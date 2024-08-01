@@ -1,0 +1,1 @@
+.\koboldcpp.exe --model .\Gemmoy-9B-G2-MK.3.i1-Q6_K.gguf --usecublas --contextsize 8192 --host 0.0.0.0 --gpulayers 99

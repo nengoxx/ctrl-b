@@ -1,0 +1,1 @@
+.\koboldcpp.exe --model .\L3-8B-Lunar-Stheno.f16.Q8_0.gguf --usecublas --contextsize 8192 --flashattention --quantkv 2 --host 0.0.0.0 --gpulayers 99

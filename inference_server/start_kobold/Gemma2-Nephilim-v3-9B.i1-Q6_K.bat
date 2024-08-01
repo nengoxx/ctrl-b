@@ -1,0 +1,1 @@
+.\koboldcpp.exe --model .\Gemma2-Nephilim-v3-9B.i1-Q6_K.gguf --usecublas --contextsize 8192 --host 0.0.0.0 --gpulayers 99
