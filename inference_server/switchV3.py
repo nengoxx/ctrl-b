@@ -9,6 +9,23 @@ def find_process_by_name(name):
             return proc
     return None
 
+
+def find_process_by_name_alternative(name):
+    for proc in psutil.process_iter(['name', 'cmdline']):
+        try:
+            proc_info = proc.info
+            if proc_info['name'] == name:
+                return proc
+            if proc_info['cmdline']:
+                cmdline = ' '.join(proc_info['cmdline'])
+                if name in cmdline:
+                    return proc
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
+    return None
+
+
+
 def gracefully_stop_process(proc):
     if proc:
         proc.terminate()
