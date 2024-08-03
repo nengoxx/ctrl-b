@@ -1,0 +1,1 @@
+.\koboldcpp.exe --model .\mini-magnum-12b-v1.1.i1-Q6_K.gguf --usecublas --contextsize 8192 --flashattention --quantkv 2 --host 0.0.0.0 --gpulayers 99
