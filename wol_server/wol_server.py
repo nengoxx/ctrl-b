@@ -20,7 +20,7 @@ class Computer:
 class WolServer:
     def __init__(self, config):
         self.app = Flask(__name__)
-        self.computers = {name: Computer(computer['name'], computer['ip'], computer['mac'], computer['ssh_username'], computer['ssh_password']) for name, computer in config['computers'].items()}
+        self.computers = {name: Computer(name, computer['ip'], computer['mac'], computer['ssh_username'], computer['ssh_password']) for name, computer in config['computers'].items()}
 
         self.app.add_url_rule('/', 'index', self.index)
         self.app.add_url_rule('/wake/<computer_name>', 'wake_computer', self.wake_computer)

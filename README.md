@@ -9,3 +9,7 @@ Discord/Telegram bot:
 Control bot:
 -notify unreachable server
 -WOL
+
+Dependencies:
+-wakeonlan
+-sshpass

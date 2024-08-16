@@ -1,14 +1,12 @@
 computers:
 
   computer1:
-    name: Computer 1
     ip: 192.168.1.1
     mac: 00:11:22:33:44:55
     ssh_username: user1
     ssh_password: pass1
 
   computer2:
-    name: Computer 2
     ip: 192.168.1.2
     mac: 66:77:88:99:AA:BB
     ssh_username: user2
