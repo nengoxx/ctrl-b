@@ -51,7 +51,7 @@ class WolServer:
     def shutdown_computer(self, computer_name):
         computer = self.computers.get(computer_name)
         if computer:
-            output, error = self.ssh_command(computer, "shutdown -h now")
+            output, error = self.ssh_command(computer, "shutdown /s")
             if error:
                 return f"Error shutting down {computer_name}: {error}"
             else:
