@@ -44,7 +44,7 @@ class WolServer:
         computer = self.computers.get(computer_name)
         if computer:
             self.send_wol_packet(computer.mac)
-            return f"Sending wake-up packet to {computer_name}"
+            return f"Sent wake-up packet to {computer_name}"
         else:
             return "Computer not found"
 
@@ -55,7 +55,7 @@ class WolServer:
             if error:
                 return f"Error shutting down {computer_name}: {error}"
             else:
-                return f"Sending shutdown command to {computer_name}"
+                return f"Sent shutdown command to {computer_name}"
         else:
             return "Computer not found"
 
