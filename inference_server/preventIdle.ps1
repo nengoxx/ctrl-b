@@ -41,14 +41,18 @@ while ($true) {
         $activity += (Get-NetTCPConnection -State Established | Where-Object { $_.LocalPort -eq $port }).Count
     }
 
+    Write-Output "Connections detected: $activity"
+
     if ($activity -gt 0) {
         # Disable the sleep timer
         powercfg /change standby-timeout-ac 0
+        Write-Output "Sleep timer disabled. Waiting for 30 minutes."
         # Wait for 30 minutes
         Start-Sleep -Seconds $longInterval
     } else {
         # Revert to the original sleep timer
         powercfg /change standby-timeout-ac $originalTimeout
+        Write-Output "No connections detected. Sleep timer reverted to original. Waiting for 60 seconds."
         # Wait for 60 seconds
         Start-Sleep -Seconds $interval
     }
