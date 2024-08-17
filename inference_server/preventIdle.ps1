@@ -32,7 +32,7 @@ if (Test-PhoneConnection) {
 $interval = 60 # Check every 60 seconds when no connections
 $longInterval = 1800 # Check every 30 minutes when connections are detected
 $portsToCheck = @(8000, 7860, 5000, 5001, 80) # List of ports to check for connections
-$originalTimeout = 3600 # Original sleep timeout in seconds (1 hour)
+$originalTimeout = 30 # Original sleep timeout in minutes (1/2 hour)
 
 while ($true) {
     $activity = 0
