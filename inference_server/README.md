@@ -1,0 +1,1 @@
+-prevent idle if a connection is open on the server(ping the client or check ports)

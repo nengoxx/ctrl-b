@@ -1,4 +1,4 @@
-# Import the necessary assembly for SendKeys
+<# # Import the necessary assembly for SendKeys
 Add-Type -AssemblyName System.Windows.Forms
 
 # Define the IP address or hostname of your phone
@@ -26,4 +26,30 @@ if (Test-PhoneConnection) {
     Set-PreventIdle
 } else {
     Write-Output "Phone is not connected. No action taken."
+}
+#---- #>
+
+$interval = 60 # Check every 60 seconds when no connections
+$longInterval = 1800 # Check every 30 minutes when connections are detected
+$portsToCheck = @(8000, 7860, 5000, 5001, 80) # List of ports to check for connections
+$originalTimeout = 3600 # Original sleep timeout in seconds (1 hour)
+
+while ($true) {
+    $activity = 0
+
+    foreach ($port in $portsToCheck) {
+        $activity += (Get-NetTCPConnection -State Established | Where-Object { $_.LocalPort -eq $port }).Count
+    }
+
+    if ($activity -gt 0) {
+        # Disable the sleep timer
+        powercfg /change standby-timeout-ac 0
+        # Wait for 30 minutes
+        Start-Sleep -Seconds $longInterval
+    } else {
+        # Revert to the original sleep timer
+        powercfg /change standby-timeout-ac $originalTimeout
+        # Wait for 60 seconds
+        Start-Sleep -Seconds $interval
+    }
 }
