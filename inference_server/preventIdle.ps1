@@ -18,26 +18,29 @@ $originalTimeout = 30 # Original sleep timeout in minutes
 $sleepTimerDisabled = $false
 
 while ($true) {
-    $deviceReachable = $false
+    # $deviceReachable = $false
 
-    foreach ($deviceIP in $deviceIPs) {
-        $pingResult = Test-Connection -ComputerName $deviceIP -Count 1 -Quiet
-        if ($pingResult) {
-            Write-Output "Device $deviceIP is reachable."
-            $deviceReachable = $true
-            break
-        } else {
-            Write-Output "Device $deviceIP is not reachable."
-        }
-    }
+    # foreach ($deviceIP in $deviceIPs) {
+    #     $pingResult = Test-Connection -ComputerName $deviceIP -Count 1 -Quiet
+    #     if ($pingResult) {
+    #         Write-Output "Device $deviceIP is reachable."
+    #         $deviceReachable = $true
+    #         break
+    #     } else {
+    #         Write-Output "Device $deviceIP is not reachable."
+    #     }
+    # }
 
-    if ($deviceReachable) {
-        Write-Output "Device is reachable. Checking connections every 30 seconds."
-        $checkInterval = $shortInterval
-    } else {
-        Write-Output "Device is not reachable. Checking connections every 60 seconds."
-        $checkInterval = $interval
-    }
+    # if ($deviceReachable) {
+    #     Write-Output "Device is reachable. Checking connections every 30 seconds."
+    #     $checkInterval = $shortInterval
+    # } else {
+    #     Write-Output "Device is not reachable. Checking connections every 60 seconds."
+    #     $checkInterval = $interval
+    # }
+
+    # Default to checking every 60 seconds since ping functionality is commented out
+    $checkInterval = $interval
 
     $activity = 0
 
