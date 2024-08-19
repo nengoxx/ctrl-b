@@ -15,6 +15,7 @@ $shortInterval = 30 # Check every 30 seconds when the device is reachable
 $longInterval = 1800 # Check every 30 minutes when connections are detected
 $portsToCheck = @(8000, 7860, 5000, 5001, 80) # List of ports to check for connections
 $originalTimeout = 30 # Original sleep timeout in minutes
+$sleepTimerDisabled = $false
 
 while ($true) {
     $deviceReachable = $false
@@ -22,8 +23,11 @@ while ($true) {
     foreach ($deviceIP in $deviceIPs) {
         $pingResult = Test-Connection -ComputerName $deviceIP -Count 1 -Quiet
         if ($pingResult) {
+            Write-Output "Device $deviceIP is reachable."
             $deviceReachable = $true
             break
+        } else {
+            Write-Output "Device $deviceIP is not reachable."
         }
     }
 
@@ -44,15 +48,22 @@ while ($true) {
     Write-Output "Connections detected: $activity"
 
     if ($activity -gt 0) {
-        # Disable the sleep timer
-        powercfg /change standby-timeout-ac 0
-        Write-Output "Sleep timer disabled. Waiting for 30 minutes."
+        if (!$sleepTimerDisabled) {
+            # Disable the sleep timer
+            powercfg /change standby-timeout-ac 0
+            $sleepTimerDisabled = $true
+            Write-Output "Sleep timer disabled. Waiting for 30 minutes."
+        }
         # Wait for 30 minutes
         Start-Sleep -Seconds $longInterval
     } else {
-        # Revert to the original sleep timer
-        powercfg /change standby-timeout-ac $originalTimeout
-        Write-Output "No connections detected. Sleep timer reverted to original. Waiting for $checkInterval seconds."
+        if ($sleepTimerDisabled) {
+            # Revert to the original sleep timer
+            powercfg /change standby-timeout-ac $originalTimeout
+            $sleepTimerDisabled = $false
+            Write-Output "No connections detected. Sleep timer reverted to original."
+        }
+        Write-Output "Waiting for $checkInterval seconds."
         # Wait for the specified interval
         Start-Sleep -Seconds $checkInterval
     }
