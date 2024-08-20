@@ -1,4 +1,4 @@
-# Function to load IP addresses from the clients file
+<# # Function to load IP addresses from the clients file
 function Load-Clients {
     param (
         [string]$filePath
@@ -8,39 +8,41 @@ function Load-Clients {
 
 # Load IP addresses from the clients file
 $clientsFilePath = "$PSScriptRoot\..\clients"
-$deviceIPs = Load-Clients -filePath $clientsFilePath
+$deviceIPs = Load-Clients -filePath $clientsFilePath #>
 
 $interval = 60 # Check every 60 seconds when no connections
-$shortInterval = 30 # Check every 30 seconds when the device is reachable
+#$shortInterval = 30 # Check every 30 seconds when the device is reachable
 $longInterval = 1800 # Check every 30 minutes when connections are detected
 $portsToCheck = @(8000, 7860, 5000, 5001, 80) # List of ports to check for connections
 $originalTimeout = 30 # Original sleep timeout in minutes
 $sleepTimerDisabled = $false
 
+# Default to checking every 60 seconds since ping functionality is commented out
+$checkInterval = $interval
+
 while ($true) {
-    # $deviceReachable = $false
+<#     $deviceReachable = $false
 
-    # foreach ($deviceIP in $deviceIPs) {
-    #     $pingResult = Test-Connection -ComputerName $deviceIP -Count 1 -Quiet
-    #     if ($pingResult) {
-    #         Write-Output "Device $deviceIP is reachable."
-    #         $deviceReachable = $true
-    #         break
-    #     } else {
-    #         Write-Output "Device $deviceIP is not reachable."
-    #     }
-    # }
+    foreach ($deviceIP in $deviceIPs) {
+        $pingResult = Test-Connection -ComputerName $deviceIP -Count 1 -Quiet
+        if ($pingResult) {
+            Write-Output "Device $deviceIP is reachable."
+            $deviceReachable = $true
+            break
+        } else {
+            Write-Output "Device $deviceIP is not reachable."
+        }
+    }
 
-    # if ($deviceReachable) {
-    #     Write-Output "Device is reachable. Checking connections every 30 seconds."
-    #     $checkInterval = $shortInterval
-    # } else {
-    #     Write-Output "Device is not reachable. Checking connections every 60 seconds."
-    #     $checkInterval = $interval
-    # }
+    if ($deviceReachable) {
+        Write-Output "Device is reachable. Checking connections every 30 seconds."
+        $checkInterval = $shortInterval
+    } else {
+        Write-Output "Device is not reachable. Checking connections every 60 seconds."
+        $checkInterval = $interval
+    } #>
 
-    # Default to checking every 60 seconds since ping functionality is commented out
-    $checkInterval = $interval
+
 
     $activity = 0
 
