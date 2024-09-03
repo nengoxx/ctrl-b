@@ -1,0 +1,11 @@
+[Unit]
+Description=wol server
+
+[Service]
+ExecStart=~/github/ctrl-b/wol_server_start.sh
+Restart=on-failure
+User=pi
+WorkingDirectory=~/github/ctrl-b
+
+[Install]
+WantedBy=multi-user.target
