@@ -4,4 +4,4 @@ VENV_FOLDER=".venv"
 
 source $VENV_FOLDER/bin/activate
 
-python wol_server/wol_server.py
+nohup python wol_server/wol_server.py >/dev/null 2>&1 &
