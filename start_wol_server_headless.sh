@@ -1,4 +1,5 @@
 #!/bin/bash
+cd /home/pi/github/ctrl-b/
 
 VENV_FOLDER=".venv"
 
