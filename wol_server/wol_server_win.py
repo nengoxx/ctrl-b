@@ -2,10 +2,10 @@ import yaml
 import subprocess
 import os
 import shutil
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 import paramiko  # for SSH functionality
 import platform  # to detect the OS
-from wakeonlan import send_magic_packet
+from wakeonlan import send_magic_packet  # for sending WOL packets
 
 class Computer:
     def __init__(self, name, ip, mac, ssh_username, ssh_password, os_type):
@@ -21,7 +21,7 @@ class Computer:
             ping_cmd = ["ping", self.ip, "-n", "1"]  # Windows uses -n for ping count
         else:
             ping_cmd = ["ping", "-c", "1", self.ip]  # Linux uses -c for ping count
-        
+
         result = subprocess.run(ping_cmd, capture_output=True, text=True)
         return result.returncode == 0
 
@@ -29,7 +29,7 @@ class WolServer:
     def __init__(self, config):
         self.app = Flask(__name__)
         self.computers = {
-            name: Computer(name, computer['ip'], computer['mac'], computer['ssh_username'], computer['ssh_password'], computer['os_type']) 
+            name: Computer(name, computer['ip'], computer['mac'], computer['ssh_username'], computer['ssh_password'], computer['os_type'])
             for name, computer in config['computers'].items()
         }
 
@@ -44,9 +44,19 @@ class WolServer:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         try:
-            ssh.connect(computer.ip, username=computer.ssh_username, password=computer.ssh_password)
+            ssh.connect(
+               computer.ip, 
+               port=22,  # Specify the correct port here
+               username=computer.ssh_username, 
+               password=computer.ssh_password,
+               timeout=10  # Add a timeout
+            )
             stdin, stdout, stderr = ssh.exec_command(command)
             return stdout.read(), stderr.read()
+        except paramiko.AuthenticationException:
+            return None, "Authentication failed. Check username and password."
+        except paramiko.SSHException as ssh_ex:
+            return None, f"SSH error: {str(ssh_ex)}"
         except Exception as e:
             return None, str(e)
         finally:
@@ -59,10 +69,13 @@ class WolServer:
     def wake_computer(self, computer_name):
         computer = self.computers.get(computer_name)
         if computer:
-            self.send_wol_packet(computer.mac)
-            return f"Sent wake-up packet to {computer_name}"
+            try:
+                self.send_wol_packet(computer.mac)
+                return jsonify({"message": f"Sent wake-up packet to {computer_name}"}), 200
+            except Exception as e:
+                return jsonify({"error": f"Failed to wake {computer_name}: {str(e)}"}), 500
         else:
-            return "Computer not found"
+            return jsonify({"error": "Computer not found"}), 404
 
     def shutdown_computer(self, computer_name):
         computer = self.computers.get(computer_name)
@@ -72,15 +85,17 @@ class WolServer:
             elif computer.os_type.lower() == "linux":
                 command = "sudo shutdown now"  # Linux shutdown command
             else:
-                return f"Unsupported OS type: {computer.os_type}"
+                return jsonify({"error": f"Unsupported OS type: {computer.os_type}"}), 400
 
-            output, error = self.ssh_command(computer, command)
-            if error:
-                return f"Error shutting down {computer_name}: {error}"
-            else:
-                return f"Sent shutdown command to {computer_name}"
+            try:
+                output, error = self.ssh_command(computer, command)
+                if error:
+                    return jsonify({"error": f"Failed to shutdown {computer_name}: {error}"}), 500
+                return jsonify({"message": f"Sent shutdown command to {computer_name}"}), 200
+            except Exception as e:
+                return jsonify({"error": f"Failed to shutdown {computer_name}: {str(e)}"}), 500
         else:
-            return "Computer not found"
+            return jsonify({"error": "Computer not found"}), 404
 
     def run(self):
         self.app.run(host='0.0.0.0', port=5000, debug=True)
@@ -100,6 +115,7 @@ def load_config(filename='config.yaml'):
     with open(filename, 'r') as f:
         return yaml.safe_load(f)
 
-config = load_config('config.yaml')
-wol_server = WolServer(config)
-wol_server.run()
+if __name__ == "__main__":
+    config = load_config('config.yaml')
+    wol_server = WolServer(config)
+    wol_server.run()

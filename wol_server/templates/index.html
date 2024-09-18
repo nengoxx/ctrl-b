@@ -89,12 +89,15 @@
 
         function wakeComputer(computerName) {
             fetch(`/wake/${computerName}`)
-                .then(response => response.text())
-                .then(message => {
-                    alert(message);
-                    location.reload();
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    alert(data.message);
+                    setTimeout(() => location.reload(), 5000); // Reload after 5 seconds
                 })
-                .catch(error => alert('Error: ' + error));
+                .catch(error => alert('Error: ' + error.message));
         }
 
         function setComputerName(computerName) {
@@ -102,14 +105,20 @@
         }
 
         function confirmShutdown() {
-            $('#shutdownModal').modal('hide');
+            const modal = document.getElementById('shutdownModal');
+            const bootstrapModal = bootstrap.Modal.getInstance(modal);
+            bootstrapModal.hide();
+
             fetch(`/shutdown/${computerNameToShutdown}`)
-                .then(response => response.text())
-                .then(message => {
-                    alert(message);
-                    location.reload();
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    alert(data.message);
+                    setTimeout(() => location.reload(), 5000); // Reload after 5 seconds
                 })
-                .catch(error => alert('Error: ' + error));
+                .catch(error => alert('Error: ' + error.message));
         }
     </script>
 </body>
