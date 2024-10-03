@@ -60,7 +60,7 @@ class WolServer:
             return "Computer not found"
 
     def run(self):
-        self.app.run(host='0.0.0.0', port=5000, debug=True)
+        self.app.run(host='0.0.0.0', port=5432, debug=True)
 
 def load_config(filename='config.yaml'):
     # Check if the config file exists
