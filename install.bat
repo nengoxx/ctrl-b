@@ -4,7 +4,7 @@ set VENV_FOLDER=.venv
 set PYTHON_VERSION=3.11
 
 if not exist %VENV_FOLDER% (
-    python -m venv %VENV_FOLDER% --python=%PYTHON_VERSION%
+    py -%PYTHON_VERSION% -m venv %VENV_FOLDER%
 )
 
 call %VENV_FOLDER%\Scripts\activate
