@@ -12,6 +12,7 @@ Dashboard:
 
 ## To Do
 
+- Cloud inference integration (OpenRouter, Groq, etc)
 - Simple chatbot
 - Whisper & alltalk integration
 - Auto shutdown on idle & wake on connection to local/vpn?
@@ -19,7 +20,9 @@ Dashboard:
 
 ## Installation
 
-You will need python 3.11 and koboldcpp if you want to use the chatbot. Run the install.bat file to install the required packages.
+You will need python 3.11, and also Koboldcpp if you want to use the assistant locally.
+
+Run the install.bat file to install the required packages.
 
 ## Usage
 
