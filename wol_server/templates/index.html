@@ -149,6 +149,7 @@
                         class="form-control"
                         placeholder="Enter your instruction here..."
                         aria-label="Command Input"
+                        onkeydown="handleKeyDown(event)"
                     />
                     <button
                         id="send-button"
@@ -286,6 +287,13 @@
 
         // Initial check for log items
         toggleInputBorderRadius();
+
+        function handleKeyDown(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault(); // Prevent the default action (form submission)
+                handleCommand();
+            }
+        }
         
     </script>
     

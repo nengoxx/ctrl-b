@@ -2,6 +2,7 @@ config.yaml
 clients
 prompt*.txt
 prompt.md
+assets/demo.mp4
 
 .DS_Store
 .venv
