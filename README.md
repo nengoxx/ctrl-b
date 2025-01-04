@@ -7,12 +7,14 @@ Easy control over your services.
 Dashboard:
 
 - Monitor server, WOL & shutdown.
-- Direct commands (preceded with '$') OR assisted with Koboldcpp backend.
+- Direct commands (preceded with '$') OR assisted with Koboldcpp backend (default or preceded by 'k:').
 - Switch models & start/stop services via assisted command execution. Provide a list of commands, read the sample_prompt.md for more info.
+- Simple prompt & after user input prompt files (prompt.md & prompt_after.md).
 
 ## To Do
 
-- Cloud inference integration (OpenRouter, Groq, etc)
+- Prompt formatting support
+- Openai endpoint integration (instruction preceded by 'o:')
 - Simple chatbot
 - Whisper & alltalk integration
 - Auto shutdown on idle & wake on connection to local/vpn?

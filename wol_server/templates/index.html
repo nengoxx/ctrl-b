@@ -59,12 +59,33 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <!-- WORKING, OLD VERSION -->
+    <!-- <div class="container">
         <img src="{{ url_for('static', filename='img.png') }}" class="header-image">
         <ul class="list-group">
             {% for computer in computers.values() %}
             <li class="list-group-item list-group-item-dark d-flex justify-content-between align-items-center">
                 <span class="{% if status[computer.name] %}status-awake{% else %}status-asleep{% endif %}">
+                    {{ computer.name }}
+                </span>
+                <div class="btn-group" role="group">
+                    <button class="btn btn-dark btn-custom btn-lg" onclick="wakeComputer('{{ computer.name }}')">Wake Up</button>
+                    <button class="btn btn-danger btn-custom btn-lg" data-bs-toggle="modal" data-bs-target="#shutdownModal" onclick="setComputerName('{{ computer.name }}')">
+                        <i class="fas fa-power-off"></i>
+                    </button>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+    </div> -->
+
+    <!-- ##### COMPUTERS ################################################################### -->
+    <div class="container">
+        <img src="{{ url_for('static', filename='img.png') }}" class="header-image">
+        <ul class="list-group">
+            {% for computer in computers.values() %}
+            <li class="list-group-item list-group-item-dark d-flex justify-content-between align-items-center" id="computer-{{ computer.name }}">
+                <span class="status-indicator {% if status[computer.name] %}status-awake{% else %}status-asleep{% endif %}" id="status-{{ computer.name }}">
                     {{ computer.name }}
                 </span>
                 <div class="btn-group" role="group">
@@ -230,7 +251,12 @@
                 });
     
                 const data = await response.json();
-                alert(data.message || data.error || "Command executed.");
+                //alert(data.message || data.error || "Command executed.");
+                // Use the text form instead of the alert
+                const suffix = " &REM Command executed!";
+                if (!inputElement.value.endsWith(suffix.trim())) {
+                inputElement.value += suffix;
+                }
             } else {
                 // Send to prompt route
                 const response = await fetch("/prompt", {
@@ -273,6 +299,7 @@
             toggleInputBorderRadius();
         }
 
+        // Toggle the input field border radius based on the existence of log items
         function toggleInputBorderRadius() {
             const inputElement = document.getElementById("command-input");
             const log = document.getElementById("response-log");
@@ -288,12 +315,38 @@
         // Initial check for log items
         toggleInputBorderRadius();
 
+        // Handle Enter key press
         function handleKeyDown(event) {
             if (event.key === 'Enter') {
                 event.preventDefault(); // Prevent the default action (form submission)
                 handleCommand();
             }
         }
+
+        // Function to update the computer statuses after the default has been loaded
+        function updateComputerStatuses() {
+            fetch('/status')
+                .then(response => response.json())
+                .then(data => {
+                    for (const computerName in data) {
+                        const isAwake = data[computerName];
+                        const statusElement = document.getElementById(`status-${computerName}`);
+                        if (statusElement) {
+                            if (isAwake) {
+                                statusElement.classList.remove('status-asleep');
+                                statusElement.classList.add('status-awake');
+                            } else {
+                                statusElement.classList.remove('status-awake');
+                                statusElement.classList.add('status-asleep');
+                            }
+                        }
+                    }
+                })
+                .catch(error => console.error('Error fetching computer statuses:', error));
+        }
+
+        // Call updateComputerStatuses when the page loads
+        window.onload = updateComputerStatuses;
         
     </script>
     

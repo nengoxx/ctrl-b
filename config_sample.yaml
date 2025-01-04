@@ -13,3 +13,10 @@ computers:
     ssh_username: user2
     ssh_password: pass2
     os_type: windows
+
+
+inference_endpoint: http://localhost:5001/api/v1/generate
+
+cloud_inference_endpoint: https://openrouter.ai/api/v1/generate
+cloud_inference_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+cloud_inference_model: meta-llama/llama-3.1-8b-instruct:free

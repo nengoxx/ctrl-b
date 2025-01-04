@@ -12,7 +12,8 @@ import requests  # for sending requests to the LLM server
 ## Variables
 ############################
 config_filename = "config.yaml"
-prompt_filename = "prompt.md"
+prompt_filename = "prompt.md" # main prompt file
+afterprompt_filename = "prompt_after.md" # after user input prompt file(optional)
 
 class Computer:
     def __init__(self, name, ip, mac, ssh_username, ssh_password, os_type):
@@ -40,8 +41,14 @@ class WolServer:
             for name, computer in config['computers'].items()
         }
 
+        self.inference_endpoint = config.get('inference_endpoint')
+        
+        default_status = {computer.name: False for computer in self.computers.values()}  # Default to asleep
+        self.previous_status = default_status
+
         ### Routes ############################
         self.app.add_url_rule('/', 'index', self.index)
+        self.app.add_url_rule('/status', 'get_computer_statuses', self.get_computer_statuses)
         self.app.add_url_rule('/wake/<computer_name>', 'wake_computer', self.wake_computer)
         self.app.add_url_rule('/shutdown/<computer_name>', 'shutdown_computer', self.shutdown_computer)
 
@@ -65,6 +72,12 @@ class WolServer:
             return jsonify({"message": "Command executed successfully"}), 200
         except Exception as e:
             return jsonify({"error": f"Failed to execute command: {str(e)}"}), 500
+
+    def get_computer_statuses(self):
+        """Returns the current computer statuses as JSON."""
+        status = {computer.name: computer.is_awake() for computer in self.computers.values()}
+        self.previous_status = status # Update the previous status with the current status
+        return jsonify(self.previous_status)
 
     # Send WOL packet
     def send_wol_packet(self, mac_address):
@@ -145,11 +158,12 @@ class WolServer:
         try:
             with open(prompt_filename, "r") as file:
                 base_prompt = file.read()
-            with open(config_filename, 'r') as file:
-                config_prompt = yaml.safe_load(file)
-                config_prompt = yaml.dump(config_prompt, default_flow_style=False)
-
-            crafted_prompt = f"# Configuration:\n\n{config_prompt}\n{base_prompt}\n{user_input.strip().capitalize()}\n\n# Command:" # ORDER MATTERS
+            if os.path.exists(afterprompt_filename):
+                with open(afterprompt_filename, "r") as file:
+                    after_prompt = file.read()
+                crafted_prompt = f"{base_prompt}\n{user_input.strip().capitalize()}\n{after_prompt}" # ORDER MATTERS
+            else:
+                crafted_prompt = f"{base_prompt}\n{user_input.strip().capitalize()}\n" # ORDER MATTERS
             print(f"Prompt:\n{crafted_prompt}")
             return crafted_prompt
         except Exception as e:
@@ -158,7 +172,8 @@ class WolServer:
 
     # Function to send the crafted prompt to KoboldCPP LLM and get the response
     def query_kobold_cpp(self, prompt):
-        url = "http://localhost:5001/api/v1/generate"  # KoboldCPP inference server URL
+        #url = "http://localhost:5001/api/v1/generate"  # KoboldCPP inference server URL
+        url = self.inference_endpoint
         headers = {"Content-Type": "application/json"}
         payload = {"prompt": prompt, "max_length": 100}
 
@@ -200,23 +215,39 @@ class WolServer:
 
         # Check if the input is a command
         if user_input.startswith('$'):
-            # Forward to execute command
+        # Forward to execute command
             command = user_input[1:]  # Remove the '$'
             return self.execute_command(command)
-        
-        # Send to LLM instead
-        if user_input:
+        elif user_input.startswith("k:"):
+            prompt = user_input[len("k:"):]
+            response_text = self.query_kobold_cpp(prompt)
+        elif user_input.startswith("o:"):
+            prompt = user_input[len("o:"):]
+            response_text = self.query_openai(prompt)
+        else:
+            # Default to Kobold if no prefix
             crafted_prompt = self.get_crafted_prompt(user_input)
             if crafted_prompt:
                 response_text = self.query_kobold_cpp(crafted_prompt)
             else:
                 response_text = "Error: Unable to craft prompt."
 
-            return jsonify({"command": response_text})  # Return JSON response
+        return jsonify({"command": response_text})
+        # if user_input.startswith('$'):
+        #     # Forward to execute command
+        #     command = user_input[1:]  # Remove the '$'
+        #     return self.execute_command(command)
+        
+        # # Send to LLM instead
+        # if user_input:
+        #     crafted_prompt = self.get_crafted_prompt(user_input)
+        #     if crafted_prompt:
+        #         response_text = self.query_kobold_cpp(crafted_prompt)
+        #     else:
+        #         response_text = "Error: Unable to craft prompt."
 
-        # Render the template with the necessary context
-        status = {computer.name: computer.is_awake() for computer in self.computers.values()}
-        return render_template("index.html", computers=self.computers, status=status, response_text=response_text)
+        #     return jsonify({"command": response_text})  # Return JSON response
+
     
 
     ############################
@@ -224,8 +255,9 @@ class WolServer:
     ############################
 
     def index(self):
-        status = {computer.name: computer.is_awake() for computer in self.computers.values()}
-        return render_template('index.html', computers=self.computers, status=status)
+        # status = {computer.name: computer.is_awake() for computer in self.computers.values()}
+        # return render_template('index.html', computers=self.computers, status=status)
+        return render_template('index.html', computers=self.computers, status=self.previous_status)
 
     def run(self):
         self.app.run(host='0.0.0.0', port=5432, debug=True)
