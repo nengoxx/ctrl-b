@@ -6,6 +6,13 @@ from flask import Flask, render_template, request, jsonify
 import paramiko  # for SSH functionality
 import platform  # to detect the OS
 from wakeonlan import send_magic_packet  # for sending WOL packets
+import requests  # for sending requests to the LLM server
+
+############################
+## Variables
+############################
+config_filename = "config.yaml"
+prompt_filename = "prompt.md"
 
 class Computer:
     def __init__(self, name, ip, mac, ssh_username, ssh_password, os_type):
@@ -22,7 +29,7 @@ class Computer:
         else:
             ping_cmd = ["ping", "-c", "1", self.ip]  # Linux uses -c for ping count
 
-        result = subprocess.run(ping_cmd, capture_output=True, text=True)
+        result = subprocess.run(ping_cmd, capture_output=True, text=True) ########### ASYNC to not stop the loading? 
         return result.returncode == 0
 
 class WolServer:
@@ -33,13 +40,37 @@ class WolServer:
             for name, computer in config['computers'].items()
         }
 
+        ### Routes ############################
         self.app.add_url_rule('/', 'index', self.index)
         self.app.add_url_rule('/wake/<computer_name>', 'wake_computer', self.wake_computer)
         self.app.add_url_rule('/shutdown/<computer_name>', 'shutdown_computer', self.shutdown_computer)
 
+        self.app.add_url_rule('/execute', 'execute_command', self.execute_command, methods=['POST'])
+        self.app.add_url_rule('/prompt', 'command_prompt', self.command_prompt, methods=['POST'])
+
+
+    ############################
+    ## Utility Functions
+    ############################
+
+    # Execute command on the server
+    def execute_command(self, command=None):
+        if not command:
+            command = request.json.get('command')
+        if not command:
+            return jsonify({"error": "No command provided"}), 400
+        try:
+            # Open a new cmd window to execute the command
+            subprocess.Popen(['cmd', '/k', command], shell=True)
+            return jsonify({"message": "Command executed successfully"}), 200
+        except Exception as e:
+            return jsonify({"error": f"Failed to execute command: {str(e)}"}), 500
+
+    # Send WOL packet
     def send_wol_packet(self, mac_address):
         send_magic_packet(mac_address)
 
+    # Execute SSH command on target computer
     def ssh_command(self, computer, command):
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -62,10 +93,7 @@ class WolServer:
         finally:
             ssh.close()
 
-    def index(self):
-        status = {computer.name: computer.is_awake() for computer in self.computers.values()}
-        return render_template('index.html', computers=self.computers, status=status)
-
+    # Wake up target computer
     def wake_computer(self, computer_name):
         computer = self.computers.get(computer_name)
         if computer:
@@ -77,6 +105,7 @@ class WolServer:
         else:
             return jsonify({"error": "Computer not found"}), 404
 
+    # Shutdown target computer
     def shutdown_computer(self, computer_name):
         computer = self.computers.get(computer_name)
         if computer:
@@ -96,11 +125,103 @@ class WolServer:
                 return jsonify({"error": f"Failed to shutdown {computer_name}: {str(e)}"}), 500
         else:
             return jsonify({"error": "Computer not found"}), 404
+        
+
+    ############################
+    ## LLM Functions
+    ############################
+
+    # Function to read the prompt file and append user input
+    def get_crafted_prompt(self, user_input):
+        try:
+            with open(prompt_filename, "r") as file:
+                base_prompt = file.read()
+            with open(config_filename, 'r') as file:
+                config_prompt = yaml.safe_load(file)
+                config_prompt = yaml.dump(config_prompt, default_flow_style=False)
+
+            crafted_prompt = f"# Configuration:\n\n{config_prompt}\n{base_prompt}\n{user_input.strip().capitalize()}\n\n# Command:" # ORDER MATTERS
+            print(f"Prompt:\n{crafted_prompt}")
+            return crafted_prompt
+        except Exception as e:
+            print(f"Error reading prompt.txt: {e}")
+            return None
+
+    # Function to send the crafted prompt to KoboldCPP LLM and get the response
+    def query_kobold_cpp(self, prompt):
+        url = "http://localhost:5001/api/v1/generate"  # KoboldCPP inference server URL
+        headers = {"Content-Type": "application/json"}
+        payload = {"prompt": prompt, "max_length": 100}
+
+        try:
+            #print(f"Sending to LLM:\n{payload}")  # Debugging log
+            response = requests.post(url, json=payload, headers=headers)
+            #response_text = response.json().get("results")
+            #print(f"Response from LLM:\n{response_text}")  # Debugging log
+            if response.status_code == 200:
+                return response.json().get("results")[0].get("text", "Error: No response received")
+            else:
+                return f"Error: {response.status_code} - {response.text}"
+        except requests.exceptions.RequestException as e:
+            return f"Error connecting to LLM server: {e}"
+        
+    # Function to send the crafted prompt to an OpenAI endpoint
+    def query_openai(self, prompt):
+        url = "http://localhost:5001/api/v1/generate"  # KoboldCPP inference server URL
+        headers = {"Content-Type": "application/json"}
+        payload = {"prompt": prompt, "max_length": 100}
+
+        try:
+            #print(f"Sending to LLM:\n{payload}")  # Debugging log
+            response = requests.post(url, json=payload, headers=headers)
+            #response_text = response.json().get("results")
+            #print(f"Response from LLM:\n{response_text}")  # Debugging log
+            if response.status_code == 200:
+                return response.json().get("results")[0].get("text", "Error: No response received")
+            else:
+                return f"Error: {response.status_code} - {response.text}"
+        except requests.exceptions.RequestException as e:
+            return f"Error connecting to LLM server: {e}"
+    
+    # Function to handle the LLM prompt
+    def command_prompt(self):
+        user_input = request.json.get('instruction')
+        if not user_input:
+            return jsonify({"error": "No input provided"}), 400
+
+        # Check if the input is a command
+        if user_input.startswith('$'):
+            # Forward to execute command
+            command = user_input[1:]  # Remove the '$'
+            return self.execute_command(command)
+        
+        # Send to LLM instead
+        if user_input:
+            crafted_prompt = self.get_crafted_prompt(user_input)
+            if crafted_prompt:
+                response_text = self.query_kobold_cpp(crafted_prompt)
+            else:
+                response_text = "Error: Unable to craft prompt."
+
+            return jsonify({"command": response_text})  # Return JSON response
+
+        # Render the template with the necessary context
+        status = {computer.name: computer.is_awake() for computer in self.computers.values()}
+        return render_template("index.html", computers=self.computers, status=status, response_text=response_text)
+    
+
+    ############################
+    ## Index
+    ############################
+
+    def index(self):
+        status = {computer.name: computer.is_awake() for computer in self.computers.values()}
+        return render_template('index.html', computers=self.computers, status=status)
 
     def run(self):
         self.app.run(host='0.0.0.0', port=5432, debug=True)
 
-def load_config(filename='config.yaml'):
+def load_config(filename=config_filename):
     # Check if the config file exists
     if not os.path.exists(filename):
         # If not, check if the sample config file exists
@@ -116,6 +237,8 @@ def load_config(filename='config.yaml'):
         return yaml.safe_load(f)
 
 if __name__ == "__main__":
-    config = load_config('config.yaml')
+    config = load_config(config_filename)
     wol_server = WolServer(config)
     wol_server.run()
+
+### Now I just need you to giver me the corresponding code for the index.html file, and remember: I want a text form with a send/enter button on the side as any chat app, the same style as the buttons I have already on my index.html. That text form & button combo will have 2 functions: first the user will input the instruction in plain text (not preceded with $), that text will be sent to the LLM, then after querying the LLM (self.app.add_url_rule('/prompt', 'command_prompt', self.execute_command, methods=['POST'])), the specific command returned by the LLM will replace the form text prepended with $, so the next time the user inputs the text, since its preceded with $, it will send it directly to the execute command route (self.app.add_url_rule('/execute', 'execute_command', self.execute_command, methods=['POST'])).

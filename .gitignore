@@ -1,4 +1,7 @@
 config.yaml
 clients
+prompt*.txt
+prompt.md
+
 .DS_Store
 .venv

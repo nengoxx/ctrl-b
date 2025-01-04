@@ -42,6 +42,20 @@
                 padding: 1rem 1rem;
             }
         }
+        /* Custom styles for input and log */
+        .input-group .form-control.rounded-bottom {
+            border-bottom-left-radius: 0.25rem;
+            border-bottom-right-radius: 0.25rem;
+        }
+        .input-group .form-control.square-bottom {
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+        #response-log {
+            border-top-left-radius: 0;
+            border-top-right-radius: 0;
+            margin-bottom: 30px;
+        }
     </style>
 </head>
 <body>
@@ -121,5 +135,162 @@
                 .catch(error => alert('Error: ' + error.message));
         }
     </script>
+
+
+    <!-- ##### CHAT/COMMAND FORM ################################################################### -->
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <!-- Chat-like input form -->
+                <div class="input-group">
+                    <input
+                        type="text"
+                        id="command-input"
+                        class="form-control"
+                        placeholder="Enter your instruction here..."
+                        aria-label="Command Input"
+                    />
+                    <button
+                        id="send-button"
+                        class="btn btn-dark btn-custom"
+                        onclick="handleCommand()"
+                    >
+                        Send
+                    </button>
+                </div>
+
+                <!-- Log of past responses -->
+                <div id="response-log" class="list-group">
+                    <!-- Responses will be dynamically added here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- <script>
+        async function handleCommand() {
+            const inputElement = document.getElementById("command-input");
+            const userInput = inputElement.value.trim();
+
+            if (!userInput) {
+                alert("Please enter a valid instruction.");
+                return;
+            }
+
+            if (userInput.startsWith("$")) {
+                // Send directly to execute route
+                const command = userInput.substring(1); // Remove the '$'
+                const response = await fetch("/execute", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ command }),
+                });
+
+                const data = await response.json();
+                alert(data.message || data.error || "Command executed.");
+            } else {
+                // Send to prompt route
+                const response = await fetch("/prompt", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ input: userInput }),
+                });
+
+                const data = await response.json();
+                if (data.command) {
+                    // Prepend the `$` to the command and update the input field
+                    inputElement.value = data.command;
+                } else {
+                    alert(data.error || "Failed to retrieve command.");
+                }
+            }
+        }
+    </script> -->
+
+    <script>
+        async function handleCommand() {
+            const inputElement = document.getElementById("command-input");
+            const userInput = inputElement.value.trim();
+    
+            if (!userInput) {
+                alert("Please enter a valid instruction.");
+                return;
+            }
+    
+            if (userInput.startsWith("$")) {
+                // Send directly to execute route
+                const command = userInput.substring(1); // Remove the '$'
+                const response = await fetch("/execute", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ command: command }),
+                });
+    
+                const data = await response.json();
+                alert(data.message || data.error || "Command executed.");
+            } else {
+                // Send to prompt route
+                const response = await fetch("/prompt", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ instruction: userInput }),
+                });
+    
+                const data = await response.json();
+                console.log(data.command);
+                if (data.command) {
+                    // Prepend the `$` to the command and update the input field
+                    inputElement.value = data.command;
+                } else {
+                    alert(data.error || "Failed to retrieve command.");
+                }
+            }
+            // Add response to the log
+            addResponseToLog(userInput, inputElement.value.trim());
+        }
+
+        function addResponseToLog(userInput, responseText) {
+            const log = document.getElementById("response-log");
+
+            // Create a new list-group-item for the response
+            const logItem = document.createElement("div");
+            logItem.className = "list-group-item list-group-item-dark";
+
+            // Format the input and response
+            logItem.innerHTML = `
+                <strong>Input:</strong> ${userInput}<br>
+                <strong>Response:</strong> ${responseText}
+            `;
+
+            // Add the new item to the top of the log
+            log.prepend(logItem);
+            // Toggle the input field border radius
+            toggleInputBorderRadius();
+        }
+
+        function toggleInputBorderRadius() {
+            const inputElement = document.getElementById("command-input");
+            const log = document.getElementById("response-log");
+            if (log.children.length > 0) {
+                inputElement.classList.remove("rounded-bottom");
+                inputElement.classList.add("square-bottom");
+            } else {
+                inputElement.classList.remove("square-bottom");
+                inputElement.classList.add("rounded-bottom");
+            }
+        }
+
+        // Initial check for log items
+        toggleInputBorderRadius();
+        
+    </script>
+    
+
+
+
 </body>
 </html>
