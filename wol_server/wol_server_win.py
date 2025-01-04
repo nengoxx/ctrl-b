@@ -133,6 +133,15 @@ class WolServer:
 
     # Function to read the prompt file and append user input
     def get_crafted_prompt(self, user_input):
+        if not os.path.exists(prompt_filename):
+            # If not, check if the sample prompt file exists
+            sample_filename = 'prompt_sample.md'
+            if os.path.exists(sample_filename):
+                # Copy the sample prompt file to the prompt file
+                shutil.copy(sample_filename, prompt_filename)
+            else:
+                raise FileNotFoundError(f"Neither {prompt_filename} nor {sample_filename} found.")
+
         try:
             with open(prompt_filename, "r") as file:
                 base_prompt = file.read()
@@ -159,7 +168,7 @@ class WolServer:
             #response_text = response.json().get("results")
             #print(f"Response from LLM:\n{response_text}")  # Debugging log
             if response.status_code == 200:
-                return response.json().get("results")[0].get("text", "Error: No response received")
+                return response.json().get("results")[0].get("text", "Error: No response received").strip()
             else:
                 return f"Error: {response.status_code} - {response.text}"
         except requests.exceptions.RequestException as e:
@@ -177,7 +186,7 @@ class WolServer:
             #response_text = response.json().get("results")
             #print(f"Response from LLM:\n{response_text}")  # Debugging log
             if response.status_code == 200:
-                return response.json().get("results")[0].get("text", "Error: No response received")
+                return response.json().get("results")[0].get("text", "Error: No response received").strip()
             else:
                 return f"Error: {response.status_code} - {response.text}"
         except requests.exceptions.RequestException as e:
