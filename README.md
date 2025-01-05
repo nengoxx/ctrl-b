@@ -28,9 +28,11 @@ Clone the repository and run the install.bat file to install the required packag
 
 ## Usage
 
+Create or copy the '_sample' files into config.yaml & prompt.md respectively, edit them with your own settings. The configuration file & prompt files will be copied from those '_sample' files provided if they're not present.
+
 Run the start_wol_server.bat file to start the dashboard. You can connect on <http://127.0.0.1:5432>
 
-Note that Linux users will need to run the start_wol_server.sh file, and it's not up to date with the latest changes.
+Note that Linux users will need to run the start_wol_server.sh file, and it's not up to date with the latest changes, just the wake-on-lan/monitoring functionality.
 
 - You can send commands directly if you start with an '$'
 - By default, or if you start with 'k:' the command will be sent to the Koboldcpp backend and it will return the command ready to send it after reviewing it.

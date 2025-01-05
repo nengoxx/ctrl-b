@@ -1,0 +1,72 @@
+<script type="module">
+  const OPTIONS = {
+    method: 'GET',
+    headers: {
+      'X-RapidAPI-Key': 'XXX',
+      'X-RapidAPI-Host': 'YYY'
+    }
+  }
+
+  const fetchIpInfo = ip => {
+    return fetch(`https://freeipapi.com/api/json/${ip}`, OPTIONS)
+      .then(res => res.json())
+      .catch(err => console.error(err))
+  }
+
+  const $ = selector => document.querySelector(selector)
+
+  const $form = $('#form')
+  const $input = $('#input')
+  const $submit = $('#submit')
+  const $results = $('#results')
+
+  // Attach an event listener to prevent the form's default submission
+  $form.addEventListener('submit', async (event) => {
+    event.preventDefault() // Prevent the default form submission behavior
+
+    const { value } = $input
+    if (!value) return // Don't proceed if input is empty
+
+    // Disable the submit button and show a loading state
+    $submit.setAttribute('disabled', '')
+    $submit.setAttribute('aria-busy', 'true')
+
+    try {
+      const ipInfo = await fetchIpInfo(value)
+      if (ipInfo) {
+        $results.textContent = JSON.stringify(ipInfo, null, 2)
+        $results.style.display = 'block'
+      }
+    } catch (error) {
+      $results.textContent = 'Error fetching IP information.'
+      $results.style.display = 'block'
+    } finally {
+      // Re-enable the submit button
+      $submit.removeAttribute('disabled')
+      $submit.removeAttribute('aria-busy')
+    }
+  })
+</script>
+
+<div class="container mt-5 pt-5">
+  <div class="row">
+    <div class="col-12">
+      <form id="form" action="#" method="GET" class="input-group mb-3">
+        <input
+          required
+          id="input"
+          type="text"
+          class="form-control form-control-lg bg-secondary text-white border-0"
+          placeholder="Write down the IP address"
+          aria-label="IP Address"
+        />
+        <button type="submit" id="submit" class="btn btn-dark btn-custom btn-lg">
+          Find IP Info
+        </button>
+      </form>
+      <div class="mt-4">
+        <pre id="results" class="bg-secondary text-white p-3 rounded shadow" style="display: none;"></pre>
+      </div>
+    </div>
+  </div>
+</div>

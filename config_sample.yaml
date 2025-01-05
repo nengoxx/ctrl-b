@@ -17,6 +17,6 @@ computers:
 
 inference_endpoint: http://localhost:5001/api/v1/generate
 
-cloud_inference_endpoint: https://openrouter.ai/api/v1/generate
+cloud_inference_endpoint: https://openrouter.ai/api/v1
 cloud_inference_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 cloud_inference_model: meta-llama/llama-3.1-8b-instruct:free

@@ -1,4 +1,5 @@
 import logging
+import time
 import yaml
 import subprocess
 import os
@@ -39,8 +40,10 @@ class Computer:
         return result.returncode == 0
 
 class WolServer:
+    app = Flask(__name__)
+
     def __init__(self, config):
-        self.app = Flask(__name__)
+        
         self.computers = {
             name: Computer(name, computer['ip'], computer['mac'], computer['ssh_username'], computer['ssh_password'], computer['os_type'])
             for name, computer in config['computers'].items()
@@ -56,6 +59,7 @@ class WolServer:
 
         ### Routes ############################
         self.app.add_url_rule('/', 'index', self.index)
+        self.app.add_url_rule('/dashboard', 'dashboard', self.show_dashboard)
         self.app.add_url_rule('/status', 'get_computer_statuses', self.get_computer_statuses)
         self.app.add_url_rule('/wake/<computer_name>', 'wake_computer', self.wake_computer)
         self.app.add_url_rule('/shutdown/<computer_name>', 'shutdown_computer', self.shutdown_computer)
@@ -198,27 +202,48 @@ class WolServer:
             return f"Error connecting to LLM server: {e}"
         
     # Function to send the crafted prompt to an OpenAI endpoint
-    def query_openai(self, prompt):
+    def query_openai(self, prompt, max_retries=3, retry_delay=1):
         client = OpenAI(
             base_url=self.cloud_inference_endpoint,
             api_key=self.cloud_inference_key,
         )
+        for attempt in range(max_retries):
+            try:
+                completion = client.chat.completions.create(
+                    model=self.cloud_inference_model,
+                    messages=[
+                        {
+                        "role": "system",
+                        "content": prompt
+                        }
+                    ]
+                )
+                print(f"Response:\n{completion}")
+                response = completion.choices[0].message.content.strip()
+                print(f"Response from LLM (attempt {attempt + 1}):\n{response}")
+                return response
+            except requests.exceptions.RequestException as e:
+                errormsg = ''
+                if completion.error:
+                    if completion.error['message']:
+                        errormsg = completion.error['message']
 
-        completion = client.chat.completions.create(
-            model=self.cloud_inference_model,
-            messages=[
-                {
-                "role": "system",
-                "content": prompt
-                }
-            ]
-        )
-        try:
-            response = completion.choices[0].message.content.strip()
-            print(f"Response from LLM:\n{response}")
-            return response
-        except requests.exceptions.RequestException as e:
-            return f"Error connecting to LLM server: {e}"
+                print(f"Error connecting to LLM server (attempt {attempt + 1}): {errormsg} - {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)  # Wait before retrying
+                else:
+                    return f"Error: Could not connect to LLM server after {max_retries} attempts."
+            except Exception as e: # Catch other potential OpenAI errors
+                errormsg = ''
+                if completion.error:
+                    if completion.error['message']:
+                        errormsg = completion.error['message']
+
+                print(f"OpenAI API Error (attempt {attempt + 1}): {errormsg} - {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay) # Wait before retrying
+                else:
+                    return f"Error: OpenAI API call failed after {max_retries} attempts: {errormsg} - {e}"
     
     # Function to handle the LLM prompt
     def command_prompt(self):
@@ -272,9 +297,27 @@ class WolServer:
         # status = {computer.name: computer.is_awake() for computer in self.computers.values()}
         # return render_template('index.html', computers=self.computers, status=status)
         return render_template('index.html', computers=self.computers, status=self.previous_status)
+    
+    def show_dashboard(self):
+        return render_template('dashboard.html', computers=self.computers, status=self.previous_status)
+    
+    @app.route('/ip_info')
+    def ip_info():
+        return render_template('ip_info.html')
+
+    @app.route('/chat')
+    def chat():
+        return render_template('chat.html')
+
+    @app.route('/settings')
+    def settings():
+        return render_template('settings.html')
 
     def run(self):
         self.app.run(host='0.0.0.0', port=5432, debug=True)
+
+
+############################
 
 def load_config(filename=config_filename):
     # Check if the config file exists
