@@ -1,3 +1,4 @@
+import logging
 import yaml
 import subprocess
 import os
@@ -7,6 +8,7 @@ import paramiko  # for SSH functionality
 import platform  # to detect the OS
 from wakeonlan import send_magic_packet  # for sending WOL packets
 import requests  # for sending requests to the LLM server
+from openai import OpenAI
 
 ############################
 ## Variables
@@ -14,6 +16,9 @@ import requests  # for sending requests to the LLM server
 config_filename = "config.yaml"
 prompt_filename = "prompt.md" # main prompt file
 afterprompt_filename = "prompt_after.md" # after user input prompt file(optional)
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 class Computer:
     def __init__(self, name, ip, mac, ssh_username, ssh_password, os_type):
@@ -42,6 +47,9 @@ class WolServer:
         }
 
         self.inference_endpoint = config.get('inference_endpoint')
+        self.cloud_inference_endpoint = config.get('cloud_inference_endpoint')
+        self.cloud_inference_key = config.get('cloud_inference_key')
+        self.cloud_inference_model = config.get('cloud_inference_model')
         
         default_status = {computer.name: False for computer in self.computers.values()}  # Default to asleep
         self.previous_status = default_status
@@ -191,19 +199,24 @@ class WolServer:
         
     # Function to send the crafted prompt to an OpenAI endpoint
     def query_openai(self, prompt):
-        url = "http://localhost:5001/api/v1/generate"  # KoboldCPP inference server URL
-        headers = {"Content-Type": "application/json"}
-        payload = {"prompt": prompt, "max_length": 100}
+        client = OpenAI(
+            base_url=self.cloud_inference_endpoint,
+            api_key=self.cloud_inference_key,
+        )
 
+        completion = client.chat.completions.create(
+            model=self.cloud_inference_model,
+            messages=[
+                {
+                "role": "system",
+                "content": prompt
+                }
+            ]
+        )
         try:
-            #print(f"Sending to LLM:\n{payload}")  # Debugging log
-            response = requests.post(url, json=payload, headers=headers)
-            #response_text = response.json().get("results")
-            #print(f"Response from LLM:\n{response_text}")  # Debugging log
-            if response.status_code == 200:
-                return response.json().get("results")[0].get("text", "Error: No response received").strip()
-            else:
-                return f"Error: {response.status_code} - {response.text}"
+            response = completion.choices[0].message.content.strip()
+            print(f"Response from LLM:\n{response}")
+            return response
         except requests.exceptions.RequestException as e:
             return f"Error connecting to LLM server: {e}"
     
@@ -228,7 +241,8 @@ class WolServer:
             # Default to Kobold if no prefix
             crafted_prompt = self.get_crafted_prompt(user_input)
             if crafted_prompt:
-                response_text = self.query_kobold_cpp(crafted_prompt)
+                #response_text = self.query_kobold_cpp(crafted_prompt)
+                response_text = self.query_openai(crafted_prompt)
             else:
                 response_text = "Error: Unable to craft prompt."
 
@@ -281,5 +295,3 @@ if __name__ == "__main__":
     config = load_config(config_filename)
     wol_server = WolServer(config)
     wol_server.run()
-
-### Now I just need you to giver me the corresponding code for the index.html file, and remember: I want a text form with a send/enter button on the side as any chat app, the same style as the buttons I have already on my index.html. That text form & button combo will have 2 functions: first the user will input the instruction in plain text (not preceded with $), that text will be sent to the LLM, then after querying the LLM (self.app.add_url_rule('/prompt', 'command_prompt', self.execute_command, methods=['POST'])), the specific command returned by the LLM will replace the form text prepended with $, so the next time the user inputs the text, since its preceded with $, it will send it directly to the execute command route (self.app.add_url_rule('/execute', 'execute_command', self.execute_command, methods=['POST'])).

@@ -24,11 +24,13 @@ Dashboard:
 
 You will need python 3.11, and also Koboldcpp if you want to use the assistant locally.
 
-Run the install.bat file to install the required packages in a virtual environment.
+Clone the repository and run the install.bat file to install the required packages in a virtual environment.
 
 ## Usage
 
 Run the start_wol_server.bat file to start the dashboard. You can connect on <http://127.0.0.1:5432>
+
+Note that Linux users will need to run the start_wol_server.sh file, and it's not up to date with the latest changes.
 
 - You can send commands directly if you start with an '$'
 - By default, or if you start with 'k:' the command will be sent to the Koboldcpp backend and it will return the command ready to send it after reviewing it.

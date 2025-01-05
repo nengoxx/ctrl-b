@@ -5,3 +5,4 @@ paramiko
 wakeonlan
 
 requests
+openai
