@@ -7,7 +7,7 @@ Easy control over your services.
 Dashboard:
 
 - Monitor server, WOL & shutdown.
-- Direct commands (preceded with '$') OR assisted with Koboldcpp backend (default or preceded by 'k:').
+- Direct commands (preceded with '$') or assisted with Koboldcpp/OpenAI backend (default or preceded by 'k:' or 'o:').
 - Switch models & start/stop services via assisted command execution. Provide a list of commands, read the sample_prompt.txt for more info.
 - Simple prompt & after user input prompt files (command_prompt.txt & command_post_prompt.txt).
 
@@ -39,7 +39,7 @@ Note that Linux users will need to run the start_wol_server.sh file, and it's no
 ### Dashboard
 
 - You can send commands directly if you precede them with '$'
-- By default, the command will be sent to the backend of choice and it will return the crafted command to the textbox, ready to send it after reviewing it.
+- By default, the user request will be sent to the backend of choice and it will return the crafted command to the textbox, ready to send it after reviewing it.
 - You can use the 'k:' or 'o:' prefix to send the command to the Koboldcpp or OpenAI backend respectively.
 
 - The contents of 'command_prompt.txt' will be sent as system prompt to the AI for the command auto-completion (sample_prompt.txt will be used as default).
