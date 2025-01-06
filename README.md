@@ -14,7 +14,7 @@ Dashboard:
 ## To Do
 
 - Prompt formatting support
-- [x] Openai endpoint integration (instruction preceded by 'o:')
+- [x] Openai endpoint integration (forced if instruction preceded by 'o:')
 - [x] Simple chatbot
 - Whisper & alltalk integration
 - Auto shutdown on idle & wake on connection to local/vpn?
