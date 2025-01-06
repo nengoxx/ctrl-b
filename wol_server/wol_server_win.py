@@ -4,7 +4,7 @@ import yaml
 import subprocess
 import os
 import shutil
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 import paramiko  # for SSH functionality
 import platform  # to detect the OS
 from wakeonlan import send_magic_packet  # for sending WOL packets
@@ -309,7 +309,7 @@ class WolServer:
 
         #     return jsonify({"command": response_text})  # Return JSON response
 
-    @app.route('/chat', methods=['POST'])
+    @app.route('/chat_api', methods=['POST'])
     def chat_api():
         user_input = request.json.get('instruction')
         if not user_input:
@@ -364,6 +364,7 @@ class WolServer:
     @app.route('/settings')
     def settings():
         return render_template('settings.html')
+
 
     def run(self):
         self.app.run(host='0.0.0.0', port=5432, debug=True)
