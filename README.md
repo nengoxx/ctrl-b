@@ -8,14 +8,14 @@ Dashboard:
 
 - Monitor server, WOL & shutdown.
 - Direct commands (preceded with '$') OR assisted with Koboldcpp backend (default or preceded by 'k:').
-- Switch models & start/stop services via assisted command execution. Provide a list of commands, read the sample_prompt.md for more info.
-- Simple prompt & after user input prompt files (prompt.md & prompt_after.md).
+- Switch models & start/stop services via assisted command execution. Provide a list of commands, read the sample_prompt.txt for more info.
+- Simple prompt & after user input prompt files (command_prompt.txt & command_post_prompt.txt).
 
 ## To Do
 
 - Prompt formatting support
-- Openai endpoint integration (instruction preceded by 'o:')
-- Simple chatbot
+- [x] Openai endpoint integration (instruction preceded by 'o:')
+- [x] Simple chatbot
 - Whisper & alltalk integration
 - Auto shutdown on idle & wake on connection to local/vpn?
 - Discord/Telegram voice bot
@@ -28,11 +28,28 @@ Clone the repository and run the install.bat file to install the required packag
 
 ## Usage
 
-Create or copy the '_sample' files into config.yaml & prompt.md respectively, edit them with your own settings. The configuration file & prompt files will be copied from those '_sample' files provided if they're not present.
+Create or copy the '_sample' files into config.yaml & command_prompt.txt respectively, edit them with your own settings. The configuration file & prompt files will be copied from those '_sample' files provided if they're not present at runtime.
+
+Check the config_sample.yaml file for available settings.
 
 Run the start_wol_server.bat file to start the dashboard. You can connect on <http://127.0.0.1:5432>
 
-Note that Linux users will need to run the start_wol_server.sh file, and it's not up to date with the latest changes, just the wake-on-lan/monitoring functionality.
+Note that Linux users will need to run the start_wol_server.sh file, and it's not up to date, just the wake-on-lan/monitoring functionality is working.
 
-- You can send commands directly if you start with an '$'
-- By default, or if you start with 'k:' the command will be sent to the Koboldcpp backend and it will return the command ready to send it after reviewing it.
+### Dashboard
+
+- You can send commands directly if you precede them with '$'
+- By default, the command will be sent to the backend of choice and it will return the crafted command to the textbox, ready to send it after reviewing it.
+- You can use the 'k:' or 'o:' prefix to send the command to the Koboldcpp or OpenAI backend respectively.
+
+- The contents of 'command_prompt.txt' will be sent as system prompt to the AI for the command auto-completion (sample_prompt.txt will be used as default).
+- The contents of 'command_post_prompt.txt', if it exists, will be sent after the user input.
+
+### Chat
+
+- You can add a system_prompt.txt file to the chat folder to add a system prompt to the chat.
+- You can also add a post_prompt.txt file to the chat folder to add a prompt to the chat after the user input.
+
+### IP Lookup
+
+- Placeholder test, input an IP and returns some info about it.

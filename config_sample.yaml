@@ -1,11 +1,11 @@
-computers:
+computers: # Computers to monitor and manage, add more computers as needed
 
-  computer1:
-    ip: 192.168.1.1
-    mac: 00:11:22:33:44:55
-    ssh_username: user1
-    ssh_password: pass1
-    os_type: windows
+  computer1: # Computer name
+    ip: 192.168.1.1 # IP address
+    mac: 00:11:22:33:44:55 # MAC address for WOL
+    ssh_username: user1 # SSH username for ssh shutdown
+    ssh_password: pass1 # SSH password for ssh shutdown
+    os_type: windows # OS type for ssh shutdown
 
   computer2:
     ip: 192.168.1.2
@@ -15,8 +15,8 @@ computers:
     os_type: windows
 
 
-inference_endpoint: http://localhost:5001/api/v1/generate
-
-cloud_inference_endpoint: https://openrouter.ai/api/v1
-cloud_inference_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-cloud_inference_model: meta-llama/llama-3.1-8b-instruct:free
+inference_endpoint: http://localhost:5001/api/v1/generate # Inference endpoint for local inference
+local_inference: false
+cloud_inference_endpoint: https://openrouter.ai/api/v1  # Inference endpoint for OpenAI API
+cloud_inference_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx # API key
+cloud_inference_model: meta-llama/llama-3.1-8b-instruct:free  # Model to use for cloud inference

@@ -48,7 +48,26 @@
   })
 </script>
 
-<div class="container mt-5 pt-5">
+<style>
+  body {
+            background-color: #222c3e;
+        }
+        .header-image {
+            display: block;
+            margin: 26px auto 0 auto;
+            width:100%;
+            max-width:600px;
+            height: auto;
+        }
+</style>
+
+  <!-- ##### HEADER IMG ################################################################### -->
+  <div class="container">
+    <img src="{{ url_for('static', filename='img.png') }}" class="header-image">
+  </div>
+
+<!-- <div class="container mt-5 pt-5"> -->
+<div class="container">
   <div class="row">
     <div class="col-12">
       <form id="form" action="#" method="GET" class="input-group mb-3">

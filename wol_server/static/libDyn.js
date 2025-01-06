@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         updateComputerStatuses();
                         setInterval(updateComputerStatuses, 30000);
                     }
-					if (targetUrl === '/ip_info') {
+					if (targetUrl === '/ip_info' || targetUrl === '/chat') {
 						// Evaluate the script tags within the dynamically loaded content
 						const scripts = document.getElementById('content-area').getElementsByTagName('script');
 						for (let script of scripts) {

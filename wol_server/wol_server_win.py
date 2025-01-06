@@ -15,8 +15,11 @@ from openai import OpenAI
 ## Variables
 ############################
 config_filename = "config.yaml"
-prompt_filename = "prompt.md" # main prompt file
-afterprompt_filename = "prompt_after.md" # after user input prompt file(optional)
+sample_prompt_filename = 'prompt_sample.txt'
+command_prompt_filename = "command_prompt.txt" # command prompt file
+command_post_prompt_filename = "command_post_prompt.txt" # after user input prompt file(optional)
+chat_system_prompt_filename = "system_prompt.txt" # chat system prompt file(optional)
+chat_post_prompt_filename = "post_prompt.txt" # chat post prompt file(optional)
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
@@ -53,6 +56,7 @@ class WolServer:
         self.cloud_inference_endpoint = config.get('cloud_inference_endpoint')
         self.cloud_inference_key = config.get('cloud_inference_key')
         self.cloud_inference_model = config.get('cloud_inference_model')
+        self.local_inference = config.get('local_inference')
         
         default_status = {computer.name: False for computer in self.computers.values()}  # Default to asleep
         self.previous_status = default_status
@@ -158,24 +162,23 @@ class WolServer:
 
     # Function to read the prompt file and append user input
     def get_crafted_prompt(self, user_input):
-        if not os.path.exists(prompt_filename):
+        if not os.path.exists(command_prompt_filename):
             # If not, check if the sample prompt file exists
-            sample_filename = 'prompt_sample.md'
-            if os.path.exists(sample_filename):
+            if os.path.exists(sample_prompt_filename):
                 # Copy the sample prompt file to the prompt file
-                shutil.copy(sample_filename, prompt_filename)
+                shutil.copy(sample_prompt_filename, command_prompt_filename)
             else:
-                raise FileNotFoundError(f"Neither {prompt_filename} nor {sample_filename} found.")
+                raise FileNotFoundError(f"Neither {command_prompt_filename} nor {sample_prompt_filename} found.")
 
         try:
-            with open(prompt_filename, "r") as file:
+            with open(command_prompt_filename, "r", encoding="utf-8") as file:
                 base_prompt = file.read()
-            if os.path.exists(afterprompt_filename):
-                with open(afterprompt_filename, "r") as file:
+            if os.path.exists(command_post_prompt_filename):
+                with open(command_post_prompt_filename, "r", encoding="utf-8") as file:
                     after_prompt = file.read()
-                crafted_prompt = f"{base_prompt}\n{user_input.strip().capitalize()}\n{after_prompt}" # ORDER MATTERS
+                crafted_prompt = f"{base_prompt}\n\n{user_input.strip().capitalize()}\n\n{after_prompt}" # ORDER MATTERS
             else:
-                crafted_prompt = f"{base_prompt}\n{user_input.strip().capitalize()}\n" # ORDER MATTERS
+                crafted_prompt = f"{base_prompt}\n\n{user_input.strip().capitalize()}" # ORDER MATTERS
             print(f"Prompt:\n{crafted_prompt}")
             return crafted_prompt
         except Exception as e:
@@ -202,23 +205,39 @@ class WolServer:
             return f"Error connecting to LLM server: {e}"
         
     # Function to send the crafted prompt to an OpenAI endpoint
-    def query_openai(self, prompt, max_retries=3, retry_delay=1):
+    def query_openai(self, sysPrompt, userPrompt=None, postPrompt=None, max_retries=3, retry_delay=1):
         client = OpenAI(
             base_url=self.cloud_inference_endpoint,
             api_key=self.cloud_inference_key,
         )
+
+        prompt = [
+            {
+                "role": "system",
+                "content": sysPrompt.strip()+"\n"
+            }
+        ]
+
+        if userPrompt:
+            prompt.append({
+                "role": "user",
+                "content": userPrompt.strip().capitalize()+"\n"
+            })
+
+        if postPrompt:
+            prompt.append({
+                "role": "user",
+                "content": postPrompt.strip()+"\n"
+            })
+
         for attempt in range(max_retries):
             try:
                 completion = client.chat.completions.create(
                     model=self.cloud_inference_model,
-                    messages=[
-                        {
-                        "role": "system",
-                        "content": prompt
-                        }
-                    ]
+                    messages=prompt
                 )
-                print(f"Response:\n{completion}")
+                print(f"Completion request:\n{prompt[0]['content']}")
+                print(f"Completion response:\n{completion}")
                 response = completion.choices[0].message.content.strip()
                 print(f"Response from LLM (attempt {attempt + 1}):\n{response}")
                 return response
@@ -263,11 +282,13 @@ class WolServer:
             prompt = user_input[len("o:"):]
             response_text = self.query_openai(prompt)
         else:
-            # Default to Kobold if no prefix
+            # Default to preferred endpoint if no prefix
             crafted_prompt = self.get_crafted_prompt(user_input)
             if crafted_prompt:
-                #response_text = self.query_kobold_cpp(crafted_prompt)
-                response_text = self.query_openai(crafted_prompt)
+                if self.local_inference:
+                    response_text = self.query_kobold_cpp(crafted_prompt)
+                else:
+                    response_text = self.query_openai(crafted_prompt)
             else:
                 response_text = "Error: Unable to craft prompt."
 
@@ -287,7 +308,37 @@ class WolServer:
 
         #     return jsonify({"command": response_text})  # Return JSON response
 
-    
+    @app.route('/chat', methods=['POST'])
+    def chat_api():
+        user_input = request.json.get('instruction')
+        if not user_input:
+            return jsonify({"error": "No input provided"}), 400
+
+        try:
+            # Check for the optional prompt files
+            sys_prompt = ""
+            if os.path.exists(chat_system_prompt_filename):
+                with open(chat_system_prompt_filename, "r", encoding="utf-8") as sys_file:
+                    sys_prompt = sys_file.read().strip()
+            else:
+                sys_prompt = "You are a helpful assistant."  # Default system prompt
+
+            post_prompt = ""
+            if os.path.exists(chat_post_prompt_filename):
+                with open(chat_post_prompt_filename, "r", encoding="utf-8") as post_file:
+                    post_prompt = post_file.read().strip()
+
+            # Send prompts to OpenAI
+            response = wol_server.query_openai(
+                sysPrompt=sys_prompt,
+                userPrompt=user_input,
+                postPrompt=post_prompt
+            )
+            return jsonify({"command": response})
+
+        except Exception as e:
+            return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
 
     ############################
     ## Index
