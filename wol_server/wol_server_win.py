@@ -85,9 +85,9 @@ class WolServer:
         try:
             # Open a new cmd window to execute the command
             subprocess.Popen(['cmd', '/k', command], shell=True)
-            return jsonify({"message": "Command executed successfully"}), 200
+            return jsonify({"message": "Command executed successfully","command": "Command executed successfully"}), 200
         except Exception as e:
-            return jsonify({"error": f"Failed to execute command: {str(e)}"}), 500
+            return jsonify({"error": f"Failed to execute command: {str(e)}","command": f"Failed to execute command: {str(e)}"}), 500
 
     def get_computer_statuses(self):
         """Returns the current computer statuses as JSON."""
@@ -229,17 +229,18 @@ class WolServer:
                 "role": "user",
                 "content": postPrompt.strip()+"\n"
             })
-
+        
+        print(f"Prompt:\n{prompt}")  # Debugging log
+        # print(f"System prompt:\n{prompt[0]['content']}")  # Debugging log
         for attempt in range(max_retries):
             try:
                 completion = client.chat.completions.create(
                     model=self.cloud_inference_model,
                     messages=prompt
                 )
-                print(f"Completion request:\n{prompt[0]['content']}")
-                print(f"Completion response:\n{completion}")
+                print(f"Completion response (attempt {attempt + 1}):\n{completion}")
                 response = completion.choices[0].message.content.strip()
-                print(f"Response from LLM (attempt {attempt + 1}):\n{response}")
+                # print(f"Response from LLM (attempt {attempt + 1}):\n{response}")
                 return response
             except requests.exceptions.RequestException as e:
                 errormsg = ''
@@ -271,7 +272,7 @@ class WolServer:
             return jsonify({"error": "No input provided"}), 400
 
         # Check if the input is a command
-        if user_input.startswith('$'):
+        if user_input.startswith('$') or user_input.startswith('>'):
         # Forward to execute command
             command = user_input[1:]  # Remove the '$'
             return self.execute_command(command)

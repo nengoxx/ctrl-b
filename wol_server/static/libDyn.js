@@ -19,6 +19,8 @@ function fetchDashboard() {
 // Dynamically load content based on the navigation links
 document.addEventListener('DOMContentLoaded', function () {
     const navLinks = document.querySelectorAll('.navbar-nav .nav-link, .dropdown-item');
+	const navbarToggler = document.querySelector('.navbar-toggler');
+    const navbarCollapse = document.querySelector('#collapsibleNavbar');
     const contentArea = document.getElementById('content-area');
 
     navLinks.forEach(link => {
@@ -58,6 +60,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     console.error('Error fetching content:', error);
                     contentArea.innerHTML = '<p>Failed to load content.</p>';
                 });
+			if (navbarCollapse.classList.contains('show')) {
+				navbarToggler.click();
+				}
         });
     });
 });
@@ -132,7 +137,7 @@ async function handleCommand() {
 		return;
 	}
 
-	if (userInput.startsWith("$")) {
+	if (userInput.startsWith("$") || userInput.startsWith(">")) {
 		// Send directly to execute route
 		const command = userInput.substring(1); // Remove the '$'
 		const response = await fetch("/execute", {

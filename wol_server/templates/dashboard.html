@@ -20,8 +20,9 @@
             font-weight: bold;
         }
         .btn-custom {
-            font-size: 1.5rem;
-            padding: 0.75rem 1.5rem;
+            font-size: 1.2rem;
+            padding: 0.2rem 0.7rem 0.5rem 0.7rem;
+            /* margin: 0.5rem; */
         }
         .header-image {
             display: block;
@@ -34,10 +35,10 @@
             .status-awake, .status-asleep {
                 font-size: 1.5rem;
             }
-            .btn-custom {
+            /* .btn-custom {
                 font-size: 1rem;
                 padding: 1rem 1rem;
-            }
+            } */
         }
         /* Custom styles for input and log */
         .input-group .form-control.rounded-bottom {
@@ -68,7 +69,7 @@
                 <span class="status-indicator {% if status[computer.name] %}status-awake{% else %}status-asleep{% endif %}" id="status-{{ computer.name }}">
                     {{ computer.name }}
                 </span>
-                <div class="btn-group" role="group">
+                <div class="btn-group p-2" role="group">
                     <button class="btn btn-dark btn-custom btn-lg" onclick="wakeComputer('{{ computer.name }}')">Wake Up</button>
                     <button class="btn btn-danger btn-custom btn-lg" data-bs-toggle="modal" data-bs-target="#shutdownModal" onclick="setComputerName('{{ computer.name }}')">
                         <i class="fas fa-power-off"></i>
@@ -109,7 +110,7 @@
                         type="text"
                         id="command-input"
                         class="form-control"
-                        placeholder="Enter your instruction here..."
+                        placeholder="Enter your instruction..."
                         aria-label="Command Input"
                         onkeydown="handleKeyDown(event)"
                     />
@@ -118,7 +119,7 @@
                         class="btn btn-dark btn-custom"
                         onclick="handleCommand()"
                     >
-                        Send
+                        <b>></b>
                     </button>
                 </div>
 

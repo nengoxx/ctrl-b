@@ -1,7 +1,7 @@
 <style>
     body {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
-      background-color: #222c3e;
+      background-color: #292927;
       display: grid;
       /* place-content: center; */
       margin-top: 50px;
@@ -12,13 +12,12 @@
       /* width: 400px; */
       max-width: 90%;
       height: 70vh;
-
-      background: #000000;
+      background: #292927;
       /* border: 1px solid #221b38; */
-      border-radius: 4px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      /* border-radius: 4px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); */
       padding: 8px;
-      margin-bottom: 16px;
+      margin-bottom: 8px;
 
       overflow-y: auto;
       scroll-behavior: smooth;
@@ -61,7 +60,7 @@
 
         span,
         p {
-          background: rgb(219, 236, 255);
+          background: #1d1e1c;
         }
       }
 
@@ -70,56 +69,75 @@
 
         span,
         p {
-          background: rgb(198, 255, 220);
+          background: #393937;
         }
       }
     }
 
     form {
-      display: flex;
-      margin: auto;
-      margin-bottom: 30px;
-      max-width: 90%;
-
-      input {
-        border-radius: 4px;
-        flex-grow: 1;
-        border: 0;
-        padding: 8px;
-        margin-right: 8px;
-        border: 1px solid #ccc;
-      }
-
-      button {
-        background: #09f;
-        border: 0;
-        color: white;
-        border-radius: 4px;
-        cursor: pointer;
-        padding: 8px;
-        transition: background .3s ease;
-
-        &[disabled] {
-          background: #ccc;
-          opacity: .6;
-          pointer-events: none;
-        }
-
-        &:hover {
-          background: rgb(0, 104, 173);
-        }
-      }
+      position: fixed; /*position: relative;*/
+      bottom: 0;
+      left: 10%; /* To center the form with 80% width */
+      width: 80%;
+      display: flex; /* To easily align input and button */
+      /* border-top: 1px solid #393937; *//* Add a border to separate from the chat content */
+      background-color: #292927; /* Match the body background or your preferred form background */
     }
 
-    small {
+    form input {
+      border-radius: 4px 0 0 0; /* Keep top-left radius, remove bottom-left */
+      border: none; /* Remove default border */
+      padding: 4px 8px 18px 16px;
+      flex-grow: 1; /* Allow input to take up available space */
+      background-color: #393937; /* Assuming this is the input background color from your context */
+      color: white; /* Assuming you want white text in the input */
+    }
+
+    form input:focus {
+      outline: none; /* Removes the focus outline */
+    }
+
+    form button {
+      border-radius: 0 4px 0 0; /* Keep top-right radius, remove bottom-right */
+      border: none; /* Remove default border */
+      padding: 8px 20px 18px 20px; /* Adjust padding as needed */
+      color: white; /* Assuming you want white text on the button */
+      cursor: pointer; /* Indicate it's clickable */
+      font-size: 1.2rem;
+      color:#a8a8a8;
+      background-color: #393937; /* Match input background color */
+      -webkit-transition: background-color 500ms;
+      -ms-transition: background-color 500ms;
+      transition: background-color 500ms;
+    }
+
+    form button:hover {
+      background-color: #555; /* Example hover color, adjust as desired */
+      -webkit-transition: background-color 500ms;
+      -ms-transition: background-color 500ms;
+      transition: background-color 500ms;
+    }
+
+    /* small {
       font-size: 10px;
       color: #555;
       position: fixed;
-      bottom: 10px;
+      bottom: 0px;
       left: 0;
       right: 0;
       margin: auto;
       width: 400px;
+    } */
+
+    small {
+      display: block; 
+      width: 80%;
+      text-align: center;
+      background-color: #393937; 
+      bottom: 0px;
+      font-size: 10px;
+      color: #555;
+      /* position: relative; */
     }
 
 
@@ -216,22 +234,28 @@
   </script>
 
 
-<div id="chat-container" class="container-fluid">
-    <main class="container-fluid bg-dark">
+<div id="chat-container" class="container-fluid border-0">
+    <main class="container-fluid border-0">
       <ul></ul>
     </main>
   
-    <form>
-      <input class="form-control form-control-lg bg-secondary text-white border-0" placeholder="Write your message...">
-      <button class="btn btn-dark btn-custom btn-lg">Send</button>
+    <!-- <form>
+      <input class="form-control form-control-lg bg-secondary text-white border-0 .fixed-bottom" placeholder="Write your message...">
+      <button class="btn btn-dark btn-custom btn-lg"><b>></b></button>
+    </form> -->
+
+    <form class=".fixed-bottom .sticky-bottom">
+      <input class="text-white border-0 .fixed-bottom" placeholder="Write your message...">
+      <button class="border-0"><b>></b></button>
     </form>
   
-    <small>&nbsp;</small>
+    <!-- <small>&nbsp;</small> -->
+    <!-- <small>Chatting with the bot...</small> -->
   
     <template id="message-template">
       <li class="message">
         <span class="who"></span>
-        <p class="text"></p>
+        <p class="text text-white"></p>
       </li>
     </template>
 </div>

@@ -7,7 +7,7 @@ Easy control over your services.
 Dashboard:
 
 - Monitor server, WOL & shutdown.
-- Direct commands (preceded with '$') or assisted with Koboldcpp/OpenAI backend (default or preceded by 'k:' or 'o:').
+- Direct commands (preceded with '$' or '>') or assisted with Koboldcpp/OpenAI backend (default or preceded by 'k:' or 'o:').
 - Switch models & start/stop services via assisted command execution. Provide a list of commands, read the sample_prompt.txt for more info.
 - Simple prompt & after user input prompt files (command_prompt.txt & command_post_prompt.txt).
 
@@ -15,7 +15,7 @@ Dashboard:
 
 - Prompt formatting support
 - [x] Openai endpoint integration (forced if instruction preceded by 'o:')
-- [x] Simple chatbot
+- [ ] Simple chatbot (needs history support 4 now)
 - Whisper & alltalk integration
 - Auto shutdown on idle & wake on connection to local/vpn?
 - Discord/Telegram voice bot
@@ -38,9 +38,9 @@ Note that Linux users will need to run the start_wol_server.sh file, and it's no
 
 ### Dashboard
 
-- You can send commands directly if you precede them with '$'
-- By default, the user request will be sent to the backend of choice and it will return the crafted command to the textbox, ready to send it after reviewing it.
-- You can use the 'k:' or 'o:' prefix to send the command to the Koboldcpp or OpenAI backend respectively.
+- You can send commands directly if you precede them with '$' or '>'
+- By default, the user request will be sent to the backend of choice (in the config.yaml file) and it will return the crafted command to the textbox, ready to send it after reviewing it.
+- You can also use the 'k:' or 'o:' prefix to send the command to the Koboldcpp or OpenAI backend respectively.
 
 - The contents of 'command_prompt.txt' will be sent as system prompt to the AI for the command auto-completion (sample_prompt.txt will be used as default).
 - The contents of 'command_post_prompt.txt', if it exists, will be sent after the user input.
