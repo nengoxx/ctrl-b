@@ -4,12 +4,19 @@ import yaml
 import subprocess
 import os
 import shutil
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_file, send_from_directory
 import paramiko  # for SSH functionality
 import platform  # to detect the OS
 from wakeonlan import send_magic_packet  # for sending WOL packets
 import requests  # for sending requests to the LLM server
 from openai import OpenAI
+
+## YouTube Captions
+import io, json
+from urllib.parse import urlparse, parse_qs
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.formatters import JSONFormatter
+
 
 ############################
 ## Variables
@@ -339,6 +346,52 @@ class WolServer:
 
         except Exception as e:
             return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
+    ############################
+    ## YT Captions
+    ############################
+
+    # Extract video ID from a YouTube URL (caption dowload)
+    def extract_video_id(url: str):
+        parsed = urlparse(url)
+        if parsed.hostname in ('www.youtube.com', 'youtube.com') or parsed.path == 'www.youtube.com/watch':
+            if parsed.path == '/watch' or parsed.path == 'www.youtube.com/watch':
+                return parse_qs(parsed.query).get('v', [None])[0]
+            if parsed.path.startswith(('/embed/', '/shorts/')):
+                return parsed.path.split('/')[2]
+        if parsed.hostname == 'youtu.be':
+            return parsed.path.lstrip('/')
+        return None
+
+
+    @app.route('/yt_caption')
+    def yt_caption():
+        return render_template('yt_caption.html')
+
+    @app.route('/yt_caption_api', methods=['POST'])
+    
+    def yt_caption_api():
+        video_url = request.json.get('url', '')
+        video_id = WolServer.extract_video_id(video_url)
+        if not video_id:
+            return jsonify({'error': 'Invalid YouTube URL'}), 400
+        try:
+            ytt_api = YouTubeTranscriptApi()
+            transcript = ytt_api.fetch(video_id)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 400
+        formatter = JSONFormatter()
+
+        # .format_transcript(transcript) turns the transcript into a JSON string.
+        data = formatter.format_transcript(transcript).encode('utf-8')
+        #data = formatter.format_transcript(transcript, indent=2).encode('utf-8') #prettier json
+
+        return send_file(
+            io.BytesIO(data),
+            mimetype='application/json',
+            as_attachment=True,
+            download_name=video_id+'_captions.json'
+        )
 
 
     ############################

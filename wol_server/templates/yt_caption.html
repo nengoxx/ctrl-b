@@ -1,0 +1,63 @@
+<script type="module">
+  const $ = s => document.querySelector(s);
+  const $form = $('#form');
+  const $input = $('#input');
+
+  $form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const url = $input.value.trim();
+    if (!url) return;
+
+    const res = await fetch('/yt_caption_api', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    if (!res.ok) return alert('Failed to fetch captions');
+
+    const disposition = res.headers.get('Content-Disposition');
+    let filename = 'captions.json';
+    if (disposition && disposition.includes('filename=')) {
+      filename = disposition
+        .split('filename=')[1]
+        .replace(/["']/g, ''); // Strip quotes
+    }
+
+    const blob = await res.blob();
+    const link = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob),
+      download: filename
+    });
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  });
+</script>
+
+<style>
+  body { background-color: #222c3e; }
+  .header-image {
+    display: block;
+    margin: 26px auto 0 auto;
+    width:100%; max-width:600px; height:auto;
+  }
+</style>
+
+<div class="container">
+  <img src="{{ url_for('static', filename='img.png') }}" class="header-image">
+</div>
+
+<div class="container">
+  <div class="row">
+    <div class="col-12">
+      <form id="form" class="input-group mb-3">
+        <input id="input" required type="text"
+               class="form-control form-control-lg border-0"
+               placeholder="https://www.youtube.com/watch?v=...">
+        <button class="btn btn-dark btn-custom btn-lg" type="submit">
+          ↓ Captions
+        </button>
+      </form>
+    </div>
+  </div>
+</div>

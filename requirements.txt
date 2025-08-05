@@ -6,3 +6,5 @@ wakeonlan
 
 requests
 openai
+
+youtube-transcript-api
