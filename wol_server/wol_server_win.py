@@ -16,6 +16,8 @@ import io, json
 from urllib.parse import urlparse, parse_qs
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import JSONFormatter
+import requests
+from bs4 import BeautifulSoup
 
 
 ############################
@@ -362,6 +364,23 @@ class WolServer:
         if parsed.hostname == 'youtu.be':
             return parsed.path.lstrip('/')
         return None
+    
+    def get_video_title(video_id):
+        # YouTube Video URL
+        url = f'https://www.youtube.com/watch?v={video_id}'
+
+        # Extracting HTML Code of the Video Page:
+        response = requests.get(url)
+        html_content = response.text
+
+        # Processing the HTML Code with BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # Extracting <title> tag's content
+        title_tag = soup.find('meta', property='og:title')
+        video_title = title_tag['content'] if title_tag else video_id
+
+        return(video_title)
 
 
     @app.route('/yt_caption')
@@ -386,11 +405,13 @@ class WolServer:
         data = formatter.format_transcript(transcript).encode('utf-8')
         #data = formatter.format_transcript(transcript, indent=2).encode('utf-8') #prettier json
 
+        video_title = WolServer.get_video_title(video_id)
+
         return send_file(
             io.BytesIO(data),
             mimetype='application/json',
             as_attachment=True,
-            download_name=video_id+'_captions.json'
+            download_name=video_title+'_captions.json'
         )
 
 
