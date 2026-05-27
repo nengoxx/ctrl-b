@@ -1,0 +1,145 @@
+/* ── Net-new v2 components (Phase 2): activity toasts + confirm dialog. ──
+   vapor.html has no confirm dialog, so these aren't a port — but they're built ONLY from the
+   vapor design tokens in vapor.css (colors / grads / glows / fonts) so they stay on-theme.
+   vapor.css itself stays verbatim (D7); net-new styling lives here. */
+
+/* Activity toasts — transient, top-center below the appbar (clear of the top-right tts-toast). */
+.toasts {
+  position: fixed;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: max-content;
+  max-width: min(92vw, 460px);
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(21, 8, 40, 0.92);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--line-2);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  animation: toast-in 0.22s ease;
+}
+.toast::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--ink-faint);
+}
+.toast.ok::before {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+.toast.err::before {
+  background: var(--red);
+  box-shadow: 0 0 8px var(--red);
+}
+.toast.info::before {
+  background: var(--teal);
+  box-shadow: var(--t-glow);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Confirm dialog — used by the lone high-risk action (shutdown). */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(5, 1, 12, 0.66);
+  backdrop-filter: blur(4px);
+  animation: modal-fade 0.18s ease;
+}
+.modal {
+  width: 100%;
+  max-width: 360px;
+  background: linear-gradient(160deg, var(--bg-2), var(--bg));
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  padding: 20px 20px 16px;
+  color: var(--ink);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.modal h3 {
+  margin: 0 0 8px;
+  font-family: "Major Mono Display", monospace;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--ink);
+}
+.modal p {
+  margin: 0 0 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.modal .row {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.modal button {
+  all: unset;
+  cursor: pointer;
+  padding: 9px 16px;
+  border-radius: 10px;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+.modal .cancel {
+  color: var(--ink-soft);
+  border: 1px solid var(--line-2);
+}
+.modal .cancel:active {
+  background: var(--line);
+}
+.modal .go {
+  color: #fff;
+  font-weight: 600;
+  background: var(--accent-grad);
+  box-shadow: 0 2px 14px rgba(var(--accent-rgb), 0.45);
+}
+.modal .go.danger {
+  background: var(--danger-grad);
+  box-shadow: 0 2px 14px rgba(var(--danger-rgb), 0.5);
+}
+.modal .go:active {
+  filter: brightness(1.08);
+  transform: scale(0.98);
+}
+@keyframes modal-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

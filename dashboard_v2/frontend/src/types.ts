@@ -29,3 +29,60 @@ export interface ServerInfo {
   debug: boolean;
   poll_seconds: number;
 }
+
+// ── Actions (Phase 2). Mirror of core/tool.py + domain/result.py + domain/event.py. ──
+
+export type Risk = "low" | "med" | "high";
+
+export type RunState =
+  | "pending"
+  | "awaiting_confirm"
+  | "running"
+  | "ok"
+  | "error"
+  | "denied"
+  | "skipped"
+  | "timeout";
+
+export interface ToolResult {
+  state: RunState;
+  summary: string;
+  data: Record<string, unknown>;
+  output: string | null;
+  error: string | null;
+  artifacts: unknown[];
+  duration_ms: number | null;
+}
+
+export interface ActionSpec {
+  name: string;
+  title: string;
+  description: string;
+  icon: string | null;
+  category: string;
+  risk: Risk;
+  confirm: boolean;
+  ui_exposed: boolean;
+  agent_exposed: boolean;
+  input_schema: Record<string, unknown>;
+}
+
+export interface CtrlEvent {
+  id: string;
+  ts: string;
+  actor: string;
+  action: string;
+  target: string | null;
+  status: RunState;
+  summary: string | null;
+  output: string | null;
+}
+
+/** `POST /api/actions/{name}` response — either a confirm prompt or an executed result. */
+export interface InvokeResponse {
+  needs_confirm: boolean;
+  confirm_token?: string;
+  prompt?: string;
+  result?: ToolResult;
+  event?: CtrlEvent;
+}

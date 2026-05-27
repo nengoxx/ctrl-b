@@ -104,6 +104,17 @@ class Database:
             await self._conn.close()
             self._conn = None
 
+    async def execute(self, sql: str, params: tuple = ()) -> None:
+        """Run a single write under the process-wide write lock (DESIGN.md §8 — avoids
+        SQLITE_BUSY under async fan-out). Reads can use `query` lock-free (WAL)."""
+        async with self._write_lock:
+            await self.conn.execute(sql, params)
+            await self.conn.commit()
+
+    async def query(self, sql: str, params: tuple = ()) -> list[aiosqlite.Row]:
+        async with self.conn.execute(sql, params) as cur:
+            return list(await cur.fetchall())
+
     async def _current_version(self) -> int:
         await self.conn.execute(
             "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)"

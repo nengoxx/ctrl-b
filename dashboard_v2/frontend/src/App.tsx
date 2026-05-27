@@ -2,7 +2,10 @@ import { useEffect } from "react";
 
 import { AppBar } from "./components/AppBar";
 import { Composer } from "./components/Composer";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { TabBar } from "./components/TabBar";
+import { Toasts } from "./components/Toasts";
+import { useEventStream } from "./hooks/useEvents";
 import { useUI } from "./store/ui";
 import { AgentTab } from "./tabs/AgentTab";
 import { ConfTab } from "./tabs/ConfTab";
@@ -15,6 +18,7 @@ import { UtilsTab } from "./tabs/UtilsTab";
 
 export default function App() {
   const { theme, tab, skyline, loz } = useUI();
+  useEventStream(); // live activity feed → refresh fleet on any recorded action
 
   useEffect(() => {
     const b = document.body;
@@ -41,6 +45,8 @@ export default function App() {
       <ConfTab active={tab === "conf"} />
       {showComposer && <Composer />}
       <TabBar />
+      <Toasts />
+      <ConfirmDialog />
     </>
   );
 }

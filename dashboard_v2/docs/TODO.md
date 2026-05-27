@@ -60,13 +60,24 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
 ## Phase 2 — Actions (typed registry + WOL/shutdown)
 
-- [ ] Action registry framework: `@action(name, risk, confirm)` + Pydantic inputs + `ActionResult`.
-- [ ] Implement `wake_host`, `shutdown_host`, `ping_host`. Write each invocation to `Event`.
-- [ ] `GET /api/actions` (registry/toolset), `POST /api/actions/{name}` (+ confirm token).
-- [ ] `GET /api/events` + `GET /api/events/stream` (SSE).
-- [ ] Frontend: device-row wake/stop buttons → mutations; **confirmation dialog** for high-risk;
-      activity/event surfacing.
-- [ ] **Verify:** wake + shutdown a real host from the UI.
+- [x] Action registry framework: unified `Tool`/`ToolSpec`/`ToolRegistry` + `@action(name, risk,
+      confirm, ui_exposed)` (`core/tool.py`), pure `permissions.decide()` (`core/permissions.py`),
+      `ToolResult` (`domain/result.py`), `InvocationContext`+`Deps` (`services/deps.py`).
+- [x] Implement `wake_host` (WOL; `mac=None`→DENIED), `shutdown_host` (paramiko SSH, per-OS cmd,
+      `risk=HIGH, confirm=True`), `ping_host` (`services/actions/`). Every invocation writes an
+      `Event` via `EventService` (persist to SQLite + publish to the in-proc `EventBus`).
+- [x] `GET /api/actions` (registry + input JSON Schema), `POST /api/actions/{name}` with the
+      single-use, TTL'd **confirm-token dance** for high-risk (`ActionService`; 404/422 mapped).
+- [x] `GET /api/events` (audit trail) + `GET /api/events/stream` (SSE via sse-starlette, keepalive).
+- [x] Frontend: device-row wake/stop (+ dropfoot wake/`$ ping`) buttons → `useFleetActions` with
+      `busy` spinner, optimistic offline-flip + rollback (shutdown), outcome **toasts**;
+      **confirm dialog ONLY for `shutdown`** (driven by the registry's `confirm`/`risk`, server
+      token enforced underneath). `useEventStream` refreshes the fleet on any recorded event.
+- [x] **Verify:** backend end-to-end exercised (registry, decide(), confirm dance + single-use
+      token, 404/422, audit trail, live SSE push); `tsc -b` + `vite build` clean; **owner ran the
+      live stack against the real fleet (2026-05-27) — fleet pings real hosts + a real WOL wake from
+      the UI works.** (Shutdown against a real host + the confirm-dialog UX still untested — needs a
+      host with SSH reachable; not a blocker.)
 
 ## Phase 3 — Services
 

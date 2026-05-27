@@ -1,10 +1,12 @@
 import type { MouseEvent } from "react";
 
+import type { FleetAction } from "../hooks/useActions";
 import type { Host } from "../types";
 
 // One fleet row + its expandable dropdown (kv detail + wake/stop buttons), ported from
-// vapor.html renderDevices(). Services land in Phase 3 (shows the empty state until then);
-// the wake/stop mask-icon buttons are rendered now but wired to real actions in Phase 2.
+// vapor.html renderDevices(). Services land in Phase 3 (shows the empty state until then).
+// Phase 2 wires the wake/stop/ping buttons to real actions via `onAction`; `busy` drives the
+// prototype's ◐ spinner affordance (.dev.busy .sub::after) while an action is in flight.
 
 const EQ_ON = [8, 16, 22, 12, 20, 10, 18, 14];
 
@@ -13,14 +15,18 @@ interface Props {
   index: number;
   featured: boolean;
   open: boolean;
+  busy: boolean;
   onToggle: () => void;
+  onAction: (action: FleetAction) => void;
 }
 
-function stop(e: MouseEvent) {
+/** Stop a button click from also toggling the row open/closed. */
+function act(e: MouseEvent, fn: () => void) {
   e.stopPropagation();
+  fn();
 }
 
-export function DeviceRow({ host, index, featured, open, onToggle }: Props) {
+export function DeviceRow({ host, index, featured, open, busy, onToggle, onAction }: Props) {
   const online = !!host.status?.online;
   const ping = host.status?.ping_ms ?? null;
   const sub = online ? `${host.os_type} · ${ping != null ? `${ping}ms` : "online"}` : `${host.os_type} · asleep`;
@@ -31,7 +37,8 @@ export function DeviceRow({ host, index, featured, open, onToggle }: Props) {
         "dev " +
         (online ? "on" : "off") +
         (featured ? " featured" : "") +
-        (open ? " open" : "")
+        (open ? " open" : "") +
+        (busy ? " busy" : "")
       }
       data-i={index}
       data-name={host.name}
@@ -52,14 +59,16 @@ export function DeviceRow({ host, index, featured, open, onToggle }: Props) {
             className="act stop"
             data-act="shutdown"
             aria-label={`shutdown ${host.name}`}
-            onClick={stop}
+            disabled={busy}
+            onClick={(e) => act(e, () => onAction("shutdown"))}
           />
         ) : (
           <button
             className="act wake"
             data-act="wake"
             aria-label={`wake ${host.name}`}
-            onClick={stop}
+            disabled={busy}
+            onClick={(e) => act(e, () => onAction("wake"))}
           />
         )}
         <span className="chev">›</span>
@@ -81,20 +90,22 @@ export function DeviceRow({ host, index, featured, open, onToggle }: Props) {
           </div>
         </div>
         <div className="dropfoot">
-          <button onClick={stop}>$ ping</button>
-          <button onClick={stop}>› ssh</button>
+          <button onClick={(e) => act(e, () => onAction("ping"))}>$ ping</button>
+          <button onClick={(e) => e.stopPropagation()}>› ssh</button>
           {online ? (
             <a
               className="open"
               href={`http://${host.ip}`}
               target="_blank"
               rel="noopener"
-              onClick={stop}
+              onClick={(e) => e.stopPropagation()}
             >
               ↗ http://{host.ip}
             </a>
           ) : (
-            <button onClick={stop}>wake</button>
+            <button disabled={busy} onClick={(e) => act(e, () => onAction("wake"))}>
+              wake
+            </button>
           )}
         </div>
       </div>
