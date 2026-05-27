@@ -45,6 +45,10 @@ no public bind, no auth** — never weaken that boundary.
 - **Agent runtime (D10):** **context compaction** (auto + `/compact`), a built-in **`task_plan`**
   tool (+ extensible toolset — new tool = one file), and **skills** (`skills/<name>/SKILL.md`,
   model- or `/skill-name`-invoked). Study `RESEARCH.md` prior art (opencode + public Claude-Code).
+- **Configurable agent design (D11):** **selectable summarizer model** (local/cloud + name);
+  **multiple agents** as definitions (`agents[]`, add more) + **subagents** via a `spawn_subagent`
+  tool; **skill-selection + orchestration are swappable strategies** — sensible default, easy to
+  switch in settings, **concrete approach decided at Phase 4** with prior art in hand.
 - **Composer prefixes:** `!<cmd>` (configurable sigil) → guarded shell; `/<cmd>` → slash commands
   incl. `/local`,`/cloud`; else → agent. Markdown bot replies + copy/send-to-composer on code blocks.
 - **Mic needs a secure context → serve over HTTPS via Tailscale Serve** (tailnet-only, not Funnel).
@@ -55,17 +59,20 @@ no public bind, no auth** — never weaken that boundary.
 ## Build now so the post-v1 backlog slots in (the "seams")
 
 Pluggable `MemoryProvider` · action `risk` levels on every action · typed chat-message kinds
-(`text`/`action`/`question`) + turn-based agent loop · chat endpoint supports streaming **and**
-buffered · a settings/policy layer (agent privilege levels ride on `risk`) · Conf tab in
-functional groups (Inference·Agent·Memory·Voice·Automations·Fleet·Server·Notifications·Appearance·
-Integrations).
+(`text`/`action`/`question`/`plan`) + turn-based agent loop · chat endpoint supports streaming
+**and** buffered · a settings/policy layer (privilege rides on `risk`) · **agents/skills/orchestration
+behind swappable strategy interfaces** (don't hardcode) · Conf tab in functional groups
+(Inference·Agent·Agents·Skills·Memory·Voice·Automations·Fleet·Server·Notifications·Appearance·Integrations).
 
 ## Open questions to resolve in-phase
 
 - Agent tool-calling format + weak-local-model fallback (Phase 4).
-- SearXNG MCP: v1 or post-v1?
-- Embeddings backend for vector memory (when B1 vector lands).
+- Embeddings backend specifics for vector memory (when B1 vector lands).
 - **Agent privilege ladder** exact steps + escalation UX — least pinned down.
+- **Agent design specifics (D11), deliberately deferred to Phase 4** — skill auto-selection
+  algorithm, subagent orchestration, agents-as-YAML-vs-files, subagent depth/concurrency +
+  privilege inheritance. Decide then, with the `RESEARCH.md` prior art (opencode + public
+  Claude-Code) in hand; keep them swappable.
 - **Real idle detection** mechanism (helper agent per host?) — the hard part of D1; optional/opt-in.
 - Frontend routing: tab state vs react-router.
 

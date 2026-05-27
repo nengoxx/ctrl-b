@@ -90,9 +90,27 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
   **Model-invoked** (agent selects by description) and **user-invoked** via `/skill-name` (A4).
   **Adding a skill = dropping a folder**; managed in Conf → Skills. Mirrors Claude-Code/opencode
   skills.
-- **Open:** compaction summary quality vs cost (which model summarizes); plan persistence shape
-  (message `meta` vs own table); skill auto-selection heuristics + whether skills can bundle their
-  own MCP servers/tools; skill sandboxing for any bundled scripts (respect privilege levels).
+- **Compaction summarizer is selectable in settings** — mode local/cloud + a specific model name
+  (use a cheap/fast model independent of the chat model).
+- **Skill auto-selection is a swappable strategy** — default informed by prior art (opencode +
+  public Claude-Code), but keep it **easy to replace/switch in settings**; don't hardcode.
+- **Open:** the concrete skill-selection algorithm; plan persistence shape (message `meta` vs own
+  table); whether skills bundle their own MCP servers/tools; skill sandboxing for bundled scripts
+  (respect privilege levels). Decide at build time (Phase 4).
+
+### A6. Multiple agents + subagents (configurable agent design)
+
+- **What:** the agent is a **definition**, and there can be **several** (the owner can add more) —
+  each with its own system prompt, backend+model, allowed tools/skills, privilege level, and memory.
+  An agent can **spawn a subagent** (a `spawn_subagent` tool) to delegate a scoped task to another
+  definition with its own context + tool subset, returning a result — like Claude-Code subagents /
+  opencode's coordinator/swarm.
+- **Design implication:** model agents as config (`agents[]` in settings; or file-based like skills),
+  selectable per chat/automation; the "main" agent is just the default definition. **Orchestration
+  (how subagents are spawned/coordinated) is a swappable strategy** with a sensible default — keep
+  it replaceable, decide specifics at build time. Reuses the same loop/tools/registry machinery.
+- **Open:** agents as YAML vs files; depth/concurrency limits for subagents; how subagent results +
+  privilege inherit; UI for picking/managing agents (Conf → Agents).
 
 ---
 
@@ -260,7 +278,10 @@ homes later:
 - **Inference** — backend mode (local llama.cpp / cloud), endpoints, keys, models, **embeddings
   endpoint** (llama.cpp `/v1/embeddings` — D9).
 - **Agent** — privilege level (A1), streaming mode (C1), prompts (system/command/post), tool/action
-  allowlist, ask-questions behavior (A2), **compaction threshold + `/compact`** (A5).
+  allowlist, ask-questions behavior (A2), compaction threshold + `/compact` + **summarizer model**
+  (local/cloud + name) (A5).
+- **Agents** (A6) — manage multiple agent definitions (prompt, backend+model, tools/skills,
+  privilege, memory); pick default; subagent settings. Add more agents.
 - **Skills** (A5) — list/enable/disable/view/edit skills (`skills/` dir); add new skill; show which
   tools each skill is allowed.
 - **Memory** — backend selector (B1: none/file/vector/both), rolling-summary toggle, view/edit

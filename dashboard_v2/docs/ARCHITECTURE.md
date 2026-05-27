@@ -120,8 +120,20 @@ async def shutdown_host(inp: ShutdownHostInput) -> ActionResult:
 - **Context compaction (ROADMAP A5/B2):** the loop tracks the token budget and, when nearing the
   model's context limit (configurable threshold) — or on a manual **`/compact`** — **summarizes
   older turns into a compact summary** that replaces them in the *working context*, while SQLite
-  keeps the **full history** untouched. Distinct from durable memory (§4): compaction manages the
-  live window; memory is long-term recall. Surfaced as a `sys` notice ("// compacted N messages").
+  keeps the **full history** untouched. The **summarizer model is separately selectable in settings**
+  (mode local/cloud + a specific model name), so a cheap/fast model can compact independently of the
+  chat model. Distinct from durable memory (§4): compaction manages the live window; memory is
+  long-term recall. Surfaced as a `sys` notice ("// compacted N messages").
+- **Agents are definitions; subagents are agents-as-tools (ROADMAP A6).** An **Agent** = a named
+  config: system prompt, backend+model, allowed tools/skills, privilege level, memory settings.
+  There can be **several** (the owner can add more), with one default chat agent. A **`spawn_subagent`**
+  built-in tool lets an agent **delegate** a scoped task to another agent definition (own context +
+  tool subset), returning a result — à la Claude-Code subagents / opencode's coordinator. The
+  "main" agent is just one definition; subagents reuse the same machinery.
+- **Pluggable strategies (decided at build time, swappable in settings):** **skill auto-selection**
+  and **subagent orchestration** are behind small strategy interfaces with a sensible default
+  (informed by the prior art in `RESEARCH.md`). Keep them **easy to replace or switch** — don't
+  hardcode one approach. Specifics intentionally deferred to Phase 4 (see ROADMAP A5/A6).
 - Capability fallback for weak local models: if tool-calling is unreliable, the model just
   drafts a shell/action into a reviewable bubble (the current command-box behavior).
 - The same agent + registry run **headless** for scheduled automations (ROADMAP A3), with a
@@ -231,7 +243,9 @@ Settings  inference{mode, local_url, cloud_url, cloud_key*, model},
           stt{url, key*, model}, tts{url, key*, model, voice},
           searxng{url, enabled},                              # web_search tool (D9)
           mcp_servers[]{name, transport(stdio|http), command, args, env*, url, headers*, enabled},  # D9
-          agent{privilege, streaming, memory_backend, ...},
+          agent{default_agent, privilege, streaming, memory_backend,
+                compaction{enabled, threshold, summarizer{mode, model}}},   # D10/D11
+          agents[]{name, prompt, backend, model, tools[], skills[], privilege, memory},  # D11 (multiple/subagents)
           server{host, port, poll_seconds, debug}, appearance{theme, skyline, ...}  [YAML]
 ```
 `*` = secret: gitignored in YAML, masked in API responses, never logged.
@@ -283,9 +297,9 @@ v1 ships the `none` + `file` providers behind the interface; vector slots in wit
 - **Tabs** = Vapor's four: **Fleet** (hero + device rows w/ expandable services + fleet
   summary), **Agent** (chat log, shares composer), **Utils** (extensible tool cards — YT captions,
   IP lookup, DNS trace, …), **Conf** —
-  organized into **functional groups** (Inference · Agent · Memory · Voice · Automations ·
-  Fleet/Hosts · Server · Notifications · Appearance · Integrations) so future toggles land in
-  obvious homes; full layout in `ROADMAP.md` → "Settings tab".
+  organized into **functional groups** (Inference · Agent · Agents · Skills · Memory · Voice ·
+  Automations · Fleet/Hosts · Server · Notifications · Appearance · Integrations) so future toggles
+  land in obvious homes; full layout in `ROADMAP.md` → "Settings tab".
 - **Composer** (shared by Fleet + Agent): textarea + push-to-talk mic + send. **Prefix routing**
   (Claude-Code-style), command sigil **configurable in settings**:
   - `!<cmd>` → **run shell directly** via the guarded `run_shell` action (the Claude-Code "bang"

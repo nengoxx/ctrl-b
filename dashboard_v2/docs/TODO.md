@@ -87,16 +87,25 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
       copy / send-to-composer on code blocks (generalize Vapor `editCmd`/`cmdInto`).
 - [ ] **`task_plan` built-in tool (D10):** agent maintains a per-thread plan/task list (steps +
       status); render as a `plan` message-kind panel in chat. Extensible — more agent tools = one file.
-- [ ] **Context compaction (D10):** summarize older turns into the working context near the token
-      limit (configurable threshold) + manual `/compact`; keep full history in SQLite; `sys` notice.
+- [ ] **Context compaction (D10/D11):** summarize older turns into the working context near the
+      token limit (configurable threshold) + manual `/compact`; keep full history in SQLite; `sys`
+      notice. **Summarizer model selectable** (local/cloud + name), independent of the chat model.
 - [ ] Frontend **Agent** tab: chat log + shared composer + streaming render + command/plan bubbles.
 
-## Phase 4.5 — Skills (D10)
+## Phase 4.5 — Skills + agents (D10/D11)
 
 - [ ] Skill loader: discover `skills/<name>/SKILL.md` (frontmatter `name`/`description`/`allowed_tools`
       + instructions) + optional resources. Adding a skill = dropping a folder.
+- [ ] **Skill auto-selection as a swappable strategy** (default informed by prior art; easy to
+      replace/switch in settings). Decide the concrete algorithm here, with opencode/Claude-Code in hand.
 - [ ] Invocation: **model-invoked** (select by description) + **user-invoked** via `/skill-name` (A4).
-- [ ] Conf → Skills panel: list/enable/disable/view/edit/add; show allowed tools per skill.
+- [ ] **Agent definitions (D11):** `agents[]` config (prompt, backend+model, tools, skills,
+      privilege, memory); select default; pick per chat/automation. The "main" agent is one definition.
+- [ ] **Subagents (D11):** `spawn_subagent` tool → delegate scoped task to another agent definition
+      (own context + tool subset), return result. **Orchestration = swappable strategy**, sensible
+      default; decide specifics here. Depth/concurrency + privilege inheritance limits.
+- [ ] Conf → **Skills** (list/enable/edit/add) + **Agents** (manage definitions, default, subagent
+      settings).
 
 ## Phase 5 — Guarded shell (`$` escape hatch)
 

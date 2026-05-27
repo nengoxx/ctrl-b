@@ -169,6 +169,26 @@ extensible tool system with a task/plan tool, and skills — the same primitives
 Claude-Code/opencode effective. Build the seams (message kinds incl. `plan`, the tool registry,
 file-discovered skills) in v1 even where full behavior lands in v1.x.
 
+## D11 — Multiple agents, subagents, selectable models, swappable strategies ✅
+
+The agent design is **configurable and pluggable**, not hardcoded:
+
+- **Selectable summarizer model** — compaction's summarizer is set in settings (mode local/cloud +
+  specific model name), independent of the chat model.
+- **Multiple agents** — an Agent is a **definition** (`agents[]`: prompt, backend+model, tools,
+  skills, privilege, memory); the owner can **add more**; one is the default. Selectable per
+  chat/automation.
+- **Subagents** — a `spawn_subagent` tool delegates a scoped task to another agent definition (own
+  context + tool subset), returning a result (Claude-Code subagents / opencode coordinator).
+- **Swappable strategies** — **skill auto-selection** and **subagent orchestration** sit behind
+  small strategy interfaces with a sensible default (informed by `RESEARCH.md` prior art) and are
+  **easy to replace/switch in settings**. **Specifics deliberately deferred to Phase 4** — tackle
+  the concrete approach then, with prior art in hand; just don't hardcode it now.
+
+Config in `ARCHITECTURE.md` §3 (`agent{compaction.summarizer}`, `agents[]`); UI in Conf → Agent +
+Agents. **Why:** the owner wants control over agent design and the option to add agents — keep these
+as data + pluggable strategies so they evolve without a rewrite.
+
 ---
 
 ## Still open (decide before building the relevant phase)
