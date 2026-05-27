@@ -5,3 +5,19 @@ assets/demo.mp4
 
 .DS_Store
 .venv
+
+# Dependencies & build output (regenerable — never commit; npm install / vite build recreate them)
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Logs / env
+*.log
+.env
+.env.*

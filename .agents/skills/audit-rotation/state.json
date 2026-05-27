@@ -1,0 +1,106 @@
+{
+  "cycle": 1,
+  "cursor": 0,
+  "cost_cap_usd": 18.85,
+  "scopes": [
+    {
+      "name": "parser",
+      "paths": [
+        "parser/"
+      ],
+      "note": "regex extraction, classification, assembly, completion policy, validation"
+    },
+    {
+      "name": "executor",
+      "paths": [
+        "executor/mt5_executor.py"
+      ],
+      "note": "serialized MT5 access, order routing, dry_run, position matching"
+    },
+    {
+      "name": "listener",
+      "paths": [
+        "listener/telethon_listener.py"
+      ],
+      "note": "Telethon user session, bootstrap history, reconnect/retry"
+    },
+    {
+      "name": "control",
+      "paths": [
+        "control/"
+      ],
+      "note": "aiogram admin bot, menus, AdminNotifier"
+    },
+    {
+      "name": "backtest-engine",
+      "paths": [
+        "backtest/engine.py",
+        "backtest/models.py",
+        "backtest/market_data.py",
+        "backtest/message_cache.py",
+        "backtest/report_slicing.py",
+        "backtest/run_logger.py"
+      ],
+      "note": "history replay, tick simulation, report slicing"
+    },
+    {
+      "name": "optimizer",
+      "paths": [
+        "backtest/optimizer.py",
+        "backtest/optimizer_parameters.py",
+        "backtest/optimizer_constraints.py",
+        "backtest/optimizer_sampling.py",
+        "backtest/optimization_config.py",
+        "backtest/optimization_lab.py",
+        "backtest/variant_search.py"
+      ],
+      "note": "Optuna integration, variant sampling, constraints, walk-forward"
+    },
+    {
+      "name": "web-dashboard",
+      "paths": [
+        "web_dashboard/"
+      ],
+      "note": "HTTP API, data formatters, static app.js, write-token handling"
+    },
+    {
+      "name": "execution-rules-sizing",
+      "paths": [
+        "execution_rules.py",
+        "position_sizing.py",
+        "allocation_utils.py"
+      ],
+      "note": "deferred/scaled entry, target split, entry-quality gates, lot sizing"
+    },
+    {
+      "name": "config-store",
+      "paths": [
+        "config_store.py",
+        "state.py"
+      ],
+      "note": "YAML config, hot-reload, thread-safety, BotState"
+    },
+    {
+      "name": "storage",
+      "paths": [
+        "storage/"
+      ],
+      "note": "artifact index, SQLite, cross-process file locking"
+    },
+    {
+      "name": "orchestration",
+      "paths": [
+        "main.py"
+      ],
+      "note": "event loop, task orchestration, graceful shutdown, log filtering"
+    },
+    {
+      "name": "tools",
+      "paths": [
+        "tools/"
+      ],
+      "note": "one-off CLI scripts: backtest, optimize, caching, maintenance, smoke"
+    }
+  ],
+  "history": []
+}

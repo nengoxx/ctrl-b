@@ -1,0 +1,73 @@
+/* Design tokens. Dark is the default (console at night on a phone); light is a
+   real alternative, not an afterthought. Color is reserved for STATE
+   (online / warning / sleeping-stopped / danger) and a single brand accent —
+   everything structural is neutral grey. Radii capped at 10px per the spec. */
+
+:root {
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+
+  --fs-xs: 11px;
+  --fs-sm: 12.5px;
+  --fs-base: 13.5px;
+  --fs-md: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 22px;
+
+  --mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --sidebar-w: 232px;
+  --dock-w: 340px;
+  --topbar-h: 52px;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.18);
+  --shadow-pop: 0 12px 40px rgb(0 0 0 / 0.45);
+}
+
+html[data-theme="dark"] {
+  --bg: #0e1116;
+  --bg-elev: #161b22;
+  --bg-elev-2: #1b212b;
+  --bg-inset: #0a0d12;
+  --line: #262d38;
+  --line-soft: #1d242e;
+  --text: #e6edf3;
+  --text-dim: #9aa7b4;
+  --text-faint: #6b7681;
+
+  --accent: #4c9aff;
+  --accent-ink: #0a0d12;
+  --violet: #a877ff;
+  --amber: #e3a008;
+
+  --online: #3fb950;
+  --warning: #d29922;
+  --sleeping: #6b7681;
+  --danger: #f85149;
+  --danger-bg: #2b1416;
+}
+
+html[data-theme="light"] {
+  --bg: #f4f5f7;
+  --bg-elev: #ffffff;
+  --bg-elev-2: #f8f9fb;
+  --bg-inset: #eceef1;
+  --line: #dfe3e8;
+  --line-soft: #e9ecef;
+  --text: #1b222b;
+  --text-dim: #5a6571;
+  --text-faint: #8a94a0;
+
+  --accent: #1f6feb;
+  --accent-ink: #ffffff;
+  --violet: #7c4dff;
+  --amber: #b7791f;
+
+  --online: #1a7f37;
+  --warning: #9a6700;
+  --sleeping: #8a94a0;
+  --danger: #cf222e;
+  --danger-bg: #fbeaea;
+}
