@@ -17,9 +17,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.api import health
+from app.api import health, hosts
 from app.config import load_dotenv, load_settings
 from app.db import Database
+from app.services.fleet import FleetService
 
 # backend/app/main.py -> dashboard_v2/frontend/dist
 _FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
@@ -29,6 +30,7 @@ _FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 async def lifespan(app: FastAPI):
     load_dotenv()  # .env → os.environ first, so CTRLB_CONFIG/CTRLB_DB are seen below
     app.state.settings = load_settings()
+    app.state.fleet = FleetService(app.state.settings)
     app.state.db = Database()
     await app.state.db.connect()
     try:
@@ -41,6 +43,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="ctrl-b dashboard", version=__version__, lifespan=lifespan)
 
     app.include_router(health.router, prefix="/api")
+    app.include_router(hosts.router, prefix="/api")
 
     # Prod single-origin serving. Absent in dev (Vite owns the SPA + proxies /api here).
     if _FRONTEND_DIST.is_dir():

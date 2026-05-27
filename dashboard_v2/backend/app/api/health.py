@@ -18,5 +18,9 @@ async def health(request: Request) -> dict[str, object]:
         "status": "ok",
         "version": __version__,
         "schema_version": await db.schema_version(),
-        "server": {"port": settings.server.port, "debug": settings.server.debug},
+        "server": {
+            "port": settings.server.port,
+            "debug": settings.server.debug,
+            "poll_seconds": settings.server.poll_seconds,
+        },
     }

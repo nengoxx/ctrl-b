@@ -16,12 +16,16 @@ of the parsed YAML before validation.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 import yaml
 from dotenv import dotenv_values
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
+
+from app.domain.enums import OSType
+from app.domain.host import Host
 
 # dashboard_v2/backend/app/config.py -> dashboard_v2/
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -63,16 +67,62 @@ class ServerCfg(BaseModel):
     debug: bool = False              # off by default — debug is an RCE surface (ARCHITECTURE §7)
 
 
+def _slug(name: str) -> str:
+    """Stable id from a host name: lowercase, non-alphanumerics → '-' (DESIGN.md §2)."""
+    s = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
+    return s or "host"
+
+
+class ComputerCfg(BaseModel):
+    """One entry under `config.yaml`'s `computers:` map — the live wol_server shape preserved.
+
+    Secrets stay plain `str` at the config layer (the file is gitignored and the API masks on
+    read via `mask_secrets`); the domain `Host` wraps the password in `SecretStr` for redaction.
+    """
+
+    model_config = {"extra": "allow"}
+
+    ip: str
+    mac: str | None = None
+    ssh_username: str | None = None
+    ssh_password: str | None = None
+    ssh_port: int = 22
+    os_type: str = "linux"
+    role: str | None = None
+    tags: list[str] = []
+
+
 class Settings(BaseModel):
     """Typed view over `config.yaml`.
 
-    `extra="allow"` so config written by later phases (inference/agents/hosts/…) round-trips
-    losslessly through Phase 0 code instead of being silently dropped on save.
+    `extra="allow"` so config written by later phases (inference/agents/voice/…) round-trips
+    losslessly through current code instead of being silently dropped on save.
     """
 
     model_config = {"extra": "allow"}
 
     server: ServerCfg = Field(default_factory=ServerCfg)
+    #: Keyed by host name, preserving the live `wol_server_win.py` `computers{}` shape so the
+    #: owner can copy their existing config.yaml unchanged (HANDOFF — migration reference).
+    computers: dict[str, ComputerCfg] = Field(default_factory=dict)
+
+    def hosts(self) -> list[Host]:
+        """Project the `computers` map into typed domain `Host`s (stable slug id from name)."""
+        return [
+            Host(
+                id=_slug(name),
+                name=name,
+                ip=cfg.ip,
+                mac=cfg.mac,
+                ssh_username=cfg.ssh_username,
+                ssh_password=SecretStr(cfg.ssh_password) if cfg.ssh_password else None,
+                ssh_port=cfg.ssh_port,
+                os_type=OSType.coerce(cfg.os_type),
+                role=cfg.role,
+                tags=cfg.tags,
+            )
+            for name, cfg in self.computers.items()
+        ]
 
 
 def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:

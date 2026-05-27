@@ -11,3 +11,42 @@ server:
   port: 5433             # 5433 coexists with the live Flask app on 5432 until cutover
   poll_seconds: 5        # fleet status poll cadence
   debug: false           # keep false — debug is an RCE surface
+
+# The fleet, keyed by host name (the live wol_server_win.py `computers{}` shape — copy yours in).
+# Each host's stable id is a slug of its name. ssh_password is a secret: masked on API read,
+# never logged. Omit mac for hosts you won't Wake-on-LAN; omit ssh_* for ping-only hosts.
+computers:
+  pegasus:
+    ip: 192.168.1.10
+    mac: "00:11:22:33:44:55"
+    ssh_username: nengo
+    ssh_password: changeme
+    ssh_port: 22
+    os_type: linux
+    role: nas
+  atlas:
+    ip: 192.168.1.12
+    mac: "6c:0b:84:ad:e1:0f"
+    ssh_username: admin
+    ssh_password: changeme
+    ssh_port: 22
+    os_type: windows
+  mercury:
+    ip: 192.168.1.15
+    mac: "b8:27:eb:0a:9c:21"
+    ssh_username: media
+    ssh_password: changeme
+    os_type: windows
+  vega:
+    ip: 192.168.1.20
+    mac: "04:7c:16:fe:88:2a"
+    ssh_username: nengo
+    ssh_password: changeme
+    ssh_port: 2222
+    os_type: linux
+  titan:
+    ip: 192.168.1.25
+    mac: "a4:5e:60:f1:cc:13"
+    ssh_username: render
+    ssh_password: changeme
+    os_type: linux

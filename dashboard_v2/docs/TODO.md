@@ -36,17 +36,27 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
 ## Phase 1 — Fleet read path (parity, done right)
 
-- [ ] Pydantic `Host` model; load hosts from YAML.
-- [ ] `hosts.py`: **concurrent** `asyncio.gather` ping status; per-OS ping shim.
-- [ ] `GET /api/hosts`, `GET /api/hosts/{id}/status`.
-- [ ] Frontend **Fleet** tab: **pixel-exact port** of the Vapor hero (sun/stripes/stars/grid +
-      skyline SVG + live waveform), device rows + expandable detail (services + kv + wake/stop
-      mask-icon buttons), fleet summary, appbar (logo lozenge + TTS toggle), bottom tab bar with
-      sliding indicator — all animations intact. Wire to TanStack Query polling (interval from
-      settings); replace mock `DEVICES` with API.
-- [ ] Theme system (`vapor`/`aqua`/`ember`) + skyline city/mountains + app-mark logo/ring + hero/
-      waveform toggles — ported from Vapor, behaving identically.
-- [ ] **Verify side-by-side against `vapor.html`** at ~390px (D7): visually indistinguishable.
+- [x] Pydantic `Host` model (`domain/host.py`, `SecretStr` ssh password + `HostStatus`) +
+      `domain/enums.py` `OSType`; load hosts from YAML via `Settings.hosts()` over the live
+      `computers{}` map (`config.py` `ComputerCfg`, stable slug id).
+- [x] `services/fleet.py`: **concurrent** `asyncio.gather` ping (semaphore + per-host `wait_for`
+      timeout + `poll_seconds` TTL cache); per-OS ping shim (Windows `-n`/`-w`, POSIX `-c`/`-W`),
+      TTL-confirmed online signal. `FleetService` on `app.state`.
+- [x] `GET /api/hosts` (host DTO + derived status, no secrets), `GET /api/hosts/{id}/status`;
+      `poll_seconds` added to `/api/health`.
+- [x] Frontend **Fleet** tab: port of the Vapor hero (sun/stripes/stars/grid + skyline SVGs via
+      verbatim `heroScene.ts` + live waveform canvas), device rows + expandable detail (kv +
+      wake/stop mask-icon buttons — buttons inert until Phase 2), fleet summary, appbar (logo
+      lozenge + TTS toggle + toast), bottom tab bar with sliding indicator. TanStack Query polling
+      at `poll_seconds`; featured auto-cycle; mock `DEVICES` replaced with the API.
+- [x] Theme system (`dark`/`aqua`/`ember`) + skyline city/mountains + app-mark logo/ring + hero/
+      waveform toggles — dependency-free `store/ui.ts` (`useSyncExternalStore` + localStorage,
+      mirrored to `document.body` data-attrs); wired via the **Conf → Appearance** group.
+- [x] Agent/Utils/Conf tabs ported as faithful static shells (wired in their later phases) so the
+      whole SPA + tab-bar slide is visually complete.
+- [x] **Verify side-by-side against `vapor.html`** at ~390px (D7): typecheck + prod build pass;
+      backend ping fan-out + Vite→FastAPI proxy verified end-to-end; **owner confirmed the visual
+      side-by-side** (2026-05-27).
 
 ## Phase 2 — Actions (typed registry + WOL/shutdown)
 

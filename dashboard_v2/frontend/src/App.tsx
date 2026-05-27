@@ -1,60 +1,46 @@
-import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 
-// Phase 0 placeholder — confirms the theme loads and the backend is reachable through the
-// Vite /api proxy. Phase 1 replaces this with the ported Vapor Fleet tab.
-interface Health {
-  status: string;
-  version: string;
-  schema_version: number;
-  server: { port: number; debug: boolean };
-}
+import { AppBar } from "./components/AppBar";
+import { Composer } from "./components/Composer";
+import { TabBar } from "./components/TabBar";
+import { useUI } from "./store/ui";
+import { AgentTab } from "./tabs/AgentTab";
+import { ConfTab } from "./tabs/ConfTab";
+import { FleetTab } from "./tabs/FleetTab";
+import { UtilsTab } from "./tabs/UtilsTab";
 
-async function fetchHealth(): Promise<Health> {
-  const res = await fetch("/api/health");
-  if (!res.ok) throw new Error(`health ${res.status}`);
-  return res.json();
-}
+// The Vapor SPA shell. The Vapor CSS keys off body data-attrs (theme/tab/skyline/loz) and
+// body.no-composer, so we mirror the UI store onto <body>. All four tabs stay mounted (the .tab
+// CSS shows only the active one) — keeps the Fleet waveform/poll alive across tab switches.
 
 export default function App() {
-  const { data, error, isLoading } = useQuery({ queryKey: ["health"], queryFn: fetchHealth });
+  const { theme, tab, skyline, loz } = useUI();
+
+  useEffect(() => {
+    const b = document.body;
+    b.dataset.theme = theme;
+    b.dataset.tab = tab;
+    b.dataset.skyline = skyline;
+    b.dataset.loz = loz;
+    const showComposer = tab === "fleet" || tab === "agent";
+    b.classList.toggle("no-composer", !showComposer);
+  }, [theme, tab, skyline, loz]);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [tab]);
+
+  const showComposer = tab === "fleet" || tab === "agent";
 
   return (
-    <div
-      style={{
-        minHeight: "100dvh",
-        display: "grid",
-        placeItems: "center",
-        padding: "24px",
-      }}
-    >
-      <div
-        style={{
-          textAlign: "center",
-          color: "var(--ink)",
-          fontFamily: '"Major Mono Display", monospace',
-        }}
-      >
-        <div style={{ fontSize: 32, letterSpacing: 2, color: "var(--magenta)" }}>ctrl-b</div>
-        <div
-          style={{
-            marginTop: 12,
-            fontFamily: '"JetBrains Mono", ui-monospace, monospace',
-            fontSize: 13,
-            color: "var(--ink-soft)",
-          }}
-        >
-          {isLoading && "connecting to backend…"}
-          {error && `backend unreachable: ${(error as Error).message}`}
-          {data && (
-            <>
-              backend ok · v{data.version} · schema {data.schema_version} · :{data.server.port}
-            </>
-          )}
-        </div>
-        <div style={{ marginTop: 8, fontSize: 11, color: "var(--ink-faint)" }}>
-          dashboard_v2 — Phase 0 scaffold
-        </div>
-      </div>
-    </div>
+    <>
+      <AppBar />
+      <FleetTab active={tab === "fleet"} />
+      <AgentTab active={tab === "agent"} />
+      <UtilsTab active={tab === "utils"} />
+      <ConfTab active={tab === "conf"} />
+      {showComposer && <Composer />}
+      <TabBar />
+    </>
   );
 }

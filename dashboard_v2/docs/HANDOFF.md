@@ -1,10 +1,12 @@
 # Handoff — start here for a fresh session
 
-**Purpose:** **Phase 0 is done and the scaffold runs.** The next session builds **Phase 1 — the
-Fleet tab**, and the bar for it is **pixel-exact fidelity to the Vapor prototype** (D7). This doc
-is the orientation; canonical detail is in the other `docs/` files.
+**Purpose:** **Phases 0 + 1 are done — the Vapor Fleet tab is ported and wired to a live FastAPI
+ping fan-out.** The next session builds **Phase 2 — typed actions (WOL / shutdown / ping)**: the
+wake/stop buttons in the device rows are already rendered but inert; Phase 2 makes them real
+through the action registry. This doc is the orientation; canonical detail is in the other
+`docs/` files. **The pixel-exact Vapor fidelity mandate (D7) still governs every new component.**
 
-> ## ⭐ The Phase 1 mandate: nail the Vapor port
+> ## ⭐ The standing Vapor-fidelity mandate (D7) — applies to every phase
 > The owner's priority is a **faithful, pixel-exact execution of `vapor.html`** — not "inspired by."
 > Before writing any component:
 > 1. **Open `../../ctrl-b (Vapor)/variations/vapor.html` in a browser at ~390px** and study the real
@@ -37,34 +39,46 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (what Phase 0 left you)
+## Current state (what Phase 1 left you)
 
-Pushed to `origin/main` (commits `510302d` scaffold, `dc9d4e9` secrets model). Both verified.
+Phase 0 pushed to `origin/main` (`510302d` scaffold, `dc9d4e9` secrets model). **Phase 1 is
+implemented locally and not yet committed** — review + commit it first.
 
 ```
 dashboard_v2/
-  backend/                 # FastAPI + Uvicorn, Python 3.11, venv at backend/.venv
-    app/main.py            #   app factory + lifespan; GET /api/health works
-    app/config.py          #   YAML↔Settings, .env overlay, atomic save, secret masking
-    app/db.py              #   aiosqlite WAL + versioned migrations; schema v1 applied
-    app/api/health.py      #   the Phase 0 checkpoint
-    pyproject.toml         #   deps PINNED to real resolved versions (openai 2.38, fastapi 0.136…)
-  frontend/                # React 19 + TS + Vite 7 PWA (deps installed)
-    src/theme/vapor.css    #   ⭐ vapor.html <style> lifted VERBATIM — style against this
-    src/main.tsx           #   QueryClientProvider + imports vapor.css
-    src/App.tsx            #   Phase-0 placeholder — REPLACE with the Fleet tab in Phase 1
-    index.html             #   shell: JetBrains Mono + Major Mono Display, viewport-fit=cover
-    public/                #   logo.png + favicon.ico (copied from Vapor)
-    vite.config.ts         #   /api → 127.0.0.1:5433, vite-plugin-pwa
-  config.example.yaml · .env.example   # templates; real config.yaml/.env are gitignored
+  backend/app/
+    domain/enums.py host.py   # ⭐ NEW — OSType + Host(SecretStr pw)/HostStatus (pure models)
+    services/fleet.py         # ⭐ NEW — concurrent ping fan-out + FleetService (TTL cache)
+    api/hosts.py              # ⭐ NEW — GET /api/hosts, GET /api/hosts/{id}/status
+    config.py                 #   + ComputerCfg + Settings.computers{} + Settings.hosts()
+    main.py                   #   lifespan builds app.state.fleet; hosts router mounted
+    api/health.py             #   + poll_seconds
+  frontend/src/
+    theme/vapor.css           #   vapor.html <style> lifted VERBATIM — unchanged, style against it
+    theme/heroScene.ts        # ⭐ NEW — sun + both skyline SVGs lifted VERBATIM (dangerouslySetInnerHTML)
+    store/ui.ts               # ⭐ NEW — dep-free UI store (theme/tab/skyline/loz/tts/hero/waveform)
+    api/client.ts  types.ts  hooks/useFleet.ts   # fetch + TS types + TanStack Query hooks
+    components/  AppBar TabBar Composer Hero Waveform DeviceRow FleetSummary
+    tabs/        FleetTab(live)  AgentTab UtilsTab ConfTab(static; Appearance wired to store)
+    App.tsx                   #   shell: mirrors store→body data-attrs, mounts all 4 tabs
+  config.example.yaml         #   + sample `computers:` block (live wol_server shape)
+  config.yaml                 #   ⭐ local dev fleet (gitignored) — mixes reachable/unreachable IPs
 ```
 
 **Run it (two terminals):**
 ```powershell
 cd dashboard_v2/backend  ; .venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 5433
-cd dashboard_v2/frontend ; npm run dev      # http://localhost:5173 (proxies /api → 5433)
+cd dashboard_v2/frontend ; npm run dev      # proxies /api → 5433
 ```
-Open the Vapor prototype next to it: `ctrl-b (Vapor)/variations/vapor.html` at ~390px.
+NOTE: this dev box already has Vite servers on 5173–5175 (other workspaces: ws_codex*, ws_claude_2,
+a telegram bot). Vite will drift to a free port — pin it if you want a known one:
+`npm run dev -- --port 5190 --strictPort`. Open the Vapor prototype next to it at ~390px:
+`ctrl-b (Vapor)/variations/vapor.html`. **Acceptance is still the human side-by-side check.**
+
+**Verified:** backend imports + host loading; `/api/health`, `/api/hosts`, `/api/hosts/{id}/status`
+return correct data with concurrent pings (127.0.0.1→1ms, 8.8.8.8/1.1.1.1 online, fake LAN IPs
+offline); frontend `tsc -b` + `vite build` clean; Vite→FastAPI proxy end-to-end. **Owner confirmed
+the pixel-exact side-by-side at 390px (2026-05-27).** Phase 1 is ready to commit.
 
 ## What this is
 
@@ -144,22 +158,29 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — Phase 1 (Fleet read path), Vapor-faithful
+## First action — Phase 2 (typed actions: WOL / shutdown / ping)
 
-Open `TODO.md` → **Phase 1**. Build, in order, verifying against `vapor.html` at ~390px each step:
+**Before anything:** open the app in a browser at ~390px next to `vapor.html` and do the Phase 1
+acceptance check (the one thing this env couldn't). Fix any fidelity drift, then commit Phase 1.
 
-1. **Backend:** Pydantic `Host` model (DESIGN §2, with `SecretStr` SSH password + stable slug `id`);
-   load hosts from YAML; `hosts.py` with **concurrent** `asyncio.gather` ping (per-OS flag shim,
-   semaphore + per-host timeout); `GET /api/hosts` (+ derived status) and `GET /api/hosts/{id}/status`.
-   Use the live `config.yaml` `computers{}` shape as the migration reference.
-2. **Frontend Fleet tab (the ⭐ deliverable):** replace `App.tsx` with the ported Vapor shell —
-   appbar, hero, device rows + expandable detail, fleet summary, bottom tab bar with sliding
-   indicator — **reusing `theme/vapor.css`'s exact classes** and porting `vapor.html`'s markup + JS
-   (waveform canvas, animations) faithfully. Wire to TanStack Query polling (interval from settings);
-   replace the mock `DEVICES` with the API.
-3. **Themes + toggles** (`vapor`/`aqua`/`ember`, skyline city/mountains, hero/waveform on/off) ported
-   so they behave identically; a tiny zustand/context UI store persisted to `localStorage`.
-4. **Decide:** tab state vs react-router (open question — lean tab state for 4 tabs).
+Then open `TODO.md` → **Phase 2** and build the action registry (DESIGN §3 — the unified `Tool`
+interface; actions/tools/MCP are one mechanism). In order:
 
-Acceptance: **side-by-side visually indistinguishable from `vapor.html`** at phone width. Each phase
-ends in something runnable. Don't build ahead into actions/agent (Phase 2+).
+1. **Registry framework** (`core/tool.py`): `ToolSpec`/`ToolResult`/`Tool` Protocol + `ToolRegistry`,
+   the `@action(name, risk, confirm, ui_exposed)` decorator, and the pure `permissions.decide()`
+   (DESIGN §3). Keep `risk` on every action (the post-v1 privilege ladder rides on it).
+2. **Actions** in `services/actions/`: `wake_host` (wakeonlan magic packet; `mac=None`→DENIED),
+   `shutdown_host` (paramiko SSH, per-OS cmd; `risk=HIGH, confirm=True`), `ping_host`. Reuse the
+   live `wol_server_win.py` flows. Every invocation writes an `Event` (the audit path + SSE feed).
+3. **API:** `GET /api/actions` (registry), `POST /api/actions/{name}` with the confirm-token
+   dance for high-risk (DESIGN §14 "UI action"); `GET /api/events` + `GET /api/events/stream` (SSE).
+4. **Frontend:** wire the already-rendered device-row wake/stop buttons → TanStack mutations with
+   optimistic update + rollback; **confirmation dialog** before high-risk; surface events. Verify
+   a real wake + shutdown from the UI.
+
+The frontend seams are in place: `DeviceRow` already renders the `.act wake`/`.act stop` buttons
+(currently `stopPropagation` no-ops) and the dropfoot — just attach mutations. Don't build ahead
+into services/agent (Phase 3+). Each phase ends in something runnable.
+
+**Resolved open question (frontend routing):** went with **tab state** (the `store/ui.ts` `tab`
+field), not react-router — 4 tabs, no deep-linking need yet.
