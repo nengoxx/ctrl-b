@@ -135,8 +135,14 @@ Conf tab.
 - Capability fallback: some local GGUF models do tool-calling poorly. Detect/configure per
   backend; for weak models, fall back to the Vapor pattern — the model *drafts* a command/action
   into a reviewable bubble and the human confirms (mirrors today's command-box UX).
-- **SearXNG MCP** for web search is a stated goal — scope it as a post-v1 tool once the registry
-  exists (open item in `DECISIONS.md`).
+- **Aggregated toolset:** the model sees typed actions + `agent_exposed` utility tools + MCP tools
+  as one tool list (namespaced to avoid collisions).
+- **MCP client (D9):** use the **official Python MCP SDK** to connect as a client to the owner's
+  servers over **stdio** and **Streamable HTTP** (the current spec transport; supersedes the old
+  HTTP+SSE transport). Discover tools per server; namespace + merge into the toolset; isolate
+  per-server failures. `embeddings` = OpenAI-compatible `/v1/embeddings` (llama.cpp), configurable.
+- **SearXNG:** the owner runs a local instance — a built-in `web_search` tool hits its
+  `format=json` API (configurable URL); optionally consume a SearXNG MCP server instead.
 
 ---
 
@@ -168,6 +174,9 @@ Conf tab.
 - MDN `getUserMedia` secure-context requirement: <https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia>
 - MDN Secure Contexts (HTTPS + loopback exceptions): <https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Secure_Contexts>
 - Tailscale Serve (HTTPS, tailnet-only): <https://tailscale.com/kb/1312/serve>
+- Model Context Protocol — transports (stdio + Streamable HTTP): <https://modelcontextprotocol.io/docs/concepts/transports>
+- MCP Python SDK (client): <https://github.com/modelcontextprotocol/python-sdk>
+- SearXNG search API (`format=json`): <https://docs.searxng.org/dev/search_api.html>
 - Tailscale enabling HTTPS / cert provisioning: <https://tailscale.com/docs/how-to/set-up-https-certificates>
 - Tailscale Funnel (public exposure — the thing we do NOT enable): <https://tailscale.com/docs/features/tailscale-funnel>
 - Chromium: deprecating powerful features on insecure origins (why the flag route is dead on Android): <https://www.chromium.org/Home/chromium-security/deprecating-powerful-features-on-insecure-origins/>

@@ -130,17 +130,38 @@ tool to prove the path. **Why:** the owner wants to add tools (DNS trace, whois,
 speedtest, …) "relatively easily" — so make extension a first-class pattern, mirroring the action
 registry. Detail in `ARCHITECTURE.md` §1 (Tools/Utils).
 
+## D9 — Configurable agent integrations: MCP, SearXNG, embeddings ✅
+
+The owner already runs these and wants them **all configurable in Conf**:
+
+- **MCP client** — the agent connects to multiple **MCP servers** over **stdio** *and* **Streamable
+  HTTP** transports; their tools merge (namespaced) into the agent's aggregated toolset. Per-server
+  config (`name`, transport, `command+args+env` or `url+headers`, `enabled`), tool discovery, and
+  failure isolation so one bad server can't break the agent. Use an MCP client lib (official Python
+  MCP SDK).
+- **SearXNG** — configurable endpoint of the owner's local instance powers a built-in `web_search`
+  tool (`format=json`); optionally consumable via a SearXNG MCP server instead. Settles the old
+  "SearXNG MCP v1 or later?" open item: **in, and configurable.**
+- **Embeddings** — configurable OpenAI-compatible `/v1/embeddings` base URL (the owner's llama.cpp
+  embedding model) feeds the **vector** `MemoryProvider` (D4/B1) and future semantic search.
+
+Config shape in `ARCHITECTURE.md` §3 (`searxng{}`, `embeddings{}`, `mcp_servers[]`); UI in Conf →
+Inference (embeddings) + Integrations (MCP servers, SearXNG). **Why:** these are existing,
+owner-operated services — wiring them as first-class configurable integrations (not hardcoded) is
+what makes the agent genuinely useful and keeps secrets in masked YAML.
+
 ---
 
 ## Still open (decide before building the relevant phase)
 
 - Agent tool-calling format: OpenAI `tools`/function-calling vs a lightweight JSON protocol for
   models that don't support tools well (some local GGUFs). Likely: detect capability, fall back.
-- SearXNG MCP: in-scope for v1 agent or post-v1? (AGENTS.md lists it as a goal.)
 - Memory backend(s): none / file (`MEMORY.md`-style) / vector / both — pluggable provider; v1 ships
-  none+file, vector later. Which embeddings endpoint? (see `ROADMAP.md` B1 + ARCHITECTURE §4.)
+  none+file, vector later. Embeddings endpoint = the owner's llama.cpp `/v1/embeddings` (D9).
 - Auth: stay none (Tailscale-only) for v1; revisit only if exposure model ever changes.
 - Frontend routing: simple tab state vs `react-router` (lean tab state unless deep-linking is wanted).
+- MCP: how much of the client to ship in v1 vs v1.x (transports both wanted; start with one server
+  working end-to-end, then generalize). Tool-namespacing + per-server failure isolation.
 
 ## Future additions (design-shaping, captured in ROADMAP.md)
 

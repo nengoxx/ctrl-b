@@ -39,6 +39,9 @@ no public bind, no auth** — never weaken that boundary.
   (`config.yaml` shape preserved, secrets gitignored + masked).
 - **LLM/voice:** all OpenAI-compatible base URLs — chat (llama.cpp `llama-server` `/v1` or cloud),
   STT (faster-whisper `/v1/audio/transcriptions`), TTS (Kokoro/openedai `/v1/audio/speech`).
+- **Agent integrations (D9), all configurable in Conf:** **MCP client** (multiple servers over
+  **stdio** + **Streamable HTTP**, tools merged/namespaced), **SearXNG** endpoint → `web_search`
+  tool, **embeddings** endpoint (llama.cpp `/v1/embeddings`) → vector memory.
 - **Composer prefixes:** `!<cmd>` (configurable sigil) → guarded shell; `/<cmd>` → slash commands
   incl. `/local`,`/cloud`; else → agent. Markdown bot replies + copy/send-to-composer on code blocks.
 - **Mic needs a secure context → serve over HTTPS via Tailscale Serve** (tailnet-only, not Funnel).

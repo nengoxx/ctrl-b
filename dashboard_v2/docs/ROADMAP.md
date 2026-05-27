@@ -235,7 +235,8 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
 Even pre-implementation, lay out the Conf tab in **functional groups** so these land in obvious
 homes later:
 
-- **Inference** — backend mode (local llama.cpp / cloud), endpoints, keys, models, embeddings URL.
+- **Inference** — backend mode (local llama.cpp / cloud), endpoints, keys, models, **embeddings
+  endpoint** (llama.cpp `/v1/embeddings` — D9).
 - **Agent** — privilege level (A1), streaming mode (C1), prompts (system/command/post), tool/action
   allowlist, ask-questions behavior (A2).
 - **Memory** — backend selector (B1: none/file/vector/both), rolling-summary toggle, view/edit
@@ -247,4 +248,6 @@ homes later:
 - **Notifications** — master on/off; default PWA-native (foreground + Web Push, auto); optional
   ntfy / Telegram-Discord channels; per-event toggles (F1).
 - **Appearance** — theme, skyline, hero, waveform (from Vapor).
-- **Integrations** — Discord/Telegram bots (E1), SearXNG MCP.
+- **Integrations** (D9) — **MCP servers** manager (add/edit/enable; stdio `command+args+env` or
+  Streamable-HTTP `url+headers`; tool discovery per server); **SearXNG** endpoint (powers
+  `web_search`); custom slash commands; Discord/Telegram bots (E1).

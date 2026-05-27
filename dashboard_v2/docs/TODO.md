@@ -69,9 +69,16 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [ ] `agent.py`: `openai` client → configured backend (local llama.cpp `/v1` or cloud).
 - [ ] Threads/messages persisted in SQLite; `GET/POST /api/threads`, `GET messages`.
 - [ ] `POST /api/agent/chat` streaming over SSE.
-- [ ] Tool-calling: registry → OpenAI `tools`; high-risk/confirm actions → **command/action
-      bubble** (execute/edit/dismiss), low-risk configurable to auto-run.
+- [ ] **Aggregated toolset** → OpenAI `tools`: action registry + `agent_exposed` tools + MCP tools
+      (namespaced). high-risk/confirm actions → **command/action bubble** (execute/edit/dismiss),
+      low-risk configurable to auto-run.
 - [ ] Capability fallback for weak local models (draft-into-bubble, no native tools).
+- [ ] **MCP client (D9):** connect to configured MCP servers over **stdio** + **Streamable HTTP**
+      (official Python MCP SDK); discover + merge tools; per-server enable + failure isolation.
+      Start with one server end-to-end, then generalize.
+- [ ] **SearXNG `web_search` tool (D9):** hits the configured local SearXNG `format=json`.
+- [ ] **Embeddings client (D9):** wire the configured llama.cpp `/v1/embeddings` (powers the vector
+      `MemoryProvider` when that lands).
 - [ ] Composer prefix routing: `!` (configurable sigil) → guarded exec, `/` → slash commands
       (incl. `/local`,`/cloud` for backend), else → agent. Markdown rendering of bot replies +
       copy / send-to-composer on code blocks (generalize Vapor `editCmd`/`cmdInto`).
@@ -99,8 +106,10 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [ ] Hosts CRUD: `POST/PUT/DELETE /api/hosts/{id}` + Conf machine forms (port Vapor `machineFormHTML`).
 - [ ] Memory mgmt: `GET /api/memory`, `POST`, `DELETE`; rolling-summary + pinned-facts; clear
       thread / clear all.
-- [ ] Conf tab: inference/STT/TTS endpoints + models + voices, server (host/port/poll/debug),
-      appearance (theme/skyline/hero/waveform), prompt-file editors, memory panel.
+- [ ] Conf tab: inference/STT/TTS endpoints + models + voices, **embeddings endpoint**, server
+      (host/port/poll/debug), appearance (theme/skyline/hero/waveform), prompt-file editors, memory panel.
+- [ ] **Integrations panel (D9):** MCP servers manager (add/edit/enable; stdio `command+args+env`
+      or Streamable-HTTP `url+headers`; show discovered tools per server) + **SearXNG** endpoint.
 
 ## Phase 8 — Tool registry + Utils (extensible, D8)
 

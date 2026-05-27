@@ -76,10 +76,25 @@ async def shutdown_host(inp: ShutdownHostInput) -> ActionResult:
   `/v1`, or `cloud` = OpenRouter et al.). **Supports both streaming (SSE) and buffered (single
   JSON) responses** from day one — a `streaming: auto|on|off` setting + graceful fallback when a
   backend can't stream (ROADMAP C1). Non-streaming is a first-class path, not an afterthought.
-- Tools = the action registry. Whether the model's proposed action **auto-runs or waits for
-  confirmation is governed by the agent privilege level** (a policy layer over the registry's
-  `risk` field — ROADMAP A1): Read-only / Confirm-each / Auto-low-risk / Full. `confirm` actions
-  always surface as a **command/action bubble** (Vapor `.b.cmd`) with execute / edit / dismiss.
+- Tools = an **aggregated toolset** from three sources, all surfaced to the model uniformly:
+  (1) the **typed-action registry** (§1), (2) `agent_exposed` **utility tools** from the tool
+  registry (§Tools, e.g. `dns_trace`, `web_search`), and (3) **tools from connected MCP servers**
+  (see Integrations below). Whether a proposed action **auto-runs or waits for confirmation is
+  governed by the agent privilege level** (policy over each tool's `risk` — ROADMAP A1):
+  Read-only / Confirm-each / Auto-low-risk / Full. `confirm` actions always surface as a
+  **command/action bubble** (Vapor `.b.cmd`) with execute / edit / dismiss.
+- **Integrations (all configurable in Conf — D9):**
+  - **MCP client** — the agent connects to multiple **MCP servers** over **stdio** *and*
+    **Streamable HTTP** transports; their tools merge into the aggregated toolset (namespaced to
+    avoid collisions). Each server is configured in settings: `name`, `transport`, `command+args+env`
+    (stdio) or `url+headers` (http), `enabled`. Tool discovery + per-server enable/disable; failures
+    isolated so one bad server doesn't break the agent. (Use an MCP client lib, e.g. the official
+    Python MCP SDK.)
+  - **SearXNG** — a configurable endpoint powers a built-in **`web_search`** tool (hits SearXNG's
+    `format=json` API). *(Alternatively/additionally usable via a SearXNG MCP server — both paths
+    supported; pick per taste in settings.)*
+  - **Embeddings** — a configurable OpenAI-compatible **`/v1/embeddings`** base URL (your llama.cpp
+    embedding model) feeds the **vector** `MemoryProvider` (§4) and any future semantic search.
 - **Turn-based chat loop with typed message kinds** — `text`, `command|action`, and **`question`**
   (the agent can ask the user for clarification mid-task, with optional choice chips, then resume —
   ROADMAP A2). Build the loop turn-based and the message kinds extensible from the start, even if
@@ -188,7 +203,11 @@ Message   id, thread_id, kind(text|action|question), role, content, ts, meta    
 Memory    id, kind(fact|summary), text, created_at, pinned                        [SQLite]
 Automation id, name, cron, prompt, privilege, thread_id, enabled, last_run, status [SQLite]  # ROADMAP A3
 Settings  inference{mode, local_url, cloud_url, cloud_key*, model},
+          embeddings{url, key*, model},                       # llama.cpp /v1/embeddings (D9)
           stt{url, key*, model}, tts{url, key*, model, voice},
+          searxng{url, enabled},                              # web_search tool (D9)
+          mcp_servers[]{name, transport(stdio|http), command, args, env*, url, headers*, enabled},  # D9
+          agent{privilege, streaming, memory_backend, ...},
           server{host, port, poll_seconds, debug}, appearance{theme, skyline, ...}  [YAML]
 ```
 `*` = secret: gitignored in YAML, masked in API responses, never logged.
