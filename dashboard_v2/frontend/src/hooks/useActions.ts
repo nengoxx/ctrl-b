@@ -66,10 +66,8 @@ export function useFleetActions() {
       const needsConfirm = spec ? spec.confirm || spec.risk === "high" : action === "shutdown";
 
       if (needsConfirm) {
-        const verb = host.os_type === "windows" ? "shutdown /s /f" : "shutdown now";
         const ok = await requestConfirm({
           title: `Shut down ${host.name}?`,
-          body: `Sends an SSH \`${verb}\` to ${host.ssh_username ?? "?"}@${host.ip}. ${host.name} drops off the fleet until you wake it.`,
           confirmLabel: "Shut down",
           danger: true,
         });

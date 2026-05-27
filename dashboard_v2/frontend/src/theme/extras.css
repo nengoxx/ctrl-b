@@ -79,61 +79,61 @@
 }
 .modal {
   width: 100%;
-  max-width: 360px;
+  max-width: 300px;
   background: linear-gradient(160deg, var(--bg-2), var(--bg));
   border: 1px solid var(--line-2);
-  border-radius: 16px;
-  padding: 20px 20px 16px;
+  border-radius: 14px;
+  padding: 16px 16px 14px;
   color: var(--ink);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
 }
+/* Title in the base mono (JetBrains), not Major Mono Display — the display font mangled the
+   leading "S" and trailing "?". Plain weight reads clean. */
 .modal h3 {
-  margin: 0 0 8px;
-  font-family: "Major Mono Display", monospace;
-  font-size: 16px;
-  font-weight: 400;
+  margin: 0 0 14px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
   color: var(--ink);
-}
-.modal p {
-  margin: 0 0 18px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--ink-soft);
 }
 .modal .row {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   justify-content: flex-end;
 }
+/* Buttons mirror the Utils-tab `.util .field button` (magenta→violet gradient, uppercase, glow)
+   but with all four corners rounded — the Utils ones square their left side to butt the input. */
 .modal button {
   all: unset;
   cursor: pointer;
-  padding: 9px 16px;
-  border-radius: 10px;
-  font-size: 12px;
-  letter-spacing: 0.5px;
-  text-align: center;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: #1a0428;
+  background: linear-gradient(135deg, var(--magenta), var(--violet));
+  box-shadow: 0 3px 12px rgba(var(--accent-rgb), 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-.modal .cancel {
-  color: var(--ink-soft);
-  border: 1px solid var(--line-2);
+.modal button:active {
+  transform: scale(0.96);
+  filter: brightness(1.1);
 }
-.modal .cancel:active {
-  background: var(--line);
-}
-.modal .go {
-  color: #fff;
-  font-weight: 600;
-  background: var(--accent-grad);
-  box-shadow: 0 2px 14px rgba(var(--accent-rgb), 0.45);
-}
-.modal .go.danger {
-  background: var(--danger-grad);
-  box-shadow: 0 2px 14px rgba(var(--danger-rgb), 0.5);
-}
-.modal .go:active {
-  filter: brightness(1.08);
-  transform: scale(0.98);
+/* Destructive action (Shut down) — IDENTICAL structure to the accent button above (135° two-stop
+   gradient, 0.4-alpha drop glow, inset highlight, dark ink); only the hue source changes from
+   --accent-rgb to --danger-rgb. That makes it red in Vapor/Ember and purple in Aqua — tracking the
+   list power-off button's per-theme hue (the owner's deliberate chat4 decision; see VAPOR_PATTERNS
+   §10). The dark second stop is the same color-mix darken the prototype uses (cf. vapor.css:616). */
+.modal button.danger {
+  background: linear-gradient(135deg, rgb(var(--danger-rgb)),
+    color-mix(in oklch, rgb(var(--danger-rgb)), #000 38%));
+  box-shadow: 0 3px 12px rgba(var(--danger-rgb), 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 @keyframes modal-fade {
   from {

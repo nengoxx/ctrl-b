@@ -26,6 +26,10 @@ new component.**
 >    toggles) — port it, don't reinvent it.
 > 4. **Verify side-by-side** against `vapor.html` at phone width before calling any piece done.
 >    "Visually indistinguishable" is the acceptance test.
+> 5. **Read [`VAPOR_PATTERNS.md`](./VAPOR_PATTERNS.md) before styling anything** — the distilled
+>    design language (tokens, button taxonomy, the per-theme danger-color philosophy, and the
+>    per-component decisions from the `ctrl-b (Vapor)/chats/`). It exists so net-new components
+>    (which have no `vapor.html` markup to copy) stay consistent by construction.
 
 ## Read order (5 min)
 
