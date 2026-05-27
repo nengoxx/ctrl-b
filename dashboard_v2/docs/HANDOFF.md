@@ -1,8 +1,26 @@
 # Handoff — start here for a fresh session
 
-**Purpose:** planning for `dashboard_v2` is **complete**. No application code exists yet. The next
-session **starts building**. This doc is the orientation; the canonical detail is in the other
-`docs/` files.
+**Purpose:** **Phase 0 is done and the scaffold runs.** The next session builds **Phase 1 — the
+Fleet tab**, and the bar for it is **pixel-exact fidelity to the Vapor prototype** (D7). This doc
+is the orientation; canonical detail is in the other `docs/` files.
+
+> ## ⭐ The Phase 1 mandate: nail the Vapor port
+> The owner's priority is a **faithful, pixel-exact execution of `vapor.html`** — not "inspired by."
+> Before writing any component:
+> 1. **Open `../../ctrl-b (Vapor)/variations/vapor.html` in a browser at ~390px** and study the real
+>    thing — the hero (sun bob + retrowave stripes, twinkling stars, moving neon grid, city/mountains
+>    skyline SVG, live waveform canvas), the appbar (logo lozenge + auto-TTS toggle), device rows with
+>    the expandable dropdown (services + kv detail + wake/stop mask-icon buttons), the fleet summary,
+>    and the bottom tab bar with its sliding indicator.
+> 2. **The CSS is already lifted verbatim** into `frontend/src/theme/vapor.css` (the 1064-line
+>    `<style>` block — `:root`/`[data-theme]` variables + all component CSS). **Reuse those exact
+>    class names and variables; do not re-derive colors/spacing/animations.** Componentize the
+>    *markup* into React, keep the *styles* as-is.
+> 3. **Read `vapor.html`'s markup + JS** (the part after `</style>`, ~line 1077+) to copy the exact
+>    DOM structure and the animation logic (waveform canvas draw loop, tab indicator slide, hero
+>    toggles) — port it, don't reinvent it.
+> 4. **Verify side-by-side** against `vapor.html` at phone width before calling any piece done.
+>    "Visually indistinguishable" is the acceptance test.
 
 ## Read order (5 min)
 
@@ -18,6 +36,35 @@ session **starts building**. This doc is the orientation; the canonical detail i
 The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (mobile-first
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
+
+## Current state (what Phase 0 left you)
+
+Pushed to `origin/main` (commits `510302d` scaffold, `dc9d4e9` secrets model). Both verified.
+
+```
+dashboard_v2/
+  backend/                 # FastAPI + Uvicorn, Python 3.11, venv at backend/.venv
+    app/main.py            #   app factory + lifespan; GET /api/health works
+    app/config.py          #   YAML↔Settings, .env overlay, atomic save, secret masking
+    app/db.py              #   aiosqlite WAL + versioned migrations; schema v1 applied
+    app/api/health.py      #   the Phase 0 checkpoint
+    pyproject.toml         #   deps PINNED to real resolved versions (openai 2.38, fastapi 0.136…)
+  frontend/                # React 19 + TS + Vite 7 PWA (deps installed)
+    src/theme/vapor.css    #   ⭐ vapor.html <style> lifted VERBATIM — style against this
+    src/main.tsx           #   QueryClientProvider + imports vapor.css
+    src/App.tsx            #   Phase-0 placeholder — REPLACE with the Fleet tab in Phase 1
+    index.html             #   shell: JetBrains Mono + Major Mono Display, viewport-fit=cover
+    public/                #   logo.png + favicon.ico (copied from Vapor)
+    vite.config.ts         #   /api → 127.0.0.1:5433, vite-plugin-pwa
+  config.example.yaml · .env.example   # templates; real config.yaml/.env are gitignored
+```
+
+**Run it (two terminals):**
+```powershell
+cd dashboard_v2/backend  ; .venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 5433
+cd dashboard_v2/frontend ; npm run dev      # http://localhost:5173 (proxies /api → 5433)
+```
+Open the Vapor prototype next to it: `ctrl-b (Vapor)/variations/vapor.html` at ~390px.
 
 ## What this is
 
@@ -40,6 +87,12 @@ no public bind, no auth** — never weaken that boundary.
   command escape hatch.
 - **Persistence:** **SQLite** (threads / messages / memory / events) + **YAML** config
   (`config.yaml` shape preserved, secrets gitignored + masked).
+- **Secrets model (decided Phase 0) — hybrid:** `config.yaml` is the UI-managed source of truth
+  **including** nested secrets (per-host SSH creds, API keys); `.env` adds bootstrap paths
+  (`CTRLB_CONFIG`/`CTRLB_DB`) + optional `CTRLB_<SECTION>__<KEY>` scalar overrides that **win** over
+  the YAML. The app only ever rewrites `config.yaml`, never `.env`. Both gitignored; `.example`
+  templates committed. Detail in `DESIGN.md` §9.
+- **Ports:** backend on **5433** (the live Flask app keeps **5432** until cutover); Vite dev on 5173.
 - **LLM/voice:** all OpenAI-compatible base URLs — chat (llama.cpp `llama-server` `/v1` or cloud),
   STT (faster-whisper `/v1/audio/transcriptions`), TTS (Kokoro/openedai `/v1/audio/speech`).
 - **Agent integrations (D9), all configurable in Conf:** **MCP client** (multiple servers over
@@ -82,17 +135,31 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
 ## Environment / running
 
 - Host: **Windows 11**, shell **PowerShell** (`$null`, `$env:VAR`, backtick continuation); Bash
-  tool also available. Python **3.11**.
+  tool also available. Python **3.11**. Backend venv already exists at `backend/.venv`; frontend
+  deps already installed (`npm install` done).
 - The **live Flask app** (`../../wol_server/wol_server_win.py`, port 5432) **keeps running** until
   cutover (TODO Phase 10). Do **not** modify it or the old prototype folders.
-- Repo is **public** (`github.com/nengoxx/ctrl-b`); `dashboard_v2/` is now tracked. Secrets
-  (`config.yaml`, `clients`, `*_prompt.*`) are gitignored — keep them out of commits/logs.
-- When scaffolding, add a `.gitignore` for `node_modules`, `dist`, `*.db`, `__pycache__`, `.venv`
-  (the repo root `.gitignore` does **not** cover node_modules).
+- Repo is **public** (`github.com/nengoxx/ctrl-b`); `dashboard_v2/` is tracked. Secrets
+  (`config.yaml`, `.env`, `clients`, `*_prompt.*`) are gitignored — keep them out of commits/logs.
+  The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
+  may rotate it.
 
-## First action
+## First action — Phase 1 (Fleet read path), Vapor-faithful
 
-Open `TODO.md` → **Phase 0 — Scaffolding**: stand up the FastAPI skeleton (`/api/health`) with
-pinned deps, the Vite/React PWA scaffold (lift config from `../../ws_claude`), copy logo/favicon,
-wire `config.py` (YAML) + `db.py` (SQLite), add the `.gitignore`. Each phase ends in something
-runnable; keep changes testable at ~390px width.
+Open `TODO.md` → **Phase 1**. Build, in order, verifying against `vapor.html` at ~390px each step:
+
+1. **Backend:** Pydantic `Host` model (DESIGN §2, with `SecretStr` SSH password + stable slug `id`);
+   load hosts from YAML; `hosts.py` with **concurrent** `asyncio.gather` ping (per-OS flag shim,
+   semaphore + per-host timeout); `GET /api/hosts` (+ derived status) and `GET /api/hosts/{id}/status`.
+   Use the live `config.yaml` `computers{}` shape as the migration reference.
+2. **Frontend Fleet tab (the ⭐ deliverable):** replace `App.tsx` with the ported Vapor shell —
+   appbar, hero, device rows + expandable detail, fleet summary, bottom tab bar with sliding
+   indicator — **reusing `theme/vapor.css`'s exact classes** and porting `vapor.html`'s markup + JS
+   (waveform canvas, animations) faithfully. Wire to TanStack Query polling (interval from settings);
+   replace the mock `DEVICES` with the API.
+3. **Themes + toggles** (`vapor`/`aqua`/`ember`, skyline city/mountains, hero/waveform on/off) ported
+   so they behave identically; a tiny zustand/context UI store persisted to `localStorage`.
+4. **Decide:** tab state vs react-router (open question — lean tab state for 4 tabs).
+
+Acceptance: **side-by-side visually indistinguishable from `vapor.html`** at phone width. Each phase
+ends in something runnable. Don't build ahead into actions/agent (Phase 2+).
