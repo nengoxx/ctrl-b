@@ -85,7 +85,18 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [ ] Composer prefix routing: `!` (configurable sigil) → guarded exec, `/` → slash commands
       (incl. `/local`,`/cloud` for backend), else → agent. Markdown rendering of bot replies +
       copy / send-to-composer on code blocks (generalize Vapor `editCmd`/`cmdInto`).
-- [ ] Frontend **Agent** tab: chat log + shared composer + streaming render + command bubbles.
+- [ ] **`task_plan` built-in tool (D10):** agent maintains a per-thread plan/task list (steps +
+      status); render as a `plan` message-kind panel in chat. Extensible — more agent tools = one file.
+- [ ] **Context compaction (D10):** summarize older turns into the working context near the token
+      limit (configurable threshold) + manual `/compact`; keep full history in SQLite; `sys` notice.
+- [ ] Frontend **Agent** tab: chat log + shared composer + streaming render + command/plan bubbles.
+
+## Phase 4.5 — Skills (D10)
+
+- [ ] Skill loader: discover `skills/<name>/SKILL.md` (frontmatter `name`/`description`/`allowed_tools`
+      + instructions) + optional resources. Adding a skill = dropping a folder.
+- [ ] Invocation: **model-invoked** (select by description) + **user-invoked** via `/skill-name` (A4).
+- [ ] Conf → Skills panel: list/enable/disable/view/edit/add; show allowed tools per skill.
 
 ## Phase 5 — Guarded shell (`$` escape hatch)
 

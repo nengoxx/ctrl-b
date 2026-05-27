@@ -72,6 +72,28 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
   human → per-automation policy (skip / use default / notify and wait). Concurrency limits. This is
   a sizeable module — likely its own post-v1 phase.
 
+### A5. Agent runtime: compaction · built-in tools (task/plan) · skills
+
+Round out the agent into a real system (study opencode + public Claude-Code patterns first):
+
+- **Context compaction.** The loop tracks the token budget; near the context limit (configurable
+  threshold) or on manual **`/compact`**, it **summarizes older turns** into a compact summary that
+  replaces them in the *working context* while SQLite keeps full history. A `sys` notice marks it.
+  Distinct from durable memory (B): compaction = live-window management; memory = long-term recall.
+- **Built-in agent tools + extensibility.** Ship a **`task_plan`** tool: the agent maintains a
+  structured session **plan / task list** (steps with status), TodoWrite-style, persisted per-thread
+  and rendered as a live `plan` panel in chat — drives multi-step work and makes headless
+  automations legible. **Adding more agent tools = one file** via the same registry (D8); the
+  toolset is built to grow.
+- **Skills.** Reusable named capability bundles — `skills/<name>/SKILL.md` (frontmatter
+  `name`/`description`/optional `allowed_tools` + instructions) + optional bundled scripts/resources.
+  **Model-invoked** (agent selects by description) and **user-invoked** via `/skill-name` (A4).
+  **Adding a skill = dropping a folder**; managed in Conf → Skills. Mirrors Claude-Code/opencode
+  skills.
+- **Open:** compaction summary quality vs cost (which model summarizes); plan persistence shape
+  (message `meta` vs own table); skill auto-selection heuristics + whether skills can bundle their
+  own MCP servers/tools; skill sandboxing for any bundled scripts (respect privilege levels).
+
 ---
 
 ## B. Memory (configurable, pluggable)
@@ -238,7 +260,9 @@ homes later:
 - **Inference** — backend mode (local llama.cpp / cloud), endpoints, keys, models, **embeddings
   endpoint** (llama.cpp `/v1/embeddings` — D9).
 - **Agent** — privilege level (A1), streaming mode (C1), prompts (system/command/post), tool/action
-  allowlist, ask-questions behavior (A2).
+  allowlist, ask-questions behavior (A2), **compaction threshold + `/compact`** (A5).
+- **Skills** (A5) — list/enable/disable/view/edit skills (`skills/` dir); add new skill; show which
+  tools each skill is allowed.
 - **Memory** — backend selector (B1: none/file/vector/both), rolling-summary toggle, view/edit
   file memory, prune/clear, vector store status.
 - **Voice** — STT endpoint/model, TTS endpoint/voice/model, auto-TTS, wake word (C2).

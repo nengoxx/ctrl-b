@@ -81,13 +81,27 @@ async def shutdown_host(inp: ShutdownHostInput) -> ActionResult:
   `/v1`, or `cloud` = OpenRouter et al.). **Supports both streaming (SSE) and buffered (single
   JSON) responses** from day one — a `streaming: auto|on|off` setting + graceful fallback when a
   backend can't stream (ROADMAP C1). Non-streaming is a first-class path, not an afterthought.
-- Tools = an **aggregated toolset** from three sources, all surfaced to the model uniformly:
+- Tools = an **aggregated toolset** from four sources, all surfaced to the model uniformly:
   (1) the **typed-action registry** (§1), (2) `agent_exposed` **utility tools** from the tool
-  registry (§Tools, e.g. `dns_trace`, `web_search`), and (3) **tools from connected MCP servers**
-  (see Integrations below). Whether a proposed action **auto-runs or waits for confirmation is
-  governed by the agent privilege level** (policy over each tool's `risk` — ROADMAP A1):
-  Read-only / Confirm-each / Auto-low-risk / Full. `confirm` actions always surface as a
-  **command/action bubble** (Vapor `.b.cmd`) with execute / edit / dismiss.
+  registry (§Tools, e.g. `dns_trace`, `web_search`), (3) **built-in agent tools** (below), and
+  (4) **tools from connected MCP servers** (see Integrations). Whether a proposed action
+  **auto-runs or waits for confirmation is governed by the agent privilege level** (policy over
+  each tool's `risk` — ROADMAP A1): Read-only / Confirm-each / Auto-low-risk / Full. `confirm`
+  actions always surface as a **command/action bubble** (Vapor `.b.cmd`) with execute / edit /
+  dismiss. **Adding a new agent tool = one file** (same registry as §Tools — D8) — the toolset is
+  designed to grow.
+- **Built-in agent tools (ship in v1):**
+  - **`task_plan`** — the agent maintains a structured **plan / task list** for the session (steps
+    with status: pending/active/done), à la Claude Code's TodoWrite. Persisted per-thread; rendered
+    in the chat UI as a live plan panel (a `plan` message kind). Drives multi-step work and makes
+    headless automations (A3) legible. The model calls it to (re)write the plan as it progresses.
+  - more built-ins slot in via the registry as needed.
+- **Skills (ROADMAP A5):** reusable, named capability bundles — a `SKILL.md`-style file (frontmatter
+  `name`/`description`/optional `allowed_tools` + instructions) plus optional bundled scripts/
+  resources. **Model-invoked** (the agent picks a skill when its description matches the task) and/or
+  **user-invoked** via `/skill-name` (ties to A4 slash commands). Discovered from a `skills/` dir;
+  **adding a skill = dropping a folder**; managed in Conf → Skills. Mirrors Claude-Code/opencode
+  skills.
 - **Integrations (all configurable in Conf — D9):**
   - **MCP client** — the agent connects to multiple **MCP servers** over **stdio** *and*
     **Streamable HTTP** transports; their tools merge into the aggregated toolset (namespaced to
@@ -100,10 +114,14 @@ async def shutdown_host(inp: ShutdownHostInput) -> ActionResult:
     supported; pick per taste in settings.)*
   - **Embeddings** — a configurable OpenAI-compatible **`/v1/embeddings`** base URL (your llama.cpp
     embedding model) feeds the **vector** `MemoryProvider` (§4) and any future semantic search.
-- **Turn-based chat loop with typed message kinds** — `text`, `command|action`, and **`question`**
-  (the agent can ask the user for clarification mid-task, with optional choice chips, then resume —
-  ROADMAP A2). Build the loop turn-based and the message kinds extensible from the start, even if
-  `question` ships later.
+- **Turn-based chat loop with typed message kinds** — `text`, `command|action`, **`question`**
+  (clarify mid-task, optional choice chips, then resume — ROADMAP A2), and **`plan`** (the
+  `task_plan` panel). Build the loop turn-based and the message kinds extensible from the start.
+- **Context compaction (ROADMAP A5/B2):** the loop tracks the token budget and, when nearing the
+  model's context limit (configurable threshold) — or on a manual **`/compact`** — **summarizes
+  older turns into a compact summary** that replaces them in the *working context*, while SQLite
+  keeps the **full history** untouched. Distinct from durable memory (§4): compaction manages the
+  live window; memory is long-term recall. Surfaced as a `sys` notice ("// compacted N messages").
 - Capability fallback for weak local models: if tool-calling is unreliable, the model just
   drafts a shell/action into a reviewable bubble (the current command-box behavior).
 - The same agent + registry run **headless** for scheduled automations (ROADMAP A3), with a
@@ -204,7 +222,8 @@ Service   id, host_id, name, kind, port, path, autostart, cmd_start/stop/restart
 Action    name, inputs(schema), risk, confirm   (code-defined, not stored)
 Event     id, ts, actor(user|agent), action, target, status, summary, output     [SQLite]
 Thread    id, title, created_at, updated_at                                       [SQLite]
-Message   id, thread_id, kind(text|action|question), role, content, ts, meta      [SQLite]
+Message   id, thread_id, kind(text|action|question|plan), role, content, ts, meta [SQLite]
+Skill     file-based: skills/<name>/SKILL.md (frontmatter + instructions) + resources  [disk]
 Memory    id, kind(fact|summary), text, created_at, pinned                        [SQLite]
 Automation id, name, cron, prompt, privilege, thread_id, enabled, last_run, status [SQLite]  # ROADMAP A3
 Settings  inference{mode, local_url, cloud_url, cloud_key*, model},

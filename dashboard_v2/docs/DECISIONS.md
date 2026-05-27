@@ -150,6 +150,25 @@ Inference (embeddings) + Integrations (MCP servers, SearXNG). **Why:** these are
 owner-operated services — wiring them as first-class configurable integrations (not hardcoded) is
 what makes the agent genuinely useful and keeps secrets in masked YAML.
 
+## D10 — Agent runtime: compaction, task/plan tool (extensible), skills ✅
+
+Make the agent a real system (informed by opencode + public Claude-Code patterns — D-ref RESEARCH):
+
+- **Context compaction** — auto-summarize older turns into the working context near the token limit
+  (configurable threshold) + manual `/compact`; SQLite keeps full history. Distinct from durable
+  memory (D4): compaction = live window, memory = recall.
+- **Built-in `task_plan` tool + extensible toolset** — the agent maintains a structured session
+  plan/task list (TodoWrite-style), rendered as a `plan` message-kind panel; **adding more agent
+  tools = one file** via the §1/D8 registry.
+- **Skills** — reusable `skills/<name>/SKILL.md` bundles (frontmatter + instructions + optional
+  resources); model-invoked or user-invoked via `/skill-name` (A4); **adding a skill = dropping a
+  folder**; managed in Conf → Skills. File-based, like the file MemoryProvider.
+
+Detail in `ARCHITECTURE.md` §Agent + ROADMAP A5. **Why:** the owner wants compaction, an
+extensible tool system with a task/plan tool, and skills — the same primitives that make
+Claude-Code/opencode effective. Build the seams (message kinds incl. `plan`, the tool registry,
+file-discovered skills) in v1 even where full behavior lands in v1.x.
+
 ---
 
 ## Still open (decide before building the relevant phase)

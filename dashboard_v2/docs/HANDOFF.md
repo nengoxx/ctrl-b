@@ -42,6 +42,9 @@ no public bind, no auth** — never weaken that boundary.
 - **Agent integrations (D9), all configurable in Conf:** **MCP client** (multiple servers over
   **stdio** + **Streamable HTTP**, tools merged/namespaced), **SearXNG** endpoint → `web_search`
   tool, **embeddings** endpoint (llama.cpp `/v1/embeddings`) → vector memory.
+- **Agent runtime (D10):** **context compaction** (auto + `/compact`), a built-in **`task_plan`**
+  tool (+ extensible toolset — new tool = one file), and **skills** (`skills/<name>/SKILL.md`,
+  model- or `/skill-name`-invoked). Study `RESEARCH.md` prior art (opencode + public Claude-Code).
 - **Composer prefixes:** `!<cmd>` (configurable sigil) → guarded shell; `/<cmd>` → slash commands
   incl. `/local`,`/cloud`; else → agent. Markdown bot replies + copy/send-to-composer on code blocks.
 - **Mic needs a secure context → serve over HTTPS via Tailscale Serve** (tailnet-only, not Funnel).
