@@ -52,7 +52,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 ## Current state (what Phase 4b left you)
 
 Phases 0–3 **and Phase 4a are on `origin/main`** (Phase 4a = commit `f9e9965`). **Phase 4b is
-committed to `main`** (run `git log` for the hash; not yet pushed unless the owner pushed). Start 4c next.
+committed to `main` as `6c2d181`** (local; push with `git push` if not already). Start 4c next.
 
 **Runtime extras landed alongside 4b (same commit):**
 - **Fleet roster injection** (`session._roster`): each turn the agent gets an id↔name map of hosts +
