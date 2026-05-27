@@ -3,6 +3,11 @@
 Canonical guide for any AI agent (Claude Code, Codex, etc.) working in this repo.
 Claude-specific notes live in `CLAUDE.md`, which defers to this file for everything below.
 
+> **▶ Active project:** the current work is the ground-up rebuild in `dashboard_v2/`. For status
+> and next steps, **start at [`dashboard_v2/docs/HANDOFF.md`](./dashboard_v2/docs/HANDOFF.md)**.
+> This file describes the legacy Flask app + the target architecture; v2 detail lives in
+> `dashboard_v2/docs/`.
+
 ---
 
 ## 1. What this project is

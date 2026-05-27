@@ -18,10 +18,12 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   LAN + Tailscale, with an LLM command box and chat. No internet exposure; Tailscale-only.
 - The live server is **`wol_server/wol_server_win.py`** (Windows, port 5432). `wol_server.py` is an
   outdated Linux variant — don't edit it unless the task is explicitly Linux WOL/monitor.
-- **The active rebuild is `dashboard_v2/`** — a ground-up v2: a mobile-first React/TS/Vite **PWA**
-  backed by a **FastAPI + Uvicorn** service, porting the **Vapor** design
-  (`ctrl-b (Vapor)/variations/vapor.html`). Read **`dashboard_v2/docs/`** first — `DECISIONS.md`,
-  `ARCHITECTURE.md`, `RESEARCH.md`, `TODO.md`. All v2 work happens there.
+- **The active rebuild is `dashboard_v2/` — START AT [`dashboard_v2/docs/HANDOFF.md`](./dashboard_v2/docs/HANDOFF.md)**,
+  the single source for current status + next steps. It's a ground-up v2: a mobile-first
+  React/TS/Vite **PWA** backed by a **FastAPI + Uvicorn** service, porting the **Vapor** design
+  (`ctrl-b (Vapor)/variations/vapor.html`). After the handoff, the canonical detail is in
+  `dashboard_v2/docs/` (`DECISIONS.md`, `ARCHITECTURE.md`, `DESIGN.md`, `RESEARCH.md`, `TODO.md`).
+  All v2 work happens there.
 - The earlier prototype folders (`ws_claude/`, `ws_claude_2/`, `ws_codex*/`) and `ctrl-b (Vapor)/`
   are **reference only** — superseded by `dashboard_v2/`. Don't import or modify them or the live
   Flask app; the live app keeps running until cutover.

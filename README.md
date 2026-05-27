@@ -1,3 +1,12 @@
+> ### 🚧 Active project: `dashboard_v2/`
+> This repo is being rebuilt. The **current work** is the ground-up v2 in
+> **[`dashboard_v2/`](./dashboard_v2/)** — start at
+> **[`dashboard_v2/docs/HANDOFF.md`](./dashboard_v2/docs/HANDOFF.md)** (the single source for
+> current status + next steps). Everything below describes the **legacy Flask app**, which keeps
+> running until v2 reaches cutover.
+
+---
+
 # AI Dashboard
 
 Easy control over your services.
