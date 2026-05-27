@@ -28,16 +28,19 @@ earlier prototypes — kept for reference, not imported or modified. The live Fl
 
 ## Status
 
-📋 **Planning.** No code yet. Start with the docs below, in order.
+📋 **Planning complete — ready to build.** No application code yet. New session? Read
+[`docs/HANDOFF.md`](docs/HANDOFF.md) first, then start at `docs/TODO.md` Phase 0.
 
 ## Docs
 
 | File | What it covers |
 |---|---|
+| [`docs/HANDOFF.md`](docs/HANDOFF.md) | **Start here in a fresh session** — orientation + first action. |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Locked-in choices and the reasoning behind each. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design: backend, frontend, data model, action registry, agent/voice, deployment profiles. |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | Framework/library survey with sources and version pins. |
 | [`docs/TODO.md`](docs/TODO.md) | Phased, checkbox build plan from empty folder to cutover. |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Future additions (privilege levels, automations, wake word, idle shutdown, bots, …) + the v1 seams to build now so they slot in. |
 
 ## Planned layout (not yet created)
 

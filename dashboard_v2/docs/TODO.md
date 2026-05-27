@@ -56,7 +56,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [ ] Tool-calling: registry → OpenAI `tools`; high-risk/confirm actions → **command/action
       bubble** (execute/edit/dismiss), low-risk configurable to auto-run.
 - [ ] Capability fallback for weak local models (draft-into-bubble, no native tools).
-- [ ] Port composer prefixes: `$`/`>` → guarded exec, `k:`/`o:` → force local/cloud, else → agent.
+- [ ] Composer prefix routing: `!` (configurable sigil) → guarded exec, `/` → slash commands
+      (incl. `/local`,`/cloud` for backend), else → agent. Markdown rendering of bot replies +
+      copy / send-to-composer on code blocks (generalize Vapor `editCmd`/`cmdInto`).
 - [ ] Frontend **Agent** tab: chat log + shared composer + streaming render + command bubbles.
 
 ## Phase 5 — Guarded shell (`$` escape hatch)
@@ -105,6 +107,30 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [ ] Flip the default; retire `wol_server/` (or keep as Linux-WOL fallback). Update README/AGENTS.
 
 ---
+
+## Post-v1 backlog (see ROADMAP.md — build v1 seams now)
+
+Not v1 scope, but the owner wants these; v1 must leave room. Detail + design notes in `ROADMAP.md`.
+
+- [ ] **v1 seams (do these *during* v1 so the backlog slots in cheaply):** pluggable
+      `MemoryProvider` interface; action `risk` levels on every action; **typed chat-message kinds**
+      (`text`/`action`/`question`) + turn-based agent loop; chat endpoint supports **streaming AND
+      buffered**; a settings/policy layer; Conf tab in **functional groups**.
+- [ ] Agent **privilege levels** (read-only → confirm-each → auto-low-risk → full) — policy over
+      `risk` (ROADMAP A1).
+- [ ] Agent **clarifying questions** (`question` bubble, pause/resume) (A2); **notify-and-wait**
+      when unattended/low-privilege (bridges A1+A3+F1).
+- [ ] **Slash commands** registry + custom/extensible commands (A4). *(Basic `!`/`/` prefix routing
+      + markdown/copy is in Phase 4 above.)*
+- [ ] **Scheduled automations**: `Automation` table + cron runner + headless agent runs (A3).
+- [ ] **Streaming toggle** (`auto|on|off`) + non-streaming fallback wired through chat/STT/TTS (C1).
+- [ ] **Wake word** (client-side, openWakeWord/Porcupine WASM, off by default) (C2).
+- [ ] **Idle shutdown/sleep** per host (Win+Linux), **optional/opt-in**, incl. **real-idle
+      detection mechanism** (helper agent?) — decide before building (D1). **Wake-on-connection** (D2).
+- [ ] **Notifications** (F1): master toggle + per-event; default PWA-native (foreground
+      Notifications API via SSE + **Web Push**/VAPID when closed, auto); optional **ntfy** /
+      **Telegram-Discord** channels. **Discord/Telegram bots** as thin API clients (E1).
+- [ ] **Security hardening**: known_hosts pinning, per-action tokens, secret encryption-at-rest (G).
 
 ## Cross-cutting / don't-forget
 

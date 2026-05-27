@@ -114,6 +114,36 @@ of truth**; copy assets (logo/favicon), don't import.
 - Agent tool-calling format: OpenAI `tools`/function-calling vs a lightweight JSON protocol for
   models that don't support tools well (some local GGUFs). Likely: detect capability, fall back.
 - SearXNG MCP: in-scope for v1 agent or post-v1? (AGENTS.md lists it as a goal.)
-- Memory strategy: rolling summary vs explicit pinned facts vs both (see ARCHITECTURE §Agent).
+- Memory backend(s): none / file (`MEMORY.md`-style) / vector / both — pluggable provider; v1 ships
+  none+file, vector later. Which embeddings endpoint? (see `ROADMAP.md` B1 + ARCHITECTURE §4.)
 - Auth: stay none (Tailscale-only) for v1; revisit only if exposure model ever changes.
 - Frontend routing: simple tab state vs `react-router` (lean tab state unless deep-linking is wanted).
+
+## Future additions (design-shaping, captured in ROADMAP.md)
+
+These are **not v1 scope**, but v1 must leave the seams for them (see `ROADMAP.md` for detail).
+The owner explicitly wants them eventually:
+
+- **Agent privilege levels** (read-only → full, Claude-Code/Codex-style) — policy layer over the
+  action `risk` field (A1).
+- **Agent asks clarifying questions** — typed `question` message kind + turn-based loop (A2). When
+  unattended/low-privilege, **notify and wait** for the answer (bridges A1+A3+F1).
+- **Scheduled agent automations** (cron + saved prompt + privilege) — new scheduler subsystem (A3).
+- **Composer-as-console** (A4): `!` (configurable sigil, the only command prefix) → guarded shell;
+  `/` → slash commands incl. **`/local`,`/cloud`** for backend (replacing the disliked `k:`/`o:`);
+  markdown bot replies + copy/send-to-composer on code blocks. *(Prefix routing + formatting +
+  `/local`,`/cloud` ≈ v1; custom slash commands post-v1.)*
+- **Streaming + non-streaming fallback** — endpoint supports both from day one (C1).
+- **Wake word** — client-side, audio stays local until trigger (C2).
+- **Idle shutdown/sleep per host** (Win + Linux) — **optional/opt-in**; needs a real-idle detection
+  mechanism, the hard part (D1). **Wake-on-connection** (D2).
+- **Discord/Telegram bots** as thin clients to the same API (E1).
+- **Notifications** (F1): whole feature **optional (master toggle)**; when on, **PWA-native is the
+  default, auto** — foreground (Notifications API via SSE) when open + **Web Push** (VAPID) when
+  closed. **ntfy** + **Telegram/Discord** are optional extra channels. Per-event toggles. Includes
+  the agent-needs-input channel. No native app required.
+- **Security hardening** (G) — known_hosts pinning, per-action tokens, secret encryption-at-rest.
+
+→ v1 seams to build now so these slot in: pluggable `MemoryProvider`, action `risk` levels,
+typed chat-message kinds, streaming-or-buffered chat endpoint, a settings/policy layer, and a
+functionally-grouped Conf tab.
