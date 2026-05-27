@@ -52,9 +52,8 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
 ## Current state (what Phase 4c left you)
 
-Phases 0–3 **and Phase 4a are on `origin/main`** (Phase 4a = commit `f9e9965`). **Phase 4b is
-committed to `main` as `6c2d181`**. **Phase 4c is in the working tree, NOT yet committed** — review
-+ commit it, then start 4d.
+**Everything through Phase 4c is committed AND pushed to `origin/main`** (Phase 4a `f9e9965` ·
+Phase 4b `6c2d181` · Phase 4c `b44c039`). The tree is clean — start 4d on a fresh branch/commit.
 
 ⭐ NEW in Phase 4c (`backend/app/`):
 ```
@@ -69,7 +68,9 @@ committed to `main` as `6c2d181`**. **Phase 4c is in the working tree, NOT yet c
                                #     startNewThread (/clear); initChat no longer clobbers local-only notes
   components/Composer.tsx      #   send → runComposer (was sendMessage+setUI)
   tabs/AgentTab.tsx            #   bot text rendered via <Markdown>; fillComposer now imported from lib/composer
-  theme/extras.css             # ⭐ net-new `.md` block/inline + `.md-code` bar styles (vapor tokens; vapor.css verbatim)
+  theme/extras.css             # ⭐ net-new `.md` block/inline + `.md-code` bar styles (vapor tokens; vapor.css verbatim).
+                               #     NB: fenced `<code>` is reset so it doesn't inherit the inline-code green lozenge
+                               #     (that bug — a green box per wrapped word inside code blocks — was caught + fixed).
 ```
 **Routing grammar** (the agreed v2 shape, ARCHITECTURE §Composer): `!<cmd>` → guarded shell — the
 sigil is `!` (the *only* command prefix, no `$`/`>`), a const in `lib/composer.ts`, configurable in
@@ -382,11 +383,10 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — commit Phase 4c, then Phase 4d (`task_plan` + plan panel)
+## First action — Phase 4d (`task_plan` + plan panel)
 
-Phase 4c is in the working tree (compileall + frontend build + mode-plumb script all clean) but
-**uncommitted** — review the diff and commit it first (footer per `CLAUDE.md`). Optional 4b/4c
-follow-ups, none blocking 4d:
+Tree is clean (4c committed + pushed, `b44c039`). Optional 4b/4c follow-ups, none blocking 4d —
+each is an **owner eyeball**, not a code task:
 - **Eyeball 4b+4c live against `minig+`**: send a fleet question — confirm the model emits tool
   calls, the `.b.cmd` bubble streams in, and a `shutdown_host`/`stop_service` shows the confirm bubble
   + resume round-trip. Confirm a prose reply renders as **markdown** and a fenced code block shows the
