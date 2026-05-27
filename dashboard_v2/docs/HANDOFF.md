@@ -26,6 +26,10 @@ no public bind, no auth** — never weaken that boundary.
 
 - **Frontend:** mobile-first **PWA** — React 19 + TS + Vite 7 + TanStack Query + lucide-react +
   vite-plugin-pwa. Ports the Vapor design; widens to desktop.
+- **⭐ Visual fidelity (D7):** the UI must be a **pixel-exact port of `vapor.html`** — lift the CSS
+  verbatim, same fonts/colors/animations/components/themes; verify side-by-side. Not negotiable.
+- **Extensible tools (D8):** Utils is a **tool registry** — a new tool (DNS trace, whois, …) is one
+  file (handler + input + metadata) that auto-creates its endpoint, Utils card, and agent tool.
 - **Backend:** **Python + FastAPI + Uvicorn**. Reuse paramiko / wakeonlan / openai /
   youtube-transcript-api. Async concurrent pings.
 - **Execution:** **hybrid** — typed-action registry (UI + agent) is primary; one guarded

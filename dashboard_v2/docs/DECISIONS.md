@@ -107,6 +107,29 @@ optional track that consumes the same API.
 reference only. All v2 work lives under `dashboard_v2/`. The Vapor HTML is the **visual source
 of truth**; copy assets (logo/favicon), don't import.
 
+## D7 — Pixel-exact Vapor visual fidelity ✅ (hard requirement)
+
+The UI must **match `ctrl-b (Vapor)/variations/vapor.html` exactly** — a faithful port, not an
+interpretation. **Lift the CSS verbatim** (the `:root`/`[data-theme]` variable system), keep all
+three palettes (vapor/aqua/ember), the exact fonts (JetBrains Mono + Major Mono Display), **all
+animations** (hero sun/stripes/stars/grid, skyline SVGs, LED heartbeat, equalizer, live waveform,
+sliding tab indicator), and every component (appbar+TTS toggle, hero panel, device rows + dropdown,
+fleet summary, chat/command bubbles, `.util` cards, Conf rows/segments/switches, fixed composer).
+Componentize into React, but the rendered result must be **visually indistinguishable** from the
+prototype; verify side-by-side at phone width. Full checklist in `ARCHITECTURE.md` §5. **Why:** the
+owner designed this deliberately and wants it preserved precisely — design is a fixed spec, not a
+v1 approximation.
+
+## D8 — Extensible tool registry (Utils) ✅
+
+Utilities are a **pluggable registry**, not one-off endpoints. A tool = handler + Pydantic input
++ display metadata + `agent_exposed` flag; registering it auto-creates the REST endpoint
+(`/api/tools/{name}`), the Utils-tab card (rendered generically), and (optionally) an agent tool —
+**from one file**. v1 ports `yt_captions` + `ip_info` and adds **`dns_trace`** as the first new
+tool to prove the path. **Why:** the owner wants to add tools (DNS trace, whois, port check,
+speedtest, …) "relatively easily" — so make extension a first-class pattern, mirroring the action
+registry. Detail in `ARCHITECTURE.md` §1 (Tools/Utils).
+
 ---
 
 ## Still open (decide before building the relevant phase)

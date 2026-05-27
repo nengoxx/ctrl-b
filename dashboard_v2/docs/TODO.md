@@ -1,7 +1,15 @@
 # Build plan — dashboard_v2
 
-Phased, checkbox plan from empty folder to cutover. Each phase ends in something runnable.
-Read `ARCHITECTURE.md` and `DECISIONS.md` first. Keep the old Flask server running throughout.
+Phased, checkbox plan from empty folder to cutover. **Each phase is independently shippable and
+scoped small** — it ends in something runnable you can verify before moving on; phases stack into
+the whole architecture in `ARCHITECTURE.md` (don't build ahead of the phase you're in). Read
+`ARCHITECTURE.md` and `DECISIONS.md` first. Keep the old Flask server running throughout.
+
+**Two requirements that touch every phase:**
+- **D7 — pixel-exact Vapor fidelity:** the UI is a faithful port of `vapor.html` (lift the CSS
+  verbatim; same fonts/colors/animations/components/themes). Verify side-by-side at phone width.
+- **D8 — extensible tool registry:** new tools (DNS trace, whois, …) drop in as one file. Build the
+  registry, don't hardcode utilities.
 
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
@@ -19,17 +27,25 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [ ] `config.py`: load/save `config.yaml` (reuse current shape) → typed `Settings`; secret masking.
 - [ ] `db.py`: SQLite schema (threads, messages, memory, events) + tiny versioned applier.
 - [ ] `.gitignore` for `config.yaml`, `*.db`, `node_modules`, `dist`, `__pycache__`, `.venv`.
-- [ ] Decide tracking: is `dashboard_v2/` committed to the repo? (confirm with owner before first commit.)
+- [ ] **Design foundation (D7):** extract `vapor.html`'s `<style>` into `frontend/src/theme/`
+      verbatim (the `:root`/`[data-theme]` variables, base/component CSS) as the canonical
+      stylesheet; set up `index.html` shell (JetBrains Mono + Major Mono Display fonts, favicon,
+      `viewport-fit=cover`). Everything later styles against this — don't re-derive the design.
+- [x] Tracking: `dashboard_v2/` is committed to the public repo (`main`).
 
 ## Phase 1 — Fleet read path (parity, done right)
 
 - [ ] Pydantic `Host` model; load hosts from YAML.
 - [ ] `hosts.py`: **concurrent** `asyncio.gather` ping status; per-OS ping shim.
 - [ ] `GET /api/hosts`, `GET /api/hosts/{id}/status`.
-- [ ] Frontend **Fleet** tab: port Vapor hero + device rows + expandable detail + fleet summary,
-      wired to TanStack Query polling (interval from settings). Replace mock `DEVICES` with API.
-- [ ] Theme system (`vapor`/`aqua`/`ember`), skyline toggle, bottom tab bar — ported from Vapor.
-- [ ] **Verify** on a ~390px viewport.
+- [ ] Frontend **Fleet** tab: **pixel-exact port** of the Vapor hero (sun/stripes/stars/grid +
+      skyline SVG + live waveform), device rows + expandable detail (services + kv + wake/stop
+      mask-icon buttons), fleet summary, appbar (logo lozenge + TTS toggle), bottom tab bar with
+      sliding indicator — all animations intact. Wire to TanStack Query polling (interval from
+      settings); replace mock `DEVICES` with API.
+- [ ] Theme system (`vapor`/`aqua`/`ember`) + skyline city/mountains + app-mark logo/ring + hero/
+      waveform toggles — ported from Vapor, behaving identically.
+- [ ] **Verify side-by-side against `vapor.html`** at ~390px (D7): visually indistinguishable.
 
 ## Phase 2 — Actions (typed registry + WOL/shutdown)
 
@@ -86,9 +102,14 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [ ] Conf tab: inference/STT/TTS endpoints + models + voices, server (host/port/poll/debug),
       appearance (theme/skyline/hero/waveform), prompt-file editors, memory panel.
 
-## Phase 8 — Utils
+## Phase 8 — Tool registry + Utils (extensible, D8)
 
-- [ ] Port `yt-captions` (transcript → JSON) and `ip-info` to `/api/utils/*` + Utils tab cards.
+- [ ] **Tool registry framework:** `@tool(name, title, icon, input, agent_exposed)` → auto-exposes
+      `GET /api/tools`, `POST /api/tools/{name}`, a generic Utils-tab card, and (optional) agent tool.
+- [ ] Port `yt_captions` (transcript → JSON download) and `ip_info` (lookup) as registry tools.
+- [ ] Add **`dns_trace`** as the first *new* tool — proves "add a tool = one file."
+- [ ] Generic Vapor `.util` card component (uhead glyph + field + result kv/download), driven by
+      each tool's declared input/result shape.
 
 ## Phase 9 — PWA, packaging, deploy
 

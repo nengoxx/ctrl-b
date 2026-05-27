@@ -11,7 +11,7 @@ real, typed backend.
 └─────────────────────────────────┼────────────────────────────┼──────────────────────────┘
                                    │  HTTPS (Tailscale Serve)    │
 ┌──────────────────────────────── FastAPI + Uvicorn ────────────┼──────────────────────────┐
-│  /api/hosts /services /events(SSE) /agent/chat(SSE) /voice/* /settings /prompts /utils    │
+│  /api/hosts /services /events(SSE) /agent/chat(SSE) /voice/* /settings /prompts /tools    │
 │        │                  │                    │                    │                      │
 │   Host layer         Action registry      Agent (openai)      Voice (openai)               │
 │   ping/WOL/SSH       typed + guarded-$     tools=registry      STT in / TTS out            │
@@ -39,7 +39,7 @@ real, typed backend.
   applier is enough; no ORM needed for this size.
 - `app/models/` — Pydantic schemas shared by API, registry, and agent tool-schemas.
 - `app/api/` — routers grouped by resource (hosts, services, agent, voice, settings, events,
-  utils).
+  tools).
 
 ### Host layer (`app/hosts.py`)
 
@@ -100,10 +100,33 @@ async def shutdown_host(inp: ShutdownHostInput) -> ActionResult:
 - Both are thin proxies so the browser never holds STT/TTS keys and CORS/secure-context stays
   simple (single origin).
 
-### Utils (`app/utils.py`)
+### Tools / Utils (`app/tools/`) — an extensible tool registry
 
-- Port `yt_caption` (transcript → JSON download) and `ip_info` from the old server, as
-  `/api/utils/yt-captions` and `/api/utils/ip-info`.
+Utilities are **not one-off endpoints** — they're a **pluggable tool registry** so adding a new
+tool (DNS trace, whois, port check, speedtest, …) is a small, self-contained drop-in. Mirror the
+action-registry pattern:
+
+```python
+@tool("dns_trace", title="DNS / traceroute", icon="globe",
+      input=DnsTraceInput, agent_exposed=True)
+async def dns_trace(inp: DnsTraceInput) -> ToolResult: ...
+```
+
+- Each tool = a **handler** + a Pydantic **input model** + display metadata (title, icon, desc) +
+  an `agent_exposed` flag. Registering it **auto-exposes three things from one definition**:
+  1. a REST endpoint under **`/api/tools/{name}`** (input validated by the model),
+  2. a **Utils-tab card** (the frontend renders cards generically from `GET /api/tools`),
+  3. optionally an **agent tool** (same registry feeding the agent — so the bot can "trace DNS for
+     X" or "grab captions for this video").
+- **Adding a tool = one file** (handler + input model + metadata) — no routing, no UI, no agent
+  wiring by hand. This is the "extensible with new tools easily" requirement.
+- **v1 tools (ported from the old server):** `yt_captions` (transcript → JSON download) and
+  `ip_info` (lookup). **`dns_trace`** is the first *new* tool, proving the extension path. Result
+  shapes support file downloads (captions) and key/value result panels (ip/dns) per the Vapor
+  Utils cards.
+- Tool results render in the Vapor `.util` card layout (`.uhead` glyph + `.ubody` field + `.result`
+  kv grid / download link); the frontend card component is generic over the tool's declared
+  result shape.
 
 ---
 
@@ -143,6 +166,9 @@ POST   /api/voice/tts                   { text, voice } -> audio stream
 # Settings / prompts
 GET    /api/settings  /  PUT /api/settings        (config.yaml-backed; secrets masked)
 GET    /api/prompts   /  PUT /api/prompts/{name}  (command_prompt, system_prompt, ...)
+# Tools (extensible registry — see §1 Tools/Utils)
+GET    /api/tools                       list registered tools (name, title, icon, input schema)
+POST   /api/tools/{name}                run a tool (yt_captions, ip_info, dns_trace, ...)
 ```
 
 ---
@@ -193,8 +219,27 @@ v1 ships the `none` + `file` providers behind the interface; vector slots in wit
 
 ## 5. Frontend (React PWA)
 
+> ### ⭐ HARD REQUIREMENT — pixel-exact Vapor fidelity
+> The UI must **match `ctrl-b (Vapor)/variations/vapor.html` exactly** — same look, feel, and
+> motion. This is not "inspired by"; it is a faithful port. Concretely:
+> - **Lift the CSS verbatim** from `vapor.html` (the `:root` + `[data-theme]` variable system) —
+>   don't re-derive colors/spacing/radii. Keep all three palettes (**vapor / aqua / ember**).
+> - **Fonts:** JetBrains Mono (UI/body) + Major Mono Display (display) — same weights/sizes.
+> - **All animations preserved:** hero sun bob + retrowave stripes, twinkling stars, moving neon
+>   grid, `city`/`mountains` skyline SVGs, status LED heartbeat, mini-equalizer bars, the live
+>   waveform canvas, the sliding tab-bar indicator, shimmer/glow effects.
+> - **Exact components:** appbar w/ logo lozenge + auto-TTS toggle; hero "now monitoring" panel +
+>   dots; device rows w/ expandable dropdown (services + kv details + wake/stop mask-icon buttons);
+>   fleet summary; chat bubbles incl. command bubble; `.util` tool cards; Conf rows/segments/
+>   switches; the fixed composer (textarea + mic + send) above the bottom tab bar.
+> - **Same toggles** the prototype exposes (theme, app-mark logo/ring, skyline city/mountains, hero
+>   on/off, live waveform) live in Conf → Appearance and behave identically.
+> - Verify side-by-side against the prototype at phone width before a tab is "done." Componentize
+>   into React, but the rendered result should be visually indistinguishable from `vapor.html`.
+
 - **Tabs** = Vapor's four: **Fleet** (hero + device rows w/ expandable services + fleet
-  summary), **Agent** (chat log, shares composer), **Utils** (YT captions, IP lookup), **Conf** —
+  summary), **Agent** (chat log, shares composer), **Utils** (extensible tool cards — YT captions,
+  IP lookup, DNS trace, …), **Conf** —
   organized into **functional groups** (Inference · Agent · Memory · Voice · Automations ·
   Fleet/Hosts · Server · Notifications · Appearance · Integrations) so future toggles land in
   obvious homes; full layout in `ROADMAP.md` → "Settings tab".

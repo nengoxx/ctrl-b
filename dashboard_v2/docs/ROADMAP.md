@@ -145,6 +145,15 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
 
 ---
 
+## E0. More tools (the extensible Utils registry — D8)
+
+- **What:** the Utils tab is a **tool registry** (one file per tool → endpoint + card + optional
+  agent tool; see `ARCHITECTURE.md` §1). v1 ships `yt_captions`, `ip_info`, and `dns_trace`.
+- **Easy future drop-ins:** whois, reverse-DNS / PTR, port check, ping/MTR, HTTP header inspector,
+  TLS-cert info, speedtest, subnet calculator, MAC-vendor lookup, "wake-and-open" combos. Each is a
+  handler + Pydantic input + metadata — no routing/UI/agent wiring by hand.
+- **Open:** which tools to prioritize; whether any need long-running/streaming output (reuse SSE).
+
 ## E. Alternate frontends
 
 ### E1. Discord / Telegram bots as thin clients
