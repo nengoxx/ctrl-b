@@ -225,6 +225,10 @@ POST   /api/tools/{name}                run a tool (yt_captions, ip_info, dns_tr
 
 ## 3. Data model
 
+> Summary view. The **authoritative, detailed** models (message-parts, the unified `Tool`
+> abstraction, `AgentDef`, result/event types, SQLite schema) live in **`DESIGN.md`** — where the
+> two differ, `DESIGN.md` wins (e.g. `Message` uses a typed `parts[]` list, not a flat `content`).
+
 YAML config (hosts/services/endpoints/keys/server/voice) + SQLite (chat/memory/events).
 
 ```
@@ -243,7 +247,7 @@ Settings  inference{mode, local_url, cloud_url, cloud_key*, model},
           stt{url, key*, model}, tts{url, key*, model, voice},
           searxng{url, enabled},                              # web_search tool (D9)
           mcp_servers[]{name, transport(stdio|http), command, args, env*, url, headers*, enabled},  # D9
-          agent{default_agent, privilege, streaming, memory_backend,
+          agent{default_agent, privilege, streaming, memory_backend, global_subagent_limit,
                 compaction{enabled, threshold, summarizer{mode, model}}},   # D10/D11
           agents[]{name, prompt, backend, model, tools[], skills[], privilege, memory},  # D11 (multiple/subagents)
           server{host, port, poll_seconds, debug}, appearance{theme, skyline, ...}  [YAML]

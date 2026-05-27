@@ -102,9 +102,11 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
 
 - **What:** the agent is a **definition**, and there can be **several** (the owner can add more) —
   each with its own system prompt, backend+model, allowed tools/skills, privilege level, and memory.
-  An agent can **spawn a subagent** (a `spawn_subagent` tool) to delegate a scoped task to another
-  definition with its own context + tool subset, returning a result — like Claude-Code subagents /
-  opencode's coordinator/swarm.
+  An agent can **spawn subagents** (a `spawn_subagents` tool) to delegate scoped tasks to other
+  definitions — **run concurrently** (bounded fan-out under structured concurrency) with their own
+  context + tool subset, results aggregated — like Claude-Code subagents / opencode's
+  coordinator/swarm. Concurrency nuances (semaphores, cancellation, isolation, deadlock avoidance)
+  are designed in `DESIGN.md` §5.5/§10.
 - **Design implication:** model agents as config (`agents[]` in settings; or file-based like skills),
   selectable per chat/automation; the "main" agent is just the default definition. **Orchestration
   (how subagents are spawned/coordinated) is a swappable strategy** with a sensible default — keep

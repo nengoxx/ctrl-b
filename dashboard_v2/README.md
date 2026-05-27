@@ -37,6 +37,7 @@ earlier prototypes — kept for reference, not imported or modified. The live Fl
 |---|---|
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | **Start here in a fresh session** — orientation + first action. |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Locked-in choices and the reasoning behind each. |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | Concrete code design — data structures, registries, the agent loop, persistence, concurrency, flows, edge cases, extension cookbook. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design: backend, frontend, data model, action registry, agent/voice, deployment profiles. |
 | [`docs/RESEARCH.md`](docs/RESEARCH.md) | Framework/library survey with sources and version pins. |
 | [`docs/TODO.md`](docs/TODO.md) | Phased, checkbox build plan from empty folder to cutover. |

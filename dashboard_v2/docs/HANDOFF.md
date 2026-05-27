@@ -8,9 +8,12 @@ session **starts building**. This doc is the orientation; the canonical detail i
 
 1. `DECISIONS.md` — every locked choice + reasoning, the open items, and the future-additions list.
 2. `ARCHITECTURE.md` — backend/frontend/data-model/action-registry/agent/voice/deploy design.
-3. `TODO.md` — the phased build plan. **Begin at Phase 0.**
-4. `RESEARCH.md` — library/version pins + sources (incl. the secure-context/mic analysis).
-5. `ROADMAP.md` — post-v1 features + the v1 seams to build now so they slot in.
+3. `DESIGN.md` — **concrete code design**: data structures, the unified capability/registry model,
+   the agent loop state machine, concurrency (incl. concurrent subagents), persistence, the SSE
+   wire protocol, end-to-end flows, edge cases, and the extension cookbook. Build against this.
+4. `TODO.md` — the phased build plan. **Begin at Phase 0.**
+5. `RESEARCH.md` — library/version pins + sources (incl. the secure-context/mic analysis).
+6. `ROADMAP.md` — post-v1 features + the v1 seams to build now so they slot in.
 
 The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (mobile-first
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
