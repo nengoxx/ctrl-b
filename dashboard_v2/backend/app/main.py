@@ -17,12 +17,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.api import actions, events, health, hosts, services
+from app.adapters.inference import InferenceClient
+from app.api import actions, agent, events, health, hosts, services
 from app.config import load_dotenv, load_settings
 from app.core.events import EventBus
 from app.db import Database
 from app.services.action_service import ActionService
 from app.services.actions import build_registry
+from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.deps import Deps
 from app.services.events import EventService
 from app.services.fleet import FleetService
@@ -53,6 +55,12 @@ async def lifespan(app: FastAPI):
     )
     app.state.actions = ActionService(build_registry(), deps)
 
+    # Chat stack (Phase 4a): one OpenAI-compatible client + the thread/message repos. The
+    # AgentSession is built per turn in the API from these (stateless across turns).
+    app.state.inference = InferenceClient(app.state.settings.inference)
+    app.state.threads = ThreadRepo(app.state.db)
+    app.state.messages = MessageRepo(app.state.db)
+
     try:
         yield
     finally:
@@ -67,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(services.router, prefix="/api")
     app.include_router(actions.router, prefix="/api")
     app.include_router(events.router, prefix="/api")
+    app.include_router(agent.router, prefix="/api")
 
     # Prod single-origin serving. Absent in dev (Vite owns the SPA + proxies /api here).
     if _FRONTEND_DIST.is_dir():

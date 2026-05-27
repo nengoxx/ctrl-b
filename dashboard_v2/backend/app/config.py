@@ -68,6 +68,30 @@ class ServerCfg(BaseModel):
     debug: bool = False              # off by default — debug is an RCE surface (ARCHITECTURE §7)
 
 
+class InferenceEndpointCfg(BaseModel):
+    """One OpenAI-compatible chat backend (DESIGN §7). `api_key` is optional — local llama.cpp
+    needs none (the client sends a placeholder)."""
+
+    base_url: str = ""               # e.g. http://192.168.1.137:5001/v1
+    api_key: str | None = None
+    model: str = ""                  # model id the backend loads, e.g. "minig+"
+
+
+class InferenceCfg(BaseModel):
+    """Chat inference (Phase 4). Two named backends — `local` + `cloud` — selected by
+    `default_mode`; the `/local`//`/cloud` composer prefixes (4c) switch per-message. One
+    `openai` client shape covers both (just a different base_url/key/model)."""
+
+    default_mode: str = "local"      # "local" | "cloud"
+    request_timeout_s: float = 600.0  # thinking models load slowly + stream slowly — be generous
+    system_prompt: str = ""          # optional override of the built-in default agent prompt
+    local: InferenceEndpointCfg = Field(default_factory=InferenceEndpointCfg)
+    cloud: InferenceEndpointCfg = Field(default_factory=InferenceEndpointCfg)
+
+    def endpoint(self, mode: str | None = None) -> InferenceEndpointCfg:
+        return self.local if (mode or self.default_mode) == "local" else self.cloud
+
+
 def _slug(name: str) -> str:
     """Stable id from a host name: lowercase, non-alphanumerics → '-' (DESIGN.md §2)."""
     s = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
@@ -123,6 +147,7 @@ class Settings(BaseModel):
     model_config = {"extra": "allow"}
 
     server: ServerCfg = Field(default_factory=ServerCfg)
+    inference: InferenceCfg = Field(default_factory=InferenceCfg)
     #: Keyed by host name, preserving the live `wol_server_win.py` `computers{}` shape so the
     #: owner can copy their existing config.yaml unchanged (HANDOFF — migration reference).
     computers: dict[str, ComputerCfg] = Field(default_factory=dict)

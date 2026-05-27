@@ -143,3 +143,179 @@
     opacity: 1;
   }
 }
+
+/* ── Agent chat (Phase 4a). The .b.bot/.user/.sys bubbles are vapor.css (verbatim); these are the
+   net-new bits vapor has no markup for: a thinking model's reasoning disclosure, the streaming
+   caret, and a chat-level error line. All built from vapor tokens. */
+
+/* App-shell layout (Phase 4a mobile fix). Replaces vapor's window-scroll + `position:fixed` bottom
+   bars — which broke on Android Firefox (the dynamic toolbar shrinks the visual viewport, leaving
+   the fixed bars and the body's bottom padding misaligned: colored gaps / vanishing tab icons at
+   the bottom of the chat). Here the whole app is a `100dvh` flex column: a scrolling content pane,
+   then the composer + tab bar in NORMAL FLOW at the bottom. `100dvh` tracks the toolbar, so the
+   bars are always at the visible bottom and the chat pane scrolls within — no body padding, no
+   fixed/viewport mismatch. Appearance is unchanged (D7); only the box model moves. */
+html,
+body {
+  height: 100%;
+  overflow: hidden; /* the shell owns scrolling, not the window */
+}
+#root {
+  height: 100%;
+}
+body {
+  padding-bottom: 0; /* override vapor's fixed-bar padding — bars are in-flow now */
+}
+.app-shell {
+  height: 100dvh; /* fallback before JS + on browsers without visualViewport */
+  height: var(--app-h, 100dvh); /* App sizes this to the visual viewport so the keyboard shrinks it */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.app-scroll {
+  flex: 1 1 auto;
+  min-height: 0; /* let the flex child actually shrink + scroll */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain; /* no scroll-chaining bounce that re-shows the toolbar oddly */
+}
+/* Composer + tab bar: in-flow flex children at the bottom of the shell (was position:fixed). */
+.composer,
+.tabbar {
+  position: static;
+  flex-shrink: 0;
+}
+
+/* Reasoning ("thinking") — a collapsible scratchpad above the answer. Stays after the turn ends
+   (collapsed) as a clear little dropdown chip so the chain-of-thought is never lost. */
+.b.bot .think {
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.b.bot .think > summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--accent-rgb), 0.32);
+  background: rgba(var(--accent-rgb), 0.06);
+  user-select: none;
+}
+.b.bot .think > summary::-webkit-details-marker {
+  display: none;
+}
+.b.bot .think > summary .label {
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-size: 9px;
+  color: var(--magenta);
+}
+.b.bot .think > summary .hint {
+  font-size: 8px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.b.bot .think > summary::before {
+  content: "▸";
+  color: var(--magenta);
+  font-size: 9px;
+  transition: transform 0.15s;
+}
+.b.bot .think[open] > summary::before {
+  transform: rotate(90deg);
+}
+.b.bot .think > summary:hover {
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+.b.bot .think pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--line-2);
+  background: rgba(var(--accent-rgb), 0.04);
+  border-radius: 0 6px 6px 0;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.85;
+}
+
+/* Streaming caret — a blinking block at the tail of the in-flight answer. */
+.b.bot .caret {
+  display: inline-block;
+  margin-left: 1px;
+  color: var(--magenta);
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+@keyframes caret-blink {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Chat-level error (backend unreachable, slow-load timeout). */
+.b.bot .chat-err {
+  color: var(--red);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+/* "working" tag in the who-line while the turn is crunching (cold-load / reasoning / no token yet). */
+.b.bot .who .status-tag {
+  margin-left: 2px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  color: var(--magenta);
+  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  background: rgba(var(--accent-rgb), 0.08);
+  animation: tag-pulse 1.3s ease-in-out infinite;
+}
+@keyframes tag-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Animated "…" — three bouncing dots shown while the bot is working, before any answer text. */
+.b.bot .dots {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  height: 18px;
+}
+.b.bot .dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--magenta);
+  box-shadow: var(--m-glow);
+  animation: dot-bounce 1.2s ease-in-out infinite;
+}
+.b.bot .dots i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.b.bot .dots i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@keyframes dot-bounce {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  35% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}

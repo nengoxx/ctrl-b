@@ -108,3 +108,32 @@ export interface InvokeResponse {
   result?: ToolResult;
   event?: CtrlEvent;
 }
+
+// ── Agent chat (Phase 4a). Mirror of domain/conversation.py + the SSE wire protocol (DESIGN §12). ──
+
+export type Role = "user" | "assistant" | "system" | "tool";
+
+export type Part =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "error"; message: string; retryable: boolean };
+
+export interface ChatMessage {
+  id: string;
+  thread_id: string;
+  role: Role;
+  parts: Part[];
+  actor: string;
+  ts: string;
+  tokens: number | null;
+  compacted: boolean;
+}
+
+export interface Thread {
+  id: string;
+  title: string | null;
+  agent: string | null;
+  created_at: string;
+  updated_at: string;
+  archived: boolean;
+}

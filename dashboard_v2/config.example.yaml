@@ -12,6 +12,21 @@ server:
   poll_seconds: 5        # fleet status poll cadence
   debug: false           # keep false — debug is an RCE surface
 
+# Chat inference (Phase 4). Two OpenAI-compatible backends; `default_mode` picks one (the
+# /local //cloud composer prefixes switch per-message, 4c). `local` needs no api_key (llama.cpp).
+# Thinking models cold-load slowly — keep request_timeout_s generous.
+inference:
+  default_mode: local
+  request_timeout_s: 600
+  system_prompt: ""      # optional; blank = the built-in ctrl-b assistant prompt
+  local:
+    base_url: http://192.168.1.137:5001/v1
+    model: minig+
+  cloud:
+    base_url: https://openrouter.ai/api/v1
+    api_key: sk-or-v1-...
+    model: google/gemini-2.0-flash-exp:free
+
 # The fleet, keyed by host name (the live wol_server_win.py `computers{}` shape — copy yours in).
 # Each host's stable id is a slug of its name. ssh_password is a secret: masked on API read,
 # never logged. Omit mac for hosts you won't Wake-on-LAN; omit ssh_* for ping-only hosts.

@@ -208,6 +208,25 @@ and keeps the data model faithful to DESIGN §2.
 
 ---
 
+## D13 — Agent chat: sliced build, text-first, streamed over SSE ✅ (Phase 4a)
+
+Phase 4 is **sliced into runnable steps** (4a text round-trip → 4b tools → 4c routing → 4d plan →
+4e compaction → 4f MCP); 4a ships chat with **no tools**. Adopted opencode's **message-has-parts**
+model (`domain/conversation.py`: a discriminated `Part` union) so a turn grows from text → reasoning
+→ tool calls/plans without a schema change (`messages.parts` stays one JSON column). Inference is
+**one OpenAI-compatible `AsyncOpenAI` client** with per-mode `base_url`/`key`/`model` (DESIGN §7) —
+no provider abstraction beyond that. Streaming is **SSE over a `POST`** (`POST /api/agent/chat` →
+`EventSourceResponse`; the client reads it with `fetch` + `ReadableStream`, since `EventSource`
+can't POST a body) using the DESIGN §12 event names. The turn **persists regardless of client
+disconnect** (state lives in the DB; reconnect re-reads). **Reasoning** (thinking models —
+`minig+`) is a first-class `ReasoningPart`: streamed + stored + shown **dimmed**, but **not replayed**
+into the model's next context (scratchpad, not durable content) — a small, justified addition to the
+DESIGN §4 part list. Backend default = **local llama.cpp `minig+` @ 192.168.1.137:5001** (thinking
+model, slow cold load → 600s client timeout). **Why:** smallest verifiable step first; the parts
+model + SSE contract + `ActionService` are the seams 4b–4f slot into without rework.
+
+---
+
 ## Still open (decide before building the relevant phase)
 
 - Agent tool-calling format: OpenAI `tools`/function-calling vs a lightweight JSON protocol for

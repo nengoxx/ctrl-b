@@ -103,12 +103,29 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
 ## Phase 4 — Agent chat (text first)
 
-- [ ] **First: study prior art** (`RESEARCH.md` → "Prior art for the agent/chat subsystem") —
-      opencode's loop/session/permission patterns + public Claude-Code interaction patterns. (Do
-      **not** use the leaked `claude-code` repo; use the Agent SDK + public docs.)
-- [ ] `agent.py`: `openai` client → configured backend (local llama.cpp `/v1` or cloud).
-- [ ] Threads/messages persisted in SQLite; `GET/POST /api/threads`, `GET messages`.
-- [ ] `POST /api/agent/chat` streaming over SSE.
+**Sliced (handoff): each sub-slice independently runnable.** ⭐ **4a (text round-trip) is DONE.**
+
+### 4a — chat foundation (text round-trip) ✅
+- [x] **Studied prior art** (`RESEARCH.md`) — adopted opencode's message-has-parts + the loop
+      shape + SSE-stream contract; Claude-Code patterns from public docs only.
+- [x] `adapters/inference.py` `InferenceClient`: one OpenAI-compatible `AsyncOpenAI` per mode
+      (cached), `stream_chat` yields `ChatDelta(text|reasoning)` (handles thinking-model
+      `reasoning_content`); `InferenceCfg` (local/cloud endpoints, `default_mode`, long timeout) in
+      `config.py` + `config.yaml` (local `minig+` @ `192.168.1.137:5001`).
+- [x] `domain/conversation.py` (Thread + Message + Part union: text/reasoning/error) +
+      `services/conversation.py` (Thread/Message repos, parts as JSON). `GET/POST /api/threads`,
+      `GET /api/threads/{id}/messages`.
+- [x] `services/agent/session.py` `AgentSession.run_turn` (text-only loop) → `POST /api/agent/chat`
+      streaming over SSE (`thread`/`message.start`/`reasoning.delta`/`text.delta`/`message.end`/
+      `error`/`done`, DESIGN §12).
+- [x] Frontend: `store/chat.ts` (dep-free streaming store + fetch-ReadableStream SSE parser),
+      Agent tab renders Vapor bubbles (sys/user/bot) + dimmed reasoning disclosure + streaming
+      caret, shared composer `send` → chat (+ jump to Agent tab).
+- [x] **Verify:** `compileall` + `TestClient` (threads CRUD, SSE event order, reasoning+text
+      persisted, error path) all pass; **live round-trip against `minig+`** works (14 `text.delta`
+      over SSE, clean answer, persisted); `tsc -b` + `vite build` clean; Agent tab reviewed @390px.
+
+### 4b+ — tools, routing, plan, compaction, MCP (next)
 - [ ] **Aggregated toolset** → OpenAI `tools`: action registry + `agent_exposed` tools + MCP tools
       (namespaced). high-risk/confirm actions → **command/action bubble** (execute/edit/dismiss),
       low-risk configurable to auto-run.
