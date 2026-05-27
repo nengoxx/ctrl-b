@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import { fillComposer } from "../lib/composer";
+import { Markdown } from "../lib/markdown";
 import { initChat, resumeCall, useChat } from "../store/chat";
 import type { ChatMessage, Part, ToolCallPart, ToolResult } from "../types";
 
@@ -30,15 +32,6 @@ function callLine(call: ToolCallPart): string {
     .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
     .join(" ");
   return args ? `${call.tool} ${args}` : call.tool;
-}
-
-/** Drop a string into the shared composer (mirrors Vapor's editCmd — composer is uncontrolled). */
-function fillComposer(text: string) {
-  const ta = document.getElementById("cmd-input") as HTMLTextAreaElement | null;
-  if (!ta) return;
-  ta.value = text;
-  ta.dispatchEvent(new Event("input", { bubbles: true }));
-  ta.focus();
 }
 
 function CmdBubble({
@@ -151,8 +144,8 @@ function Bubbles({
                 <i />
               </span>
             ) : (
-              <span>
-                {text}
+              <span className="md">
+                <Markdown text={text} />
                 {streaming && text && <span className="caret">▍</span>}
               </span>
             )}

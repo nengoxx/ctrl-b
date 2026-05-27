@@ -155,9 +155,14 @@ tools + confirm bubbles) are DONE.**
 - [ ] **SearXNG `web_search` tool (D9):** hits the configured local SearXNG `format=json`.
 - [ ] **Embeddings client (D9):** wire the configured llama.cpp `/v1/embeddings` (powers the vector
       `MemoryProvider` when that lands).
-- [ ] Composer prefix routing: `!` (configurable sigil) → guarded exec, `/` → slash commands
-      (incl. `/local`,`/cloud` for backend), else → agent. Markdown rendering of bot replies +
-      copy / send-to-composer on code blocks (generalize Vapor `editCmd`/`cmdInto`).
+- [x] **Composer prefix routing (4c):** `!` (configurable sigil, const in `lib/composer.ts`) →
+      guarded exec — **routed + Phase-5-stubbed** (echoes the intent + a "not wired yet" note, no
+      fake exec); `/` → slash commands (`/local`,`/cloud` force the backend per-message *or* set a
+      sticky session mode when bare; `/clear` new thread; `/help`), else → agent. Per-message `mode`
+      plumbed `ChatRequest.mode` (sanitized to local|cloud) → `run_turn` → `_drive` → `stream_chat`.
+      **Markdown** bot replies via a hand-rolled dep-free `lib/markdown.tsx` (headings/lists/quote/
+      hr/bold/italic/inline+fenced code/links) — fenced blocks get **copy + send-to-composer**
+      (generalizes Vapor `editCmd`/`cmdInto`). Net-new `.md` CSS in `extras.css` (vapor.css verbatim).
 - [ ] **`task_plan` built-in tool (D10):** agent maintains a per-thread plan/task list (steps +
       status); render as a `plan` message-kind panel in chat. Extensible — more agent tools = one file.
 - [ ] **Context compaction (D10/D11):** summarize older turns into the working context near the

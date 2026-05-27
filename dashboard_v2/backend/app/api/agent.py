@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sse_starlette.sse import EventSourceResponse
 
 from app.domain.conversation import Thread
@@ -27,6 +27,13 @@ class ChatRequest(BaseModel):
     text: str = Field(min_length=1)
     thread_id: str | None = None
     mode: str | None = None  # "local" | "cloud"; None → configured default (4c switches per-msg)
+
+    @field_validator("mode")
+    @classmethod
+    def _known_mode(cls, v: str | None) -> str | None:
+        # InferenceCfg.endpoint() treats any non-"local" string as "cloud"; reject junk so a typo'd
+        # mode falls back to the configured default instead of silently routing to cloud.
+        return v if v in ("local", "cloud") else None
 
 
 class ResumeRequest(BaseModel):
@@ -76,7 +83,7 @@ async def chat(body: ChatRequest, request: Request) -> EventSourceResponse:
     async def gen() -> AsyncIterator[dict[str, Any]]:
         # Tell the client the thread id first (it may have just been created).
         yield {"event": "thread", "data": json.dumps({"threadId": thread.id, "title": thread.title})}
-        async for ev in session.run_turn(thread, body.text):
+        async for ev in session.run_turn(thread, body.text, mode=body.mode):
             yield {"event": ev.event, "data": json.dumps(ev.data)}
 
     return EventSourceResponse(gen())

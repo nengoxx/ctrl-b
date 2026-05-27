@@ -1,11 +1,12 @@
 import { useRef, useState, type KeyboardEvent } from "react";
 
-import { sendMessage, useChat } from "../store/chat";
-import { setUI } from "../store/ui";
+import { runComposer } from "../lib/composer";
+import { useChat } from "../store/chat";
 
 // Shared composer (fleet + agent tabs). Ported from vapor.html: auto-growing textarea, an
-// embedded mic toggle, and the send button. Phase 4a wires send → the agent chat (and jumps to the
-// Agent tab). Prefix routing ($/!/slash, /local //cloud) lands in 4c; STT in 6 — mic stays local.
+// embedded mic toggle, and the send button. Submits route through runComposer (Phase 4c): `!<cmd>`
+// → guarded shell (Phase-5 stub), `/<verb>` → slash commands (incl. /local //cloud), else → agent;
+// every route jumps to the Agent tab. STT lands in Phase 6 — the mic stays a local toggle for now.
 // Lives in normal flow at the bottom of the app-shell (App), so no bottom-padding bookkeeping.
 
 export function Composer() {
@@ -27,8 +28,7 @@ export function Composer() {
     if (!ta) return;
     const text = ta.value.trim();
     if (!text || status === "streaming") return;
-    setUI({ tab: "agent" }); // route to chat (4c adds $/! prefix routing)
-    void sendMessage(text);
+    runComposer(text); // routes by prefix: !shell · /slash · else agent (lib/composer)
     ta.value = "";
     autoSize();
   }

@@ -199,13 +199,17 @@ class AgentSession:
                     out.append({"role": m.role, "content": text})
         return out
 
-    async def run_turn(self, thread: Thread, user_text: str) -> AsyncIterator[AgentEvent]:
-        """Persist the user message, then drive the loop. Yields SSE events."""
+    async def run_turn(
+        self, thread: Thread, user_text: str, *, mode: str | None = None
+    ) -> AsyncIterator[AgentEvent]:
+        """Persist the user message, then drive the loop. Yields SSE events. `mode` (`local`/`cloud`,
+        from the `/local`//`/cloud` composer prefixes, 4c) forces the inference backend for this turn;
+        `None` uses the configured `default_mode`."""
         user_msg = Message(
             thread_id=thread.id, role="user", actor=Actor.USER, parts=[TextPart(text=user_text)]
         )
         await self._messages.add(user_msg)
-        async for ev in self._drive(thread):
+        async for ev in self._drive(thread, mode=mode):
             yield ev
 
     async def resume(
@@ -237,11 +241,15 @@ class AgentSession:
         self,
         thread: Thread,
         *,
+        mode: str | None = None,
         resume_assistant: Message | None = None,
         resume_tokens: dict[str, str | None] | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """The loop state machine (DESIGN §5.2). On resume, first finish the suspended step; then
-        run model iterations until text-only / suspended / capped."""
+        run model iterations until text-only / suspended / capped. `mode` forces the inference
+        backend for this turn (4c); resume uses the configured default (no per-message mode is
+        carried across the confirm round-trip — a minor inconsistency only if the summary model
+        differs from the turn's)."""
         if resume_assistant is not None:
             events, suspended = await self._run_calls(thread, resume_assistant, resume_tokens or {})
             for ev in events:
@@ -259,7 +267,9 @@ class AgentSession:
             text_buf: list[str] = []
             reqs = []
             try:
-                async for delta in self._inference.stream_chat(messages, tools=self._tools()):
+                async for delta in self._inference.stream_chat(
+                    messages, mode=mode, tools=self._tools()
+                ):
                     if delta.reasoning:
                         reasoning_buf.append(delta.reasoning)
                         yield AgentEvent(

@@ -24,6 +24,15 @@ const listeners = new Set<() => void>();
 // Confirm tokens from `tool.permission`, keyed by callId — sent back on resume(execute).
 const confirmTokens: Record<string, string> = {};
 
+// Sticky inference backend for this session, set by a bare `/local`//`/cloud` (4c). `null` → the
+// server's configured default. A `/cloud <msg>` form forces one message via sendMessage's `mode`
+// arg without touching this. Module-level (not reactive) — no UI reflects it yet.
+export type ChatMode = "local" | "cloud";
+let sessionMode: ChatMode | null = null;
+export function setSessionMode(mode: ChatMode | null): void {
+  sessionMode = mode;
+}
+
 function set(next: Partial<ChatState>) {
   state = { ...state, ...next };
   for (const l of listeners) l();
@@ -46,6 +55,9 @@ export function useChat(): ChatState {
 export async function initChat(): Promise<void> {
   if (loaded) return;
   loaded = true;
+  // Don't clobber a session already in flight (e.g. local-only /help notes or a send that beat the
+  // first Agent-tab mount) — only hydrate history into an empty log.
+  if (state.messages.length || state.threadId) return;
   try {
     const threads = (await (await fetch("/api/threads")).json()) as Thread[];
     if (!threads.length) return;
@@ -55,6 +67,38 @@ export async function initChat(): Promise<void> {
   } catch {
     /* offline / empty — start fresh; the first send creates a thread */
   }
+}
+
+/** Append a client-only message (system note or shell echo) — not persisted; gone on reload. Used
+ *  by the composer router for `/help`, mode-switch notes, and the Phase-5 shell stub (lib/composer). */
+function pushLocal(role: "system" | "user", text: string): void {
+  set({
+    messages: [
+      ...state.messages,
+      {
+        id: `${role[0]}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        thread_id: state.threadId ?? "",
+        role,
+        parts: [{ type: "text", text }],
+        actor: role === "user" ? "user" : "system",
+        ts: new Date().toISOString(),
+        tokens: null,
+        compacted: false,
+      },
+    ],
+  });
+}
+export function pushSystemNote(text: string): void {
+  pushLocal("system", text);
+}
+export function pushUserEcho(text: string): void {
+  pushLocal("user", text);
+}
+
+/** `/clear`: drop back to a fresh, thread-less view. History stays in SQLite; the next send mints a
+ *  new thread (the server creates one when `thread_id` is null). */
+export function startNewThread(): void {
+  set({ threadId: null, messages: [], status: "idle", streamingId: null });
 }
 
 function emptyAssistant(id: string): ChatMessage {
@@ -249,9 +293,11 @@ async function streamTurn(
  * placeholder (instant "…" feedback through the slow cold-load), then reduces the SSE turn — which
  * may run tools, suspend on a confirm bubble, or just answer.
  */
-export async function sendMessage(text: string): Promise<void> {
+export async function sendMessage(text: string, opts?: { mode?: ChatMode }): Promise<void> {
   const body = text.trim();
   if (!body || state.status === "streaming") return;
+  // Per-message `/cloud <msg>` wins; else the sticky session mode; else the server default (null).
+  const mode = opts?.mode ?? sessionMode ?? null;
 
   const tempUser: ChatMessage = {
     id: `local-${Date.now()}`,
@@ -270,7 +316,11 @@ export async function sendMessage(text: string): Promise<void> {
     streamingId: placeholderId,
   });
 
-  await streamTurn("/api/agent/chat", { text: body, thread_id: state.threadId }, placeholderId);
+  await streamTurn(
+    "/api/agent/chat",
+    { text: body, thread_id: state.threadId, mode },
+    placeholderId,
+  );
 }
 
 /** Resolve a suspended tool call (the command bubble's execute/dismiss) and continue the turn. */

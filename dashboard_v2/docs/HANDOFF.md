@@ -1,16 +1,17 @@
 # Handoff — start here for a fresh session
 
-**Purpose:** **Phases 0–3, Phase 4a (text round-trip), and now Phase 4b (agent tools + confirm
-bubbles) are done** — the Vapor Fleet tab drives real fleet/action/service typed-actions, and the
-**Agent tab is a live tool-using chat**: the model sees the action registry as OpenAI `tools`,
-the loop runs ALLOW calls through the existing `ActionService` and **suspends on a confirm-gated
-call** (med/high risk) rendering a Vapor `.b.cmd` **command bubble** with execute/dismiss — resume
-re-opens the stream and continues. (Phase 4a's streaming text + dimmed thinking-model reasoning is
-unchanged underneath.) The next session continues **Phase 4c — composer prefix routing**
-(`!`/`/`, `/local`//`/cloud`) + markdown bot replies. Then 4d `task_plan` · 4e compaction · 4f
-MCP/SearXNG/embeddings — each a runnable slice (don't build it all at once). This doc is the
-orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor fidelity
-mandate (D7) still governs every new component.**
+**Purpose:** **Phases 0–3, Phase 4a (text round-trip), Phase 4b (agent tools + confirm bubbles),
+and now Phase 4c (composer prefix routing + markdown) are done** — the Vapor Fleet tab drives real
+fleet/action/service typed-actions, and the **Agent tab is a live tool-using chat**: the model sees
+the action registry as OpenAI `tools`, the loop runs ALLOW calls through the existing `ActionService`
+and **suspends on a confirm-gated call** (med/high risk) rendering a Vapor `.b.cmd` **command bubble**
+with execute/dismiss — resume re-opens the stream and continues. **4c** added the shared composer's
+**prefix routing** (`!`→guarded shell [Phase-5 stub] · `/`→slash incl. `/local`//`/cloud` · else→agent),
+per-message inference-mode switching, and **markdown bot replies** (hand-rolled, dep-free) with copy +
+send-to-composer on code blocks. The next session continues **Phase 4d — `task_plan` builtin + plan
+panel**, then 4e compaction · 4f MCP/SearXNG/embeddings — each a runnable slice (don't build it all at
+once). This doc is the orientation; canonical detail is in the other `docs/` files. **The pixel-exact
+Vapor fidelity mandate (D7) still governs every new component.**
 
 > ## ⭐ The standing Vapor-fidelity mandate (D7) — applies to every phase
 > The owner's priority is a **faithful, pixel-exact execution of `vapor.html`** — not "inspired by."
@@ -49,10 +50,41 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (what Phase 4b left you)
+## Current state (what Phase 4c left you)
 
 Phases 0–3 **and Phase 4a are on `origin/main`** (Phase 4a = commit `f9e9965`). **Phase 4b is
-committed to `main` as `6c2d181`** (local; push with `git push` if not already). Start 4c next.
+committed to `main` as `6c2d181`**. **Phase 4c is in the working tree, NOT yet committed** — review
++ commit it, then start 4d.
+
+⭐ NEW in Phase 4c (`backend/app/`):
+```
+  api/agent.py                 # ⭐ ChatRequest.mode validator (junk→None, else local|cloud) + run_turn(mode=)
+  services/agent/session.py    #   run_turn/_drive take `mode`; forwarded to stream_chat (resume uses default)
+```
+⭐ NEW in Phase 4c (`frontend/src/`):
+```
+  lib/composer.ts              # ⭐ runComposer prefix router (!shell stub · /slash · else agent) + shared fillComposer
+  lib/markdown.tsx             # ⭐ hand-rolled dep-free markdown→React + CodeBlock (copy + send-to-composer)
+  store/chat.ts                #   sendMessage(text,{mode}) + sticky sessionMode; pushSystemNote/pushUserEcho;
+                               #     startNewThread (/clear); initChat no longer clobbers local-only notes
+  components/Composer.tsx      #   send → runComposer (was sendMessage+setUI)
+  tabs/AgentTab.tsx            #   bot text rendered via <Markdown>; fillComposer now imported from lib/composer
+  theme/extras.css             # ⭐ net-new `.md` block/inline + `.md-code` bar styles (vapor tokens; vapor.css verbatim)
+```
+**Routing grammar** (the agreed v2 shape, ARCHITECTURE §Composer): `!<cmd>` → guarded shell — the
+sigil is `!` (the *only* command prefix, no `$`/`>`), a const in `lib/composer.ts`, configurable in
+Conf later (Phase 7); Phase 5 wires the real `run_shell`, so 4c **stubs** it (echo + "not wired"
+note). `/local`//`/cloud` with a message force the backend for that one message; **bare** they set a
+sticky `sessionMode` (module var in `store/chat.ts`) until changed. `/clear` → fresh thread (history
+stays in SQLite; next send mints a new one). `/help` lists commands. `mode` rides `ChatRequest.mode`
+→ `stream_chat(mode=…)`. **Markdown is React-node output (never innerHTML)** so it's XSS-safe by
+construction; links are scheme-allowlisted (http/https/mailto only). Streams fine — re-parsing the
+short text each token is cheap and a half-typed ``` fence still renders.
+
+> **Cloud isn't configured** (only `local`), so `/cloud …` will error until a cloud endpoint lands
+> in `config.yaml` — that's expected, not a 4c bug. **Resume runs on the default mode** (the
+> per-message mode isn't carried across the confirm round-trip — only matters if the summary model
+> would differ; acceptable for now).
 
 **Runtime extras landed alongside 4b (same commit):**
 - **Fleet roster injection** (`session._roster`): each turn the agent gets an id↔name map of hosts +
@@ -251,6 +283,15 @@ fallback" follow-up). The confirm bubble UX wasn't reviewed @390px against `vapo
 to do the side-by-side** (the `.b.cmd` shell is verbatim vapor, so it should match; the net-new
 outcome line is the only new pixels).
 
+**Verified (Phase 4c):** backend `compileall` clean; frontend `tsc -b` + `vite build` clean. A
+stubbed-inference script confirmed `ChatRequest.mode` sanitizes (`local`/`cloud` kept, junk→`None`,
+absent→`None`) and that `run_turn(mode="cloud")` forwards `mode` to `stream_chat` (turn → `completed`).
+Backend relaunched on 5433 with the new code; health OK direct + via the Vite proxy (5190). **Not
+yet eyeballed live:** the markdown rendering @390px against a real bot reply, the slash UX, and the
+shell stub — **owner to do the side-by-side** (markdown CSS is net-new `.md` from vapor tokens; the
+`.md-code` bar reuses the `.b.cmd` palette). Cloud-mode switching is plumbed but cloud is
+unconfigured (see note above).
+
 **Phase 3 stays verified** (committed `2675f82`): service actions register with right risk/confirm,
 `GET /api/services` derives port-probe status + url/controls, confirm dance + audit trail all
 checked; owner has g5/emma services declared in `config.yaml` and the `.svc-row` reviewed @390px.
@@ -341,27 +382,25 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — Phase 4c (composer prefix routing)
+## First action — commit Phase 4c, then Phase 4d (`task_plan` + plan panel)
 
-Phase 4b is committed + verified (compileall + TestClient + frontend build). Optional 4b
-follow-ups, none blocking 4c:
-- **Eyeball it live against `minig+`**: send a fleet question and confirm the model actually emits
-  tool calls and the bubble streams in; trigger a `shutdown_host`/`stop_service` to see the confirm
-  bubble + resume round-trip. If the local thinking model's native tool-calling is unreliable, that's
-  the **capability fallback** item (prompted-JSON → same `ToolCallPart` path; TODO 4b).
-- **Side-by-side @390px** of the `.b.cmd` command bubble vs `vapor.html` (D7) — owner's call.
+Phase 4c is in the working tree (compileall + frontend build + mode-plumb script all clean) but
+**uncommitted** — review the diff and commit it first (footer per `CLAUDE.md`). Optional 4b/4c
+follow-ups, none blocking 4d:
+- **Eyeball 4b+4c live against `minig+`**: send a fleet question — confirm the model emits tool
+  calls, the `.b.cmd` bubble streams in, and a `shutdown_host`/`stop_service` shows the confirm bubble
+  + resume round-trip. Confirm a prose reply renders as **markdown** and a fenced code block shows the
+  copy/edit bar. If the thinking model's native tool-calling is unreliable, that's the **capability
+  fallback** item (prompted-JSON → same `ToolCallPart` path; TODO 4c).
+- **Side-by-side @390px** of the markdown bubble + `.md-code` bar vs the Vapor look (D7) — owner's call.
 - Cloud mode + the SSH service/shutdown path are still untested against a real host (shared one SSH path).
 
-Open `TODO.md` → **Phase 4 → 4c+**:
-1. **Composer prefix routing:** `!<cmd>` (configurable sigil) → guarded shell (Phase 5 wires the
-   actual exec; for now route/stub), `/<cmd>` → slash commands incl. `/local`//`/cloud` (switch the
-   per-message `mode` already plumbed through `ChatRequest.mode` → `stream_chat(mode=…)`), else →
-   agent. Generalize Vapor's `editCmd`/`cmdInto` (the AgentTab `fillComposer` is a start).
-2. **Markdown bot replies** + copy / send-to-composer on code blocks (the bubbles render plain text
-   today). Keep it within the Vapor bubble look.
-3. Then **4d** `task_plan` builtin + plan panel, **4e** compaction (selectable summarizer), **4f**
-   MCP + SearXNG + embeddings (D9). Keep agents/skills/orchestration behind swappable strategies (D11).
-   Each sub-slice stays runnable — don't build all of 4c–4f at once.
+Open `TODO.md` → **Phase 4 → 4c+** (the routing/markdown bullet is now `[x]`). Next runnable slices:
+1. **`task_plan` built-in tool (4d):** the agent maintains a per-thread plan/task list (steps +
+   status); render it as a `plan` message-kind panel in chat. Extensible — a new agent tool stays one
+   file. (Capability fallback for weak local tool-calling can fold in here if `minig+` needs it.)
+2. Then **4e** compaction (selectable summarizer), **4f** MCP + SearXNG + embeddings (D9). Keep
+   agents/skills/orchestration behind swappable strategies (D11). Each sub-slice stays runnable.
 
 **Resume protocol (4b, for reference):** the confirm bubble's execute/dismiss POSTs
 `/api/agent/resume {thread_id, call_id, decision, confirm_token}` and consumes a **fresh SSE stream**
