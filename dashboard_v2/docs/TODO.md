@@ -66,6 +66,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
 ## Phase 4 — Agent chat (text first)
 
+- [ ] **First: study prior art** (`RESEARCH.md` → "Prior art for the agent/chat subsystem") —
+      opencode's loop/session/permission patterns + public Claude-Code interaction patterns. (Do
+      **not** use the leaked `claude-code` repo; use the Agent SDK + public docs.)
 - [ ] `agent.py`: `openai` client → configured backend (local llama.cpp `/v1` or cloud).
 - [ ] Threads/messages persisted in SQLite; `GET/POST /api/threads`, `GET messages`.
 - [ ] `POST /api/agent/chat` streaming over SSE.

@@ -72,6 +72,11 @@ async def shutdown_host(inp: ShutdownHostInput) -> ActionResult:
 
 ### Agent (`app/agent.py`)
 
+> **Prior art:** this subsystem is large enough to be its own project — before building it, study
+> `RESEARCH.md` → "Prior art for the agent/chat subsystem" (opencode's session/loop/permission
+> patterns + public Claude-Code interaction patterns via the Agent SDK; the leaked `claude-code`
+> repo is intentionally excluded).
+
 - Uses the `openai` SDK against the configured backend (`local` = llama.cpp `llama-server`
   `/v1`, or `cloud` = OpenRouter et al.). **Supports both streaming (SSE) and buffered (single
   JSON) responses** from day one — a `streaming: auto|on|off` setting + graceful fallback when a

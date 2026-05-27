@@ -144,6 +144,42 @@ Conf tab.
 - **SearXNG:** the owner runs a local instance — a built-in `web_search` tool hits its
   `format=json` API (configurable URL); optionally consume a SearXNG MCP server instead.
 
+### Prior art for the agent/chat subsystem (study before Phase 4)
+
+The chat+agent subsystem is large enough to be its own project — survey proven designs first.
+
+- **opencode (`sst/opencode`) — primary reference (open source).** Patterns that map onto our plan:
+  - **Client-server + SSE streaming**; the server owns the session, clients (TUI/desktop/web)
+    attach → our FastAPI + SSE + PWA split. Bonus: **sessions survive client disconnect** (great
+    for headless automations, A3).
+  - **SQLite session persistence** with a **message-has-parts** shape (text / tool-call /
+    tool-result) + **context-compaction** → adopt for our threads/messages + typed message kinds +
+    rolling-summary memory.
+  - **Agent loop** `SessionPrompt.loop()`: resolve provider → iterate { detect tool calls → execute
+    via permission gate → persist → stream } until done/max-iters → the concrete shape for our
+    turn-based loop.
+  - **Permission-gated tools** (declare none/interactive/explicit; checked before execute; approval
+    prompt **rides in the SSE stream**) → exactly our action-`risk` + privilege levels (A1) +
+    confirm bubbles. Steal the approval-in-stream idea.
+  - **Tools = built-ins + plugins + skills + MCP** → our tool registry (D8) + MCP client (D9).
+  - **Provider abstraction** over 75+ models (wraps an AI SDK) → we need far less: all backends are
+    OpenAI-compatible, so one `openai` client + base-url switching. Keep the lesson (normalize
+    behind one interface), skip the complexity.
+- **Claude-Code-style patterns — from PUBLIC sources, not the leaked repo.** ⚠️ The repo
+  `github.com/yasasbanukaofficial/claude-code` presents itself as **leaked/reverse-engineered
+  proprietary Anthropic source** (npm sourcemaps). **We deliberately do not use it** — unlicensed
+  proprietary code; mining it for design is an IP/ethics problem. Legitimate substitutes cover the
+  same ground: Anthropic's **public Claude Code docs** + the **Claude Agent SDK**, and the
+  publicly-documented patterns worth emulating — **permission modes** (≈ privilege ladder, A1),
+  **slash commands** (A4), **tool-use loop**, **plan mode** (≈ draft-and-confirm bubbles, A2),
+  **subagents**, **hooks**, **MCP** (D9), **file-based memory** (`CLAUDE.md`/`MEMORY.md` ≈ file
+  MemoryProvider, B1).
+- **Other open agents (skim for breadth):** Aider, Goose (Block), Cline / Continue — for tool
+  schemas, approval UX, and session/memory handling.
+- **Net:** our spec already matches opencode's proven shape. Before Phase 4, lift concrete details
+  from opencode (message-parts model, loop structure, approval-in-stream), apply Claude-Code
+  interaction patterns from public docs, and keep the provider layer thin (OpenAI-compatible only).
+
 ---
 
 ## Cross-OS / deployment
@@ -177,6 +213,8 @@ Conf tab.
 - Model Context Protocol — transports (stdio + Streamable HTTP): <https://modelcontextprotocol.io/docs/concepts/transports>
 - MCP Python SDK (client): <https://github.com/modelcontextprotocol/python-sdk>
 - SearXNG search API (`format=json`): <https://docs.searxng.org/dev/search_api.html>
+- opencode (agent/chat subsystem reference) — repo: <https://github.com/sst/opencode> · architecture: <https://deepwiki.com/sst/opencode>
+- Claude Agent SDK (legitimate Claude-style agent building): <https://docs.claude.com/en/api/agent-sdk/overview>
 - Tailscale enabling HTTPS / cert provisioning: <https://tailscale.com/docs/how-to/set-up-https-certificates>
 - Tailscale Funnel (public exposure — the thing we do NOT enable): <https://tailscale.com/docs/features/tailscale-funnel>
 - Chromium: deprecating powerful features on insecure origins (why the flag route is dead on Android): <https://www.chromium.org/Home/chromium-security/deprecating-powerful-features-on-insecure-origins/>
