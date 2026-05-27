@@ -12,8 +12,8 @@ turns it into a clean SSE `error` event + an `ErrorPart`, never a stack trace to
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import AsyncIterator
+from dataclasses import dataclass, field
+from typing import Any, AsyncIterator
 
 from openai import AsyncOpenAI
 
@@ -28,11 +28,25 @@ class InferenceError(RuntimeError):
 
 
 @dataclass
+class ToolCallRequest:
+    """One completed tool call the model asked for. `arguments` is the raw JSON string the model
+    emitted — parsed + validated against the tool's `input_model` by the session (a malformed
+    blob becomes an error result fed back, never a crash)."""
+
+    id: str
+    name: str
+    arguments: str = ""
+
+
+@dataclass
 class ChatDelta:
-    """One streamed increment. Exactly one field is non-empty per delta."""
+    """One streamed increment. `text`/`reasoning` are per-token; `tool_calls` is the terminal
+    delta carrying the fully-accumulated calls once the stream finishes (OpenAI streams them as
+    index-keyed fragments, reassembled here)."""
 
     text: str = ""
     reasoning: str = ""
+    tool_calls: list[ToolCallRequest] = field(default_factory=list)
 
 
 class InferenceClient:
@@ -58,20 +72,31 @@ class InferenceClient:
         return self._cfg.endpoint(mode).model
 
     async def stream_chat(
-        self, messages: list[dict], *, mode: str | None = None
+        self,
+        messages: list[dict],
+        *,
+        mode: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[ChatDelta]:
-        """Stream a chat completion. `messages` is OpenAI shape ({role, content}).
+        """Stream a chat completion. `messages` is OpenAI shape; `tools` is the optional function
+        toolset (the agent loop passes `registry.to_openai_tools(...)`).
 
-        Yields `ChatDelta`s as tokens arrive. Raises `InferenceError` on any backend failure.
+        Yields per-token `text`/`reasoning` deltas live. Tool calls arrive as index-keyed
+        fragments, reassembled here and emitted as one terminal `ChatDelta(tool_calls=[...])`
+        after the stream ends. Raises `InferenceError` on any backend failure.
         """
         ep = self._cfg.endpoint(mode)
         client = self._client(ep)
         if not ep.model:
             raise InferenceError(f"no model configured for mode '{mode or self._cfg.default_mode}'")
+        kwargs: dict[str, Any] = {"model": ep.model, "messages": messages, "stream": True}
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+        # Accumulate tool-call fragments by their stream index; merge id/name/arguments deltas.
+        pending: dict[int, dict[str, str]] = {}
         try:
-            stream = await client.chat.completions.create(
-                model=ep.model, messages=messages, stream=True
-            )
+            stream = await client.chat.completions.create(**kwargs)
             async for chunk in stream:
                 if not chunk.choices:
                     continue
@@ -89,6 +114,23 @@ class InferenceClient:
                     yield ChatDelta(reasoning=reasoning)
                 if delta.content:
                     yield ChatDelta(text=delta.content)
+                for tc in delta.tool_calls or []:
+                    slot = pending.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+                    if tc.id:
+                        slot["id"] = tc.id
+                    if tc.function and tc.function.name:
+                        slot["name"] = tc.function.name
+                    if tc.function and tc.function.arguments:
+                        slot["arguments"] += tc.function.arguments
+            if pending:
+                yield ChatDelta(
+                    tool_calls=[
+                        ToolCallRequest(
+                            id=slot["id"], name=slot["name"], arguments=slot["arguments"]
+                        )
+                        for _, slot in sorted(pending.items())
+                    ]
+                )
         except InferenceError:
             raise
         except Exception as exc:  # noqa: BLE001 — normalize any SDK/transport error

@@ -32,7 +32,11 @@ def run_command(
     password: str,
     command: str,
     timeout: float = 10.0,
+    stdin_data: str | None = None,
 ) -> SshResult:
+    """Run `command` over SSH. `stdin_data`, when set, is written to the command's stdin then the
+    write side is closed — used to feed a password to `sudo -S` (no TTY on an exec channel). It's
+    treated as a secret: never logged, scrubbed from output by the caller's `redact`."""
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     try:
@@ -45,7 +49,14 @@ def run_command(
             allow_agent=False,
             look_for_keys=False,
         )
-        _, stdout, stderr = client.exec_command(command, timeout=timeout)
+        stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+        if stdin_data is not None:
+            try:
+                stdin.write(stdin_data if stdin_data.endswith("\n") else stdin_data + "\n")
+                stdin.flush()
+                stdin.channel.shutdown_write()
+            except OSError:
+                pass  # channel already closing (e.g. the command exited fast) — read what we got
         out = stdout.read().decode(errors="replace")
         err = stderr.read().decode(errors="replace")
         return SshResult(ok=True, stdout=out, stderr=err)

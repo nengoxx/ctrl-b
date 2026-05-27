@@ -105,6 +105,27 @@ class ToolRegistry:
     def ui_tools(self) -> list[Tool]:
         return [t for t in self._tools.values() if t.spec.ui_exposed]
 
+    def agent_tools(self) -> list[Tool]:
+        """The subset the agent may call (Phase 4). An `AgentDef` allowlist narrows this further
+        in 4.5; for now it's every `agent_exposed` tool."""
+        return [t for t in self._tools.values() if t.spec.agent_exposed]
+
+    def to_openai_tools(self, tools: list[Tool] | None = None) -> list[dict[str, Any]]:
+        """Render tools as OpenAI `tools` function defs (the input model → JSON Schema). Defaults
+        to `agent_tools()`. The model picks by `name`/`description`; we validate args on the way
+        back through each tool's `input_model`, so a hallucinated arg shape fails cleanly."""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": t.spec.name,
+                    "description": t.spec.description or t.spec.title,
+                    "parameters": t.spec.input_model.model_json_schema(),
+                },
+            }
+            for t in (tools if tools is not None else self.agent_tools())
+        ]
+
 
 #: The default registry built-in actions register into at import time. main.py imports the
 #: action modules (triggering registration) and reads this — see services/actions/__init__.py.

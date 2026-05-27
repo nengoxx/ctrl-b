@@ -16,12 +16,25 @@ from app.domain.enums import OSType, Risk, RunState
 from app.domain.result import ToolResult
 from app.services.actions._common import HostTargetInput
 
-#: Per-OS shutdown command — matches the live `wol_server_win.py` for Windows/Linux.
+#: Per-OS shutdown command. Windows mirrors the live `wol_server_win.py`. POSIX uses `sudo -S`
+#: (read the password from stdin, `-p ''` silences the prompt) because an SSH exec channel has no
+#: TTY for an interactive sudo prompt — the SSH password is fed in as the sudo password.
 _SHUTDOWN_CMD: dict[OSType, str] = {
     OSType.WINDOWS: "shutdown /s /f /t 0",
-    OSType.LINUX: "sudo shutdown now",
-    OSType.MACOS: "sudo shutdown -h now",
+    OSType.LINUX: "sudo -S -p '' shutdown now",
+    OSType.MACOS: "sudo -S -p '' shutdown -h now",
 }
+
+#: Markers that mean sudo never ran the command (auth/TTY problem) — so a clean connect isn't
+#: success. Lowercased substring match against the captured output.
+_SUDO_FAILED = (
+    "incorrect password",
+    "sorry, try again",
+    "a terminal is required",
+    "interactive authentication is required",
+    "authentication failure",
+    "is not in the sudoers",
+)
 
 
 @action("shutdown_host", title="Shut down", icon="power", risk=Risk.HIGH, confirm=True)
@@ -45,6 +58,8 @@ async def shutdown_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolRes
         username=host.ssh_username,
         password=secret,
         command=command,
+        # POSIX shutdown runs under `sudo -S`; feed the SSH password as the sudo password.
+        stdin_data=secret if host.os_type != OSType.WINDOWS else None,
     )
 
     if not res.ok:
@@ -53,7 +68,17 @@ async def shutdown_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolRes
             summary=f"failed to shut down {host.name}",
             error=redact(res.error, [secret]),
         )
-    # Some hosts drop the connection mid-command (a successful shutdown often does); a clean
-    # connect with empty stderr is success. Surface captured output only when present.
+    # sudo can connect cleanly yet refuse to run (wrong password / no passwordless sudo / no TTY).
+    # Catch that explicitly so we don't report a shutdown that never happened.
+    combined = (res.stdout + res.stderr).lower()
+    if any(marker in combined for marker in _SUDO_FAILED):
+        return ToolResult(
+            state=RunState.ERROR,
+            summary=f"failed to shut down {host.name}",
+            error="sudo could not authenticate — the SSH password must also be the sudo password, "
+            "or grant passwordless sudo for shutdown on this host",
+        )
+    # A successful shutdown often drops the connection mid-command; a clean connect with no sudo
+    # error is success. Surface captured output only when present.
     output = redact((res.stdout + res.stderr).strip() or None, [secret])
     return ToolResult(state=RunState.OK, summary=f"sent shutdown command to {host.name}", output=output)

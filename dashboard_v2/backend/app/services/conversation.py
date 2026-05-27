@@ -96,6 +96,24 @@ class MessageRepo:
         )
         return msg
 
+    async def update(self, msg: Message) -> Message:
+        """Rewrite a message's parts in place (4b: a ToolCallPart flips PENDING →
+        AWAITING_CONFIRM → resolved as the confirm dance completes)."""
+        await self._db.execute(
+            "UPDATE messages SET parts = ?, tokens = ?, compacted = ? WHERE id = ?",
+            (
+                _PARTS.dump_json(msg.parts).decode(),
+                msg.tokens,
+                int(msg.compacted),
+                msg.id,
+            ),
+        )
+        return msg
+
+    async def get(self, message_id: str) -> Message | None:
+        rows = await self._db.query("SELECT * FROM messages WHERE id = ?", (message_id,))
+        return self._row(rows[0]) if rows else None
+
     async def list(self, thread_id: str, *, include_compacted: bool = True) -> list[Message]:
         sql = "SELECT * FROM messages WHERE thread_id = ?"
         if not include_compacted:

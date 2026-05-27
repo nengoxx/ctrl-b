@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 
-import { initChat, useChat } from "../store/chat";
-import type { ChatMessage, Part } from "../types";
+import { initChat, resumeCall, useChat } from "../store/chat";
+import type { ChatMessage, Part, ToolCallPart, ToolResult } from "../types";
 
-// Agent chat tab (Phase 4a). Renders the live thread from the chat store as Vapor bubbles
-// (sys / user / bot), streaming token-by-token. A thinking model's reasoning shows in a dimmed
-// collapsible above the answer. Tool/command bubbles + plan panels arrive in 4b/4d.
+// Agent chat tab (Phase 4a + 4b). Renders the live thread from the chat store as Vapor bubbles
+// (sys / user / bot), streaming token-by-token, with a thinking model's reasoning in a dimmed
+// collapsible. 4b adds command/action bubbles (.b.cmd): a tool the model wants to run, paired with
+// its result by call_id; a confirm-gated call shows execute/edit/dismiss (DESIGN §12, vapor.html:1934).
 
 function hm(iso: string): string {
   const d = new Date(iso);
@@ -23,7 +24,81 @@ function errorOf(parts: Part[]): string | null {
   return e && e.type === "error" ? e.message : null;
 }
 
-function Bubble({ m, streaming }: { m: ChatMessage; streaming: boolean }) {
+/** Render a tool call as a command-like line for the `$` pre block (Vapor `.b.cmd`). */
+function callLine(call: ToolCallPart): string {
+  const args = Object.entries(call.args)
+    .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
+    .join(" ");
+  return args ? `${call.tool} ${args}` : call.tool;
+}
+
+/** Drop a string into the shared composer (mirrors Vapor's editCmd — composer is uncontrolled). */
+function fillComposer(text: string) {
+  const ta = document.getElementById("cmd-input") as HTMLTextAreaElement | null;
+  if (!ta) return;
+  ta.value = text;
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+  ta.focus();
+}
+
+function CmdBubble({
+  call,
+  result,
+  ts,
+}: {
+  call: ToolCallPart;
+  result: ToolResult | undefined;
+  ts: string;
+}) {
+  const awaiting = !result && call.state === "awaiting_confirm";
+  const running = !result && (call.state === "pending" || call.state === "running");
+  const okState = result?.state ?? call.state;
+  const line = callLine(call);
+  return (
+    <div className={"b cmd" + (result ? " cmd-resolved" : "")}>
+      <div className="who">assistant · {hm(ts)}</div>
+      <div className="body">
+        <div className="preamble">
+          {call.tool.replace(/_/g, " ")}
+          {awaiting && <span className="cmd-gate"> · confirm to run</span>}
+        </div>
+        <pre>{line}</pre>
+        {awaiting && (
+          <div className="actions">
+            <button className="exec" onClick={() => void resumeCall(call.call_id, "execute")}>
+              execute
+            </button>
+            <button className="edit" onClick={() => fillComposer(line)}>
+              edit
+            </button>
+            <button className="dismiss" onClick={() => void resumeCall(call.call_id, "dismiss")}>
+              dismiss
+            </button>
+          </div>
+        )}
+        {running && <div className="cmd-result running">// running…</div>}
+        {result && (
+          <div className={"cmd-result " + okState}>
+            // {result.summary}
+            {result.error ? ` — ${result.error}` : ""}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Bubbles({
+  m,
+  streaming,
+  resultFor,
+}: {
+  m: ChatMessage;
+  streaming: boolean;
+  resultFor: (callId: string) => ToolResult | undefined;
+}) {
+  if (m.role === "tool") return null; // results render inside their command bubble (paired by id)
+
   if (m.role === "system") {
     return (
       <div className="b sys">
@@ -39,44 +114,55 @@ function Bubble({ m, streaming }: { m: ChatMessage; streaming: boolean }) {
       </div>
     );
   }
-  // assistant
+
+  // assistant: a bot text bubble (if any text/reasoning/error or still working) + one cmd bubble
+  // per tool call.
   const err = errorOf(m.parts);
   const reasoning = reasoningOf(m.parts);
   const text = textOf(m.parts);
-  // "working" = streaming but no answer text yet (cold-loading / reasoning / crunching the prompt).
-  const working = streaming && !text && !err;
+  const calls = m.parts.filter((p): p is ToolCallPart => p.type === "tool_call");
+  const working = streaming && !text && !err && !calls.length;
+  const showBot = !!(reasoning || text || err || working);
+
   return (
-    <div className="b bot">
-      <div className="who">
-        assistant · {hm(m.ts)}
-        {working && <span className="status-tag">{reasoning ? "thinking" : "working"}</span>}
-      </div>
-      <div className="body">
-        {reasoning && (
-          <details className="think" open={working}>
-            <summary>
-              <span className="label">thinking</span>
-              {!working && <span className="hint">tap to view</span>}
-            </summary>
-            <pre>{reasoning}</pre>
-          </details>
-        )}
-        {err ? (
-          <span className="chat-err">// {err}</span>
-        ) : working ? (
-          <span className="dots" aria-label="working">
-            <i />
-            <i />
-            <i />
-          </span>
-        ) : (
-          <span>
-            {text}
-            {streaming && <span className="caret">▍</span>}
-          </span>
-        )}
-      </div>
-    </div>
+    <>
+      {showBot && (
+        <div className="b bot">
+          <div className="who">
+            assistant · {hm(m.ts)}
+            {working && <span className="status-tag">{reasoning ? "thinking" : "working"}</span>}
+          </div>
+          <div className="body">
+            {reasoning && (
+              <details className="think" open={working}>
+                <summary>
+                  <span className="label">thinking</span>
+                  {!working && <span className="hint">tap to view</span>}
+                </summary>
+                <pre>{reasoning}</pre>
+              </details>
+            )}
+            {err ? (
+              <span className="chat-err">// {err}</span>
+            ) : working ? (
+              <span className="dots" aria-label="working">
+                <i />
+                <i />
+                <i />
+              </span>
+            ) : (
+              <span>
+                {text}
+                {streaming && text && <span className="caret">▍</span>}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+      {calls.map((c) => (
+        <CmdBubble key={c.call_id} call={c} result={resultFor(c.call_id)} ts={m.ts} />
+      ))}
+    </>
   );
 }
 
@@ -87,7 +173,7 @@ interface Props {
 const SCROLLER_ID = "app-scroll";
 
 export function AgentTab({ active }: Props) {
-  const { messages, status } = useChat();
+  const { messages, status, streamingId } = useChat();
   // The scroller is the app-shell content pane (`#app-scroll`), not the window — the composer/tab
   // bar are in-flow at the bottom of the shell. "Stick to bottom" only while the user is already
   // near the bottom, so streaming follows the bot without yanking them down if they scrolled up.
@@ -137,7 +223,14 @@ export function AgentTab({ active }: Props) {
     return () => cancelAnimationFrame(id);
   }, [active]);
 
-  const lastId = messages.length ? messages[messages.length - 1].id : null;
+  // Pair tool results to their calls by id across the whole thread (live appends + reloaded
+  // separate `tool` messages both land here).
+  const resultByCall: Record<string, ToolResult> = {};
+  for (const m of messages) {
+    for (const p of m.parts) {
+      if (p.type === "tool_result") resultByCall[p.call_id] = p.result;
+    }
+  }
 
   return (
     <div className={"tab" + (active ? " active" : "")} id="tab-agent" data-screen-label="02 Agent">
@@ -153,10 +246,11 @@ export function AgentTab({ active }: Props) {
           </div>
         )}
         {messages.map((m) => (
-          <Bubble
+          <Bubbles
             key={m.id}
             m={m}
-            streaming={status === "streaming" && m.role === "assistant" && m.id === lastId}
+            streaming={status === "streaming" && m.id === streamingId}
+            resultFor={(id) => resultByCall[id]}
           />
         ))}
       </div>

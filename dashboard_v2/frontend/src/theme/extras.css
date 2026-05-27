@@ -286,6 +286,61 @@ body {
   }
 }
 
+/* ── Command/action bubbles (Phase 4b). The `.b.cmd` shell (border, $-pre, .actions, .preamble)
+   is vapor.css verbatim — used for a tool the agent wants to run. These net-new bits style what
+   vapor's static markup lacks: the confirm-gate hint, the resolved/running outcome line, and the
+   dimmed "already ran" look (vapor's `.cmd.done::after` hardcodes a shell message, so we don't use
+   `.done` — we render the real result here instead). Built from vapor tokens. */
+.b.cmd .preamble {
+  text-transform: capitalize;
+  letter-spacing: 0.3px;
+  color: var(--ink-soft);
+}
+.b.cmd .preamble .cmd-gate {
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  font-size: 9px;
+  color: var(--magenta);
+}
+/* Outcome line under the command (// summary), colored by run state. */
+.b.cmd .cmd-result {
+  margin: -2px 12px 10px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+  letter-spacing: 0.2px;
+  word-break: break-word;
+  color: var(--ink-soft);
+}
+.b.cmd .cmd-result.ok {
+  color: var(--green);
+}
+.b.cmd .cmd-result.error,
+.b.cmd .cmd-result.denied,
+.b.cmd .cmd-result.timeout {
+  color: var(--red);
+}
+.b.cmd .cmd-result.skipped {
+  color: var(--ink-faint);
+}
+.b.cmd .cmd-result.running {
+  color: var(--teal);
+  animation: tag-pulse 1.3s ease-in-out infinite;
+}
+/* Resolved bubble: dim the command + lozenge to read as "done" (no actions are rendered). Mirrors
+   vapor's `.cmd.done` tones via the accent-2/violet palette, minus the hardcoded ::after. */
+.b.cmd.cmd-resolved .body {
+  background: rgba(var(--accent-rgb-2), 0.04);
+  border-color: rgba(var(--accent-rgb-2), 0.32);
+}
+.b.cmd.cmd-resolved pre {
+  color: var(--ink-soft);
+  border-color: rgba(var(--accent-rgb-2), 0.2);
+}
+.b.cmd.cmd-resolved pre::before {
+  color: var(--violet);
+}
+
 /* Animated "…" — three bouncing dots shown while the bot is working, before any answer text. */
 .b.bot .dots {
   display: inline-flex;

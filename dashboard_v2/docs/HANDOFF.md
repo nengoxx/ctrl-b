@@ -1,15 +1,16 @@
 # Handoff — start here for a fresh session
 
-**Purpose:** **Phases 0–3 are done, and Phase 4a (agent chat — text round-trip) is done** — the
-Vapor Fleet tab drives real fleet/action/service typed-actions, and the **Agent tab now holds a
-live streaming chat** with the local `minig+` llama.cpp backend (threads/messages persisted to
-SQLite, SSE token streaming, thinking-model reasoning shown dimmed). The next session continues
-**Phase 4b — tools**: expose the action registry as OpenAI `tools`, add the tool-call loop +
-permission gate, and render command/action **confirm bubbles** (reusing Phase 2's `ActionService`/
-`decide`). Then 4c routing · 4d `task_plan` · 4e compaction · 4f MCP/SearXNG/embeddings — each a
-runnable slice (don't build it all at once). This doc is the orientation; canonical detail is in
-the other `docs/` files. **The pixel-exact Vapor fidelity mandate (D7) still governs every new
-component.**
+**Purpose:** **Phases 0–3, Phase 4a (text round-trip), and now Phase 4b (agent tools + confirm
+bubbles) are done** — the Vapor Fleet tab drives real fleet/action/service typed-actions, and the
+**Agent tab is a live tool-using chat**: the model sees the action registry as OpenAI `tools`,
+the loop runs ALLOW calls through the existing `ActionService` and **suspends on a confirm-gated
+call** (med/high risk) rendering a Vapor `.b.cmd` **command bubble** with execute/dismiss — resume
+re-opens the stream and continues. (Phase 4a's streaming text + dimmed thinking-model reasoning is
+unchanged underneath.) The next session continues **Phase 4c — composer prefix routing**
+(`!`/`/`, `/local`//`/cloud`) + markdown bot replies. Then 4d `task_plan` · 4e compaction · 4f
+MCP/SearXNG/embeddings — each a runnable slice (don't build it all at once). This doc is the
+orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor fidelity
+mandate (D7) still governs every new component.**
 
 > ## ⭐ The standing Vapor-fidelity mandate (D7) — applies to every phase
 > The owner's priority is a **faithful, pixel-exact execution of `vapor.html`** — not "inspired by."
@@ -48,10 +49,62 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (what Phase 4a left you)
+## Current state (what Phase 4b left you)
 
-Phases 0–3 are on `origin/main` (through `2675f82`). **Phase 4a is implemented locally** — review +
-commit it (the owner commits when asked).
+Phases 0–3 **and Phase 4a are on `origin/main`** (Phase 4a = commit `f9e9965`). **Phase 4b is
+committed to `main`** (run `git log` for the hash; not yet pushed unless the owner pushed). Start 4c next.
+
+**Runtime extras landed alongside 4b (same commit):**
+- **Fleet roster injection** (`session._roster`): each turn the agent gets an id↔name map of hosts +
+  services projected from config, so it resolves a named host/service to its slug `host_id`/
+  `service_id` itself instead of asking the owner. Prompt updated to forbid asking for ids.
+- **`sudo -S` over SSH** (`adapters/ssh.run_command` gained `stdin_data`): `shutdown_host` (POSIX) and
+  the service control runner (`actions/_common._prepare_sudo`) rewrite `sudo`→`sudo -S -p ''` and pipe
+  the SSH password as the sudo password (an exec channel has no TTY). Both now detect sudo-auth
+  failure instead of reporting false success. Assumes SSH password == sudo password (true on emma).
+- **Owner's real `config.yaml`** (gitignored, not in the commit) now declares real services
+  (corsair: llamacpp/signal-bot · vault: whisper/tts · g5: open-webui/sillytavern/old-dashboard ·
+  emma: open-webui/searxng/open-terminal) and **staged config for later phases**: `stt`/`tts`
+  (vault, Phase 6 voice), `searxng` (emma:8888) + `mcp_servers` (emma `http://192.168.1.160:3003/mcp`,
+  Streamable-HTTP crawl4ai) — **real targets for Phase 4f**. These extra sections round-trip via
+  Settings `extra="allow"`; the typed `SttCfg`/`TtsCfg`/`SearxngCfg`/`McpServerCfg` models are still
+  TODO (add them when 4f/6 consume the sections).
+
+**Dev-run gotchas (this box):** the backend must run with **LAN access** (don't sandbox it) or every
+ping/WOL/SSH fails and hosts read offline though the code is fine. Avoid `uvicorn --reload` when
+launching detached — its child worker orphans and holds 5433; run plain and restart on changes.
+Frontend pinned to **5190** (5173–5175 are other workspaces).
+
+⭐ NEW in Phase 4b (`backend/app/`):
+```
+  domain/conversation.py       # ⭐ ToolCallPart (call_id/tool/args/state) + ToolResultPart in the Part union
+  core/tool.py                 # ⭐ ToolRegistry.agent_tools() + to_openai_tools() (input_model → JSON-Schema fn defs)
+  adapters/inference.py        # ⭐ ToolCallRequest + ChatDelta.tool_calls; stream_chat(tools=…) reassembles streamed calls
+  services/conversation.py     #   + MessageRepo.update()/get() (flip a ToolCallPart's state in place)
+  services/agent/session.py    # ⭐ run_turn = the tool loop (assemble incl. tool_calls/results in OpenAI shape →
+                               #     call w/ tools → ALLOW via ActionService · DENY synth · CONFIRM suspend) + resume()
+  api/agent.py                 # ⭐ POST /api/agent/resume (execute|dismiss + confirm_token) → fresh SSE stream
+```
+⭐ NEW in Phase 4b (`frontend/src/`):
+```
+  types.ts                     #   + ToolCallPart / ToolResultPart (extend Part)
+  store/chat.ts                # ⭐ multi-message turns; part.added/tool.permission/tool.result; resumeCall(); shared streamTurn()
+  tabs/AgentTab.tsx            # ⭐ Vapor .b.cmd command bubbles (pairs tool_call+result by id) + execute/edit/dismiss
+  theme/extras.css             # ⭐ net-new: cmd-result outcome line (state-colored) + resolved/gate states (vapor tokens)
+```
+**Agent privilege = `CONFIRM`** (the AgentDef default, D11): low-risk tools (wake/ping/start_service/
+open_service_url) **auto-run** in the loop; med/high (stop/restart_service, shutdown_host) **gate** on a
+confirm bubble — identical to the UI's `decide()` policy, just `Actor.AGENT`. The confirm dance reuses
+Phase 2's single-use TTL'd token (minted by `ActionService`, surfaced in the `tool.permission` SSE event,
+sent back on resume). A **suspended** turn parks in the DB (`ToolCallPart.state=AWAITING_CONFIRM`); resume
+finishes that step then loops so the model summarizes. `_assemble` round-trips persisted tool calls/results
+into OpenAI `assistant.tool_calls` + `tool` messages, synthesizing a `skipped` result for any abandoned
+confirm so the context is always API-valid. `MAX_ITERATIONS=8`. SSE events added: `part.added`,
+`tool.permission`, `tool.result` (DESIGN §12). **`vapor.css` untouched** (D7) — the `.b.cmd` shell is
+verbatim; the outcome line is net-new in `extras.css` (vapor's `.cmd.done::after` hardcodes a shell
+message, so resolved bubbles render the real `ToolResult.summary` instead of using `.done`).
+
+----
 
 ⭐ NEW in Phase 4a (`backend/app/`):
 ```
@@ -184,6 +237,20 @@ the Android toolbar + keyboard behaviour on the phone**.
 **Not yet exercised:** the **cloud backend** (only `local` configured). The cold-load is now
 visibly indicated (dots) rather than a dead spinner. No `vapor.css` changes — D7 unaffected.
 
+**Verified (Phase 4b):** `compileall` clean; frontend `tsc -b` + `vite build` clean. A `TestClient`
+run with a **stubbed scriptable inference** (emits tool calls) + two synthetic tools (one LOW, one
+HIGH/confirm) registered into the real registry passed end-to-end: `to_openai_tools` exposes the
+toolset; **ALLOW loop** (model calls the low tool → auto-runs via `ActionService` → result fed back
+as a `tool` message → second model call → `completed`); **CONFIRM** (high tool → `tool.permission`
+with a token, no model call while parked → `suspended`); **resume(execute)** with the token → tool
+runs → `completed`; **persistence** round-trips `tool_call` + `tool_result` parts; **resume(dismiss)**
+→ synthesized `skipped` result → `completed`; **bad/empty args** tolerated (→ `{}` → validation,
+no crash). **Not yet exercised live against `minig+`** — needs eyeballing that the model actually
+emits tool calls (it's a thinking model; if native tool-calling is weak, that's the 4b "capability
+fallback" follow-up). The confirm bubble UX wasn't reviewed @390px against `vapor.html` yet — **owner
+to do the side-by-side** (the `.b.cmd` shell is verbatim vapor, so it should match; the net-new
+outcome line is the only new pixels).
+
 **Phase 3 stays verified** (committed `2675f82`): service actions register with right risk/confirm,
 `GET /api/services` derives port-probe status + url/controls, confirm dance + audit trail all
 checked; owner has g5/emma services declared in `config.yaml` and the `.svc-row` reviewed @390px.
@@ -274,31 +341,33 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — Phase 4b (agent tools + confirm bubbles)
+## First action — Phase 4c (composer prefix routing)
 
-Phase 4a is implemented locally (commit it when asked). The chat foundation is in place; **4b adds
-tools to the loop**. Optional 4a follow-ups, none blocking 4b:
-- trigger a **reasoning turn** on `minig+` (a harder prompt) to eyeball the dimmed `thinking`
-  disclosure live, and confirm cloud-mode once a `cloud` endpoint is configured,
-- the SSH service/shutdown path is still untested against a real host (shared one SSH path).
+Phase 4b is committed + verified (compileall + TestClient + frontend build). Optional 4b
+follow-ups, none blocking 4c:
+- **Eyeball it live against `minig+`**: send a fleet question and confirm the model actually emits
+  tool calls and the bubble streams in; trigger a `shutdown_host`/`stop_service` to see the confirm
+  bubble + resume round-trip. If the local thinking model's native tool-calling is unreliable, that's
+  the **capability fallback** item (prompted-JSON → same `ToolCallPart` path; TODO 4b).
+- **Side-by-side @390px** of the `.b.cmd` command bubble vs `vapor.html` (D7) — owner's call.
+- Cloud mode + the SSH service/shutdown path are still untested against a real host (shared one SSH path).
 
-Open `TODO.md` → **Phase 4 → 4b+** and extend `AgentSession.run_turn`:
-1. **Aggregated toolset → OpenAI `tools`:** add `ToolRegistry.to_openai_tools(...)` (Pydantic
-   `input_model` → JSON Schema is already there via `spec_to_dict`); pass the `agent_exposed` subset
-   on the chat call. Add `ToolCallPart`/`ToolResultPart` to `domain/conversation.py` (the union is
-   built for this).
-2. **Tool-call loop + permission gate:** parse tool calls from the stream, validate args (bad args →
-   `tool_result(error)` back to the model, don't crash), run `permissions.decide(...)`; ALLOW →
-   execute via the **existing `ActionService`/registry**, CONFIRM → emit `tool.permission` and
-   suspend (reuse the single-use confirm-token), DENY → synthesize a denied result. Loop until
-   text-only or `max_iterations`.
-3. **Confirm/command bubbles (frontend):** render `ToolCallPart`+`ToolResultPart` as the Vapor
-   `.b.cmd` bubble (execute/edit/dismiss — markup at `vapor.html:1934`); a `tool.permission` event
-   shows the execute/dismiss controls that POST the confirm-token back to resume.
-4. Then **4c** composer prefix routing (`!`/`/`, `/local`//`/cloud`) + markdown replies, **4d**
-   `task_plan` builtin + plan panel, **4e** compaction (selectable summarizer), **4f** MCP +
-   SearXNG + embeddings (D9). Keep agents/skills/orchestration behind swappable strategies (D11).
-   Each sub-slice stays runnable — don't build all of 4b–4f at once.
+Open `TODO.md` → **Phase 4 → 4c+**:
+1. **Composer prefix routing:** `!<cmd>` (configurable sigil) → guarded shell (Phase 5 wires the
+   actual exec; for now route/stub), `/<cmd>` → slash commands incl. `/local`//`/cloud` (switch the
+   per-message `mode` already plumbed through `ChatRequest.mode` → `stream_chat(mode=…)`), else →
+   agent. Generalize Vapor's `editCmd`/`cmdInto` (the AgentTab `fillComposer` is a start).
+2. **Markdown bot replies** + copy / send-to-composer on code blocks (the bubbles render plain text
+   today). Keep it within the Vapor bubble look.
+3. Then **4d** `task_plan` builtin + plan panel, **4e** compaction (selectable summarizer), **4f**
+   MCP + SearXNG + embeddings (D9). Keep agents/skills/orchestration behind swappable strategies (D11).
+   Each sub-slice stays runnable — don't build all of 4c–4f at once.
+
+**Resume protocol (4b, for reference):** the confirm bubble's execute/dismiss POSTs
+`/api/agent/resume {thread_id, call_id, decision, confirm_token}` and consumes a **fresh SSE stream**
+(same event vocab as `/agent/chat`). `confirm_token` comes from the `tool.permission` event; the
+client holds it in `store/chat.ts`'s `confirmTokens` map. A second message to a suspended thread just
+starts a new turn — `_assemble` synthesizes a `skipped` result for the abandoned call so nothing breaks.
 
 **Resolved open question (frontend routing):** went with **tab state** (the `store/ui.ts` `tab`
 field), not react-router — 4 tabs, no deep-linking need yet.

@@ -103,7 +103,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
 ## Phase 4 — Agent chat (text first)
 
-**Sliced (handoff): each sub-slice independently runnable.** ⭐ **4a (text round-trip) is DONE.**
+**Sliced (handoff): each sub-slice independently runnable.** ⭐ **4a (text round-trip) + 4b (agent
+tools + confirm bubbles) are DONE.**
 
 ### 4a — chat foundation (text round-trip) ✅
 - [x] **Studied prior art** (`RESEARCH.md`) — adopted opencode's message-has-parts + the loop
@@ -125,11 +126,29 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
       persisted, error path) all pass; **live round-trip against `minig+`** works (14 `text.delta`
       over SSE, clean answer, persisted); `tsc -b` + `vite build` clean; Agent tab reviewed @390px.
 
-### 4b+ — tools, routing, plan, compaction, MCP (next)
-- [ ] **Aggregated toolset** → OpenAI `tools`: action registry + `agent_exposed` tools + MCP tools
-      (namespaced). high-risk/confirm actions → **command/action bubble** (execute/edit/dismiss),
-      low-risk configurable to auto-run.
-- [ ] Capability fallback for weak local models (draft-into-bubble, no native tools).
+### 4b — agent tools + confirm bubbles ✅
+- [x] **Aggregated toolset** → OpenAI `tools`: `ToolRegistry.agent_tools()` + `to_openai_tools()`
+      (`input_model` → JSON Schema). `ToolCallPart`/`ToolResultPart` added to the Part union;
+      `adapters/inference.py` reassembles streamed tool-call fragments (`ChatDelta.tool_calls`).
+      (MCP tools merge into the same toolset in 4f.)
+- [x] **Tool-call loop + permission gate** (`AgentSession.run_turn`): assemble (incl. prior
+      tool_calls/results in OpenAI shape, synth `skipped` for abandoned confirms) → call w/ tools →
+      ALLOW runs via the existing `ActionService` (validates/decides/executes/records Event) · DENY +
+      bad-args synth a clean result fed back · **CONFIRM suspends** (`AWAITING_CONFIRM`, `tool.permission`
+      event w/ the single-use token, `done(suspended)`). `MAX_ITERATIONS=8`. `POST /api/agent/resume`
+      (execute|dismiss + token) finishes the step + continues the loop over a fresh SSE stream.
+- [x] **Command/action bubbles** (frontend): Vapor `.b.cmd` pairs `tool_call`+`tool_result` by
+      `call_id`; med/high-risk show execute/edit/dismiss wired to `resumeCall()`; low-risk auto-run
+      (agent privilege=CONFIRM). Net-new outcome line in `extras.css` (vapor.css verbatim, D7).
+- [x] **Verify:** `compileall` + a `TestClient` run (stubbed scriptable inference + synthetic
+      LOW/HIGH tools): ALLOW loop, CONFIRM suspend→resume(execute), persistence round-trip,
+      resume(dismiss)→skipped, bad-args tolerated; `tsc -b` + `vite build` clean. **Live `minig+`
+      tool-calling + the bubble @390px not yet eyeballed by the owner.**
+
+### 4c+ — routing, plan, compaction, MCP (next)
+- [ ] Capability fallback for weak local models (draft-into-bubble, no native tools). *(Eyeball
+      `minig+` native tool-calling first — if unreliable, build the prompted-JSON path into the same
+      `ToolCallPart` flow.)*
 - [ ] **MCP client (D9):** connect to configured MCP servers over **stdio** + **Streamable HTTP**
       (official Python MCP SDK); discover + merge tools; per-server enable + failure isolation.
       Start with one server end-to-end, then generalize.

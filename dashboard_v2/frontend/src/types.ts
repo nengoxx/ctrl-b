@@ -113,9 +113,25 @@ export interface InvokeResponse {
 
 export type Role = "user" | "assistant" | "system" | "tool";
 
+export interface ToolCallPart {
+  type: "tool_call";
+  call_id: string;
+  tool: string;
+  args: Record<string, unknown>;
+  state: RunState;
+}
+
+export interface ToolResultPart {
+  type: "tool_result";
+  call_id: string;
+  result: ToolResult;
+}
+
 export type Part =
   | { type: "text"; text: string }
   | { type: "reasoning"; text: string }
+  | ToolCallPart
+  | ToolResultPart
   | { type: "error"; message: string; retryable: boolean };
 
 export interface ChatMessage {

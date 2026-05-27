@@ -29,9 +29,19 @@ class ChatRequest(BaseModel):
     mode: str | None = None  # "local" | "cloud"; None → configured default (4c switches per-msg)
 
 
+class ResumeRequest(BaseModel):
+    """Resolve a suspended tool call (4b confirm bubble). `decision` is execute|dismiss; execute
+    must carry the `confirm_token` from the `tool.permission` event."""
+
+    thread_id: str
+    call_id: str
+    decision: str = "execute"  # "execute" | "dismiss"
+    confirm_token: str | None = None
+
+
 def _session(request: Request) -> AgentSession:
     s = request.app.state
-    return AgentSession(s.threads, s.messages, s.inference, s.settings)
+    return AgentSession(s.threads, s.messages, s.inference, s.settings, s.actions)
 
 
 @router.get("/threads")
@@ -67,6 +77,24 @@ async def chat(body: ChatRequest, request: Request) -> EventSourceResponse:
         # Tell the client the thread id first (it may have just been created).
         yield {"event": "thread", "data": json.dumps({"threadId": thread.id, "title": thread.title})}
         async for ev in session.run_turn(thread, body.text):
+            yield {"event": ev.event, "data": json.dumps(ev.data)}
+
+    return EventSourceResponse(gen())
+
+
+@router.post("/agent/resume")
+async def resume(body: ResumeRequest, request: Request) -> EventSourceResponse:
+    """Resolve a suspended tool call and continue the turn over a fresh SSE stream (DESIGN §5.3).
+    Body: `{thread_id, call_id, decision, confirm_token?}`."""
+    threads = request.app.state.threads
+    thread = await threads.get(body.thread_id)
+    if thread is None:
+        raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
+    session = _session(request)
+
+    async def gen() -> AsyncIterator[dict[str, Any]]:
+        yield {"event": "thread", "data": json.dumps({"threadId": thread.id, "title": thread.title})}
+        async for ev in session.resume(thread, body.call_id, body.decision, body.confirm_token):
             yield {"event": ev.event, "data": json.dumps(ev.data)}
 
     return EventSourceResponse(gen())

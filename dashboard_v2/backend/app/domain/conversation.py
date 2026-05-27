@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.domain.enums import Actor
+from app.domain.enums import Actor, RunState
+from app.domain.result import ToolResult
 
 Role = Literal["user", "assistant", "system", "tool"]
 
@@ -43,13 +44,37 @@ class ReasoningPart(BaseModel):
     text: str = ""
 
 
+class ToolCallPart(BaseModel):
+    """One tool/action the model asked to run (4b). `call_id` ties it to its `ToolResultPart`
+    and to the OpenAI `tool_calls[].id` round-trip; `state` tracks the lifecycle the UI renders
+    (PENDING → AWAITING_CONFIRM → OK/ERROR/DENIED/SKIPPED). The bubble is built from the pair."""
+
+    type: Literal["tool_call"] = "tool_call"
+    call_id: str
+    tool: str
+    args: dict[str, Any] = Field(default_factory=dict)
+    state: RunState = RunState.PENDING
+
+
+class ToolResultPart(BaseModel):
+    """The outcome of a `ToolCallPart` (4b). Lives on a `role="tool"` message so the assembled
+    OpenAI context maps cleanly (assistant `tool_calls` → `tool` results by `call_id`)."""
+
+    type: Literal["tool_result"] = "tool_result"
+    call_id: str
+    result: ToolResult
+
+
 class ErrorPart(BaseModel):
     type: Literal["error"] = "error"
     message: str
     retryable: bool = False
 
 
-Part = Annotated[TextPart | ReasoningPart | ErrorPart, Field(discriminator="type")]
+Part = Annotated[
+    TextPart | ReasoningPart | ToolCallPart | ToolResultPart | ErrorPart,
+    Field(discriminator="type"),
+]
 
 
 class Message(BaseModel):
@@ -65,6 +90,12 @@ class Message(BaseModel):
     def text(self) -> str:
         """The concatenated `text` parts (the durable answer, excluding reasoning)."""
         return "".join(p.text for p in self.parts if isinstance(p, TextPart))
+
+    def tool_calls(self) -> list[ToolCallPart]:
+        return [p for p in self.parts if isinstance(p, ToolCallPart)]
+
+    def tool_results(self) -> list[ToolResultPart]:
+        return [p for p in self.parts if isinstance(p, ToolResultPart)]
 
 
 class Thread(BaseModel):
