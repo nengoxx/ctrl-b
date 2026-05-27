@@ -1,0 +1,2267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ctrl·b · vapor</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<link rel="icon" type="image/x-icon" href="favicon.ico" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Major+Mono+Display&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0a0316;
+    --bg-2: #150828;
+    --bg-3: #1f0d3f;
+    --ink: #ffe6f7;
+    --ink-soft: #c89be0;
+    --ink-faint: #6a4a90;
+    --magenta: #ff52d4;
+    --magenta-2: #ff8ee5;
+    --violet: #a55cff;
+    --teal: #5ce6ff;
+    --sun-1: #ffb04f;
+    --sun-2: #ff52a0;
+    --sun-3: #a55cff;
+    --green: #7eff96;
+    --red: #ff3b7a;
+    --line: rgba(255, 230, 247, 0.08);
+    --line-2: rgba(255, 230, 247, 0.2);
+    --m-glow: 0 0 14px rgba(255, 82, 212, 0.55);
+    --v-glow: 0 0 14px rgba(165, 92, 255, 0.5);
+    --t-glow: 0 0 8px rgba(92, 230, 255, 0.6);
+    /* Themed accent — used by wake/stop/mic-rec icons, save buttons, etc */
+    --accent-grad: linear-gradient(180deg, #ffb3ec 0%, #ff52d4 30%, #a55cff 70%, #5e2eb8 100%);
+    --accent-glow: drop-shadow(0 0 10px rgba(255,82,212,0.65));
+    --accent-glow-soft: drop-shadow(0 0 6px rgba(255,82,212,0.45));
+    /* Destructive actions — red in vapor, swaps to the vapor accent (pink/violet) in aqua */
+    --danger-grad: linear-gradient(180deg, #ff9ec8 0%, #ff3b7a 35%, #b8204a 75%, #5c0a2a 100%);
+    --danger-glow: drop-shadow(0 0 9px rgba(255, 59, 122, 0.6));
+    --accent-rgb: 255, 82, 212;        /* for rgba() expressions */
+    --accent-rgb-2: 165, 92, 255;
+    --skyline-stroke: #ff52d4;
+    --skyline-stroke-faint: rgba(255, 82, 212, 0.45);
+    --skyline-stroke-far: rgba(255, 82, 212, 0.28);
+    --sun-aura: rgba(255, 82, 160, 0.6);
+    --sun-stripe: rgba(31, 13, 63, 0.62);
+    --danger-rgb: 255, 59, 122;
+    /* Skyline gradient stops — themed per palette. Vapor = purple atmospheric layers. */
+    --mtn-far-top: #6e3aa8;  --mtn-far-bot: #3f1d70;
+    --mtn-back-top: #4a2080; --mtn-back-bot: #26124a;
+    --mtn-mid-top: #2a1052;  --mtn-mid-bot: #10052a;
+    --mtn-fore-top: #10052a; --mtn-fore-bot: #04010a;
+    --city-mtn-top: #7a2eb0;  --city-mtn-bot: #4a1980;
+    --city-back-top: #4a1980; --city-back-bot: #2a0d54;
+    --city-mid-top: #220a42;  --city-mid-bot: #0d041e;
+    --city-fore-top: #050009; --city-fore-bot: #000000;
+    --city-window-far: #b58dd9;
+    --city-window-mid: #ffb0e6;
+    --city-window-fore: #ffb88a;
+  }
+  /* Alt dark palette — cyan/aqua dominant, deep ocean blacks */
+  [data-theme="aqua"] {
+    --bg: #02101a;
+    --bg-2: #06202e;
+    --bg-3: #0b3148;
+    --ink: #d8f6ff;
+    --ink-soft: #7fc8db;
+    --ink-faint: #3a7a92;
+    --magenta: #5ce6ff;     /* swap roles — primary is now cyan */
+    --magenta-2: #9af1ff;
+    --violet: #6e7bff;
+    --teal: #7eff96;        /* accent shifts to mint */
+    --sun-1: #ffd75c;
+    --sun-2: #5ce6ff;
+    --sun-3: #6e7bff;
+    --green: #7eff96;
+    --red: #ff6b8e;
+    --line: rgba(216, 246, 255, 0.08);
+    --line-2: rgba(216, 246, 255, 0.2);
+    --m-glow: 0 0 14px rgba(92, 230, 255, 0.55);
+    --v-glow: 0 0 14px rgba(110, 123, 255, 0.5);
+    --t-glow: 0 0 8px rgba(126, 255, 150, 0.6);
+    --accent-grad: linear-gradient(180deg, #c6f4ff 0%, #5ce6ff 30%, #6e7bff 70%, #233a96 100%);
+    --accent-glow: drop-shadow(0 0 10px rgba(92, 230, 255, 0.65));
+    --accent-glow-soft: drop-shadow(0 0 6px rgba(92, 230, 255, 0.45));
+    /* In aqua, destructive uses the vapor accent (pink/violet) for contrast against cool UI */
+    --danger-grad: linear-gradient(180deg, #ffb3ec 0%, #ff52d4 30%, #a55cff 70%, #5e2eb8 100%);
+    --danger-glow: drop-shadow(0 0 10px rgba(255, 82, 212, 0.65));
+    --accent-rgb: 92, 230, 255;
+    --accent-rgb-2: 110, 123, 255;
+    --skyline-stroke: #5ce6ff;
+    --skyline-stroke-faint: rgba(92, 230, 255, 0.45);
+    --skyline-stroke-far: rgba(92, 230, 255, 0.28);
+    --sun-aura: rgba(92, 230, 255, 0.55);
+    --sun-stripe: rgba(8, 32, 56, 0.7);
+    --danger-rgb: 255, 82, 212;
+    /* Aqua skyline — deep-ocean blues, fading to near-black at the base */
+    --mtn-far-top: #2e6caa;  --mtn-far-bot: #173d70;
+    --mtn-back-top: #1a4880; --mtn-back-bot: #0d2a4a;
+    --mtn-mid-top: #102a52;  --mtn-mid-bot: #04101e;
+    --mtn-fore-top: #04101e; --mtn-fore-bot: #00040a;
+    --city-mtn-top: #2e7ab0;  --city-mtn-bot: #19488a;
+    --city-back-top: #194880; --city-back-bot: #0d2854;
+    --city-mid-top: #0a2242;  --city-mid-bot: #04101e;
+    --city-fore-top: #000509; --city-fore-bot: #000000;
+    --city-window-far: #8dc1d9;
+    --city-window-mid: #b0e6ff;
+    --city-window-fore: #ffe48a;
+  }
+  /* Aqua hero — flip the warm sunset to a cool oceanic sky */
+  [data-theme="aqua"] .hero {
+    background: linear-gradient(180deg, #02101a 0%, #0a2a3a 35%, #144860 55%, #0b3148 75%, #02101a 100%) !important;
+  }
+
+  /* 3rd palette — Ember. Full Miami-sunset: amber/gold primary, coral danger,
+     warm brown-black backgrounds. Distinct from cool-violet vapor and cool-cyan aqua. */
+  [data-theme="ember"] {
+    --bg: #110603;
+    --bg-2: #1f0d05;
+    --bg-3: #2e1a0a;
+    --ink: #ffe8c8;
+    --ink-soft: #d9ad7a;
+    --ink-faint: #8c5a32;
+    --magenta: #ff8a3d;
+    --magenta-2: #ffb070;
+    --violet: #ffd75c;
+    --teal: #ff5e6c;          /* contrast accent — coral red */
+    --sun-1: #ffe98c;
+    --sun-2: #ff9050;
+    --sun-3: #c8324a;
+    --green: #b3e36c;
+    --red: #ff3b3b;
+    --line: rgba(255, 232, 200, 0.08);
+    --line-2: rgba(255, 232, 200, 0.2);
+    --m-glow: 0 0 14px rgba(255, 138, 61, 0.55);
+    --v-glow: 0 0 14px rgba(255, 215, 92, 0.5);
+    --t-glow: 0 0 8px rgba(255, 94, 108, 0.6);
+    --accent-grad: linear-gradient(180deg, #ffe2b3 0%, #ffb04f 30%, #ff7a3d 70%, #a82912 100%);
+    --accent-glow: drop-shadow(0 0 10px rgba(255, 138, 61, 0.65));
+    --accent-glow-soft: drop-shadow(0 0 6px rgba(255, 138, 61, 0.45));
+    /* Ember keeps stop/mic.rec a true crimson — it already pops against warm orange UI */
+    --danger-grad: linear-gradient(180deg, #ffb09e 0%, #ff3b3b 35%, #8a1a1a 75%, #3a0808 100%);
+    --danger-glow: drop-shadow(0 0 9px rgba(255, 59, 59, 0.6));
+    --accent-rgb: 255, 138, 61;
+    --accent-rgb-2: 255, 215, 92;
+    --skyline-stroke: #ff8a3d;
+    --skyline-stroke-faint: rgba(255, 138, 61, 0.45);
+    --skyline-stroke-far: rgba(255, 138, 61, 0.28);
+    --sun-aura: rgba(255, 144, 80, 0.65);
+    --sun-stripe: rgba(46, 18, 8, 0.7);
+    --danger-rgb: 255, 59, 59;
+    /* Ember skyline — Miami-sunset oranges and browns */
+    --mtn-far-top: #c8662a;  --mtn-far-bot: #80331a;
+    --mtn-back-top: #8a3a18; --mtn-back-bot: #4a1f0a;
+    --mtn-mid-top: #4a2008;  --mtn-mid-bot: #1f0a04;
+    --mtn-fore-top: #1f0a04; --mtn-fore-bot: #0a0401;
+    --city-mtn-top: #c8702e;  --city-mtn-bot: #8a3a18;
+    --city-back-top: #8a3a18; --city-back-bot: #50200a;
+    --city-mid-top: #401a08;  --city-mid-bot: #1a0a02;
+    --city-fore-top: #0a0401; --city-fore-bot: #000000;
+    --city-window-far: #ffc88d;
+    --city-window-mid: #ffe6b0;
+    --city-window-fore: #ff8e5c;
+  }
+  /* Ember hero — deep dusk gradient, brown-red-gold layered */
+  [data-theme="ember"] .hero {
+    background: linear-gradient(180deg, #110603 0%, #3a1208 35%, #6a1f10 55%, #2e1a0a 75%, #110603 100%) !important;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+    font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased; min-height: 100%;
+  }
+  body { padding-bottom: 116px; overflow-x: hidden; position: relative; }
+  body.no-composer { padding-bottom: 80px; }
+
+  /* Top bar */
+  .appbar {
+    position: sticky; top: 0; z-index: 20;
+    backdrop-filter: blur(14px);
+    background: color-mix(in oklch, var(--bg) 70%, transparent);
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; flex: 1; }
+  .brand .lozenge {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: conic-gradient(from 0deg, var(--magenta), var(--violet), var(--teal), var(--magenta));
+    box-shadow: var(--m-glow);
+    position: relative;
+  }
+  .brand .lozenge::after {
+    content: ""; position: absolute; inset: 4px; border-radius: 50%;
+    background: var(--bg) url("logo.png") center/130% no-repeat;
+  }
+  /* classic ring variant — spinning gradient ring, no logo */
+  body[data-loz="ring"] .brand .lozenge { animation: spin 8s linear infinite; }
+  body[data-loz="ring"] .brand .lozenge::after { inset: 6px; background: var(--bg); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .brand .mark {
+    font-family: "Major Mono Display", monospace;
+    font-size: 16px; letter-spacing: 2px;
+    color: var(--ink);
+  }
+  .brand .meta { font-size: 9px; color: var(--ink-soft); letter-spacing: 1.5px; text-transform: uppercase; }
+  /* TTS toggle — outline icon, mask-based, sized like the composer mic */
+  .tts-btn {
+    all: unset; cursor: pointer;
+    width: 40px; height: 40px;
+    flex-shrink: 0;
+    background: linear-gradient(180deg, color-mix(in oklch, var(--teal) 75%, white) 0%, var(--teal) 55%, color-mix(in oklch, var(--teal) 60%, var(--violet)) 100%);
+    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 9.5h3.5L12 5.5v13L7.5 14.5H4z'/><path d='M15.5 9.5c1.2 1.4 1.2 5.6 0 7'/><path d='M18 7c2.6 2.6 2.6 7.4 0 10'/></svg>") center/26px no-repeat;
+            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 9.5h3.5L12 5.5v13L7.5 14.5H4z'/><path d='M15.5 9.5c1.2 1.4 1.2 5.6 0 7'/><path d='M18 7c2.6 2.6 2.6 7.4 0 10'/></svg>") center/26px no-repeat;
+    filter: drop-shadow(0 0 6px color-mix(in oklch, var(--teal) 45%, transparent));
+    transition: transform .12s;
+  }
+  .tts-btn:active { transform: scale(0.9); }
+  /* muted: switch to slashed-speaker mask + desaturated fill */
+  .tts-btn.muted {
+    background: linear-gradient(180deg, color-mix(in oklch, var(--ink-soft) 70%, white) 0%, var(--ink-soft) 55%, var(--ink-faint) 100%);
+    filter: none; opacity: .85;
+    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 9.5h3.5L12 5.5v13L7.5 14.5H4z'/><path d='M15.5 9.5l5.5 5.5'/><path d='M21 9.5l-5.5 5.5'/></svg>") center/26px no-repeat;
+            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 9.5h3.5L12 5.5v13L7.5 14.5H4z'/><path d='M15.5 9.5l5.5 5.5'/><path d='M21 9.5l-5.5 5.5'/></svg>") center/26px no-repeat;
+  }
+  .tts-btn:not(.muted) { animation: ttsGlow 2.4s ease-in-out infinite; }
+  @keyframes ttsGlow {
+    0%, 100% { filter: drop-shadow(0 0 4px color-mix(in oklch, var(--teal) 35%, transparent)); }
+    50%      { filter: drop-shadow(0 0 10px color-mix(in oklch, var(--teal) 60%, transparent)); }
+  }
+  /* tiny toast */
+  .tts-toast {
+    position: fixed; top: 64px; right: 16px; z-index: 30;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+    padding: 6px 10px; border-radius: 999px;
+    background: color-mix(in oklch, var(--bg-2) 88%, transparent);
+    border: 1px solid var(--line-2);
+    color: var(--ink-soft);
+    opacity: 0; transform: translateY(-4px); pointer-events: none;
+    transition: opacity .18s, transform .18s;
+  }
+  .tts-toast.show { opacity: 1; transform: translateY(0); }
+  .tts-toast b { color: var(--teal); font-weight: 600; }
+  .tts-toast.off b { color: var(--ink); }
+
+  /* Bottom tab bar with sliding indicator — 4 tabs */
+  .tabbar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 12;
+    background: color-mix(in oklch, var(--bg) 92%, transparent);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--line);
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    padding: 0;
+  }
+  .tabbar::before {
+    content: ""; position: absolute; top: 0; left: 0;
+    width: 25%; height: 3px;
+    background: linear-gradient(90deg, var(--magenta), var(--violet));
+    box-shadow: var(--m-glow);
+    transition: transform 0.4s cubic-bezier(.25,1,.4,1);
+  }
+  .tabbar[data-tab="agent"]::before { transform: translateX(100%); }
+  .tabbar[data-tab="utils"]::before { transform: translateX(200%); }
+  .tabbar[data-tab="conf"]::before  { transform: translateX(300%); }
+  .tabbtn { all: unset; cursor: pointer; padding: 12px 6px 14px; text-align: center; color: var(--ink-faint); transition: color 0.25s; }
+  .tabbtn.active { color: var(--ink); }
+  .tabbtn .glyph { font-size: 16px; line-height: 1; display: block; margin-bottom: 4px; font-family: "Major Mono Display"; }
+  .tabbtn .lbl { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; font-weight: 600; }
+
+  .tab { display: none; }
+  .tab.active { display: block; }
+
+  /* HERO: sun + horizon + now-monitoring */
+  .hero {
+    position: relative;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: linear-gradient(180deg, #0a0316 0%, #2a0a2a 35%, #4a0e4a 55%, #1f0d3f 75%, #0a0316 100%);
+    border-bottom: 1px solid var(--line);
+  }
+  .hero .sky {
+    position: relative;
+    height: 200px;
+    overflow: hidden;
+  }
+  .hero .sun {
+    position: absolute; left: 50%; bottom: -120px;
+    transform: translateX(-50%);
+    width: 280px; height: 280px;
+    background: radial-gradient(circle at 50% 45%, var(--sun-1), var(--sun-2) 55%, var(--sun-3) 80%, transparent 90%);
+    border-radius: 50%;
+    filter: drop-shadow(0 0 40px var(--sun-aura));
+    animation: float 8s ease-in-out infinite;
+    overflow: hidden; /* clip stripes to the sun's circle */
+    will-change: transform; /* force a single compositor layer so the stripe pseudo-element tracks 1:1 */
+  }
+  @keyframes float {
+    0%, 100% { transform: translateX(-50%) translateY(0); }
+    50% { transform: translateX(-50%) translateY(-5px); }
+  }
+  /* counter-animation on the stripe pseudo-element so it stays visually static
+     while the parent .sun bobs. translateY here cancels out the parent's float. */
+  @keyframes sun-stripes-static {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(5px); }
+  }
+  /* Retrowave sun stripes — 6 lines, aggressive thickness ramp (1→8 px),
+     muted purple (--bg-3), generous gaps near the top. */
+  .hero .sun::before { display: none; }
+  .hero .sun::after {
+    content: ""; position: absolute; inset: 0;
+    pointer-events: none;
+    background: linear-gradient(to bottom,
+      transparent 0 57px,
+      var(--sun-stripe) 57px 61px,
+      transparent 61px 72px,
+      var(--sun-stripe) 72px 78px,
+      transparent 78px 88px,
+      var(--sun-stripe) 88px 96px,
+      transparent 96px 105px,
+      var(--sun-stripe) 105px 115px,
+      transparent 115px 123px,
+      var(--sun-stripe) 123px 134px,
+      transparent 134px 100%
+    );
+    /* opaque dusky color matching the hero's bottom bg — themed via --sun-stripe.
+       blends into the sky at the sun's edge, hiding the bright circumference. */
+    filter: blur(1.1px);
+    /* Almost-flat mask so every stripe reads the same opacity; only quick fades
+       at the very top and bottom edges where the band meets sky / mountains. */
+    /* fade the band in at the top and out at the bottom — top stripe is gauzy,
+       bottom stripe lives inside the mountain silhouette and only peeks during
+       the sun's float. */
+    -webkit-mask: linear-gradient(to bottom,
+      transparent 50px,
+      black 64px,
+      black 136px,
+      transparent 144px);
+            mask: linear-gradient(to bottom,
+      transparent 50px,
+      black 64px,
+      black 136px,
+      transparent 144px);
+    animation: sun-stripes-static 8s ease-in-out infinite;
+  }
+  /* HORIZON SCENE — two interchangeable styles, switched via body[data-skyline].
+     Both implemented as multi-layer SVGs for depth + neon outline control.
+     Sit inside .sky so their base is clipped naturally by overflow:hidden. */
+  .hero .sky svg.skyline {
+    position: absolute;
+    left: -2%; width: 104%;
+    bottom: -4px; height: 56px;
+    pointer-events: none;
+    overflow: visible;
+  }
+  .hero .sky svg.skyline .edge {
+    fill: none;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  /* Mountains: 3 ridge lines, deepest at back, neon-pink outline on each.
+     Stroke width varies (thinner = farther back) for atmospheric perspective. */
+  .hero .sky svg.skyline-mountains {
+    filter: drop-shadow(0 0 3px color-mix(in oklch, var(--magenta) 35%, transparent));
+  }
+  /* Themed strokes — CSS overrides the inline stroke="" attrs on each path */
+  .hero .sky svg.skyline-mountains .edge { stroke: var(--skyline-stroke); }
+  .hero .sky svg.skyline-mountains g:nth-of-type(1) .edge { stroke: var(--skyline-stroke-faint); }
+  .hero .sky svg.skyline-mountains > .edge { stroke: var(--skyline-stroke-far); }
+
+  /* Themed gradient stops — CSS overrides the inline stop-color="" attrs */
+  .hero .sky #mtn-far  stop:nth-of-type(1) { stop-color: var(--mtn-far-top); }
+  .hero .sky #mtn-far  stop:nth-of-type(2) { stop-color: var(--mtn-far-bot); }
+  .hero .sky #mtn-back stop:nth-of-type(1) { stop-color: var(--mtn-back-top); }
+  .hero .sky #mtn-back stop:nth-of-type(2) { stop-color: var(--mtn-back-bot); }
+  .hero .sky #mtn-mid  stop:nth-of-type(1) { stop-color: var(--mtn-mid-top); }
+  .hero .sky #mtn-mid  stop:nth-of-type(2) { stop-color: var(--mtn-mid-bot); }
+  .hero .sky #mtn-fore stop:nth-of-type(1) { stop-color: var(--mtn-fore-top); }
+  .hero .sky #mtn-fore stop:nth-of-type(2) { stop-color: var(--mtn-fore-bot); }
+
+  .hero .sky #city-mtn  stop:nth-of-type(1) { stop-color: var(--city-mtn-top); }
+  .hero .sky #city-mtn  stop:nth-of-type(2) { stop-color: var(--city-mtn-bot); }
+  .hero .sky #city-back stop:nth-of-type(1) { stop-color: var(--city-back-top); }
+  .hero .sky #city-back stop:nth-of-type(2) { stop-color: var(--city-back-bot); }
+  .hero .sky #city-mid  stop:nth-of-type(1) { stop-color: var(--city-mid-top); }
+  .hero .sky #city-mid  stop:nth-of-type(2) { stop-color: var(--city-mid-bot); }
+  .hero .sky #city-fore stop:nth-of-type(1) { stop-color: var(--city-fore-top); }
+  .hero .sky #city-fore stop:nth-of-type(2) { stop-color: var(--city-fore-bot); }
+
+  /* City windows — three depth tiers (distant lavender, mid bright, fore warm) all themed.
+     The city SVG has 5 <g> children in source order:
+       1: distant windows · 2: main-tower windows · 3: rooftop details (uses #city-fore)
+       4: thin antennas · 5: foreground warm windows */
+  .hero .sky svg.skyline-city > g:nth-of-type(1) { fill: var(--city-window-far); }
+  .hero .sky svg.skyline-city > g:nth-of-type(2) { fill: var(--city-window-mid); }
+  .hero .sky svg.skyline-city > g:nth-of-type(5) { fill: var(--city-window-fore); }
+
+  /* City: distant mountains + main skyline + foreground buildings. No neon
+     outline on city — the depth comes from layered silhouettes shading
+     darker as they come forward. */
+  .hero .sky svg.skyline-city {
+    filter: drop-shadow(0 -1px 4px color-mix(in oklch, var(--magenta) 8%, transparent));
+  }
+
+  body[data-skyline="city"] .skyline-mountains { display: none; }
+  body[data-skyline="mountains"] .skyline-city { display: none; }
+  .hero .sky::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      radial-gradient(1px 1px at 10% 20%, #fff, transparent),
+      radial-gradient(1px 1px at 30% 12%, #ffe6f7, transparent),
+      radial-gradient(1px 1px at 55% 28%, var(--teal), transparent),
+      radial-gradient(1px 1px at 70% 16%, #fff, transparent),
+      radial-gradient(1px 1px at 85% 32%, var(--magenta-2), transparent),
+      radial-gradient(1px 1px at 92% 14%, #fff, transparent);
+    opacity: 0.7;
+    animation: twinkle 3s ease-in-out infinite;
+  }
+  @keyframes twinkle { 0%, 100% { opacity: 0.7; } 50% { opacity: 0.35; } }
+  .hero .horizon {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 80px;
+    background: linear-gradient(0deg, var(--bg) 10%, transparent);
+    pointer-events: none;
+  }
+  .hero .grid {
+    position: absolute; bottom: -40px; left: -50%; right: -50%; height: 120px;
+    background:
+      linear-gradient(var(--magenta) 1px, transparent 1px),
+      linear-gradient(90deg, var(--magenta) 1px, transparent 1px);
+    background-size: 40px 30px;
+    transform: perspective(140px) rotateX(60deg);
+    transform-origin: center top;
+    opacity: 0.5;
+    mask-image: linear-gradient(to bottom, black, transparent);
+    -webkit-mask-image: linear-gradient(to bottom, black, transparent);
+    animation: gridmove 4s linear infinite;
+  }
+  @keyframes gridmove {
+    from { background-position: 0 0, 0 0; }
+    to   { background-position: 0 30px, 0 0; }
+  }
+
+  /* Now monitoring panel */
+  .now {
+    position: relative;
+    padding: 14px 18px 18px;
+    z-index: 2;
+  }
+  .now .eyebrow {
+    font-size: 9px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--magenta);
+    text-shadow: 0 0 8px rgba(var(--accent-rgb), 0.5);
+    margin-bottom: 4px;
+  }
+  .now .row { display: flex; align-items: baseline; gap: 12px; }
+  .now .name {
+    font-family: "Major Mono Display";
+    font-size: 36px; line-height: 1;
+    letter-spacing: 2px;
+    background: linear-gradient(90deg, var(--ink), var(--magenta-2), var(--teal));
+    background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    animation: shimmer 4s ease-in-out infinite;
+  }
+  @keyframes shimmer {
+    0%, 100% { background-position: 0% 0%; }
+    50% { background-position: 100% 0%; }
+  }
+  .now .role { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-soft); }
+
+  .now .stats { display: flex; gap: 16px; margin-top: 10px; align-items: flex-end; }
+  .now .stat { display: flex; flex-direction: column; }
+  .now .stat .v { font-family: "Major Mono Display"; font-size: 18px; line-height: 1; color: var(--ink); }
+  .now .stat .v small { font-size: 10px; color: var(--ink-faint); }
+  .now .stat .v.mac { font-size: 13px; letter-spacing: 0.5px; }
+  .now .stat .v.mac small { font-size: 9px; margin: 0 1px; }
+  .now .stat .l { font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-faint); margin-top: 4px; }
+
+  /* Live waveform canvas */
+  .waveform {
+    margin-top: 14px;
+    height: 64px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background:
+      linear-gradient(180deg, rgba(var(--accent-rgb), 0.06), rgba(var(--accent-rgb-2), 0.02));
+    position: relative; overflow: hidden;
+  }
+  .waveform canvas { display: block; width: 100%; height: 100%; }
+  .waveform .legend { position: absolute; left: 10px; bottom: 6px; font-size: 8px; letter-spacing: 1.5px; color: var(--ink-faint); text-transform: uppercase; }
+  .waveform .legend-r { position: absolute; right: 10px; bottom: 6px; font-size: 8px; letter-spacing: 1.5px; color: var(--magenta); text-transform: uppercase; }
+
+  .now-dots { display: flex; justify-content: center; gap: 6px; padding: 12px 0 0; }
+  .now-dots div { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint); cursor: pointer; transition: 0.2s; }
+  .now-dots div.active { background: var(--magenta); width: 22px; border-radius: 3px; box-shadow: var(--m-glow); }
+
+  /* Section header */
+  .sec { padding: 18px 18px 8px; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-soft); display: flex; align-items: baseline; gap: 8px; }
+  .sec .num { color: var(--magenta); font-weight: 600; }
+  .sec b { color: var(--ink); font-weight: 600; }
+  .sec::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line-2), transparent); align-self: center; }
+  .sec .right { color: var(--ink-faint); }
+
+  /* Compact device rows */
+  .devs { padding: 0 18px; display: flex; flex-direction: column; gap: 6px; }
+  .dev {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .dev.on { border-color: rgba(var(--accent-rgb), 0.18); }
+  .dev.on::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: rgba(var(--accent-rgb-2), 0.35);
+    z-index: 1;
+  }
+  .dev.featured {
+    border-color: var(--magenta);
+    box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.25);
+  }
+  .dev.featured.on::before,
+  .dev.featured::before {
+    background: linear-gradient(180deg, var(--magenta), var(--violet));
+    box-shadow: 0 0 8px var(--magenta);
+  }
+
+  .dev .top {
+    display: grid;
+    grid-template-columns: auto 1fr 60px auto 16px;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    min-height: 56px;
+  }
+
+  .dev .led { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); }
+  .dev.on .led { background: var(--magenta); box-shadow: var(--m-glow); animation: heartbeat 1.6s ease-in-out infinite; }
+  @keyframes heartbeat {
+    0%, 100% { transform: scale(1); }
+    20% { transform: scale(1.4); }
+    40% { transform: scale(1); }
+  }
+
+  .dev .info { min-width: 0; }
+  .dev .name {
+    font-family: "Major Mono Display"; font-size: 16px; line-height: 1; letter-spacing: 1.5px;
+    color: var(--ink);
+  }
+  .dev.off .name { color: var(--ink-soft); }
+  .dev .sub { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-faint); margin-top: 4px; }
+  .dev.busy .sub::after {
+    content: " · ◐"; color: var(--teal); animation: spin 1s linear infinite; display: inline-block;
+  }
+
+  .dev .chev { color: var(--ink-faint); font-size: 14px; transition: transform 0.2s; line-height: 1; text-align: center; }
+  .dev.open .chev { transform: rotate(90deg); color: var(--magenta); }
+
+  /* Dropdown: machine details + services */
+  .dev .dropdown { display: none; border-top: 1px solid var(--line); padding: 6px 6px 10px; }
+  .dev.open .dropdown { display: block; }
+
+  /* Services list */
+  .dev .svc-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px;
+    text-decoration: none; color: inherit;
+    border-radius: 6px;
+    min-height: 40px;
+  }
+  .dev .svc-row:active { background: var(--bg-3); }
+  .dev .svc-row .led { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); box-shadow: none; animation: none; flex-shrink: 0; }
+  .dev .svc-row.on .led { background: var(--magenta); box-shadow: var(--m-glow); }
+  .dev .svc-row .info { flex: 1; min-width: 0; }
+  .dev .svc-row .name { font-family: "JetBrains Mono"; font-size: 12px; font-weight: 600; letter-spacing: 0.2px; color: var(--ink); }
+  .dev .svc-row.off .name { color: var(--ink-soft); }
+  .dev .svc-row .addr { font-family: "JetBrains Mono"; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-faint); margin-top: 1px; }
+  .dev .svc-row .arrow { color: var(--magenta); font-size: 12px; flex-shrink: 0; }
+  .dev .svc-row.off .arrow { color: var(--ink-faint); }
+  .dev .no-svc {
+    padding: 10px 10px; text-align: center;
+    font-size: 9px; color: var(--ink-faint);
+    letter-spacing: 2px; text-transform: uppercase;
+    font-style: italic;
+  }
+
+  /* Details (kvgrid) is now a compact section under the services */
+  .dev .details {
+    margin: 6px 8px 0;
+    padding: 10px 10px 0;
+    border-top: 1px dashed var(--line);
+  }
+  .dev .kvgrid {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 4px 12px;
+    font-size: 11px;
+  }
+  .dev .kvgrid .k { color: var(--ink-faint); letter-spacing: 1.2px; text-transform: uppercase; font-size: 9px; align-self: center; }
+  .dev .kvgrid .v { color: var(--ink); font-family: "JetBrains Mono"; }
+  .dev .kvgrid .v.dim { color: var(--ink-soft); }
+  .dev .kvgrid .v.mac { letter-spacing: 1px; }
+  .dev .kvgrid .v.os-win::before { content: "⊞ "; color: var(--teal); }
+  .dev .kvgrid .v.os-linux::before { content: "◆ "; color: var(--violet); }
+  .dev .dropfoot {
+    display: flex; gap: 6px; margin: 10px 8px 0; padding-top: 10px;
+    border-top: 1px dashed var(--line);
+  }
+  .dev .dropfoot button,
+  .dev .dropfoot a.open {
+    all: unset; cursor: pointer;
+    flex: 1; text-align: center;
+    padding: 8px 0; font-size: 9px;
+    letter-spacing: 1.8px; text-transform: uppercase;
+    border: 1px solid var(--line-2); border-radius: 6px;
+    color: var(--ink-soft);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .dev .dropfoot button:active,
+  .dev .dropfoot a.open:active { background: var(--bg-3); color: var(--magenta); border-color: var(--magenta); }
+  .dev .dropfoot a.open { color: var(--magenta); border-color: color-mix(in oklch, var(--magenta) 40%, transparent); flex: 2; font-family: "JetBrains Mono", ui-monospace, monospace; letter-spacing: 1px; text-transform: none; }
+  .dev .dropfoot button.danger { color: rgba(var(--danger-rgb), 0.85); }
+  .dev .dropfoot button.danger:active { color: var(--red); border-color: var(--red); }
+
+  /* mini equalizer */
+  .eq { display: flex; gap: 3px; align-items: flex-end; height: 26px; }
+  .eq i {
+    display: block; width: 5px; background: var(--magenta);
+    box-shadow: 0 0 5px var(--magenta);
+    border-radius: 1px;
+    animation: eq 0.9s ease-in-out infinite alternate;
+  }
+  .dev.off .eq i { background: var(--ink-faint); box-shadow: none; height: 4px !important; animation: none; }
+  .eq i:nth-child(1) { animation-delay: 0.00s; }
+  .eq i:nth-child(2) { animation-delay: 0.08s; }
+  .eq i:nth-child(3) { animation-delay: 0.16s; }
+  .eq i:nth-child(4) { animation-delay: 0.24s; }
+  .eq i:nth-child(5) { animation-delay: 0.32s; }
+  .eq i:nth-child(6) { animation-delay: 0.40s; }
+  .eq i:nth-child(7) { animation-delay: 0.48s; }
+  .eq i:nth-child(8) { animation-delay: 0.56s; }
+  @keyframes eq {
+    from { height: 4px; opacity: 0.5; }
+    to   { height: 24px; opacity: 1; }
+  }
+
+  .dev .act {
+    all: unset; cursor: pointer;
+    width: 44px; height: 44px;
+    display: inline-block; flex-shrink: 0;
+    -webkit-mask-position: center; -webkit-mask-repeat: no-repeat; -webkit-mask-size: 30px;
+    mask-position: center; mask-repeat: no-repeat; mask-size: 30px;
+    transition: transform 0.12s, filter 0.15s;
+  }
+  .dev .act:active { transform: scale(0.85); }
+  .dev .act.wake {
+    background: var(--accent-grad);
+    -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M10 2L3 14h6l-1 8 8-12h-6l1-8z' fill='black' stroke='black' stroke-width='1.2' stroke-linejoin='round'/></svg>");
+            mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M10 2L3 14h6l-1 8 8-12h-6l1-8z' fill='black' stroke='black' stroke-width='1.2' stroke-linejoin='round'/></svg>");
+    filter: var(--accent-glow);
+  }
+  .dev .act.stop {
+    background: var(--danger-grad);
+    -webkit-mask-size: 32px; mask-size: 32px;
+    -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round'><path d='M12 3 v8'/><path d='M6.5 7.5 A7 7 0 1 0 17.5 7.5'/></svg>");
+            mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round'><path d='M12 3 v8'/><path d='M6.5 7.5 A7 7 0 1 0 17.5 7.5'/></svg>");
+    filter: var(--danger-glow);
+  }
+
+  /* Fleet summary */
+  .summary {
+    margin: 16px 18px 0;
+    padding: 14px 18px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.10), rgba(92,230,255,0.06));
+    border: 1px solid var(--line-2);
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .summary .s { text-align: center; }
+  .summary .s .v { font-family: "Major Mono Display"; font-size: 22px; line-height: 1; color: var(--ink); }
+  .summary .s .v small { font-size: 11px; color: var(--ink-faint); }
+  .summary .s .l { font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-soft); margin-top: 4px; }
+  .summary .s.cyan .v { color: var(--teal); text-shadow: var(--t-glow); }
+  .summary .s.violet .v { color: var(--violet); text-shadow: var(--v-glow); }
+
+  /* Shared chat composer (fleet + chat tabs only) */
+  .composer {
+    position: fixed; bottom: 60px; left: 0; right: 0; z-index: 11;
+    background: color-mix(in oklch, var(--bg) 94%, transparent);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--line-2);
+    border-left: 1px solid var(--line-2);
+    border-right: 1px solid var(--line-2);
+    border-radius: 14px 14px 0 0;
+    padding: 0;
+    display: flex; align-items: stretch; gap: 0;
+    box-shadow: 0 -6px 18px rgba(0,0,0,0.35);
+  }
+  /* Field wraps textarea + mic, both share the same input background
+     so the mic looks like an embedded icon inside the field. */
+  .composer .field {
+    flex: 1;
+    display: flex; align-items: center;
+    background: var(--bg-2);
+    border-radius: 14px 0 0 0;
+    position: relative;
+  }
+  .composer .field:focus-within {
+    box-shadow: inset 0 0 0 1px var(--magenta), 0 0 12px rgba(var(--accent-rgb), 0.3);
+  }
+  .composer textarea {
+    all: unset; flex: 1;
+    padding: 13px 6px 11px 14px;
+    border-radius: 14px 0 0 0;
+    background: transparent;
+    color: var(--ink); font: inherit; font-size: 12px;
+    border: 0;
+    min-height: 22px; max-height: 96px;
+    resize: none; line-height: 1.45;
+    overflow-y: auto;
+  }
+  .composer textarea::placeholder { color: var(--ink-faint); }
+  .composer textarea:focus { outline: 0; }
+  /* Send button: on the far right, flush with composer edge */
+  .composer .send {
+    all: unset; cursor: pointer;
+    width: 50px;
+    border-radius: 0 14px 0 0;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, var(--magenta), var(--violet));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+    display: inline-flex; align-items: center; justify-content: center;
+    position: relative;
+    transition: transform 0.12s, filter 0.15s;
+  }
+  .composer .send:active { transform: scale(0.94); filter: brightness(1.1); }
+  .composer .send.brewing { animation: brew 1s ease-in-out infinite; }
+  @keyframes brew { 50% { filter: brightness(1.35) saturate(1.2); } }
+  .composer .send::before {
+    content: "";
+    width: 24px; height: 24px;
+    background: var(--bg-2);
+    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M3 11.5 L21 3 L13 21 L11 13 Z' fill='black'/></svg>") center/contain no-repeat;
+            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M3 11.5 L21 3 L13 21 L11 13 Z' fill='black'/></svg>") center/contain no-repeat;
+    transform: translate(-1px, 1px);
+  }
+  /* Mic sits inside the field, between textarea and send button */
+  .composer .mic {
+    all: unset; cursor: pointer;
+    width: 44px;
+    height: 44px;
+    margin-right: 4px;
+    flex-shrink: 0;
+    background: var(--accent-grad);
+    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><rect x='9' y='3' width='6' height='11' rx='3'/><path d='M5 11a7 7 0 0 0 14 0'/><path d='M12 18v3'/></svg>") center/28px no-repeat;
+            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><rect x='9' y='3' width='6' height='11' rx='3'/><path d='M5 11a7 7 0 0 0 14 0'/><path d='M12 18v3'/></svg>") center/28px no-repeat;
+    filter: var(--accent-glow-soft);
+  }
+  .composer .mic:active { transform: scale(0.88); }
+  .composer .mic.rec {
+    background: var(--danger-grad);
+    filter: var(--danger-glow);
+    animation: micrec 1.2s ease-in-out infinite;
+  }
+  @keyframes micrec { 50% { transform: scale(0.92); } }
+
+  /* (peek + meta-row removed for compact composer) */
+
+  /* CHAT */
+  .chat-log { padding: 6px 16px 12px; display: flex; flex-direction: column; gap: 14px; }
+  .b .who { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .b .who::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint); }
+  .b.user .who::before { background: var(--teal); box-shadow: var(--t-glow); }
+  .b.bot .who::before { background: var(--magenta); box-shadow: var(--m-glow); }
+  .b .body { font-size: 13px; line-height: 1.5; color: var(--ink); }
+  .b.user { align-self: flex-end; max-width: 88%; }
+  .b.user .body {
+    background: linear-gradient(135deg, rgba(92,230,255,0.14), rgba(92,230,255,0.04));
+    border: 1px solid rgba(92,230,255,0.3);
+    padding: 9px 13px; border-radius: 16px 16px 4px 16px;
+  }
+  .b.bot { max-width: 92%; }
+  .b.bot .body {
+    background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.10), rgba(var(--accent-rgb-2), 0.04));
+    border: 1px solid rgba(var(--accent-rgb), 0.25);
+    padding: 9px 13px; border-radius: 16px 16px 16px 4px;
+  }
+  .b.sys { align-self: center; max-width: 90%; }
+  .b.sys .body {
+    font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--ink-faint); text-align: center;
+    padding: 8px 12px;
+    border: 1px dashed var(--line-2); border-radius: 8px;
+  }
+
+  /* Command bubble: bot suggests a $ command to review and execute */
+  .b.cmd { max-width: 92%; }
+  .b.cmd .body {
+    padding: 0;
+    border-radius: 12px;
+    background: rgba(126,255,150,0.04);
+    border: 1px solid rgba(126,255,150,0.32);
+    overflow: hidden;
+  }
+  .b.cmd .preamble {
+    padding: 8px 12px 0;
+    font-size: 12px; line-height: 1.4; color: var(--ink);
+  }
+  .b.cmd pre {
+    margin: 8px 12px 10px;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid rgba(126,255,150,0.25);
+    border-radius: 6px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11.5px; line-height: 1.5;
+    color: var(--green);
+    white-space: pre-wrap; word-break: break-all;
+    overflow-x: auto;
+  }
+  .b.cmd pre::before {
+    content: "$"; color: var(--ink-faint); margin-right: 6px; font-weight: 600;
+  }
+  .b.cmd .actions {
+    display: flex; gap: 0;
+    border-top: 1px solid rgba(126,255,150,0.2);
+  }
+  .b.cmd .actions button {
+    all: unset; cursor: pointer;
+    flex: 1; text-align: center;
+    padding: 9px 0;
+    font-size: 9px; letter-spacing: 1.8px; text-transform: uppercase; font-weight: 600;
+    color: var(--ink-soft);
+    border-right: 1px solid rgba(126,255,150,0.2);
+  }
+  .b.cmd .actions button:last-child { border-right: 0; }
+  .b.cmd .actions button:active { background: rgba(126,255,150,0.08); }
+  .b.cmd .actions .exec { color: var(--green); }
+  .b.cmd .actions .exec:active { background: rgba(126,255,150,0.15); }
+  .b.cmd .actions .edit { color: var(--teal); }
+  .b.cmd .actions .dismiss { color: var(--ink-faint); }
+  .b.cmd.done .body { background: rgba(var(--accent-rgb-2), 0.04); border-color: rgba(var(--accent-rgb-2), 0.32); }
+  .b.cmd.done pre { color: var(--ink-soft); border-color: rgba(var(--accent-rgb-2), 0.2); }
+  .b.cmd.done pre::before { color: var(--violet); }
+  .b.cmd.done .actions { display: none; }
+  .b.cmd.done .body::after {
+    content: "// dispatched · cmd window opened";
+    display: block;
+    padding: 6px 12px 10px;
+    font-size: 8.5px; letter-spacing: 1.8px; text-transform: uppercase; color: var(--violet);
+  }
+
+  .notice {
+    margin: 8px 16px;
+    padding: 9px 12px;
+    font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--ink-soft);
+    border-radius: 6px;
+    background: rgba(var(--accent-rgb-2), 0.08);
+    border-left: 2px solid var(--violet);
+  }
+  .notice .heart { color: var(--violet); }
+
+  /* UTILS — tool cards */
+  .util {
+    margin: 14px 16px;
+    border: 1px solid var(--line-2);
+    border-radius: 14px;
+    background: var(--bg-2);
+    overflow: hidden;
+  }
+  .util .uhead {
+    padding: 12px 14px;
+    display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.08), transparent);
+  }
+  .util .uhead .glyph {
+    width: 42px; height: 42px;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .util .uhead .glyph .ico {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--magenta), var(--violet));
+    filter: drop-shadow(0 0 10px rgba(var(--accent-rgb), 0.45));
+    flex-shrink: 0;
+  }
+  .util .uhead .glyph .ico.yt {
+    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M23.5 6.5s-.2-1.6-.9-2.3c-.9-.9-1.9-1-2.4-1C16.8 3 12 3 12 3h0s-4.8 0-8.2.3c-.5 0-1.5.1-2.4 1C.7 4.9.5 6.5.5 6.5S.3 8.4.3 10.3v1.7c0 1.9.2 3.8.2 3.8s.2 1.6.9 2.3c.9.9 2 .9 2.5 1 1.8.2 7.6.3 7.6.3s4.8 0 8.2-.3c.5-.1 1.5-.1 2.4-1 .7-.7.9-2.3.9-2.3s.2-1.9.2-3.8v-1.7c0-1.9-.2-3.8-.2-3.8zM9.6 14.6V7.9l6.3 3.4-6.3 3.3z' fill='black'/></svg>") center/contain no-repeat;
+            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M23.5 6.5s-.2-1.6-.9-2.3c-.9-.9-1.9-1-2.4-1C16.8 3 12 3 12 3h0s-4.8 0-8.2.3c-.5 0-1.5.1-2.4 1C.7 4.9.5 6.5.5 6.5S.3 8.4.3 10.3v1.7c0 1.9.2 3.8.2 3.8s.2 1.6.9 2.3c.9.9 2 .9 2.5 1 1.8.2 7.6.3 7.6.3s4.8 0 8.2-.3c.5-.1 1.5-.1 2.4-1 .7-.7.9-2.3.9-2.3s.2-1.9.2-3.8v-1.7c0-1.9-.2-3.8-.2-3.8zM9.6 14.6V7.9l6.3 3.4-6.3 3.3z' fill='black'/></svg>") center/contain no-repeat;
+  }
+  .util .uhead .glyph .ico.globe {
+    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'><circle cx='12' cy='12' r='9'/><ellipse cx='12' cy='12' rx='4' ry='9'/><path d='M3 12 h18'/><path d='M4.5 7 h15'/><path d='M4.5 17 h15'/></svg>") center/contain no-repeat;
+            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'><circle cx='12' cy='12' r='9'/><ellipse cx='12' cy='12' rx='4' ry='9'/><path d='M3 12 h18'/><path d='M4.5 7 h15'/><path d='M4.5 17 h15'/></svg>") center/contain no-repeat;
+  }
+  .util .uhead .t { flex: 1; }
+  .util .uhead .t .nm { font-family: "Major Mono Display"; font-size: 16px; letter-spacing: 1.5px; color: var(--ink); }
+  .util .uhead .t .desc { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-faint); margin-top: 2px; }
+  .util .ubody { padding: 12px 14px 14px; }
+  .util .field { display: flex; gap: 0; align-items: stretch; }
+  .util .field input {
+    all: unset; flex: 1; padding: 9px 12px;
+    border-radius: 8px 0 0 8px;
+    background: var(--bg-3); color: var(--ink); font: inherit; font-size: 12px;
+    border: 1px solid var(--line-2);
+    border-right: 0;
+  }
+  .util .field input:focus {
+    border-color: var(--magenta);
+    box-shadow: 0 0 0 1px var(--magenta), 0 0 12px rgba(var(--accent-rgb), 0.3);
+    position: relative; z-index: 1;
+  }
+  .util .field input::placeholder { color: var(--ink-faint); }
+  .util .field button {
+    all: unset; cursor: pointer; padding: 0 16px;
+    border-radius: 0 8px 8px 0;
+    background: linear-gradient(135deg, var(--magenta), var(--violet));
+    color: #1a0428; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; font-weight: 800;
+    box-shadow: 0 3px 12px rgba(var(--accent-rgb), 0.4), inset 0 1px 0 rgba(255,255,255,0.18);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .util .field button:active { transform: scale(0.96); filter: brightness(1.1); }
+  .util .result {
+    margin-top: 12px; padding: 10px 12px;
+    background: var(--bg-3);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 11px; line-height: 1.55;
+  }
+  .util .result.empty {
+    color: var(--ink-faint); font-style: italic; text-align: center;
+    background: transparent; border-style: dashed;
+  }
+  .util .result .kv { display: grid; grid-template-columns: 90px 1fr; gap: 4px 10px; font-size: 11px; }
+  .util .result .kv .k { color: var(--ink-faint); font-size: 9px; letter-spacing: 1.2px; text-transform: uppercase; align-self: center; }
+  .util .result .kv .v { color: var(--ink); }
+  .util .result .vtitle { font-family: "Major Mono Display"; font-size: 13px; color: var(--magenta); letter-spacing: 1px; margin-bottom: 6px; }
+  .util .result .download {
+    margin-top: 10px; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--green); text-decoration: none;
+    border: 1px dashed rgba(126,255,150,0.4);
+    padding: 6px 10px; border-radius: 6px;
+  }
+
+  /* SETTINGS */
+  .confgroup { margin: 8px 16px 0; }
+  .conftitle { padding: 16px 0 8px; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-soft); display: flex; align-items: baseline; gap: 8px; }
+  .conftitle .num { color: var(--magenta); }
+  .conftitle b { color: var(--ink); }
+  .conftitle::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line-2), transparent); align-self: center; }
+  .conftitle .right { color: var(--ink-faint); font-size: 8px; letter-spacing: 1.2px; }
+
+  .conf-card { background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 14px; overflow: hidden; }
+  .confrow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; min-height: 52px; border-top: 1px solid var(--line); }
+  .conf-card .confrow:first-child { border-top: 0; }
+  .confrow .k { flex: 1; min-width: 0; }
+  .confrow .k .label { font-size: 13px; color: var(--ink); }
+  .confrow .k .desc { font-size: 9px; color: var(--ink-faint); margin-top: 2px; letter-spacing: 1.2px; text-transform: uppercase; word-break: break-all; }
+  .confrow .k .desc.code { font-family: "JetBrains Mono"; text-transform: none; letter-spacing: 0.5px; color: var(--ink-soft); }
+  .seg { display: inline-flex; border-radius: 999px; padding: 3px; background: var(--bg-3); border: 1px solid var(--line); }
+  .seg button { all: unset; cursor: pointer; padding: 6px 10px; border-radius: 999px; font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-soft); font-weight: 600; }
+  .seg button.active { background: linear-gradient(135deg, var(--magenta), var(--violet)); color: #fff; box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.4); }
+  .switch { display: inline-flex; align-items: center; cursor: pointer; }
+  .switch .knob { width: 42px; height: 22px; border-radius: 999px; background: var(--bg-3); position: relative; transition: 0.2s; border: 1px solid var(--line-2); }
+  .switch .knob::after { content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--ink-soft); transition: 0.2s; }
+  .switch.on .knob { background: linear-gradient(135deg, var(--magenta), var(--violet)); border-color: var(--magenta); box-shadow: var(--m-glow); }
+  .switch.on .knob::after { left: 22px; background: #fff; }
+  .confrow input[type=text], .confrow input[type=password] {
+    all: unset; flex: 1; min-width: 0; padding: 7px 10px; border-radius: 8px; background: var(--bg-3);
+    color: var(--ink); font: inherit; font-size: 11px; max-width: 62%;
+    border: 1px solid var(--line);
+  }
+  .confrow input:focus { border-color: var(--magenta); box-shadow: var(--m-glow); }
+  .confrow .chev { color: var(--magenta); font-size: 16px; transition: transform 0.2s; line-height: 1; }
+
+  /* Expandable machine row: header (.confrow) + dropdown (.mconf) */
+  .mwrap { border-top: 1px solid var(--line); }
+  .conf-card .mwrap:first-child { border-top: 0; }
+  .mwrap > .confrow { border-top: 0; cursor: pointer; user-select: none; }
+  .mwrap.open > .confrow { background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.08), transparent); }
+  .mwrap.open > .confrow .chev { transform: rotate(90deg); }
+  .mwrap .mconf { display: none; padding: 4px 14px 14px; background: rgba(10,3,22,0.4); border-top: 1px dashed var(--line); }
+  .mwrap.open .mconf { display: block; }
+  .mconf .mform { display: grid; grid-template-columns: 90px 1fr; gap: 8px 12px; align-items: center; }
+  .mconf .mform label {
+    font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--ink-faint); align-self: center;
+  }
+  .mconf .mform input, .mconf .mform select {
+    all: unset; box-sizing: border-box;
+    width: 100%; padding: 8px 10px; border-radius: 8px;
+    background: var(--bg-3); color: var(--ink);
+    font: inherit; font-size: 11px; font-family: "JetBrains Mono", ui-monospace, monospace;
+    border: 1px solid var(--line); letter-spacing: 0.3px;
+  }
+  .mconf .mform input:focus, .mconf .mform select:focus {
+    border-color: var(--magenta); box-shadow: 0 0 0 1px var(--magenta), 0 0 10px rgba(var(--accent-rgb), 0.25);
+  }
+  .mconf .mform input::placeholder { color: var(--ink-faint); }
+  /* compact 2-col split for port + scan */
+  .mconf .mform .split { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  .mconf .mform .split button {
+    all: unset; cursor: pointer;
+    padding: 7px 10px; border-radius: 7px;
+    font-size: 8.5px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--teal); border: 1px solid rgba(92,230,255,0.3);
+  }
+  .mconf .mform .split button:active { background: rgba(92,230,255,0.1); }
+  .mconf .mform .pw {
+    position: relative;
+    display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+  }
+  .mconf .mform .pw button.reveal {
+    all: unset; cursor: pointer;
+    padding: 7px 10px; border-radius: 7px;
+    font-size: 8.5px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--ink-soft); border: 1px solid var(--line-2);
+  }
+  .mconf .mform .pw button.reveal.on { color: var(--magenta); border-color: var(--magenta); }
+  .mconf .mfoot {
+    display: flex; gap: 8px; margin-top: 12px; padding-top: 12px;
+    border-top: 1px dashed var(--line);
+  }
+  .mconf .mfoot button {
+    all: unset; cursor: pointer; flex: 1; text-align: center;
+    padding: 9px 0; font-size: 9px; letter-spacing: 1.8px; text-transform: uppercase; font-weight: 600;
+    border-radius: 8px; border: 1px solid var(--line-2); color: var(--ink-soft);
+  }
+  .mconf .mfoot button:active { background: var(--bg-3); }
+  .mconf .mfoot button.save { color: #1a0428; background: linear-gradient(135deg, var(--magenta), var(--violet)); border-color: transparent; box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.35); }
+  .mconf .mfoot button.danger { color: rgba(var(--danger-rgb), 0.85); border-color: rgba(var(--danger-rgb), 0.3); }
+  .mconf .mfoot button.danger:active { color: var(--red); border-color: var(--red); background: rgba(var(--danger-rgb), 0.08); }
+
+  /* Add-machine row — magenta plus, expands to empty form */
+  .mwrap.add > .confrow .label { color: var(--magenta); display: flex; align-items: center; gap: 8px; }
+  .mwrap.add > .confrow .label::before {
+    content: "+"; display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 1px solid var(--magenta); color: var(--magenta);
+    font-size: 14px; line-height: 1; font-weight: 600;
+    box-shadow: var(--m-glow);
+  }
+  .mwrap.add.open > .confrow .label::before { content: "−"; }
+  .confrow .badge {
+    font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 999px;
+    background: rgba(126,255,150,0.12);
+    color: var(--green); border: 1px solid rgba(126,255,150,0.3);
+  }
+  .confrow .badge.stale { background: rgba(255,90,90,0.12); color: var(--red); border-color: rgba(255,90,90,0.3); }
+  .confrow .badge.dim { background: var(--bg-3); color: var(--ink-faint); border-color: var(--line); }
+
+  .conf-foot {
+    margin: 18px 16px 0;
+    padding: 14px;
+    text-align: center;
+    font-size: 8px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--ink-faint);
+    border-top: 1px dashed var(--line);
+  }
+  .conf-foot a { color: var(--violet); text-decoration: none; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-thumb { background: var(--magenta); border-radius: 2px; }
+  ::selection { background: var(--magenta); color: #fff; }
+</style>
+</head>
+<body data-theme="dark" data-tab="fleet" data-skyline="city" data-loz="logo">
+
+  <div class="appbar">
+    <div class="brand">
+      <div class="lozenge"></div>
+      <span class="mark">ctrl·b</span>
+      <span class="meta">dashboard</span>
+    </div>
+    <button class="tts-btn" id="ttsToggle" title="auto-speak assistant replies" aria-pressed="true" aria-label="auto text-to-speech"></button>
+  </div>
+  <div class="tts-toast" id="ttsToast"><b>auto-tts</b> on</div>
+
+  <!-- ============================================== -->
+  <!-- FLEET — dashboard + command crafter            -->
+  <!-- ============================================== -->
+  <div class="tab active" id="tab-fleet" data-screen-label="01 Fleet">
+    <div class="hero">
+      <div class="sky">
+        <div class="sun"></div>
+        <!-- MOUNTAINS — 3 ridges of decreasing distance, each with its own neon outline -->
+        <svg class="skyline skyline-mountains" viewBox="0 0 200 56" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="mtn-far" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#6e3aa8"/><stop offset="100%" stop-color="#3f1d70"/>
+            </linearGradient>
+            <linearGradient id="mtn-back" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#4a2080"/><stop offset="100%" stop-color="#26124a"/>
+            </linearGradient>
+            <linearGradient id="mtn-mid" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#2a1052"/><stop offset="100%" stop-color="#10052a"/>
+            </linearGradient>
+            <linearGradient id="mtn-fore" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#10052a"/><stop offset="100%" stop-color="#04010a"/>
+            </linearGradient>
+          </defs>
+
+          <!-- FAR: hazy distant rolling ridge with the faintest outline -->
+          <path d="M 0,56 L 0,38 L 15,32 L 30,36 L 50,28 L 70,32 L 90,26 L 110,30 L 130,24 L 150,28 L 170,26 L 190,30 L 200,28 L 200,56 Z" fill="url(#mtn-far)"/>
+          <path class="edge" d="M 0,38 L 15,32 L 30,36 L 50,28 L 70,32 L 90,26 L 110,30 L 130,24 L 150,28 L 170,26 L 190,30 L 200,28" stroke="rgba(255,82,212,0.28)" stroke-width="0.4" vector-effect="non-scaling-stroke"/>
+
+          <!-- BACK ROW: 8 small overlapping peaks. Smaller than the front row so atmospheric
+               perspective reads correctly (distant = lower silhouettes). Each is its own polygon
+               so the next one's fill clips part of the previous outline → "peak behind peak".
+               Peak positions are deliberately asymmetric — mix of left-, right-, and center-lean. -->
+          <g>
+            <polygon points="-10,56 8,26 32,56" fill="url(#mtn-back)"/>
+            <polyline class="edge" points="-10,56 8,26 32,56" stroke="rgba(255,82,212,0.45)" stroke-width="0.55" vector-effect="non-scaling-stroke"/>
+
+            <polygon points="14,56 36,22 54,56" fill="url(#mtn-back)"/>
+            <polyline class="edge" points="14,56 36,22 54,56" stroke="rgba(255,82,212,0.45)" stroke-width="0.55" vector-effect="non-scaling-stroke"/>
+
+            <polygon points="42,56 50,28 76,56" fill="url(#mtn-back)"/>
+            <polyline class="edge" points="42,56 50,28 76,56" stroke="rgba(255,82,212,0.45)" stroke-width="0.55" vector-effect="non-scaling-stroke"/>
+
+            <polygon points="64,56 82,20 102,56" fill="url(#mtn-back)"/>
+            <polyline class="edge" points="64,56 82,20 102,56" stroke="rgba(255,82,212,0.45)" stroke-width="0.55" vector-effect="non-scaling-stroke"/>
+
+            <polygon points="88,56 104,30 124,56" fill="url(#mtn-back)"/>
+            <polyline class="edge" points="88,56 104,30 124,56" stroke="rgba(255,82,212,0.45)" stroke-width="0.55" vector-effect="non-scaling-stroke"/>
+
+            <polygon points="112,56 128,24 158,56" fill="url(#mtn-back)"/>
+            <polyline class="edge" points="112,56 128,24 158,56" stroke="rgba(255,82,212,0.45)" stroke-width="0.55" vector-effect="non-scaling-stroke"/>
+
+            <polygon points="140,56 166,18 188,56" fill="url(#mtn-back)"/>
+            <polyline class="edge" points="140,56 166,18 188,56" stroke="rgba(255,82,212,0.45)" stroke-width="0.55" vector-effect="non-scaling-stroke"/>
+
+            <polygon points="174,56 192,26 218,56" fill="url(#mtn-back)"/>
+            <polyline class="edge" points="174,56 192,26 218,56" stroke="rgba(255,82,212,0.45)" stroke-width="0.55" vector-effect="non-scaling-stroke"/>
+          </g>
+
+          <!-- FRONT ROW: 7 large dramatic peaks, overlapping, with randomized peak lean. -->
+          <g>
+            <polygon points="-18,56 12,14 38,56" fill="url(#mtn-mid)"/>
+            <polyline class="edge" points="-18,56 12,14 38,56" stroke="#ff52d4" stroke-width="0.75" vector-effect="non-scaling-stroke"/>
+
+            <polygon points="10,56 45,4 74,56" fill="url(#mtn-mid)"/>
+            <polyline class="edge" points="10,56 45,4 74,56" stroke="#ff52d4" stroke-width="0.75" vector-effect="non-scaling-stroke"/>
+
+            <polygon points="54,56 78,20 102,56" fill="url(#mtn-mid)"/>
+            <polyline class="edge" points="54,56 78,20 102,56" stroke="#ff52d4" stroke-width="0.75" vector-effect="non-scaling-stroke"/>
+
+            <polygon points="94,56 110,8 152,56" fill="url(#mtn-mid)"/>
+            <polyline class="edge" points="94,56 110,8 152,56" stroke="#ff52d4" stroke-width="0.75" vector-effect="non-scaling-stroke"/>
+
+            <polygon points="118,56 142,22 162,56" fill="url(#mtn-mid)"/>
+            <polyline class="edge" points="118,56 142,22 162,56" stroke="#ff52d4" stroke-width="0.75" vector-effect="non-scaling-stroke"/>
+
+            <polygon points="150,56 170,6 210,56" fill="url(#mtn-mid)"/>
+            <polyline class="edge" points="150,56 170,6 210,56" stroke="#ff52d4" stroke-width="0.75" vector-effect="non-scaling-stroke"/>
+
+            <polygon points="178,56 200,16 230,56" fill="url(#mtn-mid)"/>
+            <polyline class="edge" points="178,56 200,16 230,56" stroke="#ff52d4" stroke-width="0.75" vector-effect="non-scaling-stroke"/>
+          </g>
+
+          <!-- FORE: closest foothills, no outline, near-black -->
+          <path d="M 0,56 L 0,48 L 12,42 L 26,46 L 40,38 L 56,44 L 70,36 L 84,42 L 100,32 L 116,40 L 130,38 L 146,46 L 162,38 L 176,42 L 190,36 L 200,44 L 200,56 Z" fill="url(#mtn-fore)"/>
+        </svg>
+
+        <!-- CITY — 4 silhouette layers: far mountains → distant skyline → main towers → foreground low-rises -->
+        <svg class="skyline skyline-city" viewBox="0 0 200 56" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="city-mtn" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#7a2eb0"/><stop offset="100%" stop-color="#4a1980"/>
+            </linearGradient>
+            <linearGradient id="city-back" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#4a1980"/><stop offset="100%" stop-color="#2a0d54"/>
+            </linearGradient>
+            <linearGradient id="city-mid" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#220a42"/><stop offset="100%" stop-color="#0d041e"/>
+            </linearGradient>
+            <linearGradient id="city-fore" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#050009"/><stop offset="100%" stop-color="#000000"/>
+            </linearGradient>
+          </defs>
+
+          <!-- 1. Far mountains -->
+          <path d="M 0,56 L 0,34 L 12,30 L 26,33 L 40,28 L 54,32 L 68,26 L 82,30 L 96,24 L 110,28 L 124,20 L 138,22 L 150,16 L 158,12 L 164,16 L 172,22 L 184,28 L 196,30 L 200,32 L 200,56 Z" fill="url(#city-mtn)"/>
+
+          <!-- 2. Distant skyline (between mountains and main towers) — three clusters with gaps that reveal the mountains -->
+          <path d="M 0,56
+            L 0,32 L 5,32 L 5,28 L 11,28 L 11,30 L 17,30
+            L 17,24 L 23,24 L 23,28 L 29,28
+            L 29,22 L 35,22 L 35,26 L 41,26
+            L 41,30 L 47,30 L 47,28 L 50,28
+            L 50,40 L 65,40
+            L 65,26 L 71,26 L 71,30 L 77,30
+            L 77,22 L 83,22 L 83,26 L 89,26
+            L 89,30 L 95,30 L 95,24 L 101,24
+            L 101,28 L 107,28 L 107,22 L 113,22
+            L 113,26 L 119,26 L 119,30 L 125,30
+            L 125,24 L 130,24
+            L 130,40 L 170,40
+            L 170,28 L 175,28 L 175,22 L 179,22
+            L 179,26 L 185,26 L 185,30 L 191,30
+            L 191,24 L 197,24 L 197,28 L 200,28
+            L 200,56 Z" fill="url(#city-back)"/>
+          <!-- distant windows — small, muted lavender (skipping the gap columns) -->
+          <g fill="#b58dd9" opacity="0.45">
+            <rect x="6.5"  y="30" width="0.4" height="0.8"/>
+            <rect x="18"   y="26" width="0.4" height="0.8"/>
+            <rect x="24.5" y="26" width="0.4" height="0.8"/>
+            <rect x="30.5" y="24" width="0.4" height="0.8"/>
+            <rect x="42.5" y="28" width="0.4" height="0.8"/>
+            <rect x="48.5" y="29" width="0.4" height="0.8"/>
+            <rect x="66.5" y="28" width="0.4" height="0.8"/>
+            <rect x="72.5" y="24" width="0.4" height="0.8"/>
+            <rect x="78.5" y="24" width="0.4" height="0.8"/>
+            <rect x="84.5" y="28" width="0.4" height="0.8"/>
+            <rect x="96.5" y="26" width="0.4" height="0.8"/>
+            <rect x="108.5" y="24" width="0.4" height="0.8"/>
+            <rect x="114.5" y="28" width="0.4" height="0.8"/>
+            <rect x="126.5" y="26" width="0.4" height="0.8"/>
+            <rect x="174.5" y="24" width="0.4" height="0.8"/>
+            <rect x="186.5" y="26" width="0.4" height="0.8"/>
+            <rect x="192.5" y="26" width="0.4" height="0.8"/>
+          </g>
+
+          <!-- 3. Main skyscrapers — varied tops, spires, antennas, with four "alley" gaps that reveal the distant skyline behind -->
+          <path d="M 0,56
+            L 0,38 L 4,38 L 4,30 L 9,30
+            L 9,36 L 14,36 L 14,20 L 19,20
+            L 19,14 L 21,14 L 21,24 L 27,24
+            L 27,56 L 32,56
+            L 32,28 L 36,28
+            L 36,10 L 38,10 L 38,4 L 39,4 L 39,12 L 42,12
+            L 42,22 L 48,22 L 48,28 L 54,28
+            L 54,16 L 59,16 L 59,9 L 60.5,9 L 60.5,18 L 65,18
+            L 65,12 L 70,12 L 70,22 L 76,22
+            L 76,28 L 81,28
+            L 81,56 L 86,56
+            L 86,8 L 87.5,8 L 87.5,16 L 92,16
+            L 92,24 L 97,24 L 97,14 L 102,14
+            L 102,26 L 107,26 L 107,20 L 112,20
+            L 112,8 L 113.5,8 L 113.5,16 L 118,16
+            L 118,28 L 123,28 L 123,18 L 128,18
+            L 128,12 L 130,12 L 130,22 L 135,22
+            L 135,26 L 140,26 L 140,14 L 145,14
+            L 145,6 L 146.5,6 L 146.5,18 L 150,18
+            L 150,28 L 156,28
+            L 156,56 L 161,56
+            L 161,14 L 166,14 L 166,24 L 171,24
+            L 171,30 L 176,30 L 176,18 L 181,18
+            L 181,10 L 182.5,10 L 182.5,20 L 186,20
+            L 186,26 L 191,26
+            L 191,56 L 196,56
+            L 196,28 L 200,28
+            L 200,56 Z" fill="url(#city-mid)"/>
+          <!-- ~45 tiny window dots scattered on the main skyscrapers.
+               Sized 0.6×1.2 in viewBox so they appear ~roughly square after horizontal stretch. -->
+          <g fill="#ffb0e6" opacity="0.7">
+            <rect x="5"   y="34" width="0.6" height="1.2"/>
+            <rect x="5"   y="32" width="0.6" height="1.2"/>
+            <rect x="10"  y="22" width="0.6" height="1.2"/>
+            <rect x="15"  y="24" width="0.6" height="1.2"/>
+            <rect x="15"  y="28" width="0.6" height="1.2"/>
+            <rect x="20"  y="16" width="0.6" height="1.2"/>
+            <rect x="22.5" y="20" width="0.6" height="1.2"/>
+            <rect x="33"  y="24" width="0.6" height="1.2"/>
+            <rect x="33"  y="20" width="0.6" height="1.2"/>
+            <rect x="36.5" y="14" width="0.6" height="1.2"/>
+            <rect x="40"  y="18" width="0.6" height="1.2"/>
+            <rect x="40"  y="14" width="0.6" height="1.2"/>
+            <rect x="44"  y="26" width="0.6" height="1.2"/>
+            <rect x="49"  y="26" width="0.6" height="1.2"/>
+            <rect x="49"  y="22" width="0.6" height="1.2"/>
+            <rect x="55"  y="20" width="0.6" height="1.2"/>
+            <rect x="55"  y="24" width="0.6" height="1.2"/>
+            <rect x="62"  y="14" width="0.6" height="1.2"/>
+            <rect x="66.5" y="16" width="0.6" height="1.2"/>
+            <rect x="71"  y="14" width="0.6" height="1.2"/>
+            <rect x="71"  y="18" width="0.6" height="1.2"/>
+            <rect x="77"  y="24" width="0.6" height="1.2"/>
+            <rect x="88"  y="12" width="0.6" height="1.2"/>
+            <rect x="93.5" y="20" width="0.6" height="1.2"/>
+            <rect x="98"  y="18" width="0.6" height="1.2"/>
+            <rect x="103.5" y="22" width="0.6" height="1.2"/>
+            <rect x="108.5" y="22" width="0.6" height="1.2"/>
+            <rect x="115"  y="20" width="0.6" height="1.2"/>
+            <rect x="119"  y="24" width="0.6" height="1.2"/>
+            <rect x="124"  y="22" width="0.6" height="1.2"/>
+            <rect x="129"  y="16" width="0.6" height="1.2"/>
+            <rect x="131"  y="20" width="0.6" height="1.2"/>
+            <rect x="136"  y="22" width="0.6" height="1.2"/>
+            <rect x="141.5" y="18" width="0.6" height="1.2"/>
+            <rect x="147"  y="10" width="0.6" height="1.2"/>
+            <rect x="151.5" y="22" width="0.6" height="1.2"/>
+            <rect x="162"  y="18" width="0.6" height="1.2"/>
+            <rect x="167"  y="20" width="0.6" height="1.2"/>
+            <rect x="172"  y="28" width="0.6" height="1.2"/>
+            <rect x="177.5" y="22" width="0.6" height="1.2"/>
+            <rect x="183"  y="14" width="0.6" height="1.2"/>
+            <rect x="187.5" y="22" width="0.6" height="1.2"/>
+            <rect x="197"  y="22" width="0.6" height="1.2"/>
+          </g>
+
+          <!-- 4. Foreground: varied widths + heights, with water towers, stepped + pitched rooftops -->
+          <path d="M 0,56
+            L 0,46 L 8,46
+            L 8,42 L 14,42 L 14,38 L 22,38
+            L 22,48 L 32,48
+            L 32,46 L 33,46 L 33,42 L 36,42 L 36,36 L 38,36 L 38,42 L 41,42 L 41,46 L 42,46
+            L 42,40 L 56,40
+            L 56,50 L 66,50
+            L 66,44 L 78,44
+            L 78,36 L 90,36
+            L 90,48 L 100,48
+            L 100,42 L 107,42 L 107,46 L 114,46
+            L 114,38 L 126,38
+            L 126,46 L 138,46
+            L 138,42 L 150,42
+            L 150,38 L 157,38 L 157,44 L 164,44
+            L 164,50 L 178,50
+            L 178,42 L 188,42
+            L 188,46 L 200,46
+            L 200,56 Z" fill="url(#city-fore)"/>
+
+          <!-- foreground rooftop details: water towers, antennas, pitched-roof peaks -->
+          <g fill="url(#city-fore)">
+            <!-- water tower on building 1 -->
+            <rect x="3"   y="42" width="1.6" height="4"/>
+            <rect x="2.6" y="41" width="2.4" height="1"/>
+            <!-- water tower on tall block @ 78-90 -->
+            <rect x="82"  y="32" width="2"   height="4"/>
+            <rect x="81.6" y="31" width="2.8" height="1"/>
+            <!-- water tower on 114-126 block -->
+            <rect x="119" y="34" width="1.8" height="4"/>
+            <!-- water tower on 178-188 block -->
+            <rect x="182" y="38" width="1.6" height="4"/>
+            <!-- pitched roof accent on 42-56 block -->
+            <polygon points="46,40 50,37 54,40"/>
+            <!-- pitched roof on 138-150 -->
+            <polygon points="142,42 146,39 150,42"/>
+          </g>
+          <!-- thin antennas -->
+          <g stroke="#0a0218" stroke-width="0.3" fill="none">
+            <line x1="86" y1="28" x2="86" y2="32"/>
+            <line x1="120" y1="30" x2="120" y2="34"/>
+            <line x1="170" y1="34" x2="170" y2="38"/>
+          </g>
+
+          <!-- foreground warm windows — denser, varied y to match new silhouette -->
+          <g fill="#ffb88a" opacity="0.6">
+            <rect x="2"   y="50" width="0.6" height="1.2"/>
+            <rect x="5"   y="48" width="0.6" height="1.2"/>
+            <rect x="10"  y="44" width="0.6" height="1.2"/>
+            <rect x="16"  y="40" width="0.6" height="1.2"/>
+            <rect x="19"  y="44" width="0.6" height="1.2"/>
+            <rect x="25"  y="50" width="0.6" height="1.2"/>
+            <rect x="28"  y="52" width="0.6" height="1.2"/>
+            <rect x="34"  y="44" width="0.6" height="1.2"/>
+            <rect x="39"  y="38" width="0.6" height="1.2"/>
+            <rect x="44"  y="42" width="0.6" height="1.2"/>
+            <rect x="51"  y="46" width="0.6" height="1.2"/>
+            <rect x="58"  y="52" width="0.6" height="1.2"/>
+            <rect x="63"  y="54" width="0.6" height="1.2"/>
+            <rect x="68"  y="46" width="0.6" height="1.2"/>
+            <rect x="74"  y="48" width="0.6" height="1.2"/>
+            <rect x="80"  y="38" width="0.6" height="1.2"/>
+            <rect x="86"  y="42" width="0.6" height="1.2"/>
+            <rect x="93"  y="50" width="0.6" height="1.2"/>
+            <rect x="97"  y="52" width="0.6" height="1.2"/>
+            <rect x="103" y="44" width="0.6" height="1.2"/>
+            <rect x="110" y="48" width="0.6" height="1.2"/>
+            <rect x="117" y="40" width="0.6" height="1.2"/>
+            <rect x="123" y="42" width="0.6" height="1.2"/>
+            <rect x="130" y="48" width="0.6" height="1.2"/>
+            <rect x="135" y="50" width="0.6" height="1.2"/>
+            <rect x="142" y="44" width="0.6" height="1.2"/>
+            <rect x="147" y="46" width="0.6" height="1.2"/>
+            <rect x="154" y="40" width="0.6" height="1.2"/>
+            <rect x="160" y="46" width="0.6" height="1.2"/>
+            <rect x="168" y="52" width="0.6" height="1.2"/>
+            <rect x="174" y="54" width="0.6" height="1.2"/>
+            <rect x="183" y="44" width="0.6" height="1.2"/>
+            <rect x="192" y="48" width="0.6" height="1.2"/>
+            <rect x="196" y="50" width="0.6" height="1.2"/>
+          </g>
+        </svg>
+      </div>
+      <div class="grid"></div>
+      <div class="horizon"></div>
+      <div class="now">
+        <div class="eyebrow">// now monitoring · 192.168.1.0/24</div>
+        <div class="row">
+          <div>
+            <div class="name" id="now-name">pegasus</div>
+            <div class="role" id="now-role">linux · 192.168.1.10</div>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="v" id="now-ping">1.8<small>ms</small></div><div class="l">ping</div></div>
+          <div class="stat"><div class="v" id="now-last">just<small>now</small></div><div class="l">last seen</div></div>
+          <div class="stat"><div class="v mac" id="now-mac">00:11<small>…</small>44:55</div><div class="l">mac</div></div>
+          <div class="stat"><div class="v" id="now-ssh">port<small> 22</small></div><div class="l">ssh</div></div>
+        </div>
+        <div class="waveform">
+          <canvas id="wf"></canvas>
+          <div class="legend">// live ping · ICMP echo</div>
+          <div class="legend-r" id="wf-r">● rec</div>
+        </div>
+        <div class="now-dots" id="now-dots">
+          <div class="active" data-i="0"></div>
+          <div data-i="1"></div>
+          <div data-i="2"></div>
+          <div data-i="3"></div>
+          <div data-i="4"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec"><span class="num">01</span><b>Fleet</b><span class="right">tap to expand</span></div>
+    <div class="devs" id="devices"></div>
+
+    <div class="summary">
+      <div class="s"><div class="v" id="sum-awake">3<small>/5</small></div><div class="l">awake</div></div>
+      <div class="s cyan"><div class="v" id="sum-ping">2.4<small>ms</small></div><div class="l">avg ping</div></div>
+      <div class="s violet"><div class="v">30<small>s</small></div><div class="l">poll cycle</div></div>
+    </div>
+
+    <div style="height:20px"></div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- AGENT — single chat, shares composer with fleet -->
+  <!-- ============================================== -->
+  <div class="tab" id="tab-agent" data-screen-label="02 Agent">
+    <div class="sec"><span class="num">02</span><b>Chat</b><span class="right">one agent · one thread</span></div>
+    <div class="chat-log" id="chatlog"></div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- UTILS — YT Captions + IP Lookup                -->
+  <!-- ============================================== -->
+  <div class="tab" id="tab-utils" data-screen-label="03 Utils">
+    <div class="sec"><span class="num">03</span><b>Utils</b><span class="right">sandbox tools</span></div>
+
+    <div class="util">
+      <div class="uhead">
+        <div class="glyph"><span class="ico yt"></span></div>
+        <div class="t">
+          <div class="nm">yt captions</div>
+          <div class="desc">paste url · dump as json</div>
+        </div>
+      </div>
+      <div class="ubody">
+        <div class="field">
+          <input id="yt-url" type="text" placeholder="https://youtube.com/watch?v=…" />
+          <button onclick="fetchYT()">fetch</button>
+        </div>
+        <div class="result" id="yt-result">
+          <div class="vtitle">Vaporwave for the modern home network</div>
+          <div class="kv">
+            <div class="k">video id</div><div class="v">dQw4w9WgXcQ</div>
+            <div class="k">duration</div><div class="v">14m 22s</div>
+            <div class="k">language</div><div class="v">en · auto-generated</div>
+            <div class="k">segments</div><div class="v">428 captions · 18.4 KB</div>
+          </div>
+          <a class="download" href="#" onclick="event.preventDefault()">↓ download .json</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="util">
+      <div class="uhead">
+        <div class="glyph"><span class="ico globe"></span></div>
+        <div class="t">
+          <div class="nm">ip lookup</div>
+          <div class="desc">placeholder · whois &amp; geoip</div>
+        </div>
+      </div>
+      <div class="ubody">
+        <div class="field">
+          <input id="ip-q" type="text" placeholder="1.1.1.1 or 192.168.1.10" />
+          <button onclick="lookupIP()">lookup</button>
+        </div>
+        <div class="result" id="ip-result">
+          <div class="vtitle">1.1.1.1</div>
+          <div class="kv">
+            <div class="k">type</div><div class="v">public · ipv4</div>
+            <div class="k">org</div><div class="v">Cloudflare, Inc.</div>
+            <div class="k">asn</div><div class="v">AS13335</div>
+            <div class="k">country</div><div class="v">US · public resolver</div>
+            <div class="k">ptr</div><div class="v">one.one.one.one</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:24px"></div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- CONF — settings matching config.yaml schema    -->
+  <!-- ============================================== -->
+  <div class="tab" id="tab-conf" data-screen-label="04 Conf">
+
+    <div class="confgroup">
+      <div class="conftitle"><span class="num">01</span><b>Inference</b><span class="right">backend selection</span></div>
+      <div class="conf-card">
+        <div class="confrow">
+          <div class="k"><div class="label">Mode</div><div class="desc">local_inference flag in config.yaml</div></div>
+          <div class="seg" id="backend-seg">
+            <button class="active" data-mode="local">Local</button>
+            <button data-mode="cloud">Cloud</button>
+          </div>
+        </div>
+        <div class="confrow">
+          <div class="k"><div class="label">Local endpoint</div><div class="desc">koboldcpp · /api/v1/generate</div></div>
+          <input type="text" value="http://localhost:5001/api/v1/generate"/>
+        </div>
+        <div class="confrow">
+          <div class="k"><div class="label">Cloud endpoint</div><div class="desc">openai-compatible base url</div></div>
+          <input type="text" value="https://openrouter.ai/api/v1"/>
+        </div>
+        <div class="confrow">
+          <div class="k"><div class="label">Cloud key</div><div class="desc">cloud_inference_key</div></div>
+          <input type="password" value="sk-or-v1-9f8a3c•••"/>
+        </div>
+        <div class="confrow">
+          <div class="k"><div class="label">Cloud model</div><div class="desc">cloud_inference_model</div></div>
+          <input type="text" value="meta-llama/llama-3.1-8b-instruct:free"/>
+        </div>
+      </div>
+    </div>
+
+    <div class="confgroup">
+      <div class="conftitle"><span class="num">02</span><b>Computers</b><span class="right">5 machines</span></div>
+      <div class="conf-card" id="conf-machines"></div>
+    </div>
+
+    <div class="confgroup">
+      <div class="conftitle"><span class="num">03</span><b>Prompt files</b><span class="right">cwd · text/plain</span></div>
+      <div class="conf-card">
+        <div class="confrow"><div class="k"><div class="label">command_prompt.txt</div><div class="desc code">/api/v1/generate · system</div></div><span class="badge">947 b</span><span class="chev">›</span></div>
+        <div class="confrow"><div class="k"><div class="label">command_post_prompt.txt</div><div class="desc">appended after user input</div></div><span class="badge dim">empty</span><span class="chev">›</span></div>
+        <div class="confrow"><div class="k"><div class="label">system_prompt.txt</div><div class="desc">chat · system role</div></div><span class="badge">247 b</span><span class="chev">›</span></div>
+        <div class="confrow"><div class="k"><div class="label">post_prompt.txt</div><div class="desc">chat · appended</div></div><span class="badge dim">empty</span><span class="chev">›</span></div>
+      </div>
+    </div>
+
+    <div class="confgroup">
+      <div class="conftitle"><span class="num">04</span><b>Server</b></div>
+      <div class="conf-card">
+        <div class="confrow"><div class="k"><div class="label">Host</div></div><input type="text" value="0.0.0.0"/></div>
+        <div class="confrow"><div class="k"><div class="label">Port</div></div><input type="text" value="5432"/></div>
+        <div class="confrow"><div class="k"><div class="label">Status poll</div><div class="desc">ping every n seconds</div></div><input type="text" value="30"/></div>
+        <div class="confrow"><div class="k"><div class="label">Debug</div><div class="desc">flask debug mode</div></div><div class="switch on" onclick="this.classList.toggle('on')"><div class="knob"></div></div></div>
+      </div>
+    </div>
+
+    <div class="confgroup">
+      <div class="conftitle"><span class="num">05</span><b>Appearance</b></div>
+      <div class="conf-card">
+        <div class="confrow"><div class="k"><div class="label">Theme</div><div class="desc">vapor · aqua · ember</div></div><div class="seg" id="theme-seg"><button data-val="dark" class="active">Vapor</button><button data-val="aqua">Aqua</button><button data-val="ember">Ember</button></div></div>
+        <div class="confrow"><div class="k"><div class="label">App mark</div><div class="desc">logo · spinning ring</div></div><div class="seg" id="loz-seg"><button data-val="logo" class="active">Logo</button><button data-val="ring">Ring</button></div></div>
+        <div class="confrow"><div class="k"><div class="label">Sun &amp; grid</div><div class="desc">animated hero scene</div></div><div class="switch on" onclick="this.classList.toggle('on')"><div class="knob"></div></div></div>
+        <div class="confrow"><div class="k"><div class="label">Horizon</div><div class="desc">city · mountains</div></div><div class="seg" id="skyline-seg"><button data-val="city" class="active">City</button><button data-val="mountains">Mountains</button></div></div>
+        <div class="confrow"><div class="k"><div class="label">Live waveform</div><div class="desc">ping graph on hero</div></div><div class="switch on" onclick="this.classList.toggle('on')"><div class="knob"></div></div></div>
+      </div>
+    </div>
+
+    <div class="conf-foot">
+      ctrl·b · vapor build · <a href="https://github.com/nengoxx/ctrl-b" target="_blank">github.com/nengoxx/ctrl-b</a>
+    </div>
+    <div style="height:24px"></div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- SHARED COMPOSER (fleet + chat tabs only)       -->
+  <!-- ============================================== -->
+  <div class="composer" id="composer">
+    <div class="field">
+      <textarea id="cmd-input" rows="1" placeholder="ask anything…"></textarea>
+      <button type="button" class="mic" aria-label="toggle dictation" title="toggle dictation" onclick="this.classList.toggle('rec')"></button>
+    </div>
+    <button type="button" class="send" id="cmd-send" aria-label="send message" title="send message" onclick="sendMsg()"></button>
+  </div>
+
+  <nav class="tabbar" data-tab="fleet">
+    <button class="tabbtn active" data-tab="fleet"><span class="glyph">◆</span><span class="lbl">fleet</span></button>
+    <button class="tabbtn" data-tab="agent"><span class="glyph">▲</span><span class="lbl">chat</span></button>
+    <button class="tabbtn" data-tab="utils"><span class="glyph">⌬</span><span class="lbl">utils</span></button>
+    <button class="tabbtn" data-tab="conf"><span class="glyph">●</span><span class="lbl">conf</span></button>
+  </nav>
+
+<script>
+  // ─── DATA ─── shape matches config.yaml + computer fields in wol_server_win.py
+  const DEVICES = [
+    { name: "pegasus", ip: "192.168.1.10", mac: "00:11:22:33:44:55", ssh_username: "nengo",   ssh_port: 22,   ssh_password: "•••••••",     os_type: "linux",   on: true,  lastSeen: "just now",  ping: 1.8 },
+    { name: "atlas",   ip: "192.168.1.12", mac: "6c:0b:84:ad:e1:0f", ssh_username: "admin",   ssh_port: 22,   ssh_password: "•••••••••••", os_type: "windows", on: false, lastSeen: "2h ago",    ping: null },
+    { name: "mercury", ip: "192.168.1.15", mac: "b8:27:eb:0a:9c:21", ssh_username: "media",   ssh_port: 22,   ssh_password: "••••••",      os_type: "windows", on: true,  lastSeen: "just now",  ping: 2.4 },
+    { name: "vega",    ip: "192.168.1.20", mac: "04:7c:16:fe:88:2a", ssh_username: "nengo",   ssh_port: 2222, ssh_password: "•••••••••",   os_type: "linux",   on: false, lastSeen: "yesterday", ping: null },
+    { name: "titan",   ip: "192.168.1.25", mac: "a4:5e:60:f1:cc:13", ssh_username: "render",  ssh_port: 22,   ssh_password: "••••••••",    os_type: "linux",   on: true,  lastSeen: "just now",  ping: 3.1 },
+  ];
+
+  // Services declared on each machine. Not part of the upstream config.yaml today
+  // — this is a forward-looking extension matching the README's "start/stop services" todo.
+  const SERVICES = [
+    { name: "open-webui", host: "pegasus", port: 3000,  path: "" },
+    { name: "jellyfin",   host: "pegasus", port: 8096,  path: "" },
+    { name: "syncthing",  host: "pegasus", port: 8384,  path: "" },
+    { name: "plex",       host: "mercury", port: 32400, path: "/web" },
+    { name: "comfyui",    host: "titan",   port: 8188,  path: "" },
+    { name: "koboldcpp",  host: "titan",   port: 5001,  path: "" },
+    { name: "ollama",     host: "titan",   port: 11434, path: "" },
+  ];
+  function svcUrl(s, d) { return d ? `http://${d.ip}:${s.port}${s.path||""}` : "#"; }
+
+  const OPEN = new Set();
+  let featured = 0;
+
+  // ─── FLEET LIST ───
+  function renderDevices() {
+    const heights = (on) => on
+      ? [8, 16, 22, 12, 20, 10, 18, 14].map(h => `<i style="height:${h}px"></i>`).join("")
+      : `<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>`;
+    document.getElementById("devices").innerHTML = DEVICES.map((d, i) => {
+      const mine = SERVICES.filter(s => s.host === d.name);
+      return `
+      <div class="dev ${d.on?"on":"off"} ${i===featured?"featured":""} ${OPEN.has(d.name)?"open":""} ${d.busy?"busy":""}" data-i="${i}" data-name="${d.name}">
+        <div class="top">
+          <span class="led"></span>
+          <div class="info">
+            <div class="name">${d.name}</div>
+            <div class="sub">${d.os_type} · ${d.on ? d.ping + "ms" : "asleep"}${mine.length ? ` · ${mine.length} svc` : ""} · ${d.lastSeen}</div>
+          </div>
+          <div class="eq">${heights(d.on)}</div>
+          ${d.on
+            ? `<button class="act stop" data-act="shutdown" data-i="${i}" aria-label="shutdown ${d.name}"></button>`
+            : `<button class="act wake" data-act="wake" data-i="${i}" aria-label="wake ${d.name}"></button>`}
+          <span class="chev">›</span>
+        </div>
+        <div class="dropdown">
+          ${mine.length === 0
+            ? `<div class="no-svc">// no services declared on this machine</div>`
+            : mine.map(s => {
+                const on = d.on;
+                return `<a class="svc-row ${on?"on":"off"}" href="${svcUrl(s, d)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+                  <span class="led"></span>
+                  <div class="info"><div class="name">${s.name}</div><div class="addr">${d.name}:${s.port}</div></div>
+                  <span class="arrow">${on ? "↗" : "—"}</span>
+                </a>`;
+              }).join("")}
+          <div class="details">
+            <div class="kvgrid">
+              <div class="k">ip</div><div class="v">${d.ip}</div>
+              <div class="k">mac</div><div class="v mac">${d.mac}</div>
+              <div class="k">ssh</div><div class="v">${d.ssh_username}@${d.ip}:22</div>
+              <div class="k">os</div><div class="v os-${d.os_type}">${d.os_type}</div>
+            </div>
+          </div>
+          <div class="dropfoot">
+            <button onclick="cmdInto('$ ping ${d.ip} -n 1');event.stopPropagation()">$ ping</button>
+            <button onclick="cmdInto('$ ssh ${d.ssh_username}@${d.ip}');event.stopPropagation()">› ssh</button>
+            ${d.on
+              ? `<a class="open" href="http://${d.ip}" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗ http://${d.ip}</a>`
+              : `<button onclick="dispatchAct(${i},'wake');event.stopPropagation()">wake</button>`}
+          </div>
+        </div>
+      </div>
+    `;
+    }).join("");
+  }
+
+  function renderNow() {
+    const d = DEVICES[featured];
+    document.getElementById("now-name").textContent = d.name;
+    document.getElementById("now-role").textContent = `${d.os_type} · ${d.ip}`;
+    document.getElementById("now-ping").innerHTML = d.on ? `${d.ping}<small>ms</small>` : `—<small> ms</small>`;
+    document.getElementById("now-last").innerHTML  = d.on ? `live<small></small>` : `${d.lastSeen.split(" ")[0]}<small></small>`;
+    const macTail = d.mac.split(":").slice(-2).join(":");
+    const macHead = d.mac.split(":").slice(0, 1).join(":");
+    document.getElementById("now-mac").innerHTML   = `${macHead}<small>…</small>${macTail}`;
+    document.getElementById("now-ssh").innerHTML   = `:22<small> ${d.ssh_username}</small>`;
+    document.getElementById("wf-r").innerHTML = d.on
+      ? `<span style="color:var(--magenta)">● rec</span>`
+      : `<span style="color:var(--ink-faint)">○ idle</span>`;
+    document.querySelectorAll("#now-dots div").forEach((dot, i) => dot.classList.toggle("active", i === featured));
+  }
+
+  function renderSummary() {
+    const awake = DEVICES.filter(d => d.on);
+    document.getElementById("sum-awake").innerHTML = `${awake.length}<small>/${DEVICES.length}</small>`;
+    const avg = awake.length ? (awake.reduce((a,b)=>a+b.ping,0)/awake.length) : 0;
+    document.getElementById("sum-ping").innerHTML = `${avg.toFixed(1)}<small>ms</small>`;
+  }
+
+  // ─── WAVEFORM ───
+  const canvas = document.getElementById("wf");
+  const ctx = canvas.getContext("2d");
+  let dpr = window.devicePixelRatio || 1;
+  function sizeCanvas() {
+    const r = canvas.getBoundingClientRect();
+    canvas.width = r.width * dpr; canvas.height = r.height * dpr;
+    ctx.scale(dpr, dpr);
+  }
+  let t = 0;
+  // Read themed RGB strings from CSS custom properties; re-read on every frame
+  // is cheap and keeps the waveform in sync with theme switches.
+  function wfColors() {
+    const s = getComputedStyle(document.body);
+    return {
+      a: (s.getPropertyValue('--accent-rgb') || '255, 82, 212').trim(),
+      b: (s.getPropertyValue('--accent-rgb-2') || '165, 92, 255').trim(),
+    };
+  }
+  function draw() {
+    const r = canvas.getBoundingClientRect();
+    const w = r.width, h = r.height;
+    ctx.clearRect(0, 0, w, h);
+    const d = DEVICES[featured];
+    const c = wfColors();
+    const wfRGB = c.a;
+    if (!d.on) {
+      ctx.fillStyle = "rgba(200,155,224,0.4)";
+      ctx.font = "10px JetBrains Mono";
+      ctx.fillText("// no echo · host asleep", 12, h/2 + 4);
+      requestAnimationFrame(draw);
+      t += 0.05;
+      return;
+    }
+    ctx.strokeStyle = `rgba(${wfRGB},0.06)`;
+    ctx.lineWidth = 1;
+    for (let y = 0; y < h; y += 16) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+    const grad = ctx.createLinearGradient(0, 0, w, 0);
+    grad.addColorStop(0,   `rgba(${c.a},0.15)`);
+    grad.addColorStop(0.4, `rgba(${c.a},0.9)`);
+    grad.addColorStop(1,   `rgba(${c.b},0.9)`);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 1.6;
+    ctx.shadowColor = `rgba(${c.a},0.5)`;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    for (let x = 0; x <= w; x += 2) {
+      const phase = (x * 0.06) + t;
+      const noise = Math.sin(phase) * 0.6 + Math.sin(phase * 2.3) * 0.25 + Math.sin(phase * 5.1) * 0.12;
+      const amp = (d.ping || 2) * 6;
+      const y = h/2 + noise * amp;
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255,230,247,0.07)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, h/2); ctx.lineTo(w, h/2); ctx.stroke();
+    t += 0.06;
+    requestAnimationFrame(draw);
+  }
+  window.addEventListener("load", () => { sizeCanvas(); draw(); });
+  window.addEventListener("resize", sizeCanvas);
+
+  // ─── AUTO-CYCLE FEATURED ───
+  setInterval(() => {
+    const onIdx = DEVICES.map((d, i) => d.on ? i : null).filter(i => i !== null);
+    if (!onIdx.length) return;
+    const cur = onIdx.indexOf(featured);
+    featured = onIdx[(cur + 1) % onIdx.length];
+    renderNow(); renderDevices();
+  }, 6000);
+
+  // ─── INTERACTIONS ───
+  document.addEventListener("click", (e) => {
+    const top = e.target.closest(".dev .top");
+    if (top && !e.target.closest("[data-act]")) {
+      const dev = top.closest(".dev");
+      const name = dev.dataset.name;
+      featured = +dev.dataset.i;
+      if (OPEN.has(name)) OPEN.delete(name); else OPEN.add(name);
+      renderDevices(); renderNow();
+    }
+    const dot = e.target.closest("#now-dots div");
+    if (dot) { featured = +dot.dataset.i; renderNow(); renderDevices(); }
+  });
+
+  // ─── TABS ───
+  document.querySelectorAll(".tabbtn").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll(".tabbtn").forEach(x => x.classList.toggle("active", x === b));
+    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === "tab-" + b.dataset.tab));
+    document.querySelector(".tabbar").dataset.tab = b.dataset.tab;
+    document.body.dataset.tab = b.dataset.tab;
+    const composer = document.getElementById("composer");
+    const showComposer = (b.dataset.tab === "fleet" || b.dataset.tab === "agent");
+    composer.style.display = showComposer ? "" : "none";
+    document.body.classList.toggle("no-composer", !showComposer);
+    // entering chat clears any peek; scroll chat to bottom
+    if (b.dataset.tab === "agent") {
+      const log = document.getElementById("chatlog");
+      log.scrollTop = log.scrollHeight;
+    }
+    window.scrollTo(0, 0);
+  }));
+
+  // ─── THEME ───
+  // segmented toggle in settings: data-val on each button drives body[data-theme].
+  document.getElementById("theme-seg")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-val]");
+    if (btn) document.body.dataset.theme = btn.dataset.val;
+  });
+
+  // ─── SKYLINE toggle (city ↔ mountains) — generic .seg handler already toggles
+  // .active; we just sync body[data-skyline] from the clicked button. ───
+  document.getElementById("skyline-seg")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-val]");
+    if (btn) document.body.dataset.skyline = btn.dataset.val;
+  });
+
+  // ─── APP MARK toggle (logo ↔ ring) ───
+  document.getElementById("loz-seg")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-val]");
+    if (btn) document.body.dataset.loz = btn.dataset.val;
+  });
+
+  // ─── AUTO-TTS toggle ───
+  // when on, assistant text replies are spoken via SpeechSynthesis (if available).
+  // when muted, replies arrive silently.
+  const ttsBtn   = document.getElementById("ttsToggle");
+  const ttsToast = document.getElementById("ttsToast");
+  let ttsAuto = true;
+  let toastT = null;
+  function flashToast(label, state) {
+    ttsToast.innerHTML = `<b>auto-tts</b> ${label}`;
+    ttsToast.classList.toggle("off", !state);
+    ttsToast.classList.add("show");
+    clearTimeout(toastT);
+    toastT = setTimeout(() => ttsToast.classList.remove("show"), 1100);
+  }
+  function setTTS(on) {
+    ttsAuto = on;
+    ttsBtn.classList.toggle("muted", !on);
+    ttsBtn.setAttribute("aria-pressed", String(on));
+    ttsBtn.title = on ? "auto-tts on — tap to mute" : "auto-tts muted — tap to enable";
+    if (!on && window.speechSynthesis) window.speechSynthesis.cancel();
+    flashToast(on ? "on" : "muted", on);
+  }
+  ttsBtn.addEventListener("click", () => setTTS(!ttsAuto));
+  // expose to chat renderer
+  window.__ttsSpeak = function(text) {
+    if (!ttsAuto) return;
+    if (!("speechSynthesis" in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(String(text).slice(0, 280));
+      u.rate = 1.05; u.pitch = 1.0; u.volume = 0.9;
+      window.speechSynthesis.speak(u);
+    } catch (e) { /* noop */ }
+  };
+
+  // ─── SEG BUTTONS (generic) ───
+  document.addEventListener("click", (e) => {
+    const sb = e.target.closest(".seg button");
+    if (sb) { sb.parentElement.querySelectorAll("button").forEach(b => b.classList.remove("active")); sb.classList.add("active"); }
+  });
+
+  // ─── WAKE/SHUTDOWN (with brief busy state, matching wol_server flow) ───
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-act]"); if (!btn) return;
+    dispatchAct(+btn.dataset.i, btn.dataset.act);
+  });
+  function dispatchAct(i, act) {
+    const d = DEVICES[i]; if (!d) return;
+    d.busy = true; renderDevices();
+    setTimeout(() => {
+      d.on = (act === "wake");
+      d.lastSeen = d.on ? "just now" : "just shut";
+      d.ping = d.on ? +(1.5 + Math.random()*2).toFixed(1) : null;
+      d.busy = false;
+      featured = i;
+      renderDevices(); renderNow(); renderSummary();
+    }, 1100);
+  }
+
+  // ─── UNIFIED CHAT + COMMAND ROUTING ───
+  // One thread. The composer is shared between fleet and agent tabs.
+  // Routing mirrors handleCommand() in libDyn.js + command_prompt() in wol_server_win.py:
+  //   '$' or '>' → direct exec (no LLM)
+  //   'k:'       → forced local koboldcpp (/api/v1/generate)
+  //   'o:'       → forced cloud (/v1/chat/completions)
+  //   anything else → natural language chat. The agent may reply with text
+  //                   OR with a $ command bubble that the user can execute/edit.
+
+  const composer = document.getElementById("composer");
+  const cmdInput = document.getElementById("cmd-input");
+  const cmdSend  = document.getElementById("cmd-send");
+
+  // single source of truth for the chat
+  // m: { kind: 'user'|'text'|'cmd'|'sys', text, cmd?, ts, done? }
+  const messages = [
+    { kind: "sys",  text: "// system_prompt.txt loaded · 247 chars",                       ts: nowHM(-12) },
+    { kind: "user", text: "is pegasus reachable from atlas?",                              ts: nowHM(-10) },
+    { kind: "text", text: "Pegasus replies in 1.8 ms at 192.168.1.10. Atlas is currently asleep — the share itself is fine, you'd just need to wake atlas first to test from there.", ts: nowHM(-10) },
+    { kind: "user", text: "wake atlas and start minecraft on vega",                        ts: nowHM(-4)  },
+    { kind: "cmd",  text: "Two-step. Wake atlas first, then run the systemd unit on vega once it's reachable:",
+                    cmd:  "wol atlas && sleep 30 && ssh nengo@192.168.1.20 'systemctl start minecraft@survival'",
+                    ts: nowHM(-4) },
+  ];
+
+  function nowHM(offsetMin) {
+    const now = new Date(Date.now() + (offsetMin||0) * 60000);
+    return String(now.getHours()).padStart(2,"0") + ":" + String(now.getMinutes()).padStart(2,"0");
+  }
+  function escapeHTML(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+  function renderChat() {
+    const log = document.getElementById("chatlog");
+    log.innerHTML = messages.map((m, i) => {
+      if (m.kind === "sys") {
+        return `<div class="b sys"><div class="body">${escapeHTML(m.text)}</div></div>`;
+      }
+      if (m.kind === "user") {
+        return `<div class="b user"><div class="who">you · ${m.ts}</div><div class="body">${escapeHTML(m.text)}</div></div>`;
+      }
+      if (m.kind === "text") {
+        return `<div class="b bot"><div class="who">assistant · ${m.ts}</div><div class="body">${escapeHTML(m.text)}</div></div>`;
+      }
+      if (m.kind === "cmd") {
+        const preamble = m.text ? `<div class="preamble">${escapeHTML(m.text)}</div>` : "";
+        const actions = m.done
+          ? ""
+          : `<div class="actions">
+               <button class="exec" onclick="execCmd(${i})">execute</button>
+               <button class="edit" onclick="editCmd(${i})">edit</button>
+               <button class="dismiss" onclick="dismissCmd(${i})">dismiss</button>
+             </div>`;
+        return `<div class="b cmd ${m.done?'done':''}">
+          <div class="who">assistant · ${m.ts}</div>
+          <div class="body">
+            ${preamble}
+            <pre>${escapeHTML(m.cmd)}</pre>
+            ${actions}
+          </div>
+        </div>`;
+      }
+      return "";
+    }).join("");
+    log.scrollTop = log.scrollHeight;
+  }
+
+  // ─── command-bubble actions ───
+  window.execCmd = function(i) {
+    const m = messages[i]; if (!m || m.done) return;
+    m.done = true;
+    messages.push({ kind: "sys", text: `// dispatched · ${m.cmd.slice(0, 56)}${m.cmd.length>56?"…":""}`, ts: nowHM(0) });
+    renderChat();
+  };
+  window.editCmd = function(i) {
+    const m = messages[i]; if (!m) return;
+    cmdInput.value = "$ " + m.cmd;
+    autoSize();
+    if (document.body.dataset.tab !== "fleet") jumpTo("fleet");
+    cmdInput.focus();
+  };
+  window.dismissCmd = function(i) {
+    const m = messages[i]; if (!m) return;
+    m.done = true;
+    renderChat();
+  };
+  window.cmdInto = function(s) {
+    cmdInput.value = s;
+    autoSize();
+    cmdInput.focus();
+  };
+  window.jumpToChat = function() { jumpTo("agent"); };
+  function jumpTo(t) {
+    document.querySelector(`.tabbtn[data-tab="${t}"]`).click();
+  }
+
+  // ─── auto-grow textarea + send on Enter ───
+  function autoSize() {
+    cmdInput.style.height = "";
+    if (cmdInput.value === "") return;
+    cmdInput.style.height = "auto";
+    cmdInput.style.height = Math.min(96, cmdInput.scrollHeight) + "px";
+  }
+  cmdInput.addEventListener("input", autoSize);
+  cmdInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+  });
+
+  function flashPeek() { /* no-op — peek UI removed */ }
+
+  // ─── send pipeline ───
+  function sendMsg() {
+    const raw = cmdInput.value.trim();
+    if (!raw) return;
+    const ts = nowHM(0);
+
+    // direct exec: $ or > prefix (mirrors libDyn.js's handleCommand)
+    if (raw.startsWith("$") || raw.startsWith(">")) {
+      const cmd = raw.slice(1).trim();
+      messages.push({ kind: "user", text: raw, ts });
+      messages.push({ kind: "cmd",  text: "Direct exec — sent to subprocess.Popen(['cmd','/k', …]).", cmd, ts, done: true });
+      messages.push({ kind: "sys",  text: "// &REM Command executed!", ts });
+      cmdInput.value = "";
+      autoSize();
+      renderChat();
+      return;
+    }
+
+    // natural language (or k: / o: forced)
+    messages.push({ kind: "user", text: raw, ts });
+    cmdInput.value = "";
+    autoSize();
+    renderChat();
+
+    // brewing state (animates the send button only)
+    cmdSend.classList.add("brewing");
+    setTimeout(() => {
+      cmdSend.classList.remove("brewing");
+      const reply = mockReply(raw);
+      messages.push(reply);
+      renderChat();
+      if (reply.kind === "text" && window.__ttsSpeak) window.__ttsSpeak(reply.text);
+      else if (reply.kind === "cmd" && window.__ttsSpeak) window.__ttsSpeak(reply.text || "command suggested");
+    }, 850);
+  }
+
+  // ─── mock backend ───
+  function mockReply(input) {
+    const ts = nowHM(0);
+    const lower = input.toLowerCase().replace(/^[ko]:\s*/, "");
+    // detect intent → command bubble
+    const dev = DEVICES.find(d => lower.includes(d.name));
+    if (/wake|turn.*on|boot/.test(lower) && dev) {
+      return { kind: "cmd", text: `Magic packet to ${dev.name} (${dev.mac}).`,
+               cmd: `wol ${dev.name}`, ts };
+    }
+    if (/shut|turn.*off|sleep/.test(lower) && dev) {
+      const cmd = dev.os_type === "windows"
+        ? `ssh ${dev.ssh_username}@${dev.ip} 'shutdown /s /f /t 0'`
+        : `ssh ${dev.ssh_username}@${dev.ip} 'sudo shutdown now'`;
+      return { kind: "cmd", text: `SSH shutdown — ${dev.os_type} flavor.`, cmd, ts };
+    }
+    if (/ping/.test(lower)) {
+      const target = dev || DEVICES.find(d => d.on) || DEVICES[0];
+      return { kind: "cmd", text: `One ICMP echo to ${target.name}.`,
+               cmd: `ping ${target.ip} -n 1`, ts };
+    }
+    if (/kobold/.test(lower)) {
+      return { kind: "cmd", text: "Kills the koboldcpp inference server.",
+               cmd: "taskkill /F /IM koboldcpp.exe", ts };
+    }
+    if (/minecraft/.test(lower)) {
+      return { kind: "cmd", text: "Starts the survival server via systemd on vega.",
+               cmd: "ssh nengo@192.168.1.20 'systemctl start minecraft@survival'", ts };
+    }
+    if (/status|who.*up|awake/.test(lower)) {
+      const awake = DEVICES.filter(d => d.on).map(d => d.name).join(", ") || "none";
+      return { kind: "text", text: `Right now: ${awake} are awake. The rest are dormant — wake any of them by name.`, ts };
+    }
+    if (/wol|wake.?on.?lan/.test(lower)) {
+      return { kind: "text", text: "Wake-on-LAN sends a magic packet — a UDP broadcast with the target MAC repeated 16 times. The NIC stays in low-power mode listening for it and powers the host up when it arrives. Broadcast frames don't cross subnets by default.", ts };
+    }
+    // fallback chatty
+    return { kind: "text", text: "I can run commands on the fleet, ping or wake/shutdown a host, kill processes, or just chat. Tell me what you're after.", ts };
+  }
+
+  // ─── CONF · MACHINE LIST ───
+  function machineFormHTML(d, idx, isNew) {
+    const v = (x) => x == null ? "" : String(x).replace(/"/g, "&quot;");
+    return `
+      <div class="mform">
+        <label>Hostname</label>
+        <input type="text" data-f="name" value="${v(d.name)}" placeholder="${isNew?'pegasus':''}" />
+
+        <label>IP address</label>
+        <input type="text" data-f="ip" value="${v(d.ip)}" placeholder="192.168.1.x" inputmode="decimal" />
+
+        <label>MAC</label>
+        <div class="split">
+          <input type="text" data-f="mac" value="${v(d.mac)}" placeholder="aa:bb:cc:dd:ee:ff" />
+          <button type="button" onclick="event.stopPropagation()">arp scan</button>
+        </div>
+
+        <label>SSH user</label>
+        <input type="text" data-f="ssh_username" value="${v(d.ssh_username)}" placeholder="root" />
+
+        <label>SSH port</label>
+        <input type="text" data-f="ssh_port" value="${v(d.ssh_port||22)}" placeholder="22" inputmode="numeric" />
+
+        <label>SSH pass</label>
+        <div class="pw">
+          <input type="password" data-f="ssh_password" value="${v(d.ssh_password)}" placeholder="••••••••" autocomplete="new-password" />
+          <button type="button" class="reveal" onclick="event.stopPropagation(); togglePw(this)">show</button>
+        </div>
+
+        <label>OS</label>
+        <select data-f="os_type">
+          <option value="linux"   ${d.os_type==='linux'?'selected':''}>linux</option>
+          <option value="windows" ${d.os_type==='windows'?'selected':''}>windows</option>
+          <option value="macos"   ${d.os_type==='macos'?'selected':''}>macos</option>
+        </select>
+      </div>
+      <div class="mfoot">
+        ${isNew
+          ? `<button type="button" onclick="event.stopPropagation(); cancelAddMachine()">cancel</button>
+             <button type="button" class="save" onclick="event.stopPropagation(); saveNewMachine(this)">add machine</button>`
+          : `<button type="button" class="danger" onclick="event.stopPropagation(); deleteMachine(${idx})">remove</button>
+             <button type="button" onclick="event.stopPropagation(); pingMachine(${idx})">ping</button>
+             <button type="button" class="save" onclick="event.stopPropagation(); saveMachine(${idx}, this)">save</button>`}
+      </div>
+    `;
+  }
+
+  let openMachine = -1;     // index of currently open existing machine; -1 = none
+  let addingMachine = false;
+
+  function renderConfMachines() {
+    const c = document.getElementById("conf-machines");
+    if (!c) return;
+    c.innerHTML = DEVICES.map((d, i) => `
+      <div class="mwrap ${openMachine===i?'open':''}" data-idx="${i}">
+        <div class="confrow" onclick="toggleMachine(${i})">
+          <div class="k">
+            <div class="label">${d.name}</div>
+            <div class="desc code">${d.ip} · ${d.ssh_username}@${d.os_type}:${d.ssh_port||22}</div>
+          </div>
+          <span class="badge ${d.on?'':'stale'}">${d.on?'awake':'asleep'}</span>
+          <span class="chev">›</span>
+        </div>
+        <div class="mconf">${openMachine===i?machineFormHTML(d, i, false):''}</div>
+      </div>
+    `).join("") + `
+      <div class="mwrap add ${addingMachine?'open':''}" id="addmachine">
+        <div class="confrow" onclick="toggleAddMachine()">
+          <div class="k">
+            <div class="label">add machine</div>
+            <div class="desc">writes a new entry to config.yaml</div>
+          </div>
+          <span class="chev">›</span>
+        </div>
+        <div class="mconf">${addingMachine?machineFormHTML({name:'',ip:'',mac:'',ssh_username:'',ssh_port:22,ssh_password:'',os_type:'linux'}, -1, true):''}</div>
+      </div>
+    `;
+    // count badge in section header
+    const right = document.querySelector('#tab-conf .confgroup .conftitle .right');
+    // (no-op if structure differs)
+    document.querySelectorAll('#tab-conf .conftitle').forEach(t => {
+      if (t.querySelector('b') && t.querySelector('b').textContent === 'Computers') {
+        const r = t.querySelector('.right');
+        if (r) r.textContent = `${DEVICES.length} machine${DEVICES.length===1?'':'s'}`;
+      }
+    });
+  }
+
+  function toggleMachine(i) {
+    openMachine = (openMachine === i) ? -1 : i;
+    addingMachine = false;
+    renderConfMachines();
+  }
+  function toggleAddMachine() {
+    addingMachine = !addingMachine;
+    if (addingMachine) openMachine = -1;
+    renderConfMachines();
+    if (addingMachine) {
+      const el = document.querySelector('#addmachine .mconf input[data-f="name"]');
+      if (el) el.focus();
+    }
+  }
+  function cancelAddMachine() {
+    addingMachine = false;
+    renderConfMachines();
+  }
+  function togglePw(btn) {
+    const inp = btn.parentElement.querySelector('input');
+    if (!inp) return;
+    const showing = inp.type === 'text';
+    inp.type = showing ? 'password' : 'text';
+    btn.classList.toggle('on', !showing);
+    btn.textContent = showing ? 'show' : 'hide';
+  }
+  function readForm(wrap) {
+    const out = {};
+    wrap.querySelectorAll('[data-f]').forEach(el => { out[el.dataset.f] = el.value.trim(); });
+    if (out.ssh_port) out.ssh_port = parseInt(out.ssh_port, 10) || 22;
+    return out;
+  }
+  function saveMachine(i, btn) {
+    const wrap = btn.closest('.mwrap');
+    const data = readForm(wrap);
+    Object.assign(DEVICES[i], data);
+    flashBtn(btn, 'saved ✓');
+    setTimeout(() => { renderConfMachines(); renderDevices && renderDevices(); renderSummary && renderSummary(); }, 450);
+  }
+  function deleteMachine(i) {
+    if (!confirm(`remove ${DEVICES[i].name}?`)) return;
+    DEVICES.splice(i, 1);
+    openMachine = -1;
+    renderConfMachines(); renderDevices && renderDevices(); renderSummary && renderSummary();
+  }
+  function pingMachine(i) {
+    // stub — leaves data unchanged but marks lastSeen
+    DEVICES[i].lastSeen = 'just now';
+    renderConfMachines();
+  }
+  function saveNewMachine(btn) {
+    const wrap = btn.closest('.mwrap');
+    const data = readForm(wrap);
+    if (!data.name || !data.ip) { flashBtn(btn, 'name + ip required', true); return; }
+    DEVICES.push(Object.assign({ on: false, lastSeen: 'never', ping: null }, data));
+    addingMachine = false;
+    openMachine = DEVICES.length - 1;
+    renderConfMachines(); renderDevices && renderDevices(); renderSummary && renderSummary();
+  }
+  function flashBtn(btn, msg, isErr) {
+    const orig = btn.textContent;
+    btn.textContent = msg;
+    btn.style.filter = isErr ? 'hue-rotate(-40deg)' : 'brightness(1.15)';
+    setTimeout(() => { btn.textContent = orig; btn.style.filter = ''; }, isErr ? 1400 : 600);
+  }
+
+  // ─── UTILS ───
+  function fetchYT() {
+    const r = document.getElementById("yt-result");
+    r.innerHTML = '<div style="color:var(--teal);text-align:center;font-size:10px;letter-spacing:2px;text-transform:uppercase">// fetching transcript…</div>';
+    setTimeout(() => {
+      r.innerHTML = `
+        <div class="vtitle">Stub · transcript ready</div>
+        <div class="kv">
+          <div class="k">video id</div><div class="v">${(document.getElementById("yt-url").value.match(/v=([\\w-]+)/)||[,'dQw4w9WgXcQ'])[1]}</div>
+          <div class="k">segments</div><div class="v">412 captions · 17.1 KB</div>
+          <div class="k">language</div><div class="v">en · auto</div>
+        </div>
+        <a class="download" href="#" onclick="event.preventDefault()">↓ download .json</a>`;
+    }, 700);
+  }
+  function lookupIP() {
+    const q = document.getElementById("ip-q").value.trim() || "1.1.1.1";
+    const r = document.getElementById("ip-result");
+    r.innerHTML = `
+      <div class="vtitle">${escapeHTML(q)}</div>
+      <div class="kv">
+        <div class="k">type</div><div class="v">${q.startsWith('192.168')?'private · rfc1918':'public · ipv4'}</div>
+        <div class="k">scope</div><div class="v">${q.startsWith('192.168')?'local network':'global'}</div>
+        <div class="k">ptr</div><div class="v">— · placeholder</div>
+      </div>`;
+  }
+
+  // ─── CLOCK ─── (removed — clock no longer in appbar)
+
+  // ─── BOOT ───
+  renderDevices();
+  renderNow();
+  renderSummary();
+  renderConfMachines();
+  renderChat();
+</script>
+</body>
+</html>

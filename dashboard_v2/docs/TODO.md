@@ -1,0 +1,123 @@
+# Build plan — dashboard_v2
+
+Phased, checkbox plan from empty folder to cutover. Each phase ends in something runnable.
+Read `ARCHITECTURE.md` and `DECISIONS.md` first. Keep the old Flask server running throughout.
+
+Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
+
+---
+
+## Phase 0 — Scaffolding & ground rules
+
+- [ ] `backend/` FastAPI skeleton: app factory, `/api/health`, run with `uvicorn`. `pyproject.toml`
+      with **pinned** deps (fastapi, uvicorn[standard], pydantic, pydantic-settings, sse-starlette,
+      paramiko, wakeonlan, openai, httpx, pyyaml, python-multipart, youtube-transcript-api,
+      beautifulsoup4, aiosqlite). Consider `uv`.
+- [ ] `frontend/` Vite + React 19 + TS scaffold (lift config from `ws_claude`): TanStack Query,
+      lucide-react, vite-plugin-pwa. Vite dev proxy `/api` → uvicorn.
+- [ ] Copy `logo.png` + `favicon.ico` into `frontend/public/` (copy, don't import from old dirs).
+- [ ] `config.py`: load/save `config.yaml` (reuse current shape) → typed `Settings`; secret masking.
+- [ ] `db.py`: SQLite schema (threads, messages, memory, events) + tiny versioned applier.
+- [ ] `.gitignore` for `config.yaml`, `*.db`, `node_modules`, `dist`, `__pycache__`, `.venv`.
+- [ ] Decide tracking: is `dashboard_v2/` committed to the repo? (confirm with owner before first commit.)
+
+## Phase 1 — Fleet read path (parity, done right)
+
+- [ ] Pydantic `Host` model; load hosts from YAML.
+- [ ] `hosts.py`: **concurrent** `asyncio.gather` ping status; per-OS ping shim.
+- [ ] `GET /api/hosts`, `GET /api/hosts/{id}/status`.
+- [ ] Frontend **Fleet** tab: port Vapor hero + device rows + expandable detail + fleet summary,
+      wired to TanStack Query polling (interval from settings). Replace mock `DEVICES` with API.
+- [ ] Theme system (`vapor`/`aqua`/`ember`), skyline toggle, bottom tab bar — ported from Vapor.
+- [ ] **Verify** on a ~390px viewport.
+
+## Phase 2 — Actions (typed registry + WOL/shutdown)
+
+- [ ] Action registry framework: `@action(name, risk, confirm)` + Pydantic inputs + `ActionResult`.
+- [ ] Implement `wake_host`, `shutdown_host`, `ping_host`. Write each invocation to `Event`.
+- [ ] `GET /api/actions` (registry/toolset), `POST /api/actions/{name}` (+ confirm token).
+- [ ] `GET /api/events` + `GET /api/events/stream` (SSE).
+- [ ] Frontend: device-row wake/stop buttons → mutations; **confirmation dialog** for high-risk;
+      activity/event surfacing.
+- [ ] **Verify:** wake + shutdown a real host from the UI.
+
+## Phase 3 — Services
+
+- [ ] `Service` model + per-OS `start/stop/restart` command maps in config.
+- [ ] `start_service` / `stop_service` / `restart_service` / `open_service_url` actions.
+- [ ] `GET /api/services`, `POST /api/services/{id}/actions/{action}`.
+- [ ] Frontend: services inside the device-row dropdown (port Vapor `.svc-row`), state + open-URL.
+
+## Phase 4 — Agent chat (text first)
+
+- [ ] `agent.py`: `openai` client → configured backend (local llama.cpp `/v1` or cloud).
+- [ ] Threads/messages persisted in SQLite; `GET/POST /api/threads`, `GET messages`.
+- [ ] `POST /api/agent/chat` streaming over SSE.
+- [ ] Tool-calling: registry → OpenAI `tools`; high-risk/confirm actions → **command/action
+      bubble** (execute/edit/dismiss), low-risk configurable to auto-run.
+- [ ] Capability fallback for weak local models (draft-into-bubble, no native tools).
+- [ ] Port composer prefixes: `$`/`>` → guarded exec, `k:`/`o:` → force local/cloud, else → agent.
+- [ ] Frontend **Agent** tab: chat log + shared composer + streaming render + command bubbles.
+
+## Phase 5 — Guarded shell (`$` escape hatch)
+
+- [ ] `run_shell` action: capture stdout/stderr, **timeout**, target local or remote (SSH),
+      `risk=high`, **excluded from agent tools by default** (setting), always logged.
+- [ ] `POST /api/exec` (setting-gated). Frontend: `$` prefix routes here; result shown as a
+      done command bubble.
+
+## Phase 6 — Voice (STT + TTS)
+
+- [ ] `POST /api/voice/stt` (multipart → OpenAI-compatible `/v1/audio/transcriptions`).
+- [ ] `POST /api/voice/tts` ({text,voice} → `/v1/audio/speech` → audio stream).
+- [ ] Frontend: push-to-talk mic (MediaRecorder) → STT → fills composer; auto-TTS toggle
+      (`#ttsToggle`) plays assistant replies.
+- [ ] **HTTPS via Tailscale Serve** so the mic works on Android (secure-context). Document it.
+- [ ] **Verify** mic + playback on a real Android phone over the tailnet.
+
+## Phase 7 — Conf tab (settings, prompts, memory, hosts CRUD)
+
+- [ ] `GET/PUT /api/settings` (YAML-backed, secrets masked); `GET/PUT /api/prompts/{name}`.
+- [ ] Hosts CRUD: `POST/PUT/DELETE /api/hosts/{id}` + Conf machine forms (port Vapor `machineFormHTML`).
+- [ ] Memory mgmt: `GET /api/memory`, `POST`, `DELETE`; rolling-summary + pinned-facts; clear
+      thread / clear all.
+- [ ] Conf tab: inference/STT/TTS endpoints + models + voices, server (host/port/poll/debug),
+      appearance (theme/skyline/hero/waveform), prompt-file editors, memory panel.
+
+## Phase 8 — Utils
+
+- [ ] Port `yt-captions` (transcript → JSON) and `ip-info` to `/api/utils/*` + Utils tab cards.
+
+## Phase 9 — PWA, packaging, deploy
+
+- [ ] vite-plugin-pwa manifest + service worker (app-shell precache; never cache `/api` writes).
+- [ ] Prod: FastAPI serves `frontend/dist` (StaticFiles + SPA fallback), single origin.
+- [ ] Deploy profiles: Windows `.bat`/Task Scheduler; Ubuntu `systemd` unit; Termux notes
+      (`termux-wake-lock`, foreground service, high port).
+- [ ] `debug=False` default; pinned deps; install scripts for both OSes.
+- [ ] Minimal smoke tests (Playwright desktop + Android viewport; a couple of backend action tests).
+
+## Phase 10 — Cutover
+
+- [ ] Feature-parity check vs `wol_server_win.py` (WOL, monitor, shutdown, command box, chat, YT,
+      IP lookup) + the new extensions.
+- [ ] Run v2 alongside the old server; migrate `config.yaml`.
+- [ ] Flip the default; retire `wol_server/` (or keep as Linux-WOL fallback). Update README/AGENTS.
+
+---
+
+## Cross-cutting / don't-forget
+
+- [ ] Secrets: gitignore YAML + `*.db`; mask in API; never log SSH passwords / keys.
+- [ ] Per-OS abstraction lives in the action layer / `platform` shim — no Windows/Linux-only
+      imports at module import time (keeps Termux profile alive).
+- [ ] Every privileged action writes an `Event` (audit trail visible in UI).
+- [ ] Keep the Tailscale-only, no-auth, no-public-bind boundary intact (AGENTS.md §6).
+
+## Open questions to resolve in-phase (from DECISIONS.md)
+
+- [ ] Agent tool-call format + weak-model fallback specifics (Phase 4).
+- [ ] SearXNG MCP: v1 or post-v1? (Phase 4+).
+- [ ] Memory strategy final shape (Phase 7).
+- [ ] Frontend routing: tab state vs react-router (Phase 1).
+- [ ] Is `dashboard_v2/` tracked in git, and when to first commit? (Phase 0 — ask owner.)
