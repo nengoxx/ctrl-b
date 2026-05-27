@@ -17,17 +17,18 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
 ## Phase 0 — Scaffolding & ground rules
 
-- [ ] `backend/` FastAPI skeleton: app factory, `/api/health`, run with `uvicorn`. `pyproject.toml`
+- [x] `backend/` FastAPI skeleton: app factory, `/api/health`, run with `uvicorn`. `pyproject.toml`
       with **pinned** deps (fastapi, uvicorn[standard], pydantic, pydantic-settings, sse-starlette,
       paramiko, wakeonlan, openai, httpx, pyyaml, python-multipart, youtube-transcript-api,
-      beautifulsoup4, aiosqlite). Consider `uv`.
-- [ ] `frontend/` Vite + React 19 + TS scaffold (lift config from `ws_claude`): TanStack Query,
-      lucide-react, vite-plugin-pwa. Vite dev proxy `/api` → uvicorn.
-- [ ] Copy `logo.png` + `favicon.ico` into `frontend/public/` (copy, don't import from old dirs).
-- [ ] `config.py`: load/save `config.yaml` (reuse current shape) → typed `Settings`; secret masking.
-- [ ] `db.py`: SQLite schema (threads, messages, memory, events) + tiny versioned applier.
-- [ ] `.gitignore` for `config.yaml`, `*.db`, `node_modules`, `dist`, `__pycache__`, `.venv`.
-- [ ] **Design foundation (D7):** extract `vapor.html`'s `<style>` into `frontend/src/theme/`
+      beautifulsoup4, aiosqlite). *(Pins resolved + frozen at scaffold; venv `backend/.venv`.)*
+- [x] `frontend/` Vite + React 19 + TS scaffold (lift config from `ws_claude`): TanStack Query,
+      lucide-react, vite-plugin-pwa. Vite dev proxy `/api` → uvicorn `127.0.0.1:5433` (5433 to
+      coexist with the live Flask app on 5432 until cutover).
+- [x] Copy `logo.png` + `favicon.ico` into `frontend/public/` (copy, don't import from old dirs).
+- [x] `config.py`: load/save `config.yaml` (reuse current shape) → typed `Settings`; secret masking.
+- [x] `db.py`: SQLite schema (threads, messages, memory, events) + tiny versioned applier.
+- [x] `.gitignore` for `config.yaml`, `*.db`, `node_modules`, `dist`, `__pycache__`, `.venv`.
+- [x] **Design foundation (D7):** extract `vapor.html`'s `<style>` into `frontend/src/theme/`
       verbatim (the `:root`/`[data-theme]` variables, base/component CSS) as the canonical
       stylesheet; set up `index.html` shell (JetBrains Mono + Major Mono Display fonts, favicon,
       `viewport-fit=cover`). Everything later styles against this — don't re-derive the design.

@@ -1,0 +1,25 @@
+# secrets / runtime config (never commit — see CLAUDE.md hard rules)
+config.yaml
+*_prompt.*
+
+# databases
+*.db
+*.db-wal
+*.db-shm
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.venv*/
+*.egg-info/
+.pytest_cache/
+
+# node / frontend
+node_modules/
+dist/
+*.local
+*.tsbuildinfo
+
+# editor / OS
+.DS_Store

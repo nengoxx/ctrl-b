@@ -28,8 +28,29 @@ earlier prototypes — kept for reference, not imported or modified. The live Fl
 
 ## Status
 
-📋 **Planning complete — ready to build.** No application code yet. New session? Read
-[`docs/HANDOFF.md`](docs/HANDOFF.md) first, then start at `docs/TODO.md` Phase 0.
+🚧 **Phase 0 done — scaffold runs.** FastAPI skeleton (`/api/health`), config + SQLite,
+and the React/TS/Vite PWA shell with the Vapor stylesheet lifted verbatim are in place and
+verified (backend health + frontend build). Next: `docs/TODO.md` **Phase 1 — Fleet read path**.
+New session? Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first.
+
+## Running (dev)
+
+Two processes; Vite proxies `/api` → the backend (single origin, no CORS). The backend uses
+port **5433** so it coexists with the live Flask app on 5432 until cutover.
+
+```powershell
+# backend  (from dashboard_v2/backend)
+py -3.11 -m venv .venv
+.venv\Scripts\python.exe -m pip install -e .
+.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 5433
+
+# frontend (from dashboard_v2/frontend) — new terminal
+npm install
+npm run dev          # http://localhost:5173  (or http://<host>:5173 on the tailnet)
+```
+
+Copy `config.example.yaml` → `config.yaml` (gitignored) to override the server block; without
+it, built-in defaults apply. The SQLite file (`ctrlb.db`) is created on first run.
 
 ## Docs
 
