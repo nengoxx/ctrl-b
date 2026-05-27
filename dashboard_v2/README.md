@@ -49,8 +49,11 @@ npm install
 npm run dev          # http://localhost:5173  (or http://<host>:5173 on the tailnet)
 ```
 
-Copy `config.example.yaml` → `config.yaml` (gitignored) to override the server block; without
-it, built-in defaults apply. The SQLite file (`ctrlb.db`) is created on first run.
+Config is **hybrid** (docs/DESIGN.md §9): `config.yaml` (copy from `config.example.yaml`,
+gitignored) is the UI-managed source of truth incl. nested secrets; `.env` (copy from
+`.env.example`, gitignored) adds bootstrap paths + optional `CTRLB_<SECTION>__<KEY>` overrides
+that win over the YAML. Both are optional — built-in defaults apply without them. The SQLite
+file (`ctrlb.db`) is created on first run.
 
 ## Docs
 

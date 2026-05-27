@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api import health
-from app.config import load_settings
+from app.config import load_dotenv, load_settings
 from app.db import Database
 
 # backend/app/main.py -> dashboard_v2/frontend/dist
@@ -27,6 +27,7 @@ _FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    load_dotenv()  # .env → os.environ first, so CTRLB_CONFIG/CTRLB_DB are seen below
     app.state.settings = load_settings()
     app.state.db = Database()
     await app.state.db.connect()

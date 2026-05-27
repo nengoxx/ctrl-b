@@ -510,7 +510,17 @@ class Settings(BaseSettings):
     server: ServerCfg; appearance: AppearanceCfg
     notifications: NotificationsCfg
 ```
-- Secrets are `SecretStr`; `GET /api/settings` returns them **masked** (`"sk-…1234"`); a `PUT`
+- **Secrets model = hybrid (decided Phase 0).** `config.yaml` is the **single UI-managed source
+  of truth, including nested secrets** (per-host SSH creds, per-endpoint API keys, per-MCP-server
+  env/headers) — because they're structured/repeating and the Conf tab edits + round-trips them,
+  which a flat `.env` can't do. A `.env` file adds a **bootstrap + override** layer:
+  - **Bootstrap knobs** the UI never edits: `CTRLB_CONFIG`, `CTRLB_DB`, `CTRLB_ENV` (paths).
+  - **Optional scalar overrides** `CTRLB_<SECTION>__<KEY>` that **win over** `config.yaml`
+    (e.g. `CTRLB_INFERENCE__CLOUD_KEY`) — so a key *can* be kept out of the YAML without breaking
+    the UI. `.env` is operator-owned; the app **never rewrites it** (only `config.yaml`).
+  Real environment variables take precedence over `.env`. Templates: `config.example.yaml` +
+  `.env.example` (both committed, commented, no real secrets).
+- Secrets are `SecretStr`; `GET /api/settings` returns them **masked** (`"sk…34"`); a `PUT`
   leaves a field unchanged if it's the masked sentinel (so editing other fields can't wipe a key).
 - **Atomic writes**: write `config.yaml.tmp` then `os.replace`. Validate before persisting; reject
   with field-level errors. A successful `PUT` triggers a **hot reload** (rebuild affected
