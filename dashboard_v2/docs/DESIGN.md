@@ -576,6 +576,11 @@ events. The same bus powers `GET /api/events/stream` (fleet activity).
 
 ## 13. Frontend data & state (TS)
 
+> **Visual fidelity is fixed (D7):** this section governs *data/state only*. The rendered UI must
+> be a **pixel-exact port of `ctrl-b (Vapor)/variations/vapor.html`** — CSS lifted verbatim, same
+> fonts/colors/animations/components/themes, verified side-by-side at phone width. State plumbing
+> never justifies deviating from the prototype's look. See `ARCHITECTURE.md` §5 + `DECISIONS.md` D7.
+
 ```ts
 // types mirror the domain; generated from OpenAPI where practical
 type Part = TextPart | ToolCallPart | ToolResultPart | QuestionPart | PlanPart | ErrorPart;

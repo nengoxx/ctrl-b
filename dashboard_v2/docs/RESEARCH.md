@@ -174,6 +174,14 @@ The chat+agent subsystem is large enough to be its own project — survey proven
   **slash commands** (A4), **tool-use loop**, **plan mode** (≈ draft-and-confirm bubbles, A2),
   **subagents**, **hooks**, **MCP** (D9), **file-based memory** (`CLAUDE.md`/`MEMORY.md` ≈ file
   MemoryProvider, B1).
+- **little-coder (`itayinbarr/little-coder`) — especially relevant (we run local LLMs).** A coding
+  agent **optimized for smaller/local models** via *scaffold–model fit* (adapting the agent
+  scaffold/prompting to the model size — reportedly moves a ~9.7B model from 19%→45% on Aider
+  Polyglot). Built as extensions + **markdown skill files** + a benchmark harness, local-only on
+  consumer hardware. Two direct lessons: (1) for our **capability fallback** (§Agent / A5), invest
+  in scaffold/prompt adaptation for weak local GGUFs rather than assuming strong native tool-calling;
+  (2) its **skills-as-markdown** approach validates our file-based skills (`SKILL.md`) design. Skim
+  its skills + extension structure before Phase 4/4.5.
 - **Other open agents (skim for breadth):** Aider, Goose (Block), Cline / Continue — for tool
   schemas, approval UX, and session/memory handling.
 - **Net:** our spec already matches opencode's proven shape. Before Phase 4, lift concrete details
@@ -214,6 +222,7 @@ The chat+agent subsystem is large enough to be its own project — survey proven
 - MCP Python SDK (client): <https://github.com/modelcontextprotocol/python-sdk>
 - SearXNG search API (`format=json`): <https://docs.searxng.org/dev/search_api.html>
 - opencode (agent/chat subsystem reference) — repo: <https://github.com/sst/opencode> · architecture: <https://deepwiki.com/sst/opencode>
+- little-coder (small/local-LLM agent + skills-as-markdown; scaffold–model fit): <https://github.com/itayinbarr/little-coder>
 - Claude Agent SDK (legitimate Claude-style agent building): <https://docs.claude.com/en/api/agent-sdk/overview>
 - Tailscale enabling HTTPS / cert provisioning: <https://tailscale.com/docs/how-to/set-up-https-certificates>
 - Tailscale Funnel (public exposure — the thing we do NOT enable): <https://tailscale.com/docs/features/tailscale-funnel>
