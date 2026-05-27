@@ -24,6 +24,21 @@ computers:
     ssh_port: 22
     os_type: linux
     role: nas
+    # Services nest under their host (Phase 3). Each gets a stable id "<host-slug>.<svc-slug>".
+    # Liveness is DERIVED, not stored: the `port` is TCP-probed each poll (a port-less service
+    # just tracks its host being up). The svc-row links to http://<ip>:<port><path> when online.
+    # `cmd` holds the per-OS start/stop/restart commands — only the host's os_type variant runs;
+    # a missing one yields a clean "no <action> command configured" instead of an error.
+    services:
+      jellyfin:
+        kind: jellyfin
+        port: 8096
+        cmd:
+          start:   {linux: "sudo systemctl start jellyfin"}
+          stop:    {linux: "sudo systemctl stop jellyfin"}
+          restart: {linux: "sudo systemctl restart jellyfin"}
+      syncthing:
+        port: 8384          # no cmd → shows status + URL only (no control actions)
   atlas:
     ip: 192.168.1.12
     mac: "6c:0b:84:ad:e1:0f"
@@ -31,6 +46,15 @@ computers:
     ssh_password: changeme
     ssh_port: 22
     os_type: windows
+    services:
+      plex:
+        kind: plex
+        port: 32400
+        path: /web         # opens http://192.168.1.12:32400/web
+        cmd:
+          start:   {windows: "net start PlexService"}
+          stop:    {windows: "net stop PlexService"}
+          restart: {windows: "net stop PlexService & net start PlexService"}
   mercury:
     ip: 192.168.1.15
     mac: "b8:27:eb:0a:9c:21"

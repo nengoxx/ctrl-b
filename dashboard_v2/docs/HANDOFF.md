@@ -1,13 +1,14 @@
 # Handoff — start here for a fresh session
 
-**Purpose:** **Phases 0 + 1 + 2 are done — the Vapor Fleet tab is ported, wired to a live FastAPI
-ping fan-out, and the wake/shutdown/ping buttons now drive real typed actions** through the
-unified action registry (confirm-gated shutdown, optimistic flip, toasts, live SSE activity feed).
-The next session builds **Phase 3 — services**: a `Service` model + per-OS start/stop/restart
-command maps, service actions, and the Vapor `.svc-row` rendering inside the device-row dropdown
-(currently the "no services declared" empty state). This doc is the orientation; canonical detail
-is in the other `docs/` files. **The pixel-exact Vapor fidelity mandate (D7) still governs every
-new component.**
+**Purpose:** **Phases 0 + 1 + 2 + 3 are done — the Vapor Fleet tab is ported, wired to a live
+FastAPI ping fan-out, the wake/shutdown/ping buttons drive real typed actions, and services now
+render** as the Vapor `.svc-row` inside the device-row dropdown (live port-probe status + open-URL
+link), backed by `start/stop/restart/open` service actions on the same registry. The next session
+builds **Phase 4 — agent chat (text first)**: the OpenAI-compatible chat client, threads/messages
+in SQLite, streaming `POST /api/agent/chat` over SSE, the aggregated toolset (action registry +
+MCP), and the Vapor Agent tab. **Start Phase 4 by studying the prior art in `RESEARCH.md`** before
+writing the loop. This doc is the orientation; canonical detail is in the other `docs/` files.
+**The pixel-exact Vapor fidelity mandate (D7) still governs every new component.**
 
 > ## ⭐ The standing Vapor-fidelity mandate (D7) — applies to every phase
 > The owner's priority is a **faithful, pixel-exact execution of `vapor.html`** — not "inspired by."
@@ -46,12 +47,36 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (what Phase 2 left you)
+## Current state (what Phase 3 left you)
 
-Phases 0 + 1 are on `origin/main` (`510302d`, `dc9d4e9`, `1fabed9`). **Phase 2 is implemented
-locally** — review + commit it (the owner commits when asked).
+Phases 0–2 are on `origin/main` (through `21781f7`). **Phase 3 is implemented locally** — review +
+commit it (the owner commits when asked).
 
-⭐ NEW in Phase 2 (`backend/app/`):
+⭐ NEW in Phase 3 (`backend/app/`):
+```
+  domain/service.py            # ⭐ Service (+ command_for) + ServiceStatus (derived, never stored)
+  config.py                    #   + ServiceCfg nested under ComputerCfg; Settings.services() projection
+  services/svc.py              # ⭐ ServiceService — cached concurrent TCP port-probe off fleet status
+  services/actions/_common.py  #   + ServiceTargetInput + run_service_command (shared SSH runner)
+  services/actions/{start,stop,restart}_service.py · open_service_url.py   # ⭐ @action, one file each
+  services/actions/__init__.py · deps.py · main.py   #   register + wire ServiceService into Deps
+  services/action_service.py   #   _record target now falls back to service_id
+  api/services.py              # ⭐ GET /api/services · POST /api/services/{id}/actions/{action}
+```
+⭐ NEW in Phase 3 (`frontend/src/`):
+```
+  types.ts                     #   + Service / ServiceStatus
+  hooks/useServices.ts         # ⭐ useServices — polls ['services'] at poll_seconds
+  hooks/useEvents.ts           #   SSE now invalidates ['services'] too
+  tabs/FleetTab.tsx            #   fetch services, group by host_id, pass each row its own
+  components/DeviceRow.tsx     #   ⭐ Vapor .svc-row list (led/name/host:port/↗ link) + "· N svc" sub
+```
+`config.example.yaml` gained a documented `services:` block under two hosts (the shape to copy).
+No `vapor.css` changes (the `.svc-row` styles were already lifted in Phase 0) — D7 unaffected.
+
+----
+
+⭐ Phase 2 (already committed, `21781f7`) (`backend/app/`):
 ```
   domain/enums.py        #   + Risk / Privilege / Actor / RunState
   domain/result.py       # ⭐ ToolResult (+ Artifact) — the one outcome shape for every capability
@@ -82,7 +107,8 @@ locally** — review + commit it (the owner commits when asked).
   theme/extras.css       # ⭐ net-new toast/modal CSS — built from vapor tokens; vapor.css stays verbatim
 ```
 
-The Phase 1 surface is unchanged underneath (Fleet read path, hero scene, theme store, etc.).
+The Phase 1 surface (Fleet read path, hero scene, theme store) and Phase 2 action stack are
+unchanged underneath.
 
 **Run it (two terminals):**
 ```powershell
@@ -94,21 +120,28 @@ a telegram bot). Vite will drift to a free port — pin it if you want a known o
 `npm run dev -- --port 5190 --strictPort`. Open the Vapor prototype next to it at ~390px:
 `ctrl-b (Vapor)/variations/vapor.html`. **Acceptance is still the human side-by-side check.**
 
-**Verified (Phase 2):** registry loads 3 actions with correct risk/confirm; `decide()` at
-`Privilege.CONFIRM` → wake/ping ALLOW, shutdown CONFIRM. Full `TestClient` run: ping/wake execute
-immediately; shutdown without a token → `needs_confirm`+token, with the token → executes (SSH
-fails on the dev fleet → clean ERROR result), token is single-use; unknown action → 404, bad args
-→ 422, unknown host → ERROR result; every call lands in the `/api/events` audit trail; a live
-`/api/events/stream` subscriber received the pushed event. `compileall` clean; frontend `tsc -b` +
-`vite build` clean. **⭐ Owner ran the live stack against the real fleet (2026-05-27): the fleet
-pings real hosts, and a real WOL wake from the UI works** (toast + the host comes online on a
-later poll).
+**Verified (Phase 3):** `compileall` clean. A synthetic-config `TestClient` run (loopback TCP
+listener as a live "service") passed end-to-end: the 4 service actions register with the right
+risk/confirm (start/open LOW, stop/restart MED); `GET /api/services` derives `online` correctly
+(open port → up, closed port → down) and builds `url`/`controls` from the host + per-OS cmd;
+`open` returns the URL with no SSH; `start` (LOW) runs immediately, `stop` (MED) gates →
+single-use token → executes; unknown service/action → 404, a service missing its OS command →
+DENIED; every call lands in the `/api/events` audit trail (target = `service_id`). Boots clean
+against the **real config** (`/api/services` → `[]` — no services declared yet). Frontend
+`tsc -b` + `vite build` clean.
 
-**Not yet exercised against a real host** (no env blocker — just untested): **shutdown** (the
-Windows hosts need OpenSSH Server running; the Linux host needs passwordless `sudo`) and the
-**confirm-dialog UX**; the toast/confirm components weren't separately checked at 390px — but
-Phase 2 added **no vapor-ported markup** (only net-new toast/modal built from vapor tokens), and
-`vapor.css` is untouched, so D7 fidelity is unaffected.
+**Not yet exercised against a real service host** (no env blocker — just untested): the
+**start/stop/restart SSH path** (needs a host with SSH reachable + a real service to control) and
+the **confirm-dialog UX for a MED service action** — but the SSH path is identical to
+`shutdown_host` and the confirm dance is the same code as Phase 2. To see services in the UI, add
+a `services:` block to `config.yaml` (shape in `config.example.yaml`). The `.svc-row` markup ports
+verbatim from `vapor.html` and reuses CSS already lifted in Phase 0, so D7 fidelity is unaffected
+(still worth the human side-by-side once a service is declared).
+
+**Phase 2 stays verified** (committed `21781f7`): registry/`decide()`/confirm dance/audit/SSE all
+checked; **owner ran the live stack against the real fleet (2026-05-27)** — fleet pings real hosts
++ a real WOL wake from the UI works. Still untested on a real host: `shutdown_host` end-to-end +
+the confirm-dialog UX (Windows hosts need OpenSSH Server; Linux needs passwordless `sudo`).
 
 (Phase 1 stays verified: `/api/health|hosts|hosts/{id}/status` correct under concurrent pings;
 owner confirmed the pixel-exact side-by-side at 390px on 2026-05-27.)
@@ -191,34 +224,36 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — Phase 3 (services)
+## First action — Phase 4 (agent chat, text first)
 
-Phase 2 is committed and confirmed working against the real fleet (wake verified live). Two small
-follow-ups you can fold in opportunistically, neither blocking Phase 3:
-- exercise **shutdown** end-to-end once a host has SSH reachable (Windows: OpenSSH Server; Linux:
-  passwordless `sudo`) — confirm the dialog → token → offline-flip path on a real box,
-- glance at the toast/confirm dialog in **aqua/ember** themes (they use vapor tokens, should be fine).
+Phase 3 is implemented locally (commit it when asked). Small follow-ups you can fold in
+opportunistically, none blocking Phase 4:
+- exercise **shutdown** AND **start/stop/restart_service** end-to-end once a host has SSH reachable
+  (Windows: OpenSSH Server; Linux: passwordless `sudo`) — they share one SSH path,
+- declare a `services:` block in `config.yaml` (shape in `config.example.yaml`) and do the human
+  **side-by-side** of the `.svc-row` against `vapor.html` at 390px (D7) — also glance at it in
+  aqua/ember.
 
-Open `TODO.md` → **Phase 3** and build services (DESIGN §2 `Service`; the same `@action`
-registry — service start/stop/restart are just more actions). In order:
-
-1. **`Service` model** + per-OS `start/stop/restart` command maps in config (`config.yaml`); load
-   like hosts. State is derived (port reachable / process check), not stored.
-2. **Actions** in `services/actions/`: `start_service` / `stop_service` / `restart_service` /
-   `open_service_url` — one file each, `@action`-registered; reuse the SSH adapter. Events as usual.
-3. **API:** `GET /api/services`, `POST /api/services/{id}/actions/{action}`.
-4. **Frontend:** render the Vapor `.svc-row` inside the device-row dropdown (replace the
-   "no services declared" empty state in `DeviceRow.tsx`), wire state + the open-URL link.
-
-The action framework + confirm/event/toast plumbing from Phase 2 is the template — services slot
-straight in. Don't build ahead into the agent (Phase 4+). Each phase ends in something runnable.
+Open `TODO.md` → **Phase 4** and build the agent. **First read `RESEARCH.md` → "Prior art for the
+agent/chat subsystem"** (opencode loop/session/permission + public Claude-Code patterns; do NOT
+use the leaked claude-code repo). Then, roughly in order: the `openai`-client `agent.py` →
+threads/messages in SQLite (`GET/POST /api/threads`, `GET messages`) → streaming `POST
+/api/agent/chat` over SSE → the aggregated toolset feeding OpenAI `tools` (the action registry is
+already the source — high-risk/confirm actions surface as command/action bubbles, reusing the
+confirm dance) → MCP client (one server end-to-end first) + SearXNG `web_search` + embeddings →
+composer prefix routing (`!`/`/`/agent) → the `task_plan` builtin + context compaction → the Vapor
+**Agent** tab. Keep agents/skills/orchestration behind swappable strategy interfaces (D11). Each
+sub-step should stay runnable; don't build all of Phase 4 in one shot.
 
 **Resolved open question (frontend routing):** went with **tab state** (the `store/ui.ts` `tab`
 field), not react-router — 4 tabs, no deep-linking need yet.
 
-**Phase 2 design notes worth carrying forward:** the UI invokes actions as `Actor.USER` /
-`Privilege.CONFIRM`, which is what makes shutdown (the lone `risk=HIGH, confirm=True` action)
-gate while wake/ping run immediately — change the privilege and the gating changes, no per-button
-logic. The frontend reads `confirm`/`risk` from `GET /api/actions` rather than hardcoding which
-action confirms. Confirm tokens are in-memory + single-use + 120s TTL (a deliberate two-step gate,
-not CSRF). `vapor.css` stayed verbatim; net-new component CSS lives in `theme/extras.css`.
+**Phase 2/3 design notes worth carrying forward:** the UI invokes actions as `Actor.USER` /
+`Privilege.CONFIRM`, so `risk` alone decides gating — `shutdown_host` (HIGH) and
+`stop_service`/`restart_service` (MED) gate; wake/ping/`start_service`/`open_service_url` (LOW) run
+immediately. Change the privilege and the gating changes, no per-button logic — the agent (Phase 4)
+reuses the **same `ActionService`** with its own actor/privilege. The frontend reads `confirm`/`risk`
+from the registry rather than hardcoding. Confirm tokens are in-memory + single-use + 120s TTL (a
+two-step gate, not CSRF). Service liveness is **derived** (TCP port probe, cached at `poll_seconds`
+off the fleet host status), never stored; service ids are `"{host_id}.{svc_slug}"`. `vapor.css`
+stayed verbatim; net-new component CSS lives in `theme/extras.css`.

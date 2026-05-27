@@ -5,7 +5,9 @@ import { FleetSummary } from "../components/FleetSummary";
 import { Hero } from "../components/Hero";
 import { useFleetActions } from "../hooks/useActions";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
+import { useServices } from "../hooks/useServices";
 import { useUI } from "../store/ui";
+import type { Service } from "../types";
 
 // The ⭐ Phase 1 deliverable: the Vapor Fleet tab wired to the live API. Owns `featured`
 // (auto-cycles among online hosts, like vapor.html) + the open-row set.
@@ -19,7 +21,15 @@ export function FleetTab({ active }: Props) {
   const { data: server } = useServerInfo();
   const poll = server?.poll_seconds ?? 5;
   const { data: hosts = [], isLoading, error } = useHosts(poll);
+  const { data: services = [] } = useServices(poll);
   const { run, busy } = useFleetActions();
+
+  // Group services by host once per render so each row gets only its own (Vapor's `mine`).
+  const svcByHost = new Map<string, Service[]>();
+  for (const s of services) {
+    const list = svcByHost.get(s.host_id);
+    list ? list.push(s) : svcByHost.set(s.host_id, [s]);
+  }
 
   const [featured, setFeatured] = useState(0);
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -74,6 +84,7 @@ export function FleetTab({ active }: Props) {
           <DeviceRow
             key={h.id}
             host={h}
+            services={svcByHost.get(h.id) ?? []}
             index={i}
             featured={i === clamped}
             open={open.has(h.id)}

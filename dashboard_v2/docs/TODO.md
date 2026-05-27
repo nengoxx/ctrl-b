@@ -81,10 +81,25 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
 ## Phase 3 — Services
 
-- [ ] `Service` model + per-OS `start/stop/restart` command maps in config.
-- [ ] `start_service` / `stop_service` / `restart_service` / `open_service_url` actions.
-- [ ] `GET /api/services`, `POST /api/services/{id}/actions/{action}`.
-- [ ] Frontend: services inside the device-row dropdown (port Vapor `.svc-row`), state + open-URL.
+- [x] `Service` model (`domain/service.py`) + per-OS `start/stop/restart` command maps in config
+      (`config.py` `ServiceCfg`, nested under each `computers:` host; `Settings.services()` projects
+      them with stable id `"{host_id}.{svc_slug}"`). State is **derived** (TCP port probe), not stored.
+- [x] `start_service` / `stop_service` / `restart_service` / `open_service_url` actions
+      (`services/actions/`, one file each; start/open `risk=LOW`, stop/restart `risk=MED` so they
+      gate at `Privilege.CONFIRM`). `ServiceService` (`services/svc.py`) derives liveness via a
+      cached concurrent port-probe sweep keyed off the fleet host status. Events as usual
+      (`_record` now targets `service_id`).
+- [x] `GET /api/services` (DTO + derived status + url + per-OS `controls`), `POST
+      /api/services/{id}/actions/{action}` (delegates to `ActionService`, same confirm-token dance).
+- [x] Frontend: Vapor `.svc-row` (led + name + `host:port` addr + ↗/— arrow → service URL) inside
+      the device-row dropdown, replacing the empty state; `useServices` polls `['services']`; `· N
+      svc` in the row sub; `useEventStream` now invalidates `['services']` too.
+- [x] **Verify:** backend `compileall` clean + a synthetic-config `TestClient` run (registry risk/
+      confirm, derived port status online/offline, url/controls DTO, open returns url, start runs /
+      stop gates→token→single-use, 404s, no-command→DENIED, audit trail); boots clean against the
+      real config (`/api/services` → `[]`); frontend `tsc -b` + `vite build` clean. **Not yet
+      exercised against a real service host** (needs SSH reachable + a real service) — the start/
+      stop/restart SSH path is identical to shutdown_host, which is also pending a live host.
 
 ## Phase 4 — Agent chat (text first)
 

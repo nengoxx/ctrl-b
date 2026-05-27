@@ -120,7 +120,7 @@ class ActionService:
         event = Event(
             actor=actor,
             action=name,
-            target=raw_args.get("host_id"),
+            target=raw_args.get("host_id") or raw_args.get("service_id"),
             status=result.state,
             summary=result.summary,
             output=result.output,

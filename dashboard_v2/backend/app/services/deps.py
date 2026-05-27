@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from app.config import Settings
 from app.services.events import EventService
 from app.services.fleet import FleetService
+from app.services.svc import ServiceService
 
 
 @dataclass
@@ -18,3 +19,4 @@ class Deps:
     settings: Settings
     fleet: FleetService
     events: EventService
+    services: ServiceService

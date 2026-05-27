@@ -11,6 +11,7 @@ export function useEventStream(): void {
     const es = new EventSource("/api/events/stream");
     const onEvent = () => {
       qc.invalidateQueries({ queryKey: ["hosts"] });
+      qc.invalidateQueries({ queryKey: ["services"] });
       qc.invalidateQueries({ queryKey: ["events"] });
     };
     es.addEventListener("event", onEvent);

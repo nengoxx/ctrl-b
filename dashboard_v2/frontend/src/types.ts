@@ -30,6 +30,28 @@ export interface ServerInfo {
   poll_seconds: number;
 }
 
+// ── Services (Phase 3). Mirror of domain/service.py + api/services.py DTO. ──
+
+export interface ServiceStatus {
+  service_id: string;
+  online: boolean; // port reachable (or host up, for a port-less service)
+  checked_at: string;
+  error: string | null;
+}
+
+export interface Service {
+  id: string;
+  host_id: string;
+  name: string;
+  kind: string | null;
+  port: number | null;
+  path: string;
+  autostart: boolean;
+  url: string | null; // http://host:port/path, when resolvable
+  controls: string[]; // control actions configured for the host's OS (start/stop/restart)
+  status: ServiceStatus | null;
+}
+
 // ── Actions (Phase 2). Mirror of core/tool.py + domain/result.py + domain/event.py. ──
 
 export type Risk = "low" | "med" | "high";

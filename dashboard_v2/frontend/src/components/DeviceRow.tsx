@@ -1,17 +1,19 @@
 import type { MouseEvent } from "react";
 
 import type { FleetAction } from "../hooks/useActions";
-import type { Host } from "../types";
+import type { Host, Service } from "../types";
 
-// One fleet row + its expandable dropdown (kv detail + wake/stop buttons), ported from
-// vapor.html renderDevices(). Services land in Phase 3 (shows the empty state until then).
-// Phase 2 wires the wake/stop/ping buttons to real actions via `onAction`; `busy` drives the
-// prototype's ◐ spinner affordance (.dev.busy .sub::after) while an action is in flight.
+// One fleet row + its expandable dropdown (services + kv detail + wake/stop buttons), ported from
+// vapor.html renderDevices(). Phase 3 fills the dropdown's service list: each service is the
+// Vapor `.svc-row` (led + name + host:port addr + ↗/— arrow linking to the service URL when up),
+// falling back to the "no services declared" empty state. Phase 2 wires the wake/stop/ping
+// buttons to real actions via `onAction`; `busy` drives the ◐ spinner (.dev.busy .sub::after).
 
 const EQ_ON = [8, 16, 22, 12, 20, 10, 18, 14];
 
 interface Props {
   host: Host;
+  services: Service[];
   index: number;
   featured: boolean;
   open: boolean;
@@ -26,10 +28,13 @@ function act(e: MouseEvent, fn: () => void) {
   fn();
 }
 
-export function DeviceRow({ host, index, featured, open, busy, onToggle, onAction }: Props) {
+export function DeviceRow({ host, services, index, featured, open, busy, onToggle, onAction }: Props) {
   const online = !!host.status?.online;
   const ping = host.status?.ping_ms ?? null;
-  const sub = online ? `${host.os_type} · ${ping != null ? `${ping}ms` : "online"}` : `${host.os_type} · asleep`;
+  const svcCount = services.length ? ` · ${services.length} svc` : "";
+  const sub = online
+    ? `${host.os_type} · ${ping != null ? `${ping}ms` : "online"}${svcCount}`
+    : `${host.os_type} · asleep${svcCount}`;
 
   return (
     <div
@@ -74,7 +79,40 @@ export function DeviceRow({ host, index, featured, open, busy, onToggle, onActio
         <span className="chev">›</span>
       </div>
       <div className="dropdown">
-        <div className="no-svc">// no services declared on this machine</div>
+        {services.length === 0 ? (
+          <div className="no-svc">// no services declared on this machine</div>
+        ) : (
+          services.map((s) => {
+            const svcOn = !!s.status?.online;
+            const addr = `${host.name}:${s.port ?? "—"}`;
+            return svcOn && s.url ? (
+              <a
+                key={s.id}
+                className="svc-row on"
+                href={s.url}
+                target="_blank"
+                rel="noopener"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <span className="led" />
+                <div className="info">
+                  <div className="name">{s.name}</div>
+                  <div className="addr">{addr}</div>
+                </div>
+                <span className="arrow">↗</span>
+              </a>
+            ) : (
+              <div key={s.id} className="svc-row off">
+                <span className="led" />
+                <div className="info">
+                  <div className="name">{s.name}</div>
+                  <div className="addr">{addr}</div>
+                </div>
+                <span className="arrow">—</span>
+              </div>
+            );
+          })
+        )}
         <div className="details">
           <div className="kvgrid">
             <div className="k">ip</div>

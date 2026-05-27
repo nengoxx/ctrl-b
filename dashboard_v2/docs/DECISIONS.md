@@ -191,6 +191,23 @@ as data + pluggable strategies so they evolve without a rewrite.
 
 ---
 
+## D12 — Services: nested under hosts, derived liveness, control = more actions ✅ (Phase 3)
+
+Services are declared **nested under their host** in `config.yaml` (`computers.<host>.services.<name>`),
+not as a flat top-level list — everything about a machine lives together, and the stable id is
+`"{host_slug}.{service_slug}"` so renaming the host re-slugs host + services in lockstep. Liveness
+is **derived, never stored** (DESIGN §2): a cached concurrent **TCP port probe** keyed off the fleet
+host status (offline host → service offline without wasting a probe; port-less service → tracks the
+host). Control is just **more typed actions** on the Phase 2 registry —
+`start_service`/`stop_service`/`restart_service` (per-OS `cmd` maps, SSH adapter) + `open_service_url`
+(URL only, no SSH, `ui_exposed=False`). **Risk:** start/open `LOW`, **stop/restart `MED`** so they
+gate at `Privilege.CONFIRM` (the seam: privilege rides on `risk`). The Vapor `.svc-row` is link-only
+(no buttons) — Phase 3 renders status + the open-URL link; control buttons in the UI come later.
+**Why:** reuses the whole action/confirm/event/toast machinery, keeps "add a service" a config edit,
+and keeps the data model faithful to DESIGN §2.
+
+---
+
 ## Still open (decide before building the relevant phase)
 
 - Agent tool-calling format: OpenAI `tools`/function-calling vs a lightweight JSON protocol for

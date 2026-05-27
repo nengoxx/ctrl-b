@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 from app.domain.enums import OSType
 from app.domain.host import Host
+from app.domain.service import Service
 
 # dashboard_v2/backend/app/config.py -> dashboard_v2/
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -73,11 +74,30 @@ def _slug(name: str) -> str:
     return s or "host"
 
 
+class ServiceCfg(BaseModel):
+    """One entry under a computer's `services:` map (Phase 3).
+
+    `cmd` is keyed by action (`start`/`stop`/`restart`) → `{os_type: command}`; only the host's
+    OS variant runs, and a missing one surfaces as a DENIED result. State is derived (port probe),
+    never stored, so there is no status field here.
+    """
+
+    model_config = {"extra": "allow"}
+
+    kind: str | None = None
+    port: int | None = None
+    path: str = ""
+    autostart: bool = False
+    cmd: dict[str, dict[str, str]] = Field(default_factory=dict)
+
+
 class ComputerCfg(BaseModel):
     """One entry under `config.yaml`'s `computers:` map — the live wol_server shape preserved.
 
     Secrets stay plain `str` at the config layer (the file is gitignored and the API masks on
     read via `mask_secrets`); the domain `Host` wraps the password in `SecretStr` for redaction.
+    Services nest under their host (`services:` map) so everything about a machine lives together
+    and renaming the host re-slugs both the host id and its service ids in lockstep.
     """
 
     model_config = {"extra": "allow"}
@@ -90,6 +110,7 @@ class ComputerCfg(BaseModel):
     os_type: str = "linux"
     role: str | None = None
     tags: list[str] = []
+    services: dict[str, ServiceCfg] = Field(default_factory=dict)
 
 
 class Settings(BaseModel):
@@ -123,6 +144,35 @@ class Settings(BaseModel):
             )
             for name, cfg in self.computers.items()
         ]
+
+    def services(self) -> list[Service]:
+        """Project the nested `services` maps into typed `Service`s (id = `{host_id}.{slug}`).
+
+        Loaded "like hosts": the id is decoupled from the display name, and `cmd`'s OS keys are
+        coerced to `OSType` so the action layer can index by the host's OS directly.
+        """
+        out: list[Service] = []
+        for name, cfg in self.computers.items():
+            host_id = _slug(name)
+            for svc_name, svc in cfg.services.items():
+                out.append(
+                    Service(
+                        id=f"{host_id}.{_slug(svc_name)}",
+                        host_id=host_id,
+                        name=svc_name,
+                        kind=svc.kind,
+                        port=svc.port,
+                        path=svc.path,
+                        autostart=svc.autostart,
+                        cmd={
+                            action: {
+                                OSType.coerce(os): command for os, command in by_os.items()
+                            }
+                            for action, by_os in svc.cmd.items()
+                        },
+                    )
+                )
+        return out
 
 
 def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
