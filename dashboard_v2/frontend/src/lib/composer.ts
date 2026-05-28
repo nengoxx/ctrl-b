@@ -12,6 +12,7 @@
 // will be configurable in Conf (Phase 7) — kept as a single constant so that wiring is one edit.
 
 import {
+  compactThread,
   pushSystemNote,
   pushUserEcho,
   sendMessage,
@@ -29,6 +30,7 @@ const HELP = [
   `${SHELL_SIGIL}<cmd>      run a shell command (guarded · lands in Phase 5)`,
   "/local [msg]   force the local inference backend",
   "/cloud [msg]   force the cloud inference backend",
+  "/compact       summarize older turns to free up context",
   "/clear         start a new thread",
   "/help          show this list",
   "// anything else is sent to the agent",
@@ -89,6 +91,9 @@ function routeSlash(text: string): void {
     }
     case "clear":
       startNewThread();
+      break;
+    case "compact":
+      void compactThread();
       break;
     case "help":
       pushSystemNote(HELP);

@@ -232,6 +232,11 @@ async function streamTurn(
       case "tool.result":
         addToolResult(data.callId as string, data.result as ToolResult);
         break;
+      case "compaction":
+        // Older turns were folded into a summary to stay within the context window (4e). Full
+        // history stays in SQLite; surface a sys breadcrumb so the trim is visible, not silent.
+        pushSystemNote(compactionNote(data.removed as number, data.truncated as boolean));
+        break;
       case "message.end":
         break;
       case "error":
@@ -325,6 +330,37 @@ export async function sendMessage(text: string, opts?: { mode?: ChatMode }): Pro
     { text: body, thread_id: state.threadId, mode },
     placeholderId,
   );
+}
+
+/** One-line sys breadcrumb for a compaction event (auto or manual). */
+function compactionNote(removed: number, truncated: boolean): string {
+  if (!removed) return "// nothing to compact yet";
+  const tail = truncated ? " (summarizer unavailable — older messages dropped)" : "";
+  return `// compacted ${removed} message${removed === 1 ? "" : "s"} into a summary${tail}`;
+}
+
+/** `/compact`: fold this thread's older turns into a summary now (manual compaction, 4e). Full
+ *  history stays in SQLite; only the live working context shrinks. */
+export async function compactThread(): Promise<void> {
+  if (!state.threadId) {
+    pushSystemNote("// nothing to compact yet");
+    return;
+  }
+  try {
+    const res = await fetch("/api/agent/compact", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: state.threadId }),
+    });
+    if (!res.ok) throw new Error(`compact → ${res.status}`);
+    const data = (await res.json()) as { removed: number; truncated?: boolean };
+    // Compaction only shrinks the model's *working* context; the visible chat log keeps the full
+    // history (the summary lives server-side for the next turn), so just drop a breadcrumb — same
+    // as the auto path. No re-read: that would surface the raw summary mid-log beside the originals.
+    pushSystemNote(compactionNote(data.removed, Boolean(data.truncated)));
+  } catch {
+    pushSystemNote("// compaction failed — try again");
+  }
 }
 
 /** Resolve a suspended tool call (the command bubble's execute/dismiss) and continue the turn. */

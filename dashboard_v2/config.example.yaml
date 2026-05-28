@@ -27,6 +27,19 @@ inference:
     api_key: sk-or-v1-...
     model: google/gemini-2.0-flash-exp:free
 
+# Agent runtime (Phase 4e+). `compaction` folds the oldest complete turns of a thread into a single
+# summary once the working context passes `threshold_tokens` (or on a manual `/compact`); the full
+# history stays in SQLite, only the model's live context shrinks. The `summarizer` is independently
+# selectable — leave mode/model blank to reuse the chat backend, or point it at a cheap/fast model.
+agent:
+  compaction:
+    enabled: true
+    threshold_tokens: 6000   # working-context size (~chars/4 estimate) that triggers auto-compaction
+    keep_last_messages: 8    # recent-message floor kept verbatim (snapped back to a turn boundary)
+    summarizer:
+      mode: ""               # ""/local/cloud — blank inherits inference.default_mode
+      model: ""              # blank inherits the endpoint's model
+
 # The fleet, keyed by host name (the live wol_server_win.py `computers{}` shape — copy yours in).
 # Each host's stable id is a slug of its name. ssh_password is a secret: masked on API read,
 # never logged. Omit mac for hosts you won't Wake-on-LAN; omit ssh_* for ping-only hosts.

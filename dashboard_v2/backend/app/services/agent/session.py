@@ -18,6 +18,7 @@ Event contract (DESIGN §12 subset emitted here):
     part.added       {messageId, part}        # a tool_call part — UI renders the command bubble
     tool.permission  {callId, tool, args, risk, token, prompt}   # confirm bubble
     tool.result      {callId, result}         # bubble resolves
+    compaction       {removed, summaryId, truncated}   # older turns folded into a summary (4e)
     message.end      {messageId}
     error            {message, retryable}
     done             {threadId, state}        # completed | suspended | capped | error
@@ -48,6 +49,7 @@ from app.domain.conversation import (
 from app.domain.enums import Actor, Privilege, RunState
 from app.domain.result import ToolResult
 from app.services.action_service import ActionService
+from app.services.agent.compaction import Compactor
 from app.services.conversation import MessageRepo, ThreadRepo
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -125,6 +127,7 @@ class AgentSession:
         self._inference = inference
         self._settings = settings
         self._actions = actions
+        self._compactor = Compactor(inference, messages, settings.agent.compaction)
 
     def _system_prompt(self) -> str:
         return self._settings.inference.system_prompt.strip() or DEFAULT_SYSTEM_PROMPT
@@ -223,6 +226,15 @@ class AgentSession:
         async for ev in self._drive(thread, mode=mode):
             yield ev
 
+    async def compact(self, thread: Thread) -> dict:
+        """Manual `/compact` (4e): force-fold the oldest turns now, ignoring the token threshold but
+        still honouring the recent-message floor + turn-boundary safety. Returns `{removed,
+        summaryId?, truncated?}` for a one-shot JSON response (no SSE — there's no turn to stream)."""
+        res = await self._compactor.compact(thread, force=True)
+        if res is None:
+            return {"removed": 0}
+        return {"removed": res.removed, "summaryId": res.summary_id, "truncated": res.truncated}
+
     async def resume(
         self, thread: Thread, call_id: str, decision: str, confirm_token: str | None = None
     ) -> AsyncIterator[AgentEvent]:
@@ -270,6 +282,14 @@ class AgentSession:
                 return
 
         for _ in range(MAX_ITERATIONS):
+            # Compaction check before each model call (DESIGN §5.2 step 2): if the working context
+            # is over the configured threshold, fold the oldest turns into a summary system message.
+            res = await self._compactor.compact(thread)
+            if res is not None:
+                yield AgentEvent(
+                    "compaction",
+                    {"removed": res.removed, "summaryId": res.summary_id, "truncated": res.truncated},
+                )
             messages = await self._assemble(thread)
             assistant = Message(thread_id=thread.id, role="assistant", actor=AGENT_ACTOR)
             yield AgentEvent("message.start", {"messageId": assistant.id, "role": "assistant"})

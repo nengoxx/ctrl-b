@@ -71,6 +71,34 @@ class InferenceClient:
     def model_for(self, mode: str | None = None) -> str:
         return self._cfg.endpoint(mode).model
 
+    async def complete(
+        self,
+        messages: list[dict],
+        *,
+        mode: str | None = None,
+        model: str | None = None,
+    ) -> str:
+        """Buffered (non-streaming) completion — used by the compactor's summarizer (4e), which
+        wants the whole text at once, not token deltas. `mode`/`model` override the configured
+        endpoint + model (the summarizer is separately selectable from the chat model, D11); when
+        either is `None` the endpoint's default is used. Raises `InferenceError` on any failure."""
+        ep = self._cfg.endpoint(mode)
+        client = self._client(ep)
+        use_model = model or ep.model
+        if not use_model:
+            raise InferenceError(f"no model configured for mode '{mode or self._cfg.default_mode}'")
+        try:
+            resp = await client.chat.completions.create(
+                model=use_model, messages=messages, stream=False
+            )
+        except InferenceError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — normalize any SDK/transport error
+            raise InferenceError(str(exc)) from exc
+        if not resp.choices:
+            raise InferenceError("inference returned no choices")
+        return resp.choices[0].message.content or ""
+
     async def stream_chat(
         self,
         messages: list[dict],

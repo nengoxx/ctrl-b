@@ -36,6 +36,12 @@ class ChatRequest(BaseModel):
         return v if v in ("local", "cloud") else None
 
 
+class CompactRequest(BaseModel):
+    """Manual `/compact` (4e) — fold the thread's older turns into a summary now."""
+
+    thread_id: str
+
+
 class ResumeRequest(BaseModel):
     """Resolve a suspended tool call (4b confirm bubble). `decision` is execute|dismiss; execute
     must carry the `confirm_token` from the `tool.permission` event."""
@@ -87,6 +93,17 @@ async def chat(body: ChatRequest, request: Request) -> EventSourceResponse:
             yield {"event": ev.event, "data": json.dumps(ev.data)}
 
     return EventSourceResponse(gen())
+
+
+@router.post("/agent/compact")
+async def compact(body: CompactRequest, request: Request) -> dict[str, Any]:
+    """Force context compaction on a thread (manual `/compact`). Returns `{removed, summaryId?,
+    truncated?}` — `removed: 0` means nothing was foldable (already compact / within the floor)."""
+    threads = request.app.state.threads
+    thread = await threads.get(body.thread_id)
+    if thread is None:
+        raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
+    return await _session(request).compact(thread)
 
 
 @router.post("/agent/resume")

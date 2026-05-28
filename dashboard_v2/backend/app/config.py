@@ -92,6 +92,36 @@ class InferenceCfg(BaseModel):
         return self.local if (mode or self.default_mode) == "local" else self.cloud
 
 
+class ModelRef(BaseModel):
+    """A pointer to an inference backend + model name (DESIGN §5.1 ModelRef). Both optional so the
+    summarizer can inherit the chat backend (`mode=None` → `default_mode`) and/or its model
+    (`model=None` → the endpoint's configured model). Set one or both to override."""
+
+    mode: str | None = None      # "local" | "cloud" | None → InferenceCfg.default_mode
+    model: str | None = None     # None → the endpoint's configured model id
+
+
+class CompactionCfg(BaseModel):
+    """Context compaction (Phase 4e, D10/D11). When the working context (non-compacted history)
+    grows past `threshold_tokens`, the oldest complete turns are summarized into a single system
+    message and marked `compacted` (kept verbatim in SQLite). `keep_last_messages` is the floor of
+    recent messages always kept; the summarizer is independently selectable (a cheap/fast model can
+    compact while a heavier model chats)."""
+
+    enabled: bool = True
+    threshold_tokens: int = 6000     # working-context size that triggers auto-compaction
+    keep_last_messages: int = 8      # recent-message floor kept verbatim (snapped to a turn boundary)
+    summarizer: ModelRef = Field(default_factory=ModelRef)
+
+
+class AgentCfg(BaseModel):
+    """Agent-runtime settings (D10/D11). `extra="allow"` so later phases (agents[], skills) round-trip."""
+
+    model_config = {"extra": "allow"}
+
+    compaction: CompactionCfg = Field(default_factory=CompactionCfg)
+
+
 def _slug(name: str) -> str:
     """Stable id from a host name: lowercase, non-alphanumerics → '-' (DESIGN.md §2)."""
     s = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
@@ -148,6 +178,7 @@ class Settings(BaseModel):
 
     server: ServerCfg = Field(default_factory=ServerCfg)
     inference: InferenceCfg = Field(default_factory=InferenceCfg)
+    agent: AgentCfg = Field(default_factory=AgentCfg)
     #: Keyed by host name, preserving the live `wol_server_win.py` `computers{}` shape so the
     #: owner can copy their existing config.yaml unchanged (HANDOFF — migration reference).
     computers: dict[str, ComputerCfg] = Field(default_factory=dict)

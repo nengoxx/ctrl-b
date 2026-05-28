@@ -1,19 +1,21 @@
 # Handoff — start here for a fresh session
 
 **Purpose:** **Phases 0–3, 4a (text round-trip), 4b (agent tools + confirm bubbles), 4c (composer
-prefix routing + markdown), and now 4d (`task_plan` + plan panel) are done** — the Vapor Fleet tab
-drives real fleet/action/service typed-actions, and the **Agent tab is a live tool-using chat**: the
-model sees the action registry as OpenAI `tools`, the loop runs ALLOW calls through the existing
-`ActionService` and **suspends on a confirm-gated call** (med/high risk) rendering a Vapor `.b.cmd`
-**command bubble** with execute/dismiss — resume re-opens the stream and continues. **4c** added the
-shared composer's **prefix routing** (`!`→guarded shell [Phase-5 stub] · `/`→slash incl.
-`/local`//`/cloud` · else→agent), per-message inference-mode switching, and **markdown bot replies**
-(hand-rolled, dep-free) with copy + send-to-composer on code blocks. **4d** added the agent-only
-**`task_plan`** builtin + a live **plan panel** (TodoWrite-style checklist). The next session
-continues **Phase 4e — context compaction** (auto + `/compact`, selectable summarizer), then 4f
-MCP/SearXNG/embeddings — each a runnable slice (don't build it all at once). This doc is the
-orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor fidelity
-mandate (D7) still governs every new component.**
+prefix routing + markdown), 4d (`task_plan` + plan panel), and now 4e (context compaction) are
+done** — the Vapor Fleet tab drives real fleet/action/service typed-actions, and the **Agent tab is
+a live tool-using chat**: the model sees the action registry as OpenAI `tools`, the loop runs ALLOW
+calls through the existing `ActionService` and **suspends on a confirm-gated call** (med/high risk)
+rendering a Vapor `.b.cmd` **command bubble** with execute/dismiss — resume re-opens the stream and
+continues. **4c** added the shared composer's **prefix routing** (`!`→guarded shell [Phase-5 stub] ·
+`/`→slash incl. `/local`//`/cloud` · else→agent), per-message inference-mode switching, and
+**markdown bot replies** (hand-rolled, dep-free) with copy + send-to-composer on code blocks. **4d**
+added the agent-only **`task_plan`** builtin + a live **plan panel** (TodoWrite-style checklist).
+**4e** added **context compaction**: before each model call the loop folds the oldest complete turns
+into a summary system message when the working context exceeds a configurable token threshold (or on
+manual `/compact`), keeping full history in SQLite — with a **separately selectable summarizer
+model**. The next session continues **Phase 4f — MCP/SearXNG/embeddings** — each a runnable slice
+(don't build it all at once). This doc is the orientation; canonical detail is in the other `docs/`
+files. **The pixel-exact Vapor fidelity mandate (D7) still governs every new component.**
 
 > ## ⭐ The standing Vapor-fidelity mandate (D7) — applies to every phase
 > The owner's priority is a **faithful, pixel-exact execution of `vapor.html`** — not "inspired by."
@@ -52,12 +54,44 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (what Phase 4d left you)
+## Current state (what Phase 4e left you)
 
 **Everything through Phase 4d is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181`
-· 4c `b44c039` · doc `d4e704b` · 4d `df612e3`). The tree is clean — start 4e on a fresh commit. (4d
-also folded in two follow-ups from owner testing: the **finish-in-one-turn** prompt fix + capped
-notice, and the **minimized plan tab** that hangs from under the menu bar.)
+· 4c `b44c039` · doc `d4e704b` · 4d `df612e3`). **Phase 4e (context compaction) is implemented +
+verified but NOT yet committed** — the working tree has the 4e changes (see the file list below).
+Review, then commit 4e on its own before starting 4f.
+
+⭐ NEW in Phase 4e (`backend/app/`):
+```
+  config.py                    # ⭐ ModelRef + CompactionCfg (enabled/threshold_tokens/keep_last_messages
+                               #     /summarizer) + AgentCfg; Settings.agent
+  adapters/inference.py        # ⭐ InferenceClient.complete — buffered (non-stream) summary call w/
+                               #     mode+model override (summarizer selectable, D11)
+  services/agent/compaction.py # ⭐ Compactor.compact(force=) + estimate_tokens + transcript render;
+                               #     turn-boundary-safe split, rolling re-fold, truncation fallback
+  services/agent/session.py    #   builds Compactor; loop runs compact() before each model call →
+                               #     `compaction` event; public compact() for the manual path
+  api/agent.py                 # ⭐ POST /api/agent/compact (force-fold; {removed, summaryId?, truncated?})
+```
+⭐ NEW in Phase 4e (`frontend/src/`):
+```
+  store/chat.ts                # ⭐ compactThread() (POST /agent/compact + breadcrumb) + `compaction`
+                               #     SSE case → sys note; compactionNote() helper
+  lib/composer.ts              #   /compact verb routes to compactThread(); added to /help
+```
+**Design:** compaction shrinks only the model's **working context** (the repo's
+`include_compacted=False` view), never the visible chat log or the DB. The cut is `keep_last_messages`
+from the end, **snapped back to a `user` message** so an assistant `tool_calls` is never split from
+its `tool` results (which would make the OpenAI context invalid) — complete turns fold, complete
+turns stay. The summary is a real `system` message timestamped at the boundary (`tail[0].ts - 1µs`)
+so it round-trips through `_assemble` + `GET /threads/{id}/messages` with no extra store. A prior
+rolling summary in the head is fed back to the summarizer (single live summary). Summarizer failure →
+a truncation **placeholder** (still flips `compacted` so the next call can't blow the window; DB rows
+never deleted). The summarizer is `agent.compaction.summarizer{mode,model}` — both `None` by default,
+so it inherits the chat backend (a cheap model can be set later). `estimate_tokens` is ~chars/4
+(excludes reasoning, which `_assemble` already drops). The UI shows a `// compacted N messages`
+breadcrumb (auto: from the `compaction` SSE event; manual: from the POST response) and does **not**
+re-read history — surfacing the raw summary mid-log beside the originals would just confuse.
 
 ⭐ NEW in Phase 4d (`backend/app/`):
 ```
@@ -187,8 +221,10 @@ message, so resolved bubbles render the real `ToolResult.summary` instead of usi
   components/Composer.tsx      #   send → sendMessage + jump to Agent tab; disabled while streaming
   theme/extras.css             # ⭐ net-new: reasoning disclosure + caret + chat-error (vapor tokens; vapor.css verbatim)
 ```
-The model `minig+` is a **thinking** model and **cold-loads slowly (2–3 min)** — the client timeout
-is 600s. Reasoning is streamed/persisted as a `ReasoningPart` (dimmed, NOT replayed into the
+The model `minig+` is a **thinking** model (Gemma, fits the owner's 3060) and is **fast in practice
+even with reasoning** — the earlier "cold-loads slowly (2–3 min)" note was a one-time first-load
+artifact, not steady-state; don't budget UX around it. The client timeout stays a generous 600s as a
+safe upper bound. Reasoning is streamed/persisted as a `ReasoningPart` (dimmed, NOT replayed into the
 model's next context). One thread for now (Vapor's "one agent · one thread"); thread-list UI later.
 
 ----
@@ -314,6 +350,22 @@ fallback" follow-up). The confirm bubble UX wasn't reviewed @390px against `vapo
 to do the side-by-side** (the `.b.cmd` shell is verbatim vapor, so it should match; the net-new
 outcome line is the only new pixels).
 
+**Verified (Phase 4e):** backend `compileall` clean; frontend `tsc -b` + `vite build` clean. A
+direct `Compactor` test (temp SQLite + a stubbed summarizer) passed 7 cases: **auto-compaction** over
+a low threshold (summary system message first in the working view, originals flipped `compacted`,
+full history intact in the DB); **turn-boundary safety** (tail starts at a `user` message, no orphaned
+`tool` result in the working context — a seeded `ping_host` call/result turn stayed together);
+**under-threshold no-op**; **`force` (manual `/compact`)** compacts under threshold; **floor**
+(below `keep_last_messages` → nothing folded); **summarizer failure → truncation placeholder** (still
+compacts, history kept); **rolling re-fold** (a prior summary is fed back, single live summary in
+context); **selectable summarizer** (`mode`+`model` forwarded to `complete`). Backend relaunched
+clean on 5433 (a stale `--reload` orphan from a prior session was holding the port with old code — it
+lacked `/agent/compact`; killed it); `/openapi.json` now lists `POST /api/agent/compact`, which 404s
+an unknown thread and returns `{removed:0}` on an empty one. Frontend already live on 5190 (HMR),
+proxy OK. **Not yet eyeballed live:** auto-compaction firing on a long real `minig+` thread + the
+`/compact` breadcrumb @390px — **owner to confirm** (and to set a cheaper summarizer in
+`agent.compaction.summarizer` if desired; default inherits the chat model).
+
 **Verified (Phase 4d):** backend `compileall` clean; frontend `tsc -b` + `vite build` clean. A
 script confirmed `task_plan` registers as a `builtin` (LOW, agent-only), its `input_model` renders a
 valid OpenAI fn schema (nested `$defs`), and a direct call returns the plan in `data["plan"]`. A
@@ -423,27 +475,31 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — Phase 4e (context compaction)
+## First action — commit 4e, then Phase 4f (MCP/SearXNG/embeddings)
 
-Tree is clean (4d committed + pushed, `df612e3`). Optional 4b/4c/4d follow-ups, none blocking 4e —
-each is an **owner eyeball**, not a code task:
+**4e is in the working tree, uncommitted + verified.** First step: review the 4e diff and **commit it
+on its own** (footer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`), then start 4f on a
+fresh commit. Optional 4b/4c/4d/4e follow-ups, none blocking 4f — each is an **owner eyeball**, not a
+code task:
 - **Eyeball live against `minig+`**: send a fleet question — confirm the model emits tool calls, the
   `.b.cmd` bubble streams in, and a `shutdown_host`/`stop_service` shows the confirm bubble + resume.
   Give it a **multi-step** ask ("wake titan then start minecraft") and confirm it calls `task_plan`
   and the **plan panel** renders/updates. Confirm a prose reply renders as **markdown** with the
   code-block copy/edit bar. If the thinking model's native tool-calling is unreliable, that's the
   **capability fallback** item (prompted-JSON → same `ToolCallPart` path; TODO 4c).
+- **Compaction live (4e):** hold a long thread until it crosses `agent.compaction.threshold_tokens`
+  (default 6000) and confirm the `// compacted N messages` breadcrumb appears + the agent still has
+  context; try `/compact` manually. Optionally set a cheaper `agent.compaction.summarizer{mode,model}`.
 - **Side-by-side @390px** of the markdown bubble, `.md-code` bar, and the `.b.plan` panel vs the Vapor
   look (D7) — owner's call.
 - Cloud mode + the SSH service/shutdown path are still untested against a real host (shared one SSH path).
 
-Open `TODO.md` → **Phase 4 → 4c+** (`task_plan` is now `[x]`). Next runnable slices:
-1. **Context compaction (4e, D10/D11):** near the token budget (configurable threshold) + manual
-   `/compact`, summarize older turns into the working context; keep full history in SQLite; emit a
-   `sys` notice. **Summarizer model selectable** (local/cloud + name), independent of the chat model.
-   The `/compact` slash verb slots into the `lib/composer.ts` router built in 4c.
-2. Then **4f** MCP + SearXNG + embeddings (D9). Keep agents/skills/orchestration behind swappable
-   strategies (D11). Each sub-slice stays runnable.
+Open `TODO.md` → **Phase 4 → 4c+** (`task_plan` + compaction are now `[x]`). Next runnable slice:
+1. **4f** MCP + SearXNG + embeddings (D9), real targets staged in the owner's `config.yaml` (emma
+   `mcp_servers` Streamable-HTTP crawl4ai + `searxng` :8888). Connect one MCP server end-to-end first
+   (official Python MCP SDK, stdio + Streamable HTTP), merge its tools into the same `agent_tools()`
+   set, then generalize; SearXNG `web_search` tool; embeddings client for the vector `MemoryProvider`.
+   Keep agents/skills/orchestration behind swappable strategies (D11). Each sub-slice stays runnable.
 
 **Resume protocol (4b, for reference):** the confirm bubble's execute/dismiss POSTs
 `/api/agent/resume {thread_id, call_id, decision, confirm_token}` and consumes a **fresh SSE stream**

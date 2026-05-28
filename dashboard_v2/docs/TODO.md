@@ -171,9 +171,18 @@ tools + confirm bubbles) are DONE.**
       Frontend: `AgentTab` renders the **latest** task_plan call as a checklist panel (per-step
       pending/active/done ticks), earlier ones collapse to a "plan revised" breadcrumb. Net-new
       `.b.plan` CSS from vapor tokens. *(Capability fallback for weak local tool-calling: still TODO.)*
-- [ ] **Context compaction (D10/D11):** summarize older turns into the working context near the
-      token limit (configurable threshold) + manual `/compact`; keep full history in SQLite; `sys`
-      notice. **Summarizer model selectable** (local/cloud + name), independent of the chat model.
+- [x] **Context compaction (4e, D10/D11):** before each model call the loop estimates the
+      working-context tokens; over `agent.compaction.threshold_tokens` (or on manual `/compact`,
+      `force=True`) it folds the oldest **complete turns** into a single summary `system` message and
+      flips the originals `compacted` (kept verbatim in SQLite — reload + audit see them). Cut snaps
+      back to a `user` boundary so an assistant `tool_calls` is never split from its `tool` results;
+      `keep_last_messages` is the recent floor. **Summarizer selectable** via
+      `agent.compaction.summarizer{mode,model}` (`None` inherits the chat backend) over a new buffered
+      `InferenceClient.complete`. Failure → truncation placeholder (still shrinks context, never drops
+      DB rows). New `compaction` SSE event + `POST /api/agent/compact`; `/compact` slash verb +
+      breadcrumb sys note. Files: `config.py` (AgentCfg/CompactionCfg/ModelRef), `adapters/inference.py`
+      (`complete`), `services/agent/compaction.py` (`Compactor`), `services/agent/session.py` (loop
+      check + `compact()`), `api/agent.py` (`/agent/compact`), `lib/composer.ts` + `store/chat.ts`.
 - [ ] Frontend **Agent** tab: chat log + shared composer + streaming render + command/plan bubbles.
 
 ## Phase 4.5 — Skills + agents (D10/D11)
