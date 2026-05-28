@@ -296,6 +296,30 @@ body {
   letter-spacing: 0.3px;
   color: var(--ink-soft);
 }
+/* Collapsed-by-default command detail: the summary row carries the tool name + a chevron; the
+   $-pre with the full args is revealed on tap (net-new; the .preamble/pre styles stay vapor). */
+.b.cmd .cmd-detail > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.b.cmd .cmd-detail > summary::-webkit-details-marker {
+  display: none;
+}
+.b.cmd .cmd-detail > summary .chev {
+  margin-left: auto;
+  color: var(--ink-faint);
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+.b.cmd .cmd-detail[open] > summary .chev {
+  transform: rotate(180deg);
+}
+.b.cmd .cmd-detail > summary:hover .preamble {
+  color: var(--ink);
+}
 .b.cmd .preamble .cmd-gate {
   text-transform: uppercase;
   letter-spacing: 1.2px;

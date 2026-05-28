@@ -164,11 +164,17 @@ function CmdBubble({
     <div className={"b cmd" + (result ? " cmd-resolved" : "")}>
       <div className="who">assistant · {hm(ts)}</div>
       <div className="body">
-        <div className="preamble">
-          {call.tool.replace(/_/g, " ")}
-          {awaiting && <span className="cmd-gate"> · confirm to run</span>}
-        </div>
-        <pre>{line}</pre>
+        {/* Collapsed by default so a tool call doesn't clutter the log — the tool name + outcome
+            stay visible; tap to reveal the full command/args. Auto-open while awaiting confirm so
+            the owner can review before approving. */}
+        <details className="cmd-detail" open={awaiting}>
+          <summary>
+            <span className="preamble">{call.tool.replace(/_/g, " ")}</span>
+            {awaiting && <span className="cmd-gate"> · confirm to run</span>}
+            <span className="chev" aria-hidden>▾</span>
+          </summary>
+          <pre>{line}</pre>
+        </details>
         {awaiting && (
           <div className="actions">
             <button className="exec" onClick={() => void resumeCall(call.call_id, "execute")}>
