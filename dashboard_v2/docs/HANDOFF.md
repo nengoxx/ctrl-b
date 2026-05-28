@@ -24,8 +24,13 @@ agents/subagents, D10/D11) backend is now DONE** — the loop is driven by a con
 (`agents[]`), file-discovered **skills** (`skills/<name>/SKILL.md`) inject instructions + narrow the
 toolset (model-invoked by description · user-invoked via `/skill-name`), and **`spawn_subagents`**
 delegates a batch of tasks to child agents run in bounded parallel (headless, depth-capped,
-privilege-clamped). **Cloud chat is now wired** (`inference.cloud` → OpenRouter Gemma 4 free;
-`default_mode` stays `local`; `:free` tier is rate-limited). **Next up: the Conf tab (Phase 7)** —
+privilege-clamped). **Since then (see the 2026-05-28 session block below):** cloud chat is wired
+(`inference.cloud` → OpenRouter Gemma 4 free, `default_mode` stays `local`); an **agent capability
+layer** (loop-discipline guards + tool-selection routing) was added; a **`fleet` intent-skill**
+auto-narrows the toolset so the weak local model behaves (the big finding — `minig+` isn't too weak,
+the 21-tool namespaced set confused it); a **`check_service`** liveness tool + a **`reboot_host`**
+action (with a device-row button); **clickable plan-step dots** (persistent, agent-aware); and an
+**OS-compatibility pass** (ping/commands detect the host OS). **Next up: the Conf tab (Phase 7)** —
 incl. the Skills/Agents management UI deferred from 4.5 — or wiring real Open WebUI tool servers, or
 Phase 5 (guarded shell).
 This doc is the orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor
@@ -68,7 +73,7 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (Phase 4.5 backend complete)
+## Current state (Phase 4.5 + 2026-05-28 capability/UX session)
 
 **Everything through Phase 4f is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181`
 · 4c `b44c039` · 4d `df612e3` · 4e `60f8e68` · vite-host fix `f2774b8` · **4f**: web_search `05e5a48`
@@ -78,8 +83,55 @@ group a thinking block with the tool call it produced `73fe813` · inset fix `5b
 transport `874cdb1`**). **Phase 4.5 (skills + agents/subagents) is committed + pushed to `origin/main`
 (through `591cc5b`):** AgentDef spine `c964237` · skills `e2c90e8` · subagents `e84797f` · 4.5 docs
 `ba11479` · **subagent parameter inheritance** `b407cec` + docs `70571c4` · **tool-description fallback
-fix** `f72ccb0`. The working tree is **clean** and in sync with `origin/main`. The 4e/4f file lists
-below are reference.
+fix** `f72ccb0`. The 4e/4f file lists below are reference.
+
+### ⭐ Session update — 2026-05-28 (committed + pushed; tree clean, in sync at `c6d3ff5`)
+
+Everything below is on `origin/main`. **Servers were restarted many times; one clean backend now
+runs on 5433 (venv python), frontend on 5190.** Watch out: a stale *system-python* backend had been
+serving 5433 with pre-fix code earlier this session — always confirm the instance on 5433 is the
+venv one running current code.
+
+- **Cloud chat wired** (`c6577c6`): `inference.cloud` → OpenRouter `google/gemma-4-31b-it:free`,
+  same key as `embeddings:`; `default_mode` stays `local` (`/cloud` is opt-in). Live-verified; the
+  `:free` tier is heavily rate-limited (429s surface as a clean SSE error).
+- **Agent capability layer** (`27529de`, `a0b8e5a`, `d112754`) — *C1 loop discipline*: per-turn
+  duplicate-call suppression (`max_repeat_calls`), per-tool cap (`max_calls_per_tool`), result-based
+  progress (a repeated outcome isn't progress), stall detection → **forced final answer** instead of
+  a silent `capped` dead-end (the stall guard must NOT count narration text — that was a real bug).
+  *C2 tool-selection*: routing rules in the prompt + sharper tool descriptions. Also **`task_plan`
+  is now lenient** (repairs `status: in_progress`→active, alt field names, bare-string steps — fixed
+  "broken task_plan call"). New knobs live on `AgentDef` (configurable, inherited by subagents).
+- **⭐ The key finding (proven live): `minig+` is NOT too weak — the full 21-tool *namespaced* set
+  confused it** (it hallucinated names like `mcp__fleet_ping`/`fleet.ping_host`, never called
+  `task_plan`, spammed web search). **Fix = a `fleet` intent-skill** (`da9f6ff`,
+  `skills/fleet/SKILL.md`) that **auto-activates** (KeywordSkillSelector, little-coder style) and
+  narrows the toolset → the same prompt went from a 16-search spiral to **4 clean calls** (task_plan
+  → ping_host → open_service_url ×2 → accurate answer). **Opt-out for capable models: set
+  `skills: []` on an agent** → full toolset, model's own judgment (Claude-Code style). Documented in
+  `config.example.yaml` + README; roadmap **A7** (`c61dd68`) tracks a Conf UI / `/agent` switch.
+- **`check_service` liveness tool + `open_service_url` correctness fix** (`448249a`): the agent had
+  no real service health check and was calling services "operational" off `open_service_url` (which
+  only *builds* the URL — no probe). `check_service` does a live TCP probe (reports DOWN if the host
+  is offline); descriptions updated so the model never conflates the two. Verified live with emma off.
+- **`reboot_host` action + UI** (`1df085f` backend · `6a7770e` button · `7308cbf`/`42b8353` refine):
+  OS-agnostic (per-target `os_type`), HIGH/confirm. Device-row button beside shutdown (wake-accent
+  gradient, gapped rotate glyph), shown with shutdown when online, wake-only when offline; eq bars
+  trimmed + buttons grouped in one `.acts` grid cell so they fit (vapor `.top` is a 5-col grid).
+- **Clickable plan-step dots** (`b525553`, `0cc9e09`): tap a step's dot in the pinned plan panel to
+  toggle done/undone — **persistent + agent-aware**. `POST /api/agent/plan` updates the latest
+  `task_plan` call's *args* (what the model sees next turn) + its result *in place* (no breadcrumb
+  spam). Reuses message history (no separate plan store). Dot keeps its original look.
+- **OS-compatibility pass** (`c6d3ff5`): `fleet._ping_cmd` is a 3-way `platform.system()` branch
+  (Windows `-n/-w ms` · Linux `-c/-W sec` · macOS/BSD `-c/-t sec`); shutdown/reboot OS-command
+  lookups use `.get()` with a clean DENIED fallback. WOL/paths/SSH/sockets/HTTP were already
+  portable. **Ready to run on emma/Linux at cutover.**
+- **Housekeeping:** the 2 moderate Dependabot alerts (vite/esbuild in the dead `ws_codex_2`
+  prototype) were **dismissed as not-used** — the active `dashboard_v2` already runs patched vite
+  7.3.3 / esbuild 0.27.7.
+
+**Still owner-eyeball (D7):** the reboot button + clickable plan dots @390px; the fleet-skill
+behavior in the live UI (a fleet ask should now plan, use real tools, and render the plan panel).
 
 **Live-probed against `minig+` this session (servers up on 5433/5190):** `web_search` ✅ (model
 calls it, auto-runs, clean answer); forced skill `/web-research` ✅ (activates, narrows tools, fuller
@@ -707,24 +759,23 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — push 4.5, then Phase 7 Conf (or 4f leftovers / Phase 5)
+## First action — Phase 7 Conf (or Phase 5 guarded shell)
 
-**Phase 4.5 backend is complete + committed + pushed** (through `591cc5b`; in sync with
-`origin/main`). It was **live-probed** (see "Live-probed" above): web_search + skills + the subagent
-runtime all work against `minig+`; the only gap is `minig+` not *choosing* `spawn_subagents`
-(capability, not wiring). The natural next slices:
-- **Owner visual side-by-side @390px** (D7) — the only un-eyeballed bit: subagent results render in
-  the existing `.b.cmd` bubble (children's answers in the output line); a richer subagent panel is
-  later polish. Also the skill/plan/markdown bubbles from earlier phases.
-- **Phase 7 Conf tab** — incl. the **Skills/Agents management UI** deferred from 4.5 **and per-tool
-  description editing** (the owner asked for it; the override seam is `ToolSpec.description`). Needs
-  the `GET/PUT /api/settings` form infrastructure Phase 7 builds; `GET /api/skills` already exists.
-- **Capability fallback (TODO 4c)** — prompted-JSON tool-calling for weak local models, so `minig+`
-  can drive abstract tools like `spawn_subagents`. (Cloud chat is now wired — `inference.cloud` →
-  OpenRouter Gemma 4 free — but the `:free` tier is rate-limited, so it's not a reliable way to get a
-  capable tool-caller; BYOK or a paid model would be.)
-- Or the older alternatives: wire real **Open WebUI tool servers** (`openapi_servers:`), or **Phase 5**
-  (guarded `run_shell`).
+**Phase 4.5 backend + the 2026-05-28 session work are all committed + pushed** (in sync with
+`origin/main` at `c6d3ff5` — see the session block above). The weak-local-model selection problem
+that dogged earlier phases is now **largely solved by the `fleet` intent-skill** (auto tool-narrowing),
+with `skills: []` as the opt-out for a capable model. The natural next slices:
+- **Owner visual side-by-side @390px** (D7) — newest un-eyeballed bits: the **reboot button**, the
+  **clickable plan dots**, and a live fleet ask now rendering the **plan panel**. Plus the older
+  skill/plan/markdown/subagent bubbles.
+- **Phase 7 Conf tab** — incl. the **Skills/Agents management UI** (manage `agents[]`, tick tools
+  per agent = roadmap A7, the `/agent` switch) **and per-tool description editing** (override seam is
+  `ToolSpec.description`). Needs the `GET/PUT /api/settings` form infra; `GET /api/skills` exists.
+- **Capability fallback (TODO 4c, now lower priority)** — prompted-JSON tool-calling for weak models.
+  The `fleet` skill mostly removed the need by narrowing the toolset; this is the deeper lever if a
+  model has weak *native* calling. (Cloud chat is wired but the free tier is rate-limited; BYOK or a
+  paid `inference.cloud` model is the reliable capable-tool-caller path.)
+- Or: wire real **Open WebUI tool servers** (`openapi_servers:`), or **Phase 5** (guarded `run_shell`).
 
 Each piece its own runnable slice + commit (footer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`).
 
