@@ -35,8 +35,10 @@ from pydantic import ValidationError
 
 from app.adapters.inference import InferenceClient, InferenceError
 from app.config import Settings
+from app.core.skills import SkillProvider, SkillSelector
 from app.core.tool import UnknownTool
 from app.domain.agent import AgentDef
+from app.services.agent.skills import narrow_tools, resolve_skills, skills_prompt
 from app.domain.conversation import (
     ErrorPart,
     Message,
@@ -117,6 +119,8 @@ class AgentSession:
         settings: Settings,
         actions: ActionService,
         agent: AgentDef | None = None,
+        skills: SkillProvider | None = None,
+        selector: SkillSelector | None = None,
     ) -> None:
         self._threads = threads
         self._messages = messages
@@ -126,7 +130,13 @@ class AgentSession:
         #: The agent definition driving this turn (D11). Resolved by the caller from the thread's
         #: `agent` field; `None` falls back to the built-in default so older call sites still work.
         self._agent = agent or settings.default_agent_def()
+        self._skills = skills
+        self._selector = selector
         self._compactor = Compactor(inference, messages, settings.agent.compaction)
+        #: Per-turn skill state (4.5), set by `_activate_skills` at the start of run_turn. The
+        #: effective tool allowlist defaults to the agent's; active skills may narrow it.
+        self._skills_note: str | None = None
+        self._tool_allow: list[str] | str = self._agent.tools
 
     def _system_prompt(self) -> str:
         """The agent's own prompt wins; then the global `inference.system_prompt` override; then the
@@ -158,11 +168,32 @@ class AgentSession:
         return "\n".join(lines)
 
     def _tools(self) -> list[dict]:
-        """The OpenAI toolset for this agent — `agent_tools()` narrowed to the `AgentDef`'s
-        allowlist (4.5). A skill may narrow it further per turn (handled at selection)."""
+        """The OpenAI toolset for this turn — `agent_tools()` narrowed to the effective allowlist
+        (`self._tool_allow`): the `AgentDef`'s allowlist, further narrowed by any active skill."""
         return self._actions.registry.to_openai_tools(
-            self._actions.registry.for_agent(self._agent.tools)
+            self._actions.registry.for_agent(self._tool_allow)
         )
+
+    def _activate_skills(self, user_text: str, invoked: list[str] | None) -> None:
+        """Resolve the skills active for this turn (4.5) and stash the prompt addition + narrowed
+        tool allowlist. No-op when the subsystem is off / unprovided so the default agent is
+        unchanged. `invoked` are explicit `/skill-name` requests (user-invoked); the selector adds
+        model-invoked picks by matching the user message."""
+        self._skills_note = None
+        self._tool_allow = self._agent.tools
+        if not (self._skills and self._selector and self._settings.agent.skills_enabled):
+            return
+        active = resolve_skills(
+            self._skills,
+            self._selector,
+            user_text,
+            agent_allow=self._agent.skills,
+            invoked=invoked,
+        )
+        if not active:
+            return
+        self._skills_note = skills_prompt(active)
+        self._tool_allow = narrow_tools(active, self._agent.tools)
 
     async def _assemble(self, thread: Thread) -> list[dict]:
         """Build the OpenAI `messages` array from non-compacted history. Reasoning is dropped (the
@@ -179,6 +210,8 @@ class AgentSession:
         roster = self._roster()
         if roster:
             out.append({"role": "system", "content": roster})
+        if self._skills_note:  # active skills' instructions (4.5)
+            out.append({"role": "system", "content": self._skills_note})
         for m in history:
             if m.role == "tool":
                 continue  # emitted inline after the assistant call below
@@ -223,11 +256,18 @@ class AgentSession:
         return out
 
     async def run_turn(
-        self, thread: Thread, user_text: str, *, mode: str | None = None
+        self,
+        thread: Thread,
+        user_text: str,
+        *,
+        mode: str | None = None,
+        skills: list[str] | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Persist the user message, then drive the loop. Yields SSE events. `mode` (`local`/`cloud`,
         from the `/local`//`/cloud` composer prefixes, 4c) forces the inference backend for this turn;
-        `None` uses the configured `default_mode`."""
+        `None` uses the configured `default_mode`. `skills` are explicit `/skill-name` invocations
+        (4.5); the selector adds model-invoked picks on top."""
+        self._activate_skills(user_text, skills)
         user_msg = Message(
             thread_id=thread.id, role="user", actor=Actor.USER, parts=[TextPart(text=user_text)]
         )

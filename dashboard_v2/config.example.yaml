@@ -34,6 +34,8 @@ inference:
 agent:
   default_agent: ""          # name of the agents[] entry new threads use; blank = built-in default
   global_subagent_limit: 6   # process-wide cap on concurrent subagents across the whole tree (4.5)
+  skills_enabled: true       # master switch for the skills subsystem (4.5)
+  skills_dir: skills         # dir scanned for <name>/SKILL.md (relative → alongside this config)
   compaction:
     enabled: true
     threshold_tokens: 6000   # working-context size (~chars/4 estimate) that triggers auto-compaction

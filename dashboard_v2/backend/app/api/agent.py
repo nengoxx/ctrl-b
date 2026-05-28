@@ -27,6 +27,7 @@ class ChatRequest(BaseModel):
     text: str = Field(min_length=1)
     thread_id: str | None = None
     mode: str | None = None  # "local" | "cloud"; None → configured default (4c switches per-msg)
+    skills: list[str] = Field(default_factory=list)  # explicit /skill-name invocations (4.5)
 
     @field_validator("mode")
     @classmethod
@@ -57,7 +58,16 @@ def _session(request: Request, thread: Thread | None = None) -> AgentSession:
     (D11). `None` → the configured default. Older callers that pass no thread still get the default."""
     s = request.app.state
     agent = s.settings.resolve_agent(thread.agent if thread else None)
-    return AgentSession(s.threads, s.messages, s.inference, s.settings, s.actions, agent)
+    return AgentSession(
+        s.threads,
+        s.messages,
+        s.inference,
+        s.settings,
+        s.actions,
+        agent,
+        skills=getattr(s, "skills", None),
+        selector=getattr(s, "skill_selector", None),
+    )
 
 
 @router.get("/threads")
@@ -92,10 +102,23 @@ async def chat(body: ChatRequest, request: Request) -> EventSourceResponse:
     async def gen() -> AsyncIterator[dict[str, Any]]:
         # Tell the client the thread id first (it may have just been created).
         yield {"event": "thread", "data": json.dumps({"threadId": thread.id, "title": thread.title})}
-        async for ev in session.run_turn(thread, body.text, mode=body.mode):
+        async for ev in session.run_turn(thread, body.text, mode=body.mode, skills=body.skills):
             yield {"event": ev.event, "data": json.dumps(ev.data)}
 
     return EventSourceResponse(gen())
+
+
+@router.get("/skills")
+async def list_skills(request: Request) -> list[dict[str, Any]]:
+    """Discovered skills (4.5) — name/description/allowed_tools for the composer `/skill-name`
+    completion + the Conf → Skills panel. Re-scans the skills dir on each call."""
+    provider = getattr(request.app.state, "skills", None)
+    if provider is None:
+        return []
+    return [
+        {"name": s.name, "description": s.description, "allowed_tools": s.allowed_tools}
+        for s in provider.list()
+    ]
 
 
 @router.post("/agent/compact")

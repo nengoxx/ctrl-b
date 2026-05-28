@@ -302,11 +302,15 @@ async function streamTurn(
  * placeholder (instant "…" feedback through the slow cold-load), then reduces the SSE turn — which
  * may run tools, suspend on a confirm bubble, or just answer.
  */
-export async function sendMessage(text: string, opts?: { mode?: ChatMode }): Promise<void> {
+export async function sendMessage(
+  text: string,
+  opts?: { mode?: ChatMode; skills?: string[] },
+): Promise<void> {
   const body = text.trim();
   if (!body || state.status === "streaming") return;
   // Per-message `/cloud <msg>` wins; else the sticky session mode; else the server default (null).
   const mode = opts?.mode ?? sessionMode ?? null;
+  const skills = opts?.skills ?? []; // explicit /skill-name invocations (4.5)
 
   const tempUser: ChatMessage = {
     id: `local-${Date.now()}`,
@@ -327,7 +331,7 @@ export async function sendMessage(text: string, opts?: { mode?: ChatMode }): Pro
 
   await streamTurn(
     "/api/agent/chat",
-    { text: body, thread_id: state.threadId, mode },
+    { text: body, thread_id: state.threadId, mode, skills },
     placeholderId,
   );
 }

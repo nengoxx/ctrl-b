@@ -5,7 +5,8 @@
 //   !<cmd>            → guarded shell escape hatch (run_shell). Phase 5 wires the real exec; here it
 //                       routes + stubs so the path is visibly distinct.
 //   /<verb> [args]    → slash commands. /local //cloud force the inference backend (replacing the old
-//                       k:/o:); /clear starts a fresh thread; /help lists commands.
+//                       k:/o:); /clear starts a fresh thread; /help lists commands. A /verb that
+//                       matches a discovered skill invokes it for that message (4.5, user-invoked).
 //   anything else     → natural-language agent chat.
 //
 // All paths jump to the Agent tab (the chat log lives there). The shell sigil is `!` by default and
@@ -25,6 +26,24 @@ import { setUI } from "../store/ui";
 /** The guarded-shell sigil. Configurable in Conf later (Phase 7); the only command prefix (no $/>). */
 export const SHELL_SIGIL = "!";
 
+/** Names of discovered skills, so `/skill-name` routes as an invocation rather than "unknown command"
+ *  (4.5). Loaded lazily from `GET /api/skills` and refreshed each time the composer module is used;
+ *  the set is best-effort — an unknown `/verb` still falls through to the unknown-command note. */
+const knownSkills = new Set<string>();
+
+export async function loadSkills(): Promise<void> {
+  try {
+    const res = await fetch("/api/skills");
+    if (!res.ok) return;
+    const skills = (await res.json()) as { name: string }[];
+    knownSkills.clear();
+    for (const s of skills) knownSkills.add(s.name);
+  } catch {
+    /* best-effort — leave the set as-is */
+  }
+}
+void loadSkills();
+
 const HELP = [
   "// commands",
   `${SHELL_SIGIL}<cmd>      run a shell command (guarded · lands in Phase 5)`,
@@ -32,6 +51,7 @@ const HELP = [
   "/cloud [msg]   force the cloud inference backend",
   "/compact       summarize older turns to free up context",
   "/clear         start a new thread",
+  "/<skill> [task] run a task with a skill active",
   "/help          show this list",
   "// anything else is sent to the agent",
 ].join("\n");
@@ -99,6 +119,12 @@ function routeSlash(text: string): void {
       pushSystemNote(HELP);
       break;
     default:
-      pushSystemNote(`// unknown command: /${verb} — try /help`);
+      if (knownSkills.has(verb)) {
+        // /skill-name <task> → run the task with that skill explicitly active (user-invoked, 4.5).
+        if (rest) void sendMessage(rest, { skills: [verb] });
+        else pushSystemNote(`// /${verb} needs a task: /${verb} <what to do>`);
+      } else {
+        pushSystemNote(`// unknown command: /${verb} — try /help`);
+      }
   }
 }

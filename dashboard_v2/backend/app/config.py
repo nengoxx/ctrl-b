@@ -119,6 +119,8 @@ class AgentCfg(BaseModel):
     compaction: CompactionCfg = Field(default_factory=CompactionCfg)
     default_agent: str = ""              # name of the default AgentDef; "" → built-in default
     global_subagent_limit: int = 6       # process-wide cap on concurrent subagents (tree-wide)
+    skills_dir: str = "skills"           # dir scanned for <name>/SKILL.md (relative → project root)
+    skills_enabled: bool = True          # master switch for the skills subsystem (4.5)
 
 
 class EmbeddingsCfg(BaseModel):
@@ -339,6 +341,13 @@ class Settings(BaseModel):
     #: `default_agent` is missing). Its empty prompt falls back to `inference.system_prompt` / the
     #: session's built-in default; its empty `ModelRef` inherits the chat backend.
     DEFAULT_AGENT_NAME: ClassVar[str] = "default"
+
+    def skills_dir_path(self) -> Path:
+        """Absolute path to the skills directory. A relative `agent.skills_dir` resolves against the
+        project root (alongside `config.yaml`), so a dropped-in `skills/<name>/SKILL.md` is found
+        wherever the config lives."""
+        p = Path(self.agent.skills_dir).expanduser()
+        return p if p.is_absolute() else (config_path().parent / p)
 
     def default_agent_def(self) -> AgentDef:
         """The built-in default chat agent (DESIGN §5.1 — "the default agent is just one entry").

@@ -30,6 +30,7 @@ from app.db import Database
 from app.services.action_service import ActionService
 from app.services.actions import build_registry
 from app.services.actions.terminal import register_openterminal
+from app.services.agent.skills import FileSkillProvider, KeywordSkillSelector
 from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.deps import Deps
 from app.services.events import EventService
@@ -87,6 +88,10 @@ async def lifespan(app: FastAPI):
     app.state.inference = InferenceClient(app.state.settings.inference)
     app.state.threads = ThreadRepo(app.state.db)
     app.state.messages = MessageRepo(app.state.db)
+    # Skills (Phase 4.5): file-discovered SKILL.md bundles + the default selection strategy. Built
+    # once; the provider re-scans the dir per call so a dropped-in skill is live without a restart.
+    app.state.skills = FileSkillProvider(app.state.settings.skills_dir_path())
+    app.state.skill_selector = KeywordSkillSelector()
 
     try:
         yield
