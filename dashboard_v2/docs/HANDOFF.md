@@ -56,10 +56,16 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
 ## Current state (what Phase 4e left you)
 
-**Everything through Phase 4d is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181`
-· 4c `b44c039` · doc `d4e704b` · 4d `df612e3`). **Phase 4e (context compaction) is implemented +
-verified but NOT yet committed** — the working tree has the 4e changes (see the file list below).
-Review, then commit 4e on its own before starting 4f.
+**Everything through Phase 4e is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181`
+· 4c `b44c039` · doc `d4e704b` · 4d `df612e3` · **4e `60f8e68`** · vite-host fix `f2774b8`). The
+working tree is clean. **Next session starts Phase 4f — MCP/SearXNG/embeddings.** The 4e file list
+below is reference for what landed.
+
+**Dev-server host fix (`f2774b8`):** `vite.config.ts` now sets `server.allowedHosts: true`. Vite
+≥5.4 otherwise rejects any `Host` header that isn't localhost/IP (a DNS-rebinding guard), which
+blocked reaching the dev server by machine name (`http://corsair:5190`) and would block the
+Tailscale Serve `*.ts.net` FQDN needed for the mic over HTTPS. Safe here — tailnet-only, no public
+bind (AGENTS.md §6). *(Note: GitHub flagged 2 moderate Dependabot vulns on push — not yet triaged.)*
 
 ⭐ NEW in Phase 4e (`backend/app/`):
 ```
@@ -475,12 +481,11 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — commit 4e, then Phase 4f (MCP/SearXNG/embeddings)
+## First action — Phase 4f (MCP/SearXNG/embeddings)
 
-**4e is in the working tree, uncommitted + verified.** First step: review the 4e diff and **commit it
-on its own** (footer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`), then start 4f on a
-fresh commit. Optional 4b/4c/4d/4e follow-ups, none blocking 4f — each is an **owner eyeball**, not a
-code task:
+**4e is committed + pushed (`60f8e68`); the tree is clean.** Start 4f on a fresh commit (footer:
+`Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`). Optional 4b/4c/4d/4e follow-ups, none
+blocking 4f — each is an **owner eyeball**, not a code task:
 - **Eyeball live against `minig+`**: send a fleet question — confirm the model emits tool calls, the
   `.b.cmd` bubble streams in, and a `shutdown_host`/`stop_service` shows the confirm bubble + resume.
   Give it a **multi-step** ask ("wake titan then start minecraft") and confirm it calls `task_plan`
