@@ -7,7 +7,7 @@
 
 import { useSyncExternalStore } from "react";
 
-import type { ChatMessage, Part, RunState, Thread, ToolResult } from "../types";
+import type { ChatMessage, Part, PlanStep, RunState, Thread, ToolResult } from "../types";
 
 export type ChatStatus = "idle" | "streaming" | "error";
 
@@ -364,6 +364,46 @@ export async function compactThread(): Promise<void> {
     pushSystemNote(compactionNote(data.removed, Boolean(data.truncated)));
   } catch {
     pushSystemNote("// compaction failed — try again");
+  }
+}
+
+/** Apply a plan edit to the latest task_plan call+result in the local message list (immutably).
+ *  Mirrors the backend's in-place update so the pinned panel re-derives instantly (optimistic). */
+function applyPlanEdit(messages: ChatMessage[], steps: PlanStep[]): ChatMessage[] {
+  let callId: string | null = null;
+  for (const m of messages)
+    for (const p of m.parts) if (p.type === "tool_call" && p.tool === "task_plan") callId = p.call_id;
+  if (!callId) return messages;
+  const done = steps.filter((s) => s.status === "done").length;
+  const summary = steps.length ? `plan · ${done}/${steps.length} done` : "plan cleared";
+  return messages.map((m) => ({
+    ...m,
+    parts: m.parts.map((p) => {
+      if (p.type === "tool_call" && p.call_id === callId)
+        return { ...p, args: { steps }, state: "ok" as RunState };
+      if (p.type === "tool_result" && p.call_id === callId)
+        return { ...p, result: { ...p.result, state: "ok" as RunState, summary, data: { plan: { steps } } } };
+      return p;
+    }),
+  }));
+}
+
+/** Toggle/edit the working plan from the UI (clicking a step's dot). Optimistically updates the
+ *  latest task_plan call+result locally, then persists; the agent sees it on its next turn. */
+export async function editPlan(steps: PlanStep[]): Promise<void> {
+  if (!state.threadId) return;
+  const prev = state.messages;
+  set({ messages: applyPlanEdit(state.messages, steps) });
+  try {
+    const res = await fetch("/api/agent/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: state.threadId, steps }),
+    });
+    if (!res.ok) throw new Error(`plan → ${res.status}`);
+  } catch {
+    set({ messages: prev }); // rollback the optimistic edit
+    pushSystemNote("// could not update the plan");
   }
 }
 

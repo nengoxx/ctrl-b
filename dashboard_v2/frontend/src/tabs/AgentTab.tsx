@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
-import { initChat, resumeCall, useChat } from "../store/chat";
+import { editPlan, initChat, resumeCall, useChat } from "../store/chat";
 import type {
   ChatMessage,
   Part,
@@ -52,13 +52,24 @@ function planFrom(call: ToolCallPart, result: ToolResult | undefined): Plan | nu
   return null;
 }
 
-/** The checklist itself (shared by the inline breadcrumb's expansion and the pinned panel). */
-function PlanSteps({ plan }: { plan: Plan }) {
+/** The checklist itself (shared by the inline breadcrumb's expansion and the pinned panel). When
+ *  `onToggle` is given (the live pinned panel), each step's dot is a button that flips done/undone;
+ *  historical breadcrumbs omit it and stay read-only. */
+function PlanSteps({ plan, onToggle }: { plan: Plan; onToggle?: (i: number) => void }) {
   return (
     <ul className="plan-steps">
       {plan.steps.map((s, i) => (
         <li key={i} className={"plan-step " + s.status}>
-          <span className="tick" aria-hidden />
+          {onToggle ? (
+            <button
+              type="button"
+              className="tick tick-btn"
+              aria-label={`toggle "${s.text}" ${s.status === "done" ? "incomplete" : "done"}`}
+              onClick={() => onToggle(i)}
+            />
+          ) : (
+            <span className="tick" aria-hidden />
+          )}
           <span className="txt">{s.text}</span>
         </li>
       ))}
@@ -88,6 +99,13 @@ function PinnedPlan({ plan }: { plan: Plan }) {
   const total = plan.steps.length;
   const done = plan.steps.filter((s) => s.status === "done").length;
   const [open, setOpen] = useState(false);
+  // Clicking a step's dot toggles done/undone, persists, and the agent sees it next turn (4-plan-edit).
+  const toggle = (i: number) =>
+    void editPlan(
+      plan.steps.map((s, j) =>
+        j === i ? { ...s, status: s.status === "done" ? "pending" : "done" } : s,
+      ),
+    );
   return (
     <div className="plan-pin">
       <div className="plan-pin-wrap">
@@ -107,7 +125,7 @@ function PinnedPlan({ plan }: { plan: Plan }) {
         </button>
         {open && (
           <div className="plan-drop">
-            <PlanSteps plan={plan} />
+            <PlanSteps plan={plan} onToggle={toggle} />
           </div>
         )}
       </div>

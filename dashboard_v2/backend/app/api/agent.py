@@ -10,6 +10,7 @@ regardless (DESIGN §5.3), so a reconnect re-reads it via `GET /api/threads/{id}
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -17,7 +18,11 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sse_starlette.sse import EventSourceResponse
 
-from app.domain.conversation import Thread
+from app.domain.conversation import Message, ToolCallPart, ToolResultPart, Thread
+from app.domain.enums import Actor, RunState
+from app.domain.plan import Plan
+from app.domain.result import ToolResult
+from app.services.agent.planning import TaskPlanInput
 from app.services.agent.session import AgentSession
 
 router = APIRouter(tags=["agent"])
@@ -130,6 +135,76 @@ async def compact(body: CompactRequest, request: Request) -> dict[str, Any]:
     if thread is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
     return await _session(request, thread).compact(thread)
+
+
+class PlanEditRequest(BaseModel):
+    """User edit of the working plan from the UI (clicking a step's dot to toggle done). The full
+    step list is sent (TodoWrite-style, same as the model's task_plan); validated leniently."""
+
+    thread_id: str
+    steps: list[Any] = Field(default_factory=list)
+
+
+@router.post("/agent/plan")
+async def edit_plan(body: PlanEditRequest, request: Request) -> dict[str, Any]:
+    """Persist a user edit to the working plan by **updating the latest `task_plan` call + result in
+    place** — so the panel re-derives it and the agent sees the change on its next turn (the call's
+    `args.steps` is what round-trips into the model's context). If the thread has no plan yet, a
+    fresh task_plan pair is appended. Reuses the existing message-history representation (no separate
+    plan store), matching the model's own task_plan shape."""
+    threads = request.app.state.threads
+    messages = request.app.state.messages
+    if await threads.get(body.thread_id) is None:
+        raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
+
+    plan = Plan(steps=TaskPlanInput(steps=body.steps).steps)  # lenient coercion (status/field names)
+    steps_dump = [s.model_dump() for s in plan.steps]
+    total = len(plan.steps)
+    summary = f"plan · {plan.done}/{total} done" if total else "plan cleared"
+    result = ToolResult(state=RunState.OK, summary=summary, data={"plan": plan.model_dump()})
+
+    msgs = await messages.list(body.thread_id)
+    call_msg = call_part = None
+    for m in msgs:
+        for p in m.tool_calls():
+            if p.tool == "task_plan":
+                call_msg, call_part = m, p
+    if call_part is not None:
+        result_msg = next(
+            (m for m in msgs if any(rp.call_id == call_part.call_id for rp in m.tool_results())),
+            None,
+        )
+        call_part.args = {"steps": steps_dump}  # what the model sees next turn
+        call_part.state = RunState.OK
+        await messages.update(call_msg)
+        if result_msg is not None:
+            for rp in result_msg.tool_results():
+                if rp.call_id == call_part.call_id:
+                    rp.result = result
+            await messages.update(result_msg)
+        return {"plan": plan.model_dump(), "updated": True}
+
+    # No prior plan — append a fresh task_plan pair (user-authored).
+    call_id = uuid.uuid4().hex
+    assistant = Message(
+        thread_id=body.thread_id,
+        role="assistant",
+        actor=Actor.USER,
+        parts=[ToolCallPart(call_id=call_id, tool="task_plan", args={"steps": steps_dump}, state=RunState.OK)],
+    )
+    await messages.add(assistant)
+    tool_msg = Message(
+        thread_id=body.thread_id,
+        role="tool",
+        actor=Actor.USER,
+        parts=[ToolResultPart(call_id=call_id, result=result)],
+    )
+    await messages.add(tool_msg)
+    return {
+        "plan": plan.model_dump(),
+        "updated": False,
+        "messages": [assistant.model_dump(mode="json"), tool_msg.model_dump(mode="json")],
+    }
 
 
 @router.post("/agent/resume")
