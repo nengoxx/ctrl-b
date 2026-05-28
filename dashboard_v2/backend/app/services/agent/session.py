@@ -109,12 +109,24 @@ class _LoopGuard:
     `search_web` fired ~14× until the iteration cap)."""
 
     max_repeat: int
+    max_per_tool: int
     counts: dict[str, int] = field(default_factory=dict)
+    tool_counts: dict[str, int] = field(default_factory=dict)
     last_results: dict[str, ToolResult] = field(default_factory=dict)
+    #: Outcome signatures already seen this turn. A call whose result repeats a prior one made no
+    #: real *progress* — the model is spinning (the live probe saw search_and_crawl fired ~16x with
+    #: trivially-varied queries, every call returning the *identical* result). Exact-arg suppression
+    #: misses that (the args differ); counting a repeated outcome as no-progress trips the stall
+    #: guard fast so the turn wraps up in a few calls instead of running to the iteration cap.
+    seen_results: set[str] = field(default_factory=set)
 
     @staticmethod
     def sig(tool: str, args: dict) -> str:
         return f"{tool}:{json.dumps(args, sort_keys=True, default=str)}"
+
+    @staticmethod
+    def result_sig(result: ToolResult) -> str:
+        return f"{result.state.value}|{result.summary}|{(result.output or '')[:300]}"
 
 
 def _tool_content(result: ToolResult) -> str:
@@ -356,7 +368,10 @@ class AgentSession:
         carried across the confirm round-trip — a minor inconsistency only if the summary model
         differs from the turn's)."""
         # One loop-discipline guard per turn (C1): tracks repeated calls + stall across iterations.
-        guard = _LoopGuard(max_repeat=self._agent.max_repeat_calls)
+        guard = _LoopGuard(
+            max_repeat=self._agent.max_repeat_calls,
+            max_per_tool=self._agent.max_calls_per_tool,
+        )
         if resume_assistant is not None:
             events, suspended, _ = await self._run_calls(
                 thread, resume_assistant, resume_tokens or {}, guard
@@ -549,34 +564,46 @@ class AgentSession:
                 made_progress = True
             else:
                 sig = _LoopGuard.sig(cp.tool, cp.args)
-                # C1a: an exact-repeat call (only for fresh model calls, never a user-approved
-                # resume) past the cap is suppressed — echo the prior result + a steering note so
-                # the model stops repeating and uses it or finishes. NOT counted as progress.
-                if (
-                    token is None
-                    and guard.counts.get(sig, 0) >= guard.max_repeat
-                    and sig in guard.last_results
-                ):
-                    prior = guard.last_results[sig]
-                    result = ToolResult(
-                        state=prior.state,
-                        summary=f"(repeat suppressed) {prior.summary}",
-                        output=(
-                            "You already ran this exact call. Do not repeat it — use the previous "
-                            "result above, try a different approach, or give your final answer."
-                        ),
-                    )
-                    cp.state = result.state
-                    result_parts.append(ToolResultPart(call_id=cp.call_id, result=result))
+                # Suppression guards apply only to fresh model calls, never a user-approved resume.
+                # C1a — exact-repeat: an identical (tool,args) call past the cap echoes the prior
+                # result + a steering note. C1c — per-tool cap: any one tool called too many times
+                # this turn (the catch-all for varied-arg spam) is refused with a steering note.
+                # A suppressed call is NOT counted as progress, so repeated suppression trips stall.
+                suppressed: ToolResult | None = None
+                if token is None:
+                    if guard.counts.get(sig, 0) >= guard.max_repeat and sig in guard.last_results:
+                        prior = guard.last_results[sig]
+                        suppressed = ToolResult(
+                            state=prior.state,
+                            summary=f"(repeat suppressed) {prior.summary}",
+                            output=(
+                                "You already ran this exact call. Do not repeat it — use the "
+                                "previous result, try a different approach, or give your final answer."
+                            ),
+                        )
+                    elif guard.tool_counts.get(cp.tool, 0) >= guard.max_per_tool:
+                        suppressed = ToolResult(
+                            state=RunState.DENIED,
+                            summary=f"(call limit) {cp.tool} used too many times this turn",
+                            output=(
+                                f"You have already called {cp.tool} {guard.tool_counts[cp.tool]} "
+                                "times this turn. Stop calling it — use what you have, switch to a "
+                                "different tool, or give the owner your final answer now."
+                            ),
+                        )
+                if suppressed is not None:
+                    cp.state = suppressed.state
+                    result_parts.append(ToolResultPart(call_id=cp.call_id, result=suppressed))
                     events.append(
                         AgentEvent(
                             "tool.result",
-                            {"callId": cp.call_id, "result": result.model_dump(mode="json")},
+                            {"callId": cp.call_id, "result": suppressed.model_dump(mode="json")},
                         )
                     )
                     continue
                 if token is None:
                     guard.counts[sig] = guard.counts.get(sig, 0) + 1
+                    guard.tool_counts[cp.tool] = guard.tool_counts.get(cp.tool, 0) + 1
                 try:
                     outcome = await self._actions.invoke(
                         cp.tool,
@@ -629,9 +656,14 @@ class AgentSession:
                         )
 
             cp.state = result.state
-            if token != _DISMISS:  # a real execution: remember it (C1a) + count it as progress
-                guard.last_results[sig] = result
-                made_progress = True
+            if token != _DISMISS:  # a real execution
+                guard.last_results[sig] = result  # remember for exact-arg suppression (C1a)
+                # Progress only if this outcome is *new* this turn — a repeated result means the
+                # model is spinning on varied-but-equivalent calls, so it should NOT reset stall.
+                rsig = _LoopGuard.result_sig(result)
+                if rsig not in guard.seen_results:
+                    guard.seen_results.add(rsig)
+                    made_progress = True
             result_parts.append(ToolResultPart(call_id=cp.call_id, result=result))
             events.append(
                 AgentEvent(

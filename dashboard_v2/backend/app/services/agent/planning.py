@@ -13,7 +13,9 @@ LOW risk → auto-runs under the agent's CONFIRM privilege (no confirm gate), li
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.tool import InvocationContext, action
 from app.domain.enums import Risk, RunState
@@ -31,6 +33,17 @@ class TaskPlanInput(BaseModel):
             "Pass an empty list to clear the plan."
         ),
     )
+
+    @field_validator("steps", mode="before")
+    @classmethod
+    def _as_list(cls, v: Any) -> Any:
+        """Tolerate a model that passes a single step (dict/str) or null instead of a list — the
+        per-step coercion (PlanStep) then repairs each item."""
+        if v is None:
+            return []
+        if isinstance(v, (str, dict)):
+            return [v]
+        return v
 
 
 @action(

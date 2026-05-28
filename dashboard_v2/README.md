@@ -94,14 +94,23 @@ subagents (no UI) **deny** a confirm-gated call in place rather than stalling.
 
 ### Loop discipline (capability layer C1) — keeps weak models from spiralling
 
-Local models can mis-drive the loop (a live probe saw `search_web` fired ~14× until the cap, with no
-answer). Three guards, all in `_drive`/`_run_calls`, **scoped to one turn**:
+Local models can mis-drive the loop (a live probe saw a search tool fired ~16× with trivially-varied
+queries until the cap, with no answer). Four layered guards, all in `_drive`/`_run_calls`, **scoped to
+one turn**:
 - **Duplicate-call suppression** — an identical `(tool, args)` call past `max_repeat_calls` is *not*
   executed; the prior result is echoed back with a steering note. A threshold of 2 still allows a
   legitimate re-poll (ping → wake → ping). Suppressing a *mutating* duplicate is also the safe default.
-- **Stall detection** — `max_stall_iterations` consecutive iterations with no executed call and no text
-  (e.g. all calls were suppressed repeats) trigger the forced wrap-up.
-- **Forced final answer** — the wrap-up above, so a turn never dead-ends.
+- **Per-tool cap** — any one tool may run at most `max_calls_per_tool` times per turn regardless of
+  args; beyond that it's refused with a steering note. The catch-all for a model that spams one tool
+  with *varied* inputs (raise it for a research-heavy agent).
+- **Result-based progress** — a call whose *outcome* repeats one already seen this turn doesn't count
+  as progress, so varied-but-equivalent calls (identical results) trip the stall guard rather than
+  looking like forward motion.
+- **Stall detection + forced final answer** — `max_stall_iterations` consecutive no-progress
+  iterations force one tool-less wrap-up call, so a turn always ends with an answer, never a dead-end.
+
+> Note: these **contain** weak-model spinning (bounded calls, always an answer) but don't *fix tool
+> selection* — see the C2 limitation below.
 
 ### Tool-selection guidance (capability layer C2)
 
@@ -145,7 +154,8 @@ Per-agent, on each `AgentDef` (under `agents:`), inherited by its subagents:
 | `tools` / `skills` | `"*"` | allowlists (names/globs) |
 | `privilege` | `confirm` | gating: `confirm` gates MED/HIGH; other rungs land post-v1 |
 | `max_iterations` | 16 | tool-call loop hard cap (→ forced wrap-up) |
-| `max_repeat_calls` | 2 | identical calls allowed before suppression (C1) |
+| `max_repeat_calls` | 2 | identical `(tool,args)` calls before suppression (C1) |
+| `max_calls_per_tool` | 6 | total calls to any one tool per turn before refusal (C1) |
 | `max_stall_iterations` | 2 | no-progress iterations before forced wrap-up (C1) |
 | `max_subagent_depth` / `max_concurrent_subagents` | 2 / 3 | subagent tree limits |
 | `compaction.*` | global `agent.compaction` | per-agent context-window override |

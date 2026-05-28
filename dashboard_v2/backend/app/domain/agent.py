@@ -66,9 +66,12 @@ class AgentDef(BaseModel):
     #: Loop-discipline guards (capability layer C1). A weak model can spiral — repeating one tool
     #: or churning many calls without ever answering. `max_repeat_calls` is how many *identical*
     #: (tool, args) calls run before the rest are suppressed with a steering note (2 still allows a
-    #: legitimate re-poll, e.g. ping→wake→ping). `max_stall_iterations` is how many consecutive
-    #: no-progress iterations (no executed call, no text) trigger a forced final answer.
+    #: legitimate re-poll, e.g. ping→wake→ping). `max_calls_per_tool` caps how many times *any one
+    #: tool* may run in a single turn regardless of args — the catch-all for a model that spams one
+    #: tool with varied inputs (raise it for a research-heavy agent). `max_stall_iterations` is how
+    #: many consecutive no-progress iterations (no new result, no text) force a final answer.
     max_repeat_calls: int = 2
+    max_calls_per_tool: int = 6
     max_stall_iterations: int = 2
     max_subagent_depth: int = 2                          # how deep spawn_subagents may nest
     max_concurrent_subagents: int = 3                    # per-agent fan-out cap (global cap in settings)
