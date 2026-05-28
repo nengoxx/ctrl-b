@@ -166,6 +166,15 @@ def _infer_input_model(fn: ToolFn) -> type[BaseModel]:
     return ann
 
 
+def _docsummary(fn: ToolFn) -> str:
+    """Fallback tool description from the function docstring: the first *paragraph* (up to a blank
+    line), with wrapped lines collapsed to one — so a description that spans several physical lines
+    isn't truncated mid-sentence. An explicit `description=` always wins over this."""
+    doc = inspect.getdoc(fn) or ""
+    para = doc.split("\n\n", 1)[0]  # first paragraph
+    return " ".join(line.strip() for line in para.splitlines() if line.strip())
+
+
 def action(
     name: str,
     *,
@@ -188,7 +197,7 @@ def action(
         spec = ToolSpec(
             name=name,
             title=title or name.replace("_", " ").title(),
-            description=description or (inspect.getdoc(fn) or "").split("\n", 1)[0],
+            description=description or _docsummary(fn),
             icon=icon,
             category=category,
             input_model=_infer_input_model(fn),

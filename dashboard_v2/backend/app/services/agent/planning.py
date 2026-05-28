@@ -36,6 +36,11 @@ class TaskPlanInput(BaseModel):
 @action(
     "task_plan",
     title="Plan",
+    description=(
+        "Create or update your working plan for a multi-step task. Lay out the steps up front, "
+        "then call again to advance their status as you complete each. Always pass the complete "
+        "ordered list (it replaces the previous plan). Skip this for a single quick action."
+    ),
     icon="list-checks",
     category="builtin",
     risk=Risk.LOW,
