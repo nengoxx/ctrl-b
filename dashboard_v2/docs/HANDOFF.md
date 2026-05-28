@@ -86,8 +86,11 @@ function-name charset `[A-Za-z0-9_-]`, ≤64 chars — **colons from the DESIGN'
 would be rejected by the API**, so `__` is used). The remote's native `inputSchema` is handed to the
 model via the new `ToolSpec.raw_schema`; arg **validation is a permissive passthrough**
 (`_PassthroughArgs`, `extra="allow"`) because the remote server validates — a faithful
-JSON-Schema→pydantic build would be fragile. Per-server **`risk`** (default `med` → the agent
-confirms each call, safe for remote tools; set `low` to auto-run a trusted server). Connection is
+JSON-Schema→pydantic build would be fragile. **Per-tool risk** (`_risk_for`): MCP **annotations**
+win — `readOnlyHint` → LOW (auto-runs: search/crawl/file-read never gate), `destructiveHint` → HIGH
+(always confirms, a safety floor even on a `low` server) — else the server's configured **`risk`**
+(default `med`; the owner's `web-tools` is set `low` since it doesn't annotate and search/crawl are
+read-only). Connection is
 **per-call** (a fresh short-lived `streamablehttp_client` + `ClientSession` entered/exited in one
 coroutine) — this dodges the SDK's anyio-task-group lifecycle pitfalls of holding sessions open
 across the lifespan, and makes **failure isolation** trivial (a down server fails into a clean
@@ -574,10 +577,10 @@ Optional 4b/4c/4d/4e follow-ups, none blocking — each is an **owner eyeball**,
   confirm `minig+` actually calls `web_search`, the `.b.cmd` bubble shows the result + the collapsed
   **links** disclosure, and the model uses the hits. (Tool + live SearXNG verified; model-behavior check.)
 - **MCP live (4f):** the agent now also has emma's 5 `mcp__web-tools__*` tools (crawl4ai/SearXNG).
-  They're `risk=med` → the `.b.cmd` **confirm bubble** appears before each call (set `risk: low` on
-  the server in `config.yaml` to auto-run a trusted server). Confirm `minig+` picks an MCP tool for a
-  crawl/search ask, the confirm→execute round-trip works, and the result feeds back. (Discovery + a
-  live `search_web` call are verified; this is the model-behavior + confirm-UX check.)
+  The owner set the server `risk: low` so they **auto-run** (read-only search/crawl — no confirm
+  prompt, per the owner's preference). Confirm `minig+` picks an MCP tool for a crawl/search ask and
+  the result feeds back. (Per-tool risk is annotation-aware: a server that sets `destructiveHint`
+  would still gate that tool even at `risk: low`.)
 - Cloud mode + the SSH service/shutdown path are still untested against a real host (shared one SSH path).
 
 Open `TODO.md` → **Phase 4 → 4c+** (`task_plan`, compaction, `web_search`, MCP client are now

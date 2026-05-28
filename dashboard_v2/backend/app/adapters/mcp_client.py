@@ -67,6 +67,23 @@ def _qualified(server: str, tool: str) -> str:
     return safe[:64]
 
 
+def _risk_for(tool, server: McpServerCfg) -> Risk:
+    """Per-tool risk, so read-only MCP ops (search, crawl, file read) don't gate while writes do.
+
+    Honours MCP tool **annotations** as a safety signal that overrides the server default:
+    `readOnlyHint=True` → LOW (auto-runs), `destructiveHint=True` → HIGH (always confirms — a floor,
+    even on a server the owner marked `low`). A tool with no decisive hint falls back to the server's
+    configured `risk` (default `med`). Most servers (e.g. emma's web-tools) don't set annotations, so
+    set that server's `risk: low` in config to let its tools auto-run."""
+    ann = getattr(tool, "annotations", None)
+    if ann is not None:
+        if getattr(ann, "destructiveHint", None) is True:
+            return Risk.HIGH
+        if getattr(ann, "readOnlyHint", None) is True:
+            return Risk.LOW
+    return _RISK.get(server.risk, Risk.MED)
+
+
 @dataclass
 class McpTool:
     """A remote MCP tool wrapped as a `Tool`. Holds the client + server so `run` opens a session,
@@ -162,7 +179,7 @@ class McpClient:
                     category="mcp",
                     input_model=_PassthroughArgs,
                     raw_schema=tool.inputSchema or {"type": "object", "properties": {}},
-                    risk=_RISK.get(server.risk, Risk.MED),
+                    risk=_risk_for(tool, server),
                     agent_exposed=True,
                     ui_exposed=False,
                 )
