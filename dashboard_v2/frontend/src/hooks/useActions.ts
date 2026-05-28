@@ -10,12 +10,19 @@ import type { ActionSpec, Host, InvokeResponse } from "../types";
 // so the UI doesn't hardcode it (D8 ethos). The server still runs its single-use confirm-token
 // dance underneath — the dialog is UX, the token is enforcement (DESIGN §14).
 
-export type FleetAction = "wake" | "shutdown" | "ping";
+export type FleetAction = "wake" | "shutdown" | "reboot" | "ping";
 
 const ACTION_NAME: Record<FleetAction, string> = {
   wake: "wake_host",
   shutdown: "shutdown_host",
+  reboot: "reboot_host",
   ping: "ping_host",
+};
+
+/** Per-action confirm-dialog copy (the registry decides *whether* to confirm; this is just text). */
+const CONFIRM_COPY: Partial<Record<FleetAction, { verb: string }>> = {
+  shutdown: { verb: "Shut down" },
+  reboot: { verb: "Reboot" },
 };
 
 /** The action registry. Rarely changes — long stale time. */
@@ -63,12 +70,15 @@ export function useFleetActions() {
     async (action: FleetAction, host: Host) => {
       const name = ACTION_NAME[action];
       const spec = specs?.find((s) => s.name === name);
-      const needsConfirm = spec ? spec.confirm || spec.risk === "high" : action === "shutdown";
+      const needsConfirm = spec
+        ? spec.confirm || spec.risk === "high"
+        : action === "shutdown" || action === "reboot";
 
       if (needsConfirm) {
+        const verb = CONFIRM_COPY[action]?.verb ?? "Run";
         const ok = await requestConfirm({
-          title: `Shut down ${host.name}?`,
-          confirmLabel: "Shut down",
+          title: `${verb} ${host.name}?`,
+          confirmLabel: verb,
           danger: true,
         });
         if (!ok) return;

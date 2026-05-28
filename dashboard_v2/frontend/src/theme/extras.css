@@ -776,3 +776,14 @@ body {
     opacity: 1;
   }
 }
+
+/* ── Reboot button (Phase: reboot action). Net-new device-row action: a restart sibling of the
+   verbatim vapor `.act.stop` (power). Owner's spec: same accent color & gradient as the wake icon
+   (var(--accent-grad)/--accent-glow), shown beside the power icon only while the host is online
+   (offline shows wake only). vapor.css stays verbatim (D7); the rotate glyph is net-new here. */
+.dev .act.reboot {
+  background: var(--accent-grad);
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M21 12a9 9 0 1 1-2.64-6.36'/><path d='M21 3v6h-6'/></svg>");
+          mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M21 12a9 9 0 1 1-2.64-6.36'/><path d='M21 3v6h-6'/></svg>");
+  filter: var(--accent-glow);
+}

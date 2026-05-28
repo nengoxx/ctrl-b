@@ -60,13 +60,22 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
           )}
         </div>
         {online ? (
-          <button
-            className="act stop"
-            data-act="shutdown"
-            aria-label={`shutdown ${host.name}`}
-            disabled={busy}
-            onClick={(e) => act(e, () => onAction("shutdown"))}
-          />
+          <>
+            <button
+              className="act reboot"
+              data-act="reboot"
+              aria-label={`reboot ${host.name}`}
+              disabled={busy}
+              onClick={(e) => act(e, () => onAction("reboot"))}
+            />
+            <button
+              className="act stop"
+              data-act="shutdown"
+              aria-label={`shutdown ${host.name}`}
+              disabled={busy}
+              onClick={(e) => act(e, () => onAction("shutdown"))}
+            />
+          </>
         ) : (
           <button
             className="act wake"
