@@ -189,12 +189,12 @@ body {
 
 /* Reasoning ("thinking") — a collapsible scratchpad above the answer. Stays after the turn ends
    (collapsed) as a clear little dropdown chip so the chain-of-thought is never lost. */
-.b.bot .think {
+.b .think {
   margin-bottom: 8px;
   font-size: 11px;
   color: var(--ink-faint);
 }
-.b.bot .think > summary {
+.b .think > summary {
   cursor: pointer;
   list-style: none;
   display: inline-flex;
@@ -206,34 +206,34 @@ body {
   background: rgba(var(--accent-rgb), 0.06);
   user-select: none;
 }
-.b.bot .think > summary::-webkit-details-marker {
+.b .think > summary::-webkit-details-marker {
   display: none;
 }
-.b.bot .think > summary .label {
+.b .think > summary .label {
   letter-spacing: 1.5px;
   text-transform: uppercase;
   font-size: 9px;
   color: var(--magenta);
 }
-.b.bot .think > summary .hint {
+.b .think > summary .hint {
   font-size: 8px;
   letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--ink-faint);
 }
-.b.bot .think > summary::before {
+.b .think > summary::before {
   content: "▸";
   color: var(--magenta);
   font-size: 9px;
   transition: transform 0.15s;
 }
-.b.bot .think[open] > summary::before {
+.b .think[open] > summary::before {
   transform: rotate(90deg);
 }
-.b.bot .think > summary:hover {
+.b .think > summary:hover {
   border-color: rgba(var(--accent-rgb), 0.55);
 }
-.b.bot .think pre {
+.b .think pre {
   margin: 6px 0 0;
   padding: 8px 10px;
   border-left: 2px solid var(--line-2);

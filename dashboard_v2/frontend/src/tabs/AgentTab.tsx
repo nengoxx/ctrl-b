@@ -146,14 +146,30 @@ function SearchResults({ hits }: { hits: WebSearchHit[] }) {
   );
 }
 
+/** The dimmed "thinking" disclosure (a thinking model's chain-of-thought). Shared by the bot text
+ *  bubble and the command bubble so a thinking block renders with the tool call it produced. */
+function ThinkBlock({ text, open }: { text: string; open?: boolean }) {
+  return (
+    <details className="think" open={open}>
+      <summary>
+        <span className="label">thinking</span>
+        {!open && <span className="hint">tap to view</span>}
+      </summary>
+      <pre>{text}</pre>
+    </details>
+  );
+}
+
 function CmdBubble({
   call,
   result,
   ts,
+  reasoning,
 }: {
   call: ToolCallPart;
   result: ToolResult | undefined;
   ts: string;
+  reasoning?: string;
 }) {
   const hits = call.tool === "web_search" ? hitsFrom(result) : [];
   const awaiting = !result && call.state === "awaiting_confirm";
@@ -164,6 +180,9 @@ function CmdBubble({
     <div className={"b cmd" + (result ? " cmd-resolved" : "")}>
       <div className="who">assistant · {hm(ts)}</div>
       <div className="body">
+        {/* The thinking that led to this call renders here so each reasoning block sits with its
+            tool call (one assistant turn = think → act). Collapsed; tap to read. */}
+        {reasoning && <ThinkBlock text={reasoning} />}
         {/* Collapsed by default so a tool call doesn't clutter the log — the tool name + outcome
             stay visible; tap to reveal the full command/args. Auto-open while awaiting confirm so
             the owner can review before approving. */}
@@ -228,14 +247,19 @@ function Bubbles({
     );
   }
 
-  // assistant: a bot text bubble (if any text/reasoning/error or still working) + one cmd bubble
-  // per tool call.
+  // assistant: a bot text bubble (text/error/streaming) + one cmd bubble per tool call. The
+  // reasoning that preceded a tool call rides INTO that call's bubble (think → act in one unit);
+  // it only gets its own bot bubble when there's no tool call to host it (e.g. a plain answer, or
+  // mid-stream before the call lands).
   const err = errorOf(m.parts);
   const reasoning = reasoningOf(m.parts);
   const text = textOf(m.parts);
   const calls = m.parts.filter((p): p is ToolCallPart => p.type === "tool_call");
   const working = streaming && !text && !err && !calls.length;
-  const showBot = !!(reasoning || text || err || working);
+  // The first non-plan tool call hosts the thinking (plan bubbles are just breadcrumbs).
+  const reasoningHostId = calls.find((c) => c.tool !== "task_plan")?.call_id;
+  const reasoningInBot = !!reasoning && !reasoningHostId;
+  const showBot = !!(text || err || working || reasoningInBot);
 
   return (
     <>
@@ -246,15 +270,7 @@ function Bubbles({
             {working && <span className="status-tag">{reasoning ? "thinking" : "working"}</span>}
           </div>
           <div className="body">
-            {reasoning && (
-              <details className="think" open={working}>
-                <summary>
-                  <span className="label">thinking</span>
-                  {!working && <span className="hint">tap to view</span>}
-                </summary>
-                <pre>{reasoning}</pre>
-              </details>
-            )}
+            {reasoningInBot && <ThinkBlock text={reasoning} open={working} />}
             {err ? (
               <span className="chat-err">// {err}</span>
             ) : working ? (
@@ -276,7 +292,13 @@ function Bubbles({
         c.tool === "task_plan" ? (
           <PlanBubble key={c.call_id} call={c} result={resultFor(c.call_id)} />
         ) : (
-          <CmdBubble key={c.call_id} call={c} result={resultFor(c.call_id)} ts={m.ts} />
+          <CmdBubble
+            key={c.call_id}
+            call={c}
+            result={resultFor(c.call_id)}
+            ts={m.ts}
+            reasoning={c.call_id === reasoningHostId ? reasoning : undefined}
+          />
         ),
       )}
     </>
