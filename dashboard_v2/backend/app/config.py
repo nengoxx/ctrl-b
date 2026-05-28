@@ -136,6 +136,25 @@ class SearxngCfg(BaseModel):
     language: str | None = None      # optional default UI language passed to SearXNG (e.g. "en")
 
 
+class OpenTerminalCfg(BaseModel):
+    """open-webui/open-terminal endpoint (Phase 4f) — a Bearer-auth REST API giving the agent a
+    remote shell + file ops on the host it runs on. Wired as curated typed actions (terminal_exec /
+    read / write / list / grep / glob). Risk is **per-operation and configurable**: reads default
+    LOW (auto-run) while `exec` and file writes default HIGH (the agent confirms — it's arbitrary
+    remote shell). `enabled=False`/empty `base_url` makes the tools report unconfigured."""
+
+    model_config = {"extra": "allow"}
+
+    base_url: str = ""               # e.g. http://192.168.1.160:9999 (no trailing slash)
+    api_key: str = ""                # HTTP Bearer token
+    enabled: bool = True
+    timeout_s: float = 30.0          # per-request timeout
+    default_wait_s: float = 30.0     # synchronous-execute wait window (server returns when done/elapsed)
+    exec_risk: str = "high"          # risk for terminal_exec (low|med|high) — HIGH gates on confirm
+    write_risk: str = "high"         # risk for file writes/replace
+    read_risk: str = "low"           # risk for read/list/grep/glob (LOW auto-runs)
+
+
 class McpServerCfg(BaseModel):
     """One MCP server the agent connects to as a client (Phase 4f, D9). `transport` selects the
     wire: `streamable_http` (the current spec transport — `url` + optional `headers`) or `stdio`
@@ -219,6 +238,7 @@ class Settings(BaseModel):
     inference: InferenceCfg = Field(default_factory=InferenceCfg)
     agent: AgentCfg = Field(default_factory=AgentCfg)
     searxng: SearxngCfg = Field(default_factory=SearxngCfg)
+    open_terminal: OpenTerminalCfg = Field(default_factory=OpenTerminalCfg)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
     #: Keyed by host name, preserving the live `wol_server_win.py` `computers{}` shape so the
     #: owner can copy their existing config.yaml unchanged (HANDOFF — migration reference).

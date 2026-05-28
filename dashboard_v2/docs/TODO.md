@@ -172,6 +172,17 @@ tools + confirm bubbles) are DONE.**
       transport: happy/empty/HTML-not-JSON/403/unconfigured/disabled) + **live against emma's
       instance** (real results, JSON format enabled). *(Results render in the existing `.b.cmd`
       bubble via the summary/outcome line; a richer results panel is a later polish, not blocking.)*
+- [x] **open-terminal tools (4f):** curated typed actions over open-webui/open-terminal's REST API
+      (a Bearer-auth remote shell + file ops — *not* MCP). `adapters/openterminal.py` client +
+      `services/actions/terminal.py` (`terminal_exec`/`read_file`/`list`/`grep`/`glob`/`write_file`),
+      registered dynamically via `register_openterminal(registry, cfg)` so **risk is per-op and
+      configurable**: reads LOW (auto-run), `exec`+writes HIGH (confirm — it's arbitrary remote
+      shell). `OpenTerminalCfg` + `Settings.open_terminal`; wired on `Deps.open_terminal` + `main.py`.
+      Verified unit + **live against emma** (exec confirm round-trip, single-use args-bound token,
+      nonzero-exit→ERROR, read-only auto-run). The remote analog of the Phase-5 guarded shell.
+- [ ] **Generic OpenAPI tool provider (4f):** ingest any OpenAPI spec (`/openapi.json`) and register
+      each operation as a tool (HTTP sibling of the MCP client, reusing `ToolSpec.raw_schema`) — so
+      the owner can plug Open WebUI "tool servers" / other OpenAPI services. Per-server enable + risk.
 - [ ] **Embeddings client (D9):** wire the configured llama.cpp `/v1/embeddings` (powers the vector
       `MemoryProvider` when that lands).
 - [x] **Composer prefix routing (4c):** `!` (configurable sigil, const in `lib/composer.ts`) →

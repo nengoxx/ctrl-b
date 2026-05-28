@@ -62,9 +62,30 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
 **Everything through Phase 4e is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181`
 · 4c `b44c039` · doc `d4e704b` · 4d `df612e3` · **4e `60f8e68`** · vite-host fix `f2774b8`).
-**Phase 4f is underway: the `web_search` (SearXNG) + MCP-client slices landed** (see below) — the
-remaining 4f work is the **embeddings client** (+ MCP **stdio** transport, a small follow-up). The
-4e file list further down is reference for what landed earlier.
+**Phase 4f is underway: `web_search` (SearXNG), the MCP client, and curated open-terminal tools
+landed** (see below). Remaining: a **generic OpenAPI tool provider** (owner wants it for Open WebUI
+tool servers) + the **embeddings client** (+ MCP **stdio** transport, a small follow-up). The 4e
+file list further down is reference for what landed earlier.
+
+⭐ NEW in Phase 4f — open-terminal tools (`backend/app/`):
+```
+  config.py                       # ⭐ OpenTerminalCfg (base_url/api_key/*_risk/…) + Settings.open_terminal
+  adapters/openterminal.py        # ⭐ OpenTerminalClient — httpx Bearer client over the REST API
+                                  #     (/execute + /files/{read,list,grep,glob,write})
+  services/actions/terminal.py    # ⭐ terminal_exec/read_file/list/grep/glob/write_file + register_openterminal(reg,cfg)
+  services/deps.py · main.py      #   Deps.open_terminal; main registers the tools (risk from cfg) + closes the client
+```
+**What open-terminal is:** open-webui/open-terminal — a Bearer-auth **REST API** ("a computer you
+can curl"), *not* an MCP server — so it's wired as **curated typed actions**, not via the MCP
+client. The owner's instance is emma `:9999` (bare-metal, runs as user `emma` in `~/workspace`,
+`--api-key 0`). **Design:** these register **dynamically** (`register_openterminal`, called in
+lifespan) instead of `@action`-at-import, so **risk is per-operation and config-driven**
+(`OpenTerminalCfg.{exec,write,read}_risk`): reads (read/list/grep/glob) default LOW → auto-run;
+`terminal_exec` + writes default HIGH → confirm (it's arbitrary remote shell — the remote analog of
+the Phase-5 guarded `run_shell`). Skipped entirely if unconfigured. **Verified** unit + **live
+against emma**: read-only auto-runs, `exec` gates → confirm token (single-use, args-bound) → runs
+(`whoami`/`pwd` etc.), nonzero exit → ERROR. The **api-key is `0`** (effectively open remote shell on
+emma — fine under tailnet-only/no-public-bind, worth knowing; keep exec/writes gated).
 
 ⭐ NEW in Phase 4f — MCP client slice (`backend/app/`):
 ```

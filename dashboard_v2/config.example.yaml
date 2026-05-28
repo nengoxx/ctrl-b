@@ -50,6 +50,21 @@ searxng:
   timeout_s: 10
   language: ""             # optional default UI language (e.g. "en"); blank = instance default
 
+# open-webui/open-terminal → curated agent shell + file tools (Phase 4f). A Bearer-auth REST API
+# (a "computer you can curl") giving the agent a remote shell + file ops on the host it runs on.
+# Risk is per-operation: reads (read/list/grep/glob) auto-run; exec + writes confirm by default —
+# it's arbitrary remote shell, so keep those gated unless you really trust it. `api_key` must match
+# the server's --api-key / OPEN_TERMINAL_API_KEY. Omit the block (or enabled:false) to disable.
+open_terminal:
+  base_url: http://192.168.1.160:9999
+  api_key: changeme
+  enabled: true
+  timeout_s: 30
+  default_wait_s: 30       # synchronous-exec wait window (seconds)
+  exec_risk: high          # low | med | high  (HIGH → the agent confirms before running)
+  write_risk: high
+  read_risk: low
+
 # MCP servers the agent connects to as a client (Phase 4f, D9). Each server's tools are discovered
 # at startup and merged into the agent's toolset, namespaced `mcp__<server>__<tool>`. A down server
 # is skipped (its tools just won't be present that run) — it never blocks startup. `risk` gates ALL

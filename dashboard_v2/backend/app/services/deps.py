@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.adapters.openterminal import OpenTerminalClient
 from app.adapters.searxng import SearxngClient
 from app.config import Settings
 from app.services.events import EventService
@@ -22,3 +23,4 @@ class Deps:
     events: EventService
     services: ServiceService
     searxng: SearxngClient | None = None  # web_search backend (Phase 4f); None until configured/wired
+    open_terminal: OpenTerminalClient | None = None  # open-terminal remote shell/files (Phase 4f)
