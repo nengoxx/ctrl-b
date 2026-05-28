@@ -49,7 +49,12 @@ async def shutdown_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolRes
             summary=f"no SSH credentials configured for {host.name} — cannot shut down",
         )
 
-    command = _SHUTDOWN_CMD[host.os_type]
+    command = _SHUTDOWN_CMD.get(host.os_type)
+    if command is None:
+        return ToolResult(
+            state=RunState.DENIED,
+            summary=f"no shutdown command defined for {host.os_type.value} hosts",
+        )
     secret = host.ssh_password.get_secret_value()
     res = await asyncio.to_thread(
         ssh.run_command,

@@ -47,7 +47,12 @@ async def reboot_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolResul
             summary=f"no SSH credentials configured for {host.name} — cannot reboot",
         )
 
-    command = _REBOOT_CMD[host.os_type]
+    command = _REBOOT_CMD.get(host.os_type)
+    if command is None:
+        return ToolResult(
+            state=RunState.DENIED,
+            summary=f"no reboot command defined for {host.os_type.value} hosts",
+        )
     secret = host.ssh_password.get_secret_value()
     res = await asyncio.to_thread(
         ssh.run_command,

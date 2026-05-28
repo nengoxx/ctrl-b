@@ -4,10 +4,10 @@ Pings every host concurrently with `asyncio.gather`, bounded by a `Semaphore`, e
 its own `wait_for` timeout so one slow/dead host can't stall the sweep. Results are cached for
 `poll_seconds` so N polling clients share a single sweep rather than each triggering their own.
 
-The ping *command syntax* depends on the OS running this server (not the target), exactly like
-the legacy `wol_server_win.py`: Windows uses `-n`/`-w`, POSIX uses `-c`/`-W`. We avoid module-
-import-time platform branching (keeps the Termux profile alive — TODO cross-cutting) by deciding
-the flags at call time.
+The ping *command syntax* depends on the OS running this server (not the target). Windows uses
+`-n`/`-w <ms>`, Linux uses `-c`/`-W <sec>`, macOS/BSD uses `-c`/`-t <sec>` (its `-W` is in ms, and
+`-t` means TTL on Linux — so the three diverge and must be branched). We avoid import-time platform
+branching (keeps the Termux/Android profile alive) by deciding the flags at call time.
 """
 
 from __future__ import annotations
@@ -28,10 +28,13 @@ _MAX_CONCURRENT = 16
 
 
 def _ping_cmd(ip: str, timeout_s: float) -> list[str]:
-    ms = max(1, int(timeout_s * 1000))
-    if platform.system().lower() == "windows":
-        return ["ping", ip, "-n", "1", "-w", str(ms)]
-    return ["ping", "-c", "1", "-W", str(max(1, int(timeout_s))), ip]
+    sysname = platform.system().lower()
+    secs = str(max(1, int(timeout_s)))
+    if sysname == "windows":
+        return ["ping", ip, "-n", "1", "-w", str(max(1, int(timeout_s * 1000)))]
+    if sysname == "darwin":  # BSD ping: -t is the total timeout in seconds (-W would be ms here)
+        return ["ping", "-c", "1", "-t", secs, ip]
+    return ["ping", "-c", "1", "-W", secs, ip]  # Linux/other iputils: -W is per-reply wait in seconds
 
 
 async def ping_host(host: Host, timeout_s: float = _DEFAULT_TIMEOUT_S) -> HostStatus:
