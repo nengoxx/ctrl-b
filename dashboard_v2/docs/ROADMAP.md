@@ -114,6 +114,30 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
 - **Open:** agents as YAML vs files; depth/concurrency limits for subagents; how subagent results +
   privilege inherit; UI for picking/managing agents (Conf → Agents).
 
+### A7. Agent tool-subsetting & quick-switch (selection control) — **optional, opt-in**
+
+- **What:** let the owner **scope which tools an agent can see** — via **preset agents** (e.g. a
+  *fleet* agent, a *research* agent) and/or **ticking tools on/off per agent in settings** — plus a
+  fast way to switch agent **per message/thread** (a `/agent <name>` composer verb alongside
+  `/local`//`/cloud`). Motivation: a weak local model mis-selects from a large toolset (live probe:
+  `minig+` reached for MCP `search_web` on a fleet task; capability layer C1/C2 *contain* the spiral
+  but prompt steering can't fully prevent the mis-pick — see HANDOFF "capability layer"). Narrowing
+  the visible toolset removes the temptation **by construction**.
+- **Why opt-in / not now:** the agent's role is **general, not fleet-bound** — the owner explicitly
+  does **not** want to restrict the default agent. So the default stays **`tools: "*"`** (everything);
+  subsetting is a feature you *opt into* by defining a narrower agent, never the default.
+- **Design implication (the seam already exists):** `AgentDef.tools` is an inclusion **glob allowlist**
+  (`ToolRegistry.for_agent`, `fnmatch` — e.g. `*_host`, `*_service`, `mcp__web-tools__*`); the agent
+  runtime already honours it. So a "fleet" agent is pure **config** today
+  (`agents: [{name: fleet, tools: [...]}]` + `agent.default_agent`). What's missing for the *feature*:
+  (1) a **Conf → Agents** management UI (A6) to create presets and tick tools without hand-editing
+  YAML; (2) a **`/agent` composer switch** (agent is currently per-thread, no per-message switch);
+  (3) maybe a couple of shipped presets. **Constraint to remember:** a **skill can only narrow, never
+  widen** the toolset (`narrow_tools`), so you can't "add search back" via a skill to an agent that
+  lacks it — the clean inverse pattern is a broad agent + skills that narrow per intent.
+- **Open:** shipped presets vs all-custom; per-message vs per-thread switch UX; whether to surface the
+  active agent in the composer/header; interaction with privilege (A1) and skills (A5).
+
 ---
 
 ## B. Memory (configurable, pluggable)
