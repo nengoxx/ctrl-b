@@ -228,20 +228,31 @@ tools + confirm bubbles) are DONE.**
       check + `compact()`), `api/agent.py` (`/agent/compact`), `lib/composer.ts` + `store/chat.ts`.
 - [ ] Frontend **Agent** tab: chat log + shared composer + streaming render + command/plan bubbles.
 
-## Phase 4.5 — Skills + agents (D10/D11)
+## Phase 4.5 — Skills + agents (D10/D11)  ⭐ backend DONE
 
-- [ ] Skill loader: discover `skills/<name>/SKILL.md` (frontmatter `name`/`description`/`allowed_tools`
-      + instructions) + optional resources. Adding a skill = dropping a folder.
-- [ ] **Skill auto-selection as a swappable strategy** (default informed by prior art; easy to
-      replace/switch in settings). Decide the concrete algorithm here, with opencode/Claude-Code in hand.
-- [ ] Invocation: **model-invoked** (select by description) + **user-invoked** via `/skill-name` (A4).
-- [ ] **Agent definitions (D11):** `agents[]` config (prompt, backend+model, tools, skills,
-      privilege, memory); select default; pick per chat/automation. The "main" agent is one definition.
-- [ ] **Subagents (D11):** `spawn_subagent` tool → delegate scoped task to another agent definition
-      (own context + tool subset), return result. **Orchestration = swappable strategy**, sensible
-      default; decide specifics here. Depth/concurrency + privilege inheritance limits.
+- [x] Skill loader: discover `skills/<name>/SKILL.md` (frontmatter `name`/`description`/`allowed_tools`
+      + instructions) + optional resources. Adding a skill = dropping a folder. *(`core/skills.py`
+      protocols + `services/agent/skills.py` `FileSkillProvider`; re-scans per call; example skill
+      shipped at `skills/web-research/`.)*
+- [x] **Skill auto-selection as a swappable strategy.** Default = `KeywordSkillSelector`
+      (token-overlap on name+description — deterministic, model-agnostic so it works with a weak
+      local model). The `SkillSelector` protocol keeps an LLM-based selector a drop-in.
+- [x] Invocation: **model-invoked** (description match) + **user-invoked** via `/skill-name` (A4) —
+      composer routes a `/verb` matching a discovered skill; `ChatRequest.skills` + `GET /api/skills`.
+      Active skills inject instructions into the system prompt + **narrow** the toolset to their
+      `allowed_tools` (intersected with the agent allowlist; never widened).
+- [x] **Agent definitions (D11):** `domain/agent.py` `AgentDef` (prompt, backend+model via `ModelRef`,
+      tool/skill allowlists, privilege, loop + subagent limits); `Settings.agents[]` +
+      `resolve_agent(name)` (named/default/built-in fallback). The loop is driven by an `AgentDef`
+      (`AgentSession`); the default chat agent is a synthesized definition. *(Memory config: Phase 7.)*
+- [x] **Subagents (D11):** `spawn_subagents` builtin (`services/agent/subagents.py`) → delegate a
+      **batch** of scoped tasks to other agent definitions (own ephemeral thread, headless), run via
+      a swappable `Orchestrator` (default `ParallelOrchestrator`: `asyncio.TaskGroup` + per-agent &
+      tree-wide semaphores). Depth bounded by `max_subagent_depth`; child privilege **clamped** to
+      the parent; per-child error/timeout isolated (partial success preserved).
 - [ ] Conf → **Skills** (list/enable/edit/add) + **Agents** (manage definitions, default, subagent
-      settings).
+      settings). **Deferred to Phase 7** — needs the Conf `GET/PUT /api/settings` form infrastructure
+      that Phase 7 builds; the read APIs (`GET /api/skills`) + config round-trip already exist.
 
 ## Phase 5 — Guarded shell (`$` escape hatch)
 

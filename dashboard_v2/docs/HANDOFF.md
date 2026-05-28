@@ -19,8 +19,13 @@ emma's `web-tools` (5 crawl4ai/SearXNG tools), (3) curated **open-terminal** she
 (configurable per-op risk), (4) a **generic OpenAPI tool provider** (for Open WebUI tool servers /
 any OpenAPI service), and (5) an **embeddings client** (OpenRouter `qwen/qwen3-embedding-4b`,
 verified live). All flow through the one registry → `ActionService` → gate → `.b.cmd` bubble. The
-MCP supports **both transports** (Streamable HTTP + stdio, both live-verified). **Next up is Phase
-4.5 (skills + agents/subagents, D10/D11)** — or wiring real Open WebUI tool servers / cloud chat.
+MCP supports **both transports** (Streamable HTTP + stdio, both live-verified). **Phase 4.5 (skills +
+agents/subagents, D10/D11) backend is now DONE** — the loop is driven by a configurable `AgentDef`
+(`agents[]`), file-discovered **skills** (`skills/<name>/SKILL.md`) inject instructions + narrow the
+toolset (model-invoked by description · user-invoked via `/skill-name`), and **`spawn_subagents`**
+delegates a batch of tasks to child agents run in bounded parallel (headless, depth-capped,
+privilege-clamped). **Next up: the Conf tab (Phase 7)** — incl. the Skills/Agents management UI
+deferred from 4.5 — or wiring real Open WebUI tool servers / cloud chat, or Phase 5 (guarded shell).
 This doc is the orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor
 fidelity mandate (D7) still governs every new component.**
 
@@ -61,15 +66,62 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (Phase 4f essentially complete)
+## Current state (Phase 4.5 backend complete)
 
 **Everything through Phase 4f is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181`
 · 4c `b44c039` · 4d `df612e3` · 4e `60f8e68` · vite-host fix `f2774b8` · **4f**: web_search `05e5a48`
 + links `271c0b3` · MCP `e148a41` + risk `2ed987d` · open-terminal `c4ec84c` · OpenAPI `a4e3e86` ·
 embeddings `97e4f89` · **Agent-tab polish**: collapse tool command bubbles by default `9d1b1e2` ·
 group a thinking block with the tool call it produced `73fe813` · inset fix `5b41dfb` · **MCP stdio
-transport `874cdb1`**). The working tree is **clean** and in sync with `origin/main`. **Start a clean session on Phase 4.5** (see "First
-action" below). The 4e file lists below are reference.
+transport `874cdb1`**). **Phase 4.5 (skills + agents/subagents) is committed locally** — AgentDef
+spine `c964237` · skills `e2c90e8` · subagents `e84797f` — **not yet pushed** (owner to push). The
+working tree is otherwise clean. The 4e/4f file lists below are reference.
+
+⭐ NEW in Phase 4.5 — agent definitions + skills + subagents (`backend/app/`):
+```
+  domain/agent.py              # ⭐ AgentDef (prompt/model/tools/skills/privilege + loop & subagent
+                               #     limits) + ModelRef (moved here from config; re-exported there)
+  config.py                    # ⭐ Settings.agents[] + resolve_agent(name); AgentCfg.default_agent /
+                               #     global_subagent_limit / skills_dir / skills_enabled; skills_dir_path()
+  core/tool.py                 # ⭐ ToolRegistry.for_agent(allow) (glob narrow); InvocationContext.depth+agent
+  core/skills.py               # ⭐ Skill + SkillProvider/SkillSelector protocols (swappable seams)
+  services/agent/skills.py     # ⭐ FileSkillProvider (SKILL.md frontmatter+body) + KeywordSkillSelector
+                               #     (default) + resolve_skills / skills_prompt / narrow_tools
+  services/agent/subagents.py  # ⭐ spawn_subagents builtin (MED) + Orchestrator/ParallelOrchestrator
+                               #     (asyncio.TaskGroup, per-agent + tree-wide sems) + run_subagent
+  services/agent/session.py    #   AgentSession driven by AgentDef (prompt/tools/privilege/model/iters);
+                               #     per-turn skill activation; headless mode (interactive=False) +
+                               #     depth forwarded to invoke
+  services/action_service.py   #   invoke()/_execute thread actor/privilege/interactive/depth/agent → ctx
+  services/deps.py             #   agent-runtime handles (inference/threads/messages/actions/skills/
+                               #     selector/subagent_sem) for spawning children; back-filled in lifespan
+  adapters/inference.py        #   stream_chat gains a model override (an AgentDef selects its model)
+  api/agent.py                 #   _session resolves the thread's AgentDef; ChatRequest.skills; GET /api/skills
+  main.py                      #   builds FileSkillProvider+KeywordSkillSelector; back-fills Deps + the sem
+  ../skills/web-research/SKILL.md   # ⭐ worked example skill (search → summarize w/ sources)
+```
+**Design decisions made here (D11 strategies):** skill auto-selection default = **keyword/description
+overlap** (`KeywordSkillSelector`) — deterministic + model-agnostic so it works with a weak local
+model; the `SkillSelector` protocol keeps an LLM-based selector a drop-in. Subagent orchestration
+default = **bounded parallel** (`ParallelOrchestrator` over `asyncio.TaskGroup`); `Orchestrator` is
+the swappable seam (sequential/map-reduce later). The **default chat agent** is a *synthesized*
+`AgentDef` (all agent tools, CONFIRM, chat backend) so behaviour is identical when no `agents[]` are
+configured. Subagents run **headless** (a confirm-gated call denies in place — no UI to confirm),
+with **depth** bounded by `max_subagent_depth` and **child privilege clamped** to never exceed the
+parent. `spawn_subagents` is MED-risk → the default CONFIRM agent confirms a fan-out before spending
+tokens; an `auto_low`/`full` agent spawns silently.
+
+**Verified (Phase 4.5):** backend `compileall` + app import clean; `tsc -b` + `vite build` clean.
+Unit/stub tests pass: agent resolver (default/named/unknown-fallback) + `for_agent` glob filtering +
+a stubbed turn honoring a custom prompt/cloud-model override; skills (frontmatter parse, selector
+match/no-match, resolve dedup + allowlist restriction, prompt injection, tool narrowing) + a stubbed
+turn where an active skill narrows tools to `web_search` and injects its instructions while an
+unrelated message keeps the full toolset; subagents (parallel 2/2 batch on archived threads, depth
+DENY, privilege clamp, headless deny-in-place, interactive suspend still works); a minimal-config
+TestClient boot (spawn_subagents registered, Deps back-filled). **Not yet eyeballed live against
+`minig+`:** whether the model actually picks a skill / calls `spawn_subagents`, and the subagent
+command bubble @390px (it renders in the existing `.b.cmd` bubble — the children's answers in the
+output line; a richer subagent panel is later polish) — **owner to do the side-by-side.**
 
 **Agent-tab UX (this session, `frontend/src/tabs/AgentTab.tsx` + `theme/extras.css`):** tool command
 bubbles (`.b.cmd`) now **collapse the `$`-args by default** (tool name + outcome stay visible; tap
@@ -627,14 +679,22 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — Phase 4.5 (skills + agents), or finish the 4f leftovers
+## First action — push 4.5, then Phase 7 Conf (or 4f leftovers / Phase 5)
 
-**Phase 4f is essentially complete** — `web_search`, MCP client, open-terminal tools, the generic
-OpenAPI provider, **and the embeddings client** all landed + are committed/pushed. The agent has 20
-built-in/MCP/terminal tools + embeddings on `Deps`. Start a fresh session on **Phase 4.5 (skills +
-agents/subagents, D10/D11)** — see `TODO.md` "Phase 4.5" and `DECISIONS.md` D11 (keep skill-selection
-+ orchestration behind swappable strategies; prior art in `RESEARCH.md`). Each piece its own runnable
-slice + commit (footer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`).
+**Phase 4.5 backend is complete + committed locally** (AgentDef `c964237` · skills `e2c90e8` ·
+subagents `e84797f`) but **not pushed** — push to `origin/main` first if the owner approves. Then the
+natural next slices:
+- **Eyeball 4.5 live against `minig+`** (owner): give a multi-topic ask and see if it calls
+  `spawn_subagents` (fan-out → aggregated answer in the `.b.cmd` bubble); try `/web-research <q>` to
+  force the shipped skill (tools narrow to `web_search`); add an `agents:` entry + `default_agent` and
+  confirm a new thread uses it. If `minig+`'s native tool-calling is weak for these, that's the
+  **capability fallback** item (prompted-JSON → same `ToolCallPart` path; TODO 4c).
+- **Phase 7 Conf tab** — incl. the **Skills/Agents management UI** deferred from 4.5 (needs the
+  `GET/PUT /api/settings` form infrastructure Phase 7 builds; `GET /api/skills` already exists).
+- Or the older alternatives: wire real **Open WebUI tool servers** (`openapi_servers:`), **cloud
+  chat** (`inference.cloud`), or **Phase 5** (guarded `run_shell`).
+
+Each piece its own runnable slice + commit (footer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`).
 
 **Small 4f leftovers (optional, non-blocking):**
 - **MCP follow-ups:** both transports are done (Streamable HTTP + stdio). Still open: hot
