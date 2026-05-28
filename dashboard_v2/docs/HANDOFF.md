@@ -54,9 +54,10 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
 ## Current state (what Phase 4d left you)
 
-**Through Phase 4c is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181` · 4c
-`b44c039` · doc `d4e704b`). **Phase 4d is in the working tree, NOT yet committed** — review + commit
-it, then start 4e.
+**Everything through Phase 4d is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181`
+· 4c `b44c039` · doc `d4e704b` · 4d `df612e3`). The tree is clean — start 4e on a fresh commit. (4d
+also folded in two follow-ups from owner testing: the **finish-in-one-turn** prompt fix + capped
+notice, and the **minimized plan tab** that hangs from under the menu bar.)
 
 ⭐ NEW in Phase 4d (`backend/app/`):
 ```
@@ -422,11 +423,10 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — commit Phase 4d, then Phase 4e (context compaction)
+## First action — Phase 4e (context compaction)
 
-Phase 4d is in the working tree (compileall + frontend build + the registration/agent-loop scripts
-all clean) but **uncommitted** — review the diff and commit it first (footer per `CLAUDE.md`).
-Optional 4b/4c/4d follow-ups, none blocking 4e — each is an **owner eyeball**, not a code task:
+Tree is clean (4d committed + pushed, `df612e3`). Optional 4b/4c/4d follow-ups, none blocking 4e —
+each is an **owner eyeball**, not a code task:
 - **Eyeball live against `minig+`**: send a fleet question — confirm the model emits tool calls, the
   `.b.cmd` bubble streams in, and a `shutdown_host`/`stop_service` shows the confirm bubble + resume.
   Give it a **multi-step** ask ("wake titan then start minecraft") and confirm it calls `task_plan`
