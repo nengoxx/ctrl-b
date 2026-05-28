@@ -107,9 +107,16 @@ default = **bounded parallel** (`ParallelOrchestrator` over `asyncio.TaskGroup`)
 the swappable seam (sequential/map-reduce later). The **default chat agent** is a *synthesized*
 `AgentDef` (all agent tools, CONFIRM, chat backend) so behaviour is identical when no `agents[]` are
 configured. Subagents run **headless** (a confirm-gated call denies in place — no UI to confirm),
-with **depth** bounded by `max_subagent_depth` and **child privilege clamped** to never exceed the
-parent. `spawn_subagents` is MED-risk → the default CONFIRM agent confirms a fan-out before spending
-tokens; an `auto_low`/`full` agent spawns silently.
+with **depth** bounded by `max_subagent_depth`. `spawn_subagents` is MED-risk → the default CONFIRM
+agent confirms a fan-out before spending tokens; an `auto_low`/`full` agent spawns silently.
+
+**Subagents inherit every parameter from the parent** (owner request, `b407cec`): `resolve_child`
+clones the parent's `AgentDef` — model, **context-window/compaction** (now per-`AgentDef`, falling
+back to the global `agent.compaction`), privilege, tool/skill allowlists, iteration + fan-out caps —
+and a *named* subagent def overlays **only the fields it explicitly set** (so "configure just the
+prompt" inherits the rest); no name → a full clone. Privilege is clamped to the parent unless
+`agent.subagent_clamp_privilege: false`. So to give subagents more autonomy, raise the *parent's*
+privilege (they inherit it); the headless deny only bites at CONFIRM (which means "ask a human").
 
 **Verified (Phase 4.5):** backend `compileall` + app import clean; `tsc -b` + `vite build` clean.
 Unit/stub tests pass: agent resolver (default/named/unknown-fallback) + `for_agent` glob filtering +
