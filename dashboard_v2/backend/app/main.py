@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.adapters.embeddings import EmbeddingsClient
 from app.adapters.inference import InferenceClient
 from app.adapters.mcp_client import McpClient
 from app.adapters.openapi_tools import OpenApiToolProvider
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI):
     # Integration clients (Phase 4f): one cached httpx client each, closed at shutdown below.
     app.state.searxng = SearxngClient(app.state.settings.searxng)
     app.state.open_terminal = OpenTerminalClient(app.state.settings.open_terminal)
+    app.state.embeddings = EmbeddingsClient(app.state.settings.embeddings)
     deps = Deps(
         settings=app.state.settings,
         fleet=app.state.fleet,
@@ -62,6 +64,7 @@ async def lifespan(app: FastAPI):
         services=app.state.services,
         searxng=app.state.searxng,
         open_terminal=app.state.open_terminal,
+        embeddings=app.state.embeddings,
     )
     registry = build_registry()
     # open-terminal (Phase 4f): register its curated tools with per-op risk from config (skipped if
@@ -91,6 +94,7 @@ async def lifespan(app: FastAPI):
         await app.state.searxng.aclose()
         await app.state.open_terminal.aclose()
         await app.state.openapi.aclose()
+        await app.state.embeddings.aclose()
         await app.state.db.close()
 
 

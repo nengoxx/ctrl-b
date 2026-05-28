@@ -13,13 +13,16 @@ added the agent-only **`task_plan`** builtin + a live **plan panel** (TodoWrite-
 **4e** added **context compaction**: before each model call the loop folds the oldest complete turns
 into a summary system message when the working context exceeds a configurable token threshold (or on
 manual `/compact`), keeping full history in SQLite — with a **separately selectable summarizer
-model**. **Phase 4f is now in progress: two slices done** — (1) the SearXNG `web_search` tool
-(agent web search; collapsible result links in the bubble) and (2) the **MCP client** (Streamable
-HTTP) which discovers each configured server's tools and merges them into the same registry —
-verified live against emma's `web-tools` (5 crawl4ai/SearXNG tools). The **remaining 4f work is the
-embeddings client** (+ MCP **stdio** transport as a small follow-up) — each a runnable slice (don't
-build it all at once). This doc is the orientation; canonical detail is in the other `docs/`
-files. **The pixel-exact Vapor fidelity mandate (D7) still governs every new component.**
+model**. **Phase 4f is essentially complete** — the agent gained: (1) SearXNG **`web_search`**
+(collapsible result links), (2) an **MCP client** (Streamable HTTP, annotation-aware risk) merging
+emma's `web-tools` (5 crawl4ai/SearXNG tools), (3) curated **open-terminal** shell/file tools
+(configurable per-op risk), (4) a **generic OpenAPI tool provider** (for Open WebUI tool servers /
+any OpenAPI service), and (5) an **embeddings client** (OpenRouter `qwen/qwen3-embedding-4b`,
+verified live). All flow through the one registry → `ActionService` → gate → `.b.cmd` bubble. The
+only 4f leftover is the small **MCP stdio** transport (no stdio server to test against yet). **Next
+up is Phase 4.5 (skills + agents/subagents, D10/D11)** — or wiring real Open WebUI tool servers /
+cloud chat. This doc is the orientation; canonical detail is in the other `docs/` files. **The
+pixel-exact Vapor fidelity mandate (D7) still governs every new component.**
 
 > ## ⭐ The standing Vapor-fidelity mandate (D7) — applies to every phase
 > The owner's priority is a **faithful, pixel-exact execution of `vapor.html`** — not "inspired by."
@@ -58,13 +61,36 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (what Phase 4e left you)
+## Current state (Phase 4f essentially complete)
 
-**Everything through Phase 4e is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181`
-· 4c `b44c039` · doc `d4e704b` · 4d `df612e3` · **4e `60f8e68`** · vite-host fix `f2774b8`).
-**Phase 4f is underway: `web_search` (SearXNG), the MCP client, curated open-terminal tools, and a
-generic OpenAPI tool provider landed** (see below). Remaining: the **embeddings client** (+ MCP
-**stdio** transport, a small follow-up). The 4e file list further down is reference for earlier work.
+**Everything through Phase 4f is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181`
+· 4c `b44c039` · 4d `df612e3` · 4e `60f8e68` · vite-host fix `f2774b8` · **4f**: web_search `05e5a48`
++ links `271c0b3` · MCP `e148a41` + risk `2ed987d` · open-terminal `c4ec84c` · OpenAPI `a4e3e86` ·
+embeddings — this session). The working tree should be clean after the embeddings commit. **Start a
+clean session on Phase 4.5** (see "First action" below). The 4e file lists below are reference.
+
+**Dev servers (per the owner's standing preference):** backend uvicorn on **5433** (launch with LAN
+access / sandbox disabled — see the run gotchas), frontend Vite on **5190**. Confirm health at
+`/api/health` direct + via the `:5190/api` proxy. A Vite server may already be live on 5190 (HMR).
+**Phase 4f essentially done: `web_search` (SearXNG), the MCP client, curated open-terminal tools, a
+generic OpenAPI tool provider, and the embeddings client all landed** (see below). Only the small
+MCP **stdio** transport remains. The 4e file list further down is reference for earlier work.
+
+⭐ NEW in Phase 4f — embeddings client (`backend/app/`):
+```
+  config.py                    # ⭐ EmbeddingsCfg (base_url/api_key/model/dim/enabled) + Settings.embeddings
+  adapters/embeddings.py       # ⭐ EmbeddingsClient — OpenAI-compatible /v1/embeddings; embed(texts)→vectors
+  services/deps.py · main.py   #   Deps.embeddings; built on app.state, closed at shutdown
+```
+**Design:** the OpenAI-compatible `/v1/embeddings` sibling of the chat `InferenceClient` (same lazy
+`AsyncOpenAI`), local or cloud. `embed()` returns one vector per input, input order preserved
+(sorted by the API's `index`). **There is no consumer yet** — the vector `MemoryProvider` + semantic
+recall are Phase 7 (DESIGN §6); this is the tested seam they plug into, sitting on `Deps`. Wired to
+**OpenRouter `qwen/qwen3-embedding-4b`** using the same key as cloud chat (OpenRouter *does* serve
+`/v1/embeddings` — confirmed) — the key lives in the gitignored `dashboard_v2/config.yaml`'s
+`embeddings:` block. **Verified live:** 2560-dim vectors, cosine sanity (self 1.0, unrelated 0.52).
+*(The same OpenRouter key could also fill `inference.cloud` to make `/cloud` chat work — currently
+unconfigured; not done, offered as a follow-up.)*
 
 ⭐ NEW in Phase 4f — generic OpenAPI tool provider (`backend/app/`):
 ```
@@ -587,19 +613,26 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — Phase 4f, remaining work (embeddings; MCP stdio follow-up)
+## First action — Phase 4.5 (skills + agents), or finish the 4f leftovers
 
-**`web_search`, the MCP client (Streamable HTTP), curated open-terminal tools, and the generic
-OpenAPI provider all landed.** Remaining 4f work, each its own runnable slice + commit (footer:
-`Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`):
-- **Embeddings client (next):** wire the configured llama.cpp `/v1/embeddings` (an `EmbeddingsCfg` +
-  `InferenceClient.embed`) — powers the vector `MemoryProvider` when that lands (Phase 7), so no
-  user-visible behavior yet; smallest remaining piece.
-- **MCP stdio transport (small follow-up):** `adapters/mcp_client.py` `_session()` raises a clear
-  `McpError` for `transport="stdio"` today (the owner has only a Streamable-HTTP server, so stdio
-  was left untested rather than guessed). Add `stdio_client` + `StdioServerParameters` when there's
-  a stdio server to verify against. Also: hot re-discovery on a settings `PUT` (Phase 7) and
-  rendering MCP `output` in the bubble (a generic disclosure, like `web_search`'s links).
+**Phase 4f is essentially complete** — `web_search`, MCP client, open-terminal tools, the generic
+OpenAPI provider, **and the embeddings client** all landed + are committed/pushed. The agent has 20
+built-in/MCP/terminal tools + embeddings on `Deps`. Start a fresh session on **Phase 4.5 (skills +
+agents/subagents, D10/D11)** — see `TODO.md` "Phase 4.5" and `DECISIONS.md` D11 (keep skill-selection
++ orchestration behind swappable strategies; prior art in `RESEARCH.md`). Each piece its own runnable
+slice + commit (footer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`).
+
+**Small 4f leftovers (optional, non-blocking):**
+- **MCP stdio transport:** `adapters/mcp_client.py` `_session()` raises a clear `McpError` for
+  `transport="stdio"` today (no stdio server to test against — left untested rather than guessed).
+  Add `stdio_client` + `StdioServerParameters` when there's one. Also: hot re-discovery on a settings
+  `PUT` (Phase 7); rendering MCP/OpenAPI `output` in the bubble (a generic disclosure, like
+  `web_search`'s links).
+- **Cloud chat:** the OpenRouter key (now in `config.yaml`'s `embeddings:` block, and in the root
+  `config.yaml`'s `cloud_inference_key`) could also fill `inference.cloud` (base_url
+  `https://openrouter.ai/api/v1`, a chat model id) to make `/cloud` work — currently unconfigured.
+- **Wire real Open WebUI tool servers** via `openapi_servers:` (the provider's tested; just needs the
+  owner's tool-server URLs + keys).
 
 Optional 4b/4c/4d/4e follow-ups, none blocking — each is an **owner eyeball**, not a code task:
 - **Eyeball live against `minig+`**: send a fleet question — confirm the model emits tool calls, the

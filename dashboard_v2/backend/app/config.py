@@ -122,6 +122,23 @@ class AgentCfg(BaseModel):
     compaction: CompactionCfg = Field(default_factory=CompactionCfg)
 
 
+class EmbeddingsCfg(BaseModel):
+    """OpenAI-compatible embeddings backend (Phase 4f, D9). One `/v1/embeddings` endpoint — local
+    llama.cpp or a cloud provider (e.g. OpenRouter `qwen/qwen3-embedding-4b`) — powering the vector
+    `MemoryProvider` + future semantic search (Phase 7). `enabled=False`/empty `base_url`/`model`
+    makes `EmbeddingsClient.configured` false so consumers degrade gracefully. `dim` is optional
+    metadata (the model's vector size) for store setup; left `None`, the first embed reveals it."""
+
+    model_config = {"extra": "allow"}
+
+    base_url: str = ""               # e.g. https://openrouter.ai/api/v1 or http://192.168.1.137:5002/v1
+    api_key: str | None = None
+    model: str = ""                  # e.g. qwen/qwen3-embedding-4b
+    enabled: bool = True
+    timeout_s: float = 60.0
+    dim: int | None = None           # optional: known embedding dimension
+
+
 class SearxngCfg(BaseModel):
     """SearXNG metasearch endpoint backing the agent `web_search` tool (Phase 4f, D9). Hits the
     instance's `/search?format=json` API (the instance must enable the JSON format in its
@@ -261,6 +278,7 @@ class Settings(BaseModel):
     inference: InferenceCfg = Field(default_factory=InferenceCfg)
     agent: AgentCfg = Field(default_factory=AgentCfg)
     searxng: SearxngCfg = Field(default_factory=SearxngCfg)
+    embeddings: EmbeddingsCfg = Field(default_factory=EmbeddingsCfg)
     open_terminal: OpenTerminalCfg = Field(default_factory=OpenTerminalCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)

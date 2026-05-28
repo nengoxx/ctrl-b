@@ -40,6 +40,16 @@ agent:
       mode: ""               # ""/local/cloud — blank inherits inference.default_mode
       model: ""              # blank inherits the endpoint's model
 
+# Embeddings backend (Phase 4f, D9) — one OpenAI-compatible `/v1/embeddings` endpoint, local
+# (llama.cpp) or cloud (e.g. OpenRouter `qwen/qwen3-embedding-4b`, which does serve embeddings).
+# Powers the vector MemoryProvider + semantic search when Phase 7 lands; no consumer before then.
+embeddings:
+  base_url: https://openrouter.ai/api/v1   # or http://192.168.1.137:5002/v1 for a local server
+  api_key: changeme                        # provider key (local servers ignore it)
+  model: qwen/qwen3-embedding-4b
+  enabled: true
+  dim: 2560                # optional: known vector size (qwen3-embedding-4b = 2560)
+
 # SearXNG metasearch → the agent's `web_search` tool (Phase 4f, D9). Point base_url at your
 # instance (no trailing /search). The instance must enable the JSON format in its settings.yml
 # (`search: { formats: [html, json] }`) — a stock SearXNG serves HTML only and web_search will

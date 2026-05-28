@@ -190,8 +190,12 @@ tools + confirm bubbles) are DONE.**
       + `Settings.openapi_servers`; wired in `main.py` (`app.state.openapi` + `openapi_summary`).
       Verified live by pointing it at open-terminal's own `/openapi.json` (12 ops discovered, schema
       `$defs`/ref-rewrite correct, GET auto-ran, POST gated→token→ran). For Open WebUI tool servers etc.
-- [ ] **Embeddings client (D9):** wire the configured llama.cpp `/v1/embeddings` (powers the vector
-      `MemoryProvider` when that lands).
+- [x] **Embeddings client (4f, D9):** `adapters/embeddings.py` `EmbeddingsClient` — OpenAI-compatible
+      `/v1/embeddings` (local llama.cpp or cloud), `embed(texts)→vectors` (input order preserved).
+      `EmbeddingsCfg` (base_url/api_key/model/dim) + `Settings.embeddings`; on `Deps.embeddings` +
+      `main.py`. Wired to **OpenRouter `qwen/qwen3-embedding-4b`** (same key as cloud chat — OpenRouter
+      *does* serve embeddings); verified live (2560-dim vectors, cosine sanity). No consumer yet — the
+      vector `MemoryProvider` + semantic recall land in Phase 7; this is the tested seam they plug into.
 - [x] **Composer prefix routing (4c):** `!` (configurable sigil, const in `lib/composer.ts`) →
       guarded exec — **routed + Phase-5-stubbed** (echoes the intent + a "not wired yet" note, no
       fake exec); `/` → slash commands (`/local`,`/cloud` force the backend per-message *or* set a
