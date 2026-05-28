@@ -12,7 +12,7 @@ from __future__ import annotations
 from app.core.tool import ToolRegistry, registry
 
 # Importing the modules triggers @action registration into `core.tool.registry`.
-from app.services.actions import ping, shutdown, wake  # noqa: E402,F401
+from app.services.actions import ping, reboot, shutdown, wake  # noqa: E402,F401
 from app.services.actions import (  # noqa: E402,F401
     check_service,
     open_service_url,

@@ -5,6 +5,7 @@ allowed_tools:
   - ping_host
   - wake_host
   - shutdown_host
+  - reboot_host
   - check_service
   - open_service_url
   - start_service
