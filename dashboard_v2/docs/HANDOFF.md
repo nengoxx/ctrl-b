@@ -24,8 +24,10 @@ agents/subagents, D10/D11) backend is now DONE** — the loop is driven by a con
 (`agents[]`), file-discovered **skills** (`skills/<name>/SKILL.md`) inject instructions + narrow the
 toolset (model-invoked by description · user-invoked via `/skill-name`), and **`spawn_subagents`**
 delegates a batch of tasks to child agents run in bounded parallel (headless, depth-capped,
-privilege-clamped). **Next up: the Conf tab (Phase 7)** — incl. the Skills/Agents management UI
-deferred from 4.5 — or wiring real Open WebUI tool servers / cloud chat, or Phase 5 (guarded shell).
+privilege-clamped). **Cloud chat is now wired** (`inference.cloud` → OpenRouter Gemma 4 free;
+`default_mode` stays `local`; `:free` tier is rate-limited). **Next up: the Conf tab (Phase 7)** —
+incl. the Skills/Agents management UI deferred from 4.5 — or wiring real Open WebUI tool servers, or
+Phase 5 (guarded shell).
 This doc is the orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor
 fidelity mandate (D7) still governs every new component.**
 
@@ -172,8 +174,8 @@ recall are Phase 7 (DESIGN §6); this is the tested seam they plug into, sitting
 **OpenRouter `qwen/qwen3-embedding-4b`** using the same key as cloud chat (OpenRouter *does* serve
 `/v1/embeddings` — confirmed) — the key lives in the gitignored `dashboard_v2/config.yaml`'s
 `embeddings:` block. **Verified live:** 2560-dim vectors, cosine sanity (self 1.0, unrelated 0.52).
-*(The same OpenRouter key could also fill `inference.cloud` to make `/cloud` chat work — currently
-unconfigured; not done, offered as a follow-up.)*
+*(The same OpenRouter key now also fills `inference.cloud` (model `google/gemma-4-31b-it:free`) so
+`/cloud` chat works — `default_mode` stays `local`; the `:free` tier is rate-limited, see the 4c note.)*
 
 ⭐ NEW in Phase 4f — generic OpenAPI tool provider (`backend/app/`):
 ```
@@ -371,8 +373,12 @@ stays in SQLite; next send mints a new one). `/help` lists commands. `mode` ride
 construction; links are scheme-allowlisted (http/https/mailto only). Streams fine — re-parsing the
 short text each token is cheap and a half-typed ``` fence still renders.
 
-> **Cloud isn't configured** (only `local`), so `/cloud …` will error until a cloud endpoint lands
-> in `config.yaml` — that's expected, not a 4c bug. **Resume runs on the default mode** (the
+> **Cloud is now configured** — `inference.cloud` points at OpenRouter (`https://openrouter.ai/api/v1`,
+> model `google/gemma-4-31b-it:free`, same key as `embeddings:`); `default_mode` stays `local` so
+> `/cloud` is opt-in per message. **Caveat:** the `:free` tier is heavily rate-limited upstream
+> (frequent 429s under back-to-back use) — wiring is proven (a live `stream_chat(mode="cloud")` returned
+> `pong`; 429s surface as a clean SSE `error`, not a crash). For reliable cloud, BYOK a Google AI Studio
+> key in OpenRouter or switch to a cheap paid model. **Resume runs on the default mode** (the
 > per-message mode isn't carried across the confirm round-trip — only matters if the summary model
 > would differ; acceptable for now).
 
@@ -558,8 +564,9 @@ rides up above it instead of being hidden (`dvh` is the CSS fallback). Desktop v
 unchanged, pane scroll + pin-to-bottom; shrinking `--app-h` lifts the composer); **owner to confirm
 the Android toolbar + keyboard behaviour on the phone**.
 
-**Not yet exercised:** the **cloud backend** (only `local` configured). The cold-load is now
-visibly indicated (dots) rather than a dead spinner. No `vapor.css` changes — D7 unaffected.
+**Cloud backend** is now configured (OpenRouter Gemma 4 free, `default_mode` stays `local`) and the
+path is live-verified, though the `:free` tier is rate-limited (see the 4c note above). The cold-load
+is now visibly indicated (dots) rather than a dead spinner. No `vapor.css` changes — D7 unaffected.
 
 **Verified (Phase 4b):** `compileall` clean; frontend `tsc -b` + `vite build` clean. A `TestClient`
 run with a **stubbed scriptable inference** (emits tool calls) + two synthetic tools (one LOW, one
@@ -607,8 +614,8 @@ absent→`None`) and that `run_turn(mode="cloud")` forwards `mode` to `stream_ch
 Backend relaunched on 5433 with the new code; health OK direct + via the Vite proxy (5190). **Not
 yet eyeballed live:** the markdown rendering @390px against a real bot reply, the slash UX, and the
 shell stub — **owner to do the side-by-side** (markdown CSS is net-new `.md` from vapor tokens; the
-`.md-code` bar reuses the `.b.cmd` palette). Cloud-mode switching is plumbed but cloud is
-unconfigured (see note above).
+`.md-code` bar reuses the `.b.cmd` palette). Cloud-mode switching is plumbed and cloud is **now
+configured** (OpenRouter Gemma 4 free; rate-limited — see note above).
 
 **Phase 3 stays verified** (committed `2675f82`): service actions register with right risk/confirm,
 `GET /api/services` derives port-probe status + url/controls, confirm dance + audit trail all
@@ -713,8 +720,9 @@ runtime all work against `minig+`; the only gap is `minig+` not *choosing* `spaw
   description editing** (the owner asked for it; the override seam is `ToolSpec.description`). Needs
   the `GET/PUT /api/settings` form infrastructure Phase 7 builds; `GET /api/skills` already exists.
 - **Capability fallback (TODO 4c)** — prompted-JSON tool-calling for weak local models, so `minig+`
-  can drive abstract tools like `spawn_subagents`; or just wire **cloud chat** (`inference.cloud`, the
-  OpenRouter key is already in `config.yaml`) and a capable model picks them.
+  can drive abstract tools like `spawn_subagents`. (Cloud chat is now wired — `inference.cloud` →
+  OpenRouter Gemma 4 free — but the `:free` tier is rate-limited, so it's not a reliable way to get a
+  capable tool-caller; BYOK or a paid model would be.)
 - Or the older alternatives: wire real **Open WebUI tool servers** (`openapi_servers:`), or **Phase 5**
   (guarded `run_shell`).
 
@@ -724,9 +732,11 @@ Each piece its own runnable slice + commit (footer: `Co-Authored-By: Claude Opus
 - **MCP follow-ups:** both transports are done (Streamable HTTP + stdio). Still open: hot
   re-discovery on a settings `PUT` (Phase 7); rendering MCP/OpenAPI `output` in the bubble (a generic
   disclosure, like `web_search`'s links).
-- **Cloud chat:** the OpenRouter key (now in `config.yaml`'s `embeddings:` block, and in the root
-  `config.yaml`'s `cloud_inference_key`) could also fill `inference.cloud` (base_url
-  `https://openrouter.ai/api/v1`, a chat model id) to make `/cloud` work — currently unconfigured.
+- **Cloud chat — DONE:** `inference.cloud` is configured (`https://openrouter.ai/api/v1`, model
+  `google/gemma-4-31b-it:free`, same OpenRouter key as `embeddings:`); `default_mode` stays `local`.
+  Live-verified (`stream_chat(mode="cloud")` → `pong`). The `:free` tier is rate-limited (frequent
+  429s, surfaced as a clean SSE error); for reliable cloud, BYOK a Google AI Studio key in OpenRouter
+  or set a paid model. The owner uses local most of the time, so this is left on free Gemma 4 as-is.
 - **Wire real Open WebUI tool servers** via `openapi_servers:` (the provider's tested; just needs the
   owner's tool-server URLs + keys).
 
