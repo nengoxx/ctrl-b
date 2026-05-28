@@ -67,8 +67,8 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 · 4c `b44c039` · 4d `df612e3` · 4e `60f8e68` · vite-host fix `f2774b8` · **4f**: web_search `05e5a48`
 + links `271c0b3` · MCP `e148a41` + risk `2ed987d` · open-terminal `c4ec84c` · OpenAPI `a4e3e86` ·
 embeddings `97e4f89` · **Agent-tab polish**: collapse tool command bubbles by default `9d1b1e2` ·
-group a thinking block with the tool call it produced `73fe813` · inset fix `5b41dfb`). The working
-tree is **clean** and in sync with `origin/main`. **Start a clean session on Phase 4.5** (see "First
+group a thinking block with the tool call it produced `73fe813` · inset fix `5b41dfb` · **MCP stdio
+transport `874cdb1`**). The working tree is **clean** and in sync with `origin/main`. **Start a clean session on Phase 4.5** (see "First
 action" below). The 4e file lists below are reference.
 
 **Agent-tab UX (this session, `frontend/src/tabs/AgentTab.tsx` + `theme/extras.css`):** tool command
