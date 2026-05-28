@@ -1,0 +1,48 @@
+"""Agent definitions (DESIGN §5.1, D11). An `AgentDef` is *data* — the configurable shape of one
+agent: its system prompt, which inference backend+model it uses, the tool/skill allowlists, its
+privilege, and the loop/subagent limits. The **default chat agent** is just one entry in
+`settings.agents`; subagents reuse the same definition shape at greater depth (§5.5).
+
+Kept in `domain/` (pure pydantic, no I/O) so both `config.py` (which round-trips `agents[]` from
+YAML) and the agent runtime can import it without a layering cycle. `ModelRef` lives here too — it's
+a pure pointer reused by `AgentDef.model` *and* `CompactionCfg.summarizer` (the selectable
+summarizer, D11).
+"""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+from app.domain.enums import Privilege
+
+
+class ModelRef(BaseModel):
+    """A pointer to an inference backend + model name (DESIGN §5.1). Both optional so a consumer can
+    inherit the chat backend (`mode=None` → `InferenceCfg.default_mode`) and/or its model
+    (`model=None` → the endpoint's configured model). Set one or both to override — used by the
+    selectable compaction summarizer and by each `AgentDef.model`."""
+
+    mode: str | None = None      # "local" | "cloud" | None → InferenceCfg.default_mode
+    model: str | None = None     # None → the endpoint's configured model id
+
+
+class AgentDef(BaseModel):
+    """One agent's definition (D11). `tools`/`skills` are allowlists — `"*"` means every
+    `agent_exposed` tool / discovered skill, or a list of names/globs to narrow it (a skill may
+    narrow further, never widen). `privilege` decides gating: `CONFIRM` (the default) auto-runs
+    low-risk tools and confirms med/high; the rest of the ladder lands post-v1 (A1). The limits cap
+    the loop and the subagent tree (§5.5). `extra="allow"` so future per-agent knobs round-trip."""
+
+    model_config = {"extra": "allow"}
+
+    name: str
+    prompt: str = ""                                    # system prompt; "" → the built-in default
+    model: ModelRef = Field(default_factory=ModelRef)   # backend+model; inherits chat default when unset
+    tools: list[str] | Literal["*"] = "*"               # tool-name allowlist (globs) or all agent tools
+    skills: list[str] | Literal["*"] = "*"              # skill allowlist or all discovered skills
+    privilege: Privilege = Privilege.CONFIRM
+    max_iterations: int = 16                             # tool-call loop safety cap
+    max_subagent_depth: int = 2                          # how deep spawn_subagents may nest
+    max_concurrent_subagents: int = 3                    # per-agent fan-out cap (global cap in settings)

@@ -104,10 +104,13 @@ class InferenceClient:
         messages: list[dict],
         *,
         mode: str | None = None,
+        model: str | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[ChatDelta]:
         """Stream a chat completion. `messages` is OpenAI shape; `tools` is the optional function
-        toolset (the agent loop passes `registry.to_openai_tools(...)`).
+        toolset (the agent loop passes `registry.to_openai_tools(...)`). `mode`/`model` override the
+        configured endpoint + model (an `AgentDef` selects its own backend+model, D11); when either
+        is `None` the endpoint's default is used.
 
         Yields per-token `text`/`reasoning` deltas live. Tool calls arrive as index-keyed
         fragments, reassembled here and emitted as one terminal `ChatDelta(tool_calls=[...])`
@@ -115,9 +118,10 @@ class InferenceClient:
         """
         ep = self._cfg.endpoint(mode)
         client = self._client(ep)
-        if not ep.model:
+        use_model = model or ep.model
+        if not use_model:
             raise InferenceError(f"no model configured for mode '{mode or self._cfg.default_mode}'")
-        kwargs: dict[str, Any] = {"model": ep.model, "messages": messages, "stream": True}
+        kwargs: dict[str, Any] = {"model": use_model, "messages": messages, "stream": True}
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"

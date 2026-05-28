@@ -52,9 +52,12 @@ class ResumeRequest(BaseModel):
     confirm_token: str | None = None
 
 
-def _session(request: Request) -> AgentSession:
+def _session(request: Request, thread: Thread | None = None) -> AgentSession:
+    """Build a session, resolving which `AgentDef` drives it from the thread's `agent` field
+    (D11). `None` → the configured default. Older callers that pass no thread still get the default."""
     s = request.app.state
-    return AgentSession(s.threads, s.messages, s.inference, s.settings, s.actions)
+    agent = s.settings.resolve_agent(thread.agent if thread else None)
+    return AgentSession(s.threads, s.messages, s.inference, s.settings, s.actions, agent)
 
 
 @router.get("/threads")
@@ -84,7 +87,7 @@ async def chat(body: ChatRequest, request: Request) -> EventSourceResponse:
     thread = await threads.get(body.thread_id) if body.thread_id else None
     if thread is None:
         thread = await threads.create(Thread(title=body.text[:60]))
-    session = _session(request)
+    session = _session(request, thread)
 
     async def gen() -> AsyncIterator[dict[str, Any]]:
         # Tell the client the thread id first (it may have just been created).
@@ -103,7 +106,7 @@ async def compact(body: CompactRequest, request: Request) -> dict[str, Any]:
     thread = await threads.get(body.thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
-    return await _session(request).compact(thread)
+    return await _session(request, thread).compact(thread)
 
 
 @router.post("/agent/resume")
@@ -114,7 +117,7 @@ async def resume(body: ResumeRequest, request: Request) -> EventSourceResponse:
     thread = await threads.get(body.thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
-    session = _session(request)
+    session = _session(request, thread)
 
     async def gen() -> AsyncIterator[dict[str, Any]]:
         yield {"event": "thread", "data": json.dumps({"threadId": thread.id, "title": thread.title})}

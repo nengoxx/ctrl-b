@@ -18,15 +18,18 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import yaml
 from dotenv import dotenv_values
 from pydantic import BaseModel, Field, SecretStr
 
+from app.domain.agent import AgentDef, ModelRef
 from app.domain.enums import OSType
 from app.domain.host import Host
 from app.domain.service import Service
+
+__all__ = ["Settings", "ModelRef", "AgentDef", "load_settings", "save_settings", "mask_secrets"]
 
 # dashboard_v2/backend/app/config.py -> dashboard_v2/
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -92,15 +95,6 @@ class InferenceCfg(BaseModel):
         return self.local if (mode or self.default_mode) == "local" else self.cloud
 
 
-class ModelRef(BaseModel):
-    """A pointer to an inference backend + model name (DESIGN §5.1 ModelRef). Both optional so the
-    summarizer can inherit the chat backend (`mode=None` → `default_mode`) and/or its model
-    (`model=None` → the endpoint's configured model). Set one or both to override."""
-
-    mode: str | None = None      # "local" | "cloud" | None → InferenceCfg.default_mode
-    model: str | None = None     # None → the endpoint's configured model id
-
-
 class CompactionCfg(BaseModel):
     """Context compaction (Phase 4e, D10/D11). When the working context (non-compacted history)
     grows past `threshold_tokens`, the oldest complete turns are summarized into a single system
@@ -115,11 +109,16 @@ class CompactionCfg(BaseModel):
 
 
 class AgentCfg(BaseModel):
-    """Agent-runtime settings (D10/D11). `extra="allow"` so later phases (agents[], skills) round-trip."""
+    """Agent-runtime settings (D10/D11). `default_agent` names which entry in `Settings.agents` a
+    new thread uses (blank → the built-in default). `global_subagent_limit` caps concurrent
+    subagents across the *whole* tree (§5.5), independent of any one agent's fan-out cap.
+    `extra="allow"` so later per-knob additions round-trip."""
 
     model_config = {"extra": "allow"}
 
     compaction: CompactionCfg = Field(default_factory=CompactionCfg)
+    default_agent: str = ""              # name of the default AgentDef; "" → built-in default
+    global_subagent_limit: int = 6       # process-wide cap on concurrent subagents (tree-wide)
 
 
 class EmbeddingsCfg(BaseModel):
@@ -282,6 +281,9 @@ class Settings(BaseModel):
     open_terminal: OpenTerminalCfg = Field(default_factory=OpenTerminalCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
+    #: Agent definitions (D11). Empty → the built-in default chat agent is synthesized
+    #: (`default_agent_def`). The owner adds entries to run/select alternate agents + subagents.
+    agents: list[AgentDef] = Field(default_factory=list)
     #: Keyed by host name, preserving the live `wol_server_win.py` `computers{}` shape so the
     #: owner can copy their existing config.yaml unchanged (HANDOFF — migration reference).
     computers: dict[str, ComputerCfg] = Field(default_factory=dict)
@@ -332,6 +334,29 @@ class Settings(BaseModel):
                     )
                 )
         return out
+
+    #: Name of the synthesized built-in agent used when no `agents[]` are configured (or the named
+    #: `default_agent` is missing). Its empty prompt falls back to `inference.system_prompt` / the
+    #: session's built-in default; its empty `ModelRef` inherits the chat backend.
+    DEFAULT_AGENT_NAME: ClassVar[str] = "default"
+
+    def default_agent_def(self) -> AgentDef:
+        """The built-in default chat agent (DESIGN §5.1 — "the default agent is just one entry").
+        Used when `agents[]` is empty so the loop always has an `AgentDef` to run."""
+        return AgentDef(name=self.DEFAULT_AGENT_NAME)
+
+    def resolve_agent(self, name: str | None = None) -> AgentDef:
+        """Resolve an `AgentDef` by name. `name=None` → the configured `agent.default_agent` (or the
+        first entry, or the built-in default). An unknown name also falls back to the default — a
+        thread that references a since-deleted agent keeps working rather than 500ing."""
+        target = name or self.agent.default_agent or None
+        if target:
+            for a in self.agents:
+                if a.name == target:
+                    return a
+        if name is None and self.agents:
+            return self.agents[0]
+        return self.default_agent_def()
 
 
 def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:

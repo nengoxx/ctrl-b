@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass, field
+from fnmatch import fnmatch
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel
@@ -110,9 +111,20 @@ class ToolRegistry:
         return [t for t in self._tools.values() if t.spec.ui_exposed]
 
     def agent_tools(self) -> list[Tool]:
-        """The subset the agent may call (Phase 4). An `AgentDef` allowlist narrows this further
-        in 4.5; for now it's every `agent_exposed` tool."""
+        """The subset *any* agent may call (Phase 4): every `agent_exposed` tool. `for_agent`
+        narrows this to a specific `AgentDef`'s allowlist (4.5)."""
         return [t for t in self._tools.values() if t.spec.agent_exposed]
+
+    def for_agent(self, allow: list[str] | str = "*") -> list[Tool]:
+        """The tools a specific agent may call (DESIGN §5.1): `agent_tools()` intersected with the
+        agent's `tools` allowlist. `"*"` (the default) is every agent tool; a list is matched by
+        glob (`fnmatch`) so a pattern like `mcp__web-tools__*` or `*_service` selects a family.
+        A skill may narrow this further at selection time — never widen it."""
+        tools = self.agent_tools()
+        if allow == "*":
+            return tools
+        patterns = list(allow)
+        return [t for t in tools if any(fnmatch(t.spec.name, p) for p in patterns)]
 
     def to_openai_tools(self, tools: list[Tool] | None = None) -> list[dict[str, Any]]:
         """Render tools as OpenAI `tools` function defs (the input model → JSON Schema). Defaults

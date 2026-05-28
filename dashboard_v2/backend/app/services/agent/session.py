@@ -36,6 +36,7 @@ from pydantic import ValidationError
 from app.adapters.inference import InferenceClient, InferenceError
 from app.config import Settings
 from app.core.tool import UnknownTool
+from app.domain.agent import AgentDef
 from app.domain.conversation import (
     ErrorPart,
     Message,
@@ -46,7 +47,7 @@ from app.domain.conversation import (
     ToolCallPart,
     ToolResultPart,
 )
-from app.domain.enums import Actor, Privilege, RunState
+from app.domain.enums import Actor, RunState
 from app.domain.result import ToolResult
 from app.services.action_service import ActionService
 from app.services.agent.compaction import Compactor
@@ -70,16 +71,10 @@ DEFAULT_SYSTEM_PROMPT = (
     "Answer directly and briefly; after the final tool runs, summarize the outcome in one or two lines."
 )
 
-#: The default chat agent's actor + privilege. CONFIRM means low-risk tools auto-run while
-#: med/high-risk ones (shutdown, stop/restart) gate on a confirm bubble (DESIGN §3 decide()).
-#: An `AgentDef` (4.5) will make these per-agent; today there's one default agent.
+#: Every agent invocation is audited as `Actor.AGENT`; the privilege (which decides gating) is now
+#: per-`AgentDef` (4.5) — `CONFIRM` (the default agent's) auto-runs low-risk tools while med/high
+#: gate on a confirm bubble (DESIGN §3 decide()).
 AGENT_ACTOR = Actor.AGENT
-AGENT_PRIVILEGE = Privilege.CONFIRM
-#: Tool-call loop safety cap. Generous so a legit fan-out (e.g. pinging every host one-at-a-time if
-#: the model doesn't batch) completes rather than capping mid-task; the turn still ends naturally as
-#: soon as the model returns text-only. On hitting it the stream ends `done(capped)` (the UI then
-#: shows a "send a message to continue" notice rather than stalling silently).
-MAX_ITERATIONS = 16
 
 #: Call states that need no further processing (used to skip already-run calls on resume).
 _RESOLVED = {
@@ -121,16 +116,26 @@ class AgentSession:
         inference: InferenceClient,
         settings: Settings,
         actions: ActionService,
+        agent: AgentDef | None = None,
     ) -> None:
         self._threads = threads
         self._messages = messages
         self._inference = inference
         self._settings = settings
         self._actions = actions
+        #: The agent definition driving this turn (D11). Resolved by the caller from the thread's
+        #: `agent` field; `None` falls back to the built-in default so older call sites still work.
+        self._agent = agent or settings.default_agent_def()
         self._compactor = Compactor(inference, messages, settings.agent.compaction)
 
     def _system_prompt(self) -> str:
-        return self._settings.inference.system_prompt.strip() or DEFAULT_SYSTEM_PROMPT
+        """The agent's own prompt wins; then the global `inference.system_prompt` override; then the
+        built-in default. So the default agent (empty prompt) inherits today's behaviour exactly."""
+        return (
+            self._agent.prompt.strip()
+            or self._settings.inference.system_prompt.strip()
+            or DEFAULT_SYSTEM_PROMPT
+        )
 
     def _roster(self) -> str | None:
         """A compact id↔name map of the fleet + services, injected each turn so the agent resolves
@@ -153,7 +158,11 @@ class AgentSession:
         return "\n".join(lines)
 
     def _tools(self) -> list[dict]:
-        return self._actions.registry.to_openai_tools()
+        """The OpenAI toolset for this agent — `agent_tools()` narrowed to the `AgentDef`'s
+        allowlist (4.5). A skill may narrow it further per turn (handled at selection)."""
+        return self._actions.registry.to_openai_tools(
+            self._actions.registry.for_agent(self._agent.tools)
+        )
 
     async def _assemble(self, thread: Thread) -> list[dict]:
         """Build the OpenAI `messages` array from non-compacted history. Reasoning is dropped (the
@@ -281,7 +290,13 @@ class AgentSession:
                 yield AgentEvent("done", {"threadId": thread.id, "state": "suspended"})
                 return
 
-        for _ in range(MAX_ITERATIONS):
+        # Effective inference target: the per-message mode override (4c `/local`//`/cloud`) wins,
+        # else the agent's own `model.mode`; the agent's `model.model` overrides the endpoint model
+        # (both `None` → the configured default, so the default agent is unchanged).
+        eff_mode = mode or self._agent.model.mode
+        eff_model = self._agent.model.model
+
+        for _ in range(self._agent.max_iterations):
             # Compaction check before each model call (DESIGN §5.2 step 2): if the working context
             # is over the configured threshold, fold the oldest turns into a summary system message.
             res = await self._compactor.compact(thread)
@@ -299,7 +314,7 @@ class AgentSession:
             reqs = []
             try:
                 async for delta in self._inference.stream_chat(
-                    messages, mode=mode, tools=self._tools()
+                    messages, mode=eff_mode, model=eff_model, tools=self._tools()
                 ):
                     if delta.reasoning:
                         reasoning_buf.append(delta.reasoning)
@@ -384,7 +399,7 @@ class AgentSession:
                         cp.tool,
                         cp.args,
                         actor=AGENT_ACTOR,
-                        privilege=AGENT_PRIVILEGE,
+                        privilege=self._agent.privilege,
                         confirm_token=token,
                     )
                 except UnknownTool:
