@@ -28,6 +28,11 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 5173,
+    // Accept any Host header. Vite (>=5.4) otherwise rejects non-localhost/IP hosts as a
+    // DNS-rebinding guard, which blocks reaching the dev server by machine name (e.g.
+    // http://corsair:5190) or the Tailscale Serve *.ts.net FQDN. Safe here: tailnet-only,
+    // no public bind (AGENTS.md §6 security model).
+    allowedHosts: true,
     proxy: { "/api": "http://127.0.0.1:5433" },
   },
 });
