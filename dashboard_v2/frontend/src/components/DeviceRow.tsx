@@ -55,7 +55,9 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
           <div className="sub">{sub}</div>
         </div>
         <div className="eq">
-          {EQ_ON.map((h, i) =>
+          {/* Online shows TWO action buttons (reboot + shutdown), so trim the bars to make room;
+              offline (wake only) keeps the full set. */}
+          {(online ? EQ_ON.slice(0, 5) : EQ_ON).map((h, i) =>
             online ? <i key={i} style={{ height: `${h}px` }} /> : <i key={i} />,
           )}
         </div>
