@@ -341,6 +341,159 @@ body {
   color: var(--violet);
 }
 
+/* ── Plan panel (Phase 4d). The task_plan tool's live checklist — net-new (vapor has no plan markup),
+   built only from vapor tokens. The current plan hangs from the top of the chat as a minimized tab
+   (`.plan-pin`); tapping it drops the checklist down as an overlay so it never reflows the messages.
+   Each task_plan call also drops a dim `.plan-note` breadcrumb in the timeline. The model rewrites
+   the whole list each call, so the tab always reflects the most-recent one. */
+
+/* The sticky tab "hangs" from the top edge (rounded bottom); centered, lets chat scroll past on the
+   sides. Collapsed by default — the dropdown below is the expanded view. */
+.plan-pin {
+  position: sticky;
+  /* pin just below the sticky appbar (its measured height, App sets `--appbar-h`) so the tab sticks
+     to the menu bar instead of riding up to the very top. z-index < the appbar's 20 so the bar
+     always covers it during the scroll transition. */
+  top: var(--appbar-h, 52px);
+  z-index: 15;
+  display: flex;
+  justify-content: center;
+  pointer-events: none; /* the empty sides stay click-through to the chat; the tab re-enables */
+}
+.plan-pin-wrap {
+  position: relative; /* anchors the dropdown */
+  pointer-events: auto;
+}
+.plan-pin-head {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 0 0 13px 13px; /* hangs from the top bar */
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.22), rgba(var(--accent-rgb-2), 0.12));
+  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  border-top: 0;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.plan-pin-head .chev {
+  color: var(--magenta);
+  font-size: 10px;
+  transition: transform 0.16s ease;
+}
+.plan-pin-head.open .chev {
+  transform: rotate(180deg);
+}
+/* The dropdown — an overlay below the tab (absolute, so opening doesn't push the chat down). */
+.plan-drop {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(86vw, 360px);
+  max-height: 52vh;
+  overflow-y: auto;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.14), rgba(var(--accent-rgb-2), 0.06));
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  animation: plan-drop-in 0.16s ease;
+}
+@keyframes plan-drop-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+.plan-title {
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--magenta);
+}
+.plan-count {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--ink-faint);
+}
+
+/* The checklist (shared) — per-step status ticks: pending = hollow ring, active = pulsing teal ring
+   + dot, done = filled green + ✓. */
+.plan-steps {
+  list-style: none;
+  margin: 0;
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.plan-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.plan-step .tick {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-faint);
+  position: relative;
+}
+.plan-step.active .tick {
+  border-color: var(--teal);
+  box-shadow: var(--t-glow);
+  animation: tag-pulse 1.3s ease-in-out infinite;
+}
+.plan-step.active .tick::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--teal);
+}
+.plan-step.done .tick {
+  border-color: var(--green);
+  background: var(--green);
+}
+.plan-step.done .tick::after {
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 800;
+  color: #06210d;
+}
+.plan-step.active .txt {
+  color: var(--ink);
+  font-weight: 600;
+}
+.plan-step.done .txt {
+  color: var(--ink-soft);
+  text-decoration: line-through;
+  text-decoration-color: rgba(126, 255, 150, 0.5);
+}
+/* Timeline breadcrumb — a dimmer `.sys` dashed line marking where the plan was set/revised. */
+.b.sys.plan-note .body {
+  opacity: 0.6;
+}
+
 /* ── Markdown bot replies (Phase 4c). The bot bubble body is vapor.css (verbatim); these style the
    block/inline elements the hand-rolled renderer (lib/markdown.tsx) emits inside `.b.bot .body .md`.
    All tokens are vapor's — colors/fonts/lines — so markdown reads as part of the Vapor design. */

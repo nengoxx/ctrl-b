@@ -43,6 +43,20 @@ export default function App() {
     if (tab !== "agent") scrollRef.current?.scrollTo(0, 0);
   }, [tab]);
 
+  // Expose the (sticky) appbar's height as `--appbar-h` so other sticky elements — the Agent tab's
+  // plan tab — can pin just *below* the menu bar instead of riding up over it. Re-measured on resize
+  // (theme/content/orientation changes shift it).
+  useEffect(() => {
+    const bar = document.querySelector(".appbar") as HTMLElement | null;
+    if (!bar) return;
+    const set = () =>
+      document.documentElement.style.setProperty("--appbar-h", `${bar.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, []);
+
   // Size the app-shell to the VISUAL viewport. `100dvh` (CSS fallback) tracks the browser toolbar
   // but NOT the on-screen keyboard, so a pure-dvh shell leaves the in-flow composer hidden behind
   // the keyboard. `visualViewport.height` shrinks when the keyboard opens, so the shell (and its

@@ -163,8 +163,14 @@ tools + confirm bubbles) are DONE.**
       **Markdown** bot replies via a hand-rolled dep-free `lib/markdown.tsx` (headings/lists/quote/
       hr/bold/italic/inline+fenced code/links) — fenced blocks get **copy + send-to-composer**
       (generalizes Vapor `editCmd`/`cmdInto`). Net-new `.md` CSS in `extras.css` (vapor.css verbatim).
-- [ ] **`task_plan` built-in tool (D10):** agent maintains a per-thread plan/task list (steps +
-      status); render as a `plan` message-kind panel in chat. Extensible — more agent tools = one file.
+- [x] **`task_plan` built-in tool (4d, D10):** agent maintains a per-thread plan/task list (steps +
+      status); rendered as a `plan` panel in chat. `domain/plan.py` (Plan + PlanStep) · agent-only
+      builtin `services/agent/planning.py` (LOW, `category="builtin"`, `ui_exposed=False`) — rewrites
+      the whole list each call (TodoWrite-style), echoes it in `ToolResult.data["plan"]`; no extra
+      per-thread state (the plan rides the message history, so reload + the model's context recover it).
+      Frontend: `AgentTab` renders the **latest** task_plan call as a checklist panel (per-step
+      pending/active/done ticks), earlier ones collapse to a "plan revised" breadcrumb. Net-new
+      `.b.plan` CSS from vapor tokens. *(Capability fallback for weak local tool-calling: still TODO.)*
 - [ ] **Context compaction (D10/D11):** summarize older turns into the working context near the
       token limit (configurable threshold) + manual `/compact`; keep full history in SQLite; `sys`
       notice. **Summarizer model selectable** (local/cloud + name), independent of the chat model.

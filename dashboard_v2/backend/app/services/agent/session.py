@@ -57,8 +57,15 @@ DEFAULT_SYSTEM_PROMPT = (
     "services, etc.). Prefer a tool over guessing. Risky actions (shutdown, stop/restart a service) "
     "will ask the owner to confirm before running — propose them when appropriate. Resolve a host "
     "or service the owner names to its stable `id` yourself using the fleet roster provided below — "
-    "never ask the owner for an id. Answer directly and briefly; after a tool runs, summarize the "
-    "outcome in one or two lines."
+    "never ask the owner for an id. For a multi-step request, call `task_plan` first to lay out the "
+    "steps, then update it (re-send the whole list) as you complete each — keep one step `active`. "
+    "Skip the plan for a single quick action. "
+    "Carry the task through to completion in this turn: keep calling tools until every step is done. "
+    "Do NOT stop to narrate progress or ask whether to continue when the next step is already clear — "
+    "the system pauses the turn for you whenever a risky action needs confirmation, so you never have "
+    "to ask permission yourself. When the same action applies to several targets (e.g. pinging every "
+    "host), issue all of those tool calls together in one step rather than one at a time. "
+    "Answer directly and briefly; after the final tool runs, summarize the outcome in one or two lines."
 )
 
 #: The default chat agent's actor + privilege. CONFIRM means low-risk tools auto-run while
@@ -66,7 +73,11 @@ DEFAULT_SYSTEM_PROMPT = (
 #: An `AgentDef` (4.5) will make these per-agent; today there's one default agent.
 AGENT_ACTOR = Actor.AGENT
 AGENT_PRIVILEGE = Privilege.CONFIRM
-MAX_ITERATIONS = 8
+#: Tool-call loop safety cap. Generous so a legit fan-out (e.g. pinging every host one-at-a-time if
+#: the model doesn't batch) completes rather than capping mid-task; the turn still ends naturally as
+#: soon as the model returns text-only. On hitting it the stream ends `done(capped)` (the UI then
+#: shows a "send a message to continue" notice rather than stalling silently).
+MAX_ITERATIONS = 16
 
 #: Call states that need no further processing (used to skip already-run calls on resume).
 _RESOLVED = {

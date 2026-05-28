@@ -150,6 +150,7 @@ def action(
     title: str | None = None,
     description: str | None = None,
     icon: str | None = None,
+    category: ToolCategory = "action",
     risk: Risk = Risk.LOW,
     confirm: bool = False,
     ui_exposed: bool = True,
@@ -158,7 +159,8 @@ def action(
     into: ToolRegistry | None = None,
 ) -> Callable[[ToolFn], ToolFn]:
     """Register an action into the registry. The function keeps its identity (returned as-is) so
-    it stays unit-testable directly; the registry holds the wrapped `Tool`."""
+    it stays unit-testable directly; the registry holds the wrapped `Tool`. `category` defaults to
+    `action` (fleet/service ops); agent-only builtins like `task_plan` pass `category="builtin"`."""
 
     def deco(fn: ToolFn) -> ToolFn:
         spec = ToolSpec(
@@ -166,7 +168,7 @@ def action(
             title=title or name.replace("_", " ").title(),
             description=description or (inspect.getdoc(fn) or "").split("\n", 1)[0],
             icon=icon,
-            category="action",
+            category=category,
             input_model=_infer_input_model(fn),
             risk=risk,
             confirm=confirm,

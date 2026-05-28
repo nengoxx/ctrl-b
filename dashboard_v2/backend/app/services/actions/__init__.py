@@ -3,6 +3,7 @@
 at startup; the rest of the app reads the populated registry.
 
 Phase 2: fleet actions (wake/shutdown/ping). Phase 3: service actions (start/stop/restart/open).
+Phase 4d: the agent-only `task_plan` builtin (lives under agent/, registered here on import).
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from app.services.actions import (  # noqa: E402,F401
     start_service,
     stop_service,
 )
+from app.services.agent import planning  # noqa: E402,F401  # task_plan builtin (agent-only)
 
 
 def build_registry() -> ToolRegistry:

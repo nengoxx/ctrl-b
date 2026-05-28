@@ -1,17 +1,19 @@
 # Handoff — start here for a fresh session
 
-**Purpose:** **Phases 0–3, Phase 4a (text round-trip), Phase 4b (agent tools + confirm bubbles),
-and now Phase 4c (composer prefix routing + markdown) are done** — the Vapor Fleet tab drives real
-fleet/action/service typed-actions, and the **Agent tab is a live tool-using chat**: the model sees
-the action registry as OpenAI `tools`, the loop runs ALLOW calls through the existing `ActionService`
-and **suspends on a confirm-gated call** (med/high risk) rendering a Vapor `.b.cmd` **command bubble**
-with execute/dismiss — resume re-opens the stream and continues. **4c** added the shared composer's
-**prefix routing** (`!`→guarded shell [Phase-5 stub] · `/`→slash incl. `/local`//`/cloud` · else→agent),
-per-message inference-mode switching, and **markdown bot replies** (hand-rolled, dep-free) with copy +
-send-to-composer on code blocks. The next session continues **Phase 4d — `task_plan` builtin + plan
-panel**, then 4e compaction · 4f MCP/SearXNG/embeddings — each a runnable slice (don't build it all at
-once). This doc is the orientation; canonical detail is in the other `docs/` files. **The pixel-exact
-Vapor fidelity mandate (D7) still governs every new component.**
+**Purpose:** **Phases 0–3, 4a (text round-trip), 4b (agent tools + confirm bubbles), 4c (composer
+prefix routing + markdown), and now 4d (`task_plan` + plan panel) are done** — the Vapor Fleet tab
+drives real fleet/action/service typed-actions, and the **Agent tab is a live tool-using chat**: the
+model sees the action registry as OpenAI `tools`, the loop runs ALLOW calls through the existing
+`ActionService` and **suspends on a confirm-gated call** (med/high risk) rendering a Vapor `.b.cmd`
+**command bubble** with execute/dismiss — resume re-opens the stream and continues. **4c** added the
+shared composer's **prefix routing** (`!`→guarded shell [Phase-5 stub] · `/`→slash incl.
+`/local`//`/cloud` · else→agent), per-message inference-mode switching, and **markdown bot replies**
+(hand-rolled, dep-free) with copy + send-to-composer on code blocks. **4d** added the agent-only
+**`task_plan`** builtin + a live **plan panel** (TodoWrite-style checklist). The next session
+continues **Phase 4e — context compaction** (auto + `/compact`, selectable summarizer), then 4f
+MCP/SearXNG/embeddings — each a runnable slice (don't build it all at once). This doc is the
+orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor fidelity
+mandate (D7) still governs every new component.**
 
 > ## ⭐ The standing Vapor-fidelity mandate (D7) — applies to every phase
 > The owner's priority is a **faithful, pixel-exact execution of `vapor.html`** — not "inspired by."
@@ -50,10 +52,37 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (what Phase 4c left you)
+## Current state (what Phase 4d left you)
 
-**Everything through Phase 4c is committed AND pushed to `origin/main`** (Phase 4a `f9e9965` ·
-Phase 4b `6c2d181` · Phase 4c `b44c039`). The tree is clean — start 4d on a fresh branch/commit.
+**Through Phase 4c is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181` · 4c
+`b44c039` · doc `d4e704b`). **Phase 4d is in the working tree, NOT yet committed** — review + commit
+it, then start 4e.
+
+⭐ NEW in Phase 4d (`backend/app/`):
+```
+  domain/plan.py               # ⭐ Plan + PlanStep (status pending|active|done); .done count
+  services/agent/planning.py   # ⭐ @action task_plan (builtin, LOW, agent-only) — echoes the plan in data["plan"]
+  core/tool.py                 #   @action gained a `category` param (default "action"; task_plan uses "builtin")
+  services/actions/__init__.py #   imports planning to register task_plan
+  services/agent/session.py    #   system prompt now tells the model to use task_plan for multi-step work
+```
+⭐ NEW in Phase 4d (`frontend/src/`):
+```
+  types.ts                     #   + Plan / PlanStep / PlanStepStatus (mirror domain/plan.py)
+  tabs/AgentTab.tsx            # ⭐ PlanBubble — task_plan call/result → checklist panel; latest = full,
+                               #     superseded = "// plan revised" breadcrumb. planFrom() reads result.data.plan
+                               #     (falls back to call.args.steps so it renders before the result lands)
+  theme/extras.css             # ⭐ net-new `.b.plan` panel + per-step tick states (vapor tokens; vapor.css verbatim)
+```
+**Design:** `task_plan` is a normal `@action` (LOW risk, `category="builtin"`, `ui_exposed=False`,
+`agent_exposed=True`) so it **auto-runs** in the loop (no confirm gate) and flows through the same
+`ActionService`. It has **no side effects and no deps** — it validates the steps and returns the
+structured plan in `ToolResult.data["plan"]`. **There is no separate Plan store**: the plan lives in
+the `task_plan` tool_result part in the message history, so reload (`GET /threads/{id}/messages`) and
+the agent's own assembled context both recover it for free. The model **rewrites the whole list each
+call** (TodoWrite-style) → the most-recent call is the live plan; the UI renders that one as the full
+panel and collapses earlier ones. *(`/api/actions` now lists `task_plan` too — harmless; nothing
+renders a UI button for it since `ui_exposed=False`.)*
 
 ⭐ NEW in Phase 4c (`backend/app/`):
 ```
@@ -284,6 +313,16 @@ fallback" follow-up). The confirm bubble UX wasn't reviewed @390px against `vapo
 to do the side-by-side** (the `.b.cmd` shell is verbatim vapor, so it should match; the net-new
 outcome line is the only new pixels).
 
+**Verified (Phase 4d):** backend `compileall` clean; frontend `tsc -b` + `vite build` clean. A
+script confirmed `task_plan` registers as a `builtin` (LOW, agent-only), its `input_model` renders a
+valid OpenAI fn schema (nested `$defs`), and a direct call returns the plan in `data["plan"]`. A
+**full agent-loop test** (stubbed inference emits a `task_plan` call) confirmed it **auto-runs** —
+no `tool.permission` — the `tool.result` carries `data.plan`, the loop continues to a text summary
+(`done` completed), and the `tool_call` + `tool_result` (with `data.plan`) **persist** + round-trip.
+Backend relaunched on 5433; `/api/actions` lists `task_plan` (8 tools). **Not yet eyeballed live:**
+whether `minig+` actually calls `task_plan` for a multi-step ask, and the panel @390px — **owner to
+do the side-by-side** (the `.b.plan` panel is net-new from vapor tokens).
+
 **Verified (Phase 4c):** backend `compileall` clean; frontend `tsc -b` + `vite build` clean. A
 stubbed-inference script confirmed `ChatRequest.mode` sanitizes (`local`/`cloud` kept, junk→`None`,
 absent→`None`) and that `run_turn(mode="cloud")` forwards `mode` to `stream_chat` (turn → `completed`).
@@ -383,24 +422,28 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — Phase 4d (`task_plan` + plan panel)
+## First action — commit Phase 4d, then Phase 4e (context compaction)
 
-Tree is clean (4c committed + pushed, `b44c039`). Optional 4b/4c follow-ups, none blocking 4d —
-each is an **owner eyeball**, not a code task:
-- **Eyeball 4b+4c live against `minig+`**: send a fleet question — confirm the model emits tool
-  calls, the `.b.cmd` bubble streams in, and a `shutdown_host`/`stop_service` shows the confirm bubble
-  + resume round-trip. Confirm a prose reply renders as **markdown** and a fenced code block shows the
-  copy/edit bar. If the thinking model's native tool-calling is unreliable, that's the **capability
-  fallback** item (prompted-JSON → same `ToolCallPart` path; TODO 4c).
-- **Side-by-side @390px** of the markdown bubble + `.md-code` bar vs the Vapor look (D7) — owner's call.
+Phase 4d is in the working tree (compileall + frontend build + the registration/agent-loop scripts
+all clean) but **uncommitted** — review the diff and commit it first (footer per `CLAUDE.md`).
+Optional 4b/4c/4d follow-ups, none blocking 4e — each is an **owner eyeball**, not a code task:
+- **Eyeball live against `minig+`**: send a fleet question — confirm the model emits tool calls, the
+  `.b.cmd` bubble streams in, and a `shutdown_host`/`stop_service` shows the confirm bubble + resume.
+  Give it a **multi-step** ask ("wake titan then start minecraft") and confirm it calls `task_plan`
+  and the **plan panel** renders/updates. Confirm a prose reply renders as **markdown** with the
+  code-block copy/edit bar. If the thinking model's native tool-calling is unreliable, that's the
+  **capability fallback** item (prompted-JSON → same `ToolCallPart` path; TODO 4c).
+- **Side-by-side @390px** of the markdown bubble, `.md-code` bar, and the `.b.plan` panel vs the Vapor
+  look (D7) — owner's call.
 - Cloud mode + the SSH service/shutdown path are still untested against a real host (shared one SSH path).
 
-Open `TODO.md` → **Phase 4 → 4c+** (the routing/markdown bullet is now `[x]`). Next runnable slices:
-1. **`task_plan` built-in tool (4d):** the agent maintains a per-thread plan/task list (steps +
-   status); render it as a `plan` message-kind panel in chat. Extensible — a new agent tool stays one
-   file. (Capability fallback for weak local tool-calling can fold in here if `minig+` needs it.)
-2. Then **4e** compaction (selectable summarizer), **4f** MCP + SearXNG + embeddings (D9). Keep
-   agents/skills/orchestration behind swappable strategies (D11). Each sub-slice stays runnable.
+Open `TODO.md` → **Phase 4 → 4c+** (`task_plan` is now `[x]`). Next runnable slices:
+1. **Context compaction (4e, D10/D11):** near the token budget (configurable threshold) + manual
+   `/compact`, summarize older turns into the working context; keep full history in SQLite; emit a
+   `sys` notice. **Summarizer model selectable** (local/cloud + name), independent of the chat model.
+   The `/compact` slash verb slots into the `lib/composer.ts` router built in 4c.
+2. Then **4f** MCP + SearXNG + embeddings (D9). Keep agents/skills/orchestration behind swappable
+   strategies (D11). Each sub-slice stays runnable.
 
 **Resume protocol (4b, for reference):** the confirm bubble's execute/dismiss POSTs
 `/api/agent/resume {thread_id, call_id, decision, confirm_token}` and consumes a **fresh SSE stream**

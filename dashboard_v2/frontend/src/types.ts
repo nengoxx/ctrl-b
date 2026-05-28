@@ -109,6 +109,19 @@ export interface InvokeResponse {
   event?: CtrlEvent;
 }
 
+// ── Plan (Phase 4d). Mirror of domain/plan.py — carried in a task_plan ToolResult's `data.plan`. ──
+
+export type PlanStepStatus = "pending" | "active" | "done";
+
+export interface PlanStep {
+  text: string;
+  status: PlanStepStatus;
+}
+
+export interface Plan {
+  steps: PlanStep[];
+}
+
 // ── Agent chat (Phase 4a). Mirror of domain/conversation.py + the SSE wire protocol (DESIGN §12). ──
 
 export type Role = "user" | "assistant" | "system" | "tool";

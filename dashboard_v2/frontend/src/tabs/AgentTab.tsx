@@ -1,9 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
 import { initChat, resumeCall, useChat } from "../store/chat";
-import type { ChatMessage, Part, ToolCallPart, ToolResult } from "../types";
+import type { ChatMessage, Part, Plan, PlanStep, ToolCallPart, ToolResult } from "../types";
 
 // Agent chat tab (Phase 4a + 4b). Renders the live thread from the chat store as Vapor bubbles
 // (sys / user / bot), streaming token-by-token, with a thinking model's reasoning in a dimmed
@@ -32,6 +32,79 @@ function callLine(call: ToolCallPart): string {
     .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
     .join(" ");
   return args ? `${call.tool} ${args}` : call.tool;
+}
+
+/** Pull the plan from a task_plan pair — prefer the executed result's `data.plan`, fall back to the
+ *  call args so it renders the instant the call streams in (before the result lands). */
+function planFrom(call: ToolCallPart, result: ToolResult | undefined): Plan | null {
+  const fromResult = (result?.data as { plan?: Plan } | undefined)?.plan;
+  if (fromResult && Array.isArray(fromResult.steps)) return fromResult;
+  const fromArgs = call.args as { steps?: PlanStep[] };
+  if (Array.isArray(fromArgs.steps)) return { steps: fromArgs.steps };
+  return null;
+}
+
+/** The checklist itself (shared by the inline breadcrumb's expansion and the pinned panel). */
+function PlanSteps({ plan }: { plan: Plan }) {
+  return (
+    <ul className="plan-steps">
+      {plan.steps.map((s, i) => (
+        <li key={i} className={"plan-step " + s.status}>
+          <span className="tick" aria-hidden />
+          <span className="txt">{s.text}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** A task_plan call in the transcript — just a timeline breadcrumb. The live, always-visible view is
+ *  the pinned panel at the top of the chat (the model rewrites the whole list each call). */
+function PlanBubble({ call, result }: { call: ToolCallPart; result: ToolResult | undefined }) {
+  const plan = planFrom(call, result);
+  const total = plan?.steps.length ?? 0;
+  const done = plan?.steps.filter((s) => s.status === "done").length ?? 0;
+  return (
+    <div className="b sys plan-note">
+      <div className="body">
+        // plan · {done}/{total}
+      </div>
+    </div>
+  );
+}
+
+/** The current plan as a minimized tab that hangs from the top of the chat and drops the checklist
+ *  down when tapped. Sticky so it stays reachable while the transcript scrolls; collapsed by default
+ *  (the dropdown overlays the chat, so opening it doesn't reflow the messages). */
+function PinnedPlan({ plan }: { plan: Plan }) {
+  const total = plan.steps.length;
+  const done = plan.steps.filter((s) => s.status === "done").length;
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="plan-pin">
+      <div className="plan-pin-wrap">
+        <button
+          type="button"
+          className={"plan-pin-head" + (open ? " open" : "")}
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+        >
+          <span className="plan-title">plan</span>
+          <span className="plan-count">
+            {done}/{total}
+          </span>
+          <span className="chev" aria-hidden>
+            ▾
+          </span>
+        </button>
+        {open && (
+          <div className="plan-drop">
+            <PlanSteps plan={plan} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function CmdBubble({
@@ -152,9 +225,13 @@ function Bubbles({
           </div>
         </div>
       )}
-      {calls.map((c) => (
-        <CmdBubble key={c.call_id} call={c} result={resultFor(c.call_id)} ts={m.ts} />
-      ))}
+      {calls.map((c) =>
+        c.tool === "task_plan" ? (
+          <PlanBubble key={c.call_id} call={c} result={resultFor(c.call_id)} />
+        ) : (
+          <CmdBubble key={c.call_id} call={c} result={resultFor(c.call_id)} ts={m.ts} />
+        ),
+      )}
     </>
   );
 }
@@ -217,13 +294,19 @@ export function AgentTab({ active }: Props) {
   }, [active]);
 
   // Pair tool results to their calls by id across the whole thread (live appends + reloaded
-  // separate `tool` messages both land here).
+  // separate `tool` messages both land here). Also track the most-recent task_plan call → its plan
+  // is the current one, shown in the pinned panel (the model rewrites the whole list each call).
   const resultByCall: Record<string, ToolResult> = {};
+  let latestPlanCall: ToolCallPart | null = null;
   for (const m of messages) {
     for (const p of m.parts) {
       if (p.type === "tool_result") resultByCall[p.call_id] = p.result;
+      if (p.type === "tool_call" && p.tool === "task_plan") latestPlanCall = p;
     }
   }
+  const currentPlan = latestPlanCall
+    ? planFrom(latestPlanCall, resultByCall[latestPlanCall.call_id])
+    : null;
 
   return (
     <div className={"tab" + (active ? " active" : "")} id="tab-agent" data-screen-label="02 Agent">
@@ -232,6 +315,7 @@ export function AgentTab({ active }: Props) {
         <b>Chat</b>
         <span className="right">one agent · one thread</span>
       </div>
+      {currentPlan && currentPlan.steps.length > 0 && <PinnedPlan plan={currentPlan} />}
       <div className="chat-log" id="chatlog">
         {!messages.length && (
           <div className="b sys">

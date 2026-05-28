@@ -240,7 +240,11 @@ async function streamTurn(
         break;
       case "done":
         settled = true;
-        // suspended / capped / completed all return the user to an interactive state.
+        // suspended / capped / completed all return the user to an interactive state. `capped` means
+        // the loop hit its step limit mid-task — say so, so a long fan-out never looks silently stuck.
+        if (data.state === "capped") {
+          pushSystemNote("// reached the step limit — send a message to continue");
+        }
         set({ status: data.state === "error" ? "error" : "idle", streamingId: null });
         break;
     }
