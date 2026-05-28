@@ -12,9 +12,9 @@ pitfalls of holding the SDK's anyio-task-group sessions open across FastAPI's li
 **failure isolation** trivial — a down server just fails its own call into a clean `ToolResult`,
 never crashing the agent. Cost is a per-call MCP handshake, fine at homelab scale.
 
-Transport: **Streamable HTTP** (the current spec transport) is wired here. `stdio` (local
-subprocess) is a marked follow-up — the owner's only server is Streamable HTTP, so shipping
-untested stdio code would be guesswork.
+Transports: **Streamable HTTP** (`url` + optional `headers`) and **stdio** (a local subprocess —
+`command`/`args`/`env`, the operator's env merged onto the SDK's safe default so `PATH` survives).
+Both converge on a `ClientSession`; the rest of the flow (discover/wrap/call) is transport-agnostic.
 
 Names are namespaced `mcp__<server>__<tool>` (sanitized to the OpenAI function-name charset
 `[A-Za-z0-9_-]`, ≤64 chars) so two servers can expose a same-named tool without colliding.
@@ -135,22 +135,38 @@ class McpClient:
 
     @asynccontextmanager
     async def _session(self, server: McpServerCfg) -> AsyncIterator:
-        """Open one short-lived MCP session over the server's transport. Entered + exited within a
-        single coroutine (the SDK's anyio task groups require that)."""
-        if server.transport != "streamable_http":
-            raise McpError(f"transport '{server.transport}' not wired yet (stdio is a follow-up)")
-        if not server.url:
-            raise McpError("no url configured for streamable_http server")
+        """Open one short-lived MCP session over the server's transport — Streamable HTTP (`url`) or
+        stdio (a local subprocess: `command`/`args`/`env`). Both converge on a `ClientSession`,
+        entered + exited within a single coroutine (the SDK's anyio task groups require that)."""
         # Imported lazily so the module loads even if a transport's extra isn't present.
         from mcp import ClientSession
-        from mcp.client.streamable_http import streamablehttp_client
 
-        async with streamablehttp_client(
-            server.url, headers=server.headers or None, timeout=server.connect_timeout_s
-        ) as (read, write, _get_session_id):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                yield session
+        if server.transport == "streamable_http":
+            if not server.url:
+                raise McpError("no url configured for streamable_http server")
+            from mcp.client.streamable_http import streamablehttp_client
+
+            async with streamablehttp_client(
+                server.url, headers=server.headers or None, timeout=server.connect_timeout_s
+            ) as (read, write, _get_session_id):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    yield session
+        elif server.transport == "stdio":
+            if not server.command:
+                raise McpError("no command configured for stdio server")
+            from mcp import StdioServerParameters
+            from mcp.client.stdio import get_default_environment, stdio_client
+
+            # Merge the operator's env onto the SDK's safe default (keeps PATH so `npx`/`uvx` resolve).
+            env = {**get_default_environment(), **server.env} if server.env else None
+            params = StdioServerParameters(command=server.command, args=server.args, env=env)
+            async with stdio_client(params) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    yield session
+        else:
+            raise McpError(f"unsupported MCP transport '{server.transport}'")
 
     async def discover(self, registry: "ToolRegistry") -> list[dict]:
         """Connect to each enabled server, list its tools, and register a wrapper per tool into the

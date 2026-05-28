@@ -19,10 +19,10 @@ emma's `web-tools` (5 crawl4ai/SearXNG tools), (3) curated **open-terminal** she
 (configurable per-op risk), (4) a **generic OpenAPI tool provider** (for Open WebUI tool servers /
 any OpenAPI service), and (5) an **embeddings client** (OpenRouter `qwen/qwen3-embedding-4b`,
 verified live). All flow through the one registry → `ActionService` → gate → `.b.cmd` bubble. The
-only 4f leftover is the small **MCP stdio** transport (no stdio server to test against yet). **Next
-up is Phase 4.5 (skills + agents/subagents, D10/D11)** — or wiring real Open WebUI tool servers /
-cloud chat. This doc is the orientation; canonical detail is in the other `docs/` files. **The
-pixel-exact Vapor fidelity mandate (D7) still governs every new component.**
+MCP supports **both transports** (Streamable HTTP + stdio, both live-verified). **Next up is Phase
+4.5 (skills + agents/subagents, D10/D11)** — or wiring real Open WebUI tool servers / cloud chat.
+This doc is the orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor
+fidelity mandate (D7) still governs every new component.**
 
 > ## ⭐ The standing Vapor-fidelity mandate (D7) — applies to every phase
 > The owner's priority is a **faithful, pixel-exact execution of `vapor.html`** — not "inspired by."
@@ -83,8 +83,8 @@ collapsed disclosure. `vapor.css` stays untouched (D7); all net-new CSS is in `e
 access / sandbox disabled — see the run gotchas), frontend Vite on **5190**. Confirm health at
 `/api/health` direct + via the `:5190/api` proxy. A Vite server may already be live on 5190 (HMR).
 **Phase 4f essentially done: `web_search` (SearXNG), the MCP client, curated open-terminal tools, a
-generic OpenAPI tool provider, and the embeddings client all landed** (see below). Only the small
-MCP **stdio** transport remains. The 4e file list further down is reference for earlier work.
+generic OpenAPI tool provider, and the embeddings client all landed** (see below); MCP supports both
+Streamable HTTP and stdio. The 4e file list further down is reference for earlier work.
 
 ⭐ NEW in Phase 4f — embeddings client (`backend/app/`):
 ```
@@ -148,7 +148,7 @@ emma — fine under tailnet-only/no-public-bind, worth knowing; keep exec/writes
                                #     (to_openai_tools prefers it over input_model.model_json_schema())
   adapters/mcp_client.py       # ⭐ McpClient — discover() registers an McpTool per remote tool into the
                                #     shared registry; call() opens a fresh session per call; per-server
-                               #     failure isolation; Streamable HTTP wired, stdio = marked McpError stub
+                               #     failure isolation; both transports wired (Streamable HTTP + stdio)
   main.py                      #   lifespan: build McpClient → discover into the registry → app.state.mcp(_summary)
   pyproject.toml               #   + mcp==1.27.1
 ```
@@ -174,8 +174,12 @@ proceeds). **Verified:** unit (fake session — discovery, raw-schema passthroug
 call→ToolResult, `isError`→ERROR, down-server isolation, med-risk gating at agent privilege) + boot
 (`/api/actions` lists the MCP tools) + **live against emma's `web-tools`** (`http://192.168.1.160:3003/mcp`:
 5 tools discovered — search_web / search_and_crawl / crawl4ai_crawl / _crawl_stream / _markdown — and
-a live `search_web` call returned real results). **Follow-ups:** stdio transport (owner has no stdio
-server to test against — shipped as a clear `McpError` stub, not guesswork); hot re-discovery on a
+a live `search_web` call returned real results) **+ stdio live** against
+`@modelcontextprotocol/server-filesystem` via `npx` (14 tools; the server's `readOnlyHint`/
+`destructiveHint` annotations drove reads→LOW/auto-run, writes→HIGH/confirm — proving `_risk_for`
+against a server that actually annotates). **`_session()`** branches on `transport`: Streamable HTTP
+(`url`/`headers`) or stdio (`StdioServerParameters` with the operator env merged onto
+`get_default_environment()` so `PATH`/`npx`/`uvx` resolve). **Follow-ups:** hot re-discovery on a
 config `PUT` (Phase 7); rendering MCP `output` in the bubble (arbitrary text/JSON — a generic
 disclosure like `web_search`'s links, later polish).
 
@@ -633,11 +637,9 @@ agents/subagents, D10/D11)** — see `TODO.md` "Phase 4.5" and `DECISIONS.md` D1
 slice + commit (footer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`).
 
 **Small 4f leftovers (optional, non-blocking):**
-- **MCP stdio transport:** `adapters/mcp_client.py` `_session()` raises a clear `McpError` for
-  `transport="stdio"` today (no stdio server to test against — left untested rather than guessed).
-  Add `stdio_client` + `StdioServerParameters` when there's one. Also: hot re-discovery on a settings
-  `PUT` (Phase 7); rendering MCP/OpenAPI `output` in the bubble (a generic disclosure, like
-  `web_search`'s links).
+- **MCP follow-ups:** both transports are done (Streamable HTTP + stdio). Still open: hot
+  re-discovery on a settings `PUT` (Phase 7); rendering MCP/OpenAPI `output` in the bubble (a generic
+  disclosure, like `web_search`'s links).
 - **Cloud chat:** the OpenRouter key (now in `config.yaml`'s `embeddings:` block, and in the root
   `config.yaml`'s `cloud_inference_key`) could also fill `inference.cloud` (base_url
   `https://openrouter.ai/api/v1`, a chat model id) to make `/cloud` work — currently unconfigured.
@@ -666,13 +668,10 @@ Optional 4b/4c/4d/4e follow-ups, none blocking — each is an **owner eyeball**,
   would still gate that tool even at `risk: low`.)
 - Cloud mode + the SSH service/shutdown path are still untested against a real host (shared one SSH path).
 
-Open `TODO.md` → **Phase 4 → 4c+** (`task_plan`, compaction, `web_search`, MCP client are now
-`[x]`/`[~]`). Next runnable slice:
-1. **4f remaining** — the **embeddings client** (D9): wire the configured llama.cpp `/v1/embeddings`
-   (`EmbeddingsCfg` + `InferenceClient.embed`) to power the vector `MemoryProvider` when that lands
-   (Phase 7). Then the small MCP **stdio** follow-up. Keep agents/skills/orchestration behind
-   swappable strategies (D11). Each sub-slice stays runnable. *(SearXNG `web_search` + MCP-client
-   Streamable-HTTP ✅ done.)*
+Open `TODO.md` → **Phase 4** is fully `[x]` (4a–4f). **Phase 4f is complete**: web_search, MCP client
+(Streamable HTTP **+ stdio**), open-terminal tools, generic OpenAPI provider, embeddings. Next
+runnable slice is **Phase 4.5 (skills + agents/subagents, D10/D11)** — keep skill-selection +
+orchestration behind swappable strategies (D11); prior art in `RESEARCH.md`.
 
 **Resume protocol (4b, for reference):** the confirm bubble's execute/dismiss POSTs
 `/api/agent/resume {thread_id, call_id, decision, confirm_token}` and consumes a **fresh SSE stream**

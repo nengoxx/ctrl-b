@@ -149,7 +149,7 @@ tools + confirm bubbles) are DONE.**
 - [ ] Capability fallback for weak local models (draft-into-bubble, no native tools). *(Eyeball
       `minig+` native tool-calling first — if unreliable, build the prompted-JSON path into the same
       `ToolCallPart` flow.)*
-- [~] **MCP client (4f, D9):** **Streamable HTTP done** — `adapters/mcp_client.py` `McpClient`
+- [x] **MCP client (4f, D9):** **Streamable HTTP + stdio done** — `adapters/mcp_client.py` `McpClient`
       discovers each configured server's tools at startup and registers an `McpTool` wrapper per
       tool into the **same** registry (so they flow through `ActionService` + the confirm gate + the
       `.b.cmd` bubble). Names namespaced `mcp__<server>__<tool>` (OpenAI charset, ≤64); native
@@ -157,12 +157,14 @@ tools + confirm bubbles) are DONE.**
       permissive passthrough — the remote validates). Per-server `risk` (default `med` → gates;
       `low` auto-runs) + **failure isolation** (a down server logs + registers 0 tools, never fatal).
       Connection is **per-call** (fresh short-lived session) to dodge anyio-task-group lifecycle
-      pitfalls. `McpServerCfg` + `Settings.mcp_servers`; `mcp==1.27.1` pinned; wired in `main.py`
-      lifespan (`app.state.mcp` + `mcp_summary`). Verified unit (fake session: discovery, schema
-      passthrough, call→ToolResult, isError, isolation, med-gate) + **live against emma's web-tools**
-      (5 tools discovered: search_web/search_and_crawl/crawl4ai_*; a live `search_web` call returns
-      real results). **Remaining:** **stdio** transport (marked `McpError` stub — owner has no stdio
-      server to test against) + hot re-discovery on config change (Phase 7).
+      pitfalls. **Both transports wired** in `_session()`: Streamable HTTP (`url`/`headers`) and
+      **stdio** (`command`/`args`/`env`, operator env merged onto the SDK default so `PATH`/`npx`
+      resolve). `McpServerCfg` + `Settings.mcp_servers`; `mcp==1.27.1` pinned; wired in `main.py`
+      lifespan (`app.state.mcp` + `mcp_summary`). Verified unit (fake session) + **live**: emma's
+      web-tools over Streamable HTTP (5 tools, real `search_web` call) **and** a stdio
+      `@modelcontextprotocol/server-filesystem` via `npx` (14 tools; its `readOnlyHint`/`destructiveHint`
+      annotations drove reads→LOW/auto-run, writes→HIGH/confirm — proving annotation-aware risk).
+      **Remaining:** hot re-discovery on config change (Phase 7).
 - [x] **SearXNG `web_search` tool (4f, D9):** a LOW-risk `category="utility"`, agent-only `@action`
       (`services/actions/web_search.py`) over a new `adapters/searxng.py` `SearxngClient` (cached
       `httpx.AsyncClient`, hits `/search?format=json`, normalizes hits, raises `SearxngError` on
