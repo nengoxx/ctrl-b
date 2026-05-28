@@ -16,12 +16,17 @@ from app.services.actions._common import ServiceTargetInput
 @action(
     "open_service_url",
     title="Open service URL",
+    description=(
+        "Build the browser URL for a service (http://host:port/path) from config so the owner can "
+        "open it. This ONLY constructs the link — it does NOT contact the service, so a returned "
+        "URL is NOT evidence the service is running. To confirm a service is up, use `check_service`."
+    ),
     icon="external-link",
     risk=Risk.LOW,
     ui_exposed=False,
 )
 async def open_service_url(inp: ServiceTargetInput, ctx: InvocationContext) -> ToolResult:
-    """Return the browser URL for a service (http://host:port/path)."""
+    """Return the browser URL for a service (http://host:port/path). Does not test reachability."""
     svc = ctx.deps.services.service(inp.service_id)
     if svc is None:
         return ToolResult(state=RunState.ERROR, summary=f"unknown service '{inp.service_id}'")
@@ -29,6 +34,10 @@ async def open_service_url(inp: ServiceTargetInput, ctx: InvocationContext) -> T
     if url is None:
         return ToolResult(
             state=RunState.DENIED,
-            summary=f"{svc.name} has no reachable URL (no port or unknown host)",
+            summary=f"{svc.name} has no URL (no port or unknown host)",
         )
-    return ToolResult(state=RunState.OK, summary=f"{svc.name} → {url}", data={"url": url})
+    return ToolResult(
+        state=RunState.OK,
+        summary=f"{svc.name} → {url} (link only — not checked; use check_service to confirm it is up)",
+        data={"url": url},
+    )
