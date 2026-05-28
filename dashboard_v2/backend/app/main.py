@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.adapters.inference import InferenceClient
+from app.adapters.mcp_client import McpClient
 from app.adapters.searxng import SearxngClient
 from app.api import actions, agent, events, health, hosts, services
 from app.config import load_dotenv, load_settings
@@ -57,7 +58,13 @@ async def lifespan(app: FastAPI):
         services=app.state.services,
         searxng=app.state.searxng,
     )
-    app.state.actions = ActionService(build_registry(), deps)
+    # MCP (Phase 4f): discover each configured server's tools at startup and merge them into the
+    # shared registry, so the agent sees them alongside built-in actions. Per-server isolated — a
+    # down server is logged + skipped (its tools just won't be present this run), never fatal.
+    registry = build_registry()
+    app.state.mcp = McpClient(app.state.settings.mcp_servers)
+    app.state.mcp_summary = await app.state.mcp.discover(registry)
+    app.state.actions = ActionService(registry, deps)
 
     # Chat stack (Phase 4a): one OpenAI-compatible client + the thread/message repos. The
     # AgentSession is built per turn in the API from these (stateless across turns).

@@ -136,6 +136,31 @@ class SearxngCfg(BaseModel):
     language: str | None = None      # optional default UI language passed to SearXNG (e.g. "en")
 
 
+class McpServerCfg(BaseModel):
+    """One MCP server the agent connects to as a client (Phase 4f, D9). `transport` selects the
+    wire: `streamable_http` (the current spec transport — `url` + optional `headers`) or `stdio`
+    (a local subprocess — `command` + `args` + `env`; wired in a later slice). Each server's tools
+    are namespaced `mcp__<server>__<tool>` and registered into the same registry as built-in
+    actions, so they flow through the same permission gate + agent loop. `risk` sets the gate for
+    *all* of this server's tools — `med`/`high` make the agent confirm before each call (safe
+    default for remote tools); set `low` for a server you fully trust to let its tools auto-run."""
+
+    model_config = {"extra": "allow"}
+
+    name: str
+    transport: str = "streamable_http"     # "streamable_http" | "stdio"
+    enabled: bool = True
+    risk: str = "med"                       # low | med | high — gate for this server's tools
+    connect_timeout_s: float = 10.0         # bound startup discovery + per-call connect
+    # streamable_http
+    url: str = ""                           # e.g. http://192.168.1.160:3003/mcp
+    headers: dict[str, str] = Field(default_factory=dict)
+    # stdio (later slice)
+    command: str = ""
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+
+
 def _slug(name: str) -> str:
     """Stable id from a host name: lowercase, non-alphanumerics → '-' (DESIGN.md §2)."""
     s = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
@@ -194,6 +219,7 @@ class Settings(BaseModel):
     inference: InferenceCfg = Field(default_factory=InferenceCfg)
     agent: AgentCfg = Field(default_factory=AgentCfg)
     searxng: SearxngCfg = Field(default_factory=SearxngCfg)
+    mcp_servers: list[McpServerCfg] = Field(default_factory=list)
     #: Keyed by host name, preserving the live `wol_server_win.py` `computers{}` shape so the
     #: owner can copy their existing config.yaml unchanged (HANDOFF — migration reference).
     computers: dict[str, ComputerCfg] = Field(default_factory=dict)

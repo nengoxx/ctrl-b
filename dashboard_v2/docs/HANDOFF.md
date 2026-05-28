@@ -13,10 +13,12 @@ added the agent-only **`task_plan`** builtin + a live **plan panel** (TodoWrite-
 **4e** added **context compaction**: before each model call the loop folds the oldest complete turns
 into a summary system message when the working context exceeds a configurable token threshold (or on
 manual `/compact`), keeping full history in SQLite — with a **separately selectable summarizer
-model**. **Phase 4f is now in progress: the SearXNG `web_search` slice is done** — a LOW-risk
-agent-only tool over a new `SearxngClient` (the agent can now search the web; verified live against
-emma). The **remaining 4f slices are MCP client + embeddings** — each a runnable slice (don't build
-it all at once). This doc is the orientation; canonical detail is in the other `docs/`
+model**. **Phase 4f is now in progress: two slices done** — (1) the SearXNG `web_search` tool
+(agent web search; collapsible result links in the bubble) and (2) the **MCP client** (Streamable
+HTTP) which discovers each configured server's tools and merges them into the same registry —
+verified live against emma's `web-tools` (5 crawl4ai/SearXNG tools). The **remaining 4f work is the
+embeddings client** (+ MCP **stdio** transport as a small follow-up) — each a runnable slice (don't
+build it all at once). This doc is the orientation; canonical detail is in the other `docs/`
 files. **The pixel-exact Vapor fidelity mandate (D7) still governs every new component.**
 
 > ## ⭐ The standing Vapor-fidelity mandate (D7) — applies to every phase
@@ -60,9 +62,44 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
 **Everything through Phase 4e is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181`
 · 4c `b44c039` · doc `d4e704b` · 4d `df612e3` · **4e `60f8e68`** · vite-host fix `f2774b8`).
-**Phase 4f is underway: the `web_search` (SearXNG) slice landed this session** (see below) — the
-remaining 4f slices are **MCP client + embeddings**. The 4e file list below is reference for what
-landed earlier.
+**Phase 4f is underway: the `web_search` (SearXNG) + MCP-client slices landed** (see below) — the
+remaining 4f work is the **embeddings client** (+ MCP **stdio** transport, a small follow-up). The
+4e file list further down is reference for what landed earlier.
+
+⭐ NEW in Phase 4f — MCP client slice (`backend/app/`):
+```
+  config.py                    # ⭐ McpServerCfg (transport/url/headers/command/args/env/risk/…) + Settings.mcp_servers
+  core/tool.py                 # ⭐ ToolSpec.raw_schema — native JSON Schema handed to the model when set
+                               #     (to_openai_tools prefers it over input_model.model_json_schema())
+  adapters/mcp_client.py       # ⭐ McpClient — discover() registers an McpTool per remote tool into the
+                               #     shared registry; call() opens a fresh session per call; per-server
+                               #     failure isolation; Streamable HTTP wired, stdio = marked McpError stub
+  main.py                      #   lifespan: build McpClient → discover into the registry → app.state.mcp(_summary)
+  pyproject.toml               #   + mcp==1.27.1
+```
+**Design:** the agent must see MCP tools as just more entries in the one toolset (DESIGN §3), so each
+discovered remote tool is wrapped as an `McpTool` (the `Tool` protocol) and **registered into the
+same `ToolRegistry`** as built-in actions — it then flows through the existing `ActionService`
+(validate → `decide()` gate → execute → audit Event) and renders in the same `.b.cmd` bubble; the
+loop never special-cases MCP. Names are `mcp__<server>__<tool>` (sanitized to the OpenAI
+function-name charset `[A-Za-z0-9_-]`, ≤64 chars — **colons from the DESIGN's `mcp:server:tool`
+would be rejected by the API**, so `__` is used). The remote's native `inputSchema` is handed to the
+model via the new `ToolSpec.raw_schema`; arg **validation is a permissive passthrough**
+(`_PassthroughArgs`, `extra="allow"`) because the remote server validates — a faithful
+JSON-Schema→pydantic build would be fragile. Per-server **`risk`** (default `med` → the agent
+confirms each call, safe for remote tools; set `low` to auto-run a trusted server). Connection is
+**per-call** (a fresh short-lived `streamablehttp_client` + `ClientSession` entered/exited in one
+coroutine) — this dodges the SDK's anyio-task-group lifecycle pitfalls of holding sessions open
+across the lifespan, and makes **failure isolation** trivial (a down server fails into a clean
+`ToolResult`, never crashing the agent; discovery of a down server logs + registers 0 tools, startup
+proceeds). **Verified:** unit (fake session — discovery, raw-schema passthrough to OpenAI tools,
+call→ToolResult, `isError`→ERROR, down-server isolation, med-risk gating at agent privilege) + boot
+(`/api/actions` lists the MCP tools) + **live against emma's `web-tools`** (`http://192.168.1.160:3003/mcp`:
+5 tools discovered — search_web / search_and_crawl / crawl4ai_crawl / _crawl_stream / _markdown — and
+a live `search_web` call returned real results). **Follow-ups:** stdio transport (owner has no stdio
+server to test against — shipped as a clear `McpError` stub, not guesswork); hot re-discovery on a
+config `PUT` (Phase 7); rendering MCP `output` in the bubble (arbitrary text/JSON — a generic
+disclosure like `web_search`'s links, later polish).
 
 ⭐ NEW in Phase 4f — `web_search` slice (`backend/app/`):
 ```
@@ -508,22 +545,18 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — Phase 4f, remaining slices (MCP client + embeddings)
+## First action — Phase 4f, remaining work (embeddings; MCP stdio follow-up)
 
-**The `web_search` slice landed this session** (commit pending — see top of "Current state"); the
-two remaining 4f slices are **MCP client** and **embeddings**. Pick one and do it as its own
-runnable slice + commit (footer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`).
-- **MCP client (next-recommended):** connect emma's configured Streamable-HTTP server
-  (`mcp_servers[0]`, `http://192.168.1.160:3003/mcp`, crawl4ai) with the **official Python `mcp`
-  SDK** (add to `pyproject.toml`); wrap each discovered remote tool into an `McpTool` (`Tool`
-  protocol, `name="mcp:<server>:<tool>"`, risk from config / default conservative) and merge into
-  the same `agent_tools()` set; **isolate per-server failures** (a down server marks its tools
-  unavailable, never crashes the agent). Start with that one server end-to-end, then generalize to
-  the `mcp_servers[]` list + stdio transport. `web_search` already proves the "remote-call → wrap
-  as a `Tool` → flows through `ActionService` → renders in the `.b.cmd` bubble" path.
-- **Embeddings client:** wire the configured llama.cpp `/v1/embeddings` (an `EmbeddingsCfg` +
+**`web_search` + the MCP client (Streamable HTTP) both landed.** Remaining 4f work, each its own
+runnable slice + commit (footer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`):
+- **Embeddings client (next):** wire the configured llama.cpp `/v1/embeddings` (an `EmbeddingsCfg` +
   `InferenceClient.embed`) — powers the vector `MemoryProvider` when that lands (Phase 7), so no
-  user-visible behavior yet; smallest of the three.
+  user-visible behavior yet; smallest remaining piece.
+- **MCP stdio transport (small follow-up):** `adapters/mcp_client.py` `_session()` raises a clear
+  `McpError` for `transport="stdio"` today (the owner has only a Streamable-HTTP server, so stdio
+  was left untested rather than guessed). Add `stdio_client` + `StdioServerParameters` when there's
+  a stdio server to verify against. Also: hot re-discovery on a settings `PUT` (Phase 7) and
+  rendering MCP `output` in the bubble (a generic disclosure, like `web_search`'s links).
 
 Optional 4b/4c/4d/4e follow-ups, none blocking — each is an **owner eyeball**, not a code task:
 - **Eyeball live against `minig+`**: send a fleet question — confirm the model emits tool calls, the
@@ -538,18 +571,22 @@ Optional 4b/4c/4d/4e follow-ups, none blocking — each is an **owner eyeball**,
 - **Side-by-side @390px** of the markdown bubble, `.md-code` bar, and the `.b.plan` panel vs the Vapor
   look (D7) — owner's call.
 - **`web_search` live (4f):** ask the agent something it must look up ("search the web for …") and
-  confirm `minig+` actually calls `web_search`, the `.b.cmd` bubble shows the result, and the model
-  uses the hits in its answer. (The tool + live SearXNG are verified; this is the model-behavior check.)
+  confirm `minig+` actually calls `web_search`, the `.b.cmd` bubble shows the result + the collapsed
+  **links** disclosure, and the model uses the hits. (Tool + live SearXNG verified; model-behavior check.)
+- **MCP live (4f):** the agent now also has emma's 5 `mcp__web-tools__*` tools (crawl4ai/SearXNG).
+  They're `risk=med` → the `.b.cmd` **confirm bubble** appears before each call (set `risk: low` on
+  the server in `config.yaml` to auto-run a trusted server). Confirm `minig+` picks an MCP tool for a
+  crawl/search ask, the confirm→execute round-trip works, and the result feeds back. (Discovery + a
+  live `search_web` call are verified; this is the model-behavior + confirm-UX check.)
 - Cloud mode + the SSH service/shutdown path are still untested against a real host (shared one SSH path).
 
-Open `TODO.md` → **Phase 4 → 4c+** (`task_plan`, compaction, `web_search` are now `[x]`). Next
-runnable slice:
-1. **4f remaining** — **MCP client** + **embeddings** (D9), real targets staged in the owner's
-   `config.yaml` (emma `mcp_servers` Streamable-HTTP crawl4ai + the `/v1/embeddings` backend). Connect
-   the one MCP server end-to-end first (official Python MCP SDK, stdio + Streamable HTTP), merge its
-   tools into the same `agent_tools()` set, then generalize; embeddings client for the vector
-   `MemoryProvider`. Keep agents/skills/orchestration behind swappable strategies (D11). Each
-   sub-slice stays runnable. *(SearXNG `web_search` ✅ done this session.)*
+Open `TODO.md` → **Phase 4 → 4c+** (`task_plan`, compaction, `web_search`, MCP client are now
+`[x]`/`[~]`). Next runnable slice:
+1. **4f remaining** — the **embeddings client** (D9): wire the configured llama.cpp `/v1/embeddings`
+   (`EmbeddingsCfg` + `InferenceClient.embed`) to power the vector `MemoryProvider` when that lands
+   (Phase 7). Then the small MCP **stdio** follow-up. Keep agents/skills/orchestration behind
+   swappable strategies (D11). Each sub-slice stays runnable. *(SearXNG `web_search` + MCP-client
+   Streamable-HTTP ✅ done.)*
 
 **Resume protocol (4b, for reference):** the confirm bubble's execute/dismiss POSTs
 `/api/agent/resume {thread_id, call_id, decision, confirm_token}` and consumes a **fresh SSE stream**

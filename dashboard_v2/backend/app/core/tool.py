@@ -34,6 +34,10 @@ class ToolSpec(BaseModel):
     icon: str | None = None
     category: ToolCategory = "action"
     input_model: type[BaseModel]  # → JSON Schema for the agent + request validation
+    #: For tools whose param schema is defined externally (MCP servers): the native JSON Schema to
+    #: hand the model verbatim. When set, it's used over `input_model.model_json_schema()` in
+    #: `to_openai_tools`; `input_model` is then a permissive passthrough (the remote validates).
+    raw_schema: dict[str, Any] | None = None
     risk: Risk = Risk.LOW
     confirm: bool = False  # force confirmation regardless of privilege
     agent_exposed: bool = True
@@ -120,7 +124,7 @@ class ToolRegistry:
                 "function": {
                     "name": t.spec.name,
                     "description": t.spec.description or t.spec.title,
-                    "parameters": t.spec.input_model.model_json_schema(),
+                    "parameters": t.spec.raw_schema or t.spec.input_model.model_json_schema(),
                 },
             }
             for t in (tools if tools is not None else self.agent_tools())

@@ -23,6 +23,7 @@ dependencies = [
     "youtube-transcript-api==1.2.4",
     "beautifulsoup4==4.14.3",
     "aiosqlite==0.22.1",
+    "mcp==1.27.1",
 ]
 
 [build-system]

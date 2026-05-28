@@ -50,6 +50,25 @@ searxng:
   timeout_s: 10
   language: ""             # optional default UI language (e.g. "en"); blank = instance default
 
+# MCP servers the agent connects to as a client (Phase 4f, D9). Each server's tools are discovered
+# at startup and merged into the agent's toolset, namespaced `mcp__<server>__<tool>`. A down server
+# is skipped (its tools just won't be present that run) — it never blocks startup. `risk` gates ALL
+# of that server's tools: med/high → the agent confirms before each call (safe for remote tools);
+# set `low` for a server you trust to let its tools auto-run. Streamable HTTP is wired; stdio TODO.
+mcp_servers:
+  - name: web-tools
+    transport: streamable_http   # streamable_http | stdio
+    url: http://192.168.1.160:3003/mcp
+    # headers: { Authorization: "Bearer …" }   # optional, for an authenticated server
+    risk: med                    # low | med | high
+    enabled: true
+  # A stdio (local subprocess) server — transport not yet wired, shown for shape:
+  # - name: filesystem
+  #   transport: stdio
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
+  #   risk: high
+
 # The fleet, keyed by host name (the live wol_server_win.py `computers{}` shape — copy yours in).
 # Each host's stable id is a slug of its name. ssh_password is a secret: masked on API read,
 # never logged. Omit mac for hosts you won't Wake-on-LAN; omit ssh_* for ping-only hosts.
