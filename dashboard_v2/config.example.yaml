@@ -55,22 +55,31 @@ agent:
 # spawn_subagents that you define below overrides ONLY the fields you set here (e.g. just prompt +
 # tools); everything else is inherited from the parent. With no named subagent, a child is a full
 # clone of the parent. (Privilege is still clamped to the parent unless subagent_clamp_privilege:false.)
+# Tool selection & the weak-model opt-out (Phase 4.5 skills + capability layer):
+#   A weak local model gets confused by a large, namespaced toolset (it hallucinates tool names like
+#   `mcp__fleet_ping` and falls back to web search). Skills fix this WITHOUT globally restricting the
+#   agent: an intent skill (skills/<name>/SKILL.md with `allowed_tools`) AUTO-ACTIVATES when the
+#   request matches its description (KeywordSkillSelector, the little-coder approach) and narrows the
+#   toolset for that turn. Keep `skills: "*"` so all intent skills can self-select.
+#   OPT OUT for a capable model: set `skills: []` on its agent — no auto-narrowing, it sees every tool
+#   and picks for itself (the Claude-Code approach). The selector itself is swappable (D11).
 # agents:
-#   - name: fleetops
-#     prompt: "You manage the PC fleet. Be terse."
-#     tools: [wake_host, ping_host, "*_service", shutdown_host]  # names/globs; "*" = all agent tools
-#     skills: "*"            # skill allowlist or "*" for all discovered skills (Phase 4.5)
-#     privilege: confirm     # readonly | confirm | auto_low | full — gates med/high-risk tools
-#     model:                 # backend+model for this agent; blank fields inherit the chat default
-#       mode: ""             # ""/local/cloud
-#       model: ""
-#     compaction:            # per-agent context window; omit to inherit agent.compaction above
-#       threshold_tokens: 6000
-#       keep_last_messages: 8
+#   - name: local              # weak local model — let intent skills auto-narrow the toolset
+#     model: { mode: local, model: "minig+" }
+#     tools: "*"               # full registry; skills narrow per-turn by intent
+#     skills: "*"              # all discovered skills may auto-activate (fleet, web-research, ...)
+#     privilege: confirm       # readonly | confirm | auto_low | full — gates med/high-risk tools
+#     # Loop-discipline guards (capability layer C1) — raise for a research-heavy agent:
 #     max_iterations: 16
-#     max_subagent_depth: 2
-#     max_concurrent_subagents: 3
-#   - name: researcher       # e.g. spawned as a subagent — set only what differs; rest inherits parent
+#     max_repeat_calls: 2          # identical (tool,args) calls before suppression
+#     max_calls_per_tool: 6        # total calls to any one tool per turn before refusal
+#     max_stall_iterations: 2      # consecutive no-progress iterations before a forced final answer
+#   - name: capable            # strong model — OPT OUT of auto-narrowing; full toolset, own judgment
+#     model: { mode: cloud, model: "anthropic/claude-sonnet-4.5" }
+#     tools: "*"
+#     skills: []               # <- the opt-out: no skill auto-selection / no tool narrowing
+#     max_calls_per_tool: 20   # a capable model can be trusted with a looser leash
+#   - name: researcher         # e.g. spawned as a subagent — set only what differs; rest inherits parent
 #     prompt: "You research topics with web tools and report concisely."
 #     tools: [web_search, "mcp__*"]
 

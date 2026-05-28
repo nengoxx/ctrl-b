@@ -114,14 +114,26 @@ one turn**:
 
 ### Tool-selection guidance (capability layer C2)
 
-The default system prompt carries explicit **routing rules** (use fleet tools + `task_plan` for fleet
-work, `web_search`/crawl only for internet lookups, don't repeat calls), and the model-facing
-`description=` on `task_plan` / `web_search` / `spawn_subagents` states *when (not) to use it*. **Known
-limitation:** prompt-level steering does *not* fully fix a weak local model — in testing `minig+` still
-sometimes picks MCP `search_*` for a fleet task (and MCP tool descriptions come from the remote server,
-so they can't be sharpened locally). The robust levers are a more capable model, **tool-subsetting**
-(gate search behind a skill/agent — future), or the deferred **C3 prompted-JSON tool-calling strategy**
-(see `docs/HANDOFF.md`). C1's loop discipline is the model-agnostic safety net regardless.
+The default system prompt carries routing rules and the tools' `description=` say *when (not) to use*
+them — but **prompt steering alone does not fix a weak local model.** Live finding: with all 21 tools
+visible, `minig+` hallucinates names (`mcp__fleet_ping`, `fleet.ping_host`) by over-generalizing the
+`mcp__…__…` namespace, never calls `task_plan`, and spams web search. **The fix is toolset size, not
+the model** — narrowing to a small, cleanly-named set makes `minig+` behave perfectly.
+
+**Solution — intent skills with auto-selection (no global restriction):**
+The agent stays general (`tools: "*"`), and an **intent skill** (`skills/<name>/SKILL.md` with
+`allowed_tools`) **auto-activates when the request matches its description** (`KeywordSkillSelector`,
+the deterministic little-coder approach) and **narrows the toolset for that turn**. Verified: with the
+`fleet` skill present, the exact prompt that used to spam 16 searches now runs 4 clean calls —
+`task_plan` → `ping_host` → `open_service_url`×2 → accurate answer, zero hallucinated names.
+
+**Opt-out for capable models:** set **`skills: []`** on an agent → no auto-selection, it sees every
+tool and chooses for itself (the Claude-Code model-invoked approach). The `SkillSelector` is a
+swappable strategy (D11): deterministic keyword (weak models) vs model-invoked (capable). So tool
+selection is **per-agent config**, from "auto-narrow by intent" to "full toolset, own judgment."
+
+C1's loop discipline remains the model-agnostic safety net regardless. (The deferred **C3
+prompted-JSON** strategy in `docs/HANDOFF.md` is a further lever for models with weak native calling.)
 
 ### Agents, skills, subagents
 
