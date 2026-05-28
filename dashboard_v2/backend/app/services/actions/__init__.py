@@ -21,6 +21,7 @@ from app.services.actions import (  # noqa: E402,F401
     web_search,
 )
 from app.services.agent import planning  # noqa: E402,F401  # task_plan builtin (agent-only)
+from app.services.agent import subagents  # noqa: E402,F401  # spawn_subagents builtin (4.5)
 
 
 def build_registry() -> ToolRegistry:

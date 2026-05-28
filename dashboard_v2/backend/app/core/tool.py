@@ -22,6 +22,7 @@ from app.domain.enums import Actor, Privilege, Risk
 from app.domain.result import ToolResult
 
 if TYPE_CHECKING:  # avoid a core→services import cycle; Deps is structural here
+    from app.domain.agent import AgentDef
     from app.services.deps import Deps
 
 
@@ -59,6 +60,11 @@ class InvocationContext:
     interactive: bool = True
     confirm_token: str | None = None
     deps: "Deps | None" = None
+    #: Subagent nesting (4.5, DESIGN §5.5). `depth` is 0 for a top-level turn and +1 per spawn
+    #: level; `agent` is the AgentDef whose turn this is — `spawn_subagents` reads both to enforce
+    #: `max_subagent_depth` / `max_concurrent_subagents` and to clamp child privilege to the parent.
+    depth: int = 0
+    agent: "AgentDef | None" = None
 
 
 @runtime_checkable

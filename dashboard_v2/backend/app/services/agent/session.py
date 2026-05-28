@@ -121,6 +121,8 @@ class AgentSession:
         agent: AgentDef | None = None,
         skills: SkillProvider | None = None,
         selector: SkillSelector | None = None,
+        interactive: bool = True,
+        depth: int = 0,
     ) -> None:
         self._threads = threads
         self._messages = messages
@@ -132,6 +134,12 @@ class AgentSession:
         self._agent = agent or settings.default_agent_def()
         self._skills = skills
         self._selector = selector
+        #: Headless subagents (4.5) run with `interactive=False`: a confirm-gated call resolves
+        #: DENIED in place rather than suspending the turn (a child has no UI to confirm against —
+        #: DESIGN §5.3). `depth` is this session's subagent nesting level, forwarded to each tool
+        #: invocation so a child's `spawn_subagents` sees depth+1.
+        self._interactive = interactive
+        self._depth = depth
         self._compactor = Compactor(inference, messages, settings.agent.compaction)
         #: Per-turn skill state (4.5), set by `_activate_skills` at the start of run_turn. The
         #: effective tool allowlist defaults to the agent's; active skills may narrow it.
@@ -440,7 +448,10 @@ class AgentSession:
                         cp.args,
                         actor=AGENT_ACTOR,
                         privilege=self._agent.privilege,
+                        interactive=self._interactive,
                         confirm_token=token,
+                        depth=self._depth,
+                        agent=self._agent,
                     )
                 except UnknownTool:
                     result = ToolResult(state=RunState.DENIED, summary=f"unknown tool '{cp.tool}'")
@@ -451,7 +462,14 @@ class AgentSession:
                         error=str(exc)[:300],
                     )
                 else:
-                    if outcome.needs_confirm:
+                    if outcome.needs_confirm and not self._interactive:
+                        # Headless child (subagent): no UI to confirm against → deny in place so the
+                        # turn never stalls (DESIGN §5.3). The child reports it skipped the risky step.
+                        result = ToolResult(
+                            state=RunState.DENIED,
+                            summary=f"{cp.tool} needs confirmation — skipped (headless subagent)",
+                        )
+                    elif outcome.needs_confirm:
                         cp.state = RunState.AWAITING_CONFIRM
                         spec = self._actions.registry.get(cp.tool).spec
                         events.append(
@@ -470,9 +488,10 @@ class AgentSession:
                         )
                         suspended = True
                         break
-                    result = outcome.result or ToolResult(
-                        state=RunState.ERROR, summary=f"{cp.tool} returned no result"
-                    )
+                    else:
+                        result = outcome.result or ToolResult(
+                            state=RunState.ERROR, summary=f"{cp.tool} returned no result"
+                        )
 
             cp.state = result.state
             result_parts.append(ToolResultPart(call_id=cp.call_id, result=result))

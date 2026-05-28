@@ -18,8 +18,12 @@ from __future__ import annotations
 import secrets
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ValidationError
+
+if TYPE_CHECKING:
+    from app.domain.agent import AgentDef
 
 from app.core.permissions import Decision, decide
 from app.core.tool import InvocationContext, ToolRegistry
@@ -69,6 +73,8 @@ class ActionService:
         privilege: Privilege = Privilege.CONFIRM,
         interactive: bool = True,
         confirm_token: str | None = None,
+        depth: int = 0,
+        agent: "AgentDef | None" = None,
     ) -> InvokeOutcome:
         """Run an action. Raises `UnknownTool` (→404) / `ValidationError` (→422) for the API to
         map; every other outcome is data on a ToolResult."""
@@ -95,13 +101,35 @@ class ActionService:
                     confirm_prompt=f"{tool.spec.title}: confirm to proceed.",
                 )
 
-        result = await self._execute(tool, inp)
+        result = await self._execute(
+            tool, inp, actor=actor, privilege=privilege, interactive=interactive,
+            depth=depth, agent=agent,
+        )
         event = await self._record(actor, name, raw_args, result)
         return InvokeOutcome(needs_confirm=False, result=result, event=event)
 
-    async def _execute(self, tool, inp: BaseModel) -> ToolResult:
+    async def _execute(
+        self,
+        tool,
+        inp: BaseModel,
+        *,
+        actor: Actor = Actor.USER,
+        privilege: Privilege = Privilege.CONFIRM,
+        interactive: bool = True,
+        depth: int = 0,
+        agent: "AgentDef | None" = None,
+    ) -> ToolResult:
+        # The context carries the real caller (actor/privilege/depth/agent) so meta-tools like
+        # spawn_subagents can enforce limits + clamp child privilege (DESIGN §5.5); ordinary tools
+        # ignore these fields.
         ctx = InvocationContext(
-            actor=Actor.USER, privilege=Privilege.CONFIRM, deps=self._deps, confirm_token=None
+            actor=actor,
+            privilege=privilege,
+            interactive=interactive,
+            deps=self._deps,
+            confirm_token=None,
+            depth=depth,
+            agent=agent,
         )
         started = time.monotonic()
         try:

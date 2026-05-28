@@ -9,6 +9,7 @@ Run:  uvicorn app.main:app --reload --port 5433   (from backend/)
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -92,6 +93,17 @@ async def lifespan(app: FastAPI):
     # once; the provider re-scans the dir per call so a dropped-in skill is live without a restart.
     app.state.skills = FileSkillProvider(app.state.settings.skills_dir_path())
     app.state.skill_selector = KeywordSkillSelector()
+
+    # Subagents (Phase 4.5): back-fill the agent-runtime handles onto the shared Deps so the
+    # spawn_subagents tool can build + run child sessions (the ActionService reference is set here
+    # to dodge the deps↔action_service import cycle). One process-wide concurrency cap (tree-wide).
+    deps.inference = app.state.inference
+    deps.threads = app.state.threads
+    deps.messages = app.state.messages
+    deps.actions = app.state.actions
+    deps.skills = app.state.skills
+    deps.selector = app.state.skill_selector
+    deps.subagent_sem = asyncio.Semaphore(max(1, app.state.settings.agent.global_subagent_limit))
 
     try:
         yield
