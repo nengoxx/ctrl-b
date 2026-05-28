@@ -15,6 +15,7 @@ of the parsed YAML before validation.
 
 from __future__ import annotations
 
+import io
 import os
 import re
 from pathlib import Path
@@ -23,6 +24,7 @@ from typing import Any, ClassVar
 import yaml
 from dotenv import dotenv_values
 from pydantic import BaseModel, Field, SecretStr
+from ruamel.yaml import YAML
 
 from app.domain.agent import AgentDef, CompactionCfg, ModelRef
 from app.domain.enums import OSType
@@ -31,7 +33,8 @@ from app.domain.service import Service
 
 __all__ = [
     "Settings", "ModelRef", "AgentDef", "CompactionCfg",
-    "load_settings", "save_settings", "mask_secrets",
+    "load_settings", "save_settings", "mask_secrets", "unmask_secrets", "deep_merge",
+    "apply_patch_to_yaml", "prune_unchanged",
 ]
 
 # dashboard_v2/backend/app/config.py -> dashboard_v2/
@@ -400,12 +403,106 @@ def save_settings(settings: Settings, path: Path | None = None) -> None:
     """Persist settings atomically (write temp + `os.replace`) so a crash can't truncate config.
 
     Note: only `config.yaml` is ever rewritten by the app — `.env` is owned by the operator.
+
+    Dumped with `mode="json"` so domain `StrEnum`s (`Privilege`, `Risk`, `OSType`, …) serialize to
+    their string values — `mode="python"` keeps the enum *member*, which `yaml.safe_dump` can't
+    represent (it dispatches on the exact subclass type) and raises `RepresenterError`. That path
+    is only reached once a config carries an enum (e.g. an `agents[]` entry's `privilege`), so the
+    bug stayed latent while `agents` was empty; `mode="json"` keeps every section YAML-safe.
     """
     p = path or config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    data = settings.model_dump(mode="python", exclude_none=False)
+    data = settings.model_dump(mode="json", exclude_none=False)
     tmp = p.with_suffix(p.suffix + ".tmp")
     tmp.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    os.replace(tmp, p)
+
+
+def deep_merge(base: Any, patch: Any) -> Any:
+    """Recursively overlay `patch` onto `base` (a copy). Dicts merge key-by-key; everything else
+    (scalars, lists) is replaced by the patch value. Used by `PUT /api/settings` so a partial form
+    submission updates only the sections it carries without clobbering the rest of the config.
+
+    Lists are replaced wholesale, not merged — so this is for **scalar/section** edits. Editing a
+    *list* section (e.g. `mcp_servers`, `agents`, `computers`) goes through a dedicated endpoint
+    that handles add/remove + secret carry-over explicitly, never this generic merge.
+    """
+    if isinstance(base, dict) and isinstance(patch, dict):
+        out = dict(base)
+        for k, v in patch.items():
+            out[k] = deep_merge(base.get(k), v) if k in base else v
+        return out
+    return patch
+
+
+def prune_unchanged(patch: Any, current: Any) -> Any:
+    """Return `patch` reduced to only the leaves that differ from `current`. The UI submits whole
+    form groups (e.g. all of `server` + `inference`), but we want to **write only what actually
+    changed** so the persisted file is touched minimally — unchanged lines (incl. unchanged secrets)
+    keep their original text/quoting/comments. Empty sub-dicts (no changes inside) are dropped."""
+    if isinstance(patch, dict):
+        cur = current if isinstance(current, dict) else {}
+        out: dict[str, Any] = {}
+        for k, v in patch.items():
+            if isinstance(v, dict):
+                sub = prune_unchanged(v, cur.get(k))
+                if sub:
+                    out[k] = sub
+            elif v != cur.get(k):
+                out[k] = v
+        return out
+    return patch
+
+
+def _yaml_rt() -> YAML:
+    """A round-trip YAML configured to preserve the operator's file as faithfully as possible."""
+    y = YAML()                       # round-trip mode (keeps comments, key order, anchors)
+    y.preserve_quotes = True
+    y.width = 4096                   # don't wrap long URLs / keys onto continuation lines
+    y.indent(mapping=2, sequence=4, offset=2)
+    return y
+
+
+def _deep_set(node: Any, patch: dict[str, Any]) -> None:
+    """Recursively write `patch`'s leaves into the ruamel `node`, descending into existing maps so
+    sibling keys + their comments survive. A scalar/list value replaces in place; a dict value
+    descends (creating the intermediate map if the file didn't have it)."""
+    for k, v in patch.items():
+        if isinstance(v, dict):
+            child = node.get(k)
+            if not hasattr(child, "get"):       # missing or not a mapping → create one
+                node[k] = {}
+                child = node[k]
+            _deep_set(child, v)
+        else:
+            node[k] = v
+
+
+def apply_patch_to_yaml(patch: dict[str, Any], path: Path | None = None) -> None:
+    """Persist `patch` by **editing the existing config file in place** with a comment/format-
+    preserving round-trip — only the changed leaves are rewritten, so the operator's comments,
+    section order, quoting, and minimal-key style are kept (a plain `yaml.safe_dump` of the full
+    model would normalize all of that away). Atomic (temp + `os.replace`). `patch` should already be
+    pruned to real changes (see `prune_unchanged`) with secrets unmasked (see `unmask_secrets`)."""
+    if not patch:
+        return
+    p = path or config_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    raw_bytes = p.read_bytes() if p.exists() else b""
+    # Detect EOL from the raw bytes — `read_text` would universal-translate CRLF→LF and hide it.
+    newline = "\r\n" if b"\r\n" in raw_bytes else "\n"
+    y = _yaml_rt()
+    doc = y.load(raw_bytes.decode("utf-8")) if raw_bytes else None
+    if not hasattr(doc, "get"):                 # empty/new file → start from a fresh mapping
+        doc = {}
+    _deep_set(doc, patch)
+    buf = io.StringIO()
+    y.dump(doc, buf)
+    # Preserve the file's existing line ending (LF default for a new file) and write bytes directly,
+    # so a Windows host doesn't silently rewrite an LF config to CRLF (which would churn every line).
+    out = buf.getvalue().replace("\r\n", "\n").replace("\n", newline)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_bytes(out.encode("utf-8"))
     os.replace(tmp, p)
 
 
@@ -416,12 +513,16 @@ def _mask(value: str) -> str:
     return f"{s[:2]}…{s[-2:]}"
 
 
+def _is_secret_key(key: Any) -> bool:
+    return isinstance(key, str) and any(h in key.lower() for h in SECRET_HINTS)
+
+
 def mask_secrets(data: Any) -> Any:
     """Recursively mask values whose key looks secret. Use on every settings response/log line."""
     if isinstance(data, dict):
         out: dict[str, Any] = {}
         for k, v in data.items():
-            if isinstance(k, str) and any(h in k.lower() for h in SECRET_HINTS) and v:
+            if _is_secret_key(k) and v:
                 out[k] = _mask(v) if isinstance(v, (str, int)) else v
             else:
                 out[k] = mask_secrets(v)
@@ -429,3 +530,36 @@ def mask_secrets(data: Any) -> Any:
     if isinstance(data, list):
         return [mask_secrets(v) for v in data]
     return data
+
+
+def unmask_secrets(incoming: Any, stored: Any) -> Any:
+    """Inverse of `mask_secrets` for the write path: where `incoming` carries a *masked* (or empty)
+    secret, restore the real value from `stored`. Without this, re-saving a form that displays the
+    masked secret (`ab…yz`) would overwrite the real credential in `config.yaml` with the mask —
+    silent loss of SSH passwords / API keys (audit A2).
+
+    A secret-keyed leaf is treated as **unchanged** (→ keep `stored`) when its incoming value is
+    empty/None or equals `_mask(stored)`; any other (genuinely new) string is taken as-is. Walks
+    dicts by key and lists by index in lockstep with `stored` — fine for the scalar/positional edits
+    `PUT /api/settings` allows; list *management* (reorder/insert) uses dedicated endpoints, not this.
+    """
+    if isinstance(incoming, dict):
+        out: dict[str, Any] = {}
+        stored_d = stored if isinstance(stored, dict) else {}
+        for k, v in incoming.items():
+            sv = stored_d.get(k)
+            if _is_secret_key(k):
+                if (v is None or v == "" or (isinstance(v, str) and v == _mask(sv))) and sv:
+                    out[k] = sv          # masked/blank → unchanged: keep the stored real secret
+                else:
+                    out[k] = v           # a new value was typed
+            else:
+                out[k] = unmask_secrets(v, sv)
+        return out
+    if isinstance(incoming, list):
+        stored_l = stored if isinstance(stored, list) else []
+        return [
+            unmask_secrets(v, stored_l[i] if i < len(stored_l) else None)
+            for i, v in enumerate(incoming)
+        ]
+    return incoming

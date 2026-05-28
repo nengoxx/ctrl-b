@@ -30,9 +30,11 @@ layer** (loop-discipline guards + tool-selection routing) was added; a **`fleet`
 auto-narrows the toolset so the weak local model behaves (the big finding — `minig+` isn't too weak,
 the 21-tool namespaced set confused it); a **`check_service`** liveness tool + a **`reboot_host`**
 action (with a device-row button); **clickable plan-step dots** (persistent, agent-aware); and an
-**OS-compatibility pass** (ping/commands detect the host OS). **Next up: the Conf tab (Phase 7)** —
-incl. the Skills/Agents management UI deferred from 4.5 — or wiring real Open WebUI tool servers, or
-Phase 5 (guarded shell).
+**OS-compatibility pass** (ping/commands detect the host OS). **Phase 7 is now sliced 7a–7e; 7a
+(settings read/write foundation + Conf Inference & Server groups) is built + verified — see the
+2026-05-29 block below** (commit pending). **Next up: 7b (hosts/services CRUD) → 7c (integrations:
+MCP/SearXNG/embeddings/OpenAPI managers, extending the `reconfigure` seam) → 7d (skills/agents UI +
+per-tool descriptions) → 7e (prompts + memory).**
 This doc is the orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor
 fidelity mandate (D7) still governs every new component.**
 
@@ -84,6 +86,46 @@ transport `874cdb1`**). **Phase 4.5 (skills + agents/subagents) is committed + p
 (through `591cc5b`):** AgentDef spine `c964237` · skills `e2c90e8` · subagents `e84797f` · 4.5 docs
 `ba11479` · **subagent parameter inheritance** `b407cec` + docs `70571c4` · **tool-description fallback
 fix** `f72ccb0`. The 4e/4f file lists below are reference.
+
+### ⭐ Session update — 2026-05-29 (Phase 7a — Conf settings read/write foundation)
+
+**Phase 7 is now sliced 7a–7e (TODO.md); 7a is built + verified (commit pending — not yet pushed).**
+Started with a **pre-implementation audit** ([`AUDIT_settings.md`](./AUDIT_settings.md)) of the
+settings functionality + config→runtime design, then built the slice with the findings folded in.
+
+- **`GET/PUT /api/settings`** (`api/settings.py`): GET returns the full config secret-masked; PUT
+  takes a **partial deep-merge patch**, restores unchanged secrets, validates (422 on bad value),
+  persists, and hot-applies. Conf tab's **Inference** + new **Server** groups are wired to it
+  (`hooks/useSettings.ts`, `putJSON`, dirty-tracked Save + toast); Appearance stays UI-store-only.
+- **Audit blocker caught (A1):** `save_settings` did `model_dump(mode="python")` → `yaml.safe_dump`,
+  which **can't serialize a `StrEnum`** → would crash the first save once an `agents[]` entry (with
+  its `privilege`) exists. Fixed with `mode="json"`. Latent only because `agents` was empty.
+- **Secret safety (A2):** `unmask_secrets` — a masked/blank secret echoed back from the form is
+  treated as unchanged (keeps the stored real value); a new value overwrites. No more wiping SSH
+  passwords / API keys with the mask.
+- **⭐ Runtime reconfigure seam (B1/B2, `app/runtime.py`):** the owner's concern was lifespan↔reload
+  **drift**. Solved by design: **single-source `set_*(app, settings)` builders** that *both* lifespan
+  and `reconfigure()` call — exactly one construction site per subsystem, can't drift. `reconfigure`
+  updates the shared `Settings` in place (live readers fleet/services/deps see it), rebuilds
+  `InferenceClient`, invalidates status caches; PUT is `asyncio.Lock`-guarded. This module is the
+  future `build_runtime` home — 7c adds `set_searxng`/etc. here and extends `reconfigure`.
+- **⭐ Comment/format preservation (E1, owner-approved):** the static audit under-rated this — live
+  testing showed `save_settings` **normalized the whole file** (stripped comments, reordered,
+  expanded defaults). Added **`ruamel.yaml` (pinned 0.18.10)** + a **patch-based writer**
+  (`apply_patch_to_yaml`): a UI save edits only the changed leaves in place (`prune_unchanged`),
+  keeping comments/order/quoting/minimal-style verbatim; unchanged lines (incl. secrets) untouched.
+  **EOL preserved too (E2):** detects LF/CRLF from raw bytes, writes bytes directly (no Windows
+  `\n`→`\r\n` churn). **Verified live:** a real PUT changed *only* the one `poll_seconds` line.
+- **⚠️ Process note (E3):** during testing I briefly ran live PUTs against the owner's real
+  `config.yaml` and it got normalized; **recovered losslessly** (reconstructed from the diff, proven
+  byte-equivalent via validated `model_dump`s, comments restored). Lesson logged: write-endpoint
+  live tests must use a throwaway `CTRLB_CONFIG`/`CTRLB_DB`, never the real config.
+- **Verified:** `compileall` + app import clean; `tests/test_settings_7a.py` **7/7 pass**; frontend
+  `tsc -b` + `vite build` clean; **live on 5433** — GET masks (`sk…2f`/`ne…go`), PUT preserves
+  secrets+comments+EOL, `poll_seconds` applies without restart, port flags `restart_required`, bad
+  value → 422. Backend relaunched on 5433 (venv), reachable via the 5190 Vite proxy.
+- **Owner eyeball pending (D7):** the Conf **Inference + Server** forms @390px (Save pill mirrors
+  vapor's `.mfoot button.save`; net-new CSS in `extras.css`, `vapor.css` untouched).
 
 ### ⭐ Session update — 2026-05-28 (committed + pushed; tree clean, in sync at `c6d3ff5`)
 

@@ -305,16 +305,52 @@ tools + confirm bubbles) are DONE.**
 - [ ] **HTTPS via Tailscale Serve** so the mic works on Android (secure-context). Document it.
 - [ ] **Verify** mic + playback on a real Android phone over the tailnet.
 
-## Phase 7 — Conf tab (settings, prompts, memory, hosts CRUD)
+## Phase 7 — Conf tab (settings, prompts, memory, hosts CRUD) — **sliced 7a–7e**
 
-- [ ] `GET/PUT /api/settings` (YAML-backed, secrets masked); `GET/PUT /api/prompts/{name}`.
+> **Pre-slice audit (2026-05-29):** see [`AUDIT_settings.md`](./AUDIT_settings.md). It found a
+> latent blocker (`save_settings` can't serialize a `StrEnum` → crashes the moment a config carries
+> an agent's `privilege`) + a secret round-trip data-loss edge + the hot-reload scalability seam.
+> Those fixes are folded into **7a** below.
+
+### Phase 7a — settings read/write foundation + Inference & Server groups ✅ DONE
+- [x] **`GET /api/settings`** → `mask_secrets(settings.model_dump(mode="json"))`. (`api/settings.py`)
+- [x] **`PUT /api/settings`** — partial deep-merge patch → `unmask_secrets` → `model_validate`
+      (422 on `ValidationError`) → comment-preserving patch write → `reconfigure` → masked echo.
+- [x] **(audit A1)** `save_settings` enum-safe via `mode="json"` (StrEnum→str). *Was a latent blocker.*
+- [x] **(audit A2)** `unmask_secrets(incoming, stored)` — masked/empty secret = unchanged → keep stored.
+- [x] **(audit B1/B2)** `app/runtime.py` `reconfigure()` seam — single-source `set_*` builders shared
+      by lifespan + reconfigure (no drift); in-place shared-`Settings` update for live readers; rebuild
+      `InferenceClient`; cache invalidation (B4); PUT `asyncio.Lock`. Extends toward `build_runtime` (7c).
+- [x] **(audit B3)** `restart_required` paths (`server.host/port/debug`) in the PUT response + UI note.
+- [x] **(audit E1/E2)** **comment-/EOL-preserving patch writer** (`apply_patch_to_yaml`, `ruamel.yaml`):
+      a UI save edits only changed leaves in place — comments/order/quoting/minimal-style + LF/CRLF kept.
+- [x] **(audit C2)** `tests/test_settings_7a.py` (7 cases): enum round-trip, secret preserve/update,
+      deep-merge, prune-unchanged, comment-preserve, EOL-preserve, + TestClient GET/PUT/422/live-apply.
+- [x] Conf tab: **Inference** group (mode, local/cloud base_url·model·api_key, timeout, system prompt)
+      + new **Server** group (host/port/poll/debug) wired to live data; `useSettings`/`useSaveSettings`
+      + `putJSON`; dirty-tracked Save + toast. Appearance stays UI-store-only. **Owner D7 eyeball pending.**
+
+### Phase 7b — hosts/services CRUD
 - [ ] Hosts CRUD: `POST/PUT/DELETE /api/hosts/{id}` + Conf machine forms (port Vapor `machineFormHTML`).
+      **Dedicated endpoints** (not the scalar settings merge — audit A2 list-merge caveat); secrets
+      handled explicitly. Force-invalidate fleet/service caches on change (audit B4).
+
+### Phase 7c — integrations panel (D9)
+- [ ] **Integrations panel:** MCP servers manager (add/edit/enable; stdio `command+args+env`
+      or Streamable-HTTP `url+headers`; show discovered tools per server) + **SearXNG** + **embeddings**
+      + **OpenAPI tool servers**. Extend `reconfigure()` (audit B1) to rebuild these adapters +
+      re-run MCP/OpenAPI discovery on save. STT/TTS endpoints land with Phase 6 voice.
+
+### Phase 7d — skills/agents management (the A7 deferral) + per-tool descriptions
+- [ ] Conf → **Skills** (list/enable/edit/add) + **Agents** (manage `agents[]`, default, tools-per-agent
+      tick, subagent settings, the `/agent` switch) + **per-tool description override** (`ToolSpec.description`).
+      Read APIs (`GET /api/skills`) exist; this writes agents through `PUT /api/settings` — **depends on
+      audit A1** (enum-safe save) being done in 7a.
+
+### Phase 7e — prompts editors + memory panel
+- [ ] `GET/PUT /api/prompts/{name}` + prompt-file editors.
 - [ ] Memory mgmt: `GET /api/memory`, `POST`, `DELETE`; rolling-summary + pinned-facts; clear
-      thread / clear all.
-- [ ] Conf tab: inference/STT/TTS endpoints + models + voices, **embeddings endpoint**, server
-      (host/port/poll/debug), appearance (theme/skyline/hero/waveform), prompt-file editors, memory panel.
-- [ ] **Integrations panel (D9):** MCP servers manager (add/edit/enable; stdio `command+args+env`
-      or Streamable-HTTP `url+headers`; show discovered tools per server) + **SearXNG** endpoint.
+      thread / clear all (vector `MemoryProvider` + embeddings seam from 4f).
 
 ## Phase 8 — Tool registry + Utils (extensible, D8)
 

@@ -19,13 +19,13 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.adapters.embeddings import EmbeddingsClient
-from app.adapters.inference import InferenceClient
 from app.adapters.mcp_client import McpClient
 from app.adapters.openapi_tools import OpenApiToolProvider
 from app.adapters.openterminal import OpenTerminalClient
 from app.adapters.searxng import SearxngClient
-from app.api import actions, agent, events, health, hosts, services
+from app.api import actions, agent, events, health, hosts, services, settings as settings_api
 from app.config import load_dotenv, load_settings
+from app.runtime import set_inference
 from app.core.events import EventBus
 from app.db import Database
 from app.services.action_service import ActionService
@@ -83,10 +83,15 @@ async def lifespan(app: FastAPI):
     app.state.openapi_summary = await app.state.openapi.discover(registry)
     app.state.openterminal_tools = n_term
     app.state.actions = ActionService(registry, deps)
+    # Stash the Deps bundle so the runtime reconfigure seam (PUT /api/settings) can re-point its
+    # adapter handles (e.g. deps.inference) on a config change. Single source: see app/runtime.py.
+    app.state.deps = deps
 
     # Chat stack (Phase 4a): one OpenAI-compatible client + the thread/message repos. The
-    # AgentSession is built per turn in the API from these (stateless across turns).
-    app.state.inference = InferenceClient(app.state.settings.inference)
+    # AgentSession is built per turn in the API from these (stateless across turns). Inference is
+    # built via the shared `set_inference` helper (the same one `reconfigure` calls) so the two
+    # paths can't drift (audit B1).
+    set_inference(app, app.state.settings)
     app.state.threads = ThreadRepo(app.state.db)
     app.state.messages = MessageRepo(app.state.db)
     # Skills (Phase 4.5): file-discovered SKILL.md bundles + the default selection strategy. Built
@@ -97,7 +102,6 @@ async def lifespan(app: FastAPI):
     # Subagents (Phase 4.5): back-fill the agent-runtime handles onto the shared Deps so the
     # spawn_subagents tool can build + run child sessions (the ActionService reference is set here
     # to dodge the deps↔action_service import cycle). One process-wide concurrency cap (tree-wide).
-    deps.inference = app.state.inference
     deps.threads = app.state.threads
     deps.messages = app.state.messages
     deps.actions = app.state.actions
@@ -124,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(actions.router, prefix="/api")
     app.include_router(events.router, prefix="/api")
     app.include_router(agent.router, prefix="/api")
+    app.include_router(settings_api.router, prefix="/api")
 
     # Prod single-origin serving. Absent in dev (Vite owns the SPA + proxies /api here).
     if _FRONTEND_DIST.is_dir():

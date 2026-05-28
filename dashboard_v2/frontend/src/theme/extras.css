@@ -812,3 +812,63 @@ body {
 .dev.on .top {
   grid-template-columns: auto 1fr 38px auto 16px;
 }
+
+/* ── Conf tab — settings forms (Phase 7a) ─────────────────────────────────────────────────────
+   Net-new from vapor tokens; vapor.css stays verbatim (D7). The textarea mirrors the conf input
+   styling; the save pill mirrors vapor's `.mconf .mfoot button.save` (magenta→violet gradient). */
+.confrow.conf-textrow {
+  align-items: flex-start;
+}
+.conf-textarea {
+  all: unset;
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  max-width: 62%;
+  min-height: 64px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--bg-3);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  border: 1px solid var(--line);
+  resize: vertical;
+}
+.conf-textarea:focus {
+  border-color: var(--magenta);
+  box-shadow: var(--m-glow);
+}
+.conf-savebar {
+  display: flex;
+  margin-top: 10px;
+}
+.conf-save {
+  all: unset;
+  cursor: pointer;
+  flex: 1;
+  text-align: center;
+  padding: 11px 0;
+  font-size: 9px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  font-weight: 600;
+  border-radius: 10px;
+  color: #1a0428;
+  background: linear-gradient(135deg, var(--magenta), var(--violet));
+  border: 1px solid transparent;
+  box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.35);
+  transition: opacity 0.15s;
+}
+.conf-save:active {
+  transform: translateY(1px);
+}
+.conf-save:disabled {
+  cursor: default;
+  color: var(--ink-faint);
+  background: var(--bg-3);
+  border-color: var(--line-2);
+  box-shadow: none;
+}
+
