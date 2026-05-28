@@ -73,9 +73,23 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 + links `271c0b3` · MCP `e148a41` + risk `2ed987d` · open-terminal `c4ec84c` · OpenAPI `a4e3e86` ·
 embeddings `97e4f89` · **Agent-tab polish**: collapse tool command bubbles by default `9d1b1e2` ·
 group a thinking block with the tool call it produced `73fe813` · inset fix `5b41dfb` · **MCP stdio
-transport `874cdb1`**). **Phase 4.5 (skills + agents/subagents) is committed locally** — AgentDef
-spine `c964237` · skills `e2c90e8` · subagents `e84797f` — **not yet pushed** (owner to push). The
-working tree is otherwise clean. The 4e/4f file lists below are reference.
+transport `874cdb1`**). **Phase 4.5 (skills + agents/subagents) is committed locally but NOT pushed**
+— 7 commits ahead of `origin/main` (owner to push): AgentDef spine `c964237` · skills `e2c90e8` ·
+subagents `e84797f` · 4.5 docs `ba11479` · **subagent parameter inheritance** `b407cec` + docs
+`70571c4` · **tool-description fallback fix** `f72ccb0`. The working tree is otherwise clean. The
+4e/4f file lists below are reference.
+
+**Live-probed against `minig+` this session (servers up on 5433/5190):** `web_search` ✅ (model
+calls it, auto-runs, clean answer); forced skill `/web-research` ✅ (activates, narrows tools, fuller
+synthesized answer); **subagent runtime ✅ live** — a direct `spawn_subagents` invocation (confirm
+token → execute) ran a real 2-child fan-out (2/2 ok, both real `minig+` answers aggregated).
+**Caveat:** `minig+` will **not *choose*** `spawn_subagents` in chat even when told to — it reaches
+for the concrete `search_web`/`mcp__web-tools__search_web` instead (it *does* fan several searches in
+one step on its own). That's the known weak-local-tool-calling limit (TODO 4c: prompted-JSON
+fallback), not a wiring bug — the delegation plumbing is proven; a stronger/cloud model would pick it.
+**Tool descriptions:** all 21 tools expose their own model-facing description (explicit / docstring /
+MCP-remote); the docstring fallback now takes the first *paragraph* (no mid-sentence truncation), and
+each description lives on `ToolSpec` — the seam a Phase-7 Conf per-tool override will overlay.
 
 ⭐ NEW in Phase 4.5 — agent definitions + skills + subagents (`backend/app/`):
 ```
@@ -688,18 +702,22 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
 
 ## First action — push 4.5, then Phase 7 Conf (or 4f leftovers / Phase 5)
 
-**Phase 4.5 backend is complete + committed locally** (AgentDef `c964237` · skills `e2c90e8` ·
-subagents `e84797f`) but **not pushed** — push to `origin/main` first if the owner approves. Then the
-natural next slices:
-- **Eyeball 4.5 live against `minig+`** (owner): give a multi-topic ask and see if it calls
-  `spawn_subagents` (fan-out → aggregated answer in the `.b.cmd` bubble); try `/web-research <q>` to
-  force the shipped skill (tools narrow to `web_search`); add an `agents:` entry + `default_agent` and
-  confirm a new thread uses it. If `minig+`'s native tool-calling is weak for these, that's the
-  **capability fallback** item (prompted-JSON → same `ToolCallPart` path; TODO 4c).
-- **Phase 7 Conf tab** — incl. the **Skills/Agents management UI** deferred from 4.5 (needs the
-  `GET/PUT /api/settings` form infrastructure Phase 7 builds; `GET /api/skills` already exists).
-- Or the older alternatives: wire real **Open WebUI tool servers** (`openapi_servers:`), **cloud
-  chat** (`inference.cloud`), or **Phase 5** (guarded `run_shell`).
+**Phase 4.5 backend is complete + committed locally (7 commits, see the commit line above) but NOT
+pushed** — `git push origin main` first if the owner approves. It was **live-probed** this session
+(see "Live-probed" above): web_search + skills + the subagent runtime all work against `minig+`; the
+only gap is `minig+` not *choosing* `spawn_subagents` (capability, not wiring). Then the natural next
+slices:
+- **Owner visual side-by-side @390px** (D7) — the only un-eyeballed bit: subagent results render in
+  the existing `.b.cmd` bubble (children's answers in the output line); a richer subagent panel is
+  later polish. Also the skill/plan/markdown bubbles from earlier phases.
+- **Phase 7 Conf tab** — incl. the **Skills/Agents management UI** deferred from 4.5 **and per-tool
+  description editing** (the owner asked for it; the override seam is `ToolSpec.description`). Needs
+  the `GET/PUT /api/settings` form infrastructure Phase 7 builds; `GET /api/skills` already exists.
+- **Capability fallback (TODO 4c)** — prompted-JSON tool-calling for weak local models, so `minig+`
+  can drive abstract tools like `spawn_subagents`; or just wire **cloud chat** (`inference.cloud`, the
+  OpenRouter key is already in `config.yaml`) and a capable model picks them.
+- Or the older alternatives: wire real **Open WebUI tool servers** (`openapi_servers:`), or **Phase 5**
+  (guarded `run_shell`).
 
 Each piece its own runnable slice + commit (footer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`).
 
