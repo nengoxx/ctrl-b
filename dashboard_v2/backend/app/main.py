@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.adapters.inference import InferenceClient
+from app.adapters.searxng import SearxngClient
 from app.api import actions, agent, events, health, hosts, services
 from app.config import load_dotenv, load_settings
 from app.core.events import EventBus
@@ -47,11 +48,14 @@ async def lifespan(app: FastAPI):
     # ActionService runs the registry built from services/actions (import side effects register).
     app.state.event_bus = EventBus()
     app.state.events = EventService(app.state.db, app.state.event_bus)
+    # SearXNG-backed web_search (Phase 4f): one cached httpx client, closed at shutdown below.
+    app.state.searxng = SearxngClient(app.state.settings.searxng)
     deps = Deps(
         settings=app.state.settings,
         fleet=app.state.fleet,
         events=app.state.events,
         services=app.state.services,
+        searxng=app.state.searxng,
     )
     app.state.actions = ActionService(build_registry(), deps)
 
@@ -64,6 +68,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await app.state.searxng.aclose()
         await app.state.db.close()
 
 

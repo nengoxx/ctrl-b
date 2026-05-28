@@ -152,7 +152,15 @@ tools + confirm bubbles) are DONE.**
 - [ ] **MCP client (D9):** connect to configured MCP servers over **stdio** + **Streamable HTTP**
       (official Python MCP SDK); discover + merge tools; per-server enable + failure isolation.
       Start with one server end-to-end, then generalize.
-- [ ] **SearXNG `web_search` tool (D9):** hits the configured local SearXNG `format=json`.
+- [x] **SearXNG `web_search` tool (4f, D9):** a LOW-risk `category="utility"`, agent-only `@action`
+      (`services/actions/web_search.py`) over a new `adapters/searxng.py` `SearxngClient` (cached
+      `httpx.AsyncClient`, hits `/search?format=json`, normalizes hits, raises `SearxngError` on
+      down/non-JSON/bad-status). `SearxngCfg` (`base_url`/`enabled`/`timeout_s`/`language`) added to
+      `Settings`; client wired onto `Deps.searxng` in `main.py` (closed at shutdown). Auto-runs in
+      the agent loop (LOW → ALLOW); unconfigured/disabled → clean `DENIED`. Verified unit (mocked
+      transport: happy/empty/HTML-not-JSON/403/unconfigured/disabled) + **live against emma's
+      instance** (real results, JSON format enabled). *(Results render in the existing `.b.cmd`
+      bubble via the summary/outcome line; a richer results panel is a later polish, not blocking.)*
 - [ ] **Embeddings client (D9):** wire the configured llama.cpp `/v1/embeddings` (powers the vector
       `MemoryProvider` when that lands).
 - [x] **Composer prefix routing (4c):** `!` (configurable sigil, const in `lib/composer.ts`) →

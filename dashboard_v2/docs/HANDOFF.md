@@ -13,8 +13,10 @@ added the agent-only **`task_plan`** builtin + a live **plan panel** (TodoWrite-
 **4e** added **context compaction**: before each model call the loop folds the oldest complete turns
 into a summary system message when the working context exceeds a configurable token threshold (or on
 manual `/compact`), keeping full history in SQLite — with a **separately selectable summarizer
-model**. The next session continues **Phase 4f — MCP/SearXNG/embeddings** — each a runnable slice
-(don't build it all at once). This doc is the orientation; canonical detail is in the other `docs/`
+model**. **Phase 4f is now in progress: the SearXNG `web_search` slice is done** — a LOW-risk
+agent-only tool over a new `SearxngClient` (the agent can now search the web; verified live against
+emma). The **remaining 4f slices are MCP client + embeddings** — each a runnable slice (don't build
+it all at once). This doc is the orientation; canonical detail is in the other `docs/`
 files. **The pixel-exact Vapor fidelity mandate (D7) still governs every new component.**
 
 > ## ⭐ The standing Vapor-fidelity mandate (D7) — applies to every phase
@@ -57,9 +59,34 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 ## Current state (what Phase 4e left you)
 
 **Everything through Phase 4e is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181`
-· 4c `b44c039` · doc `d4e704b` · 4d `df612e3` · **4e `60f8e68`** · vite-host fix `f2774b8`). The
-working tree is clean. **Next session starts Phase 4f — MCP/SearXNG/embeddings.** The 4e file list
-below is reference for what landed.
+· 4c `b44c039` · doc `d4e704b` · 4d `df612e3` · **4e `60f8e68`** · vite-host fix `f2774b8`).
+**Phase 4f is underway: the `web_search` (SearXNG) slice landed this session** (see below) — the
+remaining 4f slices are **MCP client + embeddings**. The 4e file list below is reference for what
+landed earlier.
+
+⭐ NEW in Phase 4f — `web_search` slice (`backend/app/`):
+```
+  config.py                    # ⭐ SearxngCfg (base_url/enabled/timeout_s/language) + Settings.searxng
+  adapters/searxng.py          # ⭐ SearxngClient — cached httpx.AsyncClient → /search?format=json;
+                               #     normalizes hits to SearchResult; SearxngError on down/non-JSON/bad-status
+  services/actions/web_search.py  # ⭐ @action web_search (utility, LOW, agent-only) — shapes input,
+                               #     formats numbered results for the model, normalizes failures to ToolResult
+  services/actions/__init__.py #   imports web_search to register it
+  services/deps.py             #   + Deps.searxng (SearxngClient | None)
+  main.py                      #   builds SearxngClient onto app.state + Deps; aclose() at shutdown
+  ../config.example.yaml       #   documented `searxng:` block (JSON-format-required note)
+```
+**Design:** `web_search` is a normal `@action` — `category="utility"`, LOW risk, `ui_exposed=False`
+(no Utils card until the Phase-8 registry), `agent_exposed=True` — so it **auto-runs in the agent
+loop** (LOW → ALLOW, no confirm gate) through the same `ActionService`, and renders in the existing
+Vapor `.b.cmd` bubble via the outcome line (no frontend change needed). The SearXNG round-trip lives
+in `adapters/searxng.py`; the tool reaches it via `ctx.deps.searxng`. Unconfigured / disabled →
+clean `DENIED` ("not configured"); a stock SearXNG that only serves HTML → `ERROR` telling the owner
+to enable the JSON format. **Verified:** unit (mocked `httpx` transport — happy path w/ param +
+count-cap assertions, empty, HTML-not-JSON, 403, unconfigured, disabled) + boot (real config parses
+`searxng`, `/api/actions` lists it as utility/LOW/agent-only) + **live against emma's instance**
+(`http://192.168.1.160:8888`, real results, JSON format enabled). *(A richer search-results panel
+beside the bubble — like the plan panel — is later polish, not blocking the next slice.)*
 
 **Dev-server host fix (`f2774b8`):** `vite.config.ts` now sets `server.allowedHosts: true`. Vite
 ≥5.4 otherwise rejects any `Host` header that isn't localhost/IP (a DNS-rebinding guard), which
@@ -481,11 +508,24 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
   The root `config.yaml` still holds a real OpenRouter key (gitignored, never committed) — the owner
   may rotate it.
 
-## First action — Phase 4f (MCP/SearXNG/embeddings)
+## First action — Phase 4f, remaining slices (MCP client + embeddings)
 
-**4e is committed + pushed (`60f8e68`); the tree is clean.** Start 4f on a fresh commit (footer:
-`Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`). Optional 4b/4c/4d/4e follow-ups, none
-blocking 4f — each is an **owner eyeball**, not a code task:
+**The `web_search` slice landed this session** (commit pending — see top of "Current state"); the
+two remaining 4f slices are **MCP client** and **embeddings**. Pick one and do it as its own
+runnable slice + commit (footer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`).
+- **MCP client (next-recommended):** connect emma's configured Streamable-HTTP server
+  (`mcp_servers[0]`, `http://192.168.1.160:3003/mcp`, crawl4ai) with the **official Python `mcp`
+  SDK** (add to `pyproject.toml`); wrap each discovered remote tool into an `McpTool` (`Tool`
+  protocol, `name="mcp:<server>:<tool>"`, risk from config / default conservative) and merge into
+  the same `agent_tools()` set; **isolate per-server failures** (a down server marks its tools
+  unavailable, never crashes the agent). Start with that one server end-to-end, then generalize to
+  the `mcp_servers[]` list + stdio transport. `web_search` already proves the "remote-call → wrap
+  as a `Tool` → flows through `ActionService` → renders in the `.b.cmd` bubble" path.
+- **Embeddings client:** wire the configured llama.cpp `/v1/embeddings` (an `EmbeddingsCfg` +
+  `InferenceClient.embed`) — powers the vector `MemoryProvider` when that lands (Phase 7), so no
+  user-visible behavior yet; smallest of the three.
+
+Optional 4b/4c/4d/4e follow-ups, none blocking — each is an **owner eyeball**, not a code task:
 - **Eyeball live against `minig+`**: send a fleet question — confirm the model emits tool calls, the
   `.b.cmd` bubble streams in, and a `shutdown_host`/`stop_service` shows the confirm bubble + resume.
   Give it a **multi-step** ask ("wake titan then start minecraft") and confirm it calls `task_plan`
@@ -497,14 +537,19 @@ blocking 4f — each is an **owner eyeball**, not a code task:
   context; try `/compact` manually. Optionally set a cheaper `agent.compaction.summarizer{mode,model}`.
 - **Side-by-side @390px** of the markdown bubble, `.md-code` bar, and the `.b.plan` panel vs the Vapor
   look (D7) — owner's call.
+- **`web_search` live (4f):** ask the agent something it must look up ("search the web for …") and
+  confirm `minig+` actually calls `web_search`, the `.b.cmd` bubble shows the result, and the model
+  uses the hits in its answer. (The tool + live SearXNG are verified; this is the model-behavior check.)
 - Cloud mode + the SSH service/shutdown path are still untested against a real host (shared one SSH path).
 
-Open `TODO.md` → **Phase 4 → 4c+** (`task_plan` + compaction are now `[x]`). Next runnable slice:
-1. **4f** MCP + SearXNG + embeddings (D9), real targets staged in the owner's `config.yaml` (emma
-   `mcp_servers` Streamable-HTTP crawl4ai + `searxng` :8888). Connect one MCP server end-to-end first
-   (official Python MCP SDK, stdio + Streamable HTTP), merge its tools into the same `agent_tools()`
-   set, then generalize; SearXNG `web_search` tool; embeddings client for the vector `MemoryProvider`.
-   Keep agents/skills/orchestration behind swappable strategies (D11). Each sub-slice stays runnable.
+Open `TODO.md` → **Phase 4 → 4c+** (`task_plan`, compaction, `web_search` are now `[x]`). Next
+runnable slice:
+1. **4f remaining** — **MCP client** + **embeddings** (D9), real targets staged in the owner's
+   `config.yaml` (emma `mcp_servers` Streamable-HTTP crawl4ai + the `/v1/embeddings` backend). Connect
+   the one MCP server end-to-end first (official Python MCP SDK, stdio + Streamable HTTP), merge its
+   tools into the same `agent_tools()` set, then generalize; embeddings client for the vector
+   `MemoryProvider`. Keep agents/skills/orchestration behind swappable strategies (D11). Each
+   sub-slice stays runnable. *(SearXNG `web_search` ✅ done this session.)*
 
 **Resume protocol (4b, for reference):** the confirm bubble's execute/dismiss POSTs
 `/api/agent/resume {thread_id, call_id, decision, confirm_token}` and consumes a **fresh SSE stream**

@@ -122,6 +122,20 @@ class AgentCfg(BaseModel):
     compaction: CompactionCfg = Field(default_factory=CompactionCfg)
 
 
+class SearxngCfg(BaseModel):
+    """SearXNG metasearch endpoint backing the agent `web_search` tool (Phase 4f, D9). Hits the
+    instance's `/search?format=json` API (the instance must enable the JSON format in its
+    `settings.yml`). `enabled=False` (or an empty `base_url`) makes `web_search` report it's
+    unconfigured rather than erroring. `extra="allow"` so a future SearXNG-MCP variant round-trips."""
+
+    model_config = {"extra": "allow"}
+
+    base_url: str = ""               # e.g. http://192.168.1.160:8888 (no trailing /search)
+    enabled: bool = True
+    timeout_s: float = 10.0          # a metasearch fan-out can be slow-ish; keep it bounded
+    language: str | None = None      # optional default UI language passed to SearXNG (e.g. "en")
+
+
 def _slug(name: str) -> str:
     """Stable id from a host name: lowercase, non-alphanumerics → '-' (DESIGN.md §2)."""
     s = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
@@ -179,6 +193,7 @@ class Settings(BaseModel):
     server: ServerCfg = Field(default_factory=ServerCfg)
     inference: InferenceCfg = Field(default_factory=InferenceCfg)
     agent: AgentCfg = Field(default_factory=AgentCfg)
+    searxng: SearxngCfg = Field(default_factory=SearxngCfg)
     #: Keyed by host name, preserving the live `wol_server_win.py` `computers{}` shape so the
     #: owner can copy their existing config.yaml unchanged (HANDOFF — migration reference).
     computers: dict[str, ComputerCfg] = Field(default_factory=dict)

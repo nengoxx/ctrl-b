@@ -40,6 +40,16 @@ agent:
       mode: ""               # ""/local/cloud — blank inherits inference.default_mode
       model: ""              # blank inherits the endpoint's model
 
+# SearXNG metasearch → the agent's `web_search` tool (Phase 4f, D9). Point base_url at your
+# instance (no trailing /search). The instance must enable the JSON format in its settings.yml
+# (`search: { formats: [html, json] }`) — a stock SearXNG serves HTML only and web_search will
+# report that. Leave it out or set enabled:false to disable the tool.
+searxng:
+  base_url: http://192.168.1.160:8888
+  enabled: true
+  timeout_s: 10
+  language: ""             # optional default UI language (e.g. "en"); blank = instance default
+
 # The fleet, keyed by host name (the live wol_server_win.py `computers{}` shape — copy yours in).
 # Each host's stable id is a slug of its name. ssh_password is a secret: masked on API read,
 # never logged. Omit mac for hosts you won't Wake-on-LAN; omit ssh_* for ping-only hosts.
