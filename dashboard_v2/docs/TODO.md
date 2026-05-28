@@ -13,6 +13,20 @@ the whole architecture in `ARCHITECTURE.md` (don't build ahead of the phase you'
 
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
+> **Status @ 2026-05-28:** Phases **0–4.5 are done**, plus a capability/UX session — cloud chat
+> wired; agent **loop-discipline guards** + tool-selection routing; the **`fleet` intent-skill** that
+> fixes weak-model tool-selection (auto tool-narrowing; `skills: []` opts a capable model out);
+> lenient `task_plan`; **`check_service`** + **`reboot_host`** (+ device-row button); **clickable
+> plan-step dots** (persistent, agent-aware); and an **OS-compatibility pass** (ping/commands detect
+> the host OS — ready for emma/Linux). Detail in `HANDOFF.md`'s 2026-05-28 block.
+>
+> **Recommended next sequence (advisory — phases below are NOT reordered):** Phase **7 (Conf, sliced
+> like Phase 4)** is the highest-leverage unlock (everything is hand-edited YAML today; many features
+> have a "configure in Conf" follow-up) → a **thin emma/Linux deploy + Tailscale-Serve HTTPS** (the
+> deploy target, now that OS-compat is done; HTTPS also unblocks the mic) → **memory/vector recall
+> (7c)** → **voice (6)** → **utils (8)**. **Phase 5 (guarded shell) is deprioritized** — open-terminal
+> already provides remote shell on emma, so local `run_shell` is largely redundant.
+
 ---
 
 ## Phase 0 — Scaffolding & ground rules
@@ -78,6 +92,10 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
       live stack against the real fleet (2026-05-27) — fleet pings real hosts + a real WOL wake from
       the UI works.** (Shutdown against a real host + the confirm-dialog UX still untested — needs a
       host with SSH reachable; not a blocker.)
+- [x] **`reboot_host`** (2026-05-28): restart sibling of `shutdown_host` — per-OS command (Windows
+      `/r`, POSIX `shutdown -r now`), `risk=HIGH, confirm=True`, OS-command lookup degrades cleanly.
+      Frontend: a device-row reboot button beside shutdown (wake-accent gradient, rotate glyph),
+      shown with shutdown when online / wake-only when offline.
 
 ## Phase 3 — Services
 
@@ -100,6 +118,10 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
       real config (`/api/services` → `[]`); frontend `tsc -b` + `vite build` clean. **Not yet
       exercised against a real service host** (needs SSH reachable + a real service) — the start/
       stop/restart SSH path is identical to shutdown_host, which is also pending a live host.
+- [x] **`check_service`** (2026-05-28): live **TCP-probe** a service (reuses `ServiceService.status_of`;
+      reports DOWN if the host is offline) so the agent can actually confirm a service is up. Fixes a
+      correctness bug where the model treated `open_service_url` (which only *builds* the link, no
+      probe) as proof of liveness; both descriptions updated. Verified live with emma off.
 
 ## Phase 4 — Agent chat (text first)
 
@@ -112,7 +134,9 @@ tools + confirm bubbles) are DONE.**
 - [x] `adapters/inference.py` `InferenceClient`: one OpenAI-compatible `AsyncOpenAI` per mode
       (cached), `stream_chat` yields `ChatDelta(text|reasoning)` (handles thinking-model
       `reasoning_content`); `InferenceCfg` (local/cloud endpoints, `default_mode`, long timeout) in
-      `config.py` + `config.yaml` (local `minig+` @ `192.168.1.137:5001`).
+      `config.py` + `config.yaml` (local `minig+` @ `192.168.1.137:5001`). *(2026-05-28:
+      `inference.cloud` wired to OpenRouter `gemma-4-31b-it:free` — same key as embeddings;
+      `default_mode` stays `local`, `/cloud` opt-in; free tier is rate-limited.)*
 - [x] `domain/conversation.py` (Thread + Message + Part union: text/reasoning/error) +
       `services/conversation.py` (Thread/Message repos, parts as JSON). `GET/POST /api/threads`,
       `GET /api/threads/{id}/messages`.
@@ -146,9 +170,12 @@ tools + confirm bubbles) are DONE.**
       tool-calling + the bubble @390px not yet eyeballed by the owner.**
 
 ### 4c+ — routing, plan, compaction, MCP (next)
-- [ ] Capability fallback for weak local models (draft-into-bubble, no native tools). *(Eyeball
-      `minig+` native tool-calling first — if unreliable, build the prompted-JSON path into the same
-      `ToolCallPart` flow.)*
+- [~] Capability fallback for weak local models. **Largely resolved (2026-05-28), prompted-JSON
+      deferred:** `minig+`'s *native* tool-calling works fine; the real weak-model problem (it
+      hallucinates names / mis-picks from the big namespaced toolset) is fixed by the **`fleet`
+      intent-skill** (auto tool-narrowing) + **loop-discipline guards** (`max_repeat_calls` /
+      `max_calls_per_tool` / `max_stall_iterations` + forced final answer) + **lenient `task_plan`**.
+      The prompted-JSON path is now optional — only for a model with weak *native* calling.
 - [x] **MCP client (4f, D9):** **Streamable HTTP + stdio done** — `adapters/mcp_client.py` `McpClient`
       discovers each configured server's tools at startup and registers an `McpTool` wrapper per
       tool into the **same** registry (so they flow through `ActionService` + the confirm gate + the
@@ -226,7 +253,10 @@ tools + confirm bubbles) are DONE.**
       breadcrumb sys note. Files: `config.py` (AgentCfg/CompactionCfg/ModelRef), `adapters/inference.py`
       (`complete`), `services/agent/compaction.py` (`Compactor`), `services/agent/session.py` (loop
       check + `compact()`), `api/agent.py` (`/agent/compact`), `lib/composer.ts` + `store/chat.ts`.
-- [ ] Frontend **Agent** tab: chat log + shared composer + streaming render + command/plan bubbles.
+- [x] Frontend **Agent** tab: chat log + shared composer + streaming render + command/plan bubbles.
+      *(Done across 4a–4d. 2026-05-28: **clickable plan-step dots** — tap a dot in the pinned panel to
+      toggle done/undone; `POST /api/agent/plan` updates the latest `task_plan` call's args + result
+      in place, so it's persistent AND the agent sees it next turn; reuses message history.)*
 
 ## Phase 4.5 — Skills + agents (D10/D11)  ⭐ backend DONE
 
@@ -241,6 +271,11 @@ tools + confirm bubbles) are DONE.**
       composer routes a `/verb` matching a discovered skill; `ChatRequest.skills` + `GET /api/skills`.
       Active skills inject instructions into the system prompt + **narrow** the toolset to their
       `allowed_tools` (intersected with the agent allowlist; never widened).
+- [x] **`fleet` intent-skill + the weak-model finding (2026-05-28).** Proven live that `minig+` isn't
+      too weak — the full 21-tool *namespaced* set confused it (hallucinated names, spammed search).
+      `skills/fleet/SKILL.md` (fleet tools only) **auto-activates** on a fleet ask and narrows the
+      toolset → went from a 16-search spiral to 4 clean calls + accurate answer. **Opt-out for a
+      capable model: `skills: []`** (full toolset, own judgment). Documented in `config.example.yaml`.
 - [x] **Agent definitions (D11):** `domain/agent.py` `AgentDef` (prompt, backend+model via `ModelRef`,
       tool/skill allowlists, privilege, loop + subagent limits); `Settings.agents[]` +
       `resolve_agent(name)` (named/default/built-in fallback). The loop is driven by an `AgentDef`
@@ -335,15 +370,20 @@ Not v1 scope, but the owner wants these; v1 must leave room. Detail + design not
 ## Cross-cutting / don't-forget
 
 - [ ] Secrets: gitignore YAML + `*.db`; mask in API; never log SSH passwords / keys.
-- [ ] Per-OS abstraction lives in the action layer / `platform` shim — no Windows/Linux-only
-      imports at module import time (keeps Termux profile alive).
+- [x] Per-OS abstraction lives in the action layer / `platform` shim — no Windows/Linux-only
+      imports at module import time (keeps Termux profile alive). *(OS-compat pass 2026-05-28: ping
+      is a 3-way `platform.system()` branch (Win/Linux/macOS); shutdown/reboot OS-command lookups
+      degrade cleanly; WOL/paths/SSH/sockets/HTTP already portable. Ready for emma/Linux.)*
 - [ ] Every privileged action writes an `Event` (audit trail visible in UI).
 - [ ] Keep the Tailscale-only, no-auth, no-public-bind boundary intact (AGENTS.md §6).
 
 ## Open questions to resolve in-phase (from DECISIONS.md)
 
-- [ ] Agent tool-call format + weak-model fallback specifics (Phase 4).
-- [ ] SearXNG MCP: v1 or post-v1? (Phase 4+).
-- [ ] Memory strategy final shape (Phase 7).
-- [ ] Frontend routing: tab state vs react-router (Phase 1).
-- [ ] Is `dashboard_v2/` tracked in git, and when to first commit? (Phase 0 — ask owner.)
+- [x] Agent tool-call format + weak-model fallback → **native OpenAI tools**; weak-model fallback is
+      the `fleet` intent-skill (tool-narrowing) + loop guards; prompted-JSON deferred (see Phase 4c).
+- [x] SearXNG → done as the built-in **`web_search`** tool (4f) **and** available via emma's
+      `mcp__web-tools__*` MCP server; both live.
+- [ ] Memory strategy final shape (Phase 7) — embeddings client built (4f), vector `MemoryProvider`
+      + recall still TODO.
+- [x] Frontend routing → **tab state** (`store/ui.ts`), not react-router (decided Phase 1).
+- [x] `dashboard_v2/` is tracked on the public `main` (decided Phase 0; committing throughout).
