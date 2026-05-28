@@ -3,7 +3,15 @@ import { useEffect, useRef, useState } from "react";
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
 import { initChat, resumeCall, useChat } from "../store/chat";
-import type { ChatMessage, Part, Plan, PlanStep, ToolCallPart, ToolResult } from "../types";
+import type {
+  ChatMessage,
+  Part,
+  Plan,
+  PlanStep,
+  ToolCallPart,
+  ToolResult,
+  WebSearchHit,
+} from "../types";
 
 // Agent chat tab (Phase 4a + 4b). Renders the live thread from the chat store as Vapor bubbles
 // (sys / user / bot), streaming token-by-token, with a thinking model's reasoning in a dimmed
@@ -107,6 +115,37 @@ function PinnedPlan({ plan }: { plan: Plan }) {
   );
 }
 
+/** Pull web_search hits from the executed result's `data.results` (empty if none / not a search). */
+function hitsFrom(result: ToolResult | undefined): WebSearchHit[] {
+  const r = (result?.data as { results?: WebSearchHit[] } | undefined)?.results;
+  return Array.isArray(r) ? r : [];
+}
+
+/** web_search results as a collapsed-by-default disclosure: the bubble stays compact (just the
+ *  "N web result(s)" summary line above), and the owner taps to reveal the actual links to check
+ *  the sources. Links open in a new tab; rel guards against tab-nabbing. */
+function SearchResults({ hits }: { hits: WebSearchHit[] }) {
+  return (
+    <details className="cmd-links">
+      <summary>
+        <span className="label">links</span>
+        <span className="hint">{hits.length} · tap to view</span>
+      </summary>
+      <ol>
+        {hits.map((h, i) => (
+          <li key={i}>
+            <a href={h.url} target="_blank" rel="noopener noreferrer nofollow">
+              {h.title || h.url}
+            </a>
+            <span className="src">{h.engine ? ` · ${h.engine}` : ""}</span>
+            {h.content && <p className="snip">{h.content}</p>}
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
 function CmdBubble({
   call,
   result,
@@ -116,6 +155,7 @@ function CmdBubble({
   result: ToolResult | undefined;
   ts: string;
 }) {
+  const hits = call.tool === "web_search" ? hitsFrom(result) : [];
   const awaiting = !result && call.state === "awaiting_confirm";
   const running = !result && (call.state === "pending" || call.state === "running");
   const okState = result?.state ?? call.state;
@@ -149,6 +189,7 @@ function CmdBubble({
             {result.error ? ` — ${result.error}` : ""}
           </div>
         )}
+        {hits.length > 0 && <SearchResults hits={hits} />}
       </div>
     </div>
   );

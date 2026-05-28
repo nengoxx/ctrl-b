@@ -341,6 +341,70 @@ body {
   color: var(--violet);
 }
 
+/* web_search results (Phase 4f): a collapsed-by-default disclosure of the hit links, so the bubble
+   stays compact (just the "N web result(s)" outcome line) until the owner taps to check sources.
+   Net-new, built from vapor tokens — mirrors the `.think` reasoning disclosure's tone. */
+.b.cmd .cmd-links {
+  margin: -2px 12px 10px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.b.cmd .cmd-links > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--ink-soft);
+}
+.b.cmd .cmd-links > summary::-webkit-details-marker {
+  display: none;
+}
+.b.cmd .cmd-links > summary .label {
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--violet);
+}
+.b.cmd .cmd-links > summary .label::before {
+  content: "▸ ";
+}
+.b.cmd .cmd-links[open] > summary .label::before {
+  content: "▾ ";
+}
+.b.cmd .cmd-links > summary .hint {
+  color: var(--ink-faint);
+}
+.b.cmd .cmd-links ol {
+  margin: 8px 0 2px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.b.cmd .cmd-links li {
+  font-size: 11px;
+  line-height: 1.4;
+}
+.b.cmd .cmd-links a {
+  color: var(--teal);
+  text-decoration: none;
+  word-break: break-word;
+}
+.b.cmd .cmd-links a:hover {
+  text-decoration: underline;
+}
+.b.cmd .cmd-links .src {
+  color: var(--ink-faint);
+  font-size: 9.5px;
+}
+.b.cmd .cmd-links .snip {
+  margin: 2px 0 0;
+  color: var(--ink-soft);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 /* ── Plan panel (Phase 4d). The task_plan tool's live checklist — net-new (vapor has no plan markup),
    built only from vapor tokens. The current plan hangs from the top of the chat as a minimized tab
    (`.plan-pin`); tapping it drops the checklist down as an overlay so it never reflows the messages.

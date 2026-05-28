@@ -109,6 +109,15 @@ export interface InvokeResponse {
   event?: CtrlEvent;
 }
 
+/** One web_search hit (Phase 4f) — carried in a web_search ToolResult's `data.results`.
+ *  Mirrors adapters/searxng.py SearchResult. */
+export interface WebSearchHit {
+  title: string;
+  url: string;
+  content: string;
+  engine: string | null;
+}
+
 // ── Plan (Phase 4d). Mirror of domain/plan.py — carried in a task_plan ToolResult's `data.plan`. ──
 
 export type PlanStepStatus = "pending" | "active" | "done";
