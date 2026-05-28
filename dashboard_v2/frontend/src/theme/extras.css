@@ -291,6 +291,11 @@ body {
    vapor's static markup lacks: the confirm-gate hint, the resolved/running outcome line, and the
    dimmed "already ran" look (vapor's `.cmd.done::after` hardcodes a shell message, so we don't use
    `.done` — we render the real result here instead). Built from vapor tokens. */
+/* The command bubble's body has no padding (its preamble/pre inset themselves), so a thinking
+   block hosted here needs the same inset as the $-pre instead of hugging the border. */
+.b.cmd .think {
+  margin: 8px 12px;
+}
 .b.cmd .preamble {
   text-transform: capitalize;
   letter-spacing: 0.3px;
