@@ -155,6 +155,29 @@ class OpenTerminalCfg(BaseModel):
     read_risk: str = "low"           # risk for read/list/grep/glob (LOW auto-runs)
 
 
+class OpenApiServerCfg(BaseModel):
+    """An OpenAPI/REST service whose operations are auto-registered as agent tools (Phase 4f) — the
+    HTTP sibling of an MCP server, for Open WebUI "tool servers" or any service exposing an OpenAPI
+    doc. The spec is fetched from `spec_url` (or `base_url` + `/openapi.json`) at startup and each
+    operation becomes a tool `api__<server>__<operationId>`. `risk` gates the **mutating** ops
+    (POST/PUT/PATCH/DELETE → `risk`, default `med`); **GET/HEAD auto-run** (LOW) since they're reads.
+    Optional `include` allowlists operationIds/paths. Bearer auth via `api_key` (+ `auth_scheme`)."""
+
+    model_config = {"extra": "allow"}
+
+    name: str
+    base_url: str = ""               # service root, e.g. http://host:port
+    spec_url: str = ""               # explicit OpenAPI doc URL; blank → base_url + /openapi.json
+    enabled: bool = True
+    risk: str = "med"                # risk for mutating ops (low|med|high); GET/HEAD always LOW
+    connect_timeout_s: float = 15.0
+    api_key: str = ""                # optional bearer/api token
+    auth_scheme: str = "Bearer"      # prefix for the auth header value ("" → raw key)
+    auth_header: str = "Authorization"
+    headers: dict[str, str] = Field(default_factory=dict)
+    include: list[str] = Field(default_factory=list)  # optional operationId/path allowlist
+
+
 class McpServerCfg(BaseModel):
     """One MCP server the agent connects to as a client (Phase 4f, D9). `transport` selects the
     wire: `streamable_http` (the current spec transport — `url` + optional `headers`) or `stdio`
@@ -239,6 +262,7 @@ class Settings(BaseModel):
     agent: AgentCfg = Field(default_factory=AgentCfg)
     searxng: SearxngCfg = Field(default_factory=SearxngCfg)
     open_terminal: OpenTerminalCfg = Field(default_factory=OpenTerminalCfg)
+    openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
     #: Keyed by host name, preserving the live `wol_server_win.py` `computers{}` shape so the
     #: owner can copy their existing config.yaml unchanged (HANDOFF — migration reference).

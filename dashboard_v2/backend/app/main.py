@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from app import __version__
 from app.adapters.inference import InferenceClient
 from app.adapters.mcp_client import McpClient
+from app.adapters.openapi_tools import OpenApiToolProvider
 from app.adapters.openterminal import OpenTerminalClient
 from app.adapters.searxng import SearxngClient
 from app.api import actions, agent, events, health, hosts, services
@@ -71,6 +72,10 @@ async def lifespan(app: FastAPI):
     # down server is logged + skipped (its tools just won't be present this run), never fatal.
     app.state.mcp = McpClient(app.state.settings.mcp_servers)
     app.state.mcp_summary = await app.state.mcp.discover(registry)
+    # Generic OpenAPI tool servers (Phase 4f): same merge-into-the-registry pattern as MCP, for
+    # plain REST/OpenAPI services (Open WebUI tool servers, etc.). Per-server failure isolation.
+    app.state.openapi = OpenApiToolProvider(app.state.settings.openapi_servers)
+    app.state.openapi_summary = await app.state.openapi.discover(registry)
     app.state.openterminal_tools = n_term
     app.state.actions = ActionService(registry, deps)
 
@@ -85,6 +90,7 @@ async def lifespan(app: FastAPI):
     finally:
         await app.state.searxng.aclose()
         await app.state.open_terminal.aclose()
+        await app.state.openapi.aclose()
         await app.state.db.close()
 
 

@@ -180,9 +180,16 @@ tools + confirm bubbles) are DONE.**
       shell). `OpenTerminalCfg` + `Settings.open_terminal`; wired on `Deps.open_terminal` + `main.py`.
       Verified unit + **live against emma** (exec confirm round-trip, single-use args-bound token,
       nonzero-exit→ERROR, read-only auto-run). The remote analog of the Phase-5 guarded shell.
-- [ ] **Generic OpenAPI tool provider (4f):** ingest any OpenAPI spec (`/openapi.json`) and register
-      each operation as a tool (HTTP sibling of the MCP client, reusing `ToolSpec.raw_schema`) — so
-      the owner can plug Open WebUI "tool servers" / other OpenAPI services. Per-server enable + risk.
+- [x] **Generic OpenAPI tool provider (4f):** `adapters/openapi_tools.py` `OpenApiToolProvider` —
+      fetches each configured server's OpenAPI doc and registers every operation as `api__<server>__
+      <opId>` into the shared registry (HTTP sibling of the MCP client). Hands the model a
+      **self-contained** JSON Schema (path/query params as top-level props + requestBody as a nested
+      `body`, `#/components/schemas` `$ref`s rewritten to local `$defs`), reusing `ToolSpec.raw_schema`;
+      flat args split back into path/query/header/body on call. **GET/HEAD auto-run (LOW)**, mutating
+      verbs use per-server `risk` (default med → confirm). Per-server failure isolation. `OpenApiServerCfg`
+      + `Settings.openapi_servers`; wired in `main.py` (`app.state.openapi` + `openapi_summary`).
+      Verified live by pointing it at open-terminal's own `/openapi.json` (12 ops discovered, schema
+      `$defs`/ref-rewrite correct, GET auto-ran, POST gated→token→ran). For Open WebUI tool servers etc.
 - [ ] **Embeddings client (D9):** wire the configured llama.cpp `/v1/embeddings` (powers the vector
       `MemoryProvider` when that lands).
 - [x] **Composer prefix routing (4c):** `!` (configurable sigil, const in `lib/composer.ts`) →

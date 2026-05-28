@@ -62,10 +62,28 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
 **Everything through Phase 4e is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181`
 · 4c `b44c039` · doc `d4e704b` · 4d `df612e3` · **4e `60f8e68`** · vite-host fix `f2774b8`).
-**Phase 4f is underway: `web_search` (SearXNG), the MCP client, and curated open-terminal tools
-landed** (see below). Remaining: a **generic OpenAPI tool provider** (owner wants it for Open WebUI
-tool servers) + the **embeddings client** (+ MCP **stdio** transport, a small follow-up). The 4e
-file list further down is reference for what landed earlier.
+**Phase 4f is underway: `web_search` (SearXNG), the MCP client, curated open-terminal tools, and a
+generic OpenAPI tool provider landed** (see below). Remaining: the **embeddings client** (+ MCP
+**stdio** transport, a small follow-up). The 4e file list further down is reference for earlier work.
+
+⭐ NEW in Phase 4f — generic OpenAPI tool provider (`backend/app/`):
+```
+  config.py                    # ⭐ OpenApiServerCfg (base_url/spec_url/api_key/auth/risk/include) + Settings.openapi_servers
+  adapters/openapi_tools.py    # ⭐ OpenApiToolProvider.discover() fetches /openapi.json, registers an
+                               #     OpenApiTool per operation (api__<server>__<opId>); call() splits args→path/query/body
+  main.py                      #   lifespan discovers into the registry (app.state.openapi + openapi_summary)
+```
+**Design:** the HTTP sibling of the MCP client — for Open WebUI "tool servers" or any OpenAPI/REST
+service. Each operation is registered into the **same registry** (→ ActionService + gate + bubble).
+The model gets a **self-contained JSON Schema**: path/query params become top-level props, the
+requestBody becomes a nested `body` prop, and `#/components/schemas/...` `$ref`s are rewritten to
+local `$defs` (attached) so nothing needs external resolution — reuses the `ToolSpec.raw_schema`
+seam. On call, the flat args are split back into path substitutions / query / headers / JSON body.
+**Risk:** GET/HEAD auto-run (LOW — reads); mutating verbs use the per-server `risk` (default med →
+confirm). Per-server failure isolation (a bad spec logs + registers nothing). **Verified live** by
+pointing it at open-terminal's own `/openapi.json` (12 ops; `$defs`/ref-rewrite correct; a GET
+auto-ran; a POST gated → token → ran). *(The owner has no `openapi_servers` configured yet — it's
+there for when they wire their Open WebUI tool servers; `openapi_summary` is `[]` until then.)*
 
 ⭐ NEW in Phase 4f — open-terminal tools (`backend/app/`):
 ```
@@ -571,8 +589,9 @@ behind swappable strategy interfaces** (don't hardcode) · Conf tab in functiona
 
 ## First action — Phase 4f, remaining work (embeddings; MCP stdio follow-up)
 
-**`web_search` + the MCP client (Streamable HTTP) both landed.** Remaining 4f work, each its own
-runnable slice + commit (footer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`):
+**`web_search`, the MCP client (Streamable HTTP), curated open-terminal tools, and the generic
+OpenAPI provider all landed.** Remaining 4f work, each its own runnable slice + commit (footer:
+`Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`):
 - **Embeddings client (next):** wire the configured llama.cpp `/v1/embeddings` (an `EmbeddingsCfg` +
   `InferenceClient.embed`) — powers the vector `MemoryProvider` when that lands (Phase 7), so no
   user-visible behavior yet; smallest remaining piece.

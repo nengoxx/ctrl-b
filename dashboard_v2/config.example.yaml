@@ -65,6 +65,20 @@ open_terminal:
   write_risk: high
   read_risk: low
 
+# Generic OpenAPI/REST tool servers (Phase 4f) — the HTTP sibling of mcp_servers, for Open WebUI
+# "tool servers" or any service exposing an OpenAPI doc. Each operation becomes a tool
+# `api__<server>__<operationId>`. GET/HEAD ops auto-run (reads); mutating verbs use `risk` (default
+# med → confirm). A server whose spec won't load is skipped. `include` optionally allowlists ops.
+openapi_servers:
+  - name: my-tools
+    base_url: http://192.168.1.160:8080   # spec fetched from base_url + /openapi.json …
+    # spec_url: http://192.168.1.160:8080/openapi.json   # … or set explicitly
+    api_key: ""              # optional bearer token
+    auth_scheme: Bearer      # header value prefix ("" → send the raw key)
+    risk: med                # risk for mutating ops; GET/HEAD always auto-run
+    enabled: true
+    # include: [search, fetch]   # optional operationId/path allowlist
+
 # MCP servers the agent connects to as a client (Phase 4f, D9). Each server's tools are discovered
 # at startup and merged into the agent's toolset, namespaced `mcp__<server>__<tool>`. A down server
 # is skipped (its tools just won't be present that run) — it never blocks startup. `risk` gates ALL
