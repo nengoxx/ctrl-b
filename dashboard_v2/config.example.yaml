@@ -34,9 +34,11 @@ inference:
 agent:
   default_agent: ""          # name of the agents[] entry new threads use; blank = built-in default
   global_subagent_limit: 6   # process-wide cap on concurrent subagents across the whole tree (4.5)
+  subagent_clamp_privilege: true  # clamp a subagent's privilege to never exceed its parent's (4.5);
+                                  # false lets a configured subagent run at a higher privilege
   skills_enabled: true       # master switch for the skills subsystem (4.5)
   skills_dir: skills         # dir scanned for <name>/SKILL.md (relative → alongside this config)
-  compaction:
+  compaction:                # global context-window default; an agent/subagent can override it below
     enabled: true
     threshold_tokens: 6000   # working-context size (~chars/4 estimate) that triggers auto-compaction
     keep_last_messages: 8    # recent-message floor kept verbatim (snapped back to a turn boundary)
@@ -47,6 +49,12 @@ agent:
 # Agent definitions (Phase 4.5, D11). Optional — with none configured a built-in default chat agent
 # is used (all agent-exposed tools, CONFIRM privilege, the chat model). Add entries to run/select
 # alternate agents (and to spawn them as subagents). Each is selectable per thread; one is default.
+#
+# Subagents INHERIT every parameter from the agent that spawns them — model, context-window
+# (compaction), privilege, tool/skill allowlists, iteration & fan-out caps. A subagent named in
+# spawn_subagents that you define below overrides ONLY the fields you set here (e.g. just prompt +
+# tools); everything else is inherited from the parent. With no named subagent, a child is a full
+# clone of the parent. (Privilege is still clamped to the parent unless subagent_clamp_privilege:false.)
 # agents:
 #   - name: fleetops
 #     prompt: "You manage the PC fleet. Be terse."
@@ -56,10 +64,13 @@ agent:
 #     model:                 # backend+model for this agent; blank fields inherit the chat default
 #       mode: ""             # ""/local/cloud
 #       model: ""
+#     compaction:            # per-agent context window; omit to inherit agent.compaction above
+#       threshold_tokens: 6000
+#       keep_last_messages: 8
 #     max_iterations: 16
 #     max_subagent_depth: 2
 #     max_concurrent_subagents: 3
-#   - name: researcher
+#   - name: researcher       # e.g. spawned as a subagent — set only what differs; rest inherits parent
 #     prompt: "You research topics with web tools and report concisely."
 #     tools: [web_search, "mcp__*"]
 

@@ -55,6 +55,26 @@ def _clamp(child: Privilege, parent: Privilege) -> Privilege:
     return child if _PRIV_ORDER[child] <= _PRIV_ORDER[parent] else parent
 
 
+def resolve_child(settings, parent: AgentDef, name: str | None, *, clamp: bool) -> AgentDef:
+    """Resolve the `AgentDef` for one subagent (§5.5). A subagent **inherits every parameter from
+    its parent** — model, context-window/compaction, privilege, tool/skill allowlists, iteration &
+    fan-out caps — and a *named* subagent def overlays only the fields it explicitly sets (so
+    "configure just the prompt" inherits everything else). No name → the subagent is a full clone of
+    the parent (its prompt included). Privilege is clamped to never exceed the parent unless the
+    owner disabled `agent.subagent_clamp_privilege`."""
+    if not name:
+        child = parent
+    else:
+        sub = settings.resolve_agent(name)
+        # Overlay only the fields the subagent def explicitly set (pydantic tracks them); the rest
+        # inherit the parent's values. `name` always comes from the subagent.
+        overlay = {f: getattr(sub, f) for f in sub.model_fields_set if f != "name"}
+        child = parent.model_copy(update={**overlay, "name": sub.name})
+    if clamp:
+        child = child.model_copy(update={"privilege": _clamp(child.privilege, parent.privilege)})
+    return child
+
+
 @dataclass
 class SubResult:
     """One child's outcome, aggregated back into the tool result the parent model reads."""
@@ -236,12 +256,11 @@ async def spawn_subagents(inp: SpawnInput, ctx: InvocationContext) -> ToolResult
             summary=f"max subagent depth ({parent.max_subagent_depth}) reached — not spawning",
         )
 
-    children: list[tuple[AgentDef, str]] = []
-    for t in inp.tasks:
-        name = t.agent or inp.agent or parent.name
-        cdef = deps.settings.resolve_agent(name)
-        cdef = cdef.model_copy(update={"privilege": _clamp(cdef.privilege, parent.privilege)})
-        children.append((cdef, t.task))
+    clamp = deps.settings.agent.subagent_clamp_privilege
+    children: list[tuple[AgentDef, str]] = [
+        (resolve_child(deps.settings, parent, t.agent or inp.agent, clamp=clamp), t.task)
+        for t in inp.tasks
+    ]
 
     orchestrator = ParallelOrchestrator(
         per_agent=parent.max_concurrent_subagents, global_sem=deps.subagent_sem

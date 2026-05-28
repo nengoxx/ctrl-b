@@ -28,6 +28,22 @@ class ModelRef(BaseModel):
     model: str | None = None     # None → the endpoint's configured model id
 
 
+class CompactionCfg(BaseModel):
+    """Context-window compaction (Phase 4e, D10/D11). When the working context (non-compacted
+    history) grows past `threshold_tokens`, the oldest complete turns are summarized into a single
+    system message and marked `compacted` (kept verbatim in SQLite). `keep_last_messages` is the
+    floor of recent messages always kept; the summarizer is independently selectable.
+
+    Lives here (not config.py) so an `AgentDef` can carry a per-agent override without a config↔domain
+    import cycle. `Settings.agent.compaction` is the global default; `AgentDef.compaction`, when set,
+    wins for that agent (and is inherited by its subagents)."""
+
+    enabled: bool = True
+    threshold_tokens: int = 6000     # working-context size that triggers auto-compaction
+    keep_last_messages: int = 8      # recent-message floor kept verbatim (snapped to a turn boundary)
+    summarizer: ModelRef = Field(default_factory=ModelRef)
+
+
 class AgentDef(BaseModel):
     """One agent's definition (D11). `tools`/`skills` are allowlists — `"*"` means every
     `agent_exposed` tool / discovered skill, or a list of names/globs to narrow it (a skill may
@@ -43,6 +59,9 @@ class AgentDef(BaseModel):
     tools: list[str] | Literal["*"] = "*"               # tool-name allowlist (globs) or all agent tools
     skills: list[str] | Literal["*"] = "*"              # skill allowlist or all discovered skills
     privilege: Privilege = Privilege.CONFIRM
+    #: Per-agent context-window override. `None` → inherit `Settings.agent.compaction` (the global
+    #: default). A subagent inherits its parent's effective value unless its own def sets this.
+    compaction: CompactionCfg | None = None
     max_iterations: int = 16                             # tool-call loop safety cap
     max_subagent_depth: int = 2                          # how deep spawn_subagents may nest
     max_concurrent_subagents: int = 3                    # per-agent fan-out cap (global cap in settings)

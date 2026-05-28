@@ -24,12 +24,15 @@ import yaml
 from dotenv import dotenv_values
 from pydantic import BaseModel, Field, SecretStr
 
-from app.domain.agent import AgentDef, ModelRef
+from app.domain.agent import AgentDef, CompactionCfg, ModelRef
 from app.domain.enums import OSType
 from app.domain.host import Host
 from app.domain.service import Service
 
-__all__ = ["Settings", "ModelRef", "AgentDef", "load_settings", "save_settings", "mask_secrets"]
+__all__ = [
+    "Settings", "ModelRef", "AgentDef", "CompactionCfg",
+    "load_settings", "save_settings", "mask_secrets",
+]
 
 # dashboard_v2/backend/app/config.py -> dashboard_v2/
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -95,19 +98,6 @@ class InferenceCfg(BaseModel):
         return self.local if (mode or self.default_mode) == "local" else self.cloud
 
 
-class CompactionCfg(BaseModel):
-    """Context compaction (Phase 4e, D10/D11). When the working context (non-compacted history)
-    grows past `threshold_tokens`, the oldest complete turns are summarized into a single system
-    message and marked `compacted` (kept verbatim in SQLite). `keep_last_messages` is the floor of
-    recent messages always kept; the summarizer is independently selectable (a cheap/fast model can
-    compact while a heavier model chats)."""
-
-    enabled: bool = True
-    threshold_tokens: int = 6000     # working-context size that triggers auto-compaction
-    keep_last_messages: int = 8      # recent-message floor kept verbatim (snapped to a turn boundary)
-    summarizer: ModelRef = Field(default_factory=ModelRef)
-
-
 class AgentCfg(BaseModel):
     """Agent-runtime settings (D10/D11). `default_agent` names which entry in `Settings.agents` a
     new thread uses (blank → the built-in default). `global_subagent_limit` caps concurrent
@@ -119,6 +109,10 @@ class AgentCfg(BaseModel):
     compaction: CompactionCfg = Field(default_factory=CompactionCfg)
     default_agent: str = ""              # name of the default AgentDef; "" → built-in default
     global_subagent_limit: int = 6       # process-wide cap on concurrent subagents (tree-wide)
+    #: Security rail: clamp a subagent's privilege so it can never exceed its parent's (§5.5).
+    #: True (default) is the safe choice; set False if you deliberately want a configured subagent
+    #: to run at a higher privilege than the agent that spawned it.
+    subagent_clamp_privilege: bool = True
     skills_dir: str = "skills"           # dir scanned for <name>/SKILL.md (relative → project root)
     skills_enabled: bool = True          # master switch for the skills subsystem (4.5)
 

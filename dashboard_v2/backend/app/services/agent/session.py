@@ -140,7 +140,11 @@ class AgentSession:
         #: invocation so a child's `spawn_subagents` sees depth+1.
         self._interactive = interactive
         self._depth = depth
-        self._compactor = Compactor(inference, messages, settings.agent.compaction)
+        # Context-window settings are per-agent (4.5): the AgentDef's `compaction` wins, else the
+        # global default. A subagent inherits the parent's effective value (resolved at spawn).
+        self._compactor = Compactor(
+            inference, messages, self._agent.compaction or settings.agent.compaction
+        )
         #: Per-turn skill state (4.5), set by `_activate_skills` at the start of run_turn. The
         #: effective tool allowlist defaults to the agent's; active skills may narrow it.
         self._skills_note: str | None = None
