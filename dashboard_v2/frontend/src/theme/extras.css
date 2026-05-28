@@ -789,22 +789,26 @@ body {
   filter: var(--accent-glow);
 }
 
-/* ── Interactive plan dots (plan-edit): in the pinned/live plan panel each step's tick is a button
-   that toggles done/undone. Reset native button chrome so it still renders as the .tick circle
-   (border from .plan-step .tick; appearance:none drops the UA fill so .done's green still wins),
-   and add a hover/press affordance. Historical breadcrumbs render a plain <span> (read-only). */
+/* ── Interactive plan dots (plan-edit): in the pinned/live panel each step's tick is clickable to
+   toggle done/undone. It stays the same <span> element so the dot looks EXACTLY like before — only
+   a pointer cursor + a small press feedback is added (no color/shape change). */
 .plan-step .tick.tick-btn {
-  -webkit-appearance: none;
-  appearance: none;
-  padding: 0;
-  box-sizing: border-box;
   cursor: pointer;
-  transition: transform 0.1s ease, border-color 0.15s, box-shadow 0.15s;
-}
-.plan-step .tick.tick-btn:hover {
-  border-color: var(--green);
-  box-shadow: var(--t-glow);
+  transition: transform 0.1s ease;
 }
 .plan-step .tick.tick-btn:active {
   transform: scale(0.82);
+}
+
+/* ── Device-row action area: when a host is ONLINE it shows two buttons (reboot + shutdown). They
+   must live in ONE grid cell (vapor's .top is a 5-col grid; two separate items pushed shutdown into
+   the 16px chev column and cropped it). Wrap them in .acts, and narrow the eq column for online rows
+   so the trimmed bars don't leave a dead gap and the buttons sit flush. vapor.css stays verbatim. */
+.dev .acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dev.on .top {
+  grid-template-columns: auto 1fr 38px auto 16px;
 }

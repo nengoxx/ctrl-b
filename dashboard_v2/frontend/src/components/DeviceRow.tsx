@@ -62,7 +62,7 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
           )}
         </div>
         {online ? (
-          <>
+          <div className="acts">
             <button
               className="act reboot"
               data-act="reboot"
@@ -77,7 +77,7 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
               disabled={busy}
               onClick={(e) => act(e, () => onAction("shutdown"))}
             />
-          </>
+          </div>
         ) : (
           <button
             className="act wake"

@@ -61,11 +61,18 @@ function PlanSteps({ plan, onToggle }: { plan: Plan; onToggle?: (i: number) => v
       {plan.steps.map((s, i) => (
         <li key={i} className={"plan-step " + s.status}>
           {onToggle ? (
-            <button
-              type="button"
+            <span
               className="tick tick-btn"
+              role="button"
+              tabIndex={0}
               aria-label={`toggle "${s.text}" ${s.status === "done" ? "incomplete" : "done"}`}
               onClick={() => onToggle(i)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onToggle(i);
+                }
+              }}
             />
           ) : (
             <span className="tick" aria-hidden />
