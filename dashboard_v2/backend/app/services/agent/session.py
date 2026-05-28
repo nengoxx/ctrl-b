@@ -461,10 +461,12 @@ class AgentSession:
             if suspended:
                 yield AgentEvent("done", {"threadId": thread.id, "state": "suspended"})
                 return
-            # Stall guard (C1b): text counts as progress too. If the model churns for
-            # `max_stall_iterations` with no executed call and no text (e.g. every call was a
-            # suppressed repeat), stop looping and force a final answer.
-            if made_progress or text:
+            # Stall guard (C1b): only a *new tool result* counts as progress. Narration text does
+            # NOT — a thinking model emits commentary alongside its tool calls every iteration, and
+            # counting that as progress would defeat this guard entirely (the bug that let the loop
+            # run to max_iterations). A text-only reply already returned `completed` above, so any
+            # `text` here is just narration accompanying tool calls.
+            if made_progress:
                 stall = 0
             else:
                 stall += 1
@@ -492,7 +494,10 @@ class AgentSession:
                 "role": "system",
                 "content": (
                     "You have done enough tool work for this request. Do NOT call any more tools. "
-                    "Give the owner your final answer now, concisely summarizing what you found or did."
+                    "Give the owner your final answer now. Be honest: summarize only what you "
+                    "actually accomplished via the tool results above, and clearly state what you "
+                    "could NOT do. Do not claim a step or plan succeeded if its tool was never run "
+                    "or returned an error."
                 ),
             }
         )
