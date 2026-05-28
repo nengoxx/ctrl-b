@@ -235,9 +235,10 @@ def _aggregate(results: list[SubResult]) -> ToolResult:
     "spawn_subagents",
     title="Spawn subagents",
     description=(
-        "Delegate one or more scoped tasks to subagents that run in parallel, each with its own "
-        "context, and return their results. Use for independent sub-tasks (research several things "
-        "at once, or fan a check across topics). Provide a list of tasks."
+        "Delegate two or more INDEPENDENT sub-tasks to subagents that run in parallel, each with its "
+        "own context, and return their results. Use only when sub-tasks are independent of each other "
+        "(e.g. research several separate topics at once). Do NOT use it for a single task or for "
+        "sequential steps that depend on each other — do those yourself with the relevant tools."
     ),
     category="builtin",
     risk=Risk.MED,

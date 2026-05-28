@@ -63,5 +63,12 @@ class AgentDef(BaseModel):
     #: default). A subagent inherits its parent's effective value unless its own def sets this.
     compaction: CompactionCfg | None = None
     max_iterations: int = 16                             # tool-call loop safety cap
+    #: Loop-discipline guards (capability layer C1). A weak model can spiral — repeating one tool
+    #: or churning many calls without ever answering. `max_repeat_calls` is how many *identical*
+    #: (tool, args) calls run before the rest are suppressed with a steering note (2 still allows a
+    #: legitimate re-poll, e.g. ping→wake→ping). `max_stall_iterations` is how many consecutive
+    #: no-progress iterations (no executed call, no text) trigger a forced final answer.
+    max_repeat_calls: int = 2
+    max_stall_iterations: int = 2
     max_subagent_depth: int = 2                          # how deep spawn_subagents may nest
     max_concurrent_subagents: int = 3                    # per-agent fan-out cap (global cap in settings)

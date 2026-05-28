@@ -44,6 +44,11 @@ def _format(results: list) -> str:
 @action(
     "web_search",
     title="Web search",
+    description=(
+        "Search the public internet (via SearXNG) for information. Use ONLY when the owner asks for "
+        "something that requires looking up external/online information. Do NOT use this for fleet, "
+        "host, or service operations — those have dedicated tools (wake/ping/start/stop/restart)."
+    ),
     icon="search",
     category="utility",
     risk=Risk.LOW,

@@ -28,10 +28,13 @@ earlier prototypes — kept for reference, not imported or modified. The live Fl
 
 ## Status
 
-🚧 **Phase 0 done — scaffold runs.** FastAPI skeleton (`/api/health`), config + SQLite,
-and the React/TS/Vite PWA shell with the Vapor stylesheet lifted verbatim are in place and
-verified (backend health + frontend build). Next: `docs/TODO.md` **Phase 1 — Fleet read path**.
-New session? Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first.
+🚧 **Phases 0–4.5 done.** Fleet read/action path, the live tool-using **Agent** (tool-calling,
+confirm bubbles, markdown, plan panel, context compaction), the 4f integrations (SearXNG
+`web_search`, MCP client over Streamable-HTTP **and** stdio, open-terminal tools, a generic OpenAPI
+provider, an embeddings client), and skills + agents/subagents are all in and live-probed against the
+local model. Cloud chat (`/cloud` → OpenRouter) is wired; default stays local. Next candidates:
+**Phase 7 Conf tab** (settings UI incl. skills/agents management) or Phase 5 (guarded shell).
+**New session? Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first** — it's the living status + next-step doc.
 
 ## Running (dev)
 
@@ -55,6 +58,109 @@ gitignored) is the UI-managed source of truth incl. nested secrets; `.env` (copy
 that win over the YAML. Both are optional — built-in defaults apply without them. The SQLite
 file (`ctrlb.db`) is created on first run.
 
+## Agent subsystem
+
+The agent is a **tool-using chat loop**: the model sees the typed-action registry as OpenAI
+function-calling `tools`, and the loop runs the calls it emits through the **same `ActionService`**
+(validate → risk/privilege gate → execute → audit) that the UI buttons use. There is no separate
+agent execution path — every capability (fleet actions, `web_search`, MCP tools, open-terminal,
+OpenAPI ops, `task_plan`, `spawn_subagents`) is one entry in one registry, so adding a tool gives the
+agent the ability for free. Canonical deep design is in [`docs/DESIGN.md`](docs/DESIGN.md) (§3 registry,
+§5 agent loop, §12 SSE); this section is the operational map + the configurable knobs.
+
+### The turn loop (`backend/app/services/agent/session.py`)
+
+`AgentSession` is built per request (state lives in SQLite, so a dropped SSE stream can reconnect).
+A turn flows: `run_turn` (persist the user message, activate skills) → `_drive` (the loop) → for each
+iteration: **compact if over threshold → assemble OpenAI context → stream the model → run any tool
+calls via `_run_calls` → loop until the model returns text-only**. Tools stream back as `.b.cmd`
+command bubbles; reasoning (thinking models) streams dimmed and is **not** replayed into context.
+
+Terminal states (the `done` SSE event):
+- **completed** — the model returned a final text answer.
+- **suspended** — a med/high-risk call hit the **confirm gate**: the call is persisted
+  `AWAITING_CONFIRM`, a `tool.permission` event carries a single-use TTL'd token, and the turn parks.
+  The UI's execute/dismiss re-opens a stream via `resume()`.
+- ~~capped~~ → **forced wrap-up**: when the loop stalls or exhausts `max_iterations`, instead of a
+  silent dead-end it makes one **tool-less** model call ("give your final answer now") so the owner
+  always gets a reply. `capped` now only appears if that final call itself errors.
+
+### Risk → privilege gating (the confirm bubbles)
+
+Every tool has a `risk` (LOW/MED/HIGH). The agent runs at a configurable **privilege** (`AgentDef.privilege`,
+default `CONFIRM`): LOW auto-runs; MED/HIGH gate on a confirm bubble. Same `decide()` policy as the UI
+(just `Actor.AGENT`). Change the privilege and the gating changes — no per-tool logic. Headless
+subagents (no UI) **deny** a confirm-gated call in place rather than stalling.
+
+### Loop discipline (capability layer C1) — keeps weak models from spiralling
+
+Local models can mis-drive the loop (a live probe saw `search_web` fired ~14× until the cap, with no
+answer). Three guards, all in `_drive`/`_run_calls`, **scoped to one turn**:
+- **Duplicate-call suppression** — an identical `(tool, args)` call past `max_repeat_calls` is *not*
+  executed; the prior result is echoed back with a steering note. A threshold of 2 still allows a
+  legitimate re-poll (ping → wake → ping). Suppressing a *mutating* duplicate is also the safe default.
+- **Stall detection** — `max_stall_iterations` consecutive iterations with no executed call and no text
+  (e.g. all calls were suppressed repeats) trigger the forced wrap-up.
+- **Forced final answer** — the wrap-up above, so a turn never dead-ends.
+
+### Tool-selection guidance (capability layer C2)
+
+The default system prompt carries explicit **routing rules** (use fleet tools + `task_plan` for fleet
+work, `web_search`/crawl only for internet lookups, don't repeat calls), and the model-facing
+`description=` on `task_plan` / `web_search` / `spawn_subagents` states *when (not) to use it*. **Known
+limitation:** prompt-level steering does *not* fully fix a weak local model — in testing `minig+` still
+sometimes picks MCP `search_*` for a fleet task (and MCP tool descriptions come from the remote server,
+so they can't be sharpened locally). The robust levers are a more capable model, **tool-subsetting**
+(gate search behind a skill/agent — future), or the deferred **C3 prompted-JSON tool-calling strategy**
+(see `docs/HANDOFF.md`). C1's loop discipline is the model-agnostic safety net regardless.
+
+### Agents, skills, subagents
+
+- **`AgentDef`** (`domain/agent.py`) is the configurable shape of an agent: `prompt`, `model`
+  (backend+id), `tools`/`skills` allowlists (globs; `"*"` = all), `privilege`, `compaction` override,
+  and the loop/subagent caps. Configured under `agents:` in `config.yaml`; the default chat agent is a
+  synthesized default when none are set. A new thread's agent is named by `agent.default_agent`.
+- **Skills** (`skills/<name>/SKILL.md`) inject instructions and narrow the toolset for a turn —
+  model-invoked by description match (`KeywordSkillSelector`) or user-invoked via `/skill-name`. Both
+  the provider and the selector are swappable interfaces (D11).
+- **Subagents** — `spawn_subagents` (MED) delegates independent tasks to children run in bounded
+  parallel, **headless**, depth-capped (`max_subagent_depth`), privilege-clamped to the parent. A child
+  **inherits every parameter from its parent** (model, compaction, caps, allowlists); a *named*
+  subagent def overlays only the fields it sets.
+
+### Context compaction
+
+Before each model call, if the working context exceeds `compaction.threshold_tokens`, the oldest
+complete turns fold into a summary system message (full history kept in SQLite). Turn-boundary-safe
+(an assistant `tool_calls` is never split from its results). Manual `/compact` forces it. The
+summarizer model is independently selectable (`compaction.summarizer`).
+
+### Configurable knobs (no hard-coding — tune in `config.yaml`)
+
+Per-agent, on each `AgentDef` (under `agents:`), inherited by its subagents:
+
+| Knob | Default | Effect |
+|---|---|---|
+| `prompt` / `model` | built-in / chat default | system prompt; inference backend + model id |
+| `tools` / `skills` | `"*"` | allowlists (names/globs) |
+| `privilege` | `confirm` | gating: `confirm` gates MED/HIGH; other rungs land post-v1 |
+| `max_iterations` | 16 | tool-call loop hard cap (→ forced wrap-up) |
+| `max_repeat_calls` | 2 | identical calls allowed before suppression (C1) |
+| `max_stall_iterations` | 2 | no-progress iterations before forced wrap-up (C1) |
+| `max_subagent_depth` / `max_concurrent_subagents` | 2 / 3 | subagent tree limits |
+| `compaction.*` | global `agent.compaction` | per-agent context-window override |
+
+Global agent settings live under `agent:` (`default_agent`, `global_subagent_limit`,
+`subagent_clamp_privilege`, `skills_dir`, `skills_enabled`, `compaction`). Inference endpoints +
+`default_mode` under `inference:`; integrations under `searxng:` / `mcp_servers:` / `open_terminal:` /
+`openapi_servers:` / `embeddings:`.
+
+### SSE event vocabulary (client ↔ `/api/agent/chat` · `/resume`)
+
+`thread` · `message.start` · `reasoning.delta` · `text.delta` · `part.added` (tool_call) ·
+`tool.permission` (confirm gate) · `tool.result` · `compaction` · `message.end` · `error` ·
+`done {state}`. Full contract in `docs/DESIGN.md` §12.
+
 ## Docs
 
 | File | What it covers |
@@ -67,7 +173,7 @@ file (`ctrlb.db`) is created on first run.
 | [`docs/TODO.md`](docs/TODO.md) | Phased, checkbox build plan from empty folder to cutover. |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Future additions (privilege levels, automations, wake word, idle shutdown, bots, …) + the v1 seams to build now so they slot in. |
 
-## Planned layout (not yet created)
+## Layout (approximate — the real tree is layered `domain/ · services/ · adapters/ · api/`; see `docs/ARCHITECTURE.md`)
 
 ```
 dashboard_v2/

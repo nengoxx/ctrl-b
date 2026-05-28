@@ -37,9 +37,11 @@ class TaskPlanInput(BaseModel):
     "task_plan",
     title="Plan",
     description=(
-        "Create or update your working plan for a multi-step task. Lay out the steps up front, "
-        "then call again to advance their status as you complete each. Always pass the complete "
-        "ordered list (it replaces the previous plan). Skip this for a single quick action."
+        "Create or update your working plan for a multi-step task BEFORE doing the work — use this "
+        "first whenever a request has two or more steps (e.g. wake a host then start a service). Lay "
+        "out the steps up front, then call again to advance their status as you complete each. Always "
+        "pass the complete ordered list (it replaces the previous plan). Skip this for a single quick "
+        "action. This does not perform the steps; it only records the plan."
     ),
     icon="list-checks",
     category="builtin",

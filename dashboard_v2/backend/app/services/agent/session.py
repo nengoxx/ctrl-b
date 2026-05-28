@@ -70,6 +70,10 @@ DEFAULT_SYSTEM_PROMPT = (
     "the system pauses the turn for you whenever a risky action needs confirmation, so you never have "
     "to ask permission yourself. When the same action applies to several targets (e.g. pinging every "
     "host), issue all of those tool calls together in one step rather than one at a time. "
+    "Tool routing: for fleet/host/service requests use the fleet tools (wake/ping/start/stop/restart/"
+    "shutdown) and `task_plan` — do NOT use web search or crawling for fleet operations. Use "
+    "`web_search`/crawl tools ONLY when the owner asks for information from the internet. Never repeat "
+    "the same tool call with the same arguments; if a result didn't help, change approach or answer. "
     "Answer directly and briefly; after the final tool runs, summarize the outcome in one or two lines."
 )
 
@@ -94,6 +98,23 @@ _DISMISS = "__dismiss__"
 class AgentEvent:
     event: str
     data: dict = field(default_factory=dict)
+
+
+@dataclass
+class _LoopGuard:
+    """Per-turn loop-discipline state (capability layer C1), scoped to a single `_drive` call.
+    Keyed by a normalized `(tool, args)` signature: `counts` is how many times each exact call has
+    been *executed* this turn; `last_results` is the latest real result for it, echoed back when a
+    further identical call is suppressed. A weak model can otherwise spiral (the live probe saw
+    `search_web` fired ~14× until the iteration cap)."""
+
+    max_repeat: int
+    counts: dict[str, int] = field(default_factory=dict)
+    last_results: dict[str, ToolResult] = field(default_factory=dict)
+
+    @staticmethod
+    def sig(tool: str, args: dict) -> str:
+        return f"{tool}:{json.dumps(args, sort_keys=True, default=str)}"
 
 
 def _tool_content(result: ToolResult) -> str:
@@ -334,8 +355,12 @@ class AgentSession:
         backend for this turn (4c); resume uses the configured default (no per-message mode is
         carried across the confirm round-trip — a minor inconsistency only if the summary model
         differs from the turn's)."""
+        # One loop-discipline guard per turn (C1): tracks repeated calls + stall across iterations.
+        guard = _LoopGuard(max_repeat=self._agent.max_repeat_calls)
         if resume_assistant is not None:
-            events, suspended = await self._run_calls(thread, resume_assistant, resume_tokens or {})
+            events, suspended, _ = await self._run_calls(
+                thread, resume_assistant, resume_tokens or {}, guard
+            )
             for ev in events:
                 yield ev
             if suspended:
@@ -348,6 +373,7 @@ class AgentSession:
         eff_mode = mode or self._agent.model.mode
         eff_model = self._agent.model.model
 
+        stall = 0  # consecutive no-progress iterations (C1b) → forced wrap-up at the agent's cap
         for _ in range(self._agent.max_iterations):
             # Compaction check before each model call (DESIGN §5.2 step 2): if the working context
             # is over the configured threshold, fold the oldest turns into a summary system message.
@@ -414,38 +440,143 @@ class AgentSession:
                 )
             yield AgentEvent("message.end", {"messageId": assistant.id})
 
-            events, suspended = await self._run_calls(thread, assistant, {})
+            events, suspended, made_progress = await self._run_calls(thread, assistant, {}, guard)
             for ev in events:
                 yield ev
             if suspended:
                 yield AgentEvent("done", {"threadId": thread.id, "state": "suspended"})
                 return
+            # Stall guard (C1b): text counts as progress too. If the model churns for
+            # `max_stall_iterations` with no executed call and no text (e.g. every call was a
+            # suppressed repeat), stop looping and force a final answer.
+            if made_progress or text:
+                stall = 0
+            else:
+                stall += 1
+                if stall >= self._agent.max_stall_iterations:
+                    async for ev in self._finalize(thread, eff_mode, eff_model):
+                        yield ev
+                    return
             # else: loop — call the model again so it can react to the tool results
 
-        yield AgentEvent("done", {"threadId": thread.id, "state": "capped"})
+        # Iterations exhausted: instead of a silent `capped` dead-end, force one tool-less call so
+        # the owner always gets a final answer (C1c, opencode's max-step-guidance pattern).
+        async for ev in self._finalize(thread, eff_mode, eff_model):
+            yield ev
+
+    async def _finalize(
+        self, thread: Thread, eff_mode: str | None, eff_model: str | None
+    ) -> AsyncIterator[AgentEvent]:
+        """Forced final answer (C1c). Reached when the loop stalls or exhausts `max_iterations` —
+        one **tool-less** model call (so it can only produce text) with a nudge to wrap up, instead
+        of the old silent `capped` dead-end. Always ends the turn with a reply; only if this call
+        itself fails do we fall back to `capped` so there's still a terminal event."""
+        messages = await self._assemble(thread)
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "You have done enough tool work for this request. Do NOT call any more tools. "
+                    "Give the owner your final answer now, concisely summarizing what you found or did."
+                ),
+            }
+        )
+        assistant = Message(thread_id=thread.id, role="assistant", actor=AGENT_ACTOR)
+        yield AgentEvent("message.start", {"messageId": assistant.id, "role": "assistant"})
+        reasoning_buf: list[str] = []
+        text_buf: list[str] = []
+        try:
+            async for delta in self._inference.stream_chat(
+                messages, mode=eff_mode, model=eff_model, tools=None
+            ):
+                if delta.reasoning:
+                    reasoning_buf.append(delta.reasoning)
+                    yield AgentEvent(
+                        "reasoning.delta", {"messageId": assistant.id, "delta": delta.reasoning}
+                    )
+                if delta.text:
+                    text_buf.append(delta.text)
+                    yield AgentEvent("text.delta", {"messageId": assistant.id, "delta": delta.text})
+        except InferenceError as exc:
+            assistant.parts = [ErrorPart(message=str(exc), retryable=True)]
+            await self._messages.add(assistant)
+            await self._threads.touch(thread.id, assistant.ts)
+            yield AgentEvent("error", {"message": str(exc), "retryable": True})
+            yield AgentEvent("done", {"threadId": thread.id, "state": "capped"})
+            return
+
+        parts: list[Part] = []
+        if reasoning_buf:
+            parts.append(ReasoningPart(text="".join(reasoning_buf)))
+        text = "".join(text_buf) or "(Stopped after reaching the step limit for this request.)"
+        parts.append(TextPart(text=text))
+        assistant.parts = parts
+        await self._messages.add(assistant)
+        await self._threads.touch(thread.id, assistant.ts)
+        yield AgentEvent("message.end", {"messageId": assistant.id})
+        yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})
 
     async def _run_calls(
-        self, thread: Thread, assistant: Message, resume_tokens: dict[str, str | None]
-    ) -> tuple[list[AgentEvent], bool]:
+        self,
+        thread: Thread,
+        assistant: Message,
+        resume_tokens: dict[str, str | None],
+        guard: _LoopGuard,
+    ) -> tuple[list[AgentEvent], bool, bool]:
         """Process the assistant's not-yet-resolved tool calls in order. ALLOW runs immediately via
         `ActionService` (which validates, decides, executes, records the Event); DENY/bad-args
         synthesize a clean result fed back to the model; CONFIRM suspends (persist AWAITING_CONFIRM,
-        emit `tool.permission`, stop). Returns (events, suspended). Tool execution is fast (local
-        ping/SSH), so a step's results are batched here while the slow model call streams live."""
+        emit `tool.permission`, stop). An exact-repeat call past `guard.max_repeat` is **suppressed**
+        (C1): not executed, the prior result echoed back with a steering note — this both kills a
+        weak model's spiral and is the safe choice for a mutating duplicate. Returns
+        `(events, suspended, made_progress)`; `made_progress` is False when every call was a
+        suppressed repeat (so `_drive` can count a stall). Tool execution is fast (local ping/SSH),
+        so a step's results are batched here while the slow model call streams live."""
         events: list[AgentEvent] = []
         result_parts: list[ToolResultPart] = []
         suspended = False
+        made_progress = False
 
         for cp in assistant.tool_calls():
             if cp.state in _RESOLVED:
                 continue  # already ran (resume: an earlier call in this step)
 
-            if resume_tokens.get(cp.call_id) == _DISMISS:
+            token = resume_tokens.get(cp.call_id)
+            if token == _DISMISS:
                 result: ToolResult = ToolResult(
                     state=RunState.SKIPPED, summary=f"{cp.tool} dismissed by the owner"
                 )
+                made_progress = True
             else:
-                token = resume_tokens.get(cp.call_id)
+                sig = _LoopGuard.sig(cp.tool, cp.args)
+                # C1a: an exact-repeat call (only for fresh model calls, never a user-approved
+                # resume) past the cap is suppressed — echo the prior result + a steering note so
+                # the model stops repeating and uses it or finishes. NOT counted as progress.
+                if (
+                    token is None
+                    and guard.counts.get(sig, 0) >= guard.max_repeat
+                    and sig in guard.last_results
+                ):
+                    prior = guard.last_results[sig]
+                    result = ToolResult(
+                        state=prior.state,
+                        summary=f"(repeat suppressed) {prior.summary}",
+                        output=(
+                            "You already ran this exact call. Do not repeat it — use the previous "
+                            "result above, try a different approach, or give your final answer."
+                        ),
+                    )
+                    cp.state = result.state
+                    result_parts.append(ToolResultPart(call_id=cp.call_id, result=result))
+                    events.append(
+                        AgentEvent(
+                            "tool.result",
+                            {"callId": cp.call_id, "result": result.model_dump(mode="json")},
+                        )
+                    )
+                    continue
+                if token is None:
+                    guard.counts[sig] = guard.counts.get(sig, 0) + 1
                 try:
                     outcome = await self._actions.invoke(
                         cp.tool,
@@ -498,6 +629,9 @@ class AgentSession:
                         )
 
             cp.state = result.state
+            if token != _DISMISS:  # a real execution: remember it (C1a) + count it as progress
+                guard.last_results[sig] = result
+                made_progress = True
             result_parts.append(ToolResultPart(call_id=cp.call_id, result=result))
             events.append(
                 AgentEvent(
@@ -515,7 +649,7 @@ class AgentSession:
                     thread_id=thread.id, role="tool", actor=AGENT_ACTOR, parts=list(result_parts)
                 )
             )
-        return events, suspended
+        return events, suspended, made_progress
 
 
 def _parse_args(raw: str) -> dict:
