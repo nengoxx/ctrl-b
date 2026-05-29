@@ -813,6 +813,24 @@ body {
   grid-template-columns: auto 1fr 38px auto 16px;
 }
 
+/* ── Conf section collapse (Phase 7c polish) ──────────────────────────────────────────────────
+   Each .confgroup header collapses its body; state persists in localStorage. Design unchanged —
+   just a leading disclosure chevron (the vapor magenta `›` that rotates down when open). */
+.conftitle.conf-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+.conf-chev {
+  color: var(--magenta);
+  font-size: 14px;
+  line-height: 1;
+  transition: transform 0.2s;
+  transform: rotate(90deg); /* expanded: points down */
+}
+.confgroup.collapsed .conf-chev {
+  transform: rotate(0deg); /* collapsed: points right */
+}
+
 /* ── Conf tab — settings forms (Phase 7a) ─────────────────────────────────────────────────────
    Net-new from vapor tokens; vapor.css stays verbatim (D7). The textarea mirrors the conf input
    styling; the save pill mirrors vapor's `.mconf .mfoot button.save` (magenta→violet gradient). */

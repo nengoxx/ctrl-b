@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { MachineEditor } from "../components/MachineEditor";
 import { ServerListEditor } from "../components/ServerListEditor";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
 import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
 import { useSaveSettings, useSettings, type SettingsDoc } from "../hooks/useSettings";
+import { useCollapsed } from "../store/collapse";
 import { setUI, useUI, type Skyline, type Theme, type Loz } from "../store/ui";
 
 // Conf tab. Appearance is wired to the live UI store (client display state). Phase 7a wires the
@@ -94,6 +95,30 @@ const RISKS = [
   { val: "high", label: "High" },
 ];
 
+/** A Conf section whose header collapses its body (persisted per `id`). Same vapor `.conftitle` look
+ * + a leading disclosure chevron; collapsing doesn't alter the design, just hides the body. */
+function ConfGroup(props: {
+  id: string;
+  num: string;
+  title: string;
+  right?: ReactNode;
+  defaultCollapsed?: boolean;
+  children: ReactNode;
+}) {
+  const [collapsed, toggle] = useCollapsed(props.id, props.defaultCollapsed);
+  return (
+    <div className={"confgroup" + (collapsed ? " collapsed" : "")}>
+      <div className="conftitle conf-toggle" onClick={toggle}>
+        <span className="conf-chev">›</span>
+        <span className="num">{props.num}</span>
+        <b>{props.title}</b>
+        {props.right != null && <span className="right">{props.right}</span>}
+      </div>
+      {!collapsed && props.children}
+    </div>
+  );
+}
+
 export function ConfTab({ active }: Props) {
   const { theme, skyline, loz, heroOn, waveformOn } = useUI();
   const { data: server } = useServerInfo();
@@ -164,12 +189,7 @@ export function ConfTab({ active }: Props) {
 
   return (
     <div className={"tab" + (active ? " active" : "")} id="tab-conf" data-screen-label="04 Conf">
-      <div className="confgroup">
-        <div className="conftitle">
-          <span className="num">01</span>
-          <b>Inference</b>
-          <span className="right">openai-compatible</span>
-        </div>
+      <ConfGroup id="inference" num="01" title="Inference" right="openai-compatible">
         <div className="conf-card">
           <div className="confrow">
             <div className="k">
@@ -244,14 +264,9 @@ export function ConfTab({ active }: Props) {
             />
           </div>
         </div>
-      </div>
+      </ConfGroup>
 
-      <div className="confgroup">
-        <div className="conftitle">
-          <span className="num">02</span>
-          <b>Server</b>
-          <span className="right">tailnet-only</span>
-        </div>
+      <ConfGroup id="server" num="02" title="Server" right="tailnet-only">
         <div className="conf-card">
           <Field
             label="Bind host"
@@ -281,14 +296,9 @@ export function ConfTab({ active }: Props) {
             <Switch on={!!srv?.debug} onToggle={() => setSrv("debug", !srv?.debug)} />
           </div>
         </div>
-      </div>
+      </ConfGroup>
 
-      <div className="confgroup">
-        <div className="conftitle">
-          <span className="num">03</span>
-          <b>SearXNG</b>
-          <span className="right">web_search</span>
-        </div>
+      <ConfGroup id="searxng" num="03" title="SearXNG" right="web_search">
         <div className="conf-card">
           <Field
             label="Endpoint"
@@ -312,14 +322,9 @@ export function ConfTab({ active }: Props) {
             <Switch on={!!sx?.enabled} onToggle={() => setSearx("enabled", !sx?.enabled)} />
           </div>
         </div>
-      </div>
+      </ConfGroup>
 
-      <div className="confgroup">
-        <div className="conftitle">
-          <span className="num">04</span>
-          <b>Embeddings</b>
-          <span className="right">vector memory</span>
-        </div>
+      <ConfGroup id="embeddings" num="04" title="Embeddings" right="vector memory">
         <div className="conf-card">
           <Field
             label="Endpoint"
@@ -357,14 +362,9 @@ export function ConfTab({ active }: Props) {
             <Switch on={!!emb?.enabled} onToggle={() => setEmb("enabled", !emb?.enabled)} />
           </div>
         </div>
-      </div>
+      </ConfGroup>
 
-      <div className="confgroup">
-        <div className="conftitle">
-          <span className="num">05</span>
-          <b>Open-terminal</b>
-          <span className="right">remote shell tools</span>
-        </div>
+      <ConfGroup id="openterminal" num="05" title="Open-terminal" right="remote shell tools">
         <div className="conf-card">
           <Field
             label="Endpoint"
@@ -414,23 +414,23 @@ export function ConfTab({ active }: Props) {
             {save.isPending ? "Saving…" : dirty ? "Save changes" : "Saved"}
           </button>
         </div>
-      </div>
+      </ConfGroup>
 
-      <div className="confgroup">
-        <div className="conftitle">
-          <span className="num">06</span>
-          <b>MCP servers</b>
-          <span className="right">{settings?.mcp_servers?.length ?? 0} server{(settings?.mcp_servers?.length ?? 0) === 1 ? "" : "s"}</span>
-        </div>
+      <ConfGroup
+        id="mcp"
+        num="06"
+        title="MCP servers"
+        right={`${settings?.mcp_servers?.length ?? 0} server${(settings?.mcp_servers?.length ?? 0) === 1 ? "" : "s"}`}
+      >
         <ServerListEditor kind="mcp" servers={settings?.mcp_servers ?? []} summaries={integrations?.mcp ?? []} />
-      </div>
+      </ConfGroup>
 
-      <div className="confgroup">
-        <div className="conftitle">
-          <span className="num">07</span>
-          <b>OpenAPI tool servers</b>
-          <span className="right">{settings?.openapi_servers?.length ?? 0} server{(settings?.openapi_servers?.length ?? 0) === 1 ? "" : "s"}</span>
-        </div>
+      <ConfGroup
+        id="openapi"
+        num="07"
+        title="OpenAPI tool servers"
+        right={`${settings?.openapi_servers?.length ?? 0} server${(settings?.openapi_servers?.length ?? 0) === 1 ? "" : "s"}`}
+      >
         <ServerListEditor kind="openapi" servers={settings?.openapi_servers ?? []} summaries={integrations?.openapi ?? []} />
         <div className="conf-savebar redisc">
           {integrations?.dirty && <span className="redisc-hint">// changes apply on next chat · or</span>}
@@ -438,24 +438,18 @@ export function ConfTab({ active }: Props) {
             {rediscover.isPending ? "Rediscovering…" : "Rediscover tools"}
           </button>
         </div>
-      </div>
+      </ConfGroup>
 
-      <div className="confgroup">
-        <div className="conftitle">
-          <span className="num">08</span>
-          <b>Computers</b>
-          <span className="right">
-            {hosts.length} machine{hosts.length === 1 ? "" : "s"}
-          </span>
-        </div>
+      <ConfGroup
+        id="computers"
+        num="08"
+        title="Computers"
+        right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
+      >
         <MachineEditor hosts={hosts} />
-      </div>
+      </ConfGroup>
 
-      <div className="confgroup">
-        <div className="conftitle">
-          <span className="num">09</span>
-          <b>Appearance</b>
-        </div>
+      <ConfGroup id="appearance" num="09" title="Appearance">
         <div className="conf-card">
           <div className="confrow">
             <div className="k">
@@ -515,7 +509,7 @@ export function ConfTab({ active }: Props) {
             <Switch on={waveformOn} onToggle={() => setUI({ waveformOn: !waveformOn })} />
           </div>
         </div>
-      </div>
+      </ConfGroup>
 
       <div className="conf-foot">
         ctrl·b · vapor build ·{" "}
