@@ -287,6 +287,11 @@ class Settings(BaseModel):
     #: Agent definitions (D11). Empty → the built-in default chat agent is synthesized
     #: (`default_agent_def`). The owner adds entries to run/select alternate agents + subagents.
     agents: list[AgentDef] = Field(default_factory=list)
+    #: Per-tool description overrides (Phase 7d), keyed by tool name → the model-facing text shown
+    #: in the OpenAI tool schema. Lets the owner sharpen a tool's wording (which steers a weak local
+    #: model's tool selection) without editing code. Applied onto the live registry specs by
+    #: `runtime.apply_tool_descriptions`; an empty/blank value means "use the built-in description".
+    tool_descriptions: dict[str, str] = Field(default_factory=dict)
     #: Keyed by host name, preserving the live `wol_server_win.py` `computers{}` shape so the
     #: owner can copy their existing config.yaml unchanged (HANDOFF — migration reference).
     computers: dict[str, ComputerCfg] = Field(default_factory=dict)

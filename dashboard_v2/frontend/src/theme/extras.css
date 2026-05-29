@@ -1086,3 +1086,28 @@ body {
   border-color: var(--magenta);
 }
 
+/* ── Conf → Agent tools · per-tool description overrides (Phase 7d-a, net-new) ─────────────────
+   Reuses the 7a .conf-textrow/.conf-textarea recipe; these add a category heading + the mono tool
+   name + a "custom" tag. Tokens from VAPOR_PATTERNS; vapor.css untouched (D7). */
+.tooldesc-cat {
+  font-size: 8.5px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 12px 0 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed var(--line);
+}
+.tooldesc-cat:first-child {
+  margin-top: 0;
+}
+.confrow .k .label.code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  text-transform: none;
+  letter-spacing: 0.3px;
+}
+.tooldesc-tag {
+  color: var(--magenta);
+  font-weight: 600;
+}
+

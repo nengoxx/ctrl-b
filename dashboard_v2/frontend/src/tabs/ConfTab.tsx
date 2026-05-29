@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { MachineEditor } from "../components/MachineEditor";
 import { ServerListEditor } from "../components/ServerListEditor";
+import { ToolDescriptionsEditor } from "../components/ToolDescriptionsEditor";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
 import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
 import { useSaveSettings, useSettings, type SettingsDoc } from "../hooks/useSettings";
@@ -441,15 +442,25 @@ export function ConfTab({ active }: Props) {
       </ConfGroup>
 
       <ConfGroup
-        id="computers"
+        id="tooldesc"
         num="08"
+        title="Agent tools"
+        right="descriptions"
+        defaultCollapsed
+      >
+        <ToolDescriptionsEditor overrides={(settings?.tool_descriptions as Record<string, string>) ?? {}} />
+      </ConfGroup>
+
+      <ConfGroup
+        id="computers"
+        num="09"
         title="Computers"
         right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
       >
         <MachineEditor hosts={hosts} />
       </ConfGroup>
 
-      <ConfGroup id="appearance" num="09" title="Appearance">
+      <ConfGroup id="appearance" num="10" title="Appearance">
         <div className="conf-card">
           <div className="confrow">
             <div className="k">

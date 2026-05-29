@@ -68,6 +68,31 @@ async def set_open_terminal(app: "FastAPI", settings: Settings) -> None:
     await _swap_client(app, "open_terminal", OpenTerminalClient(settings.open_terminal))
 
 
+def apply_tool_descriptions(app: "FastAPI", settings: Settings | None = None) -> None:
+    """Overlay the per-tool description overrides (Phase 7d) onto the **live** registry specs. The
+    model sees `spec.description` via `to_openai_tools` and `GET /api/actions` returns it, so mutating
+    the registered specs in place is the single seam that reaches both paths at once.
+
+    Originals are captured once on `app.state.tool_desc_orig` (keyed by tool name), so clearing an
+    override restores the tool's built-in description rather than leaving the last override stuck. Run
+    by lifespan (after the registry is built), by `reconfigure` (when `tool_descriptions` changed), and
+    at the end of `rediscover_integrations` (so freshly re-discovered MCP/OpenAPI tools pick overrides
+    up too)."""
+    settings = settings or app.state.settings
+    overrides: dict = getattr(settings, "tool_descriptions", None) or {}
+    registry = app.state.actions.registry
+    orig: dict = getattr(app.state, "tool_desc_orig", None)
+    if orig is None:
+        orig = {}
+        app.state.tool_desc_orig = orig
+    for tool in registry.all():
+        name = tool.spec.name
+        if name not in orig:
+            orig[name] = tool.spec.description
+        ov = overrides.get(name)
+        tool.spec.description = ov.strip() if isinstance(ov, str) and ov.strip() else orig[name]
+
+
 async def rediscover_integrations(app: "FastAPI") -> dict:
     """Rebuild the MCP + OpenAPI tool sets from current settings and merge them into the live
     registry (Phase 7c-b). MCP and OpenAPI tools both register as category `"mcp"`, so we clear that
@@ -92,6 +117,8 @@ async def rediscover_integrations(app: "FastAPI") -> dict:
         app.state.openapi = OpenApiToolProvider(settings.openapi_servers)
         app.state.openapi_summary = await app.state.openapi.discover(registry)
         app.state.integrations_dirty = False
+    # Re-apply description overrides onto the freshly registered MCP/OpenAPI specs (Phase 7d).
+    apply_tool_descriptions(app)
     return integrations_status(app)
 
 
@@ -141,6 +168,7 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
     searxng_changed = _changed(old, new, "searxng")
     embeddings_changed = _changed(old, new, "embeddings")
     open_terminal_changed = _changed(old, new, "open_terminal")
+    tool_desc_changed = _changed(old, new, "tool_descriptions")
     caches_stale = _changed(old, new, "server") or _changed(old, new, "computers")
 
     apply_settings_inplace(app, new)
@@ -152,5 +180,7 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
         await set_embeddings(app, new)
     if open_terminal_changed:
         await set_open_terminal(app, new)
+    if tool_desc_changed and getattr(app.state, "actions", None) is not None:
+        apply_tool_descriptions(app, new)
     if caches_stale:
         invalidate_status_caches(app)
