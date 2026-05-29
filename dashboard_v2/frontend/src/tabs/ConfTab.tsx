@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 
 import { MachineEditor } from "../components/MachineEditor";
+import { ServerListEditor } from "../components/ServerListEditor";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
+import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
 import { useSaveSettings, useSettings, type SettingsDoc } from "../hooks/useSettings";
 import { setUI, useUI, type Skyline, type Theme, type Loz } from "../store/ui";
 
@@ -99,6 +101,8 @@ export function ConfTab({ active }: Props) {
 
   const { data: settings } = useSettings();
   const save = useSaveSettings();
+  const { data: integrations } = useIntegrationsStatus();
+  const rediscover = useRediscover();
   const [draft, setDraft] = useState<Draft | null>(null);
 
   // Reseed the draft whenever the server doc changes (initial load + after a successful save, which
@@ -415,6 +419,30 @@ export function ConfTab({ active }: Props) {
       <div className="confgroup">
         <div className="conftitle">
           <span className="num">06</span>
+          <b>MCP servers</b>
+          <span className="right">{settings?.mcp_servers?.length ?? 0} server{(settings?.mcp_servers?.length ?? 0) === 1 ? "" : "s"}</span>
+        </div>
+        <ServerListEditor kind="mcp" servers={settings?.mcp_servers ?? []} summaries={integrations?.mcp ?? []} />
+      </div>
+
+      <div className="confgroup">
+        <div className="conftitle">
+          <span className="num">07</span>
+          <b>OpenAPI tool servers</b>
+          <span className="right">{settings?.openapi_servers?.length ?? 0} server{(settings?.openapi_servers?.length ?? 0) === 1 ? "" : "s"}</span>
+        </div>
+        <ServerListEditor kind="openapi" servers={settings?.openapi_servers ?? []} summaries={integrations?.openapi ?? []} />
+        <div className="conf-savebar redisc">
+          {integrations?.dirty && <span className="redisc-hint">// changes apply on next chat · or</span>}
+          <button className="conf-save alt" disabled={rediscover.isPending} onClick={() => rediscover.mutate()}>
+            {rediscover.isPending ? "Rediscovering…" : "Rediscover tools"}
+          </button>
+        </div>
+      </div>
+
+      <div className="confgroup">
+        <div className="conftitle">
+          <span className="num">08</span>
           <b>Computers</b>
           <span className="right">
             {hosts.length} machine{hosts.length === 1 ? "" : "s"}
@@ -425,7 +453,7 @@ export function ConfTab({ active }: Props) {
 
       <div className="confgroup">
         <div className="conftitle">
-          <span className="num">07</span>
+          <span className="num">09</span>
           <b>Appearance</b>
         </div>
         <div className="conf-card">

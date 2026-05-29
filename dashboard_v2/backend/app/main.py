@@ -20,7 +20,16 @@ from fastapi.staticfiles import StaticFiles
 from app import __version__
 from app.adapters.mcp_client import McpClient
 from app.adapters.openapi_tools import OpenApiToolProvider
-from app.api import actions, agent, events, health, hosts, services, settings as settings_api
+from app.api import (
+    actions,
+    agent,
+    events,
+    health,
+    hosts,
+    integrations,
+    services,
+    settings as settings_api,
+)
 from app.config import load_dotenv, load_settings
 from app.runtime import set_embeddings, set_inference, set_open_terminal, set_searxng
 from app.core.events import EventBus
@@ -82,6 +91,13 @@ async def lifespan(app: FastAPI):
     app.state.openapi_summary = await app.state.openapi.discover(registry)
     app.state.openterminal_tools = n_term
     app.state.actions = ActionService(registry, deps)
+    # Integration re-discovery state (Phase 7c-b): MCP/OpenAPI edits flip `integrations_dirty`; the
+    # next agent turn (or the manual endpoint) re-discovers under `discovery_lock`. `active_turns`
+    # lets the manual rediscover refuse (409) while a turn is iterating, so the registry is only ever
+    # rebuilt between turns, never under a live loop.
+    app.state.discovery_lock = asyncio.Lock()
+    app.state.integrations_dirty = False
+    app.state.active_turns = 0
     # Stash the Deps bundle so the runtime reconfigure seam (PUT /api/settings) can re-point its
     # adapter handles (e.g. deps.inference) on a config change. Single source: see app/runtime.py.
     app.state.deps = deps
@@ -128,6 +144,7 @@ def create_app() -> FastAPI:
     app.include_router(events.router, prefix="/api")
     app.include_router(agent.router, prefix="/api")
     app.include_router(settings_api.router, prefix="/api")
+    app.include_router(integrations.router, prefix="/api")
 
     # Prod single-origin serving. Absent in dev (Vite owns the SPA + proxies /api here).
     if _FRONTEND_DIST.is_dir():

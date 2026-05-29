@@ -22,6 +22,7 @@ from app.domain.conversation import Message, ToolCallPart, ToolResultPart, Threa
 from app.domain.enums import Actor, RunState
 from app.domain.plan import Plan
 from app.domain.result import ToolResult
+from app.runtime import rediscover_integrations
 from app.services.agent.planning import TaskPlanInput
 from app.services.agent.session import AgentSession
 
@@ -102,13 +103,23 @@ async def chat(body: ChatRequest, request: Request) -> EventSourceResponse:
     thread = await threads.get(body.thread_id) if body.thread_id else None
     if thread is None:
         thread = await threads.create(Thread(title=body.text[:60]))
+
+    # Apply any pending MCP/OpenAPI integration edits at the turn boundary (Phase 7c-b) — before the
+    # session reads the toolset, so the registry is rebuilt between turns, never mid-loop.
+    if getattr(request.app.state, "integrations_dirty", False):
+        await rediscover_integrations(request.app)
+
     session = _session(request, thread)
 
     async def gen() -> AsyncIterator[dict[str, Any]]:
         # Tell the client the thread id first (it may have just been created).
         yield {"event": "thread", "data": json.dumps({"threadId": thread.id, "title": thread.title})}
-        async for ev in session.run_turn(thread, body.text, mode=body.mode, skills=body.skills):
-            yield {"event": ev.event, "data": json.dumps(ev.data)}
+        request.app.state.active_turns += 1
+        try:
+            async for ev in session.run_turn(thread, body.text, mode=body.mode, skills=body.skills):
+                yield {"event": ev.event, "data": json.dumps(ev.data)}
+        finally:
+            request.app.state.active_turns -= 1
 
     return EventSourceResponse(gen())
 

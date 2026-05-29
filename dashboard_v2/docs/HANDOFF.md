@@ -32,9 +32,9 @@ the 21-tool namespaced set confused it); a **`check_service`** liveness tool + a
 action (with a device-row button); **clickable plan-step dots** (persistent, agent-aware); and an
 **OS-compatibility pass** (ping/commands detect the host OS). **Phase 7 is sliced 7a–7e; 7a (settings
 foundation + Inference/Server groups) and 7b (hosts + services CRUD machine editor) are built +
-verified — see the two 2026-05-29 blocks below.** **Next up: 7c (integrations: MCP/SearXNG/embeddings/
-OpenAPI managers, extending the `edit_config_yaml`+`reconfigure` seam) → 7d (skills/agents UI +
-per-tool descriptions) → 7e (prompts + memory).**
+verified — see the two 2026-05-29 blocks below.** **7c (integrations: SearXNG/embeddings/open-terminal
+hot-apply + MCP/OpenAPI managers with between-turn rediscovery) is built + verified. Next up: 7d
+(skills/agents UI + per-tool descriptions) → 7e (prompts + memory).**
 This doc is the orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor
 fidelity mandate (D7) still governs every new component.**
 
@@ -86,6 +86,39 @@ transport `874cdb1`**). **Phase 4.5 (skills + agents/subagents) is committed + p
 (through `591cc5b`):** AgentDef spine `c964237` · skills `e2c90e8` · subagents `e84797f` · 4.5 docs
 `ba11479` · **subagent parameter inheritance** `b407cec` + docs `70571c4` · **tool-description fallback
 fix** `f72ccb0`. The 4e/4f file lists below are reference.
+
+### ⭐ Session update — 2026-05-29 (Phase 7c — integrations panel)
+
+**Built + verified (commit pending — push on owner OK).** Conf gains an integrations panel; the
+agent's external endpoints are UI-managed. Two apply paths, by design (owner's call):
+
+- **7c-a — scalars hot-apply** (committed `455ae8c`, not yet pushed): SearXNG / embeddings /
+  open-terminal groups edit through the existing `PUT /api/settings`. `runtime.py` gained async `set_searxng`/
+  `set_embeddings`/`set_open_terminal` single-source builders (await old `aclose`, rebuild, repoint
+  `app.state.*` **and** `deps.*`), called by both lifespan and `reconfigure` (no drift). `reconfigure`
+  rebuilds each only when its section changed. No restart.
+- **7c-b — MCP + OpenAPI managers + rediscover:** `api/integrations.py` (list CRUD keyed by name,
+  comment/secret-safe via `edit_config_yaml`+`sync_mapping`; `_minimal` trims defaults so the YAML
+  stays hand-written-style), `GET /integrations/status` (per-server discovered-tool summaries +
+  `dirty` flag), `POST /integrations/rediscover`. **Apply between turns, never mid-turn** (the safe
+  design for live-registry mutation): a write flips `app.state.integrations_dirty`; `api/agent.chat`
+  re-discovers **before** building the turn's toolset when dirty; the manual **Rediscover** button
+  applies on demand and **409s while `active_turns>0`** (counter bumped around `run_turn`).
+  `ToolRegistry.remove`/`remove_category("mcp")` (MCP + OpenAPI both register as `"mcp"`) clears the
+  bucket before re-running both providers' `discover()` under `app.state.discovery_lock`. No restart.
+- **Frontend:** `components/ServerListEditor.tsx` (reuses the vapor `.mwrap`/`.mform`/`.mfoot` shell;
+  MCP transport `Seg` toggles http url+headers ↔ stdio command+args+env; OpenAPI base/spec/auth/
+  include; headers/env/args via compact `.kv-text` textareas — net-new in `extras.css`). Each row
+  shows its discovered-tool count or error from the status. `hooks/useIntegrations.ts` (status +
+  CRUD + rediscover); name is read-only on edit (rename = delete+add). `vapor.css` untouched (D7).
+- **Verified:** `test_integrations_7c.py` (scalar hot-apply rebuilds client+deps; MCP CRUD + dirty +
+  409 dup + 404; rediscover busy-409 + empty-ok clears dirty; registry remove). All suites green
+  (7a 7/7, 7b 2/2, 7c 4/4); `compileall` + `tsc -b`/`vite build` clean. Backend relaunched on 5433 —
+  `GET /integrations/status` works (emma's `web-tools` currently shows a discovery error since emma
+  is unreachable right now — failure-isolation surfacing it; Rediscover when it's up).
+- **Note:** MCP discovery wraps connection failures as "unhandled errors in a TaskGroup (1 sub-
+  exception)" — ugly but harmless (0 tools registered, surfaced in the row). Friendlier error
+  extraction is a small follow-up. **Owner D7 eyeball pending:** integrations forms @390px ×3 themes.
 
 ### ⭐ Session update — 2026-05-29 (Phase 7b — hosts + services CRUD)
 

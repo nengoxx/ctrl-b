@@ -104,6 +104,20 @@ class ToolRegistry:
             raise ValueError(f"duplicate tool name: {tool.spec.name!r}")
         self._tools[tool.spec.name] = tool
 
+    def remove(self, name: str) -> bool:
+        """Drop a tool by name. Returns whether it was present. Used by integration re-discovery
+        (Phase 7c) to clear stale MCP/OpenAPI tools before re-registering the current set."""
+        return self._tools.pop(name, None) is not None
+
+    def remove_category(self, category: str) -> int:
+        """Drop every tool of a category, returning the count removed. MCP **and** OpenAPI tools both
+        register as `"mcp"` (the remote-tool bucket), so `remove_category("mcp")` clears them all
+        ahead of a fresh `discover()` — the registry is rebuilt between agent turns, never mid-turn."""
+        names = [n for n, t in self._tools.items() if t.spec.category == category]
+        for n in names:
+            del self._tools[n]
+        return len(names)
+
     def get(self, name: str) -> Tool:
         try:
             return self._tools[name]

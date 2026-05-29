@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getJSON, putJSON } from "../api/client";
 import { pushToast } from "../store/toast";
+import type { McpServer, OpenApiServer } from "./useIntegrations";
 
 // Phase 7a. The settings doc is the whole masked config; the Conf forms read/write the slices they
 // expose (server + inference here). Typed loosely — only the edited groups are modelled; the rest
@@ -39,7 +40,9 @@ export interface SettingsDoc {
     write_risk: string;
     read_risk: string;
   };
-  [k: string]: unknown; // other sections (agent, mcp_servers, …) — managed elsewhere
+  mcp_servers: McpServer[]; // Phase 7c-b — managed via the integrations CRUD endpoints, read here
+  openapi_servers: OpenApiServer[];
+  [k: string]: unknown; // other sections (agent, …) — managed elsewhere
 }
 
 export interface SaveResult {

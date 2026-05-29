@@ -1016,3 +1016,55 @@ body {
   background: rgba(var(--danger-rgb), 0.08);
 }
 
+/* ── Conf → Integrations · MCP/OpenAPI server editor (Phase 7c-b, net-new) ────────────────────
+   The forms reuse vapor's .mform grid; these add the multi-line key/value + list inputs and the
+   rediscover bar. Tokens/recipes from VAPOR_PATTERNS; vapor.css untouched. */
+.mform textarea.kv-text {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-3);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  line-height: 1.5;
+  border: 1px solid var(--line);
+  resize: vertical;
+}
+.mform textarea.kv-text::placeholder {
+  color: var(--ink-faint);
+}
+.mform textarea.kv-text:focus {
+  border-color: var(--magenta);
+  box-shadow: 0 0 0 1px var(--magenta), 0 0 10px rgba(var(--accent-rgb), 0.25);
+}
+/* rediscover bar: a hint + a secondary (outline) action button */
+.conf-savebar.redisc {
+  align-items: center;
+  gap: 10px;
+}
+.redisc-hint {
+  flex: 1;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+/* secondary variant of the save pill — outline, not the filled gradient (§7 footer-choice) */
+.conf-save.alt {
+  flex: 0 0 auto;
+  padding: 11px 18px;
+  color: var(--ink-soft);
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  box-shadow: none;
+}
+.conf-save.alt:active:not(:disabled) {
+  color: var(--magenta);
+  border-color: var(--magenta);
+}
+

@@ -68,6 +68,43 @@ async def set_open_terminal(app: "FastAPI", settings: Settings) -> None:
     await _swap_client(app, "open_terminal", OpenTerminalClient(settings.open_terminal))
 
 
+async def rediscover_integrations(app: "FastAPI") -> dict:
+    """Rebuild the MCP + OpenAPI tool sets from current settings and merge them into the live
+    registry (Phase 7c-b). MCP and OpenAPI tools both register as category `"mcp"`, so we clear that
+    bucket and re-run both providers' `discover()`. Guarded by `app.state.discovery_lock` and only
+    ever called **between** agent turns (auto at a new turn's start when `integrations_dirty`, or via
+    the manual endpoint which refuses while a turn is active) — never mid-turn, so an iterating loop
+    never sees the registry change under it. Returns the fresh `{mcp, openapi, dirty}` status."""
+    from app.adapters.mcp_client import McpClient
+    from app.adapters.openapi_tools import OpenApiToolProvider
+
+    async with app.state.discovery_lock:
+        settings: Settings = app.state.settings
+        registry = app.state.actions.registry
+        registry.remove_category("mcp")
+
+        old_openapi = getattr(app.state, "openapi", None)
+        if old_openapi is not None and hasattr(old_openapi, "aclose"):
+            await old_openapi.aclose()
+
+        app.state.mcp = McpClient(settings.mcp_servers)
+        app.state.mcp_summary = await app.state.mcp.discover(registry)
+        app.state.openapi = OpenApiToolProvider(settings.openapi_servers)
+        app.state.openapi_summary = await app.state.openapi.discover(registry)
+        app.state.integrations_dirty = False
+    return integrations_status(app)
+
+
+def integrations_status(app: "FastAPI") -> dict:
+    """The per-server discovery summaries + the pending-changes flag (`GET /api/integrations/status`
+    and the rediscover response)."""
+    return {
+        "mcp": getattr(app.state, "mcp_summary", []),
+        "openapi": getattr(app.state, "openapi_summary", []),
+        "dirty": bool(getattr(app.state, "integrations_dirty", False)),
+    }
+
+
 def apply_settings_inplace(app: "FastAPI", new: Settings) -> None:
     """Copy `new`'s top-level fields onto the **shared** `app.state.settings` object in place, so
     every holder that reads it lazily (`FleetService`/`ServiceService`/`Deps.settings`) sees the new

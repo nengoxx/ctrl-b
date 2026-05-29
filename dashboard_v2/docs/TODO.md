@@ -347,11 +347,21 @@ tools + confirm bubbles) are DONE.**
 - **Known limitation:** a comment physically *trailing a deleted element* is dropped with it (ruamel);
   leading section comments (the owner's style) survive. **Owner D7 eyeball pending** (@390px ×3 themes).
 
-### Phase 7c — integrations panel (D9)
-- [ ] **Integrations panel:** MCP servers manager (add/edit/enable; stdio `command+args+env`
-      or Streamable-HTTP `url+headers`; show discovered tools per server) + **SearXNG** + **embeddings**
-      + **OpenAPI tool servers**. Extend `reconfigure()` (audit B1) to rebuild these adapters +
-      re-run MCP/OpenAPI discovery on save. STT/TTS endpoints land with Phase 6 voice.
+### Phase 7c — integrations panel (D9) ✅ DONE (commit pending)
+- [x] **7c-a — scalar integrations:** SearXNG / embeddings / open-terminal Conf groups via the
+      existing `PUT /api/settings`; `reconfigure` extended with async `set_searxng`/`set_embeddings`/
+      `set_open_terminal` single-source builders (rebuild client + repoint `app.state.*`/`deps.*`,
+      await old `aclose`) → **hot-apply, no restart**.
+- [x] **7c-b — MCP + OpenAPI managers + rediscover** (`api/integrations.py`, `components/
+      ServerListEditor.tsx`): list CRUD keyed by name (comment/secret-safe via `edit_config_yaml`+
+      `sync_mapping`), `GET /integrations/status` (per-server discovered-tool summaries + dirty flag),
+      add/edit/enable/delete (stdio `command+args+env` or HTTP `url+headers`; OpenAPI base/spec/auth/
+      include). **Apply between turns** (owner's design): a write flips `integrations_dirty` →
+      `POST /agent/chat` re-discovers before building the toolset; a manual **Rediscover** button
+      (`POST /integrations/rediscover`, 409 while a turn is active) applies on demand. No process
+      restart. `ToolRegistry.remove`/`remove_category("mcp")` clears MCP+OpenAPI tools before re-run.
+- Tests: `test_integrations_7c.py` (scalar hot-apply, MCP CRUD + dirty + 409/404, rediscover busy/empty,
+  registry removal). STT/TTS endpoints still deferred to Phase 6 voice. **Owner D7 eyeball pending.**
 
 ### Phase 7d — skills/agents management (the A7 deferral) + per-tool descriptions
 - [ ] Conf → **Skills** (list/enable/edit/add) + **Agents** (manage `agents[]`, default, tools-per-agent
