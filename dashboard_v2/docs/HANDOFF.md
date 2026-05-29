@@ -75,7 +75,14 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (Phase 4.5 + 2026-05-28 capability/UX session)
+## Current state (Phase 7a–7c done + pushed · see the 2026-05-29 blocks below)
+
+> **In sync with `origin/main` at `e99ea49`** (Conf tab: settings + hosts/services + integrations
+> editors, all comment/secret/EOL-safe; sections collapsible w/ persisted state). **Next: 7d**
+> (skills/agents management UI + per-tool description overrides) → 7e (prompts + memory). The detail
+> for everything before Phase 7 is in the sections further down (unchanged).
+
+### Earlier baseline (Phase 4.5 + 2026-05-28 capability/UX session)
 
 **Everything through Phase 4f is committed + pushed to `origin/main`** (4a `f9e9965` · 4b `6c2d181`
 · 4c `b44c039` · 4d `df612e3` · 4e `60f8e68` · vite-host fix `f2774b8` · **4f**: web_search `05e5a48`
@@ -89,10 +96,11 @@ fix** `f72ccb0`. The 4e/4f file lists below are reference.
 
 ### ⭐ Session update — 2026-05-29 (Phase 7c — integrations panel)
 
-**Built + verified (commit pending — push on owner OK).** Conf gains an integrations panel; the
-agent's external endpoints are UI-managed. Two apply paths, by design (owner's call):
+**Built + verified + pushed to `origin/main`** (7c-a `455ae8c` · 7c-b `7804212` · collapsible-Conf
+polish `e99ea49`; tree clean). Conf gains an integrations panel; the agent's external endpoints are
+UI-managed. Two apply paths, by design (owner's call):
 
-- **7c-a — scalars hot-apply** (committed `455ae8c`, not yet pushed): SearXNG / embeddings /
+- **7c-a — scalars hot-apply** (`455ae8c`): SearXNG / embeddings /
   open-terminal groups edit through the existing `PUT /api/settings`. `runtime.py` gained async `set_searxng`/
   `set_embeddings`/`set_open_terminal` single-source builders (await old `aclose`, rebuild, repoint
   `app.state.*` **and** `deps.*`), called by both lifespan and `reconfigure` (no drift). `reconfigure`
@@ -116,14 +124,17 @@ agent's external endpoints are UI-managed. Two apply paths, by design (owner's c
   (7a 7/7, 7b 2/2, 7c 4/4); `compileall` + `tsc -b`/`vite build` clean. Backend relaunched on 5433 —
   `GET /integrations/status` works (emma's `web-tools` currently shows a discovery error since emma
   is unreachable right now — failure-isolation surfacing it; Rediscover when it's up).
+- **Collapsible Conf sections** (`e99ea49`): all 9 `.confgroup` headers now collapse via a leading
+  magenta `›` chevron (design unchanged); open/closed state persists per-section in `localStorage`
+  (`store/collapse.ts`). Default expanded.
 - **Note:** MCP discovery wraps connection failures as "unhandled errors in a TaskGroup (1 sub-
   exception)" — ugly but harmless (0 tools registered, surfaced in the row). Friendlier error
   extraction is a small follow-up. **Owner D7 eyeball pending:** integrations forms @390px ×3 themes.
 
 ### ⭐ Session update — 2026-05-29 (Phase 7b — hosts + services CRUD)
 
-**Built + verified (commit pending — push on owner OK).** The Conf → Computers group is now a real
-editor: add / edit / delete machines (Vapor machine forms) **and** their services.
+**Built + verified + pushed** (`e325468` + services-collapse `d80a1f1`). The Conf → Computers group
+is now a real editor: add / edit / delete machines (Vapor machine forms) **and** their services.
 
 - **Backend `api/hosts.py`:** `POST /api/hosts`, `PUT /api/hosts/{id}`, `DELETE /api/hosts/{id}`.
   GET `_host_dto` gained **`has_password`** (bool — never the value) + **`services[]`** (full `cmd`
