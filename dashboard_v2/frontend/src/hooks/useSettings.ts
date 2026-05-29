@@ -22,7 +22,24 @@ export interface SettingsDoc {
     local: InferenceEndpoint;
     cloud: InferenceEndpoint;
   };
-  [k: string]: unknown; // other sections (agent, mcp_servers, …) — not edited in 7a
+  // Integration endpoints (Phase 7c-a) — scalar configs edited through this same settings PUT.
+  searxng: { base_url: string; enabled: boolean; language: string | null };
+  embeddings: {
+    base_url: string;
+    api_key: string | null; // masked on read
+    model: string;
+    enabled: boolean;
+    dim: number | null;
+  };
+  open_terminal: {
+    base_url: string;
+    api_key: string | null; // masked on read
+    enabled: boolean;
+    exec_risk: string;
+    write_risk: string;
+    read_risk: string;
+  };
+  [k: string]: unknown; // other sections (agent, mcp_servers, …) — managed elsewhere
 }
 
 export interface SaveResult {

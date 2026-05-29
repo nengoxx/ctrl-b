@@ -74,11 +74,23 @@ function Field(props: {
 
 // Just the slices the 7a form edits — kept verbatim from the loaded doc so a save round-trips the
 // masked api_key (the backend restores it) and leaves every other section untouched.
-type Draft = Pick<SettingsDoc, "server" | "inference">;
+type Draft = Pick<SettingsDoc, "server" | "inference" | "searxng" | "embeddings" | "open_terminal">;
 
 function pickDraft(s: SettingsDoc): Draft {
-  return { server: s.server, inference: s.inference };
+  return {
+    server: s.server,
+    inference: s.inference,
+    searxng: s.searxng,
+    embeddings: s.embeddings,
+    open_terminal: s.open_terminal,
+  };
 }
+
+const RISKS = [
+  { val: "low", label: "Low" },
+  { val: "med", label: "Med" },
+  { val: "high", label: "High" },
+];
 
 export function ConfTab({ active }: Props) {
   const { theme, skyline, loz, heroOn, waveformOn } = useUI();
@@ -111,10 +123,24 @@ export function ConfTab({ active }: Props) {
   function setSrv<K extends keyof Draft["server"]>(key: K, val: Draft["server"][K]) {
     setDraft((d) => (d ? { ...d, server: { ...d.server, [key]: val } } : d));
   }
+  function setSearx<K extends keyof Draft["searxng"]>(key: K, val: Draft["searxng"][K]) {
+    setDraft((d) => (d ? { ...d, searxng: { ...d.searxng, [key]: val } } : d));
+  }
+  function setEmb<K extends keyof Draft["embeddings"]>(key: K, val: Draft["embeddings"][K]) {
+    setDraft((d) => (d ? { ...d, embeddings: { ...d.embeddings, [key]: val } } : d));
+  }
+  function setTerm<K extends keyof Draft["open_terminal"]>(key: K, val: Draft["open_terminal"][K]) {
+    setDraft((d) => (d ? { ...d, open_terminal: { ...d.open_terminal, [key]: val } } : d));
+  }
+
+  const sx = draft?.searxng;
+  const emb = draft?.embeddings;
+  const term = draft?.open_terminal;
 
   function onSave() {
     if (!draft) return;
     // Coerce numeric text fields; the backend validates and 422s on a bad value (surfaced as toast).
+    const dimRaw = String(draft.embeddings.dim ?? "").trim();
     const patch: Draft = {
       server: {
         ...draft.server,
@@ -125,6 +151,9 @@ export function ConfTab({ active }: Props) {
         ...draft.inference,
         request_timeout_s: Number(draft.inference.request_timeout_s),
       },
+      searxng: draft.searxng,
+      embeddings: { ...draft.embeddings, dim: dimRaw ? Number(dimRaw) : null },
+      open_terminal: draft.open_terminal,
     };
     save.mutate(patch as unknown as Record<string, unknown>);
   }
@@ -248,12 +277,136 @@ export function ConfTab({ active }: Props) {
             <Switch on={!!srv?.debug} onToggle={() => setSrv("debug", !srv?.debug)} />
           </div>
         </div>
+      </div>
+
+      <div className="confgroup">
+        <div className="conftitle">
+          <span className="num">03</span>
+          <b>SearXNG</b>
+          <span className="right">web_search</span>
+        </div>
+        <div className="conf-card">
+          <Field
+            label="Endpoint"
+            desc="searxng base url — needs JSON format enabled"
+            value={sx?.base_url ?? ""}
+            onChange={(v) => setSearx("base_url", v)}
+            placeholder="http://host:8888"
+          />
+          <Field
+            label="Language"
+            desc="optional default ui language"
+            value={sx?.language ?? ""}
+            onChange={(v) => setSearx("language", v || null)}
+            placeholder="en"
+          />
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Enabled</div>
+              <div className="desc">powers the agent web_search tool</div>
+            </div>
+            <Switch on={!!sx?.enabled} onToggle={() => setSearx("enabled", !sx?.enabled)} />
+          </div>
+        </div>
+      </div>
+
+      <div className="confgroup">
+        <div className="conftitle">
+          <span className="num">04</span>
+          <b>Embeddings</b>
+          <span className="right">vector memory</span>
+        </div>
+        <div className="conf-card">
+          <Field
+            label="Endpoint"
+            desc="openai-compatible /v1 base url"
+            value={emb?.base_url ?? ""}
+            onChange={(v) => setEmb("base_url", v)}
+            placeholder="https://openrouter.ai/api/v1"
+          />
+          <Field
+            label="Model"
+            desc="embedding model id"
+            value={emb?.model ?? ""}
+            onChange={(v) => setEmb("model", v)}
+            placeholder="qwen/qwen3-embedding-4b"
+          />
+          <Field
+            label="API key"
+            desc="bearer key (stored masked)"
+            type="password"
+            value={emb?.api_key ?? ""}
+            onChange={(v) => setEmb("api_key", v)}
+          />
+          <Field
+            label="Dimension"
+            desc="optional — vector size hint"
+            value={emb?.dim == null ? "" : String(emb.dim)}
+            onChange={(v) => setEmb("dim", (v === "" ? null : v) as unknown as number)}
+            placeholder="2560"
+          />
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Enabled</div>
+              <div className="desc">semantic recall (Phase 7e)</div>
+            </div>
+            <Switch on={!!emb?.enabled} onToggle={() => setEmb("enabled", !emb?.enabled)} />
+          </div>
+        </div>
+      </div>
+
+      <div className="confgroup">
+        <div className="conftitle">
+          <span className="num">05</span>
+          <b>Open-terminal</b>
+          <span className="right">remote shell tools</span>
+        </div>
+        <div className="conf-card">
+          <Field
+            label="Endpoint"
+            desc="open-terminal rest api base url"
+            value={term?.base_url ?? ""}
+            onChange={(v) => setTerm("base_url", v)}
+            placeholder="http://host:9999"
+          />
+          <Field
+            label="API key"
+            desc="bearer token (stored masked)"
+            type="password"
+            value={term?.api_key ?? ""}
+            onChange={(v) => setTerm("api_key", v)}
+          />
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Exec risk</div>
+              <div className="desc">terminal_exec gate — high = confirm</div>
+            </div>
+            <Seg<string> current={term?.exec_risk ?? "high"} options={RISKS} onPick={(v) => setTerm("exec_risk", v)} />
+          </div>
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Write risk</div>
+              <div className="desc">file write/replace gate</div>
+            </div>
+            <Seg<string> current={term?.write_risk ?? "high"} options={RISKS} onPick={(v) => setTerm("write_risk", v)} />
+          </div>
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Read risk</div>
+              <div className="desc">read/list/grep/glob gate</div>
+            </div>
+            <Seg<string> current={term?.read_risk ?? "low"} options={RISKS} onPick={(v) => setTerm("read_risk", v)} />
+          </div>
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Enabled</div>
+              <div className="desc">curated remote shell + file tools</div>
+            </div>
+            <Switch on={!!term?.enabled} onToggle={() => setTerm("enabled", !term?.enabled)} />
+          </div>
+        </div>
         <div className="conf-savebar">
-          <button
-            className="conf-save"
-            disabled={!dirty || save.isPending}
-            onClick={onSave}
-          >
+          <button className="conf-save" disabled={!dirty || save.isPending} onClick={onSave}>
             {save.isPending ? "Saving…" : dirty ? "Save changes" : "Saved"}
           </button>
         </div>
@@ -261,7 +414,7 @@ export function ConfTab({ active }: Props) {
 
       <div className="confgroup">
         <div className="conftitle">
-          <span className="num">03</span>
+          <span className="num">06</span>
           <b>Computers</b>
           <span className="right">
             {hosts.length} machine{hosts.length === 1 ? "" : "s"}
@@ -272,7 +425,7 @@ export function ConfTab({ active }: Props) {
 
       <div className="confgroup">
         <div className="conftitle">
-          <span className="num">04</span>
+          <span className="num">07</span>
           <b>Appearance</b>
         </div>
         <div className="conf-card">

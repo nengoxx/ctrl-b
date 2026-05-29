@@ -20,7 +20,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from app.adapters.embeddings import EmbeddingsClient
 from app.adapters.inference import InferenceClient
+from app.adapters.openterminal import OpenTerminalClient
+from app.adapters.searxng import SearxngClient
 from app.config import Settings
 
 if TYPE_CHECKING:
@@ -36,6 +39,33 @@ def set_inference(app: "FastAPI", settings: Settings) -> None:
     deps = getattr(app.state, "deps", None)
     if deps is not None:
         deps.inference = app.state.inference
+
+
+async def _swap_client(app: "FastAPI", attr: str, new_client: object) -> None:
+    """Assign a freshly built adapter client onto `app.state.<attr>` (and mirror onto `deps.<attr>`),
+    closing the previous one's httpx session first. The single-source helper for the scalar
+    integration clients — called by both lifespan and `reconfigure`, so the two can't drift. At
+    lifespan there's no prior client to close and `deps` isn't built yet (skipped); `Deps(...)` then
+    reads `app.state.<attr>`."""
+    old = getattr(app.state, attr, None)
+    if old is not None and hasattr(old, "aclose"):
+        await old.aclose()
+    setattr(app.state, attr, new_client)
+    deps = getattr(app.state, "deps", None)
+    if deps is not None:
+        setattr(deps, attr, new_client)
+
+
+async def set_searxng(app: "FastAPI", settings: Settings) -> None:
+    await _swap_client(app, "searxng", SearxngClient(settings.searxng))
+
+
+async def set_embeddings(app: "FastAPI", settings: Settings) -> None:
+    await _swap_client(app, "embeddings", EmbeddingsClient(settings.embeddings))
+
+
+async def set_open_terminal(app: "FastAPI", settings: Settings) -> None:
+    await _swap_client(app, "open_terminal", OpenTerminalClient(settings.open_terminal))
 
 
 def apply_settings_inplace(app: "FastAPI", new: Settings) -> None:
@@ -71,10 +101,19 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
     body, not the caller."""
     old: Settings = app.state.settings
     inference_changed = _changed(old, new, "inference")
+    searxng_changed = _changed(old, new, "searxng")
+    embeddings_changed = _changed(old, new, "embeddings")
+    open_terminal_changed = _changed(old, new, "open_terminal")
     caches_stale = _changed(old, new, "server") or _changed(old, new, "computers")
 
     apply_settings_inplace(app, new)
     if inference_changed:
         set_inference(app, new)
+    if searxng_changed:
+        await set_searxng(app, new)
+    if embeddings_changed:
+        await set_embeddings(app, new)
+    if open_terminal_changed:
+        await set_open_terminal(app, new)
     if caches_stale:
         invalidate_status_caches(app)

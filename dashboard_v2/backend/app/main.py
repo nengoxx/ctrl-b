@@ -18,14 +18,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.adapters.embeddings import EmbeddingsClient
 from app.adapters.mcp_client import McpClient
 from app.adapters.openapi_tools import OpenApiToolProvider
-from app.adapters.openterminal import OpenTerminalClient
-from app.adapters.searxng import SearxngClient
 from app.api import actions, agent, events, health, hosts, services, settings as settings_api
 from app.config import load_dotenv, load_settings
-from app.runtime import set_inference
+from app.runtime import set_embeddings, set_inference, set_open_terminal, set_searxng
 from app.core.events import EventBus
 from app.db import Database
 from app.services.action_service import ActionService
@@ -55,10 +52,12 @@ async def lifespan(app: FastAPI):
     # ActionService runs the registry built from services/actions (import side effects register).
     app.state.event_bus = EventBus()
     app.state.events = EventService(app.state.db, app.state.event_bus)
-    # Integration clients (Phase 4f): one cached httpx client each, closed at shutdown below.
-    app.state.searxng = SearxngClient(app.state.settings.searxng)
-    app.state.open_terminal = OpenTerminalClient(app.state.settings.open_terminal)
-    app.state.embeddings = EmbeddingsClient(app.state.settings.embeddings)
+    # Integration clients (Phase 4f): one cached httpx client each, closed at shutdown below. Built
+    # via the runtime `set_*` helpers (single source shared with `reconfigure`, so a Conf edit
+    # rebuilds them the same way — Phase 7c-a). `deps` isn't built yet, so these set app.state.* only.
+    await set_searxng(app, app.state.settings)
+    await set_open_terminal(app, app.state.settings)
+    await set_embeddings(app, app.state.settings)
     deps = Deps(
         settings=app.state.settings,
         fleet=app.state.fleet,
