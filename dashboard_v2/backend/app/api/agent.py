@@ -10,8 +10,10 @@ regardless (DESIGN §5.3), so a reconnect re-reads it via `GET /api/threads/{id}
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -152,6 +154,72 @@ async def list_agents(request: Request) -> dict[str, Any]:
         "agents": [a.name for a in s.agents],
         "default": s.resolve_agent(None).name,
     }
+
+
+#: A skill folder name: lowercase slug, no path separators — guards the file CRUD below against
+#: traversal (the name becomes `skills_dir/<name>/SKILL.md`).
+_SKILL_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+#: Scaffold for a brand-new skill so the editor opens with valid frontmatter, not a blank file.
+_SKILL_TEMPLATE = (
+    "---\n"
+    "name: {name}\n"
+    "description: When to use this skill (the selector matches the user message against this).\n"
+    "# allowed_tools: [ping_host, wake_host]   # optional — narrows the toolset while active\n"
+    "---\n\n"
+    "Instructions for the agent when this skill is active.\n"
+)
+
+
+class SkillContent(BaseModel):
+    content: str = ""
+
+
+def _skill_md_path(request: Request, name: str) -> Path:
+    """Resolve `skills_dir/<name>/SKILL.md`, validating the name (422 on a bad/unsafe slug)."""
+    if not _SKILL_NAME.match(name):
+        raise HTTPException(
+            status_code=422, detail="invalid skill name (lowercase letters, digits, '-' or '_')"
+        )
+    return request.app.state.settings.skills_dir_path() / name / "SKILL.md"
+
+
+@router.get("/skills/{name}")
+async def get_skill(name: str, request: Request) -> dict[str, Any]:
+    """The raw `SKILL.md` text for the editor (7d). 404 if the skill doesn't exist; a fresh name
+    returns the scaffold template so the editor opens populated."""
+    p = _skill_md_path(request, name)
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail=f"unknown skill '{name}'")
+    return {"name": name, "content": p.read_text(encoding="utf-8")}
+
+
+@router.put("/skills/{name}")
+async def put_skill(name: str, body: SkillContent, request: Request) -> dict[str, Any]:
+    """Create or overwrite `skills/<name>/SKILL.md` (7d). The FileSkillProvider re-scans per call, so
+    a save is live with no restart. Blank content → the scaffold template (used by 'add skill')."""
+    p = _skill_md_path(request, name)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    content = body.content if body.content.strip() else _SKILL_TEMPLATE.format(name=name)
+    # Write bytes with the file's existing EOL (LF default for a new file) to avoid CRLF churn.
+    newline = "\r\n" if (p.is_file() and b"\r\n" in p.read_bytes()) else "\n"
+    p.write_bytes(content.replace("\r\n", "\n").replace("\n", newline).encode("utf-8"))
+    return {"name": name, "content": content}
+
+
+@router.delete("/skills/{name}")
+async def delete_skill(name: str, request: Request) -> dict[str, Any]:
+    """Remove a skill's `SKILL.md` (7d) and its folder if it's left empty (resource files the owner
+    dropped in are preserved — only an empty folder is cleaned up). Idempotent: 404 if not present."""
+    p = _skill_md_path(request, name)
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail=f"unknown skill '{name}'")
+    p.unlink()
+    try:
+        p.parent.rmdir()  # only succeeds when empty — keep any sibling resources
+    except OSError:
+        pass
+    return {"name": name, "deleted": True}
 
 
 @router.post("/agent/compact")

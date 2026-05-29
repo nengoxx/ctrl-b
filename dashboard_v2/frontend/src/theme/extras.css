@@ -1198,3 +1198,14 @@ body {
   box-shadow: 0 0 0 1px var(--magenta), 0 0 10px rgba(var(--accent-rgb), 0.25);
 }
 
+/* ── Conf → Skills · SKILL.md editor (Phase 7d-c, net-new) ────────────────────────────────────
+   The raw-markdown editor reuses the 7c .kv-text textarea; just taller for editing a whole file. */
+.kv-text.skill-md {
+  grid-column: 1 / -1;
+  min-height: 200px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: 2;
+}
+

@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { AgentsEditor } from "../components/AgentsEditor";
 import { MachineEditor } from "../components/MachineEditor";
 import { ServerListEditor } from "../components/ServerListEditor";
+import { SkillsEditor } from "../components/SkillsEditor";
 import { ToolDescriptionsEditor } from "../components/ToolDescriptionsEditor";
 import { useActionSpecs } from "../hooks/useActions";
 import { type AgentDef, type AgentSectionCfg } from "../hooks/useAgents";
@@ -147,6 +148,7 @@ export function ConfTab({ active }: Props) {
   };
   const agentToolNames = actionSpecs.filter((s) => s.agent_exposed).map((s) => s.name);
   const skillNames = skillList.map((s) => s.name);
+  const skillsEnabled = (agentSection as { skills_enabled?: boolean } | undefined)?.skills_enabled ?? true;
 
   // Reseed the draft whenever the server doc changes (initial load + after a successful save, which
   // replaces the cache with the masked echo → clears the dirty state).
@@ -469,8 +471,18 @@ export function ConfTab({ active }: Props) {
       </ConfGroup>
 
       <ConfGroup
-        id="tooldesc"
+        id="skills"
         num="09"
+        title="Skills"
+        right={`${skillNames.length} discovered`}
+        defaultCollapsed
+      >
+        <SkillsEditor enabled={skillsEnabled} />
+      </ConfGroup>
+
+      <ConfGroup
+        id="tooldesc"
+        num="10"
         title="Agent tools"
         right="descriptions"
         defaultCollapsed
@@ -480,14 +492,14 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="computers"
-        num="10"
+        num="11"
         title="Computers"
         right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
       >
         <MachineEditor hosts={hosts} />
       </ConfGroup>
 
-      <ConfGroup id="appearance" num="11" title="Appearance">
+      <ConfGroup id="appearance" num="12" title="Appearance">
         <div className="conf-card">
           <div className="confrow">
             <div className="k">
