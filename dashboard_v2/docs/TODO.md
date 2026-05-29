@@ -285,9 +285,9 @@ tools + confirm bubbles) are DONE.**
       a swappable `Orchestrator` (default `ParallelOrchestrator`: `asyncio.TaskGroup` + per-agent &
       tree-wide semaphores). Depth bounded by `max_subagent_depth`; child privilege **clamped** to
       the parent; per-child error/timeout isolated (partial success preserved).
-- [ ] Conf → **Skills** (list/enable/edit/add) + **Agents** (manage definitions, default, subagent
-      settings). **Deferred to Phase 7** — needs the Conf `GET/PUT /api/settings` form infrastructure
-      that Phase 7 builds; the read APIs (`GET /api/skills`) + config round-trip already exist.
+- [x] Conf → **Skills** (list/enable/edit/add) + **Agents** (manage definitions, default, subagent
+      settings). **Done in Phase 7d** (`AgentsEditor`/`SkillsEditor`); skill files edited via new
+      `GET/PUT/DELETE /api/skills/{name}`, agents via `PUT /api/settings`.
 
 ## Phase 5 — Guarded shell (`$` escape hatch)
 
@@ -363,11 +363,21 @@ tools + confirm bubbles) are DONE.**
 - Tests: `test_integrations_7c.py` (scalar hot-apply, MCP CRUD + dirty + 409/404, rediscover busy/empty,
   registry removal). STT/TTS endpoints still deferred to Phase 6 voice. **Owner D7 eyeball pending.**
 
-### Phase 7d — skills/agents management (the A7 deferral) + per-tool descriptions
-- [ ] Conf → **Skills** (list/enable/edit/add) + **Agents** (manage `agents[]`, default, tools-per-agent
-      tick, subagent settings, the `/agent` switch) + **per-tool description override** (`ToolSpec.description`).
-      Read APIs (`GET /api/skills`) exist; this writes agents through `PUT /api/settings` — **depends on
-      audit A1** (enum-safe save) being done in 7a.
+### Phase 7d — skills/agents management (the A7 deferral) + per-tool descriptions ✅ DONE (commit pending)
+- [x] **7d-a — per-tool description overrides:** `Settings.tool_descriptions` + `runtime.apply_tool_descriptions`
+      overlay onto the live registry specs (capturing originals so clearing restores the built-in),
+      wired in lifespan/reconfigure/rediscover. Conf → **Agent tools** group edits them via `PUT
+      /api/settings`. Tests: `test_tool_descriptions_7d.py` 2/2.
+- [x] **7d-b — Agents management** (`components/AgentsEditor.tsx`): manage `agents[]` (name/backend/model/
+      privilege/prompt, **tools-per-agent tick-grid**, skills all/none/custom, loop+subagent limit grid),
+      the **default agent**, and subagent settings (fan-out limit, clamp-privilege). Saved through `PUT
+      /api/settings` (whole-list replace + section deep-merge; full objects round-trip). **`/agent <name>`
+      composer switch** (`ChatRequest.agent` + `_session` override; `GET /api/agents` for names+default).
+      Tests: `test_agents_7d.py` 1/1 (StrEnum privilege round-trip — A1, hot-apply, 422, clear→built-in).
+- [x] **7d-c — Skills management** (`components/SkillsEditor.tsx`): master `skills_enabled` toggle, list +
+      raw `SKILL.md` editor + add/remove via new `GET/PUT/DELETE /api/skills/{name}` (slug-guarded,
+      EOL-preserving, scaffold template; provider re-scans → live, no restart). Tests: `test_skills_7d.py`
+      1/1. **Owner D7 eyeball pending:** the Agents/Skills/Agent-tools forms @390px ×3 themes.
 
 ### Phase 7e — prompts editors + memory panel
 - [ ] `GET/PUT /api/prompts/{name}` + prompt-file editors.

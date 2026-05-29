@@ -33,8 +33,9 @@ action (with a device-row button); **clickable plan-step dots** (persistent, age
 **OS-compatibility pass** (ping/commands detect the host OS). **Phase 7 is sliced 7a–7e; 7a (settings
 foundation + Inference/Server groups) and 7b (hosts + services CRUD machine editor) are built +
 verified — see the two 2026-05-29 blocks below.** **7c (integrations: SearXNG/embeddings/open-terminal
-hot-apply + MCP/OpenAPI managers with between-turn rediscovery) is built + verified. Next up: 7d
-(skills/agents UI + per-tool descriptions) → 7e (prompts + memory).**
+hot-apply + MCP/OpenAPI managers with between-turn rediscovery) is built + verified. 7d (skills/agents
+management UI + per-tool description overrides) is built + verified + committed (see the 7d block
+below). Next up: 7e (prompts editors + memory panel).**
 This doc is the orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor
 fidelity mandate (D7) still governs every new component.**
 
@@ -75,12 +76,60 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (Phase 7a–7c done + pushed · see the 2026-05-29 blocks below)
+## Current state (Phase 7a–7d done · 7a–7c pushed, 7d committed locally · see the 2026-05-29 blocks below)
 
-> **In sync with `origin/main` at `e99ea49`** (Conf tab: settings + hosts/services + integrations
-> editors, all comment/secret/EOL-safe; sections collapsible w/ persisted state). **Next: 7d**
-> (skills/agents management UI + per-tool description overrides) → 7e (prompts + memory). The detail
-> for everything before Phase 7 is in the sections further down (unchanged).
+> **7a–7c are on `origin/main` at `e99ea49`; 7d is committed locally (NOT yet pushed)** — three
+> commits `7d-a` (per-tool descriptions) · `7d-b` (agents UI + `/agent` switch) · `7d-c` (skills UI).
+> Conf is now the full functional-groups tab (settings · hosts/services · integrations · **agents ·
+> skills · agent-tool descriptions** · appearance), all comment/secret/EOL-safe; sections collapsible
+> w/ persisted state. **Next: 7e** (prompts editors + memory panel). The detail for everything before
+> Phase 7 is in the sections further down (unchanged). **Pushing 7d needs owner confirmation.**
+
+### ⭐ Session update — 2026-05-29 (Phase 7d — skills/agents management + per-tool descriptions)
+
+**Built + verified + committed locally** (`7d-a` per-tool descriptions · `7d-b` agents UI · `7d-c`
+skills UI; **not yet pushed**). Conf gains the last management groups so agents/skills/tool-wording
+are all UI-editable — no more hand-edited YAML for these. The big lever here is that the agent picks
+tools by their model-facing **description**, so editing those steers a weak local model (the
+2026-05-28 finding) without code.
+
+- **7d-a — per-tool description overrides:** `Settings.tool_descriptions` (name→text) +
+  `runtime.apply_tool_descriptions` overlays them onto the **live registry specs** — the single seam
+  both `GET /api/actions` and `to_openai_tools` read, so the model + the UI reflect a change at once.
+  Originals are captured once on `app.state.tool_desc_orig` so **clearing an override restores the
+  built-in**. Wired in lifespan (after every provider registers), `reconfigure` (when the section
+  changed), and at the end of `rediscover_integrations` (fresh MCP/OpenAPI specs pick overrides up).
+  Edited via the existing `PUT /api/settings`. Conf → **Agent tools** group (collapsed): agent-exposed
+  tools grouped by category, editable description each, blank = reset.
+- **7d-b — Agents management** (`components/AgentsEditor.tsx`, `hooks/useAgents.ts`): a group-level
+  draft saved through `PUT /api/settings` — the **whole `agents` list is replaced** (deep_merge
+  replaces lists) and the `agent` section deep-merges, in one PUT; the full agent objects round-trip
+  so unexposed fields (compaction, extras) survive. Per-agent form: name (add-only), backend
+  (inherit/local/cloud) + model id, privilege Seg, prompt, a **tools tick-grid** (all vs explicit
+  subset), a **skills mode** (all/none/custom + tick-grid), and a **loop/subagent limit grid**. Plus
+  default-agent select + subagent fan-out limit + clamp-privilege toggle. **`/agent <name>` composer
+  switch** (sticky per session, bare = default — same non-persistent caveat as `/local`//`/cloud`):
+  `ChatRequest.agent` → `_session(agent_name)` override (resume uses thread/default); `GET /api/agents`
+  returns names+default for the composer + UI.
+- **7d-c — Skills management** (`components/SkillsEditor.tsx`, `hooks/useSkills.ts`): master
+  `skills_enabled` toggle (via `PUT /api/settings`), the discovered-skills list, a **raw `SKILL.md`
+  editor** + add/remove via new **`GET/PUT/DELETE /api/skills/{name}`** (slug-guarded against
+  traversal → 422; EOL-preserving; a blank PUT writes a frontmatter scaffold; DELETE removes the file
+  + an empty folder, keeping sibling resources). The `FileSkillProvider` re-scans per call, so edits
+  are **live, no restart**.
+- **Frontend shape:** all three reuse the vapor `.mwrap`/`.mform`/`.mfoot` recipe + the 7a/7c
+  `.conf-textarea`/`.kv-text` inputs; net-new CSS only (tick-grid, limits grid, `.skill-md`) in
+  `extras.css` — **`vapor.css` untouched (D7)**. Conf groups renumbered 01–12 (Agents 08, Skills 09,
+  Agent tools 10, Computers 11, Appearance 12); all collapsible with persisted state.
+- **Verified:** `test_tool_descriptions_7d.py` 2/2 · `test_agents_7d.py` 1/1 (StrEnum privilege
+  round-trip = audit A1 exercised live, hot-apply via `resolve_agent`, `/api/agents`, 422 on bad
+  privilege, clear→built-in default) · `test_skills_7d.py` 1/1 (scaffold + live discovery, overwrite +
+  re-parsed description/allowed_tools, slug-guard 422, delete + 404). **All backend suites green** (7a
+  7 · 7b 2 · 7c 4 · 7d 2+1+1); `compileall` + `tsc -b` + `vite build` clean. **Writes tested on a temp
+  config/skills dir only** (audit E3).
+- **Owner D7 eyeball pending:** the **Agents**, **Skills**, and **Agent tools** forms @390px across
+  vapor/aqua/ember — and a live check that `/agent <name>` switches the agent and an edited tool
+  description actually changes the model's tool pick.
 
 ### Earlier baseline (Phase 4.5 + 2026-05-28 capability/UX session)
 
