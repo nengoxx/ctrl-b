@@ -30,10 +30,10 @@ layer** (loop-discipline guards + tool-selection routing) was added; a **`fleet`
 auto-narrows the toolset so the weak local model behaves (the big finding — `minig+` isn't too weak,
 the 21-tool namespaced set confused it); a **`check_service`** liveness tool + a **`reboot_host`**
 action (with a device-row button); **clickable plan-step dots** (persistent, agent-aware); and an
-**OS-compatibility pass** (ping/commands detect the host OS). **Phase 7 is now sliced 7a–7e; 7a
-(settings read/write foundation + Conf Inference & Server groups) is built + verified — see the
-2026-05-29 block below** (commit pending). **Next up: 7b (hosts/services CRUD) → 7c (integrations:
-MCP/SearXNG/embeddings/OpenAPI managers, extending the `reconfigure` seam) → 7d (skills/agents UI +
+**OS-compatibility pass** (ping/commands detect the host OS). **Phase 7 is sliced 7a–7e; 7a (settings
+foundation + Inference/Server groups) and 7b (hosts + services CRUD machine editor) are built +
+verified — see the two 2026-05-29 blocks below.** **Next up: 7c (integrations: MCP/SearXNG/embeddings/
+OpenAPI managers, extending the `edit_config_yaml`+`reconfigure` seam) → 7d (skills/agents UI +
 per-tool descriptions) → 7e (prompts + memory).**
 This doc is the orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor
 fidelity mandate (D7) still governs every new component.**
@@ -86,6 +86,38 @@ transport `874cdb1`**). **Phase 4.5 (skills + agents/subagents) is committed + p
 (through `591cc5b`):** AgentDef spine `c964237` · skills `e2c90e8` · subagents `e84797f` · 4.5 docs
 `ba11479` · **subagent parameter inheritance** `b407cec` + docs `70571c4` · **tool-description fallback
 fix** `f72ccb0`. The 4e/4f file lists below are reference.
+
+### ⭐ Session update — 2026-05-29 (Phase 7b — hosts + services CRUD)
+
+**Built + verified (commit pending — push on owner OK).** The Conf → Computers group is now a real
+editor: add / edit / delete machines (Vapor machine forms) **and** their services.
+
+- **Backend `api/hosts.py`:** `POST /api/hosts`, `PUT /api/hosts/{id}`, `DELETE /api/hosts/{id}`.
+  GET `_host_dto` gained **`has_password`** (bool — never the value) + **`services[]`** (full `cmd`
+  map). Blank password on PUT keeps the stored secret (audit A2). **Rename** re-keys the entry via
+  `comps[new] = comps.pop(old)` (preserves the node's inner field comments) + re-slugs the id.
+  Service add/remove handled by `sync_mapping` (removed keys disappear). Each op validates via
+  `ComputerCfg.model_validate` (422) + semantic checks (name/ip required, slug uniqueness → 409,
+  dup service name), then `edit_config_yaml(mutate)` + `reconfigure(app, load_settings())` to
+  hot-apply + invalidate caches (audit B4) — new machine shows next poll, no restart. `asyncio.Lock`.
+- **`config.py` generalized:** the 7a comment/EOL-preserving writer is now `edit_config_yaml(mutate,
+  path)` (the single YAML-write chokepoint) + `sync_mapping(node, target)` (set-if-changed / add /
+  delete, comment-preserving) + public `host_slug`. `apply_patch_to_yaml` delegates to it. This is
+  the seam 7c's MCP/integration list editors will reuse.
+- **Frontend:** `components/MachineEditor.tsx` ports vapor's `.mwrap`/`.mform`/`.mfoot` machine rows +
+  add-machine row (CSS already in `vapor.css`); a **net-new services sub-editor** (`.svc-*` in
+  `extras.css`, built from VAPOR_PATTERNS tokens — `vapor.css` untouched) edits name/kind/port/path/
+  autostart + per-host-OS start/stop/restart `cmd`, carrying other-OS `cmd` through unchanged.
+  `hooks/useHostMutations.ts` (create/update/delete → invalidate `['hosts']`+`['settings']` + toast);
+  `del()` added to `api/client.ts`; delete goes through the existing `requestConfirm`.
+- **Verified:** `tests/test_hosts_7b.py` 2/2 (TestClient on a **temp** config — add/edit/rename/
+  delete/services-sync/multi-OS-cmd/secret-keep/409/422); 7a tests still 7/7; `compileall` + frontend
+  `tsc -b`/`vite build` clean. Backend relaunched on 5433 (venv) — `GET /hosts` on the real config
+  shows `has_password`/services with no secret leak. **Writes were tested only on a temp config
+  (audit E3 — never the real `config.yaml`).**
+- **Known limitation:** a comment *physically trailing a deleted element* is dropped with it (ruamel);
+  leading section comments (the owner's style) survive sibling deletions.
+- **Owner D7 eyeball pending:** machine form + the net-new services editor @390px in vapor/aqua/ember.
 
 ### ⭐ Session update — 2026-05-29 (Phase 7a — Conf settings read/write foundation)
 

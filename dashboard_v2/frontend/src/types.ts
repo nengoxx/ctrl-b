@@ -22,6 +22,19 @@ export interface Host {
   role: string | null;
   tags: string[];
   status: HostStatus | null;
+  has_password?: boolean; // Phase 7b: whether an ssh_password is stored (the value is never sent)
+  services?: HostServiceCfg[]; // Phase 7b: the host's declared services, for the Conf editor
+}
+
+// One service as declared in config.yaml (Phase 7b machine-form editor). Distinct from the derived
+// `Service` DTO above (which carries live status/url/controls); this is the raw editable config.
+export interface HostServiceCfg {
+  name: string;
+  kind: string | null;
+  port: number | null;
+  path: string;
+  autostart: boolean;
+  cmd: Record<string, Record<string, string>>; // {action: {os_type: command}} — round-trips verbatim
 }
 
 export interface ServerInfo {

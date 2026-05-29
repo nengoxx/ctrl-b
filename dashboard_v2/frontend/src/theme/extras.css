@@ -872,3 +872,133 @@ body {
   box-shadow: none;
 }
 
+/* ── Conf → Computers · services sub-editor (Phase 7b, net-new — no vapor markup) ─────────────
+   Built only from VAPOR_PATTERNS tokens/recipes; vapor.css untouched (D7). Sits inside the .mconf
+   machine form, below .mform, above .mfoot. */
+.svc-edit {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+.svc-edit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 8px;
+}
+.svc-empty {
+  font-size: 10px;
+  color: var(--ink-faint);
+  letter-spacing: 0.5px;
+  padding: 2px 0 8px;
+}
+/* small outline "+ service" button — the §7 footer-choice recipe, compact */
+.svc-add {
+  all: unset;
+  cursor: pointer;
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-size: 8.5px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--ink-soft);
+  border: 1px solid var(--line-2);
+}
+.svc-add:active {
+  background: var(--bg-3);
+  color: var(--magenta);
+  border-color: var(--magenta);
+}
+.svc-card {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.svc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.svc-cmd {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* inputs follow VAPOR_PATTERNS §8 (same recipe as .mconf .mform input) */
+.svc-card input {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--bg-3);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  border: 1px solid var(--line);
+  letter-spacing: 0.3px;
+}
+.svc-card input::placeholder {
+  color: var(--ink-faint);
+}
+.svc-card input:focus {
+  border-color: var(--magenta);
+  box-shadow: 0 0 0 1px var(--magenta), 0 0 10px rgba(var(--accent-rgb), 0.25);
+}
+.svc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.svc-auto {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+/* a slightly smaller switch knob to fit the compact service card */
+.svc-auto .switch .knob {
+  width: 36px;
+  height: 19px;
+}
+.svc-auto .switch .knob::after {
+  width: 13px;
+  height: 13px;
+}
+.svc-auto .switch.on .knob::after {
+  left: 19px;
+}
+/* remove = outline danger (§7) — red in vapor/ember, purple in aqua via --danger-rgb (§10) */
+.svc-rm {
+  all: unset;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 8.5px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: rgba(var(--danger-rgb), 0.85);
+  border: 1px solid rgba(var(--danger-rgb), 0.3);
+}
+.svc-rm:active {
+  color: var(--red);
+  border-color: var(--red);
+  background: rgba(var(--danger-rgb), 0.08);
+}
+

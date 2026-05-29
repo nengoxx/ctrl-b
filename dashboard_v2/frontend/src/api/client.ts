@@ -35,3 +35,18 @@ export function postJSON<T>(path: string, body: unknown): Promise<T> {
 export function putJSON<T>(path: string, body: unknown): Promise<T> {
   return sendJSON<T>("PUT", path, body);
 }
+
+/** DELETE a resource. Surfaces FastAPI `detail` on error; tolerates an empty 204 body. */
+export async function del(path: string): Promise<void> {
+  const res = await fetch(path, { method: "DELETE", headers: { Accept: "application/json" } });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const j = (await res.json()) as { detail?: unknown };
+      if (j?.detail) detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+    } catch {
+      /* 204 / non-JSON — keep the status line */
+    }
+    throw new Error(detail);
+  }
+}

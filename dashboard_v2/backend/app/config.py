@@ -34,7 +34,7 @@ from app.domain.service import Service
 __all__ = [
     "Settings", "ModelRef", "AgentDef", "CompactionCfg",
     "load_settings", "save_settings", "mask_secrets", "unmask_secrets", "deep_merge",
-    "apply_patch_to_yaml", "prune_unchanged",
+    "apply_patch_to_yaml", "prune_unchanged", "edit_config_yaml", "sync_mapping", "host_slug",
 ]
 
 # dashboard_v2/backend/app/config.py -> dashboard_v2/
@@ -222,6 +222,10 @@ def _slug(name: str) -> str:
     """Stable id from a host name: lowercase, non-alphanumerics → '-' (DESIGN.md §2)."""
     s = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
     return s or "host"
+
+
+#: Public alias — the hosts CRUD API maps a path `id` back to its `computers:` key via this.
+host_slug = _slug
 
 
 class ServiceCfg(BaseModel):
@@ -478,14 +482,29 @@ def _deep_set(node: Any, patch: dict[str, Any]) -> None:
             node[k] = v
 
 
-def apply_patch_to_yaml(patch: dict[str, Any], path: Path | None = None) -> None:
-    """Persist `patch` by **editing the existing config file in place** with a comment/format-
-    preserving round-trip — only the changed leaves are rewritten, so the operator's comments,
-    section order, quoting, and minimal-key style are kept (a plain `yaml.safe_dump` of the full
-    model would normalize all of that away). Atomic (temp + `os.replace`). `patch` should already be
-    pruned to real changes (see `prune_unchanged`) with secrets unmasked (see `unmask_secrets`)."""
-    if not patch:
-        return
+def sync_mapping(node: Any, target: dict[str, Any]) -> None:
+    """Make the ruamel mapping `node` match `target` while preserving the file as much as possible:
+    set only the leaves that differ (so unchanged lines keep their comments/quoting), recurse into
+    nested mappings, **add** keys new to `target`, and **delete** keys absent from `target`. Unlike
+    `_deep_set` this also removes keys — so it's the right tool for replacing a host entry / its
+    `services` map where the submission is the source of truth (a removed service really disappears)."""
+    for k, v in target.items():
+        cur = node.get(k)
+        if isinstance(v, dict) and hasattr(cur, "get"):
+            sync_mapping(cur, v)
+        elif cur != v or k not in node:
+            node[k] = v
+    for k in [k for k in node if k not in target]:
+        del node[k]
+
+
+def edit_config_yaml(mutate: Any, path: Path | None = None) -> None:
+    """Edit the config file in place with a comment/format-preserving round-trip: load the ruamel
+    doc (or a fresh mapping), run `mutate(doc)` to apply changes (set/sync/delete keys), then write
+    atomically while keeping the file's existing line ending. This is the single chokepoint for every
+    YAML write — `apply_patch_to_yaml` + the hosts CRUD endpoints all funnel through it, so a plain
+    `yaml.safe_dump` (which would strip comments, reorder, expand defaults, flip EOL) is never used
+    on the operator's file."""
     p = path or config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     raw_bytes = p.read_bytes() if p.exists() else b""
@@ -495,7 +514,7 @@ def apply_patch_to_yaml(patch: dict[str, Any], path: Path | None = None) -> None
     doc = y.load(raw_bytes.decode("utf-8")) if raw_bytes else None
     if not hasattr(doc, "get"):                 # empty/new file → start from a fresh mapping
         doc = {}
-    _deep_set(doc, patch)
+    mutate(doc)
     buf = io.StringIO()
     y.dump(doc, buf)
     # Preserve the file's existing line ending (LF default for a new file) and write bytes directly,
@@ -504,6 +523,15 @@ def apply_patch_to_yaml(patch: dict[str, Any], path: Path | None = None) -> None
     tmp = p.with_suffix(p.suffix + ".tmp")
     tmp.write_bytes(out.encode("utf-8"))
     os.replace(tmp, p)
+
+
+def apply_patch_to_yaml(patch: dict[str, Any], path: Path | None = None) -> None:
+    """Persist `patch` by editing the existing config file in place (comment/format/EOL preserving) —
+    only the changed leaves are rewritten. `patch` should already be pruned to real changes (see
+    `prune_unchanged`) with secrets unmasked (see `unmask_secrets`)."""
+    if not patch:
+        return
+    edit_config_yaml(lambda doc: _deep_set(doc, patch), path)
 
 
 def _mask(value: str) -> str:

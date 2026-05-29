@@ -330,10 +330,22 @@ tools + confirm bubbles) are DONE.**
       + new **Server** group (host/port/poll/debug) wired to live data; `useSettings`/`useSaveSettings`
       + `putJSON`; dirty-tracked Save + toast. Appearance stays UI-store-only. **Owner D7 eyeball pending.**
 
-### Phase 7b — hosts/services CRUD
-- [ ] Hosts CRUD: `POST/PUT/DELETE /api/hosts/{id}` + Conf machine forms (port Vapor `machineFormHTML`).
-      **Dedicated endpoints** (not the scalar settings merge — audit A2 list-merge caveat); secrets
-      handled explicitly. Force-invalidate fleet/service caches on change (audit B4).
+### Phase 7b — hosts/services CRUD ✅ DONE (commit pending)
+- [x] Hosts CRUD: `POST/PUT/DELETE /api/hosts/{id}` (`api/hosts.py`) + Conf machine forms ported from
+      Vapor (`components/MachineEditor.tsx`) + **net-new services sub-editor** (name/kind/port/path/
+      autostart + per-host-OS start/stop/restart cmd; add/remove). **Dedicated endpoints** (not the
+      scalar settings merge — audit A2). Blank password keeps the stored secret; rename re-keys the
+      entry (preserving inner field comments) + re-slugs the id; removed services synced away.
+- [x] Generalized the comment/EOL-preserving writer: `edit_config_yaml(mutate)` + `sync_mapping`
+      (`config.py`) — one chokepoint for every YAML write; reused by 7a's patch path + hosts CRUD,
+      and the seam 7c's list editors build on. `reconfigure(app, load_settings())` hot-applies +
+      invalidates fleet/service caches (audit B4) → new/edited machine shows next poll, no restart.
+- [x] `tests/test_hosts_7b.py` (TestClient on a **temp** config, audit E3): list DTO (has_password,
+      no secret, services), add + 409 collision, edit (blank-pw kept, comments preserved, services
+      add/remove synced), multi-OS `cmd` preserved, rename (re-keyed id + carried services + secret),
+      delete + 404, 422 on missing ip. Frontend: `useHostMutations` + `del()`; delete confirms.
+- **Known limitation:** a comment physically *trailing a deleted element* is dropped with it (ruamel);
+  leading section comments (the owner's style) survive. **Owner D7 eyeball pending** (@390px ×3 themes).
 
 ### Phase 7c — integrations panel (D9)
 - [ ] **Integrations panel:** MCP servers manager (add/edit/enable; stdio `command+args+env`

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { MachineEditor } from "../components/MachineEditor";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
 import { useSaveSettings, useSettings, type SettingsDoc } from "../hooks/useSettings";
 import { setUI, useUI, type Skyline, type Theme, type Loz } from "../store/ui";
@@ -266,22 +267,7 @@ export function ConfTab({ active }: Props) {
             {hosts.length} machine{hosts.length === 1 ? "" : "s"}
           </span>
         </div>
-        <div className="conf-card">
-          {hosts.map((h) => (
-            <div className="confrow" key={h.id}>
-              <div className="k">
-                <div className="label">{h.name}</div>
-                <div className="desc code">
-                  {h.ip} · {h.ssh_username ?? "—"}@{h.os_type}:{h.ssh_port}
-                </div>
-              </div>
-              <span className={"badge" + (h.status?.online ? "" : " stale")}>
-                {h.status?.online ? "awake" : "asleep"}
-              </span>
-              <span className="chev">›</span>
-            </div>
-          ))}
-        </div>
+        <MachineEditor hosts={hosts} />
       </div>
 
       <div className="confgroup">
