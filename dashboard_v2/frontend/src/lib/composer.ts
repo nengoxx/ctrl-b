@@ -17,6 +17,7 @@ import {
   pushSystemNote,
   pushUserEcho,
   sendMessage,
+  setSessionAgent,
   setSessionMode,
   startNewThread,
   type ChatMode,
@@ -44,11 +45,31 @@ export async function loadSkills(): Promise<void> {
 }
 void loadSkills();
 
+/** Configured agent names, so `/agent <name>` can validate + the default is known (7d). Best-effort,
+ *  same as the skills set; an unknown name still routes (the backend resolves gracefully). */
+const knownAgents = new Set<string>();
+let defaultAgent = "default";
+
+export async function loadAgents(): Promise<void> {
+  try {
+    const res = await fetch("/api/agents");
+    if (!res.ok) return;
+    const data = (await res.json()) as { agents: string[]; default: string };
+    knownAgents.clear();
+    for (const n of data.agents) knownAgents.add(n);
+    defaultAgent = data.default || "default";
+  } catch {
+    /* best-effort */
+  }
+}
+void loadAgents();
+
 const HELP = [
   "// commands",
   `${SHELL_SIGIL}<cmd>      run a shell command (guarded · lands in Phase 5)`,
   "/local [msg]   force the local inference backend",
   "/cloud [msg]   force the cloud inference backend",
+  "/agent [name]  switch the active agent (bare = back to default)",
   "/compact       summarize older turns to free up context",
   "/clear         start a new thread",
   "/<skill> [task] run a task with a skill active",
@@ -106,6 +127,21 @@ function routeSlash(text: string): void {
       } else {
         setSessionMode(mode); // sticky: subsequent messages until changed
         pushSystemNote(`// inference → ${mode}`);
+      }
+      break;
+    }
+    case "agent": {
+      // `/agent <name>` sets a sticky session agent; bare `/agent` resets to the default. The name
+      // is validated against the configured set (best-effort) — an unknown one still routes, the
+      // backend resolves gracefully, but we warn so a typo is visible.
+      const name = rest.split(/\s+/)[0] || "";
+      if (!name) {
+        setSessionAgent(null);
+        pushSystemNote(`// agent → ${defaultAgent} (default)`);
+      } else {
+        setSessionAgent(name);
+        const known = knownAgents.has(name);
+        pushSystemNote(known ? `// agent → ${name}` : `// agent → ${name} (not configured — will fall back to default)`);
       }
       break;
     }

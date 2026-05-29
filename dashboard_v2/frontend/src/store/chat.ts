@@ -33,6 +33,14 @@ export function setSessionMode(mode: ChatMode | null): void {
   sessionMode = mode;
 }
 
+// Sticky agent for this session, set by `/agent <name>` (7d). `null` → the thread's / configured
+// default AgentDef. Per-message only (not persisted on the thread) — like sessionMode, a resume
+// finishes on the default agent.
+let sessionAgent: string | null = null;
+export function setSessionAgent(name: string | null): void {
+  sessionAgent = name;
+}
+
 function set(next: Partial<ChatState>) {
   state = { ...state, ...next };
   for (const l of listeners) l();
@@ -331,7 +339,7 @@ export async function sendMessage(
 
   await streamTurn(
     "/api/agent/chat",
-    { text: body, thread_id: state.threadId, mode, skills },
+    { text: body, thread_id: state.threadId, mode, skills, agent: sessionAgent },
     placeholderId,
   );
 }

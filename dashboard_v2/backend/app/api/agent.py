@@ -34,6 +34,7 @@ class ChatRequest(BaseModel):
     thread_id: str | None = None
     mode: str | None = None  # "local" | "cloud"; None → configured default (4c switches per-msg)
     skills: list[str] = Field(default_factory=list)  # explicit /skill-name invocations (4.5)
+    agent: str | None = None  # `/agent <name>` switch (7d); None → the thread's / configured default
 
     @field_validator("mode")
     @classmethod
@@ -59,11 +60,15 @@ class ResumeRequest(BaseModel):
     confirm_token: str | None = None
 
 
-def _session(request: Request, thread: Thread | None = None) -> AgentSession:
-    """Build a session, resolving which `AgentDef` drives it from the thread's `agent` field
-    (D11). `None` → the configured default. Older callers that pass no thread still get the default."""
+def _session(
+    request: Request, thread: Thread | None = None, agent_name: str | None = None
+) -> AgentSession:
+    """Build a session, resolving which `AgentDef` drives it. `agent_name` (the per-message `/agent
+    <name>` switch, 7d) wins; else the thread's `agent` field (D11); else the configured default. An
+    unknown name falls back to the default (resolve_agent is graceful). Resume passes no override, so
+    a suspended turn finishes on the thread/default agent — same caveat as the per-message mode (4c)."""
     s = request.app.state
-    agent = s.settings.resolve_agent(thread.agent if thread else None)
+    agent = s.settings.resolve_agent(agent_name or (thread.agent if thread else None))
     return AgentSession(
         s.threads,
         s.messages,
@@ -109,7 +114,7 @@ async def chat(body: ChatRequest, request: Request) -> EventSourceResponse:
     if getattr(request.app.state, "integrations_dirty", False):
         await rediscover_integrations(request.app)
 
-    session = _session(request, thread)
+    session = _session(request, thread, agent_name=body.agent)
 
     async def gen() -> AsyncIterator[dict[str, Any]]:
         # Tell the client the thread id first (it may have just been created).
@@ -135,6 +140,18 @@ async def list_skills(request: Request) -> list[dict[str, Any]]:
         {"name": s.name, "description": s.description, "allowed_tools": s.allowed_tools}
         for s in provider.list()
     ]
+
+
+@router.get("/agents")
+async def list_agents(request: Request) -> dict[str, Any]:
+    """Configured agent names + the resolved default (7d) — for the composer `/agent <name>` switch
+    and a quick reference. The built-in default agent (used when `agents[]` is empty) isn't listed
+    here; `default` is the name a bare thread resolves to."""
+    s = request.app.state.settings
+    return {
+        "agents": [a.name for a in s.agents],
+        "default": s.resolve_agent(None).name,
+    }
 
 
 @router.post("/agent/compact")

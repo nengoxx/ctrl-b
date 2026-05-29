@@ -1111,3 +1111,90 @@ body {
   font-weight: 600;
 }
 
+/* ── Conf → Agents · definitions editor (Phase 7d-b, net-new) ─────────────────────────────────
+   Reuses vapor's .mwrap/.mform/.mfoot machine-row recipe; these add the tool/skill allowlist tick
+   grids, the limits grid, and the prompt textarea sizing. Tokens from VAPOR_PATTERNS; vapor.css
+   untouched (D7). The agent prompt reuses the .mform textarea.kv-text recipe (7c). */
+.agent-allow {
+  grid-column: 1 / -1; /* span both .mform columns */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agent-allow-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--ink-soft);
+}
+.tick-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tick {
+  all: unset;
+  cursor: pointer;
+  padding: 4px 9px;
+  border-radius: 6px;
+  font-size: 9.5px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.3px;
+  color: var(--ink-faint);
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+}
+.tick.on {
+  color: #1a0428;
+  background: linear-gradient(135deg, var(--magenta), var(--violet));
+  border-color: transparent;
+}
+.agent-empty {
+  font-size: 10px;
+  color: var(--ink-faint);
+  letter-spacing: 0.5px;
+}
+.agent-lim {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.agent-lim-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.agent-lim-cell span {
+  font-size: 8px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.agent-lim-cell input,
+.lim-input {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: var(--bg-3);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  border: 1px solid var(--line);
+  text-align: center;
+}
+.lim-input {
+  flex: 0 0 70px;
+  text-align: right;
+}
+.agent-lim-cell input:focus,
+.lim-input:focus {
+  border-color: var(--magenta);
+  box-shadow: 0 0 0 1px var(--magenta), 0 0 10px rgba(var(--accent-rgb), 0.25);
+}
+

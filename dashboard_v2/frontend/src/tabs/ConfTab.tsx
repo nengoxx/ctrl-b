@@ -1,11 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 
+import { AgentsEditor } from "../components/AgentsEditor";
 import { MachineEditor } from "../components/MachineEditor";
 import { ServerListEditor } from "../components/ServerListEditor";
 import { ToolDescriptionsEditor } from "../components/ToolDescriptionsEditor";
+import { useActionSpecs } from "../hooks/useActions";
+import { type AgentDef, type AgentSectionCfg } from "../hooks/useAgents";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
 import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
 import { useSaveSettings, useSettings, type SettingsDoc } from "../hooks/useSettings";
+import { useSkills } from "../hooks/useSkills";
 import { useCollapsed } from "../store/collapse";
 import { setUI, useUI, type Skyline, type Theme, type Loz } from "../store/ui";
 
@@ -129,7 +133,20 @@ export function ConfTab({ active }: Props) {
   const save = useSaveSettings();
   const { data: integrations } = useIntegrationsStatus();
   const rediscover = useRediscover();
+  const { data: actionSpecs = [] } = useActionSpecs();
+  const { data: skillList = [] } = useSkills();
   const [draft, setDraft] = useState<Draft | null>(null);
+
+  // Agent definitions + the agent-section scalars come straight off the settings doc.
+  const agents = (settings?.agents as AgentDef[] | undefined) ?? [];
+  const agentSection = settings?.agent as Partial<AgentSectionCfg> | undefined;
+  const agentCfg: AgentSectionCfg = {
+    default_agent: agentSection?.default_agent ?? "",
+    global_subagent_limit: agentSection?.global_subagent_limit ?? 6,
+    subagent_clamp_privilege: agentSection?.subagent_clamp_privilege ?? true,
+  };
+  const agentToolNames = actionSpecs.filter((s) => s.agent_exposed).map((s) => s.name);
+  const skillNames = skillList.map((s) => s.name);
 
   // Reseed the draft whenever the server doc changes (initial load + after a successful save, which
   // replaces the cache with the masked echo → clears the dirty state).
@@ -442,8 +459,18 @@ export function ConfTab({ active }: Props) {
       </ConfGroup>
 
       <ConfGroup
-        id="tooldesc"
+        id="agents"
         num="08"
+        title="Agents"
+        right={`${agents.length} defined`}
+        defaultCollapsed
+      >
+        <AgentsEditor agents={agents} cfg={agentCfg} toolNames={agentToolNames} skillNames={skillNames} />
+      </ConfGroup>
+
+      <ConfGroup
+        id="tooldesc"
+        num="09"
         title="Agent tools"
         right="descriptions"
         defaultCollapsed
@@ -453,14 +480,14 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="computers"
-        num="09"
+        num="10"
         title="Computers"
         right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
       >
         <MachineEditor hosts={hosts} />
       </ConfGroup>
 
-      <ConfGroup id="appearance" num="10" title="Appearance">
+      <ConfGroup id="appearance" num="11" title="Appearance">
         <div className="conf-card">
           <div className="confrow">
             <div className="k">
