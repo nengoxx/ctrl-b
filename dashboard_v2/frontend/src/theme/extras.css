@@ -888,7 +888,21 @@ body {
   letter-spacing: 1.5px;
   text-transform: uppercase;
   color: var(--ink-faint);
-  margin-bottom: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+/* disclosure chevron — rotates down when the section is open (matches the .confrow .chev feel) */
+.svc-chev {
+  color: var(--magenta);
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.2s;
+}
+.svc-edit.open .svc-chev {
+  transform: rotate(90deg);
+}
+.svc-body {
+  margin-top: 8px;
 }
 .svc-empty {
   font-size: 10px;

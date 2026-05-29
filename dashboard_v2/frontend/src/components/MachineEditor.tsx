@@ -152,6 +152,7 @@ function MachineForm(props: {
 }) {
   const [d, setD] = useState<Draft>(props.initial);
   const [showPw, setShowPw] = useState(false);
+  const [svcOpen, setSvcOpen] = useState(false); // services collapsed by default (usability)
   const set = (patch: Partial<Draft>) => setD({ ...d, ...patch });
   const setSvc = (i: number, s: SvcDraft) =>
     set({ services: d.services.map((x, j) => (j === i ? s : x)) });
@@ -196,29 +197,34 @@ function MachineForm(props: {
         </select>
       </div>
 
-      <div className="svc-edit">
-        <div className="svc-edit-head">
-          <span>Services</span>
-          <button
-            type="button"
-            className="svc-add"
-            onClick={() =>
-              set({ services: [...d.services, { name: "", kind: "", port: "", path: "", autostart: false, cmd: {} }] })
-            }
-          >
-            + service
-          </button>
+      <div className={"svc-edit" + (svcOpen ? " open" : "")}>
+        <div className="svc-edit-head" onClick={() => setSvcOpen(!svcOpen)}>
+          <span>Services{d.services.length ? ` · ${d.services.length}` : ""}</span>
+          <span className="svc-chev">›</span>
         </div>
-        {d.services.length === 0 && <div className="svc-empty">no services declared</div>}
-        {d.services.map((s, i) => (
-          <ServiceCard
-            key={i}
-            svc={s}
-            os={d.os_type}
-            onChange={(ns) => setSvc(i, ns)}
-            onRemove={() => set({ services: d.services.filter((_, j) => j !== i) })}
-          />
-        ))}
+        {svcOpen && (
+          <div className="svc-body">
+            {d.services.length === 0 && <div className="svc-empty">no services declared</div>}
+            {d.services.map((s, i) => (
+              <ServiceCard
+                key={i}
+                svc={s}
+                os={d.os_type}
+                onChange={(ns) => setSvc(i, ns)}
+                onRemove={() => set({ services: d.services.filter((_, j) => j !== i) })}
+              />
+            ))}
+            <button
+              type="button"
+              className="svc-add"
+              onClick={() =>
+                set({ services: [...d.services, { name: "", kind: "", port: "", path: "", autostart: false, cmd: {} }] })
+              }
+            >
+              + service
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="mfoot">
