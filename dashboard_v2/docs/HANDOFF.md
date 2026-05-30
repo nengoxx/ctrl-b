@@ -76,14 +76,140 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (Phase 7a–7d done · 7a–7c pushed, 7d committed locally · see the 2026-05-29 blocks below)
+## Current state (Phase 7a–7d done · 7a–7c pushed, 7d committed locally + planning done for the prompt-append + Conf-sizing slices · see the 2026-05-30 block below)
 
 > **7a–7c are on `origin/main` at `e99ea49`; 7d is committed locally (NOT yet pushed)** — three
 > commits `7d-a` (per-tool descriptions) · `7d-b` (agents UI + `/agent` switch) · `7d-c` (skills UI).
-> Conf is now the full functional-groups tab (settings · hosts/services · integrations · **agents ·
-> skills · agent-tool descriptions** · appearance), all comment/secret/EOL-safe; sections collapsible
-> w/ persisted state. **Next: 7e** (prompts editors + memory panel). The detail for everything before
-> Phase 7 is in the sections further down (unchanged). **Pushing 7d needs owner confirmation.**
+> Plus a 4th docs commit (`eb5ce4a`). Conf is now the full functional-groups tab (settings ·
+> hosts/services · integrations · **agents · skills · agent-tool descriptions** · appearance), all
+> comment/secret/EOL-safe; sections collapsible w/ persisted state. **Next: a prompt-append +
+> Conf-sizing slice (7d follow-up / 7e-a), then 7e proper (prompts editors + memory panel).** Read the
+> **2026-05-30 block below** for the locked direction, the UX proposal, and the "start here tomorrow"
+> checklist. **Pushing 7d needs owner confirmation.**
+
+### ⭐ Session update — 2026-05-30 (planning · system-prompt direction set · 7d wrap)
+
+A short planning session. No code shipped; direction locked for the next slice.
+
+#### State of the tree
+- **4 local commits on `main`, none pushed:** `c47bb1a` 7d-a · `16c160f` 7d-b · `293ee2f` 7d-c ·
+  `eb5ce4a` docs. Push needs owner go-ahead (per the standing rule).
+- **Two uncommitted Conf CSS refinements** sitting in the working tree (from late polish):
+  1. **Skills · SKILL.md editor** restructured to render *outside* the `.mform` grid, self-styled,
+     **320px min-height** (up from 200), 10px gap above the `.mfoot` so the editor sits clearly above
+     the remove/save buttons. (`extras.css` `.kv-text.skill-md` rewritten as standalone.)
+  2. **Agent tools · category heading** got `padding: 0 14px 4px` (matches `.confrow`) so the
+     uppercase letter-spaced "FLEET" word clears `.conf-card`'s `border-radius: 14px` +
+     `overflow: hidden`. Was being cropped on the left.
+  Fold both into a single `refine(dashboard_v2): polish 7d Conf` commit at the start of tomorrow's
+  session, before the new work.
+- **Servers up:** backend on **5433** (venv, serving 7d code — relaunched today after killing the
+  stale system-python that was on the port; see the same trap noted in the 2026-05-28 block) and
+  frontend on **5190** (Vite HMR). Leave them up or restart in the fresh session — either is fine.
+- **Owner D7 eyeball pending:** Agents / Skills / Agent-tools forms @390px × 3 themes. A live check
+  that `/agent <name>` switches the agent and that an edited tool description shifts the model's pick.
+
+#### Research delivered + direction locked
+The owner asked how opencode, little-coder, and Claude Code handle the system prompt. Findings:
+
+- **Claude Code (Agent SDK)** — baked `claude_code` preset (text not user-editable). Four
+  customization layers, each explicitly *append* or *replace*: **`append`** to the preset (additive,
+  recommended default · "lowest-risk"), **custom string** (full replace), **output styles** (markdown
+  files; replace by default, `keep-coding-instructions: true` flips to extend), **CLAUDE.md** (injected
+  as *conversation context*, not the system prompt — always additive, auto-discovered).
+- **opencode** — assembles `AGENTS.md`/`CLAUDE.md` discovered instructions (additive, FS + URL) →
+  then agent-specific prompt (defined in `opencode.json` or `.opencode/agents/*.md` frontmatter+body,
+  replace). Same two-axis model.
+- **little-coder** — deliberately **lean ~1000-token base** + 4 tools, then **30 markdown skill
+  files** injected on demand by extensions. Whole thesis is "scaffold–model fit" for small local
+  models (9.7B Qwen 19%→45% on Aider Polyglot). Validates our `fleet` intent-skill +
+  `KeywordSkillSelector` approach: don't grow the base, lean harder on skills.
+
+**Common pattern:** baked base · two customization axes (additive layer + replaceable persona) ·
+specialization in injected fragments (skills), not the base.
+
+**Where ctrl-b sits today:** baked `DEFAULT_SYSTEM_PROMPT` → `inference.system_prompt` (replace) →
+`agent.prompt` (replace) + skills injection. **We're missing the additive axis** (the
+`append`/AGENTS.md equivalent) and a way to *see* the baked default. That's the gap A + B close.
+
+**Owner-locked plan:**
+- **A — additive layer:** new `inference.system_prompt_append: str` (+ optional per-agent
+  `prompt_append`). Effective context = base + an append, **emitted as its own `system` message**
+  (separate from the base — mirrors how the roster and active skills are injected; keeps the base
+  prompt stable for any future caching, makes the "extra" easy to attribute in logs).
+- **B — show the default:** `GET /api/agent/default-prompt` returns the baked text + the prompt
+  editor gets a "Load default" button (pre-fills the override field with a copy) and a "Restore
+  default" button (clears the override → falls back to baked). Removes the "blank = mystery" UX.
+
+**Decisions to lock at the start of tomorrow's session (~5 min):**
+1. **Per-agent append vs. global append composition:** does `AgentDef.prompt_append` *layer onto*
+   `inference.system_prompt_append`, or *replace* it? Claude Code's analog has them independent
+   (CLAUDE.md always added, persona independent), suggesting **both apply** with an opt-out flag per
+   agent (e.g. `inherit_append: false`). Confirm.
+2. **Append as a separate `system` message** (lean: yes, clean + cache-friendly + visible in logs)
+   vs. concatenated to the base. Confirm.
+3. **Home phase:** A + B fit naturally in **7e** ("prompts editors + memory panel"); folding the
+   baked default into a "default" prompt asset is also 7e-shaped (option D from the research). Confirm
+   7e as the home so 7d stays the finished slice — or call it `7d-d`.
+
+#### UX proposal — full-page prompt modal (the "small text fields" fix)
+
+Owner reaction was right: textareas inside `.mform` rows / `.conf-textrow` are too small for a real
+prompt. Proposal:
+
+- **One reusable `<PromptModal>`** — full-viewport overlay, opened from any prompt field by an inline
+  **"Edit fullscreen ↗"** button. Uses the same `100dvh` + `--app-h` (`visualViewport.height`) shell
+  the app already runs (`App.tsx`), so the Android keyboard shrinks the modal correctly.
+- **Layout:** header (title + close) · tall monospace `<textarea>` filling the body · char/token
+  counter · footer `[Load default] [Restore default] [Cancel] [Save]`. For SKILL.md the footer adds
+  `[Remove skill]`.
+- **Opens from:** Conf → Inference → System prompt; Conf → Agents → per-agent Prompt; Conf → Skills
+  → SKILL.md editor. The inline row keeps a 1-line preview (`override active · 1.2k chars · "you are
+  ctrl-b, a concise assistant…"`) so the Conf list stays scannable.
+- **Why a modal over a sub-page:** matches the mobile-first single-window design, reuses the shell,
+  no tab-state plumbing. A "Prompts" sub-page can come later in 7e if the count of editable prompts
+  grows.
+- **Alternatives considered:** inline expand (fights with fixed composer/tab bar), bottom sheet
+  (visually identical to a modal on mobile, more code).
+
+#### Conf sizing/cropping inventory (one `refine` commit)
+
+Group these into one `refine(dashboard_v2): conf sizing` commit so the diff is reviewable:
+
+1. **Inference → System prompt textarea** (`.conf-textarea` 64px, max-width 62%) → replace with the
+   "Edit fullscreen ↗" button + 1-line preview.
+2. **Agents → per-agent Prompt** (`.kv-text` 48px inside `.mform`) → same opener.
+3. **Skills → SKILL.md editor** — keep the inline 320px (already polished in the working tree) but
+   add an "Open fullscreen ↗" button for long files.
+4. **`.mform` grid** (90px label / 1fr value) — long labels ("Subagent fan-out limit", "Clamp
+   subagent privilege") wrap awkwardly at 390px. Either widen the label column to 100–110px or allow
+   `label` to wrap to 2 lines.
+5. **Agents → Limits grid** (3 columns) — tight at 390px; switch to 2 columns at viewport ≤ 420px.
+6. **Masked secrets / long URLs** in `.confrow` — audit `word-break` on values that don't render
+   through `.k .desc` (which vapor already breaks).
+7. **Fold the two CSS refinements in the working tree** (tooldesc heading padding + skill textarea
+   bigger) into this same commit.
+
+#### Start here tomorrow
+
+1. **Lock the three decisions above** (yes/no in 5 min).
+2. **`refine(dashboard_v2): polish 7d Conf` commit** — pick up the two uncommitted CSS refinements
+   in the working tree (skills textarea standalone + 320px, tooldesc heading padding). Verify @390px.
+3. **Push 7d (4 commits + polish)** to `origin/main` after the owner eyeball — or hold per the
+   standing rule.
+4. **Slice the prompt-append + default-prompt slice (`7d-d` or `7e-a`):**
+   - Backend: `Settings.inference.system_prompt_append` + optional `AgentDef.prompt_append` + the
+     inheritance flag. `_system_prompt()` returns the base; `_assemble()` emits a *second* `system`
+     message carrying the append (and a third if per-agent append exists, depending on the
+     compose decision). `GET /api/agent/default-prompt` returns the baked text. Tests:
+     `test_prompt_append_7e.py` — base + global append + per-agent append round-trip through
+     `_assemble`; endpoint returns the default text.
+   - Frontend: `<PromptModal>` (one component), wired from Conf → Inference / Agents / (optionally)
+     Skills SKILL.md. Inline rows shrink to "preview + Edit fullscreen ↗".
+5. **Slice the Conf-sizing refine** (the 7-item list above) as a separate commit so the diff stays
+   reviewable.
+6. After both: the rest of **7e** (prompt-file editors for arbitrary `prompts/*.md` + the memory
+   panel built on the 4f embeddings seam) is unblocked.
 
 ### ⭐ Session update — 2026-05-29 (Phase 7d — skills/agents management + per-tool descriptions)
 

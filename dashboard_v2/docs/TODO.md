@@ -379,8 +379,21 @@ tools + confirm bubbles) are DONE.**
       EOL-preserving, scaffold template; provider re-scans → live, no restart). Tests: `test_skills_7d.py`
       1/1. **Owner D7 eyeball pending:** the Agents/Skills/Agent-tools forms @390px ×3 themes.
 
-### Phase 7e — prompts editors + memory panel
-- [ ] `GET/PUT /api/prompts/{name}` + prompt-file editors.
+### Phase 7e — prompts append/default + prompt-file editors + memory panel
+- [ ] **7e-a — system-prompt append layer + show/load the baked default** (planned 2026-05-30; see
+      HANDOFF block). `Settings.inference.system_prompt_append` (+ optional `AgentDef.prompt_append`
+      with an inherit-global flag) emitted as a **separate `system` message** by `_assemble`. New
+      `GET /api/agent/default-prompt` returns the baked `DEFAULT_SYSTEM_PROMPT` text so the editor can
+      `[Load default]` / `[Restore default]`. Net effect: matches Claude Code's `append` /
+      opencode's `AGENTS.md` (additive axis), without growing the base prompt.
+- [ ] **7e-b — `<PromptModal>` full-page editor + Conf-sizing refine** (planned 2026-05-30). One
+      reusable full-viewport modal opened from any prompt field (Conf → Inference / Agents / Skills
+      SKILL.md); inline rows shrink to preview + opener. Bundled with the Conf sizing/cropping fixes
+      (`.mform` label column, limits grid 2-col at narrow width, tooldesc heading edge, secret
+      overflow audit). Separate refine commit for reviewability.
+- [ ] `GET/PUT /api/prompts/{name}` + prompt-file editors (covers arbitrary `prompts/*.md`; the
+      baked default can graduate into one of these files with the hardcoded string as fallback —
+      option D from the 2026-05-30 research).
 - [ ] Memory mgmt: `GET /api/memory`, `POST`, `DELETE`; rolling-summary + pinned-facts; clear
       thread / clear all (vector `MemoryProvider` + embeddings seam from 4f).
 
