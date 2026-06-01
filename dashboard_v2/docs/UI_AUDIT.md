@@ -160,11 +160,17 @@ This is documented in `Waveform.tsx` with a leading comment so the mistake isn't
 
 ---
 
-### F7 🟡 — `lucide-react` not audited
+### F7 🟡 — `lucide-react` not audited · ✅ SHIPPED (Slice 8 — dependency removed)
 
-Tree-shakes, but worth verifying. No behavior change.
+**Finding from `dist/stats.html`:** the bundle is dominated by React (`react-dom-client.production.js` alone is **65%** of total raw bytes — ~95 KB gz). Subtotal for React DOM + scheduler + React + tiny react-dom shim: ~104 KB gz / 70% of the bundle. TanStack Query is ~14 KB gz (7%). Our own code is ~25 KB gz (14%). Everything else is sub-1%.
 
-**Safety verdict: ✅ SAFE.** Pure measurement, then a possibly-zero change.
+**`lucide-react` is not in the bundle.** Grep confirmed zero imports across `src/` and zero occurrences in the built JS — it was tree-shaken at build time. The dependency was dead code in `package.json`.
+
+**Action shipped:** removed `lucide-react` from `package.json` via `npm uninstall lucide-react`. Bundle hashes pre/post are identical (`index-CyaGVU_6.js`, `ConfTab-CqaCO4kP.js`) — confirming zero runtime impact. The win is purely dev-time: smaller `node_modules`, smaller `package-lock.json`, faster `npm install` on fresh checkouts, one less dep to track for security advisories.
+
+**No other action warranted.** The only meaningful bundle-reduction lever left would be migrating to Preact compat (~50 KB gz savings), which is high-risk for a React 19 app using `useSyncExternalStore` + `Suspense`/`React.lazy`/concurrent features. Not worth it for a single-user tailnet PWA where the SW precaches the bundle after first install. The 95 KB gz React cost is the accepted floor.
+
+**Lesson recorded:** any future "is this dep heavy?" question is one `npm run build` away from `dist/stats.html` — the analyzer wired in Slice 1 is the source of truth.
 
 ---
 
@@ -253,7 +259,7 @@ Tree-shakes, but worth verifying. No behavior change.
 | F4 | `useUISlice` selector pattern | 🟡 | ⚠️ MITIGATED | M | ✅ Slice 7 |
 | F5 | Audit `transition:` declarations | 🟡 | ⚠️ MITIGATED | S | ✅ Slice 3 |
 | F6 | Lazy-load Conf only, prefetch on idle | 🔴 | ⚠️ MITIGATED | S | ✅ Slice 6 (+ follow-up fix for true lazy mount) |
-| F7 | `lucide-react` tree-shake audit | 🟡 | ✅ SAFE | XS | ⏳ Slice 8 (measure first) |
+| F7 | `lucide-react` tree-shake audit | 🟡 | ✅ SAFE | XS | ✅ Slice 8 (dead dep removed; bundle was already React-dominated) |
 | F8 | Body-attr mirroring into `setUI()` | 🟡 | ✅ SAFE | S | ✅ Slice 4 |
 | F9 | `useTransition` / `useDeferredValue` | 🟢 | 🛑 DEFER | — | ⏸️ defer until measured |
 | F10 | Memoize `resultByCall` in AgentTab | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
