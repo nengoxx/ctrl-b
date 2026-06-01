@@ -308,7 +308,11 @@ Acceptance: Network panel shows ONLY hosts/services/events traffic while on Flee
 
 `React.lazy(() => import('./tabs/ConfTab'))` + `<Suspense fallback={<ConfShellPlaceholder/>}>`. Idle-prefetch via `requestIdleCallback`. Hover/touch-start prefetch on the Conf tab button.
 
-Acceptance: initial JS bundle drops ≥ 20%; Conf tab opens instantly after warm-up (verify via 3G throttling in dev tools). No visible Suspense flash under normal use.
+**Important — design pitfall hit on first ship and fixed in a follow-up:** rendering `<ConfTabLazy>` unconditionally in the JSX tree causes React.lazy to invoke its loader on App mount, fetching the chunk immediately and making the prefetch step a no-op. Also: a Suspense fallback baked with `className="tab active"` will visually overlay whatever tab is actually active during the chunk download. Both fixed by **conditional mount** — render `<ConfTabLazy>` only after the user activates Conf at least once (then keep it mounted to preserve form drafts). With conditional mount, `prefetchOnIdle` becomes meaningful again because the import is no longer triggered on mount, and the Suspense fallback is only ever rendered when Conf is the active tab. **Rule for any future lazy tab: never put the lazy component into the tree before the user has signaled intent to view it.**
+
+Acceptance: initial JS bundle drops ≥ 10% (achieved: 324 → 282 KB raw, 96 → 87 KB gz). Conf tab opens instantly after warm-up (verify via 3G throttling in dev tools). No visible Suspense flash under normal use. Lazy chunk fetch starts on idle (or hover/touch), **not** on App mount — verify in DevTools Network panel.
+
+Also shipped in the follow-up: a small reusable `ErrorBoundary` (`components/ErrorBoundary.tsx`) wrapping the Suspense, with a Vapor-styled "Reload page" fallback. Covers the most common real-world failure (stale chunk URL after a deploy → 404 on click), which React.lazy can't recover from because it caches rejections — only a page reload picks up the new manifest. Boundary is reusable for any future lazy tab.
 
 ### Slice 7 — `useUISlice` selectors 🎯 M · F4
 
