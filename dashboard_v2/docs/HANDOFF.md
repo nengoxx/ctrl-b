@@ -76,16 +76,94 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (Phase 7a–7d done · 7a–7c pushed, 7d committed locally + planning done for the prompt-append + Conf-sizing slices · see the 2026-05-30 block below)
+## Current state (Phase 7a–7d done + UI perf pass complete · 7a–7c pushed, 7d + UI perf pass committed locally · follow-up a11y/resilience audit recorded · see the 2026-06-02 block below)
 
-> **7a–7c are on `origin/main` at `e99ea49`; 7d is committed locally (NOT yet pushed)** — three
-> commits `7d-a` (per-tool descriptions) · `7d-b` (agents UI + `/agent` switch) · `7d-c` (skills UI).
-> Plus a 4th docs commit (`eb5ce4a`). Conf is now the full functional-groups tab (settings ·
-> hosts/services · integrations · **agents · skills · agent-tool descriptions** · appearance), all
-> comment/secret/EOL-safe; sections collapsible w/ persisted state. **Next: a prompt-append +
-> Conf-sizing slice (7d follow-up / 7e-a), then 7e proper (prompts editors + memory panel).** Read the
-> **2026-05-30 block below** for the locked direction, the UX proposal, and the "start here tomorrow"
-> checklist. **Pushing 7d needs owner confirmation.**
+> **7a–7c are on `origin/main` at `e99ea49`; 7d + the entire UI perf pass (Slices 1–8) + the
+> follow-up audit are committed locally (NOT yet pushed)** — local HEAD is `1c4a35e`. Eight
+> local commits span: 7d a/b/c + docs (`c47bb1a`, `16c160f`, `293ee2f`, `eb5ce4a`, `f9b809c`)
+> → UI perf pass + cross-OS docs (`5906ba3`) → Slice 6 follow-up fix (`40cc5fa`) → Slice 7
+> useUISlice (`d915d57`) → Slice 8 lucide-react removal (`e944ec7`) → follow-up audit docs
+> (`1c4a35e`). Conf is now the full functional-groups tab (settings · hosts/services ·
+> integrations · **agents · skills · agent-tool descriptions** · appearance), all
+> comment/secret/EOL-safe; sections collapsible w/ persisted state. **The UI perf pass
+> (UI_AUDIT.md Slices 1–8) is complete — 10 of 13 findings shipped; F9/F13 deferred. The
+> follow-up audit (section 6c of UI_AUDIT.md) recorded 13 new findings (F14–F26) on
+> accessibility / resilience / UX edge cases — documented, not implemented.** **Next options:**
+> (1) tackle the F14–F26 backlog (recommended order in UI_AUDIT.md footer; F25 + F14 + F15
+> are the WCAG-critical ones); (2) the prompt-append + Conf-sizing slice (7d follow-up /
+> 7e-a, locked in the 2026-05-30 block); (3) 7e proper (prompts editors + memory panel).
+> **Pushing the eight local commits needs owner confirmation.**
+
+### ⭐ Session update — 2026-06-02 (UI perf pass shipped end-to-end + follow-up audit recorded)
+
+Long session. Two distinct things shipped:
+
+**Part 1 — UI perf pass complete (Slices 1–8 of `docs/UI_AUDIT.md`).** Eight commits closed
+10 of the 13 perf-pass findings. Commits, in order:
+- `5906ba3` — Slices 1–6 + cross-OS docs (the bulk). Bundle analyzer, PWA icon fan-out,
+  hoist constants, AgentTab memoize, Hero/NowPanel/FleetSummary memo (Waveform deliberately
+  not — see F2 caveat), transition audit (3 surgical edits), body-attr mirroring into
+  `setUI()`, `useScopedQuery` for Conf-only queries, lazy `ConfTab` + Suspense + idle
+  prefetch. Plus the OS-agnostic docs + the Windows `--reload` ping gotcha (documented in
+  CLAUDE.md, ARCHITECTURE.md §6, README.md, main.py). Plus configurable
+  `feature_cycle_seconds`, sub-millisecond ping precision (corsair self-ping reports 0.5ms
+  now), Vapor-themed conic-gradient busy spinner.
+- `40cc5fa` — Slice 6 follow-up. The first ship of Slice 6 had two bugs found in a
+  post-implementation audit (chunk fetched on mount instead of on intent; Suspense
+  fallback overlaid the active tab during download). Fixed via conditional-mount
+  (`confMounted` state) + a small reusable `components/ErrorBoundary.tsx` that catches
+  stale-chunk-after-deploy failures.
+- `d915d57` — Slice 7 (`useUISlice` selector pattern). Audit had claimed 25 `useUI()`
+  consumers; actual count was 5 (App, TabBar, AppBar, FleetTab, ConfTab). All migrated;
+  `useTabActive` rewritten as a one-line wrapper over `useUISlice`; `useUI()` kept
+  `@deprecated` as an escape hatch.
+- `e944ec7` — Slice 8 (F7 — `lucide-react` audit). Found the dep was dead (never imported;
+  zero bytes in the build). Removed. Bundle hashes pre/post identical. Bundle is now
+  ~70% React itself; no further legitimate trim targets.
+
+Final bundle: main 282 KB / 86.7 KB gz · lazy ConfTab 45 KB / 11.4 KB gz · CSS 60.8 KB /
+11.5 KB gz. First-paint cost ≈ 99 KB gz (Main JS + CSS).
+
+**Part 2 — Follow-up audit recorded (`1c4a35e`).** A second pass focused on areas the
+perf pass deliberately deferred: **accessibility, resilience, edge-case correctness**.
+13 new findings (F14–F26) documented in `docs/UI_AUDIT.md` section 6c. No implementation
+in this pass — pure documentation with severity, mechanism, safety verdict, and a fix
+sketch each. Critical ones (🔴, keyboard users functionally blocked today): **F25** (`all:
+unset` wipes focus outlines on ~30 buttons — WCAG 2.4.7 AA fail), **F14** (interactive
+`<div>`s in DeviceRow + Hero now-dots — keyboard skips them), **F15** (37 animations
+ignore `prefers-reduced-motion`). Resilience (🟡): **F16/F20** (SSE + chat-stream have no
+reconnect signals), **F23** (no root `ErrorBoundary` outside the Conf lazy chunk).
+Polish/UX/future-proofing (mostly 🟢): F17 (ConfirmDialog focus trap), F18 (TabBar ARIA
+tablist + arrow keys), F19 (`beforeunload` on dirty Conf), F21 (mic stub disable), F22
+(decorative-glyph `aria-hidden`), F24 (axe-core CI gate — already TODO Phase 9), F26 (SW
+update toast). UI_AUDIT.md footer documents the recommended implementation order.
+
+#### State of the tree
+- Eight commits ahead of `origin/main`. All 7d/perf/audit work is local. Pushing all
+  needs owner confirmation (per the standing rule).
+- No uncommitted changes (working tree clean as of this session end).
+- Servers as left running this session: backend on **5433** (corsair, no `--reload` per
+  the Windows gotcha; venv at `dashboard_v2/backend/.venv`); frontend Vite dev on **5190**
+  with HMR. Either can be torn down without state loss — config in `config.yaml`,
+  chat/events/memory in `ctrlb.db`. The dev server has cycled HMR through most files
+  many times this session — all clean.
+
+#### Start here in a fresh session
+1. **Decide pushing the eight local commits.** Tree is clean at `1c4a35e`; safe to push.
+2. **Pick the next direction:**
+   - **a11y backlog (F14–F26)** — concrete fix sketches are in `docs/UI_AUDIT.md` §6c with
+     a recommended order in the doc footer. F25 (one-line global focus rule) +
+     F14 (interactive divs → buttons) + F15 (`prefers-reduced-motion` media block) are the
+     highest-leverage; together they restore keyboard usability and reduced-motion
+     respect.
+   - **prompt-append + Conf-sizing (7d follow-up / 7e-a)** — direction locked 2026-05-30
+     (block below). `Settings.inference.system_prompt_append` + optional per-agent
+     `prompt_append` + a `<PromptModal>` full-page editor. See that block for the locked
+     decisions and the seven-item Conf-sizing checklist.
+   - **7e proper** — prompt-file editors for arbitrary `prompts/*.md` + a memory panel
+     built on the 4f embeddings seam.
+3. **Bundle analyzer is wired** — every `npm run build` writes `dist/stats.html`. Open it
+   if you ever want to see the treemap.
 
 ### ⭐ Session update — 2026-05-30 (planning · system-prompt direction set · 7d wrap)
 

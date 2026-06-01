@@ -1,9 +1,9 @@
 # UI audit — frontend architecture, performance, and a usability-safe implementation plan
 
-**Originally written:** 2026-06-01 (perf pass). **Extended:** 2026-06-01 (follow-up audit — section 6c, F14–F26).
+**Originally written:** 2026-06-01 (perf pass). **Extended:** 2026-06-02 (follow-up audit — section 6c, F14–F26).
 **Scope:** `dashboard_v2/frontend/` (React 19, Vite 7, TanStack Query, Vapor port).
 
-The original sections (1–6b) cover the performance + best-practices pass that ran as Slices 1–8 — all shipped. Section **6c (Follow-up audit)** is a second pass that focused on **accessibility, resilience, and edge-case correctness** — the layer the perf pass deliberately deferred. F14–F26 are documented but **not yet implemented**; they're the next backlog of frontend work.
+The original sections (1–6b) cover the performance + best-practices pass that ran as Slices 1–8 — all shipped (HEAD `e944ec7` at the time of audit). Section **6c (Follow-up audit)** is a second pass that focused on **accessibility, resilience, and edge-case correctness** — the layer the perf pass deliberately deferred. F14–F26 are documented but **not yet implemented**; they're the next backlog of frontend work. **Recommended order** for tackling them lives in the doc footer.
 
 > **Owner constraint (driving every decision below):** "I like how it flows. I like how it works." Performance and best-practices wins must not regress perceived responsiveness, freshness of fleet state, or interaction smoothness. Anything that *could* feel slower goes through an explicit "preserve behavior" mitigation before shipping.
 
@@ -269,19 +269,19 @@ This is documented in `Waveform.tsx` with a leading comment so the mistake isn't
 | F11 | PWA icon fan-out + PNG compression | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
 | F12 | Bundle analyzer in build | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
 | F13 | React Compiler trial | 🟢 | 🛑 DEFER | — | ⏸️ defer until F1–F12 stable |
-| F14 | Interactive divs missing keyboard/role | 🔴 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-01 |
-| F15 | `prefers-reduced-motion` not respected | 🔴 | ✅ SAFE | S | 🆕 follow-up audit 2026-06-01 |
-| F16 | SSE no error handler / no reconnect UI | 🟡 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-01 |
-| F17 | ConfirmDialog: no focus trap / restoration | 🟡 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-01 |
-| F18 | TabBar missing ARIA tablist + arrow keys | 🟡 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-01 |
-| F19 | No `beforeunload` for unsaved Conf changes | 🟡 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-01 |
-| F20 | Chat fetch-SSE has no reconnect on drop | 🟡 | ⚠️ MITIGATED | M | 🆕 follow-up audit 2026-06-01 |
-| F21 | Mic button is a visual stub | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-01 |
-| F22 | Decorative glyphs missing `aria-hidden` | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-01 |
-| F23 | No root `ErrorBoundary` outside ConfTab | 🟡 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-01 |
-| F24 | No automated UI / a11y tests | 🟢 | ✅ SAFE | M | 🆕 follow-up audit 2026-06-01 (already TODO Phase 9) |
-| F25 | `all: unset` wipes focus indicators on ~30 buttons | 🔴 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-01 |
-| F26 | SW `autoUpdate` has no in-app reload prompt | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-01 |
+| F14 | Interactive divs missing keyboard/role | 🔴 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-02 |
+| F15 | `prefers-reduced-motion` not respected | 🔴 | ✅ SAFE | S | 🆕 follow-up audit 2026-06-02 |
+| F16 | SSE no error handler / no reconnect UI | 🟡 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-02 |
+| F17 | ConfirmDialog: no focus trap / restoration | 🟡 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-02 |
+| F18 | TabBar missing ARIA tablist + arrow keys | 🟡 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-02 |
+| F19 | No `beforeunload` for unsaved Conf changes | 🟡 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-02 |
+| F20 | Chat fetch-SSE has no reconnect on drop | 🟡 | ⚠️ MITIGATED | M | 🆕 follow-up audit 2026-06-02 |
+| F21 | Mic button is a visual stub | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-02 |
+| F22 | Decorative glyphs missing `aria-hidden` | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-02 |
+| F23 | No root `ErrorBoundary` outside ConfTab | 🟡 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-02 |
+| F24 | No automated UI / a11y tests | 🟢 | ✅ SAFE | M | 🆕 follow-up audit 2026-06-02 (already TODO Phase 9) |
+| F25 | `all: unset` wipes focus indicators on ~30 buttons | 🔴 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-02 |
+| F26 | SW `autoUpdate` has no in-app reload prompt | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-02 |
 
 ## 6. Phased implementation plan
 
@@ -350,7 +350,7 @@ Look at the bundle analyzer output post-Slice 6 to see if `lucide-react` deserve
 
 ---
 
-## 6c. Follow-up audit — 2026-06-01 (F14–F26)
+## 6c. Follow-up audit — 2026-06-02 (F14–F26)
 
 After the F1–F13 pass landed (Slices 1–8 shipped), a second pass focused on **accessibility, resilience, and edge-case correctness** — areas the original audit deliberately deferred while we got perf and structure right. The findings below are the new backlog. None are critical for single-user-on-tailnet operation; several are real WCAG 2.2 AA failures that matter for any phone/voice-input flow (Phase 6) and for usability in low-vision / motion-sensitive contexts. **No implementation in this audit pass — documented for prioritization.**
 
