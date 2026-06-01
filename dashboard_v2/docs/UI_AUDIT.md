@@ -1,6 +1,9 @@
 # UI audit — frontend architecture, performance, and a usability-safe implementation plan
 
-**Date:** 2026-06-01 · **Scope:** `dashboard_v2/frontend/` (React 19, Vite 7, TanStack Query, Vapor port). Captures the analysis review delivered in chat, then layers a **usability-safety pass** over every finding so we don't trade fluidity for "perf" by accident. Final section is the **phased implementation plan** — each slice independently shippable, each one preserving current behavior unless explicitly noted.
+**Originally written:** 2026-06-01 (perf pass). **Extended:** 2026-06-01 (follow-up audit — section 6c, F14–F26).
+**Scope:** `dashboard_v2/frontend/` (React 19, Vite 7, TanStack Query, Vapor port).
+
+The original sections (1–6b) cover the performance + best-practices pass that ran as Slices 1–8 — all shipped. Section **6c (Follow-up audit)** is a second pass that focused on **accessibility, resilience, and edge-case correctness** — the layer the perf pass deliberately deferred. F14–F26 are documented but **not yet implemented**; they're the next backlog of frontend work.
 
 > **Owner constraint (driving every decision below):** "I like how it flows. I like how it works." Performance and best-practices wins must not regress perceived responsiveness, freshness of fleet state, or interaction smoothness. Anything that *could* feel slower goes through an explicit "preserve behavior" mitigation before shipping.
 
@@ -266,6 +269,19 @@ This is documented in `Waveform.tsx` with a leading comment so the mistake isn't
 | F11 | PWA icon fan-out + PNG compression | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
 | F12 | Bundle analyzer in build | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
 | F13 | React Compiler trial | 🟢 | 🛑 DEFER | — | ⏸️ defer until F1–F12 stable |
+| F14 | Interactive divs missing keyboard/role | 🔴 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-01 |
+| F15 | `prefers-reduced-motion` not respected | 🔴 | ✅ SAFE | S | 🆕 follow-up audit 2026-06-01 |
+| F16 | SSE no error handler / no reconnect UI | 🟡 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-01 |
+| F17 | ConfirmDialog: no focus trap / restoration | 🟡 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-01 |
+| F18 | TabBar missing ARIA tablist + arrow keys | 🟡 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-01 |
+| F19 | No `beforeunload` for unsaved Conf changes | 🟡 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-01 |
+| F20 | Chat fetch-SSE has no reconnect on drop | 🟡 | ⚠️ MITIGATED | M | 🆕 follow-up audit 2026-06-01 |
+| F21 | Mic button is a visual stub | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-01 |
+| F22 | Decorative glyphs missing `aria-hidden` | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-01 |
+| F23 | No root `ErrorBoundary` outside ConfTab | 🟡 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-01 |
+| F24 | No automated UI / a11y tests | 🟢 | ✅ SAFE | M | 🆕 follow-up audit 2026-06-01 (already TODO Phase 9) |
+| F25 | `all: unset` wipes focus indicators on ~30 buttons | 🔴 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-01 |
+| F26 | SW `autoUpdate` has no in-app reload prompt | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-01 |
 
 ## 6. Phased implementation plan
 
@@ -334,6 +350,193 @@ Look at the bundle analyzer output post-Slice 6 to see if `lucide-react` deserve
 
 ---
 
+## 6c. Follow-up audit — 2026-06-01 (F14–F26)
+
+After the F1–F13 pass landed (Slices 1–8 shipped), a second pass focused on **accessibility, resilience, and edge-case correctness** — areas the original audit deliberately deferred while we got perf and structure right. The findings below are the new backlog. None are critical for single-user-on-tailnet operation; several are real WCAG 2.2 AA failures that matter for any phone/voice-input flow (Phase 6) and for usability in low-vision / motion-sensitive contexts. **No implementation in this audit pass — documented for prioritization.**
+
+Same severity legend as section 4: **🔴** user-visible · **🟡** perf/cleanup · **🟢** future-proofing. Safety verdicts use the same scale.
+
+---
+
+### F14 🔴 — Interactive `<div>`s lack keyboard + role
+
+**The issue.** Two main interaction sites use `<div onClick>` instead of `<button>`:
+- `DeviceRow.tsx` lines 55–60: `<div className="top" onClick={onToggle}>` — the row-expansion target. Tab key skips it entirely; screen readers don't announce it as interactive.
+- `Hero.tsx` (NowPanel inner): the `.now-dots div` carousel dots — `<div onClick={() => onFeature(i)}>`. Same problem.
+
+**Why it slipped.** Both ports trace from `vapor.html`'s prototype markup, which used divs. The pixel-fidelity mandate (D7) preserved the DOM shape without revisiting interactivity.
+
+**Safety verdict: ⚠️ NEEDS MITIGATION** (the migration to `<button>` may shift box-model defaults — must verify with `all: unset` + the existing styles).
+
+**Fix:** convert to `<button type="button">` and add `aria-expanded={open}` on the device row. Add `role="tab"` / `aria-selected` on the now-dots (they're a carousel selector). Pair with F25 to ensure focus indicators are visible on the new buttons.
+
+---
+
+### F15 🔴 — `prefers-reduced-motion` not respected
+
+**The issue.** `vapor.css` declares **37** animation/keyframe/transition rules — sun float, grid scroll, sky shimmer, equalizer bars, heartbeat LED, send-button "brewing", TTS glow, tab-indicator slide, dot bounce, twinkling stars, retrowave grid motion, etc. None are gated on the user's reduced-motion preference. Zero occurrences of `prefers-reduced-motion` in either CSS file.
+
+**Why it matters (per MDN/Josh Comeau/Tatiana Mac).** Motion can trigger vestibular disorders, migraine, nausea. The OS setting is well-supported (iOS, Android, macOS, Windows) and zero-cost to honor.
+
+**Safety verdict: ✅ SAFE** — gating animations with the media query never *adds* motion; users without the preference are unaffected.
+
+**Fix sketch:** one block at the top of `vapor.css`:
+```css
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+```
+Or, more nuanced: keep functional transitions (button presses, disclosure rotations) but drop ambient motion (sun float, grid scroll, twinkle). Pairs naturally with the **motion tokens** in section 6b.
+
+---
+
+### F16 🟡 — SSE has no error handler / no reconnect signal
+
+**The issue.** `hooks/useEvents.ts` opens an `EventSource` and listens only for `'event'`. No `'error'` handler. Comment claims "the browser's EventSource auto-reconnects on drop" — true, but with no max-retries, no backoff visibility, no Last-Event-ID resume, and **no UI signal that the connection is broken**. During a reconnection gap, events emitted server-side are missed entirely (the next refresh of `hosts`/`services` polls catches up, but agent-action events that didn't trigger a poll are lost).
+
+**Real-world failure mode.** Phone leaves wifi → wakes back → SSE reconnects but the user sees a stale UI for the gap window. No "connection lost" indicator. On Tailscale flakes this happens routinely.
+
+**Safety verdict: ⚠️ NEEDS MITIGATION** — adding error handling can incorrectly mark transient drops as fatal. Use the [HTML spec EventSource reconnection semantics](https://html.spec.whatwg.org/multipage/server-sent-events.html) + the [reconnecting-eventsource pattern](https://github.com/fanout/reconnecting-eventsource).
+
+**Fix sketch.** Add an `error` listener that reads `es.readyState`: if `CLOSED` (server permanently rejected), give up; if `CONNECTING`, just show a small "reconnecting…" badge in the appbar. Optionally adopt the `reconnecting-eventsource` polyfill for exponential backoff + jitter. On reconnect, force-invalidate `hosts`/`services`/`events` so missed events are reconciled.
+
+---
+
+### F17 🟡 — `ConfirmDialog` missing focus trap + focus restoration
+
+**The issue.** `ConfirmDialog.tsx`:
+- Tab from the Confirm button moves focus **out of the dialog** — onto whatever element is next in DOM order. Keyboard-only users can lose the modal.
+- `keydown` listener is on `window`, so Enter typed inside an unrelated textarea elsewhere on the page could trigger Confirm. (Not currently reachable while a modal is open because pointer events go to the backdrop, but typing focus is unaffected.)
+- On close, focus doesn't return to the trigger element (e.g., the action button that opened the dialog).
+- No `aria-labelledby` / `aria-describedby` linking the h3 + p to the dialog. Screen readers don't read the title on focus.
+
+**Safety verdict: ⚠️ NEEDS MITIGATION** — switching to the native `<dialog>` element (per WCAG 2.2 + UXPin's 2026 modal guide) handles all three for free, but the styling needs porting from `.modal-backdrop` / `.modal` rules.
+
+**Fix sketch.** Either (a) add `inert` to the rest of the app while the dialog is open + a focus-trap util, or (b) migrate to `<dialog>` opened with `.showModal()` — native focus trap, native Escape, native `::backdrop` styling.
+
+---
+
+### F18 🟡 — TabBar lacks ARIA tablist semantics + arrow-key nav
+
+**The issue.** `TabBar.tsx` renders a `<nav>` with 4 `<button>`s. WCAG / WAI-ARIA "tabs" pattern expects `role="tablist"` with `role="tab"` children, `aria-selected`, `aria-controls` (pointing at the panel), and `←` / `→` arrow-key navigation between tabs (not just Tab → button → Tab → button). Screen readers announce a "tablist" with positional info ("Tab 2 of 4, selected") only when the role is present.
+
+**Safety verdict: ⚠️ NEEDS MITIGATION** — adding `role="tab"` changes screen-reader announcements; verify no other code relies on `<button>` semantics.
+
+**Fix sketch.** Add `role="tablist"` to the nav, `role="tab"` + `aria-selected={tab === t.id}` + `aria-controls={"tab-" + t.id}` to each button. Add an `onKeyDown` that maps `ArrowLeft`/`ArrowRight` to the prev/next tab. Each `.tab` panel needs `role="tabpanel"` + matching `id`.
+
+---
+
+### F19 🟡 — No `beforeunload` warning for unsaved Conf changes
+
+**The issue.** `ConfTab.tsx` tracks `dirty` state (`JSON.stringify(draft) !== JSON.stringify(pickDraft(settings))`). The save button is gated on it. But a refresh / close / tab-switch-out of the browser silently discards the edit. No `beforeunload` listener.
+
+**Owner risk.** Editing a multi-section Conf form and accidentally hitting refresh → minutes of work gone.
+
+**Safety verdict: ✅ SAFE** — `beforeunload` only fires when something is genuinely dirty, and modern browsers limit it to a generic prompt anyway.
+
+**Fix sketch.** In `App.tsx` (or a small hook): when ANY dirty store says it's dirty, register a `beforeunload` listener that calls `e.preventDefault()`. Aggregate dirty flags from Conf, Agents editor, Skills editor.
+
+---
+
+### F20 🟡 — Chat fetch-SSE has no reconnect on drop
+
+**The issue.** `store/chat.ts:_streamTurn` (around line 270) uses `fetch` + a `ReadableStream` to parse the agent's SSE — *not* `EventSource`. This means **no auto-reconnect**. If the connection drops mid-stream (wifi flake, server restart, tailnet pause), the stream just ends. The catch surfaces an error toast and resets `status: "idle"`, but the user has to manually resend or, worse, the assistant's half-written reply is left orphan.
+
+**Why fetch-SSE?** Because the agent endpoint is `POST /api/agent/chat` with a body — `EventSource` only does GET. The choice is forced.
+
+**Safety verdict: ⚠️ NEEDS MITIGATION** — naive auto-resume would re-execute the agent turn (side effects). Need a server-side resume token.
+
+**Fix sketch.** Phase A: detect mid-stream failure, show a "stream interrupted — resume" affordance (a button on the broken assistant bubble that calls the existing `/api/agent/resume` endpoint with the streaming message id). Phase B: pair with a server-side `Last-Event-Id` so reconnects continue from where they left off. The infrastructure is already there for confirm-gated suspends; extending it for network drops is similar.
+
+---
+
+### F21 🟢 — Mic button is a visual stub but looks fully functional
+
+**The issue.** `Composer.tsx`'s mic button toggles a local `rec` state; the `.rec` class drives a pulsing animation. There's no STT wiring (correct — Phase 6 isn't done). But to a user, the button **looks** like dictation works: it's right next to the textarea, has a "toggle dictation" tooltip, animates when pressed.
+
+**Safety verdict: ✅ SAFE** to clarify; trivial change.
+
+**Fix sketch.** Until Phase 6: either hide the button entirely (cleanest), or add `disabled` + `aria-disabled="true"` + a "// dictation lands in Phase 6" tooltip. The current animation is misleading.
+
+---
+
+### F22 🟢 — Decorative glyphs without `aria-hidden`
+
+**The issue.** Several UTF glyphs are used decoratively in text content:
+- `<span className="chev">›</span>` in DeviceRow / ConfTab / SkillsEditor / etc.
+- `<span className="arrow">↗</span>` and `↗ http://…` link text in DeviceRow service rows.
+- `<span className="arrow">—</span>` for offline service.
+
+Screen readers announce these literally ("greater-than sign", "north east arrow", "em dash"). Decorative-only glyphs should have `aria-hidden="true"`.
+
+**Safety verdict: ✅ SAFE** — `aria-hidden` only hides from AT, never visually.
+
+**Fix sketch.** Add `aria-hidden="true"` to every `.chev`, `.arrow`, the chev character in `confrow .chev` rules, and the disclosure markers in `cmd-detail > summary .chev`.
+
+---
+
+### F23 🟡 — No root `ErrorBoundary` outside the Conf lazy chunk
+
+**The issue.** Slice 6 introduced `components/ErrorBoundary.tsx` and wraps it around `<Suspense>` for ConfTabLazy only. If a render error happens in Fleet, Agent, Utils, AppBar, Composer, or any other always-mounted component, **React unmounts the entire root**, showing a blank page.
+
+**Real-world trigger.** A bad chat-stream response that violates a type assumption; a malformed YAML in `config.yaml` that propagates to `useSettings`; a tiny prop type bug introduced in a future commit.
+
+**Safety verdict: ✅ SAFE** — wrapping `<App>` in `<ErrorBoundary>` is a pure addition with no behavior change in the happy path.
+
+**Fix sketch.** Wrap the `<App>` root in `main.tsx` with the existing `ErrorBoundary`, providing a Vapor-styled global fallback (looks like a tab section header reading "// the app hit a snag — reload to continue" + a Reload button). The Slice 6 boundary stays where it is for chunk-load specificity.
+
+---
+
+### F24 🟢 — No automated UI / a11y tests
+
+**The issue.** Zero test coverage on the frontend. No Vitest, no Playwright, no Storybook visual tests, no axe-core a11y CI. `TODO.md` Phase 9 mentions "Minimal smoke tests (Playwright desktop + Android viewport; a couple of backend action tests)" but that work is still queued.
+
+**Safety verdict: ✅ SAFE** to add — testing is purely additive.
+
+**Status.** Already on the backlog in `TODO.md` Phase 9. The follow-up audit elevates it to "should land alongside any future a11y fix" because the WCAG-related findings (F14, F15, F17, F18, F22, F25) all benefit from an axe-core CI gate to prevent regressions.
+
+---
+
+### F25 🔴 — `all: unset` wipes focus indicators on ~30 buttons
+
+**The issue.** `all: unset` appears **~30 times** in `vapor.css` + `extras.css`, always on `<button>` styling. It strips the browser's default focus outline. Only a handful of inputs/textareas have replacement `:focus { border-color, box-shadow }` styles. The **buttons don't**: TabBar tabs, action buttons (wake/shutdown/reboot), the send button, the mic button, segmented controls in Conf, dropdown chevrons, etc., have no visible focus indicator at all. `composer textarea:focus { outline: 0 }` explicitly removes it too (mitigated by the parent's `.composer .field:focus-within` border treatment, which is OK).
+
+**WCAG impact.** This is a **WCAG 2.4.7 Focus Visible (Level AA)** failure — keyboard users literally cannot see what they have focus on while tabbing through the UI. Combined with F14 (interactive divs not in the tab order at all), the app is functionally unusable from a keyboard today.
+
+**Safety verdict: ⚠️ NEEDS MITIGATION** — adding `:focus-visible` outlines may clash visually with the Vapor design unless tuned. The magenta glow already used for input focus is the natural choice.
+
+**Fix sketch.** A single global rule:
+```css
+:focus-visible {
+  outline: 2px solid var(--magenta);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+```
+Then sprinkle component-specific overrides where the global outline doesn't fit (round buttons want the outline rounded with `outline-offset` set to inset). Use `:focus-visible` rather than `:focus` so mouse-clicks don't show the ring (keyboard-only by default).
+
+---
+
+### F26 🟢 — Service worker `autoUpdate` has no in-app reload prompt
+
+**The issue.** `vite-plugin-pwa` is configured with `registerType: "autoUpdate"`. On a new deploy:
+1. The next visit downloads the new SW + manifest in the background.
+2. The SW takes over on the *next* reload.
+3. The user is never notified that an update is available.
+
+**Real-world failure mode.** The user has the old `index.html` loaded. We push a new build. The lazy chunk hash changes. They click Conf → 404. The Slice-6 `ErrorBoundary` catches the failure and offers "Reload page" — so we recover, but the user shouldn't have hit the error in the first place.
+
+**Safety verdict: ✅ SAFE** to add a non-blocking toast.
+
+**Fix sketch.** Subscribe to `vite-plugin-pwa`'s `useRegisterSW` (or the manual `navigator.serviceWorker.controllerchange` event) and `pushToast("// new version available — refresh to load", "info")` with a click-to-reload action. Standard PWA pattern.
+
+---
+
 ## 6b. Noted for later (not part of any current slice)
 
 - **Theme registry / data-driven themes.** Today adding a theme is 3 manual edits (TS `Theme` union · `vapor.css` `[data-theme="…"]` block · Conf picker option). Easy enough at 3 themes; gets repetitive past ~6. A small refactor — export a `const THEMES = ["dark", "aqua", "ember"] as const` from `store/ui.ts`, derive `Theme` from it, iterate the array in the Conf picker — would let new themes "drop in" with one edit + the CSS block. **Bigger move** if ever wanted: load theme tokens (CSS variable sets) from YAML/JSON so new themes are pure config, no code edit. Out of scope until the theme count actually grows; noting here so future-us doesn't re-derive the design space.
@@ -349,6 +552,7 @@ Look at the bundle analyzer output post-Slice 6 to see if `lucide-react` deserve
 
 ## 8. References
 
+**Perf pass (F1–F13):**
 - [TanStack Query — Render Optimizations](https://tanstack.com/query/v5/docs/framework/react/guides/render-optimizations) — structural sharing, `select` behavior.
 - [React 19 release notes](https://react.dev/blog/2024/12/05/react-19)
 - [`useTransition` reference](https://react.dev/reference/react/useTransition) · [`useDeferredValue`](https://react.dev/reference/react/useDeferredValue)
@@ -356,6 +560,20 @@ Look at the bundle analyzer output post-Slice 6 to see if `lucide-react` deserve
 - [PWA best practices 2026 — Wirefuture](https://wirefuture.com/post/progressive-web-apps-pwa-best-practices-for-2026)
 - [React SPA development best practices — Tolga Ege](https://tolgaege.com/en/blog/react-spa-best-practices)
 
+**Follow-up audit (F14–F26):**
+- [React Accessibility (A11y) Best Practices — rtCamp](https://rtcamp.com/handbook/react-best-practices/accessibility/)
+- [SPA Accessibility: React/Vue/Angular Guide — TestParty](https://testparty.ai/blog/spa-accessibility)
+- [How to Build Accessible Modals with Focus Traps (2026) — UXPin](https://www.uxpin.com/studio/blog/how-to-build-accessible-modals-with-focus-traps/)
+- [Accessible Animations in React with `prefers-reduced-motion` — Josh W. Comeau](https://www.joshwcomeau.com/react/prefers-reduced-motion/)
+- [`prefers-reduced-motion` reference — MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/prefers-reduced-motion)
+- [Designing Accessible Animations: A Practical Guide — Dacey Nolan](https://medium.com/@daceynolan/designing-accessible-animations-a-practical-guide-to-prefers-reduced-motion-0d3b89c3b1cb)
+- [SSE protocol best practices — HTML spec](https://html.spec.whatwg.org/multipage/server-sent-events.html)
+- [reconnecting-eventsource](https://github.com/fanout/reconnecting-eventsource)
+- [Implementing React SSE with reconnection backoff — Logan Lee](https://medium.com/@dlrnjstjs/implementing-react-sse-server-sent-events-real-time-notification-system-a999bb983d1b)
+- [WCAG 2.2 — Focus Appearance](https://www.w3.org/WAI/WCAG22/Understanding/focus-appearance.html) (AA, new in 2.2)
+- [Keyboard Navigation & Focus — Accesify](https://www.accesify.io/blog/keyboard-navigation-focus-wcag/)
+
 ---
 
-**Next action:** start with **Slice 1** (the four zero-risk quick wins). Each subsequent slice is gated on owner-approved verification of the previous.
+**Next action (perf pass):** complete — Slices 1–8 shipped.
+**Next action (follow-up audit):** prioritize F14–F26 by severity. Recommended order if implementing: F25 (focus indicators — global one-rule fix unblocks keyboard use today) → F14 (interactive divs as buttons) → F15 (`prefers-reduced-motion`) → F23 (root error boundary) → F17/F18 (dialog focus trap + tablist ARIA, paired) → F22 (decorative glyph `aria-hidden`) → F26 (SW update toast) → F19 (`beforeunload`) → F16/F20 (SSE/chat resilience, paired) → F21 (mic stub disable) → F24 (axe-core CI gate, as a foundation for any further a11y work).
