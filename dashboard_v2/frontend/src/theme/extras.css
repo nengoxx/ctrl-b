@@ -1094,12 +1094,13 @@ body {
   letter-spacing: 2px;
   text-transform: uppercase;
   color: var(--ink-faint);
+  /* match the .confrow horizontal padding so the heading clears the card's rounded/clipped edge */
   margin: 12px 0 4px;
-  padding-bottom: 4px;
+  padding: 0 14px 4px;
   border-bottom: 1px dashed var(--line);
 }
 .tooldesc-cat:first-child {
-  margin-top: 0;
+  margin-top: 12px;
 }
 .confrow .k .label.code {
   font-family: "JetBrains Mono", ui-monospace, monospace;
@@ -1199,13 +1200,35 @@ body {
 }
 
 /* ── Conf → Skills · SKILL.md editor (Phase 7d-c, net-new) ────────────────────────────────────
-   The raw-markdown editor reuses the 7c .kv-text textarea; just taller for editing a whole file. */
+   A standalone raw-markdown editor (rendered above the .mfoot buttons, not inside the .mform grid),
+   so it's self-styled from the same VAPOR_PATTERNS recipe as .kv-text but taller for a whole file. */
 .kv-text.skill-md {
-  grid-column: 1 / -1;
-  min-height: 200px;
-  line-height: 1.55;
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-3);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  line-height: 1.6;
+  border: 1px solid var(--line);
+  resize: vertical;
   white-space: pre;
   overflow-wrap: normal;
+  overflow: auto;
   tab-size: 2;
+}
+.kv-text.skill-md::placeholder {
+  color: var(--ink-faint);
+}
+.kv-text.skill-md:focus {
+  border-color: var(--magenta);
+  box-shadow: 0 0 0 1px var(--magenta), 0 0 10px rgba(var(--accent-rgb), 0.25);
 }
 

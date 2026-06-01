@@ -48,7 +48,7 @@ function SkillFileEditor({ name, onClose }: { name: string; onClose: () => void 
 
   if (isLoading || text == null) return <div className="agent-empty">loading…</div>;
   return (
-    <div className="mform">
+    <>
       <textarea
         className="kv-text skill-md"
         value={text}
@@ -68,7 +68,7 @@ function SkillFileEditor({ name, onClose }: { name: string; onClose: () => void 
           {saveSkill.isPending ? "saving…" : "save"}
         </button>
       </div>
-    </div>
+    </>
   );
 }
 
