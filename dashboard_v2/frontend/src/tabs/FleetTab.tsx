@@ -6,7 +6,7 @@ import { Hero } from "../components/Hero";
 import { useFleetActions } from "../hooks/useActions";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
 import { useServices } from "../hooks/useServices";
-import { useUI } from "../store/ui";
+import { useUISlice } from "../store/ui";
 import type { Service } from "../types";
 
 // The ⭐ Phase 1 deliverable: the Vapor Fleet tab wired to the live API. Owns `featured`
@@ -17,7 +17,10 @@ interface Props {
 }
 
 export function FleetTab({ active }: Props) {
-  const { heroOn, waveformOn } = useUI();
+  // Two slices, one per field — each subscription is independent and only fires when
+  // *its* field changes. A toggle of one doesn't wake up consumers of the other.
+  const heroOn = useUISlice((s) => s.heroOn);
+  const waveformOn = useUISlice((s) => s.waveformOn);
   const { data: server } = useServerInfo();
   const poll = server?.poll_seconds ?? 5;
   const cycleMs = Math.max(1, server?.feature_cycle_seconds ?? 6) * 1000;

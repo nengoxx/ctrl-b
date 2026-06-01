@@ -94,21 +94,53 @@ function getSnapshot(): UIState {
   return state;
 }
 
+/**
+ * Subscribe to one slice of the UI store (Slice 7 / F4 in docs/UI_AUDIT.md). The component
+ * re-renders only when the selected value changes (`Object.is` equality), so toggling an
+ * unrelated UI field — e.g. TTS auto, or a theme change — doesn't wake up consumers that
+ * only read `tab` or `heroOn`.
+ *
+ * ⚠️  Contract for selectors:
+ *   - **Return a primitive or a stable reference.** A selector that builds a fresh
+ *     object/array on every call (`s => ({ a: s.a, b: s.b })`) creates a new reference
+ *     each tick and will trigger an infinite re-render loop. For multi-field reads, call
+ *     `useUISlice` once per field — each subscription is independent and only fires when
+ *     *its* slice changes.
+ *   - **Keep selectors cheap.** They run on every store notification, so this is just for
+ *     field reads or primitive comparisons. Expensive derivations belong in the consuming
+ *     component behind `useMemo`.
+ *   - The selector's *function identity* doesn't need to be stable. React reads the
+ *     snapshot fresh each time without memoizing on the selector itself, so inline
+ *     arrow-function selectors are the expected idiom (`useUISlice((s) => s.tab)`).
+ *
+ * If you ever need a composite/object selector with custom equality, add a sibling
+ * `useUISliceWith(selector, equalityFn)` modelled on Zustand's `useStoreWithEqualityFn`.
+ * Out of scope today (no consumer needs it).
+ */
+export function useUISlice<T>(selector: (s: UIState) => T): T {
+  return useSyncExternalStore(
+    subscribe,
+    () => selector(state),
+    () => selector(state),
+  );
+}
+
+/**
+ * @deprecated Prefer `useUISlice((s) => s.field)` for any new code — `useUI()` returns the
+ * whole state object and triggers a re-render on *every* UI change, even fields the
+ * caller doesn't read (F4). Kept as an escape hatch for a future debug/console panel that
+ * legitimately wants to inspect or stream the whole state.
+ */
 export function useUI(): UIState {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 /**
  * Returns whether `tab` is the currently active one. Used by tab-scoped server queries
- * (`useScopedQuery`) to pause polling/work when the user isn't looking. Returns a plain
- * boolean so the subscription only fires a re-render when the *boolean* changes, not on
- * every UI store change — avoids the F4 over-subscription issue ahead of the Slice 7
- * selector refactor.
+ * (`useScopedQuery`) to pause polling/work when the user isn't looking. A thin wrapper
+ * over `useUISlice` — kept as a named primitive because it appears in many hook files
+ * and the call-site reads more clearly than the equivalent inline selector.
  */
 export function useTabActive(tab: Tab): boolean {
-  return useSyncExternalStore(
-    subscribe,
-    () => state.tab === tab,
-    () => state.tab === tab,
-  );
+  return useUISlice((s) => s.tab === tab);
 }

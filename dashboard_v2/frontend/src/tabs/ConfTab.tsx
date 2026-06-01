@@ -12,7 +12,7 @@ import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
 import { useSaveSettings, useSettings, type SettingsDoc } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
 import { useCollapsed } from "../store/collapse";
-import { setUI, useUI, type Skyline, type Theme, type Loz } from "../store/ui";
+import { setUI, useUISlice, type Skyline, type Theme, type Loz } from "../store/ui";
 
 // Conf tab. Appearance is wired to the live UI store (client display state). Phase 7a wires the
 // **Inference** + **Server** groups to the YAML-backed settings API (GET masked / PUT partial
@@ -126,7 +126,15 @@ function ConfGroup(props: {
 }
 
 export function ConfTab({ active }: Props) {
-  const { theme, skyline, loz, heroOn, waveformOn } = useUI();
+  // One slice per Appearance field — each toggle only re-renders the consumers that
+  // actually read that specific field. Theme/skyline/loz/heroOn/waveformOn changes used
+  // to wake App + TabBar + AppBar + FleetTab through the old `useUI()` subscription;
+  // post-Slice-7 those consumers stay quiet unless they read the changed field.
+  const theme = useUISlice((s) => s.theme);
+  const skyline = useUISlice((s) => s.skyline);
+  const loz = useUISlice((s) => s.loz);
+  const heroOn = useUISlice((s) => s.heroOn);
+  const waveformOn = useUISlice((s) => s.waveformOn);
   const { data: server } = useServerInfo();
   const { data: hosts = [] } = useHosts(server?.poll_seconds ?? 5);
 

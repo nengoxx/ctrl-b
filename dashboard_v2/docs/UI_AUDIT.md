@@ -105,19 +105,21 @@ This is documented in `Waveform.tsx` with a leading comment so the mistake isn't
 
 ---
 
-### F4 🟡 — `useUI()` re-renders every consumer on any UI change
+### F4 🟡 — `useUI()` re-renders every consumer on any UI change · ✅ SHIPPED (Slice 7)
 
-**The issue.** The hook returns the whole `UIState` object; `useSyncExternalStore` bails only on `===`. Every `setUI` triggers re-render of all 25 consumer files (~30+ call sites).
+**The issue.** The hook returns the whole `UIState` object; `useSyncExternalStore` bails only on `===`. Every `setUI` triggers a re-render of every consumer. (Original audit estimated "25 consumer files" — actual count is **5**: App, TabBar, AppBar, FleetTab, ConfTab. The 25 was a count of `useUI` *imports* in the codebase grep, but only 5 of those are hook calls. Recorded here so the next planner isn't mis-anchored.)
 
-**Owner worry:** does switching tabs / themes feel different after the change?
+**What shipped (Slice 7):**
+- New `useUISlice<T>(selector)` in `store/ui.ts`. Generalizes the existing `useTabActive` (which also moved over to call `useUISlice` for consistency). Selector returns one slice; re-render fires only when that slice changes via `Object.is`.
+- All 5 consumers migrated. ConfTab uses 5 separate slice calls (one per Appearance field) instead of a single composite — each subscription is independent, so toggling one field doesn't wake consumers of the others.
+- `useUI()` kept and marked `@deprecated` in JSDoc; left as an escape hatch for a future debug/console panel that legitimately needs the whole state. IDE tooling flags accidental new usage.
 
-**Safety verdict: ⚠️ NEEDS MITIGATION** — the risk is implementation, not concept.
+**Contract for selectors (locked in JSDoc on `useUISlice`):**
+- **Selectors must return a primitive or a stable reference.** A selector that builds a fresh object/array per call (`s => ({ a: s.a, b: s.b })`) creates a new reference each tick and triggers an infinite re-render loop. For multi-field reads, use multiple `useUISlice` calls — each subscription is independent.
+- **Selectors run on every store notification.** Keep them cheap (field reads or primitive comparisons). Expensive derivations belong behind `useMemo` in the consuming component.
+- If a future case genuinely needs an object/composite selector, add `useUISliceWith(selector, equalityFn)` modelled on Zustand's `useStoreWithEqualityFn`. Out of scope today.
 
-**Mitigation plan:**
-- Add a `useUISlice(selector)` next to `useUI()`. **Keep `useUI()` available** for components that genuinely need everything, so we migrate incrementally and reversibly.
-- The selector pattern requires `Object.is`-stable returns for primitives (built-in) and reference-stable returns for objects/arrays — selectors must NOT construct new objects. We restrict selectors to return primitives at first (`useUISlice(s => s.theme)`). A faulty selector returning `{ a, b }` each call would re-render every time — guard with linting / review.
-- The visible behavior is **strictly the same** — same values, same timing, just fewer components re-rendering. Theme switch repaints CSS via body attrs (unchanged). Tab switch flips one class (unchanged).
-- **Acceptance test:** record a clean session profile before and after; flame chart should be quieter on UI changes, no new flicker or delay anywhere.
+**Verified:** typecheck clean; bundle size delta < 100 bytes; visual behavior identical across all themes and toggles; profiler shows AppBar re-renders only on `ttsAuto`, App/TabBar only on `tab`, FleetTab on `heroOn`/`waveformOn`, ConfTab on Appearance fields.
 
 ---
 
@@ -243,21 +245,21 @@ Tree-shakes, but worth verifying. No behavior change.
 
 ## 5. Risk-stratified summary
 
-| ID | Finding | Sev | Safety | Implementation effort |
-|---|---|---|---|---|
-| F1 | Pause inactive-tab queries (scoped) | 🔴 | ⚠️ MITIGATED | S |
-| F2 | Memoize Waveform / FleetSummary / NowStats | 🔴 | ✅ SAFE | S |
-| F3 | Hoist constants / useMemo derived calcs | 🟡 | ✅ SAFE | XS |
-| F4 | `useUISlice` selector pattern | 🟡 | ⚠️ MITIGATED | M |
-| F5 | Audit `transition:` declarations | 🟡 | ⚠️ MITIGATED | S |
-| F6 | Lazy-load Conf only, prefetch on idle | 🔴 | ⚠️ MITIGATED | S |
-| F7 | `lucide-react` tree-shake audit | 🟡 | ✅ SAFE | XS |
-| F8 | Body-attr mirroring into `setUI()` | 🟡 | ✅ SAFE | S |
-| F9 | `useTransition` / `useDeferredValue` | 🟢 | 🛑 DEFER | — |
-| F10 | Memoize `resultByCall` in AgentTab | 🟢 | ✅ SAFE | XS |
-| F11 | PWA icon fan-out + PNG compression | 🟢 | ✅ SAFE | XS |
-| F12 | Bundle analyzer in build | 🟢 | ✅ SAFE | XS |
-| F13 | React Compiler trial | 🟢 | 🛑 DEFER | — |
+| ID | Finding | Sev | Safety | Effort | Status |
+|---|---|---|---|---|---|
+| F1 | Pause inactive-tab queries (scoped) | 🔴 | ⚠️ MITIGATED | S | ✅ Slice 5 |
+| F2 | Memoize Waveform / FleetSummary / NowStats | 🔴 | ✅ SAFE | S | ✅ Slice 2 (Waveform stays unmemoized — see F2 note) |
+| F3 | Hoist constants / useMemo derived calcs | 🟡 | ✅ SAFE | XS | ✅ Slice 1 |
+| F4 | `useUISlice` selector pattern | 🟡 | ⚠️ MITIGATED | M | ✅ Slice 7 |
+| F5 | Audit `transition:` declarations | 🟡 | ⚠️ MITIGATED | S | ✅ Slice 3 |
+| F6 | Lazy-load Conf only, prefetch on idle | 🔴 | ⚠️ MITIGATED | S | ✅ Slice 6 (+ follow-up fix for true lazy mount) |
+| F7 | `lucide-react` tree-shake audit | 🟡 | ✅ SAFE | XS | ⏳ Slice 8 (measure first) |
+| F8 | Body-attr mirroring into `setUI()` | 🟡 | ✅ SAFE | S | ✅ Slice 4 |
+| F9 | `useTransition` / `useDeferredValue` | 🟢 | 🛑 DEFER | — | ⏸️ defer until measured |
+| F10 | Memoize `resultByCall` in AgentTab | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
+| F11 | PWA icon fan-out + PNG compression | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
+| F12 | Bundle analyzer in build | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
+| F13 | React Compiler trial | 🟢 | 🛑 DEFER | — | ⏸️ defer until F1–F12 stable |
 
 ## 6. Phased implementation plan
 

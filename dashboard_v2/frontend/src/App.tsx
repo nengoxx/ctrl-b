@@ -8,7 +8,7 @@ import { TabBar } from "./components/TabBar";
 import { Toasts } from "./components/Toasts";
 import { useEventStream } from "./hooks/useEvents";
 import { prefetchOnIdle } from "./lib/prefetch";
-import { useUI, type Tab } from "./store/ui";
+import { useUISlice, type Tab } from "./store/ui";
 import { AgentTab } from "./tabs/AgentTab";
 import { ConfTabLazy, preloadConfTab } from "./tabs/ConfTab.lazy";
 import { FleetTab } from "./tabs/FleetTab";
@@ -29,7 +29,7 @@ import { UtilsTab } from "./tabs/UtilsTab";
 // so its draft state survives subsequent tab switches.
 
 export default function App() {
-  const { tab } = useUI();
+  const tab = useUISlice((s) => s.tab);
   const scrollRef = useRef<HTMLDivElement>(null);
   useEventStream(); // live activity feed → refresh fleet on any recorded action
 

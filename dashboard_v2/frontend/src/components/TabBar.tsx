@@ -1,4 +1,4 @@
-import { setUI, useUI, type Tab } from "../store/ui";
+import { setUI, useUISlice, type Tab } from "../store/ui";
 
 // Bottom tab bar. The sliding neon indicator is pure CSS (.tabbar::before keyed off
 // .tabbar[data-tab]); we just keep data-tab + .active in sync with the store.
@@ -21,7 +21,7 @@ interface Props {
 }
 
 export function TabBar({ onPrefetch }: Props) {
-  const { tab } = useUI();
+  const tab = useUISlice((s) => s.tab);
   return (
     <nav className="tabbar" data-tab={tab}>
       {TABS.map((t) => (

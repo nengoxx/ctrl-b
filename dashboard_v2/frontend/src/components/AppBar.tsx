@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
-import { setUI, useUI } from "../store/ui";
+import { setUI, useUISlice } from "../store/ui";
 
 // Top bar: brand lozenge (logo or spinning ring via body[data-loz]) + auto-TTS toggle.
 // The toggle flips a themed mask icon (speaker ↔ slashed-speaker) and flashes a toast — ported
 // from vapor.html. Actual TTS playback arrives in Phase 6; here it only drives the UI flag.
 
 export function AppBar() {
-  const { ttsAuto } = useUI();
+  const ttsAuto = useUISlice((s) => s.ttsAuto);
   const [toast, setToast] = useState<{ on: boolean } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(false);
