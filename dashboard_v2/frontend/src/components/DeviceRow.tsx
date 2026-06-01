@@ -10,6 +10,10 @@ import type { Host, Service } from "../types";
 // buttons to real actions via `onAction`; `busy` drives the ◐ spinner (.dev.busy .sub::after).
 
 const EQ_ON = [8, 16, 22, 12, 20, 10, 18, 14];
+//: A pre-sliced view of EQ_ON for the online row (which has wake+reboot+shutdown sharing the
+//  row width, so the eq is trimmed to 5 bars). Hoisted as a module constant so each row render
+//  doesn't allocate a fresh array.
+const EQ_ON_TRIMMED = EQ_ON.slice(0, 5);
 
 interface Props {
   host: Host;
@@ -57,7 +61,7 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
         <div className="eq">
           {/* Online shows TWO action buttons (reboot + shutdown), so trim the bars to make room;
               offline (wake only) keeps the full set. */}
-          {(online ? EQ_ON.slice(0, 5) : EQ_ON).map((h, i) =>
+          {(online ? EQ_ON_TRIMMED : EQ_ON).map((h, i) =>
             online ? <i key={i} style={{ height: `${h}px` }} /> : <i key={i} />,
           )}
         </div>

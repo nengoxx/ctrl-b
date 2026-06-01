@@ -13,19 +13,21 @@ the whole architecture in `ARCHITECTURE.md` (don't build ahead of the phase you'
 
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
-> **Status @ 2026-05-28:** Phases **0–4.5 are done**, plus a capability/UX session — cloud chat
-> wired; agent **loop-discipline guards** + tool-selection routing; the **`fleet` intent-skill** that
-> fixes weak-model tool-selection (auto tool-narrowing; `skills: []` opts a capable model out);
-> lenient `task_plan`; **`check_service`** + **`reboot_host`** (+ device-row button); **clickable
-> plan-step dots** (persistent, agent-aware); and an **OS-compatibility pass** (ping/commands detect
-> the host OS — ready for emma/Linux). Detail in `HANDOFF.md`'s 2026-05-28 block.
+> **Status @ 2026-06-01:** Phases **0–4.5 + 7a–7d are done**. 7a–7c are on `origin/main`; 7d (per-tool
+> descriptions · agents UI + `/agent` switch · skills UI) is committed locally (push pending owner
+> go-ahead). Plus the capability/UX session — cloud chat wired; agent **loop-discipline guards** +
+> tool-selection routing; the **`fleet` intent-skill** that fixes weak-model tool-selection (auto
+> tool-narrowing; `skills: []` opts a capable model out); lenient `task_plan`; **`check_service`** +
+> **`reboot_host`** (+ device-row button); **clickable plan-step dots** (persistent, agent-aware); and
+> an **OS-compatibility pass** (ping/commands detect the host OS — ready for emma/Linux). Detail in
+> `HANDOFF.md`'s 2026-05-28 through 2026-05-30 blocks.
 >
-> **Recommended next sequence (advisory — phases below are NOT reordered):** Phase **7 (Conf, sliced
-> like Phase 4)** is the highest-leverage unlock (everything is hand-edited YAML today; many features
-> have a "configure in Conf" follow-up) → a **thin emma/Linux deploy + Tailscale-Serve HTTPS** (the
-> deploy target, now that OS-compat is done; HTTPS also unblocks the mic) → **memory/vector recall
-> (7c)** → **voice (6)** → **utils (8)**. **Phase 5 (guarded shell) is deprioritized** — open-terminal
-> already provides remote shell on emma, so local `run_shell` is largely redundant.
+> **Recommended next sequence (advisory — phases below are NOT reordered):** the **7e slice**
+> (prompt-append + show/load the baked default + `<PromptModal>` full-page editor + Conf-sizing
+> refine — planned 2026-05-30) is the active follow-up → then 7e proper (prompt-file editors + memory
+> panel) → a **thin emma/Linux deploy + Tailscale-Serve HTTPS** (the migration target; HTTPS also
+> unblocks the mic) → **voice (6)** → **utils (8)**. **Phase 5 (guarded shell) is deprioritized** —
+> open-terminal already provides remote shell on emma, so local `run_shell` is largely redundant.
 
 ---
 

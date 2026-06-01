@@ -42,15 +42,29 @@ Two processes; Vite proxies `/api` → the backend (single origin, no CORS). The
 port **5433** so it coexists with the live Flask app on 5432 until cutover.
 
 ```powershell
-# backend  (from dashboard_v2/backend)
+# backend  (from dashboard_v2/backend) — Windows: do NOT pass --reload (see note below)
 py -3.11 -m venv .venv
 .venv\Scripts\python.exe -m pip install -e .
-.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 5433
+.venv\Scripts\python.exe -m uvicorn app.main:app --port 5433
 
 # frontend (from dashboard_v2/frontend) — new terminal
 npm install
 npm run dev          # http://localhost:5173  (or http://<host>:5173 on the tailnet)
 ```
+
+```bash
+# Linux/macOS — same thing, `--reload` is safe here
+cd dashboard_v2/backend
+python3.11 -m venv .venv
+.venv/bin/pip install -e .
+.venv/bin/uvicorn app.main:app --reload --port 5433
+```
+
+> **Windows + `--reload` gotcha.** Don't run the backend with `--reload` on Windows: uvicorn's
+> reload worker uses an event loop that doesn't properly support `asyncio.create_subprocess_exec`,
+> so `fleet.ping_host` (which shells out to `ping`) captures empty output and every host shows
+> offline. Linux and macOS are unaffected. Run plain (no `--reload`) on Windows, or use
+> `watchfiles` externally to restart.
 
 Config is **hybrid** (docs/DESIGN.md §9): `config.yaml` (copy from `config.example.yaml`,
 gitignored) is the UI-managed source of truth incl. nested secrets; `.env` (copy from

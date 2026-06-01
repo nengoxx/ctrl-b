@@ -20,8 +20,11 @@ from datetime import datetime, timezone
 
 from app.domain.host import Host, HostStatus
 
-#: Matches "time=1.83 ms" (Linux/macOS) and "time=1ms" / "time<1ms" (Windows).
-_PING_TIME_RE = re.compile(r"time[=<]\s*([\d.]+)\s*ms", re.IGNORECASE)
+#: Matches "time=1.83 ms" (Linux/macOS) and "time=1ms" / "time<1ms" (Windows). Group 1 captures
+#: the operator (`=` or `<`) so we can distinguish a real 1ms hop from sub-ms loopback — Windows
+#: reports both as "1ms" if you only read the number, hiding the difference between a server
+#: pinging itself and a real LAN hop.
+_PING_TIME_RE = re.compile(r"time([=<])\s*([\d.]+)\s*ms", re.IGNORECASE)
 
 _DEFAULT_TIMEOUT_S = 2.0
 _MAX_CONCURRENT = 16
@@ -65,7 +68,11 @@ async def ping_host(host: Host, timeout_s: float = _DEFAULT_TIMEOUT_S) -> HostSt
     if online:
         m = _PING_TIME_RE.search(text)
         if m:
-            ping_ms = float(m.group(1))
+            value = float(m.group(2))
+            # Windows reports sub-millisecond replies as `time<1ms`; flatten to a single number
+            # would lie that loopback (~0ms) is the same as a 1ms LAN hop. Report sub-ms as half
+            # the threshold so the UI can show the gradient.
+            ping_ms = value / 2 if m.group(1) == "<" else value
     return HostStatus(
         host_id=host.id,
         online=online,

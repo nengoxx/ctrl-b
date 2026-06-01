@@ -483,7 +483,14 @@
   .waveform .legend-r { position: absolute; right: 10px; bottom: 6px; font-size: 8px; letter-spacing: 1.5px; color: var(--magenta); text-transform: uppercase; }
 
   .now-dots { display: flex; justify-content: center; gap: 6px; padding: 12px 0 0; }
-  .now-dots div { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint); cursor: pointer; transition: 0.2s; }
+  /* The .active morph: dot grows into a pill, recolors, and gains a glow. All four properties
+     are part of the intentional animation. Explicit list (Slice 3) so a future style addition
+     can't accidentally start animating something paint-expensive like a `filter`. */
+  .now-dots div {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--ink-faint); cursor: pointer;
+    transition: width 0.2s, border-radius 0.2s, background-color 0.2s, box-shadow 0.2s;
+  }
   .now-dots div.active { background: var(--magenta); width: 22px; border-radius: 3px; box-shadow: var(--m-glow); }
 
   /* Section header */
@@ -500,7 +507,10 @@
     border: 1px solid var(--line);
     border-radius: 12px;
     cursor: pointer;
-    transition: all 0.2s;
+    /* Explicit transition list — `all` was animating box-shadow on every featured-row
+       swap (~6s), and the paint storm stole the next compositor frame, making the sun's
+       float animation visibly hitch. Border-color is cheap; the glow snaps. */
+    transition: border-color 0.2s;
     position: relative;
     overflow: hidden;
   }
@@ -544,8 +554,27 @@
   }
   .dev.off .name { color: var(--ink-soft); }
   .dev .sub { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-faint); margin-top: 4px; }
+  /* Busy spinner — vapor "comet trail" ring. A conic-gradient draws ~270° of magenta fading to
+     transparent, then a radial mask hollows out the center to leave a ring. The drop-shadow gives
+     the same magenta glow the LEDs use. Larger + brighter than the old `· ◐` glyph so it actually
+     reads when an action is in flight. */
   .dev.busy .sub::after {
-    content: " · ◐"; color: var(--teal); animation: spin 1s linear infinite; display: inline-block;
+    content: "";
+    display: inline-block;
+    width: 10px; height: 10px;
+    margin-left: 8px;
+    vertical-align: -2px;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg,
+      rgba(var(--accent-rgb), 0) 0deg,
+      rgba(var(--accent-rgb), 0.15) 90deg,
+      rgba(var(--accent-rgb), 0.55) 200deg,
+      var(--magenta) 320deg,
+      var(--magenta) 360deg);
+    -webkit-mask: radial-gradient(circle, transparent 48%, black 52%);
+            mask: radial-gradient(circle, transparent 48%, black 52%);
+    filter: drop-shadow(0 0 4px var(--magenta));
+    animation: spin 0.9s linear infinite;
   }
 
   .dev .chev { color: var(--ink-faint); font-size: 14px; transition: transform 0.2s; line-height: 1; text-align: center; }
@@ -960,8 +989,24 @@
   .seg button { all: unset; cursor: pointer; padding: 6px 10px; border-radius: 999px; font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-soft); font-weight: 600; }
   .seg button.active { background: linear-gradient(135deg, var(--magenta), var(--violet)); color: #fff; box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.4); }
   .switch { display: inline-flex; align-items: center; cursor: pointer; }
-  .switch .knob { width: 42px; height: 22px; border-radius: 999px; background: var(--bg-3); position: relative; transition: 0.2s; border: 1px solid var(--line-2); }
-  .switch .knob::after { content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--ink-soft); transition: 0.2s; }
+  /* Toggle: explicit transition lists (Slice 3) — narrows from `0.2s` shorthand. Browsers don't
+     transition solid→gradient backgrounds smoothly (the gradient snaps); border-color + box-shadow
+     are the properties that actually carry the motion. */
+  .switch .knob {
+    width: 42px; height: 22px; border-radius: 999px;
+    background: var(--bg-3); position: relative;
+    transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+    border: 1px solid var(--line-2);
+  }
+  /* Inner circle slides left:2px → left:22px on `.on` and recolors. Note: animating `left`
+     triggers layout (not compositor-friendly). A future polish could refactor to
+     `transform: translateX(20px)` for compositor-only motion — out of scope here. */
+  .switch .knob::after {
+    content: ""; position: absolute;
+    left: 2px; top: 2px; width: 16px; height: 16px;
+    border-radius: 50%; background: var(--ink-soft);
+    transition: left 0.2s, background 0.2s;
+  }
   .switch.on .knob { background: linear-gradient(135deg, var(--magenta), var(--violet)); border-color: var(--magenta); box-shadow: var(--m-glow); }
   .switch.on .knob::after { left: 22px; background: #fff; }
   .confrow input[type=text], .confrow input[type=password] {

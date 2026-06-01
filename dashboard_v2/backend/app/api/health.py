@@ -22,5 +22,6 @@ async def health(request: Request) -> dict[str, object]:
             "port": settings.server.port,
             "debug": settings.server.debug,
             "poll_seconds": settings.server.poll_seconds,
+            "feature_cycle_seconds": settings.server.feature_cycle_seconds,
         },
     }

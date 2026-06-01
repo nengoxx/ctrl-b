@@ -41,6 +41,7 @@ export interface ServerInfo {
   port: number;
   debug: boolean;
   poll_seconds: number;
+  feature_cycle_seconds: number;
 }
 
 // ── Services (Phase 3). Mirror of domain/service.py + api/services.py DTO. ──

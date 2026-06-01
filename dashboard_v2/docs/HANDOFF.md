@@ -35,7 +35,7 @@ foundation + Inference/Server groups) and 7b (hosts + services CRUD machine edit
 verified — see the two 2026-05-29 blocks below.** **7c (integrations: SearXNG/embeddings/open-terminal
 hot-apply + MCP/OpenAPI managers with between-turn rediscovery) is built + verified. 7d (skills/agents
 management UI + per-tool description overrides) is built + verified + committed (see the 7d block
-below). Next up: 7e (prompts editors + memory panel).**
+below). Next up: 7e (prompts editors + memory panel) — **and in parallel, the UI perf pass tracked in [`UI_AUDIT.md`](./UI_AUDIT.md) (Slices 1–8, each independently shippable, each preserving current UX).**
 This doc is the orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor
 fidelity mandate (D7) still governs every new component.**
 

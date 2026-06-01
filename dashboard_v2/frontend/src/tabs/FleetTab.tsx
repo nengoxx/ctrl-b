@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { DeviceRow } from "../components/DeviceRow";
 import { FleetSummary } from "../components/FleetSummary";
@@ -20,6 +20,7 @@ export function FleetTab({ active }: Props) {
   const { heroOn, waveformOn } = useUI();
   const { data: server } = useServerInfo();
   const poll = server?.poll_seconds ?? 5;
+  const cycleMs = Math.max(1, server?.feature_cycle_seconds ?? 6) * 1000;
   const { data: hosts = [], isLoading, error } = useHosts(poll);
   const { data: services = [] } = useServices(poll);
   const { run, busy } = useFleetActions();
@@ -37,18 +38,25 @@ export function FleetTab({ active }: Props) {
   // Keep featured in range as the fleet changes.
   const clamped = hosts.length ? Math.min(featured, hosts.length - 1) : 0;
 
-  // Auto-cycle the featured host among those online (6s), matching the prototype.
+  // Auto-cycle the featured host among those online. Period is `server.feature_cycle_seconds`
+  // (configurable in Conf → Server). `hosts` is read through a ref so the interval only resets
+  // when the period itself changes — depending on `hosts` here would reset the timer on every
+  // poll (TanStack returns a new array reference when `checked_at` changes), and the cycle
+  // would never reliably fire.
+  const hostsRef = useRef(hosts);
+  hostsRef.current = hosts;
   useEffect(() => {
     const id = setInterval(() => {
       setFeatured((f) => {
-        const onIdx = hosts.map((h, i) => (h.status?.online ? i : -1)).filter((i) => i >= 0);
+        const cur = hostsRef.current;
+        const onIdx = cur.map((h, i) => (h.status?.online ? i : -1)).filter((i) => i >= 0);
         if (!onIdx.length) return f;
-        const cur = onIdx.indexOf(f);
-        return onIdx[(cur + 1) % onIdx.length];
+        const curPos = onIdx.indexOf(f);
+        return onIdx[(curPos + 1) % onIdx.length];
       });
-    }, 6000);
+    }, cycleMs);
     return () => clearInterval(id);
-  }, [hosts]);
+  }, [cycleMs]);
 
   function toggle(id: string, i: number) {
     setFeatured(i);

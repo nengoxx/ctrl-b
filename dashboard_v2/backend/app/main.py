@@ -4,7 +4,13 @@ Dev: Vite proxies `/api` → uvicorn (single origin, no CORS). Prod (Phase 9): t
 the built `frontend/dist` via StaticFiles + SPA fallback. Phase 0 only wires lifespan (db +
 settings) and the `/api/health` checkpoint.
 
-Run:  uvicorn app.main:app --reload --port 5433   (from backend/)
+Run:  uvicorn app.main:app --port 5433   (from backend/)
+
+On Linux/macOS you can add `--reload` for dev. On **Windows do NOT use `--reload`** — uvicorn's
+reload worker on Windows runs under an event loop that does not properly support
+`asyncio.create_subprocess_exec`, so `fleet.ping_host` silently captures empty output and every
+host reports offline. Run plain (no `--reload`) on Windows, or use `watchfiles` externally to
+restart the process.
 """
 
 from __future__ import annotations

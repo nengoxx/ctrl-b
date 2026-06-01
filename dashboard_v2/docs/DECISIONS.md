@@ -1,7 +1,10 @@
 # Decisions log — dashboard_v2
 
 Locked-in choices for the rebuild, with the reasoning. Anything not listed here is open and
-should be decided in `TODO.md` / `ARCHITECTURE.md` before it's built. Date: 2026-05-27.
+should be decided in `TODO.md` / `ARCHITECTURE.md` before it's built. Log opened 2026-05-27; D1–D13
+are locked. Latest project status (which decisions have shipped vs are pending) lives in
+[`HANDOFF.md`](./HANDOFF.md) / [`TODO.md`](./TODO.md) — this file is the decisions log, not a
+status board.
 
 ---
 

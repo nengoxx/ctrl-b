@@ -129,14 +129,16 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
 - **Design implication (the seam already exists):** `AgentDef.tools` is an inclusion **glob allowlist**
   (`ToolRegistry.for_agent`, `fnmatch` — e.g. `*_host`, `*_service`, `mcp__web-tools__*`); the agent
   runtime already honours it. So a "fleet" agent is pure **config** today
-  (`agents: [{name: fleet, tools: [...]}]` + `agent.default_agent`). What's missing for the *feature*:
-  (1) a **Conf → Agents** management UI (A6) to create presets and tick tools without hand-editing
-  YAML; (2) a **`/agent` composer switch** (agent is currently per-thread, no per-message switch);
-  (3) maybe a couple of shipped presets. **Constraint to remember:** a **skill can only narrow, never
-  widen** the toolset (`narrow_tools`), so you can't "add search back" via a skill to an agent that
-  lacks it — the clean inverse pattern is a broad agent + skills that narrow per intent.
-- **Open:** shipped presets vs all-custom; per-message vs per-thread switch UX; whether to surface the
-  active agent in the composer/header; interaction with privilege (A1) and skills (A5).
+  (`agents: [{name: fleet, tools: [...]}]` + `agent.default_agent`). **What shipped in Phase 7d-b**:
+  (1) the **Conf → Agents** management UI (`AgentsEditor.tsx`) creates/edits presets with a tools
+  tick-grid and skills allowlist — no hand-editing YAML; (2) a **`/agent <name>` composer switch**
+  (`ChatRequest.agent` + per-turn `_session` override · `GET /api/agents` lists names + default) lets
+  one thread switch agent per message. **Still open**: maybe a couple of shipped presets; whether to
+  surface the active agent in the composer/header. **Constraint to remember:** a **skill can only
+  narrow, never widen** the toolset (`narrow_tools`), so you can't "add search back" via a skill to
+  an agent that lacks it — the clean inverse pattern is a broad agent + skills that narrow per intent.
+- **Open:** shipped presets vs all-custom; whether to surface the active agent in the composer/header;
+  interaction with privilege (A1) and skills (A5).
 
 ---
 

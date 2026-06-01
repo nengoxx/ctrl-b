@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { del, getJSON, putJSON } from "../api/client";
 import { pushToast } from "../store/toast";
+import { useScopedQuery } from "./useScopedQuery";
 
 // Discovered skills (Phase 4.5 / 7d). `GET /api/skills` re-scans skills/<name>/SKILL.md each call.
 // Used by the Agents editor (skill allowlist ticks) and the Skills panel (7d-c). The file CRUD
@@ -14,8 +15,10 @@ export interface SkillInfo {
   allowed_tools: string[] | null;
 }
 
+/** Discovered skills. Scoped to the Conf tab (both consumers — ConfTab + SkillsEditor —
+ *  live there). Re-entry to Conf force-refreshes via useScopedQuery's policy. */
 export function useSkills() {
-  return useQuery({
+  return useScopedQuery<SkillInfo[]>("conf", {
     queryKey: ["skills"],
     queryFn: () => getJSON<SkillInfo[]>("/api/skills"),
     staleTime: 30_000,

@@ -333,9 +333,24 @@ v1 ships the `none` + `file` providers behind the interface; vector slots in wit
 
 | Profile | Launch | Notes |
 |---|---|---|
-| **Windows 11** | `uvicorn app.main:app` via `.bat` / Task Scheduler | primary today |
-| **Ubuntu 26 LTS** | `systemd` unit (model on `wol_server/wol_server.service`) | headless server |
+| **Windows 11** | `uvicorn app.main:app` via `.bat` / Task Scheduler — **no `--reload`** | primary today; see gotcha below |
+| **Ubuntu 26 LTS** *(emma — target host)* | `systemd` unit (model on `wol_server/wol_server.service`); `--reload` ok for dev | headless server |
+| **macOS** | `uvicorn app.main:app` (`--reload` ok for dev) | sibling POSIX path |
 | **Android / Termux** *(exp.)* | `uvicorn` in Termux + `termux-wake-lock` + foreground service, charger | phone = host; WOL only on its LAN; high port (no root) |
+
+**OS-agnostic by design.** All target-OS branching keys off `host.os_type` (the *managed* host),
+never the server's OS — so an Ubuntu server on emma running a Windows host is the same code path
+as a Windows server on corsair running a Linux host. The single server-OS branch is the ping
+command syntax (`fleet._ping_cmd` — Windows `-n`/`-w`, Linux `-c`/`-W`, BSD/macOS `-c`/`-t`),
+decided at call time so a Termux profile stays alive. Paths use `pathlib`; the YAML writer
+preserves the existing file's CRLF/LF so a Windows host can't churn an LF config to CRLF.
+
+**Gotcha — Windows + `uvicorn --reload`.** On Windows, uvicorn's reload worker uses an event
+loop that does not properly support `asyncio.create_subprocess_exec`. `fleet.ping_host` shells
+out to `ping`, captures empty output under reload, and every host reports offline (no error,
+just silent failure). **Run plain `uvicorn app.main:app --port 5433` on Windows** (or use
+`watchfiles` externally to restart). Linux/macOS reload mode is fine — those loops have full
+subprocess support.
 
 **HTTPS for mic:** front any profile the phone reaches with **Tailscale Serve** so the PWA gets
 a secure context (`https://<host>.<tailnet>.ts.net`) → `getUserMedia` works. Without it, voice

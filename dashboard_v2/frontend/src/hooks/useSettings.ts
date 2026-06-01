@@ -1,8 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { getJSON, putJSON } from "../api/client";
 import { pushToast } from "../store/toast";
 import type { McpServer, OpenApiServer } from "./useIntegrations";
+import { useScopedQuery } from "./useScopedQuery";
 
 // Phase 7a. The settings doc is the whole masked config; the Conf forms read/write the slices they
 // expose (server + inference here). Typed loosely — only the edited groups are modelled; the rest
@@ -15,7 +16,7 @@ export interface InferenceEndpoint {
 }
 
 export interface SettingsDoc {
-  server: { host: string; port: number; poll_seconds: number; debug: boolean };
+  server: { host: string; port: number; poll_seconds: number; feature_cycle_seconds: number; debug: boolean };
   inference: {
     default_mode: string;
     request_timeout_s: number;
@@ -50,9 +51,11 @@ export interface SaveResult {
   restart_required: string[];
 }
 
-/** Full config (secrets masked). Changes rarely; refetched on save via invalidation. */
+/** Full config (secrets masked). Conf-only data — scoped to the Conf tab so we don't fetch while
+ *  the user is on Fleet/Agent. Re-entry to Conf force-refreshes (refetchOnMount: 'always' inside
+ *  useScopedQuery), so the cache stays fresh whenever the user actually looks at it. */
 export function useSettings() {
-  return useQuery({
+  return useScopedQuery<SettingsDoc>("conf", {
     queryKey: ["settings"],
     queryFn: () => getJSON<SettingsDoc>("/api/settings"),
     staleTime: 30_000,

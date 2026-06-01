@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
@@ -390,17 +390,20 @@ export function AgentTab({ active }: Props) {
   // Pair tool results to their calls by id across the whole thread (live appends + reloaded
   // separate `tool` messages both land here). Also track the most-recent task_plan call → its plan
   // is the current one, shown in the pinned panel (the model rewrites the whole list each call).
-  const resultByCall: Record<string, ToolResult> = {};
-  let latestPlanCall: ToolCallPart | null = null;
-  for (const m of messages) {
-    for (const p of m.parts) {
-      if (p.type === "tool_result") resultByCall[p.call_id] = p.result;
-      if (p.type === "tool_call" && p.tool === "task_plan") latestPlanCall = p;
+  // Memoized: linear scan over every message every render gets pricey on long threads — only
+  // recompute when `messages` actually changes.
+  const { resultByCall, currentPlan } = useMemo(() => {
+    const byCall: Record<string, ToolResult> = {};
+    let latestPlanCall: ToolCallPart | null = null;
+    for (const m of messages) {
+      for (const p of m.parts) {
+        if (p.type === "tool_result") byCall[p.call_id] = p.result;
+        if (p.type === "tool_call" && p.tool === "task_plan") latestPlanCall = p;
+      }
     }
-  }
-  const currentPlan = latestPlanCall
-    ? planFrom(latestPlanCall, resultByCall[latestPlanCall.call_id])
-    : null;
+    const plan = latestPlanCall ? planFrom(latestPlanCall, byCall[latestPlanCall.call_id]) : null;
+    return { resultByCall: byCall, currentPlan: plan };
+  }, [messages]);
 
   return (
     <div className={"tab" + (active ? " active" : "")} id="tab-agent" data-screen-label="02 Agent">

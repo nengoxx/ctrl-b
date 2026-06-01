@@ -3,6 +3,13 @@ import { useEffect, useRef } from "react";
 // Live ping waveform — the canvas draw loop ported verbatim from vapor.html. Reads themed RGB
 // from CSS custom properties each frame so it tracks theme switches. Latest online/ping are held
 // in a ref so the RAF loop is set up once (not torn down on every poll).
+//
+// NOT memoized: this component's render body must run on every parent render so that
+// `stateRef.current = { online, ping }` stays in sync with the latest props. With a `memo()`
+// wrapper, two hosts with identical ping values (very common on LAN — corsair/g5 both at 1ms)
+// would cause the memo to bail on a featured-cycle, freezing the ref and the RAF loop on the
+// previous host's snapshot. The outer `NowPanel` (in Hero.tsx) is the memo barrier that saves
+// work; this component's render itself is trivial (a canvas + two legend divs).
 
 interface Props {
   online: boolean;

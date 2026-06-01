@@ -1,7 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { del, getJSON, postJSON, putJSON } from "../api/client";
 import { pushToast } from "../store/toast";
+import { useScopedQuery } from "./useScopedQuery";
 
 // Phase 7c-b. MCP + OpenAPI server lists are managed through dedicated CRUD endpoints (not the
 // settings PUT) and applied between agent turns. The status carries per-server discovery summaries
@@ -45,8 +46,10 @@ export interface OpenApiServer {
 
 export type IntegrationKind = "mcp" | "openapi";
 
+/** MCP/OpenAPI discovery status. Scoped to Conf — the 15s polling interval used to run while the
+ *  user was on Fleet/Agent doing nothing with integrations; now it only runs when Conf is open. */
 export function useIntegrationsStatus() {
-  return useQuery({
+  return useScopedQuery<IntegrationsStatus>("conf", {
     queryKey: ["integrations"],
     queryFn: () => getJSON<IntegrationsStatus>("/api/integrations/status"),
     refetchInterval: 15_000,

@@ -195,6 +195,7 @@ export function ConfTab({ active }: Props) {
         ...draft.server,
         port: Number(draft.server.port),
         poll_seconds: Number(draft.server.poll_seconds),
+        feature_cycle_seconds: Number(draft.server.feature_cycle_seconds),
       },
       inference: {
         ...draft.inference,
@@ -307,6 +308,12 @@ export function ConfTab({ active }: Props) {
             desc="seconds — fleet status sweep"
             value={String(srv?.poll_seconds ?? "")}
             onChange={(v) => setSrv("poll_seconds", v as unknown as number)}
+          />
+          <Field
+            label="Feature cycle"
+            desc="seconds — hero auto-cycles the featured online host"
+            value={String(srv?.feature_cycle_seconds ?? "")}
+            onChange={(v) => setSrv("feature_cycle_seconds", v as unknown as number)}
           />
           <div className="confrow">
             <div className="k">

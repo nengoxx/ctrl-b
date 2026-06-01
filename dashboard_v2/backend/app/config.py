@@ -74,6 +74,7 @@ class ServerCfg(BaseModel):
     host: str = "127.0.0.1"          # tailnet-only; fronted by Tailscale Serve for HTTPS
     port: int = 5433                 # 5433 so v2 runs alongside the live Flask app on 5432
     poll_seconds: int = 5            # fleet status poll cadence
+    feature_cycle_seconds: int = 6   # hero "now monitoring" auto-cycle period (online hosts only)
     debug: bool = False              # off by default — debug is an RCE surface (ARCHITECTURE §7)
 
 
