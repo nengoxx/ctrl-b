@@ -28,12 +28,23 @@ earlier prototypes — kept for reference, not imported or modified. The live Fl
 
 ## Status
 
-🚧 **Phases 0–4.5 done.** Fleet read/action path, the live tool-using **Agent** (tool-calling,
-confirm bubbles, markdown, plan panel, context compaction), the 4f integrations (SearXNG
-`web_search`, MCP client over Streamable-HTTP **and** stdio, open-terminal tools, a generic OpenAPI
-provider, an embeddings client), and skills + agents/subagents are all in and live-probed against the
-local model. Cloud chat (`/cloud` → OpenRouter) is wired; default stays local. Next candidates:
-**Phase 7 Conf tab** (settings UI incl. skills/agents management) or Phase 5 (guarded shell).
+🚧 **Phases 0–4.5 + 7a–7d done. UI performance pass (`docs/UI_AUDIT.md` Slices 1–8) complete.**
+Fleet read/action path, the live tool-using **Agent** (tool-calling, confirm bubbles, markdown,
+plan panel, context compaction), the 4f integrations (SearXNG `web_search`, MCP client over
+Streamable-HTTP **and** stdio, open-terminal tools, a generic OpenAPI provider, an embeddings
+client), and skills + agents/subagents are all in and live-probed against the local model. The
+Conf tab now manages settings, hosts/services, integrations, agents, skills, and per-tool
+descriptions through the UI — no more hand-edited YAML for those. Cloud chat (`/cloud` →
+OpenRouter) is wired; default stays local. The frontend perf pass closed 10 of 13 audit findings
+(bundle analyzer, PWA icon fan-out, memo pass, transition audit, body-attr fast-path, tab-scoped
+queries, lazy Conf + Suspense + error boundary, `useUISlice` selectors); a follow-up audit
+recorded 13 a11y/resilience/UX findings (F14–F26 in `docs/UI_AUDIT.md` §6c) as the next backlog.
+
+**Next candidates:** the **a11y/resilience backlog** (F14–F26 — F25 + F14 + F15 are
+WCAG-critical), the **7e slice** (prompt-append + `<PromptModal>` + Conf-sizing refine), or
+**7e proper** (prompt-file editors + memory panel). Phase 5 (guarded shell) is deprioritized —
+open-terminal already provides remote shell on emma.
+
 **New session? Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first** — it's the living status + next-step doc.
 
 ## Running (dev)

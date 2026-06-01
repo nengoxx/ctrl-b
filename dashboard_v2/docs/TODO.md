@@ -13,21 +13,31 @@ the whole architecture in `ARCHITECTURE.md` (don't build ahead of the phase you'
 
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
-> **Status @ 2026-06-01:** Phases **0–4.5 + 7a–7d are done**. 7a–7c are on `origin/main`; 7d (per-tool
-> descriptions · agents UI + `/agent` switch · skills UI) is committed locally (push pending owner
-> go-ahead). Plus the capability/UX session — cloud chat wired; agent **loop-discipline guards** +
-> tool-selection routing; the **`fleet` intent-skill** that fixes weak-model tool-selection (auto
-> tool-narrowing; `skills: []` opts a capable model out); lenient `task_plan`; **`check_service`** +
-> **`reboot_host`** (+ device-row button); **clickable plan-step dots** (persistent, agent-aware); and
-> an **OS-compatibility pass** (ping/commands detect the host OS — ready for emma/Linux). Detail in
-> `HANDOFF.md`'s 2026-05-28 through 2026-05-30 blocks.
+> **Status @ 2026-06-02:** Phases **0–4.5 + 7a–7d are done**, and the **UI performance pass
+> (`docs/UI_AUDIT.md` Slices 1–8) is complete** — 10 of 13 findings shipped (F9 `useTransition`
+> and F13 React Compiler deferred until measured pressure). 7a–7c are on `origin/main`; 7d +
+> the perf pass + a follow-up a11y/resilience audit are committed locally (eight commits ahead,
+> HEAD `bf549c4`, push pending owner go-ahead). Plus the capability/UX session — cloud chat
+> wired; agent **loop-discipline guards** + tool-selection routing; the **`fleet` intent-skill**
+> that fixes weak-model tool-selection (auto tool-narrowing; `skills: []` opts a capable model
+> out); lenient `task_plan`; **`check_service`** + **`reboot_host`** (+ device-row button);
+> **clickable plan-step dots** (persistent, agent-aware); an **OS-compatibility pass**
+> (ping/commands detect the host OS — ready for emma/Linux); the **Windows `--reload` ping
+> gotcha** documented (`fleet.ping_host` returns empty under reload — run plain on Windows);
+> **sub-millisecond ping precision** (Windows `time<1ms` distinguished from `time=1ms`);
+> **configurable hero feature-cycle** (`server.feature_cycle_seconds`); **Vapor-themed busy
+> spinner** (conic-gradient ring). Detail in `HANDOFF.md`'s 2026-05-28 through **2026-06-02**
+> blocks.
 >
-> **Recommended next sequence (advisory — phases below are NOT reordered):** the **7e slice**
-> (prompt-append + show/load the baked default + `<PromptModal>` full-page editor + Conf-sizing
-> refine — planned 2026-05-30) is the active follow-up → then 7e proper (prompt-file editors + memory
-> panel) → a **thin emma/Linux deploy + Tailscale-Serve HTTPS** (the migration target; HTTPS also
-> unblocks the mic) → **voice (6)** → **utils (8)**. **Phase 5 (guarded shell) is deprioritized** —
-> open-terminal already provides remote shell on emma, so local `run_shell` is largely redundant.
+> **Recommended next sequence (advisory — phases below are NOT reordered):** three live
+> candidates — (1) the **F14–F26 a11y/resilience backlog** documented in `docs/UI_AUDIT.md`
+> §6c (F25 + F14 + F15 are the WCAG-critical ones; recommended order in the doc footer);
+> (2) the **7e slice** (prompt-append + show/load the baked default + `<PromptModal>`
+> full-page editor + Conf-sizing refine — planned 2026-05-30) → then 7e proper (prompt-file
+> editors + memory panel); (3) a **thin emma/Linux deploy + Tailscale-Serve HTTPS** (the
+> migration target; HTTPS also unblocks the mic) → **voice (6)** → **utils (8)**. **Phase 5
+> (guarded shell) is deprioritized** — open-terminal already provides remote shell on emma,
+> so local `run_shell` is largely redundant.
 
 ---
 

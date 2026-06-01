@@ -37,7 +37,7 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | [`dashboard_v2/docs/VAPOR_PATTERNS.md`](./dashboard_v2/docs/VAPOR_PATTERNS.md) | Vapor design tokens/components — read **before** styling any net-new UI. |
   | [`dashboard_v2/docs/RESEARCH.md`](./dashboard_v2/docs/RESEARCH.md) | Library/version pins + sourced rationale (incl. the mic secure-context analysis). |
   | [`dashboard_v2/docs/AUDIT_settings.md`](./dashboard_v2/docs/AUDIT_settings.md) | Historical pre-7a audit; findings already folded in. Reference, not a checklist. |
-  | [`dashboard_v2/docs/UI_AUDIT.md`](./dashboard_v2/docs/UI_AUDIT.md) | Frontend perf + best-practices audit (F1–F13) with per-finding usability-safety verdicts and the phased Slice 1–8 implementation plan. Active during the perf pass. |
+  | [`dashboard_v2/docs/UI_AUDIT.md`](./dashboard_v2/docs/UI_AUDIT.md) | Two-pass frontend audit. §1–6b: perf + best-practices pass (F1–F13) — Slices 1–8 all shipped (10 of 13 closed; F9/F13 deferred). §6c: a11y/resilience/UX follow-up audit (F14–F26) — documented, not implemented; the next backlog. Recommended implementation order in the doc footer. |
 
   When designing a new feature, the canonical flow is: **HANDOFF (where we are) → ROADMAP (is this listed? what seams already exist?) → DECISIONS (any locked choice that constrains it?) → DESIGN/ARCHITECTURE (how does it slot in?) → TODO (which phase owns it? add the slice).** If a feature isn't in any of these, propose where it goes *before* coding.
 - The earlier prototype folders (`ws_claude/`, `ws_claude_2/`, `ws_codex*/`) and `ctrl-b (Vapor)/`
