@@ -920,6 +920,14 @@ body {
 .confgroup.collapsed .conf-chev {
   transform: rotate(0deg); /* collapsed: points right */
 }
+/* F29 — hide the body when collapsed, but keep children MOUNTED. This preserves
+   in-progress edits in the sub-editors (Agents / Skills / Machines / Integrations) across
+   a collapse-expand cycle. Mirrors the project's existing tab pattern (Fleet/Agent/Utils
+   stay mounted; CSS shows only `.tab.active`). `:not(.conftitle)` keeps the title visible
+   so the user can re-expand. */
+.confgroup.collapsed > *:not(.conftitle) {
+  display: none;
+}
 
 /* ── Conf tab — settings forms (Phase 7a) ─────────────────────────────────────────────────────
    Net-new from vapor tokens; vapor.css stays verbatim (D7). The textarea mirrors the conf input

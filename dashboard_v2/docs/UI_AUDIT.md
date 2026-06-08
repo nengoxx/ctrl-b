@@ -537,15 +537,17 @@ Then sprinkle component-specific overrides where the global outline doesn't fit 
 
 ---
 
-### F29 🟡 — Collapsing a Conf group discards in-progress sub-editor state
+### F29 🟡 — Collapsing a Conf group discards in-progress sub-editor state · ✅ SHIPPED (option B)
 
-**The issue.** `ConfGroup` in `tabs/ConfTab.tsx` conditionally renders its children (`{!collapsed && props.children}`). So expanding **Agents** → typing into a draft → collapsing the group → re-expanding it gives a fresh `AgentsEditor` mount with the persisted-server state, dropping whatever was in the working draft. Same shape for **Skills**, **Integrations**, **Computers**.
+**The issue.** `ConfGroup` in `tabs/ConfTab.tsx` was conditionally rendering its children (`{!collapsed && props.children}`). So expanding **Agents** → typing into a draft → collapsing the group → re-expanding it gave a fresh `AgentsEditor` mount with the persisted-server state, dropping whatever was in the working draft. Same shape for **Skills**, **Integrations**, **Computers**.
 
-**Why it matters.** Same family as [F28](#f28----composer-textarea-loses-draft-on-tab-switch-and-reload--shipped) but one layer deeper. The Slice-E1 beforeunload guard catches refresh/close-tab while a group is *expanded*; this finding is about the *intra-session* loss when the user collapses the group mid-edit.
+**Why it mattered.** Same family as [F28](#f28----composer-textarea-loses-draft-on-tab-switch-and-reload--shipped) but one layer deeper. The Slice-E1 beforeunload guard catches refresh/close-tab while a group is *expanded*; this finding was about the *intra-session* loss when the user collapses the group mid-edit.
 
-**Safety verdict: ✅ SAFE.** Two implementation paths to weigh: (a) lift each sub-editor's draft into a store (same trick as F28's `store/composer.ts`), or (b) keep children mounted and use CSS to hide collapsed bodies (cheap diff, but defers the unmount lifecycle that was probably deliberate for memory hygiene with many groups). Pick (a) for the long-form editors (Agents / Skills / Integrations / Computers), keep (b) untouched for the scalar-only groups (Inference / Server / Appearance) where there's no editor state to lose.
+**Safety verdict: ✅ SAFE.** Two implementation paths weighed: (a) lift each sub-editor's draft into a store (same trick as F28's `store/composer.ts`), or (b) keep children mounted and use CSS to hide collapsed bodies. Shipped **(b)** because it's a one-line JSX change + one CSS rule, matches the project's existing "keep mounted, toggle visibility" pattern from the four top-level tabs (Fleet/Agent/Utils stay mounted; CSS shows only `.tab.active`), and dirty-registration via `useRegisterDirty` (E1) keeps working across the collapse cycle without effort. Memory cost is negligible for a single-user homelab.
 
-**Status.** Deferred — owner OK with the current behavior (in-session collapses are deliberate "discard the draft" gestures, mostly). Queue under §6c when a real loss is hit.
+**The fix (shipped 2026-06-08).** `ConfGroup` now always renders `props.children`; `extras.css` gains `.confgroup.collapsed > *:not(.conftitle) { display: none; }` to hide the body when collapsed. No new stores, no new effects, no editor changes.
+
+**Option A as a future enhancement** — lifting each long-form editor's draft into its own store (mirrors `store/composer.ts`) would also enable **reload-survival** for in-progress edits in Agents / Skills / Integrations / Computers. Not needed to fix the collapse problem, but a natural follow-up. Tracked in §6b below.
 
 ---
 
@@ -575,6 +577,7 @@ Then sprinkle component-specific overrides where the global outline doesn't fit 
 
 ## 6b. Noted for later (not part of any current slice)
 
+- **Editor draft persistence (F29 option A — reload-survival).** F29 was shipped via option B (keep children mounted, CSS-hide when collapsed) — that fully solves intra-session collapse/expand state loss. A future enhancement: lift each long-form editor's local draft state into a small store mirroring `store/composer.ts` (one per editor: Agents / Skills SKILL.md / Machines / Integrations / Tool descriptions), persist to localStorage, so a refresh / PWA reopen with unsaved changes restores the draft. Two design decisions to lock when this lands: (1) **conflict policy** when the server-persisted state differs from the saved draft (toast "Local changes restored — server has X different · [Discard local] [Keep editing]"), and (2) **scope key** for editors that have multiple instances (Skill name; Machine slug; server name). The E1 dirty registry seam composes naturally — the persisted draft remains dirty across the reload, and the beforeunload guard never fires for a saved-locally draft. Owner asked to note this 2026-06-08 for the day reload-survival is wanted.
 - **Theme registry / data-driven themes.** Today adding a theme is 3 manual edits (TS `Theme` union · `vapor.css` `[data-theme="…"]` block · Conf picker option). Easy enough at 3 themes; gets repetitive past ~6. A small refactor — export a `const THEMES = ["dark", "aqua", "ember"] as const` from `store/ui.ts`, derive `Theme` from it, iterate the array in the Conf picker — would let new themes "drop in" with one edit + the CSS block. **Bigger move** if ever wanted: load theme tokens (CSS variable sets) from YAML/JSON so new themes are pure config, no code edit. Out of scope until the theme count actually grows; noting here so future-us doesn't re-derive the design space.
 - **Compositor-friendly toggle slide.** `.switch .knob::after` still animates `left` (layout-triggering). A refactor to `transform: translateX(20px)` would put it on the compositor. Single-element change, low risk, but out of scope for the perf pass — file under "polish."
 - **Motion tokens.** Centralizing durations/easings into `--motion-fast / --motion-base / --motion-slow` + `--ease-standard / --ease-out` CSS custom properties, with a `prefers-reduced-motion` override. Every transition declaration is already explicit about its property, so this is a mechanical find-and-replace later. See `Slice 3` notes + the references at the bottom of this doc.

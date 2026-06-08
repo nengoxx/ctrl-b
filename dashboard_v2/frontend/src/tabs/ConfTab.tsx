@@ -103,7 +103,13 @@ const RISKS = [
 ];
 
 /** A Conf section whose header collapses its body (persisted per `id`). Same vapor `.conftitle` look
- * + a leading disclosure chevron; collapsing doesn't alter the design, just hides the body. */
+ * + a leading disclosure chevron; collapsing doesn't alter the design, just hides the body.
+ *
+ * F29 — children stay MOUNTED when collapsed; CSS hides them via `.confgroup.collapsed > *:not(.conftitle) { display: none; }`
+ * in extras.css. This preserves any in-progress edits in the sub-editors (Agents / Skills / Machines /
+ * Integrations) across a collapse-expand cycle. Mirrors the project's existing "keep mounted, toggle
+ * visibility" pattern from the four top-level tabs (Fleet/Agent/Utils stay mounted; only `.tab.active`
+ * is visible). Reload-survival is a future enhancement — see UI_AUDIT.md §6b. */
 function ConfGroup(props: {
   id: string;
   num: string;
@@ -121,7 +127,7 @@ function ConfGroup(props: {
         <b>{props.title}</b>
         {props.right != null && <span className="right">{props.right}</span>}
       </div>
-      {!collapsed && props.children}
+      {props.children}
     </div>
   );
 }
