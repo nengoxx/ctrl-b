@@ -132,7 +132,13 @@ export default function App() {
 // is correct in context.
 function ConfLoading() {
   return (
-    <div className="tab active" id="tab-conf" data-screen-label="04 Conf">
+    <div
+      className="tab active"
+      id="tab-conf"
+      data-screen-label="04 Conf"
+      role="tabpanel"
+      aria-labelledby="tabbtn-conf"
+    >
       <div className="sec">
         <span className="num">04</span>
         <b>Conf</b>
@@ -148,7 +154,13 @@ function ConfLoading() {
 // clearing state — only a page reload picks up the new manifest. The button does exactly that.
 function confErrorFallback(error: Error, reload: () => void) {
   return (
-    <div className="tab active" id="tab-conf" data-screen-label="04 Conf">
+    <div
+      className="tab active"
+      id="tab-conf"
+      data-screen-label="04 Conf"
+      role="tabpanel"
+      aria-labelledby="tabbtn-conf"
+    >
       <div className="sec">
         <span className="num">04</span>
         <b>Conf</b>

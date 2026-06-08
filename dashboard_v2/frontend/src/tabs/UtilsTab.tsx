@@ -8,7 +8,13 @@ interface Props {
 
 export function UtilsTab({ active }: Props) {
   return (
-    <div className={"tab" + (active ? " active" : "")} id="tab-utils" data-screen-label="03 Utils">
+    <div
+      className={"tab" + (active ? " active" : "")}
+      id="tab-utils"
+      data-screen-label="03 Utils"
+      role="tabpanel"
+      aria-labelledby="tabbtn-utils"
+    >
       <div className="sec">
         <span className="num">03</span>
         <b>Utils</b>

@@ -218,7 +218,13 @@ export function ConfTab({ active }: Props) {
   }
 
   return (
-    <div className={"tab" + (active ? " active" : "")} id="tab-conf" data-screen-label="04 Conf">
+    <div
+      className={"tab" + (active ? " active" : "")}
+      id="tab-conf"
+      data-screen-label="04 Conf"
+      role="tabpanel"
+      aria-labelledby="tabbtn-conf"
+    >
       <ConfGroup id="inference" num="01" title="Inference" right="openai-compatible">
         <div className="conf-card">
           <div className="confrow">

@@ -71,7 +71,13 @@ export function FleetTab({ active }: Props) {
   }
 
   return (
-    <div className={"tab" + (active ? " active" : "")} id="tab-fleet" data-screen-label="01 Fleet">
+    <div
+      className={"tab" + (active ? " active" : "")}
+      id="tab-fleet"
+      data-screen-label="01 Fleet"
+      role="tabpanel"
+      aria-labelledby="tabbtn-fleet"
+    >
       <Hero
         hosts={hosts}
         featured={clamped}

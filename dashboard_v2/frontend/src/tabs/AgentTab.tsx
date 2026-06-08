@@ -406,7 +406,13 @@ export function AgentTab({ active }: Props) {
   }, [messages]);
 
   return (
-    <div className={"tab" + (active ? " active" : "")} id="tab-agent" data-screen-label="02 Agent">
+    <div
+      className={"tab" + (active ? " active" : "")}
+      id="tab-agent"
+      data-screen-label="02 Agent"
+      role="tabpanel"
+      aria-labelledby="tabbtn-agent"
+    >
       <div className="sec">
         <span className="num">02</span>
         <b>Chat</b>
