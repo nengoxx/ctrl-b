@@ -67,6 +67,14 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   (arbitrary shell) beyond the tailnet. Prefer the typed-action approach for new execution paths.
 - **Never commit or echo secrets.** `config.yaml`, `clients`, and `*_prompt.*` are gitignored and
   contain SSH passwords / API keys. Keep them out of code, logs, and commit messages.
+- **Don't duplicate existing patterns — in either direction.** Before writing new code or adding
+  a dep for X, find how X is already done in this codebase and extend it. Two failure modes to
+  avoid: *different code for similar things* (a parallel implementation that bypasses an existing
+  pattern — e.g. an OS-driven `@media (prefers-reduced-motion)` block when `UIState` + an
+  Appearance Switch already model user prefs), and *similar code for the same thing we already
+  own* (e.g. pulling in `react-error-boundary` when our `ErrorBoundary.tsx` already provides the
+  same render-prop API). Read the touch points first, match the pattern, and propose any
+  deviation in the design before coding.
 - **Commit only when asked**, scope commits tightly, and **don't sweep the untracked `ws_codex*`
   dirs into a commit** unless that's the explicit intent.
 - Confirm before destructive/hard-to-reverse actions (rewriting the live server, deleting

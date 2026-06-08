@@ -263,6 +263,15 @@ then cut over (see `dashboard_v2/docs/TODO.md` Phase 10). Don't break the workin
   enterprise scaffolding. But **never weaken the security boundary** in Section 6.
 - When asked to "make the dashboard better," default to the Section 7 direction and `SPEC.md`
   rather than re-theming Bootstrap.
+- **Don't duplicate existing patterns — in either direction.** Before introducing new code or a
+  new dependency for X, find how X is already done in this codebase and extend it. Two failure
+  modes to avoid: writing *different code for similar things* (a parallel implementation that
+  bypasses an existing pattern — e.g. an OS-driven `@media (prefers-reduced-motion)` block when
+  the project already has a `UIState` + Appearance-Switch model for user prefs), and pulling in
+  a dep for *similar code for the same thing we already own* (e.g. adding `react-error-boundary`
+  when our `ErrorBoundary.tsx` already provides the same render-prop API). Read the touch points
+  first, match the existing pattern, and propose any deviation in the design before coding.
+  Consistency by construction beats cleanup after the fact.
 - Confirm before destructive or hard-to-reverse actions (deleting templates, rewriting the live
   server, force-pushing). The owner connects from Android — keep changes testable at narrow widths.
 - Commit only when asked. Keep commits scoped; don't sweep the untracked `ws_codex*` dirs in.

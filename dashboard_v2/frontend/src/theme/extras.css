@@ -3,6 +3,30 @@
    vapor design tokens in vapor.css (colors / grads / glows / fonts) so they stay on-theme.
    vapor.css itself stays verbatim (D7); net-new styling lives here. */
 
+/* ── F23 — Root error boundary fallback. The Slice-6 boundary inside <App> handles
+   the lazy Conf chunk specifically; this one is the global net for any always-mounted
+   subtree (AppBar / Composer / TabBar / Fleet / Agent / Utils / Toasts / ConfirmDialog).
+   Self-contained layout — `.app-shell` isn't mounted when this renders, so the fallback
+   can't reuse `.tab`. Reuses `.sec` + `.conf-save` from vapor.css; only the outer
+   container is net-new. vapor.css untouched (D7). */
+.root-error {
+  min-height: 100dvh;
+  padding: 24px 18px;
+  background: var(--bg);
+  color: var(--ink);
+}
+.root-error-body {
+  padding: 18px 4px;
+}
+.root-error-body p {
+  color: var(--ink-faint);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0 0 16px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ── F14 — Hero now-dots are <button>s now (so keyboard tab reaches them).
    vapor.css's `.now-dots div { … }` rule is dormant since the markup no longer
    contains <div>s; mirror the same shape onto the buttons here so they look
