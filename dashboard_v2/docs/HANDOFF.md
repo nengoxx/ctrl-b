@@ -76,23 +76,112 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (Phase 7a–7d done + UI perf pass complete · 7a–7c pushed, 7d + UI perf pass committed locally · follow-up a11y/resilience audit recorded · see the 2026-06-02 block below)
+## Current state (F14–F26 a11y backlog closed + tree is clean on `origin/main` at `40f94e8` · next: Phase 7e)
 
-> **7a–7c are on `origin/main` at `e99ea49`; 7d + the entire UI perf pass (Slices 1–8) + the
-> follow-up audit are committed locally (NOT yet pushed)** — local HEAD is `1c4a35e`. Eight
-> local commits span: 7d a/b/c + docs (`c47bb1a`, `16c160f`, `293ee2f`, `eb5ce4a`, `f9b809c`)
-> → UI perf pass + cross-OS docs (`5906ba3`) → Slice 6 follow-up fix (`40cc5fa`) → Slice 7
-> useUISlice (`d915d57`) → Slice 8 lucide-react removal (`e944ec7`) → follow-up audit docs
-> (`1c4a35e`). Conf is now the full functional-groups tab (settings · hosts/services ·
-> integrations · **agents · skills · agent-tool descriptions** · appearance), all
-> comment/secret/EOL-safe; sections collapsible w/ persisted state. **The UI perf pass
-> (UI_AUDIT.md Slices 1–8) is complete — 10 of 13 findings shipped; F9/F13 deferred. The
-> follow-up audit (section 6c of UI_AUDIT.md) recorded 13 new findings (F14–F26) on
-> accessibility / resilience / UX edge cases — documented, not implemented.** **Next options:**
-> (1) tackle the F14–F26 backlog (recommended order in UI_AUDIT.md footer; F25 + F14 + F15
-> are the WCAG-critical ones); (2) the prompt-append + Conf-sizing slice (7d follow-up /
-> 7e-a, locked in the 2026-05-30 block); (3) 7e proper (prompts editors + memory panel).
-> **Pushing the eight local commits needs owner confirmation.**
+> **All of UI_AUDIT.md §6c (F14–F29) is shipped or deferred end-to-end.** 13 slices landed
+> across the 2026-06-08 session, all pushed (see that session block below). Tree is clean;
+> no uncommitted work. F21 (mic stub) was deliberately deferred to Phase 6 (it owns the full
+> mic lifecycle); F29 was discovered mid-slice and fixed in-line. **Next focus options
+> ranked by what was locked previously:**
+>
+> 1. **Prompt-append + Conf-sizing (7e-a)** — direction was locked 2026-05-30 with three
+>    open decisions waiting + a 7-item Conf-sizing checklist. Start at the 2026-05-30 block
+>    further down for the full plan. This is the smallest slice; finishes 7d and unblocks 7e.
+> 2. **7e proper — prompts editors + memory panel.** The original phase plan. The
+>    `prompts/*.md` editor is the natural extension of 7d-c's SKILL.md editor; the memory
+>    panel rides on the 4f embeddings seam already shipped.
+> 3. **F29 option A (reload-survival for sub-editor drafts).** Documented in UI_AUDIT.md
+>    §6b. Not urgent; only matters if owner hits the data-loss scenario in practice.
+>
+> **Recommended:** start with (1) since the decisions/checklist are already worked out; it's
+> a quick win + finishes a phase. Roll into (2) right after.
+
+### ⭐ Session update — 2026-06-08 (UI_AUDIT.md §6c F14–F26 a11y/resilience backlog — closed end-to-end)
+
+Long session. Closed the entire F14–F26 backlog the 2026-06-02 audit had filed, plus a
+discovered F28/F29 and a UX miss on the Conf Save button. **13 commits, all pushed to
+`origin/main` (HEAD `40f94e8`)**, tree clean.
+
+#### What shipped (in chronological order)
+
+| # | Slice | Audit ID | Commit | One-line |
+|---|---|---|---|---|
+| 1 | A1 | F25 | `ab24a27` | Global `:focus-visible` magenta ring — WCAG 2.4.7 fix on ~30 buttons that were doing `all: unset`. |
+| 2 | A2 | F14 | `ab24a27` | DeviceRow `.top` ARIA button pattern (can't be `<button>` because of nested action buttons); Hero `.now-dots` → real `<button>`s. |
+| 3 | B | F15 | `fa0742d` | "Motion" toggle in Conf → Appearance (not OS-driven `@media (prefers-reduced-motion)` — owner reframed it as a per-user preference). First-install default honors the OS query. |
+| 4 | C1 | F23 | `98f30f0` | Root ErrorBoundary inside QueryClientProvider + React 19's `createRoot` `onUncaughtError`/`onCaughtError` hooks. Researched react-error-boundary lib — chose to keep the custom 50-LOC component (the "similar code for the same thing we already own" trap). |
+| 5 | C2 | F22 | `f647ee7` | `aria-hidden` sweep on 13 decorative `.chev`/`.arrow`/`.svc-chev`/`.conf-chev` sites. |
+| 6 | D1 | F17 | `c7bd0d9` | ConfirmDialog focus trap (Tab ↔ Cancel/Confirm) + focus restoration + scoped keydown (was on window) + `aria-labelledby`/`aria-describedby`. Did NOT migrate to native `<dialog>` — CSS port risk against the Vapor design. |
+| 7 | D2 | F18 | `25d942c` | TabBar WAI-ARIA tabs pattern: `role="tablist"`, `role="tab"`, `aria-selected`, `aria-controls`, roving tabindex, arrow-key nav (auto-activation). Each top-level tab container gets `role="tabpanel"` + `aria-labelledby`. |
+| 8 | E0 | F28 | `3b2e45c` | **Discovered mid-session by owner:** composer textarea was uncontrolled; switching to Conf/Utils dropped the draft. New `store/composer.ts` (mirrors `store/ui.ts`) — controlled textarea, persisted to localStorage. Survives tab-switch + reload. |
+| 9 | E1 | F19 | `4ea10a9` | New `store/dirty.ts` cross-editor dirty registry + `beforeunload` listener in App.tsx. Conf / Agents / Skills editors each register their existing `dirty` expression via `useRegisterDirty()`. |
+| 10 | F29-fix | F29 | `6f6c7e9` | **Discovered while wiring E1:** `ConfGroup` was `{!collapsed && children}`, so collapsing a group mid-edit unmounted the editor and dropped the draft. Fixed via option B (keep children mounted, CSS-hide the body). |
+| 11 | E3 | F26 | `76b8490` | `useRegisterSW({ onNeedRefresh })` → sticky info toast with a "refresh" action. Extended `store/toast.ts` with optional `action` + `sticky` (backwards-compatible). |
+| 12 | F1 | F16 | `be86f40` | SSE event-stream error handler + manual exponential-backoff reconnect (browser stops auto-retrying at `readyState=CLOSED` once Vite's proxy returns 5xx). New `store/connection.ts` + `.conn-badge` in AppBar (`role="status"`, magenta pulsing dot for "reconnecting", danger-rgb dot for "disconnected"). Reconcile-after-reconnect calls `qc.invalidateQueries()` *and* `reloadChat()` (chat isn't a React Query consumer). **Second connection-health signal added in F2 below.** |
+| 13 | F2 | F20 | `40f94e8` | Chat-stream retry affordance. **Audit's fix-sketch was wrong**: `/api/agent/resume` is only for confirm-gated suspension (`call_id`+`confirm_token`), not network drops. Phase A landed: `retryLastTurn()` walks back to the user message, truncates the failed turn, calls `sendMessage()` for a clean re-run. `failStream` now also fires when the loop exits with `!settled` (server killed mid-stream without a terminal event). Cross-channel `setConnection("reconnecting")` on chat-fetch failure. Plus: global React Query QueryCache observer in `useEvents.ts` — any cache entry in error state → "reconnecting" — much more reliable than EventSource's silent-drop detection. |
+| + | UX fix | — | `dc98486` | Owner caught: Save button was only at the bottom of `Open-terminal` (the 5th of 5 saveable Conf groups). Refactored to render `{saveBar}` at the bottom of each: Inference / Server / SearXNG / Embeddings / Open-terminal. |
+
+#### Deferrals + future-only notes
+
+- **F21 → Phase 6.** The mic stub honest-disable was reframed as Phase 6 (Voice / STT / TTS).
+  Owner's call: "I want the features and issues handled in their own phase if possible."
+  TODO.md Phase 6 gains the explicit mic-button state-machine checkbox; UI_AUDIT.md F21 is
+  marked `🟦 DEFERRED TO PHASE 6` with a resolution block. **New feedback memory recorded:**
+  [[fix-in-the-owning-phase]].
+- **F29 option A** (reload-survival for sub-editor drafts via `store/composer.ts`-style
+  lifting) — recorded in UI_AUDIT.md §6b. Two design decisions to lock when it ships:
+  conflict policy when server-persisted state diverges, and scope key for multi-instance
+  editors.
+- **F27** (offline-row screen-reader indicator) — recorded in UI_AUDIT.md §6c.
+- **F24** (axe-core CI gate) — Phase 9 already owns it.
+- **HMR-safe store modules** — recorded in UI_AUDIT.md §6b. **Dev-only ergonomics, zero
+  production impact.** We hit this hard during live F2 testing in Firefox: editing
+  `store/chat.ts` left React subscribers attached to the old module's listeners Set while
+  the new module's `set()` calls notified an empty new Set, so UI silently didn't update.
+  Verified F2 works end-to-end via **Playwright headless Chromium** (debug-f2.mjs, since
+  deleted). Fix is `if (import.meta.hot) { import.meta.hot.dispose(data => …); }` — ~12
+  lines per store. Apply to `chat.ts` first if it bites again.
+
+#### Recurring feedback memories saved this session
+
+- **[[pause-between-phases-for-review]]** — after each slice, summarize what changed +
+  wait silently for go-ahead. No batching, no momentum-continue. Owner caught me drifting
+  into a parallel preference channel (OS `@media` motion gate) when `UIState` + an
+  Appearance Switch already modeled user prefs. Compounded by the existing
+  [[commit-autonomously-clearly]].
+- **[[fix-in-the-owning-phase]]** — see F21 above.
+- **CLAUDE.md + AGENTS.md** both gained a new Hard Rule: *"Don't duplicate existing
+  patterns — in either direction."* Two failure modes named: (1) different code for similar
+  things (parallel implementation bypassing an existing pattern); (2) similar code for the
+  same thing we already own (pulling in a dep that overlaps with our own code). Consistency
+  by construction beats cleanup after the fact.
+
+#### State of the tree
+
+- **Origin/main HEAD: `40f94e8`** (10 + 3 commits past `3ca412a` at session start).
+- Tree clean; no uncommitted work; nothing local pending push. **Includes the launcher's
+  `start_claude_remote.ps1` effort-tweak left untouched** (owner's personal config).
+- **Servers left running:** backend uvicorn on **5433** (corsair, no `--reload`, venv at
+  `dashboard_v2/backend/.venv` — restarted many times during F1/F2 live testing). Frontend
+  Vite dev on **5190**, `--host 0.0.0.0` for Tailscale phone access. Either can be torn
+  down without state loss — config in `config.yaml`, chat/events/memory in `ctrlb.db`.
+- **Phone access URL (Tailscale):** `http://corsair:5190` (or `http://100.76.212.35:5190`).
+
+#### Start here in a fresh session
+
+1. **Pick the next focus** (ranked at the top of this block):
+   - **Recommended: prompt-append + Conf-sizing (7e-a).** Direction locked 2026-05-30 — go
+     read that block below for the three decisions to confirm + the seven-item Conf-sizing
+     checklist. Should be a clean, ~half-day slice.
+   - **Then: 7e proper** (prompts editors for arbitrary `prompts/*.md` + memory panel on
+     the 4f embeddings seam).
+2. **Heads-up on dev workflow:** if you find yourself editing `store/*.ts` modules
+   repeatedly and the UI behaves oddly between edits, hard-quit the browser (not just
+   refresh). Or ship the HMR-safe pattern from UI_AUDIT.md §6b first.
+3. **No live verification regrets:** F1's reconnect badge was verified live; F2's retry
+   button was verified via Playwright. If a future session wants a live-Firefox check of
+   F2, kill the backend, send a chat message, and the bubble should show
+   `// <error> [retry]` within a couple of seconds.
 
 ### ⭐ Session update — 2026-06-02 (UI perf pass shipped end-to-end + follow-up audit recorded)
 
