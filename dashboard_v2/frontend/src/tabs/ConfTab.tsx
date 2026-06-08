@@ -135,6 +135,7 @@ export function ConfTab({ active }: Props) {
   const loz = useUISlice((s) => s.loz);
   const heroOn = useUISlice((s) => s.heroOn);
   const waveformOn = useUISlice((s) => s.waveformOn);
+  const motion = useUISlice((s) => s.motion);
   const { data: server } = useServerInfo();
   const { data: hosts = [] } = useHosts(server?.poll_seconds ?? 5);
 
@@ -551,6 +552,16 @@ export function ConfTab({ active }: Props) {
               <div className="desc">animated hero scene</div>
             </div>
             <Switch on={heroOn} onToggle={() => setUI({ heroOn: !heroOn })} />
+          </div>
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Motion</div>
+              <div className="desc">ambient effects · LED · equalizer · sun bob</div>
+            </div>
+            <Switch
+              on={motion === "full"}
+              onToggle={() => setUI({ motion: motion === "full" ? "reduced" : "full" })}
+            />
           </div>
           <div className="confrow">
             <div className="k">

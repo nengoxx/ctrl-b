@@ -11,6 +11,7 @@ export type Theme = "dark" | "aqua" | "ember";
 export type Tab = "fleet" | "agent" | "utils" | "conf";
 export type Skyline = "city" | "mountains";
 export type Loz = "logo" | "ring";
+export type Motion = "full" | "reduced";
 
 export interface UIState {
   theme: Theme;
@@ -20,6 +21,18 @@ export interface UIState {
   ttsAuto: boolean;
   heroOn: boolean; // animated sun/grid/skyline scene
   waveformOn: boolean; // live ping waveform on the hero
+  motion: Motion; // ambient animations (LED pulse, equalizer, sun bob, grid scroll, …)
+}
+
+// First-load default for `motion`: honor the OS `prefers-reduced-motion` preference once.
+// After the user touches the toggle the persisted value wins; this only affects the very
+// first paint on a fresh install / cleared localStorage.
+function defaultMotion(): Motion {
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "reduced" : "full";
+  } catch {
+    return "full";
+  }
 }
 
 const DEFAULTS: UIState = {
@@ -30,6 +43,7 @@ const DEFAULTS: UIState = {
   ttsAuto: true,
   heroOn: true,
   waveformOn: true,
+  motion: defaultMotion(),
 };
 
 const KEY = "ctrlb.ui";
@@ -65,6 +79,7 @@ function applyBodyAttrs(s: UIState): void {
   b.dataset.tab = s.tab;
   b.dataset.skyline = s.skyline;
   b.dataset.loz = s.loz;
+  b.dataset.motion = s.motion;
   const showComposer = s.tab === "fleet" || s.tab === "agent";
   b.classList.toggle("no-composer", !showComposer);
 }

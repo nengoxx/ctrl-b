@@ -40,6 +40,35 @@ textarea:focus-visible {
   outline: none;
 }
 
+/* ── F15 / Appearance · Motion — user-controlled ambient-animation gate.
+   Toggled from Conf → Appearance → Motion (Switch in src/tabs/ConfTab.tsx; persists in
+   the UI store as `motion: "full" | "reduced"`, mirrored to `body[data-motion]` by
+   `applyBodyAttrs` alongside theme/skyline/loz). On first install the default honors the
+   OS `prefers-reduced-motion: reduce` query (see `defaultMotion()` in store/ui.ts); after
+   that the user's choice wins.
+
+   Nuanced scope: kill ambient/decorative motion (sun bob, sun stripes, retrowave grid
+   scroll, star twinkle, hero name shimmer, device LED heartbeat, equalizer bars, send
+   "brewing" pulse, tts-button glow, logo lozenge spin) but KEEP functional motion that
+   conveys state — button-press transforms, disclosure chevron rotations, tab-indicator
+   slide, switch toggles, the busy spinner on `.dev.busy .sub::after` (work-in-progress),
+   the now-dots active-morph (which dot is featured), and short entrance transitions
+   (<300ms) on toasts/confirm dialog. vapor.css stays verbatim per D7; this overrides
+   via cascade (extras.css loads after vapor.css). */
+body[data-motion="reduced"] [data-loz="ring"] .brand .lozenge,
+body[data-motion="reduced"] .tts-btn:not(.muted),
+body[data-motion="reduced"] .hero .sun,
+body[data-motion="reduced"] .hero .sun::after,
+body[data-motion="reduced"] .hero .sky::before,
+body[data-motion="reduced"] .hero .grid,
+body[data-motion="reduced"] .now .name,
+body[data-motion="reduced"] .dev.on .led,
+body[data-motion="reduced"] .dev.on .eq i,
+body[data-motion="reduced"] .composer .send.brewing,
+body[data-motion="reduced"] .composer .mic.rec {
+  animation: none !important;
+}
+
 /* Activity toasts — transient, top-center below the appbar (clear of the top-right tts-toast). */
 .toasts {
   position: fixed;
