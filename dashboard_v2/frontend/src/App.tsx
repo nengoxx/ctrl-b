@@ -4,6 +4,7 @@ import { AppBar } from "./components/AppBar";
 import { Composer } from "./components/Composer";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { SwUpdatePrompt } from "./components/SwUpdatePrompt";
 import { TabBar } from "./components/TabBar";
 import { Toasts } from "./components/Toasts";
 import { useEventStream } from "./hooks/useEvents";
@@ -138,6 +139,7 @@ export default function App() {
       <TabBar onPrefetch={prefetch} />
       <Toasts />
       <ConfirmDialog />
+      <SwUpdatePrompt />
     </div>
   );
 }

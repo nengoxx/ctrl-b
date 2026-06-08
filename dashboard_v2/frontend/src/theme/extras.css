@@ -143,6 +143,39 @@ body[data-motion="reduced"] .composer .mic.rec {
   background: var(--teal);
   box-shadow: var(--t-glow);
 }
+/* F26 — text body. Grows to fill the toast and wraps if long, so a future action
+   toast with a longer message doesn't overflow the max-width container. Belt-and-
+   braces — today's only sticky-action toast (SW update) is short, but the wrapper
+   was introduced here so this is the right place to make it forward-compatible. */
+.toast-text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+/* F26 — inline action button for interactive toasts (SW update prompt). Deliberately
+   discreet — magenta text-only, no border, hover background only — so the existing
+   toast aesthetic stays understated. Tap target is comfortable on mobile (~36px wide
+   at the smallest label). */
+.toast-action {
+  all: unset;
+  cursor: pointer;
+  margin-left: 4px;
+  padding: 6px 12px;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--magenta);
+  font-weight: 700;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.toast-action:hover {
+  background: rgba(var(--accent-rgb), 0.12);
+}
+.toast-action:active {
+  transform: scale(0.96);
+  filter: brightness(1.1);
+}
 @keyframes toast-in {
   from {
     opacity: 0;
