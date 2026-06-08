@@ -537,6 +537,18 @@ Then sprinkle component-specific overrides where the global outline doesn't fit 
 
 ---
 
+### F28 🔴 — Composer textarea loses draft on tab-switch and reload · ✅ SHIPPED
+
+**The issue.** `App.tsx` conditionally renders the composer (`{showComposer && <Composer />}`); switching to Conf/Utils unmounts it entirely. `Composer.tsx` held the textarea value in the **uncontrolled** DOM ref (`taRef.current.value`), so on unmount the value was destroyed — switching back gave the user an empty textarea. A full page reload had the same effect (no persistence layer).
+
+**Why it slipped the original audit.** The audit pass focused on a11y / resilience / a few perf concerns. State-persistence on a single uncontrolled input wasn't explicitly probed; the owner hit it organically while testing the Slice D2 work.
+
+**Safety verdict: ✅ SAFE** — controlled textarea + a localStorage-backed store is the same shape as `store/ui.ts`. Adding the store is purely additive; rewiring the textarea to controlled is a one-line semantic change. No mobile risk (controlled inputs behave the same as uncontrolled for English typing; IME edge cases are theoretical and don't apply to this homelab single-owner context).
+
+**The fix (shipped between D2 and E1).** New `src/store/composer.ts` modelled on `store/ui.ts`: single `draft: string` slot, `useSyncExternalStore` subscription, persisted to `localStorage` under `"ctrlb.composer"`, swallowed quota error for private-mode browsers. `Composer.tsx` reads via `useDraft()`, writes via `setDraft()`, and calls `clearDraft()` after `runComposer()`. An `useEffect([draft])` re-runs the auto-size logic so a draft loaded from storage gets the correct height on first mount.
+
+---
+
 ### F27 🟢 — Offline service rows have no screen-reader-perceivable offline indicator
 
 **The issue.** In `DeviceRow.tsx`, an offline service renders as `<div className="svc-row off"><span className="led"/><div className="info">…</div><span className="arrow" aria-hidden>—</span></div>`. The `.off` class is purely visual (faded color, no LED glow); the `—` arrow is the only "offline" glyph and Slice C2 (F22) correctly marked it `aria-hidden` as a decorative character. Net effect: a screen-reader user hears `"ssh, name, host:port"` for both online and offline rows, with no auditory cue which is which.
