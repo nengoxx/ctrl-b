@@ -73,7 +73,29 @@ export async function initChat(): Promise<void> {
     const msgs = (await (await fetch(`/api/threads/${t.id}/messages`)).json()) as ChatMessage[];
     set({ threadId: t.id, messages: msgs });
   } catch {
-    /* offline / empty — start fresh; the first send creates a thread */
+    // Backend was down at load time. Reset `loaded` so the next initChat (or the F16
+    // reconnect-triggered reloadChat) can retry — otherwise the chat would be stuck empty
+    // until a full page refresh.
+    loaded = false;
+  }
+}
+
+/** Reconcile the chat after the SSE feed reconnects (hooks/useEvents.ts, F16). Re-fetches the
+ *  current thread's messages so anything that arrived during the drop reappears; falls back to
+ *  `initChat()` when there's no thread yet (cold start during a disconnect). Skips entirely while
+ *  a turn is streaming so we don't yank messages out from under an in-flight reply. */
+export async function reloadChat(): Promise<void> {
+  if (state.status === "streaming") return;
+  try {
+    if (state.threadId) {
+      const msgs = (await (await fetch(`/api/threads/${state.threadId}/messages`)).json()) as ChatMessage[];
+      set({ messages: msgs });
+    } else {
+      loaded = false;
+      await initChat();
+    }
+  } catch {
+    /* still unreachable — next reconnect signal will try again */
   }
 }
 

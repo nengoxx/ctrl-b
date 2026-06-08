@@ -89,8 +89,54 @@ body[data-motion="reduced"] .now .name,
 body[data-motion="reduced"] .dev.on .led,
 body[data-motion="reduced"] .dev.on .eq i,
 body[data-motion="reduced"] .composer .send.brewing,
-body[data-motion="reduced"] .composer .mic.rec {
+body[data-motion="reduced"] .composer .mic.rec,
+body[data-motion="reduced"] .conn-badge.reconnecting .dot {
   animation: none !important;
+}
+
+/* ── F16 — Live SSE connection badge in the appbar.
+   Renders only when the connection is NOT "connected" (driven by store/connection.ts via
+   hooks/useEvents.ts). Compact pill that sits between `.brand` (which has flex: 1 and
+   shrinks to accommodate) and the TTS button. Vapor-token colors only; vapor.css stays
+   verbatim (D7). The pulsing dot in "reconnecting" state is also gated by the global
+   Motion preference above. */
+.conn-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px solid rgba(var(--accent-rgb), 0.22);
+  flex-shrink: 0;
+}
+.conn-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.conn-badge.reconnecting .dot {
+  background: var(--magenta);
+  box-shadow: 0 0 6px var(--magenta);
+  animation: conn-pulse 1.4s ease-in-out infinite;
+}
+.conn-badge.disconnected {
+  border-color: rgba(var(--danger-rgb), 0.4);
+  color: rgb(var(--danger-rgb));
+}
+.conn-badge.disconnected .dot {
+  background: rgb(var(--danger-rgb));
+  box-shadow: 0 0 6px rgb(var(--danger-rgb));
+}
+@keyframes conn-pulse {
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* Activity toasts — transient, top-center below the appbar (clear of the top-right tts-toast). */
