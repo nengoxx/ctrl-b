@@ -316,6 +316,17 @@ tools + confirm bubbles) are DONE.**
       (`#ttsToggle`) plays assistant replies.
 - [ ] **HTTPS via Tailscale Serve** so the mic works on Android (secure-context). Document it.
 - [ ] **Verify** mic + playback on a real Android phone over the tailnet.
+- [ ] **Mic-button state machine** (folded in from UI_AUDIT.md F21, deferred 2026-06-08):
+      The Composer mic today is a visual stub — taps toggle a local `rec` boolean + a
+      `micrec` keyframe pulse but no MediaRecorder is wired, so users tap it expecting
+      dictation and nothing happens. Phase 6 owns the full lifecycle: capability probe
+      (secure-context + permission state), disabled-with-tooltip when unsupported / denied,
+      `aria-disabled` + muted Vapor styling for the inert state, then the active recording
+      states when STT actually runs. Re-using the existing `.rec` class for the recording
+      state is fine — drop the local `useState(rec)` and drive it from the recorder's
+      actual state. Do NOT ship a "honest disable" intermediate slice — the disable would
+      be undone the moment the recorder lands. Keep the button visible the whole time
+      (it's part of the Vapor composer layout — D7).
 
 ## Phase 7 — Conf tab (settings, prompts, memory, hosts CRUD) — **sliced 7a–7e**
 

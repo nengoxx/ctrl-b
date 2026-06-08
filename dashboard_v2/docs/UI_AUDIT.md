@@ -455,13 +455,13 @@ Or, more nuanced: keep functional transitions (button presses, disclosure rotati
 
 ---
 
-### F21 🟢 — Mic button is a visual stub but looks fully functional
+### F21 🟢 — Mic button is a visual stub but looks fully functional · 🟦 DEFERRED TO PHASE 6
 
 **The issue.** `Composer.tsx`'s mic button toggles a local `rec` state; the `.rec` class drives a pulsing animation. There's no STT wiring (correct — Phase 6 isn't done). But to a user, the button **looks** like dictation works: it's right next to the textarea, has a "toggle dictation" tooltip, animates when pressed.
 
 **Safety verdict: ✅ SAFE** to clarify; trivial change.
 
-**Fix sketch.** Until Phase 6: either hide the button entirely (cleanest), or add `disabled` + `aria-disabled="true"` + a "// dictation lands in Phase 6" tooltip. The current animation is misleading.
+**Resolution (2026-06-08).** Originally planned as Slice E2 (honest disable: `disabled` + `aria-disabled` + tooltip + drop the local `rec` state). Owner reframed it as a Phase 6 concern — the full mic lifecycle (capability probe, permission state, disabled visual, active recording state, transcript handoff) is one coherent piece that Phase 6 owns end-to-end; shipping an "honest disable" intermediate would be undone the moment the recorder lands. Deferred. The TODO.md Phase 6 section now carries the explicit checkbox + the design notes for the state machine.
 
 ---
 
@@ -534,6 +534,18 @@ Then sprinkle component-specific overrides where the global outline doesn't fit 
 **Safety verdict: ✅ SAFE** to add a non-blocking toast.
 
 **Fix sketch.** Subscribe to `vite-plugin-pwa`'s `useRegisterSW` (or the manual `navigator.serviceWorker.controllerchange` event) and `pushToast("// new version available — refresh to load", "info")` with a click-to-reload action. Standard PWA pattern.
+
+---
+
+### F29 🟡 — Collapsing a Conf group discards in-progress sub-editor state
+
+**The issue.** `ConfGroup` in `tabs/ConfTab.tsx` conditionally renders its children (`{!collapsed && props.children}`). So expanding **Agents** → typing into a draft → collapsing the group → re-expanding it gives a fresh `AgentsEditor` mount with the persisted-server state, dropping whatever was in the working draft. Same shape for **Skills**, **Integrations**, **Computers**.
+
+**Why it matters.** Same family as [F28](#f28----composer-textarea-loses-draft-on-tab-switch-and-reload--shipped) but one layer deeper. The Slice-E1 beforeunload guard catches refresh/close-tab while a group is *expanded*; this finding is about the *intra-session* loss when the user collapses the group mid-edit.
+
+**Safety verdict: ✅ SAFE.** Two implementation paths to weigh: (a) lift each sub-editor's draft into a store (same trick as F28's `store/composer.ts`), or (b) keep children mounted and use CSS to hide collapsed bodies (cheap diff, but defers the unmount lifecycle that was probably deliberate for memory hygiene with many groups). Pick (a) for the long-form editors (Agents / Skills / Integrations / Computers), keep (b) untouched for the scalar-only groups (Inference / Server / Appearance) where there's no editor state to lose.
+
+**Status.** Deferred — owner OK with the current behavior (in-session collapses are deliberate "discard the draft" gestures, mostly). Queue under §6c when a real loss is hit.
 
 ---
 
