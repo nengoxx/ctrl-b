@@ -8,6 +8,7 @@
 import { useSyncExternalStore } from "react";
 
 import type { ChatMessage, Part, PlanStep, RunState, Thread, ToolResult } from "../types";
+import { setConnection } from "./connection";
 
 export type ChatStatus = "idle" | "streaming" | "error";
 
@@ -321,10 +322,40 @@ async function streamTurn(
         }
       }
     }
-    if (!settled) set({ status: "idle", streamingId: null });
+    // F20 — the loop exits when the underlying stream closes. If the server sent a `done`
+    // (or `error`) event before closing, `settled` is true and there's nothing more to do.
+    // Otherwise the connection was cut mid-flight (backend killed / network drop / proxy
+    // timeout) — treat it as a failure so the F20 retry affordance lands instead of silently
+    // marking the chat idle with no signal. Also signal the connection store so the F16
+    // badge appears immediately, even before EventSource notices the TCP drop on its own.
+    if (!settled) {
+      setConnection("reconnecting");
+      failStream("connection interrupted");
+    }
   } catch (e) {
+    // Cross-channel reconnect signal (F16): if this looks like a backend-unreachable error
+    // (fetch network failure, or a 502/503/504 from Vite's proxy when the upstream is gone),
+    // flip the connection state so the badge appears at the same time the chat error does.
+    // The SSE event stream is authoritative — its own `open` will clear "reconnecting" the
+    // moment it reconnects, so a transient false-positive here is self-healing. We don't
+    // signal on 4xx (it's a real semantic error from the backend, not unreachability).
+    if (isLikelyUnreachable(e)) setConnection("reconnecting");
     failStream((e as Error).message);
   }
+}
+
+function isLikelyUnreachable(e: unknown): boolean {
+  // Native fetch network errors (DNS, connection refused, abort) surface as TypeError.
+  if (e instanceof TypeError) return true;
+  // Our own `throw new Error('<url> → <status>')` for !res.ok. Any 5xx is a
+  // backend-side problem (in dev, Vite's proxy returns 500 when the upstream is down —
+  // I empirically verified this — not 502 like a typical reverse proxy). Treating all
+  // 5xx as "unreachable for badge purposes" is honest: even a legit 500 means the
+  // backend is in trouble, and the SSE event stream's authoritative `open` event will
+  // clear the badge the moment things recover. A 4xx is a real semantic error — leave
+  // the badge alone.
+  if (e instanceof Error && /→ 5\d\d$/.test(e.message)) return true;
+  return false;
 }
 
 /**
@@ -435,6 +466,46 @@ export async function editPlan(steps: PlanStep[]): Promise<void> {
     set({ messages: prev }); // rollback the optimistic edit
     pushSystemNote("// could not update the plan");
   }
+}
+
+/**
+ * F20 — retry the most recent failed turn (e.g. when the chat SSE dropped mid-stream because
+ * of a network flake or backend restart). Re-runs the user's last message from scratch.
+ *
+ * Not a byte-level resume: the partial assistant work (intermediate tool results, half-written
+ * replies) from the failed turn is discarded. The matching backend "resume" endpoint
+ * (/api/agent/resume) is specifically for confirm-gated suspension; there's no
+ * resume-from-drop endpoint. Phase B (server-side Last-Event-Id) would close that gap but is
+ * not in this slice.
+ *
+ * Walks back to the user message that started the failed turn, truncates the message log to
+ * before it, and calls sendMessage(text). Re-running a turn re-runs any side effects it
+ * performs (e.g. an agent wake action); mostly benign in chat context, but worth noting.
+ *
+ * No-op while streaming (you'd be double-firing). The button is only rendered on the LAST
+ * message when status === "error", so this should never see a non-error tail.
+ */
+export function retryLastTurn(): void {
+  if (state.status === "streaming") return;
+  const lastIdx = state.messages.length - 1;
+  const last = state.messages[lastIdx];
+  if (!last || last.role !== "assistant") return;
+  const errPart = last.parts.find((p) => p.type === "error");
+  if (!errPart || errPart.type !== "error" || !errPart.retryable) return;
+  // Walk back to the user message that started this turn.
+  let userIdx = lastIdx - 1;
+  while (userIdx >= 0 && state.messages[userIdx].role !== "user") userIdx--;
+  if (userIdx < 0) return;
+  const userMsg = state.messages[userIdx];
+  const textPart = userMsg.parts.find((p) => p.type === "text");
+  if (!textPart || textPart.type !== "text") return;
+  // Truncate to just before the user message; sendMessage will re-add it.
+  set({
+    messages: state.messages.slice(0, userIdx),
+    status: "idle",
+    streamingId: null,
+  });
+  void sendMessage(textPart.text);
 }
 
 /** Resolve a suspended tool call (the command bubble's execute/dismiss) and continue the turn. */

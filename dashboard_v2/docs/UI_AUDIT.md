@@ -577,6 +577,23 @@ Then sprinkle component-specific overrides where the global outline doesn't fit 
 
 ## 6b. Noted for later (not part of any current slice)
 
+- **HMR-safe store modules (dev ergonomics, not a prod issue).** Our `store/*.ts` modules
+  hold module-scope state (`let state = …; const listeners = new Set<…>()`) — the
+  `useSyncExternalStore` pattern from React docs. In production this is rock-solid; every
+  full page load instantiates each module exactly once. **In Vite's dev server**, however,
+  editing a store triggers HMR: a new module is hot-swapped in with fresh `state` and a
+  fresh empty `listeners` Set, but the existing React components are still subscribed via
+  the *old* module's listeners. The new module's `set()` calls notify a Set with zero
+  subscribers — the UI silently doesn't update. **We hit this hard during F1/F2 live
+  testing** (2026-06-08): a clean F2 retry-button implementation appeared broken in
+  Firefox because every edit to `store/chat.ts` left behind orphaned subscribers, and only
+  a full quit-and-relaunch of the browser cleared it. Playwright in a fresh headless
+  Chromium confirmed the code was correct end-to-end. The Vite-recommended pattern is
+  `if (import.meta.hot) { import.meta.hot.dispose(data => { data.state = state; data.listeners
+  = listeners; … }); if (import.meta.hot.data.state) { /* restore */ } }` — ~12 lines per
+  store, dead-code-eliminated in production. Apply to `chat.ts` first (most stateful + most
+  edited); other stores (`ui`, `toast`, `confirm`, `connection`, `composer`, `dirty`) only
+  if a similar friction surfaces. **Zero production behavior change** — it's pure dev QoL.
 - **Editor draft persistence (F29 option A — reload-survival).** F29 was shipped via option B (keep children mounted, CSS-hide when collapsed) — that fully solves intra-session collapse/expand state loss. A future enhancement: lift each long-form editor's local draft state into a small store mirroring `store/composer.ts` (one per editor: Agents / Skills SKILL.md / Machines / Integrations / Tool descriptions), persist to localStorage, so a refresh / PWA reopen with unsaved changes restores the draft. Two design decisions to lock when this lands: (1) **conflict policy** when the server-persisted state differs from the saved draft (toast "Local changes restored — server has X different · [Discard local] [Keep editing]"), and (2) **scope key** for editors that have multiple instances (Skill name; Machine slug; server name). The E1 dirty registry seam composes naturally — the persisted draft remains dirty across the reload, and the beforeunload guard never fires for a saved-locally draft. Owner asked to note this 2026-06-08 for the day reload-survival is wanted.
 - **Theme registry / data-driven themes.** Today adding a theme is 3 manual edits (TS `Theme` union · `vapor.css` `[data-theme="…"]` block · Conf picker option). Easy enough at 3 themes; gets repetitive past ~6. A small refactor — export a `const THEMES = ["dark", "aqua", "ember"] as const` from `store/ui.ts`, derive `Theme` from it, iterate the array in the Conf picker — would let new themes "drop in" with one edit + the CSS block. **Bigger move** if ever wanted: load theme tokens (CSS variable sets) from YAML/JSON so new themes are pure config, no code edit. Out of scope until the theme count actually grows; noting here so future-us doesn't re-derive the design space.
 - **Compositor-friendly toggle slide.** `.switch .knob::after` still animates `left` (layout-triggering). A refactor to `transform: translateX(20px)` would put it on the compositor. Single-element change, low risk, but out of scope for the perf pass — file under "polish."

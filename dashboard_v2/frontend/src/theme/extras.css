@@ -430,11 +430,43 @@ body {
   }
 }
 
-/* Chat-level error (backend unreachable, slow-load timeout). */
+/* Chat-level error (backend unreachable, slow-load timeout). F20 — also hosts the inline
+   retry button rendered on the latest assistant bubble when chat status is "error". Flex
+   row so the magenta retry pill sits next to the red message; wraps onto the next line at
+   narrow widths. */
 .b.bot .chat-err {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
   color: var(--red);
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 12px;
+}
+.b.bot .chat-err-msg {
+  /* the existing error text — color/font inherited from .chat-err */
+}
+/* F20 — inline retry pill. Deliberately discreet (text-only, hover bg) to match the existing
+   chat-err aesthetic. Tap target ≥ ~36px wide at the "retry" label. */
+.b.bot .chat-err-retry {
+  all: unset;
+  cursor: pointer;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--magenta);
+  padding: 4px 10px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.b.bot .chat-err-retry:hover {
+  background: rgba(var(--accent-rgb), 0.12);
+}
+.b.bot .chat-err-retry:active {
+  transform: scale(0.96);
+  filter: brightness(1.1);
 }
 
 /* "working" tag in the who-line while the turn is crunching (cold-load / reasoning / no token yet). */

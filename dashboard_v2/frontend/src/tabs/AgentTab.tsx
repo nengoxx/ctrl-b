@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
-import { editPlan, initChat, resumeCall, useChat } from "../store/chat";
+import { editPlan, initChat, resumeCall, retryLastTurn, useChat } from "../store/chat";
 import type {
   ChatMessage,
   Part,
@@ -29,9 +29,9 @@ function reasoningOf(parts: Part[]): string {
 function textOf(parts: Part[]): string {
   return parts.filter((p) => p.type === "text").map((p) => p.text).join("");
 }
-function errorOf(parts: Part[]): string | null {
+function errorOf(parts: Part[]): { message: string; retryable: boolean } | null {
   const e = parts.find((p) => p.type === "error");
-  return e && e.type === "error" ? e.message : null;
+  return e && e.type === "error" ? { message: e.message, retryable: e.retryable } : null;
 }
 
 /** Render a tool call as a command-like line for the `$` pre block (Vapor `.b.cmd`). */
@@ -249,10 +249,14 @@ function Bubbles({
   m,
   streaming,
   resultFor,
+  canRetry,
 }: {
   m: ChatMessage;
   streaming: boolean;
   resultFor: (callId: string) => ToolResult | undefined;
+  /** F20 — render the retry affordance on this assistant bubble. Only true on the latest
+   * message when chat status === "error", so historical errors don't grow phantom buttons. */
+  canRetry: boolean;
 }) {
   if (m.role === "tool") return null; // results render inside their command bubble (paired by id)
 
@@ -297,7 +301,19 @@ function Bubbles({
           <div className="body">
             {reasoningInBot && <ThinkBlock text={reasoning} open={working} />}
             {err ? (
-              <span className="chat-err">// {err}</span>
+              <div className="chat-err">
+                <span className="chat-err-msg">// {err.message}</span>
+                {canRetry && err.retryable && (
+                  <button
+                    type="button"
+                    className="chat-err-retry"
+                    onClick={retryLastTurn}
+                    aria-label="Retry the last message"
+                  >
+                    retry
+                  </button>
+                )}
+              </div>
             ) : working ? (
               <span className="dots" aria-label="working">
                 <i />
@@ -425,12 +441,15 @@ export function AgentTab({ active }: Props) {
             <div className="body">// new thread · ask me about the fleet</div>
           </div>
         )}
-        {messages.map((m) => (
+        {messages.map((m, i) => (
           <Bubbles
             key={m.id}
             m={m}
             streaming={status === "streaming" && m.id === streamingId}
             resultFor={(id) => resultByCall[id]}
+            // F20 — only the latest message is eligible for retry, and only when chat is in
+            // error state. Historical errors elsewhere in the log stay quiet.
+            canRetry={i === messages.length - 1 && status === "error"}
           />
         ))}
       </div>

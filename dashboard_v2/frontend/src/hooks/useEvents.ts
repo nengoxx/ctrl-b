@@ -93,6 +93,24 @@ export function useEventStream(): void {
       es.addEventListener("event", invalidateLiveCaches);
     }
 
+    // F16 — global React Query cache observer as a second connection-health signal. The
+    // browser's EventSource is unreliable at detecting silent connection drops mid-session
+    // (TCP-level RESET sometimes doesn't propagate through Vite's dev proxy fast enough),
+    // so a TLS-clean "everything's fine, no events flowing" state can hide a dead backend.
+    // React Query's hosts poll fires every poll-cadence seconds, so the cache reflects
+    // backend reachability within a few seconds regardless of what EventSource thinks.
+    //
+    // Rule: if ANY cache entry is in error state → "reconnecting". When all entries recover
+    // (or new successful ones arrive) AND nothing is errored → "connected". The SSE's own
+    // setConnection calls compose into the same state; whichever signal updates last wins,
+    // but since they generally agree (backend healthy ⇔ no errors), oscillation is rare.
+    const cache = qc.getQueryCache();
+    const unsubCache = cache.subscribe(() => {
+      const anyError = cache.getAll().some((q) => q.state.status === "error");
+      if (anyError) setConnection("reconnecting");
+      else setConnection("connected");
+    });
+
     connect();
 
     return () => {
@@ -100,6 +118,7 @@ export function useEventStream(): void {
       if (retryTimer) clearTimeout(retryTimer);
       es?.close();
       es = null;
+      unsubCache();
       setConnection("connected");
     };
   }, [qc]);
