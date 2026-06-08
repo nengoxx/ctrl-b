@@ -3,6 +3,43 @@
    vapor design tokens in vapor.css (colors / grads / glows / fonts) so they stay on-theme.
    vapor.css itself stays verbatim (D7); net-new styling lives here. */
 
+/* ── F14 — Hero now-dots are <button>s now (so keyboard tab reaches them).
+   vapor.css's `.now-dots div { … }` rule is dormant since the markup no longer
+   contains <div>s; mirror the same shape onto the buttons here so they look
+   visually identical. vapor.css stays untouched per D7. */
+.now-dots button {
+  all: unset;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  cursor: pointer;
+  transition: width 0.2s, border-radius 0.2s, background-color 0.2s, box-shadow 0.2s;
+}
+.now-dots button.active {
+  background: var(--magenta);
+  width: 22px;
+  border-radius: 3px;
+  box-shadow: var(--m-glow);
+}
+
+/* ── F25 — Global keyboard focus indicator (WCAG 2.4.7 Focus Visible).
+   `all: unset` on ~30 buttons across vapor.css/extras.css strips the browser default
+   outline; this restores a visible magenta ring without affecting mouse-clicks
+   (`:focus-visible` is keyboard-only by spec). Inputs/textareas keep their existing
+   parent-treatment focus styles (`.composer .field:focus-within`, `.confrow input:focus`,
+   `.mconf .mform input:focus`, etc.) which fire on `:focus` regardless of input method,
+   so we suppress the global ring on form fields to avoid doubled rings. */
+:focus-visible {
+  outline: 2px solid var(--magenta);
+  outline-offset: 2px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
+
 /* Activity toasts — transient, top-center below the appbar (clear of the top-right tts-toast). */
 .toasts {
   position: fixed;

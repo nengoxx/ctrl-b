@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import type { KeyboardEvent, MouseEvent } from "react";
 
 import type { FleetAction } from "../hooks/useActions";
 import type { Host, Service } from "../types";
@@ -32,6 +32,17 @@ function act(e: MouseEvent, fn: () => void) {
   fn();
 }
 
+/** F14 — ARIA button keydown for the row toggle. `.top` can't be a real `<button>`
+ *  because it contains the nested .acts buttons (HTML forbids nested interactive
+ *  controls), so we apply the ARIA button pattern: role="button" + tabIndex + this
+ *  Enter/Space handler. Space scrolls by default; preventDefault keeps the page still. */
+function onTopKeyDown(e: KeyboardEvent<HTMLDivElement>, fn: () => void) {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    fn();
+  }
+}
+
 export function DeviceRow({ host, services, index, featured, open, busy, onToggle, onAction }: Props) {
   const online = !!host.status?.online;
   const ping = host.status?.ping_ms ?? null;
@@ -52,7 +63,15 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
       data-i={index}
       data-name={host.name}
     >
-      <div className="top" onClick={onToggle}>
+      <div
+        className="top"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        aria-label={`${host.name} — ${online ? "online" : "asleep"}, ${open ? "collapse" : "expand"} details`}
+        onClick={onToggle}
+        onKeyDown={(e) => onTopKeyDown(e, onToggle)}
+      >
         <span className="led" />
         <div className="info">
           <div className="name">{host.name}</div>

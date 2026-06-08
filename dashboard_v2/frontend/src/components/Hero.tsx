@@ -131,10 +131,16 @@ export function Hero({ hosts, featured, onFeature, heroOn, waveformOn }: Props) 
           sshUser={host?.ssh_username ?? ""}
           waveformOn={waveformOn}
         />
-        <div className="now-dots" id="now-dots">
+        {/* F14 — each dot is a real <button> so keyboard tab reaches it. role="tab"
+            + aria-selected gives screen readers the carousel-selector semantic. */}
+        <div className="now-dots" id="now-dots" role="tablist" aria-label="featured host">
           {hosts.map((h, i) => (
-            <div
+            <button
               key={h.id}
+              type="button"
+              role="tab"
+              aria-selected={i === featured}
+              aria-label={`feature ${h.name}`}
               className={i === featured ? "active" : ""}
               onClick={() => onFeature(i)}
             />
