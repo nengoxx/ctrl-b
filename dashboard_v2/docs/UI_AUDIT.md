@@ -537,6 +537,18 @@ Then sprinkle component-specific overrides where the global outline doesn't fit 
 
 ---
 
+### F27 🟢 — Offline service rows have no screen-reader-perceivable offline indicator
+
+**The issue.** In `DeviceRow.tsx`, an offline service renders as `<div className="svc-row off"><span className="led"/><div className="info">…</div><span className="arrow" aria-hidden>—</span></div>`. The `.off` class is purely visual (faded color, no LED glow); the `—` arrow is the only "offline" glyph and Slice C2 (F22) correctly marked it `aria-hidden` as a decorative character. Net effect: a screen-reader user hears `"ssh, name, host:port"` for both online and offline rows, with no auditory cue which is which.
+
+**Why it's low priority.** Single-user homelab; the owner is sighted and uses Android in a normal context. Filed for the day the dashboard gets shared, or if voice/STT pivots ever require AT to make sense of service state.
+
+**Safety verdict: ✅ SAFE** — pure addition of accessible text; no visual change.
+
+**Fix sketch.** On the `.svc-row.off` div, add `aria-label={"${s.name} — offline"}` (or a visually-hidden `<span className="sr-only">offline</span>` if we want CSS-level styling). The online row is already an `<a>` so it'll announce as a link; this just gives the offline row equivalent semantic clarity.
+
+---
+
 ## 6b. Noted for later (not part of any current slice)
 
 - **Theme registry / data-driven themes.** Today adding a theme is 3 manual edits (TS `Theme` union · `vapor.css` `[data-theme="…"]` block · Conf picker option). Easy enough at 3 themes; gets repetitive past ~6. A small refactor — export a `const THEMES = ["dark", "aqua", "ember"] as const` from `store/ui.ts`, derive `Theme` from it, iterate the array in the Conf picker — would let new themes "drop in" with one edit + the CSS block. **Bigger move** if ever wanted: load theme tokens (CSS variable sets) from YAML/JSON so new themes are pure config, no code edit. Out of scope until the theme count actually grows; noting here so future-us doesn't re-derive the design space.

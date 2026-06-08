@@ -238,7 +238,7 @@ export function ServerListEditor({
                 </div>
               </div>
               <span className={"badge" + (sum && !sum.error ? "" : " stale")}>{s.risk}</span>
-              <span className="chev">›</span>
+              <span className="chev" aria-hidden>›</span>
             </div>
             <div className="mconf">
               {openName === s.name &&
@@ -260,7 +260,7 @@ export function ServerListEditor({
             <div className="label">add {kind === "mcp" ? "MCP" : "OpenAPI"} server</div>
             <div className="desc">writes a new entry to config.yaml</div>
           </div>
-          <span className="chev">›</span>
+          <span className="chev" aria-hidden>›</span>
         </div>
         <div className="mconf">
           {adding &&

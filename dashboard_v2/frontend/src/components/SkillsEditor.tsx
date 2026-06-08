@@ -118,7 +118,7 @@ export function SkillsEditor({ enabled }: { enabled: boolean }) {
               <div className="desc">{s.description || "(no description)"}</div>
             </div>
             {s.allowed_tools != null && <span className="badge">{s.allowed_tools.length} tools</span>}
-            <span className="chev">›</span>
+            <span className="chev" aria-hidden>›</span>
           </div>
           <div className="mconf">{openName === s.name && <SkillFileEditor name={s.name} onClose={() => setOpenName(null)} />}</div>
         </div>
@@ -130,7 +130,7 @@ export function SkillsEditor({ enabled }: { enabled: boolean }) {
             <div className="label">add skill</div>
             <div className="desc">creates skills/&lt;name&gt;/SKILL.md from a template</div>
           </div>
-          <span className="chev">›</span>
+          <span className="chev" aria-hidden>›</span>
         </div>
         <div className="mconf">
           {adding && (

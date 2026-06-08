@@ -115,7 +115,7 @@ function ConfGroup(props: {
   return (
     <div className={"confgroup" + (collapsed ? " collapsed" : "")}>
       <div className="conftitle conf-toggle" onClick={toggle}>
-        <span className="conf-chev">›</span>
+        <span className="conf-chev" aria-hidden>›</span>
         <span className="num">{props.num}</span>
         <b>{props.title}</b>
         {props.right != null && <span className="right">{props.right}</span>}

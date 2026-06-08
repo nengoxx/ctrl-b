@@ -243,7 +243,7 @@ export function AgentsEditor(props: {
               </div>
             </div>
             <span className="badge">{a.tools === "*" ? "all tools" : `${(a.tools as string[]).length} tools`}</span>
-            <span className="chev">›</span>
+            <span className="chev" aria-hidden>›</span>
           </div>
           <div className="mconf">
             {openIdx === i && (
@@ -266,7 +266,7 @@ export function AgentsEditor(props: {
             <div className="label">add agent</div>
             <div className="desc">a new definition (saved with the group below)</div>
           </div>
-          <span className="chev">›</span>
+          <span className="chev" aria-hidden>›</span>
         </div>
         <div className="mconf">
           {adding && (

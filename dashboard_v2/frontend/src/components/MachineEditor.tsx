@@ -200,7 +200,7 @@ function MachineForm(props: {
       <div className={"svc-edit" + (svcOpen ? " open" : "")}>
         <div className="svc-edit-head" onClick={() => setSvcOpen(!svcOpen)}>
           <span>Services{d.services.length ? ` · ${d.services.length}` : ""}</span>
-          <span className="svc-chev">›</span>
+          <span className="svc-chev" aria-hidden>›</span>
         </div>
         {svcOpen && (
           <div className="svc-body">
@@ -286,7 +286,7 @@ export function MachineEditor({ hosts }: { hosts: Host[] }) {
             <span className={"badge" + (h.status?.online ? "" : " stale")}>
               {h.status?.online ? "awake" : "asleep"}
             </span>
-            <span className="chev">›</span>
+            <span className="chev" aria-hidden>›</span>
           </div>
           <div className="mconf">
             {openId === h.id && (
@@ -309,7 +309,7 @@ export function MachineEditor({ hosts }: { hosts: Host[] }) {
             <div className="label">add machine</div>
             <div className="desc">writes a new entry to config.yaml</div>
           </div>
-          <span className="chev">›</span>
+          <span className="chev" aria-hidden>›</span>
         </div>
         <div className="mconf">
           {adding && (

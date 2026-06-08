@@ -110,7 +110,7 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
             onClick={(e) => act(e, () => onAction("wake"))}
           />
         )}
-        <span className="chev">›</span>
+        <span className="chev" aria-hidden>›</span>
       </div>
       <div className="dropdown">
         {services.length === 0 ? (
@@ -133,7 +133,7 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
                   <div className="name">{s.name}</div>
                   <div className="addr">{addr}</div>
                 </div>
-                <span className="arrow">↗</span>
+                <span className="arrow" aria-hidden>↗</span>
               </a>
             ) : (
               <div key={s.id} className="svc-row off">
@@ -142,7 +142,7 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
                   <div className="name">{s.name}</div>
                   <div className="addr">{addr}</div>
                 </div>
-                <span className="arrow">—</span>
+                <span className="arrow" aria-hidden>—</span>
               </div>
             );
           })
