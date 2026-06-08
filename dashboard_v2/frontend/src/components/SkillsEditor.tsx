@@ -9,6 +9,7 @@ import {
   type SkillInfo,
 } from "../hooks/useSkills";
 import { requestConfirm } from "../store/confirm";
+import { useRegisterDirty } from "../store/dirty";
 import { pushToast } from "../store/toast";
 
 // Phase 7d-c — Skills management. Lists discovered skills (skills/<name>/SKILL.md), edits the raw
@@ -35,6 +36,9 @@ function SkillFileEditor({ name, onClose }: { name: string; onClose: () => void 
   }, [data]);
 
   const dirty = data != null && text != null && text !== data.content;
+  // F19 — keyed by skill name so a different SKILL.md being edited registers under its own
+  // slot (in practice only one is open at a time, but this keeps the registry honest).
+  useRegisterDirty(`skill:${name}`, dirty);
 
   const onDelete = async () => {
     const ok = await requestConfirm({

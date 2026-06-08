@@ -12,6 +12,7 @@ import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
 import { useSaveSettings, useSettings, type SettingsDoc } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
 import { useCollapsed } from "../store/collapse";
+import { useRegisterDirty } from "../store/dirty";
 import { setUI, useUISlice, type Skyline, type Theme, type Loz } from "../store/ui";
 
 // Conf tab. Appearance is wired to the live UI store (client display state). Phase 7a wires the
@@ -166,6 +167,10 @@ export function ConfTab({ active }: Props) {
   }, [settings]);
 
   const dirty = settings && draft && JSON.stringify(draft) !== JSON.stringify(pickDraft(settings));
+  // F19 — register with the cross-editor dirty registry so a refresh/close-tab while these
+  // settings are unsaved triggers the browser's beforeunload prompt. Cleanup on unmount
+  // auto-clears the registration (closing Conf doesn't leave the registry stuck).
+  useRegisterDirty("conf", !!dirty);
 
   const inf = draft?.inference;
   const srv = draft?.server;

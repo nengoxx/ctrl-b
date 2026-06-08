@@ -8,6 +8,7 @@ import {
   type Privilege,
 } from "../hooks/useAgents";
 import { requestConfirm } from "../store/confirm";
+import { useRegisterDirty } from "../store/dirty";
 import { pushToast } from "../store/toast";
 
 // Phase 7d-b — Agents management. Manage Settings.agents[] (the D11 agent definitions) + the
@@ -195,6 +196,8 @@ export function AgentsEditor(props: {
   const dirty =
     JSON.stringify(agents) !== JSON.stringify(props.agents) ||
     JSON.stringify(cfg) !== JSON.stringify(props.cfg);
+  // F19 — beforeunload guard (store/dirty.ts). Auto-cleared on unmount.
+  useRegisterDirty("agents", dirty);
 
   const editAt = (i: number, a: AgentDef) => setAgents(agents.map((x, j) => (j === i ? a : x)));
   const removeAt = async (i: number) => {

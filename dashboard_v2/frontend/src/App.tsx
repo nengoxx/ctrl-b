@@ -8,6 +8,7 @@ import { TabBar } from "./components/TabBar";
 import { Toasts } from "./components/Toasts";
 import { useEventStream } from "./hooks/useEvents";
 import { prefetchOnIdle } from "./lib/prefetch";
+import { isAnyDirty } from "./store/dirty";
 import { useUISlice, type Tab } from "./store/ui";
 import { AgentTab } from "./tabs/AgentTab";
 import { ConfTabLazy, preloadConfTab } from "./tabs/ConfTab.lazy";
@@ -79,6 +80,22 @@ export default function App() {
       vv.removeEventListener("resize", apply);
       vv.removeEventListener("scroll", apply);
     };
+  }, []);
+
+  // F19 — warn the browser before unload (refresh / close tab / navigate away) if any editor
+  // has unsaved changes. `isAnyDirty()` is a direct read of the registry rather than a React
+  // subscription so this useEffect only runs once at mount; the handler reads fresh state at
+  // the moment of unload. Both `preventDefault()` (modern spec) and `returnValue = ""` (legacy
+  // Chrome < 50) are included — that's the canonical pattern in 2026 docs. Browsers force a
+  // generic prompt anyway; no custom message survives.
+  useEffect(() => {
+    function handler(e: BeforeUnloadEvent) {
+      if (!isAnyDirty()) return;
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
   }, []);
 
   // Slice 6 / F6: warm the Conf chunk after first paint so the first click on the Conf tab is
