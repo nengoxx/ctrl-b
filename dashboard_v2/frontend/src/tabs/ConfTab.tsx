@@ -228,6 +228,22 @@ export function ConfTab({ active }: Props) {
     save.mutate(patch as unknown as Record<string, unknown>);
   }
 
+  // The five "scalar settings" groups below (Inference / Server / SearXNG / Embeddings /
+  // Open-terminal) all share a single global `dirty` flag and the same `onSave` patch,
+  // because their forms compose into one PUT /api/settings. Rather than parking one Save
+  // button at the bottom of just the last group (where users editing Inference can't find
+  // it), we render the same bar at the end of every saveable group so it's reachable from
+  // whichever section the user is actually in. Editor-managed groups (MCP, OpenAPI, Agents,
+  // Skills, Tool descriptions, Computers) have their own save flows; Appearance is UI-store
+  // only and needs no save button.
+  const saveBar = (
+    <div className="conf-savebar">
+      <button className="conf-save" disabled={!dirty || save.isPending} onClick={onSave}>
+        {save.isPending ? "Saving…" : dirty ? "Save changes" : "Saved"}
+      </button>
+    </div>
+  );
+
   return (
     <div
       className={"tab" + (active ? " active" : "")}
@@ -311,6 +327,7 @@ export function ConfTab({ active }: Props) {
             />
           </div>
         </div>
+        {saveBar}
       </ConfGroup>
 
       <ConfGroup id="server" num="02" title="Server" right="tailnet-only">
@@ -349,6 +366,7 @@ export function ConfTab({ active }: Props) {
             <Switch on={!!srv?.debug} onToggle={() => setSrv("debug", !srv?.debug)} />
           </div>
         </div>
+        {saveBar}
       </ConfGroup>
 
       <ConfGroup id="searxng" num="03" title="SearXNG" right="web_search">
@@ -375,6 +393,7 @@ export function ConfTab({ active }: Props) {
             <Switch on={!!sx?.enabled} onToggle={() => setSearx("enabled", !sx?.enabled)} />
           </div>
         </div>
+        {saveBar}
       </ConfGroup>
 
       <ConfGroup id="embeddings" num="04" title="Embeddings" right="vector memory">
@@ -415,6 +434,7 @@ export function ConfTab({ active }: Props) {
             <Switch on={!!emb?.enabled} onToggle={() => setEmb("enabled", !emb?.enabled)} />
           </div>
         </div>
+        {saveBar}
       </ConfGroup>
 
       <ConfGroup id="openterminal" num="05" title="Open-terminal" right="remote shell tools">
@@ -462,11 +482,7 @@ export function ConfTab({ active }: Props) {
             <Switch on={!!term?.enabled} onToggle={() => setTerm("enabled", !term?.enabled)} />
           </div>
         </div>
-        <div className="conf-savebar">
-          <button className="conf-save" disabled={!dirty || save.isPending} onClick={onSave}>
-            {save.isPending ? "Saving…" : dirty ? "Save changes" : "Saved"}
-          </button>
-        </div>
+        {saveBar}
       </ConfGroup>
 
       <ConfGroup
