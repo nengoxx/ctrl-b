@@ -144,6 +144,16 @@ async def list_skills(request: Request) -> list[dict[str, Any]]:
     ]
 
 
+@router.get("/agent/default-prompt")
+async def get_default_prompt() -> dict[str, str]:
+    """The baked `DEFAULT_SYSTEM_PROMPT` text (7e-a). The Conf editor uses this to back
+    `[Load default]` (pre-fill the override field with a copy) and `[Restore default]` (clear
+    the override → the loop falls back to baked at runtime). Removes the "blank = mystery" UX
+    of the empty override field."""
+    from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
+    return {"text": DEFAULT_SYSTEM_PROMPT}
+
+
 @router.get("/agents")
 async def list_agents(request: Request) -> dict[str, Any]:
     """Configured agent names + the resolved default (7d) — for the composer `/agent <name>` switch

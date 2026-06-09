@@ -192,6 +192,22 @@ class AgentSession:
             or DEFAULT_SYSTEM_PROMPT
         )
 
+    def _appends(self) -> list[str]:
+        """The additive append axis (7e-a). Returns 0-2 non-empty strings to emit as separate
+        `system` messages, in this order: (1) global `inference.system_prompt_append` (skipped when
+        this agent opts out via `inherit_append=False`); (2) per-agent `AgentDef.prompt_append`.
+        Mirrors how the roster + skills note are already injected — keeps the base prompt stable
+        for any future provider-side caching and makes the "extra" easy to attribute in logs."""
+        out: list[str] = []
+        if self._agent.inherit_append:
+            g = self._settings.inference.system_prompt_append.strip()
+            if g:
+                out.append(g)
+        a = self._agent.prompt_append.strip()
+        if a:
+            out.append(a)
+        return out
+
     def _roster(self) -> str | None:
         """A compact id↔name map of the fleet + services, injected each turn so the agent resolves
         a display name to the stable slug `host_id`/`service_id` a tool needs — instead of asking
@@ -252,6 +268,8 @@ class AgentSession:
                 results[rp.call_id] = rp.result
 
         out: list[dict] = [{"role": "system", "content": self._system_prompt()}]
+        for extra in self._appends():  # additive guidance, base-first (7e-a)
+            out.append({"role": "system", "content": extra})
         roster = self._roster()
         if roster:
             out.append({"role": "system", "content": roster})

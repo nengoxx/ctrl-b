@@ -94,7 +94,12 @@ class InferenceCfg(BaseModel):
 
     default_mode: str = "local"      # "local" | "cloud"
     request_timeout_s: float = 600.0  # thinking models load slowly + stream slowly — be generous
-    system_prompt: str = ""          # optional override of the built-in default agent prompt
+    system_prompt: str = ""          # optional override of the built-in default agent prompt (replace)
+    #: Additive guidance appended to whichever base prompt is active (7e-a). Emitted as its own
+    #: `system` message after the base — mirrors how the roster + active skills are injected. The
+    #: per-agent equivalent is `AgentDef.prompt_append`; both apply unless the agent opts out
+    #: (`inherit_append=False`). Leaving this blank keeps today's behaviour.
+    system_prompt_append: str = ""
     local: InferenceEndpointCfg = Field(default_factory=InferenceEndpointCfg)
     cloud: InferenceEndpointCfg = Field(default_factory=InferenceEndpointCfg)
 

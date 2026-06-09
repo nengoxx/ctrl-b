@@ -55,6 +55,15 @@ class AgentDef(BaseModel):
 
     name: str
     prompt: str = ""                                    # system prompt; "" → the built-in default
+    #: Additive guidance (7e-a). When non-empty, emitted as its own `system` message *after* the
+    #: base prompt — so the persona/base stays a stable cache-key candidate and the extra is easy
+    #: to attribute when reading logs. The global `inference.system_prompt_append` is emitted too
+    #: unless `inherit_append=False`; when both apply, global comes before per-agent.
+    prompt_append: str = ""
+    #: When False, this agent ignores the global `inference.system_prompt_append`. Default True
+    #: mirrors Claude Code's CLAUDE.md model (always added) — flip it for an agent that needs to
+    #: escape the global guidance (e.g. a sandboxed/clean-room persona).
+    inherit_append: bool = True
     model: ModelRef = Field(default_factory=ModelRef)   # backend+model; inherits chat default when unset
     tools: list[str] | Literal["*"] = "*"               # tool-name allowlist (globs) or all agent tools
     skills: list[str] | Literal["*"] = "*"              # skill allowlist or all discovered skills
