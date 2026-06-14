@@ -1,10 +1,11 @@
 """Agent definitions (DESIGN §5.1, D11). An `AgentDef` is *data* — the configurable shape of one
 agent: its system prompt, which inference backend+model it uses, the tool/skill allowlists, its
-privilege, and the loop/subagent limits. The **default chat agent** is just one entry in
-`settings.agents`; subagents reuse the same definition shape at greater depth (§5.5).
+privilege, and the loop/subagent limits. Agents are folder-discovered (D14): the **default/root
+agent** is `config.yaml` globals + `agent.defaults`, and each specialist is an `agents/<slug>/`
+(agent.yaml + SOUL.md); `name` is the folder slug and `prompt` is loaded from SOUL.md.
 
-Kept in `domain/` (pure pydantic, no I/O) so both `config.py` (which round-trips `agents[]` from
-YAML) and the agent runtime can import it without a layering cycle. `ModelRef` lives here too — it's
+Kept in `domain/` (pure pydantic, no I/O) so both `config.py` (which builds an `AgentDef` from
+`agent.defaults` + a folder's agent.yaml) and the agent runtime can import it without a layering cycle. `ModelRef` lives here too — it's
 a pure pointer reused by `AgentDef.model` *and* `CompactionCfg.summarizer` (the selectable
 summarizer, D11).
 """
