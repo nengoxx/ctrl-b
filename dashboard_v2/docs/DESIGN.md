@@ -5,6 +5,15 @@ The concrete engineering design behind the decisions in `DECISIONS.md` and the s
 cases; where it sharpens an earlier sketch (e.g. the message model), **this doc wins** and the
 sketch is a summary. Python 3.11+, Pydantic v2, FastAPI. Read alongside `ARCHITECTURE.md`.
 
+> **⚠️ Reconciliation note (2026-06-14).** This doc predates **D14/D15**. For the **agent-workspace
+> and memory** areas, **D14/D15 supersede the sketches here**: agents are **folder-only**
+> (`$CTRLB_HOME/agents/<name>/` = `agent.yaml` + `SOUL.md` + `memories/` + `skills/`; **no `agents:[]`
+> list**, no `AgentDef.memory` field); memory is the **Hermes file model** (§6 updated below);
+> `messages` gains an **`agent`** column (D15 #5). The §1 package layout is **aspirational** — the
+> shipped tree is leaner (inference is an *adapter*, the loop lives in `session.py` not a `runner.py`,
+> no `tools/`/`voice.py`/`automations.py`/`notify/`/`memory/` yet). Conceptual designs (capability
+> model, loop state machine, concurrency, SSE) remain accurate.
+
 ---
 
 ## 0. Design principles
@@ -252,6 +261,9 @@ class Message(BaseModel):
     role: Literal["user","assistant","system","tool"]
     parts: list[Part]
     actor: Actor = Actor.USER
+    agent: str | None = None           # D15 #5: which AgentDef produced this assistant turn
+                                       # (null = legacy/default). Resume prefers the last turn's agent;
+                                       # session_search/restore read it for per-turn attribution.
     ts: datetime
     tokens: int | None = None          # for compaction budgeting
     compacted: bool = False            # excluded from working context once summarized
@@ -288,8 +300,18 @@ class AgentDef(BaseModel):
 class ModelRef(BaseModel): mode: Literal["local","cloud"]; model: str
 ```
 
-`AgentRunner` is constructed per turn from an `AgentDef`; the **default chat agent** is just one
-entry in `settings.agents`. Subagents reuse the same runner at greater depth.
+`AgentSession` (shipped name; the sketch says `AgentRunner`) is constructed per turn from an
+`AgentDef`. Subagents reuse the same machinery at greater depth.
+
+> **Updated by D14/D15 (2026-06-14).** The `AgentDef` above is illustrative; the shipped + folder
+> shape: agents are **folders** (`$CTRLB_HOME/agents/<name>/`), not `settings.agents` entries —
+> **there is no `agents:[]` list**. `agent.yaml` = `AgentDef` **minus `name`** (= folder) and **minus
+> `prompt`** (= `SOUL.md`), carrying **only overrides**; absent fields inherit a `config.yaml`
+> **`agent.defaults`** block via `deep_merge` (D15 #1). The **default agent** has no folder/`agent.yaml`
+> — it's the root + `config.yaml` globals. There is **no `AgentDef.memory` field** (memory is the file
+> model, §6); real fields include `prompt_append`/`inherit_append` (7e-a), `compaction`, the loop
+> guards (`max_repeat_calls`/`max_calls_per_tool`/`max_stall_iterations`), and `max_iterations=16`.
+> `ModelRef.mode`/`model` are **both optional** (None → inherit `inference.default_mode`/the endpoint).
 
 ### 5.2 The loop as an explicit state machine
 
@@ -439,21 +461,34 @@ path → identical downstream handling. Worst case it degrades to draft-into-bub
 
 ---
 
-## 6. Memory
+## 6. Memory (D14/D15 — Hermes file model)
+
+> Replaces the earlier none/file/vector sketch. v1 = **file-based, Hermes-shaped** (D14, D15 #4).
 
 ```python
 class MemoryProvider(Protocol):
-    async def context(self, thread: Thread) -> list[Message]: ...   # injected each turn
-    async def remember(self, item: MemoryItem) -> None: ...
-    async def forget(self, id: str) -> None: ...
-    async def list(self) -> list[MemoryItem]: ...
-# impls: NoneMemory; FileMemory(MEMORY.md, parsed sections, file-locked for UI+agent writes);
-#        VectorMemory(embeddings via the configured /v1/embeddings ModelRef, top-k recall).
-# "Both" = a CompositeMemory wrapping file (durable) + vector (recall). Rolling-summary feeds here.
+    def load_context(self) -> str: ...                          # the injected agent+user block
+    async def write(self, target: Literal["memory","user"],
+                    action: Literal["add","replace","remove"],
+                    content: str, old_text: str | None = None) -> ToolResult: ...  # cap-enforced
+    def read_raw(self, target) -> str: ...                      # for the Conf Memory panel
+    async def clear(self, target) -> None: ...
+# v1 impl: FileMemoryProvider, on Deps.memory.
 ```
 
-File memory is the v1 default. Concurrent edits (UI editor vs agent `remember`) are serialized with
-a file lock + last-write-wins on disjoint sections; the UI warns on conflict.
+- **Files (under `$CTRLB_HOME`):** per-agent `agents/<name>/memories/MEMORY.md` (default agent →
+  root `memories/MEMORY.md`) + a **global** `memories/USER.md`. `memories/` is gitignored.
+- **Injection:** `load_context()` output is emitted in `_assemble` **right after the appends**
+  (order: SOUL.md → appends → **memory** → roster → skills → history), frozen per turn. Rendered
+  **Hermes-style** — per-section usage header (`## Agent memory (67% — 1,474/2,200)`) + `§` between
+  entries (D15 #4).
+- **`memory` tool** (builtin, sibling of `skill_manage`): `add`/`replace`/`remove`, `target:
+  memory|user`, substring `old_text`, **no read** (memory is in the prompt). **Autonomous auto-write**
+  (`memory.auto_write` default ON; OFF → non-blocking *propose*, never gates the turn). Caps
+  `memory.memory_char_limit` (2200) / `memory.user_char_limit` (1375) — over-cap raises so the agent
+  consolidates (no silent drop). Audited as Events.
+- **Recall tier:** `session_search` (FTS5 over `messages`, redacted, global; D15 #7) — *not* a memory
+  file. **Vector** ("both" mode) = the SQLite `memory` table + the embeddings client, a later drop-in.
 
 ---
 
@@ -481,8 +516,11 @@ class NotificationChannel(Protocol):
 
 ## 8. Persistence (SQLite)
 
-Tables: `threads`, `messages` (parts as JSON column), `memory`, `events`, `automations`,
+Tables: `threads`, `messages` (parts as JSON column; **+ a nullable `agent` column**, D15 #5),
+`memory` (**reserved for the later vector store — unused in v1**, D14/D15), `events`, `automations`,
 `push_subscriptions`, `pending_actions` (for suspended confirms / notify-park), `schema_version`.
+A **`messages_fts` FTS5 virtual table** (+ sync triggers) backs `session_search`, indexed over
+**redacted** message text, covering live **and** compacted rows (D15 #7).
 
 ```python
 class UnitOfWork:                      # one place that owns the connection + write serialization
@@ -510,6 +548,13 @@ class Settings(BaseSettings):
     server: ServerCfg; appearance: AppearanceCfg
     notifications: NotificationsCfg
 ```
+> **Reconciliation (D14/D15 + shipped):** **no `agents: list[AgentDef]`** — agents are folders
+> (D15 #3); `AgentCfg` gains **`defaults`** (the AgentDef-shaped inheritance base, D15 #1). Add
+> **`memory`** (`enabled`/`user_profile_enabled`/`auto_write`/`memory_char_limit`/`user_char_limit`)
+> and **`skills`** (`enabled`/`auto_write`). `hosts`/`services` aren't flat lists — they're **nested
+> under `computers{}`** in YAML and projected by `Settings.hosts()`/`services()`. **`stt`/`tts`/
+> `notifications` don't exist yet** (Phase 6 / F1). Path resolution is rooted at **`$CTRLB_HOME`**
+> (D15 #2). The hybrid secrets model below is accurate and shipped (7a).
 - **Secrets model = hybrid (decided Phase 0).** `config.yaml` is the **single UI-managed source
   of truth, including nested secrets** (per-host SSH creds, per-endpoint API keys, per-MCP-server
   env/headers) — because they're structured/repeating and the Conf tab edits + round-trips them,
@@ -687,10 +732,14 @@ registry/Protocol design rather than hoped for.
 
 ## 17. Open design questions (deferred to their phase)
 
-- Concrete **skill-selection** algorithm + **subagent orchestration** strategy (Phase 4, with prior
-  art) — interfaces fixed here, impls later.
-- **Tokenizer** for budgeting (model-specific vs heuristic char/4 estimate).
-- **Plan persistence**: dedicated `plans` table vs message `meta` (leaning: latest `PlanPart` is
-  source of truth, snapshot in thread).
-- **Real idle detection** mechanism for D1 (helper agent vs heuristic) — still the hard one.
-- **OpenAPI→TS** type generation vs hand-written types.
+- ✅ **Resolved — skill-selection**: shipped as `KeywordSkillSelector` (token overlap, model-agnostic);
+  the `SkillSelector` Protocol keeps an LLM selector a drop-in. **Subagent orchestration**: shipped as
+  `ParallelOrchestrator` (anyio task group + semaphores).
+- ✅ **Resolved — tokenizer**: a **heuristic char/4 estimate** is used for compaction budgeting (no
+  model-specific tokenizer dep).
+- ✅ **Resolved — plan persistence**: the latest `task_plan` call **rides the message history** (no
+  `plans` table); reload + the model's context recover it.
+- ⏳ **AgentSelector auto-rotate algorithm** (D15 #8) — seam locked (off-by-default `agent.auto_rotate`,
+  `KeywordAgentSelector` default lean); concrete algorithm decided at the 7e-g build.
+- ⏳ **Real idle detection** mechanism for D1 (helper agent vs heuristic) — still the hard one.
+- ⏳ **OpenAPI→TS** type generation vs hand-written types.

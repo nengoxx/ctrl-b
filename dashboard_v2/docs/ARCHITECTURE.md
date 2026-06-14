@@ -4,6 +4,17 @@ How the pieces fit. Reflects the locked decisions in `DECISIONS.md`. The Vapor p
 (`ctrl-b (Vapor)/variations/vapor.html`) is the visual source of truth; this maps its UI onto a
 real, typed backend.
 
+> **⚠️ Reconciliation note (2026-06-14).** This doc is a pre-build sketch; it predates Phases 7a–7d
+> and **D14/D15**. Where it conflicts with shipped code or those decisions, **`DECISIONS.md`
+> D14/D15 and `DESIGN.md` win.** Specifically: (1) **agents are folder-only** (`$CTRLB_HOME/agents/<name>/`
+> = `agent.yaml` + `SOUL.md` + `memories/` + `skills/`) — there is **no `agents:[]` list** in config
+> (D14/D15 #3); (2) **memory** follows the Hermes file model (§4 below is superseded by D14/D15 #4–#7);
+> (3) module/file names here are **illustrative** — the real layout is `services/` + `adapters/` +
+> `api/` (see `DESIGN.md` §1); (4) some "day-one" claims aren't built yet — **C1 streaming `auto|on|off`
+> + buffered chat** (chat is SSE-only today) and the **A2 `question` message kind** are future, not
+> shipped; (5) endpoints `/api/prompts`, `/api/memory`, `/api/exec`, `/api/tools` are **not built** —
+> the real routers are `/api/agents`, `/api/integrations`, `/api/skills`, `/api/agent/default-prompt`.
+
 ```
 ┌────────────────────────────── Android / Desktop browser ──────────────────────────────┐
 │  React + TS PWA  (mobile-first; Fleet · Agent · Utils · Conf)                            │
@@ -236,21 +247,25 @@ Host      id, name, ip, mac, ssh_username, ssh_password*, ssh_port=22, os_type, 
           idle_action(none|sleep|shutdown), idle_minutes   # idle fields = ROADMAP D1
 Service   id, host_id, name, kind, port, path, autostart, cmd_start/stop/restart (per-OS)
 Action    name, inputs(schema), risk, confirm   (code-defined, not stored)
-Event     id, ts, actor(user|agent), action, target, status, summary, output     [SQLite]
-Thread    id, title, created_at, updated_at                                       [SQLite]
-Message   id, thread_id, kind(text|action|question|plan), role, content, ts, meta [SQLite]
-Skill     file-based: skills/<name>/SKILL.md (frontmatter + instructions) + resources  [disk]
-Memory    id, kind(fact|summary), text, created_at, pinned                        [SQLite]
+Event     id, ts, actor(user|agent|system|automation), action, target, status, summary, output  [SQLite]
+Thread    id, title, agent, created_at, updated_at, archived                      [SQLite]
+Message   id, thread_id, role, parts[](JSON; DESIGN §4), actor, agent(D15 #5), ts, tokens, compacted [SQLite]
+Skill     file-based: $CTRLB_HOME/skills/ (default agent) + agents/<n>/skills/ (per-agent, D14)  [disk]
+Memory    files: $CTRLB_HOME/memories/{MEMORY.md,USER.md} + agents/<n>/memories/MEMORY.md (D14)  [disk]
+          (the SQLite `memory` table is UNUSED — reserved for the later vector store, D15 #4)
 Automation id, name, cron, prompt, privilege, thread_id, enabled, last_run, status [SQLite]  # ROADMAP A3
 Settings  inference{mode, local_url, cloud_url, cloud_key*, model},
           embeddings{url, key*, model},                       # llama.cpp /v1/embeddings (D9)
           stt{url, key*, model}, tts{url, key*, model, voice},
           searxng{url, enabled},                              # web_search tool (D9)
           mcp_servers[]{name, transport(stdio|http), command, args, env*, url, headers*, enabled},  # D9
-          agent{default_agent, privilege, streaming, memory_backend, global_subagent_limit,
-                compaction{enabled, threshold, summarizer{mode, model}}},   # D10/D11
-          agents[]{name, prompt, backend, model, tools[], skills[], privilege, memory},  # D11 (multiple/subagents)
-          server{host, port, poll_seconds, debug}, appearance{theme, skyline, ...}  [YAML]
+          agent{default_agent, defaults{…AgentDef-shaped…}, global_subagent_limit, clamp_subagent_privilege,
+                compaction{enabled, threshold_tokens, keep_last_messages, summarizer{mode,model}}},  # D10/D11/D15#1
+          # NO agents[] list — agents are folder-only under $CTRLB_HOME/agents/<name>/ (D14/D15 #3)
+          memory{enabled, user_profile_enabled, auto_write, memory_char_limit, user_char_limit},  # D14/D15 #4
+          skills{enabled, auto_write},   # skill_manage self-authoring, default off (D15 #6)
+          server{host, port, poll_seconds, feature_cycle_seconds, debug}, appearance{theme, skyline, ...}  [YAML]
+          # Paths resolve from $CTRLB_HOME (env; default project-root); CTRLB_CONFIG/CTRLB_DB still override (D15 #2)
 ```
 `*` = secret: gitignored in YAML, masked in API responses, never logged.
 
@@ -260,6 +275,15 @@ and per-OS service commands are net-new (additive, optional).
 ---
 
 ## 4. Agent memory (pluggable — configurable in Conf)
+
+> **⚠️ Superseded by D14/D15 (2026-06-14).** v1 memory is the **Hermes-style file model**, not the
+> generic none/file/vector sketch below: per-agent `memories/MEMORY.md` + a global
+> `memories/USER.md` (under `$CTRLB_HOME`), injected into the system prompt (Hermes-formatted: usage
+> header + `§` delimiters), self-curated by an autonomous `memory` tool (add/replace/remove · target
+> memory|user · `memory.auto_write` kill switch · configurable caps 2200/1375). `session_search`
+> (FTS5 over `messages`, redacted, global) is the recall tier. The **vector** store (the SQLite
+> `memory` table + embeddings client) is the later "both" mode. See **DECISIONS.md D14 + D15 #4–#7**;
+> the `MemoryProvider` Protocol below is still the seam, with `FileMemoryProvider` as the v1 impl.
 
 Memory is a **`MemoryProvider` interface** (`load_context()`, `remember()`, `forget()`, `list()`)
 so the backend is **selectable in settings**, not hardcoded (ROADMAP B1):
@@ -337,6 +361,12 @@ v1 ships the `none` + `file` providers behind the interface; vector slots in wit
 | **Ubuntu 26 LTS** *(emma — target host)* | `systemd` unit (model on `wol_server/wol_server.service`); `--reload` ok for dev | headless server |
 | **macOS** | `uvicorn app.main:app` (`--reload` ok for dev) | sibling POSIX path |
 | **Android / Termux** *(exp.)* | `uvicorn` in Termux + `termux-wake-lock` + foreground service, charger | phone = host; WOL only on its LAN; high port (no root) |
+
+**Data root (`$CTRLB_HOME`, D15 #2).** All data — `config.yaml`, `ctrlb.db`, `SOUL.md`, `memories/`,
+`skills/`, `agents/` — lives under one relocatable root (env `CTRLB_HOME`; mirrors Hermes' `HERMES_HOME`).
+Resolution: explicit `CTRLB_CONFIG`/`CTRLB_DB` override their specific path (back-compat + temp-config
+tests) → else derive from `CTRLB_HOME` → else today's project-root default. **emma/new installs set
+`CTRLB_HOME=~/.ctrl-b`**; corsair keeps working with nothing set.
 
 **OS-agnostic by design.** All target-OS branching keys off `host.os_type` (the *managed* host),
 never the server's OS — so an Ubuntu server on emma running a Windows host is the same code path

@@ -175,13 +175,15 @@ exactly. 7e-d should mirror Hermes' config-key names for cross-tool portability.
 #### Design audit + D15 (2026-06-14)
 A whole-project review (docs vs shipped code) found doc↔code drift and loose specs. **All findings
 are tracked in `TODO.md` → "Design audit — 2026-06-14"**; the 7e-blocking specs are **locked in
-`DECISIONS.md` D15** (`agent.defaults` merge · `CTRLB_HOME` · migration finalize · `MemoryProvider`
+`DECISIONS.md` D15** (`agent.defaults` merge · `CTRLB_HOME` · agents folder-only (no migration) · `MemoryProvider`
 interface + injection · `messages.agent`/resume · `skill_manage` · `session_search` scope/redaction ·
 `AgentSelector` seam). Headlines: **`ARCHITECTURE.md`/`DESIGN.md` need a reconciliation pass** (they
 predate 7a–7d + D14); the **A1 privilege ladder is already built** in `permissions.decide()`
 (downgrade to UX-only); **C1 streaming-both-ways + A2 `question` kind** are doc "day-one" claims that
 aren't built; **Utils/D8 registry should reuse `core/tool.py`**; **Phase 5 `run_shell`** — decide
-drop vs keep. **Recommended order:** lock D15 (done) → reconcile ARCHITECTURE/DESIGN → build 7e-b.
+drop vs keep. **Recommended order:** lock D15 ✓ → reconcile `ARCHITECTURE.md`/`DESIGN.md` ✓
+(2026-06-14: status banners + D14/D15 fixes; C1/A2 overclaims corrected; A1 downgraded; D8-unify
+confirmed) → **build 7e-b (next)**.
 
 #### D15 ratified one-by-one (2026-06-14)
 All eight D15 specs were decided with the owner (marked ✅ inline in D15): #1 `agent.defaults` block

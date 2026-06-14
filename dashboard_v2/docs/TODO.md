@@ -492,20 +492,24 @@ tools + confirm bubbles) are DONE.**
 
 ## Design audit — 2026-06-14 (loose ends + doc drift)
 
-A whole-project review (docs vs the shipped backend code). Findings, tracked:
+A whole-project review (docs vs the shipped backend code). Findings, tracked.
+**Reconciliation done 2026-06-14:** `ARCHITECTURE.md` + `DESIGN.md` got status banners + targeted
+D14/D15 fixes (data model, agents folder-only, memory file model, `CTRLB_HOME`, `messages.agent`,
+FTS5); the C1/A2 doc "day-one" overclaims are corrected (flagged as future, not shipped). Remaining
+*build/decision* items below stay open.
 
 **Doc↔code drift — `ARCHITECTURE.md` predates 7a–7d + D14 (highest priority):**
-- [ ] **Reconcile `ARCHITECTURE.md`**: §3 still lists YAML `agents[]` (D14 removes it) + `agent.memory_backend`/per-agent `memory` (superseded by D14); §3 data model is stale (`Message kind|content` → real code is `parts[]` JSON + `actor`, no `kind`; `Event actor(user|agent)` → real `user|agent|system|automation`); §2 lists unbuilt endpoints (`/api/prompts`, `/api/memory`, `/api/exec`, `/api/tools`) and omits the real ones (`/api/agents`, `/api/integrations`, `/api/skills`, `/api/agent/default-prompt`); §4 memory predates D14; §6 lacks `CTRLB_HOME`.
-- [ ] **Module names in `ARCHITECTURE.md` are illustrative + drifted** (`app/hosts.py`/`app/agent.py`/`app/voice.py`/`app/tools/`/`app/models/` vs the real `services/`/`adapters/`/`api/`). Add a caveat or refresh.
-- [ ] **Reconcile `DESIGN.md`** with shipped reality + D14/D15 (read it first — it's the authoritative data-model doc).
+- [x] **Reconcile `ARCHITECTURE.md`** ✓2026-06-14: §3 still listed YAML `agents[]` (D14 removes it) + `agent.memory_backend`/per-agent `memory` (superseded by D14); §3 data model is stale (`Message kind|content` → real code is `parts[]` JSON + `actor`, no `kind`; `Event actor(user|agent)` → real `user|agent|system|automation`); §2 lists unbuilt endpoints (`/api/prompts`, `/api/memory`, `/api/exec`, `/api/tools`) and omits the real ones (`/api/agents`, `/api/integrations`, `/api/skills`, `/api/agent/default-prompt`); §4 memory predates D14; §6 lacks `CTRLB_HOME`.
+- [x] **Module names in `ARCHITECTURE.md` are illustrative + drifted** ✓2026-06-14 (banner caveat added) (`app/hosts.py`/`app/agent.py`/`app/voice.py`/`app/tools/`/`app/models/` vs the real `services/`/`adapters/`/`api/`). Add a caveat or refresh.
+- [x] **Reconcile `DESIGN.md`** ✓2026-06-14 (banner + §4 `messages.agent` · §5.1 folder model · §6 file memory · §8 FTS5 · §9 settings · §17 resolved).
 
 **Documented "day-one" seams that were never built (contradiction to fix — doc or code):**
-- [ ] **Streaming `auto|on|off` + buffered chat (C1):** ARCHITECTURE §1 claims "both from day one"; `/api/agent/chat` is SSE-only (`InferenceClient.complete` exists but only the compactor uses it). Either build the buffered path + `streaming` setting, or correct the overclaim.
-- [ ] **`question` message kind (A2):** ARCHITECTURE lists it as a v1 kind; the Part union has no `question` part / pause-for-answer flow (the confirm-suspend flow is the same shape — cheap later). Fix the doc's "day-one" framing.
-- [ ] **D8 tool registry / Utils (Phase 8) unbuilt:** no `@tool`, no `/api/tools`, Utils is a static shell. **Decide:** the Utils tool registry should reuse `core/tool.py` (the action registry), not a parallel one.
+- [ ] **Streaming `auto|on|off` + buffered chat (C1)** (doc overclaim corrected ✓; building the buffered path remains): ARCHITECTURE §1 claimed "both from day one"; `/api/agent/chat` is SSE-only (`InferenceClient.complete` exists but only the compactor uses it). Either build the buffered path + `streaming` setting, or correct the overclaim.
+- [ ] **`question` message kind (A2)** (doc framing corrected ✓; building the kind remains): ARCHITECTURE listed it as a v1 kind; the Part union has no `question` part / pause-for-answer flow (the confirm-suspend flow is the same shape — cheap later). Fix the doc's "day-one" framing.
+- [ ] **D8 tool registry / Utils (Phase 8) unbuilt:** no `@tool`, no `/api/tools`, Utils is a static shell. **Confirmed (DESIGN §0.4 + §16):** the Utils tool registry **reuses `core/tool.py`** (the unified capability model) — not a parallel registry. Build remains (Phase 8).
 
 **Found *better* than documented:**
-- [ ] **A1 privilege ladder is already implemented** in `core/permissions.decide()` (READONLY/CONFIRM/AUTO_LOW/FULL + `run_shell` gating). Downgrade ROADMAP A1 to "selection/persistence UX only"; decide where the level is chosen (global setting + per-session/per-automation override — today only `AgentDef.privilege`).
+- [x] **A1 privilege ladder already implemented** ✓2026-06-14 in `core/permissions.decide()` (READONLY/CONFIRM/AUTO_LOW/FULL + `run_shell` gating); **ROADMAP A1 downgraded** to "selection/persistence UX only". Still to decide at that phase: where the level is chosen (global + per-session/per-automation override — today only `AgentDef.privilege`).
 
 **Decisions to formalize:**
 - [ ] **Phase 5 (`run_shell`/`/api/exec`):** gated in `decide()` but no tool/endpoint; `!` composer prefix is a stub. Decide: **formally drop** (open-terminal covers remote shell) vs keep.

@@ -13,6 +13,12 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
 
 ### A1. Agent privilege levels (like Claude Code / Codex)
 
+> **Status (2026-06-14): the policy core is already built.** `core/permissions.decide()` fully
+> implements the ladder (`READONLY` / `CONFIRM` / `AUTO_LOW` / `FULL`) + the `run_shell` gate. So A1
+> is **downgraded to selection/persistence UX only**: where the level is chosen + stored (global
+> setting + per-session and per-automation overrides — today the only knob is `AgentDef.privilege`),
+> and surfacing the active level in the composer/header. No new decision logic needed.
+
 - **What:** a selector for how much the agent may do on its own, from read-only up to full
   autonomy. Suggested ladder:
   1. **Read-only / Plan** — can inspect + suggest, runs nothing.
