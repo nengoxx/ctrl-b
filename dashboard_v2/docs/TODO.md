@@ -435,6 +435,11 @@ tools + confirm bubbles) are DONE.**
       (scaffold + transitional fallback read), then **remove `agents:[]` from `config.yaml`** at
       completion. Repoint `AgentsEditor` to the file API with a first-class **add-agent flow**
       (scaffolds the folder) + edit/delete, well-designed @390px (D7). Tests on a temp workspace dir.
+      **Session attribution (D14):** add a nullable **`messages.agent`** column (additive migration;
+      null = legacy/default) set to the resolved AgentDef name on each assistant message → restore
+      shows the per-turn agent across mid-thread `/agent` switches, **resume prefers the last
+      assistant turn's agent**, and `session_search` (7e-e) can attribute/filter by agent.
+      `threads.agent` stays the thread's primary/default.
 - [ ] **7e-d — file memory: `FileMemoryProvider` + `memory` tool (D14).** Per-agent
       **`memories/MEMORY.md`** (isolated) + global **`memories/USER.md`** (the file impl of the
       ROADMAP B1 `MemoryProvider`; `memories/` gitignored). A

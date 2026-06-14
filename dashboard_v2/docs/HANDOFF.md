@@ -138,6 +138,10 @@ multi-agent runtime** (`resolve_agent` + in-process `spawn_subagents` — strict
 - **`session_search`** = FTS5 over `messages` + a builtin tool. **Sessions stay central + agent-
   agnostic in `ctrlb.db`** — a *deliberate divergence* from Hermes/OpenClaw (preserves `/agent`
   mid-thread switching + cross-agent search).
+- **Session attribution** (7e-c): nullable **`messages.agent`** column (additive migration) records
+  the resolved agent per assistant turn → restore shows the per-turn agent across `/agent` switches,
+  resume prefers the last turn's agent, `session_search` can filter by agent. `threads.agent` stays
+  the thread's primary/default.
 - **Skills**: per-agent (global `skills/` = the default agent's set; each agent its own folder);
   `agent.yaml` `skills_inherit` = all | specific subset | none. Plus a **`skill_manage` agent tool**
   (sibling of `memory`: self-author `SKILL.md`, auto-write + `skills.auto_write` kill switch) — built

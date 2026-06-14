@@ -319,6 +319,18 @@ can `/agent`-switch mid-conversation, and `session_search` spans everything. Thi
 divergence** from Hermes/OpenClaw (who store sessions per profile/workspace); copying them here
 would break thread-switching and cross-agent search.
 
+**Session attribution — per-message agent (the consequence of agent-agnostic threads).** Today
+`threads.agent` records *one* agent per thread, and the `/agent <name>` switch is a non-persistent
+per-turn override (`messages.actor` is only the role-class `user`/`agent`/`system`, not the
+AgentDef). With per-agent memory that loses provenance: restore a thread that switched
+`default → coder` mid-conversation and the DB can't say which turn was `coder`. So 7e-c adds a
+**nullable `messages.agent` column** set to the resolved AgentDef name on each assistant message
+(null = legacy/default; one additive, backwards-compatible migration). Effect: **restore shows the
+agent per-turn** across switches; **resume prefers the last assistant turn's agent** (natural
+continuity, no need to mutate `thread.agent`); **`session_search` can filter/attribute by agent**.
+`threads.agent` stays the thread's *primary/default* (what a fresh turn or bare resume starts from);
+the column is the source of truth for "who said this."
+
 **Skills — per-agent, with inheritance + agent self-authoring.** The global `skills/` dir is the
 **default agent's** set; every other agent has its **own folder `skills/`**. An agent's `agent.yaml`
 carries a **`skills_inherit`** setting: inherit **all** global skills · a **specific subset** · or
