@@ -76,25 +76,180 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (F14–F26 a11y backlog closed + tree is clean on `origin/main` at `40f94e8` · next: Phase 7e)
+## Current state (7e-a shipped locally at `d4cd25c`, not pushed · next: 7e-b PromptModal + Conf-sizing refine)
 
-> **All of UI_AUDIT.md §6c (F14–F29) is shipped or deferred end-to-end.** 13 slices landed
-> across the 2026-06-08 session, all pushed (see that session block below). Tree is clean;
-> no uncommitted work. F21 (mic stub) was deliberately deferred to Phase 6 (it owns the full
-> mic lifecycle); F29 was discovered mid-slice and fixed in-line. **Next focus options
-> ranked by what was locked previously:**
+> **7e-a (system-prompt append layer + default-prompt endpoint) is committed locally as
+> `d4cd25c`** (5 files / +381 / -1, 8 tests). **Not pushed** — push needs owner go-ahead.
+> Tree clean except for `start_claude_remote.ps1` (owner's launcher tweak, untouched).
+> See the 2026-06-09 block below for the full backend slice + the 7e-b design discussion
+> the owner and I worked out before pausing.
 >
-> 1. **Prompt-append + Conf-sizing (7e-a)** — direction was locked 2026-05-30 with three
->    open decisions waiting + a 7-item Conf-sizing checklist. Start at the 2026-05-30 block
->    further down for the full plan. This is the smallest slice; finishes 7d and unblocks 7e.
-> 2. **7e proper — prompts editors + memory panel.** The original phase plan. The
->    `prompts/*.md` editor is the natural extension of 7d-c's SKILL.md editor; the memory
->    panel rides on the 4f embeddings seam already shipped.
-> 3. **F29 option A (reload-survival for sub-editor drafts).** Documented in UI_AUDIT.md
+> **Next focus (locked 2026-06-09):**
+>
+> 1. **7e-b — `<PromptModal>` full-page editor + Conf-sizing refine.** The 7e-a backend
+>    is live; 7e-b wires the new fields into the UI through one reusable modal, shrinks the
+>    inline prompt rows to preview + opener, and bundles the 4-item Conf-sizing refine.
+>    **Six design questions are recorded at the bottom of the 2026-06-09 block and need
+>    answers before any frontend code lands** (per [[pause-between-phases-for-review]]).
+> 2. **7e-c** — `GET/PUT /api/prompts/{name}` + arbitrary `prompts/*.md` editors.
+> 3. **7e-d** — Memory mgmt (MemoryProvider + `/api/memory` + panel on the 4f embeddings seam).
+> 4. **F29 option A (reload-survival for sub-editor drafts).** Documented in UI_AUDIT.md
 >    §6b. Not urgent; only matters if owner hits the data-loss scenario in practice.
->
-> **Recommended:** start with (1) since the decisions/checklist are already worked out; it's
-> a quick win + finishes a phase. Roll into (2) right after.
+
+### ⭐ Session update — 2026-06-09 (7e-a backend shipped · 7e-b design discussion locked, paused for review)
+
+Half-session. **7e-a (additive system-prompt axis + show-the-baked-default endpoint) is
+committed locally as `d4cd25c`, not pushed.** Then we designed 7e-b out loud — the
+`<PromptModal>` shape, callsite list, save semantics, and a 4-item Conf-sizing refine.
+**Paused before writing any frontend code** so the owner can answer six design questions
+([[pause-between-phases-for-review]]).
+
+#### 7e-a — what shipped (`d4cd25c`)
+
+The 2026-05-30 plan's three open decisions were closed by the owner at the start of session:
+
+1. **Per-agent append vs. global append:** **both apply** with a per-agent `inherit_append: bool`
+   opt-out. Mirrors Claude Code's CLAUDE.md model (always added, persona independent).
+   Default `True`; flip to `False` for a sandboxed/clean-room persona.
+2. **Append as a separate `system` message** (yes): emitted *after* the base prompt, *before*
+   the roster and the skills note. Order in `_assemble`: **base → global append → per-agent
+   append → roster → skills note → history**. Keeps the base stable as a future cache-key
+   candidate; makes the extra easy to attribute when reading logs.
+3. **Home phase:** 7e (this is `7e-a`).
+
+##### Files touched
+
+| File | Change |
+|---|---|
+| `app/config.py` | `InferenceCfg.system_prompt_append: str = ""` |
+| `app/domain/agent.py` | `AgentDef.prompt_append: str = ""` + `AgentDef.inherit_append: bool = True` (with docstrings) |
+| `app/services/agent/session.py` | New `_appends()` helper; `_assemble` emits 0-2 extra `system` messages right after the base |
+| `app/api/agent.py` | New `GET /api/agent/default-prompt` → `{"text": DEFAULT_SYSTEM_PROMPT}` for the editor's `[Load default]` / `[Restore default]` |
+| `backend/tests/test_prompt_append_7e.py` | **New, 8 tests** — happy path, whitespace trim, clear-falls-back, built-in default inheritance, per-agent isolation, GET/PUT API shape, multi-line YAML round-trip, default-prompt endpoint |
+
+##### Invariants verified during design
+
+- `apply_settings_inplace` rebinds `cur.inference = new.inference` → `_appends()` reads
+  `self._settings.inference.system_prompt_append` lazily, so a hot-apply lands immediately.
+- `_finalize` adds its wrap-up `system` message **after** `_assemble`, so appends still lead.
+- Compaction operates on **persisted** messages only; new system blocks are constructed fresh
+  per turn from live Settings → no interaction with the rolling summary.
+- The resume path goes through `_drive` → `_assemble`, so resumed turns also see appends.
+
+##### Test status
+
+All backend suites green: **7a 7 · 7b 2 · 7c 4 · 7d 2+1+1 · 7e 8**; `compileall` clean.
+Writes were exercised against `tempfile.mkdtemp()` via `CTRLB_CONFIG` / `CTRLB_DB`
+(per [[test-write-endpoints-on-temp-config]]) — **never the real `config.yaml`**.
+
+##### Live verification status
+
+**Not yet live-verified.** Backend on 5433 is still running the pre-`d4cd25c` build — needs a
+restart to load the new endpoint + the `_appends()` plumbing. Restart command (per the Windows
+`--reload` gotcha):
+
+```powershell
+# kill the running uvicorn on 5433, then:
+cd dashboard_v2/backend; .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 5433
+```
+
+The smoke checks worth doing after restart:
+1. `GET /api/agent/default-prompt` returns the baked `DEFAULT_SYSTEM_PROMPT` text.
+2. Send a chat turn with `inference.system_prompt_append` set → confirm the model honors it
+   (e.g. set append = "Always sign off with 'cheers'." and watch the reply).
+3. Set `AgentDef.inherit_append=False` on one agent + global append set → that agent doesn't
+   inherit; default agent does.
+
+#### 7e-b — design discussion (paused for owner review)
+
+**Scope:** one reusable `<PromptModal>` + wire 7e-a's UI fields + 4-item Conf-sizing refine.
+The original 7-item Conf-sizing list collapses: items 1-3 (System prompt / per-agent Prompt /
+SKILL.md textareas) are absorbed into the modal pattern, item 7 is moot.
+
+##### `<PromptModal>` proposed shape
+
+```
+┌──────────────────────────────────────────┐
+│ ‹ Title (e.g. "System prompt")       ✕  │  ← .mhead style
+├──────────────────────────────────────────┤
+│  [ monospace textarea, fills viewport ] │
+├──────────────────────────────────────────┤
+│  1,247 chars                            │  ← char counter, dim
+│  [Load default] [Restore default]       │  ← contextual (System prompt only)
+│  [Cancel]                       [Save]  │
+└──────────────────────────────────────────┘
+```
+
+- Reuses the existing `100dvh` + `--app-h` viewport shell from `App.tsx` (Android keyboard).
+- Focus trap + Escape-to-cancel + focus restore on close — same pattern as ConfirmDialog (F17).
+- **Net-new CSS lives in `extras.css`; `vapor.css` stays untouched** (D7).
+
+##### Callsite inventory
+
+| Where | Inline shows | Modal opens with |
+|---|---|---|
+| Conf → Inference → System prompt | Preview ("override active · 1.2k chars · 'You are…'" or "empty — using baked default") + `Edit fullscreen ↗` | Title "System prompt"; footer `[Load default]` + `[Restore default]` |
+| Conf → Inference → System prompt append **(new, 7e-a)** | Preview + opener | Title "System prompt append"; plain footer (no Load default — see Q3) |
+| Conf → Agents → per-agent Prompt | Preview + opener | Title "Agent prompt: \<name\>"; footer `[Load default]` |
+| Conf → Agents → per-agent Append **(new, 7e-a)** | Preview + opener; paired with the `inherit_append` Seg | Title "Agent prompt append: \<name\>" |
+| Conf → Skills → SKILL.md editor | **Keep** existing 320px inline + add `Open fullscreen ↗` opener | Title "Skill: \<name\>"; footer `[Remove skill]` |
+
+##### Save semantics
+
+Modal `[Save]` updates the **parent Conf group's draft state**, then closes. The user still
+hits the group-level `Save` button to persist. This matches the existing Inference/Agents/
+Skills group-save pattern. Modal `Save` does **not** hit the backend directly. `Cancel`
+discards the modal-local edit. (The `beforeunload` listener from F19 catches reload-with-dirty
+if the user forgets the group Save — known limitation of F29 option A not being shipped yet.)
+
+##### Conf-sizing refine — the 4-item list to bundle
+
+1. `.mform` label column — widen 90 → 100-110px or allow `label` to wrap to 2 lines (long
+   labels like "Subagent fan-out limit" wrap awkwardly @390px).
+2. Agents → Limits grid — switch 3-col → 2-col at viewport ≤ 420px.
+3. `.confrow` `word-break` audit on masked secrets / long URLs that don't render through
+   `.k .desc` (which vapor already breaks).
+4. Decision: separate `refine(dashboard_v2): 7e Conf sizing` commit so the modal slice's diff
+   stays focused.
+
+##### Six design questions waiting on owner
+
+1. **`[Load default]` placement:** modal-only (recommended — keeps inline rows terse) vs.
+   inline next to the field as well?
+2. **Modal Save semantics:** draft-update + close (recommended — matches current Conf group
+   flow) vs. direct backend write per-field?
+3. **`[Load default]` on append fields?** Recommended **no** — the default of an *append* is
+   `""`, there's nothing to load. The replace fields (System prompt, per-agent Prompt) get it.
+4. **`inherit_append` UI shape:** Seg (`Inherit` / `Ignore`, matching how other bool/enum knobs
+   render in `AgentsEditor`) vs. plain checkbox row? Recommended Seg for consistency.
+5. **Skills SKILL.md:** keep 320px inline **plus** `Open fullscreen ↗` (recommended — SKILL.md
+   benefits from in-place editing) vs. shrink to preview + opener like the others?
+6. **Char counter only**, no token counter? (Token counter would need the tokenizer + isn't
+   worth the dep.)
+
+#### State of the tree
+
+- **Local HEAD: `d4cd25c`** (1 commit past `origin/main`'s `40f94e8`). **Not pushed**;
+  push needs owner go-ahead.
+- Tree clean except `M start_claude_remote.ps1` (owner's launcher tweak — see the
+  2026-06-08 block + standing rule: leave it untouched).
+- **Servers up:** backend uvicorn on **5433** (corsair, no `--reload`) — **but still serving
+  pre-`d4cd25c` code**, restart needed to live-verify 7e-a (see command above). Frontend Vite
+  dev on **5190** (`--host 0.0.0.0` for Tailscale phone access). Either tearable down without
+  state loss.
+- **Phone access URL (Tailscale):** `http://corsair:5190` (or `http://100.76.212.35:5190`).
+
+#### Start here in a fresh session
+
+1. **Answer the six 7e-b design questions** at the bottom of the 2026-06-09 block. ~5 min;
+   recommendations are pre-filled, so just confirm or override.
+2. **Restart backend 5433** to live-verify 7e-a (command above). Smoke checks listed.
+3. **Build `<PromptModal>` (7e-b)** following the locked answers. New file
+   `frontend/src/components/PromptModal.tsx`; net-new CSS in `extras.css`. Wire the four
+   callsites + the new `inherit_append` Seg. Char counter (no token counter).
+4. **Bundle the 4-item Conf-sizing refine** as a separate commit (see list above).
+5. **Push `d4cd25c` + the 7e-b commits** after the owner D7 eyeball at 390px × 3 themes.
+6. Next: 7e-c (`prompts/*.md` editors), then 7e-d (memory panel on the 4f embeddings seam).
 
 ### ⭐ Session update — 2026-06-08 (UI_AUDIT.md §6c F14–F26 a11y/resilience backlog — closed end-to-end)
 
