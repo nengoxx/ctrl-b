@@ -367,6 +367,75 @@ below. Detail + slices in `TODO.md` Phase 7e; `ARCHITECTURE.md` §Agent gains th
 
 ---
 
+## D15 — Loose-end specs for the 7e agent-workspace build ✅ (Phase 7e)
+
+The concrete specs the D14 slices need before coding (surfaced by the 2026-06-14 design audit).
+Each cites the existing seam it extends. *(Judgment calls flagged ⚖ — easy to revisit.)*
+
+1. **`agent.defaults` block + merge precedence.** New `config.yaml` `agent.defaults:` — an
+   `AgentDef`-shaped mapping (no `name`). A specialist loads as
+   `AgentDef.model_validate(deep_merge(agent.defaults, agent_yaml))` (`deep_merge` = `config.py:436`,
+   the one `PUT /api/settings` uses), `name` = folder. **Static-field precedence:** `agent.yaml` →
+   `agent.defaults` → `AgentDef` code default. The existing **runtime** chain still resolves the
+   *dynamic* fields (`_system_prompt`: SOUL.md → `inference.system_prompt` → baked;
+   `ModelRef(mode=None)` → `inference.default_mode`). The **default agent** has no `agent.yaml` → built
+   from `agent.defaults` (or pure code defaults) + globals.
+
+2. **`CTRLB_HOME`.** New env root; default `Path.home() / ".ctrl-b"` (cross-OS via `pathlib`). Holds
+   `config.yaml`, `ctrlb.db`, `SOUL.md`, `memories/`, `skills/`, `agents/`. **Precedence ⚖:** an
+   explicit `CTRLB_CONFIG`/`CTRLB_DB` still overrides *its* path (back-compat with today's dev setup);
+   otherwise paths derive from `CTRLB_HOME`; if neither is set, fall back to today's repo/cwd-relative
+   default (nothing breaks pre-migration). Extend `config_path()`; add `home_path()` +
+   `agents_dir_path()` + `memories_dir_path()` mirroring `skills_dir_path()` (`config.py:357`).
+
+3. **`agents:[] → folders` migration ⚖ — idempotent, non-destructive, manual finalize.** On load, a
+   present `agents:[]` is read as a **fallback** and, one-time, **scaffolded** into any missing
+   `agents/<name>/` (write `agent.yaml` + a `SOUL.md` from the entry's `prompt`). When a folder and a
+   YAML entry share a name, **the folder wins**. `agents:[]` is **removed only by an explicit
+   "finalize migration" action** (Conf button / CLI) after the owner verifies the folders — never
+   auto-deleted. Both coexist until finalized.
+
+4. **`MemoryProvider` interface + injection point.** A `core/` protocol + a `FileMemoryProvider`
+   (`services/agent/memory.py`), on `Deps.memory`. Methods: `load_context() -> str` (the injected
+   agent+user block), `write(target, action, content, old_text=None)` (the `memory` tool's backend;
+   enforces caps → raises over-cap so the agent consolidates), `read_raw(target)`, `clear(target)`.
+   **Injected in `_assemble` right after `_appends()`** → order becomes base → appends → **memory** →
+   roster → skills → history; frozen per turn (compaction ignores fresh system blocks). Config:
+   `memory.memory_char_limit` (2200) · `memory.user_char_limit` (1375) · `memory.enabled` ·
+   `memory.user_profile_enabled` · `memory.auto_write` (Hermes-named keys, for portability).
+
+5. **`messages.agent` + resume resolution.** Nullable column, set to the resolved AgentDef name on
+   each **assistant** message (null = legacy/default). `/agent` stays a non-persistent per-turn
+   override (`thread.agent` unchanged), but each assistant turn records its agent. **Resume order:**
+   explicit request agent → **last assistant message's `agent`** → `thread.agent` → default. Restore
+   + `session_search` read the column for per-turn attribution. Subagent turns run on ephemeral
+   threads, so they never pollute parent-thread attribution.
+
+6. **`skill_manage` tool.** Agent builtin (sibling of `memory`), `category="builtin"`,
+   `ui_exposed=False`, **risk LOW** (auto-runs) gated by a **`skills.auto_write` kill switch** (off →
+   returns a "suggested skill" result, no write). Actions `write`/`remove` (+ `list`), writing **only**
+   under the agent's own `skills/<slug>/SKILL.md` (reuse 7d-c's slug-guard; traversal → error). The
+   `FileSkillProvider` re-scans per call → live, no restart. Audited as Events.
+
+7. **`session_search` scope + redaction ⚖.** **Global across all threads by default** (Hermes-like;
+   optional thread-id filter arg), FTS5 over `messages` text **with tool outputs already redacted**
+   (reuse `core/redact.py` — never index raw secrets). Indexes live **and** compacted messages
+   (recall is the point). Returns ranked snippets with `thread_id` + `ts` + the recorded `agent`. A
+   migration adds the FTS5 virtual table + sync triggers.
+
+8. **`AgentSelector` seam (7e-g) — algorithm deferred.** Lock the seam now: a `SelectorProtocol`
+   mirroring `SkillSelector`, default `KeywordAgentSelector` (token overlap on agent name + SOUL.md
+   description), **off unless `agent.auto_rotate`** is enabled. Concrete algorithm decided at 7e-g
+   build (same as the skill-selector deferral pattern).
+
+**Project-wide cleanups from the same audit** (tracked in `TODO.md` "Design audit"): reconcile
+`ARCHITECTURE.md`/`DESIGN.md` to shipped reality + D14/D15; fix the C1 (streaming both-ways) and A2
+(`question` kind) "day-one" overclaims; confirm the Utils tool registry (D8) **reuses `core/tool.py`**;
+downgrade ROADMAP **A1** to "privilege-selection UX only" (the `decide()` ladder already exists);
+decide Phase 5 (`run_shell`) **drop vs keep**.
+
+---
+
 ## Still open (decide before building the relevant phase)
 
 - Agent tool-calling format: OpenAI `tools`/function-calling vs a lightweight JSON protocol for

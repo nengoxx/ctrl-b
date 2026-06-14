@@ -171,9 +171,20 @@ The six open questions from the 2026-06-09 block are answered (all the "recommen
 `USER.md` 1,375 chars (~500 tok, `user_char_limit`), both configurable — our D14 defaults match
 exactly. 7e-d should mirror Hermes' config-key names for cross-tool portability.
 
+#### Design audit + D15 (2026-06-14)
+A whole-project review (docs vs shipped code) found doc↔code drift and loose specs. **All findings
+are tracked in `TODO.md` → "Design audit — 2026-06-14"**; the 7e-blocking specs are **locked in
+`DECISIONS.md` D15** (`agent.defaults` merge · `CTRLB_HOME` · migration finalize · `MemoryProvider`
+interface + injection · `messages.agent`/resume · `skill_manage` · `session_search` scope/redaction ·
+`AgentSelector` seam). Headlines: **`ARCHITECTURE.md`/`DESIGN.md` need a reconciliation pass** (they
+predate 7a–7d + D14); the **A1 privilege ladder is already built** in `permissions.decide()`
+(downgrade to UX-only); **C1 streaming-both-ways + A2 `question` kind** are doc "day-one" claims that
+aren't built; **Utils/D8 registry should reuse `core/tool.py`**; **Phase 5 `run_shell`** — decide
+drop vs keep. **Recommended order:** lock D15 (done) → reconcile ARCHITECTURE/DESIGN → build 7e-b.
+
 #### State of the tree
-- **Local HEAD after this session's doc commit** (DECISIONS D14 + TODO 7e rewrite + this block):
-  one commit past `origin/main`'s `6d212a9`. Push per owner go-ahead.
+- **Local HEAD after this session's doc commit** (DECISIONS D14+D15 + TODO 7e rewrite + audit + this
+  block): commits past `origin/main`. Push per owner go-ahead.
 - Tree otherwise clean except `start_claude_remote.ps1` (untouched).
 - Servers: backend uvicorn **5433** (live, 7e-a verified), frontend Vite **5190** (`--host 0.0.0.0`).
 

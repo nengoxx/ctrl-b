@@ -489,6 +489,29 @@ tools + confirm bubbles) are DONE.**
 
 ---
 
+## Design audit — 2026-06-14 (loose ends + doc drift)
+
+A whole-project review (docs vs the shipped backend code). Findings, tracked:
+
+**Doc↔code drift — `ARCHITECTURE.md` predates 7a–7d + D14 (highest priority):**
+- [ ] **Reconcile `ARCHITECTURE.md`**: §3 still lists YAML `agents[]` (D14 removes it) + `agent.memory_backend`/per-agent `memory` (superseded by D14); §3 data model is stale (`Message kind|content` → real code is `parts[]` JSON + `actor`, no `kind`; `Event actor(user|agent)` → real `user|agent|system|automation`); §2 lists unbuilt endpoints (`/api/prompts`, `/api/memory`, `/api/exec`, `/api/tools`) and omits the real ones (`/api/agents`, `/api/integrations`, `/api/skills`, `/api/agent/default-prompt`); §4 memory predates D14; §6 lacks `CTRLB_HOME`.
+- [ ] **Module names in `ARCHITECTURE.md` are illustrative + drifted** (`app/hosts.py`/`app/agent.py`/`app/voice.py`/`app/tools/`/`app/models/` vs the real `services/`/`adapters/`/`api/`). Add a caveat or refresh.
+- [ ] **Reconcile `DESIGN.md`** with shipped reality + D14/D15 (read it first — it's the authoritative data-model doc).
+
+**Documented "day-one" seams that were never built (contradiction to fix — doc or code):**
+- [ ] **Streaming `auto|on|off` + buffered chat (C1):** ARCHITECTURE §1 claims "both from day one"; `/api/agent/chat` is SSE-only (`InferenceClient.complete` exists but only the compactor uses it). Either build the buffered path + `streaming` setting, or correct the overclaim.
+- [ ] **`question` message kind (A2):** ARCHITECTURE lists it as a v1 kind; the Part union has no `question` part / pause-for-answer flow (the confirm-suspend flow is the same shape — cheap later). Fix the doc's "day-one" framing.
+- [ ] **D8 tool registry / Utils (Phase 8) unbuilt:** no `@tool`, no `/api/tools`, Utils is a static shell. **Decide:** the Utils tool registry should reuse `core/tool.py` (the action registry), not a parallel one.
+
+**Found *better* than documented:**
+- [ ] **A1 privilege ladder is already implemented** in `core/permissions.decide()` (READONLY/CONFIRM/AUTO_LOW/FULL + `run_shell` gating). Downgrade ROADMAP A1 to "selection/persistence UX only"; decide where the level is chosen (global setting + per-session/per-automation override — today only `AgentDef.privilege`).
+
+**Decisions to formalize:**
+- [ ] **Phase 5 (`run_shell`/`/api/exec`):** gated in `decide()` but no tool/endpoint; `!` composer prefix is a stub. Decide: **formally drop** (open-terminal covers remote shell) vs keep.
+- [ ] **Voice config block:** `config.py` has no `stt`/`tts`/`voice` section yet (ARCHITECTURE §3 lists it). Add when Phase 6 lands.
+
+**§2 blocking specs for the 7e build → locked in `DECISIONS.md` D15:** `agent.defaults` shape + merge precedence · `CTRLB_HOME` path + precedence · `agents:[]→folders` migration mechanics · `MemoryProvider` interface + injection point · `messages.agent` + resume resolution · `skill_manage` schema/scope · `session_search` scope + redaction · `AgentSelector` seam.
+
 ## Post-v1 backlog (see ROADMAP.md — build v1 seams now)
 
 Not v1 scope, but the owner wants these; v1 must leave room. Detail + design notes in `ROADMAP.md`.
