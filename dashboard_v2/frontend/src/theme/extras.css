@@ -1663,3 +1663,33 @@ body {
   margin-bottom: 6px;
 }
 
+/* ── Conf sizing refine (Phase 7e-b) ──────────────────────────────────────────────────────────
+   Small @390px legibility fixes that the prompt-modal slice surfaced. Overrides of vapor.css
+   rules live here (extras.css loads after vapor.css), keeping vapor.css verbatim (D7). */
+
+/* The .mform label column (vapor 90px) clipped the longest agent labels — "INHERIT APPEND" wrapped
+   to two lines. Widen to 104px (still leaves ~240px for the value column at 390px) and tidy the
+   wrap line-height for any label that still needs two lines (e.g. localized/longer ones). */
+.mconf .mform {
+  grid-template-columns: 104px 1fr;
+}
+.mconf .mform label {
+  line-height: 1.25;
+}
+
+/* Agents → per-agent Limits grid: 3 columns is tight at phone width (the labels "per-tool cap",
+   "subagent depth" + a centered input don't fit). Drop to 2 columns on narrow viewports. */
+@media (max-width: 420px) {
+  .agent-lim {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Value overflow audit: masked secrets are <input type=password> (they scroll, never overflow) and
+   long URLs/errors render through `.confrow .k .desc`, which vapor already breaks (word-break:
+   break-all). The one gap is the row label itself — a long host/model/agent name in `.k .label`
+   had no wrap rule. Let it break so it can never push the row's badge/chevron off-screen. */
+.confrow .k .label {
+  overflow-wrap: anywhere;
+}
+
