@@ -1441,3 +1441,225 @@ body {
   box-shadow: 0 0 0 1px var(--magenta), 0 0 10px rgba(var(--accent-rgb), 0.25);
 }
 
+/* ── PromptModal · full-page prompt/markdown editor (Phase 7e-b, net-new) ──────────────────────
+   The one reusable editor for every prompt field (System prompt + appends, per-agent prompt +
+   append, SKILL.md, and the 7e-c+ SOUL.md/MEMORY.md editors). Built only from vapor tokens;
+   vapor.css untouched (D7). Sizes to the app's --app-h viewport shell so the Android keyboard
+   shrinks it the same way it shrinks the composer (App.tsx). */
+.pm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60; /* above .modal-backdrop (50) — single-user, never co-open, but keep the order explicit */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  background: rgba(5, 1, 12, 0.72);
+  backdrop-filter: blur(4px);
+  animation: modal-fade 0.18s ease;
+}
+.pm {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 640px;
+  height: var(--app-h, 100dvh);
+  max-height: calc(var(--app-h, 100dvh) - 28px);
+  background: linear-gradient(160deg, var(--bg-2), var(--bg));
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.pm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.pm-head h3 {
+  margin: 0;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--ink);
+}
+.pm-x {
+  all: unset;
+  cursor: pointer;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  border: 1px solid var(--line-2);
+}
+.pm-x:active {
+  color: var(--magenta);
+  border-color: var(--magenta);
+}
+.pm-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  padding: 12px 14px;
+}
+.pm-text {
+  all: unset;
+  box-sizing: border-box;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-3);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  border: 1px solid var(--line);
+  resize: none;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  -webkit-overflow-scrolling: touch;
+}
+.pm-text.mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.pm-text::placeholder {
+  color: var(--ink-faint);
+}
+.pm-text:focus {
+  border-color: var(--magenta);
+  box-shadow: var(--m-glow);
+}
+.pm-foot {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--line);
+}
+.pm-count {
+  flex: 1 1 100%;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.pm-count.over {
+  color: rgb(var(--danger-rgb));
+}
+.pm-defaults {
+  display: flex;
+  gap: 8px;
+  margin-right: auto; /* keep Load/Restore on the left, push Cancel/Save right */
+}
+.pm-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+/* secondary (outline) buttons — Load/Restore/Cancel; mirrors the .conf-save.alt recipe */
+.pm-alt {
+  all: unset;
+  cursor: pointer;
+  padding: 9px 14px;
+  border-radius: 8px;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pm-alt:active {
+  color: var(--magenta);
+  border-color: var(--magenta);
+}
+/* primary Save — same gradient pill as the .modal accent button */
+.pm-save {
+  all: unset;
+  cursor: pointer;
+  padding: 9px 20px;
+  border-radius: 8px;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: #1a0428;
+  background: linear-gradient(135deg, var(--magenta), var(--violet));
+  box-shadow: 0 3px 12px rgba(var(--accent-rgb), 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pm-save:active {
+  transform: scale(0.97);
+  filter: brightness(1.1);
+}
+
+/* Inline prompt rows — the 1-line preview + "Edit fullscreen ↗" opener that replaces the small
+   textareas in Conf → Inference and Conf → Agents. */
+.confrow.conf-promptrow {
+  align-items: flex-start;
+}
+.prompt-preview {
+  margin-top: 5px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  word-break: break-word;
+}
+.prompt-open {
+  all: unset;
+  cursor: pointer;
+  flex: 0 0 auto;
+  padding: 7px 11px;
+  border-radius: 8px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+}
+.prompt-open:active {
+  color: var(--magenta);
+  border-color: var(--magenta);
+}
+/* The agent .mform value cell holding the preview + opener (replaces the kv-text textarea). */
+.kv-prompt {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.kv-prompt .prompt-preview {
+  margin-top: 2px;
+  flex: 1;
+  min-width: 0;
+}
+/* SKILL.md keeps its inline 320px editor; this is just the fullscreen-opener toolbar above it. */
+.skill-md-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+

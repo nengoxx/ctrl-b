@@ -7,12 +7,15 @@ import { SkillsEditor } from "../components/SkillsEditor";
 import { ToolDescriptionsEditor } from "../components/ToolDescriptionsEditor";
 import { useActionSpecs } from "../hooks/useActions";
 import { type AgentDef, type AgentSectionCfg } from "../hooks/useAgents";
+import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
 import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
 import { useSaveSettings, useSettings, type SettingsDoc } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
+import { promptPreview } from "../lib/promptPreview";
 import { useCollapsed } from "../store/collapse";
 import { useRegisterDirty } from "../store/dirty";
+import { requestPrompt } from "../store/prompt";
 import { setUI, useUISlice, type Skyline, type Theme, type Loz } from "../store/ui";
 
 // Conf tab. Appearance is wired to the live UI store (client display state). Phase 7a wires the
@@ -78,6 +81,30 @@ function Field(props: {
         placeholder={props.placeholder}
         onChange={(e) => props.onChange(e.target.value)}
       />
+    </div>
+  );
+}
+
+/** A prompt/markdown field shown as a 1-line preview + an "Edit fullscreen ↗" opener that routes to
+ *  the shared PromptModal (7e-b). The full text lives behind the modal so the Conf list stays
+ *  scannable; the modal hands back the edited string, which the caller folds into its group draft. */
+function PromptRow(props: {
+  label: string;
+  desc: string;
+  value: string;
+  emptyHint: string;
+  onEdit: () => void;
+}) {
+  return (
+    <div className="confrow conf-promptrow">
+      <div className="k">
+        <div className="label">{props.label}</div>
+        <div className="desc">{props.desc}</div>
+        <div className="prompt-preview">{promptPreview(props.value, props.emptyHint)}</div>
+      </div>
+      <button type="button" className="prompt-open" onClick={props.onEdit}>
+        Edit fullscreen ↗
+      </button>
     </div>
   );
 }
@@ -152,6 +179,7 @@ export function ConfTab({ active }: Props) {
   const rediscover = useRediscover();
   const { data: actionSpecs = [] } = useActionSpecs();
   const { data: skillList = [] } = useSkills();
+  const { data: defaultPrompt = "" } = useDefaultPrompt();
   const [draft, setDraft] = useState<Draft | null>(null);
 
   // Agent definitions + the agent-section scalars come straight off the settings doc.
@@ -314,18 +342,35 @@ export function ConfTab({ active }: Props) {
             value={String(inf?.request_timeout_s ?? "")}
             onChange={(v) => setInf("request_timeout_s", v as unknown as number)}
           />
-          <div className="confrow conf-textrow">
-            <div className="k">
-              <div className="label">System prompt</div>
-              <div className="desc">optional override of the default agent prompt</div>
-            </div>
-            <textarea
-              className="conf-textarea"
-              value={inf?.system_prompt ?? ""}
-              placeholder="(use the built-in default)"
-              onChange={(e) => setInf("system_prompt", e.target.value)}
-            />
-          </div>
+          <PromptRow
+            label="System prompt"
+            desc="optional override of the default agent prompt"
+            value={inf?.system_prompt ?? ""}
+            emptyHint="empty — using the baked default"
+            onEdit={async () => {
+              const next = await requestPrompt({
+                title: "System prompt",
+                value: inf?.system_prompt ?? "",
+                defaultText: defaultPrompt,
+                placeholder: "(empty → the built-in default)",
+              });
+              if (next != null) setInf("system_prompt", next);
+            }}
+          />
+          <PromptRow
+            label="System prompt append"
+            desc="added after the base — applies to every agent unless it opts out"
+            value={inf?.system_prompt_append ?? ""}
+            emptyHint="empty — nothing appended"
+            onEdit={async () => {
+              const next = await requestPrompt({
+                title: "System prompt append",
+                value: inf?.system_prompt_append ?? "",
+                placeholder: "extra instructions added to every agent",
+              });
+              if (next != null) setInf("system_prompt_append", next);
+            }}
+          />
         </div>
         {saveBar}
       </ConfGroup>

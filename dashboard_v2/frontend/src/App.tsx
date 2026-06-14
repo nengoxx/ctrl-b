@@ -4,6 +4,7 @@ import { AppBar } from "./components/AppBar";
 import { Composer } from "./components/Composer";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { PromptModal } from "./components/PromptModal";
 import { SwUpdatePrompt } from "./components/SwUpdatePrompt";
 import { TabBar } from "./components/TabBar";
 import { Toasts } from "./components/Toasts";
@@ -139,6 +140,7 @@ export default function App() {
       <TabBar onPrefetch={prefetch} />
       <Toasts />
       <ConfirmDialog />
+      <PromptModal />
       <SwUpdatePrompt />
     </div>
   );

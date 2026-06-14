@@ -7,8 +7,11 @@ import {
   type AgentSectionCfg,
   type Privilege,
 } from "../hooks/useAgents";
+import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
+import { promptPreview } from "../lib/promptPreview";
 import { requestConfirm } from "../store/confirm";
 import { useRegisterDirty } from "../store/dirty";
+import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
 
 // Phase 7d-b — Agents management. Manage Settings.agents[] (the D11 agent definitions) + the
@@ -82,6 +85,7 @@ function AgentForm(props: {
   const { agent: a, onChange } = props;
   const set = (p: Partial<AgentDef>) => onChange({ ...a, ...p });
   const setModel = (p: Partial<AgentDef["model"]>) => onChange({ ...a, model: { ...a.model, ...p } });
+  const { data: defaultPrompt = "" } = useDefaultPrompt();
 
   const toolsAll = a.tools === "*";
   const toolSet = new Set(toolsAll ? [] : (a.tools as string[]));
@@ -123,11 +127,52 @@ function AgentForm(props: {
       <Seg<Privilege> current={a.privilege} onPick={(v) => set({ privilege: v })} options={PRIVS} />
 
       <label>Prompt</label>
-      <textarea
-        className="kv-text"
-        placeholder="(blank → built-in default agent prompt)"
-        value={a.prompt}
-        onChange={(e) => set({ prompt: e.target.value })}
+      <div className="kv-prompt">
+        <div className="prompt-preview">{promptPreview(a.prompt, "blank → built-in default agent prompt")}</div>
+        <button
+          type="button"
+          className="prompt-open"
+          onClick={async () => {
+            const next = await requestPrompt({
+              title: `Agent prompt: ${a.name || "new"}`,
+              value: a.prompt,
+              defaultText: defaultPrompt,
+              placeholder: "(empty → the built-in default agent prompt)",
+            });
+            if (next != null) set({ prompt: next });
+          }}
+        >
+          Edit fullscreen ↗
+        </button>
+      </div>
+
+      <label>Append</label>
+      <div className="kv-prompt">
+        <div className="prompt-preview">{promptPreview(a.prompt_append, "blank → nothing appended")}</div>
+        <button
+          type="button"
+          className="prompt-open"
+          onClick={async () => {
+            const next = await requestPrompt({
+              title: `Agent prompt append: ${a.name || "new"}`,
+              value: a.prompt_append,
+              placeholder: "extra instructions for this agent",
+            });
+            if (next != null) set({ prompt_append: next });
+          }}
+        >
+          Edit fullscreen ↗
+        </button>
+      </div>
+
+      <label>Inherit append</label>
+      <Seg<"yes" | "no">
+        current={a.inherit_append ? "yes" : "no"}
+        onPick={(v) => set({ inherit_append: v === "yes" })}
+        options={[
+          { val: "yes", label: "Inherit" },
+          { val: "no", label: "Ignore" },
+        ]}
       />
 
       <label>Tools</label>

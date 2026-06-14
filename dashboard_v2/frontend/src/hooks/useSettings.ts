@@ -21,6 +21,7 @@ export interface SettingsDoc {
     default_mode: string;
     request_timeout_s: number;
     system_prompt: string;
+    system_prompt_append: string; // 7e-a additive axis — appended as its own system message
     local: InferenceEndpoint;
     cloud: InferenceEndpoint;
   };

@@ -18,6 +18,8 @@ export interface ModelRef {
 export interface AgentDef {
   name: string;
   prompt: string;
+  prompt_append: string; // 7e-a — appended after the base; emitted as its own system message
+  inherit_append: boolean; // 7e-a — when false, ignore the global inference.system_prompt_append
   model: ModelRef;
   tools: string[] | "*";
   skills: string[] | "*";
@@ -43,6 +45,8 @@ export function blankAgent(name = ""): AgentDef {
   return {
     name,
     prompt: "",
+    prompt_append: "",
+    inherit_append: true,
     model: { mode: "", model: "" },
     tools: "*",
     skills: "*",

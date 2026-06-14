@@ -10,6 +10,7 @@ import {
 } from "../hooks/useSkills";
 import { requestConfirm } from "../store/confirm";
 import { useRegisterDirty } from "../store/dirty";
+import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
 
 // Phase 7d-c — Skills management. Lists discovered skills (skills/<name>/SKILL.md), edits the raw
@@ -53,6 +54,22 @@ function SkillFileEditor({ name, onClose }: { name: string; onClose: () => void 
   if (isLoading || text == null) return <div className="agent-empty">loading…</div>;
   return (
     <>
+      <div className="skill-md-bar">
+        <button
+          type="button"
+          className="prompt-open"
+          onClick={async () => {
+            const next = await requestPrompt({
+              title: `Skill: ${name}`,
+              value: text,
+              placeholder: "SKILL.md — markdown body + frontmatter",
+            });
+            if (next != null) setText(next);
+          }}
+        >
+          Open fullscreen ↗
+        </button>
+      </div>
       <textarea
         className="kv-text skill-md"
         value={text}
