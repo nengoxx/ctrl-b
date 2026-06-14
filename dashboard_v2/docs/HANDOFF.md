@@ -76,23 +76,24 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e-a pushed · Phase 7e **reshaped by D14** — agent workspaces · next: 7e-b PromptModal)
+## Current state (all pushed @ `5df69be` · Phase 7e designed via D14/D15 · **next: BUILD 7e-b**)
 
-> **7e-a is pushed** (`d4cd25c`) along with the HANDOFF doc (`6d212a9`); backend **restarted +
-> live-verified** on 5433 (`GET /api/agent/default-prompt` returns the baked default). Then a
-> long planning session **reshaped Phase 7e into the D14 agent-workspace design** (file-based,
-> portable persona + memory modelled on Hermes Agent / OpenClaw, on our in-process runtime).
-> See the **2026-06-14 block** below for the research + every locked decision; **D14** in
-> `DECISIONS.md` and the rewritten **7e-a…g** slices in `TODO.md` are the canonical record.
+> **Everything is pushed to `origin/main` (`5df69be`)** — 7e-a shipped + live-verified, and a long
+> **planning + audit session** that: reshaped Phase 7e into the **D14 agent-workspace design**
+> (file-based, portable persona + memory modelled on Hermes Agent / OpenClaw, on our in-process
+> runtime); **ratified all 8 D15 build-specs** one-by-one with the owner; ran a **whole-project design
+> audit**; and **reconciled `ARCHITECTURE.md` + `DESIGN.md`** to shipped reality + D14/D15. **D14 + D15**
+> in `DECISIONS.md` and the **7e-a…g** slices in `TODO.md` are the canonical build record. The next
+> action is **writing code for 7e-b** — all design is locked, no open questions block it.
 > Tree clean except `start_claude_remote.ps1` (owner's launcher tweak, untouched).
 >
-> **Next focus (locked 2026-06-14):** the slices are 7e-a ✅ → **7e-b** (PromptModal + Conf-sizing,
-> the reusable editor everything below plugs into) → **7e-c** (per-agent workspace foundation:
-> `$CTRLB_HOME` root, `agents/<name>/ = agent.yaml + SOUL.md`, migrate+remove `agents:[]`, AgentsEditor
-> add/edit/delete, agents folder-only — no `agents:[]`) → **7e-d** (`FileMemoryProvider` + `memory` tool + auto-write/kill-switch + per-agent
-> `memories/MEMORY.md` / global `memories/USER.md` + Conf Memory panel) → **7e-e** (`session_search`
-> FTS5) → **7e-f** (per-agent skills w/ inheritance + `skill_manage` self-authoring) → **7e-g**
-> (optional `AgentSelector` auto-rotate).
+> **The 7e slice sequence (D14/D15):** 7e-a ✅ → **7e-b** (PromptModal + Conf-sizing — the reusable
+> editor everything below plugs into; **build this next**) → **7e-c** (workspace foundation:
+> `$CTRLB_HOME`, `agents/<name>/ = agent.yaml + SOUL.md`, **agents folder-only — `agents:[]` removed,
+> no migration**, `messages.agent` column, AgentsEditor add/edit/delete) → **7e-d** (`FileMemoryProvider`
+> + `memory` tool + auto-write/kill-switch + per-agent `memories/MEMORY.md` / global `memories/USER.md`
+> + Conf Memory panel) → **7e-e** (`session_search` FTS5) → **7e-f** (per-agent skills w/ inheritance +
+> `skill_manage`) → **7e-g** (optional `AgentSelector` auto-rotate).
 >
 > 1. **Build 7e-b** — still the right next step; D14 gives it a clear downstream contract (it edits
 >    `SOUL.md` / `MEMORY.md` files, not just inline strings). The **six design questions are
@@ -196,16 +197,24 @@ global + redacted · #8 `AgentSelector` seam locked, algorithm at 7e-g. **Also n
 endpoints) → recorded in ROADMAP A4, lands as a small slice once 7e makes the lists real.
 
 #### State of the tree
-- **Local HEAD after this session's doc commits** (DECISIONS D14+D15 + TODO 7e + audit + ROADMAP A4 +
-  this block): commits past `origin/main`. Push per owner go-ahead.
-- Tree otherwise clean except `start_claude_remote.ps1` (untouched).
+- **`origin/main` HEAD `5df69be`** — everything from this session is **pushed**: 7e-a (`d4cd25c`),
+  D14 + refinements, D15 + the 8 ratified specs, the whole-project design audit, and the
+  ARCHITECTURE/DESIGN reconciliation. Nothing local pending.
+- Tree clean except `start_claude_remote.ps1` (owner's launcher tweak — leave it).
 - Servers: backend uvicorn **5433** (live, 7e-a verified), frontend Vite **5190** (`--host 0.0.0.0`).
+  Tearable down without state loss (config in `config.yaml`, data in `ctrlb.db`).
 
-#### Start here in a fresh session
-1. **Build 7e-b** (PromptModal + Conf-sizing) — answer the **six design questions** at the bottom of
-   the 2026-06-09 block first.
-2. Then **7e-c → 7e-d → 7e-e → 7e-f** per `TODO.md` / D14. The migration that removes `agents:[]`
-   lives in 7e-c.
+#### Start here in a fresh session — **build 7e-b**
+1. **Build 7e-b** (`<PromptModal>` full-page editor + the 4-item Conf-sizing refine). The **six design
+   questions are answered + locked** ("7e-b decisions locked" subsection above) — no blockers. New file
+   `frontend/src/components/PromptModal.tsx`; net-new CSS in `extras.css` (vapor.css untouched, D7).
+   Wire the four callsites + the `inherit_append` Seg; char counter only. Separate `refine` commit for
+   the Conf-sizing items. Verify @390px ×3 themes before calling it done.
+2. Then **7e-c → 7e-d → 7e-e → 7e-f → 7e-g** per `TODO.md` + **D14/D15** (the build specs). Note 7e-c
+   makes agents **folder-only** (no migration; `agents:[]` removed from schema) and adds `$CTRLB_HOME`
+   + the `messages.agent` column.
+3. Two audit items remain open as deliberate future decisions: **Phase 5 `run_shell`** (drop vs keep)
+   and the **voice config block** (Phase 6).
 
 ### ⭐ Session update — 2026-06-09 (7e-a backend shipped · 7e-b design discussion locked, paused for review)
 
