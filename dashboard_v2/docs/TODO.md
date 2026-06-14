@@ -36,8 +36,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 > full-page editor + Conf-sizing refine — planned 2026-05-30) → then 7e proper (prompt-file
 > editors + memory panel); (3) a **thin emma/Linux deploy + Tailscale-Serve HTTPS** (the
 > migration target; HTTPS also unblocks the mic) → **voice (6)** → **utils (8)**. **Phase 5
-> (guarded shell) is deprioritized** — open-terminal already provides remote shell on emma,
-> so local `run_shell` is largely redundant.
+> (guarded shell) is back in scope (decided 2026-06-14):** the `!` composer prefix is the
+> **local-shell UX** on the backend host (Claude-Code/Codex model — `!git status`), **not**
+> open-terminal (which is a *separate remote box* over REST, an agent tool). See the Phase 5 section.
 
 ---
 
@@ -301,12 +302,25 @@ tools + confirm bubbles) are DONE.**
       settings). **Done in Phase 7d** (`AgentsEditor`/`SkillsEditor`); skill files edited via new
       `GET/PUT/DELETE /api/skills/{name}`, agents via `PUT /api/settings`.
 
-## Phase 5 — Guarded shell (`$` escape hatch)
+## Phase 5 — Guarded local shell (the `!` escape hatch) — **specced 2026-06-14**
 
-- [ ] `run_shell` action: capture stdout/stderr, **timeout**, target local or remote (SSH),
-      `risk=high`, **excluded from agent tools by default** (setting), always logged.
-- [ ] `POST /api/exec` (setting-gated). Frontend: `$` prefix routes here; result shown as a
-      done command bubble.
+> The Claude-Code/Codex `!` model: the **user** types `!<cmd>` to run a real shell command **on the
+> backend host** (the box running ctrl-b — corsair/emma). Distinct from open-terminal (a *remote* box
+> over REST, used as an agent tool). Decisions locked 2026-06-14:
+> - **Target = local backend host only** (other fleet hosts stay the job of SSH actions + open-terminal).
+> - **Workdir = configurable `shell.workdir`, default `$CTRLB_HOME`** (Conf-editable).
+> - **Output feeds the agent's context** (Claude-Code behavior: `!git log` → bubble *and* available to
+>   the next turn) — redacted + truncated like any tool output.
+> - **User `!` enabled by default**, `shell.user_exec_enabled` toggle to disable. The **agent's**
+>   `run_shell` tool stays **separate + excluded-by-default** (D3 / `permissions.decide` already gates it).
+
+- [ ] `run_shell` action (local exec via `asyncio.create_subprocess_exec`): capture stdout/stderr,
+      **kill-on-timeout**, per-OS shell (Windows pwsh/cmd · Linux bash — a legitimate server-OS branch),
+      cwd = `shell.workdir`, `risk=HIGH`, redact + truncate output, always logged as an `Event`.
+- [ ] `POST /api/exec` (gated by `shell.user_exec_enabled`). Composer **`!` prefix** routes here;
+      result shown as a done command bubble **and** appended to the thread so the agent sees it.
+- [ ] `shell.workdir` + `shell.user_exec_enabled` config + Conf controls; keep the agent-facing
+      `run_shell` tool excluded-by-default (separate setting).
 
 ## Phase 6 — Voice (STT + TTS)
 
@@ -512,8 +526,10 @@ FTS5); the C1/A2 doc "day-one" overclaims are corrected (flagged as future, not 
 - [x] **A1 privilege ladder already implemented** ✓2026-06-14 in `core/permissions.decide()` (READONLY/CONFIRM/AUTO_LOW/FULL + `run_shell` gating); **ROADMAP A1 downgraded** to "selection/persistence UX only". Still to decide at that phase: where the level is chosen (global + per-session/per-automation override — today only `AgentDef.privilege`).
 
 **Decisions to formalize:**
-- [ ] **Phase 5 (`run_shell`/`/api/exec`):** gated in `decide()` but no tool/endpoint; `!` composer prefix is a stub. Decide: **formally drop** (open-terminal covers remote shell) vs keep.
-- [ ] **Voice config block:** `config.py` has no `stt`/`tts`/`voice` section yet (ARCHITECTURE §3 lists it). Add when Phase 6 lands.
+- [x] **Phase 5 (`run_shell`/`/api/exec`)** ✓2026-06-14 — **decided: KEEP + build.** The `!` prefix is the
+  local-shell UX on the backend host (Claude-Code model), distinct from open-terminal. Full spec in the
+  Phase 5 section (local-only · `shell.workdir` default `$CTRLB_HOME` · output→context · enabled-by-default).
+- [ ] **Voice config block:** `config.py` has no `stt`/`tts`/`voice` section yet (ARCHITECTURE §3 lists it). **Confirmed 2026-06-14: voice (Phase 6) is still planned as designed** — the config block lands when Phase 6 is built (nothing to do now).
 
 **§2 blocking specs for the 7e build → locked in `DECISIONS.md` D15:** `agent.defaults` shape + merge precedence · `CTRLB_HOME` path + precedence · **agents folder-only (no migration; `agents:[]` removed from schema)** · `MemoryProvider` interface + injection point · `messages.agent` + resume resolution · `skill_manage` schema/scope · `session_search` scope + redaction · `AgentSelector` seam.
 

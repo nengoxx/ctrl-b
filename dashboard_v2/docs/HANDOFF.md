@@ -213,8 +213,12 @@ endpoints) → recorded in ROADMAP A4, lands as a small slice once 7e makes the 
 2. Then **7e-c → 7e-d → 7e-e → 7e-f → 7e-g** per `TODO.md` + **D14/D15** (the build specs). Note 7e-c
    makes agents **folder-only** (no migration; `agents:[]` removed from schema) and adds `$CTRLB_HOME`
    + the `messages.agent` column.
-3. Two audit items remain open as deliberate future decisions: **Phase 5 `run_shell`** (drop vs keep)
-   and the **voice config block** (Phase 6).
+3. **Both former open items are now decided (2026-06-14):** **Phase 5 = KEEP + build** — the `!`
+   prefix is the user-driven **local shell on the backend host** (Claude-Code model: `!git status`),
+   target local-only · cwd `shell.workdir` default `$CTRLB_HOME` · output→agent-context · enabled by
+   default (`shell.user_exec_enabled`); the agent's `run_shell` stays excluded-by-default. Spec in
+   `TODO.md` Phase 5 + D3. **Voice (Phase 6)** confirmed still planned as designed; its config block
+   lands when Phase 6 is built. **No open design decisions remain.**
 
 ### ⭐ Session update — 2026-06-09 (7e-a backend shipped · 7e-b design discussion locked, paused for review)
 

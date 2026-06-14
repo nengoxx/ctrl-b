@@ -69,6 +69,16 @@ serial `is_awake()` loop that blocks status for the whole fleet.
   **off-limits to the agent by default** (gated by a setting). This preserves the Vapor `$`
   power-user UX without making arbitrary shell the agent's casual default.
 
+**✅ Clarified 2026-06-14 (Phase 5 spec).** The `!` composer prefix is the **user-driven local
+shell** — `!<cmd>` runs a real shell command **on the backend host** (the box running ctrl-b,
+corsair/emma), the Claude-Code/Codex model. It is **not** open-terminal (a *separate remote box*
+over REST, used as an *agent* tool). Locked: **target = local backend host only** (other fleet hosts
+stay SSH actions + open-terminal); **cwd = configurable `shell.workdir`, default `$CTRLB_HOME`**;
+**output feeds the agent's context** (bubble + next-turn visibility, redacted/truncated); **user `!`
+enabled by default** (`shell.user_exec_enabled` toggle), while the **agent's** `run_shell` tool stays
+**separate + excluded-by-default** (`decide()` already gates it). Phase 5 is **kept + built**, not
+dropped. Full slice in `TODO.md` Phase 5.
+
 **Why:** today's `/execute` is Windows-only (`cmd /k` pops a GUI window — meaningless headless
 on Ubuntu), captures no output (the agent can't see results), and is RCE-by-design. Typed
 actions are OS-abstracted, validatable, loggable, and streamable.
