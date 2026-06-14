@@ -1371,6 +1371,19 @@ body {
   color: var(--ink-faint);
   font-weight: 400;
 }
+/* storage-location caption at the top of an agent's edit form (7e-c) — spans the mform grid so it's
+   unambiguous which files/section the fields write to (agent.yaml + SOUL.md, or config agent.defaults). */
+.mform .agent-store {
+  grid-column: 1 / -1;
+  font-size: 9px;
+  letter-spacing: 0.4px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  color: var(--ink-faint);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+  border-bottom: 1px dashed var(--line);
+  word-break: break-all;
+}
 .agent-lim {
   grid-column: 1 / -1;
   display: grid;

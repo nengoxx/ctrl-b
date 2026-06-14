@@ -114,9 +114,14 @@ function AgentFieldsForm(props: {
   const modeVal = (a.model.mode || "") as "" | "local" | "cloud";
   const label = a.title || a.name;
 
+  // Where this agent's data lives — so it's unambiguous which file each field edits.
+  const store = props.isDefault
+    ? "config.yaml · agent.defaults + root SOUL.md"
+    : `agents/${a.name}/ · agent.yaml + SOUL.md`;
+
   const editSoul = async () => {
     const next = await requestPrompt({
-      title: `Persona — ${label}`,
+      title: `Persona (SOUL.md) — ${label}`,
       value: props.soul,
       defaultText: props.defaultPrompt,
       placeholder: "(empty → the built-in default agent prompt)",
@@ -126,15 +131,17 @@ function AgentFieldsForm(props: {
 
   const editAppend = async () => {
     const next = await requestPrompt({
-      title: `Prompt append — ${label}`,
+      title: `Prompt append (${props.isDefault ? "agent.defaults" : "agent.yaml"}) — ${label}`,
       value: a.prompt_append,
-      placeholder: "extra instructions for this agent",
+      placeholder: "extra instructions added after the persona",
     });
     if (next != null) set({ prompt_append: next });
   };
 
   return (
     <div className="mform">
+      <div className="agent-store">{store}</div>
+
       <label>Display name</label>
       <input value={a.title} placeholder={a.name} onChange={(e) => set({ title: e.target.value })} />
 
@@ -154,17 +161,17 @@ function AgentFieldsForm(props: {
       <label>Privilege</label>
       <Seg<Privilege> current={a.privilege} onPick={(v) => set({ privilege: v })} options={PRIVS} />
 
-      <label>Persona</label>
+      <label>Persona · SOUL.md</label>
       <div className="kv-prompt">
         <div className="prompt-preview">
-          {promptPreview(props.soul, props.isDefault ? "blank → built-in default prompt" : "blank → built-in default agent prompt")}
+          {promptPreview(props.soul, "blank → built-in default prompt")}
         </div>
         <button type="button" className="prompt-open" onClick={editSoul}>
           Edit fullscreen ↗
         </button>
       </div>
 
-      <label>Append</label>
+      <label>Prompt append</label>
       <div className="kv-prompt">
         <div className="prompt-preview">{promptPreview(a.prompt_append, "blank → nothing appended")}</div>
         <button type="button" className="prompt-open" onClick={editAppend}>
@@ -172,7 +179,7 @@ function AgentFieldsForm(props: {
         </button>
       </div>
 
-      <label>Inherit append</label>
+      <label>Inherit global append</label>
       <Seg<"yes" | "no">
         current={a.inherit_append ? "yes" : "no"}
         onPick={(v) => set({ inherit_append: v === "yes" })}
