@@ -83,15 +83,16 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > long planning session **reshaped Phase 7e into the D14 agent-workspace design** (file-based,
 > portable persona + memory modelled on Hermes Agent / OpenClaw, on our in-process runtime).
 > See the **2026-06-14 block** below for the research + every locked decision; **D14** in
-> `DECISIONS.md` and the rewritten **7e-a…f** slices in `TODO.md` are the canonical record.
+> `DECISIONS.md` and the rewritten **7e-a…g** slices in `TODO.md` are the canonical record.
 > Tree clean except `start_claude_remote.ps1` (owner's launcher tweak, untouched).
 >
 > **Next focus (locked 2026-06-14):** the slices are 7e-a ✅ → **7e-b** (PromptModal + Conf-sizing,
 > the reusable editor everything below plugs into) → **7e-c** (per-agent workspace foundation:
-> `agents/<name>/ = agent.yaml + SOUL.md`, migrate+remove `agents:[]`, AgentsEditor add/edit/delete)
-> → **7e-d** (`FileMemoryProvider` + `memory` tool + auto-write/kill-switch + per-agent `MEMORY.md`
-> / global `USER.md` + Conf Memory panel) → **7e-e** (`session_search` FTS5) → **7e-f** (per-agent
-> skills w/ inheritance + optional `AgentSelector` auto-rotate).
+> `$CTRLB_HOME` root, `agents/<name>/ = agent.yaml + SOUL.md`, migrate+remove `agents:[]`, AgentsEditor
+> add/edit/delete) → **7e-d** (`FileMemoryProvider` + `memory` tool + auto-write/kill-switch + per-agent
+> `memories/MEMORY.md` / global `memories/USER.md` + Conf Memory panel) → **7e-e** (`session_search`
+> FTS5) → **7e-f** (per-agent skills w/ inheritance + `skill_manage` self-authoring) → **7e-g**
+> (optional `AgentSelector` auto-rotate).
 >
 > 1. **Build 7e-b** — still the right next step; D14 gives it a clear downstream contract (it edits
 >    `SOUL.md` / `MEMORY.md` files, not just inline strings). **Six design questions** are at the
@@ -118,24 +119,32 @@ Researched that **Hermes profiles** and **OpenClaw workspaces** are both *single
 multi-agent runtime** (`resolve_agent` + in-process `spawn_subagents` — strictly more capable for
 "a generalist that *uses* specialists") and adopt only their **folder convention**:
 
-- **Default agent = the workspace root** (root `SOUL.md`/`MEMORY.md`/`skills/`, **no `agent.yaml`** —
-  it *is* the config.yaml globals). **`agents/<name>/` = specialists only** (`fleet` stays a *skill*,
-  not an agent): `agent.yaml` (overrides only — absent fields inherit a config.yaml `agent.defaults`
-  block via `deep_merge` at load) + `SOUL.md` + `MEMORY.md` + `skills/`. Scan-discovered, live-reloaded.
+- **Relocatable root `$CTRLB_HOME`** (env, default `~/.ctrl-b/`; composes with `CTRLB_CONFIG`/`CTRLB_DB`)
+  holds `config.yaml` + `ctrlb.db` + `SOUL.md` + `memories/` + `skills/` + `agents/` — mirrors `HERMES_HOME`,
+  sets up the emma deploy.
+- **Default agent = the root** (root `SOUL.md`/`memories/`/`skills/`, **no `agent.yaml`** — it *is* the
+  config.yaml globals). **`agents/<name>/` = specialists only** (`fleet` stays a *skill*, not an agent):
+  `agent.yaml` (overrides only — absent fields inherit a config.yaml `agent.defaults` block via
+  `deep_merge` at load) + `SOUL.md` + `memories/MEMORY.md` + `skills/`. Scan-discovered, live-reloaded.
 - **`agents:[]` migration** is non-destructive (scaffold folders + transitional fallback read) and
   **`agents:[]` is fully removed at completion** (owner's explicit requirement).
 - **`SOUL.md`**: scaffold-if-missing from the baked default + a setting to disable the baked default
   entirely (empty = empty). Portable to/from Hermes/OpenClaw.
-- **Memory**: file impl of the ROADMAP B1 `MemoryProvider` — per-agent `MEMORY.md` + **global**
-  `USER.md`; a Hermes-shaped **`memory` tool** (add/replace/remove · target memory|user · substring
-  old_text · no read), **autonomous auto-write** + `memory.auto_write` kill switch, configurable caps
-  (2200/1375 default), over-cap → consolidate, injected via 7e-a's machinery, audited as Events.
-  Vector = later "both" mode over the unused `memory` table + 4f embeddings.
+- **Memory**: file impl of the ROADMAP B1 `MemoryProvider` — per-agent `memories/MEMORY.md` + **global**
+  `memories/USER.md` (gitignored); a Hermes-shaped **`memory` tool** (add/replace/remove · target
+  memory|user · substring old_text · no read), **autonomous auto-write** + `memory.auto_write` kill
+  switch, configurable caps (2200/1375 default), over-cap → consolidate, injected via 7e-a's machinery,
+  audited as Events. Vector = later "both" mode over the unused `memory` table + 4f embeddings.
 - **`session_search`** = FTS5 over `messages` + a builtin tool. **Sessions stay central + agent-
   agnostic in `ctrlb.db`** — a *deliberate divergence* from Hermes/OpenClaw (preserves `/agent`
   mid-thread switching + cross-agent search).
-- **Skills inheritance** (locked, wired in 7e-f): global `skills/` = the default agent's set; each
-  agent its own folder; `agent.yaml` `skills_inherit` = all | specific subset | none.
+- **Skills**: per-agent (global `skills/` = the default agent's set; each agent its own folder);
+  `agent.yaml` `skills_inherit` = all | specific subset | none. Plus a **`skill_manage` agent tool**
+  (sibling of `memory`: self-author `SKILL.md`, auto-write + `skills.auto_write` kill switch) — built
+  in 7e-f, Hermes-style self-improvement.
+- **Skipped vs the Hermes home**: `auth.json` (no OAuth), `.env` split (secrets stay in masked
+  `config.yaml` + `CTRLB_*__*` env), `sessions/` + `logs/` (central `ctrlb.db` + the `events` table /
+  process journal). Hermes' `cron/` → ROADMAP A3 (reserve seam).
 - **Invocation**: explicit `/agent` + `spawn_subagents` primary; optional `AgentSelector` auto-rotate
   (mirrors `SkillSelector`), default off.
 - **UI**: `AgentsEditor` repointed to a file-per-agent API with a first-class **add-agent** flow

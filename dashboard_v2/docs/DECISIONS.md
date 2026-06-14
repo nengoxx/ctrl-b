@@ -244,22 +244,24 @@ per Gateway). ctrl-b stays **one FastAPI process running multiple `AgentDef`s**,
 that — it's *more* capable for the goal ("a generalist that *uses* specialists"); Hermes profiles
 literally can't spawn each other. We adopt their **folder *convention*, not their process model.**
 
-**Per-agent workspace folder (the layout we adopt).** A configurable base dir (default beside
-`config.yaml`), one folder per agent, **discovered by scanning** (drop a folder = add an agent —
-same ethos as the skill loader, D8/D10):
+**Per-agent workspace folder (the layout we adopt).** Modelled on the Hermes home (`~/.hermes/`),
+which is *one agent's* home — so **our root is the default-agent / global home**, and specialists are
+lighter override-folders under `agents/`. A single **relocatable root `$CTRLB_HOME`** (env var,
+default `~/.ctrl-b/`, composes with `CTRLB_CONFIG`/`CTRLB_DB`) holds everything; agents are
+**discovered by scanning** (drop a folder = add an agent — same ethos as the skill loader, D8/D10):
 
 ```
-ctrl-b-data/
+$CTRLB_HOME/             # relocatable root (env CTRLB_HOME, default ~/.ctrl-b/) — mirrors HERMES_HOME
 ├── config.yaml          # globals + `agent.defaults` (inheritance base) + default_agent  (agents:[] REMOVED at completion)
+├── ctrlb.db             # threads/messages/events/(vector memory) — agent-AGNOSTIC, central
 ├── SOUL.md              # the DEFAULT/generalist agent's persona (scaffold-if-missing)
-├── USER.md              # GLOBAL user profile — shared by every agent
-├── MEMORY.md            # the DEFAULT agent's memory
+├── memories/            # MEMORY.md (default agent) + USER.md (GLOBAL, shared)   [gitignored]
 ├── skills/              # the DEFAULT agent's skills
 └── agents/              # SPECIALISTS only (distinct identity/model/memory)
     └── coder/
         ├── agent.yaml   # ONLY the overrides — absent fields inherit config.yaml `agent.defaults`
         ├── SOUL.md      # persona override (optional)
-        ├── MEMORY.md    # its own memory
+        ├── memories/    # MEMORY.md (its own)
         └── skills/      # its own skills
 ```
 
@@ -293,8 +295,9 @@ fallback). Plain markdown so it copy-pastes to/from a Hermes `SOUL.md` or an Ope
 baked string becomes a *scaffold template*, not a permanent runtime fallback.
 
 **Memory — the file impl of the ROADMAP B1 `MemoryProvider`.**
-- **`MEMORY.md` per-agent** (isolated — a specialist accumulates its own notes whether invoked
-  directly or spawned as a subagent); **`USER.md` global** (one shared user profile).
+- **`memories/MEMORY.md` per-agent** (isolated — a specialist accumulates its own notes whether
+  invoked directly or spawned as a subagent); **`memories/USER.md` global** (one shared user profile,
+  at the root only). The `memories/` subdir mirrors Hermes and leaves room for daily logs/archives.
 - A **`memory` builtin tool** (Hermes-shaped): `add` / `replace` / `remove`, `target: memory|user`,
   substring `old_text` for replace/remove, **no `read`** (memory is auto-injected). Injected via
   7e-a's separate-`system`-message machinery, **frozen at session start** (preserves prefix cache;
@@ -316,10 +319,24 @@ can `/agent`-switch mid-conversation, and `session_search` spans everything. Thi
 divergence** from Hermes/OpenClaw (who store sessions per profile/workspace); copying them here
 would break thread-switching and cross-agent search.
 
-**Skills — per-agent, with inheritance.** The global `skills/` dir is the **default agent's** set;
-every other agent has its **own folder `skills/`**. An agent's `agent.yaml` carries a
-**`skills_inherit`** setting: inherit **all** global skills · a **specific subset** · or **none**
-(own folder only). Wiring lands in a later 7e slice, but the model is locked now.
+**Skills — per-agent, with inheritance + agent self-authoring.** The global `skills/` dir is the
+**default agent's** set; every other agent has its **own folder `skills/`**. An agent's `agent.yaml`
+carries a **`skills_inherit`** setting: inherit **all** global skills · a **specific subset** · or
+**none** (own folder only). And — Hermes' self-improvement angle — a **`skill_manage` agent tool**
+(sibling of the `memory` tool: create/edit/remove a `SKILL.md` under the agent's own `skills/`,
+**autonomous auto-write** + a `skills.auto_write` kill switch, audited as Events) lets the agent
+author its own skills. Built in 7e (not deferred).
+
+**Adopted / skipped vs the Hermes home.** We mirror Hermes' `config.yaml`, `SOUL.md`, `memories/`,
+and `skills/`. We **skip** `auth.json` (no OAuth — OpenAI-compatible API keys live in masked
+`config.yaml`), keep secrets in **masked `config.yaml`** rather than a `.env` (the 7a mask/unmask
+round-trip + `CTRLB_*__*` env overrides already cover it; a `.env` split is optional future
+hardening, ROADMAP G), and **drop `sessions/` and `logs/`**: sessions live in the central
+agent-agnostic `ctrlb.db`, and the **`events` table** (queryable, UI-visible, redacted) plus the
+process journal (systemd/Task Scheduler) replace file logs. Hermes' `cron/` maps to ROADMAP **A3**
+(scheduled automations) — reserve the seam, build later. **Gitignore policy:** `memories/` and any
+`USER.md` hold personal data → **gitignored** (extends the no-secrets rule); `SOUL.md`/`skills/` are
+persona/capability → trackable if the owner wants them in the repo.
 
 **Invocation — explicit first, optional auto-rotate.** `/agent <name>` (sticky per session) and the
 generalist's `spawn_subagents` are the primary paths. An optional **`AgentSelector`** (mirrors the

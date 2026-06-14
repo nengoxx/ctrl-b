@@ -420,8 +420,10 @@ tools + confirm bubbles) are DONE.**
       opener. Bundled with the Conf sizing/cropping fixes (`.mform` label column, limits grid 2-col
       at narrow width, tooldesc heading edge, secret overflow audit). Separate refine commit. **This
       is the reusable editor that the 7e-c persona files + 7e-d memory files plug into.**
-- [ ] **7e-c — per-agent workspace foundation (D14).** The **default agent lives at the workspace
-      root** (root `SOUL.md`/`MEMORY.md`/`skills/`, no `agent.yaml` — it *is* the config.yaml globals);
+- [ ] **7e-c — per-agent workspace foundation (D14).** Define the relocatable **`$CTRLB_HOME`** root
+      (env var, default `~/.ctrl-b/`; composes with `CTRLB_CONFIG`/`CTRLB_DB`) holding `config.yaml` +
+      `ctrlb.db` + `SOUL.md` + `memories/` + `skills/` + `agents/`. The **default agent lives at the
+      root** (root `SOUL.md`/`memories/`/`skills/`, no `agent.yaml` — it *is* the config.yaml globals);
       **`agents/<name>/` holds specialists only** (distinct identity/model/memory — `fleet` stays a
       *skill*, not an agent). Configurable base dir, scan-based discovery + live reload. **`agent.yaml`**
       = `AgentDef` minus `name`/`prompt`, carrying **only overrides** — absent fields inherit a
@@ -433,8 +435,9 @@ tools + confirm bubbles) are DONE.**
       (scaffold + transitional fallback read), then **remove `agents:[]` from `config.yaml`** at
       completion. Repoint `AgentsEditor` to the file API with a first-class **add-agent flow**
       (scaffolds the folder) + edit/delete, well-designed @390px (D7). Tests on a temp workspace dir.
-- [ ] **7e-d — file memory: `FileMemoryProvider` + `memory` tool (D14).** Per-agent **`MEMORY.md`**
-      (isolated) + global **`USER.md`** (the file impl of the ROADMAP B1 `MemoryProvider`). A
+- [ ] **7e-d — file memory: `FileMemoryProvider` + `memory` tool (D14).** Per-agent
+      **`memories/MEMORY.md`** (isolated) + global **`memories/USER.md`** (the file impl of the
+      ROADMAP B1 `MemoryProvider`; `memories/` gitignored). A
       **`memory` builtin** (Hermes-shaped): `add`/`replace`/`remove`, `target: memory|user`, substring
       `old_text`, **no read**; injected via 7e-a's separate-`system`-message machinery, frozen at
       session start. **Autonomous auto-write** + `memory.auto_write` kill switch (off → suggests);
@@ -443,12 +446,16 @@ tools + confirm bubbles) are DONE.**
       Vector recall = the later "both" mode over the unused `memory` table + the 4f embeddings client.
 - [ ] **7e-e — `session_search` (Hermes Tier 2).** An **FTS5** index over the `messages` table + a
       builtin tool the agent invokes autonomously. Sessions stay agent-agnostic in `ctrlb.db` (D14).
-- [ ] **7e-f — per-agent skills + optional auto-rotate (D14).** Wire per-agent `skills/` (global
-      `skills/` = the default agent's set; each agent its own folder), with `agent.yaml`
-      **`skills_inherit`**: inherit **all** global skills · a **specific subset** · or **none**.
-      Plus an optional **`AgentSelector`** (mirrors `SkillSelector`) to auto-route a turn to a
-      specialist when enabled in settings — default off (explicit `/agent` + `spawn_subagents` stay
-      primary).
+- [ ] **7e-f — per-agent skills (inheritance) + `skill_manage` self-authoring (D14).** Wire per-agent
+      `skills/` (global `skills/` = the default agent's set; each agent its own folder), with
+      `agent.yaml` **`skills_inherit`**: inherit **all** global skills · a **specific subset** · or
+      **none**. Add a **`skill_manage` agent tool** (sibling of the `memory` tool): create/edit/remove
+      a `SKILL.md` under the agent's own `skills/`, **autonomous auto-write** + a `skills.auto_write`
+      kill switch, audited as Events — Hermes-style self-improvement. The `FileSkillProvider` re-scans
+      per call, so authored skills are live with no restart.
+- [ ] **7e-g — optional `AgentSelector` auto-rotate (D14).** A swappable selector (mirrors
+      `SkillSelector`) that auto-routes a turn to a specialist **when enabled** in settings — default
+      off; explicit `/agent` + `spawn_subagents` stay primary.
 
 ## Phase 8 — Tool registry + Utils (extensible, D8)
 
