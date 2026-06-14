@@ -125,6 +125,7 @@ class AgentCfg(BaseModel):
 
     compaction: CompactionCfg = Field(default_factory=CompactionCfg)
     default_agent: str = ""              # name of the default agent folder; "" → built-in default
+    default_title: str = ""              # optional display name for the default/root agent (slug stays "default")
     #: Inheritance base for folder-discovered agents (D14/D15 #1). An `AgentDef`-shaped mapping
     #: (no `name`/`prompt`) whose fields a specialist's `agent.yaml` overrides via
     #: `deep_merge(defaults, agent_yaml)` at load. Absent → the `AgentDef` code defaults. May set
@@ -401,7 +402,9 @@ class Settings(BaseModel):
         """Build an `AgentDef` from `agent.defaults` (inheritance base) + `agent_yaml` (overrides) +
         the folder name + its `SOUL.md`. `deep_merge(defaults, overrides)` is the same merge
         `PUT /api/settings` uses; the folder name always wins for `name` (D15 #1/#3)."""
-        merged = deep_merge(dict(self.agent.defaults), dict(agent_yaml or {}))
+        defaults = dict(self.agent.defaults)
+        defaults.pop("title", None)  # title is per-agent identity — never inherited from defaults
+        merged = deep_merge(defaults, dict(agent_yaml or {}))
         merged["name"] = name
         merged.pop("prompt", None)  # persona is SOUL.md, never agent.yaml
         agent = AgentDef.model_validate(merged)
@@ -412,8 +415,11 @@ class Settings(BaseModel):
 
     def default_agent_def(self) -> AgentDef:
         """The default/generalist agent — the workspace root (D14). Built from `agent.defaults` +
-        globals; persona = root `SOUL.md`. Always available so the loop has an `AgentDef` to run."""
-        return self._agent_from(self.DEFAULT_AGENT_NAME, self.home_dir(), None)
+        globals; persona = root `SOUL.md`; display name = `agent.default_title`. Always available so
+        the loop has an `AgentDef` to run."""
+        agent = self._agent_from(self.DEFAULT_AGENT_NAME, self.home_dir(), None)
+        agent.title = self.agent.default_title
+        return agent
 
     def _load_agent_folder(self, name: str) -> AgentDef | None:
         """Load `agents/<name>/` (agent.yaml + SOUL.md) or `None` if the folder is absent. Loaded

@@ -1366,6 +1366,11 @@ body {
   color: var(--ink-faint);
   letter-spacing: 0.5px;
 }
+/* the slug shown dim after an agent's display name in its row header (7e-c) */
+.agent-slug {
+  color: var(--ink-faint);
+  font-weight: 400;
+}
 .agent-lim {
   grid-column: 1 / -1;
   display: grid;

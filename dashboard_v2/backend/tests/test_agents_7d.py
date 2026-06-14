@@ -55,13 +55,22 @@ def test_agent_folder_crud_and_default() -> None:
 
             # create a specialist via the file API; a new folder scaffolds agent.yaml + SOUL.md
             r = c.put("/api/agents/ops", json={
-                "agent": {"privilege": "full", "tools": ["wake_host", "ping_host"], "skills": []}
+                "agent": {"title": "Ops Bot", "privilege": "full", "tools": ["wake_host", "ping_host"], "skills": []}
             })
             assert r.status_code == 200, r.text
             body = r.json()
             assert body["name"] == "ops" and body["is_default"] is False
             assert body["agent"]["privilege"] == "full"          # StrEnum → str (the A1 round-trip)
-            assert body["agent"]["name"] == "ops"                # folder name wins
+            assert body["agent"]["name"] == "ops"                # folder slug wins
+            assert body["agent"]["title"] == "Ops Bot"           # display name round-trips
+            assert c.app.state.settings.resolve_agent("ops").title == "Ops Bot"
+
+            # the default agent's display name comes from agent.default_title (slug stays "default")
+            assert c.put("/api/settings", json={"agent": {"default_title": "Atlas"}}).status_code == 200
+            assert c.get("/api/agents/default").json()["agent"]["title"] == "Atlas"
+            # title never leaks from defaults into specialists
+            assert c.put("/api/settings", json={"agent": {"defaults": {"title": "LEAK"}}}).status_code == 200
+            assert c.get("/api/agents/ops").json()["agent"]["title"] == "Ops Bot"
             assert body["soul"]                                  # SOUL.md scaffolded from the baked default
 
             # on disk: a folder with agent.yaml + SOUL.md

@@ -6,7 +6,7 @@ import { ServerListEditor } from "../components/ServerListEditor";
 import { SkillsEditor } from "../components/SkillsEditor";
 import { ToolDescriptionsEditor } from "../components/ToolDescriptionsEditor";
 import { useActionSpecs } from "../hooks/useActions";
-import { type AgentDef, type AgentSectionCfg } from "../hooks/useAgents";
+import { useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
 import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
@@ -182,11 +182,14 @@ export function ConfTab({ active }: Props) {
   const { data: defaultPrompt = "" } = useDefaultPrompt();
   const [draft, setDraft] = useState<Draft | null>(null);
 
-  // Agent definitions + the agent-section scalars come straight off the settings doc.
-  const agents = (settings?.agents as AgentDef[] | undefined) ?? [];
+  // Agents are folder-discovered (D14) — the list comes from /api/agents; the agent-section scalars
+  // (default agent, default title, subagent limits) come off the settings doc.
+  const { data: agentList } = useAgentList();
+  const agentCount = (agentList?.agents.length ?? 0) + 1; // specialists + the default/root agent
   const agentSection = settings?.agent as Partial<AgentSectionCfg> | undefined;
   const agentCfg: AgentSectionCfg = {
     default_agent: agentSection?.default_agent ?? "",
+    default_title: agentSection?.default_title ?? "",
     global_subagent_limit: agentSection?.global_subagent_limit ?? 6,
     subagent_clamp_privilege: agentSection?.subagent_clamp_privilege ?? true,
   };
@@ -558,10 +561,10 @@ export function ConfTab({ active }: Props) {
         id="agents"
         num="08"
         title="Agents"
-        right={`${agents.length} defined`}
+        right={`${agentCount} agent${agentCount === 1 ? "" : "s"}`}
         defaultCollapsed
       >
-        <AgentsEditor agents={agents} cfg={agentCfg} toolNames={agentToolNames} skillNames={skillNames} />
+        <AgentsEditor cfg={agentCfg} toolNames={agentToolNames} skillNames={skillNames} />
       </ConfGroup>
 
       <ConfGroup

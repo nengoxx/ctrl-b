@@ -53,7 +53,8 @@ class AgentDef(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    name: str
+    name: str                                           # slug = folder name; the stable /agent id
+    title: str = ""                                     # optional display name (UI only); "" → show the slug
     prompt: str = ""                                    # system prompt; "" → the built-in default
     #: Additive guidance (7e-a). When non-empty, emitted as its own `system` message *after* the
     #: base prompt — so the persona/base stays a stable cache-key candidate and the extra is easy
