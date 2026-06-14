@@ -103,8 +103,11 @@ function AgentFieldsForm(props: {
     set({ tools: [...next] });
   };
 
-  const skillMode = a.skills === "*" ? "all" : (a.skills as string[]).length === 0 ? "none" : "custom";
-  const skillSet = new Set(skillMode === "custom" ? (a.skills as string[]) : []);
+  // Skills mirror the Tools control above: an "all" switch, else a tick-grid (empty grid = no skills).
+  // A two-state field over a two-value store ("*" | list) — no ambiguous third mode (was: All/None/
+  // Custom, where an empty Custom collided with None so Custom could never be entered).
+  const skillsAll = a.skills === "*";
+  const skillSet = new Set(skillsAll ? [] : (a.skills as string[]));
   const toggleSkill = (n: string) => {
     const next = new Set(skillSet);
     next.has(n) ? next.delete(n) : next.add(n);
@@ -200,16 +203,11 @@ function AgentFieldsForm(props: {
 
       <label>Skills</label>
       <div className="agent-allow">
-        <Seg<"all" | "none" | "custom">
-          current={skillMode}
-          onPick={(v) => set({ skills: v === "all" ? "*" : v === "none" ? [] : (a.skills === "*" ? [] : a.skills) })}
-          options={[
-            { val: "all", label: "All" },
-            { val: "none", label: "None" },
-            { val: "custom", label: "Custom" },
-          ]}
-        />
-        {skillMode === "custom" && <TickGrid all={props.skillNames} selected={skillSet} onToggle={toggleSkill} />}
+        <div className="agent-allow-head">
+          <span>{skillsAll ? "all skills" : `${skillSet.size} selected`}</span>
+          <Switch on={skillsAll} onToggle={() => set({ skills: skillsAll ? [] : "*" })} />
+        </div>
+        {!skillsAll && <TickGrid all={props.skillNames} selected={skillSet} onToggle={toggleSkill} />}
       </div>
 
       <label>Limits</label>
