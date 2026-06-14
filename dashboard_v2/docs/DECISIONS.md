@@ -230,12 +230,100 @@ model + SSE contract + `ActionService` are the seams 4b–4f slot into without r
 
 ---
 
+## D14 — Agent workspaces: per-agent folders, file-based persona + memory (Hermes/OpenClaw layout) ✅ (Phase 7e)
+
+The agent is becoming a **general-purpose assistant** (a generalist default + specialist agents it
+can invoke or delegate to), with **portable, file-based** persona and memory modelled on
+**Hermes Agent** and **OpenClaw** — but on **our** runtime, not theirs.
+
+**Runtime model — in-process multi-agent, NOT separate instances (the key distinction).** Hermes
+"profiles" and OpenClaw "workspaces" are both *single-agent-per-process*: each agent is a separate
+OS instance (Hermes: its own `HERMES_HOME`, gateway **process**, and bot token; OpenClaw: one agent
+per Gateway). ctrl-b stays **one FastAPI process running multiple `AgentDef`s**, selected per-turn
+(`resolve_agent`) with `spawn_subagents` running specialists **in-process, concurrently**. We keep
+that — it's *more* capable for the goal ("a generalist that *uses* specialists"); Hermes profiles
+literally can't spawn each other. We adopt their **folder *convention*, not their process model.**
+
+**Per-agent workspace folder (the layout we adopt).** A configurable base dir (default beside
+`config.yaml`), one folder per agent, **discovered by scanning** (drop a folder = add an agent —
+same ethos as the skill loader, D8/D10):
+
+```
+ctrl-b-data/
+├── config.yaml          # globals only + agent.default_agent name  (agents:[] REMOVED at completion)
+├── USER.md              # GLOBAL user profile — shared by every agent
+├── skills/              # the DEFAULT/generalist agent's skills
+└── agents/
+    ├── default/  agent.yaml · SOUL.md · MEMORY.md            # generalist (uses global skills/)
+    └── fleet/    agent.yaml · SOUL.md · MEMORY.md · skills/   # specialist (own folder skills)
+```
+
+- **`agent.yaml`** = today's `AgentDef` **minus `name`** (= the folder name) and **minus `prompt`**
+  (= `SOUL.md`): model, tool/skill allowlists, privilege, loop/subagent limits, compaction, append.
+  Loaded fresh per turn → live edit, no restart.
+- **`config.yaml` keeps only globals** + `agent.default_agent`. The current `agents:[]` list
+  (built in 7d) is migrated into folders **non-destructively** (scaffold from each entry, read it as
+  a transitional fallback), and **`agents:[]` is fully removed once the folders are the source of
+  truth** — not left dangling.
+
+**Persona — `SOUL.md` (portable).** Feeds `_system_prompt()`. **Scaffold-if-missing** from the baked
+`DEFAULT_SYSTEM_PROMPT` template; a setting disables the baked default entirely (empty = empty, no
+fallback). Plain markdown so it copy-pastes to/from a Hermes `SOUL.md` or an OpenClaw workspace. The
+baked string becomes a *scaffold template*, not a permanent runtime fallback.
+
+**Memory — the file impl of the ROADMAP B1 `MemoryProvider`.**
+- **`MEMORY.md` per-agent** (isolated — a specialist accumulates its own notes whether invoked
+  directly or spawned as a subagent); **`USER.md` global** (one shared user profile).
+- A **`memory` builtin tool** (Hermes-shaped): `add` / `replace` / `remove`, `target: memory|user`,
+  substring `old_text` for replace/remove, **no `read`** (memory is auto-injected). Injected via
+  7e-a's separate-`system`-message machinery, **frozen at session start** (preserves prefix cache;
+  compaction provably ignores fresh system blocks).
+- **Autonomous auto-write** (the agent is the primary user — no confirm), with a **`memory.auto_write`
+  kill switch** (off → the agent *suggests* the write instead of persisting). Every write is still an
+  audited `Event`.
+- **Configurable hard caps** (defaults from Hermes: agent 2,200 / user 1,375 chars); over-cap →
+  the tool **errors with current entries** and the agent **consolidates** (no silent drop, no
+  auto-compact).
+- **Vector recall = the later "both" mode**: the (currently unused) SQLite `memory` table + the
+  already-built embeddings client (4f) become a semantic provider alongside the files — Hermes'
+  external-provider tier. Deferred, not dropped.
+
+**`session_search` (Hermes Tier 2).** An **FTS5** index over the existing `messages` table + a
+builtin tool the agent invokes autonomously ("did we discuss X"). Keeps the durable files small.
+**Sessions stay in central `ctrlb.db` (agent-agnostic threads) — NOT per-agent folders**: a thread
+can `/agent`-switch mid-conversation, and `session_search` spans everything. This is a **deliberate
+divergence** from Hermes/OpenClaw (who store sessions per profile/workspace); copying them here
+would break thread-switching and cross-agent search.
+
+**Skills — per-agent, with inheritance.** The global `skills/` dir is the **default agent's** set;
+every other agent has its **own folder `skills/`**. An agent's `agent.yaml` carries a
+**`skills_inherit`** setting: inherit **all** global skills · a **specific subset** · or **none**
+(own folder only). Wiring lands in a later 7e slice, but the model is locked now.
+
+**Invocation — explicit first, optional auto-rotate.** `/agent <name>` (sticky per session) and the
+generalist's `spawn_subagents` are the primary paths. An optional **`AgentSelector`** (mirrors the
+existing `SkillSelector` strategy) can auto-route a turn to a specialist **only when enabled** in
+settings — default off, predictable.
+
+**UI.** The 7d `AgentsEditor` is repointed to a **file-per-agent API** (like the skills
+`GET/PUT/DELETE`), with a first-class **add-agent flow** (scaffolds the folder: `agent.yaml` +
+`SOUL.md` + `MEMORY.md`), plus edit/delete — well-designed at 390px (D7).
+
+**Why:** the owner wants a portable, transparent, editable agent (copy a `SOUL.md`/`MEMORY.md`
+between ctrl-b, Hermes, and OpenClaw), each agent self-contained in a folder, while keeping our
+superior in-process multi-agent + subagent runtime and our agent-agnostic central conversation
+store. This refines D10/D11 (file MemoryProvider, multiple agents) and resolves the open memory item
+below. Detail + slices in `TODO.md` Phase 7e; `ARCHITECTURE.md` §Agent gains the workspace layout.
+
+---
+
 ## Still open (decide before building the relevant phase)
 
 - Agent tool-calling format: OpenAI `tools`/function-calling vs a lightweight JSON protocol for
   models that don't support tools well (some local GGUFs). Likely: detect capability, fall back.
-- Memory backend(s): none / file (`MEMORY.md`-style) / vector / both — pluggable provider; v1 ships
-  none+file, vector later. Embeddings endpoint = the owner's llama.cpp `/v1/embeddings` (D9).
+- ~~Memory backend(s): none / file / vector / both~~ → **resolved in D14**: file impl first
+  (`MEMORY.md` per-agent + global `USER.md` + a `memory` tool, Hermes-shaped), vector as the later
+  "both" mode over the embeddings client (D9). Pluggable `MemoryProvider` (ROADMAP B1) is the seam.
 - Auth: stay none (Tailscale-only) for v1; revisit only if exposure model ever changes.
 - Frontend routing: simple tab state vs `react-router` (lean tab state unless deep-linking is wanted).
 - MCP: how much of the client to ship in v1 vs v1.x (transports both wanted; start with one server

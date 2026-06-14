@@ -76,25 +76,81 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e-a shipped locally at `d4cd25c`, not pushed · next: 7e-b PromptModal + Conf-sizing refine)
+## Current state (7e-a pushed · Phase 7e **reshaped by D14** — agent workspaces · next: 7e-b PromptModal)
 
-> **7e-a (system-prompt append layer + default-prompt endpoint) is committed locally as
-> `d4cd25c`** (5 files / +381 / -1, 8 tests). **Not pushed** — push needs owner go-ahead.
-> Tree clean except for `start_claude_remote.ps1` (owner's launcher tweak, untouched).
-> See the 2026-06-09 block below for the full backend slice + the 7e-b design discussion
-> the owner and I worked out before pausing.
+> **7e-a is pushed** (`d4cd25c`) along with the HANDOFF doc (`6d212a9`); backend **restarted +
+> live-verified** on 5433 (`GET /api/agent/default-prompt` returns the baked default). Then a
+> long planning session **reshaped Phase 7e into the D14 agent-workspace design** (file-based,
+> portable persona + memory modelled on Hermes Agent / OpenClaw, on our in-process runtime).
+> See the **2026-06-14 block** below for the research + every locked decision; **D14** in
+> `DECISIONS.md` and the rewritten **7e-a…f** slices in `TODO.md` are the canonical record.
+> Tree clean except `start_claude_remote.ps1` (owner's launcher tweak, untouched).
 >
-> **Next focus (locked 2026-06-09):**
+> **Next focus (locked 2026-06-14):** the slices are 7e-a ✅ → **7e-b** (PromptModal + Conf-sizing,
+> the reusable editor everything below plugs into) → **7e-c** (per-agent workspace foundation:
+> `agents/<name>/ = agent.yaml + SOUL.md`, migrate+remove `agents:[]`, AgentsEditor add/edit/delete)
+> → **7e-d** (`FileMemoryProvider` + `memory` tool + auto-write/kill-switch + per-agent `MEMORY.md`
+> / global `USER.md` + Conf Memory panel) → **7e-e** (`session_search` FTS5) → **7e-f** (per-agent
+> skills w/ inheritance + optional `AgentSelector` auto-rotate).
 >
-> 1. **7e-b — `<PromptModal>` full-page editor + Conf-sizing refine.** The 7e-a backend
->    is live; 7e-b wires the new fields into the UI through one reusable modal, shrinks the
->    inline prompt rows to preview + opener, and bundles the 4-item Conf-sizing refine.
->    **Six design questions are recorded at the bottom of the 2026-06-09 block and need
->    answers before any frontend code lands** (per [[pause-between-phases-for-review]]).
-> 2. **7e-c** — `GET/PUT /api/prompts/{name}` + arbitrary `prompts/*.md` editors.
-> 3. **7e-d** — Memory mgmt (MemoryProvider + `/api/memory` + panel on the 4f embeddings seam).
-> 4. **F29 option A (reload-survival for sub-editor drafts).** Documented in UI_AUDIT.md
->    §6b. Not urgent; only matters if owner hits the data-loss scenario in practice.
+> 1. **Build 7e-b** — still the right next step; D14 gives it a clear downstream contract (it edits
+>    `SOUL.md` / `MEMORY.md` files, not just inline strings). **Six design questions** are at the
+>    bottom of the 2026-06-09 block and still need answers before frontend code
+>    (per [[pause-between-phases-for-review]]).
+> 2. **F29 option A (reload-survival for sub-editor drafts).** UI_AUDIT.md §6b. Not urgent.
+
+### ⭐ Session update — 2026-06-14 (pushed 7e-a · verified · **reshaped 7e into the D14 agent-workspace design**)
+
+Planning + housekeeping session. Pushed the pending work, live-verified 7e-a, then researched
+**Hermes Agent** + **OpenClaw** memory/agent models and reshaped Phase 7e around a **file-based,
+portable, per-agent-workspace** design — locked as **D14**. No feature code (per
+[[pause-between-phases-for-review]]); the artifacts are the doc updates.
+
+#### Housekeeping done
+- **Pushed** `615c694..6d212a9` → `origin/main`: `d4cd25c` (7e-a) + a new `6d212a9` docs commit
+  recording the 7e-a ship. `start_claude_remote.ps1` left untouched (standing rule).
+- **Backend restarted on 5433** (no `--reload`, venv) and **7e-a verified live** —
+  `GET /api/agent/default-prompt` → baked `DEFAULT_SYSTEM_PROMPT` (1739 chars). Frontend on 5190 up.
+
+#### The D14 design (canonical detail in `DECISIONS.md` D14 + `TODO.md` 7e)
+Researched that **Hermes profiles** and **OpenClaw workspaces** are both *single-agent-per-process*
+(separate `HERMES_HOME`/gateway/bot-token, or one agent per Gateway). We **keep our in-process
+multi-agent runtime** (`resolve_agent` + in-process `spawn_subagents` — strictly more capable for
+"a generalist that *uses* specialists") and adopt only their **folder convention**:
+
+- **Per-agent workspace** `agents/<name>/` = `agent.yaml` (wiring = `AgentDef` − name − prompt) +
+  `SOUL.md` (persona) + `MEMORY.md` (per-agent, isolated) + `skills/` (per-agent). Scan-discovered,
+  live-reloaded. `config.yaml` keeps only globals + `default_agent`.
+- **`agents:[]` migration** is non-destructive (scaffold folders + transitional fallback read) and
+  **`agents:[]` is fully removed at completion** (owner's explicit requirement).
+- **`SOUL.md`**: scaffold-if-missing from the baked default + a setting to disable the baked default
+  entirely (empty = empty). Portable to/from Hermes/OpenClaw.
+- **Memory**: file impl of the ROADMAP B1 `MemoryProvider` — per-agent `MEMORY.md` + **global**
+  `USER.md`; a Hermes-shaped **`memory` tool** (add/replace/remove · target memory|user · substring
+  old_text · no read), **autonomous auto-write** + `memory.auto_write` kill switch, configurable caps
+  (2200/1375 default), over-cap → consolidate, injected via 7e-a's machinery, audited as Events.
+  Vector = later "both" mode over the unused `memory` table + 4f embeddings.
+- **`session_search`** = FTS5 over `messages` + a builtin tool. **Sessions stay central + agent-
+  agnostic in `ctrlb.db`** — a *deliberate divergence* from Hermes/OpenClaw (preserves `/agent`
+  mid-thread switching + cross-agent search).
+- **Skills inheritance** (locked, wired in 7e-f): global `skills/` = the default agent's set; each
+  agent its own folder; `agent.yaml` `skills_inherit` = all | specific subset | none.
+- **Invocation**: explicit `/agent` + `spawn_subagents` primary; optional `AgentSelector` auto-rotate
+  (mirrors `SkillSelector`), default off.
+- **UI**: `AgentsEditor` repointed to a file-per-agent API with a first-class **add-agent** flow
+  (scaffolds the folder) + edit/delete, well-designed @390px.
+
+#### State of the tree
+- **Local HEAD after this session's doc commit** (DECISIONS D14 + TODO 7e rewrite + this block):
+  one commit past `origin/main`'s `6d212a9`. Push per owner go-ahead.
+- Tree otherwise clean except `start_claude_remote.ps1` (untouched).
+- Servers: backend uvicorn **5433** (live, 7e-a verified), frontend Vite **5190** (`--host 0.0.0.0`).
+
+#### Start here in a fresh session
+1. **Build 7e-b** (PromptModal + Conf-sizing) — answer the **six design questions** at the bottom of
+   the 2026-06-09 block first.
+2. Then **7e-c → 7e-d → 7e-e → 7e-f** per `TODO.md` / D14. The migration that removes `agents:[]`
+   lives in 7e-c.
 
 ### ⭐ Session update — 2026-06-09 (7e-a backend shipped · 7e-b design discussion locked, paused for review)
 

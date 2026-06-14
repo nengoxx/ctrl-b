@@ -402,23 +402,49 @@ tools + confirm bubbles) are DONE.**
       EOL-preserving, scaffold template; provider re-scans → live, no restart). Tests: `test_skills_7d.py`
       1/1. **Owner D7 eyeball pending:** the Agents/Skills/Agent-tools forms @390px ×3 themes.
 
-### Phase 7e — prompts append/default + prompt-file editors + memory panel
-- [ ] **7e-a — system-prompt append layer + show/load the baked default** (planned 2026-05-30; see
-      HANDOFF block). `Settings.inference.system_prompt_append` (+ optional `AgentDef.prompt_append`
-      with an inherit-global flag) emitted as a **separate `system` message** by `_assemble`. New
-      `GET /api/agent/default-prompt` returns the baked `DEFAULT_SYSTEM_PROMPT` text so the editor can
-      `[Load default]` / `[Restore default]`. Net effect: matches Claude Code's `append` /
-      opencode's `AGENTS.md` (additive axis), without growing the base prompt.
+### Phase 7e — agent workspaces: append/persona/memory (file-based, portable) — **D14**
+
+> **Reshaped 2026-06-14 (D14).** The agent becomes a general-purpose assistant with **portable,
+> file-based** persona + memory modelled on **Hermes Agent / OpenClaw**, on our **in-process**
+> multi-agent runtime (NOT their separate-process model). Per-agent **workspace folders**
+> (`agents/<name>/ = agent.yaml + SOUL.md + MEMORY.md + skills/`); `config.yaml` keeps only globals,
+> and **`agents:[]` is fully removed once folders are the source of truth.** Conversations stay in
+> central `ctrlb.db` (agent-agnostic). See D14 for the full rationale + the deliberate divergences.
+
+- [x] **7e-a — system-prompt append layer + show/load the baked default** (shipped `d4cd25c`).
+      `Settings.inference.system_prompt_append` + `AgentDef.prompt_append` + `inherit_append` emitted
+      as **separate `system` messages** by `_assemble`; `GET /api/agent/default-prompt` returns the
+      baked `DEFAULT_SYSTEM_PROMPT`. The injection seam every persona/memory block below reuses.
 - [ ] **7e-b — `<PromptModal>` full-page editor + Conf-sizing refine** (planned 2026-05-30). One
-      reusable full-viewport modal opened from any prompt field (Conf → Inference / Agents / Skills
-      SKILL.md); inline rows shrink to preview + opener. Bundled with the Conf sizing/cropping fixes
-      (`.mform` label column, limits grid 2-col at narrow width, tooldesc heading edge, secret
-      overflow audit). Separate refine commit for reviewability.
-- [ ] `GET/PUT /api/prompts/{name}` + prompt-file editors (covers arbitrary `prompts/*.md`; the
-      baked default can graduate into one of these files with the hardcoded string as fallback —
-      option D from the 2026-05-30 research).
-- [ ] Memory mgmt: `GET /api/memory`, `POST`, `DELETE`; rolling-summary + pinned-facts; clear
-      thread / clear all (vector `MemoryProvider` + embeddings seam from 4f).
+      reusable full-viewport modal opened from any prompt field; inline rows shrink to preview +
+      opener. Bundled with the Conf sizing/cropping fixes (`.mform` label column, limits grid 2-col
+      at narrow width, tooldesc heading edge, secret overflow audit). Separate refine commit. **This
+      is the reusable editor that the 7e-c persona files + 7e-d memory files plug into.**
+- [ ] **7e-c — per-agent workspace foundation (D14).** Define the `agents/<name>/` layout
+      (configurable base dir, scan-based discovery + live reload). **`agent.yaml`** = `AgentDef` minus
+      `name`/`prompt`. **`SOUL.md`** = persona, **scaffold-if-missing** from `DEFAULT_SYSTEM_PROMPT` +
+      a setting to disable the baked default entirely (empty = empty). File-per-agent API
+      (`GET/PUT/DELETE /api/agents/{name}/...` — the SOUL.md editor + the `agent.yaml` wiring).
+      **Migrate** the 7d `config.yaml agents:[]` into folders **non-destructively** (scaffold +
+      transitional fallback read), then **remove `agents:[]` from `config.yaml`** at completion.
+      Repoint `AgentsEditor` to the file API with a first-class **add-agent flow** (scaffolds the
+      folder) + edit/delete, well-designed @390px (D7). Tests on a temp workspace dir.
+- [ ] **7e-d — file memory: `FileMemoryProvider` + `memory` tool (D14).** Per-agent **`MEMORY.md`**
+      (isolated) + global **`USER.md`** (the file impl of the ROADMAP B1 `MemoryProvider`). A
+      **`memory` builtin** (Hermes-shaped): `add`/`replace`/`remove`, `target: memory|user`, substring
+      `old_text`, **no read**; injected via 7e-a's separate-`system`-message machinery, frozen at
+      session start. **Autonomous auto-write** + `memory.auto_write` kill switch (off → suggests);
+      every write an audited `Event`. **Configurable caps** (defaults 2200/1375); over-cap → tool
+      errors + agent consolidates. Conf **Memory panel** (view/edit/clear the files + caps + toggle).
+      Vector recall = the later "both" mode over the unused `memory` table + the 4f embeddings client.
+- [ ] **7e-e — `session_search` (Hermes Tier 2).** An **FTS5** index over the `messages` table + a
+      builtin tool the agent invokes autonomously. Sessions stay agent-agnostic in `ctrlb.db` (D14).
+- [ ] **7e-f — per-agent skills + optional auto-rotate (D14).** Wire per-agent `skills/` (global
+      `skills/` = the default agent's set; each agent its own folder), with `agent.yaml`
+      **`skills_inherit`**: inherit **all** global skills · a **specific subset** · or **none**.
+      Plus an optional **`AgentSelector`** (mirrors `SkillSelector`) to auto-route a turn to a
+      specialist when enabled in settings — default off (explicit `/agent` + `spawn_subagents` stay
+      primary).
 
 ## Phase 8 — Tool registry + Utils (extensible, D8)
 
