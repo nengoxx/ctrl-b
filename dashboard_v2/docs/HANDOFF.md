@@ -95,9 +95,9 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > (optional `AgentSelector` auto-rotate).
 >
 > 1. **Build 7e-b** — still the right next step; D14 gives it a clear downstream contract (it edits
->    `SOUL.md` / `MEMORY.md` files, not just inline strings). **Six design questions** are at the
->    bottom of the 2026-06-09 block and still need answers before frontend code
->    (per [[pause-between-phases-for-review]]).
+>    `SOUL.md` / `MEMORY.md` files, not just inline strings). The **six design questions are
+>    answered + locked 2026-06-14** (see "7e-b decisions locked" in the block below) — frontend code
+>    is unblocked.
 > 2. **F29 option A (reload-survival for sub-editor drafts).** UI_AUDIT.md §6b. Not urgent.
 
 ### ⭐ Session update — 2026-06-14 (pushed 7e-a · verified · **reshaped 7e into the D14 agent-workspace design**)
@@ -153,6 +153,23 @@ multi-agent runtime** (`resolve_agent` + in-process `spawn_subagents` — strict
   (mirrors `SkillSelector`), default off.
 - **UI**: `AgentsEditor` repointed to a file-per-agent API with a first-class **add-agent** flow
   (scaffolds the folder) + edit/delete, well-designed @390px.
+
+#### 7e-b decisions locked (2026-06-14)
+The six open questions from the 2026-06-09 block are answered (all the "recommended" options):
+1. **`[Load default]` placement** — **modal-only** (inline rows stay terse: preview + opener).
+2. **Modal Save semantics** — **draft-update + close** for settings-backed fields (Inference /
+   per-agent append → group Save persists); **file-backed editors** (`SOUL.md`/`MEMORY.md`/`SKILL.md`,
+   7e-c+) **save directly** via their file API. The modal supports both modes.
+3. **`[Load default]` on append fields** — **no** (append default is `""`); only the *replace*
+   fields (System prompt → `SOUL.md`) get Load/Restore default, fed by `/api/agent/default-prompt`.
+4. **`inherit_append` UI** — **Seg** (`Inherit`/`Ignore`), matching the other `AgentsEditor` knobs.
+5. **Skills `SKILL.md`** — keep the **320px inline editor + `Open fullscreen ↗`** opener.
+6. **Counter** — **char counter only** (no token dep). Renders chars/cap + % like Hermes
+   (`67% — 1,474/2,200`); the 7e-d memory panel reuses it against the configurable caps.
+
+**Hermes caps verified (2026-06-14):** `MEMORY.md` 2,200 chars (~800 tok, `memory_char_limit`),
+`USER.md` 1,375 chars (~500 tok, `user_char_limit`), both configurable — our D14 defaults match
+exactly. 7e-d should mirror Hermes' config-key names for cross-tool portability.
 
 #### State of the tree
 - **Local HEAD after this session's doc commit** (DECISIONS D14 + TODO 7e rewrite + this block):
