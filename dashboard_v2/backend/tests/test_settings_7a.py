@@ -34,21 +34,22 @@ from app.config import (
 )
 
 
-def test_save_roundtrips_enum_agent() -> None:
-    """A1: a config with an agent (privilege is a StrEnum) saves + reloads without RepresenterError."""
+def test_save_roundtrips_config() -> None:
+    """A1: a representative config saves + reloads cleanly (`mode='json'` keeps every section
+    YAML-safe). Agents moved to folders (D14), so the StrEnum-privilege round-trip now lives in
+    test_agents_7d; this guards the generic config save/reload + secret survival."""
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "config.yaml"
         s = Settings.model_validate(
             {
-                "agents": [{"name": "ops", "privilege": "full", "tools": ["wake_host"]}],
+                "agent": {"default_agent": "ops", "defaults": {"privilege": "full"}},
                 "inference": {"local": {"base_url": "http://x/v1", "api_key": "supersecret", "model": "m"}},
             }
         )
         save_settings(s, p)                       # must not raise
-        text = p.read_text(encoding="utf-8")
-        assert "privilege: full" in text, "StrEnum should serialize to its string value"
         reloaded = load_settings(p)
-        assert reloaded.agents[0].privilege.value == "full"
+        assert reloaded.agent.default_agent == "ops"
+        assert reloaded.agent.defaults["privilege"] == "full"
         assert reloaded.inference.local.api_key == "supersecret"
 
 

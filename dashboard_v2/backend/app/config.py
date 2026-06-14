@@ -39,11 +39,10 @@ __all__ = [
 
 # dashboard_v2/backend/app/config.py -> dashboard_v2/
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_CONFIG = _PROJECT_ROOT / "config.yaml"
 
 ENV_PREFIX = "CTRLB_"
 #: Env vars handled as bootstrap paths, not as config-section overrides.
-_BOOTSTRAP_KEYS = {"CONFIG", "DB", "ENV"}
+_BOOTSTRAP_KEYS = {"HOME", "CONFIG", "DB", "ENV"}
 
 #: Substrings that mark a leaf value as secret (masked on read, never logged).
 SECRET_HINTS = ("password", "secret", "token", "key")
@@ -64,10 +63,19 @@ def load_dotenv() -> None:
             os.environ[k] = v
 
 
+def home_path() -> Path:
+    """The relocatable workspace root (D14/D15 #2) holding `config.yaml`, `ctrlb.db`, `SOUL.md`,
+    `memories/`, `skills/`, `agents/`. `CTRLB_HOME` wins; otherwise the project root, so an existing
+    corsair checkout keeps working unchanged. emma / new installs set `CTRLB_HOME=~/.ctrl-b`."""
+    override = os.environ.get("CTRLB_HOME")
+    return Path(override).expanduser().resolve() if override else _PROJECT_ROOT
+
+
 def config_path() -> Path:
-    """Resolve the config file path (env `CTRLB_CONFIG` overrides the default location)."""
+    """Resolve the config file path. An explicit `CTRLB_CONFIG` still overrides directly (back-compat
+    + the temp-config test workflow); otherwise it derives from `$CTRLB_HOME` (D15 #2 — layered)."""
     override = os.environ.get("CTRLB_CONFIG")
-    return Path(override).expanduser().resolve() if override else _DEFAULT_CONFIG
+    return Path(override).expanduser().resolve() if override else home_path() / "config.yaml"
 
 
 class ServerCfg(BaseModel):
@@ -108,15 +116,21 @@ class InferenceCfg(BaseModel):
 
 
 class AgentCfg(BaseModel):
-    """Agent-runtime settings (D10/D11). `default_agent` names which entry in `Settings.agents` a
-    new thread uses (blank → the built-in default). `global_subagent_limit` caps concurrent
+    """Agent-runtime settings (D10/D11/D14). `default_agent` names which `agents/<name>/` folder a
+    new thread uses (blank → the default/root agent). `global_subagent_limit` caps concurrent
     subagents across the *whole* tree (§5.5), independent of any one agent's fan-out cap.
     `extra="allow"` so later per-knob additions round-trip."""
 
     model_config = {"extra": "allow"}
 
     compaction: CompactionCfg = Field(default_factory=CompactionCfg)
-    default_agent: str = ""              # name of the default AgentDef; "" → built-in default
+    default_agent: str = ""              # name of the default agent folder; "" → built-in default
+    #: Inheritance base for folder-discovered agents (D14/D15 #1). An `AgentDef`-shaped mapping
+    #: (no `name`/`prompt`) whose fields a specialist's `agent.yaml` overrides via
+    #: `deep_merge(defaults, agent_yaml)` at load. Absent → the `AgentDef` code defaults. May set
+    #: `model` (a per-agent `ModelRef` still wins; `inference.default_mode` is the floor when neither
+    #: sets it). The default agent (no `agent.yaml`) is built from this + globals.
+    defaults: dict[str, Any] = Field(default_factory=dict)
     global_subagent_limit: int = 6       # process-wide cap on concurrent subagents (tree-wide)
     #: Security rail: clamp a subagent's privilege so it can never exceed its parent's (§5.5).
     #: True (default) is the safe choice; set False if you deliberately want a configured subagent
@@ -290,9 +304,9 @@ class Settings(BaseModel):
     open_terminal: OpenTerminalCfg = Field(default_factory=OpenTerminalCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
-    #: Agent definitions (D11). Empty → the built-in default chat agent is synthesized
-    #: (`default_agent_def`). The owner adds entries to run/select alternate agents + subagents.
-    agents: list[AgentDef] = Field(default_factory=list)
+    #: Agents are **folder-only** (D14/D15 #3): discovered by scanning `$CTRLB_HOME/agents/<name>/`
+    #: (`agent.yaml` + `SOUL.md`), never stored as a `config.yaml` list. The default/generalist agent
+    #: lives at the root (`SOUL.md` + globals, no `agent.yaml`). See `resolve_agent` / `list_agent_names`.
     #: Per-tool description overrides (Phase 7d), keyed by tool name → the model-facing text shown
     #: in the OpenAI tool schema. Lets the owner sharpen a tool's wording (which steers a weak local
     #: model's tool selection) without editing code. Applied onto the live registry specs by
@@ -349,10 +363,22 @@ class Settings(BaseModel):
                 )
         return out
 
-    #: Name of the synthesized built-in agent used when no `agents[]` are configured (or the named
-    #: `default_agent` is missing). Its empty prompt falls back to `inference.system_prompt` / the
-    #: session's built-in default; its empty `ModelRef` inherits the chat backend.
+    #: Name of the default/generalist agent — the root workspace (no `agent.yaml`). Its persona is
+    #: the root `SOUL.md` (→ `inference.system_prompt` → baked); its `ModelRef`/limits come from
+    #: `agent.defaults` (or the `AgentDef` code defaults). `default_agent_def` synthesizes it.
     DEFAULT_AGENT_NAME: ClassVar[str] = "default"
+
+    def home_dir(self) -> Path:
+        """The relocatable workspace root (D14/D15 #2)."""
+        return home_path()
+
+    def agents_dir_path(self) -> Path:
+        """`$CTRLB_HOME/agents/` — scanned for specialist `<name>/` folders."""
+        return self.home_dir() / "agents"
+
+    def memories_dir_path(self) -> Path:
+        """`$CTRLB_HOME/memories/` — the default agent's `MEMORY.md` + the global `USER.md` (7e-d)."""
+        return self.home_dir() / "memories"
 
     def skills_dir_path(self) -> Path:
         """Absolute path to the skills directory. A relative `agent.skills_dir` resolves against the
@@ -361,22 +387,79 @@ class Settings(BaseModel):
         p = Path(self.agent.skills_dir).expanduser()
         return p if p.is_absolute() else (config_path().parent / p)
 
+    @staticmethod
+    def _read_soul(folder: Path) -> str:
+        """Read `<folder>/SOUL.md` (the agent's persona), or "" if absent/blank. Fed into
+        `AgentDef.prompt`, so `_system_prompt()` keeps its SOUL.md → `inference.system_prompt` →
+        baked precedence with no change."""
+        p = folder / "SOUL.md"
+        if not p.is_file():
+            return ""
+        return p.read_text(encoding="utf-8").strip()
+
+    def _agent_from(self, name: str, folder: Path, agent_yaml: dict[str, Any] | None) -> AgentDef:
+        """Build an `AgentDef` from `agent.defaults` (inheritance base) + `agent_yaml` (overrides) +
+        the folder name + its `SOUL.md`. `deep_merge(defaults, overrides)` is the same merge
+        `PUT /api/settings` uses; the folder name always wins for `name` (D15 #1/#3)."""
+        merged = deep_merge(dict(self.agent.defaults), dict(agent_yaml or {}))
+        merged["name"] = name
+        merged.pop("prompt", None)  # persona is SOUL.md, never agent.yaml
+        agent = AgentDef.model_validate(merged)
+        soul = self._read_soul(folder)
+        if soul:
+            agent.prompt = soul
+        return agent
+
     def default_agent_def(self) -> AgentDef:
-        """The built-in default chat agent (DESIGN §5.1 — "the default agent is just one entry").
-        Used when `agents[]` is empty so the loop always has an `AgentDef` to run."""
-        return AgentDef(name=self.DEFAULT_AGENT_NAME)
+        """The default/generalist agent — the workspace root (D14). Built from `agent.defaults` +
+        globals; persona = root `SOUL.md`. Always available so the loop has an `AgentDef` to run."""
+        return self._agent_from(self.DEFAULT_AGENT_NAME, self.home_dir(), None)
+
+    def _load_agent_folder(self, name: str) -> AgentDef | None:
+        """Load `agents/<name>/` (agent.yaml + SOUL.md) or `None` if the folder is absent. Loaded
+        fresh per call so an edit is live with no restart (D14)."""
+        folder = self.agents_dir_path() / name
+        if not folder.is_dir():
+            return None
+        yaml_p = folder / "agent.yaml"
+        raw: dict[str, Any] = {}
+        if yaml_p.is_file():
+            loaded = yaml.safe_load(yaml_p.read_text(encoding="utf-8")) or {}
+            if isinstance(loaded, dict):
+                raw = loaded
+        return self._agent_from(name, folder, raw)
+
+    def load_agent(self, name: str) -> AgentDef | None:
+        """Public resolver for the file-per-agent API: the default/root agent for `DEFAULT_AGENT_NAME`,
+        else the `agents/<name>/` folder, or `None` if that specialist folder is absent."""
+        if name == self.DEFAULT_AGENT_NAME:
+            return self.default_agent_def()
+        return self._load_agent_folder(name)
+
+    def list_agent_names(self) -> list[str]:
+        """Specialist agent names — each subdir of `agents/` carrying an `agent.yaml` or `SOUL.md`
+        (a valid slug). Sorted for stable ordering. The default/root agent is not listed here."""
+        d = self.agents_dir_path()
+        if not d.is_dir():
+            return []
+        out = [
+            p.name
+            for p in d.iterdir()
+            if p.is_dir()
+            and _slug(p.name) == p.name
+            and ((p / "agent.yaml").is_file() or (p / "SOUL.md").is_file())
+        ]
+        return sorted(out)
 
     def resolve_agent(self, name: str | None = None) -> AgentDef:
-        """Resolve an `AgentDef` by name. `name=None` → the configured `agent.default_agent` (or the
-        first entry, or the built-in default). An unknown name also falls back to the default — a
-        thread that references a since-deleted agent keeps working rather than 500ing."""
+        """Resolve an `AgentDef` by name (folder-only, D15 #3). `name=None` → the configured
+        `agent.default_agent` folder, else the root default agent. An unknown/since-deleted name
+        falls back to the default rather than 500ing — a thread that references it keeps working."""
         target = name or self.agent.default_agent or None
         if target:
-            for a in self.agents:
-                if a.name == target:
-                    return a
-        if name is None and self.agents:
-            return self.agents[0]
+            loaded = self._load_agent_folder(target)
+            if loaded is not None:
+                return loaded
         return self.default_agent_def()
 
 

@@ -10,16 +10,21 @@ regardless (DESIGN §5.3), so a reconnect re-reads it via `GET /api/threads/{id}
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+import yaml
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sse_starlette.sse import EventSourceResponse
 
+from app.config import deep_merge
+from app.domain.agent import AgentDef
 from app.domain.conversation import Message, ToolCallPart, ToolResultPart, Thread
 from app.domain.enums import Actor, RunState
 from app.domain.plan import Plan
@@ -156,12 +161,12 @@ async def get_default_prompt() -> dict[str, str]:
 
 @router.get("/agents")
 async def list_agents(request: Request) -> dict[str, Any]:
-    """Configured agent names + the resolved default (7d) — for the composer `/agent <name>` switch
-    and a quick reference. The built-in default agent (used when `agents[]` is empty) isn't listed
-    here; `default` is the name a bare thread resolves to."""
+    """Discovered specialist agent names + the resolved default (7d/D14) — for the composer
+    `/agent <name>` switch and a quick reference. Names come from `agents/<name>/` folders; the
+    default/root agent isn't listed (`default` is what a bare thread resolves to)."""
     s = request.app.state.settings
     return {
-        "agents": [a.name for a in s.agents],
+        "agents": s.list_agent_names(),
         "default": s.resolve_agent(None).name,
     }
 
@@ -230,6 +235,139 @@ async def delete_skill(name: str, request: Request) -> dict[str, Any]:
     except OSError:
         pass
     return {"name": name, "deleted": True}
+
+
+# ── Agents file API (Phase 7e-c, D14) ─────────────────────────────────────────────────────────
+# Agents are folder-only: `$CTRLB_HOME/agents/<name>/` = `agent.yaml` (overrides) + `SOUL.md`
+# (persona). The default/root agent IS the workspace (root `SOUL.md` + config.yaml globals /
+# `agent.defaults`) — its fields are edited in Conf, its persona via the SOUL.md endpoint; it has no
+# `agent.yaml` and can't be created/deleted here. Mirrors the skills file API above. Agent names
+# reuse the same slug guard as skills (`_SKILL_NAME`) — lowercase, no path separators.
+
+
+class AgentBody(BaseModel):
+    """The `agent.yaml` override fields (an `AgentDef` minus `name`/`prompt`). Validated against
+    `AgentDef` (merged onto `agent.defaults`) so a bad value 422s — same guarantee the 7d
+    `PUT /api/settings` path gave."""
+
+    agent: dict[str, Any] = Field(default_factory=dict)
+
+
+class SoulContent(BaseModel):
+    content: str = ""
+
+
+def _write_text_eol(p: Path, text: str) -> None:
+    """Atomic write preserving the file's existing EOL (LF for a new file) — avoids CRLF churn,
+    same recipe as `put_skill`."""
+    newline = "\r\n" if (p.is_file() and b"\r\n" in p.read_bytes()) else "\n"
+    data = text.replace("\r\n", "\n").replace("\n", newline).encode("utf-8")
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, p)
+
+
+def _agent_folder(request: Request, name: str, *, allow_default: bool = False) -> tuple[Path, bool]:
+    """Resolve an agent's folder + whether it's the default/root. Validates the slug (422). The
+    default agent maps to the workspace root and is only addressable when `allow_default` (the SOUL.md
+    endpoints) — never for `agent.yaml` create/delete (those live in Conf)."""
+    s = request.app.state.settings
+    if name == s.DEFAULT_AGENT_NAME:
+        if not allow_default:
+            raise HTTPException(
+                status_code=422,
+                detail="the default agent is the workspace root — edit its defaults in Conf, its persona via SOUL.md",
+            )
+        return s.home_dir(), True
+    if not _SKILL_NAME.match(name):
+        raise HTTPException(
+            status_code=422, detail="invalid agent name (lowercase letters, digits, '-' or '_')"
+        )
+    return s.agents_dir_path() / name, False
+
+
+def _agent_payload(name: str, agent: AgentDef, folder: Path, is_default: bool) -> dict[str, Any]:
+    soul_p = folder / "SOUL.md"
+    return {
+        "name": name,
+        "is_default": is_default,
+        "agent": agent.model_dump(mode="json"),
+        "soul": soul_p.read_text(encoding="utf-8") if soul_p.is_file() else "",
+    }
+
+
+@router.get("/agents/{name}")
+async def get_agent(name: str, request: Request) -> dict[str, Any]:
+    """The resolved `AgentDef` (agent.yaml merged onto `agent.defaults`) + its `SOUL.md` persona, for
+    the editor. 404 if a specialist folder is absent. The `default` name returns the root agent."""
+    s = request.app.state.settings
+    folder, is_default = _agent_folder(request, name, allow_default=True)
+    agent = s.load_agent(name)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
+    return _agent_payload(name, agent, folder, is_default)
+
+
+@router.put("/agents/{name}")
+async def put_agent(name: str, body: AgentBody, request: Request) -> dict[str, Any]:
+    """Create or update a specialist's `agent.yaml` (D14). Validates the merged def (422 on a bad
+    value). A brand-new folder is scaffolded with a `SOUL.md` from the baked default. Loaded fresh
+    per turn, so the change is live with no restart."""
+    from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
+
+    s = request.app.state.settings
+    folder, _ = _agent_folder(request, name)  # rejects the default agent
+    fields = {k: v for k, v in body.agent.items() if k not in ("name", "prompt")}
+    merged = deep_merge(dict(s.agent.defaults), fields)
+    merged["name"] = name
+    try:
+        AgentDef.model_validate(merged)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=f"invalid agent: {e.errors()[0]['msg']}") from e
+    folder.mkdir(parents=True, exist_ok=True)
+    _write_text_eol(folder / "agent.yaml", yaml.safe_dump(fields, sort_keys=False, allow_unicode=True))
+    soul_p = folder / "SOUL.md"
+    if not soul_p.is_file():
+        _write_text_eol(soul_p, DEFAULT_SYSTEM_PROMPT + "\n")
+    return _agent_payload(name, s.load_agent(name), folder, False)
+
+
+@router.delete("/agents/{name}")
+async def delete_agent(name: str, request: Request) -> dict[str, Any]:
+    """Delete a specialist agent's whole folder (agent.yaml + SOUL.md + its memories). The default
+    agent can't be deleted. Idempotent: 404 if absent."""
+    folder, _ = _agent_folder(request, name)
+    if not folder.is_dir():
+        raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
+    shutil.rmtree(folder)
+    return {"name": name, "deleted": True}
+
+
+@router.get("/agents/{name}/soul")
+async def get_agent_soul(name: str, request: Request) -> dict[str, Any]:
+    """The raw `SOUL.md` persona for an agent (incl. `default` → root SOUL.md). Empty string if the
+    file doesn't exist yet (the loop falls back to inference.system_prompt → baked)."""
+    folder, _ = _agent_folder(request, name, allow_default=True)
+    if name != request.app.state.settings.DEFAULT_AGENT_NAME and not folder.is_dir():
+        raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
+    p = folder / "SOUL.md"
+    return {"name": name, "content": p.read_text(encoding="utf-8") if p.is_file() else ""}
+
+
+@router.put("/agents/{name}/soul")
+async def put_agent_soul(name: str, body: SoulContent, request: Request) -> dict[str, Any]:
+    """Write an agent's `SOUL.md` persona (incl. `default` → root SOUL.md). Blank content removes the
+    file → the loop falls back to `inference.system_prompt` → the baked default."""
+    folder, is_default = _agent_folder(request, name, allow_default=True)
+    if not is_default and not folder.is_dir():
+        raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
+    p = folder / "SOUL.md"
+    if body.content.strip():
+        folder.mkdir(parents=True, exist_ok=True)
+        _write_text_eol(p, body.content)
+    elif p.is_file():
+        p.unlink()  # blank → remove so the prompt falls back to inference.system_prompt → baked
+    return {"name": name, "content": body.content}
 
 
 @router.post("/agent/compact")

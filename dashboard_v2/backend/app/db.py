@@ -17,9 +17,6 @@ from pathlib import Path
 
 import aiosqlite
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_DB = _PROJECT_ROOT / "ctrlb.db"
-
 # Numbered migrations. Append new (version, sql) tuples; never edit a shipped one.
 MIGRATIONS: list[tuple[int, str]] = [
     (
@@ -71,9 +68,14 @@ MIGRATIONS: list[tuple[int, str]] = [
 
 
 def db_path() -> Path:
-    """Resolve the SQLite file path (env `CTRLB_DB` overrides the default)."""
+    """Resolve the SQLite file path. An explicit `CTRLB_DB` still overrides directly (back-compat +
+    the temp-DB test workflow); otherwise it derives from `$CTRLB_HOME` (D15 #2 — layered)."""
     override = os.environ.get("CTRLB_DB")
-    return Path(override).expanduser().resolve() if override else _DEFAULT_DB
+    if override:
+        return Path(override).expanduser().resolve()
+    from app.config import home_path  # local import: config imports nothing from db (no cycle)
+
+    return home_path() / "ctrlb.db"
 
 
 class Database:
