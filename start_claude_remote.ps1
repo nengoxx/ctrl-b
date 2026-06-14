@@ -2,8 +2,8 @@ $ErrorActionPreference = "Stop"
 
 $ProjectPath = "C:\Users\rovax\Documents\github\ctrl-b"
 $SessionName = "ctrl-b"
-$Model = "claude-opus-4-7"
-$Effort = "medium"
+$Model = "claude-opus-4-8"
+$Effort = "high"
 $PermissionMode = "bypassPermissions"
 
 if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
