@@ -429,12 +429,24 @@ tools + confirm bubbles) are DONE.**
       `Settings.inference.system_prompt_append` + `AgentDef.prompt_append` + `inherit_append` emitted
       as **separate `system` messages** by `_assemble`; `GET /api/agent/default-prompt` returns the
       baked `DEFAULT_SYSTEM_PROMPT`. The injection seam every persona/memory block below reuses.
-- [ ] **7e-b — `<PromptModal>` full-page editor + Conf-sizing refine** (planned 2026-05-30). One
-      reusable full-viewport modal opened from any prompt field; inline rows shrink to preview +
-      opener. Bundled with the Conf sizing/cropping fixes (`.mform` label column, limits grid 2-col
-      at narrow width, tooldesc heading edge, secret overflow audit). Separate refine commit. **This
-      is the reusable editor that the 7e-c persona files + 7e-d memory files plug into.**
-- [ ] **7e-c — per-agent workspace foundation (D14).** Define the relocatable **`$CTRLB_HOME`** root
+- [x] **7e-b — `<PromptModal>` full-page editor + Conf-sizing refine** ✅2026-06-14 (`d92aff6`,
+      `62935af`). One reusable full-viewport modal opened imperatively via `requestPrompt()`
+      (`store/prompt.ts` + `components/PromptModal.tsx`, same store/host pattern as `ConfirmDialog`);
+      inline rows shrank to preview (`lib/promptPreview.ts`) + opener. `[Load default]`/`[Restore
+      default]` fed by `useDefaultPrompt` → `/api/agent/default-prompt`; char counter only; text seeded
+      during render (no flash). Wired System prompt (+append), per-agent Prompt (+append +
+      `inherit_append`), Skills SKILL.md (inline + fullscreen opener). Conf-sizing refine bundled
+      separately. Net-new CSS in `extras.css`; vapor.css untouched (D7).
+- [~] **7e-c — per-agent workspace foundation (D14).** **Agents-as-folders DONE ✅2026-06-14**
+      (`0a30375` backend, `3e34d9c` frontend, `fc15ceb`/`e417859` refine/fix): `$CTRLB_HOME` +
+      `agent.defaults` merge + folder discovery + SOUL.md→prompt + `agents:[]` removed (no migration,
+      no-op confirmed) + file API (`GET/PUT/DELETE /api/agents/{name}` + `…/soul`) + **display names**
+      (`AgentDef.title` / `agent.default_title`, slug stays the `/agent` id) + `AgentsEditor` repointed
+      as the unified list (default row + specialists; Skills control now matches Tools). Also added
+      `agents_dir_path()`/`memories_dir_path()` (the 7e-d seam). **REMAINING: `messages.agent`** — the
+      nullable column + per-turn attribution + resume order (see the sub-item just below, D15 #5).
+      The original full spec follows for reference:
+- [ ] **7e-c (cont.) — `$CTRLB_HOME` reference + the REMAINING `messages.agent` work.** Define the relocatable **`$CTRLB_HOME`** root
       (env var, default `~/.ctrl-b/`; composes with `CTRLB_CONFIG`/`CTRLB_DB`) holding `config.yaml` +
       `ctrlb.db` + `SOUL.md` + `memories/` + `skills/` + `agents/`. The **default agent lives at the
       root** (root `SOUL.md`/`memories/`/`skills/`, no `agent.yaml` — it *is* the config.yaml globals);

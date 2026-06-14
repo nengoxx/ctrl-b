@@ -76,30 +76,81 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (all pushed @ `5df69be` · Phase 7e designed via D14/D15 · **next: BUILD 7e-b**)
+## Current state (all pushed @ `b202f5b` · 7e-b ✅ + 7e-c agents-as-folders ✅ · **next: finish 7e-c (`messages.agent`)**)
 
-> **Everything is pushed to `origin/main` (`5df69be`)** — 7e-a shipped + live-verified, and a long
-> **planning + audit session** that: reshaped Phase 7e into the **D14 agent-workspace design**
-> (file-based, portable persona + memory modelled on Hermes Agent / OpenClaw, on our in-process
-> runtime); **ratified all 8 D15 build-specs** one-by-one with the owner; ran a **whole-project design
-> audit**; and **reconciled `ARCHITECTURE.md` + `DESIGN.md`** to shipped reality + D14/D15. **D14 + D15**
-> in `DECISIONS.md` and the **7e-a…g** slices in `TODO.md` are the canonical build record. The next
-> action is **writing code for 7e-b** — all design is locked, no open questions block it.
+> **Everything is pushed to `origin/main` (`b202f5b`)** — this session shipped **7e-b** (the reusable
+> `<PromptModal>` + Conf-sizing refine) and the bulk of **7e-c** (agents are now **folder-only**: a
+> `$CTRLB_HOME` workspace, file-per-agent API, and the **AgentsEditor repointed** to it as a unified
+> list with **display names**). All design stays locked in **D14 + D15** (`DECISIONS.md`) and the
+> **7e-a…g** slices in `TODO.md`. The next action is the **second half of 7e-c**: the **`messages.agent`
+> column + resume/restore per-turn agent attribution** (D15 #5) — the only remaining 7e-c item.
 > Tree clean except `start_claude_remote.ps1` (owner's launcher tweak, untouched).
 >
-> **The 7e slice sequence (D14/D15):** 7e-a ✅ → **7e-b** (PromptModal + Conf-sizing — the reusable
-> editor everything below plugs into; **build this next**) → **7e-c** (workspace foundation:
-> `$CTRLB_HOME`, `agents/<name>/ = agent.yaml + SOUL.md`, **agents folder-only — `agents:[]` removed,
-> no migration**, `messages.agent` column, AgentsEditor add/edit/delete) → **7e-d** (`FileMemoryProvider`
-> + `memory` tool + auto-write/kill-switch + per-agent `memories/MEMORY.md` / global `memories/USER.md`
-> + Conf Memory panel) → **7e-e** (`session_search` FTS5) → **7e-f** (per-agent skills w/ inheritance +
-> `skill_manage`) → **7e-g** (optional `AgentSelector` auto-rotate).
+> **The 7e slice sequence (D14/D15):** 7e-a ✅ → 7e-b ✅ → **7e-c** (workspace foundation — **agents-as-
+> folders DONE**; **`messages.agent` + resume/restore attribution = REMAINING**) → **7e-d**
+> (`FileMemoryProvider` + `memory` tool + auto-write/kill-switch + per-agent `memories/MEMORY.md` /
+> global `memories/USER.md` + Conf Memory panel) → **7e-e** (`session_search` FTS5) → **7e-f** (per-agent
+> skills w/ inheritance + `skill_manage`) → **7e-g** (optional `AgentSelector` auto-rotate).
 >
-> 1. **Build 7e-b** — still the right next step; D14 gives it a clear downstream contract (it edits
->    `SOUL.md` / `MEMORY.md` files, not just inline strings). The **six design questions are
->    answered + locked 2026-06-14** (see "7e-b decisions locked" in the block below) — frontend code
->    is unblocked.
-> 2. **F29 option A (reload-survival for sub-editor drafts).** UI_AUDIT.md §6b. Not urgent.
+> 1. **Finish 7e-c** — the `messages.agent` column (additive migration #2 in `db.py`; `messages`
+>    table has no `agent` col yet, only `threads`), set it to the resolved AgentDef name on each
+>    assistant turn, **resume order** = explicit → last assistant turn's `agent` → `thread.agent` →
+>    default (D15 #5), restore shows the per-turn agent. Backend-led; small frontend touch.
+> 2. **Then 7e-d** (file memory) — the next big slice. `agents_dir_path()`/`memories_dir_path()`
+>    already exist (added in 7e-c); `MemoryProvider` interface + injection point spec is D15 #4.
+> 3. **F29 option A (reload-survival for sub-editor drafts).** UI_AUDIT.md §6b. Not urgent.
+>
+> **Servers:** backend uvicorn **5433** (no `--reload`, venv), frontend Vite **5173** (HMR; note: the
+> old docs said 5190, but `npm run dev` defaults to **5173** unless `--port 5190` is passed). Phone:
+> `http://corsair:5173`. Both tearable down without state loss.
+
+### ⭐ Session update — 2026-06-14 (evening) (shipped **7e-b** + **7e-c agents-as-folders** · all pushed `b202f5b`)
+
+Build session. Shipped 7e-b end-to-end and the larger half of 7e-c, all pushed to `origin/main`
+(`62935af..b202f5b`). Tree clean (except the standing `start_claude_remote.ps1`).
+
+#### 7e-b — `<PromptModal>` + Conf-sizing (commits `d92aff6`, `62935af`)
+- **`<PromptModal>`** (`components/PromptModal.tsx`) — the one reusable full-page prompt/markdown
+  editor, opened imperatively via **`requestPrompt()`** (`store/prompt.ts`, the same store/host
+  pattern as `ConfirmDialog`). Sizes to the `--app-h` shell (Android keyboard), focus-trap/Escape/
+  restore mirror F17, char counter only, `[Load default]`/`[Restore default]` only when `defaultText`
+  is passed (`useDefaultPrompt` → `/api/agent/default-prompt`). Text seeded **during render** (no
+  stale-frame flash). Inline prompt rows shrank to a preview (`lib/promptPreview.ts`) + opener.
+- **Wired**: Conf → Inference System prompt (+ new **append**), per-agent Prompt (+ **append** +
+  `inherit_append` Seg), Skills SKILL.md keeps its inline editor + a fullscreen opener.
+- **Conf-sizing refine** (`62935af`): `.mform` label col 90→104px, Limits grid 2-col @≤420px,
+  `.confrow .k .label` overflow-wrap. All net-new CSS in `extras.css`; **vapor.css untouched (D7)**.
+
+#### 7e-c — agents are folder-only (commits `0a30375` backend, `3e34d9c` frontend, `fc15ceb`+`e417859` refine/fix, `b202f5b` docs)
+- **Backend (`0a30375`)**: `$CTRLB_HOME` root (`home_path()`, env `CTRLB_HOME`, **default = project
+  root** so corsair is unchanged; `CTRLB_CONFIG`/`CTRLB_DB` still override). `config_path()`/`db_path()`
+  layer on it; new `agents_dir_path()`/`memories_dir_path()`. **`agent.defaults`** inheritance base +
+  `deep_merge` load; **`agents:[]` removed from the Settings schema** (D15 #3 — no migration; the live
+  v2 config had no `agents:`/`agent:` block, confirmed no-op). `resolve_agent`/`list_agent_names` read
+  folders; **SOUL.md → `AgentDef.prompt`** (so `_system_prompt()` is unchanged). **File API**:
+  `GET/PUT/DELETE /api/agents/{name}` (+ `…/soul`); the default/root agent can't be created/deleted
+  here (its fields live in Conf, persona = root SOUL.md). Tests rewritten/migrated, **27/27 green**.
+- **Display names (`3e34d9c`)**: optional **`AgentDef.title`** (in agent.yaml) + **`agent.default_title`**
+  for the root agent. The folder **slug stays the `/agent` id**; UI shows `title || slug`; `title`
+  never inherits from `agent.defaults` (popped before the merge).
+- **Frontend (`3e34d9c`)**: `AgentsEditor` rewritten off the file API (`useAgentList`/`useAgent`/
+  `useSaveAgent`/`useDeleteAgent`/`useSaveAgentSoul`). **Unified list (owner's pick)**: default/root
+  agent first row (fields ↔ `agent.defaults`, title ↔ `default_title`, persona ↔ root SOUL.md),
+  specialists below (own `agent.yaml` + SOUL.md). SOUL saves **directly** (file-backed) through the
+  PromptModal; add-agent takes a **slug + optional display name**, scaffolds, opens.
+- **Two refinements after owner feedback**: `fc15ceb` made the fields **explicit about what they
+  edit** (a storage caption `agents/<slug>/ · agent.yaml + SOUL.md` or `config.yaml · agent.defaults +
+  root SOUL.md`; labels `Persona · SOUL.md`, `Prompt append`, `Inherit global append`). `e417859`
+  **fixed the Skills control**: the old All/None/Custom Seg made Custom unreachable (empty Custom ==
+  None); now it's an "all skills" Switch + tick-grid, identical to the Tools control.
+
+#### Process notes / heads-up for next session
+- **Live write-test slip + remediation**: a backend API smoke-test ran against the **real**
+  `dashboard_v2/config.yaml` (no `CTRLB_HOME` set), briefly writing `agent.default_title: Atlas` +
+  creating `agents/`. Caught, **reverted, dir removed, backend restarted clean** ([[test-write-endpoints-on-temp-config]]).
+  **Next session: set `CTRLB_HOME` to a temp dir for any live write-test of the agents/memory APIs.**
+- **Remaining 7e-c = `messages.agent`** (see Current state #1). Then **7e-d** (file memory) is the big
+  one; the `memories_dir_path()` seam is already in place.
 
 ### ⭐ Session update — 2026-06-14 (pushed 7e-a · verified · **reshaped 7e into the D14 agent-workspace design**)
 
