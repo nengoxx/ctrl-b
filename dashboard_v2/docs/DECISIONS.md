@@ -250,21 +250,42 @@ same ethos as the skill loader, D8/D10):
 
 ```
 ctrl-b-data/
-├── config.yaml          # globals only + agent.default_agent name  (agents:[] REMOVED at completion)
+├── config.yaml          # globals + `agent.defaults` (inheritance base) + default_agent  (agents:[] REMOVED at completion)
+├── SOUL.md              # the DEFAULT/generalist agent's persona (scaffold-if-missing)
 ├── USER.md              # GLOBAL user profile — shared by every agent
-├── skills/              # the DEFAULT/generalist agent's skills
-└── agents/
-    ├── default/  agent.yaml · SOUL.md · MEMORY.md            # generalist (uses global skills/)
-    └── fleet/    agent.yaml · SOUL.md · MEMORY.md · skills/   # specialist (own folder skills)
+├── MEMORY.md            # the DEFAULT agent's memory
+├── skills/              # the DEFAULT agent's skills
+└── agents/              # SPECIALISTS only (distinct identity/model/memory)
+    └── coder/
+        ├── agent.yaml   # ONLY the overrides — absent fields inherit config.yaml `agent.defaults`
+        ├── SOUL.md      # persona override (optional)
+        ├── MEMORY.md    # its own memory
+        └── skills/      # its own skills
 ```
 
-- **`agent.yaml`** = today's `AgentDef` **minus `name`** (= the folder name) and **minus `prompt`**
+- **Skill vs. agent (the distinction).** A **skill** is a *capability* (instructions + tool-narrowing)
+  the running agent activates for a task — e.g. **`fleet` stays a skill**, not an agent; the generalist
+  activates it on a fleet request. An **agent** is an *identity* — its own persona, model, privilege,
+  **memory**, and allowlists. Spin up a separate agent only for a different identity/model/memory, not
+  merely a different toolset (that's what a skill is for). `agents/` holds specialists like a `coder`,
+  not capability bundles.
+- **The default/generalist agent needs NO `agent.yaml`** — it *is* the config.yaml globals.
+  `resolve_agent(None)` → `default_agent_def()` already falls its fields back to `inference.*`/`agent.*`
+  (`_system_prompt()`: agent.prompt → `inference.system_prompt` → baked; `ModelRef(mode=None)` →
+  `inference.default_mode`). Its persona/memory/skills are the **root-level** `SOUL.md` / `MEMORY.md` /
+  `skills/` (consistent with "global `skills/` = the default agent's set").
+- **`agent.yaml`** = today's `AgentDef` **minus `name`** (= folder name) and **minus `prompt`**
   (= `SOUL.md`): model, tool/skill allowlists, privilege, loop/subagent limits, compaction, append.
   Loaded fresh per turn → live edit, no restart.
-- **`config.yaml` keeps only globals** + `agent.default_agent`. The current `agents:[]` list
-  (built in 7d) is migrated into folders **non-destructively** (scaffold from each entry, read it as
-  a transitional fallback), and **`agents:[]` is fully removed once the folders are the source of
-  truth** — not left dangling.
+- **Inheritance (config.yaml is the base).** A specialist's `agent.yaml` carries **only overrides**;
+  absent fields inherit a config.yaml **`agent.defaults`** block (an `AgentDef`-shaped template),
+  resolved at load by `AgentDef.model_validate(deep_merge(agent.defaults, agent_yaml))` — the **same
+  `deep_merge` used by `PUT /api/settings`**. Absent → `agent.defaults` → the `AgentDef` code default.
+  No architectural change; one merge at load.
+- **`config.yaml` keeps only globals** + `agent.defaults` + `agent.default_agent`. The current
+  `agents:[]` list (built in 7d) is migrated into specialist folders **non-destructively** (scaffold
+  from each entry, read it as a transitional fallback), and **`agents:[]` is fully removed once the
+  folders are the source of truth** — not left dangling.
 
 **Persona — `SOUL.md` (portable).** Feeds `_system_prompt()`. **Scaffold-if-missing** from the baked
 `DEFAULT_SYSTEM_PROMPT` template; a setting disables the baked default entirely (empty = empty, no

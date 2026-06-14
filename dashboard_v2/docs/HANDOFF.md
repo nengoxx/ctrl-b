@@ -118,9 +118,10 @@ Researched that **Hermes profiles** and **OpenClaw workspaces** are both *single
 multi-agent runtime** (`resolve_agent` + in-process `spawn_subagents` — strictly more capable for
 "a generalist that *uses* specialists") and adopt only their **folder convention**:
 
-- **Per-agent workspace** `agents/<name>/` = `agent.yaml` (wiring = `AgentDef` − name − prompt) +
-  `SOUL.md` (persona) + `MEMORY.md` (per-agent, isolated) + `skills/` (per-agent). Scan-discovered,
-  live-reloaded. `config.yaml` keeps only globals + `default_agent`.
+- **Default agent = the workspace root** (root `SOUL.md`/`MEMORY.md`/`skills/`, **no `agent.yaml`** —
+  it *is* the config.yaml globals). **`agents/<name>/` = specialists only** (`fleet` stays a *skill*,
+  not an agent): `agent.yaml` (overrides only — absent fields inherit a config.yaml `agent.defaults`
+  block via `deep_merge` at load) + `SOUL.md` + `MEMORY.md` + `skills/`. Scan-discovered, live-reloaded.
 - **`agents:[]` migration** is non-destructive (scaffold folders + transitional fallback read) and
   **`agents:[]` is fully removed at completion** (owner's explicit requirement).
 - **`SOUL.md`**: scaffold-if-missing from the baked default + a setting to disable the baked default

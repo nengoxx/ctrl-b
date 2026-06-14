@@ -420,15 +420,19 @@ tools + confirm bubbles) are DONE.**
       opener. Bundled with the Conf sizing/cropping fixes (`.mform` label column, limits grid 2-col
       at narrow width, tooldesc heading edge, secret overflow audit). Separate refine commit. **This
       is the reusable editor that the 7e-c persona files + 7e-d memory files plug into.**
-- [ ] **7e-c — per-agent workspace foundation (D14).** Define the `agents/<name>/` layout
-      (configurable base dir, scan-based discovery + live reload). **`agent.yaml`** = `AgentDef` minus
-      `name`/`prompt`. **`SOUL.md`** = persona, **scaffold-if-missing** from `DEFAULT_SYSTEM_PROMPT` +
-      a setting to disable the baked default entirely (empty = empty). File-per-agent API
-      (`GET/PUT/DELETE /api/agents/{name}/...` — the SOUL.md editor + the `agent.yaml` wiring).
-      **Migrate** the 7d `config.yaml agents:[]` into folders **non-destructively** (scaffold +
-      transitional fallback read), then **remove `agents:[]` from `config.yaml`** at completion.
-      Repoint `AgentsEditor` to the file API with a first-class **add-agent flow** (scaffolds the
-      folder) + edit/delete, well-designed @390px (D7). Tests on a temp workspace dir.
+- [ ] **7e-c — per-agent workspace foundation (D14).** The **default agent lives at the workspace
+      root** (root `SOUL.md`/`MEMORY.md`/`skills/`, no `agent.yaml` — it *is* the config.yaml globals);
+      **`agents/<name>/` holds specialists only** (distinct identity/model/memory — `fleet` stays a
+      *skill*, not an agent). Configurable base dir, scan-based discovery + live reload. **`agent.yaml`**
+      = `AgentDef` minus `name`/`prompt`, carrying **only overrides** — absent fields inherit a
+      config.yaml **`agent.defaults`** block via `deep_merge(agent.defaults, agent.yaml)` at load (the
+      same merge `PUT /api/settings` uses). **`SOUL.md`** = persona, **scaffold-if-missing** from
+      `DEFAULT_SYSTEM_PROMPT` + a setting to disable the baked default entirely (empty = empty).
+      File-per-agent API (`GET/PUT/DELETE /api/agents/{name}/...` — SOUL.md editor + `agent.yaml`
+      wiring). **Migrate** the 7d `config.yaml agents:[]` into specialist folders **non-destructively**
+      (scaffold + transitional fallback read), then **remove `agents:[]` from `config.yaml`** at
+      completion. Repoint `AgentsEditor` to the file API with a first-class **add-agent flow**
+      (scaffolds the folder) + edit/delete, well-designed @390px (D7). Tests on a temp workspace dir.
 - [ ] **7e-d — file memory: `FileMemoryProvider` + `memory` tool (D14).** Per-agent **`MEMORY.md`**
       (isolated) + global **`USER.md`** (the file impl of the ROADMAP B1 `MemoryProvider`). A
       **`memory` builtin** (Hermes-shaped): `add`/`replace`/`remove`, `target: memory|user`, substring
