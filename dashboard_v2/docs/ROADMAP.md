@@ -55,8 +55,14 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
   replies render **markdown** with **copy / send-to-composer** on code blocks (generalize Vapor
   `editCmd`/`cmdInto`). See `ARCHITECTURE.md` §5. *(Prefix routing + formatting + `/local`,`/cloud`
   is effectively v1; custom/extensible slash commands are the post-v1 part.)*
+- **Composer autocomplete / typeahead (raised 2026-06-14):** as you type, a filtered popover above
+  the composer suggests completions — `/` → slash commands; `/agent ` → agent names
+  (`GET /api/agents`); `/<partial>` → matching skills (`GET /api/skills`) + commands. **Frontend-only**
+  (reuses existing endpoints + a static command list), viable + cheap. Becomes useful once 7e makes
+  the agent/skill lists real (folders + per-agent skills), so it lands as a small slice after that —
+  off the critical path. Arrow/Tab to select; Esc to dismiss.
 - **Open:** slash-command registry shape; how custom commands are defined (config vs UI);
-  configurable command sigil storage.
+  configurable command sigil storage; autocomplete popover styling (Vapor tokens, D7).
 
 ### A3. Scheduled agent automations (cron triggers)
 

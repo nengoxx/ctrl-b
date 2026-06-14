@@ -431,9 +431,10 @@ tools + confirm bubbles) are DONE.**
       same merge `PUT /api/settings` uses). **`SOUL.md`** = persona, **scaffold-if-missing** from
       `DEFAULT_SYSTEM_PROMPT` + a setting to disable the baked default entirely (empty = empty).
       File-per-agent API (`GET/PUT/DELETE /api/agents/{name}/...` — SOUL.md editor + `agent.yaml`
-      wiring). **Migrate** the 7d `config.yaml agents:[]` into specialist folders **non-destructively**
-      (scaffold + transitional fallback read), then **remove `agents:[]` from `config.yaml`** at
-      completion. Repoint `AgentsEditor` to the file API with a first-class **add-agent flow**
+      wiring). **Agents are folder-only (D15 #3):** remove the `agents:[]` field from the `Settings`
+      schema; `resolve_agent`/`default_agent_def` read folders. **No migration feature** — relocate any
+      existing live-config `agents:[]` entries to folders by hand during this slice (likely a no-op).
+      Repoint `AgentsEditor` (+ `test_agents_7d`) to the file API with a first-class **add-agent flow**
       (scaffolds the folder) + edit/delete, well-designed @390px (D7). Tests on a temp workspace dir.
       **Session attribution (D14):** add a nullable **`messages.agent`** column (additive migration;
       null = legacy/default) set to the resolved AgentDef name on each assistant message → restore
@@ -510,7 +511,7 @@ A whole-project review (docs vs the shipped backend code). Findings, tracked:
 - [ ] **Phase 5 (`run_shell`/`/api/exec`):** gated in `decide()` but no tool/endpoint; `!` composer prefix is a stub. Decide: **formally drop** (open-terminal covers remote shell) vs keep.
 - [ ] **Voice config block:** `config.py` has no `stt`/`tts`/`voice` section yet (ARCHITECTURE §3 lists it). Add when Phase 6 lands.
 
-**§2 blocking specs for the 7e build → locked in `DECISIONS.md` D15:** `agent.defaults` shape + merge precedence · `CTRLB_HOME` path + precedence · `agents:[]→folders` migration mechanics · `MemoryProvider` interface + injection point · `messages.agent` + resume resolution · `skill_manage` schema/scope · `session_search` scope + redaction · `AgentSelector` seam.
+**§2 blocking specs for the 7e build → locked in `DECISIONS.md` D15:** `agent.defaults` shape + merge precedence · `CTRLB_HOME` path + precedence · **agents folder-only (no migration; `agents:[]` removed from schema)** · `MemoryProvider` interface + injection point · `messages.agent` + resume resolution · `skill_manage` schema/scope · `session_search` scope + redaction · `AgentSelector` seam.
 
 ## Post-v1 backlog (see ROADMAP.md — build v1 seams now)
 

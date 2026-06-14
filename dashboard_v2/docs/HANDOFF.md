@@ -89,7 +89,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > **Next focus (locked 2026-06-14):** the slices are 7e-a ✅ → **7e-b** (PromptModal + Conf-sizing,
 > the reusable editor everything below plugs into) → **7e-c** (per-agent workspace foundation:
 > `$CTRLB_HOME` root, `agents/<name>/ = agent.yaml + SOUL.md`, migrate+remove `agents:[]`, AgentsEditor
-> add/edit/delete) → **7e-d** (`FileMemoryProvider` + `memory` tool + auto-write/kill-switch + per-agent
+> add/edit/delete, agents folder-only — no `agents:[]`) → **7e-d** (`FileMemoryProvider` + `memory` tool + auto-write/kill-switch + per-agent
 > `memories/MEMORY.md` / global `memories/USER.md` + Conf Memory panel) → **7e-e** (`session_search`
 > FTS5) → **7e-f** (per-agent skills w/ inheritance + `skill_manage` self-authoring) → **7e-g**
 > (optional `AgentSelector` auto-rotate).
@@ -126,8 +126,9 @@ multi-agent runtime** (`resolve_agent` + in-process `spawn_subagents` — strict
   config.yaml globals). **`agents/<name>/` = specialists only** (`fleet` stays a *skill*, not an agent):
   `agent.yaml` (overrides only — absent fields inherit a config.yaml `agent.defaults` block via
   `deep_merge` at load) + `SOUL.md` + `memories/MEMORY.md` + `skills/`. Scan-discovered, live-reloaded.
-- **`agents:[]` migration** is non-destructive (scaffold folders + transitional fallback read) and
-  **`agents:[]` is fully removed at completion** (owner's explicit requirement).
+- **Agents are folder-only** (D15 #3, owner-clarified 2026-06-14): **no migration feature** —
+  `agents:[]` is removed from the schema; agents are read exclusively from folders; any existing
+  live-config entries are relocated by hand during 7e-c (one-time dev step, likely a no-op).
 - **`SOUL.md`**: scaffold-if-missing from the baked default + a setting to disable the baked default
   entirely (empty = empty). Portable to/from Hermes/OpenClaw.
 - **Memory**: file impl of the ROADMAP B1 `MemoryProvider` — per-agent `memories/MEMORY.md` + **global**
@@ -182,9 +183,19 @@ predate 7a–7d + D14); the **A1 privilege ladder is already built** in `permiss
 aren't built; **Utils/D8 registry should reuse `core/tool.py`**; **Phase 5 `run_shell`** — decide
 drop vs keep. **Recommended order:** lock D15 (done) → reconcile ARCHITECTURE/DESIGN → build 7e-b.
 
+#### D15 ratified one-by-one (2026-06-14)
+All eight D15 specs were decided with the owner (marked ✅ inline in D15): #1 `agent.defaults` block
+(model included) · #2 `CTRLB_HOME` layered/project-root default · **#3 agents folder-only — NO
+migration feature** (`agents:[]` removed from schema; existing entries relocated by hand in 7e-c) ·
+#4 memory injection mirrors Hermes' format · #5 resume = continue as last turn's agent · #6
+`skill_manage` default OFF + **non-blocking propose** (memory same when off) · #7 `session_search`
+global + redacted · #8 `AgentSelector` seam locked, algorithm at 7e-g. **Also noted:** composer
+**autocomplete/typeahead** for `/`-commands, `/agent`, `/skill` (frontend-only, reuses existing
+endpoints) → recorded in ROADMAP A4, lands as a small slice once 7e makes the lists real.
+
 #### State of the tree
-- **Local HEAD after this session's doc commit** (DECISIONS D14+D15 + TODO 7e rewrite + audit + this
-  block): commits past `origin/main`. Push per owner go-ahead.
+- **Local HEAD after this session's doc commits** (DECISIONS D14+D15 + TODO 7e + audit + ROADMAP A4 +
+  this block): commits past `origin/main`. Push per owner go-ahead.
 - Tree otherwise clean except `start_claude_remote.ps1` (untouched).
 - Servers: backend uvicorn **5433** (live, 7e-a verified), frontend Vite **5190** (`--host 0.0.0.0`).
 
