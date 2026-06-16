@@ -9,8 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git commit*)",
-            "command": "printf %s '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"coding-discipline POST-FLIGHT - run these BEFORE this commit, not after: (1) self-review the full diff; (2) audit-lens pass over any STRUCTURAL change (agent loop / DB schema / SSE wire protocol / security boundaries - not just leaf edits); (3) verify against a real criterion (tests + live), report honestly; (4) strip instrumentation. Trivial fast-path edits: a quick confirm is enough. Reminder only - not blocking.\"}}'",
+            "command": "if grep -q 'git commit'; then printf %s '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"coding-discipline POST-FLIGHT - run these BEFORE this commit, not after: (1) self-review the full diff; (2) audit-lens pass over any STRUCTURAL change (agent loop / DB schema / SSE wire protocol / security boundaries - not just leaf edits); (3) verify against a real criterion (tests + live), report honestly; (4) strip instrumentation. Trivial fast-path edits: a quick confirm is enough. Reminder only - not blocking.\"}}'; fi",
             "statusMessage": "coding-discipline post-flight reminder"
           }
         ]
