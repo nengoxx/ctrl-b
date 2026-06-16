@@ -472,15 +472,26 @@ tools + confirm bubbles) are DONE.**
       shows the per-turn agent across mid-thread `/agent` switches, **resume prefers the last
       assistant turn's agent**, and `session_search` (7e-e) can attribute/filter by agent.
       `threads.agent` stays the thread's primary/default.
-- [ ] **7e-d — file memory: `FileMemoryProvider` + `memory` tool (D14).** Per-agent
-      **`memories/MEMORY.md`** (isolated) + global **`memories/USER.md`** (the file impl of the
-      ROADMAP B1 `MemoryProvider`; `memories/` gitignored). A
-      **`memory` builtin** (Hermes-shaped): `add`/`replace`/`remove`, `target: memory|user`, substring
-      `old_text`, **no read**; injected via 7e-a's separate-`system`-message machinery, frozen at
-      session start. **Autonomous auto-write** + `memory.auto_write` kill switch (off → suggests);
-      every write an audited `Event`. **Configurable caps** (defaults 2200/1375); over-cap → tool
-      errors + agent consolidates. Conf **Memory panel** (view/edit/clear the files + caps + toggle).
-      Vector recall = the later "both" mode over the unused `memory` table + the 4f embeddings client.
+- [~] **7e-d — file memory: `FileMemoryProvider` + `memory` tool (D14).** Sub-sliced d-1/d-2/d-3.
+  - [x] **7e-d-1 — read path ✅2026-06-16 (`16bde75`).** `MemoryCfg` (`Settings.memory`: enabled /
+        user_profile_enabled / auto_write / caps 2200/1375) + `MemoryProvider` protocol (`core/memory.py`,
+        mirrors `SkillProvider`) + `FileMemoryProvider.load_context` (`services/agent/memory.py`):
+        per-agent `memories/MEMORY.md` (default → root `memories/`; specialist → `agents/<slug>/memories/`)
+        + global `memories/USER.md`, injected as a `system` message right after `_appends()` (D15 #4) with
+        Hermes usage headers. Wired on `Deps.memory` + `app.state.memory`; `AgentSession.memory=` +
+        `_memory_block()`; subagents pass it. `memories/` + `agents/*/memories/` gitignored. Tests:
+        `test_memory_7e.py` (6).
+  - [ ] **7e-d-2 — `memory` tool / write path (NEXT).** A `@action(category="builtin",
+        ui_exposed=False, risk=LOW)`: `add`/`replace`/`remove`, `target: memory|user`, substring
+        `old_text`, **no read**. Extend `FileMemoryProvider` with `write(agent, target, action, content,
+        old_text)` (`add` = `§`-delimited entry; replace/remove on substring). **Cap enforcement:**
+        over-cap → provider raises → tool returns an ERROR `ToolResult` so the agent consolidates.
+        **`auto_write` kill switch (default ON):** OFF = **propose-only, non-blocking** (no write, no
+        suspend); the Approve-to-apply UI is **deferred to 7e-f** (shared with `skill_manage`). Writes
+        auto-audited via `ActionService._record`. `user` target gated by `user_profile_enabled`.
+  - [ ] **7e-d-3 — Conf Memory panel (frontend).** View/edit/clear the files + caps + toggles; needs
+        `read_raw`/`clear` on the provider + small read/write API endpoints (mirror the skills file API).
+  - Vector recall = the later "both" mode over the unused `memory` table + the 4f embeddings client.
 - [ ] **7e-e — `session_search` (Hermes Tier 2).** An **FTS5** index over the `messages` table + a
       builtin tool the agent invokes autonomously. Sessions stay agent-agnostic in `ctrlb.db` (D14).
 - [ ] **7e-f — per-agent skills (inheritance) + `skill_manage` self-authoring (D14).** Wire per-agent

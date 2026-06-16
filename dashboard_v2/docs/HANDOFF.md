@@ -76,37 +76,89 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e-c **DONE** — per-turn agent attribution shipped · **next *build*: 7e-d (file memory)**)
+## Current state (7e-d **sub-sliced**: d-1 read path **DONE** · **next *build*: 7e-d-2 — the `memory` tool / write path**)
 
-> **Everything is pushed to `origin/main`.** **7e-c is complete**: per-turn agent attribution
-> (`messages.agent`, D15 #5) shipped — restore shows the agent per-turn across `/agent` switches, and
-> resume continues as the last assistant turn's agent. Build commits this session: `680b310` (7e-c) →
-> `fe2cbe5` (the `coder` example specialist agent) → `cdace1b` (the `coding-discipline` Claude-Code
-> skill) → this handoff. Verified: **32 backend tests green** (incl. 5 new `test_messages_agent_7e`),
-> `tsc` clean, and a **live `/agent coder` turn stored + labelled `coder` end-to-end**. All design
-> stays locked in **D14 + D15 + D16 + D17** (`DECISIONS.md`) and the **7e-a…g** slices in `TODO.md`.
-> Tree clean except `start_claude_remote.ps1` (owner's launcher tweak, untouched).
+> **Everything is pushed to `origin/main`** (HEAD `16bde75`). 7e-c shipped (per-turn agent
+> attribution, `messages.agent`, D15 #5) + the `coder` example specialist agent + the
+> `coding-discipline` Claude-Code skill. **7e-d (file memory) is sub-sliced into d-1 / d-2 / d-3**
+> (owner's call this session); **7e-d-1 (read path) is DONE** (`16bde75`): `FileMemoryProvider`
+> injects per-agent `memories/MEMORY.md` + global `memories/USER.md` as a `system` message right
+> after the prompt appends (D15 #4), with Hermes-style usage headers. Also fixed the post-flight
+> reminder hook (`f2002c0` — it had been over-firing on non-commit Bash). Verified: **38 backend
+> tests green** (6 new `test_memory_7e`), `compileall` clean, backend rebooted with the new wiring,
+> `/api/settings` shows the live `memory` section. Tree clean except `start_claude_remote.ps1`.
 >
-> **The 7e slice sequence (D14/D15):** 7e-a ✅ → 7e-b ✅ → **7e-c ✅** (workspace foundation — agents-as-
-> folders + `messages.agent`/resume attribution, all done) → **7e-d (NEXT)**
-> (`FileMemoryProvider` + `memory` tool + auto-write/kill-switch + per-agent `memories/MEMORY.md` /
-> global `memories/USER.md` + Conf Memory panel) → **7e-e** (`session_search` FTS5) → **7e-f** (per-agent
-> skills w/ inheritance + `skill_manage`) → **7e-g** (optional `AgentSelector` auto-rotate).
+> **The 7e slice sequence (D14/D15):** 7e-a ✅ → 7e-b ✅ → 7e-c ✅ → **7e-d** (file memory: **d-1 read
+> path ✅** → **d-2 `memory` tool / write path = NEXT** → d-3 Conf Memory panel) → **7e-e**
+> (`session_search` FTS5) → **7e-f** (per-agent skills w/ inheritance + `skill_manage`) → **7e-g**
+> (optional `AgentSelector` auto-rotate).
 >
-> 1. **Build 7e-d** (file memory) — the next big slice, fully specced by **D15 #4/#6**. The
->    `agents_dir_path()`/`memories_dir_path()` seams already exist; the `MemoryProvider` interface +
->    injection point (in `_assemble`, right after `_appends()`) is D15 #4, with Hermes-named config
->    keys for portability (`memory.memory_char_limit` 2200 · `memory.user_char_limit` 1375 ·
->    `memory.enabled` · `memory.auto_write`). **Apply the pre-implementation directive:** read
->    `session.py` `_assemble`, `config.py`, and the `core/` protocols first; reuse, don't fork.
-> 2. **Decided-but-deferred builds** (all design-locked, pick when wanted): C1 dual-mode chat (D17),
->    A1 privilege selection (D16), A2 question kind, F29 opt A (UI_AUDIT.md §6b).
+> 1. **Build 7e-d-2 — the `memory` tool (write path).** A `@action(category="builtin",
+>    agent_exposed=True, ui_exposed=False, risk=LOW)` (register in `services/actions/__init__.py`,
+>    sibling of `task_plan`/`spawn_subagents`). Input: `target: memory|user`, `action: add|replace|
+>    remove`, `content`, `old_text` (substring for replace/remove); **no read** (the content is already
+>    injected each turn by d-1). Reads `ctx.deps.memory` + `ctx.agent`; extend `FileMemoryProvider`
+>    with `write(agent, target, action, content, old_text)` — `add` appends a `§`-delimited entry,
+>    `replace`/`remove` operate on the `old_text` substring. **Cap enforcement:** over-cap → the
+>    provider raises → the tool returns an **ERROR `ToolResult`** steering the model to consolidate
+>    (not a crash). **`auto_write` kill switch (default ON):** when **OFF**, the tool **does not write
+>    and does not block** — it returns a non-blocking "proposed (not written)" result; the
+>    Approve-to-apply **UI affordance is DEFERRED to 7e-f** (shared with `skill_manage` — build the
+>    propose-UI once, for both — owner's call this session). Writes are **auto-audited** — no manual
+>    Event needed (`ActionService._record` records every invocation). `user` target gated by
+>    `memory.user_profile_enabled`. **Pre-flight:** read `services/agent/planning.py` (the builtin
+>    pattern), `core/tool.py` (`@action`/`InvocationContext`), `services/agent/memory.py` (extend the
+>    provider), and `services/action_service.py` (how `_record` audits). Test on a **temp
+>    `$CTRLB_HOME`** (`CTRLB_HOME`/`CTRLB_CONFIG`/`CTRLB_DB`) — never the real config.
+> 2. **Then 7e-d-3 — Conf Memory panel (frontend):** view/edit/clear the files + caps + toggles.
+>    Needs `read_raw`/`clear` on the provider + small read/write API endpoints (mirror the skills file API).
+> 3. **Decided-but-deferred builds** (all design-locked): C1 dual-mode chat (D17), A1 privilege
+>    selection (D16), A2 question kind, F29 opt A (UI_AUDIT.md §6b).
 >
 > **Servers:** backend uvicorn **5433** (no `--reload`, venv), frontend Vite **5173** (HMR; `npm run
 > dev` defaults to 5173 unless `--port 5190`). Phone: `http://corsair:5173`. Both tearable down
-> without state loss.
+> without state loss. **Heads-up:** pytest is **not installed** in the backend venv — every test file
+> has a `__main__` runner; run `./.venv/Scripts/python.exe tests/<file>.py`.
 
-### ⭐ Session update — 2026-06-16 (build session — shipped **7e-c `messages.agent`** + the `coder` example agent · 3 commits)
+### ⭐ Session update — 2026-06-16 (build session #2 — **7e-d-1 file-memory read path** + hook fix · cut off by a connection drop, handed off clean)
+
+Build session, ended by a connection drop mid-way through "continue to 7e-d-2" — **no 7e-d-2 code was
+written**, tree is clean at `16bde75`, everything pushed. What landed:
+
+**7e-d sub-sliced (owner's call): d-1 (read path) → d-2 (write tool) → d-3 (Conf panel).** Plus two
+locked decisions for the tool: `auto_write` OFF = **propose-only, no write, no block**; the
+Approve-to-apply **UI affordance is deferred to 7e-f** (shared with `skill_manage`).
+
+**7e-d-1 — file memory read path (`16bde75`).** The file impl of the ROADMAP B1 `MemoryProvider`,
+injecting saved notes into every turn:
+- `config.py` **`MemoryCfg`** (`Settings.memory`): `enabled` · `user_profile_enabled` · `auto_write`
+  · `memory_char_limit` 2200 · `user_char_limit` 1375 (Hermes-named, `extra="allow"`).
+- `core/memory.py` **`MemoryProvider`** Protocol (`load_context(agent) -> str`) — mirrors
+  `core/skills.py`'s `SkillProvider`.
+- `services/agent/memory.py` **`FileMemoryProvider.load_context`** — reads per-agent MEMORY.md (default
+  agent → `$CTRLB_HOME/memories/`; specialist → `agents/<slug>/memories/`) + global `memories/USER.md`,
+  formats each as a Hermes-style section (`## Agent memory (1% — 24/2,200)`). Stateless (paths/caps from
+  live Settings each call → edits land with no restart).
+- Wired on **`Deps.memory`** + **`app.state.memory`** (main.py, like `skills`); **`AgentSession` gains
+  `memory=`**, injected in **`_assemble` right after `_appends()`** (D15 #4) via a `_memory_block()`
+  helper; subagents pass `deps.memory`. `memory=None` → byte-identical prior behaviour.
+- **`memories/` + `agents/*/memories/` gitignored** (personal data, D14) — landed *before* any file is created.
+- `tests/test_memory_7e.py` (6): inject order, usage header, profile toggle, master switch, empty, per-agent isolation.
+
+**Hook fix (`f2002c0`).** The commit-time post-flight reminder hook (`94f7bf8`) was **over-firing on
+non-commit Bash** — the `if: Bash(git commit*)` gate mishandled compound `cd … && …` commands. Fixed by
+dropping the gate; the command now greps its own stdin for `git commit` and emits the reminder only
+then. Pipe-tested both ways (clean → silent, commit → reminder, exit 0). The hook is working as
+intended now — you'll see it fire only on real `git commit` calls.
+
+**Verified:** 38 backend tests green (6 new), `compileall` clean, backend rebooted on 5433 with the new
+wiring, `/api/settings` confirms the live `memory` section. No frontend in d-1.
+
+**Start here next session: build 7e-d-2** (the `memory` tool / write path) — full spec + pre-flight
+reading list is in the "Current state" block above. Apply the coding-discipline loop; the commit-time
+hook will remind you of the post-flight.
+
+### ⭐ Session update — 2026-06-16 (build session #1 — shipped **7e-c `messages.agent`** + the `coder` example agent · 3 commits)
 
 Build session, following the new pre-implementation directive end-to-end (read every touch point
 before writing). Closed out 7e-c, added a real specialist agent as the live fixture, and recorded a
