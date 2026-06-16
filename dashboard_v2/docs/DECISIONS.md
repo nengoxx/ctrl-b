@@ -553,15 +553,23 @@ a streaming-vs-buffered final-message parity check, all on a temp config.
 
 ## Still open (decide before building the relevant phase)
 
-- Agent tool-calling format: OpenAI `tools`/function-calling vs a lightweight JSON protocol for
-  models that don't support tools well (some local GGUFs). Likely: detect capability, fall back.
+**Resolved since this list was written (kept here as a pointer so the section stays honest):**
+- ~~Agent tool-calling format + prompted-JSON fallback~~ → **resolved 2026-06-16: native-only,
+  prompted-JSON DROPPED.** Native OpenAI `tools` shipped + proven (`inference.py:125`); the weak-model
+  problem was tool *selection*, fixed by the `fleet` intent-skill (tool-narrowing) + loop guards, not a
+  format change (Phase 4c). The owner runs only native-tool-capable models (local `minig+`, cloud), so
+  the capability-probe + prompted-JSON path is **not built and not a deferred seam** — if a future
+  tool-incapable model is ever adopted, we decide from scratch then.
 - ~~Memory backend(s): none / file / vector / both~~ → **resolved in D14**: file impl first
   (`MEMORY.md` per-agent + global `USER.md` + a `memory` tool, Hermes-shaped), vector as the later
   "both" mode over the embeddings client (D9). Pluggable `MemoryProvider` (ROADMAP B1) is the seam.
-- Auth: stay none (Tailscale-only) for v1; revisit only if exposure model ever changes.
-- Frontend routing: simple tab state vs `react-router` (lean tab state unless deep-linking is wanted).
-- MCP: how much of the client to ship in v1 vs v1.x (transports both wanted; start with one server
-  working end-to-end, then generalize). Tool-namespacing + per-server failure isolation.
+- ~~Frontend routing: tab state vs `react-router`~~ → **resolved Phase 1**: lean tab state
+  (`store/ui.ts`), no router (no deep-linking need). Recorded in TODO "Open questions".
+- ~~MCP: how much of the client to ship in v1~~ → **resolved (Phase 4f)**: **both transports**
+  (Streamable HTTP + stdio) shipped + live-verified, namespaced `mcp__<server>__<tool>`, per-server
+  failure isolation, between-turn rediscovery (7c-b). Nothing left open here.
+- **Auth: standing decision (not open)** — stay none (Tailscale-only) for v1; revisit only if the
+  exposure model ever changes (security hardening = ROADMAP G).
 
 ## Future additions (design-shaping, captured in ROADMAP.md)
 

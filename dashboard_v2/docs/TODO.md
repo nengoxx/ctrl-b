@@ -183,12 +183,13 @@ tools + confirm bubbles) are DONE.**
       tool-calling + the bubble @390px not yet eyeballed by the owner.**
 
 ### 4c+ — routing, plan, compaction, MCP (next)
-- [~] Capability fallback for weak local models. **Largely resolved (2026-05-28), prompted-JSON
-      deferred:** `minig+`'s *native* tool-calling works fine; the real weak-model problem (it
+- [x] Capability fallback for weak local models. **Resolved (2026-05-28 finding, prompted-JSON
+      DROPPED 2026-06-16):** `minig+`'s *native* tool-calling works fine; the real weak-model problem (it
       hallucinates names / mis-picks from the big namespaced toolset) is fixed by the **`fleet`
       intent-skill** (auto tool-narrowing) + **loop-discipline guards** (`max_repeat_calls` /
       `max_calls_per_tool` / `max_stall_iterations` + forced final answer) + **lenient `task_plan`**.
-      The prompted-JSON path is now optional — only for a model with weak *native* calling.
+      **The prompted-JSON path is dropped** (native-only — the owner runs only native-tool-capable
+      models; revisit from scratch if that ever changes).
 - [x] **MCP client (4f, D9):** **Streamable HTTP + stdio done** — `adapters/mcp_client.py` `McpClient`
       discovers each configured server's tools at startup and registers an `McpTool` wrapper per
       tool into the **same** registry (so they flow through `ActionService` + the confirm gate + the
@@ -582,7 +583,8 @@ Not v1 scope, but the owner wants these; v1 must leave room. Detail + design not
 ## Open questions to resolve in-phase (from DECISIONS.md)
 
 - [x] Agent tool-call format + weak-model fallback → **native OpenAI tools**; weak-model fallback is
-      the `fleet` intent-skill (tool-narrowing) + loop guards; prompted-JSON deferred (see Phase 4c).
+      the `fleet` intent-skill (tool-narrowing) + loop guards; **prompted-JSON dropped 2026-06-16**
+      (native-only — see Phase 4c + DECISIONS "Still open").
 - [x] SearXNG → done as the built-in **`web_search`** tool (4f) **and** available via emma's
       `mcp__web-tools__*` MCP server; both live.
 - [ ] Memory strategy final shape (Phase 7) — embeddings client built (4f), vector `MemoryProvider`
