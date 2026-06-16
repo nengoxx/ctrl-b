@@ -452,12 +452,13 @@ Each cites the existing seam it extends. **All eight were ratified one-by-one wi
    (recall is the point). Returns ranked snippets with `thread_id` + `ts` + the recorded `agent`. A
    migration adds the FTS5 virtual table + sync triggers.
 
-8. **`AgentSelector` seam (✅ decided 2026-06-14 — seam locked, algorithm deferred).** A
+8. **`AgentSelector` seam (✅ decided 2026-06-14 — seam locked; default algorithm decided 2026-06-16).** A
    `SelectorProtocol` mirroring `SkillSelector`, **off unless `agent.auto_rotate`** is enabled
-   (explicit `/agent` + `spawn_subagents` stay primary). The concrete matching algorithm (default
-   lean: a `KeywordAgentSelector` over agent name + SOUL.md description, like `KeywordSkillSelector`;
-   LLM router a drop-in) is **decided in the 7e-g section at build time** — same deferral pattern that
-   worked for skill selection.
+   (explicit `/agent` + `spawn_subagents` stay primary). **Default = `KeywordAgentSelector`** — token
+   overlap on agent name + SOUL.md description, an exact mirror of `KeywordSkillSelector`
+   (deterministic, model-agnostic, consistency by construction). The protocol stays **swappable** so an
+   LLM router or an embeddings selector (over the 4f client) is a drop-in. Only the final keyword
+   tuning happens at 7e-g build, with real agent descriptions in hand.
 
 **Project-wide cleanups from the same audit** (tracked in `TODO.md` "Design audit"): reconcile
 `ARCHITECTURE.md`/`DESIGN.md` to shipped reality + D14/D15; fix the C1 (streaming both-ways) and A2

@@ -325,8 +325,11 @@ tools + confirm bubbles) are DONE.**
 
 ## Phase 6 — Voice (STT + TTS)
 
-- [ ] `POST /api/voice/stt` (multipart → OpenAI-compatible `/v1/audio/transcriptions`).
-- [ ] `POST /api/voice/tts` ({text,voice} → `/v1/audio/speech` → audio stream).
+- [ ] `POST /api/voice/stt` (multipart → OpenAI-compatible `/v1/audio/transcriptions`). **Always
+      buffered** (push-to-talk record-then-send) — no streaming toggle (C1 decision 2026-06-16).
+- [ ] `POST /api/voice/tts` ({text,voice} → `/v1/audio/speech` → audio stream). **Own streaming knob**
+      in the voice config block (full-clip vs chunked playback; the latency win is sentence-pipelining
+      with the chat stream) — decoupled from chat's `AgentCfg.streaming` (C1 decision 2026-06-16, D17).
 - [ ] Frontend: push-to-talk mic (MediaRecorder) → STT → fills composer; auto-TTS toggle
       (`#ttsToggle`) plays assistant replies.
 - [ ] **HTTPS via Tailscale Serve** so the mic works on Android (secure-context). Document it.
@@ -488,7 +491,9 @@ tools + confirm bubbles) are DONE.**
       per call, so authored skills are live with no restart.
 - [ ] **7e-g — optional `AgentSelector` auto-rotate (D14).** A swappable selector (mirrors
       `SkillSelector`) that auto-routes a turn to a specialist **when enabled** in settings — default
-      off; explicit `/agent` + `spawn_subagents` stay primary.
+      off; explicit `/agent` + `spawn_subagents` stay primary. **Default algorithm =
+      `KeywordAgentSelector`** (name + SOUL.md token overlap, mirroring `KeywordSkillSelector`; D15 #8);
+      protocol swappable (LLM/embeddings drop-ins). Final keyword tuning at build.
 
 ## Phase 8 — Tool registry + Utils (extensible, D8)
 
@@ -532,7 +537,7 @@ FTS5); the C1/A2 doc "day-one" overclaims are corrected (flagged as future, not 
 
 **Documented "day-one" seams that were never built (contradiction to fix — doc or code):**
 - [ ] **Streaming `auto|on|off` + buffered chat (C1) — DECIDED 2026-06-16: BUILD (spec in DECISIONS D17).** ARCHITECTURE §1 claimed "both from day one"; `/api/agent/chat` is SSE-only today. Build = a `collect_turn(events)` collector that drains the existing `run_turn`/`resume` `AgentEvent` generator into a buffered JSON payload (the loop is NOT forked), `AgentCfg.streaming` setting, Accept-header negotiation under `auto`, setting authoritative (off buffers the PWA too), client branches on response content-type and reuses the reload render path. Chat endpoint only — STT/TTS streaming stays Phase 6. On landing, flip the ARCHITECTURE §1 claim to true.
-- [ ] **`question` message kind (A2)** (doc framing corrected ✓; building the kind remains): ARCHITECTURE listed it as a v1 kind; the Part union has no `question` part / pause-for-answer flow (the confirm-suspend flow is the same shape — cheap later). Fix the doc's "day-one" framing.
+- [ ] **`question` message kind (A2)** (doc framing corrected ✓; **design locked 2026-06-16 in ROADMAP A2**, build deferred): ARCHITECTURE listed it as a v1 kind; the Part union has no `question` part / pause-for-answer flow. Locked shape: a `question` builtin (sibling of `task_plan`) that suspends via the existing suspend path (`RunState.AWAITING_ANSWER`) + `tool.question` SSE event + a question bubble + **extends** `/api/agent/resume` with `decision="answer"` (no parallel endpoint). Cheap when built because it reuses the confirm-suspend machinery.
 - [ ] **D8 tool registry / Utils (Phase 8) unbuilt:** no `@tool`, no `/api/tools`, Utils is a static shell. **Confirmed (DESIGN §0.4 + §16):** the Utils tool registry **reuses `core/tool.py`** (the unified capability model) — not a parallel registry. Build remains (Phase 8).
 
 **Found *better* than documented:**
@@ -561,10 +566,14 @@ Not v1 scope, but the owner wants these; v1 must leave room. Detail + design not
 - [ ] **Slash commands** registry + custom/extensible commands (A4). *(Basic `!`/`/` prefix routing
       + markdown/copy is in Phase 4 above.)*
 - [ ] **Scheduled automations**: `Automation` table + cron runner + headless agent runs (A3).
-- [ ] **Streaming toggle** (`auto|on|off`) + non-streaming fallback wired through chat/STT/TTS (C1).
+- [ ] **Streaming, decoupled per-transport (C1, 2026-06-16):** chat = `AgentCfg.streaming` auto|on|off
+      (decided D17); TTS = own chunked-playback knob (Phase 6); STT = always buffered, no toggle. **Not**
+      one global toggle.
 - [ ] **Wake word** (client-side, openWakeWord/Porcupine WASM, off by default) (C2).
-- [ ] **Idle shutdown/sleep** per host (Win+Linux), **optional/opt-in**, incl. **real-idle
-      detection mechanism** (helper agent?) — decide before building (D1). **Wake-on-connection** (D2).
+- [ ] **Idle sleep → OS-native (decided 2026-06-16, D1):** let each host's own OS power plan
+      suspend on idle; ctrl-b builds nothing for now (no remote idle detection). **Compute-aware idle**
+      (don't sleep during GPU jobs) is a deferred future maybe — the only variant the OS can't do.
+      **Wake-on-connection** (D2) still open.
 - [ ] **Notifications** (F1): master toggle + per-event; default PWA-native (foreground
       Notifications API via SSE + **Web Push**/VAPID when closed, auto); optional **ntfy** /
       **Telegram-Discord** channels. **Discord/Telegram bots** as thin API clients (E1).

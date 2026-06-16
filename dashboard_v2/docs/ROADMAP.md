@@ -42,16 +42,31 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
 - **What:** the agent can ask the user a question mid-task — for missing info or to disambiguate —
   exactly like Claude Code's question prompts, optionally with suggested answers.
 - **Design implication:** the chat protocol must be **typed message kinds**, not just text. v1
-  already plans `text` / `command|action` bubbles; add a **`question`** kind (prompt + optional
-  choice chips + free text), and the agent loop must **pause for the answer** and resume. This is
-  the same shape as the action-confirm flow, so build the chat loop turn-based from day one.
-- **Notify when blocked (ties A1+A3+F1):** when the agent needs input — a clarifying **question**,
-  or a **confirm** it lacks privilege for — and **no human is present** (low-privilege mode or a
-  headless automation), **fire a notification** (F1) and park the turn until the user answers, then
-  resume. This is the key bridge: a low-privilege or scheduled agent that hits a decision point
-  pings the phone, the user opens the app, answers, the agent continues.
-- **Open:** timeout/abandon behavior; per-automation fallback when unattended (notify-and-wait /
-  use-default / skip).
+  already has `text` / `command|action` bubbles; add a **`question`** kind (prompt + optional
+  choice chips + free text), and the agent loop must **pause for the answer** and resume.
+- **Locked design (✅ 2026-06-16 — reuse the confirm-suspend machinery; build deferred).** A2 is the
+  *same shape* as the action-confirm flow that already works, so it **extends** that path rather than
+  adding a parallel one:
+  - A **`question` builtin tool** — sibling of `task_plan` (`services/agent/planning.py`,
+    `category="builtin"`, `ui_exposed=False`, LOW). The agent calls it with
+    `{prompt, choices?: list[str], allow_free_text?: bool}`.
+  - It **suspends the turn** through the existing suspend path (a new suspend reason, e.g. a
+    `RunState.AWAITING_ANSWER` alongside `AWAITING_CONFIRM`) and emits a **`tool.question`** SSE event
+    (sibling of `tool.permission`) carrying `{callId, prompt, choices}`. The turn ends `done(suspended)`.
+  - The UI renders a **question bubble** (prompt + choice chips + free-text), parallel to the `.b.cmd`
+    confirm bubble — net-new component, same suspend/resume wiring.
+  - **Resume reuses `/api/agent/resume`** (don't fork it): extend `ResumeRequest` with an
+    `answer: str | None`; a new `decision="answer"` records the answer as the tool result fed back to
+    the model, then the loop continues — exactly the execute/dismiss round-trip carrying text instead
+    of a confirm token. An abandoned question synthesizes a "no answer"/`SKIPPED` result, like an
+    abandoned confirm.
+- **Notify when blocked (ties A1+A3+F1):** when the agent needs input — a clarifying **question**, or
+  a **confirm** it lacks privilege for — and **no human is present** (low-privilege or headless
+  automation), **fire a notification** (F1) and park the turn until answered, then resume. The key
+  bridge: a low-privilege/scheduled agent that hits a decision point pings the phone, the owner
+  answers, the agent continues.
+- **Open (only matters once automations exist — defer to build):** timeout/abandon behavior;
+  per-automation fallback when unattended (notify-and-wait / use-default / skip).
 
 ### A4. Composer as a console — prefix routing & slash commands
 
@@ -184,12 +199,19 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
 
 ### C1. Streaming with non-streaming fallback (chat + voice)
 
-- **What:** streaming responses by default, with a **toggle** (`auto | on | off`) and graceful
-  fallback when a backend doesn't support SSE/streaming.
-- **Design implication:** the `/api/agent/chat` endpoint supports **both** a streaming (SSE) and a
-  buffered (single JSON) response from day one; the client honors the setting. Same idea for STT
-  (record-then-send vs streaming transcription) and TTS (full-clip vs chunked playback). Build the
-  contract so non-streaming is a first-class path, not an afterthought.
+- **What:** streaming responses by default, with graceful fallback when a backend doesn't support
+  streaming. **Decoupled per-transport (✅ decided 2026-06-16)** — each transport owns its own knob;
+  there is **no single global streaming toggle** (the three transports have different semantics +
+  failure modes; over-coupling them was an early over-simplification):
+  - **Chat** — `AgentCfg.streaming: auto|on|off` (✅ shipped design **D17**: SSE vs buffered-JSON one
+    endpoint, Accept-header negotiation under `auto`, setting authoritative). Done as a decision.
+  - **TTS** — its **own** knob in the Phase 6 voice config block: full-clip vs **chunked playback**
+    (progressive audio; the real latency win is sentence-pipelining with the chat stream). Built in Phase 6.
+  - **STT** — **always buffered** (push-to-talk record-then-send); **no toggle.** Live partial
+    transcription is a large complexity jump (streaming-capable backend + websocket/chunked) for
+    marginal benefit on a single-user mic — out of scope unless a concrete need appears.
+- **Design implication:** chat's dual-mode is D17. Voice (Phase 6) builds the TTS streaming knob and
+  the buffered STT path; the voice config block lands with Phase 6 (`config.py` has no voice section yet).
 
 ### C2. Wake word
 
@@ -205,20 +227,22 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
 
 ## D. Fleet automation
 
-### D1. Idle shutdown / sleep (per-host, Windows + Linux) — **optional / opt-in**
+### D1. Idle sleep — **OS-native (✅ decided 2026-06-16); ctrl-b adds nothing for now**
 
-- **What:** a per-host **opt-in** toggle — on idle for *N* minutes, **sleep** or **shut down** the
-  host. Configurable action + threshold, independently for Windows and Linux machines. Off by
-  default; enabled per host.
-- **Design implication:** new `Host` fields (`idle_action: none|sleep|shutdown`, `idle_minutes`)
-  surfaced in the Conf machine form; enforced by the scheduler (A3) or a dedicated monitor loop.
-  Actions map per-OS (`shutdown`/`rundll32 powrprof` or `psshutdown` on Windows; `systemctl
-  suspend`/`shutdown` on Linux).
-- **⚠️ Hard part — detecting *real* idle remotely:** GUI/input idle time isn't cleanly queryable
-  over SSH (CPU% and TTY idle aren't the same as "user is away"). Likely needs a **tiny helper
-  agent on each host** reporting last-input/idle (Windows `GetLastInputInfo`; Linux `xprintidle`/
-  loginctl), or a heuristic (no active sessions + low CPU). **Open + non-trivial** — decide the
-  detection mechanism before building.
+- **Decision (2026-06-16):** for plain "sleep the machine when idle," **let each host's own OS power
+  plan do it** (Windows power settings / Linux `systemd`/logind suspend-on-idle). The OS already
+  detects input-idle correctly, locally — so ctrl-b implements **no** idle-shutdown and **no** remote
+  idle detection for now. This deletes the old "⚠️ hard part" entirely: there is nothing to query over
+  SSH because the decision never leaves the host.
+- **What ctrl-b is NOT building (the reasons that *would* have justified it — none wanted now):**
+  central shutdown-on-idle policy (full power-off vs sleep), and fleet-wide automation
+  ("every night sleep idle boxes"). Revisit only if one of these becomes a real need.
+- **Future maybe — compute-aware idle (the owner flagged it "later, not now"):** "don't sleep/shut
+  down while a GPU/compute job is running; act once it's truly done." This is the **only** variant the
+  OS power plan *can't* do (input-idle ≠ compute-idle), and it's where the genuinely hard remote
+  detection lives (a compute signal — GPU utilization / job presence — not last-input time). Deferred;
+  if built, design the detection mechanism then (likely a tiny per-host signal over the existing
+  SSH/open-terminal channels before any persistent helper agent).
 
 ### D2. Wake-on-connection
 
