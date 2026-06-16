@@ -151,6 +151,14 @@ starts by *reading* the code it touches; reuse existing data structures/classes/
 no hardcoding, no duplicate/near-duplicate paths; surface the seams + any deviation and confirm before
 coding. Recorded in **AGENTS.md §9 + CLAUDE.md Hard rules** + memory [[check-patterns-before-implementing]].
 
+**Dependency security cleanup (same session, `07d64da` + `a06e3b5`).** Cleared the Dependabot
+backlog: **frontend** `package.json` gained `overrides: { esbuild: ^0.28.1 }` (vite 7.3.3 capped it at
+`^0.27.0`) and vite bumped 7.3.3 → **7.3.5** (`npm audit` → 0 vulns, build verified); **backend**
+`python-multipart` 0.0.29 → **0.0.31** (venv reinstalled, `pip check` clean, `app.main` imports). The
+15 alerts on the dead `ws_*` prototype dirs were **dismissed as "not used"**. Heads-up for a fresh
+checkout: a clean `npm install` honors the esbuild override; the backend venv already has 0.0.31. (The
+GitHub banner may briefly still show the 4 python-multipart alerts until Dependabot re-scans `main`.)
+
 **Start here in a fresh session — back to *building* 7e-c:**
 1. **Finish 7e-c — the `messages.agent` column** (the only remaining 7e-c item, D15 #5). Additive
    migration in `db.py` (`messages` has no `agent` col yet, only `threads`); set it to the resolved
