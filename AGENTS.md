@@ -272,6 +272,22 @@ then cut over (see `dashboard_v2/docs/TODO.md` Phase 10). Don't break the workin
   when our `ErrorBoundary.tsx` already provides the same render-prop API). Read the touch points
   first, match the existing pattern, and propose any deviation in the design before coding.
   Consistency by construction beats cleanup after the fact.
+- **Check the design before you implement — mandatory pre-flight (owner directive 2026-06-16).**
+  Implementing a feature does **not** start with writing code. It starts with reading the code the
+  feature touches and confirming you will reuse it. Before any feature, verify:
+  1. **Existing data structures / classes / functions** — does a model, service, adapter, store, or
+     helper for this already exist? Reuse it; don't introduce a parallel shape. (E.g. the agent
+     turn is one async generator of `AgentEvent`s — a new transport drains *that*, it never
+     re-implements the loop.)
+  2. **The current architecture & layering** — which layer owns this (`domain`/`core`/`adapters`/
+     `services`/`api` on the backend; `store`/`hooks`/`components`/`lib` on the frontend)? Slot it
+     in at the right layer; don't bypass a chokepoint (e.g. the YAML write path, the action
+     registry, the permission gate).
+  3. **No hardcoding** — tunables go in config / `AgentDef` / Settings, never magic numbers or
+     inline literals (matches "prefer configurable" memory).
+  4. **No duplicated / near-duplicate code** — one source of truth for each behavior.
+  When in doubt, surface the design (the seams you'll reuse + any deviation) and confirm **before**
+  coding. The cost of reading first is always less than the cost of an inconsistent parallel path.
 - Confirm before destructive or hard-to-reverse actions (deleting templates, rewriting the live
   server, force-pushing). The owner connects from Android — keep changes testable at narrow widths.
 - Commit only when asked. Keep commits scoped; don't sweep the untracked `ws_codex*` dirs in.

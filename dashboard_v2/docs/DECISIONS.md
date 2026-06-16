@@ -467,6 +467,90 @@ decide Phase 5 (`run_shell`) **drop vs keep**.
 
 ---
 
+## D16 — A1 privilege selection: reuse `agent.defaults` + a session override (no new global field) ✅
+
+A1 (the privilege ladder) is **not a new engine** — `core/permissions.decide()` (`permissions.py:25`)
+already implements the full `READONLY/CONFIRM/AUTO_LOW/FULL` ladder + the `run_shell` gate, and it's
+the single seam gating both UI actions and the agent loop. This locks the remaining
+**selection/persistence/UX** layer, grounded in the resolution chain that already exists, so the
+build reuses seams instead of duplicating them.
+
+**Resolution chain (most-specific wins): per-session → per-agent → global default.**
+
+1. **Global default = `agent.defaults.privilege`** — *already wired, no new field.* `agent.defaults`
+   (D15 #1) is the `AgentDef`-shaped inheritance base; the root agent (`default_agent_def()`,
+   `config.py:416`) **and** every specialist inherit its `privilege` via `deep_merge` unless their
+   `agent.yaml` overrides. **Explicitly rejected: a separate `agent.default_privilege` setting** — it
+   would duplicate `agent.defaults` and create two sources of truth. Surface this in the
+   `AgentsEditor` default-row (which already edits `agent.defaults`-backed fields).
+2. **Per-agent = `AgentDef.privilege`** (`agent.py:72`) — already shipped + editable in the 7d-b
+   Agents editor. Nothing to build.
+3. **Per-session override = the one new field.** Add `ChatRequest.privilege: Privilege | None`
+   (`api/agent.py:39`); in the `_session` builder do `agent = agent.model_copy(update={"privilege":
+   override})` when set — exactly the per-turn override pattern `ChatRequest.agent` already uses
+   (`session.py:154`). **No clamp** (an interactive, present owner may raise *or* lower it — the
+   Claude-Code `/mode` model); a `subagent_clamp_privilege`-style ceiling is out of scope.
+
+**Surfacing.** A header/composer **chip** shows the active level; a sticky **`/privilege <level>`**
+composer verb sets the session override — both reuse the sticky-session-mode plumbing `/local`/`/cloud`
+already use (`lib/composer.ts` + `store/chat.ts`), not new architecture.
+
+**Deferred (the ROADMAP §A1 "Open:" sub-questions) — not in the first A1 slice:** per-host privilege
+overrides; time-boxed "full for the next N min" escalation. Both add resolution complexity for a
+need that doesn't exist yet; revisit if a concrete case arises.
+
+**Headless mapping stays elsewhere.** `decide()`'s `interactive=False` → notify-and-park policy is
+owned by A2/A3 (`permissions.py:4`), not A1; A1's persistence model just leaves room for a
+per-automation privilege (A3) alongside the per-session one.
+
+**Home phase.** A standalone slice, **not** part of the 7e workspace arc. Becomes relevant when the
+session quick-switch UX is wanted or when A3 (scheduled automations) forces the per-automation
+override. Until then this entry is the locked spec; nothing is built ahead of its phase.
+
+---
+
+## D17 — Dual-mode chat (streaming + buffered) + `streaming` setting (C1) ✅
+
+**Decided 2026-06-16: build it** (resolves the C1 "build vs drop" audit item). The chat endpoint
+becomes streaming-or-buffered, governed by one setting — closing the old ARCHITECTURE §1 "both from
+day one" overclaim by making it true.
+
+**Core principle — reuse the turn generator, do not fork it.** `AgentSession.run_turn()` / `resume()`
+are already a single async generator of `AgentEvent`s, and the SSE endpoint (`api/agent.py:126`) only
+*relays* them. Buffered mode is a second **consumer** of that same generator, not a second turn
+implementation: a new `collect_turn(events) -> dict` drains any `AgentEvent` stream (serves both
+`run_turn` and `resume`) and folds it into `{threadId, state, messageId, permission?, error?}`. The
+loop/tools/compaction/confirm-suspend/finalize code is touched **zero times**. `InferenceClient.complete`
+is *not* used here — buffering is at the event layer, not the token layer (the loop still needs
+`stream_chat` internally for tool-call reassembly).
+
+**Locked choices (with the owner, 2026-06-16):**
+1. **Setting** = `AgentCfg.streaming: Literal["auto","on","off"] = "auto"` (reuse `AgentCfg`,
+   `config.py:118` — ROADMAP §Conf files "streaming mode" under Agent; no new config class).
+2. **`auto` signal = HTTP content negotiation (Accept header).** `auto` streams unless the request's
+   `Accept` lacks `text/event-stream`. Standard, idiomatic; the PWA stays streaming with no change; a
+   bot sets `Accept: application/json`. (`ChatRequest.stream` field rejected as a redundant second knob.)
+3. **The setting is authoritative** — `off` buffers **everyone, including the PWA** (whole reply at
+   once; legitimate for a flaky link). One global switch, no client carve-out.
+4. **One endpoint, content-negotiated:** `chat()` resolves effective-streaming in one helper, then
+   returns `EventSourceResponse` (today's path, unchanged) or `JSONResponse`; `text/event-stream` vs
+   `application/json` is the client's discriminator. Same for `resume()`. The `active_turns` counter +
+   integrations-dirty rediscover wrap both branches once (not duplicated).
+5. **Frontend reuses the reload path:** `store/chat.ts` posts as today, branches on response
+   `content-type` — event-stream → existing SSE parser (untouched); json → re-read the persisted
+   message via the existing `reloadChat()`/GET-messages render path (no parallel rendering reducer),
+   handling `state==suspended` (confirm bubble already renders from the persisted `AWAITING_CONFIRM`
+   part) and `state==error`. The buffered payload stays small + authoritative (the turn persists the
+   message regardless of transport, `api/agent.py:6`).
+6. **Conf** exposes the selector via the existing `useSettings`/`PUT /api/settings` Seg pattern.
+
+**Scope:** chat endpoint only. **STT/TTS streaming (also under ROADMAP C1) stays Phase 6.** On
+landing: flip ARCHITECTURE §1's claim to shipped-true and tick the C1 audit line. Tests: `collect_turn`
+over scripted `AgentEvent` streams (completed/suspended/error/capped) + endpoint content-negotiation +
+a streaming-vs-buffered final-message parity check, all on a temp config.
+
+---
+
 ## Still open (decide before building the relevant phase)
 
 - Agent tool-calling format: OpenAI `tools`/function-calling vs a lightweight JSON protocol for

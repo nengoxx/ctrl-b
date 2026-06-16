@@ -13,11 +13,13 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
 
 ### A1. Agent privilege levels (like Claude Code / Codex)
 
-> **Status (2026-06-14): the policy core is already built.** `core/permissions.decide()` fully
-> implements the ladder (`READONLY` / `CONFIRM` / `AUTO_LOW` / `FULL`) + the `run_shell` gate. So A1
-> is **downgraded to selection/persistence UX only**: where the level is chosen + stored (global
-> setting + per-session and per-automation overrides — today the only knob is `AgentDef.privilege`),
-> and surfacing the active level in the composer/header. No new decision logic needed.
+> **Status (2026-06-16): policy core built; selection layer locked in D16.** `core/permissions.decide()`
+> fully implements the ladder (`READONLY` / `CONFIRM` / `AUTO_LOW` / `FULL`) + the `run_shell` gate. A1
+> is **selection/persistence UX only**, and its shape is now **locked in DECISIONS D16**: global default =
+> `agent.defaults.privilege` (already wired — **no new global field**), per-agent = `AgentDef.privilege`
+> (shipped), per-session = a new `ChatRequest.privilege` override (`model_copy`, mirrors `ChatRequest.agent`),
+> surfaced via a header chip + a sticky `/privilege` composer verb (reuses the `/local`//`/cloud` plumbing).
+> Standalone slice, not part of 7e. No new decision logic needed.
 
 - **What:** a selector for how much the agent may do on its own, from read-only up to full
   autonomy. Suggested ladder:
@@ -30,7 +32,10 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
   already carries a `risk` level (see `ARCHITECTURE.md` §1), so privilege = "auto-run threshold +
   whether `run_shell` is unlocked." Set globally, **overridable per chat session and per
   automation** (see A3). Persist in settings; surface the active level in the composer/header.
-- **Open:** per-host privilege overrides? a time-boxed "full for next 10 min" escalation?
+- **Resolution + surfacing:** locked in **DECISIONS D16** (per-session → per-agent → global
+  `agent.defaults.privilege`; new `ChatRequest.privilege` override; header chip + sticky `/privilege` verb).
+- **Open (deferred past the first A1 slice — D16):** per-host privilege overrides? a time-boxed
+  "full for next 10 min" escalation?
 
 ### A2. Agent asks questions (clarifications, not just commands)
 

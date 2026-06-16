@@ -530,12 +530,12 @@ FTS5); the C1/A2 doc "day-one" overclaims are corrected (flagged as future, not 
 - [x] **Reconcile `DESIGN.md`** ✓2026-06-14 (banner + §4 `messages.agent` · §5.1 folder model · §6 file memory · §8 FTS5 · §9 settings · §17 resolved).
 
 **Documented "day-one" seams that were never built (contradiction to fix — doc or code):**
-- [ ] **Streaming `auto|on|off` + buffered chat (C1)** (doc overclaim corrected ✓; building the buffered path remains): ARCHITECTURE §1 claimed "both from day one"; `/api/agent/chat` is SSE-only (`InferenceClient.complete` exists but only the compactor uses it). Either build the buffered path + `streaming` setting, or correct the overclaim.
+- [ ] **Streaming `auto|on|off` + buffered chat (C1) — DECIDED 2026-06-16: BUILD (spec in DECISIONS D17).** ARCHITECTURE §1 claimed "both from day one"; `/api/agent/chat` is SSE-only today. Build = a `collect_turn(events)` collector that drains the existing `run_turn`/`resume` `AgentEvent` generator into a buffered JSON payload (the loop is NOT forked), `AgentCfg.streaming` setting, Accept-header negotiation under `auto`, setting authoritative (off buffers the PWA too), client branches on response content-type and reuses the reload render path. Chat endpoint only — STT/TTS streaming stays Phase 6. On landing, flip the ARCHITECTURE §1 claim to true.
 - [ ] **`question` message kind (A2)** (doc framing corrected ✓; building the kind remains): ARCHITECTURE listed it as a v1 kind; the Part union has no `question` part / pause-for-answer flow (the confirm-suspend flow is the same shape — cheap later). Fix the doc's "day-one" framing.
 - [ ] **D8 tool registry / Utils (Phase 8) unbuilt:** no `@tool`, no `/api/tools`, Utils is a static shell. **Confirmed (DESIGN §0.4 + §16):** the Utils tool registry **reuses `core/tool.py`** (the unified capability model) — not a parallel registry. Build remains (Phase 8).
 
 **Found *better* than documented:**
-- [x] **A1 privilege ladder already implemented** ✓2026-06-14 in `core/permissions.decide()` (READONLY/CONFIRM/AUTO_LOW/FULL + `run_shell` gating); **ROADMAP A1 downgraded** to "selection/persistence UX only". Still to decide at that phase: where the level is chosen (global + per-session/per-automation override — today only `AgentDef.privilege`).
+- [x] **A1 privilege ladder already implemented** ✓2026-06-14 in `core/permissions.decide()` (READONLY/CONFIRM/AUTO_LOW/FULL + `run_shell` gating); **ROADMAP A1 downgraded** to "selection/persistence UX only". **Selection layer specced ✓2026-06-16 in DECISIONS D16:** global default = `agent.defaults.privilege` (no new field), per-agent = `AgentDef.privilege` (shipped), per-session = new `ChatRequest.privilege` override, surfaced via header chip + sticky `/privilege` verb. Standalone slice (not 7e); per-host + time-boxed escalation deferred.
 
 **Decisions to formalize:**
 - [x] **Phase 5 (`run_shell`/`/api/exec`)** ✓2026-06-14 — **decided: KEEP + build.** The `!` prefix is the

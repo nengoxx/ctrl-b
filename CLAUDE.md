@@ -75,6 +75,12 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   own* (e.g. pulling in `react-error-boundary` when our `ErrorBoundary.tsx` already provides the
   same render-prop API). Read the touch points first, match the pattern, and propose any
   deviation in the design before coding.
+- **Check the design before you implement — mandatory pre-flight (owner directive 2026-06-16; full
+  text in AGENTS.md §9).** A feature starts by *reading* the code it touches, not writing code.
+  Confirm you're reusing the existing **data structures/classes/functions**, slotting into the
+  right **architecture layer** (don't bypass a chokepoint), with **no hardcoding** (tunables →
+  config/AgentDef/Settings) and **no duplicated/near-duplicate code** (one source of truth).
+  Surface the seams you'll reuse + any deviation, and confirm **before** coding.
 - **Commit only when asked**, scope commits tightly, and **don't sweep the untracked `ws_codex*`
   dirs into a commit** unless that's the explicit intent.
 - Confirm before destructive/hard-to-reverse actions (rewriting the live server, deleting
