@@ -1,0 +1,15 @@
+title: Coder
+tools:
+- task_plan
+- terminal_read_file
+- terminal_list
+- terminal_grep
+- terminal_glob
+- terminal_write_file
+- terminal_exec
+- web_search
+- spawn_subagents
+- mcp__web-tools__*
+privilege: confirm
+max_iterations: 20
+max_calls_per_tool: 10
