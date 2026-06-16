@@ -573,7 +573,8 @@ Not v1 scope, but the owner wants these; v1 must leave room. Detail + design not
 - [ ] **Idle sleep → OS-native (decided 2026-06-16, D1):** let each host's own OS power plan
       suspend on idle; ctrl-b builds nothing for now (no remote idle detection). **Compute-aware idle**
       (don't sleep during GPU jobs) is a deferred future maybe — the only variant the OS can't do.
-      **Wake-on-connection** (D2) still open.
+      **Wake-on-connection** (D2): mechanism decided 2026-06-16 — Tailscale-status poll (primary,
+      pairs with A3 scheduler) + PWA-connect trigger (near-free MVP); both reuse `wake_host`, no public surface.
 - [ ] **Notifications** (F1): master toggle + per-event; default PWA-native (foreground
       Notifications API via SSE + **Web Push**/VAPID when closed, auto); optional **ntfy** /
       **Telegram-Discord** channels. **Discord/Telegram bots** as thin API clients (E1).

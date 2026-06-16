@@ -247,10 +247,20 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
 ### D2. Wake-on-connection
 
 - **What:** (from the old README TODO) auto-wake chosen hosts when the phone/owner joins the
-  LAN/tailnet.
-- **Design implication:** needs a trigger on tailnet/LAN join — a tailnet event hook or a poll for
-  the owner's device coming online → fire `wake_host`. Pairs with the scheduler.
-- **Open:** how to detect "owner is back" reliably without a public surface.
+  LAN/tailnet — walk in the door, the boxes are already coming up.
+- **Mechanism (✅ decided 2026-06-16 — A primary, B as MVP; both reuse `wake_host`, no public surface):**
+  - **A (the real feature) — Tailscale-status poll.** The backend (already on the tailnet, always-on)
+    polls `tailscale status --json` / the local tailscaled API for the owner's **known device**
+    transitioning offline→online, then fires `wake_host` on the configured targets. Reuses the tailnet
+    (answers the "no public surface" worry — the check is local to the backend host) and the existing
+    fleet **monitor-loop pattern**. Config: owner device node(s), wake targets, debounce/cooldown.
+  - **B (near-free MVP, can ship first) — PWA-connect trigger.** When the owner's client opens its SSE
+    stream (existing connect path), an endpoint wakes the configured hosts. Trivial, no new deps; weaker
+    semantics ("wake when I *open the dashboard*," not "when I get home"). Not mutually exclusive with A.
+  - **Rejected — C, LAN ARP/ping presence:** Android suppresses ping (battery), phone IPs churn,
+    LAN-only. Strictly worse than A.
+- **Timing:** post-v1; the **A** build pairs with the **A3 scheduler / monitor subsystem** (none exists
+  yet). **B** can ship independently of the scheduler. Detection (A) reuses `tailscale`, never a public surface.
 
 ---
 
