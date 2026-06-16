@@ -72,8 +72,9 @@ def _session(
 ) -> AgentSession:
     """Build a session, resolving which `AgentDef` drives it. `agent_name` (the per-message `/agent
     <name>` switch, 7d) wins; else the thread's `agent` field (D11); else the configured default. An
-    unknown name falls back to the default (resolve_agent is graceful). Resume passes no override, so
-    a suspended turn finishes on the thread/default agent — same caveat as the per-message mode (4c)."""
+    unknown name falls back to the default (resolve_agent is graceful). Resume passes the last
+    assistant turn's `agent` here (D15 #5) so a suspended turn finishes on the agent that started it;
+    the per-message mode (4c) is still not carried across the confirm round-trip."""
     s = request.app.state
     agent = s.settings.resolve_agent(agent_name or (thread.agent if thread else None))
     return AgentSession(
@@ -459,7 +460,12 @@ async def resume(body: ResumeRequest, request: Request) -> EventSourceResponse:
     thread = await threads.get(body.thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
-    session = _session(request, thread)
+    # Continue as the last assistant turn's agent (D15 #5): last assistant message's `agent` →
+    # thread.agent → default (no explicit override on resume). So a thread keeps talking to the
+    # specialist you last used until you `/agent`-switch on a fresh turn.
+    msgs = await request.app.state.messages.list(thread.id)
+    last_agent = next((m.agent for m in reversed(msgs) if m.role == "assistant" and m.agent), None)
+    session = _session(request, thread, agent_name=last_agent)
 
     async def gen() -> AsyncIterator[dict[str, Any]]:
         yield {"event": "thread", "data": json.dumps({"threadId": thread.id, "title": thread.title})}

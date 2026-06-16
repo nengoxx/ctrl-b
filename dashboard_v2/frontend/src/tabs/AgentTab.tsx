@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useAgentRoster } from "../hooks/useAgents";
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
 import { editPlan, initChat, resumeCall, retryLastTurn, useChat } from "../store/chat";
@@ -250,6 +251,7 @@ function Bubbles({
   streaming,
   resultFor,
   canRetry,
+  resolvedDefault,
 }: {
   m: ChatMessage;
   streaming: boolean;
@@ -257,6 +259,9 @@ function Bubbles({
   /** F20 — render the retry affordance on this assistant bubble. Only true on the latest
    * message when chat status === "error", so historical errors don't grow phantom buttons. */
   canRetry: boolean;
+  /** The resolved default agent slug (7e-c). An assistant turn is labelled with its `agent` only
+   * when it differs from this — so default turns stay clean and specialist turns are attributed. */
+  resolvedDefault: string | undefined;
 }) {
   if (m.role === "tool") return null; // results render inside their command bubble (paired by id)
 
@@ -295,7 +300,7 @@ function Bubbles({
       {showBot && (
         <div className="b bot">
           <div className="who">
-            assistant · {hm(m.ts)}
+            {m.agent && m.agent !== resolvedDefault ? m.agent : "assistant"} · {hm(m.ts)}
             {working && <span className="status-tag">{reasoning ? "thinking" : "working"}</span>}
           </div>
           <div className="body">
@@ -354,6 +359,8 @@ const SCROLLER_ID = "app-scroll";
 
 export function AgentTab({ active }: Props) {
   const { messages, status, streamingId } = useChat();
+  // Resolved default agent slug — assistant turns are labelled only when their agent differs (7e-c).
+  const resolvedDefault = useAgentRoster().data?.default;
   // The scroller is the app-shell content pane (`#app-scroll`), not the window — the composer/tab
   // bar are in-flow at the bottom of the shell. "Stick to bottom" only while the user is already
   // near the bottom, so streaming follows the bot without yanking them down if they scrolled up.
@@ -450,6 +457,7 @@ export function AgentTab({ active }: Props) {
             // F20 — only the latest message is eligible for retry, and only when chat is in
             // error state. Historical errors elsewhere in the log stay quiet.
             canRetry={i === messages.length - 1 && status === "error"}
+            resolvedDefault={resolvedDefault}
           />
         ))}
       </div>

@@ -179,6 +179,7 @@ export interface ChatMessage {
   ts: string;
   tokens: number | null;
   compacted: boolean;
+  agent?: string | null; // which AgentDef produced this assistant turn (7e-c); null on user/default
 }
 
 export interface Thread {

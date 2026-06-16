@@ -86,6 +86,10 @@ class Message(BaseModel):
     ts: datetime = Field(default_factory=_now)
     tokens: int | None = None  # for compaction budgeting (4e)
     compacted: bool = False  # excluded from working context once summarized (4e)
+    #: Which AgentDef produced this assistant turn (7e-c, D15 #5). Set to the resolved agent name on
+    #: assistant messages; None on user/system turns and legacy rows. `Thread.agent` stays the
+    #: thread's primary/default; this is the source of truth for "who said this" per turn.
+    agent: str | None = None
 
     def text(self) -> str:
         """The concatenated `text` parts (the durable answer, excluding reasoning)."""

@@ -12,7 +12,7 @@ stream via `resume()`, which finishes that step and continues the loop (DESIGN �
 in the DB, so a dropped stream can reconnect and re-read.
 
 Event contract (DESIGN §12 subset emitted here):
-    message.start    {messageId, role}
+    message.start    {messageId, role, agent}   # agent = resolved AgentDef name (7e-c)
     reasoning.delta  {messageId, delta}       # thinking model's chain-of-thought (dimmed)
     text.delta       {messageId, delta}       # answer content
     part.added       {messageId, part}        # a tool_call part — UI renders the command bubble
@@ -417,8 +417,13 @@ class AgentSession:
                     {"removed": res.removed, "summaryId": res.summary_id, "truncated": res.truncated},
                 )
             messages = await self._assemble(thread)
-            assistant = Message(thread_id=thread.id, role="assistant", actor=AGENT_ACTOR)
-            yield AgentEvent("message.start", {"messageId": assistant.id, "role": "assistant"})
+            assistant = Message(
+                thread_id=thread.id, role="assistant", actor=AGENT_ACTOR, agent=self._agent.name
+            )
+            yield AgentEvent(
+                "message.start",
+                {"messageId": assistant.id, "role": "assistant", "agent": self._agent.name},
+            )
 
             reasoning_buf: list[str] = []
             text_buf: list[str] = []
@@ -519,8 +524,13 @@ class AgentSession:
                 ),
             }
         )
-        assistant = Message(thread_id=thread.id, role="assistant", actor=AGENT_ACTOR)
-        yield AgentEvent("message.start", {"messageId": assistant.id, "role": "assistant"})
+        assistant = Message(
+            thread_id=thread.id, role="assistant", actor=AGENT_ACTOR, agent=self._agent.name
+        )
+        yield AgentEvent(
+            "message.start",
+            {"messageId": assistant.id, "role": "assistant", "agent": self._agent.name},
+        )
         reasoning_buf: list[str] = []
         text_buf: list[str] = []
         try:

@@ -611,7 +611,7 @@ class Settings(BaseSettings):
 the message list:
 
 ```
-event: message.start      data: {messageId, role}
+event: message.start      data: {messageId, role, agent}       # agent = resolved AgentDef name (7e-c)
 event: text.delta         data: {messageId, delta}
 event: part.added         data: {messageId, part}            # tool_call / plan / question
 event: tool.permission    data: {callId, tool, args, risk}   # → client shows confirm bubble

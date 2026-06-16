@@ -64,6 +64,13 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_events_ts ON events(ts);
         """,
     ),
+    (
+        2,
+        # Per-turn agent attribution (7e-c, D15 #5). Nullable: NULL = legacy rows / non-assistant
+        # turns. Set to the resolved AgentDef name on each assistant message so restore shows the
+        # agent per-turn across `/agent` switches and resume can continue as the last turn's agent.
+        "ALTER TABLE messages ADD COLUMN agent TEXT;",
+    ),
 ]
 
 

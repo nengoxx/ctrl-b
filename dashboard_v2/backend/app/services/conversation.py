@@ -81,8 +81,8 @@ class MessageRepo:
 
     async def add(self, msg: Message) -> Message:
         await self._db.execute(
-            "INSERT INTO messages (id, thread_id, role, parts, actor, ts, tokens, compacted) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO messages (id, thread_id, role, parts, actor, ts, tokens, compacted, agent) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 msg.id,
                 msg.thread_id,
@@ -92,6 +92,7 @@ class MessageRepo:
                 _iso(msg.ts),
                 msg.tokens,
                 int(msg.compacted),
+                msg.agent,
             ),
         )
         return msg
@@ -132,4 +133,5 @@ class MessageRepo:
             ts=r["ts"],
             tokens=r["tokens"],
             compacted=bool(r["compacted"]),
+            agent=r["agent"],
         )

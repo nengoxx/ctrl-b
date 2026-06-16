@@ -74,6 +74,17 @@ export function useAgentList() {
   });
 }
 
+/** The resolved default agent slug + specialist names, always-on (not Conf-scoped). The Agent tab
+ *  uses `default` to attribute per-turn agents on assistant bubbles (7e-c) — a turn is labelled only
+ *  when its `agent` differs from this. Reuses the `["agents"]` key the agent mutations invalidate. */
+export function useAgentRoster() {
+  return useQuery<{ agents: string[]; default: string }>({
+    queryKey: ["agents"],
+    queryFn: () => getJSON("/api/agents"),
+    staleTime: 30_000,
+  });
+}
+
 /** One agent's resolved def + persona. Lazy by-id (gated on the open row), so a plain useQuery. */
 export function useAgent(name: string | null) {
   return useQuery<AgentFull>({

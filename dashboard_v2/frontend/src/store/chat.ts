@@ -132,7 +132,7 @@ export function startNewThread(): void {
   set({ threadId: null, messages: [], status: "idle", streamingId: null });
 }
 
-function emptyAssistant(id: string): ChatMessage {
+function emptyAssistant(id: string, agent: string | null = null): ChatMessage {
   return {
     id,
     thread_id: state.threadId ?? "",
@@ -142,6 +142,7 @@ function emptyAssistant(id: string): ChatMessage {
     ts: new Date().toISOString(),
     tokens: null,
     compacted: false,
+    agent,
   };
 }
 
@@ -236,14 +237,17 @@ async function streamTurn(
         break;
       case "message.start": {
         const id = data.messageId as string;
+        // Per-turn agent attribution (7e-c): the server stamps which AgentDef is producing this
+        // turn so a live specialist turn is labelled immediately, not only after a reload.
+        const agent = (data.agent as string | null) ?? null;
         if (!claimed && placeholderId) {
           set({
-            messages: state.messages.map((m) => (m.id === placeholderId ? { ...m, id } : m)),
+            messages: state.messages.map((m) => (m.id === placeholderId ? { ...m, id, agent } : m)),
             streamingId: id,
           });
           claimed = true;
         } else {
-          set({ messages: [...state.messages, emptyAssistant(id)], streamingId: id });
+          set({ messages: [...state.messages, emptyAssistant(id, agent)], streamingId: id });
         }
         break;
       }
