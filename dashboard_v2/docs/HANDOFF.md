@@ -76,15 +76,18 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (all pushed @ `b202f5b` · 7e-b ✅ + 7e-c agents-as-folders ✅ · **next: finish 7e-c (`messages.agent`)**)
+## Current state (all pushed · **design backlog fully reconciled** (D16/D17 + ROADMAP locks) · **next *build*: finish 7e-c (`messages.agent`)**)
 
-> **Everything is pushed to `origin/main` (`b202f5b`)** — this session shipped **7e-b** (the reusable
-> `<PromptModal>` + Conf-sizing refine) and the bulk of **7e-c** (agents are now **folder-only**: a
-> `$CTRLB_HOME` workspace, file-per-agent API, and the **AgentsEditor repointed** to it as a unified
-> list with **display names**). All design stays locked in **D14 + D15** (`DECISIONS.md`) and the
-> **7e-a…g** slices in `TODO.md`. The next action is the **second half of 7e-c**: the **`messages.agent`
-> column + resume/restore per-turn agent attribution** (D15 #5) — the only remaining 7e-c item.
-> Tree clean except `start_claude_remote.ps1` (owner's launcher tweak, untouched).
+> **Everything is pushed to `origin/main`.** The last *code* shipped was **7e-b** + **7e-c
+> agents-as-folders** (`b202f5b`). **Since then this was a pure design/decisions session** — no
+> feature code; the entire **unresolved-items backlog was closed** (see the 2026-06-15/16 block
+> directly below): A1 (D16), dual-mode chat (D17), C1 STT/TTS, prompted-JSON dropped, A2, 7e-g default,
+> F29 opt A, D1, D2 — plus a new **pre-implementation design directive** (AGENTS.md §9 + CLAUDE.md).
+> Decision commits: `f9c6315` → `ea03495` → `349dfcc` → `11ce86a` (+ this handoff). All design stays
+> locked in **D14 + D15 + D16 + D17** (`DECISIONS.md`) and the **7e-a…g** slices in `TODO.md`.
+> **The next *build* action is unchanged: the second half of 7e-c — the `messages.agent` column +
+> resume/restore per-turn agent attribution (D15 #5).** Tree clean except `start_claude_remote.ps1`
+> (owner's launcher tweak, untouched).
 >
 > **The 7e slice sequence (D14/D15):** 7e-a ✅ → 7e-b ✅ → **7e-c** (workspace foundation — **agents-as-
 > folders DONE**; **`messages.agent` + resume/restore attribution = REMAINING**) → **7e-d**
@@ -103,6 +106,66 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > **Servers:** backend uvicorn **5433** (no `--reload`, venv), frontend Vite **5173** (HMR; note: the
 > old docs said 5190, but `npm run dev` defaults to **5173** unless `--port 5190` is passed). Phone:
 > `http://corsair:5173`. Both tearable down without state loss.
+
+### ⭐ Session update — 2026-06-15/16 (design/decisions session — **unresolved-items backlog closed**; no feature code)
+
+Pure planning + decision session (per [[pause-between-phases-for-review]] + the new pre-implementation
+directive). Walked the open-questions/loose-specs across HANDOFF/TODO/UI_AUDIT/DECISIONS one by one
+with the owner and **locked every live decision**, grounding each in the actual code so the eventual
+builds reuse existing seams (no parallel paths). **All pushed** (`f9c6315` → `ea03495` → `349dfcc` →
+`11ce86a` + this handoff). Tree clean except the standing `start_claude_remote.ps1`.
+
+**Decisions locked (each cites the seam it reuses):**
+- **A1 privilege selection → D16.** Global default = **`agent.defaults.privilege`** (already wired —
+  *no new `agent.default_privilege` field*; that was explicitly rejected as redundant), per-agent =
+  `AgentDef.privilege` (shipped), per-session = a new **`ChatRequest.privilege`** override (`model_copy`,
+  mirrors `ChatRequest.agent`); surfaced via a header chip + sticky `/privilege` verb (reuses the
+  `/local`//`/cloud` plumbing). `core/permissions.decide()` already implements the full ladder — no new
+  engine. Standalone slice, **not** 7e. Per-host + time-boxed escalation deferred.
+- **Dual-mode chat → D17 (build).** Buffered mode is a **second consumer** of the existing
+  `run_turn`/`resume` `AgentEvent` generator via a new `collect_turn(events)` collector — **the loop is
+  not forked**. `AgentCfg.streaming: auto|on|off`; `auto` = Accept-header negotiation; setting
+  authoritative (`off` buffers the PWA too); one content-negotiated endpoint; client branches on
+  response content-type and reuses the reload render path. Chat only.
+- **C1 STT/TTS → decoupled per-transport** (ROADMAP C1): chat = D17's `AgentCfg.streaming`; **TTS** =
+  own chunked-playback knob (Phase 6); **STT** = always buffered, no toggle. No single global toggle.
+- **Prompted-JSON tool-calling fallback → DROPPED** (native-only; the weak-model fix was the `fleet`
+  skill + loop guards, not the call format).
+- **A2 `question` kind → design locked, build deferred** (ROADMAP A2): a `question` builtin (sibling of
+  `task_plan`) → `RunState.AWAITING_ANSWER` suspend → `tool.question` event → question bubble →
+  **extends** `/api/agent/resume` with `decision="answer"`. Reuses the confirm-suspend machinery.
+- **7e-g AgentSelector → default `KeywordAgentSelector`** (mirrors `KeywordSkillSelector`), protocol
+  swappable (D15 #8).
+- **F29 option A → sub-decisions locked, build deferred** (UI_AUDIT §6b): conflict policy = restore +
+  toast (user resolves); scope key = `<editor-type>:<instance-id>`.
+- **D1 idle → OS-native sleep** (let each host's own power plan do it; ctrl-b builds no remote idle
+  detection). **Compute-aware idle** (don't sleep during GPU jobs) = the only future variant worth
+  ctrl-b involvement; deferred.
+- **D2 wake-on-connection → Tailscale-status poll** (primary; reuses tailnet + the fleet monitor-loop
+  pattern, no public surface) **+ PWA-connect trigger** (near-free MVP). Pairs with the A3 scheduler.
+- **Stale DECISIONS "Still open" reconciled** — MCP (both transports shipped), routing (tab state),
+  auth (standing decision), memory (D14) all marked resolved.
+
+**New standing rule (owner directive 2026-06-16): check the design before implementing.** A feature
+starts by *reading* the code it touches; reuse existing data structures/classes/architecture layers,
+no hardcoding, no duplicate/near-duplicate paths; surface the seams + any deviation and confirm before
+coding. Recorded in **AGENTS.md §9 + CLAUDE.md Hard rules** + memory [[check-patterns-before-implementing]].
+
+**Start here in a fresh session — back to *building* 7e-c:**
+1. **Finish 7e-c — the `messages.agent` column** (the only remaining 7e-c item, D15 #5). Additive
+   migration in `db.py` (`messages` has no `agent` col yet, only `threads`); set it to the resolved
+   AgentDef name on each assistant turn; **resume order** = explicit → last assistant turn's `agent` →
+   `thread.agent` → default; restore shows the per-turn agent. Backend-led, small frontend touch.
+   **Apply the new directive:** read `session.py` (`_drive`/`run_turn`/`resume`), `api/agent.py`
+   (`_session`), `domain/conversation.py` (`Message`/`Thread`), and `db.py`'s migration applier first;
+   reuse them, don't add a parallel path.
+2. **Then 7e-d** (file memory) — fully specced by D15 #4/#6; `agents_dir_path()`/`memories_dir_path()`
+   seams already exist. The next big slice.
+3. **Decided-but-deferred builds** (pick when wanted, all design-locked above): C1 dual-mode chat (D17),
+   A1 privilege selection (D16), A2 question kind, F29 opt A.
+
+**Servers:** backend uvicorn **5433** (no `--reload`, venv), frontend Vite **5173** (HMR; `npm run dev`
+defaults to 5173 unless `--port 5190`). Phone: `http://corsair:5173`. Tearable down without state loss.
 
 ### ⭐ Session update — 2026-06-14 (evening) (shipped **7e-b** + **7e-c agents-as-folders** · all pushed `b202f5b`)
 
