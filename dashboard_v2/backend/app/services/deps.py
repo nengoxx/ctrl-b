@@ -15,6 +15,7 @@ from app.adapters.inference import InferenceClient
 from app.adapters.openterminal import OpenTerminalClient
 from app.adapters.searxng import SearxngClient
 from app.config import Settings
+from app.core.memory import MemoryProvider
 from app.core.skills import SkillProvider, SkillSelector
 from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.events import EventService
@@ -44,4 +45,5 @@ class Deps:
     actions: "ActionService | None" = None
     skills: SkillProvider | None = None
     selector: SkillSelector | None = None
+    memory: MemoryProvider | None = None  # file-based agent memory (Phase 7e-d); read each turn
     subagent_sem: asyncio.Semaphore | None = None

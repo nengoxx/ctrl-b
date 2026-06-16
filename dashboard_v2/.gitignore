@@ -3,6 +3,10 @@ config.yaml
 .env
 *_prompt.*
 
+# agent memory — personal data (D14): per-agent MEMORY.md + global USER.md
+memories/
+agents/*/memories/
+
 # databases
 *.db
 *.db-wal

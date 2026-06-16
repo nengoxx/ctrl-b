@@ -86,6 +86,7 @@ def _session(
         agent,
         skills=getattr(s, "skills", None),
         selector=getattr(s, "skill_selector", None),
+        memory=getattr(s, "memory", None),
     )
 
 

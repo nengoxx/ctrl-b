@@ -141,6 +141,22 @@ class AgentCfg(BaseModel):
     skills_enabled: bool = True          # master switch for the skills subsystem (4.5)
 
 
+class MemoryCfg(BaseModel):
+    """File-based agent memory (7e-d, D14/D15 #4). Per-agent `memories/MEMORY.md` (isolated) + a
+    global `memories/USER.md` (the owner profile, shared across agents), injected into each turn's
+    system context after the prompt appends. Hermes-named keys + matching defaults so the files are
+    portable to/from Hermes/OpenClaw. `extra="allow"` so later knobs (vector recall, consolidation)
+    round-trip."""
+
+    model_config = {"extra": "allow"}
+
+    enabled: bool = True                 # master switch for the memory subsystem
+    user_profile_enabled: bool = True    # inject + (7e-d-2) allow writes to the global USER.md
+    auto_write: bool = True              # agent may write memory autonomously; off → propose-only (D15 #6)
+    memory_char_limit: int = 2200        # per-agent MEMORY.md cap (~800 tokens, Hermes default)
+    user_char_limit: int = 1375          # global USER.md cap (~500 tokens, Hermes default)
+
+
 class EmbeddingsCfg(BaseModel):
     """OpenAI-compatible embeddings backend (Phase 4f, D9). One `/v1/embeddings` endpoint — local
     llama.cpp or a cloud provider (e.g. OpenRouter `qwen/qwen3-embedding-4b`) — powering the vector
@@ -300,6 +316,7 @@ class Settings(BaseModel):
     server: ServerCfg = Field(default_factory=ServerCfg)
     inference: InferenceCfg = Field(default_factory=InferenceCfg)
     agent: AgentCfg = Field(default_factory=AgentCfg)
+    memory: MemoryCfg = Field(default_factory=MemoryCfg)
     searxng: SearxngCfg = Field(default_factory=SearxngCfg)
     embeddings: EmbeddingsCfg = Field(default_factory=EmbeddingsCfg)
     open_terminal: OpenTerminalCfg = Field(default_factory=OpenTerminalCfg)

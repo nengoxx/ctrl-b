@@ -181,6 +181,7 @@ async def run_subagent(
         agent=agent_def,
         skills=deps.skills,
         selector=deps.selector,
+        memory=deps.memory,
         interactive=False,
         depth=depth,
     )

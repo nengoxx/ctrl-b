@@ -49,6 +49,7 @@ from app.db import Database
 from app.services.action_service import ActionService
 from app.services.actions import build_registry
 from app.services.actions.terminal import register_openterminal
+from app.services.agent.memory import FileMemoryProvider
 from app.services.agent.skills import FileSkillProvider, KeywordSkillSelector
 from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.deps import Deps
@@ -129,6 +130,9 @@ async def lifespan(app: FastAPI):
     # once; the provider re-scans the dir per call so a dropped-in skill is live without a restart.
     app.state.skills = FileSkillProvider(app.state.settings.skills_dir_path())
     app.state.skill_selector = KeywordSkillSelector()
+    # File-based agent memory (Phase 7e-d): per-agent MEMORY.md + global USER.md, read each turn.
+    # Stateless — paths/caps resolve from live Settings per call, so edits land with no restart.
+    app.state.memory = FileMemoryProvider(app.state.settings)
 
     # Subagents (Phase 4.5): back-fill the agent-runtime handles onto the shared Deps so the
     # spawn_subagents tool can build + run child sessions (the ActionService reference is set here
@@ -138,6 +142,7 @@ async def lifespan(app: FastAPI):
     deps.actions = app.state.actions
     deps.skills = app.state.skills
     deps.selector = app.state.skill_selector
+    deps.memory = app.state.memory
     deps.subagent_sem = asyncio.Semaphore(max(1, app.state.settings.agent.global_subagent_limit))
 
     try:

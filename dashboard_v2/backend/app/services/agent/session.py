@@ -35,6 +35,7 @@ from pydantic import ValidationError
 
 from app.adapters.inference import InferenceClient, InferenceError
 from app.config import Settings
+from app.core.memory import MemoryProvider
 from app.core.skills import SkillProvider, SkillSelector
 from app.core.tool import UnknownTool
 from app.domain.agent import AgentDef
@@ -154,6 +155,7 @@ class AgentSession:
         agent: AgentDef | None = None,
         skills: SkillProvider | None = None,
         selector: SkillSelector | None = None,
+        memory: MemoryProvider | None = None,
         interactive: bool = True,
         depth: int = 0,
     ) -> None:
@@ -167,6 +169,9 @@ class AgentSession:
         self._agent = agent or settings.default_agent_def()
         self._skills = skills
         self._selector = selector
+        #: File-based agent memory (7e-d). `None` (unprovided) → no memory block, so older call
+        #: sites + the subsystem-off case behave exactly as before.
+        self._memory = memory
         #: Headless subagents (4.5) run with `interactive=False`: a confirm-gated call resolves
         #: DENIED in place rather than suspending the turn (a child has no UI to confirm against —
         #: DESIGN §5.3). `depth` is this session's subagent nesting level, forwarded to each tool
@@ -207,6 +212,15 @@ class AgentSession:
         if a:
             out.append(a)
         return out
+
+    def _memory_block(self) -> str | None:
+        """The durable-memory block (7e-d), injected as its own `system` message right after the
+        appends (D15 #4) — so it sits ahead of the roster/skills note and the history. `None` when
+        no provider is wired or the subsystem/stores are empty. Read fresh per turn from live files,
+        so it never interacts with the rolling compaction summary (same as the appends/roster)."""
+        if self._memory is None:
+            return None
+        return self._memory.load_context(self._agent) or None
 
     def _roster(self) -> str | None:
         """A compact id↔name map of the fleet + services, injected each turn so the agent resolves
@@ -270,6 +284,9 @@ class AgentSession:
         out: list[dict] = [{"role": "system", "content": self._system_prompt()}]
         for extra in self._appends():  # additive guidance, base-first (7e-a)
             out.append({"role": "system", "content": extra})
+        memory = self._memory_block()  # durable memory, after appends (7e-d, D15 #4)
+        if memory:
+            out.append({"role": "system", "content": memory})
         roster = self._roster()
         if roster:
             out.append({"role": "system", "content": roster})
