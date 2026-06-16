@@ -76,36 +76,83 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (all pushed · **design backlog fully reconciled** (D16/D17 + ROADMAP locks) · **next *build*: finish 7e-c (`messages.agent`)**)
+## Current state (7e-c **DONE** — per-turn agent attribution shipped · **next *build*: 7e-d (file memory)**)
 
-> **Everything is pushed to `origin/main`.** The last *code* shipped was **7e-b** + **7e-c
-> agents-as-folders** (`b202f5b`). **Since then this was a pure design/decisions session** — no
-> feature code; the entire **unresolved-items backlog was closed** (see the 2026-06-15/16 block
-> directly below): A1 (D16), dual-mode chat (D17), C1 STT/TTS, prompted-JSON dropped, A2, 7e-g default,
-> F29 opt A, D1, D2 — plus a new **pre-implementation design directive** (AGENTS.md §9 + CLAUDE.md).
-> Decision commits: `f9c6315` → `ea03495` → `349dfcc` → `11ce86a` (+ this handoff). All design stays
-> locked in **D14 + D15 + D16 + D17** (`DECISIONS.md`) and the **7e-a…g** slices in `TODO.md`.
-> **The next *build* action is unchanged: the second half of 7e-c — the `messages.agent` column +
-> resume/restore per-turn agent attribution (D15 #5).** Tree clean except `start_claude_remote.ps1`
-> (owner's launcher tweak, untouched).
+> **Everything is pushed to `origin/main`.** **7e-c is complete**: per-turn agent attribution
+> (`messages.agent`, D15 #5) shipped — restore shows the agent per-turn across `/agent` switches, and
+> resume continues as the last assistant turn's agent. Build commits this session: `680b310` (7e-c) →
+> `fe2cbe5` (the `coder` example specialist agent) → `cdace1b` (the `coding-discipline` Claude-Code
+> skill) → this handoff. Verified: **32 backend tests green** (incl. 5 new `test_messages_agent_7e`),
+> `tsc` clean, and a **live `/agent coder` turn stored + labelled `coder` end-to-end**. All design
+> stays locked in **D14 + D15 + D16 + D17** (`DECISIONS.md`) and the **7e-a…g** slices in `TODO.md`.
+> Tree clean except `start_claude_remote.ps1` (owner's launcher tweak, untouched).
 >
-> **The 7e slice sequence (D14/D15):** 7e-a ✅ → 7e-b ✅ → **7e-c** (workspace foundation — **agents-as-
-> folders DONE**; **`messages.agent` + resume/restore attribution = REMAINING**) → **7e-d**
+> **The 7e slice sequence (D14/D15):** 7e-a ✅ → 7e-b ✅ → **7e-c ✅** (workspace foundation — agents-as-
+> folders + `messages.agent`/resume attribution, all done) → **7e-d (NEXT)**
 > (`FileMemoryProvider` + `memory` tool + auto-write/kill-switch + per-agent `memories/MEMORY.md` /
 > global `memories/USER.md` + Conf Memory panel) → **7e-e** (`session_search` FTS5) → **7e-f** (per-agent
 > skills w/ inheritance + `skill_manage`) → **7e-g** (optional `AgentSelector` auto-rotate).
 >
-> 1. **Finish 7e-c** — the `messages.agent` column (additive migration #2 in `db.py`; `messages`
->    table has no `agent` col yet, only `threads`), set it to the resolved AgentDef name on each
->    assistant turn, **resume order** = explicit → last assistant turn's `agent` → `thread.agent` →
->    default (D15 #5), restore shows the per-turn agent. Backend-led; small frontend touch.
-> 2. **Then 7e-d** (file memory) — the next big slice. `agents_dir_path()`/`memories_dir_path()`
->    already exist (added in 7e-c); `MemoryProvider` interface + injection point spec is D15 #4.
-> 3. **F29 option A (reload-survival for sub-editor drafts).** UI_AUDIT.md §6b. Not urgent.
+> 1. **Build 7e-d** (file memory) — the next big slice, fully specced by **D15 #4/#6**. The
+>    `agents_dir_path()`/`memories_dir_path()` seams already exist; the `MemoryProvider` interface +
+>    injection point (in `_assemble`, right after `_appends()`) is D15 #4, with Hermes-named config
+>    keys for portability (`memory.memory_char_limit` 2200 · `memory.user_char_limit` 1375 ·
+>    `memory.enabled` · `memory.auto_write`). **Apply the pre-implementation directive:** read
+>    `session.py` `_assemble`, `config.py`, and the `core/` protocols first; reuse, don't fork.
+> 2. **Decided-but-deferred builds** (all design-locked, pick when wanted): C1 dual-mode chat (D17),
+>    A1 privilege selection (D16), A2 question kind, F29 opt A (UI_AUDIT.md §6b).
 >
-> **Servers:** backend uvicorn **5433** (no `--reload`, venv), frontend Vite **5173** (HMR; note: the
-> old docs said 5190, but `npm run dev` defaults to **5173** unless `--port 5190` is passed). Phone:
-> `http://corsair:5173`. Both tearable down without state loss.
+> **Servers:** backend uvicorn **5433** (no `--reload`, venv), frontend Vite **5173** (HMR; `npm run
+> dev` defaults to 5173 unless `--port 5190`). Phone: `http://corsair:5173`. Both tearable down
+> without state loss.
+
+### ⭐ Session update — 2026-06-16 (build session — shipped **7e-c `messages.agent`** + the `coder` example agent · 3 commits)
+
+Build session, following the new pre-implementation directive end-to-end (read every touch point
+before writing). Closed out 7e-c, added a real specialist agent as the live fixture, and recorded a
+reusable engineering-discipline skill. Three commits on `main`, pushed with this handoff.
+
+**7e-c — per-turn agent attribution (`messages.agent`, D15 #5) — `680b310`.** Records which AgentDef
+produced each assistant turn so a restored thread shows the agent per-turn across `/agent` switches,
+and resume continues as the last turn's agent.
+- **db**: additive **migration #2** (`ALTER TABLE messages ADD COLUMN agent TEXT`, nullable — `null`
+  = legacy rows / non-assistant turns). Applied live to the real `ctrlb.db` on restart (66 legacy
+  rows → `null`).
+- **domain/repo**: `Message.agent` round-trips through `MessageRepo.add`/`_row` (`update` left alone —
+  agent is set at insert, immutable).
+- **session.py**: stamp `self._agent.name` on the assistant turn in **both** `_drive` and `_finalize`
+  (the forced-final-answer path — caught by the post-flight diff review, which is why both got it),
+  and carry `agent` on the **`message.start`** SSE event so a live specialist turn is labelled
+  immediately, not only after reload.
+- **api/agent.py**: `resume()` resolves the **last assistant turn's `agent`** (→ `thread.agent` →
+  default). Resume-only — a bare `/agent` clears the sticky session agent to `null` on the chat path,
+  so applying the last-agent fallback there would break clear-to-default (verified in `composer.ts`).
+- **frontend**: `ChatMessage.agent`; `AgentTab` labels a turn with its agent **only when it differs
+  from the resolved default** (new always-on `useAgentRoster()`, reusing the `["agents"]` query key the
+  mutations already invalidate); `store/chat.ts` carries the `message.start` agent onto the live bubble.
+- **tests**: `test_messages_agent_7e.py` — 5 tests (migration + round-trip, restore API shape, resume
+  prefers last-assistant agent over thread, latest-wins after switch, fall-through). Suite **32 green**,
+  `tsc` clean. Run via the venv's `python tests/<file>.py` (**pytest is not installed in this venv** —
+  every test file has a `__main__` runner; heads-up vs the docs that say "run with pytest").
+
+**`coder` example specialist agent — `fe2cbe5`** (`dashboard_v2/agents/coder/`). Created through the
+**file API** (`PUT /api/agents/coder` + `…/soul`) — the validated chokepoint, not hand-written files.
+Scoped toolset (terminal read/list/grep/glob/write/exec + `web_search` + `task_plan` +
+`spawn_subagents` + `mcp__web-tools__*` glob; **no** fleet/service controls — also exercises the
+`tools` allowlist), `privilege=confirm`, `max_iterations:20`, `max_calls_per_tool:10`, and a
+read-before-write coding persona in `SOUL.md`. `agents/` is **not** gitignored, so it's tracked.
+Doubles as the live attribution fixture. (Reminder confirmed: agents are **folder-only** now — the
+`agents:[]` config vector was removed in D15 #3; `$CTRLB_HOME` = project root = `dashboard_v2/` on
+corsair, so the folder is `dashboard_v2/agents/coder/`.)
+
+**`coding-discipline` skill — `cdace1b`** (`.agents/skills/coding-discipline/SKILL.md`). An always-on
+engineering loop (pre-flight read/reuse/pattern/no-hardcoding → clean build → review/audit/debug/verify)
+with a trivial fast-path; delegates depth to the existing audit/debug/karpathy/refactor/commit skills
+rather than duplicating them. Claude-Code tooling, not a dashboard runtime skill.
+
+**Heads-up / housekeeping:** the live attribution test left one throwaway chat thread (an "ok" turn)
+in `ctrlb.db` — harmless, `/clear` drops it. Servers left up: backend **5433** (no `--reload`),
+frontend **5173**.
 
 ### ⭐ Session update — 2026-06-15/16 (design/decisions session — **unresolved-items backlog closed**; no feature code)
 

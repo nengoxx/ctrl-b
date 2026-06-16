@@ -441,16 +441,17 @@ tools + confirm bubbles) are DONE.**
       during render (no flash). Wired System prompt (+append), per-agent Prompt (+append +
       `inherit_append`), Skills SKILL.md (inline + fullscreen opener). Conf-sizing refine bundled
       separately. Net-new CSS in `extras.css`; vapor.css untouched (D7).
-- [~] **7e-c — per-agent workspace foundation (D14).** **Agents-as-folders DONE ✅2026-06-14**
+- [x] **7e-c — per-agent workspace foundation (D14). COMPLETE ✅2026-06-16.** **Agents-as-folders DONE ✅2026-06-14**
       (`0a30375` backend, `3e34d9c` frontend, `fc15ceb`/`e417859` refine/fix): `$CTRLB_HOME` +
       `agent.defaults` merge + folder discovery + SOUL.md→prompt + `agents:[]` removed (no migration,
       no-op confirmed) + file API (`GET/PUT/DELETE /api/agents/{name}` + `…/soul`) + **display names**
       (`AgentDef.title` / `agent.default_title`, slug stays the `/agent` id) + `AgentsEditor` repointed
       as the unified list (default row + specialists; Skills control now matches Tools). Also added
-      `agents_dir_path()`/`memories_dir_path()` (the 7e-d seam). **REMAINING: `messages.agent`** — the
-      nullable column + per-turn attribution + resume order (see the sub-item just below, D15 #5).
-      The original full spec follows for reference:
-- [ ] **7e-c (cont.) — `$CTRLB_HOME` reference + the REMAINING `messages.agent` work.** Define the relocatable **`$CTRLB_HOME`** root
+      `agents_dir_path()`/`memories_dir_path()` (the 7e-d seam). **`messages.agent` DONE ✅2026-06-16**
+      (`680b310`): nullable migration #2 + per-turn attribution (loop + finalize) + resume order
+      (last-assistant → thread → default) + `message.start` live label + frontend label
+      (`useAgentRoster`) + `test_messages_agent_7e` (5 tests). The original full spec follows for reference:
+- [x] **7e-c (cont.) — `$CTRLB_HOME` reference + `messages.agent` (DONE ✅2026-06-16).** Define the relocatable **`$CTRLB_HOME`** root
       (env var, default `~/.ctrl-b/`; composes with `CTRLB_CONFIG`/`CTRLB_DB`) holding `config.yaml` +
       `ctrlb.db` + `SOUL.md` + `memories/` + `skills/` + `agents/`. The **default agent lives at the
       root** (root `SOUL.md`/`memories/`/`skills/`, no `agent.yaml` — it *is* the config.yaml globals);
