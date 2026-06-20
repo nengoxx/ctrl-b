@@ -1873,7 +1873,7 @@ with `skills: []` as the opt-out for a capable model. The natural next slices:
   paid `inference.cloud` model is the reliable capable-tool-caller path.)
 - Or: wire real **Open WebUI tool servers** (`openapi_servers:`), or **Phase 5** (guarded `run_shell`).
 
-Each piece its own runnable slice + commit (footer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`).
+Each piece its own runnable slice + commit (footer: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`).
 
 **Small 4f leftovers (optional, non-blocking):**
 - **MCP follow-ups:** both transports are done (Streamable HTTP + stdio). Still open: hot

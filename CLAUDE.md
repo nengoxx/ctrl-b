@@ -108,5 +108,5 @@ seam; if the seam is missing, propose one in `DECISIONS.md` (new D-entry) before
 End commit messages with:
 
 ```
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 ```
