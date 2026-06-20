@@ -39,7 +39,7 @@ from app.core.memory import MemoryProvider
 from app.core.skills import SkillProvider, SkillSelector
 from app.core.tool import UnknownTool
 from app.domain.agent import AgentDef
-from app.services.agent.skills import narrow_tools, resolve_skills, skills_prompt
+from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
 from app.domain.conversation import (
     ErrorPart,
     Message,
@@ -258,13 +258,8 @@ class AgentSession:
         self._tool_allow = self._agent.tools
         if not (self._skills and self._selector and self._settings.agent.skills_enabled):
             return
-        active = resolve_skills(
-            self._skills,
-            self._selector,
-            user_text,
-            agent_allow=self._agent.skills,
-            invoked=invoked,
-        )
+        available = available_skills(self._skills, self._settings, self._agent)
+        active = resolve_skills(available, self._selector, user_text, invoked=invoked)
         if not active:
             return
         self._skills_note = skills_prompt(active)

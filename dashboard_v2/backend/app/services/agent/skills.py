@@ -9,9 +9,10 @@ against each skill's name + description (token overlap), returning those over a 
 It's model-agnostic (no extra LLM call, works with a weak local model) and deterministic; an
 `LLMSkillSelector` that asks the model to pick is the documented drop-in alternative.
 
-`resolve_skills` ties them together for one turn: it unions the *user-invoked* `/skill-name` (always
-honored) with the selector's *model-invoked* picks, restricted to the agent's `skills` allowlist.
-`apply_skills` turns the active set into a prompt addition + a narrowed tool allowlist.
+`available_skills` computes one agent's effective set — its own `agents/<name>/skills/` (always
+available) merged over the global `skills/` it inherits via its `skills` allowlist (7e-f-1, D14).
+`resolve_skills` then unions the *user-invoked* `/skill-name` (always honored) with the selector's
+*model-invoked* picks over that set; `narrow_tools` turns the active set into a narrowed allowlist.
 """
 
 from __future__ import annotations
@@ -20,10 +21,15 @@ import logging
 import re
 from fnmatch import fnmatch
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 
 from app.core.skills import Skill, SkillProvider, SkillSelector
+
+if TYPE_CHECKING:
+    from app.config import Settings
+    from app.domain.agent import AgentDef
 
 log = logging.getLogger(__name__)
 
@@ -120,18 +126,33 @@ def _allowed_by(allow: list[str] | str, name: str) -> bool:
     return allow == "*" or any(fnmatch(name, p) for p in allow)
 
 
+def available_skills(
+    global_provider: SkillProvider, settings: "Settings", agent: "AgentDef"
+) -> list[Skill]:
+    """The effective skill set for one agent (7e-f-1, D14): the agent's OWN `agents/<name>/skills/`
+    (always available) merged over the GLOBAL `skills/` it inherits. Global inheritance reuses the
+    agent's existing `skills` allowlist — `"*"` inherits all, a list a subset, `[]` none — so there's
+    no separate inherit knob. An own skill overrides an inherited one of the same name. The
+    default/root agent IS the global set (it has no own folder), so it just gets the global skills its
+    own allowlist permits."""
+    by_name = {s.name: s for s in global_provider.list() if _allowed_by(agent.skills, s.name)}
+    if agent.name != settings.DEFAULT_AGENT_NAME:
+        own_root = settings.agents_dir_path() / agent.name / "skills"
+        for s in FileSkillProvider(own_root).list():
+            by_name[s.name] = s  # own overrides an inherited skill of the same name
+    return list(by_name.values())
+
+
 def resolve_skills(
-    provider: SkillProvider,
+    available: list[Skill],
     selector: SkillSelector,
     user_msg: str,
     *,
-    agent_allow: list[str] | str = "*",
     invoked: list[str] | None = None,
 ) -> list[Skill]:
-    """The active skills for a turn: user-invoked `/skill-name` (always, if it exists) unioned with
-    the selector's model-invoked picks — both restricted to the agent's `skills` allowlist. Order:
+    """The active skills for a turn over an agent's effective set (`available_skills`): user-invoked
+    `/skill-name` (always, if present) unioned with the selector's model-invoked picks. Order:
     invoked first (explicit intent), then selected; de-duplicated by name."""
-    available = [s for s in provider.list() if _allowed_by(agent_allow, s.name)]
     by_name = {s.name: s for s in available}
     active: list[Skill] = []
     seen: set[str] = set()
