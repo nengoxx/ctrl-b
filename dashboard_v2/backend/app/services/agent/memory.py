@@ -13,10 +13,28 @@ tool and Conf editing extend this provider in 7e-d-2 / 7e-d-3.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from app.config import Settings
 from app.domain.agent import AgentDef
+
+
+class MemoryWriteError(RuntimeError):
+    """A memory write that can't proceed for a reason the model can fix (e.g. `old_text` not found).
+    The `memory` tool catches it and returns an ERROR `ToolResult` steering the model, not a crash."""
+
+
+class MemoryCapError(MemoryWriteError):
+    """A write that would push a store past its character cap. The tool turns this into an ERROR
+    `ToolResult` telling the model to consolidate (replace/remove) before adding."""
+
+    def __init__(self, label: str, length: int, cap: int) -> None:
+        self.label, self.length, self.cap = label, length, cap
+        super().__init__(
+            f"{label} would be {length:,} chars, over its {cap:,}-char cap — consolidate "
+            "(replace/remove) existing entries before adding."
+        )
 
 
 class FileMemoryProvider:
@@ -62,6 +80,47 @@ class FileMemoryProvider:
             "The percentages show how full each store is against its character cap."
         )
         return intro + "\n\n" + "\n\n".join(sections)
+
+    def _target(self, agent: AgentDef, target: str) -> tuple[Path, int, str]:
+        """Resolve a write target to its (file, cap, label). `user` → the global USER.md; anything
+        else → the agent's own MEMORY.md. Caps read from live Settings (same source as the headers
+        `load_context` shows), so a cap edit applies with no restart."""
+        cfg = self._settings.memory
+        if target == "user":
+            return self._user_file(), cfg.user_char_limit, "User profile"
+        return self._memory_file(agent), cfg.memory_char_limit, "Agent memory"
+
+    def write(
+        self, agent: AgentDef, target: str, action: str, content: str, old_text: str | None = None
+    ) -> str:
+        """Apply one edit to a memory store and persist it; returns a one-line summary with the new
+        cap usage. `add` appends a `§`-delimited entry; `replace`/`remove` operate on the first
+        occurrence of the `old_text` substring. Raises `MemoryWriteError` (old_text not found / bad
+        action) or `MemoryCapError` (over cap) — the caller turns either into an ERROR result. The
+        store's enable/profile gating + the `auto_write` switch live in the tool, not here."""
+        path, cap, label = self._target(agent, target)
+        body = _read(path)
+        if action == "add":
+            entry = content.strip()
+            new = f"{body}\n\n§ {entry}" if body else f"§ {entry}"
+        elif action in ("replace", "remove"):
+            needle = old_text or ""
+            if needle not in body:
+                raise MemoryWriteError(
+                    f"`old_text` not found in {label} — copy an exact substring from the memory "
+                    "block injected this turn."
+                )
+            new = body.replace(needle, content if action == "replace" else "", 1)
+        else:
+            raise MemoryWriteError(f"unknown memory action {action!r}")
+
+        new = re.sub(r"\n{3,}", "\n\n", new).strip()
+        if len(new) > cap:
+            raise MemoryCapError(label, len(new), cap)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(new + "\n" if new else "", encoding="utf-8")
+        pct = round(100 * len(new) / cap) if cap > 0 else 0
+        return f"{label} updated ({action}) — {pct}% ({len(new):,}/{cap:,})"
 
 
 def _read(p: Path) -> str:

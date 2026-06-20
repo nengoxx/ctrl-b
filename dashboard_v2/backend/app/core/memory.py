@@ -22,6 +22,13 @@ from app.domain.agent import AgentDef
 class MemoryProvider(Protocol):
     """Durable memory for the agent loop. `load_context` returns the block injected into the system
     prompt each turn — the agent's own memory plus the global user profile, with cap-usage headers —
-    or "" when there's nothing to inject (subsystem off, or both stores empty)."""
+    or "" when there's nothing to inject (subsystem off, or both stores empty). `write` applies one
+    edit (the `memory` tool's write path, 7e-d-2) and returns a one-line summary; it raises on a
+    failed/over-cap edit so the tool can steer the model. Read-back/clear (the Conf panel, 7e-d-3)
+    extend this in their slice."""
 
     def load_context(self, agent: AgentDef) -> str: ...
+
+    def write(
+        self, agent: AgentDef, target: str, action: str, content: str, old_text: str | None = ...
+    ) -> str: ...
