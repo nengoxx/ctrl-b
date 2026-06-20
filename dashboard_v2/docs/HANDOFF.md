@@ -76,50 +76,97 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e-d ✅ + 7e-e ✅ shipped · **next: 7e-f — per-agent skills + `skill_manage` (+ the deferred propose-UI)**)
+## Current state (7e-d ✅ · 7e-e ✅ · **7e-f sub-sliced: f-1 ✅ shipped · f-2 pre-flighted/design-locked = NEXT *build* · f-3 propose-UI**)
 
-> **Everything is pushed to `origin/main`** (HEAD after this push). **7e-d (file memory) and 7e-e
-> (`session_search`) are both done.** 7e-d: read path (`16bde75`) injects per-agent MEMORY.md + global
-> USER.md each turn; the **`memory`** write tool (`e5ebcaa`/`ed1dfa8`) — `add`/`replace`/`remove` ·
-> `target: memory|user` · `auto_write` OFF = propose-only · over-cap → ERROR · auto-audited; the **Conf
-> Memory panel** (`2e18638`) — provider `read_raw`/`overwrite` + file API (`/api/agents/{name}/memory`,
-> `/api/memory/user`) + the frontend Memory group (#10). **7e-e (`003bad3`)**: migration #3 FTS5
-> `messages_fts` (trigger-synced via `json_each`, archived filtered at query time, backfilled) +
-> `MessageRepo.search` + the **`session_search`** builtin (global + secret-redacted, D15 #7). Verified:
-> **full backend suite green (12 files)**, `tsc` clean, live migration applied to the real db
-> (schema_version 3, backfill 368/368). Tree clean except `start_claude_remote.ps1`.
+> **Everything is pushed to `origin/main`** (HEAD `6dc06db`). **7e-d (file memory), 7e-e
+> (`session_search`), and 7e-f-1 (per-agent skills) are done.** 7e-d: read path (`16bde75`) + the
+> **`memory`** write tool (`e5ebcaa`/`ed1dfa8`) + the **Conf Memory panel** (`2e18638`). 7e-e
+> (`003bad3`): migration #3 FTS5 `messages_fts` + `MessageRepo.search` + the **`session_search`**
+> builtin (global + secret-redacted). **7e-f-1 (`6dc06db`)**: `available_skills(global_provider,
+> settings, agent)` — a specialist's own `agents/<name>/skills/` is always available, merged over the
+> global `skills/` it inherits via its existing **`skills` allowlist** (`*`/list/`[]` = all/subset/none —
+> **no new field**, the reuse decision); own overrides inherited by name; default agent = the global set.
+> `resolve_skills` refactored to take the precomputed set; `_activate_skills` rewired. Default-agent
+> behaviour byte-identical. Verified: **full backend suite green (13 files)**, live boot clean. Tree
+> clean except `start_claude_remote.ps1`.
 >
-> **Deep audit (2026-06-20) — surfaced nuances, none blocking (full detail in the session block below):**
-> (1) **builtin reachability** — specialists with an explicit `tools` allowlist (the `coder` agent) do
-> **not** receive new builtins (`memory`, `session_search`); only `*` agents do. There's no "always-on
-> core builtin" notion — `for_agent` is the only gate. **Owner decision** (likely fold into 7e-f): make
-> core builtins (`task_plan`/`memory`/`session_search`/`spawn_subagents`) implicitly available, or
-> document that specialist allowlists must list them. (2) FTS triggers key on `messages.rowid`
-> (VACUUM-fragile; app never VACUUMs and the search `INNER JOIN message_id` protects query correctness
-> — index-resync only, defer to a migration #4 if ever needed). (3) `session_search` redacts whole
-> secret strings, but `snippet()` truncates at token boundaries → a secret split by word-boundary chars
-> could leak a *fragment* (low; secrets rarely in chat text). **Applied:** `MemoryCfg` caps floored
-> `ge=1` (a blanked Conf field → 0 silently wedged agent writes).
+> **7e-f is sub-sliced (owner's call): f-1 per-agent skills ✅ → f-2 `skill_manage` + core-builtins (NEXT)
+> → f-3 shared propose-UI.** **7e-f-2 is fully pre-flighted and design-locked this session** (build it
+> next):
+> 1. **Core-builtin reachability (resolves the deep-audit finding #1).** Add **`core: bool = False` to
+>    `ToolSpec`** + a `core=` param on `@action`; mark **`task_plan`, `memory`, `session_search`** as
+>    `core=True` (owner's pick: the cognitive set — *not* `spawn_subagents`/`skill_manage`, those stay
+>    explicit-grant). **`ToolRegistry.for_agent()` always unions the `core` tools** → they survive any
+>    `tools` allowlist *and* any skill narrowing, in one place (fixes the `coder` agent silently lacking
+>    `memory`/`session_search`).
+> 2. **`skill_manage` builtin** (mirror `memory_tool.py`; **not** core): `@action("skill_manage",
+>    category="builtin", risk=LOW, ui_exposed=False)`, `action: save|remove` · `name` (slug) · `content`
+>    (full SKILL.md). Writes to the agent's **own** skills folder (specialist → `agents/<name>/skills/<slug>/`;
+>    default → global `skills/`) — the `available_skills` mirror. Gating `skills_enabled` →
+>    **`skills_auto_write`** (OFF → propose-only, returns `data["proposed"]` for f-3). Slug-validated →
+>    ERROR on bad name; auto-audited via `ActionService._record`.
+> 3. **Config:** add **`AgentCfg.skills_auto_write: bool = True`** next to `skills_enabled` (skills config
+>    already lives under `agent.*` — no new `SkillsCfg`).
+> 4. **De-dup the skill-file write:** extract the generic `_write_text_eol` from `api/agent.py` to a small
+>    **`core/fsutil.py`**; add **`write_skill_md(root, name, content)` / `remove_skill_md(root, name)`** +
+>    a shared slug validator to `services/agent/skills.py`; refactor the existing `/api/skills` endpoints
+>    to use them (one source of truth). **Pre-flight already done** (skills subsystem, `memory_tool.py`,
+>    skills API, config all read). Test on a **temp `$CTRLB_HOME`**.
 >
-> **The 7e slice sequence (D14/D15):** 7e-a ✅ → 7e-b ✅ → 7e-c ✅ → **7e-d ✅** → **7e-e ✅** → **7e-f**
-> (per-agent skills w/ inheritance + `skill_manage`) **← NEXT** → **7e-g** (optional `AgentSelector`).
+> **Then f-3 — the shared Approve-to-apply propose-UI** (frontend): render `data["proposed"]` from *both*
+> `memory` and `skill_manage` as an Approve/Dismiss affordance on the tool bubble + an apply endpoint.
+> Needs its **own pre-flight** over the tool-bubble / confirm-resume frontend code (AgentTab `.b.cmd`
+> command bubble + the resume flow). Biggest new frontend surface of 7e-f.
 >
-> 1. **Build 7e-f — per-agent skills + `skill_manage`.** Wire per-agent `skills/` (global `skills/` =
->    the default agent's set; each agent its own folder) with `agent.yaml` **`skills_inherit`** (all ·
->    subset · none), plus the **`skill_manage`** self-authoring tool (sibling of `memory`; auto-write +
->    `skills.auto_write` kill switch, same propose-only semantics). **This slice owns the shared
->    Approve-to-apply propose-UI** that `memory`'s `auto_write=OFF` path (7e-d-2) returns
->    `data["proposed"]` for — build it once, for both. **Consider resolving audit nuance (1)** here
->    (core-builtin reachability). **Pre-flight:** read `core/skills.py` + `services/agent/skills.py`
->    (provider + `narrow_tools`), `memory_tool.py` (the propose pattern to mirror), and the Skills Conf
->    editor. Test on a **temp `$CTRLB_HOME`**.
-> 2. **Decided-but-deferred builds** (all design-locked): C1 dual-mode chat (D17), A1 privilege
->    selection (D16), A2 question kind, F29 opt A (UI_AUDIT.md §6b).
+> **Deep-audit nuances still open (low, non-blocking — full detail two session blocks below):** (2) FTS
+> triggers key on `messages.rowid` (VACUUM-fragile; INNER JOIN protects correctness; migration #4 only
+> if ever needed). (3) `session_search` snippet truncation could leak a secret *fragment* (secrets rarely
+> in chat text). Finding (1) is being resolved in f-2 above; the `ge=1` cap floor already landed (`d422dcc`).
+>
+> **The 7e sequence (D14/D15):** 7e-a✅ → 7e-b✅ → 7e-c✅ → 7e-d✅ → 7e-e✅ → **7e-f** (f-1✅ · **f-2 NEXT** ·
+> f-3) → **7e-g** (optional `AgentSelector`).
+>
+> **Decided-but-deferred builds** (all design-locked): C1 dual-mode chat (D17), A1 privilege selection
+> (D16), A2 question kind, F29 opt A (UI_AUDIT.md §6b).
 >
 > **Servers:** backend uvicorn **5433** (no `--reload`, venv), frontend Vite **5173** (HMR; `npm run
 > dev` defaults to 5173 unless `--port 5190`). Phone: `http://corsair:5173`. Both tearable down
 > without state loss. **Heads-up:** pytest is **not installed** in the backend venv — every test file
 > has a `__main__` runner; run `./.venv/Scripts/python.exe tests/<file>.py`.
+
+### ⭐ Session update — 2026-06-20 (build session #3 — **7e-f-1 per-agent skills** + **7e-f-2 pre-flight/design-lock** · pushed)
+
+Sub-sliced 7e-f (owner's call: f-1 per-agent skills → f-2 `skill_manage` + core-builtins → f-3 shared
+propose-UI), built f-1, and fully pre-flighted + design-locked f-2. `6dc06db` (f-1) + this docs commit,
+pushed. Tree clean except `start_claude_remote.ps1`.
+
+**7e-f-1 — per-agent skills + inheritance (`6dc06db`).** Reuse decision (locked with owner): **no new
+`skills_inherit` field** — the existing `AgentDef.skills` allowlist already expresses all/subset/none,
+so it *is* the global-inheritance knob; a specialist's own `agents/<name>/skills/` is always available
+on top.
+- `services/agent/skills.py`: new **`available_skills(global_provider, settings, agent)`** = global
+  `list()` filtered by `agent.skills` ∪ the agent's own-folder skills (specialist only), own-overrides-
+  inherited by name. **`resolve_skills` refactored** to take that precomputed set (allowlist filtering
+  moved out of it). The AgentsEditor Skills tick-grid (already bound to `agent.skills`) now reads as the
+  inheritance selection — **no frontend change**.
+- `services/agent/session.py`: `_activate_skills` builds the per-agent set via `available_skills`;
+  subagents inherit the same path via `deps.skills`. **Default-agent behaviour byte-identical** (own=[],
+  global filtered by its allowlist). The only semantic shift — `skills=[]` now means "no *inherited*
+  global, own folder still on" — affects no current agent (own folders are new this slice).
+- Tests `test_skills_per_agent_7e.py` (6). Full suite green (13 files); live boot clean.
+
+**7e-f-2 — pre-flighted + design-locked (build next).** Two owner decisions taken: (a) **core builtins =
+the cognitive set `task_plan`/`memory`/`session_search`** (not `spawn_subagents`/`skill_manage`),
+bypassing both the agent allowlist and skill narrowing via a `core=True` `ToolSpec` flag honored in
+`for_agent`; (b) **`skills_auto_write` lives in `AgentCfg`** (next to `skills_enabled`, no new section).
+Full locked spec + the de-dup plan (extract `_write_text_eol` → `core/fsutil.py`; `write_skill_md`/
+`remove_skill_md` in skills.py; refactor `/api/skills` to use them) is in the "Current state" block
+above. No code written for f-2 yet.
+
+**Heads-up for the propose-UI (f-3):** it's the shared Approve-to-apply affordance that both `memory`
+(`auto_write=OFF`) and `skill_manage` (`skills_auto_write=OFF`) already feed via `data["proposed"]`. It
+needs its own pre-flight over the AgentTab command-bubble (`.b.cmd`) + confirm-resume frontend before
+building — don't start it cold.
 
 ### ⭐ Session update — 2026-06-20 (build session #2 — **7e-e `session_search`** + a **deep audit pass** · pushed)
 

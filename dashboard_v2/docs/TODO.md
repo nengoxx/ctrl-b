@@ -511,13 +511,25 @@ tools + confirm bubbles) are DONE.**
       allowlists don't receive new builtins (no always-on-builtin notion — owner decision); FTS triggers
       key on `rowid` (VACUUM-fragile, but `INNER JOIN message_id` protects query correctness); snippet
       truncation could leak a secret *fragment* across tokens (low). Hardening: `MemoryCfg` caps floored `ge=1`.
-- [ ] **7e-f — per-agent skills (inheritance) + `skill_manage` self-authoring (D14).** Wire per-agent
-      `skills/` (global `skills/` = the default agent's set; each agent its own folder), with
-      `agent.yaml` **`skills_inherit`**: inherit **all** global skills · a **specific subset** · or
-      **none**. Add a **`skill_manage` agent tool** (sibling of the `memory` tool): create/edit/remove
-      a `SKILL.md` under the agent's own `skills/`, **autonomous auto-write** + a `skills.auto_write`
-      kill switch, audited as Events — Hermes-style self-improvement. The `FileSkillProvider` re-scans
-      per call, so authored skills are live with no restart.
+- [~] **7e-f — per-agent skills + `skill_manage` + shared propose-UI (D14).** Sub-sliced f-1/f-2/f-3.
+  - [x] **7e-f-1 — per-agent skills + inheritance ✅2026-06-20 (`6dc06db`).** **No new `skills_inherit`
+        field** — the existing `AgentDef.skills` allowlist *is* the global-inheritance knob (`*`/list/`[]`
+        = all/subset/none); a specialist's own `agents/<name>/skills/` is always available on top
+        (own-overrides-inherited by name). `available_skills(global_provider, settings, agent)` +
+        `resolve_skills` refactored to take the precomputed set; `_activate_skills` rewired. Default-agent
+        byte-identical; AgentsEditor tick-grid (bound to `agent.skills`) now reads as inheritance — no FE
+        change. Tests `test_skills_per_agent_7e.py` (6).
+  - [ ] **7e-f-2 — `skill_manage` + core-builtin reachability (NEXT, design-locked).** (a) **`core: bool`
+        on `ToolSpec`** + `@action(core=)`; mark **`task_plan`/`memory`/`session_search`** core (owner's
+        cognitive set — resolves deep-audit #1); `for_agent` always unions core tools (survive allowlist +
+        skill narrowing). (b) **`skill_manage`** builtin (mirror `memory_tool.py`, **not** core):
+        `save`/`remove` a SKILL.md in the agent's own folder; gated `skills_enabled` → **`skills_auto_write`**
+        (OFF → propose-only `data["proposed"]`); slug-validated; auto-audited. (c) **`AgentCfg.skills_auto_write`**.
+        (d) De-dup: `_write_text_eol` → **`core/fsutil.py`**; `write_skill_md`/`remove_skill_md` + shared slug
+        in `services/agent/skills.py`; refactor `/api/skills` to use them.
+  - [ ] **7e-f-3 — shared Approve-to-apply propose-UI (frontend).** Render `data["proposed"]` from *both*
+        `memory` and `skill_manage` as an Approve/Dismiss affordance on the tool bubble + an apply endpoint.
+        Needs its own pre-flight over the AgentTab `.b.cmd` command bubble + confirm-resume flow.
 - [ ] **7e-g — optional `AgentSelector` auto-rotate (D14).** A swappable selector (mirrors
       `SkillSelector`) that auto-routes a turn to a specialist **when enabled** in settings — default
       off; explicit `/agent` + `spawn_subagents` stay primary. **Default algorithm =
