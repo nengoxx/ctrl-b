@@ -33,7 +33,7 @@ from app.domain.service import Service
 
 __all__ = [
     "Settings", "ModelRef", "AgentDef", "CompactionCfg",
-    "load_settings", "save_settings", "mask_secrets", "unmask_secrets", "deep_merge",
+    "load_settings", "save_settings", "mask_secrets", "secret_values", "unmask_secrets", "deep_merge",
     "apply_patch_to_yaml", "prune_unchanged", "edit_config_yaml", "sync_mapping", "host_slug",
 ]
 
@@ -398,6 +398,12 @@ class Settings(BaseModel):
         """`$CTRLB_HOME/memories/` — the default agent's `MEMORY.md` + the global `USER.md` (7e-d)."""
         return self.home_dir() / "memories"
 
+    def secret_values(self) -> list[str]:
+        """The live config's secret leaf values (api keys, ssh passwords, …) — for redacting them out
+        of free text like `session_search` snippets (7e-e, D15 #7). Plain strings at the config layer
+        (the file is gitignored; the API masks on read), so `model_dump()` yields the real values."""
+        return secret_values(self.model_dump())
+
     def skills_dir_path(self) -> Path:
         """Absolute path to the skills directory. A relative `agent.skills_dir` resolves against the
         project root (alongside `config.yaml`), so a dropped-in `skills/<name>/SKILL.md` is found
@@ -675,6 +681,23 @@ def mask_secrets(data: Any) -> Any:
     if isinstance(data, list):
         return [mask_secrets(v) for v in data]
     return data
+
+
+def secret_values(data: Any) -> list[str]:
+    """Collect the non-empty secret *leaf values* (keys matching `SECRET_HINTS`) from a settings/dict
+    tree — the value-level analog of `mask_secrets` (which masks by key). Used to redact those
+    secrets out of free text (e.g. `session_search` snippets) via `core.redact.redact`."""
+    out: list[str] = []
+    if isinstance(data, dict):
+        for k, v in data.items():
+            if _is_secret_key(k) and isinstance(v, str) and v:
+                out.append(v)
+            else:
+                out.extend(secret_values(v))
+    elif isinstance(data, list):
+        for v in data:
+            out.extend(secret_values(v))
+    return out
 
 
 def unmask_secrets(incoming: Any, stored: Any) -> Any:

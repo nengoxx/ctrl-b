@@ -24,6 +24,7 @@ from app.services.actions import (  # noqa: E402,F401
 from app.services.agent import planning  # noqa: E402,F401  # task_plan builtin (agent-only)
 from app.services.agent import subagents  # noqa: E402,F401  # spawn_subagents builtin (4.5)
 from app.services.agent import memory_tool  # noqa: E402,F401  # memory write tool (7e-d-2)
+from app.services.agent import session_search  # noqa: E402,F401  # session_search builtin (7e-e)
 
 
 def build_registry() -> ToolRegistry:

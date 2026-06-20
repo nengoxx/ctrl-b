@@ -9,7 +9,9 @@ without touching the schema.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
+from typing import Any
 
 from pydantic import TypeAdapter
 
@@ -22,6 +24,14 @@ _PARTS = TypeAdapter(list[Part])
 
 def _iso(dt: datetime) -> str:
     return dt.isoformat()
+
+
+def _fts_query(raw: str) -> str:
+    """Turn a free-text query into a safe FTS5 MATCH expression: each word becomes a quoted literal
+    term, joined (implicit AND). Quoting neutralizes FTS5 operators (`"`, `*`, `AND`, `:`, `-`) so a
+    model-supplied query can't throw a syntax error; `""` (no word chars) signals "no query"."""
+    tokens = re.findall(r"\w+", raw, flags=re.UNICODE)
+    return " ".join(f'"{t}"' for t in tokens)
 
 
 class ThreadRepo:
@@ -121,6 +131,31 @@ class MessageRepo:
             sql += " AND compacted = 0"
         sql += " ORDER BY ts ASC"
         return [self._row(r) for r in await self._db.query(sql, (thread_id,))]
+
+    async def search(
+        self, query: str, *, limit: int = 5, include_archived: bool = False
+    ) -> list[dict[str, Any]]:
+        """Full-text search over user/assistant message text (the `messages_fts` index, migration 3)
+        — global across threads (D15 #7). Returns the best `limit` hits (FTS5 `rank`) as dicts with
+        the thread/agent context + a highlighted `snippet`. Archived (ephemeral subagent) threads are
+        excluded by default. Caller redacts the snippet before exposing it. Empty/word-less query → []."""
+        match = _fts_query(query)
+        if not match:
+            return []
+        sql = (
+            "SELECT f.message_id AS message_id, f.thread_id AS thread_id, "
+            "       t.title AS thread_title, t.agent AS thread_agent, "
+            "       m.role AS role, m.ts AS ts, m.agent AS agent, "
+            "       snippet(messages_fts, 0, '«', '»', '…', 12) AS snippet "
+            "FROM messages_fts f "
+            "JOIN messages m ON m.id = f.message_id "
+            "JOIN threads t ON t.id = f.thread_id "
+            "WHERE messages_fts MATCH ?"
+        )
+        if not include_archived:
+            sql += " AND t.archived = 0"
+        sql += " ORDER BY rank LIMIT ?"
+        return [dict(r) for r in await self._db.query(sql, (match, limit))]
 
     @staticmethod
     def _row(r) -> Message:

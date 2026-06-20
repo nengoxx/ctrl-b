@@ -71,6 +71,58 @@ MIGRATIONS: list[tuple[int, str]] = [
         # agent per-turn across `/agent` switches and resume can continue as the last turn's agent.
         "ALTER TABLE messages ADD COLUMN agent TEXT;",
     ),
+    (
+        3,
+        # session_search (7e-e, D15 #7). An FTS5 index over the *text* of user/assistant messages so
+        # the agent can recall past sessions. The searchable text is derived (the concatenated
+        # TextPart text inside the JSON `parts` column, reasoning/tool parts excluded), so the index
+        # is kept in sync by triggers that extract it with json_each — no coupling to MessageRepo,
+        # and the JSON `parts` shape stays the single source of truth. `message_id`/`thread_id` are
+        # UNINDEXED (stored for retrieval, not searched); the FTS rowid mirrors `messages.rowid`.
+        # Archived (ephemeral subagent) threads are filtered at *query* time, not here, so a thread's
+        # archived flag stays live without re-indexing. Backfill populates existing rows in one pass.
+        """
+        CREATE VIRTUAL TABLE messages_fts USING fts5(
+            text,
+            message_id UNINDEXED,
+            thread_id  UNINDEXED
+        );
+
+        CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages
+        WHEN new.role IN ('user', 'assistant') BEGIN
+            INSERT INTO messages_fts(rowid, text, message_id, thread_id)
+            VALUES (
+                new.rowid,
+                (SELECT group_concat(json_extract(value, '$.text'), '')
+                   FROM json_each(new.parts) WHERE json_extract(value, '$.type') = 'text'),
+                new.id, new.thread_id
+            );
+        END;
+
+        CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
+            DELETE FROM messages_fts WHERE rowid = old.rowid;
+        END;
+
+        CREATE TRIGGER messages_fts_au AFTER UPDATE ON messages BEGIN
+            DELETE FROM messages_fts WHERE rowid = old.rowid;
+            INSERT INTO messages_fts(rowid, text, message_id, thread_id)
+            SELECT
+                new.rowid,
+                (SELECT group_concat(json_extract(value, '$.text'), '')
+                   FROM json_each(new.parts) WHERE json_extract(value, '$.type') = 'text'),
+                new.id, new.thread_id
+            WHERE new.role IN ('user', 'assistant');
+        END;
+
+        INSERT INTO messages_fts(rowid, text, message_id, thread_id)
+        SELECT
+            m.rowid,
+            (SELECT group_concat(json_extract(value, '$.text'), '')
+               FROM json_each(m.parts) WHERE json_extract(value, '$.type') = 'text'),
+            m.id, m.thread_id
+        FROM messages m WHERE m.role IN ('user', 'assistant');
+        """,
+    ),
 ]
 
 
