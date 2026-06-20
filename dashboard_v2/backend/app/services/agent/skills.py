@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
+from app.core.fsutil import write_text_eol
 from app.core.skills import Skill, SkillProvider, SkillSelector
 
 if TYPE_CHECKING:
@@ -32,6 +33,16 @@ if TYPE_CHECKING:
     from app.domain.agent import AgentDef
 
 log = logging.getLogger(__name__)
+
+#: A skill folder name: lowercase slug, no path separators — guards the file write below (and the
+#: `/api/skills` + `/api/agents` endpoints, which import it) against traversal: the name becomes
+#: `<root>/<name>/SKILL.md`. Agent names reuse the same shape.
+SKILL_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def valid_skill_slug(name: str) -> bool:
+    """Whether `name` is a safe skill/agent folder slug (one source of truth for the API + tool)."""
+    return bool(SKILL_SLUG.match(name))
 
 _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.DOTALL)
 _WORD = re.compile(r"[a-z0-9]+")
@@ -137,10 +148,42 @@ def available_skills(
     own allowlist permits."""
     by_name = {s.name: s for s in global_provider.list() if _allowed_by(agent.skills, s.name)}
     if agent.name != settings.DEFAULT_AGENT_NAME:
-        own_root = settings.agents_dir_path() / agent.name / "skills"
-        for s in FileSkillProvider(own_root).list():
+        for s in FileSkillProvider(agent_skills_root(settings, agent)).list():
             by_name[s.name] = s  # own overrides an inherited skill of the same name
     return list(by_name.values())
+
+
+def agent_skills_root(settings: "Settings", agent: "AgentDef") -> Path:
+    """The directory holding an agent's OWN `<name>/SKILL.md` bundles — where `skill_manage` writes
+    (7e-f-2). The default/root agent owns the global `skills/` (so it edits the shared set); a
+    specialist owns `agents/<slug>/skills/`. Mirrors `available_skills`'s own-folder path so a
+    self-authored skill lands exactly where that resolver picks it up next turn."""
+    if agent.name == settings.DEFAULT_AGENT_NAME:
+        return settings.skills_dir_path()
+    return settings.agents_dir_path() / agent.name / "skills"
+
+
+def write_skill_md(root: Path, name: str, content: str) -> None:
+    """Create/overwrite `root/<name>/SKILL.md` with `content`, EOL-preserving + atomic. The single
+    write path for both the `/api/skills` editor and the `skill_manage` tool. Caller validates the
+    slug (`valid_skill_slug`) and supplies the full markdown (incl. any scaffold default)."""
+    p = root / name / "SKILL.md"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    write_text_eol(p, content)
+
+
+def remove_skill_md(root: Path, name: str) -> bool:
+    """Delete `root/<name>/SKILL.md`, returning whether it was present. Cleans up the folder only if
+    it's left empty — owner-dropped resource files (assets, scripts) are preserved."""
+    p = root / name / "SKILL.md"
+    if not p.is_file():
+        return False
+    p.unlink()
+    try:
+        p.parent.rmdir()  # only succeeds when empty — keep any sibling resources
+    except OSError:
+        pass
+    return True
 
 
 def resolve_skills(

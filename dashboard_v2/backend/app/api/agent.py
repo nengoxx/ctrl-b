@@ -10,8 +10,6 @@ regardless (DESIGN §5.3), so a reconnect re-reads it via `GET /api/threads/{id}
 from __future__ import annotations
 
 import json
-import os
-import re
 import shutil
 import uuid
 from collections.abc import AsyncIterator
@@ -24,6 +22,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import deep_merge
+from app.core.fsutil import write_text_eol
 from app.domain.agent import AgentDef
 from app.domain.conversation import Message, ToolCallPart, ToolResultPart, Thread
 from app.domain.enums import Actor, RunState
@@ -32,6 +31,7 @@ from app.domain.result import ToolResult
 from app.runtime import rediscover_integrations
 from app.services.agent.planning import TaskPlanInput
 from app.services.agent.session import AgentSession
+from app.services.agent.skills import remove_skill_md, valid_skill_slug, write_skill_md
 
 router = APIRouter(tags=["agent"])
 
@@ -173,10 +173,6 @@ async def list_agents(request: Request) -> dict[str, Any]:
     }
 
 
-#: A skill folder name: lowercase slug, no path separators — guards the file CRUD below against
-#: traversal (the name becomes `skills_dir/<name>/SKILL.md`).
-_SKILL_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
-
 #: Scaffold for a brand-new skill so the editor opens with valid frontmatter, not a blank file.
 _SKILL_TEMPLATE = (
     "---\n"
@@ -192,20 +188,22 @@ class SkillContent(BaseModel):
     content: str = ""
 
 
-def _skill_md_path(request: Request, name: str) -> Path:
-    """Resolve `skills_dir/<name>/SKILL.md`, validating the name (422 on a bad/unsafe slug)."""
-    if not _SKILL_NAME.match(name):
+def _skill_root(request: Request, name: str) -> Path:
+    """The global skills dir (the default agent's set) — the root the `/api/skills` editor manages —
+    after validating the slug (422 on a bad/unsafe name). The slug guard is shared with the
+    `skill_manage` tool via `valid_skill_slug` (one source of truth)."""
+    if not valid_skill_slug(name):
         raise HTTPException(
             status_code=422, detail="invalid skill name (lowercase letters, digits, '-' or '_')"
         )
-    return request.app.state.settings.skills_dir_path() / name / "SKILL.md"
+    return request.app.state.settings.skills_dir_path()
 
 
 @router.get("/skills/{name}")
 async def get_skill(name: str, request: Request) -> dict[str, Any]:
     """The raw `SKILL.md` text for the editor (7d). 404 if the skill doesn't exist; a fresh name
     returns the scaffold template so the editor opens populated."""
-    p = _skill_md_path(request, name)
+    p = _skill_root(request, name) / name / "SKILL.md"
     if not p.is_file():
         raise HTTPException(status_code=404, detail=f"unknown skill '{name}'")
     return {"name": name, "content": p.read_text(encoding="utf-8")}
@@ -215,12 +213,9 @@ async def get_skill(name: str, request: Request) -> dict[str, Any]:
 async def put_skill(name: str, body: SkillContent, request: Request) -> dict[str, Any]:
     """Create or overwrite `skills/<name>/SKILL.md` (7d). The FileSkillProvider re-scans per call, so
     a save is live with no restart. Blank content → the scaffold template (used by 'add skill')."""
-    p = _skill_md_path(request, name)
-    p.parent.mkdir(parents=True, exist_ok=True)
+    root = _skill_root(request, name)
     content = body.content if body.content.strip() else _SKILL_TEMPLATE.format(name=name)
-    # Write bytes with the file's existing EOL (LF default for a new file) to avoid CRLF churn.
-    newline = "\r\n" if (p.is_file() and b"\r\n" in p.read_bytes()) else "\n"
-    p.write_bytes(content.replace("\r\n", "\n").replace("\n", newline).encode("utf-8"))
+    write_skill_md(root, name, content)
     return {"name": name, "content": content}
 
 
@@ -228,14 +223,8 @@ async def put_skill(name: str, body: SkillContent, request: Request) -> dict[str
 async def delete_skill(name: str, request: Request) -> dict[str, Any]:
     """Remove a skill's `SKILL.md` (7d) and its folder if it's left empty (resource files the owner
     dropped in are preserved — only an empty folder is cleaned up). Idempotent: 404 if not present."""
-    p = _skill_md_path(request, name)
-    if not p.is_file():
+    if not remove_skill_md(_skill_root(request, name), name):
         raise HTTPException(status_code=404, detail=f"unknown skill '{name}'")
-    p.unlink()
-    try:
-        p.parent.rmdir()  # only succeeds when empty — keep any sibling resources
-    except OSError:
-        pass
     return {"name": name, "deleted": True}
 
 
@@ -244,7 +233,7 @@ async def delete_skill(name: str, request: Request) -> dict[str, Any]:
 # (persona). The default/root agent IS the workspace (root `SOUL.md` + config.yaml globals /
 # `agent.defaults`) — its fields are edited in Conf, its persona via the SOUL.md endpoint; it has no
 # `agent.yaml` and can't be created/deleted here. Mirrors the skills file API above. Agent names
-# reuse the same slug guard as skills (`_SKILL_NAME`) — lowercase, no path separators.
+# reuse the same slug guard as skills (`valid_skill_slug`) — lowercase, no path separators.
 
 
 class AgentBody(BaseModel):
@@ -259,16 +248,6 @@ class SoulContent(BaseModel):
     content: str = ""
 
 
-def _write_text_eol(p: Path, text: str) -> None:
-    """Atomic write preserving the file's existing EOL (LF for a new file) — avoids CRLF churn,
-    same recipe as `put_skill`."""
-    newline = "\r\n" if (p.is_file() and b"\r\n" in p.read_bytes()) else "\n"
-    data = text.replace("\r\n", "\n").replace("\n", newline).encode("utf-8")
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_bytes(data)
-    os.replace(tmp, p)
-
-
 def _agent_folder(request: Request, name: str, *, allow_default: bool = False) -> tuple[Path, bool]:
     """Resolve an agent's folder + whether it's the default/root. Validates the slug (422). The
     default agent maps to the workspace root and is only addressable when `allow_default` (the SOUL.md
@@ -281,7 +260,7 @@ def _agent_folder(request: Request, name: str, *, allow_default: bool = False) -
                 detail="the default agent is the workspace root — edit its defaults in Conf, its persona via SOUL.md",
             )
         return s.home_dir(), True
-    if not _SKILL_NAME.match(name):
+    if not valid_skill_slug(name):
         raise HTTPException(
             status_code=422, detail="invalid agent name (lowercase letters, digits, '-' or '_')"
         )
@@ -327,10 +306,10 @@ async def put_agent(name: str, body: AgentBody, request: Request) -> dict[str, A
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=f"invalid agent: {e.errors()[0]['msg']}") from e
     folder.mkdir(parents=True, exist_ok=True)
-    _write_text_eol(folder / "agent.yaml", yaml.safe_dump(fields, sort_keys=False, allow_unicode=True))
+    write_text_eol(folder / "agent.yaml", yaml.safe_dump(fields, sort_keys=False, allow_unicode=True))
     soul_p = folder / "SOUL.md"
     if not soul_p.is_file():
-        _write_text_eol(soul_p, DEFAULT_SYSTEM_PROMPT + "\n")
+        write_text_eol(soul_p, DEFAULT_SYSTEM_PROMPT + "\n")
     return _agent_payload(name, s.load_agent(name), folder, False)
 
 
@@ -366,7 +345,7 @@ async def put_agent_soul(name: str, body: SoulContent, request: Request) -> dict
     p = folder / "SOUL.md"
     if body.content.strip():
         folder.mkdir(parents=True, exist_ok=True)
-        _write_text_eol(p, body.content)
+        write_text_eol(p, body.content)
     elif p.is_file():
         p.unlink()  # blank → remove so the prompt falls back to inference.system_prompt → baked
     return {"name": name, "content": body.content}

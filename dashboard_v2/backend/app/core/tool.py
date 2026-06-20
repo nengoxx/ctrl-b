@@ -44,6 +44,11 @@ class ToolSpec(BaseModel):
     confirm: bool = False  # force confirmation regardless of privilege
     agent_exposed: bool = True
     ui_exposed: bool = False  # shows as a Utils card / host button
+    #: A core builtin every agent can always reach: `for_agent` unions these in regardless of the
+    #: agent's `tools` allowlist *and* any skill narrowing (the cognitive set — task_plan/memory/
+    #: session_search). It removes the footgun where a specialist with an explicit `tools` list
+    #: silently loses a builtin, and means a new core builtin needs no per-agent allowlist update.
+    core: bool = False
     timeout_s: float | None = None
 
     model_config = {"arbitrary_types_allowed": True}
@@ -137,14 +142,20 @@ class ToolRegistry:
 
     def for_agent(self, allow: list[str] | str = "*") -> list[Tool]:
         """The tools a specific agent may call (DESIGN §5.1): `agent_tools()` intersected with the
-        agent's `tools` allowlist. `"*"` (the default) is every agent tool; a list is matched by
-        glob (`fnmatch`) so a pattern like `mcp__web-tools__*` or `*_service` selects a family.
-        A skill may narrow this further at selection time — never widen it."""
+        agent's `tools` allowlist, **plus** the always-on `core` builtins. `"*"` (the default) is
+        every agent tool; a list is matched by glob (`fnmatch`) so a pattern like `mcp__web-tools__*`
+        or `*_service` selects a family. A skill may narrow the allowlist further at selection time —
+        never widen it — but the `core` set survives both the allowlist and skill narrowing, since
+        the narrowed allowlist is fed back through here. Order is stable (registration order)."""
         tools = self.agent_tools()
         if allow == "*":
             return tools
         patterns = list(allow)
-        return [t for t in tools if any(fnmatch(t.spec.name, p) for p in patterns)]
+        return [
+            t
+            for t in tools
+            if t.spec.core or any(fnmatch(t.spec.name, p) for p in patterns)
+        ]
 
     def to_openai_tools(self, tools: list[Tool] | None = None) -> list[dict[str, Any]]:
         """Render tools as OpenAI `tools` function defs (the input model → JSON Schema). Defaults
@@ -200,6 +211,7 @@ def action(
     confirm: bool = False,
     ui_exposed: bool = True,
     agent_exposed: bool = True,
+    core: bool = False,
     timeout_s: float | None = None,
     into: ToolRegistry | None = None,
 ) -> Callable[[ToolFn], ToolFn]:
@@ -219,6 +231,7 @@ def action(
             confirm=confirm,
             ui_exposed=ui_exposed,
             agent_exposed=agent_exposed,
+            core=core,
             timeout_s=timeout_s,
         )
         (into or registry).register(FunctionTool(spec=spec, fn=fn))
@@ -239,5 +252,6 @@ def spec_to_dict(spec: ToolSpec) -> dict[str, Any]:
         "confirm": spec.confirm,
         "ui_exposed": spec.ui_exposed,
         "agent_exposed": spec.agent_exposed,
+        "core": spec.core,
         "input_schema": spec.input_model.model_json_schema(),
     }

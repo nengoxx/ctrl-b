@@ -139,6 +139,9 @@ class AgentCfg(BaseModel):
     subagent_clamp_privilege: bool = True
     skills_dir: str = "skills"           # dir scanned for <name>/SKILL.md (relative → project root)
     skills_enabled: bool = True          # master switch for the skills subsystem (4.5)
+    # The `skill_manage` self-author tool may write SKILL.md autonomously; off → propose-only
+    # (returns data["proposed"], never writes/blocks), mirroring `memory.auto_write` (7e-f-2, D14).
+    skills_auto_write: bool = True
 
 
 class MemoryCfg(BaseModel):

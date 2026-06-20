@@ -60,6 +60,7 @@ class TaskPlanInput(BaseModel):
     category="builtin",
     risk=Risk.LOW,
     ui_exposed=False,
+    core=True,  # cognitive builtin — always reachable regardless of an agent's tools allowlist
 )
 async def task_plan(inp: TaskPlanInput, ctx: InvocationContext) -> ToolResult:
     """Create or update your working plan for a multi-step task. Lay out the steps up front, then

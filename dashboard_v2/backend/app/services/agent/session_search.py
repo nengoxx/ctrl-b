@@ -54,6 +54,7 @@ def _format(hits: list[dict[str, Any]]) -> str:
     category="builtin",
     risk=Risk.LOW,
     ui_exposed=False,
+    core=True,  # cognitive builtin — always reachable regardless of an agent's tools allowlist
 )
 async def session_search(inp: SessionSearchInput, ctx: InvocationContext) -> ToolResult:
     """Search your past conversations (all sessions) for something discussed earlier that isn't in the

@@ -72,6 +72,7 @@ class MemoryInput(BaseModel):
     category="builtin",
     risk=Risk.LOW,
     ui_exposed=False,
+    core=True,  # cognitive builtin — always reachable regardless of an agent's tools allowlist
 )
 async def memory(inp: MemoryInput, ctx: InvocationContext) -> ToolResult:
     """Save something to your durable memory so you remember it across sessions. `add` a note, or
