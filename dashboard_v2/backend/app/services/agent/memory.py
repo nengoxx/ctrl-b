@@ -124,6 +124,25 @@ class FileMemoryProvider:
         pct = round(100 * len(new) / cap) if cap > 0 else 0
         return f"{label} updated ({action}) — {pct}% ({len(new):,}/{cap:,})"
 
+    def read_raw(self, agent: AgentDef, target: str) -> str:
+        """The raw stored text of a memory file (USER.md for `user`, else the agent's MEMORY.md), or
+        "" if absent — for the Conf editor. Distinct from `load_context`, which formats + wraps it."""
+        path, _cap, _label = self._target(agent, target)
+        return _read(path)
+
+    def overwrite(self, agent: AgentDef, target: str, content: str) -> str:
+        """Replace a memory file wholesale (the Conf panel's manual edit). Blank content removes the
+        file (→ nothing injected), mirroring the SOUL.md editor. **No cap enforcement** — manual
+        owner edits aren't capped (the cap only governs the agent's own `write` auto-writes). Returns
+        the stored text (== what `read_raw` would return next)."""
+        path, _cap, _label = self._target(agent, target)
+        if content.strip():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content.rstrip("\n") + "\n", encoding="utf-8")
+        elif path.is_file():
+            path.unlink()
+        return _read(path)
+
 
 def _read(p: Path) -> str:
     return p.read_text(encoding="utf-8").strip() if p.is_file() else ""

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { AgentsEditor } from "../components/AgentsEditor";
 import { MachineEditor } from "../components/MachineEditor";
+import { MemoryEditor } from "../components/MemoryEditor";
 import { ServerListEditor } from "../components/ServerListEditor";
 import { SkillsEditor } from "../components/SkillsEditor";
 import { ToolDescriptionsEditor } from "../components/ToolDescriptionsEditor";
@@ -10,6 +11,7 @@ import { useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
 import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
+import { type MemoryCfg } from "../hooks/useMemory";
 import { useSaveSettings, useSettings, type SettingsDoc } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
 import { promptPreview } from "../lib/promptPreview";
@@ -195,6 +197,17 @@ export function ConfTab({ active }: Props) {
   };
   const agentToolNames = actionSpecs.filter((s) => s.agent_exposed).map((s) => s.name);
   const skillNames = skillList.map((s) => s.name);
+
+  // Memory caps/toggles come off the settings doc (config.yaml `memory.*`); the MemoryEditor edits
+  // them + the per-agent/global memory files (7e-d-3). Defaults mirror MemoryCfg's backend defaults.
+  const memorySection = settings?.memory as Partial<MemoryCfg> | undefined;
+  const memoryCfg: MemoryCfg = {
+    enabled: memorySection?.enabled ?? true,
+    user_profile_enabled: memorySection?.user_profile_enabled ?? true,
+    auto_write: memorySection?.auto_write ?? true,
+    memory_char_limit: memorySection?.memory_char_limit ?? 2200,
+    user_char_limit: memorySection?.user_char_limit ?? 1375,
+  };
   const skillsEnabled = (agentSection as { skills_enabled?: boolean } | undefined)?.skills_enabled ?? true;
 
   // Reseed the draft whenever the server doc changes (initial load + after a successful save, which
@@ -578,8 +591,18 @@ export function ConfTab({ active }: Props) {
       </ConfGroup>
 
       <ConfGroup
-        id="tooldesc"
+        id="memory"
         num="10"
+        title="Memory"
+        right={memoryCfg.enabled ? "on" : "off"}
+        defaultCollapsed
+      >
+        <MemoryEditor cfg={memoryCfg} />
+      </ConfGroup>
+
+      <ConfGroup
+        id="tooldesc"
+        num="11"
         title="Agent tools"
         right="descriptions"
         defaultCollapsed
@@ -589,14 +612,14 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="computers"
-        num="11"
+        num="12"
         title="Computers"
         right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
       >
         <MachineEditor hosts={hosts} />
       </ConfGroup>
 
-      <ConfGroup id="appearance" num="12" title="Appearance">
+      <ConfGroup id="appearance" num="13" title="Appearance">
         <div className="conf-card">
           <div className="confrow">
             <div className="k">

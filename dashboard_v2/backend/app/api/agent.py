@@ -372,6 +372,63 @@ async def put_agent_soul(name: str, body: SoulContent, request: Request) -> dict
     return {"name": name, "content": body.content}
 
 
+# ── Memory file API (Phase 7e-d-3, D14/D15 #4) ────────────────────────────────────────────────
+# The raw read/overwrite path behind the Conf Memory panel — per-agent `memories/MEMORY.md` (incl.
+# `default` → root) + the global `memories/USER.md`. Path resolution lives on the provider
+# (`_memory_file`/`_user_file`), so these endpoints route through it rather than re-deriving paths.
+# Blank content clears the file (mirrors the SOUL.md editor). The agent's own writes go through the
+# `memory` tool (7e-d-2); these are the owner's manual edits — uncapped (D-decision: soft cap).
+
+
+class MemoryContent(BaseModel):
+    content: str = ""
+
+
+def _memory_provider(request: Request):
+    prov = getattr(request.app.state, "memory", None)
+    if prov is None:
+        raise HTTPException(status_code=503, detail="memory provider is not available")
+    return prov
+
+
+def _resolve_agent_for_memory(request: Request, name: str) -> AgentDef:
+    """Validate the slug (422), reject nothing for `default`, and load the AgentDef (404 if a
+    specialist folder is absent). Reuses the agents-API slug/default guard."""
+    _agent_folder(request, name, allow_default=True)  # slug validation + default handling (422)
+    agent = request.app.state.settings.load_agent(name)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
+    return agent
+
+
+@router.get("/agents/{name}/memory")
+async def get_agent_memory(name: str, request: Request) -> dict[str, str]:
+    """The raw `MEMORY.md` for an agent (incl. `default` → root `memories/MEMORY.md`), or "" if none."""
+    agent = _resolve_agent_for_memory(request, name)
+    return {"name": name, "content": _memory_provider(request).read_raw(agent, "memory")}
+
+
+@router.put("/agents/{name}/memory")
+async def put_agent_memory(name: str, body: MemoryContent, request: Request) -> dict[str, str]:
+    """Overwrite an agent's `MEMORY.md`. Blank content clears the file. Re-read each turn → live."""
+    agent = _resolve_agent_for_memory(request, name)
+    return {"name": name, "content": _memory_provider(request).overwrite(agent, "memory", body.content)}
+
+
+@router.get("/memory/user")
+async def get_user_memory(request: Request) -> dict[str, str]:
+    """The raw global `USER.md` owner profile (shared across agents), or "" if none."""
+    default = request.app.state.settings.default_agent_def()
+    return {"content": _memory_provider(request).read_raw(default, "user")}
+
+
+@router.put("/memory/user")
+async def put_user_memory(body: MemoryContent, request: Request) -> dict[str, str]:
+    """Overwrite the global `USER.md`. Blank content clears it. (`agent` arg is ignored for `user`.)"""
+    default = request.app.state.settings.default_agent_def()
+    return {"content": _memory_provider(request).overwrite(default, "user", body.content)}
+
+
 @router.post("/agent/compact")
 async def compact(body: CompactRequest, request: Request) -> dict[str, Any]:
     """Force context compaction on a thread (manual `/compact`). Returns `{removed, summaryId?,

@@ -1681,6 +1681,26 @@ body {
   margin-bottom: 6px;
 }
 
+/* ── Memory panel (Phase 7e-d-3, net-new) ─────────────────────────────────────────────────────
+   The MEMORY.md/USER.md editor reuses the .kv-text.skill-md textarea + .mwrap/.mconf/.mfoot row
+   recipe; this only adds the counter bar above the textarea (usage vs the live cap, mirroring the
+   Hermes-style load_context headers). Built from vapor tokens; vapor.css untouched (D7). */
+.mem-md-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.mem-count {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+.mem-count.over {
+  color: var(--danger, var(--magenta));
+}
+
 /* ── Conf sizing refine (Phase 7e-b) ──────────────────────────────────────────────────────────
    Small @390px legibility fixes that the prompt-modal slice surfaced. Overrides of vapor.css
    rules live here (extras.css loads after vapor.css), keeping vapor.css verbatim (D7). */
