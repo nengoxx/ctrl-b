@@ -105,6 +105,8 @@ class FileMemoryProvider:
             new = f"{body}\n\n§ {entry}" if body else f"§ {entry}"
         elif action in ("replace", "remove"):
             needle = old_text or ""
+            if not needle:
+                raise MemoryWriteError(f"{action} requires a non-empty `old_text`.")
             if needle not in body:
                 raise MemoryWriteError(
                     f"`old_text` not found in {label} — copy an exact substring from the memory "
