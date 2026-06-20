@@ -76,34 +76,43 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e-d **file memory COMPLETE** — d-1/d-2/d-3 all shipped · **next: 7e-e — `session_search` FTS5**)
+## Current state (7e-d ✅ + 7e-e ✅ shipped · **next: 7e-f — per-agent skills + `skill_manage` (+ the deferred propose-UI)**)
 
-> **Everything is pushed to `origin/main`** (HEAD `2e18638`). **All of 7e-d (file memory) is done.**
-> 7e-d-1 (read path, `16bde75`) injects per-agent `memories/MEMORY.md` + global `memories/USER.md`
-> each turn with Hermes-style usage headers. **7e-d-2 (write tool, `e5ebcaa` + hardening `ed1dfa8`)**
-> added the agent-only **`memory`** builtin (`services/agent/memory_tool.py`): `add`/`replace`/`remove`
-> · `target: memory|user` · substring `old_text` · **no read** · over-cap → ERROR steering
-> consolidation · `auto_write` OFF = **propose-only/non-blocking** (Approve-UI deferred to 7e-f) ·
-> auto-audited via `ActionService._record`. **7e-d-3 (Conf Memory panel, `2e18638`)** added
-> `read_raw`/`overwrite` on the provider (blank clears, **uncapped** manual edits — soft cap) + the
-> file API (`GET/PUT /api/agents/{name}/memory` incl. default→root + `GET/PUT /api/memory/user`) + the
-> frontend **Memory** group (#10): toggles (Enabled/User profile/Auto-write), caps, one editable row
-> per file (USER.md + default/specialist MEMORY.md) with a cap-usage counter. Verified: **backend suite
-> green (11 files; `test_memory_tool_7e` 11 + `test_memory_panel_7e` 8 new)**, `tsc` clean, live
-> endpoints smoke-tested on 5433. Tree clean except `start_claude_remote.ps1`.
+> **Everything is pushed to `origin/main`** (HEAD after this push). **7e-d (file memory) and 7e-e
+> (`session_search`) are both done.** 7e-d: read path (`16bde75`) injects per-agent MEMORY.md + global
+> USER.md each turn; the **`memory`** write tool (`e5ebcaa`/`ed1dfa8`) — `add`/`replace`/`remove` ·
+> `target: memory|user` · `auto_write` OFF = propose-only · over-cap → ERROR · auto-audited; the **Conf
+> Memory panel** (`2e18638`) — provider `read_raw`/`overwrite` + file API (`/api/agents/{name}/memory`,
+> `/api/memory/user`) + the frontend Memory group (#10). **7e-e (`003bad3`)**: migration #3 FTS5
+> `messages_fts` (trigger-synced via `json_each`, archived filtered at query time, backfilled) +
+> `MessageRepo.search` + the **`session_search`** builtin (global + secret-redacted, D15 #7). Verified:
+> **full backend suite green (12 files)**, `tsc` clean, live migration applied to the real db
+> (schema_version 3, backfill 368/368). Tree clean except `start_claude_remote.ps1`.
 >
-> **The 7e slice sequence (D14/D15):** 7e-a ✅ → 7e-b ✅ → 7e-c ✅ → **7e-d ✅** (file memory: d-1 read ✅
-> · d-2 write tool ✅ · d-3 Conf panel ✅) → **7e-e** (`session_search` FTS5) **← NEXT** → **7e-f**
-> (per-agent skills w/ inheritance + `skill_manage`) → **7e-g** (optional `AgentSelector` auto-rotate).
+> **Deep audit (2026-06-20) — surfaced nuances, none blocking (full detail in the session block below):**
+> (1) **builtin reachability** — specialists with an explicit `tools` allowlist (the `coder` agent) do
+> **not** receive new builtins (`memory`, `session_search`); only `*` agents do. There's no "always-on
+> core builtin" notion — `for_agent` is the only gate. **Owner decision** (likely fold into 7e-f): make
+> core builtins (`task_plan`/`memory`/`session_search`/`spawn_subagents`) implicitly available, or
+> document that specialist allowlists must list them. (2) FTS triggers key on `messages.rowid`
+> (VACUUM-fragile; app never VACUUMs and the search `INNER JOIN message_id` protects query correctness
+> — index-resync only, defer to a migration #4 if ever needed). (3) `session_search` redacts whole
+> secret strings, but `snippet()` truncates at token boundaries → a secret split by word-boundary chars
+> could leak a *fragment* (low; secrets rarely in chat text). **Applied:** `MemoryCfg` caps floored
+> `ge=1` (a blanked Conf field → 0 silently wedged agent writes).
 >
-> 1. **Build 7e-e — `session_search`.** An **FTS5** index over the `messages` table + an agent-only
->    builtin tool (sibling of `memory`/`task_plan`) the model invokes to recall past sessions.
->    **Global + redacted** (D15 #7): search spans all threads (sessions stay agent-agnostic in
->    `ctrlb.db`, D14), results redact secrets. **Pre-flight:** read `db.py` (schema + migration
->    applier — decide FTS5 virtual table + sync triggers vs. an external/contentless-content table
->    over `messages`), `domain/conversation.py` + `services/conversation.py` (`Message`/`MessageRepo`),
->    and a builtin (`memory_tool.py`/`planning.py`) for the tool shape. Test on a **temp `$CTRLB_HOME`**
->    (`CTRLB_HOME`/`CTRLB_CONFIG`/`CTRLB_DB`) — never the real config/db.
+> **The 7e slice sequence (D14/D15):** 7e-a ✅ → 7e-b ✅ → 7e-c ✅ → **7e-d ✅** → **7e-e ✅** → **7e-f**
+> (per-agent skills w/ inheritance + `skill_manage`) **← NEXT** → **7e-g** (optional `AgentSelector`).
+>
+> 1. **Build 7e-f — per-agent skills + `skill_manage`.** Wire per-agent `skills/` (global `skills/` =
+>    the default agent's set; each agent its own folder) with `agent.yaml` **`skills_inherit`** (all ·
+>    subset · none), plus the **`skill_manage`** self-authoring tool (sibling of `memory`; auto-write +
+>    `skills.auto_write` kill switch, same propose-only semantics). **This slice owns the shared
+>    Approve-to-apply propose-UI** that `memory`'s `auto_write=OFF` path (7e-d-2) returns
+>    `data["proposed"]` for — build it once, for both. **Consider resolving audit nuance (1)** here
+>    (core-builtin reachability). **Pre-flight:** read `core/skills.py` + `services/agent/skills.py`
+>    (provider + `narrow_tools`), `memory_tool.py` (the propose pattern to mirror), and the Skills Conf
+>    editor. Test on a **temp `$CTRLB_HOME`**.
 > 2. **Decided-but-deferred builds** (all design-locked): C1 dual-mode chat (D17), A1 privilege
 >    selection (D16), A2 question kind, F29 opt A (UI_AUDIT.md §6b).
 >
@@ -112,7 +121,54 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > without state loss. **Heads-up:** pytest is **not installed** in the backend venv — every test file
 > has a `__main__` runner; run `./.venv/Scripts/python.exe tests/<file>.py`.
 
-### ⭐ Session update — 2026-06-20 (build session — **7e-d-2 + 7e-d-3 → 7e-d file memory COMPLETE** · 3 commits, all pushed `2e18638`)
+### ⭐ Session update — 2026-06-20 (build session #2 — **7e-e `session_search`** + a **deep audit pass** · pushed)
+
+Built 7e-e end-to-end (pre-flight → design → build → verify → review), then ran a deep audit over the
+session's surface (7e-d-2/d-3 + 7e-e) at the owner's request. `003bad3` (7e-e) + an audit-hardening
+commit + this docs commit, all pushed.
+
+**7e-e — `session_search` (`003bad3`).** Pre-flight read `db.py`, `domain/conversation.py`,
+`services/conversation.py`, and de-risked the FTS5+`json_each`-in-trigger approach with a throwaway
+SQLite check before recommending it.
+- **db migration #3:** `messages_fts` FTS5 over user/assistant message *text*. Kept in sync by AI/AU/AD
+  triggers that extract the concatenated `TextPart` text from the JSON `parts` via `json_each`
+  (reasoning/tool/system excluded by a `WHEN role IN ('user','assistant')` guard) + a one-pass backfill
+  of existing rows. Pure SQL — no `MessageRepo` coupling; `parts` stays the single source of truth.
+- **`MessageRepo.search`:** FTS5 `MATCH … ORDER BY rank` + `snippet()`, joins thread context, excludes
+  archived (ephemeral subagent) threads at *query* time. `_fts_query` sanitizes each word to a quoted
+  literal term so a model query with FTS operators can't throw.
+- **`session_search` builtin** (LOW, `ui_exposed=False`): global recall; each snippet redacted via
+  `core.redact` against **`Settings.secret_values()`** (a new value-level collector mirroring
+  `mask_secrets`). Formats like `web_search`.
+- Tests `test_session_search_7e.py` (8). Live: migration applied to the real db — **schema_version 3,
+  backfill 368/368**, tool registered, snippets render.
+
+**Deep audit findings (surfaced; none blocking):**
+1. **Builtin reachability (inconsistency — owner decision).** The agent toolset is `for_agent(allowlist)`
+   intersected with skill narrowing; there is **no always-on core-builtin notion**. So a specialist with
+   an explicit `tools` list (the `coder` agent lists `task_plan`/`spawn_subagents`/terminal/web_search
+   but **not** `memory`/`session_search`) silently can't use the new builtins, and every future builtin
+   needs each specialist's allowlist updated. Pre-existing property, amplified by adding builtins.
+   Recommend deciding in 7e-f: implicitly grant a core-builtin set, or document the requirement.
+2. **FTS rowid coupling (latent fragility — low).** Triggers key on `messages.rowid`, not stable across
+   `VACUUM` (messages has a TEXT PK). The app never VACUUMs, and the search `INNER JOIN messages ON
+   m.id = f.message_id` means orphaned/stale FTS rows can't produce wrong results — only the
+   trigger-resync would target a stale rowid post-VACUUM. Robust fix = key triggers on `message_id`
+   (needs a migration #4); deferred (no VACUUM in the codebase).
+3. **Snippet fragment redaction (nuance — low).** Redaction replaces whole secret strings, but `snippet()`
+   truncates at token boundaries, so a secret split by word-boundary chars (e.g. `sk-…`) could leak a
+   *fragment*. Low severity (secrets rarely live in chat text; tool outputs are pre-redacted at write
+   time; a fragment isn't usable). Documented limitation.
+4. **FK-cascade delete (verified non-issue).** A thread delete may not fire the AD trigger (orphaned FTS
+   rows), but the search INNER JOIN filters orphans → no wrong results, only potential bloat. No action.
+5. **Applied hardening:** `MemoryCfg.memory_char_limit`/`user_char_limit` floored `Field(…, ge=1)` — a
+   blanked Conf cap field (→ 0) used to silently wedge all agent memory writes (every write over-caps);
+   now the PUT 422s. Suite re-verified green.
+
+**Start here next session: build 7e-f** (per-agent skills + `skill_manage` + the shared propose-UI; and
+likely resolve audit finding #1). Pre-flight list is in the "Current state" block above.
+
+### ⭐ Session update — 2026-06-20 (build session #1 — **7e-d-2 + 7e-d-3 → 7e-d file memory COMPLETE** · 3 commits, all pushed `2e18638`)
 
 Build session following the pre-flight read→design→build→review loop end-to-end. Finished file
 memory: the write tool, a review-driven hardening, and the Conf panel. **3 commits on `main`, pushed**

@@ -500,9 +500,17 @@ tools + confirm bubbles) are DONE.**
         reusing `.kv-text.skill-md` + a cap-usage counter), new Conf **Memory** group (#10). Tests:
         `test_memory_panel_7e.py` (8). `tsc` clean; net-new CSS in `extras.css` (D7).
   - Vector recall = the later "both" mode over the unused `memory` table + the 4f embeddings client.
-- [ ] **7e-e — `session_search` (Hermes Tier 2). ← NEXT.** An **FTS5** index over the `messages` table
-      + a builtin tool the agent invokes autonomously. Sessions stay agent-agnostic in `ctrlb.db` (D14);
-      **global + redacted** (D15 #7).
+- [x] **7e-e — `session_search` (Hermes Tier 2). ✅2026-06-20 (`003bad3`).** Migration #3: FTS5
+      `messages_fts` over user/assistant message text, kept in sync by triggers that extract the
+      `TextPart` text from the JSON `parts` via `json_each` (reasoning/tool/system excluded; archived
+      filtered at *query* time) + a one-pass backfill. `MessageRepo.search` (MATCH + `rank` + `snippet`,
+      excludes archived, `_fts_query` sanitizer). `session_search` builtin (LOW, ui_exposed=False),
+      **global + redacted** (D15 #7 — snippets run through `core.redact` against `Settings.secret_values()`).
+      Tests `test_session_search_7e.py` (8). Live: migration applied to the real db (schema_version 3,
+      backfill 368/368). **Audit nuances surfaced (see HANDOFF):** specialists with explicit `tools`
+      allowlists don't receive new builtins (no always-on-builtin notion — owner decision); FTS triggers
+      key on `rowid` (VACUUM-fragile, but `INNER JOIN message_id` protects query correctness); snippet
+      truncation could leak a secret *fragment* across tokens (low). Hardening: `MemoryCfg` caps floored `ge=1`.
 - [ ] **7e-f — per-agent skills (inheritance) + `skill_manage` self-authoring (D14).** Wire per-agent
       `skills/` (global `skills/` = the default agent's set; each agent its own folder), with
       `agent.yaml` **`skills_inherit`**: inherit **all** global skills · a **specific subset** · or
