@@ -76,10 +76,29 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e-d ✅ · 7e-e ✅ · **7e-f sub-sliced: f-1 ✅ shipped · f-2 pre-flighted/design-locked = NEXT *build* · f-3 propose-UI**)
+## Current state (7e-d ✅ · 7e-e ✅ · **7e-f sub-sliced: f-1 ✅ · f-2 ✅ committed (unpushed) · f-3 propose-UI = NEXT, needs own pre-flight**)
 
-> **Everything is pushed to `origin/main`** (HEAD `6dc06db`). **7e-d (file memory), 7e-e
-> (`session_search`), and 7e-f-1 (per-agent skills) are done.** 7e-d: read path (`16bde75`) + the
+> **7e-f-2 is committed locally as `fc1aec2` (NOT yet pushed — push needs the owner's OK).** Everything
+> before it is on `origin/main` (HEAD `6dc06db`). **7e-f-2 (core builtins + `skill_manage` + skill-write
+> de-dup) shipped this session:** (1) `ToolSpec.core` + `@action(core=…)`; `for_agent` unions the `core`
+> set so it survives any `tools` allowlist *and* skill narrowing; marked `task_plan`/`memory`/
+> `session_search` `core=True` (resolves deep-audit finding #1 — `coder` no longer silently lacks
+> memory/session_search). (2) `services/agent/skill_tool.py` `skill_manage` builtin (agent-only, LOW,
+> **not** core): save|remove a SKILL.md in the agent's own skills folder; gating `skills_enabled` →
+> new `AgentCfg.skills_auto_write` (off → propose-only, returns `data["proposed"]` for f-3). (3) De-dup:
+> extracted `core/fsutil.py` `write_text_eol`; added `agent_skills_root`/`write_skill_md`/
+> `remove_skill_md` + shared `valid_skill_slug` to `services/agent/skills.py`; refactored `/api/skills`
+> + `/api/agents` to reuse them. Tests: `test_core_builtins_7e.py` (5) + `test_skill_manage_7e.py` (8);
+> **full suite green (15 files)**, compileall clean, **live boot on 5433 verified** (`/api/actions` shows
+> `skill_manage` builtin/core=False + the three core flags True). Write paths exercised on a temp
+> `$CTRLB_HOME` only.
+>
+> **Next: 7e-f-3 — the shared Approve-to-apply propose-UI** (frontend). Both `memory` (`auto_write` off)
+> and `skill_manage` (`skills_auto_write` off) now feed `data["proposed"]`; f-3 renders it as an
+> Approve/Dismiss affordance on the tool bubble + an apply endpoint. **Needs its own pre-flight** over
+> the AgentTab `.b.cmd` command-bubble + confirm-resume frontend — don't start it cold.
+>
+> **7e-d (file memory), 7e-e (`session_search`), and 7e-f-1 (per-agent skills) are done.** 7e-d: read path (`16bde75`) + the
 > **`memory`** write tool (`e5ebcaa`/`ed1dfa8`) + the **Conf Memory panel** (`2e18638`). 7e-e
 > (`003bad3`): migration #3 FTS5 `messages_fts` + `MessageRepo.search` + the **`session_search`**
 > builtin (global + secret-redacted). **7e-f-1 (`6dc06db`)**: `available_skills(global_provider,
@@ -133,6 +152,43 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > dev` defaults to 5173 unless `--port 5190`). Phone: `http://corsair:5173`. Both tearable down
 > without state loss. **Heads-up:** pytest is **not installed** in the backend venv — every test file
 > has a `__main__` runner; run `./.venv/Scripts/python.exe tests/<file>.py`.
+
+### ⭐ Session update — 2026-06-20 (build session #4 — **7e-f-2 shipped: core builtins + `skill_manage` + skill-write de-dup** · committed `fc1aec2`, **unpushed**)
+
+Built 7e-f-2 end-to-end off the design lock from build-session #3 (re-read every touch point cold first,
+per the pre-implementation directive — `core/tool.py`, `memory_tool.py`, `skills.py`, `config.py`,
+`api/agent.py` skill/agent file CRUD, the builtin registration). One commit `fc1aec2` on `main`,
+**not pushed** (push awaits the owner's OK). Tree clean except the standing `start_claude_remote.ps1`.
+
+**Three pieces (all locked specs):**
+- **Core-builtin reachability.** `ToolSpec.core: bool` + `@action(core=…)`; `ToolRegistry.for_agent`
+  unions every `core` tool on top of the allowlist match — and since the *narrowed* allowlist is fed
+  back through `for_agent`, core survives skill narrowing too. `task_plan`/`memory`/`session_search`
+  are `core=True`. `for_agent` starts from `agent_tools()` (already `agent_exposed`-filtered), so core
+  can never surface a non-exposed tool — no security-boundary change (all three are LOW read/cognitive
+  ops still gated by ActionService). Resolves deep-audit finding #1. `spec_to_dict` carries `core`.
+- **`skill_manage` builtin** (`services/agent/skill_tool.py`, mirrors `memory_tool.py`) — agent-only,
+  LOW, **not** core (self-authoring is an explicit grant). `save|remove` a SKILL.md in the agent's own
+  skills folder (`agent_skills_root`: default → global `skills/`, specialist → `agents/<slug>/skills/`).
+  Gating: `agent.skills_enabled` → new **`AgentCfg.skills_auto_write`** (off → propose-only, returns
+  `data["proposed"]`). Bad slug / empty `save` body → ERROR; auto-audited via `ActionService._record`.
+  Registered in `services/actions/__init__.py`.
+- **De-dup the skill-file write.** Extracted the EOL-preserving atomic writer to **`core/fsutil.py`**
+  (`write_text_eol`); added `agent_skills_root`/`write_skill_md`/`remove_skill_md` + a shared
+  `valid_skill_slug` (+ `SKILL_SLUG`) to `services/agent/skills.py`; refactored `/api/skills` (dropped
+  the local `_SKILL_NAME`/`_skill_md_path`/inline writer) and `/api/agents` (uses the relocated
+  `write_text_eol`) to reuse them — one source of truth, no parallel writer.
+
+**Verified:** `test_core_builtins_7e.py` (5) + `test_skill_manage_7e.py` (8); **full backend suite green
+(15 files)**, `compileall` clean. Backend restarted on **5433** (no `--reload`) — `/api/actions` shows
+`skill_manage` (builtin, core=False, ui_exposed=False) + `task_plan`/`memory`/`session_search` core=True,
+`spawn_subagents` core=False; `/api/settings` round-trips `agent.skills_auto_write`. All write-tests on a
+temp `$CTRLB_HOME` (never the real config/skills). Frontend untouched this slice (5173 left as-is).
+
+**Start here next session: 7e-f-3 — the shared Approve-to-apply propose-UI** (frontend, the biggest new
+surface of 7e-f). Both `memory` and `skill_manage` already emit `data["proposed"]` when their auto-write
+switch is off. **Pre-flight its own touch points first** — the AgentTab `.b.cmd` command bubble + the
+confirm/resume flow + an apply endpoint. Don't start cold. **Also pending: push `fc1aec2`** once cleared.
 
 ### ⭐ Session update — 2026-06-20 (build session #3 — **7e-f-1 per-agent skills** + **7e-f-2 pre-flight/design-lock** · pushed)
 
