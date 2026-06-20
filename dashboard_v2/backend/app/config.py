@@ -153,8 +153,10 @@ class MemoryCfg(BaseModel):
     enabled: bool = True                 # master switch for the memory subsystem
     user_profile_enabled: bool = True    # inject + (7e-d-2) allow writes to the global USER.md
     auto_write: bool = True              # agent may write memory autonomously; off → propose-only (D15 #6)
-    memory_char_limit: int = 2200        # per-agent MEMORY.md cap (~800 tokens, Hermes default)
-    user_char_limit: int = 1375          # global USER.md cap (~500 tokens, Hermes default)
+    # Floored at 1 so a blanked Conf field (→ 0) can't silently wedge the agent's memory writes:
+    # at cap 0 every non-empty write over-caps. The PUT 422s instead, surfacing the bad value.
+    memory_char_limit: int = Field(2200, ge=1)  # per-agent MEMORY.md cap (~800 tokens, Hermes default)
+    user_char_limit: int = Field(1375, ge=1)    # global USER.md cap (~500 tokens, Hermes default)
 
 
 class EmbeddingsCfg(BaseModel):
