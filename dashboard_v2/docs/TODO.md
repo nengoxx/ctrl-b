@@ -315,13 +315,21 @@ tools + confirm bubbles) are DONE.**
 > - **User `!` enabled by default**, `shell.user_exec_enabled` toggle to disable. The **agent's**
 >   `run_shell` tool stays **separate + excluded-by-default** (D3 / `permissions.decide` already gates it).
 
-- [ ] `run_shell` action (local exec via `asyncio.create_subprocess_exec`): capture stdout/stderr,
-      **kill-on-timeout**, per-OS shell (Windows pwsh/cmd · Linux bash — a legitimate server-OS branch),
-      cwd = `shell.workdir`, `risk=HIGH`, redact + truncate output, always logged as an `Event`.
-- [ ] `POST /api/exec` (gated by `shell.user_exec_enabled`). Composer **`!` prefix** routes here;
-      result shown as a done command bubble **and** appended to the thread so the agent sees it.
-- [ ] `shell.workdir` + `shell.user_exec_enabled` config + Conf controls; keep the agent-facing
-      `run_shell` tool excluded-by-default (separate setting).
+- [x] `run_shell` action (`services/actions/shell.py`, local exec via `asyncio.create_subprocess_exec`):
+      captures combined stdout/stderr, **kill-on-timeout** (`wait_for`→`proc.kill()`), per-OS shell
+      (`platform.system()` → Windows `powershell -Command` · else `bash -lc` — the legitimate server-OS
+      branch, like `fleet._ping_cmd`), cwd = `shell.workdir` (blank → `$CTRLB_HOME`), `risk=HIGH`,
+      `ui_exposed=False`, redact (`settings.secret_values()`) + truncate (`max_output_chars`); logged
+      as an `Event` via `ActionService._record`. Shared `_run` core used by both entry points.
+- [x] `POST /api/exec` (gated by `shell.user_exec_enabled` → 403). Composer **`!` prefix** routes here
+      (`store/chat.ts runShell` → set threadId → `reloadChat`); reuses `invoke("run_shell", FULL)` so
+      the user `!` is authorized (the run is audited), then persists the result as an `assistant`
+      tool_call + `tool` result pair — renders as a command bubble **and** the agent sees it next turn.
+      CmdBubble gained a collapsed **output** disclosure (also surfaces agent `terminal_exec` output).
+- [x] `ShellCfg` (`shell.enabled`/`user_exec_enabled`/`agent_exec_enabled`/`workdir`/`timeout_s`/
+      `max_output_chars`) + a Conf **Shell** group (#06). Agent-facing `run_shell` excluded-by-default
+      via `decide(run_shell_allowed=shell.agent_exec_enabled)` wired at the single ActionService gate —
+      off → DENY below FULL; on → HIGH still confirms. Tests: `test_shell_5.py` (10).
 
 ## Phase 6 — Voice (STT + TTS)
 

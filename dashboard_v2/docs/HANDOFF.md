@@ -76,7 +76,7 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e FULLY COMPLETE · **A1 privilege ✅** · **A2 question ✅** · **7e-g AgentSelector ✅** · **D17 dual-mode chat ✅ (C1 chat half)** · NEXT = Phase 5 / Phase 6 voice / emma deploy)
+## Current state (7e FULLY COMPLETE · **D17 dual-mode chat ✅** · **Phase 5 guarded shell ✅** · NEXT = Phase 6 voice / emma deploy)
 
 > **Everything is pushed to `origin/main`** (HEAD `8007772`; latest = the propose-wording fix `8007772`).
 > **7e-f is done end-to-end + the f-3 propose-UI is now owner-verified** (the propose bubble renders;
@@ -213,6 +213,58 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > dev` defaults to 5173 unless `--port 5190`). Phone: `http://corsair:5173`. Both tearable down
 > without state loss. **Heads-up:** pytest is **not installed** in the backend venv — every test file
 > has a `__main__` runner; run `./.venv/Scripts/python.exe tests/<file>.py`.
+
+### ⭐ Session update — 2026-06-21 (build session #10 — **Phase 5 guarded local shell shipped** · committed, not pushed)
+
+Picked the next track with the owner (Phase 5, their stated order), cold-pre-flighted every touch
+point (composer stub, `permissions.decide`'s reserved `run_shell_allowed` gate, `core/tool.py`,
+`ActionService`, `Deps`, `config.py`, `conversation.py` parts + `session._assemble`, `api/agent.py`
+chat endpoint, the `chat.ts`/`AgentTab` command-bubble render), locked two design points with the
+owner, built it end-to-end, verified, committed. Tree clean except the standing `start_claude_remote.ps1`.
+
+**The `!<cmd>` escape hatch is live — a real shell command on the *backend host* (corsair/emma).**
+Distinct from open-terminal (a remote box). One exec core, two entry points:
+- **`services/actions/shell.py`** — `run_shell` (`@action`, HIGH, `ui_exposed=False`). Shared `_run`
+  core: `asyncio.create_subprocess_exec` through a per-OS shell (`platform.system()` → `powershell
+  -NoProfile -NonInteractive -Command` on Windows · `bash -lc` elsewhere — the legitimate server-OS
+  branch, like `fleet._ping_cmd`), cwd = `shell.workdir` (blank → `$CTRLB_HOME`), **kill-on-timeout**
+  (`wait_for`→`proc.kill()`+reap), combined stdout/stderr **redacted** (`settings.secret_values()`) +
+  **truncated** (`max_output_chars`). Exit code in `data`.
+- **User `!` path — `POST /api/exec {command, thread_id?}`** (`api/agent.py`). Guards
+  `shell.user_exec_enabled` (→403), creates a thread like `/agent/chat`, then **reuses
+  `actions.invoke("run_shell", actor=USER, privilege=FULL)`** — FULL ⇒ ALLOW (the user typing `!`
+  *is* the authorization) **and the Event audit comes for free**. Persists the result as an
+  `assistant`(tool_call) + `tool`(tool_result) pair — the same shape the agent loop produces — so it
+  **renders as a command bubble *and* feeds the agent's context next turn** (`_assemble` round-trips it).
+- **Agent `run_shell` gate** — wired the *already-reserved* `run_shell_allowed` at the **single**
+  `decide()` call: `run_shell_allowed=self._deps.settings.shell.agent_exec_enabled`. Default **off** →
+  DENY below FULL; on → HIGH still confirms. The user `!` path (FULL) is never blocked by it.
+- **`config.py ShellCfg`** (`settings.shell`): `enabled` · `user_exec_enabled=True` ·
+  `agent_exec_enabled=False` · `workdir=""` · `timeout_s=60` · `max_output_chars=6000`. Read live each
+  call (no reconfigure builder — like memory/fleet).
+- **Frontend**: `store/chat.ts runShell` (POST `/api/exec` → set threadId → `reloadChat`, mirrors the
+  D17 buffered path); `composer.ts routeShell` now calls it (stub gone); `/help` updated. **CmdBubble
+  gained a collapsed `output` disclosure** (owner's call — also surfaces agent `terminal_exec`/file-read
+  output, hidden before; skipped for `web_search` which has its own hits UI). Conf **Shell** group (#06,
+  groups 07–14 renumbered). Net-new CSS (`.cmd-output`) in `extras.css`; **vapor.css untouched (D7)**.
+
+**Two design points locked with the owner:** (1) `run_shell` stays **always-registered + gated by
+decide()** (not dynamically hidden) — keeps the user `!` path simple; the model may see a tool it gets
+denied on when agent_exec is off (acceptable, matches D3). (2) the CmdBubble **renders `result.output`**.
+
+**Verified:** `test_shell_5.py` (10: exec success / nonzero-exit / timeout-kill / secret-redaction /
+truncation · the decide truth-table · agent denied-without-optin / confirms-with-optin · endpoint
+persists tool_call+result / 403 when user-exec off). **Full backend suite green (21 files)**, `tsc`
+clean, `compileall` clean. **Live on 5433** (real uvicorn, not just TestClient): `POST /api/exec
+{command:"echo …"}` ran the real subprocess (exit 0, ~200ms) and persisted the assistant tool_call +
+tool result pair exactly as `reloadChat` renders. **Not yet eyeballed live in the PWA:** the `!` command
+bubble + the new output disclosure + the Conf Shell group at 390px (backend HMR'd; a human glance is
+the one thing the tests don't cover — finish opportunistically).
+
+**Start here next session:** Phase 6 voice (STT/TTS — D17 was the chat half of C1; the mic state machine
+folds in UI_AUDIT F21) → emma (Linux) deploy / v1 cutover. Deferred: ROADMAP E2 OpenAI facade, F29 opt A.
+Push this commit (+ session #8/#9's if still local) when ready. Servers: backend **5433** (no `--reload`),
+frontend **5173**.
 
 ### ⭐ Session update — 2026-06-21 (build session #9 — **D17 dual-mode chat shipped** · committed `3fb6603`, not pushed yet)
 
