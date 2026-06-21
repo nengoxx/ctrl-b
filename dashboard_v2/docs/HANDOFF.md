@@ -256,11 +256,15 @@ forked.
 **Verified:** `test_dual_mode_d17.py` (8: collect_turn folds completed/suspended-confirm-with-token/
 suspended-question/error/capped · resolver truth table · endpoint content-negotiation · on/off overrides ·
 streamed-vs-buffered parity). **Full backend suite green (20 files)**, `tsc` clean. **Live on 5433:**
-`stream:false` → `application/json` payload, `stream:true` → SSE; minig+ answered "pong" both ways.
-**Not eyeballed live:** the **PWA buffered render** (set Conf → Chat delivery = Buffer and send a chat) —
-backend transport + token-in-payload are proven (curl + unit test), frontend type-checks, but a human
-glance at the buffered confirm bubble in the PWA is the one remaining check (couldn't flip the live
-setting without writing the real `config.yaml`, which the temp-config rule forbids).
+`stream:false` → `application/json` payload, `stream:true` → SSE; minig+ answered "pong" both ways. A
+buffered turn that **calls a real tool** (`ping_host`) drained the full multi-step loop and persisted
+`user → assistant(reasoning+tool_call) → tool(result) → assistant(reply)` — exactly what `reloadChat()`
+renders. **PWA buffered render eyeballed at 390px (`400c19e` follow-up):** forced buffered via the
+`CTRLB_AGENT__STREAMING=off` env override (no `config.yaml` write), drove the PWA with Puppeteer — the
+reply rendered fully via `reloadChat` (reasoning disclosure + answer), **zero console errors**, and the
+Conf "Chat delivery" Seg correctly showed **Buffer**. Backend restored to `auto` after. **Still not
+forced live:** a buffered *confirm-suspend* with the real model (needs a deterministic med/high-risk
+tool call) — covered by the scripted endpoint test + the `collect_turn` unit test.
 
 **Start here next session:** Phase 5 (`!` user-shell, stubbed in `lib/composer.ts`) → Phase 6 voice
 (STT/TTS — D17 is the chat half of C1; TTS/STT are the remaining transports) → emma (Linux) deploy.
