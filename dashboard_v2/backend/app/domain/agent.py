@@ -56,6 +56,10 @@ class AgentDef(BaseModel):
 
     name: str                                           # slug = folder name; the stable /agent id
     title: str = ""                                     # optional display name (UI only); "" → show the slug
+    #: Short routing summary (7e-g, D15 #8) — the text the `AgentSelector` matches the user message
+    #: against (with `name`) to auto-route a turn when `agent.auto_rotate` is on and no `/agent` is
+    #: pinned. The persona stays in SOUL.md (`prompt`); this is just "when to pick me".
+    description: str = ""
     prompt: str = ""                                    # system prompt; "" → the built-in default
     #: Additive guidance (7e-a). When non-empty, emitted as its own `system` message *after* the
     #: base prompt — so the persona/base stays a stable cache-key candidate and the extra is easy

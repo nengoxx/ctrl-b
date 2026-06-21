@@ -142,6 +142,17 @@ function AgentFieldsForm(props: {
       <label>Display name</label>
       <input value={a.title} placeholder={a.name} onChange={(e) => set({ title: e.target.value })} />
 
+      {!props.isDefault && (
+        <>
+          <label>Description</label>
+          <input
+            value={a.description ?? ""}
+            placeholder="when to pick me (matched by the auto-router)"
+            onChange={(e) => set({ description: e.target.value })}
+          />
+        </>
+      )}
+
       <label>Backend</label>
       <Seg<"" | "local" | "cloud">
         current={modeVal}
@@ -343,6 +354,17 @@ export function AgentsEditor(props: { cfg: AgentSectionCfg; toolNames: string[];
 
   useEffect(() => setCfg(props.cfg), [props.cfg]);
 
+  // Auto-router controls (7e-g) save immediately (mirrors the SkillsEditor master switch), so they
+  // read straight off the server doc (props.cfg) rather than the savebar draft. The min-overlap
+  // input keeps a local draft and commits on blur to avoid a save per keystroke.
+  const [minOverlap, setMinOverlap] = useState(String(props.cfg.auto_rotate_min_overlap));
+  useEffect(() => setMinOverlap(String(props.cfg.auto_rotate_min_overlap)), [props.cfg.auto_rotate_min_overlap]);
+  const commitMinOverlap = () => {
+    const n = Math.max(1, Number(minOverlap) || 1);
+    if (n !== props.cfg.auto_rotate_min_overlap) saveSettings.mutate({ agent: { auto_rotate_min_overlap: n } });
+    else setMinOverlap(String(props.cfg.auto_rotate_min_overlap)); // normalize a junk entry back
+  };
+
   // Globals (default-agent picker + subagent limits) — config.yaml, saved via PUT /api/settings.
   // `default_title` is edited inside the default agent's row, so it's excluded from this draft.
   const globalsDirty =
@@ -388,6 +410,27 @@ export function AgentsEditor(props: { cfg: AgentSectionCfg; toolNames: string[];
 
   return (
     <div className="conf-card">
+      <div className="confrow">
+        <div className="k">
+          <div className="label">Auto-route to specialists</div>
+          <div className="desc">when no /agent is pinned, pick the best-matching specialist per turn</div>
+        </div>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            className="lim-input"
+            inputMode="numeric"
+            title="min matching words to route"
+            value={minOverlap}
+            onChange={(e) => setMinOverlap(e.target.value)}
+            onBlur={commitMinOverlap}
+          />
+          <Switch
+            on={props.cfg.auto_rotate}
+            onToggle={() => saveSettings.mutate({ agent: { auto_rotate: !props.cfg.auto_rotate } })}
+          />
+        </span>
+      </div>
+
       <AgentRow
         name={DEFAULT_AGENT}
         isDefault

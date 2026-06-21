@@ -27,6 +27,7 @@ import yaml
 
 from app.core.fsutil import write_text_eol
 from app.core.skills import Skill, SkillProvider, SkillSelector
+from app.core.textmatch import rank_by_overlap
 
 if TYPE_CHECKING:
     from app.config import Settings
@@ -45,11 +46,6 @@ def valid_skill_slug(name: str) -> bool:
     return bool(SKILL_SLUG.match(name))
 
 _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.DOTALL)
-_WORD = re.compile(r"[a-z0-9]+")
-#: Stopwords stripped before token-overlap scoring so common verbs don't trigger every skill.
-_STOP = frozenset(
-    "the a an and or of to for in on with my me you it is are be can please help how do i".split()
-)
 
 
 def _parse_skill_md(path: Path, fallback_name: str) -> Skill | None:
@@ -106,31 +102,22 @@ class FileSkillProvider(SkillProvider):
         return next((s for s in self.list() if s.name == name), None)
 
 
-def _tokens(text: str) -> set[str]:
-    return {w for w in _WORD.findall(text.lower()) if w not in _STOP and len(w) > 2}
-
-
 class KeywordSkillSelector(SkillSelector):
     """Default selector (D11): score each skill by token overlap between the user message and the
     skill's name + description; return those scoring at least `min_overlap`, best first, capped at
     `max_skills`. Deterministic and model-agnostic — swap in an LLM-based selector for richer
-    matching later."""
+    matching later. Scoring is the shared `core.textmatch.rank_by_overlap` (one source of truth with
+    the agent selector)."""
 
     def __init__(self, min_overlap: int = 1, max_skills: int = 2) -> None:
         self._min = min_overlap
         self._max = max_skills
 
     def select(self, user_msg: str, skills: list[Skill]) -> list[Skill]:
-        msg = _tokens(user_msg)
-        if not msg:
-            return []
-        scored = []
-        for s in skills:
-            overlap = len(msg & _tokens(f"{s.name} {s.description}"))
-            if overlap >= self._min:
-                scored.append((overlap, s))
-        scored.sort(key=lambda t: t[0], reverse=True)
-        return [s for _, s in scored[: self._max]]
+        ranked = rank_by_overlap(
+            user_msg, skills, lambda s: f"{s.name} {s.description}", min_overlap=self._min
+        )
+        return [s for _, s in ranked[: self._max]]
 
 
 def _allowed_by(allow: list[str] | str, name: str) -> bool:

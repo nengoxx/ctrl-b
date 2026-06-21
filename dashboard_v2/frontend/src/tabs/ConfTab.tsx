@@ -194,6 +194,9 @@ export function ConfTab({ active }: Props) {
     default_title: agentSection?.default_title ?? "",
     global_subagent_limit: agentSection?.global_subagent_limit ?? 6,
     subagent_clamp_privilege: agentSection?.subagent_clamp_privilege ?? true,
+    auto_rotate: (agentSection as { auto_rotate?: boolean } | undefined)?.auto_rotate ?? false,
+    auto_rotate_min_overlap:
+      (agentSection as { auto_rotate_min_overlap?: number } | undefined)?.auto_rotate_min_overlap ?? 2,
   };
   const agentToolNames = actionSpecs.filter((s) => s.agent_exposed).map((s) => s.name);
   const skillNames = skillList.map((s) => s.name);

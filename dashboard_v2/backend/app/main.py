@@ -50,6 +50,7 @@ from app.services.action_service import ActionService
 from app.services.actions import build_registry
 from app.services.actions.terminal import register_openterminal
 from app.services.agent.memory import FileMemoryProvider
+from app.services.agent.selector import KeywordAgentSelector
 from app.services.agent.skills import FileSkillProvider, KeywordSkillSelector
 from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.deps import Deps
@@ -130,6 +131,9 @@ async def lifespan(app: FastAPI):
     # once; the provider re-scans the dir per call so a dropped-in skill is live without a restart.
     app.state.skills = FileSkillProvider(app.state.settings.skills_dir_path())
     app.state.skill_selector = KeywordSkillSelector()
+    # Agent auto-router (Phase 7e-g, D15 #8): picks a specialist per turn when no /agent is pinned
+    # and agent.auto_rotate is on. Same swappable-protocol shape as the skill selector.
+    app.state.agent_selector = KeywordAgentSelector()
     # File-based agent memory (Phase 7e-d): per-agent MEMORY.md + global USER.md, read each turn.
     # Stateless — paths/caps resolve from live Settings per call, so edits land with no restart.
     app.state.memory = FileMemoryProvider(app.state.settings)

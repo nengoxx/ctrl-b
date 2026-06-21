@@ -32,6 +32,7 @@ from app.domain.result import ToolResult
 from app.runtime import rediscover_integrations
 from app.services.agent.planning import TaskPlanInput
 from app.services.agent.proposals import apply_proposal
+from app.services.agent.selector import select_agent
 from app.services.agent.session import AgentSession
 from app.services.agent.skills import remove_skill_md, valid_skill_slug, write_skill_md
 
@@ -173,7 +174,20 @@ async def chat(body: ChatRequest, request: Request) -> EventSourceResponse:
     if getattr(request.app.state, "integrations_dirty", False):
         await rediscover_integrations(request.app)
 
-    session = _session(request, thread, agent_name=body.agent, privilege=body.privilege)
+    # Auto-route to a specialist (7e-g, D15 #8) only when nothing pins the agent — an explicit
+    # `/agent` (body.agent) or a thread-sticky agent always wins, and the switch is off by default.
+    # `thread.agent` is never set in normal chat (created None), so "no pin" → per-turn routing.
+    agent_name = body.agent
+    selector = getattr(request.app.state, "agent_selector", None)
+    if (
+        agent_name is None
+        and thread.agent is None
+        and request.app.state.settings.agent.auto_rotate
+        and selector is not None
+    ):
+        agent_name = select_agent(request.app.state.settings, selector, body.text)
+
+    session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
 
     async def gen() -> AsyncIterator[dict[str, Any]]:
         # Tell the client the thread id first (it may have just been created).

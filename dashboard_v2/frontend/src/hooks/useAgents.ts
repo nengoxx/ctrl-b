@@ -21,6 +21,7 @@ export interface ModelRef {
 export interface AgentDef {
   name: string; // slug = folder name; the stable /agent id
   title: string; // optional display name (UI only); "" → show the slug
+  description: string; // short routing summary the auto-router matches against (7e-g); persona stays in SOUL.md
   prompt: string; // persona = SOUL.md (read-only here; edited via the soul endpoint)
   prompt_append: string;
   inherit_append: boolean;
@@ -44,6 +45,8 @@ export interface AgentSectionCfg {
   default_title: string;
   global_subagent_limit: number;
   subagent_clamp_privilege: boolean;
+  auto_rotate: boolean; // auto-route a turn to the best-matching specialist when no /agent is pinned (7e-g)
+  auto_rotate_min_overlap: number; // min matching tokens for an auto-route pick
 }
 
 /** The `default` slug — the workspace-root / generalist agent (no agent.yaml). */

@@ -142,6 +142,13 @@ class AgentCfg(BaseModel):
     # The `skill_manage` self-author tool may write SKILL.md autonomously; off → propose-only
     # (returns data["proposed"], never writes/blocks), mirroring `memory.auto_write` (7e-f-2, D14).
     skills_auto_write: bool = True
+    # Auto-route a turn to the best-matching specialist when no `/agent` is pinned (7e-g, D15 #8).
+    # Off by default — explicit `/agent` + `spawn_subagents` stay primary. The default
+    # `KeywordAgentSelector` matches the user message against each agent's name+description.
+    auto_rotate: bool = False
+    # Min matching tokens for an auto-route pick (conservative; a tie or below-threshold → the
+    # default agent). Floored at 1 so a blanked Conf field can't make every message route.
+    auto_rotate_min_overlap: int = Field(2, ge=1)
 
 
 class MemoryCfg(BaseModel):
