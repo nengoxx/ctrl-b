@@ -1,16 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { del, getJSON, putJSON } from "../api/client";
+import type { Privilege } from "../lib/privilege";
 import { pushToast } from "../store/toast";
 import { useScopedQuery } from "./useScopedQuery";
+
+export type { Privilege };  // re-export so existing `import { Privilege } from "../hooks/useAgents"` keeps working
 
 // Phase 7e-c (D14). Agents are folder-only: discovered via `GET /api/agents`, each managed through
 // the file-per-agent API (`GET/PUT/DELETE /api/agents/{name}` for agent.yaml + `…/soul` for SOUL.md).
 // The default/root agent (`name = "default"`) is the workspace itself — its fields map to the
 // config.yaml `agent.defaults` block + `agent.default_title` (saved via PUT /api/settings), its
 // persona to the root SOUL.md. Specialists map to their own folder. One unified editor drives both.
-
-export type Privilege = "readonly" | "confirm" | "auto_low" | "full";
 
 export interface ModelRef {
   mode: string | null; // ""/null/local/cloud — blank inherits inference.default_mode

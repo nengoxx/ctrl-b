@@ -25,7 +25,7 @@ from app.config import deep_merge
 from app.core.fsutil import write_text_eol
 from app.domain.agent import AgentDef
 from app.domain.conversation import Message, ToolCallPart, ToolResultPart, Thread
-from app.domain.enums import Actor, RunState
+from app.domain.enums import Actor, Privilege, RunState
 from app.domain.event import Event
 from app.domain.plan import Plan
 from app.domain.result import ToolResult
@@ -44,6 +44,11 @@ class ChatRequest(BaseModel):
     mode: str | None = None  # "local" | "cloud"; None → configured default (4c switches per-msg)
     skills: list[str] = Field(default_factory=list)  # explicit /skill-name invocations (4.5)
     agent: str | None = None  # `/agent <name>` switch (7d); None → the thread's / configured default
+    #: `/privilege <level>` session override (A1/D16). None → the resolved agent's own privilege (its
+    #: `AgentDef.privilege`, itself layered over `agent.defaults`). Applied in `_session` by copying
+    #: the resolved agent with this privilege — most-specific-wins, no clamp (an interactive owner may
+    #: raise *or* lower it). Like `mode`, it isn't carried across a confirm resume.
+    privilege: Privilege | None = None
 
     @field_validator("mode")
     @classmethod
@@ -51,6 +56,15 @@ class ChatRequest(BaseModel):
         # InferenceCfg.endpoint() treats any non-"local" string as "cloud"; reject junk so a typo'd
         # mode falls back to the configured default instead of silently routing to cloud.
         return v if v in ("local", "cloud") else None
+
+    @field_validator("privilege", mode="before")
+    @classmethod
+    def _known_privilege(cls, v: object) -> object:
+        # Lenient like `_known_mode`: an unknown/blank level coerces to None (→ no override, use the
+        # agent's own privilege) instead of 422-ing the whole turn over a stray composer value.
+        if v is None or v == "":
+            return None
+        return v if v in {p.value for p in Privilege} else None
 
 
 class CompactRequest(BaseModel):
@@ -69,16 +83,35 @@ class ResumeRequest(BaseModel):
     confirm_token: str | None = None
 
 
+def resolve_session_agent(
+    settings, name: str | None, privilege: Privilege | None
+) -> AgentDef:
+    """Resolve the `AgentDef` driving a turn + apply the per-session privilege override (A1/D16). The
+    resolution chain is most-specific-wins: `resolve_agent` already layers per-agent over the global
+    `agent.defaults`; this copies that agent with the session `privilege` when one is set (the
+    `/privilege` override), or returns it unchanged when not. Pure (no request/state) so it's unit
+    testable. No clamp — an interactive owner may raise or lower the level."""
+    agent = settings.resolve_agent(name)
+    if privilege is not None:
+        agent = agent.model_copy(update={"privilege": privilege})
+    return agent
+
+
 def _session(
-    request: Request, thread: Thread | None = None, agent_name: str | None = None
+    request: Request,
+    thread: Thread | None = None,
+    agent_name: str | None = None,
+    privilege: Privilege | None = None,
 ) -> AgentSession:
     """Build a session, resolving which `AgentDef` drives it. `agent_name` (the per-message `/agent
     <name>` switch, 7d) wins; else the thread's `agent` field (D11); else the configured default. An
-    unknown name falls back to the default (resolve_agent is graceful). Resume passes the last
-    assistant turn's `agent` here (D15 #5) so a suspended turn finishes on the agent that started it;
-    the per-message mode (4c) is still not carried across the confirm round-trip."""
+    unknown name falls back to the default (resolve_agent is graceful). `privilege` is the `/privilege`
+    session override (A1/D16). Resume passes the last assistant turn's `agent` here (D15 #5) so a
+    suspended turn finishes on the agent that started it; the per-message mode (4c) + privilege are
+    not carried across the confirm round-trip."""
     s = request.app.state
-    agent = s.settings.resolve_agent(agent_name or (thread.agent if thread else None))
+    name = agent_name or (thread.agent if thread else None)
+    agent = resolve_session_agent(s.settings, name, privilege)
     return AgentSession(
         s.threads,
         s.messages,
@@ -125,7 +158,7 @@ async def chat(body: ChatRequest, request: Request) -> EventSourceResponse:
     if getattr(request.app.state, "integrations_dirty", False):
         await rediscover_integrations(request.app)
 
-    session = _session(request, thread, agent_name=body.agent)
+    session = _session(request, thread, agent_name=body.agent, privilege=body.privilege)
 
     async def gen() -> AsyncIterator[dict[str, Any]]:
         # Tell the client the thread id first (it may have just been created).

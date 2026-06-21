@@ -19,10 +19,12 @@ import {
   sendMessage,
   setSessionAgent,
   setSessionMode,
+  setSessionPrivilege,
   startNewThread,
   type ChatMode,
 } from "../store/chat";
 import { setUI } from "../store/ui";
+import { PRIVILEGE_VALUES, privilegeLabel, type Privilege } from "./privilege";
 
 /** The guarded-shell sigil. Configurable in Conf later (Phase 7); the only command prefix (no $/>). */
 export const SHELL_SIGIL = "!";
@@ -70,6 +72,7 @@ const HELP = [
   "/local [msg]   force the local inference backend",
   "/cloud [msg]   force the cloud inference backend",
   "/agent [name]  switch the active agent (bare = back to default)",
+  "/privilege [lvl] set the session privilege (read|confirm|auto_low|full; bare = agent default)",
   "/compact       summarize older turns to free up context",
   "/clear         start a new thread",
   "/<skill> [task] run a task with a skill active",
@@ -142,6 +145,25 @@ function routeSlash(text: string): void {
         setSessionAgent(name);
         const known = knownAgents.has(name);
         pushSystemNote(known ? `// agent → ${name}` : `// agent → ${name} (not configured — will fall back to default)`);
+      }
+      break;
+    }
+    case "privilege":
+    case "priv": {
+      // `/privilege <level>` sets a sticky session override; bare (or `default`/`clear`) resets to
+      // the agent's own privilege. Accepts `read` as an alias for `readonly`. Unknown → warn, no-op.
+      const raw = rest.split(/\s+/)[0]?.toLowerCase() ?? "";
+      if (!raw || raw === "default" || raw === "clear") {
+        setSessionPrivilege(null);
+        pushSystemNote("// privilege → agent default");
+      } else {
+        const lvl = (raw === "read" ? "readonly" : raw) as Privilege;
+        if (PRIVILEGE_VALUES.has(lvl)) {
+          setSessionPrivilege(lvl);
+          pushSystemNote(`// privilege → ${privilegeLabel(lvl)}`);
+        } else {
+          pushSystemNote(`// unknown level: ${raw} — try read · confirm · auto_low · full`);
+        }
       }
       break;
     }

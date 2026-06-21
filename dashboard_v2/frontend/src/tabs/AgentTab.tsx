@@ -3,7 +3,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAgentRoster } from "../hooks/useAgents";
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
-import { applyProposal, editPlan, initChat, resumeCall, retryLastTurn, useChat } from "../store/chat";
+import { PRIVILEGE_LEVELS, privilegeLabel, type Privilege } from "../lib/privilege";
+import {
+  applyProposal,
+  editPlan,
+  initChat,
+  resumeCall,
+  retryLastTurn,
+  setSessionPrivilege,
+  useChat,
+} from "../store/chat";
 import type {
   ChatMessage,
   Part,
@@ -369,6 +378,66 @@ function Bubbles({
   );
 }
 
+/** The session privilege chip (A1/D16) in the chat section header: shows the active session override
+ *  (or "default" = follow the agent's own privilege) and opens a small menu to change it. The
+ *  `/privilege` composer verb sets the same sticky state; this is the tap-friendly setter for mobile. */
+function PrivilegeChip() {
+  const { sessionPrivilege } = useChat();
+  const [open, setOpen] = useState(false);
+  const label = sessionPrivilege ? privilegeLabel(sessionPrivilege) : "default";
+  const pick = (p: Privilege | null) => {
+    setSessionPrivilege(p);
+    setOpen(false);
+  };
+  return (
+    <span className="priv-chip-wrap">
+      <button
+        type="button"
+        className={"priv-chip" + (sessionPrivilege ? " set" : "")}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-label={`session privilege: ${label} — tap to change`}
+        title="session privilege"
+      >
+        <span className="priv-dot" aria-hidden />
+        <span className="priv-lbl">{label}</span>
+        <span className="chev" aria-hidden>▾</span>
+      </button>
+      {open && (
+        <>
+          <button className="priv-backdrop" aria-hidden tabIndex={-1} onClick={() => setOpen(false)} />
+          <ul className="priv-menu" role="menu">
+            {PRIVILEGE_LEVELS.map((l) => (
+              <li key={l.val}>
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={sessionPrivilege === l.val}
+                  className={sessionPrivilege === l.val ? "active" : ""}
+                  onClick={() => pick(l.val)}
+                >
+                  {l.label}
+                </button>
+              </li>
+            ))}
+            <li>
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={!sessionPrivilege}
+                className={!sessionPrivilege ? "active" : ""}
+                onClick={() => pick(null)}
+              >
+                Default
+              </button>
+            </li>
+          </ul>
+        </>
+      )}
+    </span>
+  );
+}
+
 interface Props {
   active: boolean;
 }
@@ -457,7 +526,9 @@ export function AgentTab({ active }: Props) {
       <div className="sec">
         <span className="num">02</span>
         <b>Chat</b>
-        <span className="right">one agent · one thread</span>
+        <span className="right">
+          <PrivilegeChip />
+        </span>
       </div>
       {currentPlan && currentPlan.steps.length > 0 && <PinnedPlan plan={currentPlan} />}
       <div className="chat-log" id="chatlog">

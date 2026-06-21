@@ -7,6 +7,7 @@
 
 import { useSyncExternalStore } from "react";
 
+import type { Privilege } from "../lib/privilege";
 import type { ChatMessage, Part, PlanStep, RunState, Thread, ToolResult } from "../types";
 import { setConnection } from "./connection";
 
@@ -17,9 +18,18 @@ interface ChatState {
   messages: ChatMessage[];
   status: ChatStatus;
   streamingId: string | null; // the message currently receiving deltas (drives caret/dots)
+  // `/privilege <level>` session override (A1/D16), null → follow the agent's own privilege. Reactive
+  // (unlike sessionMode/sessionAgent) so the chip reflects it; session-scoped, so `/clear` keeps it.
+  sessionPrivilege: Privilege | null;
 }
 
-let state: ChatState = { threadId: null, messages: [], status: "idle", streamingId: null };
+let state: ChatState = {
+  threadId: null,
+  messages: [],
+  status: "idle",
+  streamingId: null,
+  sessionPrivilege: null,
+};
 let loaded = false;
 const listeners = new Set<() => void>();
 // Confirm tokens from `tool.permission`, keyed by callId — sent back on resume(execute).
@@ -40,6 +50,12 @@ export function setSessionMode(mode: ChatMode | null): void {
 let sessionAgent: string | null = null;
 export function setSessionAgent(name: string | null): void {
   sessionAgent = name;
+}
+
+// Sticky session privilege override, set by `/privilege <level>` (A1/D16). Reactive (lives in
+// ChatState) so the PrivilegeChip can render it; `null` → the resolved agent's own privilege.
+export function setSessionPrivilege(p: Privilege | null): void {
+  set({ sessionPrivilege: p });
 }
 
 function set(next: Partial<ChatState>) {
@@ -396,7 +412,14 @@ export async function sendMessage(
 
   await streamTurn(
     "/api/agent/chat",
-    { text: body, thread_id: state.threadId, mode, skills, agent: sessionAgent },
+    {
+      text: body,
+      thread_id: state.threadId,
+      mode,
+      skills,
+      agent: sessionAgent,
+      privilege: state.sessionPrivilege,
+    },
     placeholderId,
   );
 }

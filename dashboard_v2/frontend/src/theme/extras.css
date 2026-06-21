@@ -1731,3 +1731,92 @@ body {
   overflow-wrap: anywhere;
 }
 
+
+/* ── Session privilege chip (A1/D16) ──────────────────────────────────────────────────────────
+   Lives in the chat section-header `.right` slot: shows the active session privilege override (or
+   "default" = follow the agent's own privilege) and opens a small menu to change it — the tap-
+   friendly twin of the `/privilege` composer verb. Net-new (no vapor.html source); tokens only. */
+.priv-chip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.priv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-soft);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: none;
+  cursor: pointer;
+  line-height: 1;
+}
+.priv-chip:active {
+  background: var(--bg-3);
+}
+.priv-chip .priv-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+.priv-chip .chev {
+  font-size: 8px;
+  opacity: 0.7;
+}
+/* An explicit override is set (not following the agent default) — accent it so it's visible at a glance. */
+.priv-chip.set {
+  border-color: rgba(var(--accent-rgb), 0.55);
+  color: var(--ink);
+}
+.priv-chip.set .priv-dot {
+  background: rgb(var(--accent-rgb));
+  box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.7);
+}
+.priv-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: transparent;
+  border: 0;
+  cursor: default;
+}
+.priv-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 61;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 124px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.priv-menu li {
+  margin: 0;
+}
+.priv-menu button {
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.priv-menu button:active {
+  background: var(--bg-3);
+}
+.priv-menu button.active {
+  color: var(--ink);
+  background: rgba(var(--accent-rgb), 0.14);
+}

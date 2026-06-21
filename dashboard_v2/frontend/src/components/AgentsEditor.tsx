@@ -15,6 +15,7 @@ import {
   type AgentSectionCfg,
   type Privilege,
 } from "../hooks/useAgents";
+import { PRIVILEGE_LEVELS } from "../lib/privilege";
 import { promptPreview } from "../lib/promptPreview";
 import { requestConfirm } from "../store/confirm";
 import { useRegisterDirty } from "../store/dirty";
@@ -27,13 +28,6 @@ import { pushToast } from "../store/toast";
 // Field edits are a per-row draft saved through the file API (specialist) or PUT /api/settings
 // (default); the SOUL.md persona saves directly (file-backed, D14 7e-b Q2). Reuses the vapor
 // .mwrap/.mform recipe (D7); the tick grids + limits grid are net-new in extras.css.
-
-const PRIVS: { val: Privilege; label: string }[] = [
-  { val: "readonly", label: "Read" },
-  { val: "confirm", label: "Confirm" },
-  { val: "auto_low", label: "Auto-low" },
-  { val: "full", label: "Full" },
-];
 
 const SLUG = /^[a-z0-9][a-z0-9_-]*$/;
 
@@ -162,7 +156,7 @@ function AgentFieldsForm(props: {
       <input value={a.model.model ?? ""} placeholder="(inherit endpoint model)" onChange={(e) => setModel({ model: e.target.value })} />
 
       <label>Privilege</label>
-      <Seg<Privilege> current={a.privilege} onPick={(v) => set({ privilege: v })} options={PRIVS} />
+      <Seg<Privilege> current={a.privilege} onPick={(v) => set({ privilege: v })} options={PRIVILEGE_LEVELS} />
 
       <label>Persona · SOUL.md</label>
       <div className="kv-prompt">
