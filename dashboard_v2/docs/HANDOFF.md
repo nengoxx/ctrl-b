@@ -76,26 +76,45 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e-d ✅ · 7e-e ✅ · **7e-f sub-sliced: f-1 ✅ · f-2 ✅ pushed · f-3 propose-UI = NEXT, needs own pre-flight**)
+## Current state (7e-d ✅ · 7e-e ✅ · **7e-f COMPLETE: f-1 ✅ · f-2 ✅ · f-3 ✅ all pushed** · 7e-g = last 7e slice, optional)
 
-> **Everything is pushed to `origin/main`** (HEAD `af6299e`; 7e-f-2 = `fc1aec2`). **7e-f-2 (core builtins
-> + `skill_manage` + skill-write de-dup) shipped this session:** (1) `ToolSpec.core` + `@action(core=…)`; `for_agent` unions the `core`
-> set so it survives any `tools` allowlist *and* skill narrowing; marked `task_plan`/`memory`/
-> `session_search` `core=True` (resolves deep-audit finding #1 — `coder` no longer silently lacks
-> memory/session_search). (2) `services/agent/skill_tool.py` `skill_manage` builtin (agent-only, LOW,
-> **not** core): save|remove a SKILL.md in the agent's own skills folder; gating `skills_enabled` →
-> new `AgentCfg.skills_auto_write` (off → propose-only, returns `data["proposed"]` for f-3). (3) De-dup:
-> extracted `core/fsutil.py` `write_text_eol`; added `agent_skills_root`/`write_skill_md`/
-> `remove_skill_md` + shared `valid_skill_slug` to `services/agent/skills.py`; refactored `/api/skills`
-> + `/api/agents` to reuse them. Tests: `test_core_builtins_7e.py` (5) + `test_skill_manage_7e.py` (8);
-> **full suite green (15 files)**, compileall clean, **live boot on 5433 verified** (`/api/actions` shows
-> `skill_manage` builtin/core=False + the three core flags True). Write paths exercised on a temp
-> `$CTRLB_HOME` only.
+> **Everything is pushed to `origin/main`** (HEAD `4b63f59`; 7e-f-3 = `4b63f59`, 7e-f-2 = `fc1aec2`).
+> **7e-f is done end-to-end** (per-agent skills → core builtins + `skill_manage` → propose-UI).
 >
-> **Next: 7e-f-3 — the shared Approve-to-apply propose-UI** (frontend). Both `memory` (`auto_write` off)
-> and `skill_manage` (`skills_auto_write` off) now feed `data["proposed"]`; f-3 renders it as an
-> Approve/Dismiss affordance on the tool bubble + an apply endpoint. **Needs its own pre-flight** over
-> the AgentTab `.b.cmd` command-bubble + confirm-resume frontend — don't start it cold.
+> **7e-f-3 — the shared Approve-to-apply propose-UI (`4b63f59`).** When a proposable builtin (`memory`
+> with `auto_write` off / `skill_manage` with `skills_auto_write` off) returns OK + `data["proposed"]`
+> instead of writing, the chat bubble now renders **Approve/Dismiss**, and Approve performs the same
+> write the agent proposed.
+> - **Tool refactor:** `memory_tool.py` + `skill_tool.py` split into shared **`gate_*` + `apply_*`**
+>   pieces. The tool branches `gate → (auto_write ? propose : apply)`; the apply path does `gate → apply`,
+>   bypassing **only** the auto-write switch (master/user-profile/skills switches, slug/arg checks, caps
+>   all still enforced). No write logic duplicated.
+> - **`services/agent/proposals.py`:** a small registry `{memory, skill_manage} → (input_model, gate,
+>   apply)` + `apply_proposal(deps, agent, tool, args)` — endpoint stays tool-agnostic; a 3rd proposable
+>   is one entry.
+> - **`POST /api/agent/apply` `{thread_id, call_id, decision}`** (plain JSON, mirrors `/agent/plan`'s
+>   in-place `messages.update`): finds the proposed call+result by id, resolves the **proposing agent
+>   from `message.agent`** (7e-c), applies via the registry, rewrites the stored result (clears
+>   `proposed`, marks `applied`) + flips the call to OK + audits a **USER Event**. Dismiss marks it
+>   resolved. A denied/failed apply (master switch off, over cap, stale `old_text`) **leaves the proposal
+>   pending**. Security property: it's **approve-the-existing, not write-anything** — applied args come
+>   from the *stored* `call.args`, the request body carries only ids+decision.
+> - **Frontend:** `store/chat.ts` **`applyProposal(callId, apply|dismiss)`** (optimistic POST + local
+>   `tool_result` patch, mirrors `editPlan`; in-flight double-tap guard); `AgentTab` `CmdBubble` gains the
+>   Approve/Dismiss affordance when `result.data.proposed` is set, reusing the confirm bubble's
+>   `.actions`/`.exec`/`.dismiss` classes (**vapor.css untouched, D7**).
+> - **Verified:** `test_apply_proposal_7e.py` (8) — apply/dismiss, persistence, USER audit, gate-denied +
+>   stale kept-pending, 404/409, specialist agent resolution. **Full backend suite green (16 files)**,
+>   `tsc` clean, live boot on 5433 confirms the route. **Not yet eyeballed live:** the interactive
+>   propose→approve bubble itself (needs `auto_write: false` + a chat turn) — render is type-checked +
+>   HMR'd to 5173; a human glance is the one thing the tests don't cover. **Minor open notes (non-block):**
+>   an unknown `decision` value falls through to apply (mirrors `ResumeRequest`'s `execute`-default); a
+>   sub-round-trip double-tap past both guards could double-write (negligible, single-user).
+>
+> **Next (optional): 7e-g — `AgentSelector`** (auto-rotate the active agent, default `KeywordAgentSelector`
+> mirroring `KeywordSkillSelector`, swappable per D15 #8). Last 7e slice; pre-flight `_activate_skills`/
+> the selector seam in `session.py` first. **Decided-but-deferred** (all design-locked): C1 dual-mode chat
+> (D17), A1 privilege selection (D16), A2 question kind, F29 opt A.
 >
 > **7e-d (file memory), 7e-e (`session_search`), and 7e-f-1 (per-agent skills) are done.** 7e-d: read path (`16bde75`) + the
 > **`memory`** write tool (`e5ebcaa`/`ed1dfa8`) + the **Conf Memory panel** (`2e18638`). 7e-e
@@ -141,8 +160,8 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > if ever needed). (3) `session_search` snippet truncation could leak a secret *fragment* (secrets rarely
 > in chat text). Finding (1) is being resolved in f-2 above; the `ge=1` cap floor already landed (`d422dcc`).
 >
-> **The 7e sequence (D14/D15):** 7e-a✅ → 7e-b✅ → 7e-c✅ → 7e-d✅ → 7e-e✅ → **7e-f** (f-1✅ · **f-2 NEXT** ·
-> f-3) → **7e-g** (optional `AgentSelector`).
+> **The 7e sequence (D14/D15):** 7e-a✅ → 7e-b✅ → 7e-c✅ → 7e-d✅ → 7e-e✅ → **7e-f✅** (f-1✅ · f-2✅ ·
+> f-3✅) → **7e-g** (optional `AgentSelector`, the last slice).
 >
 > **Decided-but-deferred builds** (all design-locked): C1 dual-mode chat (D17), A1 privilege selection
 > (D16), A2 question kind, F29 opt A (UI_AUDIT.md §6b).
@@ -151,6 +170,35 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > dev` defaults to 5173 unless `--port 5190`). Phone: `http://corsair:5173`. Both tearable down
 > without state loss. **Heads-up:** pytest is **not installed** in the backend venv — every test file
 > has a `__main__` runner; run `./.venv/Scripts/python.exe tests/<file>.py`.
+
+### ⭐ Session update — 2026-06-21 (build session #5 — **7e-f-3 shipped: Approve-to-apply propose-UI → 7e-f COMPLETE** · pushed `4b63f59`)
+
+Pre-flighted f-3 cold (read `AgentTab`/`store/chat.ts`/`types.ts` + the backend `tool.result`
+emission, `/agent/plan` + `/agent/resume`, `action_service._record`, `Deps`), locked the design with
+the owner (4 confirmations), built it end-to-end, deep-reviewed, and **pushed** (`4b63f59` + this docs).
+**7e-f is now complete.** Tree clean except the standing `start_claude_remote.ps1`.
+
+**Key pre-flight finding that shaped the design:** `data["proposed"]` already rides the `tool.result`
+SSE event into the `tool_result` part — so f-3 is a **render on a completed OK result**, NOT a
+suspend/resume. The persistence model copies `/agent/plan` (in-place `messages.update` of the stored
+call+result by id), so an "applied/dismissed" proposal survives a reload instead of resurrecting its
+buttons. Full spec in the "Current state" block above.
+
+**Shape (one slice, backend + frontend):** tool refactor into shared `gate_*`/`apply_*` →
+`services/agent/proposals.py` registry → `POST /api/agent/apply` → `store/chat.ts applyProposal` →
+`AgentTab` CmdBubble Approve/Dismiss (reuses `.actions`/`.exec`/`.dismiss`, D7). The apply path bypasses
+**only** the auto-write switch; it's approve-the-existing (args from the stored call, not the request).
+
+**Verified:** `test_apply_proposal_7e.py` (8), full backend suite green (16 files), `tsc` clean, live
+route probe on 5433 (404 unknown-thread = handler reached). All write-tests on a temp `$CTRLB_HOME`.
+**The one gap:** the interactive bubble wasn't eyeballed live (needs `auto_write: false` + a chat turn) —
+type-checked + HMR'd to 5173; worth a human glance next session if convenient.
+
+**Start here next session: 7e-g — `AgentSelector`** (optional, the last 7e slice; D15 #8). Mirror
+`KeywordSkillSelector`: a default `KeywordAgentSelector` that auto-rotates the active agent by matching
+the user message against agent titles/descriptions, swappable via the same protocol seam. **Pre-flight
+`session.py`'s `_activate_skills` + how `_agent`/`resolve_agent` are wired** before building. Or pick a
+decided-but-deferred build (C1/A1/A2/F29). Servers: backend **5433** (no `--reload`), frontend **5173**.
 
 ### ⭐ Session update — 2026-06-20 (build session #4 — **7e-f-2 shipped: core builtins + `skill_manage` + skill-write de-dup** · pushed `fc1aec2`/`af6299e`)
 
