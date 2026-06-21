@@ -193,6 +193,29 @@ def test_endpoint_buffered_vs_streamed_and_parity() -> None:
             assert '"state": "completed"' in r2.text and "m-x" in r2.text
 
 
+def _suspended_confirm_events():
+    return [
+        _ev("message.start", messageId="m-c"),
+        _ev("message.end", messageId="m-c"),
+        _ev("tool.permission", callId="c1", tool="reboot_host", token="tok-xyz", prompt="confirm?"),
+        _ev("done", threadId="t", state="suspended"),
+    ]
+
+
+def test_endpoint_buffered_suspend_carries_token() -> None:
+    # The full endpoint → payload path must surface the confirm token (not persisted) so a buffered
+    # confirm stays resumable — the frontend seeds confirmTokens[callId] from it.
+    with _env_cleanup():
+        with _client() as c:
+            with _fake_session(_suspended_confirm_events()):
+                r = c.post("/api/agent/chat", json={"text": "reboot it", "stream": False})
+            assert r.headers["content-type"].startswith("application/json")
+            body = r.json()
+            assert body["state"] == "suspended"
+            assert body["permission"]["token"] == "tok-xyz"
+            assert body["permission"]["callId"] == "c1"
+
+
 def test_setting_off_forces_buffered_even_when_client_asks_stream() -> None:
     with _env_cleanup():
         with _client("server:\n  port: 5433\nagent:\n  streaming: off\n") as c:
