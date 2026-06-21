@@ -112,7 +112,21 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >   an unknown `decision` value falls through to apply (mirrors `ResumeRequest`'s `execute`-default); a
 >   sub-round-trip double-tap past both guards could double-write (negligible, single-user).
 >
-> **Next (optional): 7e-g — `AgentSelector`** (auto-rotate the active agent, default `KeywordAgentSelector`
+> **▶ START HERE NEXT SESSION — finish verifying 7e-f (the owner's pick).** 7e-f is built end-to-end, but
+> the **f-3 Approve-to-apply propose-UI was never eyeballed live** — it only renders when a proposable
+> builtin proposes instead of writing, i.e. with an auto-write switch **off**. To exercise it:
+> 1. Turn an auto-write switch off — **Conf → Memory panel** toggle `auto_write` off (or set
+>    `memory.auto_write: false` / `agent.skills_auto_write: false`), restart backend on 5433 if edited via file.
+> 2. In chat, get the agent to call **`memory`** (e.g. *"remember that I prefer dark mode"*) — with auto-write
+>    off it returns a **proposal**, so the tool bubble shows **Approve / Dismiss** (the `data["proposed"]` path).
+> 3. **Approve** → the write actually lands (check the Memory panel / `memories/MEMORY.md`); **Dismiss** →
+>    discarded; **reload** → the resolved proposal should NOT resurrect its buttons (it's persisted via
+>    `messages.update`). Same flow for **`skill_manage`** with `agent.skills_auto_write: false`.
+> If anything's off, the code is `api/agent.py` `POST /api/agent/apply` + `store/chat.ts applyProposal` +
+> `AgentTab` CmdBubble (the `isProposed(result)` affordance). Backend behaviour is covered by
+> `test_apply_proposal_7e.py` (8) — this is purely the **visual/interaction** glance the tests can't do.
+>
+> **Then (optional): 7e-g — `AgentSelector`** (auto-rotate the active agent, default `KeywordAgentSelector`
 > mirroring `KeywordSkillSelector`, swappable per D15 #8). Last 7e slice; pre-flight `_activate_skills`/
 > the selector seam in `session.py` first. **Decided-but-deferred** (all design-locked): C1 dual-mode chat
 > (D17), F29 opt A. (**A1 privilege selection + A2 question kind — done.**)
