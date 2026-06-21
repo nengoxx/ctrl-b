@@ -384,7 +384,7 @@ function Bubbles({
 function PrivilegeChip() {
   const { sessionPrivilege } = useChat();
   const [open, setOpen] = useState(false);
-  const label = sessionPrivilege ? privilegeLabel(sessionPrivilege) : "default";
+  const label = sessionPrivilege ? privilegeLabel(sessionPrivilege) : "Default";
   const pick = (p: Privilege | null) => {
     setSessionPrivilege(p);
     setOpen(false);

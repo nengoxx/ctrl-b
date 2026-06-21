@@ -107,9 +107,10 @@ def _capture_session(agent_api):
     captured: dict[str, str | None] = {}
     orig = agent_api._session
 
-    def spy(request, thread=None, agent_name=None):
+    def spy(request, thread=None, agent_name=None, privilege=None):
         captured["agent_name"] = agent_name
-        return orig(request, thread, agent_name)
+        captured["privilege"] = privilege
+        return orig(request, thread, agent_name, privilege)
 
     agent_api._session = spy
     try:

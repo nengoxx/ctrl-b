@@ -36,12 +36,17 @@ def _workspace(config_text: str = "server:\n  port: 5433\n"):
 
 
 def test_validator_coerces_unknown_and_blank() -> None:
-    from app.api.agent import ChatRequest
+    from app.api.agent import ChatRequest, ResumeRequest
 
     assert ChatRequest(text="x").privilege is None
     assert ChatRequest(text="x", privilege="").privilege is None
     assert ChatRequest(text="x", privilege="bogus").privilege is None
     assert ChatRequest(text="x", privilege="full").privilege.value == "full"
+
+    # ResumeRequest carries the session level across a confirm round-trip (A1/D16) with the same gate.
+    assert ResumeRequest(thread_id="t", call_id="c").privilege is None
+    assert ResumeRequest(thread_id="t", call_id="c", privilege="junk").privilege is None
+    assert ResumeRequest(thread_id="t", call_id="c", privilege="readonly").privilege.value == "readonly"
 
 
 def test_override_applies_and_none_is_unchanged() -> None:

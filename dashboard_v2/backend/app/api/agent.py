@@ -38,6 +38,15 @@ from app.services.agent.skills import remove_skill_md, valid_skill_slug, write_s
 router = APIRouter(tags=["agent"])
 
 
+def _coerce_privilege(v: object) -> object:
+    """Coerce a raw `/privilege` input to a known level or None — lenient like `_known_mode`, so an
+    unknown/blank value (a stray composer token) becomes "no override" instead of 422-ing the turn.
+    Shared by `ChatRequest` + `ResumeRequest` so the session level survives a confirm round-trip."""
+    if v is None or v == "":
+        return None
+    return v if v in {p.value for p in Privilege} else None
+
+
 class ChatRequest(BaseModel):
     text: str = Field(min_length=1)
     thread_id: str | None = None
@@ -47,7 +56,8 @@ class ChatRequest(BaseModel):
     #: `/privilege <level>` session override (A1/D16). None → the resolved agent's own privilege (its
     #: `AgentDef.privilege`, itself layered over `agent.defaults`). Applied in `_session` by copying
     #: the resolved agent with this privilege — most-specific-wins, no clamp (an interactive owner may
-    #: raise *or* lower it). Like `mode`, it isn't carried across a confirm resume.
+    #: raise *or* lower it). Carried across the confirm resume too (it's a security stance, unlike
+    #: `mode`) so a lowered session can't silently revert to the agent's higher default mid-turn.
     privilege: Privilege | None = None
 
     @field_validator("mode")
@@ -60,11 +70,7 @@ class ChatRequest(BaseModel):
     @field_validator("privilege", mode="before")
     @classmethod
     def _known_privilege(cls, v: object) -> object:
-        # Lenient like `_known_mode`: an unknown/blank level coerces to None (→ no override, use the
-        # agent's own privilege) instead of 422-ing the whole turn over a stray composer value.
-        if v is None or v == "":
-            return None
-        return v if v in {p.value for p in Privilege} else None
+        return _coerce_privilege(v)
 
 
 class CompactRequest(BaseModel):
@@ -75,12 +81,19 @@ class CompactRequest(BaseModel):
 
 class ResumeRequest(BaseModel):
     """Resolve a suspended tool call (4b confirm bubble). `decision` is execute|dismiss; execute
-    must carry the `confirm_token` from the `tool.permission` event."""
+    must carry the `confirm_token` from the `tool.permission` event. `privilege` carries the session
+    override across the round-trip (A1/D16) so the continuation gates at the same level."""
 
     thread_id: str
     call_id: str
     decision: str = "execute"  # "execute" | "dismiss"
     confirm_token: str | None = None
+    privilege: Privilege | None = None
+
+    @field_validator("privilege", mode="before")
+    @classmethod
+    def _known_privilege(cls, v: object) -> object:
+        return _coerce_privilege(v)
 
 
 def resolve_session_agent(
@@ -106,9 +119,9 @@ def _session(
     """Build a session, resolving which `AgentDef` drives it. `agent_name` (the per-message `/agent
     <name>` switch, 7d) wins; else the thread's `agent` field (D11); else the configured default. An
     unknown name falls back to the default (resolve_agent is graceful). `privilege` is the `/privilege`
-    session override (A1/D16). Resume passes the last assistant turn's `agent` here (D15 #5) so a
-    suspended turn finishes on the agent that started it; the per-message mode (4c) + privilege are
-    not carried across the confirm round-trip."""
+    session override (A1/D16) — resume re-sends it so the continuation gates at the same level (a
+    security stance, unlike `mode` which isn't carried). Resume passes the last assistant turn's
+    `agent` here (D15 #5) so a suspended turn finishes on the agent that started it."""
     s = request.app.state
     name = agent_name or (thread.agent if thread else None)
     agent = resolve_session_agent(s.settings, name, privilege)
@@ -537,7 +550,7 @@ async def resume(body: ResumeRequest, request: Request) -> EventSourceResponse:
     # specialist you last used until you `/agent`-switch on a fresh turn.
     msgs = await request.app.state.messages.list(thread.id)
     last_agent = next((m.agent for m in reversed(msgs) if m.role == "assistant" and m.agent), None)
-    session = _session(request, thread, agent_name=last_agent)
+    session = _session(request, thread, agent_name=last_agent, privilege=body.privilege)
 
     async def gen() -> AsyncIterator[dict[str, Any]]:
         yield {"event": "thread", "data": json.dumps({"threadId": thread.id, "title": thread.title})}

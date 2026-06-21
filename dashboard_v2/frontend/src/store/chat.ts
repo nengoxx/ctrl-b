@@ -595,5 +595,8 @@ export async function resumeCall(callId: string, decision: "execute" | "dismiss"
     call_id: callId,
     decision,
     confirm_token: confirmTokens[callId],
+    // Carry the session privilege across the resume (A1/D16) so the continuation gates at the same
+    // level the suspended turn used — a lowered session can't silently revert to the agent default.
+    privilege: state.sessionPrivilege,
   });
 }
