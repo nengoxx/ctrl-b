@@ -256,6 +256,18 @@ function CmdBubble({
             {result.error ? ` — ${result.error}` : ""}
           </div>
         )}
+        {/* Captured stdout/stderr (run_shell, terminal_exec, file reads, …) — collapsed by default
+            like the web_search links, so the bubble stays compact until the owner taps to read it.
+            Skipped for web_search (its hits render below instead). */}
+        {result?.output && hits.length === 0 && (
+          <details className="cmd-output">
+            <summary>
+              <span className="label">output</span>
+              <span className="chev" aria-hidden>▾</span>
+            </summary>
+            <pre>{result.output}</pre>
+          </details>
+        )}
         {/* A proposed write (auto-write off): the owner approves it to perform the agent's write, or
             dismisses it. Reuses the confirm-bubble's action classes (D7). */}
         {isProposed(result) && (

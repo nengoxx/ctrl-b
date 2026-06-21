@@ -42,6 +42,15 @@ export interface SettingsDoc {
     write_risk: string;
     read_risk: string;
   };
+  // Guarded local shell (Phase 5) — the `!<cmd>` escape hatch + the agent's run_shell gate.
+  shell: {
+    enabled: boolean;
+    user_exec_enabled: boolean;
+    agent_exec_enabled: boolean;
+    workdir: string;
+    timeout_s: number;
+    max_output_chars: number;
+  };
   mcp_servers: McpServer[]; // Phase 7c-b — managed via the integrations CRUD endpoints, read here
   openapi_servers: OpenApiServer[];
   [k: string]: unknown; // other sections (agent, …) — managed elsewhere

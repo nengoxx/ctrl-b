@@ -17,6 +17,7 @@ from app.services.actions import (  # noqa: E402,F401
     check_service,
     open_service_url,
     restart_service,
+    shell,
     start_service,
     stop_service,
     web_search,

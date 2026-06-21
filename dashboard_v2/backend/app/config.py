@@ -234,6 +234,28 @@ class OpenTerminalCfg(BaseModel):
     read_risk: str = "low"           # risk for read/list/grep/glob (LOW auto-runs)
 
 
+class ShellCfg(BaseModel):
+    """Guarded local shell (Phase 5) — the Claude-Code/Codex `!` escape hatch. The **user** types
+    `!<cmd>` (routed to `POST /api/exec`) to run a real command **on the backend host** (the box
+    running ctrl-b — corsair/emma), distinct from open-terminal (a *remote* box). Output feeds the
+    agent's context (the command + result are persisted into the thread) so a later turn can read it.
+
+    Two independent gates: `user_exec_enabled` governs the `!` path (on by default — the user typing
+    it *is* the authorization); `agent_exec_enabled` governs the agent's own `run_shell` tool (off by
+    default — it's arbitrary local shell, so the agent only gets it on an explicit opt-in, and even
+    then HIGH risk makes it confirm). `enabled` is the master switch that registers the action at all.
+    """
+
+    model_config = {"extra": "allow"}
+
+    enabled: bool = True                 # master switch — registers the run_shell action
+    user_exec_enabled: bool = True       # the `!<cmd>` composer escape hatch (POST /api/exec)
+    agent_exec_enabled: bool = False     # the agent's run_shell tool (D3 gate; off → confirm only at FULL)
+    workdir: str = ""                    # cwd for commands; blank → $CTRLB_HOME (home_dir())
+    timeout_s: float = 60.0              # kill the process after this many seconds
+    max_output_chars: int = 6000         # truncate captured stdout/stderr to this length
+
+
 class OpenApiServerCfg(BaseModel):
     """An OpenAPI/REST service whose operations are auto-registered as agent tools (Phase 4f) — the
     HTTP sibling of an MCP server, for Open WebUI "tool servers" or any service exposing an OpenAPI
@@ -347,6 +369,7 @@ class Settings(BaseModel):
     searxng: SearxngCfg = Field(default_factory=SearxngCfg)
     embeddings: EmbeddingsCfg = Field(default_factory=EmbeddingsCfg)
     open_terminal: OpenTerminalCfg = Field(default_factory=OpenTerminalCfg)
+    shell: ShellCfg = Field(default_factory=ShellCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
     #: Agents are **folder-only** (D14/D15 #3): discovered by scanning `$CTRLB_HOME/agents/<name>/`

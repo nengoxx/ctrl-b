@@ -479,6 +479,30 @@ export async function compactThread(): Promise<void> {
   }
 }
 
+/** `!<cmd>` — the guarded shell escape hatch (Phase 5). POST the command to `/api/exec`; the server
+ *  runs it on the backend host and persists the command + result into the thread as a tool_call +
+ *  tool result pair, so a re-read renders it as a command bubble (and the agent sees it next turn).
+ *  Mirrors the D17 buffered path: set the thread id, then `reloadChat()` — no parallel render path. */
+export async function runShell(command: string): Promise<void> {
+  try {
+    const res = await fetch("/api/exec", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command, thread_id: state.threadId }),
+    });
+    if (res.status === 403) {
+      pushSystemNote("// shell exec is disabled (Conf → Shell → user exec)");
+      return;
+    }
+    if (!res.ok) throw new Error(`exec → ${res.status}`);
+    const data = (await res.json()) as { threadId: string };
+    if (data.threadId) set({ threadId: data.threadId });
+    await reloadChat();
+  } catch {
+    pushSystemNote("// shell exec failed — backend unreachable?");
+  }
+}
+
 /** Apply a plan edit to the latest task_plan call+result in the local message list (immutably).
  *  Mirrors the backend's in-place update so the pinned panel re-derives instantly (optimistic). */
 function applyPlanEdit(messages: ChatMessage[], steps: PlanStep[]): ChatMessage[] {

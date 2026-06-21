@@ -113,7 +113,10 @@ function PromptRow(props: {
 
 // Just the slices the 7a form edits — kept verbatim from the loaded doc so a save round-trips the
 // masked api_key (the backend restores it) and leaves every other section untouched.
-type Draft = Pick<SettingsDoc, "server" | "inference" | "searxng" | "embeddings" | "open_terminal">;
+type Draft = Pick<
+  SettingsDoc,
+  "server" | "inference" | "searxng" | "embeddings" | "open_terminal" | "shell"
+>;
 
 function pickDraft(s: SettingsDoc): Draft {
   return {
@@ -122,6 +125,7 @@ function pickDraft(s: SettingsDoc): Draft {
     searxng: s.searxng,
     embeddings: s.embeddings,
     open_terminal: s.open_terminal,
+    shell: s.shell,
   };
 }
 
@@ -249,10 +253,14 @@ export function ConfTab({ active }: Props) {
   function setTerm<K extends keyof Draft["open_terminal"]>(key: K, val: Draft["open_terminal"][K]) {
     setDraft((d) => (d ? { ...d, open_terminal: { ...d.open_terminal, [key]: val } } : d));
   }
+  function setShell<K extends keyof Draft["shell"]>(key: K, val: Draft["shell"][K]) {
+    setDraft((d) => (d ? { ...d, shell: { ...d.shell, [key]: val } } : d));
+  }
 
   const sx = draft?.searxng;
   const emb = draft?.embeddings;
   const term = draft?.open_terminal;
+  const sh = draft?.shell;
 
   function onSave() {
     if (!draft) return;
@@ -272,6 +280,11 @@ export function ConfTab({ active }: Props) {
       searxng: draft.searxng,
       embeddings: { ...draft.embeddings, dim: dimRaw ? Number(dimRaw) : null },
       open_terminal: draft.open_terminal,
+      shell: {
+        ...draft.shell,
+        timeout_s: Number(draft.shell.timeout_s),
+        max_output_chars: Number(draft.shell.max_output_chars),
+      },
     };
     save.mutate(patch as unknown as Record<string, unknown>);
   }
@@ -550,9 +563,55 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
+      <ConfGroup id="shell" num="06" title="Shell" right="! escape hatch">
+        <div className="conf-card">
+          <div className="confrow">
+            <div className="k">
+              <div className="label">User exec</div>
+              <div className="desc">the !&lt;cmd&gt; composer escape hatch</div>
+            </div>
+            <Switch on={!!sh?.user_exec_enabled} onToggle={() => setShell("user_exec_enabled", !sh?.user_exec_enabled)} />
+          </div>
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Agent run_shell</div>
+              <div className="desc">let the agent call run_shell (else confirm at full only)</div>
+            </div>
+            <Switch on={!!sh?.agent_exec_enabled} onToggle={() => setShell("agent_exec_enabled", !sh?.agent_exec_enabled)} />
+          </div>
+          <Field
+            label="Workdir"
+            desc="cwd for commands — blank → workspace home"
+            value={sh?.workdir ?? ""}
+            onChange={(v) => setShell("workdir", v)}
+            placeholder="$CTRLB_HOME"
+          />
+          <Field
+            label="Timeout"
+            desc="seconds — kill the process after"
+            value={String(sh?.timeout_s ?? "")}
+            onChange={(v) => setShell("timeout_s", v as unknown as number)}
+          />
+          <Field
+            label="Max output"
+            desc="chars — truncate captured stdout/stderr"
+            value={String(sh?.max_output_chars ?? "")}
+            onChange={(v) => setShell("max_output_chars", v as unknown as number)}
+          />
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Enabled</div>
+              <div className="desc">master switch for local shell exec</div>
+            </div>
+            <Switch on={!!sh?.enabled} onToggle={() => setShell("enabled", !sh?.enabled)} />
+          </div>
+        </div>
+        {saveBar}
+      </ConfGroup>
+
       <ConfGroup
         id="mcp"
-        num="06"
+        num="07"
         title="MCP servers"
         right={`${settings?.mcp_servers?.length ?? 0} server${(settings?.mcp_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
@@ -561,7 +620,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="openapi"
-        num="07"
+        num="08"
         title="OpenAPI tool servers"
         right={`${settings?.openapi_servers?.length ?? 0} server${(settings?.openapi_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
@@ -576,7 +635,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="agents"
-        num="08"
+        num="09"
         title="Agents"
         right={`${agentCount} agent${agentCount === 1 ? "" : "s"}`}
         defaultCollapsed
@@ -586,7 +645,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="skills"
-        num="09"
+        num="10"
         title="Skills"
         right={`${skillNames.length} discovered`}
         defaultCollapsed
@@ -596,7 +655,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="memory"
-        num="10"
+        num="11"
         title="Memory"
         right={memoryCfg.enabled ? "on" : "off"}
         defaultCollapsed
@@ -606,7 +665,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="tooldesc"
-        num="11"
+        num="12"
         title="Agent tools"
         right="descriptions"
         defaultCollapsed
@@ -616,14 +675,14 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="computers"
-        num="12"
+        num="13"
         title="Computers"
         right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
       >
         <MachineEditor hosts={hosts} />
       </ConfGroup>
 
-      <ConfGroup id="appearance" num="13" title="Appearance">
+      <ConfGroup id="appearance" num="14" title="Appearance">
         <div className="conf-card">
           <div className="confrow">
             <div className="k">

@@ -82,7 +82,14 @@ class ActionService:
         inp = tool.spec.input_model.model_validate(raw_args)  # ValidationError → API 422
         args_json = inp.model_dump_json()
 
-        decision = decide(tool.spec, privilege, interactive=interactive)
+        # `run_shell` (Phase 5) is denied below FULL unless the owner opts the agent in via
+        # `shell.agent_exec_enabled`; the user `!` path invokes it at FULL, so this never blocks it.
+        decision = decide(
+            tool.spec,
+            privilege,
+            interactive=interactive,
+            run_shell_allowed=self._deps.settings.shell.agent_exec_enabled,
+        )
 
         if decision is Decision.DENY:
             result = ToolResult(

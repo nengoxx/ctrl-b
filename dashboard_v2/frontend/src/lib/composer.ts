@@ -15,7 +15,7 @@
 import {
   compactThread,
   pushSystemNote,
-  pushUserEcho,
+  runShell,
   sendMessage,
   setSessionAgent,
   setSessionMode,
@@ -68,7 +68,7 @@ void loadAgents();
 
 const HELP = [
   "// commands",
-  `${SHELL_SIGIL}<cmd>      run a shell command (guarded · lands in Phase 5)`,
+  `${SHELL_SIGIL}<cmd>      run a shell command on the backend host (guarded)`,
   "/local [msg]   force the local inference backend",
   "/cloud [msg]   force the cloud inference backend",
   "/agent [name]  switch the active agent (bare = back to default)",
@@ -107,12 +107,11 @@ export function runComposer(raw: string): void {
   void sendMessage(text);
 }
 
-/** `!<cmd>` — the guarded shell escape hatch. Phase 5 wires `run_shell` + a command bubble; for now
- *  echo the intent and note it isn't live, so the routing is observable without faking execution. */
+/** `!<cmd>` — the guarded shell escape hatch (Phase 5). Runs `run_shell` on the backend host via
+ *  `/api/exec`; the result persists into the thread and renders as a command bubble (store/chat). */
 function routeShell(cmd: string): void {
   if (!cmd) return;
-  pushUserEcho(`${SHELL_SIGIL}${cmd}`);
-  pushSystemNote(`// shell exec ("${SHELL_SIGIL}") arrives in Phase 5 — not wired yet`);
+  void runShell(cmd);
 }
 
 /** `/<verb> [args]` — slash commands. Unknown verbs get a one-line note rather than hitting the agent. */

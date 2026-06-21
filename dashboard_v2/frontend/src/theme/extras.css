@@ -635,6 +635,53 @@ body {
   line-height: 1.45;
 }
 
+/* Captured command output (Phase 5 run_shell, terminal_exec, file reads) — a collapsed disclosure
+   like cmd-links, with a $-pre-style body so stdout reads as a terminal block. Built from vapor
+   tokens (mirrors the `.b.cmd pre` look). */
+.b.cmd .cmd-output {
+  margin: -2px 12px 10px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.b.cmd .cmd-output > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+}
+.b.cmd .cmd-output > summary::-webkit-details-marker {
+  display: none;
+}
+.b.cmd .cmd-output > summary .label {
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--violet);
+}
+.b.cmd .cmd-output > summary .chev {
+  margin-left: auto;
+  color: var(--ink-faint);
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+.b.cmd .cmd-output[open] > summary .chev {
+  transform: rotate(180deg);
+}
+.b.cmd .cmd-output > pre {
+  margin: 8px 0 2px;
+  padding: 8px 10px;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--green);
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(var(--accent-rgb-2), 0.22);
+  border-radius: 8px;
+}
+
 /* ── Plan panel (Phase 4d). The task_plan tool's live checklist — net-new (vapor has no plan markup),
    built only from vapor tokens. The current plan hangs from the top of the chat as a minimized tab
    (`.plan-pin`); tapping it drops the checklist down as an overlay so it never reflows the messages.

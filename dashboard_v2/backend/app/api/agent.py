@@ -81,6 +81,15 @@ class ChatRequest(BaseModel):
         return _coerce_privilege(v)
 
 
+class ExecRequest(BaseModel):
+    """User `!<cmd>` escape hatch (Phase 5). Runs on the backend host; creates a thread on first use
+    like `/agent/chat`. No privilege field — the user typing `!` *is* the authorization (the run is at
+    FULL), gated only by `shell.user_exec_enabled`."""
+
+    command: str = Field(min_length=1)
+    thread_id: str | None = None
+
+
 class CompactRequest(BaseModel):
     """Manual `/compact` (4e) — fold the thread's older turns into a summary now."""
 
@@ -248,6 +257,52 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
     events = session.run_turn(thread, body.text, mode=body.mode, skills=body.skills)
     return await _turn_response(request, thread, events, stream=stream, count=True)
+
+
+@router.post("/exec")
+async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any]:
+    """Run the user's `!<cmd>` on the backend host (Phase 5). Reuses the `run_shell` action at FULL
+    privilege (so it executes + is audited as an Event), then persists the command + result into the
+    thread as an `assistant` tool_call + `tool` result pair — the same shape the agent loop produces —
+    so it renders as a command bubble *and* feeds the agent's context on the next turn. The client
+    re-reads the thread to render it (no parallel render path)."""
+    settings = request.app.state.settings
+    if not settings.shell.user_exec_enabled:
+        raise HTTPException(status_code=403, detail="user shell exec is disabled (shell.user_exec_enabled)")
+
+    threads = request.app.state.threads
+    thread = await threads.get(body.thread_id) if body.thread_id else None
+    if thread is None:
+        thread = await threads.create(Thread(title=f"! {body.command[:58]}"))
+
+    outcome = await request.app.state.actions.invoke(
+        "run_shell", {"command": body.command}, actor=Actor.USER, privilege=Privilege.FULL
+    )
+    result = outcome.result or ToolResult(state=RunState.ERROR, summary="run_shell produced no result")
+
+    call_id = uuid.uuid4().hex
+    messages = request.app.state.messages
+    await messages.add(
+        Message(
+            thread_id=thread.id,
+            role="assistant",
+            actor=Actor.USER,
+            parts=[
+                ToolCallPart(
+                    call_id=call_id, tool="run_shell", args={"command": body.command}, state=result.state
+                )
+            ],
+        )
+    )
+    await messages.add(
+        Message(
+            thread_id=thread.id,
+            role="tool",
+            actor=Actor.USER,
+            parts=[ToolResultPart(call_id=call_id, result=result)],
+        )
+    )
+    return {"threadId": thread.id, "callId": call_id, "state": result.state.value}
 
 
 @router.get("/skills")
