@@ -76,7 +76,7 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e-d ✅ · 7e-e ✅ · **7e-f COMPLETE** · **A1 privilege ✅** · **A2 question ✅** · **7e-g spec'd + owner-locked → NEXT (build cold)**)
+## Current state (7e-f COMPLETE · **A1 privilege ✅** · **A2 question ✅** · **7e-g AgentSelector ✅ → 7e FULLY COMPLETE** · NEXT = Phase 5 / C1 / F29)
 
 > **Everything is pushed to `origin/main`** (HEAD `8007772`; latest = the propose-wording fix `8007772`).
 > **7e-f is done end-to-end + the f-3 propose-UI is now owner-verified** (the propose bubble renders;
@@ -124,59 +124,40 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > glance yet; finish opportunistically. **Noted, not changed:** a *dismissed* proposal keeps `state=OK`
 > (summary "proposal dismissed") — clear enough; flip `_resolved` to SKIPPED if ever desired.
 >
-> **▶ START HERE NEXT SESSION — build 7e-g `AgentSelector` (FULLY SPEC'D + owner-locked this session; build cold).**
-> Optional auto-router: when no `/agent` is pinned, pick the best-matching specialist per turn. Off by
-> default; explicit `/agent` + `spawn_subagents` stay primary. Mirrors the `SkillSelector` seam (D15 #8).
-> Pre-flight already done — the seams (`api/agent.py` chat endpoint agent resolution, `_session` →
-> `resolve_session_agent`, `main.py` `skill_selector` wiring, `KeywordSkillSelector` in `services/agent/skills.py`,
-> `AgentsEditor`/`SkillsEditor` master-switch pattern) are read + cited below. **Key fact:** `thread.agent` is
-> never set in normal chat (created `None`), so "no pin" → per-turn routing, which the 7e-c per-turn
-> attribution already labels.
+> **▶ 7e-g `AgentSelector` shipped (`b7ce996`) → 7e is FULLY COMPLETE.** Optional per-turn auto-router:
+> when no `/agent` is pinned **and** `agent.auto_rotate` is on, the chat endpoint picks the best-matching
+> specialist by token overlap of the user message against each agent's `name + description`. Off by default;
+> explicit `/agent` + `spawn_subagents` stay primary. All locked decisions honored (default OFF · per-turn,
+> no `thread.agent` write · match `name+description` · strict-winner threshold `auto_rotate_min_overlap`
+> default 2, `ge=1` · tie/below-threshold → default · specialists-only candidates · graceful no-op · one
+> shared matcher). What landed:
+> - **`core/textmatch.py`** (new) — `tokens` + `rank_by_overlap(query, items, text_of, *, min_overlap)`,
+>   extracted from `skills.py`; **`KeywordSkillSelector` refactored onto it** (one scoring path, skill tests
+>   green). **`core/agents.py`** (new) — `AgentSelector` Protocol; `select(user_msg, agents, *, min_overlap)`
+>   takes the threshold **per call** (the one spec deviation from the "no-min_overlap protocol" sketch — owner
+>   intent was "read live", so the protocol carries it; an LLM router can ignore it).
+> - **`services/agent/selector.py`** (new) — `KeywordAgentSelector` (strict winner over `min_overlap`, tie →
+>   `None`) + `select_agent(settings, selector, user_msg)` (loads specialists, **skips a malformed one**, reads
+>   `agent.auto_rotate_min_overlap` live).
+> - **`domain/agent.py`** `AgentDef.description` · **`config.py`** `AgentCfg.auto_rotate=False` +
+>   `auto_rotate_min_overlap=Field(2, ge=1)` · **`api/agent.py`** chat-endpoint routing (resume untouched;
+>   A1 per-session privilege still composes — `model_copy` runs after selection) · **`main.py`**
+>   `app.state.agent_selector = KeywordAgentSelector()`.
+> - **Frontend** — `AgentsEditor` gains a per-specialist **Description** input + an **"Auto-route to
+>   specialists"** master Switch & min-overlap control (immediate-save off `props.cfg`, mirrors SkillsEditor;
+>   number commits on blur). `AgentDef`/`AgentSectionCfg` types + `ConfTab` mapping updated. vapor.css
+>   untouched (D7).
+> - **Verified:** `test_agent_selector_7eg.py` (7: winner/threshold/tie/empty, `select_agent` resolve +
+>   malformed-skip, the chat-endpoint gate on/off/explicit, a `KeywordSkillSelector` regression). **Full
+>   backend suite green (19 files)**, `tsc` clean, **backend rebooted on 5433** (`/api/settings` round-trips
+>   `auto_rotate`/`auto_rotate_min_overlap`; `agent_selector` is a `KeywordAgentSelector`). **Not yet
+>   eyeballed live:** the new AgentsEditor controls at 390px (HMR'd to 5173 — a human glance is the one thing
+>   the tests don't cover; finish opportunistically).
 >
-> **Locked decisions (owner-confirmed):** default **OFF** (`agent.auto_rotate=false`) · **per-turn** routing
-> (stateless, no `thread.agent` write) · match on a **new `AgentDef.description`** (selector matches
-> `name + description`; SOUL.md stays persona) · **conservative threshold ≥2** matching tokens, configurable
-> `agent.auto_rotate_min_overlap` (default 2, `ge=1`) · **tie → default** (don't guess between equals) ·
-> **precedence** `/agent`(body.agent) → `thread.agent` → auto-rotate → `resolve_agent(None)` (configured
-> default → root) · candidates = **specialists only** (default = the no-match fallback) · current message
-> only · graceful no-op (no specialists / all malformed / empty-stopword message → default) · swappable
-> protocol (LLM/embeddings router is a future drop-in) · **one shared matcher** (no duplicate scoring).
->
-> **Backend plan:**
-> 1. **`core/textmatch.py`** (new) — extract `_tokens`/`_STOP`/`_WORD` + a `rank_by_overlap(query, items,
->    text_of, *, min_overlap) -> [(score, item)]` out of `services/agent/skills.py`; **refactor
->    `KeywordSkillSelector` onto it** (one source of truth; existing skill tests must stay green).
-> 2. **`core/agents.py`** (new) — `AgentSelector` Protocol `select(user_msg, agents: list[AgentDef]) -> AgentDef | None`
->    (mirror `core/skills.py`'s `SkillSelector`; picks one specialist or none).
-> 3. **`services/agent/selector.py`** (new) — `KeywordAgentSelector`: rank specialists via `rank_by_overlap`
->    on `name + description`; return the top **only if** its score `≥ min_overlap` **and** it's a strict winner
->    (no tie at the top) — else `None`. Plus **`select_agent(settings, selector, user_msg) -> str | None`**:
->    load specialists (`list_agent_names`/`load_agent`, skip `None`), run the selector, return the picked name.
->    Read `min_overlap` from `settings.agent.auto_rotate_min_overlap` **live** (so a Conf change applies with
->    no restart) — pass it into the selector per call rather than baking it at construction.
-> 4. **`domain/agent.py`** — `AgentDef.description: str = ""` (short routing summary; the selector's match text).
-> 5. **`config.py` `AgentCfg`** — `auto_rotate: bool = False` + `auto_rotate_min_overlap: int = Field(2, ge=1)`
->    (next to `skills_enabled`).
-> 6. **`api/agent.py` chat endpoint** — before `_session`: `agent_name = body.agent; if agent_name is None
->    and thread.agent is None and s.settings.agent.auto_rotate: agent_name = select_agent(s.settings,
->    s.agent_selector, body.text)`. `resume` untouched. A1 per-session privilege still composes (the
->    `model_copy` in `_session` runs after selection).
-> 7. **`main.py`** — `app.state.agent_selector = KeywordAgentSelector()` (mirror `skill_selector`).
->
-> **Frontend plan:**
-> 8. **`AgentsEditor`** — a per-agent **Description** `<input>` in the `mform` (bind `a.description`); an
->    **"Auto-route turns to specialists"** master `Switch` at the top (mirror `SkillsEditor`'s `skills_enabled`
->    row → `saveSettings.mutate({ agent: { auto_rotate: !on } })`), with a small **min-overlap** number input
->    beside it (`auto_rotate_min_overlap`). `types.ts` `AgentDef` gains `description`.
->
-> **Tests** (`test_agent_selector_7eg.py`): clear winner ≥2 picked; below-threshold / tie / empty → `None`;
-> `select_agent` resolves names + skips a malformed agent; chat routes only when `auto_rotate` on + no
-> explicit/thread agent (off → default unchanged, no selection cost); the refactored `KeywordSkillSelector`
-> stays green. Then tsc + full suite + live boot + a 390px eyeball of the new AgentsEditor controls.
->
-> **After 7e-g (7e fully complete) — going in order per the owner (polish/architecture, no rush):**
+> **▶ START HERE NEXT SESSION — 7e is done; pick the next track (owner's order, polish/architecture, no rush):**
 > Phase 5 (`!` user-shell, stubbed in `lib/composer.ts`) → Phase 6 voice (STT/TTS) → emma (Linux) deploy /
-> v1 cutover. Deferred polish still open: C1 dual-mode chat (D17), F29 opt A.
+> v1 cutover. Deferred polish still open: C1 dual-mode chat (D17), F29 opt A (UI_AUDIT §6b). Each needs its
+> own cold pre-flight before building.
 >
 > **7e-d (file memory), 7e-e (`session_search`), and 7e-f-1 (per-agent skills) are done.** 7e-d: read path (`16bde75`) + the
 > **`memory`** write tool (`e5ebcaa`/`ed1dfa8`) + the **Conf Memory panel** (`2e18638`). 7e-e
@@ -232,6 +213,37 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > dev` defaults to 5173 unless `--port 5190`). Phone: `http://corsair:5173`. Both tearable down
 > without state loss. **Heads-up:** pytest is **not installed** in the backend venv — every test file
 > has a `__main__` runner; run `./.venv/Scripts/python.exe tests/<file>.py`.
+
+### ⭐ Session update — 2026-06-21 (build session #8 — **7e-g `AgentSelector` shipped → 7e COMPLETE** · committed `b7ce996`, not pushed yet)
+
+Pre-flighted 7e-g cold despite the prior session's owner-locked spec (re-read every touch point:
+`services/agent/skills.py` `KeywordSkillSelector`, `core/skills.py`, `domain/agent.py`, `api/agent.py`
+chat/resume + `resolve_session_agent`, `config.py` `AgentCfg`, `main.py` wiring, `AgentsEditor`/
+`SkillsEditor` master-switch pattern, `config.py` `list_agent_names`/`load_agent`/`_load_agent_folder`),
+built it end-to-end, ran the full suite + a live boot, committed. **One commit on `main` — NOT pushed
+(awaiting owner go-ahead).** Tree clean except the standing `start_claude_remote.ps1`.
+
+**What shipped (`b7ce996`) — full detail in the "Current state" block above.** The optional per-turn
+auto-router: `agent.auto_rotate` (default OFF) + a shared `core/textmatch.py` matcher (`KeywordSkillSelector`
+refactored onto it, one scoring path) + `core/agents.py` `AgentSelector` protocol + `services/agent/selector.py`
+`KeywordAgentSelector`/`select_agent` + `AgentDef.description` + the chat-endpoint routing + the AgentsEditor
+controls. All locked decisions honored.
+
+**One spec deviation (noted, sensible):** the spec sketched `AgentSelector.select(user_msg, agents) ->
+AgentDef | None` (no threshold), but the locked "read `min_overlap` live, pass per call" requirement needs
+the threshold *somewhere* per call — so the protocol carries `*, min_overlap` (an LLM/embeddings router can
+ignore it). This is the clean reconciliation of the two locked points; flag it if the owner wanted the
+threshold threaded some other way.
+
+**Verified:** `test_agent_selector_7eg.py` (7), **full backend suite green (19 files)**, `tsc` clean, backend
+rebooted on **5433** (`/api/settings` round-trips the two new `agent.*` fields; `agent_selector` is a
+`KeywordAgentSelector`). All workspace tests on a temp `$CTRLB_HOME`. **The one gap:** the new AgentsEditor
+Description input + auto-route switch/number weren't eyeballed live at 390px (HMR'd to 5173) — a human glance
+next session.
+
+**Start here next session:** 7e is complete — pick the next track per the owner's order (Phase 5 `!` user-shell
+→ Phase 6 voice → emma deploy), or a deferred polish item (C1 dual-mode chat D17, F29 opt A). Push `b7ce996`
+first if not already done. Servers: backend **5433** (no `--reload`), frontend **5173**.
 
 ### ⭐ Session update — 2026-06-21 (build session #7 — **A2 `question` kind** shipped + owner-tested · pushed `bb82882`+`472c731`)
 
