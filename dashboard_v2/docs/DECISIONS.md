@@ -459,6 +459,17 @@ Each cites the existing seam it extends. **All eight were ratified one-by-one wi
    (deterministic, model-agnostic, consistency by construction). The protocol stays **swappable** so an
    LLM router or an embeddings selector (over the 4f client) is a drop-in. Only the final keyword
    tuning happens at 7e-g build, with real agent descriptions in hand.
+   **Sub-decisions locked at 7e-g pre-flight (2026-06-21, owner-confirmed):** (a) **per-turn** routing —
+   each unpinned message is routed independently (stateless; no `thread.agent` write; the 7e-c per-turn
+   attribution labels it), not sticky-per-thread. (b) Match on a **new `AgentDef.description`** field (the
+   selector matches `name + description`) — SOUL.md stays pure persona; this refines the "SOUL.md
+   description" wording above (a freeform persona is too noisy to token-match). (c) **Conservative
+   threshold: ≥2** matching tokens to route, configurable via **`agent.auto_rotate_min_overlap`** (default
+   2) — fewer surprise whole-agent switches than the skill selector's ≥1. (d) A **tie at the top score →
+   the default agent** (don't guess between equals). (e) Precedence `/agent` → `thread.agent` → auto-rotate
+   → `resolve_agent(None)`; candidates are **specialists only** (default = no-match fallback). (f) The
+   keyword matcher is **extracted to `core/textmatch.py`** and shared by both `KeywordSkillSelector` +
+   `KeywordAgentSelector` (one implementation). Full file-by-file plan in HANDOFF "▶ START HERE".
 
 **Project-wide cleanups from the same audit** (tracked in `TODO.md` "Design audit"): reconcile
 `ARCHITECTURE.md`/`DESIGN.md` to shipped reality + D14/D15; fix the C1 (streaming both-ways) and A2
