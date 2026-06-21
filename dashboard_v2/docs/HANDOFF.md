@@ -76,11 +76,11 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e-d ✅ · 7e-e ✅ · **7e-f COMPLETE** · **A1 privilege selection ✅ shipped** · 7e-g = last 7e slice, optional)
+## Current state (7e-d ✅ · 7e-e ✅ · **7e-f COMPLETE** · **A1 privilege ✅** · **A2 question ✅** · 7e-g = last 7e slice, optional)
 
-> **Everything is pushed to `origin/main`** (HEAD `8e29690`; A1 = `3bb7716`+`8e29690`, 7e-f-3 = `4b63f59`).
-> **7e-f is done end-to-end** (per-agent skills → core builtins + `skill_manage` → propose-UI), and the
-> standalone **A1 per-session privilege selection (D16)** shipped this session (the next session block).
+> **Everything is pushed to `origin/main`** (HEAD `472c731`; A2 = `bb82882`+`472c731`, A1 = `3bb7716`+`8e29690`).
+> **7e-f is done end-to-end**; the standalone **A1 per-session privilege (D16)** and **A2 `question` kind**
+> (the agent asks the owner mid-turn) both shipped — see their session blocks below.
 >
 > **7e-f-3 — the shared Approve-to-apply propose-UI (`4b63f59`).** When a proposable builtin (`memory`
 > with `auto_write` off / `skill_manage` with `skills_auto_write` off) returns OK + `data["proposed"]`
@@ -115,7 +115,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > **Next (optional): 7e-g — `AgentSelector`** (auto-rotate the active agent, default `KeywordAgentSelector`
 > mirroring `KeywordSkillSelector`, swappable per D15 #8). Last 7e slice; pre-flight `_activate_skills`/
 > the selector seam in `session.py` first. **Decided-but-deferred** (all design-locked): C1 dual-mode chat
-> (D17), A2 question kind, F29 opt A. (**A1 privilege selection — done this session.**)
+> (D17), F29 opt A. (**A1 privilege selection + A2 question kind — done.**)
 >
 > **7e-d (file memory), 7e-e (`session_search`), and 7e-f-1 (per-agent skills) are done.** 7e-d: read path (`16bde75`) + the
 > **`memory`** write tool (`e5ebcaa`/`ed1dfa8`) + the **Conf Memory panel** (`2e18638`). 7e-e
@@ -171,6 +171,41 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > dev` defaults to 5173 unless `--port 5190`). Phone: `http://corsair:5173`. Both tearable down
 > without state loss. **Heads-up:** pytest is **not installed** in the backend venv — every test file
 > has a `__main__` runner; run `./.venv/Scripts/python.exe tests/<file>.py`.
+
+### ⭐ Session update — 2026-06-21 (build session #7 — **A2 `question` kind** shipped + owner-tested · pushed `bb82882`+`472c731`)
+
+Pre-flighted A2 cold (read the confirm-suspend/resume machinery in `session.py` — `_run_calls`,
+`resume`, `_find_pending`, `_drive`, `_tool_content`, the `AgentEvent` wire contract, `task_plan` as the
+sibling), specced it, built it, owner-tested it live, fixed a reported padding bug, pushed. Two commits.
+Tree clean except `start_claude_remote.ps1`. **Locked sub-decisions:** `question` is **core** · the answer
+is typed in the **bubble's own input** · **free-text** MVP (deferred: optional `choices` → quick-reply buttons).
+
+**Key insight from pre-flight:** A2 reuses the confirm-suspend *shape* but the trigger + resume differ —
+the **tool itself** signals suspend (not the permission gate), and resume **injects the owner's answer as
+the call's result** (the dismiss-injection path), it doesn't re-run anything.
+
+- **Backend (`bb82882`):** `RunState.AWAITING_ANSWER`; `services/agent/question.py` `question` builtin
+  (`core=True`, LOW) returns AWAITING_ANSWER with the prompt as summary. `session.py`: a suspend branch on
+  AWAITING_ANSWER (persist, emit **`tool.question`**, stop) mirroring the confirm suspend — same headless
+  guard (subagent → DENIED, carries on); `_run_calls` gains `resume_answers` injecting the reply as an OK
+  result (`output`=answer, read via `_tool_content`); `_find_pending` matches AWAITING_ANSWER;
+  `resume(decision="answer", answer=…)` drives it. dismiss skips a question (reuses `_DISMISS`); an
+  abandoned one falls into `_assemble`'s SKIPPED synthesis. API: `ResumeRequest.answer` + `decision="answer"`.
+- **Frontend (`bb82882`):** `RunState += "awaiting_answer"`; `chat.ts` `tool.question` handler +
+  `answerQuestion(callId, text)` (carries session privilege like `resumeCall`); a dedicated **`QuestionBubble`**
+  (sibling of PlanBubble): prompt + reply input (Send/Dismiss) while awaiting, the answer once resolved.
+- **Padding fix (`472c731`, owner-reported):** `.b.cmd .body` is `padding:0` (each child insets itself);
+  the net-new `.q-prompt`/input had none → gave them the 12px inset and moved Send/Dismiss to the
+  edge-to-edge `.b.cmd .actions` footer so the question bubble matches the confirm bubble. Audited the
+  whole bubble subsystem — every other child (confirm/propose `.actions`, `.cmd-result`, `.think`,
+  `.cmd-links`, plan/sys `.body`) was already inset; the question bubble was the only one affected.
+- **Verified:** `test_question_a2.py` (6: builtin, suspend+event, find_pending, answer injection, headless
+  DENIED, dismiss SKIPPED); full backend suite green (**18 files**; `test_core_builtins` updated — `question`
+  joined the core set); tsc clean; live boot confirms the tool (core) + `ResumeRequest.answer`. **Owner
+  live-tested** the ask→answer→continue loop (works; minig+ calls it on a forced prompt).
+
+**Start here next session: 7e-g — `AgentSelector`** (optional, last 7e slice) or C1/F29. Servers: backend
+**5433** (no `--reload`), frontend **5173**.
 
 ### ⭐ Session update — 2026-06-21 (build session #6 — **A1 per-session privilege selection (D16)** shipped + edge-case review · pushed `3bb7716`+`8e29690`)
 
