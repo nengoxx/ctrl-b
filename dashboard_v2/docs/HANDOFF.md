@@ -76,11 +76,10 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e-d ✅ · 7e-e ✅ · **7e-f sub-sliced: f-1 ✅ · f-2 ✅ committed (unpushed) · f-3 propose-UI = NEXT, needs own pre-flight**)
+## Current state (7e-d ✅ · 7e-e ✅ · **7e-f sub-sliced: f-1 ✅ · f-2 ✅ pushed · f-3 propose-UI = NEXT, needs own pre-flight**)
 
-> **7e-f-2 is committed locally as `fc1aec2` (NOT yet pushed — push needs the owner's OK).** Everything
-> before it is on `origin/main` (HEAD `6dc06db`). **7e-f-2 (core builtins + `skill_manage` + skill-write
-> de-dup) shipped this session:** (1) `ToolSpec.core` + `@action(core=…)`; `for_agent` unions the `core`
+> **Everything is pushed to `origin/main`** (HEAD `af6299e`; 7e-f-2 = `fc1aec2`). **7e-f-2 (core builtins
+> + `skill_manage` + skill-write de-dup) shipped this session:** (1) `ToolSpec.core` + `@action(core=…)`; `for_agent` unions the `core`
 > set so it survives any `tools` allowlist *and* skill narrowing; marked `task_plan`/`memory`/
 > `session_search` `core=True` (resolves deep-audit finding #1 — `coder` no longer silently lacks
 > memory/session_search). (2) `services/agent/skill_tool.py` `skill_manage` builtin (agent-only, LOW,
@@ -153,12 +152,12 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > without state loss. **Heads-up:** pytest is **not installed** in the backend venv — every test file
 > has a `__main__` runner; run `./.venv/Scripts/python.exe tests/<file>.py`.
 
-### ⭐ Session update — 2026-06-20 (build session #4 — **7e-f-2 shipped: core builtins + `skill_manage` + skill-write de-dup** · committed `fc1aec2`, **unpushed**)
+### ⭐ Session update — 2026-06-20 (build session #4 — **7e-f-2 shipped: core builtins + `skill_manage` + skill-write de-dup** · pushed `fc1aec2`/`af6299e`)
 
 Built 7e-f-2 end-to-end off the design lock from build-session #3 (re-read every touch point cold first,
 per the pre-implementation directive — `core/tool.py`, `memory_tool.py`, `skills.py`, `config.py`,
-`api/agent.py` skill/agent file CRUD, the builtin registration). One commit `fc1aec2` on `main`,
-**not pushed** (push awaits the owner's OK). Tree clean except the standing `start_claude_remote.ps1`.
+`api/agent.py` skill/agent file CRUD, the builtin registration), deep-reviewed, and **pushed** (`fc1aec2`
+code + `af6299e`/this docs). Tree clean except the standing `start_claude_remote.ps1`.
 
 **Three pieces (all locked specs):**
 - **Core-builtin reachability.** `ToolSpec.core: bool` + `@action(core=…)`; `ToolRegistry.for_agent`
@@ -185,10 +184,21 @@ per the pre-implementation directive — `core/tool.py`, `memory_tool.py`, `skil
 `spawn_subagents` core=False; `/api/settings` round-trips `agent.skills_auto_write`. All write-tests on a
 temp `$CTRLB_HOME` (never the real config/skills). Frontend untouched this slice (5173 left as-is).
 
+**Deep review (post-push) — clean, one behavioral note:** `for_agent` starts from `agent_tools()` (already
+`agent_exposed`-filtered), so `core` can only re-add tools an agent could already be granted — it can't
+surface a hidden/UI-only tool → **no security-boundary change** (the trio is LOW read/cognitive, still
+gated by `ActionService`). Gating order matches `memory_tool`; the de-dup is behaviour-preserving (7d
+suites green). **Note (not a bug, locked design):** the default agent has `tools="*"`, so it now sees
+`skill_manage` and — with `skills_auto_write` default-**on** — can autonomously author/delete **global**
+skills (exactly mirrors `memory.auto_write`). Kill switch + f-3 propose-mode + audit Events cover it; flip
+`agent.skills_auto_write: false` for propose-only.
+
 **Start here next session: 7e-f-3 — the shared Approve-to-apply propose-UI** (frontend, the biggest new
 surface of 7e-f). Both `memory` and `skill_manage` already emit `data["proposed"]` when their auto-write
-switch is off. **Pre-flight its own touch points first** — the AgentTab `.b.cmd` command bubble + the
-confirm/resume flow + an apply endpoint. Don't start cold. **Also pending: push `fc1aec2`** once cleared.
+switch is off (`memory.auto_write` / `agent.skills_auto_write`). **Pre-flight its own touch points first** —
+the AgentTab `.b.cmd` command bubble + the confirm/resume flow (`/api/agent/resume`) + a new apply endpoint.
+Don't start cold. After f-3, 7e-f is complete → **7e-g** (optional `AgentSelector`, mirrors
+`KeywordSkillSelector`) is the last 7e slice.
 
 ### ⭐ Session update — 2026-06-20 (build session #3 — **7e-f-1 per-agent skills** + **7e-f-2 pre-flight/design-lock** · pushed)
 
