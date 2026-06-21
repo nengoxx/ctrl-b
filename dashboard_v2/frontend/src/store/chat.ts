@@ -512,6 +512,57 @@ export function retryLastTurn(): void {
   void sendMessage(textPart.text);
 }
 
+// Proposals being applied/dismissed right now — guards a double-tap of Approve/Dismiss (the POST is
+// not instant and the bubble stays mounted until the result patch lands).
+const applyingProposals = new Set<string>();
+
+/** Patch the tool_result (and, when applied, its tool_call state) for `callId` with the server's
+ *  resolved result — clears `data.proposed`, so the bubble's Approve/Dismiss affordance disappears. */
+function patchResult(callId: string, result: ToolResult, applied: boolean): void {
+  set({
+    messages: state.messages.map((m) => ({
+      ...m,
+      parts: m.parts.map((p) => {
+        if (p.type === "tool_result" && p.call_id === callId) return { ...p, result };
+        if (applied && p.type === "tool_call" && p.call_id === callId)
+          return { ...p, state: "ok" as RunState };
+        return p;
+      }),
+    })),
+  });
+}
+
+/**
+ * Approve or dismiss a proposed write (7e-f-3) — the chat bubble's affordance for a `memory` /
+ * `skill_manage` call that returned `data.proposed` (its auto-write switch is off). Approve performs
+ * the write the agent proposed; dismiss drops it. Both resolve the proposal server-side (so a reload
+ * doesn't resurrect the buttons) and patch the local result. A failed apply (over cap / stale memory)
+ * leaves the proposal pending and drops a breadcrumb.
+ */
+export async function applyProposal(callId: string, decision: "apply" | "dismiss"): Promise<void> {
+  if (!state.threadId || applyingProposals.has(callId)) return;
+  applyingProposals.add(callId);
+  try {
+    const res = await fetch("/api/agent/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: state.threadId, call_id: callId, decision }),
+    });
+    if (!res.ok) throw new Error(`apply → ${res.status}`);
+    const data = (await res.json()) as { result: ToolResult; applied: boolean };
+    if (decision === "apply" && !data.applied) {
+      // Gate denied / write failed (over cap, stale old_text) — proposal stays pending.
+      pushSystemNote(`// not applied — ${data.result.error ?? data.result.summary}`);
+      return;
+    }
+    patchResult(callId, data.result, data.applied);
+  } catch {
+    pushSystemNote(`// could not ${decision} the proposal — try again`);
+  } finally {
+    applyingProposals.delete(callId);
+  }
+}
+
 /** Resolve a suspended tool call (the command bubble's execute/dismiss) and continue the turn. */
 export async function resumeCall(callId: string, decision: "execute" | "dismiss"): Promise<void> {
   if (state.status === "streaming" || !state.threadId) return;

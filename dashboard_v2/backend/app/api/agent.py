@@ -26,10 +26,12 @@ from app.core.fsutil import write_text_eol
 from app.domain.agent import AgentDef
 from app.domain.conversation import Message, ToolCallPart, ToolResultPart, Thread
 from app.domain.enums import Actor, RunState
+from app.domain.event import Event
 from app.domain.plan import Plan
 from app.domain.result import ToolResult
 from app.runtime import rediscover_integrations
 from app.services.agent.planning import TaskPlanInput
+from app.services.agent.proposals import apply_proposal
 from app.services.agent.session import AgentSession
 from app.services.agent.skills import remove_skill_md, valid_skill_slug, write_skill_md
 
@@ -510,3 +512,82 @@ async def resume(body: ResumeRequest, request: Request) -> EventSourceResponse:
             yield {"event": ev.event, "data": json.dumps(ev.data)}
 
     return EventSourceResponse(gen())
+
+
+class ApplyRequest(BaseModel):
+    """Owner resolution of a proposed write (7e-f-3). A proposable tool (`memory`/`skill_manage`) with
+    its auto-write switch off returns an OK result carrying `data["proposed"]` instead of writing; the
+    chat bubble's Approve/Dismiss posts here. `decision` is apply|dismiss."""
+
+    thread_id: str
+    call_id: str
+    decision: str = "apply"  # "apply" | "dismiss"
+
+
+def _resolved(result: ToolResult, *, applied: bool, summary: str | None = None) -> ToolResult:
+    """A copy of a proposed result with the pending `proposed` cleared and an `applied`/`dismissed`
+    marker set — so the bubble's affordance disappears and a reload doesn't resurrect it."""
+    data = {k: v for k, v in (result.data or {}).items() if k != "proposed"}
+    data["applied" if applied else "dismissed"] = True
+    return result.model_copy(update={"data": data, "summary": summary or result.summary})
+
+
+@router.post("/agent/apply")
+async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[str, Any]:
+    """Approve or dismiss a pending proposed write (7e-f-3). Finds the proposed tool call + its result
+    in the thread (mirrors `/agent/plan`'s in-place update), then:
+
+    - **dismiss** → marks the stored result resolved (clears `proposed`) and persists it.
+    - **apply** → resolves the agent that proposed it (the call's `message.agent`, 7e-c), re-runs the
+      tool's gate + write via `apply_proposal` (bypassing only the auto-write switch). On a successful
+      write it rewrites the stored result (clears `proposed`, marks `applied`), flips the call to OK,
+      and audits the write as a USER Event. If the write fails (over cap / stale `old_text`), the
+      proposal is left pending and the ERROR result is returned for the owner to retry or dismiss.
+    """
+    threads = request.app.state.threads
+    messages = request.app.state.messages
+    thread = await threads.get(body.thread_id)
+    if thread is None:
+        raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
+
+    msgs = await messages.list(body.thread_id)
+    call_msg = call_part = None
+    for m in msgs:
+        for p in m.tool_calls():
+            if p.call_id == body.call_id:
+                call_msg, call_part = m, p
+    result_msg = result_part = None
+    for m in msgs:
+        for rp in m.tool_results():
+            if rp.call_id == body.call_id:
+                result_msg, result_part = m, rp
+    if call_part is None or result_part is None:
+        raise HTTPException(status_code=404, detail=f"no tool call '{body.call_id}' in this thread")
+    if not isinstance(result_part.result.data, dict) or "proposed" not in result_part.result.data:
+        raise HTTPException(status_code=409, detail="no pending proposal for this call")
+
+    if body.decision == "dismiss":
+        result_part.result = _resolved(result_part.result, applied=False, summary="proposal dismissed")
+        await messages.update(result_msg)
+        return {"call_id": body.call_id, "decision": "dismiss", "applied": False,
+                "result": result_part.result.model_dump(mode="json")}
+
+    # apply — re-run the proposing agent's write, auto-write gate aside.
+    deps = request.app.state.deps
+    agent = request.app.state.settings.resolve_agent(call_msg.agent)
+    written = await apply_proposal(deps, agent, call_part.tool, dict(call_part.args))
+    if written.state is not RunState.OK:
+        # Leave the proposal pending (it stays approvable/dismissable) and surface the failure.
+        return {"call_id": body.call_id, "decision": "apply", "applied": False,
+                "result": written.model_dump(mode="json")}
+
+    result_part.result = _resolved(written, applied=True)
+    call_part.state = RunState.OK
+    await messages.update(call_msg)
+    if result_msg is not call_msg:
+        await messages.update(result_msg)
+    await deps.events.record(
+        Event(actor=Actor.USER, action=call_part.tool, status=written.state, summary=written.summary)
+    )
+    return {"call_id": body.call_id, "decision": "apply", "applied": True,
+            "result": result_part.result.model_dump(mode="json")}

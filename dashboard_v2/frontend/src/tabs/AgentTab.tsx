@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAgentRoster } from "../hooks/useAgents";
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
-import { editPlan, initChat, resumeCall, retryLastTurn, useChat } from "../store/chat";
+import { applyProposal, editPlan, initChat, resumeCall, retryLastTurn, useChat } from "../store/chat";
 import type {
   ChatMessage,
   Part,
@@ -147,6 +147,12 @@ function hitsFrom(result: ToolResult | undefined): WebSearchHit[] {
   return Array.isArray(r) ? r : [];
 }
 
+/** Whether this result is a *pending* proposed write (7e-f-3): a `memory`/`skill_manage` call whose
+ *  auto-write switch is off, returned `data.proposed`, and hasn't been approved/dismissed yet. */
+function isProposed(result: ToolResult | undefined): boolean {
+  return !!(result?.data as { proposed?: unknown } | undefined)?.proposed;
+}
+
 /** web_search results as a collapsed-by-default disclosure: the bubble stays compact (just the
  *  "N web result(s)" summary line above), and the owner taps to reveal the actual links to check
  *  the sources. Links open in a new tab; rel guards against tab-nabbing. */
@@ -238,6 +244,18 @@ function CmdBubble({
           <div className={"cmd-result " + okState}>
             // {result.summary}
             {result.error ? ` — ${result.error}` : ""}
+          </div>
+        )}
+        {/* A proposed write (auto-write off): the owner approves it to perform the agent's write, or
+            dismisses it. Reuses the confirm-bubble's action classes (D7). */}
+        {isProposed(result) && (
+          <div className="actions">
+            <button className="exec" onClick={() => void applyProposal(call.call_id, "apply")}>
+              approve
+            </button>
+            <button className="dismiss" onClick={() => void applyProposal(call.call_id, "dismiss")}>
+              dismiss
+            </button>
           </div>
         )}
         {hits.length > 0 && <SearchResults hits={hits} />}

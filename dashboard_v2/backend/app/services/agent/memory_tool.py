@@ -17,7 +17,7 @@ LOW risk → auto-runs under the agent's CONFIRM privilege (no confirm gate), li
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,10 @@ from app.core.tool import InvocationContext, action
 from app.domain.enums import Risk, RunState
 from app.domain.result import ToolResult
 from app.services.agent.memory import MemoryCapError, MemoryWriteError
+
+if TYPE_CHECKING:
+    from app.domain.agent import AgentDef
+    from app.services.deps import Deps
 
 
 class MemoryInput(BaseModel):
@@ -79,15 +83,36 @@ async def memory(inp: MemoryInput, ctx: InvocationContext) -> ToolResult:
     `replace`/`remove` one by its exact `old_text`. No read needed — your memory is injected each
     turn. Use `target=user` for a durable fact about the person you're helping."""
     deps = ctx.deps
+    gated = gate_memory(deps, inp)
+    if gated is not None:
+        return gated
+    agent = ctx.agent or deps.settings.default_agent_def()
+
+    # Kill switch (D15 #6): off → propose, never write, never block. The owner approves it later via
+    # the Approve-to-apply UI (7e-f-3), which re-runs the gate + `apply_memory` below, auto-write
+    # aside — shared with `skill_manage` through `services/agent/proposals.py`.
+    if not deps.settings.memory.auto_write:
+        return ToolResult(
+            state=RunState.OK,
+            summary=f"proposed {inp.action} to {inp.target} memory (not written — auto-write is off)",
+            data={"proposed": inp.model_dump()},
+        )
+    return await apply_memory(deps, agent, inp)
+
+
+def gate_memory(deps: "Deps | None", inp: MemoryInput) -> ToolResult | None:
+    """The shared gate for the memory write path — used by the `memory` tool *and* the Approve-to-apply
+    endpoint (proposals.py). Enforces availability + the master/user-profile switches + the arg checks
+    the model can fix; returns a short-circuit `ToolResult` (DENIED/ERROR) or `None` to proceed. The
+    only thing it does NOT check is `auto_write` — that gate is the tool's alone (off → propose), so an
+    owner-approved apply legitimately bypasses it while every other rail still holds."""
     if deps is None or deps.memory is None:
         return ToolResult(state=RunState.DENIED, summary="memory is not available")
-
     cfg = deps.settings.memory
     if not cfg.enabled:
         return ToolResult(state=RunState.DENIED, summary="memory subsystem is disabled")
     if inp.target == "user" and not cfg.user_profile_enabled:
         return ToolResult(state=RunState.DENIED, summary="user-profile writes are disabled")
-
     # Arg checks the model can fix → ERROR (data, not an exception).
     if inp.action == "add" and not inp.content.strip():
         return ToolResult(
@@ -99,17 +124,13 @@ async def memory(inp: MemoryInput, ctx: InvocationContext) -> ToolResult:
             summary=f"{inp.action} needs old_text",
             error="`old_text` must be an exact substring of the current memory.",
         )
+    return None
 
-    agent = ctx.agent or deps.settings.default_agent_def()
 
-    # Kill switch (D15 #6): off → propose, never write, never block. The approve-to-apply UI is 7e-f.
-    if not cfg.auto_write:
-        return ToolResult(
-            state=RunState.OK,
-            summary=f"proposed {inp.action} to {inp.target} memory (not written — auto-write is off)",
-            data={"proposed": inp.model_dump()},
-        )
-
+async def apply_memory(deps: "Deps", agent: "AgentDef", inp: MemoryInput) -> ToolResult:
+    """Perform the memory write (assumes `gate_memory` passed). Called by the tool when `auto_write`
+    is on, and by the Approve-to-apply endpoint on owner approval. A cap/write failure comes back as
+    an ERROR result (the caller keeps a pending proposal so the owner can retry/dismiss)."""
     try:
         summary = deps.memory.write(agent, inp.target, inp.action, inp.content, inp.old_text)
     except MemoryCapError as exc:

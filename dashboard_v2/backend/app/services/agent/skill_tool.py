@@ -20,7 +20,7 @@ LOW risk → auto-runs under the agent's CONFIRM privilege (no confirm gate), li
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
@@ -33,6 +33,10 @@ from app.services.agent.skills import (
     valid_skill_slug,
     write_skill_md,
 )
+
+if TYPE_CHECKING:
+    from app.domain.agent import AgentDef
+    from app.services.deps import Deps
 
 
 class SkillManageInput(BaseModel):
@@ -76,12 +80,33 @@ async def skill_manage(inp: SkillManageInput, ctx: InvocationContext) -> ToolRes
     """Author or update one of your own skills (a reusable SKILL.md). `save` to create/overwrite by
     `name`, `remove` to delete one. Writes to your own skills folder; live on your next turn."""
     deps = ctx.deps
+    gated = gate_skill(deps, inp)
+    if gated is not None:
+        return gated
+    agent = ctx.agent or deps.settings.default_agent_def()
+
+    # Kill switch (mirrors memory.auto_write, D15 #6): off → propose, never write, never block. The
+    # owner approves it later via the Approve-to-apply UI (7e-f-3), which re-runs the gate +
+    # `apply_skill` below — shared with the `memory` tool through `services/agent/proposals.py`.
+    if not deps.settings.agent.skills_auto_write:
+        return ToolResult(
+            state=RunState.OK,
+            summary=f"proposed {inp.action} of skill '{inp.name}' (not written — auto-write is off)",
+            data={"proposed": inp.model_dump()},
+        )
+    return await apply_skill(deps, agent, inp)
+
+
+def gate_skill(deps: "Deps | None", inp: SkillManageInput) -> ToolResult | None:
+    """The shared gate for the skill write path — used by the `skill_manage` tool *and* the
+    Approve-to-apply endpoint (proposals.py). Enforces availability + the `skills_enabled` master
+    switch + the slug/empty-body arg checks; returns a short-circuit `ToolResult` (DENIED/ERROR) or
+    `None`. Does NOT check `skills_auto_write` — that's the tool's gate (off → propose), so an
+    owner-approved apply bypasses it while every other rail still holds."""
     if deps is None or deps.settings is None:
         return ToolResult(state=RunState.DENIED, summary="skill management is not available")
-
     if not deps.settings.agent.skills_enabled:
         return ToolResult(state=RunState.DENIED, summary="the skills subsystem is disabled")
-
     # Arg checks the model can fix → ERROR (data, not an exception).
     if not valid_skill_slug(inp.name):
         return ToolResult(
@@ -95,18 +120,13 @@ async def skill_manage(inp: SkillManageInput, ctx: InvocationContext) -> ToolRes
             summary="nothing to save",
             error="`content` is the full SKILL.md text — it can't be empty for save.",
         )
+    return None
 
-    agent = ctx.agent or deps.settings.default_agent_def()
 
-    # Kill switch (mirrors memory.auto_write, D15 #6): off → propose, never write, never block. The
-    # Approve-to-apply UI is 7e-f-3, shared with the `memory` tool via the same `data["proposed"]`.
-    if not deps.settings.agent.skills_auto_write:
-        return ToolResult(
-            state=RunState.OK,
-            summary=f"proposed {inp.action} of skill '{inp.name}' (not written — auto-write is off)",
-            data={"proposed": inp.model_dump()},
-        )
-
+async def apply_skill(deps: "Deps", agent: "AgentDef", inp: SkillManageInput) -> ToolResult:
+    """Perform the skill write/remove (assumes `gate_skill` passed). Called by the tool when
+    `skills_auto_write` is on, and by the Approve-to-apply endpoint on owner approval. A `remove` of a
+    non-existent skill comes back as ERROR (the caller keeps a pending proposal to retry/dismiss)."""
     root = agent_skills_root(deps.settings, agent)
     if inp.action == "save":
         write_skill_md(root, inp.name, inp.content)
