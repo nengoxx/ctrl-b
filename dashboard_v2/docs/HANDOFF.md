@@ -76,10 +76,11 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e-d ✅ · 7e-e ✅ · **7e-f COMPLETE: f-1 ✅ · f-2 ✅ · f-3 ✅ all pushed** · 7e-g = last 7e slice, optional)
+## Current state (7e-d ✅ · 7e-e ✅ · **7e-f COMPLETE** · **A1 privilege selection ✅ shipped** · 7e-g = last 7e slice, optional)
 
-> **Everything is pushed to `origin/main`** (HEAD `4b63f59`; 7e-f-3 = `4b63f59`, 7e-f-2 = `fc1aec2`).
-> **7e-f is done end-to-end** (per-agent skills → core builtins + `skill_manage` → propose-UI).
+> **Everything is pushed to `origin/main`** (HEAD `8e29690`; A1 = `3bb7716`+`8e29690`, 7e-f-3 = `4b63f59`).
+> **7e-f is done end-to-end** (per-agent skills → core builtins + `skill_manage` → propose-UI), and the
+> standalone **A1 per-session privilege selection (D16)** shipped this session (the next session block).
 >
 > **7e-f-3 — the shared Approve-to-apply propose-UI (`4b63f59`).** When a proposable builtin (`memory`
 > with `auto_write` off / `skill_manage` with `skills_auto_write` off) returns OK + `data["proposed"]`
@@ -114,7 +115,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > **Next (optional): 7e-g — `AgentSelector`** (auto-rotate the active agent, default `KeywordAgentSelector`
 > mirroring `KeywordSkillSelector`, swappable per D15 #8). Last 7e slice; pre-flight `_activate_skills`/
 > the selector seam in `session.py` first. **Decided-but-deferred** (all design-locked): C1 dual-mode chat
-> (D17), A1 privilege selection (D16), A2 question kind, F29 opt A.
+> (D17), A2 question kind, F29 opt A. (**A1 privilege selection — done this session.**)
 >
 > **7e-d (file memory), 7e-e (`session_search`), and 7e-f-1 (per-agent skills) are done.** 7e-d: read path (`16bde75`) + the
 > **`memory`** write tool (`e5ebcaa`/`ed1dfa8`) + the **Conf Memory panel** (`2e18638`). 7e-e
@@ -170,6 +171,41 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > dev` defaults to 5173 unless `--port 5190`). Phone: `http://corsair:5173`. Both tearable down
 > without state loss. **Heads-up:** pytest is **not installed** in the backend venv — every test file
 > has a `__main__` runner; run `./.venv/Scripts/python.exe tests/<file>.py`.
+
+### ⭐ Session update — 2026-06-21 (build session #6 — **A1 per-session privilege selection (D16)** shipped + edge-case review · pushed `3bb7716`+`8e29690`)
+
+Pre-flighted A1 cold (read `permissions.decide`, `AgentDef.privilege`, the loop's `self._agent.privilege`
+at `session.py:657`, `subagents.resolve_child` clamp, `composer.ts`/`chat.ts` sticky-state, the
+AgentsEditor Seg), specced it fully, built it, owner-tested live, then ran an edge-case review that
+caught + fixed a real nuance. Two commits, pushed. Tree clean except `start_claude_remote.ps1`.
+
+**Leaner than specced:** D16 #1 (global default = `agent.defaults.privilege`) + #2 (per-agent
+`AgentDef.privilege`) were **already editable** in the AgentsEditor Privilege `Seg` (default-row binds
+`agent.defaults`). So A1 was purely the **per-session override + surfacing**.
+- **Backend (`3bb7716`):** `ChatRequest.privilege: Privilege | None` (lenient validator → unknown/blank
+  coerces to None); pure `resolve_session_agent(settings, name, privilege)` = `resolve_agent` +
+  `model_copy(update={"privilege": …})`, most-specific-wins, **no clamp** (owner may raise or lower).
+  The loop + `decide()` are unchanged — it only selects a level on the existing gate. Subagents inherit
+  it correctly: `resolve_child` clamps children to the (overridden) `ctx.agent.privilege` ceiling.
+- **Frontend (`3bb7716`):** shared **`lib/privilege.ts`** (type + `PRIVILEGE_LEVELS`/`_VALUES`/
+  `privilegeLabel`); `AgentsEditor` de-duped onto it (`useAgents` re-exports the type). Reactive
+  `sessionPrivilege` in the chat store (sticky across `/clear`, threaded into the send body); **`/privilege
+  [lvl]`** composer verb (+ `read` alias, bare/`default`/`clear` reset, `/help` line); a tappable
+  **`PrivilegeChip`** in the chat section header (Vapor tokens, vapor.css untouched, D7).
+- **Edge-case review → harden (`8e29690`):** the override wasn't carried across a **confirm resume**
+  (D16 had specced "like `mode`"), so a *lowered* session could silently revert to the agent's higher
+  default mid-turn after executing one confirm — a sharper edge for a **security** control than for
+  routing. Fixed: `ResumeRequest.privilege` (+ shared `_coerce_privilege`), `resume()` passes it,
+  `resumeCall` re-sends `state.sessionPrivilege`. Also chip label `default`→`Default`. **This deviates
+  from D16's "not carried across resume" wording — owner-approved.**
+- **Verified:** `test_privilege_7e.py` (4: validator incl. ResumeRequest, override applies/none,
+  session-beats-agent + no-clamp, `decide()` flips HIGH-risk CONFIRM→ALLOW at `full`); full backend suite
+  green (**17 files**; the `_session` spy in `test_messages_agent_7e` gained the `privilege` kwarg), tsc
+  clean, live boot confirms `privilege` on **both** ChatRequest + ResumeRequest schemas. Owner manually
+  confirmed the chip + verb + gating (readonly denies, confirm gates, full auto-runs).
+
+**Start here next session: 7e-g — `AgentSelector`** (optional, last 7e slice) or a decided-but-deferred
+build (C1/A1-done/A2/F29). Servers: backend **5433** (no `--reload`), frontend **5173**.
 
 ### ⭐ Session update — 2026-06-21 (build session #5 — **7e-f-3 shipped: Approve-to-apply propose-UI → 7e-f COMPLETE** · pushed `4b63f59`)
 

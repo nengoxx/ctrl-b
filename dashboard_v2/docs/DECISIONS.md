@@ -491,6 +491,10 @@ build reuses seams instead of duplicating them.
    override})` when set — exactly the per-turn override pattern `ChatRequest.agent` already uses
    (`session.py:154`). **No clamp** (an interactive, present owner may raise *or* lower it — the
    Claude-Code `/mode` model); a `subagent_clamp_privilege`-style ceiling is out of scope.
+   **Carried across the confirm resume too** (revised at build, 2026-06-21): `ResumeRequest.privilege`
+   + `resumeCall` re-send it, so a *lowered* session can't silently revert to the agent's higher
+   default after one executed confirm. This is the one place A1 diverges from `mode` (which isn't
+   carried) — justified because privilege is a security stance, not a routing knob.
 
 **Surfacing.** A header/composer **chip** shows the active level; a sticky **`/privilege <level>`**
 composer verb sets the session override — both reuse the sticky-session-mode plumbing `/local`/`/cloud`
