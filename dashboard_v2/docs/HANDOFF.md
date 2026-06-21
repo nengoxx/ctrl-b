@@ -76,7 +76,7 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e-f COMPLETE · **A1 privilege ✅** · **A2 question ✅** · **7e-g AgentSelector ✅ → 7e FULLY COMPLETE** · NEXT = Phase 5 / C1 / F29)
+## Current state (7e FULLY COMPLETE · **A1 privilege ✅** · **A2 question ✅** · **7e-g AgentSelector ✅** · **D17 dual-mode chat ✅ (C1 chat half)** · NEXT = Phase 5 / Phase 6 voice / emma deploy)
 
 > **Everything is pushed to `origin/main`** (HEAD `8007772`; latest = the propose-wording fix `8007772`).
 > **7e-f is done end-to-end + the f-3 propose-UI is now owner-verified** (the propose bubble renders;
@@ -213,6 +213,59 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > dev` defaults to 5173 unless `--port 5190`). Phone: `http://corsair:5173`. Both tearable down
 > without state loss. **Heads-up:** pytest is **not installed** in the backend venv — every test file
 > has a `__main__` runner; run `./.venv/Scripts/python.exe tests/<file>.py`.
+
+### ⭐ Session update — 2026-06-21 (build session #9 — **D17 dual-mode chat shipped** · committed `3fb6603`, not pushed yet)
+
+Long design+research session first (the owner pressure-tested the streaming-signal convention), then
+built D17 end-to-end. One commit on `main` — **NOT pushed** (awaiting go-ahead, alongside `b7ce996`+
+`bba38d8` from session #8 which are also unpushed). Tree clean except the standing
+`start_claude_remote.ps1`.
+
+**The chat + resume endpoints are now streaming-or-buffered.** Buffered mode is a second *consumer* of
+the same `run_turn()`/`resume()` `AgentEvent` generator via a new `collect_turn()` — the loop is never
+forked.
+
+**Two decisions taken with the owner (researched, web-sourced):**
+1. **Signal = a `stream` body field** (OpenAI/Anthropic convention), **revising D17's original Accept
+   header.** `ChatRequest.stream`/`ResumeRequest.stream` (bool, default `False`; the PWA always sends
+   `true`). The server `AgentCfg.streaming = auto|on|off` is **authoritative** — `on`/`off` force it for
+   every client, `auto` honors the field. Rationale: the project lives in the OpenAI-compatible
+   ecosystem, so the toggle should look the way any future client/facade expects; a body field also
+   beats a header for robustness (proxies can't strip it).
+2. **Keep ctrl-b's custom stateful protocol as the core; OpenAI stays a boundary/adapter format only**
+   (anti-corruption layer — OpenAI themselves moved agents to the stateful Responses API). A
+   **`POST /v1/chat/completions` facade is deferred to ROADMAP E2** — a ~200–300 LOC adapter reusing
+   `run_turn` + `collect_turn` + the existing `interactive=False` headless-confirm path. The `collect_turn`
+   built here is its foundation.
+
+**What landed (`3fb6603`):**
+- **`session.collect_turn(events)`** → `{state, messageId?, permission?, question?, error?}`. `permission`
+  carries the confirm **token+prompt** — the one thing not persisted — so a **buffered confirm stays
+  resumable** (the make-or-break edge case; unit-tested).
+- **`api/agent.py`**: `_effective_stream(setting, requested)` resolver + a shared `_turn_response()` that
+  branches SSE-vs-JSON for **both** chat (counts `active_turns`) and resume (doesn't), draining the same
+  generator. The streaming branch is **byte-identical** to before (verified live).
+- **`config.py` `AgentCfg.streaming`** (`Literal["auto","on","off"]="auto"`) + a **before-validator**
+  coercing the YAML-1.1 booleans `on`/`off` back to strings (hand-edited-config gotcha — two of three
+  values are YAML bools).
+- **Frontend**: `store/chat.ts streamTurn` branches on response `content-type` — JSON → seed
+  `confirmTokens` from `payload.permission`, then `reloadChat()` (renders the persisted turn + confirm/
+  question bubbles from persisted state; no parallel reducer). All three senders add `stream: true`.
+  Conf → Agents gains a **"Chat delivery" Auto/Stream/Buffer Seg** (savebar-saved). vapor.css untouched (D7).
+
+**Verified:** `test_dual_mode_d17.py` (8: collect_turn folds completed/suspended-confirm-with-token/
+suspended-question/error/capped · resolver truth table · endpoint content-negotiation · on/off overrides ·
+streamed-vs-buffered parity). **Full backend suite green (20 files)**, `tsc` clean. **Live on 5433:**
+`stream:false` → `application/json` payload, `stream:true` → SSE; minig+ answered "pong" both ways.
+**Not eyeballed live:** the **PWA buffered render** (set Conf → Chat delivery = Buffer and send a chat) —
+backend transport + token-in-payload are proven (curl + unit test), frontend type-checks, but a human
+glance at the buffered confirm bubble in the PWA is the one remaining check (couldn't flip the live
+setting without writing the real `config.yaml`, which the temp-config rule forbids).
+
+**Start here next session:** Phase 5 (`!` user-shell, stubbed in `lib/composer.ts`) → Phase 6 voice
+(STT/TTS — D17 is the chat half of C1; TTS/STT are the remaining transports) → emma (Linux) deploy.
+Deferred: the ROADMAP E2 OpenAI facade, F29 opt A. Push `3fb6603` (+ session #8's `b7ce996`/`bba38d8`)
+when ready. Servers: backend **5433** (no `--reload`), frontend **5173**.
 
 ### ⭐ Session update — 2026-06-21 (build session #8 — **7e-g `AgentSelector` shipped → 7e COMPLETE** · committed `b7ce996`, not pushed yet)
 
