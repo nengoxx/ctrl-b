@@ -78,11 +78,10 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
 ## Current state (7e FULLY COMPLETE · **D17 dual-mode chat ✅** · **Phase 5 guarded shell ✅** · NEXT = Phase 6 voice / emma deploy)
 
-> **Everything is pushed to `origin/main`** (HEAD `8007772`; latest = the propose-wording fix `8007772`).
-> **7e-f is done end-to-end + the f-3 propose-UI is now owner-verified** (the propose bubble renders;
-> Approve/Dismiss work; a wording bug was found+fixed — see the f-3-verification note below).
-> The standalone **A1 per-session privilege (D16)** and **A2 `question` kind**
-> (the agent asks the owner mid-turn) both shipped — see their session blocks below.
+> **Everything is pushed to `origin/main`** (HEAD `a6618e7` = the Phase 5 docs commit; code `a5deb24`).
+> **Phase 5 (guarded local shell, the `!` escape hatch) is shipped + owner-verified live at 390px** —
+> see session #10 below. 7e is fully complete; **D17 dual-mode chat**, **A1 per-session privilege
+> (D16)**, **A2 `question` kind**, and **7e-g AgentSelector** all shipped earlier — see their blocks below.
 >
 > **7e-f-3 — the shared Approve-to-apply propose-UI (`4b63f59`).** When a proposable builtin (`memory`
 > with `auto_write` off / `skill_manage` with `skills_auto_write` off) returns OK + `data["proposed"]`
@@ -154,10 +153,13 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >   eyeballed live:** the new AgentsEditor controls at 390px (HMR'd to 5173 — a human glance is the one thing
 >   the tests don't cover; finish opportunistically).
 >
-> **▶ START HERE NEXT SESSION — 7e is done; pick the next track (owner's order, polish/architecture, no rush):**
-> Phase 5 (`!` user-shell, stubbed in `lib/composer.ts`) → Phase 6 voice (STT/TTS) → emma (Linux) deploy /
-> v1 cutover. Deferred polish still open: C1 dual-mode chat (D17), F29 opt A (UI_AUDIT §6b). Each needs its
-> own cold pre-flight before building.
+> **▶ START HERE NEXT SESSION — 7e + D17 + Phase 5 all done; pick the next track (owner's order, no rush):**
+> **Phase 6 voice** (STT/TTS — D17 was the chat half of C1; the mic-button state machine folds in
+> UI_AUDIT F21; HTTPS via Tailscale Serve for the Android mic) → **emma (Linux) deploy / v1 cutover**.
+> Deferred polish: ROADMAP E2 OpenAI `/v1/chat/completions` facade, F29 opt A (UI_AUDIT §6b). Each needs
+> its own cold pre-flight before building. **Phase 5 caveat for Windows hosts:** `run_shell` uses
+> `powershell -Command`, and Windows PowerShell 5.1 rejects `&&`/`||` (pipes/single cmds fine); bash on
+> emma has no such limit — flip to `pwsh` in `shell.py` if `&&` is ever needed on a Windows box.
 >
 > **7e-d (file memory), 7e-e (`session_search`), and 7e-f-1 (per-agent skills) are done.** 7e-d: read path (`16bde75`) + the
 > **`memory`** write tool (`e5ebcaa`/`ed1dfa8`) + the **Conf Memory panel** (`2e18638`). 7e-e
@@ -214,7 +216,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > without state loss. **Heads-up:** pytest is **not installed** in the backend venv — every test file
 > has a `__main__` runner; run `./.venv/Scripts/python.exe tests/<file>.py`.
 
-### ⭐ Session update — 2026-06-21 (build session #10 — **Phase 5 guarded local shell shipped** · committed, not pushed)
+### ⭐ Session update — 2026-06-21 (build session #10 — **Phase 5 guarded local shell shipped** · pushed `a5deb24`+`a6618e7`)
 
 Picked the next track with the owner (Phase 5, their stated order), cold-pre-flighted every touch
 point (composer stub, `permissions.decide`'s reserved `run_shell_allowed` gate, `core/tool.py`,
@@ -261,10 +263,15 @@ tool result pair exactly as `reloadChat` renders. **Not yet eyeballed live in th
 bubble + the new output disclosure + the Conf Shell group at 390px (backend HMR'd; a human glance is
 the one thing the tests don't cover — finish opportunistically).
 
+**Owner verified live at 390px (Puppeteer, this session):** the `!` command bubble renders faithfully —
+green/exit-0 with a working **OUTPUT** disclosure (`echo second`→`second`), red for an error — zero
+console errors; the Conf **Shell** group (#06) renders all six controls + the renumber (07 MCP / 08
+OpenAPI) is correct. **Caveat found:** a `&&` test exited 1 because **Windows PowerShell 5.1 rejects
+`&&`/`||`** (host-shell limitation, not our code; fine on emma/bash — see the START-HERE caveat above).
+
 **Start here next session:** Phase 6 voice (STT/TTS — D17 was the chat half of C1; the mic state machine
 folds in UI_AUDIT F21) → emma (Linux) deploy / v1 cutover. Deferred: ROADMAP E2 OpenAI facade, F29 opt A.
-Push this commit (+ session #8/#9's if still local) when ready. Servers: backend **5433** (no `--reload`),
-frontend **5173**.
+**All pushed** (HEAD `a6618e7`). Servers: backend **5433** (no `--reload`), frontend **5173**.
 
 ### ⭐ Session update — 2026-06-21 (build session #9 — **D17 dual-mode chat shipped** · committed `3fb6603`, not pushed yet)
 
