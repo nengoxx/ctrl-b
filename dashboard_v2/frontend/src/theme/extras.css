@@ -1824,16 +1824,17 @@ body {
 /* ── Question bubble (A2) ──────────────────────────────────────────────────────────────────────
    The `question` builtin asks the owner mid-turn and suspends. Reuses the `.b.cmd` shell + the
    confirm bubble's `.actions`/`.exec`/`.dismiss` buttons; only the prompt + reply input are net-new. */
+/* `.b.cmd .body` is padding:0 (each child insets itself, like `.preamble`/`pre`/`.cmd-result`),
+   so the prompt + input carry their own 12px inset; the Send/Dismiss bar reuses the edge-to-edge
+   `.b.cmd .actions` footer (a direct `.body` child), so the question bubble matches the confirm one. */
 .b.cmd.question .q-prompt {
+  padding: 10px 12px;
   color: var(--ink);
   font-size: 13px;
   line-height: 1.4;
-  margin-bottom: 8px;
 }
-.b.cmd.question .q-answer {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.b.cmd.question .q-input-wrap {
+  padding: 0 12px 10px;
 }
 .q-input {
   width: 100%;

@@ -299,21 +299,24 @@ function QuestionBubble({
       <div className="body">
         <div className="q-prompt">{prompt || "(question)"}</div>
         {awaiting ? (
-          <div className="q-answer">
-            <input
-              className="q-input"
-              value={text}
-              placeholder="type your answer…"
-              aria-label="answer the agent's question"
-              autoFocus
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-            />
+          <>
+            <div className="q-input-wrap">
+              <input
+                className="q-input"
+                value={text}
+                placeholder="type your answer…"
+                aria-label="answer the agent's question"
+                autoFocus
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+              />
+            </div>
+            {/* Edge-to-edge footer bar, identical to the confirm bubble's actions (.b.cmd .actions). */}
             <div className="actions">
               <button className="exec" onClick={send} disabled={!text.trim()}>
                 send
@@ -322,7 +325,7 @@ function QuestionBubble({
                 dismiss
               </button>
             </div>
-          </div>
+          </>
         ) : result ? (
           <div className={"cmd-result " + result.state}>
             // {result.state === "skipped" ? "dismissed" : result.output || result.summary}
