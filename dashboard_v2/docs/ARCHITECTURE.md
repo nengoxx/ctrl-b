@@ -10,9 +10,9 @@ real, typed backend.
 > = `agent.yaml` + `SOUL.md` + `memories/` + `skills/`) — there is **no `agents:[]` list** in config
 > (D14/D15 #3); (2) **memory** follows the Hermes file model (§4 below is superseded by D14/D15 #4–#7);
 > (3) module/file names here are **illustrative** — the real layout is `services/` + `adapters/` +
-> `api/` (see `DESIGN.md` §1); (4) some "day-one" claims aren't built yet — **C1 streaming `auto|on|off`
-> + buffered chat** (chat is SSE-only today) and the **A2 `question` message kind** are future, not
-> shipped; (5) endpoints `/api/prompts`, `/api/memory`, `/api/exec`, `/api/tools` are **not built** —
+> `api/` (see `DESIGN.md` §1); (4) **C1 streaming `auto|on|off` + buffered chat** (D17) and the **A2
+> `question` message kind** are now **shipped** (the `stream` body field + `agent.streaming` setting +
+> `collect_turn`); (5) endpoints `/api/prompts`, `/api/memory`, `/api/exec`, `/api/tools` are **not built** —
 > the real routers are `/api/agents`, `/api/integrations`, `/api/skills`, `/api/agent/default-prompt`.
 
 ```
@@ -218,7 +218,7 @@ GET    /api/threads                     list chat threads
 POST   /api/threads                     new thread
 GET    /api/threads/{id}/messages
 DELETE /api/threads/{id}
-POST   /api/agent/chat                  SSE token stream; may emit action/command bubbles
+POST   /api/agent/chat                  SSE token stream OR buffered JSON (D17 `stream` field); may emit action/command bubbles
 GET    /api/memory                      list memory items     (Conf)
 POST   /api/memory / DELETE /api/memory/{id}
 # Voice

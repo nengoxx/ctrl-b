@@ -47,6 +47,7 @@ export interface AgentSectionCfg {
   subagent_clamp_privilege: boolean;
   auto_rotate: boolean; // auto-route a turn to the best-matching specialist when no /agent is pinned (7e-g)
   auto_rotate_min_overlap: number; // min matching tokens for an auto-route pick
+  streaming: "auto" | "on" | "off"; // dual-mode chat delivery (D17): on=always SSE, off=always buffered, auto=honor client
 }
 
 /** The `default` slug — the workspace-root / generalist agent (no agent.yaml). */

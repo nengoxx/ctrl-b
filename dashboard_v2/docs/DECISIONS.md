@@ -525,11 +525,21 @@ override. Until then this entry is the locked spec; nothing is built ahead of it
 
 ---
 
-## D17 — Dual-mode chat (streaming + buffered) + `streaming` setting (C1) ✅
+## D17 — Dual-mode chat (streaming + buffered) + `streaming` setting (C1) ✅ SHIPPED 2026-06-21
 
-**Decided 2026-06-16: build it** (resolves the C1 "build vs drop" audit item). The chat endpoint
-becomes streaming-or-buffered, governed by one setting — closing the old ARCHITECTURE §1 "both from
-day one" overclaim by making it true.
+**Decided 2026-06-16: build it** (resolves the C1 "build vs drop" audit item); **shipped 2026-06-21**
+with the per-request signal revised from the Accept header to a `stream` body field (see point 2). The
+chat endpoint is now streaming-or-buffered, governed by one setting — closing the old ARCHITECTURE §1
+"both from day one" overclaim by making it true.
+
+**Boundary decision (2026-06-21, with the owner).** ctrl-b keeps its **custom stateful protocol as the
+core** (threads + `AgentEvent`); the OpenAI schema stays a *boundary/adapter* format only — inbound it
+already is (`adapters/inference.py`), outbound it will be a thin `POST /v1/chat/completions` facade
+(deferred to ROADMAP, ~200–300 LOC reusing `run_turn` + `collect_turn` + the existing
+`interactive=False` headless-confirm path). Rationale: OpenAI Chat Completions is a *stateless,
+single-completion* interchange format — the wrong altitude for a stateful, server-executes-tools,
+human-in-the-loop agent (OpenAI themselves moved agents to the stateful Responses API). Anti-corruption
+layer / ports-and-adapters: adapt at the edge, don't pull the vendor schema into the domain.
 
 **Core principle — reuse the turn generator, do not fork it.** `AgentSession.run_turn()` / `resume()`
 are already a single async generator of `AgentEvent`s, and the SSE endpoint (`api/agent.py:126`) only
@@ -543,9 +553,17 @@ is *not* used here — buffering is at the event layer, not the token layer (the
 **Locked choices (with the owner, 2026-06-16):**
 1. **Setting** = `AgentCfg.streaming: Literal["auto","on","off"] = "auto"` (reuse `AgentCfg`,
    `config.py:118` — ROADMAP §Conf files "streaming mode" under Agent; no new config class).
-2. **`auto` signal = HTTP content negotiation (Accept header).** `auto` streams unless the request's
-   `Accept` lacks `text/event-stream`. Standard, idiomatic; the PWA stays streaming with no change; a
-   bot sets `Accept: application/json`. (`ChatRequest.stream` field rejected as a redundant second knob.)
+2. **`auto` signal = a `stream` boolean in the request body** (revised 2026-06-21 — was the Accept
+   header). `ChatRequest.stream: bool = False` + `ResumeRequest.stream`, the **OpenAI/Anthropic
+   convention** (omit → non-streaming). The PWA always sends `stream: true`; the server setting is
+   authoritative and only consults the field in `auto`. **Why the revision:** the project lives in the
+   OpenAI-compatible ecosystem (it consumes OpenAI-compatible inference + STT/TTS), so the streaming
+   toggle should look the way any future client/facade expects — the Accept header is the REST/MCP
+   convention, not the LLM-API one. The signal choice is *decoupled* from the future OpenAI facade
+   (that endpoint brings its own native `stream` field); the field here is for cross-endpoint
+   consistency. Body field also beats a header for robustness (proxies can't strip it; always present
+   after validation). **YAML gotcha handled:** `on`/`off` are YAML-1.1 booleans, so `AgentCfg.streaming`
+   has a before-validator coercing `True→"on"`/`False→"off"` for hand-edited config.
 3. **The setting is authoritative** — `off` buffers **everyone, including the PWA** (whole reply at
    once; legitimate for a flaky link). One global switch, no client carve-out.
 4. **One endpoint, content-negotiated:** `chat()` resolves effective-streaming in one helper, then

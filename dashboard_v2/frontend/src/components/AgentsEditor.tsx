@@ -370,7 +370,8 @@ export function AgentsEditor(props: { cfg: AgentSectionCfg; toolNames: string[];
   const globalsDirty =
     cfg.default_agent !== props.cfg.default_agent ||
     cfg.global_subagent_limit !== props.cfg.global_subagent_limit ||
-    cfg.subagent_clamp_privilege !== props.cfg.subagent_clamp_privilege;
+    cfg.subagent_clamp_privilege !== props.cfg.subagent_clamp_privilege ||
+    cfg.streaming !== props.cfg.streaming;
   useRegisterDirty("agents-globals", globalsDirty);
 
   const toggle = (name: string) => setOpen((o) => (o === name ? null : name));
@@ -399,6 +400,7 @@ export function AgentsEditor(props: { cfg: AgentSectionCfg; toolNames: string[];
         default_agent: cfg.default_agent,
         global_subagent_limit: cfg.global_subagent_limit,
         subagent_clamp_privilege: cfg.subagent_clamp_privilege,
+        streaming: cfg.streaming,
       },
     });
   };
@@ -507,6 +509,21 @@ export function AgentsEditor(props: { cfg: AgentSectionCfg; toolNames: string[];
           <div className="desc">a subagent can never exceed its parent's privilege</div>
         </div>
         <Switch on={cfg.subagent_clamp_privilege} onToggle={() => setCfg({ ...cfg, subagent_clamp_privilege: !cfg.subagent_clamp_privilege })} />
+      </div>
+      <div className="confrow">
+        <div className="k">
+          <div className="label">Chat delivery</div>
+          <div className="desc">auto = client decides · on = always stream · off = buffer whole reply (flaky link)</div>
+        </div>
+        <Seg<"auto" | "on" | "off">
+          current={cfg.streaming}
+          onPick={(v) => setCfg({ ...cfg, streaming: v })}
+          options={[
+            { val: "auto", label: "Auto" },
+            { val: "on", label: "Stream" },
+            { val: "off", label: "Buffer" },
+          ]}
+        />
       </div>
 
       <div className="conf-savebar">

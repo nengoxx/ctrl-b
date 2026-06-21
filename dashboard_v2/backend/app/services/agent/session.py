@@ -102,6 +102,31 @@ class AgentEvent:
     data: dict = field(default_factory=dict)
 
 
+async def collect_turn(events: AsyncIterator[AgentEvent]) -> dict:
+    """Drain a `run_turn()`/`resume()` event stream into one buffered payload (D17, dual-mode chat).
+
+    Buffered mode is a second *consumer* of the same generator — the loop is never forked. Per-token
+    `text`/`reasoning` deltas are discarded (the turn persists the full assistant message to SQLite
+    regardless of transport; the client re-reads it via the normal restore path), so the payload
+    carries only the control data needed to drive the UI: terminal `state`, the assistant `messageId`,
+    and — when the turn suspended — the `permission` (which **carries the confirm token+prompt**, the
+    one thing not persisted, required for a buffered confirm to be resumable) or `question` event, or
+    the `error`. The endpoint merges `{threadId, title}` on top."""
+    out: dict = {"state": "completed"}
+    async for ev in events:
+        if ev.event in ("message.start", "message.end"):
+            out["messageId"] = ev.data.get("messageId")
+        elif ev.event == "tool.permission":
+            out["permission"] = ev.data
+        elif ev.event == "tool.question":
+            out["question"] = ev.data
+        elif ev.event == "error":
+            out["error"] = ev.data
+        elif ev.event == "done":
+            out["state"] = ev.data.get("state", "completed")
+    return out
+
+
 @dataclass
 class _LoopGuard:
     """Per-turn loop-discipline state (capability layer C1), scoped to a single `_drive` call.

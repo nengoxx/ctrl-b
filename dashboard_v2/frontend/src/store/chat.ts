@@ -319,6 +319,24 @@ async function streamTurn(
     });
     if (!res.ok || !res.body) throw new Error(`${url} → ${res.status}`);
 
+    // D17 — buffered (non-streaming) turn: the server returned one JSON payload instead of an SSE
+    // stream (agent.streaming=off, or a non-streaming client). The turn already persisted its
+    // message, so re-read the thread to render the bot reply + any confirm/question bubble (both
+    // render from the persisted call state) — seeding the confirm token from the payload so a
+    // buffered confirm stays resumable (it's the one thing not persisted). No parallel render path.
+    if (res.headers.get("content-type")?.includes("application/json")) {
+      const payload = (await res.json()) as Record<string, any>;
+      if (payload.threadId) set({ threadId: payload.threadId as string });
+      const perm = payload.permission as { callId?: string; token?: string } | undefined;
+      if (perm?.callId && perm.token) confirmTokens[perm.callId] = perm.token;
+      // Clear the streaming placeholder so reloadChat (which skips while "streaming") runs.
+      set({ status: "idle", streamingId: null });
+      await reloadChat();
+      if (payload.state === "capped") pushSystemNote("// reached the step limit — send a message to continue");
+      if (payload.state === "error") set({ status: "error" });
+      return;
+    }
+
     // SSE parser over the fetch byte stream. sse-starlette frames end in a blank line with CRLF
     // line endings (`\r\n\r\n`); tolerate bare `\n` too (the bug that hid live replies in 4a).
     const reader = res.body.getReader();
@@ -424,6 +442,7 @@ export async function sendMessage(
       skills,
       agent: sessionAgent,
       privilege: state.sessionPrivilege,
+      stream: true, // the PWA always prefers streaming; the server's agent.streaming=off can override (D17)
     },
     placeholderId,
   );
@@ -602,6 +621,7 @@ export async function answerQuestion(callId: string, answer: string): Promise<vo
     decision: "answer",
     answer,
     privilege: state.sessionPrivilege,
+    stream: true,
   });
 }
 
@@ -617,5 +637,6 @@ export async function resumeCall(callId: string, decision: "execute" | "dismiss"
     // Carry the session privilege across the resume (A1/D16) so the continuation gates at the same
     // level the suspended turn used — a lowered session can't silently revert to the agent default.
     privilege: state.sessionPrivilege,
+    stream: true,
   });
 }

@@ -197,6 +197,7 @@ export function ConfTab({ active }: Props) {
     auto_rotate: (agentSection as { auto_rotate?: boolean } | undefined)?.auto_rotate ?? false,
     auto_rotate_min_overlap:
       (agentSection as { auto_rotate_min_overlap?: number } | undefined)?.auto_rotate_min_overlap ?? 2,
+    streaming: (agentSection as { streaming?: "auto" | "on" | "off" } | undefined)?.streaming ?? "auto",
   };
   const agentToolNames = actionSpecs.filter((s) => s.agent_exposed).map((s) => s.name);
   const skillNames = skillList.map((s) => s.name);

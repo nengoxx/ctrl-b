@@ -287,6 +287,27 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
   reconcile with the no-public-exposure model: the bot process runs on the tailnet and polls those
   services outbound, which is fine).
 
+### E2. OpenAI-compatible `POST /v1/chat/completions` facade — **deferred (decided 2026-06-21, D17)**
+
+- **What:** expose ctrl-b's agent as an **opaque "agent-as-a-smart-model"** OpenAI endpoint, so any
+  OpenAI-speaking client/SDK/tool can drive it. Tools run *server-side* (invisible to the caller); the
+  response is just the final answer, streamed as `chat.completion.chunk`s or returned as one
+  `chat.completion`.
+- **Why a facade, not a reshaping of `/api/agent/chat`:** OpenAI Chat Completions is a *stateless,
+  client-executes-tools, single-completion* contract — a different altitude from ctrl-b's stateful,
+  server-executes-tools, human-in-the-loop protocol. Keep the custom protocol as the core; this is a
+  boundary adapter (anti-corruption layer, D17). The `stream` field already on `/api/agent/chat` (D17)
+  is the same convention this endpoint uses natively, so the two stay mentally consistent.
+- **Scope (~200–300 LOC):** a new `api/openai_compat.py` router + OpenAI request/response Pydantic
+  models; map `model`→agent (`resolve_agent`), `messages[]`→a seeded ephemeral thread, drive
+  **`run_turn`**; `stream:false`→`collect_turn`→`chat.completion`, `stream:true`→map `text.delta`
+  AgentEvents→`chat.completion.chunk` + `data: [DONE]`. **Confirm policy:** run **`interactive=False`**
+  (the existing headless path) so confirm-gated tools deny-in-place — an OpenAI client can't render a
+  confirm bubble. Usage tokens: return zeros/omit (untracked). Conf toggle to enable; still tailnet-only.
+- **Reuse already in place (from D17):** `collect_turn` + the `interactive=False` headless-confirm path
+  are the foundation — this slice is mostly the OpenAI ↔ domain translation. Target **Chat Completions**
+  (the widest-supported lingua franca) rather than the newer Responses API for max third-party interop.
+
 ---
 
 ## F. Notifications

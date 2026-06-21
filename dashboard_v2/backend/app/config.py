@@ -19,11 +19,11 @@ import io
 import os
 import re
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import yaml
 from dotenv import dotenv_values
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from ruamel.yaml import YAML
 
 from app.domain.agent import AgentDef, CompactionCfg, ModelRef
@@ -149,6 +149,21 @@ class AgentCfg(BaseModel):
     # Min matching tokens for an auto-route pick (conservative; a tie or below-threshold → the
     # default agent). Floored at 1 so a blanked Conf field can't make every message route.
     auto_rotate_min_overlap: int = Field(2, ge=1)
+    # Dual-mode chat delivery (D17). Authoritative server-side: `on` always streams (SSE), `off`
+    # always buffers (one JSON response — e.g. for a flaky link), `auto` honors the request's
+    # `stream` field (the PWA always sends true). Enforced in api/agent.py `_effective_stream`.
+    streaming: Literal["auto", "on", "off"] = "auto"
+
+    @field_validator("streaming", mode="before")
+    @classmethod
+    def _yaml_bool_streaming(cls, v: object) -> object:
+        # YAML 1.1 parses the bare tokens `on`/`off` (two of our three values!) as booleans, so a
+        # hand-edited `streaming: off` arrives as Python False. Coerce it back to the string literal.
+        if v is True:
+            return "on"
+        if v is False:
+            return "off"
+        return v
 
 
 class MemoryCfg(BaseModel):

@@ -18,8 +18,10 @@ from typing import Any
 
 import yaml
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from sse_starlette.sse import EventSourceResponse
+from starlette.responses import Response
 
 from app.config import deep_merge
 from app.core.fsutil import write_text_eol
@@ -33,7 +35,7 @@ from app.runtime import rediscover_integrations
 from app.services.agent.planning import TaskPlanInput
 from app.services.agent.proposals import apply_proposal
 from app.services.agent.selector import select_agent
-from app.services.agent.session import AgentSession
+from app.services.agent.session import AgentSession, collect_turn
 from app.services.agent.skills import remove_skill_md, valid_skill_slug, write_skill_md
 
 router = APIRouter(tags=["agent"])
@@ -60,6 +62,11 @@ class ChatRequest(BaseModel):
     #: raise *or* lower it). Carried across the confirm resume too (it's a security stance, unlike
     #: `mode`) so a lowered session can't silently revert to the agent's higher default mid-turn.
     privilege: Privilege | None = None
+    #: Dual-mode delivery (D17). `true` → SSE stream, `false` → one buffered JSON response. Default
+    #: `false` mirrors the OpenAI convention (omit → non-streaming); the PWA always sends `true`. The
+    #: server's `agent.streaming` setting is authoritative — it only matters in `auto` (see
+    #: `_effective_stream`); `on`/`off` ignore this field.
+    stream: bool = False
 
     @field_validator("mode")
     @classmethod
@@ -92,6 +99,7 @@ class ResumeRequest(BaseModel):
     confirm_token: str | None = None
     answer: str | None = None  # the owner's reply when decision == "answer" (A2)
     privilege: Privilege | None = None
+    stream: bool = False  # dual-mode delivery (D17); the PWA re-sends true so the continuation matches
 
     @field_validator("privilege", mode="before")
     @classmethod
@@ -141,6 +149,54 @@ def _session(
     )
 
 
+def _effective_stream(setting: str, requested: bool) -> bool:
+    """Resolve whether a turn streams (D17). The server `agent.streaming` setting is authoritative —
+    `on` always streams, `off` always buffers (so the override applies to every client, e.g. a flaky
+    link), `auto` honors the client's `stream` field. Pure → unit testable."""
+    if setting == "on":
+        return True
+    if setting == "off":
+        return False
+    return requested  # "auto"
+
+
+async def _turn_response(
+    request: Request,
+    thread: Thread,
+    events: AsyncIterator[Any],
+    *,
+    stream: bool,
+    count: bool,
+) -> Response:
+    """Return a turn as SSE or as one buffered JSON response (D17), draining the **same** event
+    generator either way — `collect_turn` is a second consumer, the loop is never forked. `events` is
+    `session.run_turn(...)` or `session.resume(...)`. `count` toggles the `active_turns` gauge (chat
+    counts; resume historically doesn't). The buffered payload reuses the persisted message — the
+    client re-reads it via the normal restore path, so the body stays small + authoritative."""
+    head = {"threadId": thread.id, "title": thread.title}
+
+    async def _counted(src: AsyncIterator[Any]) -> AsyncIterator[Any]:
+        if count:
+            request.app.state.active_turns += 1
+        try:
+            async for ev in src:
+                yield ev
+        finally:
+            if count:
+                request.app.state.active_turns -= 1
+
+    if not stream:
+        payload = await collect_turn(_counted(events))
+        return JSONResponse({**head, **payload})
+
+    async def gen() -> AsyncIterator[dict[str, Any]]:
+        yield {"event": "thread", "data": json.dumps(head)}
+        async for ev in _counted(events):
+            yield {"event": ev.event, "data": json.dumps(ev.data)}
+
+    return EventSourceResponse(gen())
+
+
 @router.get("/threads")
 async def list_threads(request: Request) -> list[dict[str, Any]]:
     return [t.model_dump(mode="json") for t in await request.app.state.threads.list()]
@@ -162,8 +218,9 @@ async def list_messages(thread_id: str, request: Request) -> list[dict[str, Any]
 
 
 @router.post("/agent/chat")
-async def chat(body: ChatRequest, request: Request) -> EventSourceResponse:
-    """Stream one chat turn. Body: `{text, thread_id?, mode?}`. SSE events per DESIGN §12."""
+async def chat(body: ChatRequest, request: Request) -> Response:
+    """Run one chat turn. Body: `{text, thread_id?, mode?, stream?, …}`. Returns SSE (DESIGN §12) or,
+    when buffered (D17), one JSON payload `{threadId, title, state, messageId?, permission?, …}`."""
     threads = request.app.state.threads
     thread = await threads.get(body.thread_id) if body.thread_id else None
     if thread is None:
@@ -188,18 +245,9 @@ async def chat(body: ChatRequest, request: Request) -> EventSourceResponse:
         agent_name = select_agent(request.app.state.settings, selector, body.text)
 
     session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
-
-    async def gen() -> AsyncIterator[dict[str, Any]]:
-        # Tell the client the thread id first (it may have just been created).
-        yield {"event": "thread", "data": json.dumps({"threadId": thread.id, "title": thread.title})}
-        request.app.state.active_turns += 1
-        try:
-            async for ev in session.run_turn(thread, body.text, mode=body.mode, skills=body.skills):
-                yield {"event": ev.event, "data": json.dumps(ev.data)}
-        finally:
-            request.app.state.active_turns -= 1
-
-    return EventSourceResponse(gen())
+    stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
+    events = session.run_turn(thread, body.text, mode=body.mode, skills=body.skills)
+    return await _turn_response(request, thread, events, stream=stream, count=True)
 
 
 @router.get("/skills")
@@ -554,9 +602,9 @@ async def edit_plan(body: PlanEditRequest, request: Request) -> dict[str, Any]:
 
 
 @router.post("/agent/resume")
-async def resume(body: ResumeRequest, request: Request) -> EventSourceResponse:
-    """Resolve a suspended tool call and continue the turn over a fresh SSE stream (DESIGN §5.3).
-    Body: `{thread_id, call_id, decision, confirm_token?}`."""
+async def resume(body: ResumeRequest, request: Request) -> Response:
+    """Resolve a suspended tool call and continue the turn (DESIGN §5.3). Returns SSE or, when
+    buffered (D17), one JSON payload. Body: `{thread_id, call_id, decision, confirm_token?, stream?}`."""
     threads = request.app.state.threads
     thread = await threads.get(body.thread_id)
     if thread is None:
@@ -567,15 +615,9 @@ async def resume(body: ResumeRequest, request: Request) -> EventSourceResponse:
     msgs = await request.app.state.messages.list(thread.id)
     last_agent = next((m.agent for m in reversed(msgs) if m.role == "assistant" and m.agent), None)
     session = _session(request, thread, agent_name=last_agent, privilege=body.privilege)
-
-    async def gen() -> AsyncIterator[dict[str, Any]]:
-        yield {"event": "thread", "data": json.dumps({"threadId": thread.id, "title": thread.title})}
-        async for ev in session.resume(
-            thread, body.call_id, body.decision, body.confirm_token, body.answer
-        ):
-            yield {"event": ev.event, "data": json.dumps(ev.data)}
-
-    return EventSourceResponse(gen())
+    stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
+    events = session.resume(thread, body.call_id, body.decision, body.confirm_token, body.answer)
+    return await _turn_response(request, thread, events, stream=stream, count=False)
 
 
 class ApplyRequest(BaseModel):
