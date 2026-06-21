@@ -17,6 +17,7 @@ Event contract (DESIGN §12 subset emitted here):
     text.delta       {messageId, delta}       # answer content
     part.added       {messageId, part}        # a tool_call part — UI renders the command bubble
     tool.permission  {callId, tool, args, risk, token, prompt}   # confirm bubble
+    tool.question    {callId, tool, question, args}   # A2: `question` builtin asks the owner (answer bubble)
     tool.result      {callId, result}         # bubble resolves
     compaction       {removed, summaryId, truncated}   # older turns folded into a summary (4e)
     message.end      {messageId}
@@ -360,16 +361,29 @@ class AgentSession:
         return {"removed": res.removed, "summaryId": res.summary_id, "truncated": res.truncated}
 
     async def resume(
-        self, thread: Thread, call_id: str, decision: str, confirm_token: str | None = None
+        self,
+        thread: Thread,
+        call_id: str,
+        decision: str,
+        confirm_token: str | None = None,
+        answer: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        """Resume a suspended turn: execute (with the token) or dismiss the awaited call, finish
-        that step, then continue the loop so the model can react to the result."""
+        """Resume a suspended turn, then continue the loop so the model can react. Three decisions:
+        `execute` (a confirm-gated call — re-run with the token), `dismiss` (skip it — works for a
+        confirm *or* a question), and `answer` (a `question` — inject the owner's `answer` as the
+        call's result, A2). Anything else is treated as execute."""
         assistant = await self._find_pending(thread, call_id)
         if assistant is None:
             yield AgentEvent(
-                "error", {"message": "no pending confirmation for this action", "retryable": False}
+                "error", {"message": "no pending action for this call", "retryable": False}
             )
             yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
+            return
+        if decision == "answer":
+            async for ev in self._drive(
+                thread, resume_assistant=assistant, resume_answers={call_id: answer or ""}
+            ):
+                yield ev
             return
         token = _DISMISS if decision == "dismiss" else confirm_token
         async for ev in self._drive(thread, resume_assistant=assistant, resume_tokens={call_id: token}):
@@ -380,7 +394,10 @@ class AgentSession:
             if m.role != "assistant":
                 continue
             for cp in m.tool_calls():
-                if cp.call_id == call_id and cp.state == RunState.AWAITING_CONFIRM:
+                if cp.call_id == call_id and cp.state in (
+                    RunState.AWAITING_CONFIRM,
+                    RunState.AWAITING_ANSWER,
+                ):
                     return m
         return None
 
@@ -391,6 +408,7 @@ class AgentSession:
         mode: str | None = None,
         resume_assistant: Message | None = None,
         resume_tokens: dict[str, str | None] | None = None,
+        resume_answers: dict[str, str] | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """The loop state machine (DESIGN §5.2). On resume, first finish the suspended step; then
         run model iterations until text-only / suspended / capped. `mode` forces the inference
@@ -404,7 +422,7 @@ class AgentSession:
         )
         if resume_assistant is not None:
             events, suspended, _ = await self._run_calls(
-                thread, resume_assistant, resume_tokens or {}, guard
+                thread, resume_assistant, resume_tokens or {}, guard, resume_answers or {}
             )
             for ev in events:
                 yield ev
@@ -582,6 +600,7 @@ class AgentSession:
         assistant: Message,
         resume_tokens: dict[str, str | None],
         guard: _LoopGuard,
+        resume_answers: dict[str, str] | None = None,
     ) -> tuple[list[AgentEvent], bool, bool]:
         """Process the assistant's not-yet-resolved tool calls in order. ALLOW runs immediately via
         `ActionService` (which validates, decides, executes, records the Event); DENY/bad-args
@@ -597,9 +616,25 @@ class AgentSession:
         suspended = False
         made_progress = False
 
+        answers = resume_answers or {}
         for cp in assistant.tool_calls():
             if cp.state in _RESOLVED:
                 continue  # already ran (resume: an earlier call in this step)
+
+            # A2 resume: the owner answered a suspended `question` — inject their reply as this call's
+            # result (the model reads it like any tool output) without re-running the tool. Mirrors
+            # the `_DISMISS` injection below; the answer text rides in `output`.
+            if cp.call_id in answers:
+                result = ToolResult(
+                    state=RunState.OK, summary="the owner answered", output=answers[cp.call_id]
+                )
+                cp.state = RunState.OK
+                made_progress = True
+                result_parts.append(ToolResultPart(call_id=cp.call_id, result=result))
+                events.append(
+                    AgentEvent("tool.result", {"callId": cp.call_id, "result": result.model_dump(mode="json")})
+                )
+                continue
 
             token = resume_tokens.get(cp.call_id)
             if token == _DISMISS:
@@ -699,6 +734,27 @@ class AgentSession:
                         result = outcome.result or ToolResult(
                             state=RunState.ERROR, summary=f"{cp.tool} returned no result"
                         )
+
+                # A2 — the `question` builtin signals AWAITING_ANSWER to suspend the turn and ask the
+                # owner. Mirrors the confirm suspend above: persist the call, emit `tool.question`,
+                # stop — resumed with the answer injected (top of this loop). A headless subagent has
+                # no one to ask, so (like a headless confirm) it's denied in place and the child carries on.
+                if result.state == RunState.AWAITING_ANSWER:
+                    if not self._interactive:
+                        result = ToolResult(
+                            state=RunState.DENIED,
+                            summary=f"{cp.tool}: cannot ask the owner — headless subagent",
+                        )
+                    else:
+                        cp.state = RunState.AWAITING_ANSWER
+                        events.append(
+                            AgentEvent(
+                                "tool.question",
+                                {"callId": cp.call_id, "tool": cp.tool, "question": result.summary, "args": cp.args},
+                            )
+                        )
+                        suspended = True
+                        break
 
             cp.state = result.state
             if token != _DISMISS:  # a real execution

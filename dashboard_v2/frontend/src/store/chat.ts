@@ -280,6 +280,11 @@ async function streamTurn(
         if (data.token) confirmTokens[data.callId as string] = data.token as string;
         setCallState(data.callId as string, "awaiting_confirm");
         break;
+      case "tool.question":
+        // A2 — the `question` builtin is asking the owner. The prompt is already on the tool_call's
+        // args (from part.added); just flip the state so the answer bubble renders its input.
+        setCallState(data.callId as string, "awaiting_answer");
+        break;
       case "tool.result":
         addToolResult(data.callId as string, data.result as ToolResult);
         break;
@@ -584,6 +589,20 @@ export async function applyProposal(callId: string, decision: "apply" | "dismiss
   } finally {
     applyingProposals.delete(callId);
   }
+}
+
+/** Answer a suspended `question` (A2) and continue the turn — the owner's reply becomes the call's
+ *  result the model reads next. Mirrors `resumeCall` (dismiss a question reuses that path). */
+export async function answerQuestion(callId: string, answer: string): Promise<void> {
+  if (state.status === "streaming" || !state.threadId || !answer.trim()) return;
+  set({ status: "streaming" });
+  await streamTurn("/api/agent/resume", {
+    thread_id: state.threadId,
+    call_id: callId,
+    decision: "answer",
+    answer,
+    privilege: state.sessionPrivilege,
+  });
 }
 
 /** Resolve a suspended tool call (the command bubble's execute/dismiss) and continue the turn. */

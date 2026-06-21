@@ -5,6 +5,7 @@ import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
 import { PRIVILEGE_LEVELS, privilegeLabel, type Privilege } from "../lib/privilege";
 import {
+  answerQuestion,
   applyProposal,
   editPlan,
   initChat,
@@ -273,6 +274,65 @@ function CmdBubble({
   );
 }
 
+/** A `question` call (A2): the agent asked the owner something and suspended. While awaiting, show the
+ *  prompt + a reply input (Send / Dismiss); once answered/dismissed, show the outcome. Sibling of
+ *  PlanBubble — questions render their own bubble, not a CmdBubble. */
+function QuestionBubble({
+  call,
+  result,
+  ts,
+}: {
+  call: ToolCallPart;
+  result: ToolResult | undefined;
+  ts: string;
+}) {
+  const prompt = typeof call.args.prompt === "string" ? call.args.prompt : "";
+  const awaiting = !result && call.state === "awaiting_answer";
+  const [text, setText] = useState("");
+  const send = () => {
+    const a = text.trim();
+    if (a) void answerQuestion(call.call_id, a);
+  };
+  return (
+    <div className="b cmd question">
+      <div className="who">assistant · {hm(ts)}</div>
+      <div className="body">
+        <div className="q-prompt">{prompt || "(question)"}</div>
+        {awaiting ? (
+          <div className="q-answer">
+            <input
+              className="q-input"
+              value={text}
+              placeholder="type your answer…"
+              aria-label="answer the agent's question"
+              autoFocus
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+            />
+            <div className="actions">
+              <button className="exec" onClick={send} disabled={!text.trim()}>
+                send
+              </button>
+              <button className="dismiss" onClick={() => void resumeCall(call.call_id, "dismiss")}>
+                dismiss
+              </button>
+            </div>
+          </div>
+        ) : result ? (
+          <div className={"cmd-result " + result.state}>
+            // {result.state === "skipped" ? "dismissed" : result.output || result.summary}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function Bubbles({
   m,
   streaming,
@@ -317,8 +377,9 @@ function Bubbles({
   const text = textOf(m.parts);
   const calls = m.parts.filter((p): p is ToolCallPart => p.type === "tool_call");
   const working = streaming && !text && !err && !calls.length;
-  // The first non-plan tool call hosts the thinking (plan bubbles are just breadcrumbs).
-  const reasoningHostId = calls.find((c) => c.tool !== "task_plan")?.call_id;
+  // The first non-plan, non-question tool call hosts the thinking (plan + question render their own
+  // bubbles, so reasoning rides into a CmdBubble or, failing that, the bot bubble).
+  const reasoningHostId = calls.find((c) => c.tool !== "task_plan" && c.tool !== "question")?.call_id;
   const reasoningInBot = !!reasoning && !reasoningHostId;
   const showBot = !!(text || err || working || reasoningInBot);
 
@@ -364,6 +425,8 @@ function Bubbles({
       {calls.map((c) =>
         c.tool === "task_plan" ? (
           <PlanBubble key={c.call_id} call={c} result={resultFor(c.call_id)} />
+        ) : c.tool === "question" ? (
+          <QuestionBubble key={c.call_id} call={c} result={resultFor(c.call_id)} ts={m.ts} />
         ) : (
           <CmdBubble
             key={c.call_id}

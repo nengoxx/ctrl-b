@@ -1820,3 +1820,31 @@ body {
   color: var(--ink);
   background: rgba(var(--accent-rgb), 0.14);
 }
+
+/* ── Question bubble (A2) ──────────────────────────────────────────────────────────────────────
+   The `question` builtin asks the owner mid-turn and suspends. Reuses the `.b.cmd` shell + the
+   confirm bubble's `.actions`/`.exec`/`.dismiss` buttons; only the prompt + reply input are net-new. */
+.b.cmd.question .q-prompt {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+.b.cmd.question .q-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.q-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13px;
+}
+.q-input:focus {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.55);
+}

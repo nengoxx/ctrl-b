@@ -23,10 +23,10 @@ def _registry():
     return build_registry()
 
 
-_CORE = {"task_plan", "memory", "session_search"}
+_CORE = {"task_plan", "memory", "session_search", "question"}  # `question` joined the core set (A2)
 
 
-def test_core_set_is_the_cognitive_trio() -> None:
+def test_core_set_is_the_cognitive_set() -> None:
     reg = _registry()
     assert {t.spec.name for t in reg.all() if t.spec.core} == _CORE
 

@@ -73,6 +73,7 @@ export type Risk = "low" | "med" | "high";
 export type RunState =
   | "pending"
   | "awaiting_confirm"
+  | "awaiting_answer"
   | "running"
   | "ok"
   | "error"

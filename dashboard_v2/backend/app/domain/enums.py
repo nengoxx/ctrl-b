@@ -58,7 +58,8 @@ class RunState(StrEnum):
     TIMEOUT) are *data* on a result, not exceptions — the agent reads and reacts to them."""
 
     PENDING = "pending"
-    AWAITING_CONFIRM = "awaiting_confirm"
+    AWAITING_CONFIRM = "awaiting_confirm"  # a confirm-gated call, suspended for the owner's approval
+    AWAITING_ANSWER = "awaiting_answer"    # a `question` builtin, suspended for the owner's reply (A2)
     RUNNING = "running"
     OK = "ok"
     ERROR = "error"

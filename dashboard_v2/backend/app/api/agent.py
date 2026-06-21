@@ -80,14 +80,16 @@ class CompactRequest(BaseModel):
 
 
 class ResumeRequest(BaseModel):
-    """Resolve a suspended tool call (4b confirm bubble). `decision` is execute|dismiss; execute
-    must carry the `confirm_token` from the `tool.permission` event. `privilege` carries the session
-    override across the round-trip (A1/D16) so the continuation gates at the same level."""
+    """Resolve a suspended tool call. `decision` is execute|dismiss|answer: `execute` re-runs a
+    confirm-gated call (carry the `confirm_token` from `tool.permission`), `dismiss` skips it (confirm
+    *or* question), `answer` supplies the owner's reply to a `question` (A2) in `answer`. `privilege`
+    carries the session override across the round-trip (A1/D16) so the continuation gates the same."""
 
     thread_id: str
     call_id: str
-    decision: str = "execute"  # "execute" | "dismiss"
+    decision: str = "execute"  # "execute" | "dismiss" | "answer"
     confirm_token: str | None = None
+    answer: str | None = None  # the owner's reply when decision == "answer" (A2)
     privilege: Privilege | None = None
 
     @field_validator("privilege", mode="before")
@@ -554,7 +556,9 @@ async def resume(body: ResumeRequest, request: Request) -> EventSourceResponse:
 
     async def gen() -> AsyncIterator[dict[str, Any]]:
         yield {"event": "thread", "data": json.dumps({"threadId": thread.id, "title": thread.title})}
-        async for ev in session.resume(thread, body.call_id, body.decision, body.confirm_token):
+        async for ev in session.resume(
+            thread, body.call_id, body.decision, body.confirm_token, body.answer
+        ):
             yield {"event": ev.event, "data": json.dumps(ev.data)}
 
     return EventSourceResponse(gen())

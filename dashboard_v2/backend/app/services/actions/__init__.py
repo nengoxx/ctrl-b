@@ -26,6 +26,7 @@ from app.services.agent import subagents  # noqa: E402,F401  # spawn_subagents b
 from app.services.agent import memory_tool  # noqa: E402,F401  # memory write tool (7e-d-2)
 from app.services.agent import session_search  # noqa: E402,F401  # session_search builtin (7e-e)
 from app.services.agent import skill_tool  # noqa: E402,F401  # skill_manage builtin (7e-f-2)
+from app.services.agent import question as _question  # noqa: E402,F401  # question builtin (A2)
 
 
 def build_registry() -> ToolRegistry:
