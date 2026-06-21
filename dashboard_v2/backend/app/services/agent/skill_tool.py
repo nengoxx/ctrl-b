@@ -91,7 +91,8 @@ async def skill_manage(inp: SkillManageInput, ctx: InvocationContext) -> ToolRes
     if not deps.settings.agent.skills_auto_write:
         return ToolResult(
             state=RunState.OK,
-            summary=f"proposed {inp.action} of skill '{inp.name}' (not written — auto-write is off)",
+            summary=f"proposed {inp.action} of skill '{inp.name}' — awaiting the owner's approval (NOT saved yet)",
+            output="Not saved yet — the owner must approve this proposal. Say you've proposed it for approval; don't claim the skill is saved.",
             data={"proposed": inp.model_dump()},
         )
     return await apply_skill(deps, agent, inp)

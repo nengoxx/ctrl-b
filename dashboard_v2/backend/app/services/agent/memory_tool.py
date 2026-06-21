@@ -94,7 +94,8 @@ async def memory(inp: MemoryInput, ctx: InvocationContext) -> ToolResult:
     if not deps.settings.memory.auto_write:
         return ToolResult(
             state=RunState.OK,
-            summary=f"proposed {inp.action} to {inp.target} memory (not written — auto-write is off)",
+            summary=f"proposed {inp.action} to {inp.target} memory — awaiting the owner's approval (NOT saved yet)",
+            output="Not saved yet — the owner must approve this proposal. Say you've proposed it for approval; don't claim it's saved.",
             data={"proposed": inp.model_dump()},
         )
     return await apply_memory(deps, agent, inp)
