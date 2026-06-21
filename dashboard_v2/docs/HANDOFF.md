@@ -78,8 +78,10 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
 ## Current state (7e-d ✅ · 7e-e ✅ · **7e-f COMPLETE** · **A1 privilege ✅** · **A2 question ✅** · 7e-g = last 7e slice, optional)
 
-> **Everything is pushed to `origin/main`** (HEAD `472c731`; A2 = `bb82882`+`472c731`, A1 = `3bb7716`+`8e29690`).
-> **7e-f is done end-to-end**; the standalone **A1 per-session privilege (D16)** and **A2 `question` kind**
+> **Everything is pushed to `origin/main`** (HEAD `8007772`; latest = the propose-wording fix `8007772`).
+> **7e-f is done end-to-end + the f-3 propose-UI is now owner-verified** (the propose bubble renders;
+> Approve/Dismiss work; a wording bug was found+fixed — see the f-3-verification note below).
+> The standalone **A1 per-session privilege (D16)** and **A2 `question` kind**
 > (the agent asks the owner mid-turn) both shipped — see their session blocks below.
 >
 > **7e-f-3 — the shared Approve-to-apply propose-UI (`4b63f59`).** When a proposable builtin (`memory`
@@ -112,24 +114,30 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >   an unknown `decision` value falls through to apply (mirrors `ResumeRequest`'s `execute`-default); a
 >   sub-round-trip double-tap past both guards could double-write (negligible, single-user).
 >
-> **▶ START HERE NEXT SESSION — finish verifying 7e-f (the owner's pick).** 7e-f is built end-to-end, but
-> the **f-3 Approve-to-apply propose-UI was never eyeballed live** — it only renders when a proposable
-> builtin proposes instead of writing, i.e. with an auto-write switch **off**. To exercise it:
-> 1. Turn an auto-write switch off — **Conf → Memory panel** toggle `auto_write` off (or set
->    `memory.auto_write: false` / `agent.skills_auto_write: false`), restart backend on 5433 if edited via file.
-> 2. In chat, get the agent to call **`memory`** (e.g. *"remember that I prefer dark mode"*) — with auto-write
->    off it returns a **proposal**, so the tool bubble shows **Approve / Dismiss** (the `data["proposed"]` path).
-> 3. **Approve** → the write actually lands (check the Memory panel / `memories/MEMORY.md`); **Dismiss** →
->    discarded; **reload** → the resolved proposal should NOT resurrect its buttons (it's persisted via
->    `messages.update`). Same flow for **`skill_manage`** with `agent.skills_auto_write: false`.
-> If anything's off, the code is `api/agent.py` `POST /api/agent/apply` + `store/chat.ts applyProposal` +
-> `AgentTab` CmdBubble (the `isProposed(result)` affordance). Backend behaviour is covered by
-> `test_apply_proposal_7e.py` (8) — this is purely the **visual/interaction** glance the tests can't do.
+> **f-3 propose-UI verification (DONE this session).** Owner live-tested with `memory.auto_write` off: the
+> `memory` call returned a proposal and the bubble showed **Approve/Dismiss** as designed. One real bug
+> surfaced + fixed (`8007772`): the propose result read as an OK "proposed…" and the model told the owner
+> it was *saved* while the bubble was still pending. Both propose paths now say "**— awaiting the owner's
+> approval (NOT saved yet)**" + a one-line steering `output` ("say you've proposed it; don't claim it's
+> saved"). Backend apply is covered by `test_apply_proposal_7e.py` (8). **Still un-eyeballed (low):** the
+> Approve-writes / reload-doesn't-resurrect / `skill_manage`-propose paths — backend-tested, just no human
+> glance yet; finish opportunistically. **Noted, not changed:** a *dismissed* proposal keeps `state=OK`
+> (summary "proposal dismissed") — clear enough; flip `_resolved` to SKIPPED if ever desired.
 >
-> **Then (optional): 7e-g — `AgentSelector`** (auto-rotate the active agent, default `KeywordAgentSelector`
-> mirroring `KeywordSkillSelector`, swappable per D15 #8). Last 7e slice; pre-flight `_activate_skills`/
-> the selector seam in `session.py` first. **Decided-but-deferred** (all design-locked): C1 dual-mode chat
-> (D17), F29 opt A. (**A1 privilege selection + A2 question kind — done.**)
+> **▶ START HERE NEXT SESSION — pick the next track (7e is effectively complete; this is a direction call):**
+> - **7e-g — `AgentSelector`** (the last 7e slice, *optional + marginal*): auto-rotate the active agent
+>   (default `KeywordAgentSelector` mirroring `KeywordSkillSelector`, swappable per D15 #8). Closes 7e
+>   formally, but low value for a single power user who already has explicit `/agent` + `spawn_subagents`.
+>   Pre-flight `_activate_skills` / the selector seam in `session.py` first.
+> - **v1-cutover track (higher impact):** **Phase 6 voice** (OpenAI-compatible STT/TTS — flagship for the
+>   owner's Android use), **Phase 5** the `!` user-shell on the backend host (already stubbed in
+>   `lib/composer.ts`), or the **emma (Linux) deploy** that retires the live Flask app. These are the
+>   "make it a daily driver / actually ship" moves.
+> - **Remaining deferred polish:** C1 dual-mode chat (D17, best paired with Phase 6), F29 opt A (editor
+>   conflict). **Done:** A1 privilege · A2 question · 7e-f f-1/f-2/f-3.
+>
+> **Recommendation:** 7e-g is skippable. If the goal is a richer daily driver, **Phase 6 voice**; if the
+> goal is to *ship v1*, the **emma deploy**. Confirm the track with the owner before pre-flighting.
 >
 > **7e-d (file memory), 7e-e (`session_search`), and 7e-f-1 (per-agent skills) are done.** 7e-d: read path (`16bde75`) + the
 > **`memory`** write tool (`e5ebcaa`/`ed1dfa8`) + the **Conf Memory panel** (`2e18638`). 7e-e
