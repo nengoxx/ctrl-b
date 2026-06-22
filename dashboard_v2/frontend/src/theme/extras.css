@@ -227,6 +227,31 @@ body[data-motion="reduced"] .conn-badge.reconnecting .dot {
 .mini-player .mp-close:hover { opacity: 1; }
 .mini-player .mp-close:active { transform: scale(0.9); }
 
+/* ── Phase 6c-2 — HTTPS access card (Tailscale Serve) in the Server conf group. The URL wraps; the
+   copy button is a small vapor-token pill. Built from existing conf classes; vapor.css untouched (D7). */
+.conf-card .conf-url {
+  word-break: break-all;
+  color: var(--teal);
+}
+.conf-card .conf-copy {
+  all: unset;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--teal);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+}
+.conf-card .conf-copy:active {
+  transform: scale(0.95);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
 /* ── F16 — Live SSE connection badge in the appbar.
    Renders only when the connection is NOT "connected" (driven by store/connection.ts via
    hooks/useEvents.ts). Compact pill that sits between `.brand` (which has flex: 1 and

@@ -6,6 +6,7 @@ import { MemoryEditor } from "../components/MemoryEditor";
 import { ServerListEditor } from "../components/ServerListEditor";
 import { SkillsEditor } from "../components/SkillsEditor";
 import { ToolDescriptionsEditor } from "../components/ToolDescriptionsEditor";
+import { useAccessStatus, useSetServe } from "../hooks/useAccess";
 import { useActionSpecs } from "../hooks/useActions";
 import { useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
@@ -18,6 +19,7 @@ import { promptPreview } from "../lib/promptPreview";
 import { useCollapsed } from "../store/collapse";
 import { useRegisterDirty } from "../store/dirty";
 import { requestPrompt } from "../store/prompt";
+import { pushToast } from "../store/toast";
 import { setUI, useUISlice, type Skyline, type Theme, type Loz } from "../store/ui";
 
 // Conf tab. Appearance is wired to the live UI store (client display state). Phase 7a wires the
@@ -53,6 +55,68 @@ function Switch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
     <div className={"switch" + (on ? " on" : "")} onClick={onToggle}>
       <div className="knob" />
+    </div>
+  );
+}
+
+/** HTTPS access (Tailscale Serve) — 6c-2. A live-action card inside the Server group: flips the
+ *  tailnet HTTPS front door on/off (so the phone mic gets a secure context) and shows the URL to open.
+ *  Acts immediately (not via the draft/saveBar); tailscaled is the source of truth. Degrades to a hint
+ *  when the CLI is unavailable. */
+function TailscaleAccessCard() {
+  const { data, isLoading } = useAccessStatus();
+  const setServe = useSetServe();
+  const copy = (url: string) =>
+    void navigator.clipboard?.writeText(url).then(
+      () => pushToast("URL copied", "ok"),
+      () => pushToast("Copy failed", "err"),
+    );
+
+  if (isLoading || !data || !data.enabled) return null; // not ready, or control disabled in config
+
+  if (!data.available) {
+    return (
+      <div className="conf-card">
+        <div className="confrow">
+          <div className="k">
+            <div className="label">HTTPS access (Tailscale Serve)</div>
+            <div className="desc">unavailable — {data.reason ?? "tailscale not ready"} · see HTTPS_TAILSCALE.md</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="conf-card">
+      <div className="confrow">
+        <div className="k">
+          <div className="label">HTTPS access (Tailscale Serve)</div>
+          <div className="desc">
+            {data.serving
+              ? "on — the phone mic works over HTTPS"
+              : "off — enable for the phone mic (secure context)"}{" "}
+            · port {data.target_port}
+          </div>
+        </div>
+        <Switch
+          on={data.serving}
+          onToggle={() => {
+            if (!setServe.isPending) setServe.mutate(!data.serving);
+          }}
+        />
+      </div>
+      {data.url && (
+        <div className="confrow">
+          <div className="k">
+            <div className="label">URL</div>
+            <div className="desc conf-url">{data.url}</div>
+          </div>
+          <button type="button" className="conf-copy" onClick={() => copy(data.url!)}>
+            copy
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -488,6 +552,8 @@ export function ConfTab({ active }: Props) {
           </div>
         </div>
         {saveBar}
+        {/* HTTPS access (Tailscale Serve) — a live toggle, separate from the saved fields above (6c-2). */}
+        <TailscaleAccessCard />
       </ConfGroup>
 
       <ConfGroup id="searxng" num="03" title="SearXNG" right="web_search">
