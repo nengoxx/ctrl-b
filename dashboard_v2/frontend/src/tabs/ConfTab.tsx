@@ -551,9 +551,10 @@ export function ConfTab({ active }: Props) {
             <Switch on={!!srv?.debug} onToggle={() => setSrv("debug", !srv?.debug)} />
           </div>
         </div>
-        {saveBar}
-        {/* HTTPS access (Tailscale Serve) — a live toggle, separate from the saved fields above (6c-2). */}
+        {/* HTTPS access (Tailscale Serve) — a live toggle (acts immediately, not part of the saved
+            fields). Sits above the save bar so it reads as a control, not an afterthought (6c-2). */}
         <TailscaleAccessCard />
+        {saveBar}
       </ConfGroup>
 
       <ConfGroup id="searxng" num="03" title="SearXNG" right="web_search">
