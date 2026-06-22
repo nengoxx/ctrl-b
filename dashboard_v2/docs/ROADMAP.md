@@ -204,14 +204,24 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
   there is **no single global streaming toggle** (the three transports have different semantics +
   failure modes; over-coupling them was an early over-simplification):
   - **Chat** — `AgentCfg.streaming: auto|on|off` (✅ shipped design **D17**: SSE vs buffered-JSON one
-    endpoint, Accept-header negotiation under `auto`, setting authoritative). Done as a decision.
-  - **TTS** — its **own** knob in the Phase 6 voice config block: full-clip vs **chunked playback**
-    (progressive audio; the real latency win is sentence-pipelining with the chat stream). Built in Phase 6.
-  - **STT** — **always buffered** (push-to-talk record-then-send); **no toggle.** Live partial
-    transcription is a large complexity jump (streaming-capable backend + websocket/chunked) for
-    marginal benefit on a single-user mic — out of scope unless a concrete need appears.
-- **Design implication:** chat's dual-mode is D17. Voice (Phase 6) builds the TTS streaming knob and
-  the buffered STT path; the voice config block lands with Phase 6 (`config.py` has no voice section yet).
+    endpoint, `stream` body field under `auto`, setting authoritative). Shipped.
+  - **Voice (STT live dictation + TTS progressive playback)** — a **designed integration pattern, D19**
+    (2026-06-22): each service has a **reliable buffered transport** (shipped in 6a — one-shot HTTP with
+    full D18 failover, the default + floor) and an optional **streaming transport** layered on top as a
+    *fast path that degrades to the buffered one*. Per-service `voice.{stt,tts}.streaming: auto|on|off`
+    reusing D17's vocabulary. **STT** streams over the primary's Speaches `/v1/realtime?intent=transcription`
+    WebSocket (verified your model is supported) via a backend WS proxy + an extension to `useDictation`
+    (AudioWorklet PCM + provisional-draft) — no parallel component. **TTS** streams as a second *source
+    strategy* on the `audioController` singleton (MSE progressive playback), trading the seekable scrubber
+    for time-to-first-audio in `stream` mode. **Full design + cost in D19.**
+- **Revision note (2026-06-22):** this supersedes the earlier "STT is always buffered, no toggle" line —
+  the owner asked for streaming STT as a real, integrated pattern, and Speaches already exposes the
+  realtime ASR, so it's now a first-class designed transport (D19), just deferred (post-v1 polish, not a
+  Phase-6 build).
+- **Design implication:** chat's dual-mode is D17; voice's two-transport pattern is **D19**. Phase 6a/6b
+  shipped the **buffered** STT + TTS transports (the reliable floor); the streaming transports are the
+  D19 follow-ups, each with its own pre-flight. The measured STT cold-start lag is fixed *server-side*
+  (keep the whisper model warm), independent of streaming.
 
 ### C2. Wake word
 

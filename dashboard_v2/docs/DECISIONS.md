@@ -632,6 +632,83 @@ slice, gets its own pre-flight, and reuses `core/failover.py` unchanged.
 
 ---
 
+## D19 — Voice streaming transports: a fast-path over the reliable request path ✏️ DESIGNED 2026-06-22 (not built)
+
+**Decided 2026-06-22 (with the owner), after a measured STT-latency audit** (warm STT ≈0.6s, our
+backend overhead ≈0; the felt lag was the Speaches whisper model **cold-reloading after idle**, fixed
+server-side by keeping it warm). Streaming voice (live dictation + progressive TTS) is **not the fix for
+that lag** — it's a UX upgrade — so it's a **designed pattern, deferred**, not a Phase-6 build. This
+**revises** the earlier "STT is always buffered, no toggle" stance (ROADMAP C1): streaming STT is now a
+first-class, designed transport, because the server already supports it (below).
+
+**The pattern — one principle: two transports behind one interface, fast-path over reliable-fallback.**
+Each voice service (STT, TTS) has:
+- a **reliable request transport** — the shipped buffered path (one-shot HTTP through `core.failover`,
+  D18; full primary→fallback). The **default and the floor.**
+- an optional **low-latency streaming transport** — a *session* (WebSocket for STT, chunked/MSE for TTS)
+  that emits output before the whole utterance/clip is done.
+
+The streaming transport **targets the primary endpoint only**; if the session can't establish — or drops
+mid-utterance — the client **degrades to the buffered request transport**, which keeps D18's full
+failover. So streaming is an **accelerator layered over the reliable path, never a replacement**: D18 is
+the reliability floor, streaming is the latency win on top. This *composes* the two subsystems instead of
+forcing failover into a persistent socket (the exact tension that made us defer chunked streaming in D17
+— resolved here, not re-fought).
+
+**Mode selection reuses D17's vocabulary (no new pattern).** Per-service `auto|on|off`, mirroring
+`AgentCfg.streaming` exactly: `voice.stt.streaming` and `voice.tts.streaming` (`off` until built, then
+`auto`). `auto` = stream iff the client supports it **and** the primary advertises the capability, else
+buffered; `on` forces, `off` always buffers — same resolver shape as D17's `_effective_stream`. Surfaced
+to the always-on mic/player via `GET /voice/status` (which already carries `stt_auto_send`; add
+`stt_streaming`/`tts_streaming` flags) — not the Conf-scoped settings query.
+
+**STT streaming — integration (extend, don't fork):**
+1. **Backend** — a WebSocket route `/api/voice/stt/stream` bridging browser-WS ↔ the primary's Speaches
+   **`/v1/realtime?intent=transcription`** (OpenAI-Realtime-compatible; **verified** your
+   `deepdml/faster-whisper-large-v3-turbo-ct2` is the model in their own example). Preserves the **proxy
+   invariant** (browser never holds the STT key/endpoint — the same reason the request path is a proxy,
+   ARCHITECTURE §Voice). Relays audio frames up, `transcript.delta`/`.completed` down; redacts deltas via
+   `Settings.secret_values()` like search snippets. Connect-failure → close with a `degrade` code so the
+   client falls back. New `adapters/voice_stream.py` (`VoiceStreamSession`) reusing `VoiceEndpointCfg` +
+   the cached client; **`VoiceClient` stays the request-path owner** — one sibling, no fork.
+2. **Frontend** — **extend `useDictation`, add one code path, no parallel component.** The hook already
+   owns the recorder lifecycle + the 4-state machine. Streaming adds an **AudioWorklet** capturing PCM16
+   → the WS → `transcript.delta`s land as **provisional** draft text, finalized on `.completed`/stop. Mic
+   visual states unchanged; only *how the transcript arrives* differs. `off`/unsupported → today's
+   record-then-POST path. The **provisional-draft model**: the hook holds the live partial locally and
+   writes the current best into the composer (a provisional region replaced as finals stabilize,
+   committed on stop) — reuses `setDraft`/`appendDraft`, no new store; this absorbs the "words rewrite as
+   context arrives" flicker by only committing finals. **Auto-send (6b-3) composes**: commit-on-stop
+   routes the final transcript through `runComposer` exactly as today.
+
+**TTS streaming — integration (a second source strategy on the singleton):**
+1. The controller (`audioController`) already abstracts playback behind the singleton; streaming TTS is a
+   **second source strategy** — `blob` (current: full-clip, natively seekable) vs `stream` (progressive
+   via **MediaSource Extensions**). The controller gains a tiny strategy switch; play/pause/dismiss, the
+   per-bubble button, and auto-TTS are **unchanged**.
+2. **Mechanism:** the backend passes `/v1/audio/speech` through chunked (AllTalk streams), and the
+   controller feeds an MSE `<audio>` so playback starts at the first chunk (time-to-first-audio ~0.5–1s
+   vs the measured ~3.75s full-clip for a long line).
+3. **The scrubber trade-off (explicit, owner-acknowledged):** streaming = **duration unknown until the
+   stream ends**, so in `stream` mode the MiniPlayer shows elapsed + an indeterminate seek until the
+   final chunk resolves duration, then becomes fully seekable. **Default stays `blob`** (seekable, great
+   for short replies); `stream` is the opt-in win for long ones. The real payoff is later
+   **sentence-pipelining** with the chat stream (synthesize sentence N while N-1 plays).
+
+**Why this shape is right (the integration test):** (a) preserves D18 by making streaming
+primary-only-with-buffered-fallback; (b) reuses D17's `auto|on|off` resolver vocabulary; (c) preserves
+the proxy/key invariant; (d) integrates into the **hook** (STT) and **singleton** (TTS) built in 6b with
+**no parallel components**; (e) config-driven + opt-in, off until built. No new failover impl, no new
+state-store, no new streaming vocabulary — it slots into four patterns we already own.
+
+**Cost / build order:** STT streaming ≈ a medium slice (WS proxy ~100–150 LOC + AudioWorklet capture +
+provisional-draft handling ~150–200 LOC + config); TTS streaming ≈ smaller (chunked passthrough + the
+controller's MSE strategy) but costs the seekable scrubber in `stream` mode. Both are **post-v1 polish**,
+each with its own pre-flight. The cold-start lag that prompted this is fixed *for free* by keeping the
+whisper model warm server-side.
+
+---
+
 ## Still open (decide before building the relevant phase)
 
 **Resolved since this list was written (kept here as a pointer so the section stays honest):**

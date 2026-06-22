@@ -89,6 +89,24 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > (would be dropped — left in the composer instead). `getDraft()`/`getChatStatus()` imperative getters added.
 > Live-verified: `/voice/status` → `{stt,tts,stt_auto_send:false}`, `/api/settings` round-trips
 > `voice.stt.auto_send`. `tsc -b` clean. Backend restarted on 5433. **Eyeball pending** (needs a browser).
+>
+> **Player restyle (`0c24a44`):** owner feedback — the mini-player play button is now the accent-gradient
+> icon (like the mic, masked, no disc), and the player **floats as a frosted pill just below the appbar**
+> (fixed, centered, not full-width), not a bottom bar. CSS-only; vapor.css untouched (D7).
+>
+> **STT-latency audit (measured, no code change):** felt-slow STT is **not our code** — warm STT ≈0.6s and
+> our backend overhead ≈0 (0.63s via backend vs 0.63s direct to Speaches). The lag is the **whisper model
+> cold-reloading after idle (~3s)**; fix is **server-side: keep the Speaches model warm** (model TTL /
+> preload). `vad_filter`+`language=en` are already optimal (faster than minimal). **Recommend the owner set
+> the Speaches model TTL** — independent of any app change.
+>
+> **D19 — voice streaming transports DESIGNED (not built):** owner asked for live-dictation STT + progressive
+> TTS as a real integrated pattern. Logged as **D19** (DECISIONS) + ROADMAP C1 revision: each voice service
+> has a reliable buffered transport (shipped) + an optional streaming transport layered as a *fast-path that
+> degrades to buffered* (preserves D18 failover). STT = Speaches `/v1/realtime` WS proxy + a `useDictation`
+> extension (verified your model is supported); TTS = a 2nd source strategy (MSE) on the `audioController`
+> singleton. Reuses D17's `auto|on|off`, the proxy invariant, and the 6b hook/singleton — no parallel code.
+> **Post-v1 polish, deferred.** This revises the old "STT always buffered" stance.
 
 > ### ⭐ Session update — 2026-06-22 (build session #12 — **Phase 6b-2: TTS mini-player + auto read-aloud** · committed `8105d2c`(6b-1)+next, NOT pushed)
 > Built 6b-2 straight after 6b-1 (owner: "commit and keep going"). The architecture was pre-agreed (DOM-backed
