@@ -806,7 +806,7 @@ fakes (Audio/MediaRecorder/`fetch`) built **per-test** for isolation. Scripts: `
 test:watch`. The chat reducer is tested via a **`mockSSE` fetch** through the real public API
 (`sendMessage`/`resumeCall`) — covers the byte-parser too, no reducer fork.
 
-**Shipped — 49 tests / 9 files.** Tier-1 (`33ae459`, 27): `toSpeech` (6), `composer` routing (9), `chat`
+**Shipped — 56 tests / 9 files.** Tier-1 (`33ae459`, 27): `toSpeech` (6), `composer` routing (9), `chat`
 streaming reducer (5: completed/reasoning-split/confirm-suspend/resume/error), `audioController` (7).
 Tier-2 (`09fdf8b`, 22): `lib/privilege` (3), `store/composer` (5), `store/ui` (5: incl. selector
 isolation), `lib/markdown` (5: parser→DOM + the `javascript:` XSS guard), `hooks/useDictation` (4: fill/
