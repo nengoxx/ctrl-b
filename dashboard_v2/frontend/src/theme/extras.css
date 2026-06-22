@@ -229,6 +229,11 @@ body[data-motion="reduced"] .conn-badge.reconnecting .dot {
 
 /* ── Phase 6c-2 — HTTPS access card (Tailscale Serve) in the Server conf group. The URL wraps; the
    copy button is a small vapor-token pill. Built from existing conf classes; vapor.css untouched (D7). */
+/* When a second conf-card follows the saved-fields card in a group (the HTTPS access card in Server),
+   give it the same 10px gap the save bar uses, so cards don't touch. */
+.conf-card.access-card {
+  margin-top: 10px;
+}
 .conf-card .conf-url {
   word-break: break-all;
   color: var(--teal);

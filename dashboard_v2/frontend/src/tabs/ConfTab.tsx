@@ -76,7 +76,7 @@ function TailscaleAccessCard() {
 
   if (!data.available) {
     return (
-      <div className="conf-card">
+      <div className="conf-card access-card">
         <div className="confrow">
           <div className="k">
             <div className="label">HTTPS access (Tailscale Serve)</div>
@@ -88,7 +88,7 @@ function TailscaleAccessCard() {
   }
 
   return (
-    <div className="conf-card">
+    <div className="conf-card access-card">
       <div className="confrow">
         <div className="k">
           <div className="label">HTTPS access (Tailscale Serve)</div>
