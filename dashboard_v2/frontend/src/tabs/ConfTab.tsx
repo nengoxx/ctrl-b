@@ -252,6 +252,7 @@ export function ConfTab({ active }: Props) {
   const { data: skillList = [] } = useSkills();
   const { data: defaultPrompt = "" } = useDefaultPrompt();
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [openFallback, setOpenFallback] = useState<number | null>(null); // D18 — expanded fallback row
 
   // Agents are folder-discovered (D14) — the list comes from /api/agents; the agent-section scalars
   // (default agent, default title, subagent limits) come off the settings doc.
@@ -315,10 +316,13 @@ export function ConfTab({ active }: Props) {
     setFallbacks((draft?.inference.fallbacks ?? []).map((fb, i) => (i === idx ? { ...fb, [key]: val } : fb)));
   }
   function addFallback() {
-    setFallbacks([...(draft?.inference.fallbacks ?? []), { base_url: "", api_key: null, model: "" }]);
+    const next = [...(draft?.inference.fallbacks ?? []), { base_url: "", api_key: null, model: "" }];
+    setFallbacks(next);
+    setOpenFallback(next.length - 1); // open the new row so its fields are immediately editable
   }
   function removeFallback(idx: number) {
     setFallbacks((draft?.inference.fallbacks ?? []).filter((_, i) => i !== idx));
+    setOpenFallback(null);
   }
   function setSrv<K extends keyof Draft["server"]>(key: K, val: Draft["server"][K]) {
     setDraft((d) => (d ? { ...d, server: { ...d.server, [key]: val } } : d));
@@ -497,23 +501,44 @@ export function ConfTab({ active }: Props) {
             value={inf?.cloud.api_key ?? ""}
             onChange={(v) => setEndpoint("cloud", "api_key", v)}
           />
-          {/* D18 — extra fallback endpoints, tried in order after local↔cloud (failover must be on). */}
-          <div className="fallback-head">
+          {/* D18 — fallback endpoints as collapsible rows, tried in order after local↔cloud (failover
+              on). Reuses the .mwrap/.mconf machine-row dropdown pattern so each row's fields are clearly
+              grouped. */}
+          <div className="fallback-section">
             <span className="label">Fallbacks</span>
             <span className="desc">tried in order after local↔cloud</span>
-            <button type="button" className="svc-add" onClick={addFallback}>+ add</button>
           </div>
           {(inf?.fallbacks ?? []).map((fb, i) => (
-            <div className="fallback-item" key={i}>
-              <div className="fallback-bar">
-                <span className="fallback-n">#{i + 1}</span>
-                <button type="button" className="svc-rm" onClick={() => removeFallback(i)}>remove</button>
+            <div className={"mwrap" + (openFallback === i ? " open" : "")} key={i}>
+              <div className="confrow" onClick={() => setOpenFallback(openFallback === i ? null : i)}>
+                <div className="k">
+                  <div className="label">Fallback #{i + 1}</div>
+                  <div className="desc">{fb.base_url || "tap to configure"}</div>
+                </div>
+                <span className="chev" aria-hidden>›</span>
               </div>
-              <Field label="Endpoint" desc="/v1 base url" value={fb.base_url} onChange={(v) => setFallback(i, "base_url", v)} placeholder="https://host/v1" />
-              <Field label="Model" desc="model id" value={fb.model} onChange={(v) => setFallback(i, "model", v)} />
-              <Field label="Key" desc="optional — masked" type="password" value={fb.api_key ?? ""} onChange={(v) => setFallback(i, "api_key", v)} />
+              <div className="mconf">
+                {openFallback === i && (
+                  <>
+                    <div className="mform">
+                      <label>Endpoint</label>
+                      <input type="text" value={fb.base_url} placeholder="https://host/v1" onChange={(e) => setFallback(i, "base_url", e.target.value)} />
+                      <label>Model</label>
+                      <input type="text" value={fb.model} placeholder="model id" onChange={(e) => setFallback(i, "model", e.target.value)} />
+                      <label>Key</label>
+                      <input type="password" value={fb.api_key ?? ""} placeholder="optional — masked" onChange={(e) => setFallback(i, "api_key", e.target.value)} />
+                    </div>
+                    <div className="mfoot">
+                      <button type="button" className="danger" onClick={() => removeFallback(i)}>remove</button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           ))}
+          <div className="fallback-add">
+            <button type="button" className="svc-add" onClick={addFallback}>+ add fallback</button>
+          </div>
           <Field
             label="Request timeout"
             desc="seconds — thinking models load slowly"

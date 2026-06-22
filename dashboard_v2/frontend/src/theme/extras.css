@@ -257,44 +257,30 @@ body[data-motion="reduced"] .conn-badge.reconnecting .dot {
   background: rgba(var(--accent-rgb), 0.12);
 }
 
-/* ── D18 — inference fallbacks list editor (Conf → Inference). A subsection header + per-fallback
-   block (dashed separator) reusing the conf Field rows + svc-add/svc-rm buttons. Vapor tokens only. */
-.fallback-head {
+/* ── D18 — inference fallbacks list editor (Conf → Inference). Collapsible rows reuse the vapor
+   .mwrap/.mconf machine-row dropdown (so each row's fields are grouped + the row inherits the .confrow
+   padding); this only adds the inset subsection header + the add-button row. Vapor tokens only. */
+.fallback-section {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 12px 0 2px;
+  padding: 13px 14px 5px; /* match the .confrow 14px horizontal inset */
+  border-top: 1px solid var(--line);
 }
-.fallback-head .label {
+.fallback-section .label {
   font-size: 11px;
   font-weight: 600;
   color: var(--ink);
   letter-spacing: 0.5px;
 }
-.fallback-head .desc {
+.fallback-section .desc {
   font-size: 9px;
   letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--ink-faint);
 }
-.fallback-head .svc-add {
-  margin-left: auto;
-}
-.fallback-item {
-  margin-top: 6px;
-  padding-top: 2px;
-  border-top: 1px dashed var(--line-2);
-}
-.fallback-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 0 0;
-}
-.fallback-n {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 10px;
-  color: var(--ink-soft);
+.fallback-add {
+  padding: 10px 14px 4px;
 }
 
 /* ── F16 — Live SSE connection badge in the appbar.
