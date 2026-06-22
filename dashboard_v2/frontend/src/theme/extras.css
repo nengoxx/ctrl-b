@@ -106,6 +106,124 @@ body[data-motion="reduced"] .conn-badge.reconnecting .dot {
   cursor: not-allowed;
 }
 
+/* ── Phase 6b-2 — TTS read-aloud. A per-bubble trigger (speaker in the assistant who-line) + a docked
+   mini-player (one at a time, scrubber). Net-new components (no vapor.html markup) built entirely from
+   vapor tokens so they adapt across dark/aqua/ember; vapor.css stays verbatim (D7). */
+
+/* Per-bubble play/pause toggle — an icon in the bot who-line, pushed to the right edge. The mask
+   swaps play↔pause; color is the themed accent. */
+.b.bot .who .tts-play {
+  all: unset;
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  margin-left: auto; /* hug the right edge of the who-line */
+  background: rgb(var(--accent-rgb));
+  opacity: 0.72;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
+  transition: opacity 0.12s ease;
+}
+.b.bot .who .tts-play:hover { opacity: 1; }
+.b.bot .who .tts-play:active { transform: scale(0.86); }
+.b.bot .who .tts-play.playing {
+  opacity: 1;
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
+          mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
+}
+.b.bot .who .tts-play.loading { opacity: 0.4; cursor: progress; }
+
+/* Docked mini-player — in-flow above the composer (App.tsx). Themed surface; only shows while a clip
+   is loaded. */
+.mini-player {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 14px;
+  background: var(--bg-2);
+  border-top: 1px solid var(--line-2);
+}
+/* Play/pause — a small filled accent disc with a masked glyph (mirrors the composer send button). */
+.mini-player .mp-play {
+  all: unset;
+  cursor: pointer;
+  position: relative;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent-grad);
+  filter: var(--accent-glow-soft);
+}
+.mini-player .mp-play:active { transform: scale(0.92); }
+.mini-player .mp-play::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--bg-2);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/15px no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/15px no-repeat;
+}
+.mini-player .mp-play.playing::before {
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
+          mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
+}
+.mini-player .mp-play:disabled { opacity: 0.5; cursor: progress; }
+/* Seek bar — native range for robust drag/click/touch; track filled via inline gradient (themed). */
+.mini-player .mp-seek {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  cursor: pointer;
+  outline: none;
+}
+.mini-player .mp-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: rgb(var(--accent-rgb));
+  box-shadow: 0 0 0 3px var(--bg-2);
+  cursor: pointer;
+}
+.mini-player .mp-seek::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border: none;
+  border-radius: 50%;
+  background: rgb(var(--accent-rgb));
+  box-shadow: 0 0 0 3px var(--bg-2);
+  cursor: pointer;
+}
+.mini-player .mp-seek:disabled { opacity: 0.6; cursor: default; }
+.mini-player .mp-time {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  min-width: 38px;
+  text-align: right;
+  flex-shrink: 0;
+}
+/* Dismiss ✕ — quiet, ink-soft mask glyph. */
+.mini-player .mp-close {
+  all: unset;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  background: var(--ink-soft);
+  opacity: 0.7;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'><path d='M6 6l12 12M18 6L6 18'/></svg>") center/15px no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'><path d='M6 6l12 12M18 6L6 18'/></svg>") center/15px no-repeat;
+}
+.mini-player .mp-close:hover { opacity: 1; }
+.mini-player .mp-close:active { transform: scale(0.9); }
+
 /* ── F16 — Live SSE connection badge in the appbar.
    Renders only when the connection is NOT "connected" (driven by store/connection.ts via
    hooks/useEvents.ts). Compact pill that sits between `.brand` (which has flex: 1 and

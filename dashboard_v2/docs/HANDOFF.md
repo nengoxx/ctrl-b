@@ -76,9 +76,40 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Phase 6b-1 mic STT DONE** · 6a pushed `9844a43` · 7e/D17/Phase 5 done · NEXT = 6b-2 scrubbable TTS mini-player + auto-TTS → 6c HTTPS/Android)
+## Current state (**Phase 6b voice UI COMPLETE (6b-1 mic + 6b-2 TTS player)** · 6a pushed `9844a43`, 6b committed not pushed · NEXT = 6c HTTPS/Android verify → emma deploy)
 
-> ### ⭐ Session update — 2026-06-22 (build session #12 — **Phase 6b-1: mic dictation + 4-state machine** · NOT pushed yet)
+> ### ⭐ Session update — 2026-06-22 (build session #12 — **Phase 6b-2: TTS mini-player + auto read-aloud** · committed `8105d2c`(6b-1)+next, NOT pushed)
+> Built 6b-2 straight after 6b-1 (owner: "commit and keep going"). The architecture was pre-agreed (DOM-backed
+> singleton controller, no `store/voice.ts`); owner refined the player spec to **minimal** (drop skip ±10s +
+> speed; remaining-time only). Self-audited (found+fixed 3 controller race/lifecycle bugs), `tsc -b` + `vite
+> build` clean. **Phone eyeball pending** (audio + scrubbing need a real browser; can't verify headless).
+>
+> **What shipped (6b-2, frontend only — same 6a voice API contract):**
+> - **`lib/audioController.ts`** (new) — the shared singleton: one `<audio>`, reactive `{id,status,current,
+>   duration}` mirrored from native media events, per-message blob cache (synth once, `clearAudioCache()` on
+>   `/clear`), `toggle`/`togglePlay`/`seekFraction`/`dismiss`, a `usePlayback(selector)` hook (mirrors
+>   `useUISlice` — per-bubble buttons select only their own status, so the ~4×/sec `timeupdate` only re-renders
+>   the player). 502 → "voice servers unreachable" toast. **Fixed in audit:** pause-on-switch (old clip kept
+>   playing during the new synth), guarded the pause handler (async pause clobbered `loading`), and
+>   `reqSeq`-bump in `reset()` (dismiss-during-load could still start playing).
+> - **`lib/toSpeech.ts`** (new) — markdown→prose strip so TTS reads words, not syntax.
+> - **`components/MiniPlayer.tsx`** (new) — docked bar (play/pause · range seek · `-M:SS` remaining · ✕),
+>   rendered in `App.tsx` above the composer, self-hides when nothing's docked.
+> - **`hooks/useAutoTts.ts`** (new) — speaks the latest completed reply on the streaming→idle transition,
+>   gated by `ttsAuto` + `tts` configured. Scans only the latest assistant turn (no stale/historical replay).
+>   **Buffered-mode (D17) auto-TTS is a documented best-effort gap** (the reply lands via reloadChat *after*
+>   the transition) — the manual per-bubble toggle always works; streaming (the PWA default) auto-plays.
+> - **`tabs/AgentTab.tsx`** — per-bubble `TtsButton` in the bot who-line (play↔pause), gated on `tts:true`,
+>   only on a settled text reply; calls `useAutoTts()`.
+> - **`components/AppBar.tsx`** — auto-TTS button hidden when TTS unconfigured; muting it stops playback
+>   (replaced the dead `window.speechSynthesis.cancel()` — we own TTS now).
+> - **`theme/extras.css`** — ~118 lines, all vapor tokens (adapts dark/aqua/ember). **vapor.css untouched (D7).**
+>
+> **Start here next: 6c** — HTTPS via Tailscale Serve (unblocks the mic + TTS on Android) + a real phone verify
+> of the whole 6b voice UX. Also queued: the **LLM inference fallback chain** (D18 follow-up, reuses
+> `core/failover.py`) and the **`createStore<T>()` factory dedup** backlog slice. **Push 6b when the owner OKs.**
+
+> ### ⭐ Session update — 2026-06-22 (build session #12 — **Phase 6b-1: mic dictation + 4-state machine** · committed `8105d2c`, NOT pushed)
 > Sub-sliced 6b into **6b-1 (mic STT) → 6b-2 (TTS mini-player)** with the owner. Cold pre-flighted every
 > touch point (Composer stub, chat store, AgentTab bubbles, AppBar `ttsAuto`, ui store, `api/voice.py` +
 > `adapters/voice.py`), researched the state-architecture question (owner flagged the duplication risk),

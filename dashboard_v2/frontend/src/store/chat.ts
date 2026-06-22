@@ -7,6 +7,7 @@
 
 import { useSyncExternalStore } from "react";
 
+import { clearAudioCache } from "../lib/audioController";
 import type { Privilege } from "../lib/privilege";
 import type { ChatMessage, Part, PlanStep, RunState, Thread, ToolResult } from "../types";
 import { setConnection } from "./connection";
@@ -145,6 +146,7 @@ export function pushUserEcho(text: string): void {
 /** `/clear`: drop back to a fresh, thread-less view. History stays in SQLite; the next send mints a
  *  new thread (the server creates one when `thread_id` is null). */
 export function startNewThread(): void {
+  clearAudioCache(); // 6b-2: revoke this thread's TTS blobs + stop any playback
   set({ threadId: null, messages: [], status: "idle", streamingId: null });
 }
 

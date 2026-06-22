@@ -4,6 +4,7 @@ import { AppBar } from "./components/AppBar";
 import { Composer } from "./components/Composer";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { MiniPlayer } from "./components/MiniPlayer";
 import { PromptModal } from "./components/PromptModal";
 import { SwUpdatePrompt } from "./components/SwUpdatePrompt";
 import { TabBar } from "./components/TabBar";
@@ -136,6 +137,8 @@ export default function App() {
           </ErrorBoundary>
         )}
       </div>
+      {/* Docked TTS mini-player (6b-2): in-flow above the composer, self-hides when nothing plays. */}
+      <MiniPlayer />
       {showComposer && <Composer />}
       <TabBar onPrefetch={prefetch} />
       <Toasts />

@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useAgentRoster } from "../hooks/useAgents";
+import { useAutoTts } from "../hooks/useAutoTts";
+import { useVoiceStatus } from "../hooks/useVoiceStatus";
+import { toggle as playMessage, usePlayback } from "../lib/audioController";
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
 import { PRIVILEGE_LEVELS, privilegeLabel, type Privilege } from "../lib/privilege";
@@ -202,6 +205,25 @@ function ThinkBlock({ text, open }: { text: string; open?: boolean }) {
   );
 }
 
+/** Per-bubble read-aloud toggle (6b-2), in the assistant who-line. Just an icon: ▶ to play this
+ *  reply, ⏸ while it's the one playing. Shares the single audio controller (one message at a time);
+ *  the docked MiniPlayer hosts the scrubber. Subscribes only to *its own* status, so the ~4×/sec
+ *  timeupdate that drives the player doesn't re-render every bubble. */
+function TtsButton({ id, text }: { id: string; text: string }) {
+  const mine = usePlayback((p) => (p.id === id ? p.status : "idle"));
+  const playing = mine === "playing";
+  const loading = mine === "loading";
+  return (
+    <button
+      type="button"
+      className={"tts-play" + (playing ? " playing" : "") + (loading ? " loading" : "")}
+      aria-label={playing ? "pause read-aloud" : "read aloud"}
+      title={playing ? "pause" : "read aloud"}
+      onClick={() => void playMessage(id, text)}
+    />
+  );
+}
+
 function CmdBubble({
   call,
   result,
@@ -354,6 +376,7 @@ function Bubbles({
   resultFor,
   canRetry,
   resolvedDefault,
+  ttsOn,
 }: {
   m: ChatMessage;
   streaming: boolean;
@@ -364,6 +387,8 @@ function Bubbles({
   /** The resolved default agent slug (7e-c). An assistant turn is labelled with its `agent` only
    * when it differs from this — so default turns stay clean and specialist turns are attributed. */
   resolvedDefault: string | undefined;
+  /** Whether TTS is configured (6b-2) — gates the per-bubble read-aloud toggle. */
+  ttsOn: boolean;
 }) {
   if (m.role === "tool") return null; // results render inside their command bubble (paired by id)
 
@@ -405,6 +430,8 @@ function Bubbles({
           <div className="who">
             {m.agent && m.agent !== resolvedDefault ? m.agent : "assistant"} · {hm(m.ts)}
             {working && <span className="status-tag">{reasoning ? "thinking" : "working"}</span>}
+            {/* Read-aloud toggle (6b-2): only on a settled text reply, and only when TTS is configured. */}
+            {ttsOn && !streaming && text && <TtsButton id={m.id} text={text} />}
           </div>
           <div className="body">
             {reasoningInBot && <ThinkBlock text={reasoning} open={working} />}
@@ -526,6 +553,10 @@ export function AgentTab({ active }: Props) {
   const { messages, status, streamingId } = useChat();
   // Resolved default agent slug — assistant turns are labelled only when their agent differs (7e-c).
   const resolvedDefault = useAgentRoster().data?.default;
+  // 6b-2 — TTS: gate the per-bubble read-aloud toggle on TTS being configured, and drive auto read-aloud
+  // of completed replies (gated internally by the AppBar auto-TTS switch + the status transition).
+  const ttsOn = useVoiceStatus().data?.tts ?? false;
+  useAutoTts();
   // The scroller is the app-shell content pane (`#app-scroll`), not the window — the composer/tab
   // bar are in-flow at the bottom of the shell. "Stick to bottom" only while the user is already
   // near the bottom, so streaming follows the bot without yanking them down if they scrolled up.
@@ -625,6 +656,7 @@ export function AgentTab({ active }: Props) {
             // error state. Historical errors elsewhere in the log stay quiet.
             canRetry={i === messages.length - 1 && status === "error"}
             resolvedDefault={resolvedDefault}
+            ttsOn={ttsOn}
           />
         ))}
       </div>

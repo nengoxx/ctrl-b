@@ -387,29 +387,26 @@ tools + confirm bubbles) are DONE.**
       round-trip verified live (502 vs 422 contracts confirmed). **Eyeball at 390px pending** (needs a
       secure context — owner to test at home; 6c HTTPS unblocks the phone).
 
-#### 6b-2 — scrubbable TTS mini-player + auto-TTS (frontend)
-- [ ] Auto-TTS toggle (the existing AppBar `ttsAuto`) → `/voice/tts` plays assistant replies.
-- [ ] **Scrubbable TTS mini-player** (ChatGPT/Telegram/WhatsApp style, owner request 2026-06-22): docked
-      bar, play/pause + draggable seek + elapsed/total + skip ±10s + speed; styled `<audio>` over a blob
-      URL (native seek); per-message blob cache (one synth per message). **Playback = a DOM-backed
-      singleton audio controller** subscribed via `useSyncExternalStore` (one `<audio>`, reactive
-      `playingId`), NOT a new `store/voice.ts` — genuinely shared (per-bubble players + the chat reducer's
-      auto-play trigger + the AppBar toggle all coordinate one player), but structurally unlike chat.ts.
+#### 6b-2 — scrubbable TTS mini-player + auto-TTS (frontend) ✅ DONE 2026-06-22
+- [x] **Per-bubble read-aloud toggle** + **auto-TTS** (the existing AppBar `ttsAuto` now gates *real*
+      playback). `lib/toSpeech.ts` strips markdown → prose; `hooks/useAutoTts.ts` speaks the just-finished
+      reply on the streaming→idle transition (only the latest assistant turn, never an old/historical
+      reply; buffered-mode auto-TTS is a documented best-effort gap — the manual toggle always works).
+      Per-bubble toggle in the bot who-line (`tts-play`, play↔pause icon), gated on `/voice/status`
+      `tts:true`. AppBar auto-TTS button now hidden when TTS unconfigured; muting it stops current playback.
+- [x] **Scrubbable TTS mini-player** (owner-refined minimal spec 2026-06-22): docked bar above the composer
+      (App.tsx, self-hides) — play/pause + draggable+clickable seek (`<input type=range>`, robust on
+      touch) + **remaining time only** + dismiss ✕. **No skip ±10s, no speed** (owner trimmed it to
+      minimal). `<audio>` over a blob URL (native seek); **per-message blob cache** (one synth/message,
+      revoked on `/clear`). **Playback = a DOM-backed singleton audio controller** (`lib/audioController.ts`)
+      subscribed via `useSyncExternalStore` (one `<audio>`, reactive `playingId` + time/duration; selector
+      hook so per-bubble buttons don't re-render on `timeupdate`), NOT a new `store/voice.ts`. Net-new
+      components styled entirely from vapor tokens (extras.css, ~118 lines) so they adapt across
+      dark/aqua/ember; **vapor.css untouched (D7)**. `tsc -b` + `vite build` clean; controller race/lifecycle
+      bugs (switch-mid-play, pause-clobbers-loading, dismiss-during-load) found + fixed in self-audit.
+      **Eyeball at 390px pending** (needs a browser — owner to test; audio playback can't be verified headless).
 - [ ] _(deferred backlog) — collapse the duplicated external-store boilerplate (`ui.ts`/`chat.ts`/
-      `composer.ts`) into a shared `createStore<T>()` factory. Own slice; see owner note 2026-06-22._
-- [ ] **(reference) Mic-button state machine** — built in 6b-1 above; visual states owner-locked 2026-06-22:
-      The Composer mic today is a visual stub — taps toggle a local `rec` boolean + a `micrec`
-      keyframe pulse but no MediaRecorder is wired. Wire the recorder and drive the button from its
-      **real** state (drop the local `useState(rec)`), reusing the existing classes — **no new
-      vapor.css** (D7). Four states:
-      1. **Idle** (available, not recording) — current default look, unchanged.
-      2. **Recording** — current red pulse (`.rec` + `micrec`). Owner explicitly likes it — keep it.
-      3. **Disabled in settings** (`GET /voice/status` `stt:false`) — **hide** the mic. (Distinct from
-         F21's "keep visible during the lifecycle"; the config-off hide is fine, the composer adapts.)
-      4. **Unavailable** (configured but the STT chain — primary *and* fallback — unreachable) —
-         **muted/greyed + inert + tooltip**, detection **REACTIVE**: normal until a recording attempt
-         502s (whole chain failed), then grey + "voice servers unreachable". No proactive liveness
-         probe (owner's call — zero new infra).
+      `composer.ts`/`audioController.ts`) into a shared `createStore<T>()` factory. Own slice; owner note 2026-06-22._
 
 ### Phase 6c — HTTPS + Android verification
 - [ ] **HTTPS via Tailscale Serve** so the mic works on Android (secure-context). Document it.
