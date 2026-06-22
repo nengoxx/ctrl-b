@@ -119,6 +119,18 @@ def test_endpoints_drops_blank_base_url() -> None:
     assert [e.base_url for e in cfg2.stt.endpoints()] == ["http://p/v1", "http://f/v1"]
 
 
+def test_timeout_floor_rejects_zero() -> None:
+    """A blanked Conf timeout (→ 0) must 422, not silently wedge voice with instant-fail calls."""
+    from pydantic import ValidationError
+
+    for bad in ({"stt": {"timeout_s": 0}}, {"tts": {"connect_timeout_s": 0}}):
+        try:
+            VoiceCfg.model_validate(bad)
+            raise AssertionError(f"expected ValidationError for {bad}")
+        except ValidationError:
+            pass
+
+
 def test_voice_secret_roundtrip() -> None:
     """The nested `voice.*.primary.api_key` masks on read and survives a masked echo on write."""
     s = Settings.model_validate(

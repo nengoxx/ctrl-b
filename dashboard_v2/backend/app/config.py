@@ -226,8 +226,10 @@ class VoiceServiceCfg(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    connect_timeout_s: float = 3.0   # fail-fast on an unreachable endpoint → fall over
-    timeout_s: float = 30.0          # read window for the transcription/synthesis itself
+    # Floored >0 so a blanked Conf field (→ 0) can't silently wedge voice (a 0s timeout fails every
+    # call instantly); the PUT 422s instead, surfacing the bad value — mirrors the memory-cap floors.
+    connect_timeout_s: float = Field(3.0, gt=0)   # fail-fast on an unreachable endpoint → fall over
+    timeout_s: float = Field(30.0, gt=0)          # read window for the transcription/synthesis itself
     extra_body: dict[str, Any] = Field(default_factory=dict)  # advanced: passthrough to the server
     primary: VoiceEndpointCfg = Field(default_factory=VoiceEndpointCfg)
     fallback: VoiceEndpointCfg = Field(default_factory=VoiceEndpointCfg)
