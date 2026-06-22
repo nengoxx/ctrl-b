@@ -94,11 +94,21 @@ class VoiceClient:
         if not self.configured("stt"):
             raise VoiceError("speech-to-text is not configured")
         svc = self._cfg.stt
+        # vad_filter/hotwords are faster-whisper/Speaches extras (not standard OpenAI params), so they
+        # ride the SDK's `extra_body` escape hatch; a user-set `extra_body` merges on top (wins).
+        extra: dict = {"vad_filter": svc.vad_filter}
+        if svc.hotwords.strip():
+            extra["hotwords"] = svc.hotwords.strip()
+        extra.update(svc.extra_body or {})
+        kwargs: dict = {"extra_body": extra}
+        if svc.language.strip():          # blank → omit so the server auto-detects
+            kwargs["language"] = svc.language.strip()
 
         async def attempt(ep: VoiceEndpointCfg) -> str:
             resp = await self._client(ep, svc).audio.transcriptions.create(
                 model=ep.model or "whisper-1",
                 file=(filename, content, content_type or "application/octet-stream"),
+                **kwargs,
             )
             return getattr(resp, "text", "") or ""
 
@@ -119,6 +129,7 @@ class VoiceClient:
             raise VoiceError("text-to-speech is not configured")
         svc = self._cfg.tts
         fmt = svc.format or "mp3"
+        kwargs: dict = {"extra_body": svc.extra_body} if svc.extra_body else {}
 
         async def attempt(ep: VoiceEndpointCfg) -> bytes:
             resp = await self._client(ep, svc).audio.speech.create(
@@ -126,6 +137,7 @@ class VoiceClient:
                 voice=voice or ep.voice or "alloy",
                 input=text,
                 response_format=fmt,  # type: ignore[arg-type]  # local servers accept the same set
+                **kwargs,
             )
             return await resp.aread()
 

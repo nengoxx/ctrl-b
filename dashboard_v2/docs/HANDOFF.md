@@ -116,6 +116,22 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > too — ensure functionality, surface via header/502); split connect/read timeouts. **Full-clip TTS** (not
 > chunked) so the PWA mini-player gets a natively seekable blob — chunked streaming deferred to ROADMAP.
 >
+> **Live-verified against the real servers (this session):** VAULT wired as primary for both —
+> `SttServiceCfg`(Speaches `192.168.1.137:9000`) + `TtsServiceCfg`(AllTalk `:7851`). Round-trip through
+> the dashboard works (TTS 2s → STT 4s → correct transcript); **failover proven live** (dead primary →
+> vault fallback, `served=fallback`). **EMMA fallback left blank** — emma:9000 serves a non-OpenAI
+> whisper UI + emma TTS is down, so it's not a usable OpenAI endpoint yet (owner to start the same
+> Speaches/AllTalk stack or give real URLs; blank fallback is dropped from the chain, so vault serves all).
+> Config lives in the gitignored `dashboard_v2/config.yaml` (not committed).
+>
+> **STT params added (owner-spec):** config refactored to a base `VoiceServiceCfg` + `SttServiceCfg`
+> (`language` default `en`/blank→auto · `vad_filter` on · `hotwords` fleet-name bias) + `TtsServiceCfg`
+> (`format` mp3) + a shared `extra_body` escape-hatch dict (OpenAI-SDK passthrough for server-specific
+> knobs). The adapter sends `language` natively and `vad_filter`/`hotwords`/`extra_body` via `extra_body`
+> (they're Speaches extras). TTS **speed stays client-side** (`<audio>.playbackRate`, no re-synth).
+> Live-verified the params reach Speaches (200; note hotwords is a *soft* bias — didn't rescue
+> "vault"→"Bolt" on synthetic TTS audio, but doesn't break anything).
+>
 > **Owner request captured in 6b:** a **scrubbable TTS mini-player** (ChatGPT/Telegram/WhatsApp style —
 > play/pause + draggable seek + skip/speed) over a styled `<audio>` + per-message blob cache.
 >

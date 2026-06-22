@@ -148,12 +148,12 @@ class _FakeBinary:
 
 
 def _fake_client(*, on_transcribe=None, on_speech=None):
-    async def t_create(*, model, file):
+    async def t_create(*, model, file, **kw):
         if isinstance(on_transcribe, Exception):
             raise on_transcribe
         return SimpleNamespace(text=on_transcribe(model, file))
 
-    async def s_create(*, model, voice, input, response_format):
+    async def s_create(*, model, voice, input, response_format, **kw):
         if isinstance(on_speech, Exception):
             raise on_speech
         return _FakeBinary(on_speech(model, voice, input, response_format))
@@ -200,6 +200,51 @@ def test_synthesize_returns_bytes_and_media_type() -> None:
         assert audio == b"ID3AUDIO"
         assert media_type == "audio/mpeg"
         assert served.served == "primary" and served.degraded is False
+
+    _run(go())
+
+
+def test_stt_passes_language_and_extras() -> None:
+    """STT sends `language` natively and `vad_filter`/`hotwords`/`extra_body` via the SDK escape
+    hatch; a user `extra_body` merges on top."""
+    async def go():
+        captured: dict = {}
+
+        async def t_create(*, model, file, **kw):
+            captured.update(kw)
+            return SimpleNamespace(text="ok")
+
+        fake = SimpleNamespace(audio=SimpleNamespace(transcriptions=SimpleNamespace(create=t_create)))
+        vc = _voice_client(
+            {"stt": {"language": "sv", "vad_filter": True, "hotwords": "vault minig",
+                     "extra_body": {"temperature": 0.2},
+                     "primary": {"base_url": "http://p/v1", "model": "w"}}},
+            by_url={"http://p/v1": fake},
+        )
+        await vc.transcribe(content=b"x", filename="a.webm", content_type="audio/webm")
+        assert captured["language"] == "sv"
+        assert captured["extra_body"] == {"vad_filter": True, "hotwords": "vault minig", "temperature": 0.2}
+
+    _run(go())
+
+
+def test_stt_blank_language_omitted() -> None:
+    """Blank language → omit the param (server auto-detects)."""
+    async def go():
+        captured: dict = {}
+
+        async def t_create(*, model, file, **kw):
+            captured.update(kw)
+            return SimpleNamespace(text="ok")
+
+        fake = SimpleNamespace(audio=SimpleNamespace(transcriptions=SimpleNamespace(create=t_create)))
+        vc = _voice_client(
+            {"stt": {"language": "", "primary": {"base_url": "http://p/v1", "model": "w"}}},
+            by_url={"http://p/v1": fake},
+        )
+        await vc.transcribe(content=b"x", filename="a.webm", content_type=None)
+        assert "language" not in captured
+        assert captured["extra_body"]["vad_filter"] is True  # default on
 
     _run(go())
 

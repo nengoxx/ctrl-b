@@ -216,19 +216,19 @@ class VoiceEndpointCfg(BaseModel):
 
 
 class VoiceServiceCfg(BaseModel):
-    """One voice service (STT or TTS) with an ordered **primary → fallback** chain (D-failover). The
-    active endpoint is `primary`; on **any** failure the request falls through to `fallback` (Phase 6
-    Q2 — ensure functionality, surface the degradation). Split timeouts make the failover snappy:
-    `connect_timeout_s` is how fast we give up *reaching* a dead endpoint before falling over;
-    `timeout_s` is the (generous) read window for the actual transcription/synthesis. `format` is the
-    TTS `response_format`/container — mp3 is the universally `<audio>`-seekable choice the mini-player
-    needs; **STT ignores `format`** (it forwards the uploaded clip as recorded)."""
+    """Base for a voice service (STT or TTS): the ordered **primary → fallback** chain (D-failover)
+    + the shared transport knobs. The active endpoint is `primary`; on **any** failure the request
+    falls through to `fallback` (Phase 6 Q2 — ensure functionality, surface the degradation). Split
+    timeouts make the failover snappy: `connect_timeout_s` is how fast we give up *reaching* a dead
+    endpoint before falling over; `timeout_s` is the (generous) read window for the actual
+    transcription/synthesis. `extra_body` is the OpenAI-SDK escape hatch — arbitrary fields passed
+    straight to the server for params we don't model as typed fields (rarely needed; usually empty)."""
 
     model_config = {"extra": "allow"}
 
     connect_timeout_s: float = 3.0   # fail-fast on an unreachable endpoint → fall over
     timeout_s: float = 30.0          # read window for the transcription/synthesis itself
-    format: str = "mp3"              # TTS response_format (mp3|opus|aac|flac|wav|pcm); STT ignores it
+    extra_body: dict[str, Any] = Field(default_factory=dict)  # advanced: passthrough to the server
     primary: VoiceEndpointCfg = Field(default_factory=VoiceEndpointCfg)
     fallback: VoiceEndpointCfg = Field(default_factory=VoiceEndpointCfg)
 
@@ -238,18 +238,39 @@ class VoiceServiceCfg(BaseModel):
         return [e for e in (self.primary, self.fallback) if e.base_url]
 
 
+class SttServiceCfg(VoiceServiceCfg):
+    """STT service (Phase 6). `language` forces the transcription language (`""` → auto-detect; no
+    per-turn picker — owner's call). `vad_filter` drops silence (avoids whisper's silence
+    hallucinations; on by default). `hotwords` is a space-separated bias list — proper nouns / fleet
+    names whisper would otherwise mangle (e.g. "minig"→"mini G"). `vad_filter`/`hotwords` are
+    faster-whisper/Speaches extras, sent to the server via `extra_body` by the adapter (they're not
+    standard OpenAI params), so a non-faster-whisper fallback just ignores/rejects them."""
+
+    language: str = "en"             # default English; "" → auto-detect
+    vad_filter: bool = True          # voice-activity-detection: skip silence
+    hotwords: str = ""               # space-separated recognition bias (fleet names, jargon)
+
+
+class TtsServiceCfg(VoiceServiceCfg):
+    """TTS service (Phase 6). `format` is the `response_format`/container — mp3 is the universally
+    `<audio>`-seekable choice the mini-player needs. Playback speed stays **client-side**
+    (`<audio>.playbackRate`, live-adjustable without re-synth — owner's call), so it's not here."""
+
+    format: str = "mp3"              # response_format (mp3|opus|aac|flac|wav|pcm)
+
+
 class VoiceCfg(BaseModel):
     """Voice subsystem (Phase 6) — push-to-talk **STT** + read-aloud **TTS**, each an
     OpenAI-compatible proxy with a primary→fallback chain so a down endpoint degrades instead of
     failing (D-failover). `enabled=False` (or a service with no configured endpoints) makes that
     service report unconfigured (`VoiceClient.configured`), so the PWA hides the mic / auto-TTS rather
-    than offering a dead control. `extra="allow"` so later knobs (speed, language) round-trip."""
+    than offering a dead control. `extra="allow"` so later knobs round-trip."""
 
     model_config = {"extra": "allow"}
 
     enabled: bool = True
-    stt: VoiceServiceCfg = Field(default_factory=VoiceServiceCfg)
-    tts: VoiceServiceCfg = Field(default_factory=VoiceServiceCfg)
+    stt: SttServiceCfg = Field(default_factory=SttServiceCfg)
+    tts: TtsServiceCfg = Field(default_factory=TtsServiceCfg)
 
 
 class SearxngCfg(BaseModel):

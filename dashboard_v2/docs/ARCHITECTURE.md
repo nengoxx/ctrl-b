@@ -264,8 +264,9 @@ Memory    files: $CTRLB_HOME/memories/{MEMORY.md,USER.md} + agents/<n>/memories/
 Automation id, name, cron, prompt, privilege, thread_id, enabled, last_run, status [SQLite]  # ROADMAP A3
 Settings  inference{mode, local_url, cloud_url, cloud_key*, model},
           embeddings{url, key*, model},                       # llama.cpp /v1/embeddings (D9)
-          voice{enabled, stt{connect_timeout_s, timeout_s, primary/fallback{base_url,key*,model}},
-                tts{connect_timeout_s, timeout_s, format, primary/fallback{base_url,key*,model,voice}}},  # Phase 6, D18 failover
+          voice{enabled, stt{connect_timeout_s, timeout_s, language, vad_filter, hotwords, extra_body,
+                              primary/fallback{base_url,key*,model}},
+                tts{connect_timeout_s, timeout_s, format, extra_body, primary/fallback{base_url,key*,model,voice}}},  # Phase 6, D18 failover
 
           searxng{url, enabled},                              # web_search tool (D9)
           mcp_servers[]{name, transport(stdio|http), command, args, env*, url, headers*, enabled},  # D9
