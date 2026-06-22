@@ -709,6 +709,68 @@ whisper model warm server-side.
 
 ---
 
+## D20 — In-app HTTPS control: Tailscale Serve as a host-management capability (6c-2) ✏️ DESIGNED 2026-06-22 (not built)
+
+**Decided 2026-06-22 (with the owner), after 6c-1 shipped the manual path.** `tailscale serve --bg 5173`
+(documented in `HTTPS_TAILSCALE.md`, **owner-verified working on the phone**) gives the mic its
+secure-context HTTPS front door. **6c-2 surfaces + controls that from the UI** — flip HTTPS on/off, see
+the `https://…ts.net` URL, and **scan a QR to open it on the phone** — without a terminal. It does **not**
+replace 6c-1; the manual command stays the fallback.
+
+**The capability's nature (what it integrates as):** Tailscale Serve manages the **backend host itself**
+(not a fleet host, not a remote box), so its closest precedents are `run_shell` (`services/actions/shell.py`
+— runs on the backend host) and the fleet host-actions. It slots into **patterns we already own**, no new
+execution path:
+
+1. **Execution = typed host-actions (the chokepoint).** New `services/actions/tailscale.py`, reusing
+   `shell.py`'s subprocess-exec core (redaction, kill-on-timeout, combined output):
+   - `tailscale_status` (LOW, read) → parse `tailscale serve status --json` (+ `tailscale status --json`
+     for daemon health) → `{serving, url, available, reason}`.
+   - `tailscale_serve_enable` / `tailscale_serve_disable` (risk **MED**, `ui_exposed=True`) →
+     `tailscale serve --bg <target_port>` / `… off`. **Hardcoded to `serve`, NEVER `funnel`** — the
+     no-public-bind boundary (AGENTS §6) is preserved by construction; the action must not expose a
+     public path. Same CLI on both OSes (PATH-resolved `tailscale`/`.exe`, no per-OS branch); runs
+     non-elevated for an admin user on Windows (verified) + via `--operator` on Linux.
+2. **Status = an always-on read (mirrors `/voice/status`).** `GET /api/access/status` →
+   `{serving, url, available, reason}`, read by the Conf panel (not Conf-scoped, cheap). **tailscaled is
+   the source of truth** — we read `serve status` live; we do **not** store on/off in our config (Serve
+   persists in tailscaled independently, so a stored flag would drift).
+3. **Config = desired-state only.** `config.py` `TailscaleCfg` (`tailscale`): `target_port: int = 5173`
+   (which local port Serve fronts — covers dev 5173 / preview / prod) + `enabled: bool` (whether the
+   panel/actions are active at all). The live on/off comes from tailscaled, not config.
+4. **Frontend = a Conf → Access panel** (mirrors the 7c integration panels): a status dot + the
+   `https://…ts.net` URL (copy + **QR**) + an Enable/Disable toggle. The toggle POSTs to an endpoint that
+   invokes the action through **`ActionService`** (USER actor, FULL privilege — the owner clicking *is*
+   the authorization, like the `!` shell path; **audited as an Event**). **Graceful degrade:**
+   `available:false` (CLI missing / denied) → show the manual command + the `HTTPS_TAILSCALE.md` link
+   instead of a dead toggle (detect-then-degrade, like the mic's reactive "unavailable").
+5. **QR generation — prefer server-side, no frontend dep.** The backend already knows the URL; render the
+   QR to an **SVG** with a tiny pure-Python lib (`segno`, zero-dep) at e.g. `GET /api/access/qr.svg`, so
+   the frontend just `<img>`s it — keeps the bundle clean and the tailnet hostname off any third-party
+   service. (Alt: a small client QR lib; decide at build.)
+
+**Security (explicit):**
+- **Serve only, never Funnel.** The actions neither offer nor accept a public-exposure path — tailnet-only,
+  the no-public-bind rule intact.
+- **USER-driven, gated + audited** via `decide()` + `ActionService._record` like other host actions.
+  **Not agent-exposed by default** — an agent shouldn't flip the host's HTTPS unprompted; it's
+  LOW-risk/tailnet, so a later explicit grant is fine, but default-off keeps the surface tight.
+
+**Why this shape:** reuses the typed-action chokepoint (`run_shell` core), the always-on status pattern
+(`/voice/status`), the integration-panel UX (7c), and config-as-desired-state — **no new execution path,
+no new security boundary**, tailscaled stays the source of truth. The only net-new dependency is a tiny
+QR generator (server-side, zero-dep).
+
+**Open before building (its own pre-flight):**
+- Verify the exact `tailscale serve status --json` schema on the host (varies by tailscale version) before
+  parsing — don't assume the shape.
+- Confirm `target_port` matches however the app is actually served at cutover (dev vs preview vs a prod
+  static server on emma).
+- QR: server-SVG (`segno`) vs a client lib — pick at build (lean server-side).
+- Whether to expose a one-shot "open on phone" affordance beyond the QR (probably not — QR is enough).
+
+---
+
 ## Still open (decide before building the relevant phase)
 
 **Resolved since this list was written (kept here as a pointer so the section stays honest):**

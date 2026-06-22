@@ -429,14 +429,21 @@ tools + confirm bubbles) are DONE.**
       `allowedHosts: true` (added anticipating the `*.ts.net` FQDN). Doc covers prerequisites (admin-console
       HTTPS enable, operator/elevation per OS), the on/off/reset commands, a QR-to-phone tip, the HMR-over-
       proxy caveat (use `npm run preview` for a clean serve), and the phone-verify checklist.
-- [ ] **Verify on the phone** (owner): run `tailscale serve --bg 5173`, open the `https://…ts.net` URL on
-      Android, walk the checklist in the doc (mic record→transcribe, the 4 mic states, TTS play/scrub,
-      auto-TTS). _Owner action — needs the host + a real phone._
+- [x] **Verify on the phone** ✅ 2026-06-22 — owner ran `tailscale serve --bg 5173` (non-elevated, Windows)
+      and confirmed the voice UX works over the `https://…ts.net` URL on Android ("it works well").
 - [ ] **(server-side, independent)** keep the Speaches whisper model warm (model TTL) — fixes the measured
       STT cold-start lag; do it around the phone test so dictation feels snappy.
 
-#### 6c-2 — in-app "Enable HTTPS" control (settings panel) — DESIGN NEXT
-- [ ] **Conf → Access panel** driving Tailscale Serve from the UI (owner request 2026-06-22): detect +
+#### 6c-2 — in-app "Enable HTTPS" control (settings panel) — ✏️ DESIGNED (D20), build next
+- [ ] **Conf → Access panel** driving Tailscale Serve from the UI (owner request 2026-06-22; **full design
+      = DECISIONS D20**): typed host-actions (`services/actions/tailscale.py`, reusing the `run_shell`
+      exec core — `tailscale_status` LOW + `serve_enable`/`disable` MED, **`serve` only, never `funnel`**),
+      an always-on `GET /api/access/status` (mirrors `/voice/status`; tailscaled is source of truth),
+      `TailscaleCfg` desired-state config (`target_port`), and a Conf panel (status dot + URL + copy +
+      **server-rendered QR** via `segno`, no frontend dep + Enable/Disable toggle through `ActionService`,
+      USER/FULL, audited). Graceful degrade to the manual command when the CLI is absent/denied. Viable on
+      both OSes (Windows non-elevated for an admin user; emma via `--operator`). **Pre-flight the
+      `serve status --json` schema on the host before coding.** Detail below is superseded by D20.
       surface `tailscale serve status` (active? the `https://…ts.net` URL + copy + **QR to scan on the
       phone**) and an Enable/Disable toggle backed by a typed host-action (`services/actions/tailscale.py`,
       gated like wake/reboot/run_shell — manages the backend host itself). Config `tailscale.serve` block

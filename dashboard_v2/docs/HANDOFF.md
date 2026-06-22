@@ -108,12 +108,16 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > singleton. Reuses D17's `auto|on|off`, the proxy invariant, and the 6b hook/singleton — no parallel code.
 > **Post-v1 polish, deferred.** This revises the old "STT always buffered" stance.
 >
-> **6c-1 — Tailscale Serve HTTPS doc landed:** [`HTTPS_TAILSCALE.md`](./HTTPS_TAILSCALE.md). `tailscale
-> serve --bg 5173` → a real TLS cert at the device's `*.ts.net` name (tailnet-only) → the phone's mic
-> secure-context requirement is met. Coexists with the plain HTTP/Firefox-flag path. **No app change** —
-> `vite.config.ts` already has `allowedHosts: true`. **Owner action:** run the command + walk the phone
-> checklist. **6c-2 (design next):** an in-app Conf → Access toggle (status + QR + enable/disable via a
-> typed host-action) — cleanest on emma; needs its own pre-flight + a DECISIONS entry.
+> **6c-1 — Tailscale Serve HTTPS ✅ DONE + owner-verified on the phone.** [`HTTPS_TAILSCALE.md`](./HTTPS_TAILSCALE.md).
+> `tailscale serve --bg 5173` (ran **non-elevated** on Windows for the admin user) → real TLS cert at the
+> device's `*.ts.net` name (tailnet-only) → the owner confirmed the full voice UX works over HTTPS on
+> Android. Coexists with the plain HTTP/Firefox-flag path. No app change (`vite.config.ts` already had
+> `allowedHosts: true`). **6c-2 — DESIGNED (D20), build next:** an in-app **Conf → Access** panel (status +
+> URL + **server-rendered QR** + Enable/Disable toggle) over typed host-actions (`services/actions/tailscale.py`,
+> reusing the `run_shell` exec core; **`serve` only, never `funnel`**), an always-on `/api/access/status`
+> (tailscaled = source of truth), and `TailscaleCfg` desired-state. Reuses the action chokepoint + the
+> `/voice/status` pattern + the 7c panel UX; only new dep is a tiny server-side QR lib (`segno`). Viable on
+> both OSes. **Pre-flight the `serve status --json` schema before coding.**
 
 > ### ⭐ Session update — 2026-06-22 (build session #12 — **Phase 6b-2: TTS mini-player + auto read-aloud** · committed `8105d2c`(6b-1)+next, NOT pushed)
 > Built 6b-2 straight after 6b-1 (owner: "commit and keep going"). The architecture was pre-agreed (DOM-backed
