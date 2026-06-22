@@ -155,16 +155,20 @@ export function SkillsEditor({ enabled }: { enabled: boolean }) {
         </div>
         <div className="mconf">
           {adding && (
-            <div className="mform">
-              <label>Name</label>
-              <input value={newName} placeholder="my-skill" onChange={(e) => setNewName(e.target.value)} />
+            <>
+              <div className="mform">
+                <label>Name</label>
+                <input value={newName} placeholder="my-skill" onChange={(e) => setNewName(e.target.value)} />
+              </div>
+              {/* .mfoot as a sibling of .mform (not inside the grid) — the canonical double-button
+                  footer, matching MachineEditor's add-machine form. */}
               <div className="mfoot">
                 <button type="button" onClick={() => { setAdding(false); setNewName(""); }}>cancel</button>
                 <button type="button" className="save" disabled={saveSkill.isPending} onClick={commitNew}>
                   {saveSkill.isPending ? "creating…" : "create"}
                 </button>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>

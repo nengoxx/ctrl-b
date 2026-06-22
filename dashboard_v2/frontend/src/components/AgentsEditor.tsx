@@ -468,18 +468,22 @@ export function AgentsEditor(props: { cfg: AgentSectionCfg; toolNames: string[];
         </div>
         <div className="mconf">
           {adding && (
-            <div className="mform">
-              <label>Slug</label>
-              <input value={newSlug} placeholder="coder" onChange={(e) => setNewSlug(e.target.value)} />
-              <label>Display name</label>
-              <input value={newTitle} placeholder="(optional, e.g. Bob the Coder)" onChange={(e) => setNewTitle(e.target.value)} />
+            <>
+              <div className="mform">
+                <label>Slug</label>
+                <input value={newSlug} placeholder="coder" onChange={(e) => setNewSlug(e.target.value)} />
+                <label>Display name</label>
+                <input value={newTitle} placeholder="(optional, e.g. Bob the Coder)" onChange={(e) => setNewTitle(e.target.value)} />
+              </div>
+              {/* .mfoot outside the .mform grid — the canonical double-button footer (matches the edit
+                  form + MachineEditor); inside the grid it gets squeezed into the 90px label column. */}
               <div className="mfoot">
                 <button type="button" onClick={() => { setAdding(false); setNewSlug(""); setNewTitle(""); }}>cancel</button>
                 <button type="button" className="save" disabled={saveAgent.isPending} onClick={commitNew}>
                   {saveAgent.isPending ? "creating…" : "create"}
                 </button>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
