@@ -115,7 +115,7 @@ function PromptRow(props: {
 // masked api_key (the backend restores it) and leaves every other section untouched.
 type Draft = Pick<
   SettingsDoc,
-  "server" | "inference" | "searxng" | "embeddings" | "open_terminal" | "shell"
+  "server" | "inference" | "searxng" | "embeddings" | "open_terminal" | "shell" | "voice"
 >;
 
 function pickDraft(s: SettingsDoc): Draft {
@@ -126,6 +126,7 @@ function pickDraft(s: SettingsDoc): Draft {
     embeddings: s.embeddings,
     open_terminal: s.open_terminal,
     shell: s.shell,
+    voice: s.voice,
   };
 }
 
@@ -256,11 +257,40 @@ export function ConfTab({ active }: Props) {
   function setShell<K extends keyof Draft["shell"]>(key: K, val: Draft["shell"][K]) {
     setDraft((d) => (d ? { ...d, shell: { ...d.shell, [key]: val } } : d));
   }
+  function setVoiceEnabled(on: boolean) {
+    setDraft((d) => (d ? { ...d, voice: { ...d.voice, enabled: on } } : d));
+  }
+  function setStt<K extends keyof Draft["voice"]["stt"]>(key: K, val: Draft["voice"]["stt"][K]) {
+    setDraft((d) => (d ? { ...d, voice: { ...d.voice, stt: { ...d.voice.stt, [key]: val } } } : d));
+  }
+  function setTts<K extends keyof Draft["voice"]["tts"]>(key: K, val: Draft["voice"]["tts"][K]) {
+    setDraft((d) => (d ? { ...d, voice: { ...d.voice, tts: { ...d.voice.tts, [key]: val } } } : d));
+  }
+  function setVoiceEp(
+    svc: "stt" | "tts",
+    tier: "primary" | "fallback",
+    key: "base_url" | "api_key" | "model" | "voice",
+    val: string,
+  ) {
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            voice: {
+              ...d.voice,
+              [svc]: { ...d.voice[svc], [tier]: { ...d.voice[svc][tier], [key]: val } },
+            },
+          }
+        : d,
+    );
+  }
 
   const sx = draft?.searxng;
   const emb = draft?.embeddings;
   const term = draft?.open_terminal;
   const sh = draft?.shell;
+  const vstt = draft?.voice.stt;
+  const vtts = draft?.voice.tts;
 
   function onSave() {
     if (!draft) return;
@@ -284,6 +314,19 @@ export function ConfTab({ active }: Props) {
         ...draft.shell,
         timeout_s: Number(draft.shell.timeout_s),
         max_output_chars: Number(draft.shell.max_output_chars),
+      },
+      voice: {
+        ...draft.voice,
+        stt: {
+          ...draft.voice.stt,
+          connect_timeout_s: Number(draft.voice.stt.connect_timeout_s),
+          timeout_s: Number(draft.voice.stt.timeout_s),
+        },
+        tts: {
+          ...draft.voice.tts,
+          connect_timeout_s: Number(draft.voice.tts.connect_timeout_s),
+          timeout_s: Number(draft.voice.tts.timeout_s),
+        },
       },
     };
     save.mutate(patch as unknown as Record<string, unknown>);
@@ -609,9 +652,106 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
+      <ConfGroup id="voice-stt" num="07" title="Voice · STT" right="speech-to-text">
+        <div className="conf-card">
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Enabled</div>
+              <div className="desc">master switch — disables STT and TTS</div>
+            </div>
+            <Switch on={!!draft?.voice.enabled} onToggle={() => setVoiceEnabled(!draft?.voice.enabled)} />
+          </div>
+          <Field
+            label="Language"
+            desc="ISO code (en, sv); blank → auto-detect"
+            value={vstt?.language ?? ""}
+            onChange={(v) => setStt("language", v)}
+            placeholder="en"
+          />
+          <div className="confrow">
+            <div className="k">
+              <div className="label">VAD filter</div>
+              <div className="desc">skip silence (avoids whisper silence-hallucinations)</div>
+            </div>
+            <Switch on={!!vstt?.vad_filter} onToggle={() => setStt("vad_filter", !vstt?.vad_filter)} />
+          </div>
+          <Field
+            label="Hotwords"
+            desc="space-separated recognition bias (fleet / jargon names)"
+            value={vstt?.hotwords ?? ""}
+            onChange={(v) => setStt("hotwords", v)}
+            placeholder="corsair vault emma minig"
+          />
+          <Field
+            label="Primary endpoint"
+            desc="vault · /v1 base url"
+            value={vstt?.primary.base_url ?? ""}
+            onChange={(v) => setVoiceEp("stt", "primary", "base_url", v)}
+            placeholder="http://host:9000/v1"
+          />
+          <Field label="Primary model" desc="whisper model id" value={vstt?.primary.model ?? ""} onChange={(v) => setVoiceEp("stt", "primary", "model", v)} />
+          <Field label="Primary key" desc="optional — local servers ignore it" type="password" value={vstt?.primary.api_key ?? ""} onChange={(v) => setVoiceEp("stt", "primary", "api_key", v)} />
+          <Field
+            label="Fallback endpoint"
+            desc="emma · tried only if primary fails"
+            value={vstt?.fallback.base_url ?? ""}
+            onChange={(v) => setVoiceEp("stt", "fallback", "base_url", v)}
+            placeholder="http://host:9000/v1 (blank → no fallback)"
+          />
+          <Field label="Fallback model" desc="whisper model id" value={vstt?.fallback.model ?? ""} onChange={(v) => setVoiceEp("stt", "fallback", "model", v)} />
+          <Field label="Fallback key" desc="optional" type="password" value={vstt?.fallback.api_key ?? ""} onChange={(v) => setVoiceEp("stt", "fallback", "api_key", v)} />
+          <Field label="Connect timeout" desc="seconds — fail-fast to fall over" value={String(vstt?.connect_timeout_s ?? "")} onChange={(v) => setStt("connect_timeout_s", v as unknown as number)} />
+          <Field label="Read timeout" desc="seconds — transcription window" value={String(vstt?.timeout_s ?? "")} onChange={(v) => setStt("timeout_s", v as unknown as number)} />
+        </div>
+        {saveBar}
+      </ConfGroup>
+
+      <ConfGroup id="voice-tts" num="08" title="Voice · TTS" right="text-to-speech">
+        <div className="conf-card">
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Format</div>
+              <div className="desc">audio container — mp3 is universally seekable (mini-player)</div>
+            </div>
+            <Seg<string>
+              current={vtts?.format ?? "mp3"}
+              options={[
+                { val: "mp3", label: "mp3" },
+                { val: "opus", label: "opus" },
+                { val: "wav", label: "wav" },
+              ]}
+              onPick={(v) => setTts("format", v)}
+            />
+          </div>
+          <Field
+            label="Primary endpoint"
+            desc="vault · /v1 base url"
+            value={vtts?.primary.base_url ?? ""}
+            onChange={(v) => setVoiceEp("tts", "primary", "base_url", v)}
+            placeholder="http://host:7851/v1"
+          />
+          <Field label="Primary model" desc="tts model id" value={vtts?.primary.model ?? ""} onChange={(v) => setVoiceEp("tts", "primary", "model", v)} />
+          <Field label="Primary voice" desc="server voice id" value={vtts?.primary.voice ?? ""} onChange={(v) => setVoiceEp("tts", "primary", "voice", v)} placeholder="echo" />
+          <Field label="Primary key" desc="optional" type="password" value={vtts?.primary.api_key ?? ""} onChange={(v) => setVoiceEp("tts", "primary", "api_key", v)} />
+          <Field
+            label="Fallback endpoint"
+            desc="emma · tried only if primary fails"
+            value={vtts?.fallback.base_url ?? ""}
+            onChange={(v) => setVoiceEp("tts", "fallback", "base_url", v)}
+            placeholder="http://host:7851/v1 (blank → no fallback)"
+          />
+          <Field label="Fallback model" desc="tts model id" value={vtts?.fallback.model ?? ""} onChange={(v) => setVoiceEp("tts", "fallback", "model", v)} />
+          <Field label="Fallback voice" desc="server voice id" value={vtts?.fallback.voice ?? ""} onChange={(v) => setVoiceEp("tts", "fallback", "voice", v)} placeholder="echo" />
+          <Field label="Fallback key" desc="optional" type="password" value={vtts?.fallback.api_key ?? ""} onChange={(v) => setVoiceEp("tts", "fallback", "api_key", v)} />
+          <Field label="Connect timeout" desc="seconds — fail-fast to fall over" value={String(vtts?.connect_timeout_s ?? "")} onChange={(v) => setTts("connect_timeout_s", v as unknown as number)} />
+          <Field label="Read timeout" desc="seconds — synthesis window" value={String(vtts?.timeout_s ?? "")} onChange={(v) => setTts("timeout_s", v as unknown as number)} />
+        </div>
+        {saveBar}
+      </ConfGroup>
+
       <ConfGroup
         id="mcp"
-        num="07"
+        num="09"
         title="MCP servers"
         right={`${settings?.mcp_servers?.length ?? 0} server${(settings?.mcp_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
@@ -620,7 +760,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="openapi"
-        num="08"
+        num="10"
         title="OpenAPI tool servers"
         right={`${settings?.openapi_servers?.length ?? 0} server${(settings?.openapi_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
@@ -635,7 +775,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="agents"
-        num="09"
+        num="11"
         title="Agents"
         right={`${agentCount} agent${agentCount === 1 ? "" : "s"}`}
         defaultCollapsed
@@ -645,7 +785,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="skills"
-        num="10"
+        num="12"
         title="Skills"
         right={`${skillNames.length} discovered`}
         defaultCollapsed
@@ -655,7 +795,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="memory"
-        num="11"
+        num="13"
         title="Memory"
         right={memoryCfg.enabled ? "on" : "off"}
         defaultCollapsed
@@ -665,7 +805,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="tooldesc"
-        num="12"
+        num="14"
         title="Agent tools"
         right="descriptions"
         defaultCollapsed
@@ -675,14 +815,14 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="computers"
-        num="13"
+        num="15"
         title="Computers"
         right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
       >
         <MachineEditor hosts={hosts} />
       </ConfGroup>
 
-      <ConfGroup id="appearance" num="14" title="Appearance">
+      <ConfGroup id="appearance" num="16" title="Appearance">
         <div className="conf-card">
           <div className="confrow">
             <div className="k">

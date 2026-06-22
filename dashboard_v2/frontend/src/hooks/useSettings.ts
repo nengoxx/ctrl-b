@@ -15,6 +15,29 @@ export interface InferenceEndpoint {
   model: string;
 }
 
+// Voice (Phase 6) — one STT + one TTS service, each a primary→fallback failover chain (D18).
+export interface VoiceEndpoint {
+  base_url: string;
+  api_key: string | null; // masked on read
+  model: string;
+  voice?: string; // TTS only — server voice id
+}
+interface VoiceServiceCommon {
+  connect_timeout_s: number; // fail-fast on an unreachable endpoint → fall over
+  timeout_s: number; // read window for the transcription/synthesis
+  extra_body: Record<string, unknown>; // advanced passthrough (round-trips even without a UI control)
+  primary: VoiceEndpoint;
+  fallback: VoiceEndpoint;
+}
+export interface VoiceStt extends VoiceServiceCommon {
+  language: string; // "" → auto-detect
+  vad_filter: boolean; // skip silence
+  hotwords: string; // space-separated recognition bias
+}
+export interface VoiceTts extends VoiceServiceCommon {
+  format: string; // response_format/container (mp3 = universally seekable)
+}
+
 export interface SettingsDoc {
   server: { host: string; port: number; poll_seconds: number; feature_cycle_seconds: number; debug: boolean };
   inference: {
@@ -51,6 +74,7 @@ export interface SettingsDoc {
     timeout_s: number;
     max_output_chars: number;
   };
+  voice: { enabled: boolean; stt: VoiceStt; tts: VoiceTts };
   mcp_servers: McpServer[]; // Phase 7c-b — managed via the integrations CRUD endpoints, read here
   openapi_servers: OpenApiServer[];
   [k: string]: unknown; // other sections (agent, …) — managed elsewhere

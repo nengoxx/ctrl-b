@@ -76,7 +76,18 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Phase 6a-1 voice backend ✅** · 7e/D17/Phase 5 done · NEXT = 6a-2 Conf Voice forms → 6b mic + mini-player)
+## Current state (**Phase 6a voice backend + Conf forms ✅** · 7e/D17/Phase 5 done · NEXT = 6b mic + scrubbable mini-player → 6c HTTPS/Android)
+
+> ### ⭐ Session update — 2026-06-22 (build session #11 cont. — **6a-2 Conf Voice forms** · committed, awaiting push)
+> 6a-1 backend (`2b08fde`+`f3470e0`) is **pushed**. Then wired the real servers (vault primary, emma
+> fallback) into `config.yaml` + **live-verified** end-to-end (round-trip + real failover + STT params
+> reach Speaches — proven via an observable `verbose_json` effect). Then built **6a-2**: two Conf groups
+> (Voice · STT #07 / Voice · TTS #08) on the existing scalar `Draft`/`saveBar` pattern, typed `VoiceEndpoint`/
+> `VoiceStt`/`VoiceTts` in `SettingsDoc`, editor groups renumbered 09–16. tsc clean; **eyeballed at 390px
+> (Puppeteer, zero console errors)** — renders faithfully (Vapor controls: Field/Switch/Seg). vapor.css
+> untouched (D7). **6a-2 committed but NOT pushed** (owner reviews first). EMMA voice servers still need
+> starting for the fallback to actually serve (emma:9000 is a non-OpenAI whisper UI; emma TTS down).
+> **Next: 6b** (mic state machine + scrubbable TTS mini-player) → **6c** (Tailscale HTTPS + Android verify).
 
 > ### ⭐ Session update — 2026-06-22 (build session #11 — **Phase 6a-1: voice backend + shared failover primitive** · NOT committed yet)
 >

@@ -357,10 +357,15 @@ tools + confirm bubbles) are DONE.**
       pruning, nested-secret round-trip, `VoiceClient` transcribe/synthesize/unconfigured, API status/stt/tts
       + status codes. Full backend suite green (22 files); live boot confirms the route + 503-when-unconfigured.
 
-### Phase 6a-2 — Conf **Voice** group (frontend)
-- [ ] Conf forms for STT + TTS × primary/fallback (base_url/api_key/model/voice) + the timeouts +
-      `tts.format`, saved via `PUT /api/settings` (the nested-secret round-trip is already proven). STT
-      ignores `format` (don't render it under STT).
+### Phase 6a-2 — Conf **Voice** group (frontend) ✅ DONE 2026-06-22
+- [x] Two Conf groups — **Voice · STT** (#07) + **Voice · TTS** (#08) — following the existing scalar
+      `Draft`/`saveBar` pattern (rides the shared dirty flag + `PUT /api/settings`). STT: master Enabled
+      Switch + language Field + vad_filter Switch + hotwords Field + primary/fallback (base_url/model/key)
+      + timeouts. TTS: format Seg (mp3/opus/wav) + primary/fallback (base_url/model/voice/key) + timeouts.
+      `extra_body` round-trips untouched through the draft (no editor — advanced/rare). `SettingsDoc`
+      gained typed `VoiceEndpoint`/`VoiceStt`/`VoiceTts`. Editor groups renumbered 09–16. vapor.css
+      untouched (D7). tsc clean; eyeballed at 390px (Puppeteer, zero console errors); settings GET/PUT
+      round-trips the masked nested keys.
 
 ### Phase 6b — mic state machine + scrubbable mini-player (frontend)
 - [ ] Frontend: push-to-talk mic (MediaRecorder) → `/voice/stt` → fills composer. The recorder's
