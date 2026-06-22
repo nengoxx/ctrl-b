@@ -76,9 +76,58 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (7e FULLY COMPLETE · **D17 dual-mode chat ✅** · **Phase 5 guarded shell ✅** · NEXT = Phase 6 voice / emma deploy)
+## Current state (**Phase 6a-1 voice backend ✅** · 7e/D17/Phase 5 done · NEXT = 6a-2 Conf Voice forms → 6b mic + mini-player)
 
-> **Everything is pushed to `origin/main`** (HEAD `a6618e7` = the Phase 5 docs commit; code `a5deb24`).
+> ### ⭐ Session update — 2026-06-22 (build session #11 — **Phase 6a-1: voice backend + shared failover primitive** · NOT committed yet)
+>
+> Picked the next track with the owner (Phase 6 voice), refined the spec across several design
+> rounds (web-researched the seek-vs-streaming tension + STT/TTS format interop), locked the failover
+> subsystem as **D18**, then built **6a-1** end-to-end. **Uncommitted on `main`** (awaiting the owner's
+> go-ahead to commit/push). Tree otherwise clean except the standing `start_claude_remote.ps1`.
+>
+> **What shipped (backend only — no UI yet):**
+> - **`core/failover.py`** — the generic, value-agnostic failover primitive (D18): `failover(endpoints,
+>   attempt)` walks the chain, returns the first success + metadata (`served_index`/`failures`/`degraded`),
+>   any-error→next, all-fail→`FailoverError`. **Reused unchanged by the LLM inference chain next slice.**
+> - **`config.py`** — `voice{enabled, stt, tts}`; `VoiceServiceCfg{connect_timeout_s=3, timeout_s=30,
+>   format="mp3", primary, fallback}` + `.endpoints()` (drops blank base_url). `api_key` rides the existing
+>   mask/unmask machinery (nested-secret round-trip proven in tests).
+> - **`adapters/voice.py`** `VoiceClient` — `transcribe` (forwards filename+content-type; Whisper routes
+>   by extension) + `synthesize` (**full clip**, not chunked — for a seekable mini-player blob) +
+>   `configured`/`status`. `AsyncOpenAI` per (url, timeouts), split `httpx.Timeout(read, connect=…)`, both
+>   wrapped in `failover`. (openai SDK 2.38.0: TTS `create()`→`HttpxBinaryResponseContent`, `await .aread()`.)
+> - **`api/voice.py`** — `POST /voice/stt`→`{text}`, `POST /voice/tts`→full audio + `Content-Length` +
+>   `X-Voice-Served-By`, `GET /voice/status` capability probe. Contract: all-fail→**502**, unconfigured→**503**,
+>   empty→**422**. Wired in `main.py` + `runtime.set_voice` (lifespan build/close + `reconfigure` hot-apply;
+>   `app.state.voice` only — the agent loop doesn't consume it).
+> - **Docs:** **D18** added (failover subsystem + the inference-chain-next note), ARCHITECTURE §3 + §Voice
+>   updated, TODO Phase 6 re-sliced (6a-1✅ / 6a-2 / 6b / 6c), the old standalone mic-button block folded into 6b.
+>
+> **Verified:** `test_voice_6a.py` (12: failover truth-table incl. **4xx-falls-through** per Q2, `endpoints()`
+> pruning, nested-secret round-trip, `VoiceClient` transcribe/synthesize/unconfigured, API status/stt/tts +
+> status codes). **Full backend suite green (22 files)**, `compileall` clean, **live boot** (`TestClient`):
+> `GET /api/voice/status`→`{stt:false,tts:false}` (unconfigured default), `app.state.voice` is a `VoiceClient`,
+> `voice.tts.format`=mp3, unconfigured TTS→503. **Not live-verified against the real vault/emma STT/TTS servers
+> yet** (need their base_urls in config — the owner has 4 servers: STT+TTS on each of vault/emma, vault primary).
+>
+> **Locked design (D18 — full text in DECISIONS):** failover is a *separate shared subsystem* (active endpoint
+> delegates to an ordered chain on failure, independent of how it was chosen); voice = fixed primary/fallback,
+> **inference = ordered `endpoints[]` chain next slice** (reuses `core/failover.py`); **any error → next** (4xx
+> too — ensure functionality, surface via header/502); split connect/read timeouts. **Full-clip TTS** (not
+> chunked) so the PWA mini-player gets a natively seekable blob — chunked streaming deferred to ROADMAP.
+>
+> **Owner request captured in 6b:** a **scrubbable TTS mini-player** (ChatGPT/Telegram/WhatsApp style —
+> play/pause + draggable seek + skip/speed) over a styled `<audio>` + per-message blob cache.
+>
+> **Start here next session:** commit/push 6a-1 if not done, then **6a-2** (Conf Voice forms — the nested-secret
+> PUT round-trip is already proven) → **6b** (mic state machine + the scrubbable mini-player) → **6c** (Tailscale
+> Serve HTTPS + Android verify). The **LLM inference fallback chain** (D18 follow-up) is also queued — its own
+> pre-flight over the `inference.local/cloud + default_mode + /local`//`/cloud` + per-agent `ModelRef` machinery.
+> Servers: backend **5433** (no `--reload`), frontend **5173**.
+>
+> ---
+>
+> **Everything below is pushed to `origin/main`** (HEAD `a6618e7` = the Phase 5 docs commit; code `a5deb24`).
 > **Phase 5 (guarded local shell, the `!` escape hatch) is shipped + owner-verified live at 390px** —
 > see session #10 below. 7e is fully complete; **D17 dual-mode chat**, **A1 per-session privilege
 > (D16)**, **A2 `question` kind**, and **7e-g AgentSelector** all shipped earlier — see their blocks below.

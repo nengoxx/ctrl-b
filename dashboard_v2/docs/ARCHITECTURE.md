@@ -152,14 +152,22 @@ async def shutdown_host(inp: ShutdownHostInput) -> ActionResult:
 - **Memory** (see §4) is injected into the system prompt per request via a pluggable provider;
   managed from Conf.
 
-### Voice (`app/voice.py`)
+### Voice (`api/voice.py` + `adapters/voice.py`) — Phase 6, D18 failover
 
-- `POST /api/voice/stt` — multipart audio in → forwards to the OpenAI-compatible STT
-  (`/v1/audio/transcriptions`) → returns `{ text }`.
-- `POST /api/voice/tts` — `{ text, voice? }` → forwards to TTS (`/v1/audio/speech`) → streams
-  audio back. Voice/model/format configurable.
-- Both are thin proxies so the browser never holds STT/TTS keys and CORS/secure-context stays
-  simple (single origin).
+- `POST /api/voice/stt` — multipart audio in → OpenAI-compatible STT (`/v1/audio/transcriptions`) →
+  `{ text }`. The upload's filename + content-type are forwarded as recorded (Whisper servers often
+  route by extension).
+- `POST /api/voice/tts` — `{ text, voice? }` → TTS (`/v1/audio/speech`) → the **full clip** buffered
+  (not chunked), so the PWA mini-player gets a natively seekable blob. `format` (default mp3) is the
+  configurable `response_format`.
+- `GET /api/voice/status` — `{ stt, tts }` capability probe so the PWA shows/hides the mic + auto-TTS
+  without the browser learning whether keys exist.
+- Each service has a **primary→fallback chain** via `core/failover.py` (D18): on **any** error the
+  request falls through; a success-via-fallback sets `X-Voice-Served-By: fallback`; all-fail → 502.
+  Split connect/read timeouts keep failover snappy.
+- Thin proxies so the browser never holds STT/TTS keys and secure-context/CORS stay simple (single
+  origin). `VoiceClient` lives on `app.state` (the agent loop doesn't consume it); a Conf edit
+  hot-applies via `runtime.set_voice`.
 
 ### Tools / Utils (`app/tools/`) — an extensible tool registry
 
@@ -256,7 +264,9 @@ Memory    files: $CTRLB_HOME/memories/{MEMORY.md,USER.md} + agents/<n>/memories/
 Automation id, name, cron, prompt, privilege, thread_id, enabled, last_run, status [SQLite]  # ROADMAP A3
 Settings  inference{mode, local_url, cloud_url, cloud_key*, model},
           embeddings{url, key*, model},                       # llama.cpp /v1/embeddings (D9)
-          stt{url, key*, model}, tts{url, key*, model, voice},
+          voice{enabled, stt{connect_timeout_s, timeout_s, primary/fallback{base_url,key*,model}},
+                tts{connect_timeout_s, timeout_s, format, primary/fallback{base_url,key*,model,voice}}},  # Phase 6, D18 failover
+
           searxng{url, enabled},                              # web_search tool (D9)
           mcp_servers[]{name, transport(stdio|http), command, args, env*, url, headers*, enabled},  # D9
           agent{default_agent, defaults{…AgentDef-shaped…}, global_subagent_limit, clamp_subagent_privilege,

@@ -24,6 +24,7 @@ from app.adapters.embeddings import EmbeddingsClient
 from app.adapters.inference import InferenceClient
 from app.adapters.openterminal import OpenTerminalClient
 from app.adapters.searxng import SearxngClient
+from app.adapters.voice import VoiceClient
 from app.config import Settings
 
 if TYPE_CHECKING:
@@ -66,6 +67,13 @@ async def set_embeddings(app: "FastAPI", settings: Settings) -> None:
 
 async def set_open_terminal(app: "FastAPI", settings: Settings) -> None:
     await _swap_client(app, "open_terminal", OpenTerminalClient(settings.open_terminal))
+
+
+async def set_voice(app: "FastAPI", settings: Settings) -> None:
+    """Build + wire the voice client from `settings.voice` (Phase 6). Voice isn't consumed by the
+    agent loop/subagents, so it lives on `app.state.voice` only (the `_swap_client` deps mirror is
+    harmless); the STT/TTS endpoints read it per request, so a Conf edit hot-applies."""
+    await _swap_client(app, "voice", VoiceClient(settings.voice))
 
 
 def apply_tool_descriptions(app: "FastAPI", settings: Settings | None = None) -> None:
@@ -168,6 +176,7 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
     searxng_changed = _changed(old, new, "searxng")
     embeddings_changed = _changed(old, new, "embeddings")
     open_terminal_changed = _changed(old, new, "open_terminal")
+    voice_changed = _changed(old, new, "voice")
     tool_desc_changed = _changed(old, new, "tool_descriptions")
     caches_stale = _changed(old, new, "server") or _changed(old, new, "computers")
 
@@ -180,6 +189,8 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
         await set_embeddings(app, new)
     if open_terminal_changed:
         await set_open_terminal(app, new)
+    if voice_changed:
+        await set_voice(app, new)
     if tool_desc_changed and getattr(app.state, "actions", None) is not None:
         apply_tool_descriptions(app, new)
     if caches_stale:

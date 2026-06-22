@@ -35,6 +35,7 @@ from app.api import (
     integrations,
     services,
     settings as settings_api,
+    voice as voice_api,
 )
 from app.config import load_dotenv, load_settings
 from app.runtime import (
@@ -43,6 +44,7 @@ from app.runtime import (
     set_inference,
     set_open_terminal,
     set_searxng,
+    set_voice,
 )
 from app.core.events import EventBus
 from app.db import Database
@@ -81,6 +83,9 @@ async def lifespan(app: FastAPI):
     await set_searxng(app, app.state.settings)
     await set_open_terminal(app, app.state.settings)
     await set_embeddings(app, app.state.settings)
+    # Voice (Phase 6): STT/TTS proxy with failover. App-state only (not consumed by the agent loop);
+    # the /api/voice endpoints read it per request, so a Conf edit hot-applies via `reconfigure`.
+    await set_voice(app, app.state.settings)
     deps = Deps(
         settings=app.state.settings,
         fleet=app.state.fleet,
@@ -156,6 +161,7 @@ async def lifespan(app: FastAPI):
         await app.state.open_terminal.aclose()
         await app.state.openapi.aclose()
         await app.state.embeddings.aclose()
+        await app.state.voice.aclose()
         await app.state.db.close()
 
 
@@ -170,6 +176,7 @@ def create_app() -> FastAPI:
     app.include_router(agent.router, prefix="/api")
     app.include_router(settings_api.router, prefix="/api")
     app.include_router(integrations.router, prefix="/api")
+    app.include_router(voice_api.router, prefix="/api")
 
     # Prod single-origin serving. Absent in dev (Vite owns the SPA + proxies /api here).
     if _FRONTEND_DIST.is_dir():

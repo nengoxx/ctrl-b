@@ -585,6 +585,53 @@ a streaming-vs-buffered final-message parity check, all on a temp config.
 
 ---
 
+## D18 — Failover is a shared subsystem; voice ships on it, the LLM chain reuses it ✅ SHIPPED 2026-06-22 (6a-1, backend)
+
+**Decided 2026-06-22 (with the owner), building Phase 6 voice.** Failover (an active endpoint dies →
+fall through to a configured chain until something works) is **its own cross-cutting subsystem**, not a
+per-service feature. Voice (STT/TTS) is the first consumer; the **LLM inference fallback chain is the
+next slice** and reuses the *same* primitive — so we never grow two failover implementations
+(the project's no-duplication rule).
+
+**The owner's mental model (locked):** the fallback chain is **independent of how the active endpoint
+was chosen**. Whatever model is in play (picked by a service's config, by chat mode, by an agent, by a
+composer prefix), if it fails the request walks one ordered chain — entry 1, then entry 2, … — until
+one succeeds. The active endpoint just *delegates* to the chain on failure; fallback is not a property
+of the primary.
+
+**Locked choices:**
+1. **One generic primitive — `core/failover.py`.** `async failover(endpoints, attempt, *, label) ->
+   FailoverResult` walks the list, returns the first success + metadata (`served_index`, per-hop
+   `failures`, `degraded`), raises `FailoverError` (carrying every hop's error) only if all fail or the
+   chain is empty. **Value-agnostic:** `attempt(ep)` returns whatever the consumer wants — a buffered
+   value (voice) or a `(first_chunk, stream)` handle (a streaming consumer) — so "success = first
+   attempt that doesn't raise" lets a future *streaming* reuse (inference) fail over at stream
+   *initiation* without this code assuming a buffered result.
+2. **Per-subsystem config shapes feed the primitive a list.** **Voice** = fixed `primary` + `fallback`
+   (two named fields, simple Conf forms — the owner's 2-tier vault/emma model); `VoiceServiceCfg.endpoints()`
+   emits `[primary, fallback]` (blank `base_url` dropped). **Inference** (next slice) = an ordered
+   `endpoints[]` chain (N-deep, crosses local/cloud). Same primitive, different ergonomics per
+   subsystem's mental model. We generalize voice to a list only if a 3rd tier is ever wanted.
+3. **Policy: any error → try the next endpoint** (the "ensure functionality" directive). Not just
+   connect/timeout/5xx — **a 4xx falls through too**: for a homelab panel a working result wins, and the
+   any-error chain naturally hedges format incompatibility (e.g. an STT box lacking ffmpeg 400s on webm →
+   skip to the next). The error is **surfaced but functional**: each failed hop is logged + collected; a
+   success-via-fallback returns an `X-Voice-Served-By: fallback` header (so you know a primary went down);
+   total failure raises the aggregated error (HTTP 502). Inference's `is_retryable` can be tuned per
+   consumer later (e.g. let a 404 model-not-found fall through, terminate on a 400 context-too-long) —
+   the primitive doesn't hardcode the classifier.
+4. **Split timeouts for snappy failover.** Each service carries a short `connect_timeout_s` (≈3s — how
+   fast we give up *reaching* a dead endpoint before failing over) separate from a generous `timeout_s`
+   read window (the actual STT/TTS work) — `httpx.Timeout(read, connect=…)`. Matters because we always
+   try the whole chain: a dead vault costs ~3s, not 30, before emma takes over.
+
+**Inference-chain follow-up (not built here):** turning `inference.local/cloud + default_mode` into an
+ordered chain crossing local→cloud is a rework of a shipped subsystem (how do `/local`//`/cloud`
+prefixes + per-agent `ModelRef` compose with "start here, then fall down the chain"?). It's the next
+slice, gets its own pre-flight, and reuses `core/failover.py` unchanged.
+
+---
+
 ## Still open (decide before building the relevant phase)
 
 **Resolved since this list was written (kept here as a pointer so the section stays honest):**

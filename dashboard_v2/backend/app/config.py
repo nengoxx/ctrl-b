@@ -201,6 +201,57 @@ class EmbeddingsCfg(BaseModel):
     dim: int | None = None           # optional: known embedding dimension
 
 
+class VoiceEndpointCfg(BaseModel):
+    """One OpenAI-compatible STT *or* TTS backend (Phase 6). `voice` is a TTS-only server voice id
+    (ignored by STT). `api_key` is optional — local servers ignore it (the client sends a
+    placeholder). Same shape spirit as `InferenceEndpointCfg`; the failover chain lives one level up
+    on `VoiceServiceCfg`."""
+
+    model_config = {"extra": "allow"}
+
+    base_url: str = ""               # e.g. http://vault:8001/v1
+    api_key: str | None = None
+    model: str = ""                  # e.g. "whisper-large-v3" (STT) or "tts-1"/a voice model (TTS)
+    voice: str = ""                  # TTS only — server voice id; STT ignores it
+
+
+class VoiceServiceCfg(BaseModel):
+    """One voice service (STT or TTS) with an ordered **primary → fallback** chain (D-failover). The
+    active endpoint is `primary`; on **any** failure the request falls through to `fallback` (Phase 6
+    Q2 — ensure functionality, surface the degradation). Split timeouts make the failover snappy:
+    `connect_timeout_s` is how fast we give up *reaching* a dead endpoint before falling over;
+    `timeout_s` is the (generous) read window for the actual transcription/synthesis. `format` is the
+    TTS `response_format`/container — mp3 is the universally `<audio>`-seekable choice the mini-player
+    needs; **STT ignores `format`** (it forwards the uploaded clip as recorded)."""
+
+    model_config = {"extra": "allow"}
+
+    connect_timeout_s: float = 3.0   # fail-fast on an unreachable endpoint → fall over
+    timeout_s: float = 30.0          # read window for the transcription/synthesis itself
+    format: str = "mp3"              # TTS response_format (mp3|opus|aac|flac|wav|pcm); STT ignores it
+    primary: VoiceEndpointCfg = Field(default_factory=VoiceEndpointCfg)
+    fallback: VoiceEndpointCfg = Field(default_factory=VoiceEndpointCfg)
+
+    def endpoints(self) -> list[VoiceEndpointCfg]:
+        """The ordered failover chain — primary then fallback — dropping any with a blank `base_url`
+        (so a half-configured fallback doesn't add a guaranteed-failing hop). Fed to `core.failover`."""
+        return [e for e in (self.primary, self.fallback) if e.base_url]
+
+
+class VoiceCfg(BaseModel):
+    """Voice subsystem (Phase 6) — push-to-talk **STT** + read-aloud **TTS**, each an
+    OpenAI-compatible proxy with a primary→fallback chain so a down endpoint degrades instead of
+    failing (D-failover). `enabled=False` (or a service with no configured endpoints) makes that
+    service report unconfigured (`VoiceClient.configured`), so the PWA hides the mic / auto-TTS rather
+    than offering a dead control. `extra="allow"` so later knobs (speed, language) round-trip."""
+
+    model_config = {"extra": "allow"}
+
+    enabled: bool = True
+    stt: VoiceServiceCfg = Field(default_factory=VoiceServiceCfg)
+    tts: VoiceServiceCfg = Field(default_factory=VoiceServiceCfg)
+
+
 class SearxngCfg(BaseModel):
     """SearXNG metasearch endpoint backing the agent `web_search` tool (Phase 4f, D9). Hits the
     instance's `/search?format=json` API (the instance must enable the JSON format in its
@@ -368,6 +419,7 @@ class Settings(BaseModel):
     memory: MemoryCfg = Field(default_factory=MemoryCfg)
     searxng: SearxngCfg = Field(default_factory=SearxngCfg)
     embeddings: EmbeddingsCfg = Field(default_factory=EmbeddingsCfg)
+    voice: VoiceCfg = Field(default_factory=VoiceCfg)
     open_terminal: OpenTerminalCfg = Field(default_factory=OpenTerminalCfg)
     shell: ShellCfg = Field(default_factory=ShellCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)

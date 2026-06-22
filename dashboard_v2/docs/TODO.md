@@ -331,28 +331,57 @@ tools + confirm bubbles) are DONE.**
       via `decide(run_shell_allowed=shell.agent_exec_enabled)` wired at the single ActionService gate —
       off → DENY below FULL; on → HIGH still confirms. Tests: `test_shell_5.py` (10).
 
-## Phase 6 — Voice (STT + TTS)
+## Phase 6 — Voice (STT + TTS) — **sliced 6a-1 / 6a-2 / 6b / 6c**
 
-- [ ] `POST /api/voice/stt` (multipart → OpenAI-compatible `/v1/audio/transcriptions`). **Always
-      buffered** (push-to-talk record-then-send) — no streaming toggle (C1 decision 2026-06-16).
-- [ ] `POST /api/voice/tts` ({text,voice} → `/v1/audio/speech` → audio stream). **Own streaming knob**
-      in the voice config block (full-clip vs chunked playback; the latency win is sentence-pipelining
-      with the chat stream) — decoupled from chat's `AgentCfg.streaming` (C1 decision 2026-06-16, D17).
-- [ ] Frontend: push-to-talk mic (MediaRecorder) → STT → fills composer; auto-TTS toggle
-      (`#ttsToggle`) plays assistant replies.
-- [ ] **HTTPS via Tailscale Serve** so the mic works on Android (secure-context). Document it.
-- [ ] **Verify** mic + playback on a real Android phone over the tailnet.
-- [ ] **Mic-button state machine** (folded in from UI_AUDIT.md F21, deferred 2026-06-08):
+> **Failover is its own subsystem (D18).** Each voice service has a `primary`→`fallback` chain via
+> `core/failover.py`; any error falls through (surfaced via `X-Voice-Served-By`, total fail → 502).
+> The LLM inference fallback chain is the **next slice after voice**, reusing the same primitive.
+>
+> **Full-clip TTS, not chunked (research-backed).** A scrubbable mini-player needs a known duration +
+> seekable bytes; streamed audio doesn't give that cleanly (MSE seek is bad, range-requests collapse
+> into "make the full clip anyway"). So TTS returns the **whole clip** (mp3) and the PWA plays a blob
+> URL — fully seekable. Chunked/sentence-pipeline streaming is a deferred ROADMAP latency optimization,
+> explicitly traded against seek. (This dropped the originally-planned `tts.stream` knob.)
+
+### Phase 6a-1 — voice backend + the shared failover primitive ✅ DONE 2026-06-22
+- [x] **`core/failover.py`** — generic, value-agnostic `failover(endpoints, attempt)` (D18): walk the
+      chain, first success + metadata, any-error→next, all-fail→`FailoverError`. Reused by inference later.
+- [x] **`config.py`** — `voice{enabled, stt, tts}` with `VoiceServiceCfg{connect_timeout_s, timeout_s,
+      format, primary, fallback}` + `.endpoints()`; `api_key` rides the existing mask/unmask machinery.
+- [x] **`adapters/voice.py`** `VoiceClient` — `transcribe`/`synthesize` (full-clip) + `configured`/`status`,
+      `AsyncOpenAI` per (url,timeouts), split `httpx.Timeout`, both wrapped in `failover`.
+- [x] **`api/voice.py`** — `POST /voice/stt` (`{text}`), `POST /voice/tts` (full audio + Content-Length +
+      `X-Voice-Served-By`), `GET /voice/status` probe. HTTP contract: all-fail→502, unconfigured→503,
+      empty→422. Wired in `main.py` + `runtime.set_voice` (lifespan build/close + `reconfigure` hot-apply).
+- [x] **Tests** `test_voice_6a.py` (12): failover truth-table (incl. 4xx-falls-through), `endpoints()`
+      pruning, nested-secret round-trip, `VoiceClient` transcribe/synthesize/unconfigured, API status/stt/tts
+      + status codes. Full backend suite green (22 files); live boot confirms the route + 503-when-unconfigured.
+
+### Phase 6a-2 — Conf **Voice** group (frontend)
+- [ ] Conf forms for STT + TTS × primary/fallback (base_url/api_key/model/voice) + the timeouts +
+      `tts.format`, saved via `PUT /api/settings` (the nested-secret round-trip is already proven). STT
+      ignores `format` (don't render it under STT).
+
+### Phase 6b — mic state machine + scrubbable mini-player (frontend)
+- [ ] Frontend: push-to-talk mic (MediaRecorder) → `/voice/stt` → fills composer. The recorder's
+      mimeType + the upload filename extension **must agree** (Whisper routes by extension) — the 6a↔6b
+      contract. **Always buffered** record-then-send (no streaming toggle, C1 2026-06-16).
+- [ ] Auto-TTS toggle (`#ttsToggle`) → `/voice/tts` plays assistant replies.
+- [ ] **Scrubbable TTS mini-player** (ChatGPT/Telegram/WhatsApp style, owner request 2026-06-22): docked
+      bar, play/pause + draggable seek + elapsed/total + skip ±10s + speed; styled `<audio>` over a blob
+      URL (native seek); per-message blob cache (one synth per message); playback state in the UI store.
+- [ ] **Mic-button state machine** (folds in UI_AUDIT.md F21, deferred 2026-06-08):
       The Composer mic today is a visual stub — taps toggle a local `rec` boolean + a
       `micrec` keyframe pulse but no MediaRecorder is wired, so users tap it expecting
-      dictation and nothing happens. Phase 6 owns the full lifecycle: capability probe
-      (secure-context + permission state), disabled-with-tooltip when unsupported / denied,
-      `aria-disabled` + muted Vapor styling for the inert state, then the active recording
-      states when STT actually runs. Re-using the existing `.rec` class for the recording
-      state is fine — drop the local `useState(rec)` and drive it from the recorder's
-      actual state. Do NOT ship a "honest disable" intermediate slice — the disable would
-      be undone the moment the recorder lands. Keep the button visible the whole time
-      (it's part of the Vapor composer layout — D7).
+      dictation and nothing happens. Capability probe (secure-context + permission state, via
+      `GET /voice/status`), disabled-with-tooltip when unsupported/denied, `aria-disabled` + muted
+      Vapor styling for the inert state, then the active recording states when STT runs. Re-use the
+      existing `.rec` class; drop the local `useState(rec)` and drive it from the recorder's actual
+      state. Do NOT ship a "honest disable" intermediate slice. Keep the button visible (Vapor D7).
+
+### Phase 6c — HTTPS + Android verification
+- [ ] **HTTPS via Tailscale Serve** so the mic works on Android (secure-context). Document it.
+- [ ] **Verify** mic + playback on a real Android phone over the tailnet.
 
 ## Phase 7 — Conf tab (settings, prompts, memory, hosts CRUD) — **sliced 7a–7e**
 
