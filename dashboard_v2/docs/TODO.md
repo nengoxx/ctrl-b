@@ -419,9 +419,31 @@ tools + confirm bubbles) are DONE.**
       the composer instead). `tsc -b` clean; live-verified `/voice/status` + `/api/settings` round-trip the
       field. Auto-play stays as the AppBar toggle (owner's call — unchanged).
 
-### Phase 6c — HTTPS + Android verification
-- [ ] **HTTPS via Tailscale Serve** so the mic works on Android (secure-context). Document it.
-- [ ] **Verify** mic + playback on a real Android phone over the tailnet.
+### Phase 6c — HTTPS + Android verification — **sliced 6c-1 (manual + doc ✅) / 6c-2 (settings panel)**
+
+#### 6c-1 — manual Tailscale Serve setup + doc ✅ DONE 2026-06-22 (doc)
+- [x] **Setup doc:** [`HTTPS_TAILSCALE.md`](./HTTPS_TAILSCALE.md) — `tailscale serve --bg 5173` puts the
+      app behind a real TLS cert at the device's `*.ts.net` name (tailnet-only, **not** Funnel), so the
+      mic's secure-context requirement is met on the phone. Coexists with the plain `http://corsair:5173`
+      path (the Firefox-flag workaround stays). **No app change needed** — `vite.config.ts` already has
+      `allowedHosts: true` (added anticipating the `*.ts.net` FQDN). Doc covers prerequisites (admin-console
+      HTTPS enable, operator/elevation per OS), the on/off/reset commands, a QR-to-phone tip, the HMR-over-
+      proxy caveat (use `npm run preview` for a clean serve), and the phone-verify checklist.
+- [ ] **Verify on the phone** (owner): run `tailscale serve --bg 5173`, open the `https://…ts.net` URL on
+      Android, walk the checklist in the doc (mic record→transcribe, the 4 mic states, TTS play/scrub,
+      auto-TTS). _Owner action — needs the host + a real phone._
+- [ ] **(server-side, independent)** keep the Speaches whisper model warm (model TTL) — fixes the measured
+      STT cold-start lag; do it around the phone test so dictation feels snappy.
+
+#### 6c-2 — in-app "Enable HTTPS" control (settings panel) — DESIGN NEXT
+- [ ] **Conf → Access panel** driving Tailscale Serve from the UI (owner request 2026-06-22): detect +
+      surface `tailscale serve status` (active? the `https://…ts.net` URL + copy + **QR to scan on the
+      phone**) and an Enable/Disable toggle backed by a typed host-action (`services/actions/tailscale.py`,
+      gated like wake/reboot/run_shell — manages the backend host itself). Config `tailscale.serve` block
+      (target port) as desired-state; tailscaled is the source of truth. **Graceful degrade** when the CLI
+      is absent / not permitted / needs elevation → show the manual command + doc link. **Cleanest on emma
+      (Linux)** — a non-elevated backend can run `tailscale serve` with `--operator` set; Windows may need
+      elevation, so it may stay manual there. Needs its own pre-flight + a DECISIONS/ROADMAP entry before coding.
 
 ## Phase 7 — Conf tab (settings, prompts, memory, hosts CRUD) — **sliced 7a–7e**
 
