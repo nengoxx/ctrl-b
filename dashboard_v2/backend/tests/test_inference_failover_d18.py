@@ -108,8 +108,21 @@ def test_chain_order():
     c = _cfg(fallbacks=[InferenceEndpointCfg(base_url="http://x/v1", model="x")])
     assert [n for n, _ in c.endpoint_chain("local")] == ["local", "cloud", "fallback1"]
     assert [n for n, _ in c.endpoint_chain("cloud")] == ["cloud", "local", "fallback1"]
-    assert [n for n, _ in c.endpoint_chain("local") if False] == []  # sanity
     assert [n for n, _ in _cfg(failover=False).endpoint_chain("local")] == ["local"]
+
+
+def test_failover_off_blank_selected_errors_not_routes():
+    # Audit fix: failover off + a blank selected endpoint must stay the (blank) selected one — not
+    # silently route to the configured other (which the pre-D18 path would never do).
+    c = InferenceCfg(
+        default_mode="local",
+        failover=False,
+        local=InferenceEndpointCfg(base_url="", model=""),
+        cloud=InferenceEndpointCfg(base_url="http://cloud/v1", model="g"),
+    )
+    chain = c.endpoint_chain("local")
+    assert [n for n, _ in chain] == ["local"]
+    assert chain[0][1].base_url == ""  # blank → errors downstream, as before
 
 
 def test_stream_failover_at_create():
@@ -186,6 +199,28 @@ def test_failover_off_does_not_try_fallback():
         raised = True
     assert raised
     assert fakes["http://cloud/v1"].chat.completions.calls == []  # off → only the selected endpoint
+
+
+def test_fallbacks_secret_survives_remove():
+    # Audit fix: removing a non-last fallback must NOT clobber the remaining ones' real api_keys (the
+    # form re-sends them masked; unmask matches by base_url identity, not the now-shifted index).
+    from app.config import mask_secrets, unmask_secrets
+
+    stored = {
+        "inference": {
+            "fallbacks": [
+                {"base_url": "http://a/v1", "api_key": "key-a", "model": "ma"},
+                {"base_url": "http://b/v1", "api_key": "key-b", "model": "mb"},
+            ]
+        }
+    }
+    masked = mask_secrets(stored)
+    incoming = {"inference": {"fallbacks": [masked["inference"]["fallbacks"][1]]}}  # A removed, B masked
+    result = unmask_secrets(incoming, stored)
+    assert result["inference"]["fallbacks"][0]["api_key"] == "key-b"  # preserved by identity
+    # a brand-new fallback's freshly typed key is taken as-is
+    new = {"inference": {"fallbacks": [{"base_url": "http://c/v1", "api_key": "fresh", "model": "mc"}]}}
+    assert unmask_secrets(new, stored)["inference"]["fallbacks"][0]["api_key"] == "fresh"
 
 
 if __name__ == "__main__":

@@ -49,7 +49,7 @@ export interface SettingsDoc {
     failover: boolean; // D18 — selected endpoint fails → walk the local↔cloud + fallbacks chain
     local: InferenceEndpoint;
     cloud: InferenceEndpoint;
-    // `fallbacks` (extra ordered endpoints) round-trips opaquely via deep_merge — not edited here yet.
+    fallbacks: InferenceEndpoint[]; // D18 — extra ordered endpoints tried after local↔cloud
   };
   // Integration endpoints (Phase 7c-a) — scalar configs edited through this same settings PUT.
   searxng: { base_url: string; enabled: boolean; language: string | null };

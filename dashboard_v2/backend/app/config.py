@@ -131,8 +131,12 @@ class InferenceCfg(BaseModel):
         the name labels failover logs + the degradation breadcrumb."""
         m = mode if mode in ("local", "cloud") else self.default_mode
         selected = "local" if m == "local" else "cloud"
-        other = "cloud" if selected == "local" else "local"
         named = {"local": self.local, "cloud": self.cloud}
+        # Failover off → strictly the selected endpoint (a blank one errors downstream, exactly the
+        # pre-D18 behavior — don't silently route a disabled-failover request to the other endpoint).
+        if not self.failover:
+            return [(selected, named[selected])]
+        other = "cloud" if selected == "local" else "local"
         ordered: list[tuple[str, InferenceEndpointCfg]] = [
             (selected, named[selected]),
             (other, named[other]),
@@ -148,7 +152,7 @@ class InferenceCfg(BaseModel):
                 continue
             seen.add(key)
             chain.append((name, ep))
-        return chain[:1] if not self.failover else chain
+        return chain
 
 
 class AgentCfg(BaseModel):
@@ -888,8 +892,9 @@ def unmask_secrets(incoming: Any, stored: Any) -> Any:
 
     A secret-keyed leaf is treated as **unchanged** (→ keep `stored`) when its incoming value is
     empty/None or equals `_mask(stored)`; any other (genuinely new) string is taken as-is. Walks
-    dicts by key and lists by index in lockstep with `stored` — fine for the scalar/positional edits
-    `PUT /api/settings` allows; list *management* (reorder/insert) uses dedicated endpoints, not this.
+    dicts by key. **Lists are matched by a stable identity** (`base_url`/`url`/`name`) when the items
+    carry one — so secret preservation survives a reorder/remove of a secret-bearing list edited inline
+    (e.g. `inference.fallbacks`); it falls back to positional matching when no identity field exists.
     """
     if isinstance(incoming, dict):
         out: dict[str, Any] = {}
@@ -905,9 +910,24 @@ def unmask_secrets(incoming: Any, stored: Any) -> Any:
                 out[k] = unmask_secrets(v, sv)
         return out
     if isinstance(incoming, list):
-        stored_l = stored if isinstance(stored, list) else []
+        stored_l = [s for s in stored if isinstance(s, dict)] if isinstance(stored, list) else []
+        # Match items by a stable identity so removing/reordering a secret-bearing entry keeps every
+        # *other* entry's stored secret (positional matching would shift them onto the wrong stored item
+        # and clobber real keys with masks). Fall back to index when no identity field is present.
+        id_key = next(
+            (k for k in ("base_url", "url", "name")
+             if incoming and isinstance(incoming[0], dict) and incoming[0].get(k)),
+            None,
+        )
+        if id_key:
+            by_id = {s.get(id_key): s for s in stored_l if s.get(id_key)}
+            return [
+                unmask_secrets(v, by_id.get(v.get(id_key)) if isinstance(v, dict) else None)
+                for v in incoming
+            ]
+        stored_seq = stored if isinstance(stored, list) else []
         return [
-            unmask_secrets(v, stored_l[i] if i < len(stored_l) else None)
+            unmask_secrets(v, stored_seq[i] if i < len(stored_seq) else None)
             for i, v in enumerate(incoming)
         ]
     return incoming

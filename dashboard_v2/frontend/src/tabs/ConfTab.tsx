@@ -306,6 +306,20 @@ export function ConfTab({ active }: Props) {
       d ? { ...d, inference: { ...d.inference, [which]: { ...d.inference[which], [key]: val } } } : d,
     );
   }
+  // D18 — the inference `fallbacks` list (edited inline; saved by the Inference saveBar like the other
+  // scalar fields). Edits operate on the draft array immutably.
+  function setFallbacks(next: Draft["inference"]["fallbacks"]) {
+    setDraft((d) => (d ? { ...d, inference: { ...d.inference, fallbacks: next } } : d));
+  }
+  function setFallback(idx: number, key: "base_url" | "api_key" | "model", val: string) {
+    setFallbacks((draft?.inference.fallbacks ?? []).map((fb, i) => (i === idx ? { ...fb, [key]: val } : fb)));
+  }
+  function addFallback() {
+    setFallbacks([...(draft?.inference.fallbacks ?? []), { base_url: "", api_key: null, model: "" }]);
+  }
+  function removeFallback(idx: number) {
+    setFallbacks((draft?.inference.fallbacks ?? []).filter((_, i) => i !== idx));
+  }
   function setSrv<K extends keyof Draft["server"]>(key: K, val: Draft["server"][K]) {
     setDraft((d) => (d ? { ...d, server: { ...d.server, [key]: val } } : d));
   }
@@ -483,6 +497,23 @@ export function ConfTab({ active }: Props) {
             value={inf?.cloud.api_key ?? ""}
             onChange={(v) => setEndpoint("cloud", "api_key", v)}
           />
+          {/* D18 — extra fallback endpoints, tried in order after local↔cloud (failover must be on). */}
+          <div className="fallback-head">
+            <span className="label">Fallbacks</span>
+            <span className="desc">tried in order after local↔cloud</span>
+            <button type="button" className="svc-add" onClick={addFallback}>+ add</button>
+          </div>
+          {(inf?.fallbacks ?? []).map((fb, i) => (
+            <div className="fallback-item" key={i}>
+              <div className="fallback-bar">
+                <span className="fallback-n">#{i + 1}</span>
+                <button type="button" className="svc-rm" onClick={() => removeFallback(i)}>remove</button>
+              </div>
+              <Field label="Endpoint" desc="/v1 base url" value={fb.base_url} onChange={(v) => setFallback(i, "base_url", v)} placeholder="https://host/v1" />
+              <Field label="Model" desc="model id" value={fb.model} onChange={(v) => setFallback(i, "model", v)} />
+              <Field label="Key" desc="optional — masked" type="password" value={fb.api_key ?? ""} onChange={(v) => setFallback(i, "api_key", v)} />
+            </div>
+          ))}
           <Field
             label="Request timeout"
             desc="seconds — thinking models load slowly"
