@@ -76,7 +76,23 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Phase 6 DONE · 6c HTTPS DONE · frontend test net DONE (D21, 56 tests, review-hardened)** · NEXT = LLM inference fallback (D18 — the test net de-risks it) → emma deploy. Owner is hardening *before* the cutover.)
+## Current state (**Phase 6 DONE · 6c HTTPS DONE · frontend tests (D21, 57) · D18 inference failover DONE** · NEXT = emma (Linux) deploy / v1 cutover. Hardening done.)
+
+> ### ⭐ Session update — 2026-06-22 (build session #12 cont. — **D18 inference failover** · committed `657ba19`, unpushed)
+> The core chat path now has failover (voice already did). A request whose selected endpoint fails walks
+> an ordered chain — `[selected, other-of-local/cloud, *inference.fallbacks]` (deduped, blanks dropped,
+> gated by `inference.failover` default-on) — reusing `core/failover.py`, **fully encapsulated in
+> `InferenceClient`** (the agent loop is unchanged, like `VoiceClient` hides failover from `api/voice`).
+> Research-validated (LiteLLM/LangChain priority-fallback + **stream-start failover**: open the stream +
+> pull the first chunk per endpoint; the first that yields a chunk wins; **no mid-stream failover** — a
+> partial reply can't be restarted). Model override (`ModelRef.model`) applies to the **selected endpoint
+> only**; fallbacks use their own model. A `StreamReport` surfaces degradation → `session.py` emits a
+> `notice` breadcrumb (`// inference failover → cloud`); the frontend renders it as a sys note (safely
+> ignored by the buffered `collect_turn` path). Conf → Inference has a Failover toggle; `fallbacks[]`
+> round-trips opaquely (deep_merge) — the list UI editor + a circuit breaker are deferred (design-compatible).
+> Also fixed a pre-existing `test_voice_6a` regression (6b-3's `stt_auto_send` shape). **Verified:**
+> `test_inference_failover_d18` (8); full backend suite (24 files); frontend 57; **LIVE** dead-cloud → real
+> local served "pong" (degraded), dead-local → cloud-429 → aggregated error. Full design in **D18**.
 
 > ### ⭐ Session update — 2026-06-22 (build session #12 cont. — **frontend tests Tier-2** · committed `09fdf8b`, unpushed)
 > Finished the logic net: **56 tests / 9 files** now (`npm test`). Tier-2 (`09fdf8b`, 22): `lib/privilege`,

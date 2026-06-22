@@ -625,10 +625,18 @@ of the primary.
    read window (the actual STT/TTS work) — `httpx.Timeout(read, connect=…)`. Matters because we always
    try the whole chain: a dead vault costs ~3s, not 30, before emma takes over.
 
-**Inference-chain follow-up (not built here):** turning `inference.local/cloud + default_mode` into an
-ordered chain crossing local→cloud is a rework of a shipped subsystem (how do `/local`//`/cloud`
-prefixes + per-agent `ModelRef` compose with "start here, then fall down the chain"?). It's the next
-slice, gets its own pre-flight, and reuses `core/failover.py` unchanged.
+**Inference-chain follow-up ✅ SHIPPED 2026-06-22 (`657ba19`).** The composition question resolved:
+the active endpoint is still selected as today (`/local`//`/cloud` → sticky → `ModelRef.mode` →
+`default_mode`); the new part is the **chain** = `[selected, the-other-of-local/cloud, *inference.fallbacks]`
+(deduped, blanks dropped, gated by `inference.failover` default-on). So local↔cloud mutual failover is
+free (no config duplication) and `fallbacks[]` adds N-deep. **Model override (`ModelRef.model`) applies
+to the selected endpoint only** — fallbacks use their own model. Streaming fails over at **initiation**
+(open stream + pull first chunk per endpoint; research-validated "confirm alive with a first token");
+**no mid-stream failover** (a partial reply can't be restarted). Fully encapsulated in `InferenceClient`
+(reuses `core/failover.py`; the agent loop is unchanged), with a `StreamReport` → a `notice` breadcrumb
+when degraded. **Deferred (design-compatible):** a circuit breaker (skip a known-dead endpoint ~60s) +
+the `fallbacks[]` UI editor. Verified: `test_inference_failover_d18` (8) + full suite + **live** (dead
+cloud → real local served "pong", degraded).
 
 ---
 
