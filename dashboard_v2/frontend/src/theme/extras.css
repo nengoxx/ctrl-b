@@ -134,38 +134,40 @@ body[data-motion="reduced"] .conn-badge.reconnecting .dot {
 }
 .b.bot .who .tts-play.loading { opacity: 0.4; cursor: progress; }
 
-/* Docked mini-player — in-flow above the composer (App.tsx). Themed surface; only shows while a clip
-   is loaded. */
+/* Floating mini-player — a frosted pill that floats just below the sticky appbar (centered, NOT
+   full-width). z-index 16: above the plan-pin (15), below the appbar (20) + toasts (40). Matches the
+   appbar/toast frosted aesthetic; only shows while a clip is loaded. */
 .mini-player {
+  position: fixed;
+  top: calc(var(--appbar-h, 56px) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 16;
+  width: min(440px, calc(100vw - 28px));
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 12px;
   padding: 8px 14px;
-  background: var(--bg-2);
-  border-top: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--bg-2) 90%, transparent);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
 }
-/* Play/pause — a small filled accent disc with a masked glyph (mirrors the composer send button). */
+/* Play/pause — the icon itself IS the accent gradient (masked), same treatment as the composer mic. */
 .mini-player .mp-play {
   all: unset;
   cursor: pointer;
-  position: relative;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   flex-shrink: 0;
-  border-radius: 50%;
   background: var(--accent-grad);
   filter: var(--accent-glow-soft);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
 }
-.mini-player .mp-play:active { transform: scale(0.92); }
-.mini-player .mp-play::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--bg-2);
-  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/15px no-repeat;
-          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/15px no-repeat;
-}
-.mini-player .mp-play.playing::before {
+.mini-player .mp-play:active { transform: scale(0.9); }
+.mini-player .mp-play.playing {
   -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
           mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
 }
@@ -173,6 +175,7 @@ body[data-motion="reduced"] .conn-badge.reconnecting .dot {
 /* Seek bar — native range for robust drag/click/touch; track filled via inline gradient (themed). */
 .mini-player .mp-seek {
   flex: 1;
+  min-width: 0;
   -webkit-appearance: none;
   appearance: none;
   height: 4px;

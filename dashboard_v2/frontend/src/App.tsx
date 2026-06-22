@@ -137,7 +137,8 @@ export default function App() {
           </ErrorBoundary>
         )}
       </div>
-      {/* Docked TTS mini-player (6b-2): in-flow above the composer, self-hides when nothing plays. */}
+      {/* Floating TTS mini-player (6b-2): fixed-position pill just below the appbar (its own CSS),
+          so JSX placement here doesn't affect layout. Self-hides when nothing's playing. */}
       <MiniPlayer />
       {showComposer && <Composer />}
       <TabBar onPrefetch={prefetch} />

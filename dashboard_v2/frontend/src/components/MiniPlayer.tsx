@@ -1,11 +1,11 @@
 import { dismiss, seekFraction, togglePlay, usePlayback } from "../lib/audioController";
 
-// Phase 6b-2 — the docked TTS mini-player. Minimal but functional (owner-locked 2026-06-22): a
-// play/pause button, a draggable+clickable seek bar, the remaining time, and a dismiss ✕ — no skip,
-// no speed. Renders in-flow above the composer (App.tsx) only while a clip is docked, so it naturally
-// sits "docked" at the bottom on any tab while audio plays. Net-new markup (no vapor.html source) —
-// styled entirely from vapor tokens (extras.css) so it adapts across dark/aqua/ember; vapor.css
-// untouched (D7). One player at a time (the controller is a singleton).
+// Phase 6b-2 — the floating TTS mini-player. Minimal but functional (owner-locked 2026-06-22): a
+// play/pause icon (the accent gradient, like the mic), a draggable+clickable seek bar, the remaining
+// time, and a dismiss ✕ — no skip, no speed. A frosted pill that floats just below the appbar
+// (fixed, centered, not full-width — CSS in extras.css), shown only while a clip is loaded. Net-new
+// markup (no vapor.html source) — styled entirely from vapor tokens so it adapts across
+// dark/aqua/ember; vapor.css untouched (D7). One player at a time (the controller is a singleton).
 
 function fmt(sec: number): string {
   const s = Number.isFinite(sec) && sec > 0 ? sec : 0;
