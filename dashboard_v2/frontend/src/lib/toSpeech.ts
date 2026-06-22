@@ -7,6 +7,7 @@ export function toSpeech(md: string): string {
   let s = md;
   s = s.replace(/```[\s\S]*?```/g, " "); // fenced code blocks — don't read code aloud
   s = s.replace(/`([^`]+)`/g, "$1"); // inline code → its text
+  s = s.replace(/<[^>]+>/g, " "); // stray inline HTML tags — don't voice "<div>"
   s = s.replace(/!\[[^\]]*\]\([^)]*\)/g, " "); // images → nothing
   s = s.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1"); // links → the link text
   s = s.replace(/^\s{0,3}#{1,6}\s+/gm, ""); // heading markers

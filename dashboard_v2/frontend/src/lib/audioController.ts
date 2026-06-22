@@ -133,7 +133,10 @@ export async function toggle(id: string, markdown: string): Promise<void> {
   try {
     await a.play();
   } catch {
-    set({ status: "paused" }); // autoplay/interaction guard — leave it docked + tappable
+    // play() rejects on the autoplay/interaction guard — OR because a newer toggle swapped the src and
+    // aborted this play. Only the still-current toggle may settle the state (else we'd clobber the
+    // newer clip's status with a stale "paused").
+    if (seq === reqSeq) set({ status: "paused" });
   }
 }
 

@@ -79,6 +79,7 @@ export function useDictation({
   const [unavailable, setUnavailable] = useState(false);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const armingRef = useRef(false); // true between a start() tap and the recorder actually arming
 
   // Re-arm after a fresh capability probe (Conf voice save / window refocus). /voice/status only
   // reports *configured*, not *reachable*, so this is an optimistic re-arm: worst case the next
@@ -140,37 +141,53 @@ export function useDictation({
   }, [autoSend]);
 
   const start = useCallback(async () => {
+    // Re-entrancy guard: a second tap during the getUserMedia await would open a *second* stream and
+    // orphan the first (its tracks never stopped → the mic stays live). `arming` blocks that window.
+    if (armingRef.current || recRef.current?.state === "recording") return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       // Insecure origin (plain HTTP over the tailnet) disables getUserMedia — that's what 6c (HTTPS
       // via Tailscale Serve) fixes. Not a server outage, so don't mark the chain unavailable.
       pushToast("Microphone needs a secure (HTTPS) connection", "err");
       return;
     }
-    let stream: MediaStream;
+    armingRef.current = true;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      pushToast("Microphone permission denied", "err");
-      return;
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch {
+        pushToast("Microphone permission denied", "err");
+        return;
+      }
+      const mime = pickMime();
+      let rec: MediaRecorder;
+      try {
+        rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      } catch {
+        // Construction can throw (no supported container) — release the stream we just opened.
+        stream.getTracks().forEach((t) => t.stop());
+        pushToast("Recording isn't supported on this browser", "err");
+        return;
+      }
+      recRef.current = rec;
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size) chunksRef.current.push(e.data);
+      };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop()); // release the mic indicator
+        void upload();
+      };
+      rec.onerror = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        pushToast("Recording failed", "err");
+        setPhase("idle");
+      };
+      rec.start();
+      setPhase("recording");
+    } finally {
+      armingRef.current = false;
     }
-    const mime = pickMime();
-    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-    recRef.current = rec;
-    chunksRef.current = [];
-    rec.ondataavailable = (e) => {
-      if (e.data.size) chunksRef.current.push(e.data);
-    };
-    rec.onstop = () => {
-      stream.getTracks().forEach((t) => t.stop()); // release the mic indicator
-      void upload();
-    };
-    rec.onerror = () => {
-      stream.getTracks().forEach((t) => t.stop());
-      pushToast("Recording failed", "err");
-      setPhase("idle");
-    };
-    rec.start();
-    setPhase("recording");
   }, [upload]);
 
   const stop = useCallback(() => {
