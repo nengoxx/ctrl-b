@@ -76,7 +76,39 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Phase 6 DONE · 6c HTTPS DONE · frontend tests (D21, 57) · D18 inference failover DONE** · NEXT = emma (Linux) deploy / v1 cutover. Hardening done.)
+## Current state (**all hardening + Phase 6/6c/D18 DONE · tree clean @ `9cb431b`, pushed** · NEXT = **Phase 8 — Utils tool registry** → then emma deploy)
+
+> ### 🟢 CLEAN-SESSION HANDOFF — start Phase 8 (Utils tool registry, D8) — written 2026-06-22
+> Everything through D18 (inference failover + fallbacks editor) is shipped + pushed (HEAD `9cb431b`,
+> `origin/main` in sync, tree clean except the standing `start_claude_remote.ps1`). Backend suite 24/24,
+> frontend 57/57. The owner chose **Phase 8 (Utils)** as the next build — the last unbuilt v1 *feature*
+> (needed for cutover parity with the old server's YT/IP tools); after it, the `createStore`/`Switch`
+> dedups, then the emma deploy. **Servers:** backend uvicorn **5433** (no `--reload`, venv), frontend Vite
+> **5173**. Tests: `./.venv/Scripts/python.exe tests/<file>.py` (pytest not installed) · `npm test` (frontend).
+>
+> **What Phase 8 is (TODO §"Phase 8", DESIGN §0.4 + §16, D8):** the Utils tab is today a **static shell**.
+> Build a `@tool(...)` registry that **reuses `core/tool.py`** (the unified capability model — *NOT* a
+> parallel registry; this is the locked decision) — a utility tool is just a registered `Tool` with
+> `category="utility"` + `ui_exposed=True` (and optionally `agent_exposed`). Then:
+> 1. **`@tool` framework** (sibling of `@action` in `core/tool.py`, or a thin wrapper) → auto-exposes
+>    **`GET /api/tools`** (the `ui_tools()`/`category=="utility"` subset, shaped like `GET /api/actions`)
+>    + **`POST /api/tools/{name}`** (invoke via `ActionService`, `actor=USER`, audited — mirror `/api/exec`).
+> 2. **Generic Vapor `.util` card** (fill `tabs/UtilsTab.tsx`) driven by each tool's `input_model` JSON
+>    schema (fields) + result shape (kv / download). **vapor.html has the Utils tab markup — port it (D7);
+>    read `VAPOR_PATTERNS.md` first.**
+> 3. **Port `yt_captions`** (YouTube transcript → JSON download) + **`ip_info`** (lookup) from the old
+>    `wol_server/wol_server_win.py`.
+> 4. **Add `dns_trace`** as the first *new* tool — proves "add a tool = one file."
+>
+> **Pre-flight touch points (read before coding):** `core/tool.py` (`@action`/`ToolSpec`/`registry`/
+> `spec_to_dict`), `services/actions/__init__.py` (registration), `services/action_service.py` (`invoke`),
+> `api/actions.py` (the `GET /api/actions` DTO to mirror), `api/agent.py`'s `/api/exec` (the USER-invoke +
+> audit pattern), `services/actions/web_search.py` (an existing utility-shaped tool), `tabs/UtilsTab.tsx`
+> (the shell), `wol_server/wol_server_win.py` (the YT/IP impls to port). Confirm the design (reuse, no
+> parallel registry, the card-from-schema approach) per the standing pre-flight directive before building.
+>
+> **Doc map:** TODO Phase 8 · DESIGN §0.4 (capability model) + §16 (Utils) · DECISIONS D8 · VAPOR_PATTERNS
+> (the `.util` card). The session blocks below are the full history of everything already shipped.
 
 > ### ⭐ Session update — 2026-06-22 (build session #12 cont. — **D18 inference failover** · committed `657ba19`, unpushed)
 > The core chat path now has failover (voice already did). A request whose selected endpoint fails walks
