@@ -153,14 +153,14 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
           <div className="label">Agent cap</div>
           <div className="desc">per-agent MEMORY.md char limit</div>
         </div>
-        <input value={memCap} inputMode="numeric" onChange={(e) => setMemCap(e.target.value)} />
+        <input type="text" value={memCap} inputMode="numeric" onChange={(e) => setMemCap(e.target.value)} />
       </div>
       <div className="confrow">
         <div className="k">
           <div className="label">User cap</div>
           <div className="desc">global USER.md char limit</div>
         </div>
-        <input value={userCap} inputMode="numeric" onChange={(e) => setUserCap(e.target.value)} />
+        <input type="text" value={userCap} inputMode="numeric" onChange={(e) => setUserCap(e.target.value)} />
       </div>
       <div className="conf-savebar">
         <button

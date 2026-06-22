@@ -1281,6 +1281,12 @@ body {
   display: flex;
   margin-top: 10px;
 }
+/* When the save bar lives *inside* a conf-card (Memory caps, Tool descriptions) rather than as a
+   sibling below it (the standard ConfGroup saveBar), the full-width button would sit flush against the
+   card's edges. Inset it so it has the same breathing room as the edge-to-edge rows have borders. */
+.conf-card > .conf-savebar {
+  margin: 10px 12px 12px;
+}
 .conf-save {
   all: unset;
   cursor: pointer;
