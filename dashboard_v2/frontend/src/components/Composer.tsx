@@ -37,7 +37,11 @@ export function Composer() {
   // per the owner's state #3); the recorder's real phase drives the button class.
   const voice = useVoiceStatus();
   const sttReady = voice.data?.stt ?? false;
-  const mic = useDictation(sttReady, voice.dataUpdatedAt);
+  const mic = useDictation({
+    sttReady,
+    statusStamp: voice.dataUpdatedAt,
+    autoSend: voice.data?.stt_auto_send ?? false,
+  });
 
   // Auto-grow the textarea to fit content (max 96px). Runs whenever the draft changes,
   // including the initial render — so a saved draft loaded from localStorage gets the right

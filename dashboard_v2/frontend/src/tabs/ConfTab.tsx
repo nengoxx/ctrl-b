@@ -682,6 +682,13 @@ export function ConfTab({ active }: Props) {
             onChange={(v) => setStt("hotwords", v)}
             placeholder="corsair vault emma minig"
           />
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Auto-send</div>
+              <div className="desc">send the transcript immediately; off → fill the composer to review first</div>
+            </div>
+            <Switch on={!!vstt?.auto_send} onToggle={() => setStt("auto_send", !vstt?.auto_send)} />
+          </div>
           <Field
             label="Primary endpoint"
             desc="vault · /v1 base url"

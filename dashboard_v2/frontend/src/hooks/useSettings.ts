@@ -33,6 +33,7 @@ export interface VoiceStt extends VoiceServiceCommon {
   language: string; // "" → auto-detect
   vad_filter: boolean; // skip silence
   hotwords: string; // space-separated recognition bias
+  auto_send: boolean; // true → mic sends the transcript; false (default) → fill composer for review
 }
 export interface VoiceTts extends VoiceServiceCommon {
   format: string; // response_format/container (mp3 = universally seekable)

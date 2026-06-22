@@ -13,6 +13,10 @@ import { getJSON } from "../api/client";
 export interface VoiceStatus {
   stt: boolean;
   tts: boolean;
+  /** Client behavior (SttServiceCfg.auto_send): true → mic sends the transcript immediately; false →
+   *  fills the composer for review. Surfaced here (not just /api/settings) because the mic is on
+   *  Fleet/Agent and the settings query is Conf-scoped. */
+  stt_auto_send: boolean;
 }
 
 export function useVoiceStatus() {

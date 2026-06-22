@@ -77,6 +77,12 @@ export function useChat(): ChatState {
   );
 }
 
+/** Read the current chat status imperatively (non-reactive) — for callers outside render, e.g. the
+ *  mic auto-send guarding against firing into an in-flight turn (which would be silently dropped). */
+export function getChatStatus(): ChatStatus {
+  return state.status;
+}
+
 /** Load the most-recent thread + its history once (on first Agent-tab mount). */
 export async function initChat(): Promise<void> {
   if (loaded) return;

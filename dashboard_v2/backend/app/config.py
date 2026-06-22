@@ -251,6 +251,10 @@ class SttServiceCfg(VoiceServiceCfg):
     language: str = "en"             # default English; "" → auto-detect
     vad_filter: bool = True          # voice-activity-detection: skip silence
     hotwords: str = ""               # space-separated recognition bias (fleet names, jargon)
+    # Client behavior (not a transcription param): True → the PWA mic *sends* the transcript
+    # immediately; False (default) → fills the composer for review-before-send. Surfaced to the
+    # always-on mic via `GET /voice/status` (the Conf-scoped settings query isn't read on Fleet/Agent).
+    auto_send: bool = False
 
 
 class TtsServiceCfg(VoiceServiceCfg):

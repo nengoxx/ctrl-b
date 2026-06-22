@@ -70,7 +70,13 @@ class VoiceClient:
         return bool(self._cfg.enabled and svc.endpoints())
 
     def status(self) -> dict[str, bool]:
-        return {"stt": self.configured("stt"), "tts": self.configured("tts")}
+        # `stt_auto_send` is a client behavior flag (not a capability) the always-on mic reads here,
+        # since the Conf settings query is tab-scoped. See SttServiceCfg.auto_send.
+        return {
+            "stt": self.configured("stt"),
+            "tts": self.configured("tts"),
+            "stt_auto_send": self._cfg.stt.auto_send,
+        }
 
     def _client(self, ep: VoiceEndpointCfg, svc: VoiceServiceCfg) -> AsyncOpenAI:
         # Key by (url, timeouts) so STT and TTS sharing a host but wanting different windows don't

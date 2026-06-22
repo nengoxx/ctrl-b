@@ -81,6 +81,12 @@ function getSnapshot(): string {
   return state.draft;
 }
 
+/** Read the current draft imperatively (non-reactive) — for callers outside render that need the live
+ *  value without a stale closure (e.g. the mic auto-send path reading what it just appended). */
+export function getDraft(): string {
+  return state.draft;
+}
+
 /** Read the current composer draft. Survives tab-switch unmount + full page reload. */
 export function useDraft(): string {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);

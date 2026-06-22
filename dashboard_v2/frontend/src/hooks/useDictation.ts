@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { appendDraft } from "../store/composer";
+import { runComposer } from "../lib/composer";
+import { getChatStatus } from "../store/chat";
+import { appendDraft, clearDraft, getDraft } from "../store/composer";
 import { pushToast } from "../store/toast";
 
 // Phase 6b-1 — push-to-talk dictation (tap to start, tap to stop). The idiomatic React home for the
@@ -61,8 +63,18 @@ function extFromMime(mime: string): string {
  * @param sttReady   whether /voice/status reports STT configured+enabled (gates re-arm on recovery)
  * @param statusStamp `dataUpdatedAt` of the status query — a change means a fresh probe landed, so a
  *                    previously-`unavailable` mic re-arms (no proactive probe; rides the existing query).
+ * @param autoSend   SttServiceCfg.auto_send (via /voice/status): true → send the transcript immediately
+ *                    (routed like a typed+sent message); false (default) → fill the composer for review.
  */
-export function useDictation(sttReady: boolean, statusStamp: number) {
+export function useDictation({
+  sttReady,
+  statusStamp,
+  autoSend,
+}: {
+  sttReady: boolean;
+  statusStamp: number;
+  autoSend: boolean;
+}) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [unavailable, setUnavailable] = useState(false);
   const recRef = useRef<MediaRecorder | null>(null);
@@ -102,8 +114,22 @@ export function useDictation(sttReady: boolean, statusStamp: number) {
         return;
       }
       const data = (await res.json()) as { text?: string };
-      if (data.text?.trim()) appendDraft(data.text);
-      else pushToast("Didn't catch that — try again", "info");
+      if (data.text?.trim()) {
+        appendDraft(data.text); // always show it in the composer first
+        // Auto-send routes it like a typed+sent message — but only when idle. Firing into an in-flight
+        // turn would be silently dropped (sendMessage no-ops while streaming), so leave it in the
+        // composer to send manually (the typed path is likewise blocked by the disabled send button).
+        if (autoSend && getChatStatus() !== "streaming") {
+          // Reads the just-appended draft imperatively (combines with anything already typed).
+          const full = getDraft().trim();
+          if (full) {
+            runComposer(full);
+            clearDraft();
+          }
+        }
+      } else {
+        pushToast("Didn't catch that — try again", "info");
+      }
     } catch {
       // Network failure reaching our own backend — treat like an unreachable chain.
       setUnavailable(true);
@@ -111,7 +137,7 @@ export function useDictation(sttReady: boolean, statusStamp: number) {
     } finally {
       setPhase("idle");
     }
-  }, []);
+  }, [autoSend]);
 
   const start = useCallback(async () => {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {

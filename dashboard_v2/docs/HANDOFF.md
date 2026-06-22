@@ -76,7 +76,19 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Phase 6b voice UI COMPLETE (6b-1 mic + 6b-2 TTS player)** · 6a pushed `9844a43`, 6b committed not pushed · NEXT = 6c HTTPS/Android verify → emma deploy)
+## Current state (**Phase 6b voice UI COMPLETE (6b-1 mic + 6b-2 TTS player + 6b-3 mic auto-send setting)** · 6a pushed `9844a43`, 6b committed not pushed · NEXT = 6c HTTPS/Android verify → emma deploy)
+
+> ### ⭐ Session update — 2026-06-22 (build session #12 cont. — **6b-3: mic auto-send setting**)
+> Owner clarification → small follow-up. **Auto-play of TTS stays the AppBar toggle (unchanged, owner's
+> call).** Added a **mic auto-send setting, default off**: off → fill the composer for review (prior
+> behavior); on → send the transcript immediately. **Backend:** `SttServiceCfg.auto_send: bool = False`;
+> exposed to the always-on mic via `GET /voice/status` → `stt_auto_send` (the Conf settings query is
+> tab-scoped, so the mic reads it from status, not settings — a Conf save invalidates `["voice-status"]`,
+> wired in 6b-1). **Frontend:** Conf → Voice · STT "Auto-send" Switch; `useDictation` routes the transcript
+> through `runComposer` (like a typed+sent message) when on, **guarded against firing into a streaming turn**
+> (would be dropped — left in the composer instead). `getDraft()`/`getChatStatus()` imperative getters added.
+> Live-verified: `/voice/status` → `{stt,tts,stt_auto_send:false}`, `/api/settings` round-trips
+> `voice.stt.auto_send`. `tsc -b` clean. Backend restarted on 5433. **Eyeball pending** (needs a browser).
 
 > ### ⭐ Session update — 2026-06-22 (build session #12 — **Phase 6b-2: TTS mini-player + auto read-aloud** · committed `8105d2c`(6b-1)+next, NOT pushed)
 > Built 6b-2 straight after 6b-1 (owner: "commit and keep going"). The architecture was pre-agreed (DOM-backed

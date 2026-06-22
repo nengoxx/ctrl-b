@@ -408,6 +408,17 @@ tools + confirm bubbles) are DONE.**
 - [ ] _(deferred backlog) — collapse the duplicated external-store boilerplate (`ui.ts`/`chat.ts`/
       `composer.ts`/`audioController.ts`) into a shared `createStore<T>()` factory. Own slice; owner note 2026-06-22._
 
+#### 6b-3 — mic auto-send setting ✅ DONE 2026-06-22
+- [x] **Conf → Voice · STT → "Auto-send" toggle** (owner request 2026-06-22, **default off**): off → the
+      mic fills the composer for review-before-send (the only prior behavior); on → it sends the transcript
+      immediately (routed like a typed+sent message via `runComposer`, combining with any existing draft).
+      `SttServiceCfg.auto_send: bool = False` (backend). Surfaced to the **always-on mic** via
+      `GET /voice/status` → `stt_auto_send` (the Conf settings query is tab-scoped, so the mic can't read
+      it there; a Conf save invalidates `["voice-status"]`, already wired in 6b-1, so the toggle takes effect
+      without a reload). Guards against auto-sending into an in-flight turn (would be dropped — leaves it in
+      the composer instead). `tsc -b` clean; live-verified `/voice/status` + `/api/settings` round-trip the
+      field. Auto-play stays as the AppBar toggle (owner's call — unchanged).
+
 ### Phase 6c — HTTPS + Android verification
 - [ ] **HTTPS via Tailscale Serve** so the mic works on Android (secure-context). Document it.
 - [ ] **Verify** mic + playback on a real Android phone over the tailnet.
