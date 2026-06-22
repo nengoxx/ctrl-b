@@ -634,9 +634,15 @@ to the selected endpoint only** — fallbacks use their own model. Streaming fai
 (open stream + pull first chunk per endpoint; research-validated "confirm alive with a first token");
 **no mid-stream failover** (a partial reply can't be restarted). Fully encapsulated in `InferenceClient`
 (reuses `core/failover.py`; the agent loop is unchanged), with a `StreamReport` → a `notice` breadcrumb
-when degraded. **Deferred (design-compatible):** a circuit breaker (skip a known-dead endpoint ~60s) +
-the `fallbacks[]` UI editor. Verified: `test_inference_failover_d18` (8) + full suite + **live** (dead
-cloud → real local served "pong", degraded).
+when degraded. **Deferred (design-compatible):** a circuit breaker (skip a known-dead endpoint ~60s).
+Verified: `test_inference_failover_d18` (11) + full suite + **live** (dead cloud → real local served
+"pong", degraded). **Fallbacks UI editor + audit fixes `30af624`:** Conf → Inference inline list editor
+(`inference.fallbacks` add/remove/edit, saved by the Inference saveBar). A pre-build audit fixed two
+bugs: (1) `endpoint_chain` with failover OFF + a blank selected endpoint silently routed to the other —
+now strictly the selected (blank → error, as pre-D18); (2) `unmask_secrets` walked secret lists by
+index, so removing a non-last fallback clobbered the others' api_keys with masks — now matches list
+items by stable identity (base_url/url/name), surviving reorder/remove (also strictly improves mcp/openapi
+secret preservation).
 
 ---
 

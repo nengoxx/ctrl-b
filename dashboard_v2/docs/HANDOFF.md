@@ -93,6 +93,14 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > Also fixed a pre-existing `test_voice_6a` regression (6b-3's `stt_auto_send` shape). **Verified:**
 > `test_inference_failover_d18` (8); full backend suite (24 files); frontend 57; **LIVE** dead-cloud → real
 > local served "pong" (degraded), dead-local → cloud-429 → aggregated error. Full design in **D18**.
+>
+> **Fallbacks-list UI editor + audit fixes (`30af624`):** Conf → Inference now has an inline fallbacks
+> editor (`inference.fallbacks` add/remove/edit, saved by the Inference saveBar). A pre-build deep audit
+> caught + fixed **two bugs**: `endpoint_chain` failover-off + blank-selected silently routed to the other
+> (now strictly the selected); `unmask_secrets` matched secret lists by index → removing a non-last
+> fallback clobbered the others' api_keys → now matches by stable identity (base_url/url/name), surviving
+> reorder/remove. Suite: backend 24/24 (`test_inference_failover_d18` now 11), frontend 57. **Editor
+> eyeball at 390px pending.**
 
 > ### ⭐ Session update — 2026-06-22 (build session #12 cont. — **frontend tests Tier-2** · committed `09fdf8b`, unpushed)
 > Finished the logic net: **56 tests / 9 files** now (`npm test`). Tier-2 (`09fdf8b`, 22): `lib/privilege`,
