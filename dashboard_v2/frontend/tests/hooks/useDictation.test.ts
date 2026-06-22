@@ -12,6 +12,7 @@ vi.mock("../../src/store/chat", () => ({ getChatStatus: vi.fn(() => "idle") }));
 
 import { useDictation } from "../../src/hooks/useDictation";
 import { runComposer } from "../../src/lib/composer";
+import { getChatStatus } from "../../src/store/chat";
 import { clearDraft, getDraft } from "../../src/store/composer";
 import { pushToast } from "../../src/store/toast";
 
@@ -103,5 +104,22 @@ describe("useDictation", () => {
       expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("secure"), "err"),
     );
     expect(result.current.status).toBe("idle");
+  });
+
+  it("auto-send is held back when a turn is already streaming (left in the draft, not dropped)", async () => {
+    vi.mocked(getChatStatus).mockReturnValue("streaming"); // a turn is in flight
+    mockStt(200, { text: "queued line" });
+    const { result } = renderHook(() => useDictation(opts(true)));
+    await recordOnce(result);
+    await waitFor(() => expect(getDraft()).toBe("queued line")); // appended for review
+    expect(runComposer).not.toHaveBeenCalled(); // NOT sent into the streaming turn (would be dropped)
+  });
+
+  it("an empty transcript prompts a retry rather than appending nothing", async () => {
+    mockStt(200, { text: "   " });
+    const { result } = renderHook(() => useDictation(opts(false)));
+    await recordOnce(result);
+    await waitFor(() => expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("Didn't catch"), "info"));
+    expect(getDraft()).toBe("");
   });
 });

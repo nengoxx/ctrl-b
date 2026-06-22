@@ -138,4 +138,54 @@ describe("audioController", () => {
     expect(result.current.id).toBeNull();
     expect(result.current.status).toBe("idle");
   });
+
+  // ── race fixes (this session's hardening) — exercised with a DEFERRED fetch so we can act during
+  //    the "loading" window, which the instant-resolve fetch above can't reach. ──
+
+  it("dismiss during load cancels the pending play (reqSeq guard)", async () => {
+    let resolveFetch!: (r: Response) => void;
+    global.fetch = vi.fn(() => new Promise<Response>((r) => (resolveFetch = r)));
+    const { result } = renderHook(() => usePlayback((p) => p));
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = toggle("m1", "hello"); // synth starts, status → loading, awaits the (pending) fetch
+    });
+    expect(result.current.status).toBe("loading");
+
+    act(() => dismiss()); // bumps reqSeq while the synth is still in flight
+    await act(async () => {
+      resolveFetch({ ok: true, blob: async () => new Blob(["a"]) } as Response);
+      await pending; // the resolved synth must hit the seq !== reqSeq guard and NOT play
+    });
+
+    expect(result.current.id).toBeNull();
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("switching during load: the superseded clip never clobbers the new one", async () => {
+    const resolvers: ((r: Response) => void)[] = [];
+    global.fetch = vi.fn(() => new Promise<Response>((r) => resolvers.push(r)));
+    const { result } = renderHook(() => usePlayback((p) => p));
+
+    await act(async () => {
+      void toggle("m1", "one"); // fetch[0] pending
+    });
+    let p2!: Promise<void>;
+    await act(async () => {
+      p2 = toggle("m2", "two"); // pauses m1, bumps reqSeq, fetch[1] pending
+    });
+    expect(result.current.id).toBe("m2");
+
+    await act(async () => {
+      resolvers[0]({ ok: true, blob: async () => new Blob(["a"]) } as Response); // stale m1 resolves
+    });
+    await act(async () => {
+      resolvers[1]({ ok: true, blob: async () => new Blob(["b"]) } as Response); // m2 resolves
+      await p2;
+    });
+
+    expect(result.current.id).toBe("m2"); // m1's late synth did not win
+    expect(result.current.status).toBe("playing");
+  });
 });

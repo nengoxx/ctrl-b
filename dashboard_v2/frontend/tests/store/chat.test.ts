@@ -32,6 +32,24 @@ function mockStream(frames: Frame[]) {
   global.fetch = vi.fn(() => Promise.resolve(sseResponse(frames)));
 }
 
+/** Stream arbitrary raw text chunks (to test framing/splitting the structured helper can't express). */
+function mockChunks(chunks: string[]) {
+  const enc = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      for (const ch of chunks) c.enqueue(enc.encode(ch));
+      c.close();
+    },
+  });
+  global.fetch = vi.fn(() =>
+    Promise.resolve({
+      ok: true,
+      body,
+      headers: { get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null) },
+    } as unknown as Response),
+  );
+}
+
 function textOf(parts: Part[]): string {
   return parts.filter((p) => p.type === "text").map((p) => (p.type === "text" ? p.text : "")).join("");
 }
@@ -145,5 +163,62 @@ describe("chat streaming reducer", () => {
     expect(result.current.status).toBe("error");
     const err = result.current.messages.at(-1)!.parts.find((p) => p.type === "error");
     expect(err).toMatchObject({ message: "boom", retryable: true });
+  });
+
+  // ── SSE byte-parser robustness (the historical \n-framing bug + multi-chunk reassembly) ──
+
+  it("tolerates bare \\n frame separators (not only \\r\\n)", async () => {
+    const f = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    mockChunks([
+      f("message.start", { messageId: "m1" }),
+      f("text.delta", { messageId: "m1", delta: "hi" }),
+      f("done", { state: "completed" }),
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    expect(textOf(result.current.messages[1].parts)).toBe("hi");
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("reassembles a single frame split across two stream chunks", async () => {
+    const frame = `event: text.delta\r\ndata: ${JSON.stringify({ messageId: "m1", delta: "spliced" })}\r\n\r\n`;
+    const cut = Math.floor(frame.length / 2);
+    mockChunks([
+      `event: message.start\r\ndata: ${JSON.stringify({ messageId: "m1" })}\r\n\r\n` + frame.slice(0, cut),
+      frame.slice(cut) + `event: done\r\ndata: ${JSON.stringify({ state: "completed" })}\r\n\r\n`,
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    expect(textOf(result.current.messages[1].parts)).toBe("spliced");
+  });
+
+  it("buffered (D17) JSON response re-reads the thread + seeds a confirm token", async () => {
+    const msg = (id: string, role: string, text: string) => ({
+      id,
+      thread_id: "t1",
+      role,
+      parts: [{ type: "text", text }],
+      actor: role === "user" ? "user" : "agent",
+      ts: new Date().toISOString(),
+      tokens: null,
+      compacted: false,
+    });
+    global.fetch = vi.fn((url: string) =>
+      Promise.resolve(
+        String(url).includes("/agent/chat")
+          ? ({ ok: true, body: {}, headers: { get: () => "application/json" }, json: async () => ({ threadId: "t1", state: "completed" }) } as unknown as Response)
+          : ({ ok: true, json: async () => [msg("u1", "user", "q"), msg("a1", "assistant", "buffered answer")] } as unknown as Response),
+      ),
+    );
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    expect(result.current.status).toBe("idle");
+    expect(textOf(result.current.messages.at(-1)!.parts)).toBe("buffered answer");
   });
 });
