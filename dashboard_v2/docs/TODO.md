@@ -441,9 +441,10 @@ tools + confirm bubbles) are DONE.**
       phone**) and an Enable/Disable toggle backed by a typed host-action (`services/actions/tailscale.py`,
       gated like wake/reboot/run_shell — manages the backend host itself). Config `tailscale.serve` block
       (target port) as desired-state; tailscaled is the source of truth. **Graceful degrade** when the CLI
-      is absent / not permitted / needs elevation → show the manual command + doc link. **Cleanest on emma
-      (Linux)** — a non-elevated backend can run `tailscale serve` with `--operator` set; Windows may need
-      elevation, so it may stay manual there. Needs its own pre-flight + a DECISIONS/ROADMAP entry before coding.
+      is absent / not permitted / needs elevation → show the manual command + doc link. Viable on **both**
+      OSes: emma (Linux) with `--operator` set, and Windows too — per the 2026-06-22 finding `tailscale
+      serve` runs from a **non-elevated** terminal for an admin user, so the backend (as that user) can
+      drive it without elevation. Needs its own pre-flight + a DECISIONS/ROADMAP entry before coding.
 
 ## Phase 7 — Conf tab (settings, prompts, memory, hosts CRUD) — **sliced 7a–7e**
 

@@ -39,7 +39,9 @@ tailnet-only.
 3. **Permission to run `tailscale serve`:**
    - **Linux (emma):** either run with `sudo`, or set yourself as operator once — `sudo tailscale set
      --operator=$USER` — then `tailscale serve` needs no sudo.
-   - **Windows (corsair):** run the command from an **elevated** terminal (Administrator).
+   - **Windows (corsair):** a **regular (non-elevated) terminal works** — verified 2026-06-22 with an
+     admin user account; you do *not* need "Run as administrator". (If you ever run as a non-admin user
+     and it's denied, an elevated terminal is the fallback.)
 
 [Tailscale admin console]: https://login.tailscale.com/admin/dns
 
@@ -123,5 +125,7 @@ HANDOFF.)
 ## When you move to emma (Linux)
 
 Serve config is per-device and persistent, so you redo `tailscale serve --bg 5173` on emma after cutover
-(with `tailscale set --operator=$USER` once). This is also where **6c-2** — the in-app "Enable HTTPS"
-toggle + status + QR — lands cleanly, since a non-elevated backend can drive `tailscale serve` there.
+(with `tailscale set --operator=$USER` once). **6c-2** — the in-app "Enable HTTPS" toggle + status + QR —
+should work on **both** OSes: a non-elevated backend drives `tailscale serve` on emma (with `--operator`
+set) and, per the 2026-06-22 finding, also on Windows when the backend runs as the (admin) user — no
+elevation needed. The backend just needs the same user context that can already run the command.
