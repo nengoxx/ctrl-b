@@ -76,7 +76,20 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Phase 6 voice DONE + 6c HTTPS DONE** · 6b pushed, 6c-1 owner-verified on phone, 6c-2 HTTPS-control core built (backend+frontend) — only QR remaining · NEXT = QR (needs `segno` dep OK) → emma deploy / v1 cutover)
+## Current state (**Phase 6 DONE · 6c HTTPS DONE · frontend test foundation landed (D21)** · NEXT = Tier-2 tests → LLM inference fallback (D18) → emma deploy. Owner is hardening *before* the emma cutover.)
+
+> ### ⭐ Session update — 2026-06-22 (build session #12 cont. — **frontend test foundation (D21)** · committed `33ae459`, unpushed)
+> Owner chose to harden before the emma deploy. Analysis: backend had 23 test files, frontend had **zero**
+> despite holding the most intricate logic. Built a **Vitest** foundation (research-backed: vitest + jsdom +
+> @testing-library/react, all devDeps), **fully isolated from production** — proven: the prod bundle is
+> **byte-identical** before/after (all 4 asset sha256 match a captured baseline), `tsc -b` + `vite build`
+> clean, tests live in `tests/` (outside `src`, separate `vitest.config.ts`, test tsconfig not referenced by
+> root). **Philosophy = backend-style: test the logic, eyeball the pixels** (no component/pixel tests — Phase
+> 9 / F24). **27 tests / 4 files:** `toSpeech` (6), `composer` routing (9), `chat` streaming reducer (5, via a
+> `mockSSE` fetch through the real `sendMessage`/`resumeCall` — covers confirm-suspend + resume), `audioController`
+> (7, fake `<audio>`). Non-vacuity proven by a mutation→red→revert. Full design + conventions in **DECISIONS D21**.
+> Scripts: `npm test` / `npm run test:watch`. **Tier 2 next:** `useDictation`, `store/composer`+`store/ui`,
+> `lib/privilege`, `lib/markdown`. Then the **D18 inference fallback** (the test net de-risks that rework), then emma.
 
 > ### ⭐ Session update — 2026-06-22 (build session #12 cont. — **6c-2: in-app HTTPS control built**)
 > Built the Conf → Access HTTPS toggle (DECISIONS D20) end-to-end. **Backend `7e3dfe3`** + **frontend

@@ -771,6 +771,48 @@ QR generator (server-side, zero-dep).
 
 ---
 
+## D21 — Frontend test foundation: Vitest, logic-first, isolated from production ✅ SHIPPED 2026-06-22
+
+**Decided 2026-06-22 (with the owner), to harden before the emma cutover.** The backend had 23 test
+files; the frontend — which now holds the most intricate, recently-churned logic (the chat streaming
+reducer, the audio-controller singleton, the dictation state machine, composer routing) — had **zero**.
+That regression gap was the highest-leverage robustness investment, and a pure addition (zero risk to
+working behavior), so it goes first — *before* the riskier inference-fallback rework, which it de-risks.
+
+**Stack (web-researched):** **Vitest** (unanimous for Vite+React+TS — native Vite integration, ESM/TS/JSX
+zero-config, far faster than Jest; Jest only for legacy/RN) + **jsdom** (chosen over happy-dom: happy-dom
+is ~2–5× faster but trades edge-case completeness for speed — that only matters at hundreds of tests; for
+a small suite **test reliability > test speed**, so the 10-yr battle-tested option wins; happy-dom is a
+15-min swap later if needed) + **@testing-library/react** (`renderHook`, to drive the `useSyncExternalStore`
+stores through their real subscription path). All **devDependencies**.
+
+**Philosophy — mirror the backend: test the logic, eyeball the pixels.** Unit-test the load-bearing
+logic (reducers, state machines, routing, helpers); **no component/pixel/snapshot tests** (brittle,
+low-leverage for single-user; the owner verifies UI at 390px under D7). That's F24/Phase-9 territory —
+we pulled forward the high-value *logic* net, not a full UI-test suite.
+
+**Production isolation (the owner's hard requirement) — verified, not assumed:**
+1. devDependencies → never in the bundle. 2. Tests in `tests/` (outside `src`) → never imported → never
+bundled. 3. **Separate `vitest.config.ts`** → the `vite build` path is untouched. 4. `tests/tsconfig.json`
+is **not referenced by the root** → `tsc -b` (the build's typecheck) never processes tests. 5. No
+in-source testing (`import.meta.vitest`). **PROOF:** the production bundle is **byte-identical** before/
+after (all 4 asset sha256 match the baseline); `npm run build` + `npm run typecheck` clean. Non-vacuity
+proven by mutating a source fn and watching the right test go red.
+
+**Conventions (locked for all future frontend tests):** files in **`tests/`** mirroring `src/` layout
+(`tests/lib/…`, `tests/store/…`), **explicit imports from `vitest`** (no `globals` injection → no
+tsconfig globals types), `tests/setup.ts` for the few unavoidable browser shims (Object URLs), richer
+fakes (Audio/MediaRecorder/`fetch`) built **per-test** for isolation. Scripts: `npm test` / `npm run
+test:watch`. The chat reducer is tested via a **`mockSSE` fetch** through the real public API
+(`sendMessage`/`resumeCall`) — covers the byte-parser too, no reducer fork.
+
+**Shipped (`33ae459`):** 27 tests / 4 files — `toSpeech` (6), `composer` routing (9), `chat` streaming
+reducer (5: completed/reasoning-split/confirm-suspend/resume/error), `audioController` (7). **Tier 2
+(next):** `useDictation` (MediaRecorder/getUserMedia mocking), `store/composer`+`store/ui` localStorage,
+`lib/privilege`, `lib/markdown`. Component-render tests stay deferred (Phase 9 / F24).
+
+---
+
 ## Still open (decide before building the relevant phase)
 
 **Resolved since this list was written (kept here as a pointer so the section stays honest):**

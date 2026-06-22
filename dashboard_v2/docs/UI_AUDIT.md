@@ -279,7 +279,7 @@ This is documented in `Waveform.tsx` with a leading comment so the mistake isn't
 | F21 | Mic button is a visual stub | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-02 |
 | F22 | Decorative glyphs missing `aria-hidden` | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-02 |
 | F23 | No root `ErrorBoundary` outside ConfTab | 🟡 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-02 |
-| F24 | No automated UI / a11y tests | 🟢 | ✅ SAFE | M | 🆕 follow-up audit 2026-06-02 (already TODO Phase 9) |
+| F24 | No automated UI / a11y tests | 🟢 | ⚠️ PARTIAL | M | 🆕 2026-06-02 · **logic-test foundation landed 2026-06-22 (D21, Vitest 27 tests)**; component/a11y UI tests still Phase 9 |
 | F25 | `all: unset` wipes focus indicators on ~30 buttons | 🔴 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-02 |
 | F26 | SW `autoUpdate` has no in-app reload prompt | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-02 |
 
