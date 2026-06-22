@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
     "preview": "vite preview --host 0.0.0.0",
-    "icons": "node scripts/gen-pwa-icons.mjs"
+    "icons": "node scripts/gen-pwa-icons.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
@@ -16,14 +18,17 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.1.1",
+    "jsdom": "^29.1.1",
     "rollup-plugin-visualizer": "^7.0.1",
     "sharp": "^0.34.5",
     "typescript": "^5.9.3",
     "vite": "^7.2.4",
-    "vite-plugin-pwa": "^1.0.3"
+    "vite-plugin-pwa": "^1.0.3",
+    "vitest": "^4.1.9"
   },
   "overrides": {
     "esbuild": "^0.28.1"
