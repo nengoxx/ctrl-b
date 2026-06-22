@@ -104,6 +104,7 @@ export function useSaveSettings() {
     onSuccess: (res) => {
       qc.setQueryData(["settings"], res.settings); // adopt the server's masked echo immediately
       qc.invalidateQueries({ queryKey: ["health"] }); // poll cadence/port may have changed
+      qc.invalidateQueries({ queryKey: ["voice-status"] }); // a Voice edit flips mic/TTS availability (6b)
       if (res.restart_required.length) {
         pushToast(`Saved · restart to apply: ${res.restart_required.join(", ")}`, "info");
       } else {

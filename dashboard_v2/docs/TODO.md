@@ -367,15 +367,37 @@ tools + confirm bubbles) are DONE.**
       untouched (D7). tsc clean; eyeballed at 390px (Puppeteer, zero console errors); settings GET/PUT
       round-trips the masked nested keys.
 
-### Phase 6b — mic state machine + scrubbable mini-player (frontend)
-- [ ] Frontend: push-to-talk mic (MediaRecorder) → `/voice/stt` → fills composer. The recorder's
-      mimeType + the upload filename extension **must agree** (Whisper routes by extension) — the 6a↔6b
-      contract. **Always buffered** record-then-send (no streaming toggle, C1 2026-06-16).
-- [ ] Auto-TTS toggle (`#ttsToggle`) → `/voice/tts` plays assistant replies.
+### Phase 6b — mic state machine + scrubbable mini-player (frontend) — **sliced 6b-1 (mic ✅) / 6b-2 (TTS player)**
+
+#### 6b-1 — mic STT + state machine ✅ DONE 2026-06-22
+- [x] Frontend: tap-to-start/tap-to-stop mic (MediaRecorder) → `/voice/stt` → appends transcript to the
+      composer draft. The recorder's mimeType + the upload filename extension **agree** — derived from the
+      recorder's *actual* `mimeType` post-start (`extFromMime`), since a browser may fall back to a
+      different container than requested. **Always buffered** record-then-send (no streaming toggle, C1).
+      Recording logic is a custom hook (`hooks/useDictation.ts`), **not** a store — recording state is
+      read by one place (the Composer mic), so a hook is the idiomatic home; no duplication of the
+      chat/ui store boilerplate (the TTS *playback* singleton in 6b-2 is the genuinely-shared piece).
+- [x] **Mic-button state machine** (folds in UI_AUDIT.md F21; visual states owner-locked 2026-06-22):
+      built off `hooks/useVoiceStatus.ts` (capability probe `GET /api/voice/status`, always-on, Conf-save
+      invalidated). Dropped the stub's `useState(rec)`; the button is driven by the recorder's real phase.
+      idle (vapor `.mic`) · recording (vapor `.mic.rec` pulse) · disabled-in-settings `stt:false` (mic
+      **hidden**) · unavailable (reactive — only after a recording attempt 502s the whole chain → muted
+      `.mic.unavail` + inert + tooltip; re-arms on the next `/voice/status` probe, no proactive liveness
+      probe). One new CSS rule in extras.css; **vapor.css untouched (D7)**. `tsc -b` clean; TTS→STT
+      round-trip verified live (502 vs 422 contracts confirmed). **Eyeball at 390px pending** (needs a
+      secure context — owner to test at home; 6c HTTPS unblocks the phone).
+
+#### 6b-2 — scrubbable TTS mini-player + auto-TTS (frontend)
+- [ ] Auto-TTS toggle (the existing AppBar `ttsAuto`) → `/voice/tts` plays assistant replies.
 - [ ] **Scrubbable TTS mini-player** (ChatGPT/Telegram/WhatsApp style, owner request 2026-06-22): docked
       bar, play/pause + draggable seek + elapsed/total + skip ±10s + speed; styled `<audio>` over a blob
-      URL (native seek); per-message blob cache (one synth per message); playback state in the UI store.
-- [ ] **Mic-button state machine** (folds in UI_AUDIT.md F21; visual states owner-locked 2026-06-22):
+      URL (native seek); per-message blob cache (one synth per message). **Playback = a DOM-backed
+      singleton audio controller** subscribed via `useSyncExternalStore` (one `<audio>`, reactive
+      `playingId`), NOT a new `store/voice.ts` — genuinely shared (per-bubble players + the chat reducer's
+      auto-play trigger + the AppBar toggle all coordinate one player), but structurally unlike chat.ts.
+- [ ] _(deferred backlog) — collapse the duplicated external-store boilerplate (`ui.ts`/`chat.ts`/
+      `composer.ts`) into a shared `createStore<T>()` factory. Own slice; see owner note 2026-06-22._
+- [ ] **(reference) Mic-button state machine** — built in 6b-1 above; visual states owner-locked 2026-06-22:
       The Composer mic today is a visual stub — taps toggle a local `rec` boolean + a `micrec`
       keyframe pulse but no MediaRecorder is wired. Wire the recorder and drive the button from its
       **real** state (drop the local `useState(rec)`), reusing the existing classes — **no new

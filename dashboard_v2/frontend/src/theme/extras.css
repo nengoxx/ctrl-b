@@ -94,6 +94,18 @@ body[data-motion="reduced"] .conn-badge.reconnecting .dot {
   animation: none !important;
 }
 
+/* ── Phase 6b-1 — mic "unavailable" state. A recording attempt 502'd (the STT primary + fallback
+   both failed), so the mic greys out + goes inert with a tooltip (reactive detection, owner-locked
+   2026-06-22 — no proactive liveness probe). Overrides the vapor `.mic` background/glow via cascade
+   (extras.css loads after vapor.css); vapor.css stays verbatim (D7). The idle/recording looks are
+   pure vapor (`.mic` / `.mic.rec`). */
+.composer .mic.unavail {
+  background: var(--ink-faint);
+  filter: none;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── F16 — Live SSE connection badge in the appbar.
    Renders only when the connection is NOT "connected" (driven by store/connection.ts via
    hooks/useEvents.ts). Compact pill that sits between `.brand` (which has flex: 1 and

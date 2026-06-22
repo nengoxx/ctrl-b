@@ -62,6 +62,16 @@ export function clearDraft(): void {
   setDraft("");
 }
 
+/** Append text to the current draft (Phase 6b dictation hand-off) — separated by a space when the
+ *  draft already has content, so a transcript lands after whatever the user already typed rather than
+ *  clobbering it. Reads state imperatively (no stale closure), then routes through `setDraft`. */
+export function appendDraft(text: string): void {
+  const add = text.trim();
+  if (!add) return;
+  const cur = state.draft.trimEnd();
+  setDraft(cur ? `${cur} ${add}` : add);
+}
+
 function subscribe(cb: () => void): () => void {
   listeners.add(cb);
   return () => listeners.delete(cb);

@@ -76,7 +76,49 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Phase 6a voice COMPLETE + pushed** · HEAD `9844a43` · 7e/D17/Phase 5 done · NEXT = 6b mic + scrubbable mini-player → 6c HTTPS/Android)
+## Current state (**Phase 6b-1 mic STT DONE** · 6a pushed `9844a43` · 7e/D17/Phase 5 done · NEXT = 6b-2 scrubbable TTS mini-player + auto-TTS → 6c HTTPS/Android)
+
+> ### ⭐ Session update — 2026-06-22 (build session #12 — **Phase 6b-1: mic dictation + 4-state machine** · NOT pushed yet)
+> Sub-sliced 6b into **6b-1 (mic STT) → 6b-2 (TTS mini-player)** with the owner. Cold pre-flighted every
+> touch point (Composer stub, chat store, AgentTab bubbles, AppBar `ttsAuto`, ui store, `api/voice.py` +
+> `adapters/voice.py`), researched the state-architecture question (owner flagged the duplication risk),
+> built 6b-1, self-audited, tested headlessly, updated docs.
+>
+> **Design decision locked with the owner (records the seam for 6b-2 + a backlog item):** recording state
+> is read by one place (the Composer mic), so it's a **custom hook (`useDictation`), not a store** — no
+> duplication of the chat/ui store plumbing. TTS *playback* in 6b-2 IS genuinely shared (per-bubble players
+> + the chat reducer's auto-play + the AppBar toggle), so it gets a **DOM-backed singleton audio controller**
+> subscribed via `useSyncExternalStore` — structurally unlike `chat.ts`, not a near-duplicate. **Backlog
+> (owner wants it, own slice):** `ui.ts`/`chat.ts`/`composer.ts` all hand-roll the same external-store
+> boilerplate → extract a shared `createStore<T>()` factory. The owner explicitly values robust, well-patterned
+> architecture as a first-class goal.
+>
+> **What shipped (6b-1, frontend only — no backend change; the 6a voice API is the contract):**
+> - **`hooks/useVoiceStatus.ts`** (new) — TanStack `useQuery` over `GET /api/voice/status` → `{stt,tts}`.
+>   Always-on (composer is on Fleet/Agent). `useSaveSettings` now invalidates `["voice-status"]` so a Conf
+>   Voice edit flips mic/TTS availability without a reload.
+> - **`hooks/useDictation.ts`** (new) — tap-to-start/tap-to-stop recorder. `getUserMedia → MediaRecorder →`
+>   on stop POST the clip to `/voice/stt` → `appendDraft(transcript)`. mimeType↔filename-ext agreement from
+>   the recorder's **actual** `mimeType` (`extFromMime`). 4-state machine via `status`: idle · recording ·
+>   sending · unavailable. 502 (whole chain failed) → reactive `unavailable`; secure-context + permission
+>   denied get distinct toasts (NOT marked unavailable); re-arms on the next status probe.
+> - **`store/composer.ts`** — added `appendDraft(text)` (imperative, space-joins onto the current draft).
+> - **`components/Composer.tsx`** — dropped `useState(rec)`; mic renders only when `stt:true`, driven by the
+>   recorder's real phase. `.rec` (recording) / `.unavail` (unreachable) classes.
+> - **`theme/extras.css`** — one rule `.composer .mic.unavail` (muted bg + dimmed + inert). **vapor.css
+>   untouched (D7).**
+>
+> **Verified:** `tsc -b --noEmit` clean. Backend 5433 + frontend 5173 up (HMR'd). `GET /api/voice/status` →
+> `{"stt":true,"tts":true}` (mic renders). **Live TTS→STT round-trip:** synth "Wake up the vault server
+> please." → mp3 (served-by primary) → STT → "Waking up the vault server, please" (HTTP 200, multipart,
+> filename-routed) — the exact path the hook drives. Empty clip → **422** (not 502), confirming an empty tap
+> won't grey the mic. **Not yet eyeballed at 390px** (needs a secure context — `getUserMedia` is blocked over
+> plain `http://corsair:5173`; works on `localhost`, phone waits on 6c).
+>
+> **Start here next: build 6b-2** — the DOM-backed singleton audio controller (`lib/audioController.ts`),
+> the per-bubble `MiniPlayer` in AgentTab, auto-TTS off the chat store's `done` transition gated by `ttsAuto`,
+> per-message blob cache. Pre-flight is mostly done (touch points above); the new design is the controller shape.
+
 
 > ### ⭐ Session update — 2026-06-22 (build session #11 — **Phase 6a voice: backend + failover (D18) + Conf forms** · ALL PUSHED `9844a43`)
 > **Everything is pushed to `origin/main`** (`main` in sync; HEAD `9844a43`). Four commits this session:
