@@ -46,8 +46,10 @@ export interface SettingsDoc {
     request_timeout_s: number;
     system_prompt: string;
     system_prompt_append: string; // 7e-a additive axis — appended as its own system message
+    failover: boolean; // D18 — selected endpoint fails → walk the local↔cloud + fallbacks chain
     local: InferenceEndpoint;
     cloud: InferenceEndpoint;
+    // `fallbacks` (extra ordered endpoints) round-trips opaquely via deep_merge — not edited here yet.
   };
   // Integration endpoints (Phase 7c-a) — scalar configs edited through this same settings PUT.
   searxng: { base_url: string; enabled: boolean; language: string | null };

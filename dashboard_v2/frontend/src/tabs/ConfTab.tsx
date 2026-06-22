@@ -436,6 +436,13 @@ export function ConfTab({ active }: Props) {
               onPick={(v) => setInf("default_mode", v)}
             />
           </div>
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Failover</div>
+              <div className="desc">on failure, fall through local↔cloud (+ any configured fallbacks)</div>
+            </div>
+            <Switch on={inf?.failover ?? true} onToggle={() => setInf("failover", !(inf?.failover ?? true))} />
+          </div>
           <Field
             label="Local endpoint"
             desc="llama.cpp · /v1 base url"

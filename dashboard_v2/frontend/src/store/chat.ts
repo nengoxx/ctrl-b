@@ -301,6 +301,11 @@ async function streamTurn(
         // history stays in SQLite; surface a sys breadcrumb so the trim is visible, not silent.
         pushSystemNote(compactionNote(data.removed as number, data.truncated as boolean));
         break;
+      case "notice":
+        // A server-side breadcrumb (D18: inference fell over to a fallback endpoint). Client-only,
+        // like compaction — a transient FYI; the failure is also logged + persisted server-side.
+        if (data.text) pushSystemNote(data.text as string);
+        break;
       case "message.end":
         break;
       case "error":

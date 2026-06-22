@@ -196,6 +196,21 @@ describe("chat streaming reducer", () => {
     expect(textOf(result.current.messages[1].parts)).toBe("spliced");
   });
 
+  it("a notice event surfaces a system breadcrumb (D18 inference failover)", async () => {
+    mockStream([
+      { event: "message.start", data: { messageId: "m1" } },
+      { event: "notice", data: { text: "// inference failover → cloud (primary unavailable)" } },
+      { event: "text.delta", data: { messageId: "m1", delta: "answer" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    const sys = result.current.messages.find((m) => m.role === "system");
+    expect(sys && textOf(sys.parts)).toContain("inference failover");
+  });
+
   it("buffered (D17) JSON response re-reads the thread + seeds a confirm token", async () => {
     const msg = (id: string, role: string, text: string) => ({
       id,

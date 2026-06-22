@@ -34,7 +34,7 @@ from typing import AsyncIterator
 
 from pydantic import ValidationError
 
-from app.adapters.inference import InferenceClient, InferenceError
+from app.adapters.inference import InferenceClient, InferenceError, StreamReport
 from app.config import Settings
 from app.core.memory import MemoryProvider
 from app.core.skills import SkillProvider, SkillSelector
@@ -483,9 +483,10 @@ class AgentSession:
             reasoning_buf: list[str] = []
             text_buf: list[str] = []
             reqs = []
+            report = StreamReport()  # D18: learn whether inference fell over, to surface a breadcrumb
             try:
                 async for delta in self._inference.stream_chat(
-                    messages, mode=eff_mode, model=eff_model, tools=self._tools()
+                    messages, mode=eff_mode, model=eff_model, tools=self._tools(), report=report
                 ):
                     if delta.reasoning:
                         reasoning_buf.append(delta.reasoning)
@@ -506,6 +507,11 @@ class AgentSession:
                 yield AgentEvent("error", {"message": str(exc), "retryable": True})
                 yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
                 return
+
+            # D18 — the request fell over to a fallback inference endpoint. Surface a breadcrumb so a
+            # down primary (e.g. the local model) is visible + actionable, not silent (it's logged too).
+            if report.degraded:
+                yield AgentEvent("notice", {"text": f"// inference failover → {report.served} (primary unavailable)"})
 
             parts: list[Part] = []
             if reasoning_buf:

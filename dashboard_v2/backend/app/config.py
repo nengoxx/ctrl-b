@@ -110,9 +110,45 @@ class InferenceCfg(BaseModel):
     system_prompt_append: str = ""
     local: InferenceEndpointCfg = Field(default_factory=InferenceEndpointCfg)
     cloud: InferenceEndpointCfg = Field(default_factory=InferenceEndpointCfg)
+    #: Failover (D18 follow-up). When on, a request whose selected endpoint fails walks a chain — the
+    #: selected one, then the *other* of local/cloud, then `fallbacks` — until one answers (any error →
+    #: next, "ensure functionality"). Configurable per the no-hardcoding rule; off → today's single-
+    #: endpoint behavior (just the selected one).
+    failover: bool = True
+    #: Extra ordered fallback endpoints beyond the automatic local↔cloud pair (D18's N-deep chain). Each
+    #: is any OpenAI-compatible backend; appended after local/cloud in `endpoint_chain`. The model
+    #: override (an agent's `ModelRef.model`) applies only to the *selected* endpoint — fallbacks always
+    #: use their own configured model (a local model id won't exist on a cloud backend).
+    fallbacks: list[InferenceEndpointCfg] = Field(default_factory=list)
 
     def endpoint(self, mode: str | None = None) -> InferenceEndpointCfg:
         return self.local if (mode or self.default_mode) == "local" else self.cloud
+
+    def endpoint_chain(self, mode: str | None = None) -> list[tuple[str, InferenceEndpointCfg]]:
+        """The ordered failover chain for a request: `[selected, the-other-of-local/cloud, *fallbacks]`,
+        with blank (`base_url`-less) endpoints dropped and duplicates (same base_url+model) removed.
+        `failover=False` collapses it to just the selected endpoint. Returns `(name, endpoint)` pairs;
+        the name labels failover logs + the degradation breadcrumb."""
+        m = mode if mode in ("local", "cloud") else self.default_mode
+        selected = "local" if m == "local" else "cloud"
+        other = "cloud" if selected == "local" else "local"
+        named = {"local": self.local, "cloud": self.cloud}
+        ordered: list[tuple[str, InferenceEndpointCfg]] = [
+            (selected, named[selected]),
+            (other, named[other]),
+            *((f"fallback{i + 1}", ep) for i, ep in enumerate(self.fallbacks)),
+        ]
+        chain: list[tuple[str, InferenceEndpointCfg]] = []
+        seen: set[tuple[str, str]] = set()
+        for name, ep in ordered:
+            if not ep.base_url:
+                continue
+            key = (ep.base_url, ep.model)
+            if key in seen:
+                continue
+            seen.add(key)
+            chain.append((name, ep))
+        return chain[:1] if not self.failover else chain
 
 
 class AgentCfg(BaseModel):

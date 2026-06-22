@@ -264,7 +264,7 @@ def test_stt_blank_language_omitted() -> None:
 def test_unconfigured_raises() -> None:
     async def go():
         vc = VoiceClient(VoiceCfg.model_validate({"enabled": False}))
-        assert vc.status() == {"stt": False, "tts": False}
+        assert vc.status() == {"stt": False, "tts": False, "stt_auto_send": False}
         for coro in (
             vc.transcribe(content=b"x", filename="a.webm", content_type=None),
             vc.synthesize(text="hi"),
