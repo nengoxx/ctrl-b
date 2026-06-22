@@ -434,24 +434,19 @@ tools + confirm bubbles) are DONE.**
 - [ ] **(server-side, independent)** keep the Speaches whisper model warm (model TTL) — fixes the measured
       STT cold-start lag; do it around the phone test so dictation feels snappy.
 
-#### 6c-2 — in-app "Enable HTTPS" control (settings panel) — ✏️ DESIGNED (D20), build next
-- [ ] **Conf → Access panel** driving Tailscale Serve from the UI (owner request 2026-06-22; **full design
-      = DECISIONS D20**): typed host-actions (`services/actions/tailscale.py`, reusing the `run_shell`
-      exec core — `tailscale_status` LOW + `serve_enable`/`disable` MED, **`serve` only, never `funnel`**),
-      an always-on `GET /api/access/status` (mirrors `/voice/status`; tailscaled is source of truth),
-      `TailscaleCfg` desired-state config (`target_port`), and a Conf panel (status dot + URL + copy +
-      **server-rendered QR** via `segno`, no frontend dep + Enable/Disable toggle through `ActionService`,
-      USER/FULL, audited). Graceful degrade to the manual command when the CLI is absent/denied. Viable on
-      both OSes (Windows non-elevated for an admin user; emma via `--operator`). **Pre-flight the
-      `serve status --json` schema on the host before coding.** Detail below is superseded by D20.
-      surface `tailscale serve status` (active? the `https://…ts.net` URL + copy + **QR to scan on the
-      phone**) and an Enable/Disable toggle backed by a typed host-action (`services/actions/tailscale.py`,
-      gated like wake/reboot/run_shell — manages the backend host itself). Config `tailscale.serve` block
-      (target port) as desired-state; tailscaled is the source of truth. **Graceful degrade** when the CLI
-      is absent / not permitted / needs elevation → show the manual command + doc link. Viable on **both**
-      OSes: emma (Linux) with `--operator` set, and Windows too — per the 2026-06-22 finding `tailscale
-      serve` runs from a **non-elevated** terminal for an admin user, so the backend (as that user) can
-      drive it without elevation. Needs its own pre-flight + a DECISIONS/ROADMAP entry before coding.
+#### 6c-2 — in-app "Enable HTTPS" control (settings panel) — ✅ CORE DONE 2026-06-22 (backend + frontend); QR remaining
+- [x] **Backend** (`7e3dfe3`): `core/proc.py run_capture()` (shared subprocess core; `shell.py` refactored
+      onto it, test_shell_5 green), `services/actions/tailscale.py` (`resolve_status()` live read +
+      audited `tailscale_serve_enable`/`disable` MED actions, **`serve` only, never `funnel`**, binary
+      PATH-resolved), `api/access.py` (`GET /access/status` + `POST /access/serve`), `TailscaleCfg`
+      (`target_port`, tailscaled = source of truth). **Live-verified** against the active Serve (status +
+      idempotent enable) + `test_tailscale_6c2.py` (5: port-match, serving/not/logged-out/CLI-missing).
+- [x] **Frontend** (`56e87a4`): `hooks/useAccess.ts` + a `TailscaleAccessCard` in the **Server** conf
+      group (no renumbering) — live Enable/Disable toggle + status + URL + copy; degrades to a hint when
+      the CLI is unavailable. `tsc -b` + `vite build` clean. **Eyeball at 390px pending** (owner).
+- [ ] **QR-to-phone** (the one remaining D20 piece): server-rendered QR SVG (`GET /api/access/qr.svg`)
+      via **`segno`** (zero-dep, pure-Python) so the panel `<img>`s it — keeps the tailnet hostname off
+      any third-party service. Deferred pending the **owner's OK on adding the `segno` backend dep**.
 
 ## Phase 7 — Conf tab (settings, prompts, memory, hosts CRUD) — **sliced 7a–7e**
 

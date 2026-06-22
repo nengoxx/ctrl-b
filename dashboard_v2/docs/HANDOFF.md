@@ -76,7 +76,33 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Phase 6b voice UI COMPLETE (6b-1 mic + 6b-2 TTS player + 6b-3 mic auto-send setting)** · 6a pushed `9844a43`, 6b committed not pushed · NEXT = 6c HTTPS/Android verify → emma deploy)
+## Current state (**Phase 6 voice DONE + 6c HTTPS DONE** · 6b pushed, 6c-1 owner-verified on phone, 6c-2 HTTPS-control core built (backend+frontend) — only QR remaining · NEXT = QR (needs `segno` dep OK) → emma deploy / v1 cutover)
+
+> ### ⭐ Session update — 2026-06-22 (build session #12 cont. — **6c-2: in-app HTTPS control built**)
+> Built the Conf → Access HTTPS toggle (DECISIONS D20) end-to-end. **Backend `7e3dfe3`** + **frontend
+> `56e87a4`** (both **unpushed** as of this note). Pre-flighted the real `tailscale serve status --json`
+> schema on the host first (it varies by version). What landed:
+> - **`core/proc.py run_capture()`** — shared subprocess-capture core; **`shell.py._run` refactored onto
+>   it** (no dup; `test_shell_5` still 10/10). The tailscale actions exec the `tailscale` **binary directly
+>   with argv** (no shell → no injection), unlike `run_shell`.
+> - **`services/actions/tailscale.py`** — `resolve_status()` (live read: available/serving/url/reason,
+>   parsed from `tailscale status --json` + `serve status --json`, binary PATH-resolved + fallbacks) +
+>   audited `tailscale_serve_enable`/`disable` MED actions (`ui_exposed=False`, `agent_exposed=False` —
+>   USER-only via the endpoint). **`serve` only, funnel never constructed** (no-public-bind intact).
+> - **`api/access.py`** — `GET /access/status` (always-on read; tailscaled = source of truth, no stored
+>   on/off → no drift) + `POST /access/serve {enable}` (invokes the action at USER/FULL → audited Event).
+> - **`config.py TailscaleCfg`** (`tailscale`): `target_port=5173`, `enabled`, `timeout_s`.
+> - **Frontend** — `hooks/useAccess.ts` + a `TailscaleAccessCard` in the **Server** conf group (no
+>   renumbering): live Enable/Disable toggle + status + URL + copy; degrades to a hint when the CLI is
+>   unavailable. `.conf-url`/`.conf-copy` in extras.css; **vapor.css untouched (D7)**.
+> - **Verified:** `tsc -b` + `vite build` clean; backend restarted on 5433 + **live-verified against the
+>   active Serve** (`/access/status` → `serving:true, url:https://corsair.lobster-vector.ts.net`;
+>   idempotent enable → ok, didn't disrupt the phone); `test_tailscale_6c2.py` (5, parsing edge cases).
+>   **Eyeball the panel at 390px pending** (owner).
+>
+> **The one remaining D20 piece — QR-to-phone:** a server-rendered QR SVG (`GET /access/qr.svg`) via
+> **`segno`** (zero-dep pure-Python), so the panel `<img>`s it. **Deferred pending the owner's OK on the
+> `segno` backend dep.** Everything else of 6c-2 is done.
 
 > ### ⭐ Session update — 2026-06-22 (build session #12 cont. — **6b-3: mic auto-send setting**)
 > Owner clarification → small follow-up. **Auto-play of TTS stays the AppBar toggle (unchanged, owner's
