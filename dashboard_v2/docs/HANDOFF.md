@@ -76,7 +76,16 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Phase 6 DONE · 6c HTTPS DONE · frontend test foundation landed (D21)** · NEXT = Tier-2 tests → LLM inference fallback (D18) → emma deploy. Owner is hardening *before* the emma cutover.)
+## Current state (**Phase 6 DONE · 6c HTTPS DONE · frontend test net DONE (D21, 49 tests Tier-1+2)** · NEXT = LLM inference fallback (D18 — the test net de-risks it) → emma deploy. Owner is hardening *before* the cutover.)
+
+> ### ⭐ Session update — 2026-06-22 (build session #12 cont. — **frontend tests Tier-2** · committed `09fdf8b`, unpushed)
+> Finished the logic net: **49 tests / 9 files** now (`npm test`). Tier-2 (`09fdf8b`, 22): `lib/privilege`,
+> `store/composer`, `store/ui` (incl. selector-isolation), `lib/markdown` (parser→DOM + the `javascript:`
+> XSS guard), `hooks/useDictation` (the mic state machine over fakes — fill/auto-send/502-unavailable/
+> insecure-context). Test-only → production bundle still byte-identical, `tsc -b` clean. Full design in
+> **D21**. Component/a11y/pixel tests stay Phase 9 (F24). **Next: the D18 LLM inference fallback chain** —
+> the core chat path currently has no failover (voice does); the new chat-reducer tests are the safety net
+> under that rework. Then **emma deploy / v1 cutover**.
 
 > ### ⭐ Session update — 2026-06-22 (build session #12 cont. — **frontend test foundation (D21)** · committed `33ae459`, unpushed)
 > Owner chose to harden before the emma deploy. Analysis: backend had 23 test files, frontend had **zero**
