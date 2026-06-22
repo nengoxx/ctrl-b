@@ -117,6 +117,16 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > style — play/pause + draggable seek + skip/speed) over a styled `<audio>` + per-message blob cache. The
 > recorder's mimeType + upload filename extension **must agree** (Whisper routes by extension) — the 6a↔6b contract.
 >
+> **Mic-button visual states (owner-locked 2026-06-22):** reuse the existing stub's classes, **no new vapor.css** (D7):
+> 1. **Idle** (available, not recording) — the current default look, unchanged.
+> 2. **Recording** — the current red pulse (`.rec` + the `micrec` keyframes); drive it from the recorder's real
+>    state (drop the stub's local `useState(rec)`). The owner explicitly likes this animation — keep it.
+> 3. **Disabled in settings** (`/voice/status` `stt:false` — voice off / no STT endpoint) — **hide** the mic
+>    entirely (distinct from F21's "keep visible during the *lifecycle*"; the config-off hide is fine, layout adapts).
+> 4. **Unavailable** (configured but the STT chain — primary *and* fallback — is unreachable) — **muted/greyed +
+>    inert + tooltip**. Detection = **REACTIVE** (owner's call): looks normal until a recording attempt 502s
+>    (whole chain failed), *then* grey + "voice servers unreachable". No proactive liveness probe (zero new infra).
+>
 > **Start here next session: build 6b** (its own pre-flight over the Composer mic stub + the chat/TTS-toggle UI),
 > then **6c** (Tailscale Serve HTTPS + real Android verify). The **LLM inference fallback chain** (D18 follow-up)
 > is also queued. Servers: backend **5433** (no `--reload`), frontend **5173** (`http://corsair:5173`).

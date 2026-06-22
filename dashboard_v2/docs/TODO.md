@@ -375,14 +375,19 @@ tools + confirm bubbles) are DONE.**
 - [ ] **Scrubbable TTS mini-player** (ChatGPT/Telegram/WhatsApp style, owner request 2026-06-22): docked
       bar, play/pause + draggable seek + elapsed/total + skip ±10s + speed; styled `<audio>` over a blob
       URL (native seek); per-message blob cache (one synth per message); playback state in the UI store.
-- [ ] **Mic-button state machine** (folds in UI_AUDIT.md F21, deferred 2026-06-08):
-      The Composer mic today is a visual stub — taps toggle a local `rec` boolean + a
-      `micrec` keyframe pulse but no MediaRecorder is wired, so users tap it expecting
-      dictation and nothing happens. Capability probe (secure-context + permission state, via
-      `GET /voice/status`), disabled-with-tooltip when unsupported/denied, `aria-disabled` + muted
-      Vapor styling for the inert state, then the active recording states when STT runs. Re-use the
-      existing `.rec` class; drop the local `useState(rec)` and drive it from the recorder's actual
-      state. Do NOT ship a "honest disable" intermediate slice. Keep the button visible (Vapor D7).
+- [ ] **Mic-button state machine** (folds in UI_AUDIT.md F21; visual states owner-locked 2026-06-22):
+      The Composer mic today is a visual stub — taps toggle a local `rec` boolean + a `micrec`
+      keyframe pulse but no MediaRecorder is wired. Wire the recorder and drive the button from its
+      **real** state (drop the local `useState(rec)`), reusing the existing classes — **no new
+      vapor.css** (D7). Four states:
+      1. **Idle** (available, not recording) — current default look, unchanged.
+      2. **Recording** — current red pulse (`.rec` + `micrec`). Owner explicitly likes it — keep it.
+      3. **Disabled in settings** (`GET /voice/status` `stt:false`) — **hide** the mic. (Distinct from
+         F21's "keep visible during the lifecycle"; the config-off hide is fine, the composer adapts.)
+      4. **Unavailable** (configured but the STT chain — primary *and* fallback — unreachable) —
+         **muted/greyed + inert + tooltip**, detection **REACTIVE**: normal until a recording attempt
+         502s (whole chain failed), then grey + "voice servers unreachable". No proactive liveness
+         probe (owner's call — zero new infra).
 
 ### Phase 6c — HTTPS + Android verification
 - [ ] **HTTPS via Tailscale Serve** so the mic works on Android (secure-context). Document it.
