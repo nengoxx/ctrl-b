@@ -334,6 +334,20 @@ class ShellCfg(BaseModel):
     max_output_chars: int = 6000         # truncate captured stdout/stderr to this length
 
 
+class TailscaleCfg(BaseModel):
+    """Tailscale Serve control (Phase 6c-2, DECISIONS D20) — the in-app HTTPS toggle. `serve` **only**,
+    never `funnel`: tailnet-only HTTPS so the phone mic gets a secure context (the no-public-bind rule
+    holds by construction). `target_port` is the local port Serve fronts — the frontend, which proxies
+    `/api`. **tailscaled is the source of truth** for on/off: we read `tailscale serve status` live and
+    store no on/off flag here, so a stored flag can't drift from reality. See `HTTPS_TAILSCALE.md`."""
+
+    model_config = {"extra": "allow"}
+
+    enabled: bool = True                 # whether the Conf → Access panel + actions are active
+    target_port: int = 5173              # the local port Tailscale Serve proxies (the frontend)
+    timeout_s: float = 15.0              # subprocess timeout for the `tailscale` CLI calls
+
+
 class OpenApiServerCfg(BaseModel):
     """An OpenAPI/REST service whose operations are auto-registered as agent tools (Phase 4f) — the
     HTTP sibling of an MCP server, for Open WebUI "tool servers" or any service exposing an OpenAPI
@@ -449,6 +463,7 @@ class Settings(BaseModel):
     voice: VoiceCfg = Field(default_factory=VoiceCfg)
     open_terminal: OpenTerminalCfg = Field(default_factory=OpenTerminalCfg)
     shell: ShellCfg = Field(default_factory=ShellCfg)
+    tailscale: TailscaleCfg = Field(default_factory=TailscaleCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
     #: Agents are **folder-only** (D14/D15 #3): discovered by scanning `$CTRLB_HOME/agents/<name>/`

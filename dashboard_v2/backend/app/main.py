@@ -27,6 +27,7 @@ from app import __version__
 from app.adapters.mcp_client import McpClient
 from app.adapters.openapi_tools import OpenApiToolProvider
 from app.api import (
+    access as access_api,
     actions,
     agent,
     events,
@@ -177,6 +178,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_api.router, prefix="/api")
     app.include_router(integrations.router, prefix="/api")
     app.include_router(voice_api.router, prefix="/api")
+    app.include_router(access_api.router, prefix="/api")
 
     # Prod single-origin serving. Absent in dev (Vite owns the SPA + proxies /api here).
     if _FRONTEND_DIST.is_dir():

@@ -17,11 +17,11 @@ by `ActionService._record`. cwd defaults to `$CTRLB_HOME`; the process is killed
 
 from __future__ import annotations
 
-import asyncio
 import platform
 
 from pydantic import BaseModel, Field
 
+from app.core.proc import run_capture
 from app.core.redact import redact
 from app.core.tool import InvocationContext, action
 from app.domain.enums import Risk, RunState
@@ -56,20 +56,11 @@ async def _run(command: str, ctx: InvocationContext) -> ToolResult:
 
     cwd = cfg.workdir.strip() or str(ctx.deps.settings.home_dir())
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *_shell_argv(command),
-            cwd=cwd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
+        cap = await run_capture(_shell_argv(command), timeout_s=cfg.timeout_s, cwd=cwd)
     except (OSError, ValueError) as exc:  # shell binary missing / bad cwd
         return ToolResult(state=RunState.ERROR, summary=f"$ {command} — could not start", error=str(exc))
 
-    try:
-        out_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=cfg.timeout_s)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.communicate()  # reap the killed process
+    if cap.timed_out:
         return ToolResult(
             state=RunState.ERROR,
             summary=f"$ {command} — killed after {cfg.timeout_s:g}s",
@@ -77,9 +68,9 @@ async def _run(command: str, ctx: InvocationContext) -> ToolResult:
             data={"timed_out": True},
         )
 
-    output = redact(out_bytes.decode("utf-8", "replace"), ctx.deps.settings.secret_values()) or ""
+    output = redact(cap.output, ctx.deps.settings.secret_values()) or ""
     output = _clip(output.strip(), cfg.max_output_chars)
-    code = proc.returncode
+    code = cap.code
     data = {"exit_code": code}
     if code == 0:
         return ToolResult(state=RunState.OK, summary=f"$ {command} — exit 0", output=output, data=data)

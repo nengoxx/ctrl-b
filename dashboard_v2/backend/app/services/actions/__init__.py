@@ -20,6 +20,7 @@ from app.services.actions import (  # noqa: E402,F401
     shell,
     start_service,
     stop_service,
+    tailscale,
     web_search,
 )
 from app.services.agent import planning  # noqa: E402,F401  # task_plan builtin (agent-only)
