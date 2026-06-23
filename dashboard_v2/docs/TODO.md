@@ -13,32 +13,23 @@ the whole architecture in `ARCHITECTURE.md` (don't build ahead of the phase you'
 
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
-> **Status @ 2026-06-02:** Phases **0–4.5 + 7a–7d are done**, and the **UI performance pass
-> (`docs/UI_AUDIT.md` Slices 1–8) is complete** — 10 of 13 findings shipped (F9 `useTransition`
-> and F13 React Compiler deferred until measured pressure). 7a–7c are on `origin/main`; 7d +
-> the perf pass + a follow-up a11y/resilience audit are committed locally (eight commits ahead,
-> HEAD `bf549c4`, push pending owner go-ahead). Plus the capability/UX session — cloud chat
-> wired; agent **loop-discipline guards** + tool-selection routing; the **`fleet` intent-skill**
-> that fixes weak-model tool-selection (auto tool-narrowing; `skills: []` opts a capable model
-> out); lenient `task_plan`; **`check_service`** + **`reboot_host`** (+ device-row button);
-> **clickable plan-step dots** (persistent, agent-aware); an **OS-compatibility pass**
-> (ping/commands detect the host OS — ready for emma/Linux); the **Windows `--reload` ping
-> gotcha** documented (`fleet.ping_host` returns empty under reload — run plain on Windows);
-> **sub-millisecond ping precision** (Windows `time<1ms` distinguished from `time=1ms`);
-> **configurable hero feature-cycle** (`server.feature_cycle_seconds`); **Vapor-themed busy
-> spinner** (conic-gradient ring). Detail in `HANDOFF.md`'s 2026-05-28 through **2026-06-02**
-> blocks.
+> **Status @ 2026-06-22 (HEAD `37bd685`, tree clean, all pushed):** Phases **0–7 are all done** —
+> Fleet, Actions, Services, Agent chat + full tool-loop, Skills/subagents, **Phase 5** (guarded `!`
+> shell), **Phase 6** (voice STT/TTS + mic + mini-player + HTTPS), and **Phase 7a–7e** (Conf:
+> settings/hosts/services/integrations/skills/agents/prompts/memory). **7e is fully complete** —
+> 7e-f-1/f-2/f-3 (per-agent skills · `skill_manage` + core-builtins · shared Approve-to-apply
+> propose-UI) and **7e-g** (`AgentSelector` auto-rotate) all shipped. **A2 `question` kind** shipped
+> (`bb82882`). **C1 dual-mode chat / D17** shipped (`3fb6603`). **D18 inference failover** + fallbacks
+> editor shipped. The **UI performance pass** (`docs/UI_AUDIT.md` Slices 1–8) is complete (10/13; F9
+> `useTransition` + F13 React Compiler deferred), and the **F14–F26 a11y/resilience backlog is also
+> shipped** (Slices A–F2, the 2026-06-08 session — F14/F15/F16/F17/F18/F19/F20/F22/F23/F25/F26/F28/F29).
+> Backend 24/24, frontend 57/57. Detail in `HANDOFF.md`.
 >
-> **Recommended next sequence (advisory — phases below are NOT reordered):** three live
-> candidates — (1) the **F14–F26 a11y/resilience backlog** documented in `docs/UI_AUDIT.md`
-> §6c (F25 + F14 + F15 are the WCAG-critical ones; recommended order in the doc footer);
-> (2) the **7e slice** (prompt-append + show/load the baked default + `<PromptModal>`
-> full-page editor + Conf-sizing refine — planned 2026-05-30) → then 7e proper (prompt-file
-> editors + memory panel); (3) a **thin emma/Linux deploy + Tailscale-Serve HTTPS** (the
-> migration target; HTTPS also unblocks the mic) → **voice (6)** → **utils (8)**. **Phase 5
-> (guarded shell) is back in scope (decided 2026-06-14):** the `!` composer prefix is the
-> **local-shell UX** on the backend host (Claude-Code/Codex model — `!git status`), **not**
-> open-terminal (which is a *separate remote box* over REST, an agent tool). See the Phase 5 section.
+> **Next: Phase 8 — Utils tool registry (D8)**, the last unbuilt v1 *feature* (cutover parity with the
+> old server's YT/IP tools). Then the `createStore<T>()` / `Switch` dedup backlog slices, then the
+> **emma (Linux) deploy / v1 cutover** (Phases 9–10). **Still open (low / deferred):** UI_AUDIT F27
+> (offline-row SR indicator) + F24 component/a11y tests (→ Phase 9); QR-to-phone (`segno` dep, pending
+> owner OK); vector memory recall; ROADMAP E2 OpenAI facade; D19 voice streaming transports.
 
 ---
 
@@ -613,7 +604,7 @@ tools + confirm bubbles) are DONE.**
       allowlists don't receive new builtins (no always-on-builtin notion — owner decision); FTS triggers
       key on `rowid` (VACUUM-fragile, but `INNER JOIN message_id` protects query correctness); snippet
       truncation could leak a secret *fragment* across tokens (low). Hardening: `MemoryCfg` caps floored `ge=1`.
-- [~] **7e-f — per-agent skills + `skill_manage` + shared propose-UI (D14).** Sub-sliced f-1/f-2/f-3.
+- [x] **7e-f — per-agent skills + `skill_manage` + shared propose-UI (D14).** Sub-sliced f-1/f-2/f-3 — all shipped.
   - [x] **7e-f-1 — per-agent skills + inheritance ✅2026-06-20 (`6dc06db`).** **No new `skills_inherit`
         field** — the existing `AgentDef.skills` allowlist *is* the global-inheritance knob (`*`/list/`[]`
         = all/subset/none); a specialist's own `agents/<name>/skills/` is always available on top
@@ -621,7 +612,7 @@ tools + confirm bubbles) are DONE.**
         `resolve_skills` refactored to take the precomputed set; `_activate_skills` rewired. Default-agent
         byte-identical; AgentsEditor tick-grid (bound to `agent.skills`) now reads as inheritance — no FE
         change. Tests `test_skills_per_agent_7e.py` (6).
-  - [ ] **7e-f-2 — `skill_manage` + core-builtin reachability (NEXT, design-locked).** (a) **`core: bool`
+  - [x] **7e-f-2 — `skill_manage` + core-builtin reachability ✅ (shipped).** (a) **`core: bool`
         on `ToolSpec`** + `@action(core=)`; mark **`task_plan`/`memory`/`session_search`** core (owner's
         cognitive set — resolves deep-audit #1); `for_agent` always unions core tools (survive allowlist +
         skill narrowing). (b) **`skill_manage`** builtin (mirror `memory_tool.py`, **not** core):
@@ -629,10 +620,10 @@ tools + confirm bubbles) are DONE.**
         (OFF → propose-only `data["proposed"]`); slug-validated; auto-audited. (c) **`AgentCfg.skills_auto_write`**.
         (d) De-dup: `_write_text_eol` → **`core/fsutil.py`**; `write_skill_md`/`remove_skill_md` + shared slug
         in `services/agent/skills.py`; refactor `/api/skills` to use them.
-  - [ ] **7e-f-3 — shared Approve-to-apply propose-UI (frontend).** Render `data["proposed"]` from *both*
+  - [x] **7e-f-3 — shared Approve-to-apply propose-UI (frontend) ✅ (shipped, `4b63f59`).** Render `data["proposed"]` from *both*
         `memory` and `skill_manage` as an Approve/Dismiss affordance on the tool bubble + an apply endpoint.
         Needs its own pre-flight over the AgentTab `.b.cmd` command bubble + confirm-resume flow.
-- [ ] **7e-g — optional `AgentSelector` auto-rotate (D14).** A swappable selector (mirrors
+- [x] **7e-g — optional `AgentSelector` auto-rotate (D14) ✅ (shipped, `b7ce996`).** A swappable selector (mirrors
       `SkillSelector`) that auto-routes a turn to a specialist **when enabled** in settings — default
       off; explicit `/agent` + `spawn_subagents` stay primary. **Default algorithm =
       `KeywordAgentSelector`** (name + SOUL.md token overlap, mirroring `KeywordSkillSelector`; D15 #8);
@@ -679,8 +670,8 @@ FTS5); the C1/A2 doc "day-one" overclaims are corrected (flagged as future, not 
 - [x] **Reconcile `DESIGN.md`** ✓2026-06-14 (banner + §4 `messages.agent` · §5.1 folder model · §6 file memory · §8 FTS5 · §9 settings · §17 resolved).
 
 **Documented "day-one" seams that were never built (contradiction to fix — doc or code):**
-- [ ] **Streaming `auto|on|off` + buffered chat (C1) — DECIDED 2026-06-16: BUILD (spec in DECISIONS D17).** ARCHITECTURE §1 claimed "both from day one"; `/api/agent/chat` is SSE-only today. Build = a `collect_turn(events)` collector that drains the existing `run_turn`/`resume` `AgentEvent` generator into a buffered JSON payload (the loop is NOT forked), `AgentCfg.streaming` setting, Accept-header negotiation under `auto`, setting authoritative (off buffers the PWA too), client branches on response content-type and reuses the reload render path. Chat endpoint only — STT/TTS streaming stays Phase 6. On landing, flip the ARCHITECTURE §1 claim to true.
-- [ ] **`question` message kind (A2)** (doc framing corrected ✓; **design locked 2026-06-16 in ROADMAP A2**, build deferred): ARCHITECTURE listed it as a v1 kind; the Part union has no `question` part / pause-for-answer flow. Locked shape: a `question` builtin (sibling of `task_plan`) that suspends via the existing suspend path (`RunState.AWAITING_ANSWER`) + `tool.question` SSE event + a question bubble + **extends** `/api/agent/resume` with `decision="answer"` (no parallel endpoint). Cheap when built because it reuses the confirm-suspend machinery.
+- [x] **Streaming `auto|on|off` + buffered chat (C1) ✅ SHIPPED 2026-06-21 (`3fb6603`, DECISIONS D17).** `session.collect_turn(events)` drains the existing `run_turn`/`resume` generator into a buffered JSON payload (loop NOT forked); `AgentCfg.streaming` (`auto|on|off`) is authoritative; the signal is a `stream` body field (OpenAI convention, revised from the original Accept-header plan); the client branches on response content-type and reuses the reload render path. A buffered confirm stays resumable (the token rides `collect_turn`). The OpenAI `/v1/chat/completions` facade stays deferred (ROADMAP E2).
+- [x] **`question` message kind (A2) ✅ SHIPPED 2026-06-21 (`bb82882`).** A `question` builtin (`services/agent/question.py`, sibling of `task_plan`) suspends via the existing suspend path (`RunState.AWAITING_ANSWER`) + `tool.question` SSE event + a question bubble; `/api/agent/resume` is **extended** with `decision="answer"` + an `answer` field (no parallel endpoint) — the owner's reply is injected as the call's result. Reuses the confirm-suspend machinery as designed.
 - [ ] **D8 tool registry / Utils (Phase 8) unbuilt:** no `@tool`, no `/api/tools`, Utils is a static shell. **Confirmed (DESIGN §0.4 + §16):** the Utils tool registry **reuses `core/tool.py`** (the unified capability model) — not a parallel registry. Build remains (Phase 8).
 
 **Found *better* than documented:**
@@ -690,7 +681,7 @@ FTS5); the C1/A2 doc "day-one" overclaims are corrected (flagged as future, not 
 - [x] **Phase 5 (`run_shell`/`/api/exec`)** ✓2026-06-14 — **decided: KEEP + build.** The `!` prefix is the
   local-shell UX on the backend host (Claude-Code model), distinct from open-terminal. Full spec in the
   Phase 5 section (local-only · `shell.workdir` default `$CTRLB_HOME` · output→context · enabled-by-default).
-- [ ] **Voice config block:** `config.py` has no `stt`/`tts`/`voice` section yet (ARCHITECTURE §3 lists it). **Confirmed 2026-06-14: voice (Phase 6) is still planned as designed** — the config block lands when Phase 6 is built (nothing to do now).
+- [x] **Voice config block ✅ SHIPPED (Phase 6a, 2026-06-22).** `config.py` now has `voice{enabled, stt:SttServiceCfg, tts:TtsServiceCfg}` over a base `VoiceServiceCfg` (primary→fallback chain + split timeouts), wired through `mask`/`unmask` and `runtime.set_voice` hot-apply. Conf → Voice · STT/TTS forms drive it.
 
 **§2 blocking specs for the 7e build → locked in `DECISIONS.md` D15:** `agent.defaults` shape + merge precedence · `CTRLB_HOME` path + precedence · **agents folder-only (no migration; `agents:[]` removed from schema)** · `MemoryProvider` interface + injection point · `messages.agent` + resume resolution · `skill_manage` schema/scope · `session_search` scope + redaction · `AgentSelector` seam.
 
