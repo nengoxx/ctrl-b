@@ -877,3 +877,58 @@ The owner explicitly wants them eventually:
 → v1 seams to build now so these slot in: pluggable `MemoryProvider`, action `risk` levels,
 typed chat-message kinds, streaming-or-buffered chat endpoint, a settings/policy layer, and a
 functionally-grouped Conf tab.
+
+## D22 — Tools tab = run cards + a unified-override agent-tool catalog (tri-state access) ✅ DECIDED 2026-06-24 (8a shipped, 8b locked)
+
+The Phase-8 Utils tab becomes the **"Tools" tab** and serves two distinct concerns in two sections:
+
+- **Section A — Run cards (8a, shipped).** Self-contained, context-free utility tools (`@tool`,
+  `category="utility"`, `ui_exposed`) the owner runs directly — yt_captions / ip_info / dns_trace. A
+  generic card renders each tool's flat `input_model` JSON Schema (no per-tool UI). Invoke is a
+  **category-guarded facade** (`POST /api/tools/{name}`) over the one `ActionService.invoke` — not a
+  second execution path; it 404s on non-utility/agent-only names so the Tools surface can't run
+  `shutdown_host`/`run_shell`/`web_search`.
+- **Section B — Agent-tool catalog (8b).** Manages *every* agent tool: a per-tool **description
+  override** + a **tri-state agent-access mode**. NOT run buttons — actions already run from Fleet;
+  builtins/MCP have no standalone meaning.
+
+**The override model — one unified object, never sibling maps (research-backed; CLAUDE.md hard rule).**
+`Settings.tool_overrides: dict[str, ToolOverride]` where `ToolOverride = {description?, agent_mode?}`.
+A future per-tool **`settings`** dimension is a purely additive field (a Pydantic v2 discriminated union
+keyed by tool — ROADMAP E0a), *not* a new top-level map. Deep-research (25/25 claims verified 3-0; VS
+Code / ESLint / Pydantic / MCP / rjsf primary sources) found sibling name-keyed maps are the refactor
+trap: each new dimension is a new map + new read/merge code, paid when the data is no longer empty.
+Legacy `tool_descriptions` is folded into `tool_overrides[name].description` by a before-validator
+(zero-touch migration).
+
+**Tri-state `agent_mode` overlays the registry spec** (generalizing the shipped 7d-a description
+overlay; `apply_tool_overrides` captures + restores originals): **core** → `(agent_exposed=True,
+core=True)` · **enabled** → `(True, False)` · **disabled** → `(False, False)` · **absent** →
+compile-time default. `for_agent`/`agent_tools` already read those fields, so there's no
+registry-logic change — only the overlay sets them. The actions DTO gains `default_agent_mode` so the
+catalog stores only deviations and can reset.
+
+**Two invariants that must not blur:**
+1. **Membership ≠ privilege.** `agent_mode` controls *availability* only (is the tool in the toolset).
+   `risk`/`confirm`/`decide()` gate *execution* independently — a `core` HIGH tool is always available
+   but still confirms. Never conflate them, or you can't have an available-but-guarded tool.
+2. **core bypasses BOTH the per-agent allowlist AND per-turn skill narrowing.** Demoting a default-core
+   tool (e.g. `session_search`) to `enabled` means specialists with explicit `tools` lists lose it
+   unless they list it — the owner's intended trade ("I don't use it much").
+
+**Two axes, edited at their subject (no duplicate writers).** Tool-centric global settings
+(description, mode) live in the **Tools tab**; per-agent tool selection (`AgentDef.tools`) stays in
+**AgentsEditor**. They compose visually: the AgentsEditor tick-grid renders a globally-**disabled** tool
+locked-off and a **core** tool locked-on. Putting a tool→agents matrix in the Tools tab is rejected —
+it would be a second writer of `AgentDef.tools`.
+
+**Special cases:** `run_shell` is shown read-only in the catalog (its `decide(shell.agent_exec_enabled)`
+gate + FULL-privilege requirement govern agent access — a tri-state toggle there would lie); MCP/OpenAPI
+tools' tri-state sits *under* the per-server enable (server off → tool gone) and stale overrides are
+ignored (rediscover re-applies the overlay). The card title/summary use the **default JetBrains Mono**
+font (owner-directed override in `extras.css`; vapor.css untouched, D7) because Major Mono renders
+capitalized titles + sentence summaries badly.
+
+**Why:** the owner wants a dedicated tool surface both they and the agent use, with descriptions +
+enable/disable consolidated in one place, designed so adding per-tool settings or many more tools never
+forces a big refactor. Full file-level 8b plan + pre-flight in HANDOFF.

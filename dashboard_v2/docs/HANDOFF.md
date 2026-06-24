@@ -76,39 +76,95 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**all hardening + Phase 6/6c/D18 DONE · tree clean @ `9cb431b`, pushed** · NEXT = **Phase 8 — Utils tool registry** → then emma deploy)
+## Current state (**Phase 8a DONE + pushed @ `a339d6a`** · NEXT = **Phase 8b — tool manage layer (tri-state + descriptions)** → then `createStore`/`Switch` dedups → emma deploy)
 
-> ### 🟢 CLEAN-SESSION HANDOFF — start Phase 8 (Utils tool registry, D8) — written 2026-06-22
-> Everything through D18 (inference failover + fallbacks editor) is shipped + pushed (HEAD `9cb431b`,
-> `origin/main` in sync, tree clean except the standing `start_claude_remote.ps1`). Backend suite 24/24,
-> frontend 57/57. The owner chose **Phase 8 (Utils)** as the next build — the last unbuilt v1 *feature*
-> (needed for cutover parity with the old server's YT/IP tools); after it, the `createStore`/`Switch`
-> dedups, then the emma deploy. **Servers:** backend uvicorn **5433** (no `--reload`, venv), frontend Vite
-> **5173**. Tests: `./.venv/Scripts/python.exe tests/<file>.py` (pytest not installed) · `npm test` (frontend).
+> ### 🟢 CLEAN-SESSION HANDOFF — start Phase 8b (tool manage layer, D8/D22) — written 2026-06-24
+> **Phase 8a is shipped + pushed** (HEAD `a339d6a`, `origin/main` in sync, tree clean except the standing
+> `start_claude_remote.ps1`). The **Utils tab is now the "Tools" tab**: a live `@tool` registry with three
+> utility cards (yt_captions / ip_info / dns_trace) the owner runs directly and the agent can call. Backend
+> suite **25/25**, frontend **57/57**. **Servers:** backend uvicorn **5433** (no `--reload`, venv) ·
+> frontend Vite **5190** (`npm run dev -- --port 5190`). Tests: `./.venv/Scripts/python.exe tests/<file>.py`
+> (pytest not installed) · `npm test` (frontend). On Windows, restart the backend with the kill-by-port
+> PowerShell one-liner + a non-`&` `run_in_background` launch (a stray `&` makes the shell exit early).
 >
-> **What Phase 8 is (TODO §"Phase 8", DESIGN §0.4 + §16, D8):** the Utils tab is today a **static shell**.
-> Build a `@tool(...)` registry that **reuses `core/tool.py`** (the unified capability model — *NOT* a
-> parallel registry; this is the locked decision) — a utility tool is just a registered `Tool` with
-> `category="utility"` + `ui_exposed=True` (and optionally `agent_exposed`). Then:
-> 1. **`@tool` framework** (sibling of `@action` in `core/tool.py`, or a thin wrapper) → auto-exposes
->    **`GET /api/tools`** (the `ui_tools()`/`category=="utility"` subset, shaped like `GET /api/actions`)
->    + **`POST /api/tools/{name}`** (invoke via `ActionService`, `actor=USER`, audited — mirror `/api/exec`).
-> 2. **Generic Vapor `.util` card** (fill `tabs/UtilsTab.tsx`) driven by each tool's `input_model` JSON
->    schema (fields) + result shape (kv / download). **vapor.html has the Utils tab markup — port it (D7);
->    read `VAPOR_PATTERNS.md` first.**
-> 3. **Port `yt_captions`** (YouTube transcript → JSON download) + **`ip_info`** (lookup) from the old
->    `wol_server/wol_server_win.py`.
-> 4. **Add `dns_trace`** as the first *new* tool — proves "add a tool = one file."
+> **Phase 8a recap (what's already built — `ef569af` + `a339d6a`):**
+> - `core/tool.py` **`@tool`** = thin sugar over `@action` (presets `category="utility"` + `ui_exposed=True`).
+> - `services/tools/{yt_captions,ip_info,dns_trace}.py` — flat input models, blocking I/O via
+>   `asyncio.to_thread`. **yt** puts the transcript *text* in `output` (bounded `_AGENT_OUTPUT_CAP=8000`,
+>   the model reads summary+output, never `data`) and the full structured transcript in
+>   `data.download={filename,content}` (UI-only). **ip_info** = net-new ip-api.com lookup (free, plaintext
+>   HTTP, blank→own public IP). **dns_trace** = dep-free getaddrinfo + reverse PTR.
+> - `api/tools.py` — `GET /api/tools` (utility cards only) + `POST /api/tools/{name}`, a **category-guarded
+>   facade** over `ActionService.invoke` (USER, audited; 404s on non-utility/agent-only names). No 2nd exec path.
+> - `services/action_service.py` — enforces **`ToolSpec.timeout_s`** (default `None` = unbounded, so an
+>   uncapped tool can never be cut off; generous per-tool: dns 20s, yt 60s, ip relies on its httpx 10s).
+>   `wait_for` gives up *waiting*, does NOT kill the worker thread (documented). TimeoutError → clean TIMEOUT.
+> - Frontend: `hooks/useTools.ts`, generic `components/UtilCard.tsx` (schema→form, no per-tool code,
+>   client-side Blob download), `tabs/UtilsTab.tsx` (maps the registry), `TabBar` relabeled "tools".
+>   Results use vapor's `.kv`/`.download`; the **owner-directed default-font override** for `.util` text is
+>   in `extras.css` (vapor.css untouched, D7). **Card order = registration order = yt → ip → dns.**
+> - Tests `test_tools_8.py` (12). **Owner eyeballed + approved 8a at 390px.**
 >
-> **Pre-flight touch points (read before coding):** `core/tool.py` (`@action`/`ToolSpec`/`registry`/
-> `spec_to_dict`), `services/actions/__init__.py` (registration), `services/action_service.py` (`invoke`),
-> `api/actions.py` (the `GET /api/actions` DTO to mirror), `api/agent.py`'s `/api/exec` (the USER-invoke +
-> audit pattern), `services/actions/web_search.py` (an existing utility-shaped tool), `tabs/UtilsTab.tsx`
-> (the shell), `wol_server/wol_server_win.py` (the YT/IP impls to port). Confirm the design (reuse, no
-> parallel registry, the card-from-schema approach) per the standing pre-flight directive before building.
+> **What Phase 8b is — the manage layer (full file-level plan; all decisions locked in DECISIONS D22):**
+> The Tools tab gets a **Section B "agent tools" catalog** below the run cards. It manages every agent tool
+> via **one unified `tool_overrides` object** (Option B — NOT sibling maps; research-backed, see D22) and a
+> **tri-state agent-access mode (core / enabled / disabled)**. **Per-agent tool selection STAYS in
+> AgentsEditor** (different axis); the two layers compose visually. Build:
 >
-> **Doc map:** TODO Phase 8 · DESIGN §0.4 (capability model) + §16 (Utils) · DECISIONS D8 · VAPOR_PATTERNS
-> (the `.util` card). The session blocks below are the full history of everything already shipped.
+> *Backend:*
+> 1. **`config.py`** — `class ToolOverride(BaseModel){ description: str|None=None; agent_mode:
+>    Literal["core","enabled","disabled"]|None=None }` (a future `settings` field is purely additive — E0a).
+>    Replace `tool_descriptions: dict[str,str]` → **`tool_overrides: dict[str, ToolOverride]`**. Add a
+>    `@model_validator(mode="before")` that folds any legacy `tool_descriptions[name]` into
+>    `tool_overrides[name].description` (don't clobber an explicit one) then drops it — zero-touch migration
+>    (verify the live config first; it's ~empty).
+> 2. **`runtime.py`** — rename `apply_tool_descriptions` → **`apply_tool_overrides`**: capture originals of
+>    `(description, agent_exposed, core)` on `app.state.tool_spec_orig`; apply description (as today) **and**
+>    map `agent_mode` → `(agent_exposed, core)`: **core**→`(T,T)` · **enabled**→`(T,F)` · **disabled**→`(F,F)`
+>    · **absent**→restore originals. `for_agent`/`agent_tools` already read those fields → no registry-logic
+>    change. Update the 3 call sites (lifespan/reconfigure/rediscover) + reconfigure's changed-key check.
+> 3. **`api/actions.py` `list_actions`** — enrich each DTO with **`default_agent_mode`** (from
+>    `tool_spec_orig`) so the catalog marks defaults, stores only deviations, and offers reset. Add a shared
+>    `agent_mode_of(exposed, core)` helper (runtime + api). `spec_to_dict` already returns `agent_exposed`+`core`.
+> 4. **Tests `test_tool_overrides_8b.py`** — legacy→unified migration; overlay truth table; `for_agent`
+>    (core survives empty allowlist + skill narrowing, disabled removed from `agent_tools`);
+>    `default_agent_mode` DTO; clear→restores built-in; `run_shell` still governed by its `decide` gate.
+>
+> *Frontend:*
+> 5. **`types.ts`** — `AgentMode`, `ToolOverride`; extend `ActionSpec` with `core: boolean` + `default_agent_mode?`.
+> 6. **`components/ToolCatalog.tsx` (new)** — reuses `useActions()`; grouped by category; each row = title +
+>    category/risk badges + a **tri-state `.seg`** (vapor segmented control) + an inline **description
+>    override** (reuse the `PromptModal` opener pattern from `ToolDescriptionsEditor`). Writes `tool_overrides`
+>    via `useSaveSettings`/`PUT /api/settings`. **Special cases:** `core`-default marked "(default)" (pick-default
+>    clears the override); **`run_shell`** read-only → link to Conf → Shell (its `decide(shell.agent_exec_enabled)`
+>    gate governs — no lying toggle); **MCP/OpenAPI** tri-state works but sits under the per-server enable (stale
+>    overrides ignored; rediscover re-applies the overlay).
+> 7. **`tabs/UtilsTab.tsx`** — add Section B under the run cards with a `.sec` divider ("agent tools · access & descriptions").
+> 8. **Retire `ToolDescriptionsEditor`** — remove the Conf → Agent tools group from `ConfTab.tsx` (descriptions
+>    now per-row in the catalog); leave a one-line "managed in Tools tab" pointer.
+> 9. **`AgentsEditor.tsx` `TickGrid` mirror** — pass per-tool effective mode (from `useActions`): **disabled**→
+>    locked-off (greyed) · **core**→locked-on (ticked, non-toggle) · **enabled**→interactive.
+>
+> **Pre-flight touch points (read before coding):** `config.py` (`tool_descriptions` + the settings PUT
+> deep-merge), `runtime.py` `apply_tool_descriptions` (+ its 3 call sites + `_changed`), `api/actions.py`
+> `list_actions`/`spec_to_dict`, `core/tool.py` (`ToolSpec.core`/`agent_exposed`, `for_agent`), `frontend
+> src/hooks/useActions.ts`, `components/ToolDescriptionsEditor.tsx` (retire), `components/AgentsEditor.tsx`
+> (`TickGrid`), `tabs/UtilsTab.tsx`. Confirm the design per the standing pre-flight directive before building.
+>
+> **Semantics to keep straight (DECISIONS D22):** **core bypasses BOTH the per-agent allowlist AND skill
+> narrowing** — demoting a default-core tool (e.g. `session_search`) to `enabled` means specialists with
+> explicit `tools` lists lose it unless they list it (the owner's intended trade). **Membership ≠ privilege:**
+> the tri-state controls *availability only*; `risk`/`confirm`/`decide()` still gate execution independently
+> (a `core` HIGH tool is always available but still confirms).
+>
+> **Deferred (don't build unless asked):** bool/enum form widgets in `UtilCard` (text-input + Pydantic
+> coercion works as interim; build + test with the first tool that needs one) · per-tool **settings**
+> (ROADMAP E0a — additive `settings` field on `ToolOverride`, typed as a Pydantic v2 discriminated union per
+> tool, rendered by the same schema→form path; do NOT re-introduce sibling maps).
+>
+> **Doc map:** TODO Phase 8 (8a done, 8b slice) · DECISIONS **D8** (registry) + **D22** (Tools-tab manage
+> layer — the locked 8b decisions) · ROADMAP **E0a** (per-tool settings future) · CLAUDE.md hard rule "shape
+> data/config to extend, not migrate" · VAPOR_PATTERNS (the `.util` card). Session blocks below = shipped history.
 
 > ### ⭐ Session update — 2026-06-22 (build session #12 cont. — **D18 inference failover** · committed `657ba19`, unpushed)
 > The core chat path now has failover (voice already did). A request whose selected endpoint fails walks

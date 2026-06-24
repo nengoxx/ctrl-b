@@ -21,9 +21,10 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
 - **The active rebuild is `dashboard_v2/` — START AT [`dashboard_v2/docs/HANDOFF.md`](./dashboard_v2/docs/HANDOFF.md)**,
   the single source for current status + next steps. It's a ground-up v2: a mobile-first
   React/TS/Vite **PWA** backed by a **FastAPI + Uvicorn** service, porting the **Vapor** design
-  (`ctrl-b (Vapor)/variations/vapor.html`). Phases 0–4.5 + 7a–7d are shipped (fleet, agent
-  tool-loop, integrations, Conf settings/hosts/services/integrations/agents/skills); 7e (prompts
-  editors + memory panel) is the active follow-up. All v2 work happens in `dashboard_v2/`.
+  (`ctrl-b (Vapor)/variations/vapor.html`). Phases 0–7 are shipped (fleet, agent tool-loop,
+  integrations, Conf, voice, guarded shell) plus **Phase 8a** (the Tools tab utility registry);
+  **Phase 8b** (tool manage layer — tri-state access + descriptions, DECISIONS D22) is the active
+  next slice. All v2 work happens in `dashboard_v2/` — see HANDOFF.md for the full 8b plan.
 
   **Doc map — read these before designing or implementing a v2 feature:**
   | File | Use it for |

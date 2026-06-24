@@ -629,14 +629,32 @@ tools + confirm bubbles) are DONE.**
       `KeywordAgentSelector`** (name + SOUL.md token overlap, mirroring `KeywordSkillSelector`; D15 #8);
       protocol swappable (LLM/embeddings drop-ins). Final keyword tuning at build.
 
-## Phase 8 — Tool registry + Utils (extensible, D8)
+## Phase 8 — Tool registry + Tools tab (extensible, D8/D22) — sliced 8a / 8b
 
-- [ ] **Tool registry framework:** `@tool(name, title, icon, input, agent_exposed)` → auto-exposes
-      `GET /api/tools`, `POST /api/tools/{name}`, a generic Utils-tab card, and (optional) agent tool.
-- [ ] Port `yt_captions` (transcript → JSON download) and `ip_info` (lookup) as registry tools.
-- [ ] Add **`dns_trace`** as the first *new* tool — proves "add a tool = one file."
-- [ ] Generic Vapor `.util` card component (uhead glyph + field + result kv/download), driven by
-      each tool's declared input/result shape.
+### Phase 8a — utility registry + run cards ✅ DONE 2026-06-24 (`ef569af` + `a339d6a`, pushed)
+- [x] **`@tool` framework** — thin sugar over `@action` (`category="utility"` + `ui_exposed=True`);
+      `GET /api/tools` + category-guarded `POST /api/tools/{name}` (facade over `ActionService.invoke`,
+      USER/audited; 404s on non-utility/agent-only names). No parallel registry, no 2nd exec path.
+- [x] Ported **`yt_captions`** (transcript → `data.download` for UI + bounded text in `output` for the
+      agent) and net-new **`ip_info`** (ip-api.com lookup). Both `agent_exposed=True`.
+- [x] **`dns_trace`** — the first net-new tool (dep-free getaddrinfo + reverse PTR) — proves "one file."
+- [x] Generic Vapor `.util` card (`UtilCard.tsx`, schema→form, client-side Blob download). Tab relabeled
+      **"Tools"**; card order yt → ip → dns. **Per-tool `ToolSpec.timeout_s` enforced** (default None =
+      unbounded; generous per-tool). Tests `test_tools_8.py` (12). Owner-eyeballed at 390px.
+
+### Phase 8b — tool manage layer: tri-state access + descriptions (D22) — NEXT
+- [ ] **Unified `tool_overrides: dict[str, ToolOverride{description, agent_mode}]`** (Option B, not sibling
+      maps) replacing `tool_descriptions`; `@model_validator(before)` folds the legacy key in (zero-touch).
+- [ ] **Tri-state `agent_mode` (core/enabled/disabled)** via a generalized `apply_tool_overrides` overlay
+      (capture+restore `description`/`agent_exposed`/`core`); `api/actions` DTO gains `default_agent_mode`.
+- [ ] **Tools-tab Section B catalog** (`ToolCatalog.tsx`): per-tool tri-state `.seg` + inline description
+      override; `core`-default marked, `run_shell` read-only→Conf·Shell, MCP under per-server enable.
+- [ ] **Retire Conf → Agent tools** (`ToolDescriptionsEditor`) — descriptions move to the catalog.
+- [ ] **AgentsEditor `TickGrid` mirror** — disabled→locked-off, core→locked-on, enabled→interactive.
+- [ ] Tests `test_tool_overrides_8b.py` (migration, overlay truth table, core survives narrowing, DTO,
+      clear→default, run_shell unaffected). **Full file-level plan + pre-flight in HANDOFF; decisions in D22.**
+- _Deferred (don't build unless asked): bool/enum form widgets (when first tool needs them); per-tool
+  `settings` (ROADMAP E0a — additive field on `ToolOverride`, discriminated union, same schema→form path)._
 
 ## Phase 9 — PWA, packaging, deploy
 
