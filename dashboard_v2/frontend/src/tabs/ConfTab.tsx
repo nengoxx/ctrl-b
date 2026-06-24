@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { AgentsEditor } from "../components/AgentsEditor";
 import { ConfGroup } from "../components/ConfGroup";
@@ -105,10 +105,15 @@ function Field(props: {
   placeholder?: string;
   restart?: boolean;
 }) {
+  // a11y (D25): the visible label is a `<div>` (not a `<label>`), and inside `.confrow .k` (block flow)
+  // swapping it to a native `<label>` would shift the block→inline layout. So we associate via
+  // `aria-labelledby` instead — zero layout risk, same accessible name. (The editors, whose labels live
+  // in `.mform` grids, use native `<label htmlFor>`; see D25 for why the mechanism differs by context.)
+  const labelId = useId();
   return (
     <div className="confrow">
       <div className="k">
-        <div className="label">{props.label}</div>
+        <div className="label" id={labelId}>{props.label}</div>
         <div className="desc">
           {props.desc}
           {props.restart ? " · restart to apply" : ""}
@@ -118,6 +123,7 @@ function Field(props: {
         type={props.type ?? "text"}
         value={props.value}
         placeholder={props.placeholder}
+        aria-labelledby={labelId}
         onChange={(e) => props.onChange(e.target.value)}
       />
     </div>

@@ -996,3 +996,80 @@ isn't worth the indirection; re-evaluate only if a third tri-state appears).
 
 **Slices (no behavior change; prod bundle verified behavior-identical, 57 fe tests green throughout):**
 (1) `createStore` + `persist` helpers + migrate the 10 instances; (2) extract `Switch` + `Seg`. Pause between.
+
+## D24 — Frontend e2e + a11y test layer: Playwright + axe-core, mocked-API against the built artifact ✅ DECIDED 2026-06-24
+
+The D21 Vitest foundation tests *logic*; this adds the missing *integration/render/a11y* layer (UI_AUDIT
+F24) before the emma deploy — the guard against "it built but the screen is blank / a flow throws / an
+a11y fix regressed."
+
+**Shape.** Playwright's `webServer` runs `npm run build && npm run preview`, so specs drive the **real
+`dist/` artifact** (not a dev build). **`/api` is mocked at the browser level** (`page.route` + fixtures),
+not via a real backend — deterministic, fast, cross-platform (no uvicorn/venv/LLM orchestration), and the
+real API contract is already covered by the 25 backend test files. Projects: `mobile` (Pixel 5, the
+primary target) + `desktop`. `serviceWorkers: "block"` (the PWA SW would cache-flake tests); workers
+capped (axe is CPU-bound — 8-wide thrashed one preview server).
+
+**Isolation (mirrors D21).** Specs live in `e2e/*.spec.ts` (separate from `tests/` + `src/`), own
+`playwright.config.ts`, all deps are devDependencies → `npm run build` output is unaffected. `npm run
+test:e2e`. The browser binaries live only on the dev/CI machine; nothing reaches `dist/` or the server.
+
+**Scope.** (1) render smoke — each of the 4 tabs mounts, key content visible, no uncaught `pageerror`;
+(2) critical flows — tool-card run, shutdown confirm + cancel, chat send, theme change; (3) a11y — axe
+scan per **active panel** (the other tabs stay mounted/hidden — scanning them adds cross-tab noise),
+**WCAG 2.0/2.1 A+AA**, with **`color-contrast` excluded** (the Vapor low-contrast neon-on-dark palette is
+the deliberate D7 aesthetic; the gate guards the *structural* a11y — roles/names/labels/ARIA — which is
+the F14–F27 work). 13 specs × 2 projects = 26.
+
+**Harness lesson (recorded).** The API mock must apply via a `page`-fixture override, NOT a fixture only
+some specs destructure — else specs taking just `{ page }` (the a11y scans) silently run unmocked. Also:
+axe catches the *machine-detectable* third of WCAG; it cannot see a click handler on a plain `<div>` (so
+keyboard-inaccessible div-toggles slip past — see D25). The gate is necessary, not sufficient.
+
+**What it found:** two real WCAG violations on its first run → fixed/tracked in **D25**.
+
+## D25 — a11y consistency: label association + accessible disclosure toggles ✅ DECIDED 2026-06-24 (gate findings fixed; broader sweep documented)
+
+The D24 gate surfaced two real, pre-existing WCAG violations. Both **fixed** (gate now green):
+
+1. **`label` — 25 Conf scalar inputs had no programmatic label** (a visible `<div class="label">`, not
+   associated with the input). Fixed in the shared **`Field`** component via **`aria-labelledby`** (a
+   `useId()` on the label `<div>` + `aria-labelledby` on the input).
+2. **`nested-interactive` — the Fleet device row was `role="button"` *containing* the action buttons.**
+   Fixed by making the row header a plain **`<div onClick>`** (tap-anywhere-to-toggle, unchanged — a div
+   with a click handler is *not* a "button containing buttons", so it sidesteps the violation) plus the
+   **chevron as a real `<button aria-expanded>`** so the toggle is keyboard-operable; the chevron and the
+   action buttons `stopPropagation` so they don't double-toggle / toggle. No visual change; vapor.css
+   untouched (D7). _(First tried Roselli's "breakout" `::before`-stretch — but it broke whole-row click;
+   the plain `<div onClick>` + child button is simpler and robust. The owner caught the regression, so the
+   e2e suite gained a "clicking the row **body** toggles it" test that the bug had slipped past.)_ Owner
+   eyeball at 390px pending.
+
+**⚠️ Deliberate labelling-mechanism inconsistency (noted for the future, owner-requested).** We use **two**
+association mechanisms, chosen by container — **not** an oversight:
+- **`Field` (Conf scalar rows):** `aria-labelledby`. The label is a `<div>` in `.confrow .k` **block
+  flow**; swapping it to a native `<label>` (inline by default) would shift the layout, so we associate
+  without changing the element. Zero layout risk, same accessible name (W3C/WAI confirms `aria-labelledby`
+  pointing at a visible element is acceptable).
+- **The editors (`.mform` grids):** native **`<label htmlFor>`** — preferred (gives click-to-focus) and
+  *free* there, since grid items don't care about inline-vs-block.
+Both yield a programmatic accessible name; the gate (`label` rule) checks that, not the mechanism. **If a
+labelling bug ever appears, this is why the mechanism differs by file** — it's intentional, not drift.
+
+**Disclosure-toggle pattern (the consistent rule going forward).** An expand/collapse row is keyboard-
+accessible via **ARIA-button-on-the-row** (`role="button"` + `tabIndex` + Enter/Space handler +
+`aria-expanded`) — **except** when the row contains nested interactive controls, where the **breakout
+pattern** is used instead (the row stays a plain div; a child button is the toggle). DeviceRow is the only
+breakout case (it has action buttons); the others have button-free headers.
+
+**Remaining consistency backlog (documented for a focused follow-up — NOT yet done).** axe didn't catch
+these (collapsed groups / can't-detect-div-onClick), but they're real and the fix approach is settled:
+- **Editor input labels** — `AgentsEditor` (~13), `MachineEditor` (~8), `ServerListEditor` (~18),
+  `MemoryEditor` (~3) use unassociated `<label>` elements → add `htmlFor`/`id` (native, free in the grids).
+- **Bare-div toggles, no keyboard access (WCAG 2.1.1)** — `ConfGroup .conftitle`, `AgentRow .confrow`,
+  `MachineEditor .svc-edit-head` + machine rows are clickable `<div>`s with no role/tabindex/key handler.
+  Fix via a shared `disclosure(open, onToggle)` helper (the ARIA-button pattern above). **Verify each
+  header is button-free first** — `ConfGroup`/`AgentRow` are; `MachineEditor` has *nested* toggles + body
+  buttons, so it needs care (don't re-introduce nested-interactive).
+- **Why deferred:** surfaced larger than estimated; a *partial* sweep would create a new inconsistency
+  (some toggles operable, some not), so it's better as one coherent pass than a rushed tail-end.

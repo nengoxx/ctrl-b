@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent } from "react";
+import type { MouseEvent } from "react";
 
 import type { FleetAction } from "../hooks/useActions";
 import type { Host, Service } from "../types";
@@ -26,21 +26,11 @@ interface Props {
   onAction: (action: FleetAction) => void;
 }
 
-/** Stop a button click from also toggling the row open/closed. */
+/** Stop an action-button click from also toggling the row (belt-and-braces; the toggle is now the
+ *  chevron button, a sibling of the action buttons, so a click no longer bubbles into it anyway). */
 function act(e: MouseEvent, fn: () => void) {
   e.stopPropagation();
   fn();
-}
-
-/** F14 — ARIA button keydown for the row toggle. `.top` can't be a real `<button>`
- *  because it contains the nested .acts buttons (HTML forbids nested interactive
- *  controls), so we apply the ARIA button pattern: role="button" + tabIndex + this
- *  Enter/Space handler. Space scrolls by default; preventDefault keeps the page still. */
-function onTopKeyDown(e: KeyboardEvent<HTMLDivElement>, fn: () => void) {
-  if (e.key === "Enter" || e.key === " ") {
-    e.preventDefault();
-    fn();
-  }
 }
 
 export function DeviceRow({ host, services, index, featured, open, busy, onToggle, onAction }: Props) {
@@ -63,15 +53,11 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
       data-i={index}
       data-name={host.name}
     >
-      <div
-        className="top"
-        role="button"
-        tabIndex={0}
-        aria-expanded={open}
-        aria-label={`${host.name} — ${online ? "online" : "asleep"}, ${open ? "collapse" : "expand"} details`}
-        onClick={onToggle}
-        onKeyDown={(e) => onTopKeyDown(e, onToggle)}
-      >
+      {/* D25 — the row header is a plain `<div onClick>` (a div with a click handler is NOT a
+          "button containing buttons", so it sidesteps the old nested-interactive without losing the
+          tap-anywhere-to-toggle behavior). Keyboard operability comes from the chevron `<button>` below;
+          the action buttons stop propagation so they act without toggling. */}
+      <div className="top" onClick={onToggle}>
         <span className="led" />
         <div className="info">
           <div className="name">{host.name}</div>
@@ -110,7 +96,15 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
             onClick={(e) => act(e, () => onAction("wake"))}
           />
         )}
-        <span className="chev" aria-hidden>›</span>
+        <button
+          type="button"
+          className="chev"
+          aria-expanded={open}
+          aria-label={`${open ? "collapse" : "expand"} ${host.name} details`}
+          onClick={(e) => act(e, onToggle)}
+        >
+          ›
+        </button>
       </div>
       <div className="dropdown">
         {services.length === 0 ? (

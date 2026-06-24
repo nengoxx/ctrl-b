@@ -10,7 +10,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "icons": "node scripts/gen-pwa-icons.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
@@ -18,6 +19,8 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",

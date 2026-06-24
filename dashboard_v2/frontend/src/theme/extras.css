@@ -2254,3 +2254,24 @@ body {
 .tcat-seg-sm button.def::after {
   margin-left: 2px;
 }
+
+/* ── DeviceRow chevron toggle as a real <button> (D25, a11y) ──────────────────────────────────────
+   The row header is a plain `<div onClick>` (tap-anywhere-to-toggle, unchanged); the chevron is a real
+   `<button>` so the toggle is keyboard-operable, and both it and the action buttons stop propagation so
+   they don't double-toggle / toggle. This removes the old `nested-interactive` violation (a role=button
+   that contained the action buttons) with NO visual change. vapor.css untouched (D7); the chevron's look
+   is re-declared here because `all: unset` (button-chrome reset) clears it first. */
+.dev button.chev {
+  all: unset;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: var(--ink-faint);
+  font-size: 14px;
+  line-height: 1;
+  transition: transform 0.2s;
+}
+.dev.open button.chev {
+  color: var(--magenta);
+  transform: rotate(90deg);
+}
