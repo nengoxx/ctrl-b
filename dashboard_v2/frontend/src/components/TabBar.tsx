@@ -27,7 +27,7 @@ import { setUI, useUISlice, type Tab } from "../store/ui";
 const TABS: { id: Tab; glyph: string; lbl: string }[] = [
   { id: "fleet", glyph: "◆", lbl: "fleet" },
   { id: "agent", glyph: "▲", lbl: "chat" },
-  { id: "utils", glyph: "⌬", lbl: "utils" },
+  { id: "utils", glyph: "⌬", lbl: "tools" },
   { id: "conf", glyph: "●", lbl: "conf" },
 ];
 

@@ -240,6 +240,38 @@ def action(
     return deco
 
 
+def tool(
+    name: str,
+    *,
+    title: str | None = None,
+    description: str | None = None,
+    icon: str | None = None,
+    risk: Risk = Risk.LOW,
+    agent_exposed: bool = True,
+    timeout_s: float | None = None,
+    into: ToolRegistry | None = None,
+) -> Callable[[ToolFn], ToolFn]:
+    """Register a **utility tool** — a self-contained, context-free capability (no host_id / chat
+    context) the owner runs from the Tools tab card *and* the agent may call. Thin sugar over
+    `action` presetting `category="utility"` + `ui_exposed=True` (and `confirm=False`); everything
+    else (the input-model introspection, registration, the registry it feeds) is identical. Adding
+    a utility = one file with one `@tool`. Keep the input model **flat** (scalar `Field(...)`s) so the
+    generic Tools-tab card renders it without per-tool UI code."""
+    return action(
+        name,
+        title=title,
+        description=description,
+        icon=icon,
+        category="utility",
+        risk=risk,
+        confirm=False,
+        ui_exposed=True,
+        agent_exposed=agent_exposed,
+        timeout_s=timeout_s,
+        into=into,
+    )
+
+
 def spec_to_dict(spec: ToolSpec) -> dict[str, Any]:
     """Public DTO for `GET /api/actions` — metadata + the input JSON Schema, no Python types."""
     return {

@@ -1,71 +1,38 @@
-// Utils tab. Phase 1 renders the Vapor tool cards statically for fidelity (D7); the extensible
-// tool registry (yt_captions, ip_info, dns_trace, …) that drives these from the backend is
-// Phase 8. Inputs/buttons are inert placeholders for now.
+// Tools tab (Phase 8, D8). Renders a generic Vapor `.util` card per utility tool from the registry
+// (`GET /api/tools`) — yt_captions, ip_info, dns_trace today; "add a tool = one backend file" makes
+// a new card appear here automatically. Labelled "Tools" (was Vapor's "Utils") since it now hosts
+// the full tool surface; the route id stays `tab-utils`. The agent-tool catalog (per-tool mode +
+// descriptions) lands in the Conf-consolidation slice (8b).
+
+import { UtilCard } from "../components/UtilCard";
+import { useTools } from "../hooks/useTools";
 
 interface Props {
   active: boolean;
 }
 
 export function UtilsTab({ active }: Props) {
+  const { data: tools, isLoading, isError } = useTools();
+
   return (
     <div
       className={"tab" + (active ? " active" : "")}
       id="tab-utils"
-      data-screen-label="03 Utils"
+      data-screen-label="03 Tools"
       role="tabpanel"
       aria-labelledby="tabbtn-utils"
     >
       <div className="sec">
         <span className="num">03</span>
-        <b>Utils</b>
-        <span className="right">sandbox tools</span>
+        <b>Tools</b>
+        <span className="right">utility tools</span>
       </div>
 
-      <div className="util">
-        <div className="uhead">
-          <div className="glyph">
-            <span className="ico yt" />
-          </div>
-          <div className="t">
-            <div className="nm">yt captions</div>
-            <div className="desc">paste url · dump as json</div>
-          </div>
-        </div>
-        <div className="ubody">
-          <div className="field">
-            <input type="text" placeholder="https://youtube.com/watch?v=…" disabled />
-            <button disabled>fetch</button>
-          </div>
-          <div className="result">
-            <div style={{ color: "var(--ink-faint)", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase" }}>
-              // tool registry — phase 8
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="util">
-        <div className="uhead">
-          <div className="glyph">
-            <span className="ico globe" />
-          </div>
-          <div className="t">
-            <div className="nm">ip lookup</div>
-            <div className="desc">placeholder · whois &amp; geoip</div>
-          </div>
-        </div>
-        <div className="ubody">
-          <div className="field">
-            <input type="text" placeholder="1.1.1.1 or 192.168.1.10" disabled />
-            <button disabled>lookup</button>
-          </div>
-          <div className="result">
-            <div style={{ color: "var(--ink-faint)", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase" }}>
-              // tool registry — phase 8
-            </div>
-          </div>
-        </div>
-      </div>
+      {isLoading && <div className="no-svc">// loading tools…</div>}
+      {isError && <div className="no-svc">// couldn't load tools</div>}
+      {tools?.map((t) => (
+        <UtilCard key={t.name} tool={t} />
+      ))}
 
       <div style={{ height: 24 }} />
     </div>

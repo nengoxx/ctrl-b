@@ -2091,3 +2091,38 @@ body {
   outline: none;
   border-color: rgba(var(--accent-rgb), 0.55);
 }
+
+/* ── Tools tab (Phase 8) — owner-directed font fix (2026-06-24). ──
+   The lifted vapor `.util` text uses "Major Mono Display", which renders capitalized tool titles
+   and full-sentence result summaries badly (oversized first capitals, low legibility). The owner
+   asked for the default body font here, like the other tabs' rows (`.svc-row .name` is JetBrains
+   Mono). vapor.css stays verbatim (D7); these scoped rules override only the `.util` text + adapt
+   the result summary/error, reusing vapor tokens so they track all three themes. */
+.util .uhead .t .nm {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+  letter-spacing: 0.2px;
+  font-weight: 600;
+}
+.util .result .tool-summary {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.util .result .tool-summary.err {
+  color: var(--red);
+}
+.util .result .tool-err {
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+/* The download affordance is a <button> (client-side Blob), not vapor's <a> — reset the UA button
+   chrome but keep vapor's `.download` sizing/green-dashed look. */
+.util .result button.download {
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}

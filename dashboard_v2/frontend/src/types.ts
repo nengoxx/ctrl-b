@@ -104,6 +104,15 @@ export interface ActionSpec {
   input_schema: Record<string, unknown>;
 }
 
+/** A utility tool shown as a Tools-tab card (`GET /api/tools`) — same DTO shape as ActionSpec. */
+export type UtilTool = ActionSpec;
+
+/** `POST /api/tools/{name}` response — the executed result + audit event (no confirm dance). */
+export interface ToolInvokeResponse {
+  result: ToolResult | null;
+  event: CtrlEvent | null;
+}
+
 export interface CtrlEvent {
   id: string;
   ts: string;

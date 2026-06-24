@@ -15,6 +15,7 @@ this same service with its own actor/privilege.
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 import time
 from dataclasses import dataclass
@@ -139,8 +140,22 @@ class ActionService:
             agent=agent,
         )
         started = time.monotonic()
+        # Per-tool deadline (DESIGN/E0a). `timeout_s=None` (the default) ⇒ NO bound — a tool we
+        # haven't explicitly capped can never be cut off, so a too-tight global timeout can't bite us.
+        # Note: this gives up *waiting*; it does NOT kill the work. A tool blocked in `asyncio.to_thread`
+        # (e.g. getaddrinfo) keeps running in its thread until it returns — Python threads aren't
+        # cancellable — and is then discarded. Harmless for a single-user panel; don't expect a kill.
+        timeout = tool.spec.timeout_s
         try:
-            result = await tool.run(inp, ctx)
+            if timeout and timeout > 0:
+                result = await asyncio.wait_for(tool.run(inp, ctx), timeout)
+            else:
+                result = await tool.run(inp, ctx)
+        except (asyncio.TimeoutError, TimeoutError):
+            result = ToolResult(
+                state=RunState.TIMEOUT,
+                summary=f"{tool.spec.title} timed out after {timeout:.0f}s",
+            )
         except Exception as exc:  # noqa: BLE001 — normalize any escape into a clean result
             result = ToolResult(
                 state=RunState.ERROR, summary=f"{tool.spec.title} failed", error=str(exc)

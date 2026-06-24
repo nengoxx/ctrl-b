@@ -36,6 +36,7 @@ from app.api import (
     integrations,
     services,
     settings as settings_api,
+    tools as tools_api,
     voice as voice_api,
 )
 from app.config import load_dotenv, load_settings
@@ -173,6 +174,7 @@ def create_app() -> FastAPI:
     app.include_router(hosts.router, prefix="/api")
     app.include_router(services.router, prefix="/api")
     app.include_router(actions.router, prefix="/api")
+    app.include_router(tools_api.router, prefix="/api")
     app.include_router(events.router, prefix="/api")
     app.include_router(agent.router, prefix="/api")
     app.include_router(settings_api.router, prefix="/api")
