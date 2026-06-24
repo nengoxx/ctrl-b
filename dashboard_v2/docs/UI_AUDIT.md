@@ -3,7 +3,7 @@
 **Originally written:** 2026-06-01 (perf pass). **Extended:** 2026-06-02 (follow-up audit — section 6c, F14–F26).
 **Scope:** `dashboard_v2/frontend/` (React 19, Vite 7, TanStack Query, Vapor port).
 
-The original sections (1–6b) cover the performance + best-practices pass that ran as Slices 1–8 — all shipped (HEAD `e944ec7` at the time of audit). Section **6c (Follow-up audit)** is a second pass that focused on **accessibility, resilience, and edge-case correctness** — the layer the perf pass deliberately deferred. **STATUS UPDATE (2026-06-08 a11y backlog session): F14–F26 are now SHIPPED** (Slices A–F2 — F14·F15·F16·F17·F18·F19·F20·F22·F23·F25·F26·F28·F29 all landed; F21 mic-stub folded into Phase 6). **Still open:** F27 (offline-row screen-reader indicator, 🟢 low) and the F24 component/a11y test layer (the D21 vitest *logic* foundation shipped; component/axe tests stay Phase 9). F9/F13 (perf) remain deferred. The per-finding sections below retain their original analysis; treat the status line on each as authoritative.
+The original sections (1–6b) cover the performance + best-practices pass that ran as Slices 1–8 — all shipped (HEAD `e944ec7` at the time of audit). Section **6c (Follow-up audit)** is a second pass that focused on **accessibility, resilience, and edge-case correctness** — the layer the perf pass deliberately deferred. **STATUS UPDATE (2026-06-08 a11y backlog session): F14–F26 are now SHIPPED** (Slices A–F2 — F14·F15·F16·F17·F18·F19·F20·F22·F23·F25·F26·F28·F29 all landed; F21 mic-stub folded into Phase 6). **Still open:** only the F24 component/a11y test layer (the D21 vitest *logic* foundation shipped; component/axe/Playwright tests stay Phase 9). F27 shipped 2026-06-24. F9/F13 (perf) remain deferred. The per-finding sections below retain their original analysis; treat the status line on each as authoritative.
 
 > **Owner constraint (driving every decision below):** "I like how it flows. I like how it works." Performance and best-practices wins must not regress perceived responsiveness, freshness of fleet state, or interaction smoothness. Anything that *could* feel slower goes through an explicit "preserve behavior" mitigation before shipping.
 
@@ -352,7 +352,7 @@ Look at the bundle analyzer output post-Slice 6 to see if `lucide-react` deserve
 
 ## 6c. Follow-up audit — 2026-06-02 (F14–F26)
 
-After the F1–F13 pass landed (Slices 1–8 shipped), a second pass focused on **accessibility, resilience, and edge-case correctness** — areas the original audit deliberately deferred while we got perf and structure right. The findings below were the new backlog. None were critical for single-user-on-tailnet operation; several were real WCAG 2.2 AA failures that matter for any phone/voice-input flow (Phase 6) and for usability in low-vision / motion-sensitive contexts. **STATUS: this backlog was implemented in the 2026-06-08 a11y session (Slices A–F2) — F14–F26 shipped except F27 (low) and the F24 component-test layer (→ Phase 9). The original "documented for prioritization" framing below is historical.**
+After the F1–F13 pass landed (Slices 1–8 shipped), a second pass focused on **accessibility, resilience, and edge-case correctness** — areas the original audit deliberately deferred while we got perf and structure right. The findings below were the new backlog. None were critical for single-user-on-tailnet operation; several were real WCAG 2.2 AA failures that matter for any phone/voice-input flow (Phase 6) and for usability in low-vision / motion-sensitive contexts. **STATUS: this backlog was implemented in the 2026-06-08 a11y session (Slices A–F2) — F14–F26 shipped; F27 shipped 2026-06-24. Only the F24 component-test layer remains (→ Phase 9). The original "documented for prioritization" framing below is historical.**
 
 Same severity legend as section 4: **🔴** user-visible · **🟡** perf/cleanup · **🟢** future-proofing. Safety verdicts use the same scale.
 
@@ -563,9 +563,13 @@ Then sprinkle component-specific overrides where the global outline doesn't fit 
 
 ---
 
-### F27 🟢 — Offline service rows have no screen-reader-perceivable offline indicator
+### F27 🟢 — Offline service rows have no screen-reader-perceivable offline indicator · ✅ SHIPPED 2026-06-24
 
-**The issue.** In `DeviceRow.tsx`, an offline service renders as `<div className="svc-row off"><span className="led"/><div className="info">…</div><span className="arrow" aria-hidden>—</span></div>`. The `.off` class is purely visual (faded color, no LED glow); the `—` arrow is the only "offline" glyph and Slice C2 (F22) correctly marked it `aria-hidden` as a decorative character. Net effect: a screen-reader user hears `"ssh, name, host:port"` for both online and offline rows, with no auditory cue which is which.
+**Resolution.** `DeviceRow.tsx`'s offline `.svc-row.off` div gained `aria-label={`${s.name} ${addr} —
+offline`}` — one line, no CSS, no visual change. The online row already announces as a link; this gives
+the offline row the equivalent auditory cue. (Minimal fix per the owner — low-priority, single-user.)
+
+**The issue (historical).** In `DeviceRow.tsx`, an offline service renders as `<div className="svc-row off"><span className="led"/><div className="info">…</div><span className="arrow" aria-hidden>—</span></div>`. The `.off` class is purely visual (faded color, no LED glow); the `—` arrow is the only "offline" glyph and Slice C2 (F22) correctly marked it `aria-hidden` as a decorative character. Net effect: a screen-reader user hears `"ssh, name, host:port"` for both online and offline rows, with no auditory cue which is which.
 
 **Why it's low priority.** Single-user homelab; the owner is sighted and uses Android in a normal context. Filed for the day the dashboard gets shared, or if voice/STT pivots ever require AT to make sense of service state.
 
@@ -632,4 +636,4 @@ Then sprinkle component-specific overrides where the global outline doesn't fit 
 ---
 
 **Next action (perf pass):** complete — Slices 1–8 shipped.
-**Next action (follow-up audit):** ✅ COMPLETE — the 2026-06-08 a11y session shipped the backlog in this order: Slice A = F25+F14 (`ab24a27`) → Slice B = F15 (`fa0742d`) → Slice C1 = F23 (`98f30f0`) → Slice C2 = F22 (`f647ee7`) → Slice D1 = F17 (`c7bd0d9`) → Slice D2 = F18 (`25d942c`) → Slice E0 = F28 (`3b2e45c`) → Slice E1 = F19 (`4ea10a9`) → Slice E3 = F26 (`76b8490`) → Slice F1 = F16 (`be86f40`) → Slice F2 = F20 (`40f94e8`); F29 (`6f6c7e9`) folded in; F21 → Phase 6 (done). **Remaining:** F27 (offline-row SR indicator, 🟢 low — unstarted) and F24 (component/axe a11y tests — D21 vitest *logic* foundation shipped; component layer deferred to Phase 9). F9/F13 perf items remain deferred until measured pressure.
+**Next action (follow-up audit):** ✅ COMPLETE — the 2026-06-08 a11y session shipped the backlog in this order: Slice A = F25+F14 (`ab24a27`) → Slice B = F15 (`fa0742d`) → Slice C1 = F23 (`98f30f0`) → Slice C2 = F22 (`f647ee7`) → Slice D1 = F17 (`c7bd0d9`) → Slice D2 = F18 (`25d942c`) → Slice E0 = F28 (`3b2e45c`) → Slice E1 = F19 (`4ea10a9`) → Slice E3 = F26 (`76b8490`) → Slice F1 = F16 (`be86f40`) → Slice F2 = F20 (`40f94e8`); F29 (`6f6c7e9`) folded in; F21 → Phase 6 (done). **Remaining:** only F24 (component/axe a11y tests — D21 vitest *logic* foundation shipped; component layer deferred to Phase 9). F27 (offline-row SR indicator) shipped 2026-06-24. F9/F13 perf items remain deferred until measured pressure.

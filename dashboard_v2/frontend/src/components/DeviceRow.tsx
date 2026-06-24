@@ -136,7 +136,9 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
                 <span className="arrow" aria-hidden>↗</span>
               </a>
             ) : (
-              <div key={s.id} className="svc-row off">
+              // F27: the offline state is visual-only (faded + dash); an aria-label gives screen
+              // readers the cue the online row gets from being a link. Low-pri, single-line.
+              <div key={s.id} className="svc-row off" aria-label={`${s.name} ${addr} — offline`}>
                 <span className="led" />
                 <div className="info">
                   <div className="name">{s.name}</div>
