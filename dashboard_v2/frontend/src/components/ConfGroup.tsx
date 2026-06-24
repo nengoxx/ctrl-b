@@ -12,6 +12,9 @@ export function ConfGroup(props: {
   id: string;
   num: string;
   title: string;
+  //: Keep `right` (and `title`) **non-interactive** — they render inside the `role="button"` header
+  //: (D25), so a `<button>`/`<a>`/`Switch` here would re-create the nested-interactive violation and
+  //: double-fire on click/Enter. For an interactive section affordance, put it in the body, not here.
   right?: ReactNode;
   defaultCollapsed?: boolean;
   children: ReactNode;

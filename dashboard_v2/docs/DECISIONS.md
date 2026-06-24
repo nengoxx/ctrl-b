@@ -1074,7 +1074,7 @@ are `display:none`; axe can't detect a click handler on a plain `<div>`), but th
   `MachineEditor`, `ServerListEditor`, `MemoryEditor`, the `ConfTab` fallback editor, `SkillsEditor`, and
   `PromptModal` got a programmatic name (`aria-label`, or `aria-labelledby` for `PromptModal`). ~40 inputs.
 - **Bare-div toggles → keyboard access — done.** New **`lib/disclosure.ts`** `disclosureToggle(open,
-  onToggle)` (the ARIA-button pattern), spread onto **11** toggles: `ConfGroup`, `AgentRow` + add-agent,
+  onToggle)` (the ARIA-button pattern), spread onto **12** toggles: `ConfGroup`, `AgentRow` + add-agent,
   `MachineEditor`'s 3 (machine row, add-machine, service-edit head), `MemoryEditor` slot, `ServerListEditor`
   row + add, `SkillsEditor` row + add, the `ConfTab` fallback row. Each header was verified button-free
   first (the body buttons live in `.mconf`/`.svc-body`, separate from the header) — no new nested-interactive.

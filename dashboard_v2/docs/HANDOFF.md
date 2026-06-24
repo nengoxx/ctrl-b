@@ -85,7 +85,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > or `aria-labelledby` for PromptModal — the editors use `aria-label` not native `<label for>`; the
 > per-input id-pairing churn wasn't worth native's marginal click-to-focus benefit, owner's call — D25
 > documents the three naming idioms). (2) New **`lib/disclosure.ts`** `disclosureToggle()` (ARIA-button
-> pattern) spread onto **11** bare-div expand/collapse toggles (ConfGroup, the Agents/Machines/Servers/
+> pattern) spread onto **12** bare-div expand/collapse toggles (ConfGroup, the Agents/Machines/Servers/
 > Skills/Memory/fallback rows) → all keyboard-operable; each header verified button-free first. e2e gained a
 > keyboard-toggle test + a findable-by-label test. **The `disclosureToggle` helper + the DeviceRow plain-div
 > pattern are the drift-guards** for future expand/collapse rows. The frontend a11y story is now complete
