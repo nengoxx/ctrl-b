@@ -7,7 +7,7 @@
 // All existing call sites stay unchanged — `opts` is a third positional arg with a default
 // of "no options," so `pushToast("foo", "ok")` still works exactly as before.
 
-import { useSyncExternalStore } from "react";
+import { createStore } from "./createStore";
 
 export type ToastKind = "ok" | "err" | "info";
 
@@ -34,13 +34,9 @@ export interface Toast {
 
 const TTL_MS = 3200;
 
+const { emit, useStore } = createStore();
 let toasts: Toast[] = [];
 let seq = 0;
-const listeners = new Set<() => void>();
-
-function emit() {
-  for (const l of listeners) l();
-}
 
 export function pushToast(text: string, kind: ToastKind = "info", opts?: ToastOptions): void {
   const id = ++seq;
@@ -56,15 +52,6 @@ export function dismissToast(id: number): void {
   emit();
 }
 
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
 export function useToasts(): Toast[] {
-  return useSyncExternalStore(
-    subscribe,
-    () => toasts,
-    () => toasts,
-  );
+  return useStore(() => toasts);
 }

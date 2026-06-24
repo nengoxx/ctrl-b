@@ -932,3 +932,67 @@ capitalized titles + sentence summaries badly.
 **Why:** the owner wants a dedicated tool surface both they and the agent use, with descriptions +
 enable/disable consolidated in one place, designed so adding per-tool settings or many more tools never
 forces a big refactor. Full file-level 8b plan + pre-flight in HANDOFF.
+
+## D23 — External-store dedup: a minimal dep-free binding primitive (not a state-owning factory) + shared Switch/Seg ✅ DECIDED 2026-06-24
+
+**Problem.** Ten module-singleton external stores hand-roll the **identical** wiring — a `listeners`
+Set + `emit` + `subscribe` + a `useSyncExternalStore` call: the 9 `store/*.ts` **plus** the
+`lib/audioController.ts` DOM-singleton (which even carries a comment admitting the duplication). Two
+small presentational controls are also copy-pasted: `Switch` (×4, byte-identical) and `Seg` (×3,
+identical modulo a `<T extends string>` generic).
+
+**Decision — a minimal "store-binding" primitive, NOT a state-owning factory.** `store/createStore.ts`
+exports `createStore()` → `{ subscribe, emit, useStore }`, where `useStore<T>(getSnapshot: () => T): T`
+wraps `useSyncExternalStore(subscribe, getSnapshot, getSnapshot)`. It unifies **only** the genuinely
+duplicated plumbing and imposes **zero state shape**: each store/singleton keeps its own `let state`
+(object / array / `Set` / primitive / promise-bridge / DOM-mirror), its own (often guarded) update
+function calling `emit()`, and supplies its own snapshot — whole (`useStore(() => state)`) or a slice
+(`useStore(() => selector(state))`).
+
+**Why minimal-binding over a `createStore<T>` that owns state (the originally-sketched plan).** Analysis
+of the real code settled it:
+- **`chat.ts` is the risk center** (679 lines, **66** `state.x` reads, **27** internal `set()` calls)
+  and the most-evolving store. The minimal binding changes it by **~4 lines** (the `listeners` decl, the
+  `emit` in `set`, the `subscribe` fn, `useChat`'s body); the reducer body + all 19 exported actions are
+  untouched. A state-owning factory would force rewriting all 66 reads to `store.get().x` — high churn on
+  the exact store that keeps changing, for ~1 line/store less boilerplate. Not worth the risk.
+- **It's the only shape that fits all 10**, including the `audioController` DOM-singleton (its reactive
+  snapshot mirrors a `<audio>` element — it is not a "state container" and doesn't fit a `setState(patch)`
+  mold). One consistent pattern across every instance → no "similar code doing different things."
+- **Heterogeneity is preserved, not flattened:** the `Set`-registry (`dirty`), the primitive
+  (`connection`), and the promise bridges (`confirm`/`prompt`) keep their natural shapes.
+
+**Migration is provably low-risk.** Every store's *public* surface is only hooks/actions/getters; the
+plumbing is module-private, so the swap is internal to each file with **zero consumer changes** (verified:
+nothing imports `subscribe`/`getSnapshot`/`state`). The three most-complex stores (`chat`/`composer`/`ui`)
+have Vitest unit tests that import only the public API, so they protect the migration unchanged.
+
+**Selector contract (unchanged).** All current selectors (`ui.useUISlice`, `audioController.usePlayback`)
+return **primitives** → safe under `Object.is` with no equality machinery. The "return a primitive/stable
+ref" caveat already documented in `ui.ts` carries over. **Explicitly out of scope (YAGNI):** an
+object-selector + `equalityFn` variant (a hand-rolled `useSyncExternalStoreWithSelector`). It's purely
+*additive* if a composite read ever appears (e.g. a future dynamic-theme slice) — not a refactor. Per
+React's own docs, the primitive way to get composite reads today is one `useStore` call per field.
+
+**Side-effects + persistence.** `emit`/`set`/snapshot is all the factory owns. Per-store side-effects
+(`ui`'s `applyBodyAttrs`, the `localStorage` writes) stay as **explicit calls inside each store's action**
+(preserving the exact current control flow, incl. `ui`'s synchronous body-attr apply before re-render).
+The only *other* real duplication — the load/save `try/catch` in the 3 persisted stores (`ui`, `composer`,
+`collapse`) — folds into a tiny shared `loadPersisted(key, defaults)` / `savePersisted(key, value)` pair
+(separate from the binding; single-responsibility). No `persist`-middleware ambition.
+
+**Build vs. buy (researched, web-sourced).** Zustand *is* this pattern (≈1–3 kB, uses
+`useSyncExternalStoreWithSelector`, `persist` middleware) and is the canonical answer for large apps. For
+this **single-user homelab PWA** — near feature-complete, simple stores, only the chat/agent + theme
+subsystems still growing — a 10-store rewrite + a dependency to remove ~60 lines of trivial boilerplate is
+disproportionate; the owner chose to **stay dep-free**. The thin binding is *not a dead-end*: its surface
+(`subscribe`/`get`/`useStore`) is close enough that swapping in Zustand later is itself low-risk if client
+state ever outgrows this.
+
+**`Switch`/`Seg`.** Extract to shared `components/Switch.tsx` + `components/Seg.tsx` (the generic
+`Seg<T extends string>` covers `ServerListEditor`'s string usage). Precedent this session: `ModeSeg`,
+`ConfGroup`. `ModeSeg` is a *richer* specialized control — it stays separate (composing the generic `Seg`
+isn't worth the indirection; re-evaluate only if a third tri-state appears).
+
+**Slices (no behavior change; prod bundle verified behavior-identical, 57 fe tests green throughout):**
+(1) `createStore` + `persist` helpers + migrate the 10 instances; (2) extract `Switch` + `Seg`. Pause between.

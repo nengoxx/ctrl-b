@@ -11,12 +11,12 @@
 // `Record<threadId, string>` alongside `draft` and a thread-aware selector; the seam is the
 // store shape, not the consuming component.
 //
-// Dependency-free external store via useSyncExternalStore. Shape mirrors store/ui.ts —
-// same load/persist/emit pattern, same swallowed quota error for private-mode browsers,
-// same useSyncExternalStore subscription. Adding another field later (e.g. cursor position)
-// is a one-line widen of `ComposerState`.
+// Dependency-free external store on the shared `createStore` binding + `persist` helpers (D23),
+// same shape as store/ui.ts. Adding another field later (e.g. cursor position) is a one-line widen
+// of `ComposerState`.
 
-import { useSyncExternalStore } from "react";
+import { createStore } from "./createStore";
+import { loadPersisted, savePersisted } from "./persist";
 
 interface ComposerState {
   draft: string;
@@ -25,36 +25,15 @@ interface ComposerState {
 const DEFAULTS: ComposerState = { draft: "" };
 const KEY = "ctrlb.composer";
 
-function load(): ComposerState {
-  try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;
-  } catch {
-    return DEFAULTS;
-  }
-}
-
-let state: ComposerState = load();
-const listeners = new Set<() => void>();
-
-function emit() {
-  for (const l of listeners) l();
-}
-
-function persist() {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(state));
-  } catch {
-    /* private mode / quota — non-fatal, state still lives in memory */
-  }
-}
+const { emit, useStore } = createStore();
+let state: ComposerState = loadPersisted(KEY, DEFAULTS);
 
 export function setDraft(draft: string): void {
   // No-op guard: skip the localStorage round-trip + emit when nothing changed.
   // Belt-and-braces — onChange normally only fires on real change anyway.
   if (state.draft === draft) return;
   state = { draft };
-  persist();
+  savePersisted(KEY, state);
   emit();
 }
 
@@ -72,15 +51,6 @@ export function appendDraft(text: string): void {
   setDraft(cur ? `${cur} ${add}` : add);
 }
 
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
-function getSnapshot(): string {
-  return state.draft;
-}
-
 /** Read the current draft imperatively (non-reactive) — for callers outside render that need the live
  *  value without a stale closure (e.g. the mic auto-send path reading what it just appended). */
 export function getDraft(): string {
@@ -89,5 +59,5 @@ export function getDraft(): string {
 
 /** Read the current composer draft. Survives tab-switch unmount + full page reload. */
 export function useDraft(): string {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return useStore(() => state.draft);
 }

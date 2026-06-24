@@ -5,7 +5,7 @@
 // This is a UX gate; the server still runs its single-use confirm-token dance underneath
 // (defense in depth — DESIGN §14). One dialog at a time is enough for a single-user panel.
 
-import { useSyncExternalStore } from "react";
+import { createStore } from "./createStore";
 
 export interface ConfirmRequest {
   title: string;
@@ -19,12 +19,8 @@ interface Active extends ConfirmRequest {
   resolve: (ok: boolean) => void;
 }
 
+const { emit, useStore } = createStore();
 let active: Active | null = null;
-const listeners = new Set<() => void>();
-
-function emit() {
-  for (const l of listeners) l();
-}
 
 export function requestConfirm(req: ConfirmRequest): Promise<boolean> {
   // If one is already open, decline it before replacing (shouldn't happen in single-user flow).
@@ -42,15 +38,6 @@ export function resolveConfirm(ok: boolean): void {
   a?.resolve(ok);
 }
 
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
 export function useConfirm(): Active | null {
-  return useSyncExternalStore(
-    subscribe,
-    () => active,
-    () => active,
-  );
+  return useStore(() => active);
 }

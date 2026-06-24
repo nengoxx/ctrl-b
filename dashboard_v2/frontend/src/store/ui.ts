@@ -1,11 +1,12 @@
-// Tiny UI store (DESIGN.md §13: "UI-only state"). Dependency-free external store via
-// useSyncExternalStore, persisted to localStorage and mirrored to document.body data-attrs
-// (the Vapor CSS keys off body[data-theme|data-skyline|data-loz|data-tab] + body.no-composer).
+// Tiny UI store (DESIGN.md §13: "UI-only state"). Dependency-free external store on the shared
+// `createStore` binding (D23), persisted via `persist` helpers and mirrored to document.body
+// data-attrs (the Vapor CSS keys off body[data-theme|data-skyline|data-loz|data-tab] + body.no-composer).
 //
 // Theme value "dark" = the default vapor palette (vapor.css :root); "aqua"/"ember" are the
 // [data-theme] overrides — matching vapor.html's seg buttons exactly.
 
-import { useSyncExternalStore } from "react";
+import { createStore } from "./createStore";
+import { loadPersisted, savePersisted } from "./persist";
 
 export type Theme = "dark" | "aqua" | "ember";
 export type Tab = "fleet" | "agent" | "utils" | "conf";
@@ -48,21 +49,8 @@ const DEFAULTS: UIState = {
 
 const KEY = "ctrlb.ui";
 
-function load(): UIState {
-  try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;
-  } catch {
-    return DEFAULTS;
-  }
-}
-
-let state: UIState = load();
-const listeners = new Set<() => void>();
-
-function emit() {
-  for (const l of listeners) l();
-}
+const { emit, useStore } = createStore();
+let state: UIState = loadPersisted(KEY, DEFAULTS);
 
 // Mirror the UI store onto <body> data-attrs + the .no-composer class. Vapor's CSS keys off
 // body[data-theme|data-tab|data-skyline|data-loz] for theme/skyline/lozenge variants, and
@@ -91,22 +79,9 @@ applyBodyAttrs(state);
 
 export function setUI(patch: Partial<UIState>): void {
   state = { ...state, ...patch };
-  applyBodyAttrs(state);
-  try {
-    localStorage.setItem(KEY, JSON.stringify(state));
-  } catch {
-    /* private mode / quota — non-fatal, state still lives in memory */
-  }
+  applyBodyAttrs(state); // synchronous, in the same tick the control toggled (before the React re-render)
+  savePersisted(KEY, state);
   emit();
-}
-
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
-function getSnapshot(): UIState {
-  return state;
 }
 
 /**
@@ -133,11 +108,7 @@ function getSnapshot(): UIState {
  * Out of scope today (no consumer needs it).
  */
 export function useUISlice<T>(selector: (s: UIState) => T): T {
-  return useSyncExternalStore(
-    subscribe,
-    () => selector(state),
-    () => selector(state),
-  );
+  return useStore(() => selector(state));
 }
 
 /**
@@ -147,7 +118,7 @@ export function useUISlice<T>(selector: (s: UIState) => T): T {
  * legitimately wants to inspect or stream the whole state.
  */
 export function useUI(): UIState {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return useStore(() => state);
 }
 
 /**

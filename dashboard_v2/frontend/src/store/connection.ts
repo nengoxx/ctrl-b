@@ -7,16 +7,12 @@
 // surfacing it can either add a second field here or compose into a single aggregate —
 // kept tiny on purpose, easy to widen when needed.
 
-import { useSyncExternalStore } from "react";
+import { createStore } from "./createStore";
 
 export type ConnectionState = "connected" | "reconnecting" | "disconnected";
 
+const { emit, useStore } = createStore();
 let state: ConnectionState = "connected";
-const listeners = new Set<() => void>();
-
-function emit() {
-  for (const l of listeners) l();
-}
 
 export function setConnection(s: ConnectionState): void {
   if (state === s) return;
@@ -24,16 +20,7 @@ export function setConnection(s: ConnectionState): void {
   emit();
 }
 
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
 /** Read the current SSE connection state. Subscribe-flavored. */
 export function useConnection(): ConnectionState {
-  return useSyncExternalStore(
-    subscribe,
-    () => state,
-    () => state,
-  );
+  return useStore(() => state);
 }

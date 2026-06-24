@@ -9,7 +9,7 @@
 // (SOUL.md/MEMORY.md, 7e-c+) will resolve straight into their file-API mutation. The modal itself
 // only edits text and hands it back — it never touches the backend.
 
-import { useSyncExternalStore } from "react";
+import { createStore } from "./createStore";
 
 export interface PromptRequest {
   title: string;
@@ -30,12 +30,8 @@ interface Active extends PromptRequest {
   resolve: (next: string | null) => void;
 }
 
+const { emit, useStore } = createStore();
 let active: Active | null = null;
-const listeners = new Set<() => void>();
-
-function emit() {
-  for (const l of listeners) l();
-}
 
 export function requestPrompt(req: PromptRequest): Promise<string | null> {
   // If one is already open, cancel it before replacing (shouldn't happen in single-user flow).
@@ -53,15 +49,6 @@ export function resolvePrompt(next: string | null): void {
   a?.resolve(next);
 }
 
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
 export function usePrompt(): Active | null {
-  return useSyncExternalStore(
-    subscribe,
-    () => active,
-    () => active,
-  );
+  return useStore(() => active);
 }

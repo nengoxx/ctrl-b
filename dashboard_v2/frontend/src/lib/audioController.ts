@@ -1,19 +1,18 @@
 // Phase 6b-2 — shared TTS playback controller (singleton). Exactly one <audio> element and one
 // active message at a time: this is the genuinely-shared piece of voice (per-bubble play buttons, the
 // chat reducer's auto-TTS, and the docked MiniPlayer all coordinate one player), so unlike recording
-// (a local hook) it lives as a module singleton subscribed via useSyncExternalStore.
+// (a local hook) it lives as a module singleton on the shared `createStore` binding (D23).
 //
 // The <audio> element is the source of truth for time/duration/paused — we mirror its native events
 // into a small reactive snapshot rather than tracking playback by hand. A per-message blob cache means
 // each reply is synthesized at most once (replays are instant + seekable from the cached clip).
 //
-// NOTE: the listeners-Set/emit plumbing below is the same shape ui.ts/chat.ts/composer.ts hand-roll —
-// the known backlog dedup is a shared `createStore<T>()` factory (see HANDOFF 2026-06-22). Kept inline
-// here so this feature slice doesn't smuggle in that refactor; it'll migrate with the others.
-
-import { useSyncExternalStore } from "react";
+// The reactive snapshot (`pb`) mirrors the <audio> element's native events; components subscribe via
+// `usePlayback`. The listener/notify/React-binding plumbing is the shared `createStore` binding (D23) —
+// this singleton is one of its ten consumers; only the snapshot + the DOM logic below are local to it.
 
 import { pushToast } from "../store/toast";
+import { createStore } from "../store/createStore";
 import { toSpeech } from "./toSpeech";
 
 export type PlayStatus = "idle" | "loading" | "playing" | "paused";
@@ -25,15 +24,12 @@ export interface Playback {
   duration: number; // seconds total (0 until known)
 }
 
+const { emit, useStore } = createStore();
 let pb: Playback = { id: null, status: "idle", current: 0, duration: 0 };
-const listeners = new Set<() => void>();
 const cache = new Map<string, string>(); // messageId → object URL (synth once per message)
 let el: HTMLAudioElement | null = null;
 let reqSeq = 0; // guards against an out-of-order synth resolving after a newer toggle
 
-function emit(): void {
-  for (const l of listeners) l();
-}
 function set(p: Partial<Playback>): void {
   pb = { ...pb, ...p };
   emit();
@@ -167,11 +163,6 @@ export function clearAudioCache(): void {
   if (pb.id) reset();
 }
 
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
 /**
  * Selector subscription (mirrors store/ui.ts `useUISlice`): a component re-renders only when its
  * selected slice changes. Per-bubble buttons select just their own status, so they don't re-render on
@@ -179,9 +170,5 @@ function subscribe(cb: () => void): () => void {
  * Contract: return a primitive or stable reference (a fresh object each call loops forever).
  */
 export function usePlayback<T>(selector: (p: Playback) => T): T {
-  return useSyncExternalStore(
-    subscribe,
-    () => selector(pb),
-    () => selector(pb),
-  );
+  return useStore(() => selector(pb));
 }

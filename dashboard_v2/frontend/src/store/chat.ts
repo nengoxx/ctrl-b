@@ -5,11 +5,10 @@
 // a summary step), tool calls render as command bubbles, and a confirm-gated call suspends the turn
 // until `resumeCall(execute|dismiss)` reopens the stream (DESIGN §5.3, §12).
 
-import { useSyncExternalStore } from "react";
-
 import { clearAudioCache } from "../lib/audioController";
 import type { Privilege } from "../lib/privilege";
 import type { ChatMessage, Part, PlanStep, RunState, Thread, ToolResult } from "../types";
+import { createStore } from "./createStore";
 import { setConnection } from "./connection";
 
 export type ChatStatus = "idle" | "streaming" | "error";
@@ -32,7 +31,7 @@ let state: ChatState = {
   sessionPrivilege: null,
 };
 let loaded = false;
-const listeners = new Set<() => void>();
+const { emit, useStore } = createStore();
 // Confirm tokens from `tool.permission`, keyed by callId — sent back on resume(execute).
 const confirmTokens: Record<string, string> = {};
 
@@ -61,20 +60,11 @@ export function setSessionPrivilege(p: Privilege | null): void {
 
 function set(next: Partial<ChatState>) {
   state = { ...state, ...next };
-  for (const l of listeners) l();
-}
-
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
+  emit();
 }
 
 export function useChat(): ChatState {
-  return useSyncExternalStore(
-    subscribe,
-    () => state,
-    () => state,
-  );
+  return useStore(() => state);
 }
 
 /** Read the current chat status imperatively (non-reactive) — for callers outside render, e.g. the

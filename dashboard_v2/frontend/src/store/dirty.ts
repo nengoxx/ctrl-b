@@ -3,8 +3,8 @@
 // beforeunload listener in App.tsx checks `isAnyDirty()` and prompts the browser to warn
 // the user before unload — refresh, close, navigate away — if anything is unsaved.
 //
-// Shape mirrors store/confirm.ts: tiny module-scope state, useSyncExternalStore for any
-// future React consumer, dependency-free. Key strings are namespaced ("conf", "agents",
+// Shape mirrors store/confirm.ts: tiny module-scope state on the shared `createStore` binding (D23)
+// for any future React consumer, dependency-free. Key strings are namespaced ("conf", "agents",
 // "skill:<name>") so several can coexist; unmount cleanup auto-removes a key so a closed
 // editor never holds the registry hostage.
 //
@@ -13,14 +13,12 @@
 // available via `useAnyDirty()` if a future surface ever wants to render a "Unsaved
 // changes" badge in the appbar (not used today).
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect } from "react";
 
+import { createStore } from "./createStore";
+
+const { emit, useStore } = createStore();
 const dirtyKeys = new Set<string>();
-const listeners = new Set<() => void>();
-
-function emit() {
-  for (const l of listeners) l();
-}
 
 export function setDirty(key: string, isDirty: boolean): void {
   const had = dirtyKeys.has(key);
@@ -39,14 +37,9 @@ export function isAnyDirty(): boolean {
   return dirtyKeys.size > 0;
 }
 
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
 /** Subscribe to the aggregate dirty state. Reserved for future "Unsaved" badge UI. */
 export function useAnyDirty(): boolean {
-  return useSyncExternalStore(subscribe, isAnyDirty, isAnyDirty);
+  return useStore(isAnyDirty);
 }
 
 /**
