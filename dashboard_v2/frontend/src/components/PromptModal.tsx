@@ -99,6 +99,7 @@ export function PromptModal() {
         <div className="pm-body">
           <textarea
             ref={textRef}
+            aria-labelledby={labelId}
             className={"pm-text" + (mono ? " mono" : "")}
             value={text}
             spellCheck={false}

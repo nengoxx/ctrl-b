@@ -10,6 +10,7 @@ import { SkillsEditor } from "../components/SkillsEditor";
 import { Switch } from "../components/Switch";
 import { useAccessStatus, useSetServe } from "../hooks/useAccess";
 import { agentModeOf, useActionSpecs } from "../hooks/useActions";
+import { disclosureToggle } from "../lib/disclosure";
 import { useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
@@ -474,7 +475,7 @@ export function ConfTab({ active }: Props) {
           </div>
           {(inf?.fallbacks ?? []).map((fb, i) => (
             <div className={"mwrap" + (openFallback === i ? " open" : "")} key={i}>
-              <div className="confrow" onClick={() => setOpenFallback(openFallback === i ? null : i)}>
+              <div className="confrow" {...disclosureToggle(openFallback === i, () => setOpenFallback(openFallback === i ? null : i))}>
                 <div className="k">
                   <div className="label">Fallback #{i + 1}</div>
                   <div className="desc">{fb.base_url || "tap to configure"}</div>
@@ -486,11 +487,11 @@ export function ConfTab({ active }: Props) {
                   <>
                     <div className="mform">
                       <label>Endpoint</label>
-                      <input type="text" value={fb.base_url} placeholder="https://host/v1" onChange={(e) => setFallback(i, "base_url", e.target.value)} />
+                      <input aria-label="Fallback endpoint" type="text" value={fb.base_url} placeholder="https://host/v1" onChange={(e) => setFallback(i, "base_url", e.target.value)} />
                       <label>Model</label>
-                      <input type="text" value={fb.model} placeholder="model id" onChange={(e) => setFallback(i, "model", e.target.value)} />
+                      <input aria-label="Fallback model" type="text" value={fb.model} placeholder="model id" onChange={(e) => setFallback(i, "model", e.target.value)} />
                       <label>Key</label>
-                      <input type="password" value={fb.api_key ?? ""} placeholder="optional — masked" onChange={(e) => setFallback(i, "api_key", e.target.value)} />
+                      <input aria-label="Fallback API key" type="password" value={fb.api_key ?? ""} placeholder="optional — masked" onChange={(e) => setFallback(i, "api_key", e.target.value)} />
                     </div>
                     <div className="mfoot">
                       <button type="button" className="danger" onClick={() => removeFallback(i)}>remove</button>

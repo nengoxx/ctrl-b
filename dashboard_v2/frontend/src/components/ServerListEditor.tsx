@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Seg } from "./Seg";
+import { disclosureToggle } from "../lib/disclosure";
 import {
   useDeleteServer,
   useSaveServer,
@@ -99,7 +100,7 @@ function McpForm(props: { initial: McpDraft; isNew: boolean; busy: boolean; onSa
     <>
       <div className="mform">
         <label>Name</label>
-        <input value={d.name} placeholder="web-tools" disabled={!props.isNew} onChange={(e) => set({ name: e.target.value })} />
+        <input aria-label="Name" value={d.name} placeholder="web-tools" disabled={!props.isNew} onChange={(e) => set({ name: e.target.value })} />
         <label>Transport</label>
         <Seg current={d.transport} onPick={(v) => set({ transport: v })} options={[{ val: "streamable_http", label: "HTTP" }, { val: "stdio", label: "stdio" }]} />
         <label>Risk</label>
@@ -107,18 +108,18 @@ function McpForm(props: { initial: McpDraft; isNew: boolean; busy: boolean; onSa
         {http ? (
           <>
             <label>URL</label>
-            <input value={d.url} placeholder="http://host:3003/mcp" onChange={(e) => set({ url: e.target.value })} />
+            <input aria-label="URL" value={d.url} placeholder="http://host:3003/mcp" onChange={(e) => set({ url: e.target.value })} />
             <label>Headers</label>
-            <textarea className="kv-text" placeholder="Name: value (one per line)" value={d.headersText} onChange={(e) => set({ headersText: e.target.value })} />
+            <textarea aria-label="Headers" className="kv-text" placeholder="Name: value (one per line)" value={d.headersText} onChange={(e) => set({ headersText: e.target.value })} />
           </>
         ) : (
           <>
             <label>Command</label>
-            <input value={d.command} placeholder="npx" onChange={(e) => set({ command: e.target.value })} />
+            <input aria-label="Command" value={d.command} placeholder="npx" onChange={(e) => set({ command: e.target.value })} />
             <label>Args</label>
-            <textarea className="kv-text" placeholder="one arg per line" value={d.argsText} onChange={(e) => set({ argsText: e.target.value })} />
+            <textarea aria-label="Args" className="kv-text" placeholder="one arg per line" value={d.argsText} onChange={(e) => set({ argsText: e.target.value })} />
             <label>Env</label>
-            <textarea className="kv-text" placeholder="KEY=value (one per line)" value={d.envText} onChange={(e) => set({ envText: e.target.value })} />
+            <textarea aria-label="Env" className="kv-text" placeholder="KEY=value (one per line)" value={d.envText} onChange={(e) => set({ envText: e.target.value })} />
           </>
         )}
         <label>Enabled</label>
@@ -162,24 +163,24 @@ function ApiForm(props: { initial: ApiDraft; isNew: boolean; busy: boolean; onSa
     <>
       <div className="mform">
         <label>Name</label>
-        <input value={d.name} placeholder="open-webui-tools" disabled={!props.isNew} onChange={(e) => set({ name: e.target.value })} />
+        <input aria-label="Name" value={d.name} placeholder="open-webui-tools" disabled={!props.isNew} onChange={(e) => set({ name: e.target.value })} />
         <label>Base URL</label>
-        <input value={d.base_url} placeholder="http://host:port" onChange={(e) => set({ base_url: e.target.value })} />
+        <input aria-label="Base URL" value={d.base_url} placeholder="http://host:port" onChange={(e) => set({ base_url: e.target.value })} />
         <label>Spec URL</label>
-        <input value={d.spec_url} placeholder="(blank → base + /openapi.json)" onChange={(e) => set({ spec_url: e.target.value })} />
+        <input aria-label="Spec URL" value={d.spec_url} placeholder="(blank → base + /openapi.json)" onChange={(e) => set({ spec_url: e.target.value })} />
         <label>Risk</label>
         <Seg current={d.risk} onPick={(v) => set({ risk: v })} options={RISKS} />
         <label>API key</label>
         <div className="pw">
-          <input type={showKey ? "text" : "password"} value={d.api_key} placeholder="•••••••• (unchanged)" autoComplete="new-password" onChange={(e) => set({ api_key: e.target.value })} />
+          <input aria-label="API key" type={showKey ? "text" : "password"} value={d.api_key} placeholder="•••••••• (unchanged)" autoComplete="new-password" onChange={(e) => set({ api_key: e.target.value })} />
           <button type="button" className={"reveal" + (showKey ? " on" : "")} onClick={() => setShowKey(!showKey)}>{showKey ? "hide" : "show"}</button>
         </div>
         <label>Auth header</label>
-        <input value={d.auth_header} placeholder="Authorization" onChange={(e) => set({ auth_header: e.target.value })} />
+        <input aria-label="Auth header" value={d.auth_header} placeholder="Authorization" onChange={(e) => set({ auth_header: e.target.value })} />
         <label>Auth scheme</label>
-        <input value={d.auth_scheme} placeholder="Bearer" onChange={(e) => set({ auth_scheme: e.target.value })} />
+        <input aria-label="Auth scheme" value={d.auth_scheme} placeholder="Bearer" onChange={(e) => set({ auth_scheme: e.target.value })} />
         <label>Include</label>
-        <textarea className="kv-text" placeholder="operationId or path (one per line; blank = all)" value={d.includeText} onChange={(e) => set({ includeText: e.target.value })} />
+        <textarea aria-label="Include" className="kv-text" placeholder="operationId or path (one per line; blank = all)" value={d.includeText} onChange={(e) => set({ includeText: e.target.value })} />
         <label>Enabled</label>
         <Toggle on={d.enabled} onToggle={() => set({ enabled: !d.enabled })} />
       </div>
@@ -219,7 +220,7 @@ export function ServerListEditor({
         const sum = summaryOf(s.name);
         return (
           <div className={"mwrap" + (openName === s.name ? " open" : "")} key={s.name}>
-            <div className="confrow" onClick={() => { setOpenName(openName === s.name ? null : s.name); setAdding(false); }}>
+            <div className="confrow" {...disclosureToggle(openName === s.name, () => { setOpenName(openName === s.name ? null : s.name); setAdding(false); })}>
               <div className="k">
                 <div className="label">{s.name}{s.enabled ? "" : " · off"}</div>
                 <div className="desc code">
@@ -244,7 +245,7 @@ export function ServerListEditor({
       })}
 
       <div className={"mwrap add" + (adding ? " open" : "")}>
-        <div className="confrow" onClick={() => { setAdding(!adding); setOpenName(null); }}>
+        <div className="confrow" {...disclosureToggle(adding, () => { setAdding(!adding); setOpenName(null); })}>
           <div className="k">
             <div className="label">add {kind === "mcp" ? "MCP" : "OpenAPI"} server</div>
             <div className="desc">writes a new entry to config.yaml</div>

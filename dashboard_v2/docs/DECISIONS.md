@@ -1051,10 +1051,16 @@ association mechanisms, chosen by container — **not** an oversight:
   flow**; swapping it to a native `<label>` (inline by default) would shift the layout, so we associate
   without changing the element. Zero layout risk, same accessible name (W3C/WAI confirms `aria-labelledby`
   pointing at a visible element is acceptable).
-- **The editors (`.mform` grids):** native **`<label htmlFor>`** — preferred (gives click-to-focus) and
-  *free* there, since grid items don't care about inline-vs-block.
-Both yield a programmatic accessible name; the gate (`label` rule) checks that, not the mechanism. **If a
-labelling bug ever appears, this is why the mechanism differs by file** — it's intentional, not drift.
+- **The editors (`.mform` grids + the run-time `<span>`-labelled / placeholder-only inputs):**
+  **`aria-label`** on the input (and `aria-labelledby` for the `PromptModal` textarea → its title h3).
+  The original plan was native `<label htmlFor>`, but across ~40 heterogeneous inputs the per-input
+  `id`-pairing churn wasn't worth native's only real benefit here (label-click-to-focus — marginal for a
+  single sighted user; owner's explicit call). `aria-label` is one attribute per input, zero layout risk,
+  and gives the same programmatic name. The visible `<label>`/`<span>` text stays for sighted users.
+Both yield a programmatic accessible name; the gate (`label` rule) checks that, not the mechanism. So the
+codebase has **three** naming idioms by context — `aria-labelledby` (`Field`, `PromptModal` → reuse an
+existing visible-label element's id), and `aria-label` (the editors → no single label element to point at).
+**If a labelling bug ever appears, this is why the mechanism differs by file** — it's intentional, not drift.
 
 **Disclosure-toggle pattern (the consistent rule going forward).** An expand/collapse row is keyboard-
 accessible via **ARIA-button-on-the-row** (`role="button"` + `tabIndex` + Enter/Space handler +
@@ -1062,14 +1068,18 @@ accessible via **ARIA-button-on-the-row** (`role="button"` + `tabIndex` + Enter/
 pattern** is used instead (the row stays a plain div; a child button is the toggle). DeviceRow is the only
 breakout case (it has action buttons); the others have button-free headers.
 
-**Remaining consistency backlog (documented for a focused follow-up — NOT yet done).** axe didn't catch
-these (collapsed groups / can't-detect-div-onClick), but they're real and the fix approach is settled:
-- **Editor input labels** — `AgentsEditor` (~13), `MachineEditor` (~8), `ServerListEditor` (~18),
-  `MemoryEditor` (~3) use unassociated `<label>` elements → add `htmlFor`/`id` (native, free in the grids).
-- **Bare-div toggles, no keyboard access (WCAG 2.1.1)** — `ConfGroup .conftitle`, `AgentRow .confrow`,
-  `MachineEditor .svc-edit-head` + machine rows are clickable `<div>`s with no role/tabindex/key handler.
-  Fix via a shared `disclosure(open, onToggle)` helper (the ARIA-button pattern above). **Verify each
-  header is button-free first** — `ConfGroup`/`AgentRow` are; `MachineEditor` has *nested* toggles + body
-  buttons, so it needs care (don't re-introduce nested-interactive).
-- **Why deferred:** surfaced larger than estimated; a *partial* sweep would create a new inconsistency
-  (some toggles operable, some not), so it's better as one coherent pass than a rushed tail-end.
+**Consistency sweep — ✅ SHIPPED 2026-06-24 (one coherent pass).** axe didn't catch these (collapsed groups
+are `display:none`; axe can't detect a click handler on a plain `<div>`), but they were real:
+- **Editor input labels — done.** Every `<input>`/`<textarea>`/`<select>` in `AgentsEditor`,
+  `MachineEditor`, `ServerListEditor`, `MemoryEditor`, the `ConfTab` fallback editor, `SkillsEditor`, and
+  `PromptModal` got a programmatic name (`aria-label`, or `aria-labelledby` for `PromptModal`). ~40 inputs.
+- **Bare-div toggles → keyboard access — done.** New **`lib/disclosure.ts`** `disclosureToggle(open,
+  onToggle)` (the ARIA-button pattern), spread onto **11** toggles: `ConfGroup`, `AgentRow` + add-agent,
+  `MachineEditor`'s 3 (machine row, add-machine, service-edit head), `MemoryEditor` slot, `ServerListEditor`
+  row + add, `SkillsEditor` row + add, the `ConfTab` fallback row. Each header was verified button-free
+  first (the body buttons live in `.mconf`/`.svc-body`, separate from the header) — no new nested-interactive.
+- **Verified:** e2e gained a keyboard-toggle test (focus a `ConfGroup`, Enter toggles) and a
+  findable-by-label test (`getByLabel("Hostname")` resolves only via the accessible name). 85 unit + 25
+  backend + **32 e2e** green; `tsc -b` + build clean.
+- **The shared `disclosureToggle` helper is the drift-guard:** new expand/collapse rows spread it (or, if
+  the row contains buttons, use the `DeviceRow` plain-`<div onClick>` + child-button approach instead).

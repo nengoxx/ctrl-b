@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { disclosureToggle } from "../lib/disclosure";
 import { useCollapsed } from "../store/collapse";
 
 // A collapsible, numbered settings section (Phase 7c polish). Extracted from ConfTab (8b) so the
@@ -18,7 +19,8 @@ export function ConfGroup(props: {
   const [collapsed, toggle] = useCollapsed(props.id, props.defaultCollapsed);
   return (
     <div className={"confgroup" + (collapsed ? " collapsed" : "")}>
-      <div className="conftitle conf-toggle" onClick={toggle}>
+      {/* D25 — keyboard-operable disclosure (header is button-free, so role=button is safe here). */}
+      <div className="conftitle conf-toggle" {...disclosureToggle(!collapsed, toggle)}>
         <span className="conf-chev" aria-hidden>›</span>
         <span className="num">{props.num}</span>
         <b>{props.title}</b>

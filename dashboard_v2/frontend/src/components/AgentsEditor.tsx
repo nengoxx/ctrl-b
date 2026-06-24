@@ -17,6 +17,7 @@ import {
 } from "../hooks/useAgents";
 import { Seg } from "./Seg";
 import { Switch } from "./Switch";
+import { disclosureToggle } from "../lib/disclosure";
 import { PRIVILEGE_LEVELS } from "../lib/privilege";
 import { promptPreview } from "../lib/promptPreview";
 import type { AgentMode } from "../types";
@@ -156,12 +157,13 @@ function AgentFieldsForm(props: {
       <div className="agent-store">{store}</div>
 
       <label>Display name</label>
-      <input value={a.title} placeholder={a.name} onChange={(e) => set({ title: e.target.value })} />
+      <input aria-label="Display name" value={a.title} placeholder={a.name} onChange={(e) => set({ title: e.target.value })} />
 
       {!props.isDefault && (
         <>
           <label>Description</label>
           <input
+            aria-label="Description"
             value={a.description ?? ""}
             placeholder="when to pick me (matched by the auto-router)"
             onChange={(e) => set({ description: e.target.value })}
@@ -180,7 +182,7 @@ function AgentFieldsForm(props: {
         ]}
       />
       <label>Model</label>
-      <input value={a.model.model ?? ""} placeholder="(inherit endpoint model)" onChange={(e) => setModel({ model: e.target.value })} />
+      <input aria-label="Model" value={a.model.model ?? ""} placeholder="(inherit endpoint model)" onChange={(e) => setModel({ model: e.target.value })} />
 
       <label>Privilege</label>
       <Seg<Privilege> current={a.privilege} onPick={(v) => set({ privilege: v })} options={PRIVILEGE_LEVELS} />
@@ -237,6 +239,7 @@ function AgentFieldsForm(props: {
           <div className="agent-lim-cell" key={l.key as string}>
             <span>{l.label}</span>
             <input
+              aria-label={l.label}
               inputMode="numeric"
               value={String(a[l.key] ?? "")}
               onChange={(e) => set({ [l.key]: Number(e.target.value) || 0 } as Partial<AgentDef>)}
@@ -311,7 +314,8 @@ function AgentRow(props: {
 
   return (
     <div className={"mwrap" + (props.open ? " open" : "")}>
-      <div className="confrow" onClick={props.onToggle}>
+      {/* D25 — keyboard-operable disclosure (button-free header → role=button is safe). */}
+      <div className="confrow" {...disclosureToggle(props.open, props.onToggle)}>
         <div className="k">
           <div className="label">
             {titleLabel}
@@ -445,6 +449,7 @@ export function AgentsEditor(props: {
             className="lim-input"
             inputMode="numeric"
             title="min matching words to route"
+            aria-label="min matching words to route"
             value={minOverlap}
             onChange={(e) => setMinOverlap(e.target.value)}
             onBlur={commitMinOverlap}
@@ -484,7 +489,7 @@ export function AgentsEditor(props: {
       ))}
 
       <div className={"mwrap add" + (adding ? " open" : "")}>
-        <div className="confrow" onClick={() => { setAdding(!adding); setOpen(null); }}>
+        <div className="confrow" {...disclosureToggle(adding, () => { setAdding(!adding); setOpen(null); })}>
           <div className="k">
             <div className="label">add agent</div>
             <div className="desc">scaffolds agents/&lt;slug&gt;/ (agent.yaml + SOUL.md)</div>
@@ -496,9 +501,9 @@ export function AgentsEditor(props: {
             <>
               <div className="mform">
                 <label>Slug</label>
-                <input value={newSlug} placeholder="coder" onChange={(e) => setNewSlug(e.target.value)} />
+                <input aria-label="Slug" value={newSlug} placeholder="coder" onChange={(e) => setNewSlug(e.target.value)} />
                 <label>Display name</label>
-                <input value={newTitle} placeholder="(optional, e.g. Bob the Coder)" onChange={(e) => setNewTitle(e.target.value)} />
+                <input aria-label="Display name" value={newTitle} placeholder="(optional, e.g. Bob the Coder)" onChange={(e) => setNewTitle(e.target.value)} />
               </div>
               {/* .mfoot outside the .mform grid — the canonical double-button footer (matches the edit
                   form + MachineEditor); inside the grid it gets squeezed into the 90px label column. */}
@@ -528,6 +533,7 @@ export function AgentsEditor(props: {
         <input
           className="lim-input"
           inputMode="numeric"
+          aria-label="Subagent fan-out limit"
           value={String(cfg.global_subagent_limit)}
           onChange={(e) => setCfg({ ...cfg, global_subagent_limit: Number(e.target.value) || 0 })}
         />

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Switch } from "./Switch";
 import { useAgentList } from "../hooks/useAgents";
+import { disclosureToggle } from "../lib/disclosure";
 import {
   agentSlot,
   useMemoryContent,
@@ -70,6 +71,7 @@ function MemoryFileEditor({ slot }: { slot: MemorySlot }) {
         </button>
       </div>
       <textarea
+        aria-label={`${slot.label} memory`}
         className="kv-text skill-md"
         value={text}
         spellCheck={false}
@@ -146,14 +148,14 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
           <div className="label">Agent cap</div>
           <div className="desc">per-agent MEMORY.md char limit</div>
         </div>
-        <input type="text" value={memCap} inputMode="numeric" onChange={(e) => setMemCap(e.target.value)} />
+        <input aria-label="Agent cap" type="text" value={memCap} inputMode="numeric" onChange={(e) => setMemCap(e.target.value)} />
       </div>
       <div className="confrow">
         <div className="k">
           <div className="label">User cap</div>
           <div className="desc">global USER.md char limit</div>
         </div>
-        <input type="text" value={userCap} inputMode="numeric" onChange={(e) => setUserCap(e.target.value)} />
+        <input aria-label="User cap" type="text" value={userCap} inputMode="numeric" onChange={(e) => setUserCap(e.target.value)} />
       </div>
       <div className="conf-savebar">
         <button
@@ -167,7 +169,7 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
 
       {slots.map((slot) => (
         <div className={"mwrap" + (openKey === slot.key ? " open" : "")} key={slot.key}>
-          <div className="confrow" onClick={() => setOpenKey(openKey === slot.key ? null : slot.key)}>
+          <div className="confrow" {...disclosureToggle(openKey === slot.key, () => setOpenKey(openKey === slot.key ? null : slot.key))}>
             <div className="k">
               <div className="label">{slot.label}</div>
               <div className="desc">{slot.sublabel}</div>

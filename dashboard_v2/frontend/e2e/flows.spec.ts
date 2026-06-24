@@ -84,6 +84,29 @@ test("Agent — sending a message shows the user's bubble", async ({ page }) => 
   await expect(page.getByText("hello agent").first()).toBeVisible();
 });
 
+test("Conf — a settings group toggles via the keyboard (D25 disclosure)", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#tabbtn-conf").click();
+  const group = page.locator(".confgroup").filter({ hasText: "Skills" }).first();
+  const header = group.locator(".conftitle");
+  await header.focus();
+  await expect(header).toBeFocused(); // tabIndex makes it focusable
+  const before = await group.evaluate((el) => el.classList.contains("collapsed"));
+  await page.keyboard.press("Enter");
+  const after = await group.evaluate((el) => el.classList.contains("collapsed"));
+  expect(after).toBe(!before); // Enter toggled it (the disclosure key handler)
+});
+
+test("Conf — an editor form's inputs are findable by their label (D25 association)", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#tabbtn-conf").click();
+  // The Computers group is expanded by default; expand the vault machine row to reveal its form.
+  await page.locator(".mwrap > .confrow").filter({ hasText: "vault" }).first().click();
+  // getByLabel resolves an input only via its accessible name — proof the labels are associated.
+  await expect(page.getByLabel("Hostname")).toBeVisible();
+  await expect(page.getByLabel("IP address")).toBeVisible();
+});
+
 test("Conf — changing the theme updates the document theme", async ({ page }) => {
   await page.goto("/");
   await page.locator("#tabbtn-conf").click();

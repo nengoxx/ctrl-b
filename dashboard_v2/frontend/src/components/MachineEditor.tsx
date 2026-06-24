@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { useCreateHost, useDeleteHost, useUpdateHost } from "../hooks/useHostMutations";
+import { disclosureToggle } from "../lib/disclosure";
 import { requestConfirm } from "../store/confirm";
 import type { Host, HostServiceCfg, OSType } from "../types";
 
@@ -114,15 +115,16 @@ function ServiceCard(props: {
   return (
     <div className="svc-card">
       <div className="svc-grid">
-        <input placeholder="name" value={svc.name} onChange={(e) => set({ name: e.target.value })} />
-        <input placeholder="kind" value={svc.kind} onChange={(e) => set({ kind: e.target.value })} />
-        <input placeholder="port" inputMode="numeric" value={svc.port} onChange={(e) => set({ port: e.target.value })} />
-        <input placeholder="path" value={svc.path} onChange={(e) => set({ path: e.target.value })} />
+        <input aria-label="service name" placeholder="name" value={svc.name} onChange={(e) => set({ name: e.target.value })} />
+        <input aria-label="service kind" placeholder="kind" value={svc.kind} onChange={(e) => set({ kind: e.target.value })} />
+        <input aria-label="service port" placeholder="port" inputMode="numeric" value={svc.port} onChange={(e) => set({ port: e.target.value })} />
+        <input aria-label="service path" placeholder="path" value={svc.path} onChange={(e) => set({ path: e.target.value })} />
       </div>
       <div className="svc-cmd">
         {CMD_ACTIONS.map((a) => (
           <input
             key={a}
+            aria-label={`${a} command (${os})`}
             placeholder={`${a} cmd (${os})`}
             value={svc.cmd[a]?.[os] ?? ""}
             onChange={(e) => setCmd(a, e.target.value)}
@@ -161,23 +163,24 @@ function MachineForm(props: {
     <>
       <div className="mform">
         <label>Hostname</label>
-        <input value={d.name} placeholder={props.isNew ? "pegasus" : ""} onChange={(e) => set({ name: e.target.value })} />
+        <input aria-label="Hostname" value={d.name} placeholder={props.isNew ? "pegasus" : ""} onChange={(e) => set({ name: e.target.value })} />
 
         <label>IP address</label>
-        <input value={d.ip} placeholder="192.168.1.x" inputMode="decimal" onChange={(e) => set({ ip: e.target.value })} />
+        <input aria-label="IP address" value={d.ip} placeholder="192.168.1.x" inputMode="decimal" onChange={(e) => set({ ip: e.target.value })} />
 
         <label>MAC</label>
-        <input value={d.mac} placeholder="aa:bb:cc:dd:ee:ff" onChange={(e) => set({ mac: e.target.value })} />
+        <input aria-label="MAC" value={d.mac} placeholder="aa:bb:cc:dd:ee:ff" onChange={(e) => set({ mac: e.target.value })} />
 
         <label>SSH user</label>
-        <input value={d.ssh_username} placeholder="root" onChange={(e) => set({ ssh_username: e.target.value })} />
+        <input aria-label="SSH user" value={d.ssh_username} placeholder="root" onChange={(e) => set({ ssh_username: e.target.value })} />
 
         <label>SSH port</label>
-        <input value={d.ssh_port} placeholder="22" inputMode="numeric" onChange={(e) => set({ ssh_port: e.target.value })} />
+        <input aria-label="SSH port" value={d.ssh_port} placeholder="22" inputMode="numeric" onChange={(e) => set({ ssh_port: e.target.value })} />
 
         <label>SSH pass</label>
         <div className="pw">
           <input
+            aria-label="SSH password"
             type={showPw ? "text" : "password"}
             value={d.ssh_password}
             placeholder={d.hasPassword ? "•••••••• (unchanged)" : "set a password"}
@@ -190,7 +193,7 @@ function MachineForm(props: {
         </div>
 
         <label>OS</label>
-        <select value={d.os_type} onChange={(e) => set({ os_type: e.target.value as OSType })}>
+        <select aria-label="OS" value={d.os_type} onChange={(e) => set({ os_type: e.target.value as OSType })}>
           {OSES.map((o) => (
             <option key={o} value={o}>{o}</option>
           ))}
@@ -198,7 +201,7 @@ function MachineForm(props: {
       </div>
 
       <div className={"svc-edit" + (svcOpen ? " open" : "")}>
-        <div className="svc-edit-head" onClick={() => setSvcOpen(!svcOpen)}>
+        <div className="svc-edit-head" {...disclosureToggle(svcOpen, () => setSvcOpen(!svcOpen))}>
           <span>Services{d.services.length ? ` · ${d.services.length}` : ""}</span>
           <span className="svc-chev" aria-hidden>›</span>
         </div>
@@ -276,7 +279,7 @@ export function MachineEditor({ hosts }: { hosts: Host[] }) {
     <div className="conf-card">
       {hosts.map((h) => (
         <div className={"mwrap" + (openId === h.id ? " open" : "")} key={h.id}>
-          <div className="confrow" onClick={() => { setOpenId(openId === h.id ? null : h.id); setAdding(false); }}>
+          <div className="confrow" {...disclosureToggle(openId === h.id, () => { setOpenId(openId === h.id ? null : h.id); setAdding(false); })}>
             <div className="k">
               <div className="label">{h.name}</div>
               <div className="desc code">
@@ -304,7 +307,7 @@ export function MachineEditor({ hosts }: { hosts: Host[] }) {
       ))}
 
       <div className={"mwrap add" + (adding ? " open" : "")}>
-        <div className="confrow" onClick={() => { setAdding(!adding); setOpenId(null); }}>
+        <div className="confrow" {...disclosureToggle(adding, () => { setAdding(!adding); setOpenId(null); })}>
           <div className="k">
             <div className="label">add machine</div>
             <div className="desc">writes a new entry to config.yaml</div>

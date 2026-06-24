@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Switch } from "./Switch";
+import { disclosureToggle } from "../lib/disclosure";
 import { useSaveSettings } from "../hooks/useSettings";
 import {
   useDeleteSkill,
@@ -64,6 +65,7 @@ function SkillFileEditor({ name, onClose }: { name: string; onClose: () => void 
         </button>
       </div>
       <textarea
+        aria-label="SKILL.md"
         className="kv-text skill-md"
         value={text}
         spellCheck={false}
@@ -126,7 +128,7 @@ export function SkillsEditor({ enabled }: { enabled: boolean }) {
 
       {skills.map((s: SkillInfo) => (
         <div className={"mwrap" + (openName === s.name ? " open" : "")} key={s.name}>
-          <div className="confrow" onClick={() => { setOpenName(openName === s.name ? null : s.name); setAdding(false); }}>
+          <div className="confrow" {...disclosureToggle(openName === s.name, () => { setOpenName(openName === s.name ? null : s.name); setAdding(false); })}>
             <div className="k">
               <div className="label">{s.name}</div>
               <div className="desc">{s.description || "(no description)"}</div>
@@ -139,7 +141,7 @@ export function SkillsEditor({ enabled }: { enabled: boolean }) {
       ))}
 
       <div className={"mwrap add" + (adding ? " open" : "")}>
-        <div className="confrow" onClick={() => { setAdding(!adding); setOpenName(null); }}>
+        <div className="confrow" {...disclosureToggle(adding, () => { setAdding(!adding); setOpenName(null); })}>
           <div className="k">
             <div className="label">add skill</div>
             <div className="desc">creates skills/&lt;name&gt;/SKILL.md from a template</div>
@@ -151,7 +153,7 @@ export function SkillsEditor({ enabled }: { enabled: boolean }) {
             <>
               <div className="mform">
                 <label>Name</label>
-                <input value={newName} placeholder="my-skill" onChange={(e) => setNewName(e.target.value)} />
+                <input aria-label="skill name" value={newName} placeholder="my-skill" onChange={(e) => setNewName(e.target.value)} />
               </div>
               {/* .mfoot as a sibling of .mform (not inside the grid) — the canonical double-button
                   footer, matching MachineEditor's add-machine form. */}

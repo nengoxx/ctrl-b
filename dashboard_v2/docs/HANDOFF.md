@@ -76,9 +76,23 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**D24 e2e/a11y layer + D25 gate-findings SHIPPED @ `0c75461`** · NEXT = **D25 a11y consistency sweep** → then emma deploy)
+## Current state (**D24 e2e/a11y layer + D25 a11y (gate findings + full consistency sweep) SHIPPED** · NEXT = **emma (Linux) deploy / v1 cutover** — the last track)
 
-> ### 🟢 CLEAN-SESSION HANDOFF — D25 a11y consistency sweep (the deferred half) — written 2026-06-24
+> ### 🟢 SESSION UPDATE — D25 a11y consistency sweep SHIPPED — 2026-06-24
+> The deferred sweep is **done** (DECISIONS **D25**, "Consistency sweep — SHIPPED"). All green: backend 25,
+> frontend **85 unit + 32 e2e**. (1) **~40 editor inputs** across AgentsEditor/MachineEditor/ServerListEditor/
+> MemoryEditor/SkillsEditor/PromptModal/the ConfTab fallback editor got a programmatic name (`aria-label`,
+> or `aria-labelledby` for PromptModal — the editors use `aria-label` not native `<label for>`; the
+> per-input id-pairing churn wasn't worth native's marginal click-to-focus benefit, owner's call — D25
+> documents the three naming idioms). (2) New **`lib/disclosure.ts`** `disclosureToggle()` (ARIA-button
+> pattern) spread onto **11** bare-div expand/collapse toggles (ConfGroup, the Agents/Machines/Servers/
+> Skills/Memory/fallback rows) → all keyboard-operable; each header verified button-free first. e2e gained a
+> keyboard-toggle test + a findable-by-label test. **The `disclosureToggle` helper + the DeviceRow plain-div
+> pattern are the drift-guards** for future expand/collapse rows. The frontend a11y story is now complete
+> (F14–F27 + D24/D25); **emma deploy is the only remaining track** (TODO Phase 9 systemd/install script +
+> Phase 10 cutover).
+
+> ### 🟢 (prior) CLEAN-SESSION HANDOFF — D25 a11y consistency sweep (the deferred half) — written 2026-06-24
 > **Everything is green + pushed** (`origin/main` @ `0c75461`; tree clean except the standing
 > `start_claude_remote.ps1`). **Backend 25 test files**, **frontend 85 unit + 28 e2e**. Servers:
 > backend **5433** (no `--reload`, venv) · frontend **5190** (`npm run dev -- --port 5190`). e2e:
