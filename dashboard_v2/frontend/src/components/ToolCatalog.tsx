@@ -37,12 +37,18 @@ interface Edit {
   desc?: string;
 }
 
-/** Tools the catalog governs: agent tools *by default* — a tool whose compile-time default is
- *  `disabled` (agent_exposed=False at registration, e.g. USER-only host actions) is intentionally
- *  not an agent tool and stays out. Filtering on the default (not the live state) keeps a
- *  user-disabled tool visible so it can be re-enabled. Grouped by category, risk-sorted. */
+/** Tools the catalog governs — the **agent-only** set (D22): every agent tool *except* the Section-A
+ *  run cards (utility + ui_exposed), which are user+agent and managed on their own card above. A tool
+ *  whose compile-time default is `disabled` (agent_exposed=False at registration, e.g. USER-only host
+ *  actions) is intentionally not an agent tool and stays out too. Filtering on the default (not the
+ *  live state) keeps a user-disabled tool visible so it can be re-enabled. Grouped by category,
+ *  risk-sorted. */
 function groupTools(specs: ActionSpec[]): [string, ActionSpec[]][] {
-  const governed = specs.filter((s) => (s.default_agent_mode ?? agentModeOf(s)) !== "disabled");
+  const governed = specs.filter(
+    (s) =>
+      (s.default_agent_mode ?? agentModeOf(s)) !== "disabled" &&
+      !(s.category === "utility" && s.ui_exposed), // those are the Section-A run cards
+  );
   const byCat = new Map<string, ActionSpec[]>();
   for (const s of governed) {
     const list = byCat.get(s.category) ?? [];

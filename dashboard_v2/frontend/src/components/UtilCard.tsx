@@ -118,16 +118,17 @@ export function UtilCard({ tool }: { tool: UtilTool }) {
           <span className={"ico " + (tool.icon ?? "")} />
         </div>
         <div className="t">
-          <div className="nm">{tool.title}</div>
+          <div className="util-title-row">
+            <div className="nm">{tool.title}</div>
+            {/* Compact agent-access tri-state, inline with the title (governs whether the *agent*
+                may call this tool; you can always run it from the card below). */}
+            <ModeSeg value={mode} def={defMode} onPick={pickMode} small />
+          </div>
           <div className="desc util-desc" onClick={editDescription} title="Edit description">
             {tool.description || <span className="tcat-faint">no description</span>}
             <span className="tcat-edit"> ✎</span>
           </div>
         </div>
-      </div>
-      <div className="util-agent">
-        <span className="util-agent-lbl">agent access</span>
-        <ModeSeg value={mode} def={defMode} onPick={pickMode} />
       </div>
       <div className="ubody">
         <div className="field">

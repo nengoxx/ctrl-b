@@ -14,10 +14,14 @@ export function ModeSeg(props: {
   value: AgentMode;
   def: AgentMode;
   readOnly?: boolean;
+  /** Compact variant for inline placement (the Section-A run-card title row). */
+  small?: boolean;
   onPick: (m: AgentMode) => void;
 }) {
   return (
-    <div className={"seg tcat-seg" + (props.readOnly ? " ro" : "")}>
+    <div
+      className={"seg tcat-seg" + (props.small ? " tcat-seg-sm" : "") + (props.readOnly ? " ro" : "")}
+    >
       {MODES.map((m) => (
         <button
           key={m.val}

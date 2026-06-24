@@ -219,6 +219,23 @@ def test_dto_reports_default_mode_even_when_overridden() -> None:
         assert actions["wake_host"]["core"] is False
 
 
+def test_disabled_utility_still_user_runnable() -> None:
+    """A Section-A run card stays **user-runnable regardless of the agent-access toggle**: disabling a
+    utility's `agent_mode` flips `agent_exposed` (the agent can't call it) but never `ui_exposed`, so
+    the card is still listed by `GET /api/tools` and still invokable via `POST /api/tools/{name}`
+    (USER). The toggle governs the agent only — the user can always run the tool."""
+    with _app() as c:
+        assert c.put(
+            "/api/settings", json={"tool_overrides": {"dns_trace": {"agent_mode": "disabled"}}}
+        ).status_code == 200
+        # The agent no longer sees it...
+        assert "dns_trace" not in {t.spec.name for t in c.app.state.actions.registry.agent_tools()}
+        # ...but it's still a run card, and still runs for the user.
+        assert "dns_trace" in {t["name"] for t in c.get("/api/tools").json()}
+        r = c.post("/api/tools/dns_trace", json={"args": {"host": "localhost"}})
+        assert r.status_code == 200 and r.json()["result"]["state"] == "ok"
+
+
 def test_tools_dto_carries_default_agent_mode() -> None:
     """The run-card endpoint (`GET /api/tools`) is enriched with `default_agent_mode` too (shared
     `runtime.spec_dto`), so each card can render the tri-state toggle — utilities default to enabled."""

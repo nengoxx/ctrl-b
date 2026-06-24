@@ -99,15 +99,23 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > **Final verification:** backend `test_tool_overrides_8b.py` **13** + full suite **25/25 files**; frontend
 > `tsc -b` + `vite build` clean, **57/57**. The detail of the build is in the original session block below.
 >
-> **Follow-up — tri-state toggle on the Section-A run cards.** Owner asked for the agent-access toggle on
-> the run cards too (the utility tools default to **enabled** — `@tool` presets `agent_exposed=True`; they
-> already appeared in the Section-B "utilities" group). Added: the `ModeSeg` tri-state was **extracted to
-> `components/ModeSeg.tsx`** (shared by the catalog + cards) and each `UtilCard` now has an "agent access"
-> row that writes the same `tool_overrides[name].agent_mode` (immediate-save, like the card's description
-> edit; running the card yourself is USER and unaffected). Backend: extracted **`runtime.spec_dto`** (the
-> DTO + `default_agent_mode`) shared by `GET /api/actions` *and* `GET /api/tools`, so the cards get the
-> default for "pick-default = reset". `test_tool_overrides_8b.py` now **14** (+`/api/tools` DTO test); suite
-> 25/25, frontend 57/57, `/api/tools` live-verified returning `default_agent_mode=enabled`.
+> **Follow-up — the two-section model clarified (owner).** **Section A = run cards = tools BOTH the user
+> and the agent can use** (utility + `ui_exposed`); **Section B = tools ONLY the agent can use** (everything
+> else; a future plan adds user-run functionality for these too). Landed:
+> - Each run card has a **compact tri-state inline on the title row** (not a separate row) writing the same
+>   `tool_overrides[name].agent_mode` (immediate-save). The `ModeSeg` control was **extracted to
+>   `components/ModeSeg.tsx`** (shared by the catalog + cards; gained a `small` variant).
+> - **Section B excludes the Section-A run cards** (`category=="utility" && ui_exposed`) so they're not
+>   duplicated — Section B is the agent-only set (actions/builtins/mcp + agent-only utilities like web_search).
+> - **Invariant (owner-confirmed):** the agent-access toggle governs the **agent only** — `apply_tool_overrides`
+>   flips `agent_exposed`, never `ui_exposed`, and `GET/POST /api/tools` guard on `ui_exposed`, so a utility
+>   set to **disabled** is still listed + **user-runnable** from its card. Locked by
+>   `test_disabled_utility_still_user_runnable`.
+> - Backend: extracted **`runtime.spec_dto`** (DTO + `default_agent_mode`) shared by `GET /api/actions` *and*
+>   `GET /api/tools` so the cards get the default for "pick-default = reset".
+>
+> `test_tool_overrides_8b.py` now **15**; backend suite **25/25**, frontend `tsc`+build clean, **57/57**;
+> `/api/tools` live-verified (`default_agent_mode=enabled`). Owner-eyeballed at 390px (inline toggle + spacing).
 >
 > ### 🟢 SESSION UPDATE — Phase 8b tool manage layer BUILT (D22) — 2026-06-24 (uncommitted)
 > **8b is built + verified except the 390px eyeball.** The Tools tab gained **Section B — the agent-tool

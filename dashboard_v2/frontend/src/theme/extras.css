@@ -2119,22 +2119,15 @@ body {
 .util .uhead .t .desc.util-desc:hover {
   color: var(--ink);
 }
-/* 8b — the per-card agent-access tri-state, between the header and the run body. The label clarifies
-   it governs the *agent*, not running the tool yourself (USER). Reuses the shared `.tcat-seg`. */
-.util-agent {
+/* 8b — the per-card agent-access tri-state sits inline with the tool title (top-right of the header),
+   compact, governing whether the *agent* may call the tool (running it from the card is USER, always
+   available). The title row lays the name + the small seg on one line. */
+.util .uhead .t .util-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 9px 14px;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg-2);
-}
-.util-agent-lbl {
-  font-size: 8.5px;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+  gap: 8px;
+  margin-bottom: 8px; /* breathing room between the title/toggle row and the description below */
 }
 .util .result .tool-summary {
   font-size: 12px;
@@ -2246,4 +2239,18 @@ body {
 }
 .tcat-seg button:disabled {
   cursor: default;
+}
+/* compact variant — inline on the run-card title row (8b). Tighter than vapor's `.seg` defaults
+   (6px 10px / 9.5px) so it reads as a small affordance next to the title, not a primary control. */
+.tcat-seg-sm {
+  padding: 2px;
+  flex: 0 0 auto;
+}
+.tcat-seg-sm button {
+  padding: 3px 7px;
+  font-size: 8px;
+  letter-spacing: 1px;
+}
+.tcat-seg-sm button.def::after {
+  margin-left: 2px;
 }
