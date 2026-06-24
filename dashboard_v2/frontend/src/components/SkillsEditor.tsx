@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { Switch } from "./Switch";
 import { useSaveSettings } from "../hooks/useSettings";
 import {
   useDeleteSkill,
@@ -16,14 +17,6 @@ import { pushToast } from "../store/toast";
 // Phase 7d-c — Skills management. Lists discovered skills (skills/<name>/SKILL.md), edits the raw
 // markdown in place, adds/removes skills, and toggles the subsystem master switch (agent.skills_enabled).
 // Reuses the vapor .mwrap/.mfoot recipe + the 7c .kv-text textarea; vapor.css untouched (D7).
-
-function Switch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return (
-    <div className={"switch" + (on ? " on" : "")} onClick={onToggle}>
-      <div className="knob" />
-    </div>
-  );
-}
 
 /** The raw SKILL.md editor for one (open) skill — fetches its content lazily, edits, saves, deletes. */
 function SkillFileEditor({ name, onClose }: { name: string; onClose: () => void }) {

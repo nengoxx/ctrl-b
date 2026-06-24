@@ -76,7 +76,29 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Phase 8b SHIPPED — owner-eyeballed + independently reviewed** · NEXT = **`createStore`/`Switch` dedups → emma deploy**)
+## Current state (**Phase 8b + D23 store/Switch dedup SHIPPED** · NEXT = **emma (Linux) deploy / v1 cutover**)
+
+> ### 🟢 SESSION UPDATE — D23 external-store + Switch/Seg dedup SHIPPED — 2026-06-24
+> The `createStore`/`Switch` cleanup backlog is **done** (DECISIONS **D23**, two slices, both pushed). No
+> behavior change; deep-researched + independently audited before committing.
+> - **Slice 1 (`590f03f`).** Ten module-singletons hand-rolled the identical external-store wiring (the 9
+>   `store/*.ts` **+** `lib/audioController.ts`). Extracted to one dep-free primitive **`store/createStore.ts`**
+>   `createStore() → { subscribe, emit, useStore(getSnapshot) }` — owns **no** state, imposes **no** shape:
+>   each store keeps its own `let state` + (guarded) update fn calling `emit()` + its snapshot. Chosen over a
+>   state-owning factory so the **chat reducer changes ~4 lines, not ~90**, and the Set/primitive/promise-bridge/
+>   DOM-singleton stores keep their natural shapes. **`store/persist.ts`** (`loadPersisted`/`savePersisted`)
+>   folds the 3 persisted stores' load/save try-catch. **Build-vs-buy researched** (web-sourced): dep-free over
+>   Zustand for this near-complete single-user PWA; migrating to Zustand later stays low-risk. Tests **65** (+8
+>   for the primitives); independent line-by-line diff audit found **zero regressions**.
+> - **Slice 2 (`<this commit>`).** Extracted the byte-identical **`Switch`** (×4) + the generic
+>   **`Seg<T extends string>`** (×3; covers `ServerListEditor`'s string usage) into shared
+>   `components/Switch.tsx` + `components/Seg.tsx`. `ModeSeg` (the richer tri-state) stays separate.
+> - **Verified:** `tsc -b` (noUnusedLocals) + `vite build` clean; **65/65** tests; owner verified the live UI.
+>
+> **Next:** the v2 backlog is essentially clear — **emma (Linux) deploy / v1 cutover** is the remaining big
+> track. Deferred polish: ROADMAP E2 OpenAI `/v1/chat/completions` facade, UI_AUDIT §6c (F14–F26 a11y/resilience),
+> F9 `useTransition` / F13 React Compiler (measure first). Owner's stated near-term additions: minor chat/agent
+> work + a dynamic-themes pass (the `ui` store + `applyBodyAttrs`/CSS-var path is ready for both — D23 verified).
 
 > ### 🟢 SESSION UPDATE — Phase 8b reviewed + finalized (D22) — 2026-06-24
 > Owner eyeballed at 390px (approved after two polish rounds — see below) and an independent code review

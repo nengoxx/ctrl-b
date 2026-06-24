@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { Seg } from "./Seg";
 import {
   useDeleteServer,
   useSaveServer,
@@ -37,18 +38,6 @@ function textToKv(text: string, sep: string): Record<string, string> {
 }
 const listToText = (a: string[]) => (a || []).join("\n");
 const textToList = (t: string) => t.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
-
-function Seg(props: { current: string; onPick: (v: string) => void; options: { val: string; label: string }[] }) {
-  return (
-    <div className="seg">
-      {props.options.map((o) => (
-        <button key={o.val} className={o.val === props.current ? "active" : ""} onClick={() => props.onPick(o.val)}>
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (

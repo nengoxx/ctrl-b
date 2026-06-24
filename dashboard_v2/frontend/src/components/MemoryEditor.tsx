@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { Switch } from "./Switch";
 import { useAgentList } from "../hooks/useAgents";
 import {
   agentSlot,
@@ -19,14 +20,6 @@ import { requestPrompt } from "../store/prompt";
 // Save. Below them, one editable row per memory file — the global USER.md + each agent's MEMORY.md
 // (default + specialists) — edited raw in the shared `.kv-text.skill-md` recipe (blank → clears).
 // Net-new pixels live in theme/extras.css; vapor.css untouched (D7).
-
-function Switch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return (
-    <div className={"switch" + (on ? " on" : "")} onClick={onToggle}>
-      <div className="knob" />
-    </div>
-  );
-}
 
 /** The raw MEMORY.md / USER.md editor for one (open) slot — fetches lazily, edits, saves, clears. */
 function MemoryFileEditor({ slot }: { slot: MemorySlot }) {

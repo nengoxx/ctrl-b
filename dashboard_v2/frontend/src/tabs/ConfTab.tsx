@@ -4,8 +4,10 @@ import { AgentsEditor } from "../components/AgentsEditor";
 import { ConfGroup } from "../components/ConfGroup";
 import { MachineEditor } from "../components/MachineEditor";
 import { MemoryEditor } from "../components/MemoryEditor";
+import { Seg } from "../components/Seg";
 import { ServerListEditor } from "../components/ServerListEditor";
 import { SkillsEditor } from "../components/SkillsEditor";
+import { Switch } from "../components/Switch";
 import { useAccessStatus, useSetServe } from "../hooks/useAccess";
 import { agentModeOf, useActionSpecs } from "../hooks/useActions";
 import { useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
@@ -28,34 +30,6 @@ import { setUI, useUISlice, type Skyline, type Theme, type Loz } from "../store/
 
 interface Props {
   active: boolean;
-}
-
-function Seg<T extends string>(props: {
-  current: T;
-  options: { val: T; label: string }[];
-  onPick: (v: T) => void;
-}) {
-  return (
-    <div className="seg">
-      {props.options.map((o) => (
-        <button
-          key={o.val}
-          className={o.val === props.current ? "active" : ""}
-          onClick={() => props.onPick(o.val)}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function Switch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return (
-    <div className={"switch" + (on ? " on" : "")} onClick={onToggle}>
-      <div className="knob" />
-    </div>
-  );
 }
 
 /** HTTPS access (Tailscale Serve) — 6c-2. A live-action card inside the Server group: flips the

@@ -15,6 +15,8 @@ import {
   type AgentSectionCfg,
   type Privilege,
 } from "../hooks/useAgents";
+import { Seg } from "./Seg";
+import { Switch } from "./Switch";
 import { PRIVILEGE_LEVELS } from "../lib/privilege";
 import { promptPreview } from "../lib/promptPreview";
 import type { AgentMode } from "../types";
@@ -31,26 +33,6 @@ import { pushToast } from "../store/toast";
 // .mwrap/.mform recipe (D7); the tick grids + limits grid are net-new in extras.css.
 
 const SLUG = /^[a-z0-9][a-z0-9_-]*$/;
-
-function Seg<T extends string>(props: { current: T; onPick: (v: T) => void; options: { val: T; label: string }[] }) {
-  return (
-    <div className="seg">
-      {props.options.map((o) => (
-        <button key={o.val} className={o.val === props.current ? "active" : ""} onClick={() => props.onPick(o.val)}>
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function Switch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return (
-    <div className={"switch" + (on ? " on" : "")} onClick={onToggle}>
-      <div className="knob" />
-    </div>
-  );
-}
 
 // `modes` (8b, D22) mirrors the Tools-tab tri-state onto the per-agent selection grid: a globally
 // **disabled** tool shows locked-off (it can't be granted), a **core** tool locked-on (it's always
