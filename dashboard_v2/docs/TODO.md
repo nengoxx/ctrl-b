@@ -396,8 +396,9 @@ tools + confirm bubbles) are DONE.**
       dark/aqua/ember; **vapor.css untouched (D7)**. `tsc -b` + `vite build` clean; controller race/lifecycle
       bugs (switch-mid-play, pause-clobbers-loading, dismiss-during-load) found + fixed in self-audit.
       **Eyeball at 390px pending** (needs a browser — owner to test; audio playback can't be verified headless).
-- [ ] _(deferred backlog) — collapse the duplicated external-store boilerplate (`ui.ts`/`chat.ts`/
-      `composer.ts`/`audioController.ts`) into a shared `createStore<T>()` factory. Own slice; owner note 2026-06-22._
+- [x] _(backlog) — collapse the duplicated external-store boilerplate into a shared binding. **DONE
+      2026-06-24 (DECISIONS D23):** dep-free `store/createStore.ts` + `persist.ts` deduped **10**
+      instances (9 `store/*` + `lib/audioController`); shared `Switch`/`Seg` extracted. 85 fe tests._
 
 #### 6b-3 — mic auto-send setting ✅ DONE 2026-06-22
 - [x] **Conf → Voice · STT → "Auto-send" toggle** (owner request 2026-06-22, **default off**): off → the
@@ -659,13 +660,16 @@ tools + confirm bubbles) are DONE.**
 - _Deferred (don't build unless asked): bool/enum form widgets (when first tool needs them); per-tool
   `settings` (ROADMAP E0a — additive field on `ToolOverride`, discriminated union, same schema→form path)._
 
-## Phase 9 — PWA, packaging, deploy
+## Phase 9 — PWA, packaging, deploy  (**mostly built; remaining = the emma deploy profile + smoke tests**)
 
-- [ ] vite-plugin-pwa manifest + service worker (app-shell precache; never cache `/api` writes).
-- [ ] Prod: FastAPI serves `frontend/dist` (StaticFiles + SPA fallback), single origin.
-- [ ] Deploy profiles: Windows `.bat`/Task Scheduler; Ubuntu `systemd` unit; Termux notes
-      (`termux-wake-lock`, foreground service, high port).
-- [ ] `debug=False` default; pinned deps; install scripts for both OSes.
+- [x] vite-plugin-pwa manifest + service worker (build emits `dist/sw.js` + workbox precache). _Minimal
+      manifest/precache — fine to ship; tune (icons/screenshots/offline polish) only if wanted._
+- [x] Prod: FastAPI serves `frontend/dist` (StaticFiles `/assets` mount + SPA `FileResponse` fallback,
+      gated on the dist dir existing so dev is unaffected) — `main.py`. Single origin.
+- [x] `debug=False` default (config.py); backend deps pinned (`pyproject.toml`, exact versions).
+- [ ] **Deploy profile for emma (Linux): a `systemd` unit** (uvicorn on boot, no `--reload`) + a Linux
+      install/run script (venv + `pip install`, `npm ci && npm run build`, start). _v2 has no install
+      script yet — the existing `*.bat` are the **legacy** Flask server's._ (Termux notes optional, later.)
 - [ ] Minimal smoke tests (Playwright desktop + Android viewport; a couple of backend action tests).
 
 ## Phase 10 — Cutover
@@ -693,7 +697,7 @@ FTS5); the C1/A2 doc "day-one" overclaims are corrected (flagged as future, not 
 **Documented "day-one" seams that were never built (contradiction to fix — doc or code):**
 - [x] **Streaming `auto|on|off` + buffered chat (C1) ✅ SHIPPED 2026-06-21 (`3fb6603`, DECISIONS D17).** `session.collect_turn(events)` drains the existing `run_turn`/`resume` generator into a buffered JSON payload (loop NOT forked); `AgentCfg.streaming` (`auto|on|off`) is authoritative; the signal is a `stream` body field (OpenAI convention, revised from the original Accept-header plan); the client branches on response content-type and reuses the reload render path. A buffered confirm stays resumable (the token rides `collect_turn`). The OpenAI `/v1/chat/completions` facade stays deferred (ROADMAP E2).
 - [x] **`question` message kind (A2) ✅ SHIPPED 2026-06-21 (`bb82882`).** A `question` builtin (`services/agent/question.py`, sibling of `task_plan`) suspends via the existing suspend path (`RunState.AWAITING_ANSWER`) + `tool.question` SSE event + a question bubble; `/api/agent/resume` is **extended** with `decision="answer"` + an `answer` field (no parallel endpoint) — the owner's reply is injected as the call's result. Reuses the confirm-suspend machinery as designed.
-- [ ] **D8 tool registry / Utils (Phase 8) unbuilt:** no `@tool`, no `/api/tools`, Utils is a static shell. **Confirmed (DESIGN §0.4 + §16):** the Utils tool registry **reuses `core/tool.py`** (the unified capability model) — not a parallel registry. Build remains (Phase 8).
+- [x] **D8 tool registry / Tools tab ✅ SHIPPED 2026-06-24 (Phase 8a + 8b, DECISIONS D8/D22).** `@tool` sugar over `@action`, `GET/POST /api/tools` (category-guarded facade over the one `ActionService`), the Tools tab = run cards (user+agent) + the agent-only catalog with per-tool description + tri-state agent-access mode (unified `tool_overrides`). Reuses `core/tool.py` (no parallel registry), as designed.
 
 **Found *better* than documented:**
 - [x] **A1 privilege ladder already implemented** ✓2026-06-14 in `core/permissions.decide()` (READONLY/CONFIRM/AUTO_LOW/FULL + `run_shell` gating); **ROADMAP A1 downgraded** to "selection/persistence UX only". **Selection layer specced ✓2026-06-16 in DECISIONS D16:** global default = `agent.defaults.privilege` (no new field), per-agent = `AgentDef.privilege` (shipped), per-session = new `ChatRequest.privilege` override, surfaced via header chip + sticky `/privilege` verb. Standalone slice (not 7e); per-host + time-boxed escalation deferred.
