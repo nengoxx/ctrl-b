@@ -76,7 +76,59 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Phase 8b + D23 store/Switch dedup SHIPPED** · NEXT = **emma (Linux) deploy / v1 cutover**)
+## Current state (**D24 e2e/a11y layer + D25 gate-findings SHIPPED @ `0c75461`** · NEXT = **D25 a11y consistency sweep** → then emma deploy)
+
+> ### 🟢 CLEAN-SESSION HANDOFF — D25 a11y consistency sweep (the deferred half) — written 2026-06-24
+> **Everything is green + pushed** (`origin/main` @ `0c75461`; tree clean except the standing
+> `start_claude_remote.ps1`). **Backend 25 test files**, **frontend 85 unit + 28 e2e**. Servers:
+> backend **5433** (no `--reload`, venv) · frontend **5190** (`npm run dev -- --port 5190`). e2e:
+> `npm run test:e2e` (Playwright builds+previews + drives the real app; ~25s).
+>
+> **What just shipped (D24 + first half of D25 — read DECISIONS D24/D25 for the full rationale):**
+> - **D24 — the e2e/a11y test layer.** Playwright + `@axe-core/playwright`, `e2e/*.spec.ts` (separate
+>   from `tests/`), own `playwright.config.ts`, devDeps only (prod `dist/` unaffected). Mocks `/api` at
+>   the browser level (`e2e/fixtures.ts` — mock applied via a **`page`-fixture override** so EVERY spec
+>   gets it, incl. the a11y scans that take only `{ page }`). 14 specs × {mobile, desktop} = **28**:
+>   render smoke · flows (row-body toggle, tool run, shutdown confirm/cancel, chat send, theme) · axe per
+>   active panel (WCAG 2.0/2.1 A+AA, **`color-contrast` excluded** = the deliberate D7 Vapor aesthetic).
+> - **D25 (gate findings, fixed).** (1) 25 unlabeled Conf inputs → shared **`Field`** got `useId` + the
+>   label `id` + **`aria-labelledby`** on the input. (2) Fleet device-row **`nested-interactive`** → row
+>   header is a plain **`<div onClick>`** (tap-anywhere toggles) + the **chevron is a real `<button
+>   aria-expanded>`** for keyboard; both chevron + action buttons `stopPropagation`. No visual change.
+>
+> **⭐ THE NEXT SLICE — D25 consistency sweep (fully specced in DECISIONS D25 "Remaining consistency
+> backlog"; read it first).** axe couldn't catch these (collapsed Conf groups are `display:none`; axe
+> can't detect a click handler on a plain `<div>`), but they're real and the approach is settled:
+>
+> 1. **Editor input labels (unassociated `<label>`s).** `AgentsEditor` (~13), `MachineEditor` (~8),
+>    `ServerListEditor` (~18), `MemoryEditor` (~3) render `<label>text</label><input>` **siblings with no
+>    association**. Fix = native **`<label htmlFor={id}>` + `id` on the input** (free in the `.mform`
+>    grids — inline-vs-block is a non-issue there, unlike `Field`'s `.confrow` block flow which is why
+>    `Field` used `aria-labelledby`; **this mechanism split is deliberate — see D25**). Use `useId()`
+>    (one per form, suffix the ids, or one per field). Pure a11y; **no visual change**.
+> 2. **Bare-div disclosure toggles → keyboard access (WCAG 2.1.1).** `ConfGroup .conftitle`
+>    (`components/ConfGroup.tsx`), `AgentRow .confrow` (`AgentsEditor.tsx:~314`), `MachineEditor`'s
+>    `.svc-edit-head` + machine rows: clickable `<div>`s with **no `role`/`tabIndex`/key handler** → not
+>    keyboard-operable. Fix = a **shared helper** (e.g. `lib/disclosure.ts` → `disclosureToggle(open,
+>    onToggle)` returning `{ role:"button", tabIndex:0, "aria-expanded":open, onClick, onKeyDown }` with
+>    Enter/Space `preventDefault`), spread onto each toggle div. **The disclosure-toggle pattern (D25):
+>    ARIA-button-on-the-row EXCEPT where the row contains nested interactive controls** — DeviceRow is the
+>    only nested case (it uses the `<div onClick>` + child-button approach instead; do NOT add `role=button`
+>    to a row that has buttons inside it or you re-create `nested-interactive`).
+>    - **⚠️ Verify each header is button-free before adding `role=button`.** `ConfGroup`/`AgentRow` headers
+>      are button-free (safe). **`MachineEditor` is nested** (a machine row contains a `.svc-edit-head`
+>      toggle, and the expanded bodies have remove/save buttons) — handle carefully; check the header only.
+>
+> **Verification for the sweep:** the a11y gate won't auto-catch these (collapsed/undetectable), so:
+> (a) consider a small e2e that **tabs to a `ConfGroup` + presses Enter** to prove keyboard toggle, and/or
+> an axe scan with a Conf group **expanded**; (b) eyeball that no label change shifts a `.mform` layout;
+> (c) run `npm run test:e2e` (28) + `npm test` (85) + the backend suite (25) green. **One coherent pass**
+> — a partial sweep leaves some toggles operable and some not (the inconsistency we're removing).
+>
+> **Pre-flight (read before coding, per the standing directive):** DECISIONS **D25** (the spec) · the
+> touch points above (`AgentsEditor`/`MachineEditor`/`ServerListEditor`/`MemoryEditor`, `ConfGroup`,
+> the `.mform`/`.confrow` label CSS) · confirm the shared `disclosure` helper's home + that each toggle
+> header is button-free. Then `Field`/`DeviceRow` (already done) are the reference for the two patterns.
 
 > ### 🟢 SESSION UPDATE — D23 external-store + Switch/Seg dedup SHIPPED — 2026-06-24
 > The `createStore`/`Switch` cleanup backlog is **done** (DECISIONS **D23**, two slices, both pushed). No
