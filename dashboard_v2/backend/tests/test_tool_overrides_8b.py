@@ -219,6 +219,16 @@ def test_dto_reports_default_mode_even_when_overridden() -> None:
         assert actions["wake_host"]["core"] is False
 
 
+def test_tools_dto_carries_default_agent_mode() -> None:
+    """The run-card endpoint (`GET /api/tools`) is enriched with `default_agent_mode` too (shared
+    `runtime.spec_dto`), so each card can render the tri-state toggle — utilities default to enabled."""
+    with _app() as c:
+        tools = {t["name"]: t for t in c.get("/api/tools").json()}
+        assert tools, "expected utility cards"
+        for name, t in tools.items():
+            assert t["default_agent_mode"] == "enabled", name  # @tool presets agent_exposed, non-core
+
+
 # --- 5. clear restores ------------------------------------------------------------------------
 
 def test_clear_override_restores_builtin() -> None:

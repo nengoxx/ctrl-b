@@ -18,8 +18,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
-from app.core.tool import UnknownTool, spec_to_dict
+from app.core.tool import UnknownTool
 from app.domain.enums import Actor, Privilege
+from app.runtime import spec_dto
 
 router = APIRouter(tags=["tools"])
 
@@ -35,9 +36,10 @@ def _is_util_card(spec) -> bool:
 
 @router.get("/tools")
 async def list_tools(request: Request) -> list[dict[str, Any]]:
-    """The utility tools shown as Tools-tab cards — metadata + input JSON Schema (drives the cards)."""
-    svc = request.app.state.actions
-    return [spec_to_dict(t.spec) for t in svc.registry.all() if _is_util_card(t.spec)]
+    """The utility tools shown as Tools-tab cards — metadata + input JSON Schema (drives the cards) +
+    `default_agent_mode` so each card can render the tri-state agent-access toggle (8b)."""
+    app = request.app
+    return [spec_dto(app, t.spec) for t in app.state.actions.registry.all() if _is_util_card(t.spec)]
 
 
 @router.post("/tools/{name}")

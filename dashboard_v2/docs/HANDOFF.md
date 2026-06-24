@@ -99,6 +99,16 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > **Final verification:** backend `test_tool_overrides_8b.py` **13** + full suite **25/25 files**; frontend
 > `tsc -b` + `vite build` clean, **57/57**. The detail of the build is in the original session block below.
 >
+> **Follow-up — tri-state toggle on the Section-A run cards.** Owner asked for the agent-access toggle on
+> the run cards too (the utility tools default to **enabled** — `@tool` presets `agent_exposed=True`; they
+> already appeared in the Section-B "utilities" group). Added: the `ModeSeg` tri-state was **extracted to
+> `components/ModeSeg.tsx`** (shared by the catalog + cards) and each `UtilCard` now has an "agent access"
+> row that writes the same `tool_overrides[name].agent_mode` (immediate-save, like the card's description
+> edit; running the card yourself is USER and unaffected). Backend: extracted **`runtime.spec_dto`** (the
+> DTO + `default_agent_mode`) shared by `GET /api/actions` *and* `GET /api/tools`, so the cards get the
+> default for "pick-default = reset". `test_tool_overrides_8b.py` now **14** (+`/api/tools` DTO test); suite
+> 25/25, frontend 57/57, `/api/tools` live-verified returning `default_agent_mode=enabled`.
+>
 > ### 🟢 SESSION UPDATE — Phase 8b tool manage layer BUILT (D22) — 2026-06-24 (uncommitted)
 > **8b is built + verified except the 390px eyeball.** The Tools tab gained **Section B — the agent-tool
 > catalog**: every agent tool gets a per-tool **description override** + a **tri-state agent-access mode**

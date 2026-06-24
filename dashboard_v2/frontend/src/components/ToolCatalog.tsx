@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { ModeSeg } from "./ModeSeg";
 import { agentModeOf, useActionSpecs } from "../hooks/useActions";
 import { useSaveToolOverrides } from "../hooks/useToolOverrides";
 import { requestPrompt } from "../store/prompt";
@@ -19,12 +20,6 @@ import type { ActionSpec, AgentMode } from "../types";
 //
 // vapor.css untouched (D7) — the rows reuse vapor's `.seg` segmented control + tokens; the catalog
 // shell/badges are net-new in extras.css.
-
-const MODES: { val: AgentMode; label: string }[] = [
-  { val: "core", label: "core" },
-  { val: "enabled", label: "on" },
-  { val: "disabled", label: "off" },
-];
 
 const RISK_ORDER = ["high", "med", "low"];
 const CAT_ORDER = ["action", "builtin", "utility", "mcp"];
@@ -62,32 +57,6 @@ function groupTools(specs: ActionSpec[]): [string, ActionSpec[]][] {
   }
   return [...byCat.entries()].sort(
     (a, b) => (CAT_ORDER.indexOf(a[0]) + 1 || 99) - (CAT_ORDER.indexOf(b[0]) + 1 || 99),
-  );
-}
-
-/** The tri-state access control. `run_shell` renders read-only (its agent access is governed by the
- *  Conf → Shell `decide()` gate + FULL-privilege requirement — a toggle here would lie; D22). */
-function ModeSeg(props: {
-  value: AgentMode;
-  def: AgentMode;
-  readOnly?: boolean;
-  onPick: (m: AgentMode) => void;
-}) {
-  return (
-    <div className={"seg tcat-seg" + (props.readOnly ? " ro" : "")}>
-      {MODES.map((m) => (
-        <button
-          key={m.val}
-          type="button"
-          disabled={props.readOnly}
-          className={(m.val === props.value ? "active" : "") + (m.val === props.def ? " def" : "")}
-          title={m.val === props.def ? `${m.label} · default` : m.label}
-          onClick={() => !props.readOnly && props.onPick(m.val)}
-        >
-          {m.label}
-        </button>
-      ))}
-    </div>
   );
 }
 

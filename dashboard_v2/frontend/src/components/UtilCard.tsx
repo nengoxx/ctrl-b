@@ -10,11 +10,13 @@
 
 import { Fragment, useState } from "react";
 
+import { ModeSeg } from "./ModeSeg";
+import { agentModeOf } from "../hooks/useActions";
 import { runTool } from "../hooks/useTools";
 import { useSaveToolOverrides } from "../hooks/useToolOverrides";
 import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
-import type { ToolResult, UtilTool } from "../types";
+import type { AgentMode, ToolResult, UtilTool } from "../types";
 
 interface SchemaProp {
   type?: string;
@@ -72,6 +74,15 @@ export function UtilCard({ tool }: { tool: UtilTool }) {
     }
   }
 
+  // The tri-state agent-access mode for this utility (Phase 8b, D22) — the same `tool_overrides`
+  // axis the Section-B catalog manages, saved immediately (like the description edit). It governs
+  // whether the *agent* may call the tool; running it from this card (USER) is unaffected. Picking
+  // the default clears the override.
+  const mode = agentModeOf(tool);
+  const defMode = tool.default_agent_mode ?? mode;
+  const pickMode = (m: AgentMode) =>
+    saveOverride.mutate({ [tool.name]: { agent_mode: m === defMode ? null : m } });
+
   const missingRequired = fieldNames.some((n) => required.has(n) && !values[n].trim());
 
   async function run() {
@@ -113,6 +124,10 @@ export function UtilCard({ tool }: { tool: UtilTool }) {
             <span className="tcat-edit"> ✎</span>
           </div>
         </div>
+      </div>
+      <div className="util-agent">
+        <span className="util-agent-lbl">agent access</span>
+        <ModeSeg value={mode} def={defMode} onPick={pickMode} />
       </div>
       <div className="ubody">
         <div className="field">

@@ -94,6 +94,23 @@ def agent_mode_of(agent_exposed: bool, core: bool) -> str:
     return "enabled" if agent_exposed else "disabled"
 
 
+def spec_dto(app: "FastAPI", spec) -> dict:
+    """The public tool DTO (`spec_to_dict`) enriched with `default_agent_mode` — the tri-state the
+    tool's *compile-time* `(agent_exposed, core)` represents, read from the captured originals
+    (`tool_spec_orig`) so a currently-overridden tool still reports its true default. Shared by
+    `GET /api/actions` (the catalog) and `GET /api/tools` (the run cards) so both surfaces can render
+    the tri-state, mark the default, store only deviations, and reset. Falls back to the live spec if
+    the original wasn't captured (only before lifespan's first `apply_tool_overrides`)."""
+    from app.core.tool import spec_to_dict
+
+    d = spec_to_dict(spec)
+    orig: dict = getattr(app.state, "tool_spec_orig", None) or {}
+    base = orig.get(spec.name)
+    base_exposed, base_core = base[1:3] if base else (spec.agent_exposed, spec.core)
+    d["default_agent_mode"] = agent_mode_of(base_exposed, base_core)
+    return d
+
+
 def apply_tool_overrides(app: "FastAPI", settings: Settings | None = None) -> None:
     """Overlay the per-tool overrides (Phase 8b, D22) onto the **live** registry specs: the
     model-facing `description` (generalizing 7d-a) **and** the tri-state agent-access `agent_mode`.

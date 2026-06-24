@@ -2119,6 +2119,23 @@ body {
 .util .uhead .t .desc.util-desc:hover {
   color: var(--ink);
 }
+/* 8b — the per-card agent-access tri-state, between the header and the run body. The label clarifies
+   it governs the *agent*, not running the tool yourself (USER). Reuses the shared `.tcat-seg`. */
+.util-agent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.util-agent-lbl {
+  font-size: 8.5px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
 .util .result .tool-summary {
   font-size: 12px;
   line-height: 1.5;
