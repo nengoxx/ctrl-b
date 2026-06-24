@@ -75,6 +75,17 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   own* (e.g. pulling in `react-error-boundary` when our `ErrorBoundary.tsx` already provides the
   same render-prop API). Read the touch points first, match the pattern, and propose any
   deviation in the design before coding.
+- **Shape data/config to extend, not to migrate (owner directive 2026-06-24).** When a feature adds
+  a dimension to something that will grow more dimensions later (per-tool overrides, per-host config,
+  per-agent settings, any `{name: …}` map), prefer **one unified per-item object you extend with an
+  optional field** over **parallel sibling maps keyed by the same name**. Sibling maps look cheaper
+  ("zero migration now") but they *defer and enlarge* the migration: every new dimension is a new
+  top-level map plus new read/merge/overlay code, and you pay it when the data is no longer empty. A
+  unified object makes the next dimension a purely additive field with a default (Open/Closed; the
+  "parameter/options object" refactor). Concrete precedent: Phase 8 `tool_overrides:
+  {<tool>: {description, agent_mode, settings?}}` — *not* `tool_descriptions{}` + `tool_agent_mode{}`
+  + `tool_settings{}`. Before adding a second name-keyed map next to an existing one, stop and ask
+  whether the two belong in one object; if migrating now is cheap (the map is sparse/empty), do it now.
 - **Check the design before you implement — mandatory pre-flight (owner directive 2026-06-16; full
   text in AGENTS.md §9).** A feature starts by *reading* the code it touches, not writing code.
   Confirm you're reusing the existing **data structures/classes/functions**, slotting into the

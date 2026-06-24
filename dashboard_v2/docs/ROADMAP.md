@@ -283,6 +283,36 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
   handler + Pydantic input + metadata — no routing/UI/agent wiring by hand.
 - **Open:** which tools to prioritize; whether any need long-running/streaming output (reuse SSE).
 
+### E0a. Per-tool settings (owner-configurable tool behavior) — **future, noted 2026-06-24**
+
+Beyond the per-tool **description override** + **agent-access mode** (core/enabled/disabled) shipped
+in Phase 8b, the owner wants to eventually set **tool-specific behavior knobs** from the Tools tab —
+e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_info` provider,
+`yt_captions` language. Recorded so the Phase-8 seam is built with this in mind.
+
+- **Shape (the clean path):** a tool optionally declares a `settings_model: type[BaseModel]` on its
+  `ToolSpec` (sibling of `input_model`). The owner's values live in a name-keyed map and are
+  **validated against that tool's `settings_model`**; the catalog renders a settings form from its
+  JSON Schema **reusing the same schema→form renderer built for the run cards** (no per-tool UI).
+  Opt-in: most tools declare none and show only mode + description.
+- **Application point (decide at build):** ActionService merges `tool_settings[name]` as **defaults
+  under the call args** before `input_model` validation, *or* passes them via `InvocationContext`.
+  Precedence must be explicit: **explicit call arg > owner tool-setting default > model field
+  default**. Watch the overlap where a setting *is* a default for an input field vs. tool-private
+  config not exposed as a call arg — keep those two notions distinct.
+- **Unified override object from the start (decided 2026-06-24, research-backed):** Phase 8b stores a
+  **single unified `tool_overrides: {<tool>: {description, agent_mode}}`** map (Option B), *not*
+  sibling name-keyed maps. Deep-research (25/25 claims verified 3-0; VS Code / ESLint / Pydantic /
+  MCP / rjsf primary sources) found sibling maps are the **refactor trap** — each new dimension is a
+  new top-level map + new read/merge code, paid when the data is no longer empty. Adding per-tool
+  `settings` here is therefore **purely additive**: one optional field on `ToolOverride`, typed as a
+  **Pydantic v2 discriminated union keyed by tool** (`Field(discriminator=...)`), each tool declaring
+  a `settings_model`. No migration. (CLAUDE.md "shape data to extend, not migrate" generalizes this.)
+- **Issues:** heterogeneous per-tool schemas (no uniform typed model — hence `settings_model` per
+  tool); hot-apply (most settings are read at call time → no client rebuild, but a connection-shaped
+  setting would need the reconfigure path); stale keys for no-longer-discovered MCP/OpenAPI tools
+  (ignored by the overlay, like `tool_descriptions` today).
+
 ## E. Alternate frontends
 
 ### E1. Discord / Telegram bots as thin clients
