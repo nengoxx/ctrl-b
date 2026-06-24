@@ -11,6 +11,8 @@
 import { Fragment, useState } from "react";
 
 import { runTool } from "../hooks/useTools";
+import { useSaveToolOverrides } from "../hooks/useToolOverrides";
+import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
 import type { ToolResult, UtilTool } from "../types";
 
@@ -53,6 +55,22 @@ export function UtilCard({ tool }: { tool: UtilTool }) {
   );
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ToolResult | null>(null);
+  const saveOverride = useSaveToolOverrides();
+
+  // Edit the tool's model-facing description in place (Phase 8b, D22) — the same `tool_overrides`
+  // value the Section-B catalog manages; a blank entry restores the built-in. Reuses the shared
+  // prompt modal; the shared save hook invalidates ["tools"] so the card re-renders.
+  async function editDescription() {
+    const next = await requestPrompt({
+      title: `Description — ${tool.name}`,
+      value: tool.description,
+      placeholder: "model-facing tool description (steers the agent's tool choice)",
+      saveLabel: "Set",
+    });
+    if (next != null && next.trim() !== tool.description) {
+      saveOverride.mutate({ [tool.name]: { description: next.trim() } });
+    }
+  }
 
   const missingRequired = fieldNames.some((n) => required.has(n) && !values[n].trim());
 
@@ -90,7 +108,10 @@ export function UtilCard({ tool }: { tool: UtilTool }) {
         </div>
         <div className="t">
           <div className="nm">{tool.title}</div>
-          <div className="desc">{tool.description}</div>
+          <div className="desc util-desc" onClick={editDescription} title="Edit description">
+            {tool.description || <span className="tcat-faint">no description</span>}
+            <span className="tcat-edit"> ✎</span>
+          </div>
         </div>
       </div>
       <div className="ubody">

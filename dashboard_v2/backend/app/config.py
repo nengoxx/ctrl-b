@@ -23,7 +23,7 @@ from typing import Any, ClassVar, Literal
 
 import yaml
 from dotenv import dotenv_values
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from ruamel.yaml import YAML
 
 from app.domain.agent import AgentDef, CompactionCfg, ModelRef
@@ -485,6 +485,32 @@ class ComputerCfg(BaseModel):
     services: dict[str, ServiceCfg] = Field(default_factory=dict)
 
 
+#: The tri-state agent-access mode for a tool (Phase 8b, D22). Overlays the registry spec's
+#: `(agent_exposed, core)` pair: **core** = always reachable (bypasses the per-agent allowlist *and*
+#: per-turn skill narrowing) · **enabled** = in the general toolset, subject to allowlist/skill
+#: narrowing · **disabled** = never offered to the agent. `None` (the default) means "use the tool's
+#: compile-time default" — see `runtime.apply_tool_overrides` / `agent_mode_of`.
+AgentMode = Literal["core", "enabled", "disabled"]
+
+
+class ToolOverride(BaseModel):
+    """Per-tool override of the registry spec (Phase 8b, D22) — the **one unified object** the owner
+    edits in the Tools tab, keyed by tool name in `Settings.tool_overrides`. Each dimension is an
+    optional field that falls back to the tool's compile-time default when unset, so adding the next
+    dimension (per-tool `settings` — ROADMAP E0a) is a purely additive field, never a new sibling map
+    (CLAUDE.md hard rule). Applied onto the live registry specs by `runtime.apply_tool_overrides`.
+
+    - `description`: the model-facing text in the OpenAI tool schema (generalizes the 7d-a override).
+      Blank/None → the built-in description.
+    - `agent_mode`: the tri-state agent-access mode (`AgentMode`). None → the compile-time default.
+    """
+
+    model_config = {"extra": "allow"}  # forward-compat: an unknown future field round-trips
+
+    description: str | None = None
+    agent_mode: AgentMode | None = None
+
+
 class Settings(BaseModel):
     """Typed view over `config.yaml`.
 
@@ -509,14 +535,52 @@ class Settings(BaseModel):
     #: Agents are **folder-only** (D14/D15 #3): discovered by scanning `$CTRLB_HOME/agents/<name>/`
     #: (`agent.yaml` + `SOUL.md`), never stored as a `config.yaml` list. The default/generalist agent
     #: lives at the root (`SOUL.md` + globals, no `agent.yaml`). See `resolve_agent` / `list_agent_names`.
-    #: Per-tool description overrides (Phase 7d), keyed by tool name → the model-facing text shown
-    #: in the OpenAI tool schema. Lets the owner sharpen a tool's wording (which steers a weak local
-    #: model's tool selection) without editing code. Applied onto the live registry specs by
-    #: `runtime.apply_tool_descriptions`; an empty/blank value means "use the built-in description".
-    tool_descriptions: dict[str, str] = Field(default_factory=dict)
+    #: Per-tool overrides (Phase 8b, D22), keyed by tool name → a unified `ToolOverride`
+    #: (description + tri-state `agent_mode`, both optional). Generalizes the 7d-a description map:
+    #: one object the owner extends with the next dimension, never a parallel sibling map (CLAUDE.md
+    #: hard rule). Applied onto the live registry specs by `runtime.apply_tool_overrides`; a field
+    #: left None means "use the tool's compile-time default". Legacy `tool_descriptions` is folded in
+    #: by `_fold_legacy_tool_descriptions` below (zero-touch migration).
+    tool_overrides: dict[str, ToolOverride] = Field(default_factory=dict)
     #: Keyed by host name, preserving the live `wol_server_win.py` `computers{}` shape so the
     #: owner can copy their existing config.yaml unchanged (HANDOFF — migration reference).
     computers: dict[str, ComputerCfg] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fold_legacy_tool_descriptions(cls, data: Any) -> Any:
+        """Migrate the pre-8b `tool_descriptions: {name: text}` map into the unified
+        `tool_overrides: {name: {description: text}}` (D22, zero-touch). Runs before field validation
+        so a hand-written or previously-saved config with the old key still loads. An explicit
+        `tool_overrides[name].description` wins; the legacy key is dropped after folding so it never
+        round-trips back to disk."""
+        if not isinstance(data, dict) or "tool_descriptions" not in data:
+            return data
+        legacy = data.get("tool_descriptions")
+        if not isinstance(legacy, dict):
+            return data
+        data = dict(data)  # don't mutate the caller's dict
+        overrides = dict(data.get("tool_overrides") or {})
+        for name, text in legacy.items():
+            if not isinstance(text, str) or not text.strip():
+                continue
+            existing = overrides.get(name)
+            if isinstance(existing, ToolOverride):
+                existing = existing.model_dump()
+            elif isinstance(existing, dict):
+                existing = dict(existing)
+            else:
+                existing = {}
+            # Fold only when the unified entry has *no* description set. Guard on `is None`, NOT
+            # falsiness: an explicit `""` is a deliberate "restore the built-in" (the catalog's clear),
+            # so it must win over the legacy text — otherwise blanking a description on disk silently
+            # reverts to the legacy value on the next load.
+            if existing.get("description") is None:
+                existing["description"] = text
+            overrides[name] = existing
+        data["tool_overrides"] = overrides
+        data.pop("tool_descriptions", None)
+        return data
 
     def hosts(self) -> list[Host]:
         """Project the `computers` map into typed domain `Host`s (stable slug id from name)."""

@@ -878,7 +878,7 @@ The owner explicitly wants them eventually:
 typed chat-message kinds, streaming-or-buffered chat endpoint, a settings/policy layer, and a
 functionally-grouped Conf tab.
 
-## D22 — Tools tab = run cards + a unified-override agent-tool catalog (tri-state access) ✅ DECIDED 2026-06-24 (8a shipped, 8b locked)
+## D22 — Tools tab = run cards + a unified-override agent-tool catalog (tri-state access) ✅ DECIDED 2026-06-24 (8a + 8b SHIPPED — eyeballed + reviewed)
 
 The Phase-8 Utils tab becomes the **"Tools" tab** and serves two distinct concerns in two sections:
 

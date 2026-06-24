@@ -91,6 +91,17 @@ export interface ToolResult {
   duration_ms: number | null;
 }
 
+/** The tri-state agent-access mode for a tool (Phase 8b, D22). core = always reachable (bypasses the
+ *  per-agent allowlist + skill narrowing); enabled = in the general toolset; disabled = never offered. */
+export type AgentMode = "core" | "enabled" | "disabled";
+
+/** A per-tool override (Phase 8b, D22) — the unified object keyed by tool name in
+ *  `Settings.tool_overrides`. Each field falls back to the tool's compile-time default when unset. */
+export interface ToolOverride {
+  description?: string | null;
+  agent_mode?: AgentMode | null;
+}
+
 export interface ActionSpec {
   name: string;
   title: string;
@@ -101,6 +112,11 @@ export interface ActionSpec {
   confirm: boolean;
   ui_exposed: boolean;
   agent_exposed: boolean;
+  /** Whether the tool is a `core` builtin (bypasses allowlist + skill narrowing). */
+  core: boolean;
+  /** The tri-state mode the tool's compile-time `(agent_exposed, core)` represents — lets the
+   *  catalog mark defaults, store only deviations, and reset (Phase 8b). */
+  default_agent_mode?: AgentMode;
   input_schema: Record<string, unknown>;
 }
 

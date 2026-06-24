@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getJSON, postJSON } from "../api/client";
 import { requestConfirm } from "../store/confirm";
 import { pushToast } from "../store/toast";
-import type { ActionSpec, Host, InvokeResponse } from "../types";
+import type { ActionSpec, AgentMode, Host, InvokeResponse } from "../types";
 
 // Phase 2 action wiring. The registry (GET /api/actions) tells us which actions are confirm-gated,
 // so the UI doesn't hardcode it (D8 ethos). The server still runs its single-use confirm-token
@@ -24,6 +24,13 @@ const CONFIRM_COPY: Partial<Record<FleetAction, { verb: string }>> = {
   shutdown: { verb: "Shut down" },
   reboot: { verb: "Reboot" },
 };
+
+/** The tri-state agent-access mode a tool's live `(agent_exposed, core)` represents — mirrors the
+ *  backend `agent_mode_of` (Phase 8b, D22). The single client-side derivation, shared by the Tools-tab
+ *  catalog and the AgentsEditor tick-grid mirror so the two never drift. */
+export function agentModeOf(s: ActionSpec): AgentMode {
+  return s.core ? "core" : s.agent_exposed ? "enabled" : "disabled";
+}
 
 /** The action registry. Rarely changes — long stale time. */
 export function useActionSpecs() {

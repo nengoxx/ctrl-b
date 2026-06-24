@@ -642,17 +642,20 @@ tools + confirm bubbles) are DONE.**
       **"Tools"**; card order yt → ip → dns. **Per-tool `ToolSpec.timeout_s` enforced** (default None =
       unbounded; generous per-tool). Tests `test_tools_8.py` (12). Owner-eyeballed at 390px.
 
-### Phase 8b — tool manage layer: tri-state access + descriptions (D22) — NEXT
-- [ ] **Unified `tool_overrides: dict[str, ToolOverride{description, agent_mode}]`** (Option B, not sibling
+### Phase 8b — tool manage layer: tri-state access + descriptions (D22) ✅ BUILT 2026-06-24 (eyeball at 390px pending)
+- [x] **Unified `tool_overrides: dict[str, ToolOverride{description, agent_mode}]`** (Option B, not sibling
       maps) replacing `tool_descriptions`; `@model_validator(before)` folds the legacy key in (zero-touch).
-- [ ] **Tri-state `agent_mode` (core/enabled/disabled)** via a generalized `apply_tool_overrides` overlay
+- [x] **Tri-state `agent_mode` (core/enabled/disabled)** via a generalized `apply_tool_overrides` overlay
       (capture+restore `description`/`agent_exposed`/`core`); `api/actions` DTO gains `default_agent_mode`.
-- [ ] **Tools-tab Section B catalog** (`ToolCatalog.tsx`): per-tool tri-state `.seg` + inline description
-      override; `core`-default marked, `run_shell` read-only→Conf·Shell, MCP under per-server enable.
-- [ ] **Retire Conf → Agent tools** (`ToolDescriptionsEditor`) — descriptions move to the catalog.
-- [ ] **AgentsEditor `TickGrid` mirror** — disabled→locked-off, core→locked-on, enabled→interactive.
-- [ ] Tests `test_tool_overrides_8b.py` (migration, overlay truth table, core survives narrowing, DTO,
-      clear→default, run_shell unaffected). **Full file-level plan + pre-flight in HANDOFF; decisions in D22.**
+- [x] **Tools-tab Section B catalog** (`ToolCatalog.tsx`): per-tool tri-state `.seg` + inline description
+      override; `default`-mode dot-marked, `run_shell` read-only→Conf·Shell. State reconstructed from the
+      actions DTO (no Conf-scoped settings query); current-state derivation centralized in `agentModeOf`.
+- [x] **Retire Conf → Agent tools** (`ToolDescriptionsEditor` deleted) — descriptions moved to the catalog;
+      Conf #14 left as a one-line pointer.
+- [x] **AgentsEditor `TickGrid` mirror** — disabled→locked-off, core→locked-on, enabled→interactive.
+- [x] Tests `test_tool_overrides_8b.py` (11: migration both directions, overlay truth table, core survives
+      empty allowlist + narrowing, DTO default vs live, clear→default, run_shell membership≠privilege, PUT
+      round-trip + legacy-on-disk). Backend suite **25/25 files**; frontend `tsc`+build clean, **57/57**.
 - _Deferred (don't build unless asked): bool/enum form widgets (when first tool needs them); per-tool
   `settings` (ROADMAP E0a — additive field on `ToolOverride`, discriminated union, same schema→form path)._
 

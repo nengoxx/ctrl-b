@@ -76,29 +76,54 @@ async def set_voice(app: "FastAPI", settings: Settings) -> None:
     await _swap_client(app, "voice", VoiceClient(settings.voice))
 
 
-def apply_tool_descriptions(app: "FastAPI", settings: Settings | None = None) -> None:
-    """Overlay the per-tool description overrides (Phase 7d) onto the **live** registry specs. The
-    model sees `spec.description` via `to_openai_tools` and `GET /api/actions` returns it, so mutating
-    the registered specs in place is the single seam that reaches both paths at once.
+#: agent_mode → (agent_exposed, core) overlay (D22). The inverse of `agent_mode_of`. A `None` mode
+#: ("absent") is handled by the caller (restore the captured originals), not here.
+_MODE_FIELDS: dict[str, tuple[bool, bool]] = {
+    "core": (True, True),
+    "enabled": (True, False),
+    "disabled": (False, False),
+}
 
-    Originals are captured once on `app.state.tool_desc_orig` (keyed by tool name), so clearing an
-    override restores the tool's built-in description rather than leaving the last override stuck. Run
-    by lifespan (after the registry is built), by `reconfigure` (when `tool_descriptions` changed), and
-    at the end of `rediscover_integrations` (so freshly re-discovered MCP/OpenAPI tools pick overrides
-    up too)."""
+
+def agent_mode_of(agent_exposed: bool, core: bool) -> str:
+    """The tri-state `AgentMode` (D22) a tool's `(agent_exposed, core)` pair represents — the inverse
+    of the `apply_tool_overrides` overlay. Lets the actions DTO report a tool's compile-time
+    `default_agent_mode` so the catalog stores only deviations and can offer a reset to default."""
+    if core:
+        return "core"
+    return "enabled" if agent_exposed else "disabled"
+
+
+def apply_tool_overrides(app: "FastAPI", settings: Settings | None = None) -> None:
+    """Overlay the per-tool overrides (Phase 8b, D22) onto the **live** registry specs: the
+    model-facing `description` (generalizing 7d-a) **and** the tri-state agent-access `agent_mode`.
+    The agent loop reads `spec.description`/`agent_exposed`/`core` straight off the registered specs
+    (`to_openai_tools`/`for_agent`) and `GET /api/actions` returns them, so mutating the specs in
+    place is the single seam that reaches both the model and the UI at once — no registry-logic change.
+
+    Originals of `(description, agent_exposed, core)` are captured once per tool on
+    `app.state.tool_spec_orig`, so clearing an override (a `None` field) restores the tool's
+    compile-time default rather than leaving the last value stuck. Run by lifespan (after the registry
+    is built), by `reconfigure` (when `tool_overrides` changed), and at the end of
+    `rediscover_integrations` (so freshly re-discovered MCP/OpenAPI tools pick overrides up too)."""
     settings = settings or app.state.settings
-    overrides: dict = getattr(settings, "tool_descriptions", None) or {}
+    overrides: dict = getattr(settings, "tool_overrides", None) or {}
     registry = app.state.actions.registry
-    orig: dict = getattr(app.state, "tool_desc_orig", None)
+    orig: dict = getattr(app.state, "tool_spec_orig", None)
     if orig is None:
         orig = {}
-        app.state.tool_desc_orig = orig
+        app.state.tool_spec_orig = orig
     for tool in registry.all():
-        name = tool.spec.name
+        spec = tool.spec
+        name = spec.name
         if name not in orig:
-            orig[name] = tool.spec.description
+            orig[name] = (spec.description, spec.agent_exposed, spec.core)
+        base_desc, base_exposed, base_core = orig[name]
         ov = overrides.get(name)
-        tool.spec.description = ov.strip() if isinstance(ov, str) and ov.strip() else orig[name]
+        desc = getattr(ov, "description", None)
+        spec.description = desc.strip() if isinstance(desc, str) and desc.strip() else base_desc
+        mode = getattr(ov, "agent_mode", None)
+        spec.agent_exposed, spec.core = _MODE_FIELDS.get(mode, (base_exposed, base_core))
 
 
 async def rediscover_integrations(app: "FastAPI") -> dict:
@@ -114,6 +139,15 @@ async def rediscover_integrations(app: "FastAPI") -> dict:
     async with app.state.discovery_lock:
         settings: Settings = app.state.settings
         registry = app.state.actions.registry
+        # Drop the captured originals for the remote tools we're about to remove, so the freshly
+        # re-discovered specs are re-captured as their *current* defaults (a remote server may have
+        # changed a tool's description/risk between discoveries). `apply_tool_overrides` below only
+        # captures a name absent from `tool_spec_orig`, so without this a re-added name keeps the
+        # stale capture. Built-in/action originals (a different category) are untouched.
+        orig: dict = getattr(app.state, "tool_spec_orig", None) or {}
+        for t in registry.all():
+            if t.spec.category == "mcp":
+                orig.pop(t.spec.name, None)
         registry.remove_category("mcp")
 
         old_openapi = getattr(app.state, "openapi", None)
@@ -125,8 +159,8 @@ async def rediscover_integrations(app: "FastAPI") -> dict:
         app.state.openapi = OpenApiToolProvider(settings.openapi_servers)
         app.state.openapi_summary = await app.state.openapi.discover(registry)
         app.state.integrations_dirty = False
-    # Re-apply description overrides onto the freshly registered MCP/OpenAPI specs (Phase 7d).
-    apply_tool_descriptions(app)
+    # Re-apply per-tool overrides onto the freshly registered MCP/OpenAPI specs (Phase 8b).
+    apply_tool_overrides(app)
     return integrations_status(app)
 
 
@@ -177,7 +211,7 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
     embeddings_changed = _changed(old, new, "embeddings")
     open_terminal_changed = _changed(old, new, "open_terminal")
     voice_changed = _changed(old, new, "voice")
-    tool_desc_changed = _changed(old, new, "tool_descriptions")
+    tool_overrides_changed = _changed(old, new, "tool_overrides")
     caches_stale = _changed(old, new, "server") or _changed(old, new, "computers")
 
     apply_settings_inplace(app, new)
@@ -191,7 +225,7 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
         await set_open_terminal(app, new)
     if voice_changed:
         await set_voice(app, new)
-    if tool_desc_changed and getattr(app.state, "actions", None) is not None:
-        apply_tool_descriptions(app, new)
+    if tool_overrides_changed and getattr(app.state, "actions", None) is not None:
+        apply_tool_overrides(app, new)
     if caches_stale:
         invalidate_status_caches(app)

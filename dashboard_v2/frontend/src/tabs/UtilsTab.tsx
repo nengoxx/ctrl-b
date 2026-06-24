@@ -1,9 +1,13 @@
-// Tools tab (Phase 8, D8). Renders a generic Vapor `.util` card per utility tool from the registry
-// (`GET /api/tools`) — yt_captions, ip_info, dns_trace today; "add a tool = one backend file" makes
-// a new card appear here automatically. Labelled "Tools" (was Vapor's "Utils") since it now hosts
-// the full tool surface; the route id stays `tab-utils`. The agent-tool catalog (per-tool mode +
-// descriptions) lands in the Conf-consolidation slice (8b).
+// Tools tab (Phase 8, D8). Two sections:
+//  · A — generic Vapor `.util` run cards, one per utility tool from `GET /api/tools` (yt_captions,
+//    ip_info, dns_trace today); "add a tool = one backend file" makes a new card appear automatically.
+//  · B — the agent-tool catalog (8b, D22): per-tool description override + tri-state agent-access
+//    mode for *every* agent tool. Per-agent tool *selection* stays in Conf → Agents (a different axis).
+// Labelled "Tools" (was Vapor's "Utils") since it hosts the full tool surface; route id stays
+// `tab-utils`.
 
+import { ConfGroup } from "../components/ConfGroup";
+import { ToolCatalog } from "../components/ToolCatalog";
 import { UtilCard } from "../components/UtilCard";
 import { useTools } from "../hooks/useTools";
 
@@ -33,6 +37,10 @@ export function UtilsTab({ active }: Props) {
       {tools?.map((t) => (
         <UtilCard key={t.name} tool={t} />
       ))}
+
+      <ConfGroup id="agent-tools" num="04" title="agent tools" right="access & descriptions" defaultCollapsed>
+        <ToolCatalog />
+      </ConfGroup>
 
       <div style={{ height: 24 }} />
     </div>

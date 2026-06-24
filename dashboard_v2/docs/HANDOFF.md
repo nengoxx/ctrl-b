@@ -76,9 +76,86 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Phase 8a DONE + pushed @ `a339d6a`** · NEXT = **Phase 8b — tool manage layer (tri-state + descriptions)** → then `createStore`/`Switch` dedups → emma deploy)
+## Current state (**Phase 8b SHIPPED — owner-eyeballed + independently reviewed** · NEXT = **`createStore`/`Switch` dedups → emma deploy**)
 
-> ### 🟢 CLEAN-SESSION HANDOFF — start Phase 8b (tool manage layer, D8/D22) — written 2026-06-24
+> ### 🟢 SESSION UPDATE — Phase 8b reviewed + finalized (D22) — 2026-06-24
+> Owner eyeballed at 390px (approved after two polish rounds — see below) and an independent code review
+> ran over the full diff. **All four D22 invariants verified correct.** One real bug + two hardening fixes
+> landed before commit:
+> - **Bug (legacy-fold guard).** `_fold_legacy_tool_descriptions` guarded on falsiness (`if not
+>   existing.get("description")`), so an explicit `description: ""` (the catalog's restore-to-built-in)
+>   coexisting with a lingering on-disk `tool_descriptions` key got **re-reverted to the legacy text on the
+>   next load**. Fixed → guard on `is None` (an explicit blank now wins). Covered by
+>   `test_explicit_blank_override_beats_lingering_legacy`.
+> - **Hardening.** (a) The catalog's change-detection now compares the **trimmed** draft description, so a
+>   whitespace-only edit no longer writes a redundant override equal to the default (matches `UtilCard`).
+>   (b) `rediscover_integrations` now drops the captured originals for the remote (`mcp`-category) tools it
+>   removes, so re-discovered specs are re-captured at their *current* server-side defaults (a latent
+>   staleness inherited from the 7d overlay).
+> - **Accepted nuance (not a bug):** clearing an override persists an inert `{…: null}` entry in
+>   `tool_overrides` (deep_merge can't delete a map key) — harmless cruft; the UI reads the actions DTO and
+>   `apply_tool_overrides` maps `None`→default. Matches the 7d precedent + CLAUDE.md "shape to extend".
+>
+> **Final verification:** backend `test_tool_overrides_8b.py` **13** + full suite **25/25 files**; frontend
+> `tsc -b` + `vite build` clean, **57/57**. The detail of the build is in the original session block below.
+>
+> ### 🟢 SESSION UPDATE — Phase 8b tool manage layer BUILT (D22) — 2026-06-24 (uncommitted)
+> **8b is built + verified except the 390px eyeball.** The Tools tab gained **Section B — the agent-tool
+> catalog**: every agent tool gets a per-tool **description override** + a **tri-state agent-access mode**
+> (core / enabled / disabled), written to the unified **`tool_overrides`** map. Per-agent tool *selection*
+> stays in Conf → Agents; the two compose (the AgentsEditor tick-grid now locks core on / disabled off).
+>
+> **What shipped:**
+> - **Backend.** `config.py` `ToolOverride{description?, agent_mode?}` + `tool_overrides: dict[str,ToolOverride]`
+>   replacing `tool_descriptions`, with a `@model_validator(before)` that folds the legacy key in (zero-touch;
+>   live config had no `tool_descriptions` key so it's a no-op there). `runtime.apply_tool_overrides`
+>   (renamed from `apply_tool_descriptions`) captures originals of `(description, agent_exposed, core)` on
+>   `app.state.tool_spec_orig` and overlays description **+** `agent_mode → (agent_exposed, core)`
+>   (core→T,T · enabled→T,F · disabled→F,F · absent→restore). Shared `agent_mode_of(exposed,core)` helper;
+>   `api/actions` DTO gains `default_agent_mode` (from the captured originals, so a live-overridden tool
+>   still reports its default). 3 call sites + reconfigure `_changed` key updated. **No registry-logic
+>   change** — `for_agent`/`agent_tools` already read those fields (the single seam is `session._tools()`).
+> - **Frontend.** New `components/ToolCatalog.tsx` — grouped, risk-sorted rows with a tri-state vapor `.seg`
+>   + a click-to-edit description (reuses `requestPrompt`). **Current state is reconstructed entirely from
+>   the actions DTO** (`agentModeOf(spec)` mirrors the backend; `default_agent_mode` marks the default with
+>   a dot; `description` is the effective text) — no `useSettings` (it's Conf-scoped and wouldn't fetch on
+>   the Tools tab); a save PUTs only the changed axis per tool (deep_merge keeps the other) and invalidates
+>   `["actions"]`. `run_shell` renders **read-only** (governed by Conf → Shell). Catalog filters to tools
+>   whose *default* mode ≠ disabled (so `tailscale_*` USER-only actions stay out; a user-disabled tool stays
+>   visible to re-enable). `UtilsTab` adds Section B; `ToolDescriptionsEditor` **deleted**, Conf #14 left as
+>   a pointer; `AgentsEditor` `TickGrid` takes `toolModes` and locks core/disabled. `agentModeOf` lives in
+>   `hooks/useActions.ts` (shared by catalog + ConfTab, no drift). Net-new CSS in `extras.css`; **vapor.css
+>   untouched (D7)**.
+> - **Verified.** `test_tool_overrides_8b.py` **11** (replaces `test_tool_descriptions_7d.py`, retired —
+>   its PUT round-trip + legacy paths folded in). Backend suite **25/25 files**. Frontend `tsc -b` + `vite
+>   build` clean, **57/57** tests. **LIVE on 5433:** `/api/actions` shows `default_agent_mode` correct
+>   (task_plan/memory/session_search=core · wake/ping/run_shell=enabled · tailscale=disabled). Servers up:
+>   backend **5433**, frontend **5190**. **NOT yet eyeballed at 390px** (the one thing tests don't cover —
+>   the catalog rows, the tri-state seg, the AgentsEditor lock states). Did **not** live-PUT against the real
+>   `config.yaml` (temp-config PUT is covered by the test).
+>
+> **Theme polish (post-eyeball #1).** Owner reviewed at 390px → three fixes: (1) the in-card save bar was
+> flush/edge-to-edge — the catalog root is now a vapor **`.conf-card`** so `.conf-card > .conf-savebar`
+> applies its standard inset (matches the other editors); (2) the section header showed a stray **"B"** —
+> Section B is now a **collapsible numbered `ConfGroup`** ("04 agent tools", default-collapsed); (3) the
+> section is collapsible like the Conf groups. To avoid duplication, **`ConfGroup` was extracted from
+> ConfTab into `components/ConfGroup.tsx`** and reused by both ConfTab and UtilsTab (one disclosure/collapse
+> source). `tsc`+build clean, 57/57. **Re-eyeball pending.**
+>
+> **Polish #2 — editable descriptions on the run cards.** The Section-A utility cards (yt/ip/dns) showed a
+> static description; they're now **click-to-edit** (pencil affordance), writing the same
+> `tool_overrides[name].description` the Section-B catalog manages. Extracted a shared
+> **`hooks/useToolOverrides.ts`** (`useSaveToolOverrides`) used by both `UtilCard` (single-tool) and
+> `ToolCatalog` (batched) — one save path that invalidates **`["tools"]` + `["actions"]` + `["settings"]`**
+> (the catalog previously missed `["tools"]`, so a utility's description edited there now updates its card
+> too). `tsc`+build clean, 57/57.
+>
+> **Next:** owner eyeball at 390px → then commit + push (tree currently has the 8b changes + the standing
+> `start_claude_remote.ps1`). After that: the `createStore<T>()` / `Switch` dedup backlog slices → emma deploy.
+>
+> ---
+>
+> ### 🟢 (prior) CLEAN-SESSION HANDOFF — start Phase 8b (tool manage layer, D8/D22) — written 2026-06-24
 > **Phase 8a is shipped + pushed** (HEAD `a339d6a`, `origin/main` in sync, tree clean except the standing
 > `start_claude_remote.ps1`). The **Utils tab is now the "Tools" tab**: a live `@tool` registry with three
 > utility cards (yt_captions / ip_info / dns_trace) the owner runs directly and the agent can call. Backend

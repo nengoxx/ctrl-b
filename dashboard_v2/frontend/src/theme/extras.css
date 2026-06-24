@@ -1603,6 +1603,13 @@ body {
   background: linear-gradient(135deg, var(--magenta), var(--violet));
   border-color: transparent;
 }
+/* 8b mirror: a tool locked by the global tri-state (core = always-on, disabled = always-off). Not
+   interactive; the dashed border + reduced opacity reads "governed elsewhere (Tools tab)". */
+.tick.locked {
+  cursor: default;
+  opacity: 0.6;
+  border-style: dashed;
+}
 .agent-empty {
   font-size: 10px;
   color: var(--ink-faint);
@@ -2104,6 +2111,14 @@ body {
   letter-spacing: 0.2px;
   font-weight: 600;
 }
+/* 8b — the card description is click-to-edit (writes the same `tool_overrides` as the Section-B
+   catalog). The pencil + hover signal it's editable; reuses the `.tcat-edit`/`.tcat-faint` tokens. */
+.util .uhead .t .desc.util-desc {
+  cursor: pointer;
+}
+.util .uhead .t .desc.util-desc:hover {
+  color: var(--ink);
+}
 .util .result .tool-summary {
   font-size: 12px;
   line-height: 1.5;
@@ -2125,4 +2140,93 @@ body {
   background: transparent;
   cursor: pointer;
   font-family: inherit;
+}
+
+/* ── Tools tab · Section B — the agent-tool catalog (Phase 8b, D22, net-new) ───────────────────
+   Reuses vapor's `.seg` segmented control (the tri-state mode picker) + the 7d `.tooldesc-cat`
+   category heading; these add the catalog row shell, the mono tool name + risk/mode badges, and the
+   clickable description line. The root is a `.conf-card` (vapor) so it frames like the Conf editors
+   and the in-card save bar gets its standard inset. The `.tooldesc-cat` heading keeps its default
+   12px top margin (the card has no inner padding, so that margin *is* the top inset — every category
+   heading, first included, gets the same gap). Tokens from VAPOR_PATTERNS; vapor.css untouched (D7). */
+.tcat-row {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.tcat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tcat-name {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  color: var(--ink);
+}
+.tcat-risk {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  color: var(--ink-faint);
+}
+.tcat-risk.r-high {
+  color: var(--danger, #ff5c8a);
+  border-color: color-mix(in srgb, var(--danger, #ff5c8a) 50%, transparent);
+}
+.tcat-risk.confirm {
+  color: var(--violet);
+  border-color: color-mix(in srgb, var(--violet) 50%, transparent);
+}
+.tcat-mod {
+  margin-left: auto;
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--magenta);
+  font-weight: 600;
+}
+.tcat-desc {
+  margin-top: 5px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.tcat-desc:hover {
+  color: var(--ink);
+}
+.tcat-edit {
+  color: var(--ink-faint);
+  font-size: 10px;
+}
+.tcat-faint {
+  color: var(--ink-faint);
+}
+.tcat-ctl {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* the default mode in the tri-state gets a subtle dot under it so "pick the dotted one = reset" reads */
+.tcat-seg button.def::after {
+  content: "·";
+  margin-left: 3px;
+  color: var(--ink-faint);
+}
+.tcat-seg button.active.def::after {
+  color: #fff;
+}
+.tcat-seg.ro {
+  opacity: 0.55;
+}
+.tcat-seg button:disabled {
+  cursor: default;
 }

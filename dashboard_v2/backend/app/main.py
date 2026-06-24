@@ -41,7 +41,7 @@ from app.api import (
 )
 from app.config import load_dotenv, load_settings
 from app.runtime import (
-    apply_tool_descriptions,
+    apply_tool_overrides,
     set_embeddings,
     set_inference,
     set_open_terminal,
@@ -112,10 +112,10 @@ async def lifespan(app: FastAPI):
     app.state.openapi_summary = await app.state.openapi.discover(registry)
     app.state.openterminal_tools = n_term
     app.state.actions = ActionService(registry, deps)
-    # Overlay any per-tool description overrides onto the freshly registered specs (Phase 7d). Done
-    # after every provider has registered (built-ins → terminal → MCP → OpenAPI) so the originals
-    # captured here are the true built-in/remote descriptions.
-    apply_tool_descriptions(app)
+    # Overlay any per-tool overrides (description + tri-state agent_mode) onto the freshly registered
+    # specs (Phase 8b, D22). Done after every provider has registered (built-ins → terminal → MCP →
+    # OpenAPI) so the originals captured here are the true built-in/remote (description, exposed, core).
+    apply_tool_overrides(app)
     # Integration re-discovery state (Phase 7c-b): MCP/OpenAPI edits flip `integrations_dirty`; the
     # next agent turn (or the manual endpoint) re-discovers under `discovery_lock`. `active_turns`
     # lets the manual rediscover refuse (409) while a turn is iterating, so the registry is only ever

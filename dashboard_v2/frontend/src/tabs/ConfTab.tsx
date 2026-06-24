@@ -1,13 +1,13 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 import { AgentsEditor } from "../components/AgentsEditor";
+import { ConfGroup } from "../components/ConfGroup";
 import { MachineEditor } from "../components/MachineEditor";
 import { MemoryEditor } from "../components/MemoryEditor";
 import { ServerListEditor } from "../components/ServerListEditor";
 import { SkillsEditor } from "../components/SkillsEditor";
-import { ToolDescriptionsEditor } from "../components/ToolDescriptionsEditor";
 import { useAccessStatus, useSetServe } from "../hooks/useAccess";
-import { useActionSpecs } from "../hooks/useActions";
+import { agentModeOf, useActionSpecs } from "../hooks/useActions";
 import { useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
@@ -16,7 +16,6 @@ import { type MemoryCfg } from "../hooks/useMemory";
 import { useSaveSettings, useSettings, type SettingsDoc } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
 import { promptPreview } from "../lib/promptPreview";
-import { useCollapsed } from "../store/collapse";
 import { useRegisterDirty } from "../store/dirty";
 import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
@@ -208,28 +207,6 @@ const RISKS = [
  * Integrations) across a collapse-expand cycle. Mirrors the project's existing "keep mounted, toggle
  * visibility" pattern from the four top-level tabs (Fleet/Agent/Utils stay mounted; only `.tab.active`
  * is visible). Reload-survival is a future enhancement — see UI_AUDIT.md §6b. */
-function ConfGroup(props: {
-  id: string;
-  num: string;
-  title: string;
-  right?: ReactNode;
-  defaultCollapsed?: boolean;
-  children: ReactNode;
-}) {
-  const [collapsed, toggle] = useCollapsed(props.id, props.defaultCollapsed);
-  return (
-    <div className={"confgroup" + (collapsed ? " collapsed" : "")}>
-      <div className="conftitle conf-toggle" onClick={toggle}>
-        <span className="conf-chev" aria-hidden>›</span>
-        <span className="num">{props.num}</span>
-        <b>{props.title}</b>
-        {props.right != null && <span className="right">{props.right}</span>}
-      </div>
-      {props.children}
-    </div>
-  );
-}
-
 export function ConfTab({ active }: Props) {
   // One slice per Appearance field — each toggle only re-renders the consumers that
   // actually read that specific field. Theme/skyline/loz/heroOn/waveformOn changes used
@@ -269,7 +246,14 @@ export function ConfTab({ active }: Props) {
       (agentSection as { auto_rotate_min_overlap?: number } | undefined)?.auto_rotate_min_overlap ?? 2,
     streaming: (agentSection as { streaming?: "auto" | "on" | "off" } | undefined)?.streaming ?? "auto",
   };
-  const agentToolNames = actionSpecs.filter((s) => s.agent_exposed).map((s) => s.name);
+  // The per-agent tool grid mirrors the global tri-state (8b, D22): show every tool that's an agent
+  // tool *by default* (so a globally-disabled tool still appears, locked-off, rather than vanishing)
+  // and pass each one's effective mode so the grid can lock core (on) / disabled (off).
+  const governedTools = actionSpecs.filter(
+    (s) => (s.default_agent_mode ?? agentModeOf(s)) !== "disabled",
+  );
+  const agentToolNames = governedTools.map((s) => s.name);
+  const agentToolModes = Object.fromEntries(governedTools.map((s) => [s.name, agentModeOf(s)]));
   const skillNames = skillList.map((s) => s.name);
 
   // Memory caps/toggles come off the settings doc (config.yaml `memory.*`); the MemoryEditor edits
@@ -917,7 +901,7 @@ export function ConfTab({ active }: Props) {
         right={`${agentCount} agent${agentCount === 1 ? "" : "s"}`}
         defaultCollapsed
       >
-        <AgentsEditor cfg={agentCfg} toolNames={agentToolNames} skillNames={skillNames} />
+        <AgentsEditor cfg={agentCfg} toolNames={agentToolNames} toolModes={agentToolModes} skillNames={skillNames} />
       </ConfGroup>
 
       <ConfGroup
@@ -941,25 +925,15 @@ export function ConfTab({ active }: Props) {
       </ConfGroup>
 
       <ConfGroup
-        id="tooldesc"
-        num="14"
-        title="Agent tools"
-        right="descriptions"
-        defaultCollapsed
-      >
-        <ToolDescriptionsEditor overrides={(settings?.tool_descriptions as Record<string, string>) ?? {}} />
-      </ConfGroup>
-
-      <ConfGroup
         id="computers"
-        num="15"
+        num="14"
         title="Computers"
         right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
       >
         <MachineEditor hosts={hosts} />
       </ConfGroup>
 
-      <ConfGroup id="appearance" num="16" title="Appearance">
+      <ConfGroup id="appearance" num="15" title="Appearance">
         <div className="conf-card">
           <div className="confrow">
             <div className="k">

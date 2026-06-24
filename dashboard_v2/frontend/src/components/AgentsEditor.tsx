@@ -17,6 +17,7 @@ import {
 } from "../hooks/useAgents";
 import { PRIVILEGE_LEVELS } from "../lib/privilege";
 import { promptPreview } from "../lib/promptPreview";
+import type { AgentMode } from "../types";
 import { requestConfirm } from "../store/confirm";
 import { useRegisterDirty } from "../store/dirty";
 import { requestPrompt } from "../store/prompt";
@@ -51,15 +52,47 @@ function Switch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   );
 }
 
-function TickGrid({ all, selected, onToggle }: { all: string[]; selected: Set<string>; onToggle: (n: string) => void }) {
+// `modes` (8b, D22) mirrors the Tools-tab tri-state onto the per-agent selection grid: a globally
+// **disabled** tool shows locked-off (it can't be granted), a **core** tool locked-on (it's always
+// available regardless of the allowlist). Only **enabled** tools are interactive. The skills grid
+// passes no `modes` → every entry stays interactive.
+function TickGrid({
+  all,
+  selected,
+  onToggle,
+  modes,
+}: {
+  all: string[];
+  selected: Set<string>;
+  onToggle: (n: string) => void;
+  modes?: Record<string, AgentMode>;
+}) {
   if (!all.length) return <div className="agent-empty">none discovered</div>;
   return (
     <div className="tick-grid">
-      {all.map((n) => (
-        <button key={n} type="button" className={"tick" + (selected.has(n) ? " on" : "")} onClick={() => onToggle(n)}>
-          {n}
-        </button>
-      ))}
+      {all.map((n) => {
+        const mode = modes?.[n];
+        const locked = mode === "core" || mode === "disabled";
+        const on = mode === "core" ? true : mode === "disabled" ? false : selected.has(n);
+        const title =
+          mode === "core"
+            ? "always available (core) — set in Tools tab"
+            : mode === "disabled"
+              ? "globally disabled — set in Tools tab"
+              : undefined;
+        return (
+          <button
+            key={n}
+            type="button"
+            disabled={locked}
+            title={title}
+            className={"tick" + (on ? " on" : "") + (locked ? " locked" : "")}
+            onClick={() => !locked && onToggle(n)}
+          >
+            {n}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -80,6 +113,7 @@ function AgentFieldsForm(props: {
   isDefault: boolean;
   soul: string;
   toolNames: string[];
+  toolModes: Record<string, AgentMode>;
   skillNames: string[];
   defaultPrompt: string;
   onChange: (a: AgentDef) => void;
@@ -203,7 +237,7 @@ function AgentFieldsForm(props: {
           <span>{toolsAll ? "all agent tools" : `${toolSet.size} selected`}</span>
           <Switch on={toolsAll} onToggle={() => set({ tools: toolsAll ? [] : "*" })} />
         </div>
-        {!toolsAll && <TickGrid all={props.toolNames} selected={toolSet} onToggle={toggleTool} />}
+        {!toolsAll && <TickGrid all={props.toolNames} selected={toolSet} onToggle={toggleTool} modes={props.toolModes} />}
       </div>
 
       <label>Skills</label>
@@ -241,6 +275,7 @@ function AgentRow(props: {
   open: boolean;
   onToggle: () => void;
   toolNames: string[];
+  toolModes: Record<string, AgentMode>;
   skillNames: string[];
   defaultPrompt: string;
 }) {
@@ -316,6 +351,7 @@ function AgentRow(props: {
                 isDefault={isDefault}
                 soul={detail?.soul ?? ""}
                 toolNames={props.toolNames}
+                toolModes={props.toolModes}
                 skillNames={props.skillNames}
                 defaultPrompt={props.defaultPrompt}
                 onChange={setDraft}
@@ -338,7 +374,12 @@ function AgentRow(props: {
   );
 }
 
-export function AgentsEditor(props: { cfg: AgentSectionCfg; toolNames: string[]; skillNames: string[] }) {
+export function AgentsEditor(props: {
+  cfg: AgentSectionCfg;
+  toolNames: string[];
+  toolModes: Record<string, AgentMode>;
+  skillNames: string[];
+}) {
   const { data: list } = useAgentList();
   const saveSettings = useSaveSettings();
   const saveAgent = useSaveAgent();
@@ -440,6 +481,7 @@ export function AgentsEditor(props: { cfg: AgentSectionCfg; toolNames: string[];
         open={open === DEFAULT_AGENT}
         onToggle={() => toggle(DEFAULT_AGENT)}
         toolNames={props.toolNames}
+        toolModes={props.toolModes}
         skillNames={props.skillNames}
         defaultPrompt={defaultPrompt}
       />
@@ -453,6 +495,7 @@ export function AgentsEditor(props: { cfg: AgentSectionCfg; toolNames: string[];
           open={open === s}
           onToggle={() => toggle(s)}
           toolNames={props.toolNames}
+          toolModes={props.toolModes}
           skillNames={props.skillNames}
           defaultPrompt={defaultPrompt}
         />

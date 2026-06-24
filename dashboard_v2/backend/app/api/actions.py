@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
 from app.core.tool import UnknownTool, spec_to_dict
+from app.runtime import agent_mode_of
 
 router = APIRouter(tags=["actions"])
 
@@ -24,9 +25,21 @@ class InvokeRequest(BaseModel):
 
 @router.get("/actions")
 async def list_actions(request: Request) -> list[dict[str, Any]]:
-    """The action registry — metadata + input JSON Schema (drives UI buttons; Phase 4 the agent)."""
+    """The action registry — metadata + input JSON Schema (drives UI buttons; the agent toolset; and
+    the Phase-8b Tools-tab catalog). Each DTO is enriched with `default_agent_mode`: the tri-state
+    `agent_mode` the tool's compile-time `(agent_exposed, core)` represents, read from the captured
+    originals (`tool_spec_orig`) so a tool whose mode is currently overridden still reports its
+    *default* — letting the catalog mark defaults, store only deviations, and offer a reset."""
     svc = request.app.state.actions
-    return [spec_to_dict(t.spec) for t in svc.registry.all()]
+    orig: dict = getattr(request.app.state, "tool_spec_orig", None) or {}
+    out: list[dict[str, Any]] = []
+    for t in svc.registry.all():
+        d = spec_to_dict(t.spec)
+        base = orig.get(t.spec.name)
+        base_exposed, base_core = base[1:3] if base else (t.spec.agent_exposed, t.spec.core)
+        d["default_agent_mode"] = agent_mode_of(base_exposed, base_core)
+        out.append(d)
+    return out
 
 
 @router.post("/actions/{name}")
