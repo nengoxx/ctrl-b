@@ -23,7 +23,7 @@ import { setUI } from "../../src/store/ui";
 // loadSkills/loadAgents fire a best-effort fetch on import; make it a quiet no-op so nothing hits the
 // network during routing tests (the routes under test don't depend on the loaded sets).
 beforeEach(() => {
-  global.fetch = vi.fn(() => Promise.resolve({ ok: false } as Response));
+  globalThis.fetch = vi.fn(() => Promise.resolve({ ok: false } as Response));
 });
 
 describe("runComposer routing", () => {

@@ -29,7 +29,7 @@ function sseResponse(frames: Frame[]): Response {
 }
 
 function mockStream(frames: Frame[]) {
-  global.fetch = vi.fn(() => Promise.resolve(sseResponse(frames)));
+  globalThis.fetch = vi.fn(() => Promise.resolve(sseResponse(frames)));
 }
 
 /** Stream arbitrary raw text chunks (to test framing/splitting the structured helper can't express). */
@@ -41,7 +41,7 @@ function mockChunks(chunks: string[]) {
       c.close();
     },
   });
-  global.fetch = vi.fn(() =>
+  globalThis.fetch = vi.fn(() =>
     Promise.resolve({
       ok: true,
       body,
@@ -222,7 +222,7 @@ describe("chat streaming reducer", () => {
       tokens: null,
       compacted: false,
     });
-    global.fetch = vi.fn((url: string) =>
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
       Promise.resolve(
         String(url).includes("/agent/chat")
           ? ({ ok: true, body: {}, headers: { get: () => "application/json" }, json: async () => ({ threadId: "t1", state: "completed" }) } as unknown as Response)

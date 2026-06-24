@@ -48,7 +48,7 @@ function setMediaDevices(present: boolean) {
 }
 
 function mockStt(status: number, body: unknown) {
-  global.fetch = vi.fn(
+  globalThis.fetch = vi.fn(
     async () =>
       ({ status, ok: status >= 200 && status < 300, json: async () => body }) as unknown as Response,
   );

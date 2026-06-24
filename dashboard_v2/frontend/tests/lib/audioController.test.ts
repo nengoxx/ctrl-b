@@ -47,7 +47,7 @@ class FakeAudio {
 
 beforeEach(() => {
   vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
-  global.fetch = vi.fn(async () => ({ ok: true, blob: async () => new Blob(["a"]) }) as unknown as Response);
+  globalThis.fetch = vi.fn(async () => ({ ok: true, blob: async () => new Blob(["a"]) }) as unknown as Response);
   clearAudioCache(); // reset the singleton's state + blob cache between cases
 });
 
@@ -59,7 +59,7 @@ describe("audioController", () => {
     });
     expect(result.current.id).toBe("m1");
     expect(result.current.status).toBe("playing");
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
   it("toggling the same message pauses then resumes — no re-synth (cache hit)", async () => {
@@ -75,7 +75,7 @@ describe("audioController", () => {
       await toggle("m1", "hello"); // paused → resume
     });
     expect(result.current.status).toBe("playing");
-    expect(global.fetch).toHaveBeenCalledTimes(1); // synthesized once, replayed from cache
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1); // synthesized once, replayed from cache
   });
 
   it("switching to a different message re-synths and swaps the active id", async () => {
@@ -87,7 +87,7 @@ describe("audioController", () => {
       await toggle("m2", "two");
     });
     expect(result.current.id).toBe("m2");
-    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
   it("togglePlay pauses/resumes the active clip", async () => {
@@ -144,7 +144,7 @@ describe("audioController", () => {
 
   it("dismiss during load cancels the pending play (reqSeq guard)", async () => {
     let resolveFetch!: (r: Response) => void;
-    global.fetch = vi.fn(() => new Promise<Response>((r) => (resolveFetch = r)));
+    globalThis.fetch = vi.fn(() => new Promise<Response>((r) => (resolveFetch = r)));
     const { result } = renderHook(() => usePlayback((p) => p));
 
     let pending!: Promise<void>;
@@ -165,7 +165,7 @@ describe("audioController", () => {
 
   it("switching during load: the superseded clip never clobbers the new one", async () => {
     const resolvers: ((r: Response) => void)[] = [];
-    global.fetch = vi.fn(() => new Promise<Response>((r) => resolvers.push(r)));
+    globalThis.fetch = vi.fn(() => new Promise<Response>((r) => resolvers.push(r)));
     const { result } = renderHook(() => usePlayback((p) => p));
 
     await act(async () => {

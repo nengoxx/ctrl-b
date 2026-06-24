@@ -2,7 +2,7 @@
   "//": "Editor/type support for the test suite ONLY. Intentionally NOT referenced by the root tsconfig.json, so `tsc -b` (the production build's typecheck) never processes test files — the production build stays untouched. Vitest itself transpiles via esbuild and doesn't need this.",
   "extends": "../tsconfig.app.json",
   "compilerOptions": {
-    "types": ["node", "vitest"],
+    "types": ["vitest"],
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },
