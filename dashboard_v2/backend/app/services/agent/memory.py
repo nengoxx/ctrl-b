@@ -14,6 +14,7 @@ tool and Conf editing extend this provider in 7e-d-2 / 7e-d-3.
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import re
 import tempfile
@@ -197,11 +198,14 @@ def migrate_legacy_specialist_memory(settings: Settings) -> int:
         new_mem = new_root / "agents" / folder.name / "MEMORY.md"
         if new_mem.exists():
             continue
-        new_mem.parent.mkdir(parents=True, exist_ok=True)
-        old_mem.replace(new_mem)
-        with contextlib.suppress(OSError):
-            old_mem.parent.rmdir()  # remove the now-empty `agents/<slug>/memories/`
-        moved += 1
+        try:  # best-effort: one bad folder must never crash startup (worst case: stays at the old path)
+            new_mem.parent.mkdir(parents=True, exist_ok=True)
+            old_mem.replace(new_mem)
+            with contextlib.suppress(OSError):
+                old_mem.parent.rmdir()  # remove the now-empty `agents/<slug>/memories/`
+            moved += 1
+        except OSError:
+            logging.getLogger(__name__).warning("memory migration skipped for %s", folder.name)
     return moved
 
 

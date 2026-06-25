@@ -140,6 +140,11 @@ class GitMemoryBackup:
             self._git_bin, "-C", str(root),
             "-c", f"user.name={cfg.author_name}",
             "-c", f"user.email={cfg.author_email}",
+            # Treat files byte-for-byte: our files are LF, and the host's global core.autocrlf (true by
+            # default on Git for Windows) would otherwise make every LF file read as perpetually
+            # "modified", churning the sweep and breaking the "dirty tree = external edit" invariant.
+            "-c", "core.autocrlf=false",
+            "-c", "core.safecrlf=false",
             *args,
         ]
         try:

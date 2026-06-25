@@ -152,6 +152,23 @@ def test_reconcile_captures_external_edit() -> None:
         assert "external" in _git(root, "log", "-1", "--format=%s")               # as a reconcile commit
 
 
+def test_tree_clean_after_write_no_churn() -> None:
+    """After an app write the working tree must read clean (no CRLF/autocrlf churn), so the reconcile
+    sweep is a true no-op and the 'dirty tree = external edit' invariant holds."""
+    with _workspace() as tmp:
+        async def go():
+            _s, prov, backup, agent = _build()
+            await prov.write(agent, "memory", "add", "a durable fact")
+            before = _git(tmp / "memories", "rev-parse", "HEAD")
+            await backup.reconcile()  # nothing external changed → must commit nothing
+            after = _git(tmp / "memories", "rev-parse", "HEAD")
+            return before, after
+        before, after = asyncio.run(go())
+        root = tmp / "memories"
+        assert _git(root, "status", "--porcelain") == ""  # clean: no perpetually-"modified" file
+        assert before == after  # the no-op reconcile created no commit
+
+
 def test_gitignore_written_at_init() -> None:
     with _workspace() as tmp:
         async def go():
