@@ -244,6 +244,8 @@ export function ConfTab({ active }: Props) {
     enabled: memorySection?.enabled ?? true,
     user_profile_enabled: memorySection?.user_profile_enabled ?? true,
     auto_write: memorySection?.auto_write ?? true,
+    consolidation_nudge: memorySection?.consolidation_nudge ?? false,
+    consolidation_nudge_pct: memorySection?.consolidation_nudge_pct ?? 80,
     memory_char_limit: memorySection?.memory_char_limit ?? 2200,
     user_char_limit: memorySection?.user_char_limit ?? 1375,
   };

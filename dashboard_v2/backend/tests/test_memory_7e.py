@@ -165,6 +165,36 @@ def test_specialist_memory_is_isolated_from_root() -> None:
             assert "ROOT note" in root and "CODER note" not in root
 
 
+def test_consolidation_nudge_appears_when_on_and_over_threshold() -> None:
+    """Slice 1b: with the nudge on, a store at/over the threshold % adds a 'consolidate' line."""
+    with _workspace() as (tmp, _cfg):
+        with _client() as c:
+            c.app.state.settings.memory.consolidation_nudge = True
+            c.app.state.settings.memory.consolidation_nudge_pct = 80
+            c.app.state.settings.memory.memory_char_limit = 20
+            _write(tmp / "memories" / "MEMORY.md", "x" * 18)  # 90% of 20
+            block = c.app.state.memory.load_context(c.app.state.settings.resolve_agent(None))
+            assert "consolidate before adding" in block.lower()
+            assert "Agent memory (90%)" in block
+
+
+def test_consolidation_nudge_silent_below_threshold_or_off() -> None:
+    """The nudge stays absent below the threshold, and absent when the toggle is off even over it."""
+    with _workspace() as (tmp, _cfg):
+        with _client() as c:
+            agent = c.app.state.settings.resolve_agent(None)
+            # on, but well under cap → no nudge
+            c.app.state.settings.memory.consolidation_nudge = True
+            c.app.state.settings.memory.memory_char_limit = 2200
+            _write(tmp / "memories" / "MEMORY.md", "a small durable note")
+            assert "consolidate" not in c.app.state.memory.load_context(agent).lower()
+            # off, but over cap → still no nudge (default-off must be silent)
+            c.app.state.settings.memory.consolidation_nudge = False
+            c.app.state.settings.memory.memory_char_limit = 20
+            _write(tmp / "memories" / "MEMORY.md", "x" * 18)
+            assert "consolidate" not in c.app.state.memory.load_context(agent).lower()
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

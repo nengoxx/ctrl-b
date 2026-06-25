@@ -233,6 +233,12 @@ class MemoryCfg(BaseModel):
     enabled: bool = True                 # master switch for the memory subsystem
     user_profile_enabled: bool = True    # inject + (7e-d-2) allow writes to the global USER.md
     auto_write: bool = True              # agent may write memory autonomously; off → propose-only (D15 #6)
+    # Proactive consolidation nudge (Slice 1b): when a store's usage ≥ `consolidation_nudge_pct`, the
+    # injected memory block adds a "consolidate before adding" line (merge with replace / drop stale with
+    # remove / reconcile contradictions). Default OFF (owner's call) — opt in per deployment. Hermes-style
+    # cap-pressure guidance; the hard over-cap error still fires regardless.
+    consolidation_nudge: bool = False
+    consolidation_nudge_pct: int = Field(80, ge=1, le=100)
     # The memory directory (D26): all memory files + the git repo root. Relative → resolved against
     # $CTRLB_HOME; absolute honored as-is. Renamed from the hardcoded "memories" so it's relocatable.
     memory_dir: str = "memories"

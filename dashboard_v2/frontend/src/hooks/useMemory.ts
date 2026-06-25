@@ -14,6 +14,8 @@ export interface MemoryCfg {
   enabled: boolean;
   user_profile_enabled: boolean;
   auto_write: boolean;
+  consolidation_nudge: boolean;
+  consolidation_nudge_pct: number;
   memory_char_limit: number;
   user_char_limit: number;
 }

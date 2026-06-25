@@ -122,6 +122,24 @@ def test_old_text_not_found_raises() -> None:
                 raise AssertionError("expected MemoryWriteError for absent old_text")
 
 
+def test_ambiguous_old_text_raises() -> None:
+    """F6: an `old_text` matching >1 place is rejected (no silent wrong-entry edit), steering the model
+    to add surrounding context."""
+    from app.services.agent.memory import MemoryWriteError
+
+    with _workspace():
+        with _client() as c:
+            prov, agent = c.app.state.memory, _agent(c)
+            _run(prov.write(agent, "memory", "add", "the cat sat"))
+            _run(prov.write(agent, "memory", "add", "the cat ran"))  # "cat" now appears twice
+            try:
+                _run(prov.write(agent, "memory", "replace", "dog", old_text="cat"))
+            except MemoryWriteError as exc:
+                assert "matches 2" in str(exc)
+            else:
+                raise AssertionError("expected MemoryWriteError for an ambiguous old_text")
+
+
 def test_over_cap_raises() -> None:
     from app.services.agent.memory import MemoryCapError
 

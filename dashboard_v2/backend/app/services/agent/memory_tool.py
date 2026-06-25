@@ -42,8 +42,8 @@ class MemoryInput(BaseModel):
     )
     action: Literal["add", "replace", "remove"] = Field(
         description=(
-            "`add` a new entry, or `replace`/`remove` an existing one. For replace/remove, give the "
-            "exact text to match in `old_text`."
+            "`add` a new entry, or `replace`/`remove` an existing one. For replace/remove, give an "
+            "`old_text` substring that **uniquely identifies one entry**."
         ),
     )
     content: str = Field(
@@ -56,7 +56,8 @@ class MemoryInput(BaseModel):
     old_text: str | None = Field(
         default=None,
         description=(
-            "For `replace`/`remove`: an exact substring of the current memory to act on. Copy it "
+            "For `replace`/`remove`: an exact substring of the current memory that **identifies "
+            "exactly one entry** — add surrounding text if a short one would match several. Copy it "
             "verbatim from the memory block injected this turn."
         ),
     )
@@ -68,7 +69,7 @@ class MemoryInput(BaseModel):
     description=(
         "Save something to your durable memory so you remember it in future sessions. Use it when "
         "you learn a lasting fact, preference, or decision worth keeping — not for transient chat. "
-        "`add` a new note, or `replace`/`remove` an existing one by its exact `old_text`. You do not "
+        "`add` a new note, or `replace`/`remove` an existing one by a unique `old_text` substring. You do not "
         "need to read first: your current memory is shown to you each turn. Set `target` to `user` to "
         "record a durable fact about the person you're helping."
     ),

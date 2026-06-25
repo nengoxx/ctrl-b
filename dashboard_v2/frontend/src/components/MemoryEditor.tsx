@@ -100,14 +100,19 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
   const { data: agentList } = useAgentList();
   const [openKey, setOpenKey] = useState<string | null>(null);
 
-  // Caps ride a small local draft (numeric text → coerced on save), reseeded from the saved cfg.
+  // Numeric settings ride a small local draft (numeric text → coerced on save), reseeded from the cfg.
   const [memCap, setMemCap] = useState(String(cfg.memory_char_limit));
   const [userCap, setUserCap] = useState(String(cfg.user_char_limit));
+  const [nudgePct, setNudgePct] = useState(String(cfg.consolidation_nudge_pct));
   useEffect(() => {
     setMemCap(String(cfg.memory_char_limit));
     setUserCap(String(cfg.user_char_limit));
-  }, [cfg.memory_char_limit, cfg.user_char_limit]);
-  const capsDirty = memCap !== String(cfg.memory_char_limit) || userCap !== String(cfg.user_char_limit);
+    setNudgePct(String(cfg.consolidation_nudge_pct));
+  }, [cfg.memory_char_limit, cfg.user_char_limit, cfg.consolidation_nudge_pct]);
+  const capsDirty =
+    memCap !== String(cfg.memory_char_limit) ||
+    userCap !== String(cfg.user_char_limit) ||
+    nudgePct !== String(cfg.consolidation_nudge_pct);
   useRegisterDirty("memory:caps", capsDirty);
 
   const setCfg = (patch: Partial<MemoryCfg>) => saveSettings.mutate({ memory: patch });
@@ -142,6 +147,13 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
         </div>
         <Switch on={cfg.auto_write} onToggle={() => setCfg({ auto_write: !cfg.auto_write })} />
       </div>
+      <div className="confrow">
+        <div className="k">
+          <div className="label">Consolidation nudge</div>
+          <div className="desc">near cap → tell the agent to consolidate before adding</div>
+        </div>
+        <Switch on={cfg.consolidation_nudge} onToggle={() => setCfg({ consolidation_nudge: !cfg.consolidation_nudge })} />
+      </div>
 
       <div className="confrow">
         <div className="k">
@@ -157,13 +169,26 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
         </div>
         <input aria-label="User cap" type="text" value={userCap} inputMode="numeric" onChange={(e) => setUserCap(e.target.value)} />
       </div>
+      <div className="confrow">
+        <div className="k">
+          <div className="label">Nudge threshold</div>
+          <div className="desc">store % full that triggers the nudge (1–100)</div>
+        </div>
+        <input aria-label="Nudge threshold" type="text" value={nudgePct} inputMode="numeric" onChange={(e) => setNudgePct(e.target.value)} />
+      </div>
       <div className="conf-savebar">
         <button
           className="conf-save"
           disabled={!capsDirty || saveSettings.isPending}
-          onClick={() => setCfg({ memory_char_limit: Number(memCap), user_char_limit: Number(userCap) })}
+          onClick={() =>
+            setCfg({
+              memory_char_limit: Number(memCap),
+              user_char_limit: Number(userCap),
+              consolidation_nudge_pct: Number(nudgePct),
+            })
+          }
         >
-          {saveSettings.isPending ? "Saving…" : capsDirty ? "Save caps" : "Saved"}
+          {saveSettings.isPending ? "Saving…" : capsDirty ? "Save" : "Saved"}
         </button>
       </div>
 

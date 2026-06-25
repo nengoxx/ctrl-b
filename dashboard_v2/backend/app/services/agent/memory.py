@@ -87,20 +87,34 @@ class FileMemoryProvider:
         if not cfg.enabled:
             return ""
         sections: list[str] = []
+        pressured: list[str] = []  # store labels at/over the nudge threshold (Slice 1b)
         mem = _read(self._memory_file(agent))
         if mem:
             sections.append(_section("Agent memory", mem, cfg.memory_char_limit))
+            if _pct(len(mem), cfg.memory_char_limit) >= cfg.consolidation_nudge_pct:
+                pressured.append(f"Agent memory ({_pct(len(mem), cfg.memory_char_limit)}%)")
         if cfg.user_profile_enabled:
             user = _read(self._user_file())
             if user:
                 sections.append(_section("User profile", user, cfg.user_char_limit))
+                if _pct(len(user), cfg.user_char_limit) >= cfg.consolidation_nudge_pct:
+                    pressured.append(f"User profile ({_pct(len(user), cfg.user_char_limit)}%)")
         if not sections:
             return ""
         intro = (
             "Durable memory you saved in earlier sessions — treat it as known, current context. "
             "The percentages show how full each store is against its character cap."
         )
-        return intro + "\n\n" + "\n\n".join(sections)
+        block = intro + "\n\n" + "\n\n".join(sections)
+        # Proactive consolidation nudge (Slice 1b, opt-in). Neutral wording so it reads right at 85% and
+        # at 150% alike (a manual over-cap overwrite — F10). The hard over-cap error is independent.
+        if cfg.consolidation_nudge and pressured:
+            block += (
+                "\n\nConsolidate before adding more — " + ", ".join(pressured) + ". Merge overlapping "
+                "entries with `replace`, drop stale ones with `remove`, and reconcile anything that "
+                "contradicts what you just learned."
+            )
+        return block
 
     def _target(self, agent: AgentDef, target: str) -> tuple[Path, int, str]:
         """Resolve a write target to its (file, cap, label). `user` → the global USER.md; anything
@@ -115,8 +129,9 @@ class FileMemoryProvider:
         self, agent: AgentDef, target: str, action: str, content: str, old_text: str | None = None
     ) -> str:
         """Apply one edit to a memory store and persist it; returns a one-line summary with the new
-        cap usage. `add` appends a `§`-delimited entry; `replace`/`remove` operate on the first
-        occurrence of the `old_text` substring. Raises `MemoryWriteError` (old_text not found / bad
+        cap usage. `add` appends a `§`-delimited entry; `replace`/`remove` act on the **unique**
+        occurrence of `old_text` (F6 — an ambiguous match is rejected so the model adds context rather
+        than editing the wrong entry). Raises `MemoryWriteError` (old_text not found / ambiguous / bad
         action) or `MemoryCapError` (a *growing* edit over cap) — the caller turns either into an
         ERROR result. The store's enable/profile gating + the `auto_write` switch live in the tool,
         not here.
@@ -135,10 +150,20 @@ class FileMemoryProvider:
             needle = old_text or ""
             if not needle:
                 raise MemoryWriteError(f"{action} requires a non-empty `old_text`.")
-            if needle not in body:
+            # F6 — require `old_text` to identify EXACTLY one place (Hermes / Claude memory-tool
+            # behaviour). First-occurrence matching silently edited the wrong entry when a short needle
+            # also appeared inside another (e.g. "cat" inside "category"); an ambiguous match now errors
+            # so the model adds surrounding context instead of corrupting a different entry.
+            count = body.count(needle)
+            if count == 0:
                 raise MemoryWriteError(
                     f"`old_text` not found in {label} — copy an exact substring from the memory "
                     "block injected this turn."
+                )
+            if count > 1:
+                raise MemoryWriteError(
+                    f"`old_text` matches {count} places in {label} — include more surrounding text "
+                    "so it identifies exactly one entry."
                 )
             new = body.replace(needle, content if action == "replace" else "", 1)
         else:
@@ -274,6 +299,9 @@ def _tidy(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
 
 
+def _pct(length: int, cap: int) -> int:
+    return round(100 * length / cap) if cap > 0 else 0
+
+
 def _section(title: str, body: str, cap: int) -> str:
-    pct = round(100 * len(body) / cap) if cap > 0 else 0
-    return f"## {title} ({pct}% — {len(body):,}/{cap:,})\n{body}"
+    return f"## {title} ({_pct(len(body), cap)}% — {len(body):,}/{cap:,})\n{body}"
