@@ -247,6 +247,12 @@ class MemoryCfg(BaseModel):
     # at cap 0 every non-empty write over-caps. The PUT 422s instead, surfacing the bad value.
     memory_char_limit: int = Field(2200, ge=1)  # per-agent MEMORY.md cap (~800 tokens, Hermes default)
     user_char_limit: int = Field(1375, ge=1)    # global USER.md cap (~500 tokens, Hermes default)
+    # Emotional/affective state (D27 slice B) — a per-agent `STATE.md` the model rewrites (SET
+    # semantics) and that's injected next to the persona. Opt-in (default OFF, like the nudge); small
+    # cap so it stays a terse "Mood / Energy / Lately …", not a journal. Writes auto-apply (the agent's
+    # own mood isn't a fact-about-the-world that needs the auto_write Approve gate — D27 #1).
+    state_enabled: bool = False
+    state_char_limit: int = Field(600, ge=1)    # per-agent STATE.md cap (~220 tokens)
 
 
 class EmbeddingsCfg(BaseModel):

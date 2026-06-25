@@ -49,14 +49,13 @@ def _provider():
     return settings, FileMemoryProvider(settings), settings.resolve_agent(None)
 
 
-def test_registry_has_two_stores_with_structural_facts() -> None:
-    from app.core.memory import StorePosition, StoreScope, StoreSemantics
-    from app.services.agent.memory import MEMORY_STORE, USER_STORE
+def test_registry_has_all_stores_with_structural_facts() -> None:
+    from app.core.memory import MEMORY_STORE, STATE_STORE, USER_STORE, StorePosition, StoreScope, StoreSemantics
 
     with _workspace():
         _s, prov, _agent = _provider()
         keys = [s.key for s in prov._stores()]
-        assert keys == ["memory", "user"]  # registration order
+        assert keys == ["memory", "user", "state"]  # registration order; all present regardless of enablement
 
         assert MEMORY_STORE.scope is StoreScope.AGENT
         assert MEMORY_STORE.filename == "MEMORY.md"
@@ -69,14 +68,21 @@ def test_registry_has_two_stores_with_structural_facts() -> None:
         assert USER_STORE.semantics is StoreSemantics.APPEND
         assert USER_STORE.position is StorePosition.FACTS
 
+        # state.md (D27-B): per-agent, SET, persona-positioned
+        assert STATE_STORE.scope is StoreScope.AGENT
+        assert STATE_STORE.filename == "STATE.md"
+        assert STATE_STORE.semantics is StoreSemantics.SET
+        assert STATE_STORE.position is StorePosition.PERSONA
+
 
 def test_spec_lookup_maps_keys_with_legacy_fallback() -> None:
-    from app.services.agent.memory import MEMORY_STORE, USER_STORE
+    from app.core.memory import MEMORY_STORE, STATE_STORE, USER_STORE
 
     with _workspace():
         _s, prov, _agent = _provider()
         assert prov._spec_for("memory") is MEMORY_STORE
         assert prov._spec_for("user") is USER_STORE
+        assert prov._spec_for("state") is STATE_STORE  # resolves even though state_enabled defaults off
         assert prov._spec_for("does-not-exist") is MEMORY_STORE  # legacy "anything else → MEMORY.md"
 
 
@@ -102,14 +108,48 @@ def test_path_resolution_matches_legacy_layout() -> None:
 
 
 def test_cap_resolution_reads_live_caps() -> None:
-    from app.services.agent.memory import MEMORY_STORE, USER_STORE
+    from app.core.memory import MEMORY_STORE, STATE_STORE, USER_STORE
 
     with _workspace():
         settings, prov, _agent = _provider()
         settings.memory.memory_char_limit = 1234
         settings.memory.user_char_limit = 567
+        settings.memory.state_char_limit = 89
         assert prov._cap_for(MEMORY_STORE) == 1234
         assert prov._cap_for(USER_STORE) == 567
+        assert prov._cap_for(STATE_STORE) == 89
+
+
+def test_every_store_is_explicitly_wired_no_silent_fallback() -> None:
+    """Drift-guard (audit): every store in STORES must be explicitly mapped in `_cap_for` /
+    `_store_enabled`, not fall through to memory's cap / always-on. A future store added to the
+    registry but forgotten in those maps trips this test instead of silently misbehaving."""
+    from app.core.memory import STORES
+
+    with _workspace():
+        settings, prov, _agent = _provider()
+        # Sentinel on memory's cap: any store that falls through to the memory default returns it.
+        settings.memory.memory_char_limit = 999_999
+        settings.memory.user_char_limit = 111
+        settings.memory.state_char_limit = 222
+        for spec in STORES:
+            cap = prov._cap_for(spec)
+            if spec.key == "memory":
+                assert cap == 999_999
+            else:
+                assert cap != 999_999, f"store '{spec.key}' falls through to the memory cap (unwired)"
+
+        # `_store_enabled` responds to each known store's own switch (memory always-on under master).
+        settings.memory.user_profile_enabled = False
+        settings.memory.state_enabled = False
+        by_key = {s.key: s for s in STORES}
+        assert prov._store_enabled(by_key["memory"]) is True
+        assert prov._store_enabled(by_key["user"]) is False
+        assert prov._store_enabled(by_key["state"]) is False
+        settings.memory.user_profile_enabled = True
+        settings.memory.state_enabled = True
+        assert prov._store_enabled(by_key["user"]) is True
+        assert prov._store_enabled(by_key["state"]) is True
 
 
 def test_inject_order_is_persona_first_then_facts() -> None:

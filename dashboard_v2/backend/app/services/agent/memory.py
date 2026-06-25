@@ -22,29 +22,20 @@ from pathlib import Path
 
 from app.config import Settings
 from app.core.memory import (
+    MEMORY_STORE,
+    STORES,
     MemoryBackup,
     StorePosition,
     StoreScope,
     StoreSemantics,
     StoreSpec,
+    store_by_key,
 )
 from app.domain.agent import AgentDef
 from app.services.agent.memory_backup import NoopBackup
 
-#: The two always-present stores (D27 store registry). Both APPEND/FACTS — identical behaviour to the
-#: pre-registry hardcoding (agent memory leads, then the global user profile). `state.md` (SET/PERSONA)
-#: is added as a third entry in D27 slice B; the registry exists so that is purely additive.
-MEMORY_STORE = StoreSpec(
-    key="memory", label="Agent memory", scope=StoreScope.AGENT, filename="MEMORY.md",
-    semantics=StoreSemantics.APPEND, position=StorePosition.FACTS,
-)
-USER_STORE = StoreSpec(
-    key="user", label="User profile", scope=StoreScope.GLOBAL, filename="USER.md",
-    semantics=StoreSemantics.APPEND, position=StorePosition.FACTS,
-)
-
-#: Injection order rank — PERSONA-first, then FACTS (`load_context` sorts stably by this, so stores at
-#: the same position keep registration order: memory before user).
+#: Injection order rank — PERSONA-first (emotional state), then FACTS (`load_context` sorts stably by
+#: this, so stores at the same position keep registration order: memory before user).
 _POSITION_RANK = {StorePosition.PERSONA: 0, StorePosition.FACTS: 1}
 
 
@@ -59,9 +50,15 @@ class MemoryCapError(MemoryWriteError):
 
     def __init__(self, label: str, length: int, cap: int, action: str = "add") -> None:
         self.label, self.length, self.cap, self.action = label, length, cap, action
+        # Remediation is semantics-aware: a SET store (`set`) has no entries to remove — the only fix
+        # is a shorter value; an APPEND store consolidates existing entries.
+        fix = (
+            "Send a shorter value."
+            if action == "set"
+            else "Remove or shorten existing entries first, then retry — a remove/shrink is always allowed."
+        )
         super().__init__(
-            f"this {action} would grow {label} to {length:,} chars, past its {cap:,}-char cap. "
-            "Remove or shorten existing entries first, then retry — a remove/shrink is always allowed."
+            f"this {action} would grow {label} to {length:,} chars, past its {cap:,}-char cap. {fix}"
         )
 
 
@@ -77,11 +74,11 @@ class FileMemoryProvider:
         self._backup: MemoryBackup = backup or NoopBackup()
 
     def _stores(self) -> list[StoreSpec]:
-        """The active stores (D27 registry), in registration order. Built fresh each call so a future
-        store gated by a live Conf flag (state.md, D27 slice B) appears/disappears with no restart.
-        Today: the two always-present APPEND stores — the `user` store's *injection* is gated per-store
-        in `load_context` (and its *writes* in the `memory` tool), not by membership here."""
-        return [MEMORY_STORE, USER_STORE]
+        """The store registry (D27) — all structural specs, regardless of enablement. A store is
+        *present* here always and *gated* per-store (injection in `load_context`, writes in the
+        `memory` tool), so a write/read target always resolves to the right file even while the store
+        is disabled (no silent misroute to agent memory)."""
+        return list(STORES)
 
     def _store_file(self, agent: AgentDef, spec: StoreSpec) -> Path:
         """The file backing `spec` for `agent`. GLOBAL → the memory-dir root; AGENT → the root for the
@@ -97,16 +94,21 @@ class FileMemoryProvider:
         shows), so a cap edit applies with no restart. Flat caps for now (D27 notes the future
         `stores: {key: {cap}}` map as the seam once stores grow past a handful)."""
         cfg = self._settings.memory
-        return {"memory": cfg.memory_char_limit, "user": cfg.user_char_limit}.get(
-            spec.key, cfg.memory_char_limit
-        )
+        return {
+            "memory": cfg.memory_char_limit,
+            "user": cfg.user_char_limit,
+            "state": cfg.state_char_limit,
+        }.get(spec.key, cfg.memory_char_limit)
 
     def _store_enabled(self, spec: StoreSpec) -> bool:
         """Whether `spec` is currently active (the master `memory.enabled` switch is checked once up in
-        `load_context`). The `user` profile has its own switch; other stores are on (state will add its
-        own gate in D27 slice B)."""
+        `load_context`). The `user` profile and `state` stores have their own opt-in switches; the
+        agent's own memory is always on under the master switch."""
+        cfg = self._settings.memory
         if spec.key == "user":
-            return self._settings.memory.user_profile_enabled
+            return cfg.user_profile_enabled
+        if spec.key == "state":
+            return cfg.state_enabled
         return True
 
     def _agent_memory_dir(self, agent: AgentDef) -> Path:
@@ -146,7 +148,7 @@ class FileMemoryProvider:
         if not sections:
             return ""
         intro = (
-            "Durable memory you saved in earlier sessions — treat it as known, current context. "
+            "Context you carry across sessions — treat it as known and current. "
             "The percentages show how full each store is against its character cap."
         )
         block = intro + "\n\n" + "\n\n".join(sections)
@@ -164,10 +166,7 @@ class FileMemoryProvider:
         """Look up a store spec by its `key`. An unknown/legacy key falls back to the agent memory
         store — preserving the pre-registry `_target` behaviour (`user` → USER.md, anything else →
         the agent's own MEMORY.md)."""
-        for spec in self._stores():
-            if spec.key == key:
-                return spec
-        return MEMORY_STORE
+        return store_by_key(key) or MEMORY_STORE
 
     def _target(self, agent: AgentDef, target: str) -> tuple[Path, StoreSpec]:
         """Resolve a write/read target to its (file, spec). Cap + label come from the spec via
@@ -180,25 +179,58 @@ class FileMemoryProvider:
         self, agent: AgentDef, target: str, action: str, content: str, old_text: str | None = None
     ) -> str:
         """Apply one edit to a memory store and persist it; returns a one-line summary with the new
-        cap usage. `add` appends a `§`-delimited entry; `replace`/`remove` act on the **unique**
+        cap usage. Behaviour is keyed by the store's **semantics** (D27): an **APPEND** store (memory,
+        user) takes `add` (a `§`-delimited entry) / `replace` / `remove` acting on the **unique**
         occurrence of `old_text` (F6 — an ambiguous match is rejected so the model adds context rather
-        than editing the wrong entry). Raises `MemoryWriteError` (old_text not found / ambiguous / bad
+        than editing the wrong entry); a **SET** store (state) takes `set`, where `content` *is* the new
+        whole value (no `§`/tidy). Raises `MemoryWriteError` (old_text not found / ambiguous / bad
         action) or `MemoryCapError` (a *growing* edit over cap) — the caller turns either into an
-        ERROR result. The store's enable/profile gating + the `auto_write` switch live in the tool,
-        not here.
+        ERROR result. The store's enable/profile gating, the action↔semantics check, and the
+        `auto_write` switch live in the tool, not here.
 
-        Concurrency invariant (F5): this read-modify-write is synchronous (no `await` between the
-        `_read` and the `write_text`), so concurrent turns/subagents sharing one file can't interleave
-        within our single-worker event loop. Slice 2's git backup moves all memory mutations under a
-        process-wide async lock — that lock then *is* the serialization guarantee (and lets the commit
-        capture exactly this write); the no-await property here is the interim guard."""
+        Concurrency invariant (F5/D26): the **entire** read-modify-write-commit runs under the backup
+        lock — the file read, the in-memory merge, the cap-check, the atomic write, and the commit are
+        one critical section. That's what makes a concurrent edit safe: two subagents writing the same
+        file (or any write that arrives while the periodic `reconcile()` sweep holds the same lock)
+        serialize, and the second reads the *post*-first-write body, so no update is lost. (Earlier the
+        read sat outside the lock; D26's `async with` could then suspend between read and write under
+        contention — a lost-update window now closed.)"""
         path, spec = self._target(agent, target)
         cap, label = self._cap_for(spec), spec.label
-        body = _read(path)
+        # The read-modify-write-commit is one critical section (see the invariant above). The merge can
+        # raise (bad `old_text`/action) or the cap-check can raise — both propagate out of the lock with
+        # no file change and no commit (the lock simply releases).
+        async with self._backup.guard():
+            body = _read(path)
+            new = self._merge(spec, action, content, old_text, body, label)
+            # F1 — the cap is a *growth* guard, not an absolute ceiling: reject only an edit that pushes
+            # the store further over cap. A `remove`/shrinking `replace`/smaller `set` is always allowed
+            # even while over cap, so an over-cap store (a lowered cap, or the uncapped manual
+            # `overwrite`) can never trap the very edits that resolve it.
+            if len(new) > cap and len(new) > len(body):
+                raise MemoryCapError(label, len(new), cap, action)
+            _atomic_write(path, new + "\n" if new else "")
+            await self._backup.commit([path], _commit_msg(agent, spec.filename, action))
+        pct = round(100 * len(new) / cap) if cap > 0 else 0
+        return f"{label} updated ({action}) — {pct}% ({len(new):,}/{cap:,})"
+
+    @staticmethod
+    def _merge(
+        spec: StoreSpec, action: str, content: str, old_text: str | None, body: str, label: str
+    ) -> str:
+        """Compute the new store body for one edit — pure (no I/O), so it runs inside the write lock.
+        SET store → the wholesale stripped `content`; APPEND store → a `§`-delimited `add`, or a
+        `replace`/`remove` on the **unique** `old_text` occurrence (F6), tidied (F3a). Raises
+        `MemoryWriteError` on a bad `old_text`/action (the gate already validated args, but this stays
+        self-defending). The action↔semantics gate guarantees `action == "set"` for a SET store."""
+        if spec.semantics is StoreSemantics.SET:
+            # SET store (state.md, D27-B): `content` is the new whole value — no `§` framing and no
+            # `_tidy` (free-form markdown the model rewrites each time).
+            return content.strip()
         if action == "add":
             entry = content.strip()
-            new = f"{body}\n\n§ {entry}" if body else f"§ {entry}"
-        elif action in ("replace", "remove"):
+            return _tidy(f"{body}\n\n§ {entry}" if body else f"§ {entry}")
+        if action in ("replace", "remove"):
             needle = old_text or ""
             if not needle:
                 raise MemoryWriteError(f"{action} requires a non-empty `old_text`.")
@@ -217,24 +249,8 @@ class FileMemoryProvider:
                     f"`old_text` matches {count} places in {label} — include more surrounding text "
                     "so it identifies exactly one entry."
                 )
-            new = body.replace(needle, content if action == "replace" else "", 1)
-        else:
-            raise MemoryWriteError(f"unknown memory action {action!r}")
-
-        new = _tidy(new)
-        # F1 — the cap is a *growth* guard, not an absolute ceiling: reject only an edit that pushes
-        # the store further over the cap. A `remove`/shrinking `replace` is always allowed even while
-        # over cap, so an over-cap store (a lowered cap, or the uncapped manual `overwrite`) can never
-        # trap the very edits that resolve it. (Raised before the lock — no file change, no commit.)
-        if len(new) > cap and len(new) > len(body):
-            raise MemoryCapError(label, len(new), cap, action)
-        # D26 — couple the atomic write to its commit under the backup lock so the commit captures
-        # exactly these bytes and concurrent writes/subagents can't interleave.
-        async with self._backup.guard():
-            _atomic_write(path, new + "\n" if new else "")
-            await self._backup.commit([path], _commit_msg(agent, spec.filename, action))
-        pct = round(100 * len(new) / cap) if cap > 0 else 0
-        return f"{label} updated ({action}) — {pct}% ({len(new):,}/{cap:,})"
+            return _tidy(body.replace(needle, content if action == "replace" else "", 1))
+        raise MemoryWriteError(f"unknown memory action {action!r}")
 
     def read_raw(self, agent: AgentDef, target: str) -> str:
         """The raw stored text of a memory file (USER.md for `user`, else the agent's MEMORY.md), or

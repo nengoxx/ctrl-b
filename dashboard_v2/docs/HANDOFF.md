@@ -76,7 +76,30 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Memory hardening (1/1b) + git backup (D26) + D27 Sub-slice A (store registry) SHIPPED** · NEXT = **D27 Sub-slice B (`state.md`)** → reflection (C); emma deploy still the last v1 track)
+## Current state (**Memory hardening (1/1b) + git backup (D26) + D27 Sub-slices A (registry) & B (`state.md`) SHIPPED + audited** · NEXT = **D27 Sub-slice C (periodic reflection)**; emma deploy still the last v1 track)
+
+> ### 🟢 SESSION UPDATE — D27 Sub-slice B (`state.md`) SHIPPED + deep-audited — 2026-06-26
+> The emotional-state store is built, fully green, live-verified, and **deep-audited** (independent
+> adversarial reviewer + a concurrency regression test). DECISIONS **D27 §B** has the full spec + audit
+> notes. Backend **29 test files green**; frontend `build` + **85 unit** + **32 e2e** clean. **Awaiting
+> the owner's final OK to commit** (uncommitted as of this block; A is committed at `6e5e2f0`).
+> - **What shipped.** Registry constants moved to `core/memory.py` (`STORES` + `store_by_key`) — the one
+>   spine for the provider, the `memory` tool, and the memory API. `state` = AGENT/`STATE.md`/**SET**/
+>   PERSONA, opt-in `state_enabled` (default off), `state_char_limit≈600`, **auto-applies** (bypasses the
+>   `auto_write` propose-gate, D27 #1). `write` branches on `spec.semantics` (SET → wholesale, no
+>   `§`/`_tidy`; APPEND unchanged), shared F1 cap-guard. Tool gate enforces action↔semantics + the state
+>   gate. New `GET/PUT /api/agents/{name}/memory/{store}` (registry+scope-validated → 404; bare `/memory`
+>   = `memory` alias; `/memory/user` = the lone GLOBAL store). Frontend Conf → Memory: "Emotional state"
+>   toggle + gated "State cap" + per-agent `· state` rows. **Routing decoupled from enablement** — a
+>   disabled store still resolves to its own file (never misroutes), gated only at inject + write.
+> - **Audit fix (BLOCKER, folded in): `write` is now a race-free read-modify-write.** Found a
+>   *pre-existing* (D26) lost-update — only the file *write* was under the backup lock, not the *read*, so
+>   concurrent writers (subagents, or a write during the `reconcile()` sweep) clobbered each other. Now the
+>   whole read→merge→cap-check→write→commit is one `async with backup.guard()` critical section (merge
+>   pulled into a pure `_merge`). Proven by **`test_memory_concurrency_d27`** (forces the interleaving;
+>   non-vacuity verified — loses an update on the old code). MINORs fixed: SET-aware cap-error wording; a
+>   **drift-guard test** + an "adding a store" checklist at `STORES` (the `stores:{cap}` map stays the
+>   D27-deferred seam — only 3 stores). **NEXT = Sub-slice C (periodic reflection)** — see D27 §C.
 
 > ### 🟢 SESSION UPDATE — D27 Sub-slice A (store registry) SHIPPED — 2026-06-25
 > The prerequisite refactor for `state.md`/reflection is **done + green** (DECISIONS **D27 §A**, "✅ SHIPPED").

@@ -248,6 +248,8 @@ export function ConfTab({ active }: Props) {
     consolidation_nudge_pct: memorySection?.consolidation_nudge_pct ?? 80,
     memory_char_limit: memorySection?.memory_char_limit ?? 2200,
     user_char_limit: memorySection?.user_char_limit ?? 1375,
+    state_enabled: memorySection?.state_enabled ?? false,
+    state_char_limit: memorySection?.state_char_limit ?? 600,
   };
   const skillsEnabled = (agentSection as { skills_enabled?: boolean } | undefined)?.skills_enabled ?? true;
 

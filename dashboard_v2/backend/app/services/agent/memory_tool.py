@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
+from app.core.memory import StoreSemantics, store_by_key
 from app.core.tool import InvocationContext, action
 from app.domain.enums import Risk, RunState
 from app.domain.result import ToolResult
@@ -32,18 +33,21 @@ if TYPE_CHECKING:
 
 
 class MemoryInput(BaseModel):
-    target: Literal["memory", "user"] = Field(
+    target: Literal["memory", "user", "state"] = Field(
         default="memory",
         description=(
             "Which store to edit. `memory` = your own working memory (facts about ongoing tasks, "
             "decisions, project context). `user` = the durable profile of the person you're helping "
-            "(their preferences, identity, standing instructions) — shared across all agents."
+            "(their preferences, identity, standing instructions) — shared across all agents. `state` "
+            "= your own current emotional/affective state (a short mood/energy note) — rewrite it "
+            "wholesale with `action=set` when how you feel shifts."
         ),
     )
-    action: Literal["add", "replace", "remove"] = Field(
+    action: Literal["add", "replace", "remove", "set"] = Field(
         description=(
-            "`add` a new entry, or `replace`/`remove` an existing one. For replace/remove, give an "
-            "`old_text` substring that **uniquely identifies one entry**."
+            "For `memory`/`user`: `add` a new entry, or `replace`/`remove` an existing one (give an "
+            "`old_text` substring that **uniquely identifies one entry**). For `state`: `set` — "
+            "`content` becomes the whole new state, replacing what was there."
         ),
     )
     content: str = Field(
@@ -71,7 +75,8 @@ class MemoryInput(BaseModel):
         "you learn a lasting fact, preference, or decision worth keeping — not for transient chat. "
         "`add` a new note, or `replace`/`remove` an existing one by a unique `old_text` substring. You do not "
         "need to read first: your current memory is shown to you each turn. Set `target` to `user` to "
-        "record a durable fact about the person you're helping."
+        "record a durable fact about the person you're helping, or `target=state` with `action=set` to "
+        "rewrite your own current mood/state when it shifts."
     ),
     icon="brain",
     category="builtin",
@@ -91,8 +96,12 @@ async def memory(inp: MemoryInput, ctx: InvocationContext) -> ToolResult:
 
     # Kill switch (D15 #6): off → propose, never write, never block. The owner approves it later via
     # the Approve-to-apply UI (7e-f-3), which re-runs the gate + `apply_memory` below, auto-write
-    # aside — shared with `skill_manage` through `services/agent/proposals.py`.
-    if not deps.settings.memory.auto_write:
+    # aside — shared with `skill_manage` through `services/agent/proposals.py`. SET stores (emotional
+    # `state`) bypass the propose-gate and always auto-apply: the agent's own mood is not a
+    # fact-about-the-world that needs the owner's Approve (D27 #1).
+    spec = store_by_key(inp.target)
+    auto_applies = spec is not None and spec.semantics is StoreSemantics.SET
+    if not deps.settings.memory.auto_write and not auto_applies:
         return ToolResult(
             state=RunState.OK,
             summary=f"proposed {inp.action} to {inp.target} memory — awaiting the owner's approval (NOT saved yet)",
@@ -115,10 +124,31 @@ def gate_memory(deps: "Deps | None", inp: MemoryInput) -> ToolResult | None:
         return ToolResult(state=RunState.DENIED, summary="memory subsystem is disabled")
     if inp.target == "user" and not cfg.user_profile_enabled:
         return ToolResult(state=RunState.DENIED, summary="user-profile writes are disabled")
+    if inp.target == "state" and not cfg.state_enabled:
+        return ToolResult(state=RunState.DENIED, summary="emotional-state writes are disabled")
+    # Action ↔ store-semantics (D27-B): `set` only on a SET store, add/replace/remove only on APPEND.
+    spec = store_by_key(inp.target)
+    if spec is not None:
+        if spec.semantics is StoreSemantics.SET and inp.action != "set":
+            return ToolResult(
+                state=RunState.ERROR,
+                summary=f"{inp.target} takes action=set",
+                error=f"the `{inp.target}` store holds one value — use `action=set` to rewrite it, "
+                "not add/replace/remove.",
+            )
+        if spec.semantics is StoreSemantics.APPEND and inp.action == "set":
+            return ToolResult(
+                state=RunState.ERROR,
+                summary="set is only for the state store",
+                error="`action=set` rewrites the whole store; only the emotional `state` store uses "
+                "it. For `memory`/`user`, use add/replace/remove.",
+            )
     # Arg checks the model can fix → ERROR (data, not an exception).
-    if inp.action == "add" and not inp.content.strip():
+    if inp.action in ("add", "set") and not inp.content.strip():
         return ToolResult(
-            state=RunState.ERROR, summary="nothing to add", error="`content` is required for add."
+            state=RunState.ERROR,
+            summary=f"nothing to {inp.action}",
+            error=f"`content` is required for {inp.action}.",
         )
     if inp.action in ("replace", "remove") and not (inp.old_text or "").strip():
         return ToolResult(

@@ -25,6 +25,7 @@ from starlette.responses import Response
 
 from app.config import deep_merge
 from app.core.fsutil import write_text_eol
+from app.core.memory import StoreScope, StoreSpec, store_by_key
 from app.domain.agent import AgentDef
 from app.domain.conversation import Message, ToolCallPart, ToolResultPart, Thread
 from app.domain.enums import Actor, Privilege, RunState
@@ -574,6 +575,39 @@ async def put_user_memory(body: MemoryContent, request: Request) -> dict[str, st
     """Overwrite the global `USER.md`. Blank content clears it. (`agent` arg is ignored for `user`.)"""
     default = request.app.state.settings.default_agent_def()
     return {"content": await _memory_provider(request).overwrite(default, "user", body.content)}
+
+
+# Store-keyed routes (D27) — the generic per-agent editor for any AGENT-scoped store (`memory`, the
+# new `state.md`). The bare `/agents/{name}/memory` routes above stay as the `memory` alias (no
+# frontend big-bang); the lone GLOBAL store keeps `/memory/user` (generalize to `/memory/{store}` only
+# if a second global store ever lands). An unknown or non-AGENT store key → 404.
+
+
+def _agent_store_spec(store: str) -> StoreSpec:
+    spec = store_by_key(store)
+    if spec is None or spec.scope is not StoreScope.AGENT:
+        raise HTTPException(status_code=404, detail=f"unknown agent memory store '{store}'")
+    return spec
+
+
+@router.get("/agents/{name}/memory/{store}")
+async def get_agent_store(name: str, store: str, request: Request) -> dict[str, str]:
+    """The raw text of one AGENT store (`memory`/`state`) for an agent, or "" if none."""
+    spec = _agent_store_spec(store)
+    agent = _resolve_agent_for_memory(request, name)
+    return {"name": name, "store": spec.key, "content": _memory_provider(request).read_raw(agent, spec.key)}
+
+
+@router.put("/agents/{name}/memory/{store}")
+async def put_agent_store(name: str, store: str, body: MemoryContent, request: Request) -> dict[str, str]:
+    """Overwrite one AGENT store (`memory`/`state`) for an agent. Blank clears it. Re-read each turn → live."""
+    spec = _agent_store_spec(store)
+    agent = _resolve_agent_for_memory(request, name)
+    return {
+        "name": name,
+        "store": spec.key,
+        "content": await _memory_provider(request).overwrite(agent, spec.key, body.content),
+    }
 
 
 @router.post("/agent/compact")

@@ -5,6 +5,7 @@ import { useAgentList } from "../hooks/useAgents";
 import { disclosureToggle } from "../lib/disclosure";
 import {
   agentSlot,
+  stateSlot,
   useMemoryContent,
   useSaveMemory,
   userSlot,
@@ -104,24 +105,35 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
   const [memCap, setMemCap] = useState(String(cfg.memory_char_limit));
   const [userCap, setUserCap] = useState(String(cfg.user_char_limit));
   const [nudgePct, setNudgePct] = useState(String(cfg.consolidation_nudge_pct));
+  const [stateCap, setStateCap] = useState(String(cfg.state_char_limit));
   useEffect(() => {
     setMemCap(String(cfg.memory_char_limit));
     setUserCap(String(cfg.user_char_limit));
     setNudgePct(String(cfg.consolidation_nudge_pct));
-  }, [cfg.memory_char_limit, cfg.user_char_limit, cfg.consolidation_nudge_pct]);
+    setStateCap(String(cfg.state_char_limit));
+  }, [cfg.memory_char_limit, cfg.user_char_limit, cfg.consolidation_nudge_pct, cfg.state_char_limit]);
   const capsDirty =
     memCap !== String(cfg.memory_char_limit) ||
     userCap !== String(cfg.user_char_limit) ||
-    nudgePct !== String(cfg.consolidation_nudge_pct);
+    nudgePct !== String(cfg.consolidation_nudge_pct) ||
+    stateCap !== String(cfg.state_char_limit);
   useRegisterDirty("memory:caps", capsDirty);
 
   const setCfg = (patch: Partial<MemoryCfg>) => saveSettings.mutate({ memory: patch });
 
   const defaultSlug = agentList?.default ?? "default";
+  const specialists = agentList?.agents ?? [];
   const slots: MemorySlot[] = [
     userSlot(cfg.user_char_limit),
     agentSlot(defaultSlug, true, cfg.memory_char_limit),
-    ...(agentList?.agents ?? []).map((s) => agentSlot(s, false, cfg.memory_char_limit)),
+    ...specialists.map((s) => agentSlot(s, false, cfg.memory_char_limit)),
+    // Emotional-state files (D27-B) — one per agent, only when the store is enabled.
+    ...(cfg.state_enabled
+      ? [
+          stateSlot(defaultSlug, true, cfg.state_char_limit),
+          ...specialists.map((s) => stateSlot(s, false, cfg.state_char_limit)),
+        ]
+      : []),
   ];
 
   return (
@@ -154,6 +166,13 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
         </div>
         <Switch on={cfg.consolidation_nudge} onToggle={() => setCfg({ consolidation_nudge: !cfg.consolidation_nudge })} />
       </div>
+      <div className="confrow">
+        <div className="k">
+          <div className="label">Emotional state</div>
+          <div className="desc">inject + let the agent rewrite a per-agent STATE.md (mood/energy)</div>
+        </div>
+        <Switch on={cfg.state_enabled} onToggle={() => setCfg({ state_enabled: !cfg.state_enabled })} />
+      </div>
 
       <div className="confrow">
         <div className="k">
@@ -176,6 +195,15 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
         </div>
         <input aria-label="Nudge threshold" type="text" value={nudgePct} inputMode="numeric" onChange={(e) => setNudgePct(e.target.value)} />
       </div>
+      {cfg.state_enabled && (
+        <div className="confrow">
+          <div className="k">
+            <div className="label">State cap</div>
+            <div className="desc">per-agent STATE.md char limit</div>
+          </div>
+          <input aria-label="State cap" type="text" value={stateCap} inputMode="numeric" onChange={(e) => setStateCap(e.target.value)} />
+        </div>
+      )}
       <div className="conf-savebar">
         <button
           className="conf-save"
@@ -185,6 +213,7 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
               memory_char_limit: Number(memCap),
               user_char_limit: Number(userCap),
               consolidation_nudge_pct: Number(nudgePct),
+              state_char_limit: Number(stateCap),
             })
           }
         >

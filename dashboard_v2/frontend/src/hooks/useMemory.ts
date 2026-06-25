@@ -18,6 +18,8 @@ export interface MemoryCfg {
   consolidation_nudge_pct: number;
   memory_char_limit: number;
   user_char_limit: number;
+  state_enabled: boolean; // D27-B — per-agent emotional STATE.md (opt-in)
+  state_char_limit: number;
 }
 
 /** One editable memory file: the global user profile or a single agent's memory. `key` is the React
@@ -38,8 +40,19 @@ export function agentSlot(slug: string, isDefault: boolean, cap: number): Memory
   return {
     key: `agent:${slug}`,
     label: slug,
-    sublabel: isDefault ? "memories/MEMORY.md · root agent" : `agents/${slug}/memories/MEMORY.md`,
+    sublabel: isDefault ? "memories/MEMORY.md · root agent" : `agents/${slug}/MEMORY.md`,
     url: `/api/agents/${encodeURIComponent(slug)}/memory`,
+    cap,
+  };
+}
+
+/** One agent's emotional `STATE.md` (D27-B) — the store-keyed route, gated by `state_enabled`. */
+export function stateSlot(slug: string, isDefault: boolean, cap: number): MemorySlot {
+  return {
+    key: `state:${slug}`,
+    label: `${slug} · state`,
+    sublabel: isDefault ? "STATE.md · root agent emotional state" : `agents/${slug}/STATE.md · emotional state`,
+    url: `/api/agents/${encodeURIComponent(slug)}/memory/state`,
     cap,
   };
 }

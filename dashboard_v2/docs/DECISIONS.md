@@ -1251,7 +1251,35 @@ so a Conf toggle hot-applies. The existing stores become two entries with **iden
   gated `state_enabled`); `MemoryCfg` type gains the new fields; `MemoryEditor` renders the state row + its cap, and
   the reflection controls (C); `ConfTab` default `memoryCfg` literal gains the new fields.
 
-### B — `state.md` (emotional/affective state, opt-in)
+### B — `state.md` (emotional/affective state, opt-in) ✅ SHIPPED 2026-06-26
+
+**Shipped + deep-audited (independent adversarial review + a concurrency regression test).** The
+registry constants moved to `core/memory.py` (`STORES` + `store_by_key`) — the single spine shared by
+the provider, the `memory` tool, and the memory API. `state` is registered as SET/PERSONA, opt-in via
+`MemoryCfg.state_enabled` (default off), cap `state_char_limit≈600`, auto-applies (bypasses the
+`auto_write` propose-gate). `write` branches on `spec.semantics` (SET → wholesale `content`, no
+`§`/`_tidy`; APPEND unchanged), sharing the F1 growth-guard. The tool gate enforces action↔semantics
+(`set`↔SET, add/replace/remove↔APPEND) + the per-store enable gate. New store-keyed API route
+`GET/PUT /api/agents/{name}/memory/{store}` (AGENT stores, registry+scope-validated → 404; bare
+`/memory` stays the `memory` alias; `/memory/user` stays for the lone GLOBAL store). Frontend: Conf →
+Memory gains an "Emotional state" toggle, a gated "State cap" field, and per-agent `· state` file rows.
+Routing is decoupled from enablement — a disabled store still resolves to its own file (never
+misroutes), gated only at injection (`load_context`) and writes (the tool gate).
+
+> **Audit fix (BLOCKER, folded in): `write` is now a race-free read-modify-write.** The audit found a
+> *pre-existing* (D26-introduced) lost-update: D26 moved only the file *write* under the backup lock,
+> leaving the *read* outside it, so under contention (≥2 subagents writing one file, or any write
+> arriving while the 120s `reconcile()` sweep holds the same lock) the second writer merged against a
+> stale body and silently clobbered the first — and the F5 docstring wrongly certified it safe. Fix:
+> the whole read→merge→cap-check→write→commit runs inside one `async with backup.guard()` (the merge
+> extracted to a pure `_merge` staticmethod). Proven by `test_memory_concurrency_d27` (pre-holds the
+> lock to force the interleaving; verified non-vacuous — it loses an update on the old code). Two MINORs
+> also fixed: the cap-error remediation is now semantics-aware (a SET store says "send a shorter value",
+> not "remove entries"); the `_cap_for`/`_store_enabled` per-store wiring has a **drift-guard test** +
+> an "adding a store" touch-point checklist at the `STORES` registry (the flat-caps→`stores:` map stays
+> the D27-deferred seam, not built — only 3 stores).
+
+**Original design (still the spec):**
 
 One registry entry: `state` = AGENT / `STATE.md` / **SET** / **PERSONA** position / injected + writable, gated by
 `MemoryCfg.state_enabled: bool = False`, `backed_up=True`. **Free-form markdown the model rewrites** (e.g. a short

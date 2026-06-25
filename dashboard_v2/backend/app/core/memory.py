@@ -66,6 +66,49 @@ class StoreSpec:
     backed_up: bool = True                # versioned in the D26 git repo (False → future ephemeral store)
 
 
+# ── The canonical store registry (D27) ────────────────────────────────────────────────────────────
+# Structural constants shared by the provider (behaviour), the `memory` tool (write gating), and the
+# memory API (route validation). Tunables (enabled / cap) resolve live from `MemoryCfg` at each
+# consumer; these descriptors are pure. Adding a store = one entry here + its caps/gate in `MemoryCfg`.
+
+MEMORY_STORE = StoreSpec(
+    key="memory", label="Agent memory", scope=StoreScope.AGENT, filename="MEMORY.md",
+    semantics=StoreSemantics.APPEND, position=StorePosition.FACTS,
+)
+USER_STORE = StoreSpec(
+    key="user", label="User profile", scope=StoreScope.GLOBAL, filename="USER.md",
+    semantics=StoreSemantics.APPEND, position=StorePosition.FACTS,
+)
+#: Emotional/affective state (D27 slice B) — one value the model rewrites (SET), injected next to the
+#: persona (PERSONA-first). Opt-in via `MemoryCfg.state_enabled`; small cap; auto-applies (no propose).
+STATE_STORE = StoreSpec(
+    key="state", label="Emotional state", scope=StoreScope.AGENT, filename="STATE.md",
+    semantics=StoreSemantics.SET, position=StorePosition.PERSONA,
+)
+
+#: The registry, in registration order (also spec-lookup order). Injection order is computed separately
+#: (PERSONA-first) by the provider. Membership is structural — a store is *present* here always and
+#: *gated* (enabled/injected) by its consumer, so a write target always resolves to the right file
+#: (never silently misroutes to agent memory) even while the store is disabled.
+#:
+#: ADDING A STORE — wire all of these or it silently misbehaves (the tunables are still flat per D27,
+#: not yet a `stores:{key:{cap,enabled}}` map; that map is the named seam once stores grow past a few):
+#:   1. a `MemoryCfg` cap (+ enable flag if opt-in)         — config.py
+#:   2. `FileMemoryProvider._cap_for` + `_store_enabled`    — map the new key (else it inherits memory's
+#:                                                             cap / is silently always-on)
+#:   3. the `memory` tool's `target` Literal + `gate_memory` — services/agent/memory_tool.py
+#:   4. (frontend) a `MemoryCfg` field + a slot in the Conf Memory editor
+#: The drift-guard test (`test_memory_registry_d27`) asserts every store here is explicitly mapped.
+STORES: tuple[StoreSpec, ...] = (MEMORY_STORE, USER_STORE, STATE_STORE)
+
+
+def store_by_key(key: str) -> StoreSpec | None:
+    """The spec for a store `key`, or `None` if unknown. Consumers decide the unknown-key policy: the
+    provider falls back to agent memory (legacy `_target` behaviour), the API 404s, the tool's
+    `Literal` keeps the model on known keys."""
+    return next((s for s in STORES if s.key == key), None)
+
+
 @runtime_checkable
 class MemoryProvider(Protocol):
     """Durable memory for the agent loop. `load_context` returns the block injected into the system
