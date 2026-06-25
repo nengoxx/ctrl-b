@@ -1199,7 +1199,19 @@ shippable. The full file-level pre-flight is inline so the build can start cold.
 > untrusted provenance; the model's own curated memory/state is trusted and would be corrupted by redaction
 > (D26's secrets-guard + private-remote rule cover the residual leak risk).
 
-### A — Store registry (the prerequisite refactor; behavior-preserving, no data migration)
+### A — Store registry (the prerequisite refactor; behavior-preserving, no data migration) ✅ SHIPPED 2026-06-25
+
+**Shipped as a pure, behavior-preserving refactor — only `core/memory.py` + `services/agent/memory.py` touched.**
+The two stores became registry entries (`MEMORY_STORE`/`USER_STORE`, both APPEND/FACTS); the provider iterates
+the registry for path/cap/label resolution + `load_context` (PERSONA-first then FACTS, stable sort keeps
+memory→user). `StoreSpec` carries **all** the fields B/C need (semantics, position, injected, writable,
+backed_up) so they reopen `core/memory.py` for nothing — B just appends a SET/PERSONA `state` spec + a SET
+branch in `write`. **Deliberately deferred to B (the owning slice), against this section's original pre-flight:**
+the tool's `"set"` action, `state_char_limit` config, the store-keyed API route, the frontend `stateSlot` —
+all dead scaffolding until a SET store exists. **Safety property held:** the four prior memory suites
+(`test_memory_7e`/`_tool_7e`/`_panel_7e`/`_git_backup_d26`, 41 tests) pass **unchanged**; new
+`test_memory_registry_d27.py` (5) pins the registry shape + that resolution matches the old hardcoded mapping.
+Full backend suite 27 files green. Original design below (B/C still pending).
 
 Today the two stores are hardcoded across ~6 sites. Replace that with one **registry** the code reads from. A
 `StoreSpec` descriptor (pure, in `core/memory.py`):

@@ -14,10 +14,56 @@ this protocol in their slices (7e-d-2 / 7e-d-3); this slice defines just the rea
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from app.domain.agent import AgentDef
+
+
+class StoreScope(str, Enum):
+    """Where a store's file lives. `AGENT` → per-agent (root agent → the memory-dir root, a specialist
+    → its `agents/<slug>/`); `GLOBAL` → one shared file at the memory-dir root, across all agents."""
+
+    AGENT = "agent"
+    GLOBAL = "global"
+
+
+class StoreSemantics(str, Enum):
+    """How the `memory` tool edits a store. `APPEND` → `§`-delimited entries the model adds/replaces/
+    removes (MEMORY.md, USER.md). `SET` → a wholesale value the model overwrites (the emotional
+    `state.md`, D27 slice B) — no `§`/cap-tidy logic; `content` *is* the new value."""
+
+    APPEND = "append"
+    SET = "set"
+
+
+class StorePosition(str, Enum):
+    """Injection ordering within the single memory block (`load_context` emits PERSONA-first, then
+    FACTS). `PERSONA` → affective/identity context that reads next to the persona (state); `FACTS` →
+    durable factual context (agent memory, user profile)."""
+
+    PERSONA = "persona"
+    FACTS = "facts"
+
+
+@dataclass(frozen=True)
+class StoreSpec:
+    """Structural descriptor for one memory store (D27). The *structural* facts are code constants
+    here; the *tunables* (`enabled`, `cap`, `backed_up`) resolve live from `MemoryCfg` so a Conf toggle
+    hot-applies. `FileMemoryProvider` builds its behaviour by iterating these instead of hardcoding
+    each store, so adding a store (state.md) is one more entry rather than a new branch at ~6 sites."""
+
+    key: str                              # stable id used by the tool / API / config (memory|user|state)
+    label: str                            # human + header label ("Agent memory")
+    scope: StoreScope
+    filename: str                         # MEMORY.md / USER.md / STATE.md
+    semantics: StoreSemantics
+    position: StorePosition
+    injected: bool = True                 # part of the injected `load_context` block
+    writable: bool = True                 # the `memory` tool may write it
+    backed_up: bool = True                # versioned in the D26 git repo (False → future ephemeral store)
 
 
 @runtime_checkable

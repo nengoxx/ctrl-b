@@ -76,7 +76,26 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Memory hardening (Slices 1 + 1b) + git backup (D26) SHIPPED · memory roadmap D27 fully specced** · NEXT = **D27 Sub-slice A (store registry)** → state.md → reflection; emma deploy still the last v1 track)
+## Current state (**Memory hardening (1/1b) + git backup (D26) + D27 Sub-slice A (store registry) SHIPPED** · NEXT = **D27 Sub-slice B (`state.md`)** → reflection (C); emma deploy still the last v1 track)
+
+> ### 🟢 SESSION UPDATE — D27 Sub-slice A (store registry) SHIPPED — 2026-06-25
+> The prerequisite refactor for `state.md`/reflection is **done + green** (DECISIONS **D27 §A**, "✅ SHIPPED").
+> Kept as a **pure behavior-preserving refactor** — only `core/memory.py` + `services/agent/memory.py` touched
+> (a tighter scope than D27's original §A pre-flight, which folded in `state.md` plumbing; that plumbing —
+> the tool `"set"` action, `state_char_limit`, the store-keyed API route, the frontend `stateSlot` — is dead
+> scaffolding until a SET store exists, so it's **deferred to B, its owning slice**).
+> - **`core/memory.py`** — new pure types: `StoreScope`/`StoreSemantics`/`StorePosition` enums + a frozen
+>   `StoreSpec{key,label,scope,filename,semantics,position,injected,writable,backed_up}`. Carries **every**
+>   field B/C need, so they reopen this file for nothing (B = append a `state` spec + a SET branch in `write`).
+> - **`services/agent/memory.py`** — `MEMORY_STORE`/`USER_STORE` consts (both APPEND/FACTS) + `_stores()`;
+>   `_memory_file`/`_user_file` → one `_store_file(agent, spec)` (keyed by scope+filename); `_cap_for`/
+>   `_store_enabled`; `_target` → `(path, spec)`; `load_context` iterates the registry **PERSONA-first then
+>   FACTS** (stable sort preserves memory→user). `write` stays APPEND-only (both stores APPEND → identical
+>   behavior); the SET branch lands in B with the first SET store. `_commit_msg` now takes the spec's filename.
+> - **Safety property held:** the four prior memory suites (`test_memory_7e`/`_tool_7e`/`_panel_7e`/
+>   `_git_backup_d26`, 41 tests) pass **unchanged**; new `test_memory_registry_d27.py` (5) pins the registry
+>   shape + that resolution matches the old hardcoded mapping. **Full backend suite 27 files green.** Frontend
+>   untouched (A is backend-only, no observable UI/API change). **NEXT = Sub-slice B (`state.md`)** — see D27 §B.
 
 > ### 🟢 CLEAN-SESSION HANDOFF — memory hardening done (Slices 1/1b + D26) · roadmap D27 spec'd · build Sub-slice A next — 2026-06-25
 > **Everything is pushed** (`origin/main` @ `aee59fb`; tree clean except the untracked `prototypes/` UI-exploration

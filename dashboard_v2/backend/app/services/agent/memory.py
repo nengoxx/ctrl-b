@@ -21,9 +21,31 @@ import tempfile
 from pathlib import Path
 
 from app.config import Settings
-from app.core.memory import MemoryBackup
+from app.core.memory import (
+    MemoryBackup,
+    StorePosition,
+    StoreScope,
+    StoreSemantics,
+    StoreSpec,
+)
 from app.domain.agent import AgentDef
 from app.services.agent.memory_backup import NoopBackup
+
+#: The two always-present stores (D27 store registry). Both APPEND/FACTS — identical behaviour to the
+#: pre-registry hardcoding (agent memory leads, then the global user profile). `state.md` (SET/PERSONA)
+#: is added as a third entry in D27 slice B; the registry exists so that is purely additive.
+MEMORY_STORE = StoreSpec(
+    key="memory", label="Agent memory", scope=StoreScope.AGENT, filename="MEMORY.md",
+    semantics=StoreSemantics.APPEND, position=StorePosition.FACTS,
+)
+USER_STORE = StoreSpec(
+    key="user", label="User profile", scope=StoreScope.GLOBAL, filename="USER.md",
+    semantics=StoreSemantics.APPEND, position=StorePosition.FACTS,
+)
+
+#: Injection order rank — PERSONA-first, then FACTS (`load_context` sorts stably by this, so stores at
+#: the same position keep registration order: memory before user).
+_POSITION_RANK = {StorePosition.PERSONA: 0, StorePosition.FACTS: 1}
 
 
 class MemoryWriteError(RuntimeError):
@@ -54,12 +76,38 @@ class FileMemoryProvider:
         #: commit; `NoopBackup` (lock only, no git) when none is injected so serialization still holds.
         self._backup: MemoryBackup = backup or NoopBackup()
 
-    def _memory_file(self, agent: AgentDef) -> Path:
-        """The agent's own MEMORY.md, inside the memory directory (D26). Default/root agent → the memory
-        dir root; a specialist → `<memory_dir>/agents/<slug>/` (or its `AgentDef.memory_dir` override)."""
-        if agent.name == self._settings.DEFAULT_AGENT_NAME:
-            return self._settings.memories_dir_path() / "MEMORY.md"
-        return self._agent_memory_dir(agent) / "MEMORY.md"
+    def _stores(self) -> list[StoreSpec]:
+        """The active stores (D27 registry), in registration order. Built fresh each call so a future
+        store gated by a live Conf flag (state.md, D27 slice B) appears/disappears with no restart.
+        Today: the two always-present APPEND stores — the `user` store's *injection* is gated per-store
+        in `load_context` (and its *writes* in the `memory` tool), not by membership here."""
+        return [MEMORY_STORE, USER_STORE]
+
+    def _store_file(self, agent: AgentDef, spec: StoreSpec) -> Path:
+        """The file backing `spec` for `agent`. GLOBAL → the memory-dir root; AGENT → the root for the
+        default/root agent, else the specialist's `agents/<slug>/` dir. Generalizes the former
+        `_memory_file`/`_user_file` (D27) — same paths, one code path keyed by scope + filename."""
+        root = self._settings.memories_dir_path()
+        if spec.scope is StoreScope.GLOBAL or agent.name == self._settings.DEFAULT_AGENT_NAME:
+            return root / spec.filename
+        return self._agent_memory_dir(agent) / spec.filename
+
+    def _cap_for(self, spec: StoreSpec) -> int:
+        """The live char cap for `spec` from `MemoryCfg` (same source as the headers `load_context`
+        shows), so a cap edit applies with no restart. Flat caps for now (D27 notes the future
+        `stores: {key: {cap}}` map as the seam once stores grow past a handful)."""
+        cfg = self._settings.memory
+        return {"memory": cfg.memory_char_limit, "user": cfg.user_char_limit}.get(
+            spec.key, cfg.memory_char_limit
+        )
+
+    def _store_enabled(self, spec: StoreSpec) -> bool:
+        """Whether `spec` is currently active (the master `memory.enabled` switch is checked once up in
+        `load_context`). The `user` profile has its own switch; other stores are on (state will add its
+        own gate in D27 slice B)."""
+        if spec.key == "user":
+            return self._settings.memory.user_profile_enabled
+        return True
 
     def _agent_memory_dir(self, agent: AgentDef) -> Path:
         """A specialist's memory directory, resolved **relative to** the memory-dir root. An absolute or
@@ -75,30 +123,26 @@ class FileMemoryProvider:
             sub = root / "agents" / agent.name
         return sub
 
-    def _user_file(self) -> Path:
-        """The global owner profile, shared across all agents — at the memory-dir root."""
-        return self._settings.memories_dir_path() / "USER.md"
-
     def load_context(self, agent: AgentDef) -> str:
         """The memory block injected each turn (after the prompt appends, D15 #4), or "" when the
-        subsystem is off or both stores are empty. Each section carries a Hermes-style usage header
-        (`## Agent memory (67% — 1,474/2,200)`) so the model sees cap pressure."""
+        subsystem is off or every injected store is empty. Iterates the store registry PERSONA-first
+        then FACTS (D27); each section carries a Hermes-style usage header (`## Agent memory (67% —
+        1,474/2,200)`) so the model sees cap pressure."""
         cfg = self._settings.memory
         if not cfg.enabled:
             return ""
         sections: list[str] = []
         pressured: list[str] = []  # store labels at/over the nudge threshold (Slice 1b)
-        mem = _read(self._memory_file(agent))
-        if mem:
-            sections.append(_section("Agent memory", mem, cfg.memory_char_limit))
-            if _pct(len(mem), cfg.memory_char_limit) >= cfg.consolidation_nudge_pct:
-                pressured.append(f"Agent memory ({_pct(len(mem), cfg.memory_char_limit)}%)")
-        if cfg.user_profile_enabled:
-            user = _read(self._user_file())
-            if user:
-                sections.append(_section("User profile", user, cfg.user_char_limit))
-                if _pct(len(user), cfg.user_char_limit) >= cfg.consolidation_nudge_pct:
-                    pressured.append(f"User profile ({_pct(len(user), cfg.user_char_limit)}%)")
+        for spec in sorted(self._stores(), key=lambda s: _POSITION_RANK[s.position]):
+            if not spec.injected or not self._store_enabled(spec):
+                continue
+            body = _read(self._store_file(agent, spec))
+            if not body:
+                continue
+            cap = self._cap_for(spec)
+            sections.append(_section(spec.label, body, cap))
+            if _pct(len(body), cap) >= cfg.consolidation_nudge_pct:
+                pressured.append(f"{spec.label} ({_pct(len(body), cap)}%)")
         if not sections:
             return ""
         intro = (
@@ -116,14 +160,21 @@ class FileMemoryProvider:
             )
         return block
 
-    def _target(self, agent: AgentDef, target: str) -> tuple[Path, int, str]:
-        """Resolve a write target to its (file, cap, label). `user` → the global USER.md; anything
-        else → the agent's own MEMORY.md. Caps read from live Settings (same source as the headers
-        `load_context` shows), so a cap edit applies with no restart."""
-        cfg = self._settings.memory
-        if target == "user":
-            return self._user_file(), cfg.user_char_limit, "User profile"
-        return self._memory_file(agent), cfg.memory_char_limit, "Agent memory"
+    def _spec_for(self, key: str) -> StoreSpec:
+        """Look up a store spec by its `key`. An unknown/legacy key falls back to the agent memory
+        store — preserving the pre-registry `_target` behaviour (`user` → USER.md, anything else →
+        the agent's own MEMORY.md)."""
+        for spec in self._stores():
+            if spec.key == key:
+                return spec
+        return MEMORY_STORE
+
+    def _target(self, agent: AgentDef, target: str) -> tuple[Path, StoreSpec]:
+        """Resolve a write/read target to its (file, spec). Cap + label come from the spec via
+        `_cap_for`/`spec.label` at the call site (caps read live from Settings, so a cap edit applies
+        with no restart)."""
+        spec = self._spec_for(target)
+        return self._store_file(agent, spec), spec
 
     async def write(
         self, agent: AgentDef, target: str, action: str, content: str, old_text: str | None = None
@@ -141,7 +192,8 @@ class FileMemoryProvider:
         within our single-worker event loop. Slice 2's git backup moves all memory mutations under a
         process-wide async lock — that lock then *is* the serialization guarantee (and lets the commit
         capture exactly this write); the no-await property here is the interim guard."""
-        path, cap, label = self._target(agent, target)
+        path, spec = self._target(agent, target)
+        cap, label = self._cap_for(spec), spec.label
         body = _read(path)
         if action == "add":
             entry = content.strip()
@@ -180,14 +232,14 @@ class FileMemoryProvider:
         # exactly these bytes and concurrent writes/subagents can't interleave.
         async with self._backup.guard():
             _atomic_write(path, new + "\n" if new else "")
-            await self._backup.commit([path], _commit_msg(agent, target, action))
+            await self._backup.commit([path], _commit_msg(agent, spec.filename, action))
         pct = round(100 * len(new) / cap) if cap > 0 else 0
         return f"{label} updated ({action}) — {pct}% ({len(new):,}/{cap:,})"
 
     def read_raw(self, agent: AgentDef, target: str) -> str:
         """The raw stored text of a memory file (USER.md for `user`, else the agent's MEMORY.md), or
         "" if absent — for the Conf editor. Distinct from `load_context`, which formats + wraps it."""
-        path, _cap, _label = self._target(agent, target)
+        path, _spec = self._target(agent, target)
         return _read(path)
 
     async def overwrite(self, agent: AgentDef, target: str, content: str) -> str:
@@ -196,13 +248,13 @@ class FileMemoryProvider:
         owner edits aren't capped (the cap only governs the agent's own `write` auto-writes). The write
         (or deletion) is committed under the backup lock (D26). Returns the stored text (== what
         `read_raw` would return next)."""
-        path, _cap, _label = self._target(agent, target)
+        path, spec = self._target(agent, target)
         async with self._backup.guard():
             if content.strip():
                 _atomic_write(path, content.rstrip("\n") + "\n")
             elif path.is_file():
                 path.unlink()
-            await self._backup.commit([path], _commit_msg(agent, target, "overwrite"))
+            await self._backup.commit([path], _commit_msg(agent, spec.filename, "overwrite"))
         return _read(path)
 
 
@@ -238,11 +290,10 @@ def _read(p: Path) -> str:
     return p.read_text(encoding="utf-8").strip() if p.is_file() else ""
 
 
-def _commit_msg(agent: AgentDef, target: str, action: str) -> str:
-    """A content-free commit subject (D26 #6) — identifies the agent + which store, never the text, so
-    nothing leaks via `git log`."""
-    store = "USER.md" if target == "user" else "MEMORY.md"
-    return f"memory({agent.name}): {action} {store}"
+def _commit_msg(agent: AgentDef, filename: str, action: str) -> str:
+    """A content-free commit subject (D26 #6) — identifies the agent + which store file, never the
+    text, so nothing leaks via `git log`."""
+    return f"memory({agent.name}): {action} {filename}"
 
 
 def _atomic_write(path: Path, content: str) -> None:

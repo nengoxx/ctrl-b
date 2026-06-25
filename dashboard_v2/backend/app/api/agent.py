@@ -521,7 +521,8 @@ async def put_agent_soul(name: str, body: SoulContent, request: Request) -> dict
 # ── Memory file API (Phase 7e-d-3, D14/D15 #4) ────────────────────────────────────────────────
 # The raw read/overwrite path behind the Conf Memory panel — per-agent `memories/MEMORY.md` (incl.
 # `default` → root) + the global `memories/USER.md`. Path resolution lives on the provider
-# (`_memory_file`/`_user_file`), so these endpoints route through it rather than re-deriving paths.
+# (the D27 store registry → `_store_file`), so these endpoints route through it rather than
+# re-deriving paths.
 # Blank content clears the file (mirrors the SOUL.md editor). The agent's own writes go through the
 # `memory` tool (7e-d-2); these are the owner's manual edits — uncapped (D-decision: soft cap).
 
