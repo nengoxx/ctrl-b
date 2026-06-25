@@ -80,8 +80,8 @@ def test_add_formats_and_appends() -> None:
     with _workspace() as (tmp, _cfg):
         with _client() as c:
             prov, agent = c.app.state.memory, _agent(c)
-            prov.write(agent, "memory", "add", "first note")
-            prov.write(agent, "memory", "add", "second note")
+            _run(prov.write(agent, "memory", "add", "first note"))
+            _run(prov.write(agent, "memory", "add", "second note"))
             body = (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
             assert "§ first note" in body and "§ second note" in body
             assert body.index("first note") < body.index("second note")
@@ -91,8 +91,8 @@ def test_replace_swaps_first_occurrence() -> None:
     with _workspace() as (tmp, _cfg):
         with _client() as c:
             prov, agent = c.app.state.memory, _agent(c)
-            prov.write(agent, "memory", "add", "alpha beta")
-            prov.write(agent, "memory", "replace", "gamma", old_text="beta")
+            _run(prov.write(agent, "memory", "add", "alpha beta"))
+            _run(prov.write(agent, "memory", "replace", "gamma", old_text="beta"))
             body = (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
             assert "alpha gamma" in body and "beta" not in body
 
@@ -101,8 +101,8 @@ def test_remove_deletes_substring() -> None:
     with _workspace() as (tmp, _cfg):
         with _client() as c:
             prov, agent = c.app.state.memory, _agent(c)
-            prov.write(agent, "memory", "add", "keep this drop that")
-            prov.write(agent, "memory", "remove", "", old_text=" drop that")
+            _run(prov.write(agent, "memory", "add", "keep this drop that"))
+            _run(prov.write(agent, "memory", "remove", "", old_text=" drop that"))
             body = (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
             assert "keep this" in body and "drop that" not in body
 
@@ -113,9 +113,9 @@ def test_old_text_not_found_raises() -> None:
     with _workspace():
         with _client() as c:
             prov, agent = c.app.state.memory, _agent(c)
-            prov.write(agent, "memory", "add", "alpha")
+            _run(prov.write(agent, "memory", "add", "alpha"))
             try:
-                prov.write(agent, "memory", "replace", "x", old_text="nope")
+                _run(prov.write(agent, "memory", "replace", "x", old_text="nope"))
             except MemoryWriteError:
                 pass
             else:
@@ -130,7 +130,7 @@ def test_over_cap_raises() -> None:
             c.app.state.settings.memory.memory_char_limit = 10
             prov, agent = c.app.state.memory, _agent(c)
             try:
-                prov.write(agent, "memory", "add", "this note is well over ten characters")
+                _run(prov.write(agent, "memory", "add", "this note is well over ten characters"))
             except MemoryCapError:
                 pass
             else:
@@ -145,8 +145,8 @@ def test_remove_while_over_cap_succeeds() -> None:
         with _client() as c:
             c.app.state.settings.memory.memory_char_limit = 20
             prov, agent = c.app.state.memory, _agent(c)
-            prov.overwrite(agent, "memory", "§ alpha entry\n\n§ beta entry\n\n§ gamma entry")
-            prov.write(agent, "memory", "remove", "", old_text="§ beta entry\n\n")
+            _run(prov.overwrite(agent, "memory", "§ alpha entry\n\n§ beta entry\n\n§ gamma entry"))
+            _run(prov.write(agent, "memory", "remove", "", old_text="§ beta entry\n\n"))
             body = (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
             assert "beta" not in body and "alpha" in body and "gamma" in body
             assert len(body.strip()) > 20  # still over the 20-char cap, yet the shrink went through
@@ -158,8 +158,8 @@ def test_shrinking_replace_while_over_cap_succeeds() -> None:
         with _client() as c:
             c.app.state.settings.memory.memory_char_limit = 10
             prov, agent = c.app.state.memory, _agent(c)
-            prov.overwrite(agent, "memory", "§ a very long first entry here\n\n§ second entry")
-            prov.write(agent, "memory", "replace", "shorter", old_text="a very long first entry here")
+            _run(prov.overwrite(agent, "memory", "§ a very long first entry here\n\n§ second entry"))
+            _run(prov.write(agent, "memory", "replace", "shorter", old_text="a very long first entry here"))
             body = (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
             assert "shorter" in body and "a very long first entry here" not in body
 
@@ -172,9 +172,9 @@ def test_growing_replace_over_cap_still_raises() -> None:
         with _client() as c:
             c.app.state.settings.memory.memory_char_limit = 20
             prov, agent = c.app.state.memory, _agent(c)
-            prov.write(agent, "memory", "add", "tiny")
+            _run(prov.write(agent, "memory", "add", "tiny"))
             try:
-                prov.write(agent, "memory", "replace", "x" * 40, old_text="tiny")
+                _run(prov.write(agent, "memory", "replace", "x" * 40, old_text="tiny"))
             except MemoryCapError:
                 pass
             else:
@@ -186,9 +186,9 @@ def test_remove_cleans_orphan_marker() -> None:
     with _workspace() as (tmp, _cfg):
         with _client() as c:
             prov, agent = c.app.state.memory, _agent(c)
-            prov.write(agent, "memory", "add", "first fact")
-            prov.write(agent, "memory", "add", "second fact")
-            prov.write(agent, "memory", "remove", "", old_text="second fact")
+            _run(prov.write(agent, "memory", "add", "first fact"))
+            _run(prov.write(agent, "memory", "add", "second fact"))
+            _run(prov.write(agent, "memory", "remove", "", old_text="second fact"))
             body = (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
             assert "second fact" not in body and "first fact" in body
             assert not any(line.strip() == "§" for line in body.splitlines())  # no orphaned marker
@@ -260,8 +260,9 @@ def test_tool_specialist_writes_own_file() -> None:
             assert c.put("/api/agents/coder", json={"agent": {}}).status_code == 200
             out = _invoke(c, {"target": "memory", "action": "add", "content": "coder note"}, agent_name="coder")
             assert out.result.state == RunState.OK
-            assert "coder note" in (tmp / "agents" / "coder" / "memories" / "MEMORY.md").read_text(encoding="utf-8")
-            assert not (tmp / "memories" / "MEMORY.md").exists()  # root untouched
+            # D26: specialist memory now lives under the memory dir, not the agent workspace folder.
+            assert "coder note" in (tmp / "memories" / "agents" / "coder" / "MEMORY.md").read_text(encoding="utf-8")
+            assert not (tmp / "memories" / "MEMORY.md").exists()  # root agent untouched
 
 
 if __name__ == "__main__":

@@ -133,7 +133,7 @@ async def apply_memory(deps: "Deps", agent: "AgentDef", inp: MemoryInput) -> Too
     is on, and by the Approve-to-apply endpoint on owner approval. A cap/write failure comes back as
     an ERROR result (the caller keeps a pending proposal so the owner can retry/dismiss)."""
     try:
-        summary = deps.memory.write(agent, inp.target, inp.action, inp.content, inp.old_text)
+        summary = await deps.memory.write(agent, inp.target, inp.action, inp.content, inp.old_text)
     except MemoryCapError as exc:
         return ToolResult(state=RunState.ERROR, summary="memory over its cap", error=str(exc))
     except MemoryWriteError as exc:

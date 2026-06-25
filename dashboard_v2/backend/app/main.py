@@ -16,6 +16,8 @@ restart the process.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -53,7 +55,8 @@ from app.db import Database
 from app.services.action_service import ActionService
 from app.services.actions import build_registry
 from app.services.actions.terminal import register_openterminal
-from app.services.agent.memory import FileMemoryProvider
+from app.services.agent.memory import FileMemoryProvider, migrate_legacy_specialist_memory
+from app.services.agent.memory_backup import GitMemoryBackup
 from app.services.agent.selector import KeywordAgentSelector
 from app.services.agent.skills import FileSkillProvider, KeywordSkillSelector
 from app.services.conversation import MessageRepo, ThreadRepo
@@ -64,6 +67,23 @@ from app.services.svc import ServiceService
 
 # backend/app/main.py -> dashboard_v2/frontend/dist
 _FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+logger = logging.getLogger(__name__)
+
+
+async def _memory_sweep(backup: GitMemoryBackup, settings) -> None:
+    """Periodic reconcile sweep (D26 #4): commit the owner's manual/external edits to memory files.
+    Interval is read live (a Conf change applies; 0 → idle-check so a re-enable is picked up). Best-
+    effort — a failure is logged and the loop continues."""
+    while True:
+        interval = settings.memory.git_backup.reconcile_interval_s
+        await asyncio.sleep(interval if interval > 0 else 60)
+        if settings.memory.git_backup.reconcile_interval_s <= 0:
+            continue
+        try:
+            await backup.reconcile()
+        except Exception:  # noqa: BLE001 — sweep must never die
+            logger.exception("memory reconcile sweep failed")
 
 
 @asynccontextmanager
@@ -143,7 +163,11 @@ async def lifespan(app: FastAPI):
     app.state.agent_selector = KeywordAgentSelector()
     # File-based agent memory (Phase 7e-d): per-agent MEMORY.md + global USER.md, read each turn.
     # Stateless — paths/caps resolve from live Settings per call, so edits land with no restart.
-    app.state.memory = FileMemoryProvider(app.state.settings)
+    # D26: all memory lives under the memory dir, auto-versioned by a local git repo. One backup
+    # instance → its lock serializes every mutation (incl. subagents sharing this provider).
+    migrate_legacy_specialist_memory(app.state.settings)  # one-time relocate (≈no-op); before any commit
+    app.state.memory_backup = GitMemoryBackup(app.state.settings)
+    app.state.memory = FileMemoryProvider(app.state.settings, backup=app.state.memory_backup)
 
     # Subagents (Phase 4.5): back-fill the agent-runtime handles onto the shared Deps so the
     # spawn_subagents tool can build + run child sessions (the ActionService reference is set here
@@ -156,9 +180,19 @@ async def lifespan(app: FastAPI):
     deps.memory = app.state.memory
     deps.subagent_sem = asyncio.Semaphore(max(1, app.state.settings.agent.global_subagent_limit))
 
+    # D26: capture edits made while the app was down (also lazily inits the repo + imports existing
+    # memory on first run), then start the periodic sweep for edits made while running.
+    await app.state.memory_backup.reconcile()
+    app.state.memory_sweep_task = asyncio.create_task(
+        _memory_sweep(app.state.memory_backup, app.state.settings)
+    )
+
     try:
         yield
     finally:
+        app.state.memory_sweep_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await app.state.memory_sweep_task
         await app.state.searxng.aclose()
         await app.state.open_terminal.aclose()
         await app.state.openapi.aclose()

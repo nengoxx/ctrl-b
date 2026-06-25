@@ -13,6 +13,8 @@ this protocol in their slices (7e-d-2 / 7e-d-3); this slice defines just the rea
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Sequence
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from app.domain.agent import AgentDef
@@ -24,15 +26,36 @@ class MemoryProvider(Protocol):
     prompt each turn — the agent's own memory plus the global user profile, with cap-usage headers —
     or "" when there's nothing to inject (subsystem off, or both stores empty). `write` applies one
     edit (the `memory` tool's write path, 7e-d-2) and returns a one-line summary; it raises on a
-    failed/over-cap edit so the tool can steer the model. Read-back/clear (the Conf panel, 7e-d-3)
-    extend this in their slice."""
+    failed/over-cap edit so the tool can steer the model. `read_raw`/`overwrite` are the Conf panel's
+    read/clear (7e-d-3).
+
+    `write`/`overwrite` are **async** (D26): each couples its file write to a git commit under a
+    process-wide lock; `load_context`/`read_raw` are read-only and stay sync."""
 
     def load_context(self, agent: AgentDef) -> str: ...
 
-    def write(
+    async def write(
         self, agent: AgentDef, target: str, action: str, content: str, old_text: str | None = ...
     ) -> str: ...
 
     def read_raw(self, agent: AgentDef, target: str) -> str: ...
 
-    def overwrite(self, agent: AgentDef, target: str, content: str) -> str: ...
+    async def overwrite(self, agent: AgentDef, target: str, content: str) -> str: ...
+
+
+@runtime_checkable
+class MemoryBackup(Protocol):
+    """Versions the memory directory in a local git repo (D26). The provider holds one instance; its
+    `guard()` is the process-wide serialization lock that couples each file write to its commit.
+
+    Contract: `commit()` assumes the caller already holds `guard()` (it's invoked from inside the
+    provider's `async with backup.guard()`), so it must NOT re-acquire the lock; `reconcile()`
+    acquires `guard()` itself (it's driven by startup + the background sweep, outside any write).
+    All operations are best-effort — a git failure never propagates to the memory write."""
+
+    def guard(self) -> "AsyncIterator[None]":  # an @asynccontextmanager
+        ...
+
+    async def commit(self, paths: Sequence[Path], message: str) -> None: ...
+
+    async def reconcile(self) -> None: ...

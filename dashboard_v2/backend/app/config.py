@@ -206,18 +206,37 @@ class AgentCfg(BaseModel):
         return v
 
 
+class MemoryGitCfg(BaseModel):
+    """Auto-version the memory directory in a local git repo (D26). Best-effort: a git failure never
+    breaks a memory write. `enabled` gates the whole backup; `reconcile_interval_s` is the periodic
+    sweep that captures the owner's *manual* edits (0 → sweep off; startup reconcile + write-commits
+    still run). Identity is set per-commit via `-c` (global git config untouched). All read live."""
+
+    model_config = {"extra": "allow"}
+
+    enabled: bool = True                          # master switch for the git backup
+    author_name: str = "ctrl-b memory"            # commit identity (per-commit -c, never global)
+    author_email: str = "memory@ctrl-b.local"
+    commit_timeout_s: float = Field(10.0, gt=0)   # per git invocation; the hang backstop
+    reconcile_interval_s: int = Field(120, ge=0)  # external-edit sweep cadence; 0 = off
+
+
 class MemoryCfg(BaseModel):
-    """File-based agent memory (7e-d, D14/D15 #4). Per-agent `memories/MEMORY.md` (isolated) + a
-    global `memories/USER.md` (the owner profile, shared across agents), injected into each turn's
-    system context after the prompt appends. Hermes-named keys + matching defaults so the files are
-    portable to/from Hermes/OpenClaw. `extra="allow"` so later knobs (vector recall, consolidation)
-    round-trip."""
+    """File-based agent memory (7e-d, D14/D15 #4). Per-agent `MEMORY.md` (isolated) + a global
+    `USER.md` (the owner profile, shared across agents), injected into each turn's system context
+    after the prompt appends. Hermes-named keys + matching defaults so the files are portable to/from
+    Hermes/OpenClaw. All memory lives under `memory_dir` (the **memory directory** = the D26 git repo
+    root). `extra="allow"` so later knobs (vector recall, consolidation) round-trip."""
 
     model_config = {"extra": "allow"}
 
     enabled: bool = True                 # master switch for the memory subsystem
     user_profile_enabled: bool = True    # inject + (7e-d-2) allow writes to the global USER.md
     auto_write: bool = True              # agent may write memory autonomously; off → propose-only (D15 #6)
+    # The memory directory (D26): all memory files + the git repo root. Relative → resolved against
+    # $CTRLB_HOME; absolute honored as-is. Renamed from the hardcoded "memories" so it's relocatable.
+    memory_dir: str = "memories"
+    git_backup: MemoryGitCfg = Field(default_factory=MemoryGitCfg)
     # Floored at 1 so a blanked Conf field (→ 0) can't silently wedge the agent's memory writes:
     # at cap 0 every non-empty write over-caps. The PUT 422s instead, surfacing the bad value.
     memory_char_limit: int = Field(2200, ge=1)  # per-agent MEMORY.md cap (~800 tokens, Hermes default)
@@ -643,8 +662,11 @@ class Settings(BaseModel):
         return self.home_dir() / "agents"
 
     def memories_dir_path(self) -> Path:
-        """`$CTRLB_HOME/memories/` — the default agent's `MEMORY.md` + the global `USER.md` (7e-d)."""
-        return self.home_dir() / "memories"
+        """The **memory directory** (D26): the default agent's `MEMORY.md` + the global `USER.md`, the
+        `agents/<slug>/` specialist memory, and the git repo root. `memory.memory_dir` resolved against
+        `$CTRLB_HOME` (default `memories`), or honored as-is if absolute."""
+        p = Path(self.memory.memory_dir).expanduser()
+        return p if p.is_absolute() else (self.home_dir() / p)
 
     def secret_values(self) -> list[str]:
         """The live config's secret leaf values (api keys, ssh passwords, …) — for redacting them out

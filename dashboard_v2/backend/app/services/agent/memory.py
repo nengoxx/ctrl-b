@@ -13,11 +13,16 @@ tool and Conf editing extend this provider in 7e-d-2 / 7e-d-3.
 
 from __future__ import annotations
 
+import contextlib
+import os
 import re
+import tempfile
 from pathlib import Path
 
 from app.config import Settings
+from app.core.memory import MemoryBackup
 from app.domain.agent import AgentDef
+from app.services.agent.memory_backup import NoopBackup
 
 
 class MemoryWriteError(RuntimeError):
@@ -42,20 +47,35 @@ class FileMemoryProvider:
     resolve from live `Settings` each call, so an edited file or a changed cap is picked up with no
     restart (the same contract as `FileSkillProvider`)."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, backup: "MemoryBackup | None" = None) -> None:
         self._settings = settings
+        #: The git backup (D26). It owns the process-wide lock that couples each file write to its
+        #: commit; `NoopBackup` (lock only, no git) when none is injected so serialization still holds.
+        self._backup: MemoryBackup = backup or NoopBackup()
 
     def _memory_file(self, agent: AgentDef) -> Path:
-        """The agent's own MEMORY.md. Default/root agent → `$CTRLB_HOME/memories/`; a specialist →
-        `agents/<slug>/memories/` (its workspace folder)."""
+        """The agent's own MEMORY.md, inside the memory directory (D26). Default/root agent → the memory
+        dir root; a specialist → `<memory_dir>/agents/<slug>/` (or its `AgentDef.memory_dir` override)."""
         if agent.name == self._settings.DEFAULT_AGENT_NAME:
-            base = self._settings.memories_dir_path()
-        else:
-            base = self._settings.agents_dir_path() / agent.name / "memories"
-        return base / "MEMORY.md"
+            return self._settings.memories_dir_path() / "MEMORY.md"
+        return self._agent_memory_dir(agent) / "MEMORY.md"
+
+    def _agent_memory_dir(self, agent: AgentDef) -> Path:
+        """A specialist's memory directory, resolved **relative to** the memory-dir root. An absolute or
+        `..`-escaping `AgentDef.memory_dir` is rejected → the safe default `agents/<slug>`, so every
+        memory file stays inside the one repo (D26 #2)."""
+        root = self._settings.memories_dir_path()
+        rel = getattr(agent, "memory_dir", None) or f"agents/{agent.name}"
+        sub = root / rel
+        try:
+            if not sub.resolve().is_relative_to(root.resolve()):
+                sub = root / "agents" / agent.name
+        except OSError:
+            sub = root / "agents" / agent.name
+        return sub
 
     def _user_file(self) -> Path:
-        """The global owner profile, shared across all agents."""
+        """The global owner profile, shared across all agents — at the memory-dir root."""
         return self._settings.memories_dir_path() / "USER.md"
 
     def load_context(self, agent: AgentDef) -> str:
@@ -90,7 +110,7 @@ class FileMemoryProvider:
             return self._user_file(), cfg.user_char_limit, "User profile"
         return self._memory_file(agent), cfg.memory_char_limit, "Agent memory"
 
-    def write(
+    async def write(
         self, agent: AgentDef, target: str, action: str, content: str, old_text: str | None = None
     ) -> str:
         """Apply one edit to a memory store and persist it; returns a one-line summary with the new
@@ -127,11 +147,14 @@ class FileMemoryProvider:
         # F1 — the cap is a *growth* guard, not an absolute ceiling: reject only an edit that pushes
         # the store further over the cap. A `remove`/shrinking `replace` is always allowed even while
         # over cap, so an over-cap store (a lowered cap, or the uncapped manual `overwrite`) can never
-        # trap the very edits that resolve it.
+        # trap the very edits that resolve it. (Raised before the lock — no file change, no commit.)
         if len(new) > cap and len(new) > len(body):
             raise MemoryCapError(label, len(new), cap, action)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(new + "\n" if new else "", encoding="utf-8")
+        # D26 — couple the atomic write to its commit under the backup lock so the commit captures
+        # exactly these bytes and concurrent writes/subagents can't interleave.
+        async with self._backup.guard():
+            _atomic_write(path, new + "\n" if new else "")
+            await self._backup.commit([path], _commit_msg(agent, target, action))
         pct = round(100 * len(new) / cap) if cap > 0 else 0
         return f"{label} updated ({action}) — {pct}% ({len(new):,}/{cap:,})"
 
@@ -141,22 +164,93 @@ class FileMemoryProvider:
         path, _cap, _label = self._target(agent, target)
         return _read(path)
 
-    def overwrite(self, agent: AgentDef, target: str, content: str) -> str:
+    async def overwrite(self, agent: AgentDef, target: str, content: str) -> str:
         """Replace a memory file wholesale (the Conf panel's manual edit). Blank content removes the
         file (→ nothing injected), mirroring the SOUL.md editor. **No cap enforcement** — manual
-        owner edits aren't capped (the cap only governs the agent's own `write` auto-writes). Returns
-        the stored text (== what `read_raw` would return next)."""
+        owner edits aren't capped (the cap only governs the agent's own `write` auto-writes). The write
+        (or deletion) is committed under the backup lock (D26). Returns the stored text (== what
+        `read_raw` would return next)."""
         path, _cap, _label = self._target(agent, target)
-        if content.strip():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content.rstrip("\n") + "\n", encoding="utf-8")
-        elif path.is_file():
-            path.unlink()
+        async with self._backup.guard():
+            if content.strip():
+                _atomic_write(path, content.rstrip("\n") + "\n")
+            elif path.is_file():
+                path.unlink()
+            await self._backup.commit([path], _commit_msg(agent, target, "overwrite"))
         return _read(path)
+
+
+def migrate_legacy_specialist_memory(settings: Settings) -> int:
+    """One-time (D26): relocate specialist memory from the pre-D26 `$CTRLB_HOME/agents/<slug>/memories/`
+    into the unified memory dir at `<memory_dir>/agents/<slug>/MEMORY.md`. Moves only when the new
+    location is absent (never clobbers); cleans the emptied old dir. Returns the count moved (0 = nothing
+    to do — the common case, since specialists are rare). Run once at startup, before the first commit."""
+    old_root = settings.agents_dir_path()
+    new_root = settings.memories_dir_path()
+    if not old_root.is_dir():
+        return 0
+    moved = 0
+    for folder in sorted(old_root.iterdir()):
+        old_mem = folder / "memories" / "MEMORY.md"
+        if not old_mem.is_file():
+            continue
+        new_mem = new_root / "agents" / folder.name / "MEMORY.md"
+        if new_mem.exists():
+            continue
+        new_mem.parent.mkdir(parents=True, exist_ok=True)
+        old_mem.replace(new_mem)
+        with contextlib.suppress(OSError):
+            old_mem.parent.rmdir()  # remove the now-empty `agents/<slug>/memories/`
+        moved += 1
+    return moved
 
 
 def _read(p: Path) -> str:
     return p.read_text(encoding="utf-8").strip() if p.is_file() else ""
+
+
+def _commit_msg(agent: AgentDef, target: str, action: str) -> str:
+    """A content-free commit subject (D26 #6) — identifies the agent + which store, never the text, so
+    nothing leaks via `git log`."""
+    store = "USER.md" if target == "user" else "MEMORY.md"
+    return f"memory({agent.name}): {action} {store}"
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    """Write `content` to `path` atomically (D26): temp file in the **same dir** → flush → `os.fsync`
+    → `os.replace`, then best-effort parent-dir fsync (POSIX). Same-dir temp keeps `os.replace`/
+    `MoveFileEx` atomic on one volume (the silent Windows non-atomic fallback only happens cross-volume).
+    Forces LF newlines so memory files stay git-clean across platforms."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-", suffix=".md")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+    _fsync_dir(path.parent)
+
+
+def _fsync_dir(d: Path) -> None:
+    """Best-effort fsync of a directory so a fresh file's name is durable (POSIX). No-op on Windows,
+    which doesn't support directory fsync — and the git commit is the durable record regardless."""
+    if os.name == "nt":
+        return
+    try:
+        fd = os.open(str(d), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def _tidy(text: str) -> str:

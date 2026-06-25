@@ -558,7 +558,7 @@ async def get_agent_memory(name: str, request: Request) -> dict[str, str]:
 async def put_agent_memory(name: str, body: MemoryContent, request: Request) -> dict[str, str]:
     """Overwrite an agent's `MEMORY.md`. Blank content clears the file. Re-read each turn → live."""
     agent = _resolve_agent_for_memory(request, name)
-    return {"name": name, "content": _memory_provider(request).overwrite(agent, "memory", body.content)}
+    return {"name": name, "content": await _memory_provider(request).overwrite(agent, "memory", body.content)}
 
 
 @router.get("/memory/user")
@@ -572,7 +572,7 @@ async def get_user_memory(request: Request) -> dict[str, str]:
 async def put_user_memory(body: MemoryContent, request: Request) -> dict[str, str]:
     """Overwrite the global `USER.md`. Blank content clears it. (`agent` arg is ignored for `user`.)"""
     default = request.app.state.settings.default_agent_def()
-    return {"content": _memory_provider(request).overwrite(default, "user", body.content)}
+    return {"content": await _memory_provider(request).overwrite(default, "user", body.content)}
 
 
 @router.post("/agent/compact")

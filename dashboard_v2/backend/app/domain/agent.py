@@ -71,6 +71,11 @@ class AgentDef(BaseModel):
     #: escape the global guidance (e.g. a sandboxed/clean-room persona).
     inherit_append: bool = True
     model: ModelRef = Field(default_factory=ModelRef)   # backend+model; inherits chat default when unset
+    #: This agent's memory subdirectory (D26), resolved **relative to** `MemoryCfg.memory_dir` (the
+    #: memory-directory git repo root). `None` → the default `agents/<slug>`. Absolute paths and `..`
+    #: escapes are rejected by the provider (falls back to the safe default) so every memory file stays
+    #: inside the one repo. The default/root agent ignores this — it lives at the memory-dir root.
+    memory_dir: str | None = None
     tools: list[str] | Literal["*"] = "*"               # tool-name allowlist (globs) or all agent tools
     skills: list[str] | Literal["*"] = "*"              # skill allowlist or all discovered skills
     privilege: Privilege = Privilege.CONFIRM

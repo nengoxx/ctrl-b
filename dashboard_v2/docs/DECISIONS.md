@@ -1083,3 +1083,86 @@ are `display:none`; axe can't detect a click handler on a plain `<div>`), but th
   backend + **32 e2e** green; `tsc -b` + build clean.
 - **The shared `disclosureToggle` helper is the drift-guard:** new expand/collapse rows spread it (or, if
   the row contains buttons, use the `DeviceRow` plain-`<div onClick>` + child-button approach instead).
+
+## D26 — Memory directory = a self-contained, auto-committed git repo (atomic, coupled, best-effort) ✏️ DESIGNED 2026-06-25 (Slice 2)
+
+Extends D14's file-based memory with a **local git repo** that auto-versions every memory change — each
+consolidation/edit/accidental-wipe becomes a recoverable, timestamped commit. The **app** manages the repo
+(not the agent); a GitHub remote is a later opt-in. Two prior slices: **Slice 1** (shipped `ecfe762`) hardened
+the consolidation path (F1 grow-only cap guard, F2 action-aware error, F3a orphan-marker cleanup, F5 invariant
+doc); **Slice 2** is this git layer. Research-corroborated (deep-research + targeted searches 2026-06-25; 23
+verified claims; see HANDOFF).
+
+**Naming (owner directive):** no "vault" — that word is reserved for the owner's future Obsidian vaults. The
+root is the **memory directory** (`MemoryCfg.memory_dir`, default `memories`); per-agent is an agent's
+**memory dir** (`AgentDef.memory_dir`).
+
+1. **System `git`, not a library.** Shell out to the `git` binary via `core/proc.run_capture` (argv, no
+   shell). dulwich/pygit2 need hand-rolled credential callbacks (weak GitHub/SSH story); GitPython is
+   maintenance-mode + Windows-unstable (DVC dropped it); the CLI gives 100% config/credential-helper
+   compatibility; and git is already a runtime dependency (the agent uses it) → a library would mean *two*
+   git implementations. A library would only win if we couldn't depend on the binary — we can.
+
+2. **One consolidated memory directory = one repo, with configurable roots.** `$CTRLB_HOME` holds
+   `config.yaml` (secrets) + `ctrlb.db`, and on the corsair checkout `$CTRLB_HOME` *is* the project repo — so
+   the repo can't root there. Instead **all** memory consolidates under **`MemoryCfg.memory_dir`** (default
+   `$CTRLB_HOME/memories/`, configurable/relocatable), which is the git repo root: default `memory_dir/MEMORY.md`
+   + `memory_dir/USER.md`, specialists at **`memory_dir/agents/<slug>/MEMORY.md`** (moved from the old
+   `agents/<slug>/memories/`; one-time startup migration, ~no-op). Each agent's location is overridable via
+   **`AgentDef.memory_dir`** — but resolved **relative to the memory dir** (`..`/absolute rejected → safe
+   default), so *every* memory file stays inside the one repo. Deliberate trade: memory leaves the agent
+   workspace folder, for a single unified, versioned memory directory (the owner's framing + the Obsidian
+   direction). **Secrets guard (mandatory, because the root is configurable):** refuse to enable the backup
+   if `config_path()`/`db_path()` resolves *inside* the memory dir (a misconfigured `memory_dir: "."`); degrade
+   to no-git, never crash, never leak. A defensive `.gitignore` (config.yaml/`*.db`/clients/`*_prompt.*`/OS
+   junk/`.obsidian/workspace.json`) is written at init as belt-and-suspenders.
+
+3. **Write + commit = one coupled, ordered, atomic unit.** All memory mutations serialize under a
+   process-wide `asyncio.Lock` on the backup. Each mutation: `async with lock:` → **atomic file write**
+   (temp in the *same dir* → `flush` → `os.fsync` → `os.replace`; POSIX parent-dir fsync best-effort; same-dir
+   temp avoids the Windows `MoveFileEx` cross-volume non-atomic fallback) → `git add -- <path>` →
+   `git commit -- <path>` (`run_capture` is async, so the subprocess never blocks the loop). The lock spanning
+   write→commit guarantees the commit captures *exactly* that write's bytes. This makes `MemoryProvider.write`/
+   `overwrite` **async** (`read_raw`/`load_context` stay sync). Contract: `commit()` assumes the lock is held
+   (called from inside the provider's `guard()`); `reconcile()` acquires it (called from startup/sweep) — the
+   lock is not reentrant.
+
+4. **Capturing the owner's manual/external edits (the key requirement).** The owner *will* edit memory files
+   directly (editor/Obsidian). Because app writes commit immediately and leave the tree **clean**, *a dirty
+   tree is by definition an uncommitted external edit* — which removes the watcher's hardest problem
+   (self-write suppression / infinite loops) and tilts the choice to a **dependency-free reconcile** over
+   `watchdog`. Three mechanisms, all lock-serialized: (a) app writes → immediate commit; (b) **startup
+   reconcile** → boot-time `git status` → commit edits made while down; (c) **periodic reconcile sweep** → a
+   background `asyncio` task every `reconcile_interval_s` (default 120; 0 = off) → commit edits made while
+   running. Reconcile enumerates dirty files via `git status --porcelain`, commits **per file**, dated to the
+   file's **mtime** (`git commit --date=<mtime>`) so `git log` reflects when the edit actually happened.
+   `watchdog` stays a documented future upgrade (only for sub-interval "instant" capture, which a backup
+   doesn't need — even gitwatch/Obsidian-Git debounce to tens of seconds). Known polling limit: multiple edits
+   to one file between sweeps collapse to the final state (a watcher wouldn't reliably differ).
+
+5. **Per-change commits.** Each mutation is its own commit (max audit/restore granularity); deletions commit
+   too (a blank `overwrite` → recoverable). etckeeper (change-triggered) is precedent; note-vault tools batch
+   only to tame *human* edit noise, which our sparse machine-writes don't have. `git gc`/retention deferred.
+
+6. **Reliability — best-effort, never blocks the data write.** A git failure is logged and swallowed; the
+   memory write always succeeds (a partial add-without-commit just rides into the next commit/reconcile).
+   Identity via `-c user.name/-c user.email` per invocation (**never** mutating global/repo config); commits
+   are **content-free in the message** (`memory(<agent>): <action> <store>`) so nothing leaks via the log;
+   local commits are network-free so they can't prompt; `run_capture`'s timeout is the hang backstop; lazy
+   `git init -b main`; graceful no-op when `git` is absent. **Memory content is committed verbatim (NOT
+   redacted)** — unlike `session_search`, redacting durable memory would corrupt it — so any future remote
+   **must be private**, and `push` stays a **separate, opt-in, out-of-band** step (never in the write path).
+
+7. **Pluggable seam + future capability.** A `MemoryBackup` protocol (default `GitMemoryBackup`; a no-git
+   fallback) owns the lock + git; `FileMemoryProvider` calls it. Because the repo is the *whole* memory
+   directory (the structured `memory` tool is just one writer into it) with per-path commits, a **future in-UI
+   memory history / diff / restore** surface (Conf → Memory or a Tools-tab section) slots onto the same seam:
+   read ops (`git log -- <file>`, `git show`, `git diff`) are additive lock-free methods, and **restore reuses
+   the existing `overwrite` chokepoint** (`git show <rev>:<file>` → `overwrite`), so it needs no second
+   mutating git path and inherits all the atomicity/commit guarantees. Curated typed endpoints, never a raw
+   `git` passthrough (security model intact). Not built now — recorded so the seam is intentional.
+
+**Config:** `MemoryCfg.memory_dir: str = "memories"`; `MemoryCfg.git_backup: MemoryGitCfg{enabled=True,
+author_name, author_email, commit_timeout_s=10, reconcile_interval_s=120}`; `AgentDef.memory_dir: str|None=None`.
+All read live (hot-toggle, no restart — the provider/backup read `Settings` per call, mirroring the rest of
+the memory subsystem; no `runtime.reconfigure` wiring needed).

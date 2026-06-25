@@ -11,7 +11,7 @@ What's exercised:
   4. Profile toggle — `memory.user_profile_enabled=False` drops USER.md, keeps agent memory.
   5. Master switch  — `memory.enabled=False` injects nothing even with files present.
   6. Empty          — no files → no memory message at all.
-  7. Per-agent      — a specialist reads its own `agents/<slug>/memories/MEMORY.md`, isolated from root.
+  7. Per-agent      — a specialist reads its own `memories/agents/<slug>/MEMORY.md`, isolated from root.
 
 Each test runs in an isolated `$CTRLB_HOME` temp workspace; the real config/db are never touched.
 """
@@ -155,7 +155,7 @@ def test_specialist_memory_is_isolated_from_root() -> None:
         with _client() as c:
             assert c.put("/api/agents/coder", json={"agent": {}}).status_code == 200  # scaffold folder
             _write(tmp / "memories" / "MEMORY.md", "ROOT note")
-            _write(tmp / "agents" / "coder" / "memories" / "MEMORY.md", "CODER note")
+            _write(tmp / "memories" / "agents" / "coder" / "MEMORY.md", "CODER note")  # D26 layout
             thread = _make_thread(c)
 
             coder = _systems(_assemble(c, thread, "coder"))[1]

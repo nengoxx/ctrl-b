@@ -21,10 +21,15 @@ Each test runs in an isolated `$CTRLB_HOME` temp workspace; the real config/db a
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import tempfile
 from pathlib import Path
+
+
+def _run(coro):
+    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 def _client():
@@ -62,7 +67,7 @@ def test_read_raw_overwrite_roundtrip() -> None:
         with _client() as c:
             prov, agent = c.app.state.memory, _default(c)
             assert prov.read_raw(agent, "memory") == ""  # nothing yet
-            prov.overwrite(agent, "memory", "line one\nline two")
+            _run(prov.overwrite(agent, "memory", "line one\nline two"))
             assert prov.read_raw(agent, "memory") == "line one\nline two"
             assert (tmp / "memories" / "MEMORY.md").is_file()
 
@@ -71,9 +76,9 @@ def test_blank_overwrite_clears_file() -> None:
     with _workspace() as (tmp, _cfg):
         with _client() as c:
             prov, agent = c.app.state.memory, _default(c)
-            prov.overwrite(agent, "memory", "something")
+            _run(prov.overwrite(agent, "memory", "something"))
             assert (tmp / "memories" / "MEMORY.md").is_file()
-            prov.overwrite(agent, "memory", "   ")  # blank → remove
+            _run(prov.overwrite(agent, "memory", "   "))  # blank → remove
             assert not (tmp / "memories" / "MEMORY.md").exists()
             assert prov.read_raw(agent, "memory") == ""
 
@@ -84,7 +89,7 @@ def test_overwrite_is_uncapped() -> None:
             c.app.state.settings.memory.memory_char_limit = 10
             prov, agent = c.app.state.memory, _default(c)
             big = "x" * 200
-            prov.overwrite(agent, "memory", big)  # no raise despite cap=10
+            _run(prov.overwrite(agent, "memory", big))  # no raise despite cap=10
             assert prov.read_raw(agent, "memory") == big
 
 
@@ -108,8 +113,9 @@ def test_api_specialist_memory_and_404() -> None:
             assert c.put("/api/agents/coder", json={"agent": {}}).status_code == 200  # scaffold
             r = c.put("/api/agents/coder/memory", json={"content": "coder note"})
             assert r.status_code == 200
-            assert "coder note" in (tmp / "agents" / "coder" / "memories" / "MEMORY.md").read_text(encoding="utf-8")
-            assert not (tmp / "memories" / "MEMORY.md").exists()  # root untouched
+            # D26: specialist memory under the memory dir, not the agent workspace folder.
+            assert "coder note" in (tmp / "memories" / "agents" / "coder" / "MEMORY.md").read_text(encoding="utf-8")
+            assert not (tmp / "memories" / "MEMORY.md").exists()  # root agent untouched
 
 
 def test_api_blank_put_clears() -> None:
