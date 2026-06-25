@@ -76,7 +76,35 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**D24 e2e/a11y layer + D25 a11y (gate findings + full consistency sweep) SHIPPED** · NEXT = **emma (Linux) deploy / v1 cutover** — the last track)
+## Current state (**Memory hardening + git backup (D26) SHIPPED** · NEXT = **emma (Linux) deploy / v1 cutover** — the last track)
+
+> ### 🟢 SESSION UPDATE — Memory consolidation hardening + memory-dir git backup (D26) SHIPPED — 2026-06-25
+> Two slices, both pushed (`origin/main` @ `cd6c195`). Backend **26 test files** green (new
+> `test_memory_git_backup_d26.py`). Frontend untouched (D26 is backend-only; the in-UI history/restore
+> surface is a recorded future seam, not built).
+> - **Slice 1 — consolidation hardening (`ecfe762`).** Fixed the core robustness hole in
+>   `FileMemoryProvider.write`: the over-cap guard rejected *every* over-cap result, so once a store hit
+>   its cap a `remove`/shrinking-`replace` was also blocked — trapping the very edits meant to free space
+>   (a weak local model would give up → memory silently lost). **F1** = grow-only cap guard (shrinks always
+>   allowed, even while over cap); **F2** action-aware cap error; **F3a** `_tidy()` drops orphaned `§` bullets
+>   (conservative — never mangles multi-line entries); **F5** documented the no-interleave invariant. +4 tests.
+> - **Slice 2 — memory directory = auto-committed git repo (`cd6c195`, DECISIONS D26).** Every memory change
+>   is versioned: `write`/`overwrite` are now **async**, each doing an atomic file write (temp+fsync+
+>   `os.replace`) then `git add`+`commit` under a process-wide lock (the commit captures exactly that write).
+>   The owner's **manual edits** are captured by a startup reconcile + a 120s sweep (`git status` → per-file,
+>   mtime-dated commits) — dependency-free, because app writes leave the tree clean. **Configurable roots**
+>   (`MemoryCfg.memory_dir` repo root + vault-relative `AgentDef.memory_dir`); all memory consolidated under
+>   the memory dir (specialists migrated from `agents/<slug>/memories/` at startup). **Secrets guard** disables
+>   the backup if config/db lie inside the memory dir; system `git` via `core.proc.run_capture` (no shell);
+>   best-effort (a git failure never breaks a write); identity via `-c`; **push deferred** (future opt-in,
+>   private remote). New `services/agent/memory_backup.py` (`GitMemoryBackup`/`NoopBackup`). Live-verified
+>   under real uvicorn. **Deferred:** F4 (dedup/contradiction on `add` + auto-summarization) — folds into a
+>   future structured/Obsidian-memory layer; Slice 3 (in-UI history/diff/restore, off-box push).
+>
+> The two-slice effort began from an audit of the memory subsystem (HANDOFF→code). Memory recall today =
+> always-inject MEMORY.md/USER.md + lexical `session_search`; **no vector/semantic recall** (the unbuilt
+> `MemoryProvider` "both" seam). **emma deploy is still the only remaining v1 track** (TODO Phase 9 systemd/
+> install script + Phase 10 cutover).
 
 > ### 🟢 SESSION UPDATE — D25 a11y consistency sweep SHIPPED — 2026-06-24
 > The deferred sweep is **done** (DECISIONS **D25**, "Consistency sweep — SHIPPED"). All green: backend 25,
