@@ -1187,37 +1187,88 @@ tanya emotional-state project). **None built yet** — recorded so the next slic
   narrative `.md`), evolved by **scheduled background jobs**, not per turn — so `state.md` is overwrite-semantics,
   not append-facts, and is naturally driven by reflection/automation.
 
-**1. Store registry (F7/F8/F9) — the prerequisite refactor; do it as step 1 of the `state.md` slice (NOT now).**
-Memory stores are currently **hardcoded to two** (per-agent MEMORY.md + global USER.md) across ~6 sites
-(`_memory_file`/`_user_file`, `_target`, `load_context`, the `MemoryInput.target` `Literal`, the two caps). Adding
-a third store would touch all of them — the per-store form of the "parallel sibling maps" anti-pattern. Generalize
-to a small **store registry**: a list of descriptors `{key, scope: per-agent|global, filename, cap, semantics:
-append|set, injected: bool, writable: bool, backed_up: bool}`. `load_context` iterates it, `_target` looks it up,
-the tool's `target` is registry-validated (not a static `Literal`), caps are per-store. Then a new store is **one
-entry**. Two dimensions the registry must carry (the reason it's not cosmetic): **F8 — per-store semantics**
-(MEMORY.md/USER.md = append-`§`-entries via add/replace/remove; `state.md` = set-value → needs a `set`/overwrite
-path, not `§`-entries); **F9 — per-store backup policy** (`backed_up`: a frequently-rewritten `state.md` may be
-un-versioned or debounced in D26's git layer to avoid churn). Per "shape to extend, not migrate," do this when the
-third store is actually added (still cheap at 2→3), not speculatively now — F6/the nudge add no store, so they
-don't deepen the hardcoding.
+Three sub-slices, sequenced **A → B → C** (A is the prerequisite refactor; B/C build on it). Each is independently
+shippable. The full file-level pre-flight is inline so the build can start cold.
 
-**2. `state.md` — emotional/affective state (opt-in).** A `set`-semantics store in the registry (overwrite the
-current state, don't append). Likely per-agent, structured-ish markdown (tanya uses JSON for mood/energy + `.md`
-narrative — pick the lighter of the two at build). `MemoryCfg.state_enabled: bool = False` gates injection + the
-write path + the Conf toggle. Default un-versioned in git (F9) unless the owner wants history. Updated by the
-reflection step (below) and/or a future scheduled automation (ROADMAP A3) — **not** every turn.
+> **Resolved sub-decisions (owner, 2026-06-25):** (1) **state writes auto-apply** — they bypass the `auto_write`
+> propose-gate (an agent's own mood is not a fact-about-the-world that needs Approve; the gate is for durable
+> facts). (2) **`state.md` IS backed up** in the D26 git repo like the other stores ("it's part of the memory
+> system") — so `backed_up` defaults **on** for every store; the flag stays only as a future escape hatch for a
+> genuinely ephemeral store. (3) Memory/state content is **never redacted** — `core/redact.py` masks config
+> secrets only in *captured external output* (shell output, `session_search` snippets, event logs), which has
+> untrusted provenance; the model's own curated memory/state is trusted and would be corrupted by redaction
+> (D26's secrets-guard + private-remote rule cover the residual leak risk).
 
-**3. Periodic reflection — "save anything worth remembering" every N turns (opt-in, Hermes-style).** At the start
-of a turn, count the thread's user turns; when `count > 0 and count % reflection_interval == 0`, inject a
-**reflection nudge** (a conditional `system` message at the existing `_assemble` injection seam — same mechanism
-as the appends/memory-block/roster/skills-note): *"review the recent turns; if anything is durably worth
-remembering, save it with the `memory` tool; otherwise do nothing."* With `auto_write` **off** the save becomes a
-**proposal** (the existing 7e-f-3 Approve UI = Hermes's `write_approval`). Config `MemoryCfg.reflection_enabled:
-bool = False` + `reflection_interval: int = 10`. The hardening de-risks this directly: reflection drives *more*
-memory writes, so F1 (dig-out), F6 (unique-match), the consolidation nudge, and the git backup all matter more —
-they're the safety net under it. Open sub-decision for build: with `auto_write` off, batch the reflection's
-proposals vs one Approve bubble each.
+### A — Store registry (the prerequisite refactor; behavior-preserving, no data migration)
 
-**Settings summary (all opt-in; the two new subsystems default off, like the nudge):** `consolidation_nudge=False`
-+ `consolidation_nudge_pct=80` (shipped, Slice 1b); `state_enabled=False` (state.md slice); `reflection_enabled=False`
-+ `reflection_interval=10` (reflection slice). Each gets a Conf → Memory control alongside the existing toggles.
+Today the two stores are hardcoded across ~6 sites. Replace that with one **registry** the code reads from. A
+`StoreSpec` descriptor (pure, in `core/memory.py`):
+`{key, label, scope: AGENT|GLOBAL, filename, semantics: APPEND|SET, position: PERSONA|FACTS, injected, writable,
+backed_up}` — *structural* facts in code; the *tunables* (`enabled`, `cap`, `backed_up`) read live from `MemoryCfg`
+so a Conf toggle hot-applies. The existing stores become two entries with **identical behavior**
+(`memory`: AGENT/MEMORY.md/APPEND/FACTS; `user`: GLOBAL/USER.md/APPEND/FACTS, injection gated by
+`user_profile_enabled`); the current memory tests must pass unchanged (that's the safety property). The
+`MemoryProvider` protocol signatures **don't change** — `write(target,action,…)`/`overwrite(target,…)`/
+`read_raw(target,…)`/`load_context` already take string `target`/`action`; only the impl generalizes.
+
+**Pre-flight (A):**
+- `core/memory.py` — add `StoreSpec` + `StoreScope`/`StoreSemantics`/`StorePosition` enums. Protocol unchanged.
+- `services/agent/memory.py` `FileMemoryProvider` — new `_stores()` → `list[StoreSpec]` built from live `MemoryCfg`
+  (memory, user, +state when `state_enabled`); new `_store_file(agent, spec)` generalizing
+  `_memory_file`/`_user_file` (keep `_agent_memory_dir` for the per-agent path); `_target(agent, key)` → look up
+  spec, return `(path, spec)`; `load_context` iterates injected stores **ordered PERSONA-first then FACTS**, header
+  + nudge per store (fold the Slice-1b nudge loop in); `write` branches on `spec.semantics` (APPEND → current
+  `§`/F1/F3a/F6 path; **SET → wholesale overwrite**, no `§`/cap-tidy logic — `content` *is* the new value);
+  `overwrite`/`read_raw` look the spec up. **Decision: one injected block with persona-first ordering** (not a
+  separate injection point) for v1 — splitting `state.md` to sit *physically* next to SOUL.md is a later `_assemble`
+  refinement, not needed first.
+- `services/agent/memory_tool.py` — `MemoryInput.action` gains `"set"`; `target` stays a `Literal` extended to all
+  known keys (`memory|user|state`) for schema clarity, with `gate_memory` rejecting a disabled/unknown store and
+  enforcing **action↔semantics** (set only on SET stores; add/replace/remove only on APPEND); the user-profile gate
+  generalizes to per-store `enabled`. The tool body **skips the propose-path for SET stores** (state auto-applies).
+- `config.py` `MemoryCfg` — caps stay flat for now (`memory_char_limit`, `user_char_limit`, +`state_char_limit`);
+  note the future `stores: {key: {cap, enabled, backed_up}}` map as the seam if stores grow past a handful.
+- `api/agent.py` — **API-shape decision:** generalize the two memory endpoints to a store-keyed route
+  (`GET/PUT /api/agents/{name}/memory/{store}` for AGENT stores; keep `/api/memory/user` or move to
+  `/api/memory/{store}` for GLOBAL) so the Conf panel can edit `state.md`; update the two callers. (Old routes can
+  stay as aliases to avoid a frontend big-bang.)
+- `services/agent/memory_backup.py` — `backed_up=False` (future) means that store's filename is added to the repo
+  `.gitignore` so reconcile/commit skip it. **No change now** (all stores backed up); the `.gitignore` template is
+  the seam.
+- Frontend `hooks/useMemory.ts` + `components/MemoryEditor.tsx` — slots become registry-driven (add a `stateSlot`,
+  gated `state_enabled`); `MemoryCfg` type gains the new fields; `MemoryEditor` renders the state row + its cap, and
+  the reflection controls (C); `ConfTab` default `memoryCfg` literal gains the new fields.
+
+### B — `state.md` (emotional/affective state, opt-in)
+
+One registry entry: `state` = AGENT / `STATE.md` / **SET** / **PERSONA** position / injected + writable, gated by
+`MemoryCfg.state_enabled: bool = False`, `backed_up=True`. **Free-form markdown the model rewrites** (e.g. a short
+"Mood / Energy / Lately …" — tanya is hybrid JSON+md; start free-form, add a structured header later only if
+wanted), small cap (`state_char_limit`, ~600). **Read** every turn via `load_context` (persona-first), fresh from
+disk, gated by `state_enabled`. **Written** set-value via `memory(target="state", action="set", content=…)` →
+`overwrite` under the D26 lock; **auto-applies** (no propose-gate, owner decision). When written: model-driven (the
+model decides its state shifted) + reflection-driven (C) — **not** every turn (would churn the file + git). Conf →
+Memory gets a state row + a cap field, gated by the toggle. Tests on a temp workspace (set round-trip, persona-first
+injection, auto-apply with `auto_write` off, backed-up commit).
+
+### C — Periodic reflection ("save anything worth remembering" every N turns, opt-in, Hermes-style)
+
+`MemoryCfg.reflection_enabled: bool = False` + `reflection_interval: int = 10`. At turn start, count the thread's
+**total** user turns — **stable across compaction**, so a dedicated count (e.g. `MessageRepo.count_user_messages`
+or `list(include_compacted=True)`), *not* `_assemble`'s `include_compacted=False` history (which under-counts).
+When `enabled and count>0 and count % interval == 0`, set a per-turn flag → `_assemble` injects a **reflection
+nudge** `system` message at the existing injection seam (after the skills note): *"It's been N turns — review the
+recent conversation; if anything is durably worth remembering, save it with the `memory` tool (and update your
+`state` if it shifted); otherwise continue."* With `auto_write` **off**, the resulting memory saves become
+**proposals** (7e-f-3 Approve UI = Hermes's `write_approval`); state saves still auto-apply. **Open sub-decision for
+build:** batch a reflection's multiple proposals vs one Approve bubble each. The hardening is the safety net under
+this — reflection drives *more* writes, so F1 (dig-out), F6 (unique-match), the nudge, and the git backup all matter
+more. **Pre-flight (C):** `config.py` (2 fields); `services/conversation.py` (`MessageRepo` count helper);
+`services/agent/session.py` (`run_turn`/`_assemble` count + conditional nudge injection); frontend toggle + interval
+in `MemoryEditor`; tests (fires at the interval, silent when off/off-interval).
+
+**Settings summary (all opt-in; the new subsystems default off, like the nudge):** `consolidation_nudge=False` +
+`consolidation_nudge_pct=80` (**shipped**, Slice 1b); `state_enabled=False` + `state_char_limit≈600` (slice B);
+`reflection_enabled=False` + `reflection_interval=10` (slice C). Each gets a Conf → Memory control. **Remaining open
+sub-decisions, to settle at build:** the `api/agent.py` store-keyed route shape (generalize vs add aliases); the
+reflection proposal-batching when `auto_write` is off.
