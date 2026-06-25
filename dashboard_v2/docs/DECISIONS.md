@@ -1166,3 +1166,58 @@ root is the **memory directory** (`MemoryCfg.memory_dir`, default `memories`); p
 author_name, author_email, commit_timeout_s=10, reconcile_interval_s=120}`; `AgentDef.memory_dir: str|None=None`.
 All read live (hot-toggle, no restart — the provider/backup read `Settings` per call, mirroring the rest of
 the memory subsystem; no `runtime.reconfigure` wiring needed).
+
+## D27 — Memory roadmap: store registry → `state.md` + periodic reflection (all opt-in) ✏️ DESIGNED 2026-06-25
+
+The memory hardening (Slice 1: F1/F2/F3a/F5; Slice 1b: F6 unique-match + opt-in consolidation nudge; D26 git
+backup) clears the way for two new memory subsystems the owner wants — an **emotional `state.md`** and a
+**periodic "save anything worth remembering" reflection**. This entry locks their shape + the one refactor
+they both need first. Web-validated 2026-06-25 (Hermes reflection mechanism, Letta/MemGPT memory-blocks, the
+tanya emotional-state project). **None built yet** — recorded so the next slices slot in cleanly.
+
+**Validation (why this shape is the robust, standard one).**
+- **Hermes's every-10-turns reflection (confirmed):** *"Every 10 turns, Hermes runs an internal review of the
+  recent conversation and asks whether anything should be saved to persistent memory"* — and it's **consent-aware**
+  (`write_approval` stages the save for review). Maps 1:1 onto our turn-boundary nudge + `auto_write`-off→propose.
+- **Letta / MemGPT** structures core memory as **labeled "memory blocks," each with its own char limit, that the
+  agent self-edits via tools** — i.e. exactly the store registry below (`state.md` = a custom block). The tiered
+  model (in-context core + searchable recall + archival) is what we already have (injected MEMORY.md +
+  `session_search` FTS + the future vector tier).
+- **tanya** (opxiahub/tanya) keeps emotional state as a **set-current-value** store (`state.json`: mood/energy +
+  narrative `.md`), evolved by **scheduled background jobs**, not per turn — so `state.md` is overwrite-semantics,
+  not append-facts, and is naturally driven by reflection/automation.
+
+**1. Store registry (F7/F8/F9) — the prerequisite refactor; do it as step 1 of the `state.md` slice (NOT now).**
+Memory stores are currently **hardcoded to two** (per-agent MEMORY.md + global USER.md) across ~6 sites
+(`_memory_file`/`_user_file`, `_target`, `load_context`, the `MemoryInput.target` `Literal`, the two caps). Adding
+a third store would touch all of them — the per-store form of the "parallel sibling maps" anti-pattern. Generalize
+to a small **store registry**: a list of descriptors `{key, scope: per-agent|global, filename, cap, semantics:
+append|set, injected: bool, writable: bool, backed_up: bool}`. `load_context` iterates it, `_target` looks it up,
+the tool's `target` is registry-validated (not a static `Literal`), caps are per-store. Then a new store is **one
+entry**. Two dimensions the registry must carry (the reason it's not cosmetic): **F8 — per-store semantics**
+(MEMORY.md/USER.md = append-`§`-entries via add/replace/remove; `state.md` = set-value → needs a `set`/overwrite
+path, not `§`-entries); **F9 — per-store backup policy** (`backed_up`: a frequently-rewritten `state.md` may be
+un-versioned or debounced in D26's git layer to avoid churn). Per "shape to extend, not migrate," do this when the
+third store is actually added (still cheap at 2→3), not speculatively now — F6/the nudge add no store, so they
+don't deepen the hardcoding.
+
+**2. `state.md` — emotional/affective state (opt-in).** A `set`-semantics store in the registry (overwrite the
+current state, don't append). Likely per-agent, structured-ish markdown (tanya uses JSON for mood/energy + `.md`
+narrative — pick the lighter of the two at build). `MemoryCfg.state_enabled: bool = False` gates injection + the
+write path + the Conf toggle. Default un-versioned in git (F9) unless the owner wants history. Updated by the
+reflection step (below) and/or a future scheduled automation (ROADMAP A3) — **not** every turn.
+
+**3. Periodic reflection — "save anything worth remembering" every N turns (opt-in, Hermes-style).** At the start
+of a turn, count the thread's user turns; when `count > 0 and count % reflection_interval == 0`, inject a
+**reflection nudge** (a conditional `system` message at the existing `_assemble` injection seam — same mechanism
+as the appends/memory-block/roster/skills-note): *"review the recent turns; if anything is durably worth
+remembering, save it with the `memory` tool; otherwise do nothing."* With `auto_write` **off** the save becomes a
+**proposal** (the existing 7e-f-3 Approve UI = Hermes's `write_approval`). Config `MemoryCfg.reflection_enabled:
+bool = False` + `reflection_interval: int = 10`. The hardening de-risks this directly: reflection drives *more*
+memory writes, so F1 (dig-out), F6 (unique-match), the consolidation nudge, and the git backup all matter more —
+they're the safety net under it. Open sub-decision for build: with `auto_write` off, batch the reflection's
+proposals vs one Approve bubble each.
+
+**Settings summary (all opt-in; the two new subsystems default off, like the nudge):** `consolidation_nudge=False`
++ `consolidation_nudge_pct=80` (shipped, Slice 1b); `state_enabled=False` (state.md slice); `reflection_enabled=False`
++ `reflection_interval=10` (reflection slice). Each gets a Conf → Memory control alongside the existing toggles.
