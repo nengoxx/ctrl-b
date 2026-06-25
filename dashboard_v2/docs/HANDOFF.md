@@ -76,7 +76,52 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Memory hardening + git backup (D26) SHIPPED** · NEXT = **emma (Linux) deploy / v1 cutover** — the last track)
+## Current state (**Memory hardening (Slices 1 + 1b) + git backup (D26) SHIPPED · memory roadmap D27 fully specced** · NEXT = **D27 Sub-slice A (store registry)** → state.md → reflection; emma deploy still the last v1 track)
+
+> ### 🟢 CLEAN-SESSION HANDOFF — memory hardening done (Slices 1/1b + D26) · roadmap D27 spec'd · build Sub-slice A next — 2026-06-25
+> **Everything is pushed** (`origin/main` @ `aee59fb`; tree clean except the untracked `prototypes/` UI-exploration
+> dir, unrelated). **Backend 26 test files green** (`./.venv/Scripts/python.exe tests/<file>.py`; pytest not
+> installed). **Frontend** `npm run build` clean + **85 unit tests** + 32 e2e. Servers if you need them: backend
+> **5433** (`uvicorn app.main:app --port 5433`, **no `--reload`** on Windows), frontend **5190**
+> (`npm run dev -- --port 5190`). ⚠️ The first real backend boot **git-inits the live `memories/` folder** (D26's
+> intended behaviour — a gitignored nested repo).
+>
+> **The memory subsystem as it stands (mental model for a fresh session):**
+> - **Two always-injected stores** (Hermes/Letta model): per-agent `MEMORY.md` + global `USER.md`, read fresh each
+>   turn by `FileMemoryProvider.load_context` and injected as a `system` message with cap-usage headers
+>   (`## Agent memory (67% — …/2,200)`). Caps 2200/1375 (Hermes defaults). The agent edits via the **`memory`**
+>   builtin (`add`/`replace`/`remove` of `§`-entries); the owner edits raw via Conf → Memory.
+> - **Recall today** = always-inject + lexical `session_search` (FTS5). **No vector/semantic recall** (the unbuilt
+>   `MemoryProvider` "both" seam + the wired-but-unused embeddings client).
+> - **Hardening shipped this session** — read the F-findings in context: **Slice 1** (`ecfe762`) F1 grow-only cap
+>   guard (an over-cap store could no longer be dug out — silent memory loss), F2 action-aware error, F3a orphan-`§`
+>   cleanup, F5 invariant doc. **Slice 1b** (`0c70146`) **F6 unique-match** (`replace`/`remove` now require `old_text`
+>   to hit exactly one place — 0→not-found, >1→"ambiguous, add context"; killed the silent wrong-entry bug, matches
+>   Hermes + Claude's memory tool) + an **opt-in consolidation nudge** (default OFF; when a store ≥
+>   `consolidation_nudge_pct`, `load_context` appends a "consolidate before adding" line; F10 neutral over-cap
+>   wording; Conf → Memory toggle + threshold).
+> - **D26 git backup** (`cd6c195`, audit-fixed `6570a1b`): all memory lives under `MemoryCfg.memory_dir` (the repo
+>   root); `write`/`overwrite` are **async** — atomic write (temp+fsync+`os.replace`) then `git add`+`commit` under a
+>   process-wide lock (commit captures exactly that write). Manual edits captured by a startup reconcile + 120s
+>   sweep. Secrets-guard, `-c` identity, best-effort, `core.autocrlf=false` (the audit's CRLF-churn fix). `push`
+>   deferred. Files: `services/agent/memory_backup.py` (`GitMemoryBackup`/`NoopBackup`).
+> - **The redactor (`core/redact.py`) does NOT touch memory/state** — it masks config secrets in *captured external
+>   output* (shell, `session_search` snippets, event logs); the model's curated memory is trusted + verbatim.
+> - **F4 reframed (not a gap):** dedup/contradiction resolution is the **model's job by design** (Hermes confirmed —
+>   it deliberately does *not* auto-consolidate memory). The only residue was the prompt nudge → shipped as 1b.
+>
+> **⭐ THE NEXT SLICE — D27 Sub-slice A (store registry). Fully specced + pre-flighted in DECISIONS D27; read it
+> first.** The two stores are hardcoded across ~6 sites; generalize to a `StoreSpec` registry (`core/memory.py`) the
+> provider reads from — **behaviour-preserving, no data migration, current tests must pass unchanged.** Then
+> **Sub-slice B** = `state.md` (emotional state: one registry entry, `SET` semantics, persona-position, auto-applies,
+> backed-up) and **Sub-slice C** = periodic reflection (Hermes every-10-turns "save anything worth remembering";
+> turn-counter + `_assemble` nudge injection; `auto_write`-off → propose). All three opt-in, defaults off. D27 has the
+> file-level pre-flight for each. **Two open build-time sub-decisions** (also in D27): the `api/agent.py` store-keyed
+> route shape; reflection proposal-batching when `auto_write` is off.
+>
+> **Doc map:** DECISIONS **D26** (git backup, shipped) + **D27** (registry → state.md → reflection, the spec) ·
+> CLAUDE.md "shape data to extend, not migrate" (why the registry is one entry per future store) · ROADMAP A3
+> (scheduled automations — the tanya-style async state-evolution seam). The blocks below are shipped history.
 
 > ### 🟢 SESSION UPDATE — Memory consolidation hardening + memory-dir git backup (D26) SHIPPED — 2026-06-25
 > Two slices, both pushed (`origin/main` @ `cd6c195`). Backend **26 test files** green (new
