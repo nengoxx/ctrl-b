@@ -76,7 +76,24 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Memory hardening (1/1b) + git backup (D26) + D27 Sub-slices A (registry) & B (`state.md`) SHIPPED + audited** · NEXT = **D27 Sub-slice C (periodic reflection)**; emma deploy still the last v1 track)
+## Current state (**Memory roadmap D27 COMPLETE — A (registry) + B (`state.md`, audited) + C (periodic reflection) all SHIPPED** · NEXT = **emma (Linux) deploy / v1 cutover** — the last v1 track)
+
+> ### 🟢 SESSION UPDATE — D27 Sub-slice C (periodic reflection) SHIPPED — 2026-06-26 — **D27 COMPLETE**
+> The Hermes-style "save anything worth remembering every N turns" nudge is built + green. DECISIONS
+> **D27 §C** has the spec. **A is pushed (`6e5e2f0`), B is pushed (`b47edc9`); C is committed locally,
+> awaiting the owner's eyeball before push.** Backend **30 test files green**; frontend build + 85 unit
+> + 32 e2e clean; live-verified (settings expose `reflection_enabled=False`/`reflection_interval=10`).
+> - **What shipped.** `MemoryCfg.reflection_enabled` (off) + `reflection_interval` (10, `ge=1`).
+>   `MessageRepo.count_user_messages` counts user msgs **including compacted** (compaction-stable cadence).
+>   `AgentSession._maybe_arm_reflection` (from `run_turn`, after the user msg persists → every Nth turn)
+>   arms a per-turn `_reflect_now`; `_assemble` injects one reflection `system` msg **after the skills
+>   note**. Resume doesn't re-arm (turn-start concern); `_finalize` clears it (its tool-less wrap-up must
+>   not say "use the memory tool"). The `state` clause shows only when `state_enabled`. Reflection only
+>   *steers* — saves ride the normal `auto_write` path (on→saved, off→proposed), `state` auto-applies;
+>   **no propose-batching** (each `memory` call already yields its own bubble — deferred UI nicety).
+>   Frontend: Conf → Memory "Periodic reflection" toggle + gated "Reflection interval".
+> - **Eyeball pending (390px):** the two new Conf → Memory rows. **NEXT = emma deploy** (TODO Phase 9
+>   systemd/install + Phase 10 cutover) — the memory roadmap is now fully shipped.
 
 > ### 🟢 SESSION UPDATE — D27 Sub-slice B (`state.md`) SHIPPED + deep-audited — 2026-06-26
 > The emotional-state store is built, fully green, live-verified, and **deep-audited** (independent

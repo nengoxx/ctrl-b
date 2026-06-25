@@ -1291,7 +1291,27 @@ model decides its state shifted) + reflection-driven (C) — **not** every turn 
 Memory gets a state row + a cap field, gated by the toggle. Tests on a temp workspace (set round-trip, persona-first
 injection, auto-apply with `auto_write` off, backed-up commit).
 
-### C — Periodic reflection ("save anything worth remembering" every N turns, opt-in, Hermes-style)
+### C — Periodic reflection ("save anything worth remembering" every N turns, opt-in, Hermes-style) ✅ SHIPPED 2026-06-26
+
+**Shipped.** `MemoryCfg.reflection_enabled` (default off) + `reflection_interval` (default 10, `ge=1`).
+`MessageRepo.count_user_messages` counts user messages **including compacted ones** (compaction-stable —
+the cadence can't drift as history folds). `AgentSession._maybe_arm_reflection` (called from `run_turn`
+*after* the user message is persisted, so the count includes it → every Nth turn) sets a per-turn
+`_reflect_now` flag when `enabled and reflection_enabled and count % interval == 0`; `_assemble` then
+injects one reflection `system` message **after the skills note** (the existing seam). The resume path
+doesn't re-arm (reflection is turn-start, not mid-turn), and `_finalize` clears the flag (its forced
+wrap-up call is tool-less — it must not carry a "use the `memory` tool" nudge). The nudge's `state`
+clause appears only when `state_enabled`. **No special propose handling** — reflection only *steers*;
+the resulting `memory` saves ride the normal `auto_write` path (on → saved, off → proposed via the 7e-f
+Approve UI), and `state` saves auto-apply, all unchanged. **Proposal-batching when `auto_write` is off
+was the one open sub-decision → resolved as NOT built** (each `memory` call already yields its own
+proposal bubble; batching is a UI nicety, deferred). Frontend: Conf → Memory gains a "Periodic
+reflection" toggle + a gated "Reflection interval" field. Tests: `test_reflection_d27` (7 — fires at
+interval, silent off-interval / disabled / master-off, compaction-stable count, state-clause gating,
+nudge-position). Backend 30 test files green; frontend build + 85 unit + 32 e2e clean. **D27 complete
+(A+B+C).**
+
+**Original design (still the spec):**
 
 `MemoryCfg.reflection_enabled: bool = False` + `reflection_interval: int = 10`. At turn start, count the thread's
 **total** user turns — **stable across compaction**, so a dedicated count (e.g. `MessageRepo.count_user_messages`

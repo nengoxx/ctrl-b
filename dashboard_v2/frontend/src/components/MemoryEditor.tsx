@@ -106,17 +106,26 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
   const [userCap, setUserCap] = useState(String(cfg.user_char_limit));
   const [nudgePct, setNudgePct] = useState(String(cfg.consolidation_nudge_pct));
   const [stateCap, setStateCap] = useState(String(cfg.state_char_limit));
+  const [reflectN, setReflectN] = useState(String(cfg.reflection_interval));
   useEffect(() => {
     setMemCap(String(cfg.memory_char_limit));
     setUserCap(String(cfg.user_char_limit));
     setNudgePct(String(cfg.consolidation_nudge_pct));
     setStateCap(String(cfg.state_char_limit));
-  }, [cfg.memory_char_limit, cfg.user_char_limit, cfg.consolidation_nudge_pct, cfg.state_char_limit]);
+    setReflectN(String(cfg.reflection_interval));
+  }, [
+    cfg.memory_char_limit,
+    cfg.user_char_limit,
+    cfg.consolidation_nudge_pct,
+    cfg.state_char_limit,
+    cfg.reflection_interval,
+  ]);
   const capsDirty =
     memCap !== String(cfg.memory_char_limit) ||
     userCap !== String(cfg.user_char_limit) ||
     nudgePct !== String(cfg.consolidation_nudge_pct) ||
-    stateCap !== String(cfg.state_char_limit);
+    stateCap !== String(cfg.state_char_limit) ||
+    reflectN !== String(cfg.reflection_interval);
   useRegisterDirty("memory:caps", capsDirty);
 
   const setCfg = (patch: Partial<MemoryCfg>) => saveSettings.mutate({ memory: patch });
@@ -173,6 +182,13 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
         </div>
         <Switch on={cfg.state_enabled} onToggle={() => setCfg({ state_enabled: !cfg.state_enabled })} />
       </div>
+      <div className="confrow">
+        <div className="k">
+          <div className="label">Periodic reflection</div>
+          <div className="desc">every N turns → nudge the agent to save anything worth remembering</div>
+        </div>
+        <Switch on={cfg.reflection_enabled} onToggle={() => setCfg({ reflection_enabled: !cfg.reflection_enabled })} />
+      </div>
 
       <div className="confrow">
         <div className="k">
@@ -204,6 +220,15 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
           <input aria-label="State cap" type="text" value={stateCap} inputMode="numeric" onChange={(e) => setStateCap(e.target.value)} />
         </div>
       )}
+      {cfg.reflection_enabled && (
+        <div className="confrow">
+          <div className="k">
+            <div className="label">Reflection interval</div>
+            <div className="desc">user turns between reflection nudges (≥1)</div>
+          </div>
+          <input aria-label="Reflection interval" type="text" value={reflectN} inputMode="numeric" onChange={(e) => setReflectN(e.target.value)} />
+        </div>
+      )}
       <div className="conf-savebar">
         <button
           className="conf-save"
@@ -214,6 +239,7 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
               user_char_limit: Number(userCap),
               consolidation_nudge_pct: Number(nudgePct),
               state_char_limit: Number(stateCap),
+              reflection_interval: Number(reflectN),
             })
           }
         >

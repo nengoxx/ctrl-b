@@ -253,6 +253,12 @@ class MemoryCfg(BaseModel):
     # own mood isn't a fact-about-the-world that needs the auto_write Approve gate — D27 #1).
     state_enabled: bool = False
     state_char_limit: int = Field(600, ge=1)    # per-agent STATE.md cap (~220 tokens)
+    # Periodic reflection (D27 slice C, Hermes-style) — every `reflection_interval` user turns, inject a
+    # one-shot nudge to review the conversation and save anything durably worth remembering (memory saves
+    # follow the normal auto_write/propose path; state saves auto-apply). Opt-in (default OFF, like the
+    # nudge + state). Gated by the master `enabled` switch too.
+    reflection_enabled: bool = False
+    reflection_interval: int = Field(10, ge=1)  # user turns between reflection nudges
 
 
 class EmbeddingsCfg(BaseModel):

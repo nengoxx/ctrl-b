@@ -20,6 +20,8 @@ export interface MemoryCfg {
   user_char_limit: number;
   state_enabled: boolean; // D27-B — per-agent emotional STATE.md (opt-in)
   state_char_limit: number;
+  reflection_enabled: boolean; // D27-C — periodic "save anything worth remembering" nudge (opt-in)
+  reflection_interval: number;
 }
 
 /** One editable memory file: the global user profile or a single agent's memory. `key` is the React

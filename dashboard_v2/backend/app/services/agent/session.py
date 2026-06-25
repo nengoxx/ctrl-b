@@ -213,6 +213,11 @@ class AgentSession:
         #: effective tool allowlist defaults to the agent's; active skills may narrow it.
         self._skills_note: str | None = None
         self._tool_allow: list[str] | str = self._agent.tools
+        #: Per-turn periodic-reflection flag (D27-C), armed by `_maybe_arm_reflection` at turn start
+        #: when the thread's user-turn count hits the interval; `_assemble` injects a one-shot nudge
+        #: while set. Default off (also the resume path, which doesn't re-arm — reflection is a
+        #: turn-start concern, not a mid-turn one).
+        self._reflect_now = False
 
     def _system_prompt(self) -> str:
         """The agent's own prompt wins; then the global `inference.system_prompt` override; then the
@@ -247,6 +252,23 @@ class AgentSession:
         if self._memory is None:
             return None
         return self._memory.load_context(self._agent) or None
+
+    def _reflection_nudge(self) -> str:
+        """The one-shot periodic-reflection prompt (D27-C). Saving runs the normal `memory` tool path
+        (auto_write on → saved; off → proposed for the owner's approval), so the nudge only steers —
+        it never writes. The `state` clause appears only when that store is enabled."""
+        cfg = self._settings.memory
+        state_clause = (
+            " Also update your `state` (action `set`) if how you feel has shifted."
+            if cfg.state_enabled
+            else ""
+        )
+        return (
+            f"It's been {cfg.reflection_interval} turns — pause and review the recent conversation. "
+            "If anything is durably worth remembering (a lasting fact, preference, or decision), save "
+            f"it with the `memory` tool.{state_clause} If there's nothing worth keeping, just continue "
+            "— don't invent things to store."
+        )
 
     def _roster(self) -> str | None:
         """A compact id↔name map of the fleet + services, injected each turn so the agent resolves
@@ -313,6 +335,8 @@ class AgentSession:
             out.append({"role": "system", "content": roster})
         if self._skills_note:  # active skills' instructions (4.5)
             out.append({"role": "system", "content": self._skills_note})
+        if self._reflect_now:  # periodic reflection nudge (D27-C), after the skills note
+            out.append({"role": "system", "content": self._reflection_nudge()})
         for m in history:
             if m.role == "tool":
                 continue  # emitted inline after the assistant call below
@@ -373,8 +397,24 @@ class AgentSession:
             thread_id=thread.id, role="user", actor=Actor.USER, parts=[TextPart(text=user_text)]
         )
         await self._messages.add(user_msg)
+        await self._maybe_arm_reflection(thread)  # D27-C — periodic "save anything worth remembering"
         async for ev in self._drive(thread, mode=mode):
             yield ev
+
+    async def _maybe_arm_reflection(self, thread: Thread) -> None:
+        """Arm the periodic-reflection nudge for this turn (D27-C) when the thread's user-turn count
+        is a multiple of `reflection_interval`. Counts the user message just persisted (so the cadence
+        is every Nth turn) and **includes compacted messages** so it doesn't drift as history folds.
+        Opt-in: off unless both the master memory switch and `reflection_enabled` are on."""
+        cfg = self._settings.memory
+        if not (cfg.enabled and cfg.reflection_enabled):
+            self._reflect_now = False
+            return
+        interval = cfg.reflection_interval
+        count = await self._messages.count_user_messages(thread.id)
+        # `interval > 0` is belt-and-suspenders — `MemoryCfg` enforces `ge=1`, but guard the modulo
+        # against a 0 reaching here via a direct mutation (tests) rather than risk a ZeroDivisionError.
+        self._reflect_now = interval > 0 and count > 0 and count % interval == 0
 
     async def compact(self, thread: Thread) -> dict:
         """Manual `/compact` (4e): force-fold the oldest turns now, ignoring the token threshold but
@@ -572,6 +612,7 @@ class AgentSession:
         one **tool-less** model call (so it can only produce text) with a nudge to wrap up, instead
         of the old silent `capped` dead-end. Always ends the turn with a reply; only if this call
         itself fails do we fall back to `capped` so there's still a terminal event."""
+        self._reflect_now = False  # the wrap-up call is tool-less — don't carry the "use the memory tool" nudge
         messages = await self._assemble(thread)
         messages.append(
             {

@@ -132,6 +132,16 @@ class MessageRepo:
         sql += " ORDER BY ts ASC"
         return [self._row(r) for r in await self._db.query(sql, (thread_id,))]
 
+    async def count_user_messages(self, thread_id: str) -> int:
+        """Count user messages in a thread, **including compacted ones** (D27-C periodic reflection).
+        Compaction only flips `compacted`, never deletes, so this is a monotonic per-thread turn
+        counter — unlike `_assemble`'s `include_compacted=False` view, which shrinks as old turns fold
+        into the rolling summary and would make the reflection cadence drift."""
+        rows = await self._db.query(
+            "SELECT COUNT(*) AS n FROM messages WHERE thread_id = ? AND role = 'user'", (thread_id,)
+        )
+        return int(rows[0]["n"]) if rows else 0
+
     async def search(
         self, query: str, *, limit: int = 5, include_archived: bool = False
     ) -> list[dict[str, Any]]:
