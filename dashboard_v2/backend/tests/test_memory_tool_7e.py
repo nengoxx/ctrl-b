@@ -137,6 +137,63 @@ def test_over_cap_raises() -> None:
                 raise AssertionError("expected MemoryCapError over the char cap")
 
 
+def test_remove_while_over_cap_succeeds() -> None:
+    """F1: once a store is over cap (here via the uncapped manual overwrite), a `remove` that shrinks
+    it must still succeed even if it stays over cap — the over-cap state must not trap the edits that
+    resolve it."""
+    with _workspace() as (tmp, _cfg):
+        with _client() as c:
+            c.app.state.settings.memory.memory_char_limit = 20
+            prov, agent = c.app.state.memory, _agent(c)
+            prov.overwrite(agent, "memory", "§ alpha entry\n\n§ beta entry\n\n§ gamma entry")
+            prov.write(agent, "memory", "remove", "", old_text="§ beta entry\n\n")
+            body = (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
+            assert "beta" not in body and "alpha" in body and "gamma" in body
+            assert len(body.strip()) > 20  # still over the 20-char cap, yet the shrink went through
+
+
+def test_shrinking_replace_while_over_cap_succeeds() -> None:
+    """F1: a `replace` that shrinks an over-cap store is allowed even if the result is still over cap."""
+    with _workspace() as (tmp, _cfg):
+        with _client() as c:
+            c.app.state.settings.memory.memory_char_limit = 10
+            prov, agent = c.app.state.memory, _agent(c)
+            prov.overwrite(agent, "memory", "§ a very long first entry here\n\n§ second entry")
+            prov.write(agent, "memory", "replace", "shorter", old_text="a very long first entry here")
+            body = (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
+            assert "shorter" in body and "a very long first entry here" not in body
+
+
+def test_growing_replace_over_cap_still_raises() -> None:
+    """F1 boundary: an edit that *grows* the store past the cap is still rejected."""
+    from app.services.agent.memory import MemoryCapError
+
+    with _workspace():
+        with _client() as c:
+            c.app.state.settings.memory.memory_char_limit = 20
+            prov, agent = c.app.state.memory, _agent(c)
+            prov.write(agent, "memory", "add", "tiny")
+            try:
+                prov.write(agent, "memory", "replace", "x" * 40, old_text="tiny")
+            except MemoryCapError:
+                pass
+            else:
+                raise AssertionError("expected MemoryCapError for a growing replace over the cap")
+
+
+def test_remove_cleans_orphan_marker() -> None:
+    """F3a: removing an entry by its text (not its `§` marker) must not leave a lone `§` bullet."""
+    with _workspace() as (tmp, _cfg):
+        with _client() as c:
+            prov, agent = c.app.state.memory, _agent(c)
+            prov.write(agent, "memory", "add", "first fact")
+            prov.write(agent, "memory", "add", "second fact")
+            prov.write(agent, "memory", "remove", "", old_text="second fact")
+            body = (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
+            assert "second fact" not in body and "first fact" in body
+            assert not any(line.strip() == "§" for line in body.splitlines())  # no orphaned marker
+
+
 # ── tool (through ActionService) ────────────────────────────────────────────────────────────────
 
 

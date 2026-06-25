@@ -26,14 +26,14 @@ class MemoryWriteError(RuntimeError):
 
 
 class MemoryCapError(MemoryWriteError):
-    """A write that would push a store past its character cap. The tool turns this into an ERROR
-    `ToolResult` telling the model to consolidate (replace/remove) before adding."""
+    """A write that would *grow* a store past its character cap (F1: only growth is rejected, never a
+    shrink). The tool turns this into an ERROR `ToolResult` telling the model to free space first."""
 
-    def __init__(self, label: str, length: int, cap: int) -> None:
-        self.label, self.length, self.cap = label, length, cap
+    def __init__(self, label: str, length: int, cap: int, action: str = "add") -> None:
+        self.label, self.length, self.cap, self.action = label, length, cap, action
         super().__init__(
-            f"{label} would be {length:,} chars, over its {cap:,}-char cap — consolidate "
-            "(replace/remove) existing entries before adding."
+            f"this {action} would grow {label} to {length:,} chars, past its {cap:,}-char cap. "
+            "Remove or shorten existing entries first, then retry — a remove/shrink is always allowed."
         )
 
 
@@ -96,8 +96,15 @@ class FileMemoryProvider:
         """Apply one edit to a memory store and persist it; returns a one-line summary with the new
         cap usage. `add` appends a `§`-delimited entry; `replace`/`remove` operate on the first
         occurrence of the `old_text` substring. Raises `MemoryWriteError` (old_text not found / bad
-        action) or `MemoryCapError` (over cap) — the caller turns either into an ERROR result. The
-        store's enable/profile gating + the `auto_write` switch live in the tool, not here."""
+        action) or `MemoryCapError` (a *growing* edit over cap) — the caller turns either into an
+        ERROR result. The store's enable/profile gating + the `auto_write` switch live in the tool,
+        not here.
+
+        Concurrency invariant (F5): this read-modify-write is synchronous (no `await` between the
+        `_read` and the `write_text`), so concurrent turns/subagents sharing one file can't interleave
+        within our single-worker event loop. Slice 2's git backup moves all memory mutations under a
+        process-wide async lock — that lock then *is* the serialization guarantee (and lets the commit
+        capture exactly this write); the no-await property here is the interim guard."""
         path, cap, label = self._target(agent, target)
         body = _read(path)
         if action == "add":
@@ -116,9 +123,13 @@ class FileMemoryProvider:
         else:
             raise MemoryWriteError(f"unknown memory action {action!r}")
 
-        new = re.sub(r"\n{3,}", "\n\n", new).strip()
-        if len(new) > cap:
-            raise MemoryCapError(label, len(new), cap)
+        new = _tidy(new)
+        # F1 — the cap is a *growth* guard, not an absolute ceiling: reject only an edit that pushes
+        # the store further over the cap. A `remove`/shrinking `replace` is always allowed even while
+        # over cap, so an over-cap store (a lowered cap, or the uncapped manual `overwrite`) can never
+        # trap the very edits that resolve it.
+        if len(new) > cap and len(new) > len(body):
+            raise MemoryCapError(label, len(new), cap, action)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(new + "\n" if new else "", encoding="utf-8")
         pct = round(100 * len(new) / cap) if cap > 0 else 0
@@ -146,6 +157,23 @@ class FileMemoryProvider:
 
 def _read(p: Path) -> str:
     return p.read_text(encoding="utf-8").strip() if p.is_file() else ""
+
+
+def _tidy(text: str) -> str:
+    """Normalize a memory body after an edit (F3a): collapse blank-line runs and drop a `§` bullet
+    left *empty* by a remove/replace (a marker whose entry text is gone). Conservative on purpose —
+    a `§`-only line is dropped only when the next line is blank, another bullet, or end-of-text, so a
+    multi-line entry whose first line was edited keeps its marker rather than being mangled."""
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    lines = text.split("\n")
+    kept: list[str] = []
+    for i, line in enumerate(lines):
+        if re.fullmatch(r"§[ \t]*", line):
+            nxt = lines[i + 1] if i + 1 < len(lines) else ""
+            if nxt == "" or nxt.startswith("§"):  # blank line / next bullet / EOF → orphaned marker
+                continue
+        kept.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
 
 
 def _section(title: str, body: str, cap: int) -> str:
