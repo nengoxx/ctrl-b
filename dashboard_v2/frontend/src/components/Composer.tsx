@@ -1,10 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent } from "react";
 
-import { useDictation } from "../hooks/useDictation";
-import { useVoiceStatus } from "../hooks/useVoiceStatus";
-import { runComposer } from "../lib/composer";
-import { useChat } from "../store/chat";
-import { clearDraft, setDraft, useDraft } from "../store/composer";
+import { useComposer } from "../hooks/useComposer";
 
 // Shared composer (fleet + agent tabs). Ported from vapor.html: auto-growing textarea, an
 // embedded mic toggle, and the send button. Submits route through runComposer (Phase 4c): `!<cmd>`
@@ -31,17 +27,9 @@ const MIC_LABEL: Record<string, string> = {
 
 export function Composer() {
   const taRef = useRef<HTMLTextAreaElement>(null);
-  const draft = useDraft();
-  const { status } = useChat();
-  // Voice capability + dictation. The mic only renders when STT is configured (stt:false → hidden,
-  // per the owner's state #3); the recorder's real phase drives the button class.
-  const voice = useVoiceStatus();
-  const sttReady = voice.data?.stt ?? false;
-  const mic = useDictation({
-    sttReady,
-    statusStamp: voice.dataUpdatedAt,
-    autoSend: voice.data?.stt_auto_send ?? false,
-  });
+  // All behaviour comes from the headless controller (draft, prefix-routed send, streaming gate, mic).
+  // This component owns only vapor's composer DOM + presentation concerns (auto-grow, Enter-to-send).
+  const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
 
   // Auto-grow the textarea to fit content (max 96px). Runs whenever the draft changes,
   // including the initial render — so a saved draft loaded from localStorage gets the right
@@ -54,13 +42,6 @@ export function Composer() {
     ta.style.height = "auto";
     ta.style.height = Math.min(96, ta.scrollHeight) + "px";
   }, [draft]);
-
-  function send() {
-    const text = draft.trim();
-    if (!text || status === "streaming") return;
-    runComposer(text); // routes by prefix: !shell · /slash · else agent (lib/composer)
-    clearDraft();
-  }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -103,7 +84,7 @@ export function Composer() {
         id="cmd-send"
         aria-label="send message"
         title="send message"
-        disabled={status === "streaming"}
+        disabled={isStreaming}
         onClick={send}
       />
     </div>
