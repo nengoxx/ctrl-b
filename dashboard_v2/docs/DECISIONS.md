@@ -1353,8 +1353,18 @@ switch between distinct, pixel-faithful design systems — not palette swaps. Th
 components** (cosmos = orbital fleet; frontier = comic art-map + beacons + bottom-sheet; observatory = SVG
 topology), load **their own fonts**, define **disjoint token namespaces**, and carry **richer palette models**
 (minimal = light/dark × 4 OKLCH hues). This entry locks the architecture. The full code-level spec + porting
-playbook live in **[`THEME_ENGINE.md`](./THEME_ENGINE.md) §§9–10**; the TODO slices are **Phase 11 (T0–T5)**. **Nothing
-built yet** — research + design phase only (2026-06-26).
+playbook live in **[`THEME_ENGINE.md`](./THEME_ENGINE.md) §§9–10**; the TODO slices are **Phase 11 (T0–T5)**.
+
+> **✅ T0 (the engine; vapor untouched) SHIPPED 2026-06-26.** The `@layer` isolation strategy is build-verified
+> (Vite preserves `@import … layer()` → no `cb-` fallback needed); `theme-engine/` (registry + slots +
+> `ThemeProvider` + cached resolution), the vapor module (existing components as slots, frozen), the `App.tsx`
+> slot host, the `{theme,mode,accent}` `ui` store (+ legacy remap + `data-skin`), the registry-driven Conf
+> Appearance picker, the View-Transition `switchTheme` path, and **cross-device sync** (`AppearanceCfg` +
+> `GET /api/appearance` + optimistic write + reconcile + no-FOUC body-top script) are all in. **Acceptance met:
+> vapor renders byte-for-byte unchanged** (frozen files git-confirmed untouched; CSS bundle hash stable). Green:
+> frontend 92 unit + 32 e2e, backend 31 test files. One implementation refinement beyond the spec wording: the
+> reconcile keeps the local selection when the server is unwritten (`updated_at=null`) rather than reverting to
+> backend defaults. **Next: T1 (minimal — BASE chrome + OKLCH mode×accent matrix).** Remaining T-slices below.
 
 **Validation (web-cited; full citations in THEME_ENGINE.md research).** Token/provider theming covers *aesthetics
 only, not structural composition* (Brad Frost's themeable-systems taxonomy) — structural divergence per theme needs a

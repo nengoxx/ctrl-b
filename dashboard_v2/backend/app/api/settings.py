@@ -12,6 +12,7 @@ Thin by design (AGENTS conventions): validate + delegate to `config.py` helpers 
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -57,12 +58,32 @@ async def get_settings(request: Request) -> dict[str, Any]:
     return mask_secrets(settings.model_dump(mode="json"))
 
 
+@router.get("/appearance")
+async def get_appearance(request: Request) -> dict[str, Any]:
+    """The active appearance selection only (Phase 11 / D28 §9.11): `{theme, mode, accent, updated_at}`.
+
+    A lightweight always-on read — the `ui` store reconciles against it on mount (the full
+    `GET /api/settings` is Conf-tab-scoped on the client, so it can't drive first-paint/reconcile).
+    No secrets in this block → no masking needed."""
+    settings: Settings = request.app.state.settings
+    return settings.appearance.model_dump(mode="json")
+
+
 @router.put("/settings")
 async def put_settings(patch: dict[str, Any], request: Request) -> dict[str, Any]:
     """Apply a partial settings patch. Deep-merges onto the current config, preserves unchanged
     secrets, validates (→ 422 on bad values), persists atomically, and hot-applies."""
     if not isinstance(patch, dict):
         raise HTTPException(status_code=422, detail="settings patch must be a JSON object")
+
+    # Appearance writes are server-stamped LWW (§9.11): stamp `updated_at` on the server's own clock so
+    # cross-device order is unambiguous (no client clocks). Stamp the PATCH (not just the live object) so
+    # the timestamp flows through the merge AND the YAML persistence — it survives a restart.
+    if isinstance(patch.get("appearance"), dict):
+        patch = {
+            **patch,
+            "appearance": {**patch["appearance"], "updated_at": datetime.now(timezone.utc).isoformat()},
+        }
 
     async with _write_lock:
         current: Settings = request.app.state.settings

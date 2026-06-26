@@ -76,7 +76,49 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Theme Engine RESEARCH + DESIGN phase COMPLETE** (D28 + Phase 11 locked) · NEXT = **build T0** (the engine, vapor untouched); emma deploy → cutover still queued)
+## Current state (**Theme Engine T0 SHIPPED** (the engine, vapor byte-for-byte unchanged) · NEXT = **build T1 (minimal — BASE chrome + OKLCH matrix)**; emma deploy → cutover still queued)
+
+> ### 🟢 SESSION UPDATE — Theme Engine **T0 (the engine; vapor untouched) SHIPPED** — 2026-06-26
+> The foundation is built + fully green; **vapor renders byte-for-byte unchanged** (the acceptance test).
+> **Read `THEME_ENGINE.md §§9–13` + `DECISIONS D28` + `TODO Phase 11` for the design; this block is what landed.**
+> - **What shipped (the §9.13 touch list, exactly).** `src/theme-engine/` — `types.ts`, `registry.ts`,
+>   `tabs.ts` (pure tab data, no component imports → lets `store/ui` read `hasComposer` with no runtime cycle),
+>   `base.ts` (**empty BASE stub** — real BASE is T1), `vapor.tsx` (registers the existing components as slots,
+>   frozen), `resolve.ts` (module-level **cached** slot map → stable identity, no context fan-out),
+>   `ThemeProvider.tsx` (+`useThemeSlot`/`useThemeSlots`), `switchTheme.ts` (View-Transition path). Wiring:
+>   `App.tsx` → **slot host** (preserves lazy-Conf/Suspense, `--appbar-h`, `hasComposer`); `store/ui.ts` →
+>   `{theme,mode,accent}` + `data-skin`/cleared-`data-theme` + `migrateLegacyTheme`; `main.tsx` →
+>   `theme/index.css` (`@layer frozen,base,theme` cage) + `<ThemeProvider>`; `ConfTab.tsx` → registry-driven
+>   Theme/Mode/Palette picker. **Cross-device sync (day-1, §9.11):** backend `AppearanceCfg` (server-stamped) +
+>   `GET /api/appearance` + `ComputerCfg.appearance` (per-host blob, schema-only); `hooks/useAppearance.ts`
+>   (always-on query + `reconcileAppearance` + optimistic scope-serialized write); inline no-FOUC `<body>`-top
+>   script in `index.html`.
+> - **The `@layer` gate PASSED (the strategy fork).** Vite 7.3.3 preserves `@import … layer()` — the emitted
+>   bundle wraps vapor.css/extras.css in `@layer frozen{…}`, byte-identical inner content. **No `cb-` namespacing
+>   fallback needed.** Future themes in `layer(theme)` win over frozen vapor by cascade order, not specificity.
+> - **Two robustness refinements beyond the spec wording** (found during the per-part audits): (1) the reconcile
+>   **keeps local when the server is unwritten** (`updated_at=null`) — otherwise the owner's existing local theme
+>   would revert to backend defaults on first load; server wins only once it has a recorded preference. (2)
+>   `--appbar-h` uses a `.appbar, .cb-appbar`-scoped selector (a wrapper-ref is impossible on the frozen
+>   `position:sticky` AppBar) — the theme-robust realization of §13.6's "stable ref". Also: the e2e mock is now
+>   **stateful for appearance** (PUT updates it, GET returns it) so the optimistic-write→reconcile round-trip is
+>   deterministic.
+> - **Verified.** Frontend `tsc -b` + `vite build` clean (**CSS bundle hash unchanged** = vapor CSS untouched),
+>   **92 unit** (+7: ui migration, legacy remap, reconcile) + **32 e2e**; backend **31 test files**
+>   (new `test_appearance_d28.py` — defaults, GET/PUT round-trip + server-stamp persistence, per-host blob).
+>   **Frozen files git-confirmed untouched** (vapor.css/extras.css/heroScene + all vapor components). Live
+>   `GET /api/appearance` → `{vapor,dark,dark,updated_at:null}`. Servers restarted (backend 5433 no-reload,
+>   frontend 5190).
+> - **Doc reconciliation noted:** the per-host override is `ComputerCfg.appearance` (config schema) day-1 only —
+>   the runtime `Host`/`_host_dto` wiring is additive at T3/T5 (§9.9 reasoning: no dead unwired field). The
+>   earlier TODO "domain/host.py day-1" line is superseded (annotated in TODO Phase 11 T0).
+> - **⛔ NEXT = T1 (minimal).** The first real theme + **the BASE token-driven chrome** (AppBar/Composer/TabBar
+>   shell/Conf rows/ChatBubble/HostDetail consuming the semantic-token contract §9.7) + the **mode×4-accent OKLCH
+>   matrix** (build the richest palette model here) + BASE FleetRows + the shared **NowMonitoring + Waveform**
+>   slot (needs the `--accent-rgb` canvas channel, §13.7). BASE lands in `layer(base)` + a `cb-` namespace; its
+>   TabBar indicator is **count-driven** (§13.8). The finer overridable sub-slots (NowMonitoring, then HostDetail
+>   at T4/T5) get **added to `ThemeSlots`** in their owning slice (the T0 interface is the shell + 4 tab-body
+>   slots; see `theme-engine/types.ts` header). Pause for the 390px eyeball after T1.
 
 > ### 🟢 CLEAN-SESSION HANDOFF — Theme Engine designed (D28); T0 is the next build slice — 2026-06-26
 > **The §8 research+design brief is DONE — no feature code written, per the owner directive.** The deliverables

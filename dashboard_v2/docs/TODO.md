@@ -686,48 +686,55 @@ first, hardest last; the foundation is paid once in T0. **D7 pixel-fidelity appl
 an independently shippable slice — pause for the owner's 390px eyeball after each (per the standing review
 rule). **vapor stays byte-for-byte unchanged throughout.**
 
-- [ ] **T0 — Foundation (the engine; vapor untouched).** _Build against THEME_ENGINE.md §13 (the final-review
-      checklist) — the items below fold its corrections in._
-  - [ ] **FIRST: `vite build`-verify CSS `@layer` survives the bundler.** Add `theme/index.css` doing
-        `@layer frozen, base, theme;` + `@import "./vapor.css" layer(frozen); @import "./extras.css"
-        layer(frozen);`, swap `main.tsx`'s two JS imports for it, `vite build && vite preview`, confirm vapor
-        is byte-identical + the `layer()` token is preserved. **If stripped → fall back to `cb-` namespacing**
-        (§13.2–13.3). Gates the isolation strategy, so do it before writing theme code.
-  - [ ] `theme-engine/` dir: `types.ts` (`ThemeDef`/`ThemeSlots`/`PaletteModel`/`VisualEncoding` + `TabDef`
-        with `hasComposer`), `ThemeRegistry`, `ThemeProvider` (lazy CSS+font load + slot resolution; **prefer
-        a module-level slot map / stable-map-in-context + active-key-in-state** to avoid context fan-out;
-        default = BASE), `useThemeSlot`.
-  - [ ] Register the **vapor module as-is** (slots point at the existing components). No edits to vapor
-        components or `vapor.css`/`extras.css` (now caged in `layer(frozen)`).
-  - [ ] `App.tsx` → **slot host** — render resolved slots, **but preserve the shell orchestration** (§13.6):
-        lazy-Conf `confMounted`+Suspense wrapper (ConfShell slot renders inside it); `--appbar-h` measured via
-        a **stable ref** not `.appbar`; `showComposer` reads `TabDef.hasComposer` (in App **and** ui.ts);
-        BASE owns its own `.tab` show/hide (don't lean on the frozen global rule).
-  - [ ] `store/ui.ts`: `{theme}`→`{theme,mode,accent}`; **`applyBodyAttrs` sets `body[data-skin]=theme`** and
-        keeps `body[data-theme]` = vapor's accent (dark/aqua/ember) when skin=vapor (§13.1); sets
-        `data-mode`/`data-accent` for non-vapor. **Dedicated legacy-`theme` migration** (`dark|aqua|ember` →
-        `{theme:"vapor",accent}`), NOT the `loadPersisted` field-fill (§13.4).
-  - [ ] **Cross-device sync — BUILT DAY 1 (§9.11):** backend `appearance:{theme,mode,accent,updated_at}`
-        Settings block (`config.py`, server-stamped) + a lightweight always-on **`GET /api/appearance`** (the
-        full settings doc is Conf-scoped → can't drive first-paint); `ui` store reconciles on mount
-        (compare-then-set, server wins); **inline `<head>` no-FOUC script** in `index.html`; Conf picker writes
-        `setUI` + optimistic `PUT /api/settings {appearance}` (`scope`-serialized, offline pause/resume).
-  - [ ] **Theme-switch animation — BUILT DAY 1 (§9.12):** the `switchTheme` path — lazy-load CSS+slots →
-        `flushSync(setUI)` inside `document.startViewTransition`, gated on `ui.motion` + feature detection
-        (no-support/reduced → instant swap). Default full-page cross-fade, no named elements.
-  - [ ] Conf → Appearance: `Seg<Theme>` → theme picker + declared-axis mode/accent controls
-        (`ThemeDef.palettes`-driven; vapor shows named accents only).
-  - [ ] Flexible **tab registry** (`ThemeDef.tabs` + `hasComposer`); v1 every theme returns the standard 4
-        (prove it's swappable without breaking the others). BASE TabBar indicator is **tab-count-driven** (§13.8).
-  - [ ] Backend `domain/host.py` **`appearance: dict[str,dict[str,Any]] = {}`** (open per-host override blob,
-        §9.9) — **defined day 1** so the host model is settled once; first consumed at T3/T4.
-  - [ ] FOUC at the React layer: theme CSS via React 19 `<link precedence>`/`preinit` inside `startTransition`;
-        keep `cssCodeSplit:true`, never `modulePreload:false` (§13.5).
-  - [ ] **Acceptance: with only vapor registered, the app is byte-for-byte unchanged** (the engine is
-        proven by adding a switch that changes nothing). Unit-test registry/slot resolution + the ui migration
-        (incl. legacy-`theme` remap) + the appearance reconcile (compare-then-set, server-wins); a backend test
-        for `GET /api/appearance` + the `appearance` PUT round-trip (temp config — never the real one); e2e
-        still green; vapor verified at 390px.
+- [x] **T0 — Foundation (the engine; vapor untouched). ✅ SHIPPED 2026-06-26** — green: frontend `tsc`+
+      `vite build` clean (CSS bundle hash unchanged), **92 unit** + **32 e2e**, backend **31 test files**
+      (new `test_appearance_d28.py`). Frozen files git-confirmed untouched. Live `GET /api/appearance` ✓.
+      _Built against THEME_ENGINE.md §13 (final-review checklist)._
+  - [x] **FIRST: `vite build`-verify CSS `@layer` survives the bundler.** ✅ Vite 7.3.3 preserves
+        `@import … layer()` — emits `@layer frozen,base,theme;` + wraps vapor.css/extras.css each in
+        `@layer frozen{…}`; the frozen-layer content is byte-identical to the pre-change baseline (only a
+        trailing `\n` repositioned). **No `cb-` fallback needed.** `theme/index.css` added; `main.tsx`'s two
+        CSS imports swapped for it.
+  - [x] `theme-engine/` dir: `types.ts`, `registry.ts`, `tabs.ts` (pure tab data — no component imports, so
+        `store/ui` can read `hasComposer` without a runtime cycle), `base.ts` (empty BASE stub — real BASE is
+        T1), `vapor.tsx`, `resolve.ts` (module-level cached slot map → stable identity, no context fan-out),
+        `ThemeProvider.tsx` (+`useThemeSlot`/`useThemeSlots`).
+  - [x] Register the **vapor module as-is** (slots → existing AppBar/Composer/TabBar/FleetTab/AgentTab/
+        UtilsTab/ConfTabLazy). No edits to vapor components or `vapor.css`/`extras.css` (caged in `layer(frozen)`).
+  - [x] `App.tsx` → **slot host** — renders resolved slots; preserves the §13.6 orchestration: lazy-Conf
+        `confMounted`+Suspense (ConfShell renders inside it); `--appbar-h` via a `.appbar, .cb-appbar`-scoped
+        selector (a wrapper-ref is impossible on the frozen `position:sticky` AppBar — this is the
+        theme-robust realization of "stable ref"); `showComposer` reads `hasComposer()` (App **and** ui.ts).
+  - [x] `store/ui.ts`: `{theme}`→`{theme,mode,accent}`; `applyBodyAttrs` sets `body[data-skin]=theme`, keeps
+        `body[data-theme]`=accent when skin=vapor + **clears it for non-vapor** (no leak), sets
+        `data-mode`/`data-accent` otherwise (§13.1). **Dedicated `migrateLegacyTheme`** (`dark|aqua|ember` →
+        `{vapor,accent}`), exported + unit-tested (§13.4).
+  - [x] **Cross-device sync — BUILT DAY 1 (§9.11):** typed `AppearanceCfg{theme,mode,accent,updated_at}`
+        Settings block (`config.py`, server-stamped on each `PUT /api/settings {appearance}` — persisted to
+        YAML so it survives restart) + always-on **`GET /api/appearance`** (plain `useQuery`, not Conf-scoped);
+        `useAppearanceSync` reconciles on mount (**pure `reconcileAppearance`: server wins only when
+        `updated_at != null` — an unwritten server keeps local, no revert**); inline **no-FOUC script at the
+        TOP of `<body>`** (not `<head>` — body is null there) in `index.html`; Conf picker → `setUI` +
+        optimistic `useSaveAppearance` (`scope`-serialized, `onMutate` cancels in-flight GET to dodge revert).
+  - [x] **Theme-switch animation — BUILT DAY 1 (§9.12):** `switchTheme` — `ensureThemeLoaded` → `flushSync(
+        setUI)` inside `document.startViewTransition` (defensively typed for any TS DOM lib), gated on
+        `ui.motion` + feature detection. Wired to the skin picker; within-theme accent/mode stay instant `setUI`.
+        (Dormant in T0 — only vapor registered — but built ready for T1.)
+  - [x] Conf → Appearance: registry-driven **Theme** seg + declared-axis **Mode**/**Palette** segs
+        (`ThemeDef.palettes`; vapor → named accents only, no mode axis). Adding a theme surfaces it automatically.
+  - [x] Flexible **tab registry** (`theme-engine/tabs.ts` `TabDef[]` + `hasComposer`); v1 every theme returns
+        the standard 4. (BASE TabBar count-driven indicator is a T1 concern — BASE is built then.)
+  - [x] Backend per-host override blob: **`ComputerCfg.appearance: dict[str,dict[str,Any]] = {}`** (config
+        schema, §9.9) — day-1, settles the YAML shape once. _Per §9.9/§9.13 the runtime `Host`/`_host_dto`
+        wiring is additive at T3/T5 (avoids a dead unwired field); the TODO's earlier "domain/host.py day-1"
+        wording is superseded by §9.9's reasoning._
+  - [x] FOUC defended: Vite prod `<link>` guarantee + the inline body-top script. (React 19 `precedence`/
+        `preinit`-in-`startTransition` is folded into `switchTheme`'s load-before-commit; `cssCodeSplit:true`
+        kept, `modulePreload` untouched.)
+  - [x] **Acceptance met: with only vapor registered, the app is byte-for-byte unchanged.** Unit-tested slot
+        resolution path + the ui migration (legacy remap) + the appearance reconcile; backend test for
+        `GET /api/appearance` + the PUT round-trip + per-host blob (temp config). e2e green. **Owner 390px
+        eyeball pending** (the one thing tests don't cover — vapor fidelity + the new Appearance picker).
 - [ ] **T1 — minimal** (LOW–MED): the first real theme + the **BASE token-driven chrome** (AppBar/Composer/
       TabBar shell/Conf rows/ChatBubble/HostDetail) consuming the semantic contract; the **mode×4-accent
       OKLCH matrix** (build the richest palette model here so the abstraction is right); BASE FleetRows

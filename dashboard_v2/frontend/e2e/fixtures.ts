@@ -86,15 +86,38 @@ const ROUTES: Record<string, unknown> = {
 };
 
 /** Install the baseline mock. Unmatched `/api/*` GETs default to `[]`/`{}` (logged); the SSE stream is
- *  fulfilled empty (the connection badge may read "reconnecting" — irrelevant to render/a11y). */
+ *  fulfilled empty (the connection badge may read "reconnecting" — irrelevant to render/a11y). The
+ *  appearance selection (D28 §9.11) is STATEFUL per page — a `PUT /api/settings {appearance}` updates it
+ *  and `GET /api/appearance` returns it — so the theme-engine's optimistic-write→reconcile round-trip is
+ *  deterministic (a static mock would let the always-on reconcile revert a just-made change). */
 export async function mockApi(page: Page): Promise<void> {
+  let appearance: { theme: string; mode: string; accent: string; updated_at: string | null } = {
+    theme: "vapor",
+    mode: "dark",
+    accent: "dark",
+    updated_at: null,
+  };
   await page.route("**/api/**", async (route) => {
     const req = route.request();
     const path = new URL(req.url()).pathname;
-    if (req.method() !== "GET") return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    if (req.method() !== "GET") {
+      // Capture an appearance write so the subsequent reconcile read reflects it (server-stamped LWW).
+      if (path.endsWith("/api/settings")) {
+        try {
+          const body = req.postDataJSON() as { appearance?: Record<string, string> };
+          if (body?.appearance) {
+            appearance = { ...appearance, ...body.appearance, updated_at: new Date().toISOString() };
+          }
+        } catch {
+          /* non-JSON body — ignore */
+        }
+      }
+      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    }
     if (path.endsWith("/api/events/stream")) {
       return route.fulfill({ status: 200, contentType: "text/event-stream", body: "" });
     }
+    if (path.endsWith("/api/appearance")) return json(route, appearance);
     const key = Object.keys(ROUTES).find((k) => path.endsWith(k));
     if (key) return json(route, ROUTES[key]);
     // eslint-disable-next-line no-console

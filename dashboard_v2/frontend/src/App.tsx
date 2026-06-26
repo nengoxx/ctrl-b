@@ -1,22 +1,19 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
-import { AppBar } from "./components/AppBar";
-import { Composer } from "./components/Composer";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { PromptModal } from "./components/PromptModal";
 import { SwUpdatePrompt } from "./components/SwUpdatePrompt";
-import { TabBar } from "./components/TabBar";
 import { Toasts } from "./components/Toasts";
+import { useAppearanceSync } from "./hooks/useAppearance";
 import { useEventStream } from "./hooks/useEvents";
 import { prefetchOnIdle } from "./lib/prefetch";
+import { hasComposer } from "./theme-engine/tabs";
+import { useThemeSlots } from "./theme-engine/ThemeProvider";
 import { isAnyDirty } from "./store/dirty";
 import { useUISlice, type Tab } from "./store/ui";
-import { AgentTab } from "./tabs/AgentTab";
-import { ConfTabLazy, preloadConfTab } from "./tabs/ConfTab.lazy";
-import { FleetTab } from "./tabs/FleetTab";
-import { UtilsTab } from "./tabs/UtilsTab";
+import { preloadConfTab } from "./tabs/ConfTab.lazy";
 
 // The Vapor SPA shell. App-shell layout (extras.css): a 100dvh flex column — a scrolling content
 // pane (`.app-scroll`) with the appbar + tabs, then the composer + tab bar in-flow at the bottom.
@@ -34,8 +31,11 @@ import { UtilsTab } from "./tabs/UtilsTab";
 
 export default function App() {
   const tab = useUISlice((s) => s.tab);
+  const theme = useUISlice((s) => s.theme); // the active skin — drives the resolved slot set + composer
+  const slots = useThemeSlots(); // resolved per-theme component slots (stable identity unless theme changes)
   const scrollRef = useRef<HTMLDivElement>(null);
   useEventStream(); // live activity feed → refresh fleet on any recorded action
+  useAppearanceSync(); // reconcile theme/mode/accent against the server (cross-device LWW, §9.11)
 
   // Conditional mount for the lazy Conf tab (Slice 6 audit fixes — see UI_AUDIT.md). The
   // initializer reads `tab` (resolved from localStorage at module load) so a hard reload while
@@ -57,8 +57,15 @@ export default function App() {
   // Expose the (sticky) appbar's height as `--appbar-h` so other sticky elements — the Agent tab's
   // plan tab — can pin just *below* the menu bar instead of riding up over it. Re-measured on resize
   // (theme/content/orientation changes shift it).
+  //
+  // §13.6: scope to the scroll container + match BOTH class names (vapor `.appbar` / BASE `.cb-appbar`)
+  // so the slot host finds the appbar regardless of the active theme — a bare `document.querySelector(
+  // ".appbar")` would return null under a non-vapor skin and the plan-pin would silently use its
+  // fallback offset. A wrapper-with-ref is unusable here: the appbar is `position:sticky`, and wrapping
+  // it would scope the sticking to the wrapper's own height (i.e. break it). Re-runs on skin change
+  // (the appbar element is replaced when the AppBar slot swaps).
   useEffect(() => {
-    const bar = document.querySelector(".appbar") as HTMLElement | null;
+    const bar = scrollRef.current?.querySelector<HTMLElement>(".appbar, .cb-appbar");
     if (!bar) return;
     const set = () =>
       document.documentElement.style.setProperty("--appbar-h", `${bar.offsetHeight}px`);
@@ -66,7 +73,7 @@ export default function App() {
     const ro = new ResizeObserver(set);
     ro.observe(bar);
     return () => ro.disconnect();
-  }, []);
+  }, [theme]);
 
   // Size the app-shell to the VISUAL viewport. `100dvh` (CSS fallback) tracks the browser toolbar
   // but NOT the on-screen keyboard, so a pure-dvh shell leaves the in-flow composer hidden behind
@@ -120,19 +127,21 @@ export default function App() {
     if (t === "conf") void preloadConfTab();
   }, []);
 
-  const showComposer = tab === "fleet" || tab === "agent";
+  // §13.6: composer visibility is tab-registry-driven (`TabDef.hasComposer`), not a hardcoded tab list —
+  // the flexible-tab-registry requirement. (ui.ts mirrors the same call for the body `.no-composer` class.)
+  const showComposer = hasComposer(theme, tab);
 
   return (
     <div className="app-shell">
       <div className="app-scroll" id="app-scroll" ref={scrollRef}>
-        <AppBar />
-        <FleetTab active={tab === "fleet"} />
-        <AgentTab active={tab === "agent"} />
-        <UtilsTab active={tab === "utils"} />
+        <slots.AppBar />
+        <slots.FleetView active={tab === "fleet"} />
+        <slots.AgentView active={tab === "agent"} />
+        <slots.UtilsView active={tab === "utils"} />
         {confMounted && (
           <ErrorBoundary fallback={confErrorFallback}>
             <Suspense fallback={<ConfLoading />}>
-              <ConfTabLazy active={tab === "conf"} />
+              <slots.ConfShell active={tab === "conf"} />
             </Suspense>
           </ErrorBoundary>
         )}
@@ -140,8 +149,8 @@ export default function App() {
       {/* Floating TTS mini-player (6b-2): fixed-position pill just below the appbar (its own CSS),
           so JSX placement here doesn't affect layout. Self-hides when nothing's playing. */}
       <MiniPlayer />
-      {showComposer && <Composer />}
-      <TabBar onPrefetch={prefetch} />
+      {showComposer && <slots.Composer />}
+      <slots.TabBar onPrefetch={prefetch} />
       <Toasts />
       <ConfirmDialog />
       <PromptModal />

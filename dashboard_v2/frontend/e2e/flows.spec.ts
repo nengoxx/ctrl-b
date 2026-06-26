@@ -107,11 +107,13 @@ test("Conf — an editor form's inputs are findable by their label (D25 associat
   await expect(page.getByLabel("IP address")).toBeVisible();
 });
 
-test("Conf — changing the theme updates the document theme", async ({ page }) => {
+test("Conf — changing the vapor palette updates body[data-theme]", async ({ page }) => {
   await page.goto("/");
   await page.locator("#tabbtn-conf").click();
 
-  // Appearance group is expanded by default; its theme segmented control switches the live UI store.
+  // Appearance group is expanded by default. Theme-engine model (D28): the skin is "Vapor"; the
+  // "Palette" segmented control switches vapor's frozen accent axis (Vapor/Aqua/Ember → body[data-theme]).
   await page.getByRole("button", { name: "Aqua", exact: true }).click();
   await expect(page.locator("body")).toHaveAttribute("data-theme", "aqua");
+  await expect(page.locator("body")).toHaveAttribute("data-skin", "vapor");
 });

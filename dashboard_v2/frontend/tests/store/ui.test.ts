@@ -1,28 +1,42 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { setUI, useUISlice } from "../../src/store/ui";
+import { migrateLegacyTheme, setUI, useUISlice, type UIState } from "../../src/store/ui";
 
-// store/ui — UI-only state (theme/tab/…), persisted to localStorage and mirrored onto <body> data-attrs
-// (the Vapor CSS keys off body[data-theme|data-tab|…] + body.no-composer).
+// store/ui — UI-only state, persisted to localStorage and mirrored onto <body> data-attrs. Theme-engine
+// model (Phase 11 / D28 §9.8): {theme(skin), mode, accent}. `body[data-skin]` is the skin identity;
+// `body[data-theme]` keeps vapor's frozen accent axis (dark/aqua/ember), set only when skin=vapor.
 
 beforeEach(() => {
-  setUI({ theme: "dark", tab: "fleet" }); // baseline (module state persists across tests)
+  setUI({ theme: "vapor", mode: "dark", accent: "dark", tab: "fleet" }); // baseline (module state persists)
   localStorage.clear();
 });
 
 describe("ui store", () => {
   it("setUI updates the selected slice", () => {
-    const { result } = renderHook(() => useUISlice((s) => s.theme));
+    const { result } = renderHook(() => useUISlice((s) => s.accent));
     expect(result.current).toBe("dark");
-    act(() => setUI({ theme: "aqua" }));
+    act(() => setUI({ accent: "aqua" }));
     expect(result.current).toBe("aqua");
   });
 
-  it("mirrors theme + tab onto <body> data-attrs (Vapor CSS hooks)", () => {
-    setUI({ theme: "ember", tab: "agent" });
-    expect(document.body.dataset.theme).toBe("ember");
+  it("vapor: mirrors accent onto body[data-theme] + sets body[data-skin] (frozen vapor hooks)", () => {
+    setUI({ theme: "vapor", accent: "ember", tab: "agent" });
+    expect(document.body.dataset.skin).toBe("vapor");
+    expect(document.body.dataset.theme).toBe("ember"); // vapor's frozen accent axis
     expect(document.body.dataset.tab).toBe("agent");
+    expect(document.body.dataset.mode).toBeUndefined(); // vapor declares no mode axis
+    expect(document.body.dataset.accent).toBeUndefined();
+  });
+
+  it("non-vapor skin: clears the stale vapor data-theme, sets data-mode/data-accent (§13.1)", () => {
+    setUI({ theme: "vapor", accent: "aqua" }); // leave a vapor accent behind
+    expect(document.body.dataset.theme).toBe("aqua");
+    setUI({ theme: "minimal", mode: "light", accent: "indigo" });
+    expect(document.body.dataset.skin).toBe("minimal");
+    expect(document.body.dataset.theme).toBeUndefined(); // vapor's accent must not leak onto another skin
+    expect(document.body.dataset.mode).toBe("light");
+    expect(document.body.dataset.accent).toBe("indigo");
   });
 
   it("toggles body.no-composer for tabs without a composer (Conf/Utils)", () => {
@@ -33,8 +47,8 @@ describe("ui store", () => {
   });
 
   it("persists to localStorage", () => {
-    setUI({ theme: "aqua" });
-    expect(JSON.parse(localStorage.getItem("ctrlb.ui")!).theme).toBe("aqua");
+    setUI({ accent: "aqua" });
+    expect(JSON.parse(localStorage.getItem("ctrlb.ui")!).accent).toBe("aqua");
   });
 
   it("a slice selector ignores unrelated changes", () => {
@@ -44,8 +58,43 @@ describe("ui store", () => {
       return useUISlice((s) => s.tab);
     });
     const before = renders;
-    act(() => setUI({ theme: "aqua" })); // unrelated to the `tab` slice
+    act(() => setUI({ accent: "aqua" })); // unrelated to the `tab` slice
     expect(result.current).toBe("fleet");
     expect(renders).toBe(before); // no re-render for an unrelated field
+  });
+
+  // §13.4 — the one-time persisted-shape remap: legacy `theme ∈ {dark,aqua,ember}` (the conflated vapor
+  // accent) → {theme:"vapor", accent}. The field-fill merge already added mode/accent defaults.
+  describe("migrateLegacyTheme", () => {
+    const base: UIState = {
+      theme: "vapor",
+      mode: "dark",
+      accent: "dark",
+      tab: "fleet",
+      skyline: "city",
+      loz: "logo",
+      ttsAuto: true,
+      heroOn: true,
+      waveformOn: true,
+      motion: "full",
+    };
+
+    it("remaps a legacy accent-as-theme to {vapor, accent}", () => {
+      expect(migrateLegacyTheme({ ...base, theme: "aqua" as never })).toMatchObject({
+        theme: "vapor",
+        mode: "dark",
+        accent: "aqua",
+      });
+      expect(migrateLegacyTheme({ ...base, theme: "ember" as never }).accent).toBe("ember");
+      expect(migrateLegacyTheme({ ...base, theme: "dark" as never })).toMatchObject({
+        theme: "vapor",
+        accent: "dark",
+      });
+    });
+
+    it("leaves an already-migrated (new-shape) state untouched", () => {
+      const migrated = { ...base, theme: "vapor" as const, accent: "aqua" };
+      expect(migrateLegacyTheme(migrated)).toEqual(migrated);
+    });
   });
 });

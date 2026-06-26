@@ -2,12 +2,13 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-// The canonical stylesheet — lifted verbatim from vapor.html (D7). Everything styles against it.
-import "./theme/vapor.css";
-// Net-new v2 component styling (toasts, confirm dialog) built from vapor tokens — see file header.
-import "./theme/extras.css";
+// Theme-engine CSS entry (Phase 11 / D28). Loads vapor.css + extras.css (the frozen canonical
+// stylesheet, lifted verbatim from vapor.html — D7) caged in `@layer frozen` so future non-vapor
+// themes win by cascade order, not specificity. The frozen files themselves are untouched. §9.6.
+import "./theme/index.css";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ThemeProvider } from "./theme-engine/ThemeProvider";
 
 const queryClient = new QueryClient();
 
@@ -51,7 +52,9 @@ createRoot(document.getElementById("root")!, {
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <ErrorBoundary fallback={rootErrorFallback}>
-        <App />
+        <ThemeProvider>
+          <App />
+        </ThemeProvider>
       </ErrorBoundary>
     </QueryClientProvider>
   </StrictMode>,

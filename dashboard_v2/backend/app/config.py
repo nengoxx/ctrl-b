@@ -18,6 +18,7 @@ from __future__ import annotations
 import io
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
@@ -520,6 +521,11 @@ class ComputerCfg(BaseModel):
     role: str | None = None
     tags: list[str] = []
     services: dict[str, ServiceCfg] = Field(default_factory=dict)
+    #: Per-host, per-theme presentation override (Phase 11 / D28 §9.9) — an OPEN pass-through blob the
+    #: theme owns the schema for (planet/beacon/angle/art), keyed by themeId. Defined day-1 so the YAML
+    #: shape is settled once (never a migration); first CONSUMED at T3/T5 (the runtime Host + DTO wiring
+    #: lands additively then). No per-theme Pydantic union — that would force a server change per theme.
+    appearance: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 #: The tri-state agent-access mode for a tool (Phase 8b, D22). Overlays the registry spec's
@@ -548,6 +554,21 @@ class ToolOverride(BaseModel):
     agent_mode: AgentMode | None = None
 
 
+class AppearanceCfg(BaseModel):
+    """Active appearance selection (Phase 11 / D28 §9.11) — the cross-device-synced theme picker state.
+
+    Backend-authoritative, server-stamped last-write-wins: the client writes `{theme,mode,accent}`
+    through the normal `PUT /api/settings` deep-merge; the server stamps `updated_at` on its own clock
+    (no cross-device skew). Read back cheaply via `GET /api/appearance` (the full settings doc is
+    Conf-tab-scoped, so it can't drive first-paint / reconcile). Typed (not `extra="allow"`) — it's a
+    small known shape. Defaults mirror the frontend `ui` store defaults (vapor / dark / dark)."""
+
+    theme: str = "vapor"
+    mode: str = "dark"
+    accent: str = "dark"
+    updated_at: datetime | None = None  # server-stamped on each write; None until first saved
+
+
 class Settings(BaseModel):
     """Typed view over `config.yaml`.
 
@@ -558,6 +579,7 @@ class Settings(BaseModel):
     model_config = {"extra": "allow"}
 
     server: ServerCfg = Field(default_factory=ServerCfg)
+    appearance: AppearanceCfg = Field(default_factory=AppearanceCfg)
     inference: InferenceCfg = Field(default_factory=InferenceCfg)
     agent: AgentCfg = Field(default_factory=AgentCfg)
     memory: MemoryCfg = Field(default_factory=MemoryCfg)

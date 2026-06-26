@@ -9,6 +9,7 @@ import { ServerListEditor } from "../components/ServerListEditor";
 import { SkillsEditor } from "../components/SkillsEditor";
 import { Switch } from "../components/Switch";
 import { useAccessStatus, useSetServe } from "../hooks/useAccess";
+import { useSaveAppearance } from "../hooks/useAppearance";
 import { agentModeOf, useActionSpecs } from "../hooks/useActions";
 import { disclosureToggle } from "../lib/disclosure";
 import { useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
@@ -22,7 +23,10 @@ import { promptPreview } from "../lib/promptPreview";
 import { useRegisterDirty } from "../store/dirty";
 import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
-import { setUI, useUISlice, type Skyline, type Theme, type Loz } from "../store/ui";
+import { registry, registeredThemes } from "../theme-engine/registry";
+import { switchTheme } from "../theme-engine/switchTheme";
+import type { Mode, ThemeId } from "../theme-engine/types";
+import { setUI, useUISlice, type Skyline, type Loz } from "../store/ui";
 
 // Conf tab. Appearance is wired to the live UI store (client display state). Phase 7a wires the
 // **Inference** + **Server** groups to the YAML-backed settings API (GET masked / PUT partial
@@ -193,12 +197,50 @@ export function ConfTab({ active }: Props) {
   // actually read that specific field. Theme/skyline/loz/heroOn/waveformOn changes used
   // to wake App + TabBar + AppBar + FleetTab through the old `useUI()` subscription;
   // post-Slice-7 those consumers stay quiet unless they read the changed field.
-  const theme = useUISlice((s) => s.theme);
+  const theme = useUISlice((s) => s.theme); // the active skin id
+  const accent = useUISlice((s) => s.accent); // named palette / hue (vapor: dark/aqua/ember)
+  const mode = useUISlice((s) => s.mode); // light/dark (only shown when the active theme declares modes)
   const skyline = useUISlice((s) => s.skyline);
   const loz = useUISlice((s) => s.loz);
   const heroOn = useUISlice((s) => s.heroOn);
   const waveformOn = useUISlice((s) => s.waveformOn);
   const motion = useUISlice((s) => s.motion);
+  const saveAppearance = useSaveAppearance(); // optimistic cross-device write (§9.11)
+
+  // Appearance picker is driven by the theme registry (D28 §9.8): the skin list + the active theme's
+  // declared palette axes (vapor → named accents only, no mode axis). Adding a theme makes it appear
+  // here automatically (one registry row). The skyline/loz/hero/waveform rows below are vapor controls.
+  const themeOptions = registeredThemes().map((d) => ({ val: d.id, label: d.label }));
+  const activeDef = registry[theme];
+  const accentOptions = (activeDef?.palettes.accents ?? []).map((a) => ({ val: a.id, label: a.label }));
+  const modeOptions = (activeDef?.palettes.modes ?? []).map((m) => ({
+    val: m,
+    label: m === "dark" ? "Dark" : "Light",
+  }));
+  // Appearance changes apply LOCALLY first (instant, the existing synchronous setUI/switchTheme path)
+  // then write to the server optimistically for cross-device sync (§9.11). Switching skin adopts the
+  // target theme's default mode/accent (re-pick of the same skin is a no-op so it never resets accent)
+  // and animates via the View-Transition path (instant under reduced-motion / unsupported); within-theme
+  // accent/mode changes stay instant `setUI`.
+  const pickTheme = (id: ThemeId) => {
+    if (id === theme) return;
+    const def = registry[id];
+    const next = {
+      theme: id,
+      mode: def?.palettes.defaultMode ?? ("dark" as Mode),
+      accent: def?.palettes.defaultAccent ?? "dark",
+    };
+    void switchTheme(id, { mode: next.mode, accent: next.accent });
+    saveAppearance.mutate(next);
+  };
+  const pickMode = (m: Mode) => {
+    setUI({ mode: m });
+    saveAppearance.mutate({ theme, mode: m, accent });
+  };
+  const pickAccent = (a: string) => {
+    setUI({ accent: a });
+    saveAppearance.mutate({ theme, mode, accent: a });
+  };
   const { data: server } = useServerInfo();
   const { data: hosts = [] } = useHosts(server?.poll_seconds ?? 5);
 
@@ -925,18 +967,30 @@ export function ConfTab({ active }: Props) {
           <div className="confrow">
             <div className="k">
               <div className="label">Theme</div>
-              <div className="desc">vapor · aqua · ember</div>
+              <div className="desc">{themeOptions.map((t) => t.label.toLowerCase()).join(" · ")}</div>
             </div>
-            <Seg<Theme>
-              current={theme}
-              options={[
-                { val: "dark", label: "Vapor" },
-                { val: "aqua", label: "Aqua" },
-                { val: "ember", label: "Ember" },
-              ]}
-              onPick={(v) => setUI({ theme: v })}
-            />
+            <Seg<ThemeId> current={theme} options={themeOptions} onPick={pickTheme} />
           </div>
+          {modeOptions.length > 1 && (
+            <div className="confrow">
+              <div className="k">
+                <div className="label">Mode</div>
+                <div className="desc">light · dark</div>
+              </div>
+              <Seg<Mode> current={mode} options={modeOptions} onPick={pickMode} />
+            </div>
+          )}
+          {accentOptions.length > 0 && (
+            <div className="confrow">
+              <div className="k">
+                <div className="label">Palette</div>
+                <div className="desc">
+                  {accentOptions.map((a) => a.label.toLowerCase()).join(" · ")}
+                </div>
+              </div>
+              <Seg<string> current={accent} options={accentOptions} onPick={pickAccent} />
+            </div>
+          )}
           <div className="confrow">
             <div className="k">
               <div className="label">App mark</div>
