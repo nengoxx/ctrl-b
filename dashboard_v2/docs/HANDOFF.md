@@ -95,8 +95,14 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > All three D27 slices were independently audited; B and C each had a real finding fixed (B: a
 > pre-existing concurrent lost-update; C: a non-one-shot nudge + subagent leak).
 >
-> **⭐ THE NEXT (AND LAST) v1 TRACK — emma (Linux) deploy → cutover (TODO Phases 9 & 10).** The owner is
-> migrating dashboard_v2 from Windows (corsair) to **emma (Linux)**. Concrete remaining work:
+> **⭐ THE LAST v1 TRACK — emma (Linux) deploy → cutover (TODO Phases 9 & 10).** The owner is migrating
+> dashboard_v2 from Windows (corsair) to **emma (Linux)**. **(Owner, 2026-06-26: deploy is NOT the next
+> session — the dynamic theme engine is. This stays queued.)**
+> **Pre-flight the deploy session first (host-specific — can't be assumed from corsair):** confirm emma's
+> layout — home dir + fresh clone vs existing checkout, Python **3.11** present + where the venv lives,
+> where `config.yaml` + the SQLite db will sit, the **Tailscale Serve** setup on emma (the HTTPS/mic
+> path), and **systemd user-service vs system-service**. Get these from the owner before writing the unit
+> or install script. Concrete remaining work:
 > - **Phase 9 deploy:** (a) a **`systemd` unit** running uvicorn on boot (no `--reload`); (b) a **Linux
 >   install/run script** (create venv + `pip install -e`/pinned deps, `npm ci && npm run build`, then
 >   start) — v2 has **no install script yet**; the `*.bat` are the legacy Flask server's. Reuse the
