@@ -118,6 +118,60 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > reuse-and-skin the existing Conf editors + Kit overlays, then **minimal** (first new theme: `tokens.css` + Fontsource
 > fonts + OKLCH mode×4-accent matrix + its Fleet view with REAL host data). **minimal's `settings` (e.g. `hideAppbar`)
 > is the first consumer of the M3 mechanism — its `Root`/`DefaultRoot` reads `useThemeSetting("minimal", …)`.**
+>
+> ---
+>
+> ## ⛔⛔ FOR THE NEXT SESSION — DOUBLE-CHECK EVERYTHING + RESEARCH BEFORE YOU BUILD Kit + minimal (owner directive 2026-06-26)
+>
+> The owner explicitly asked that the next session **double-check the whole state first** and **research before
+> implementing the new theme** — this is the biggest, most net-new slice yet (a token contract + a headless Kit + the
+> first ground-up theme), so do NOT rush into code. The discipline that made M0–M3 land cleanly is the bar.
+>
+> **STEP 0 — read, in this order (don't skip):** this whole block → `THEME_ENGINE.md` **§14.4** (the Kit + token
+> contract), **§14.10** (build order), **§14.11** (the cross-browser perf RULE — minimal must pass it on Firefox/Fennec
+> AND Chrome at 390px), **§9.7** (the 3-tier semantic-token contract), **§9.8** (the `PaletteModel`/OKLCH matrix) →
+> `DECISIONS.md` **D29** (the locked architecture — the Kit is the OPTIONAL reuse layer; reskin themes = `DefaultRoot` +
+> `tokens.css` + fonts + a Fleet view; bespoke themes write their own `Root`) → `TODO.md` "Kit + minimal" + "T2…T5" →
+> `ROADMAP.md` (per-host visuals / `present()` seam) → `VAPOR_PATTERNS.md` (the design language, for parity) → `DESIGN.md`
+> / `ARCHITECTURE.md` (where the Kit slots in). Then **read the actual code you'll touch** before writing a line: the
+> 5 controllers (`useFleet`/`useComposer`/`useAgentChat`/`useSections`/`useAppChrome`) + `store/*`, the `theme-engine/`
+> (registry/types/resolve/ThemeProvider/switchTheme/**settings.ts** — minimal's `hideAppbar` rides `useThemeSetting`),
+> the vapor components the Kit generalizes (AppBar/TabBar/Composer/ConfTab + its editors/DeviceRow/Hero/NowMonitoring/
+> Waveform), and how `body[data-skin]`/`@scope`/`@layer` gate CSS (§14.6).
+>
+> **STEP 1 — RESEARCH BEFORE IMPLEMENTING (the owner's explicit ask).** Kill ambiguity with web-search + a question,
+> never a guess (memories `prioritize-robust-over-seams`, `converse-on-design-decisions`). Research at minimum:
+> - **OKLCH palette generation** — building a `mode × 4-accent` matrix with perceptually-uniform OKLCH (lightness/chroma/
+>   hue ramps, dark↔light pairing, contrast/APCA for WCAG); how to express it as CSS custom props per `@scope`.
+> - **3-tier / semantic design tokens** — the global→semantic→component naming convention (the dominant external
+>   pattern; follow it at the boundary per `follow-external-conventions-for-pluggability`) so the Kit's contract is
+>   forward-compatible and a theme overrides at the right tier.
+> - **Headless/token-driven component pattern** — `DefaultRoot`-style parameterized scaffold (Radix/Headless-UI/Kit
+>   patterns) that consumes the controllers + token contract; how reskin themes stay cheap.
+> - **Fontsource** self-hosted font activation (lazy `loadFonts`, FOUT/FOIT avoidance, the PWA-precache angle).
+> - **The §14.11 perf budget for a NEW theme** — transform/opacity-only ambient anims, `data-perf`/`data-motion` gates,
+>   ResizeObserver-sized + FPS-capped + IntersectionObserver-paused canvases (the cosmos/frontier trap), themed scrollbars.
+> - Anything else genuinely uncertain (e.g. View-Transition cost across themes, real-host-data Fleet rows vs the
+>   prototype's mock uptime/cpu/temp). **Web-research it, then ASK — don't assume.**
+>
+> **STEP 2 — DESIGN IN PROSE, SURFACE THE SEAMS + DECISIONS, AND WAIT FOR THE OWNER before coding** (memories
+> `check-patterns-before-implementing`, `converse-on-design-decisions`, `design-quality-is-first-class`). State exactly
+> which existing structures/controllers/tokens you reuse, where the Kit slots in (don't bypass a chokepoint — the
+> appearance-sync, the theme registry, the controllers), what's net-new, and the open decisions (which Kit primitives
+> exist; the token tiers; minimal's settings; how minimal's Fleet shows REAL host data). The owner prefers a prose
+> back-and-forth over a model that rushes into code — this slice is exactly that kind of decision.
+>
+> **STEP 3 — BUILD IN SMALL, AUDITED SLICES** (memories `audit-each-part-before-continuing`, `pause-between-phases-for-
+> review`, `prefer-configurable-no-hardcoding`, `themes-smooth-on-firefox-and-chrome`): no hardcoding (tunables →
+> tokens/ThemeDef/Settings), no duplicated/near-duplicate code (one source of truth, in BOTH directions). After each
+> part: re-read the diff · behavior-equivalence (vapor must stay byte/behavior-identical — it's the default) · re-render
+> scope (the M2.1 lesson) · store-state survives a theme switch · run the FULL suite (currently **120 unit + 34 e2e** +
+> backend) · then commit + push + **pause for the owner's 390px eyeball + a go-ahead** (Firefox/Fennec AND Chrome).
+> **Run an independent audit pass on any structural change** (it caught M3's upgrade-wipe blocker) — robustness,
+> efficiency, reliability.
+>
+> **The standing pre-flight + the controller pattern below (the M2 block) still govern** — re-read them; the Kit's
+> shared controllers/primitives are built with the same store-backed, re-render-isolated discipline.
 
 > ### 🟢 CLEAN-SESSION HANDOFF — Theme-engine v2 (D29): **M2 DONE → M3 (register vapor + per-theme settings)**, then Kit + minimal — 2026-06-26
 >
