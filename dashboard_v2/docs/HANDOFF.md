@@ -76,7 +76,48 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Memory roadmap D27 COMPLETE — A (registry) + B (`state.md`, audited) + C (periodic reflection) all SHIPPED** · NEXT = **emma (Linux) deploy / v1 cutover** — the last v1 track)
+## Current state (**Memory roadmap D27 COMPLETE + pushed** · the **v2 feature set is done** · NEXT = **emma (Linux) deploy → v1 cutover**, Phases 9–10 — the last track)
+
+> ### 🟢 CLEAN-SESSION HANDOFF — D27 done & pushed · only the emma deploy / cutover remains — 2026-06-26
+> **Everything is pushed** (`origin/main` @ `af05a20`; tree clean except the untracked `prototypes/`
+> UI-exploration dir, unrelated). **All green:** backend **30 test files** (`./.venv/Scripts/python.exe
+> tests/<file>.py`; pytest not installed), frontend `npm run build` + **85 unit** + **32 e2e**
+> (`npm run test:e2e`). Servers if needed: backend **5433** (`uvicorn app.main:app --port 5433`, **no
+> `--reload`** on Windows), frontend **5190** (`npm run dev -- --port 5190`). On Windows restart the
+> backend with the kill-by-port one-liner + a hidden `Start-Process` launch (a stray `&` exits the shell).
+>
+> **The v2 feature set is functionally complete** — Phases 0–8 shipped (fleet, agent tool-loop, voice,
+> integrations, Conf, guarded shell, Tools tab + manage layer) and the memory subsystem is now fully
+> built: two always-injected stores (per-agent `MEMORY.md` + global `USER.md`) + the **D27** additions —
+> a **store registry** (`core/memory.py` `STORES`/`store_by_key`, the single spine), an opt-in emotional
+> **`state.md`** (SET semantics, auto-applies), and opt-in **periodic reflection** (every N turns).
+> Memory writes are atomic + git-backed (**D26**) and now race-free under one lock (the B-audit fix).
+> All three D27 slices were independently audited; B and C each had a real finding fixed (B: a
+> pre-existing concurrent lost-update; C: a non-one-shot nudge + subagent leak).
+>
+> **⭐ THE NEXT (AND LAST) v1 TRACK — emma (Linux) deploy → cutover (TODO Phases 9 & 10).** The owner is
+> migrating dashboard_v2 from Windows (corsair) to **emma (Linux)**. Concrete remaining work:
+> - **Phase 9 deploy:** (a) a **`systemd` unit** running uvicorn on boot (no `--reload`); (b) a **Linux
+>   install/run script** (create venv + `pip install -e`/pinned deps, `npm ci && npm run build`, then
+>   start) — v2 has **no install script yet**; the `*.bat` are the legacy Flask server's. Reuse the
+>   single-origin prod path that already exists (FastAPI serves `frontend/dist`, `main.py`). (c) Optional
+>   smoke tests (Android-viewport Playwright already exists via D24; add a couple of backend action tests).
+> - **Phase 10 cutover:** feature-parity check vs the legacy `wol_server/wol_server_win.py` (WOL, monitor,
+>   shutdown, command box, chat, YT/IP tools — all have v2 equivalents); run v2 beside the old server +
+>   migrate `config.yaml`; flip the default; retire `wol_server/` (or keep as a Linux-WOL fallback) and
+>   refresh README/AGENTS. **Keep the Tailscale-only, no-auth, no-public-bind boundary intact.**
+>
+> **Deferred / low-priority (none block cutover):** vector/semantic memory recall (the embeddings client
+> is built + wired but unused — the `MemoryProvider` "both" seam); UI_AUDIT **F24** (component/axe a11y
+> tests → Phase 9); **F9** `useTransition` / **F13** React Compiler (measure-first); QR-to-phone (`segno`
+> dep, pending owner OK); ROADMAP **E2** OpenAI `/v1/chat/completions` facade; **D19** voice streaming
+> transports (live STT + progressive TTS); **E0a** per-tool settings; **D27-C** reflection proposal-
+> batching. Post-v1 backlog (ROADMAP): scheduled automations (A3), notifications (F1), wake word (C2),
+> wake-on-connection (D1/D2), security hardening (G), privilege-selection UX (D16, specced).
+>
+> **Doc map for the deploy work:** `ARCHITECTURE.md` §6 (deployment profiles, the Windows `--reload`
+> gotcha, the OS-branch invariant) · `README.md` (current run/build) · TODO **Phase 9/10** (the checklist
+> below) · AGENTS.md §6 (the security boundary to preserve). The session blocks below are shipped history.
 
 > ### 🟢 SESSION UPDATE — D27 Sub-slice C (periodic reflection) SHIPPED — 2026-06-26 — **D27 COMPLETE**
 > The Hermes-style "save anything worth remembering every N turns" nudge is built + green. DECISIONS
