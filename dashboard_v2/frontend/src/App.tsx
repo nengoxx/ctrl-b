@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 
+import { useChatInit } from "./hooks/useAgentChat";
 import { useAppearanceSync } from "./hooks/useAppearance";
+import { useAutoTts } from "./hooks/useAutoTts";
 import { useEventStream } from "./hooks/useEvents";
 import { useFleetCycle } from "./hooks/useFleet";
 import { isAnyDirty } from "./store/dirty";
@@ -32,11 +34,14 @@ export default function App() {
   );
 }
 
-// Headless controller engines mounted ABOVE the theme Root (D29 §14.5), isolated here so their query
-// subscriptions (hosts poll, appearance reconcile) re-render only this null component — not App.
+// Headless controller engines mounted ABOVE the theme Root (D29 §14.5), isolated here so their query/
+// chat subscriptions (hosts poll, appearance reconcile, chat deltas) re-render only this null component —
+// not App, so they never cascade through `<ActiveRoot/>` into the theme tree.
 function AppEngines() {
   useFleetCycle(); // SINGLETON featured-host auto-advance engine
   useAppearanceSync(); // reconcile theme/mode/accent against the server (cross-device LWW, §9.11)
+  useChatInit(); // load the most-recent thread once (was AgentTab) — theme-independent (§14.5)
+  useAutoTts(); // auto read-aloud of a just-completed reply (6b-2) — global, runs regardless of tab
   return null;
 }
 

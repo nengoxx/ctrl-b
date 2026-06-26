@@ -1,17 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { useAgentRoster } from "../hooks/useAgents";
-import { useAutoTts } from "../hooks/useAutoTts";
-import { useVoiceStatus } from "../hooks/useVoiceStatus";
+import { useAgentChat } from "../hooks/useAgentChat";
 import { toggle as playMessage, usePlayback } from "../lib/audioController";
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
+import { planFrom } from "../lib/plan";
 import { PRIVILEGE_LEVELS, privilegeLabel, type Privilege } from "../lib/privilege";
 import {
   answerQuestion,
   applyProposal,
   editPlan,
-  initChat,
   resumeCall,
   retryLastTurn,
   setSessionPrivilege,
@@ -21,7 +19,6 @@ import type {
   ChatMessage,
   Part,
   Plan,
-  PlanStep,
   ToolCallPart,
   ToolResult,
   WebSearchHit,
@@ -54,16 +51,6 @@ function callLine(call: ToolCallPart): string {
     .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
     .join(" ");
   return args ? `${call.tool} ${args}` : call.tool;
-}
-
-/** Pull the plan from a task_plan pair — prefer the executed result's `data.plan`, fall back to the
- *  call args so it renders the instant the call streams in (before the result lands). */
-function planFrom(call: ToolCallPart, result: ToolResult | undefined): Plan | null {
-  const fromResult = (result?.data as { plan?: Plan } | undefined)?.plan;
-  if (fromResult && Array.isArray(fromResult.steps)) return fromResult;
-  const fromArgs = call.args as { steps?: PlanStep[] };
-  if (Array.isArray(fromArgs.steps)) return { steps: fromArgs.steps };
-  return null;
 }
 
 /** The checklist itself (shared by the inline breadcrumb's expansion and the pinned panel). When
@@ -550,21 +537,16 @@ interface Props {
 const SCROLLER_ID = "app-scroll";
 
 export function AgentTab({ active }: Props) {
-  const { messages, status, streamingId } = useChat();
-  // Resolved default agent slug — assistant turns are labelled only when their agent differs (7e-c).
-  const resolvedDefault = useAgentRoster().data?.default;
-  // 6b-2 — TTS: gate the per-bubble read-aloud toggle on TTS being configured, and drive auto read-aloud
-  // of completed replies (gated internally by the AppBar auto-TTS switch + the status transition).
-  const ttsOn = useVoiceStatus().data?.tts ?? false;
-  useAutoTts();
+  // All chat state + derivations + roster/voice context come from the headless controller (D29 §14.2).
+  // `resultByCall`/`currentPlan` are memoized there; `resolvedDefault` attributes per-turn agents (7e-c);
+  // `ttsOn` gates the per-bubble read-aloud. The init engine + auto-TTS run once in <AppEngines/> (§14.5),
+  // not here. The scroll-stick-to-bottom below stays vapor-specific (it targets `#app-scroll`).
+  const { messages, status, streamingId, resultByCall, currentPlan, resolvedDefault, ttsOn } =
+    useAgentChat();
   // The scroller is the app-shell content pane (`#app-scroll`), not the window — the composer/tab
   // bar are in-flow at the bottom of the shell. "Stick to bottom" only while the user is already
   // near the bottom, so streaming follows the bot without yanking them down if they scrolled up.
   const stick = useRef(true);
-
-  useEffect(() => {
-    void initChat();
-  }, []);
 
   const pin = () => {
     const el = document.getElementById(SCROLLER_ID);
@@ -605,24 +587,6 @@ export function AgentTab({ active }: Props) {
     });
     return () => cancelAnimationFrame(id);
   }, [active]);
-
-  // Pair tool results to their calls by id across the whole thread (live appends + reloaded
-  // separate `tool` messages both land here). Also track the most-recent task_plan call → its plan
-  // is the current one, shown in the pinned panel (the model rewrites the whole list each call).
-  // Memoized: linear scan over every message every render gets pricey on long threads — only
-  // recompute when `messages` actually changes.
-  const { resultByCall, currentPlan } = useMemo(() => {
-    const byCall: Record<string, ToolResult> = {};
-    let latestPlanCall: ToolCallPart | null = null;
-    for (const m of messages) {
-      for (const p of m.parts) {
-        if (p.type === "tool_result") byCall[p.call_id] = p.result;
-        if (p.type === "tool_call" && p.tool === "task_plan") latestPlanCall = p;
-      }
-    }
-    const plan = latestPlanCall ? planFrom(latestPlanCall, byCall[latestPlanCall.call_id]) : null;
-    return { resultByCall: byCall, currentPlan: plan };
-  }, [messages]);
 
   return (
     <div
