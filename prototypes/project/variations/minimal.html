@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ctrl-b · minimal</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #1b1b1a;
+    --surface: #232321;
+    --surface-2: #2a2a28;
+    --line: rgba(255,255,255,0.08);
+    --line-2: rgba(255,255,255,0.13);
+    --text: #ece9e3;
+    --text-2: #a8a59d;
+    --text-3: #74726b;
+    --accent: oklch(0.74 0.07 195);
+    --accent-soft: oklch(0.74 0.07 195 / 0.14);
+    --green: oklch(0.76 0.10 155);
+    --green-soft: oklch(0.76 0.10 155 / 0.16);
+    --red: oklch(0.68 0.13 28);
+    --red-soft: oklch(0.68 0.13 28 / 0.14);
+    --radius: 16px;
+    --radius-sm: 11px;
+  }
+  [data-theme="light"] {
+    --bg: #f4f2ed;
+    --surface: #ffffff;
+    --surface-2: #faf8f4;
+    --line: rgba(0,0,0,0.08);
+    --line-2: rgba(0,0,0,0.13);
+    --text: #21201d;
+    --text-2: #5f5d57;
+    --text-3: #8f8d86;
+    --accent: oklch(0.58 0.08 195);
+    --accent-soft: oklch(0.58 0.08 195 / 0.12);
+    --green: oklch(0.55 0.11 155);
+    --green-soft: oklch(0.55 0.11 155 / 0.12);
+    --red: oklch(0.55 0.16 28);
+    --red-soft: oklch(0.55 0.16 28 / 0.10);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Hanken Grotesk", system-ui, sans-serif;
+    font-size: 14px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100%; overscroll-behavior: contain;
+    padding-bottom: 80px;
+  }
+
+  /* App bar */
+  .appbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 16px 18px 12px;
+    position: sticky; top: 0; background: var(--bg); z-index: 5;
+  }
+  .brand { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px; }
+  .brand .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .grow { flex: 1; }
+  .iconbtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--text-2); font-size: 12px; font-weight: 500; transition: background 0.15s, color 0.15s; }
+  .iconbtn:active { background: var(--surface-2); color: var(--text); }
+  .iconbtn.round { width: 34px; padding: 0; }
+
+  /* Bottom tab bar */
+  .tabbar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--line);
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    padding: 6px 10px calc(8px + env(safe-area-inset-bottom));
+    z-index: 10;
+  }
+  .tabbtn { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 7px 8px; border-radius: 12px; color: var(--text-3); transition: color 0.15s, background 0.15s; }
+  .tabbtn.active { color: var(--text); }
+  .tabbtn.active .ic { background: var(--accent-soft); color: var(--accent); }
+  .tabbtn .ic { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 26px; border-radius: 999px; transition: background 0.15s, color 0.15s; }
+  .tabbtn .ic svg { display: block; }
+  .tabbtn .lbl { font-size: 10.5px; font-weight: 500; letter-spacing: 0.01em; }
+
+  /* Sections */
+  .wrap { padding: 0 18px; }
+  .sec { display: flex; align-items: baseline; gap: 8px; padding: 22px 2px 10px; }
+  .sec .t { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+  .sec .grow { flex: 1; }
+  .sec .hint { font-size: 11.5px; color: var(--text-3); }
+
+  /* ===== Now monitoring (featured) ===== */
+  .now { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 16px 14px; margin: 4px 18px 0; }
+  .now .eyebrow { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-3); }
+  .now .eyebrow .pip { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+  .now .eyebrow .pip.off { background: var(--text-3); box-shadow: none; }
+  .now .name { font-size: 27px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; margin-top: 11px; }
+  .now .role { font-size: 12.5px; color: var(--text-3); margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .now .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 15px; }
+  .now .stat .v { font-size: 19px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
+  .now .stat .v small { font-size: 11px; font-weight: 500; color: var(--text-3); margin-left: 1px; }
+  .now .stat .l { font-size: 10.5px; color: var(--text-3); margin-top: 5px; }
+  .now .graph { position: relative; height: 58px; margin-top: 16px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); overflow: hidden; }
+  .now .graph canvas { display: block; width: 100%; height: 100%; }
+  .now .graph .lg { position: absolute; left: 11px; bottom: 7px; font-size: 10px; color: var(--text-3); letter-spacing: 0.02em; }
+  .dots { display: flex; justify-content: center; gap: 6px; margin-top: 14px; }
+  .dots div { width: 6px; height: 6px; border-radius: 999px; background: var(--line-2); cursor: pointer; transition: width 0.2s, background 0.2s; }
+  .dots div.active { width: 18px; background: var(--accent); }
+
+  /* Device list */
+  .devices { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .device { border-top: 1px solid var(--line); }
+  .device:first-child { border-top: 0; }
+  .device.featured { background: var(--surface-2); }
+  .device .row1 { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px; padding: 13px 14px; cursor: pointer; min-height: 58px; }
+  .device .led { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; }
+  .device.on .led { background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
+  .device .nm { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .device .nm .name { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .device.off .nm .name { color: var(--text-2); }
+  .device .nm .role { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .device .chev { color: var(--text-3); transition: transform 0.2s; display: inline-flex; }
+  .device.open .chev { transform: rotate(90deg); color: var(--text-2); }
+
+  /* inline wake / stop action */
+  .device .act { all: unset; cursor: pointer; width: 36px; height: 36px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; border: 1px solid var(--line-2); color: var(--text-2); transition: background 0.15s, opacity 0.2s; }
+  .device .act svg { display: block; }
+  .device .act.wake { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
+  .device .act.wake:active { background: var(--accent-soft); }
+  .device .act.stop:active { background: var(--surface-2); color: var(--red); }
+  .device .act.busy { opacity: 0.4; pointer-events: none; }
+
+  .device .body { display: none; padding: 0 14px 14px 34px; }
+  .device.open .body { display: block; }
+  .device .meta { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 6px 12px; font-size: 12px; padding: 2px 0 12px; }
+  .device .meta .k { color: var(--text-3); }
+  .device .meta .v { color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+  /* nested per-machine services */
+  .device .svcs { display: flex; flex-direction: column; gap: 2px; }
+  .device .srow { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 10px; text-decoration: none; color: inherit; min-height: 42px; }
+  .device .srow:active { background: var(--surface); }
+  .device.featured .srow:active { background: var(--bg); }
+  .device .srow .led { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); box-shadow: none; }
+  .device .srow.on .led { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+  .device .srow .nm2 { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .device .srow .nm2 .name { font-size: 13px; font-weight: 500; }
+  .device .srow.off .nm2 .name { color: var(--text-2); }
+  .device .srow .nm2 .addr { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .device .srow .arrow { color: var(--text-3); display: inline-flex; }
+  .device .srow.on .arrow { color: var(--accent); }
+  .device .no-svc { font-size: 12px; color: var(--text-3); padding: 6px 10px 10px; }
+
+  /* Summary card */
+  .summary-card { margin: 16px 18px 0; padding: 15px 16px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); display: grid; grid-template-columns: repeat(3, 1fr); }
+  .summary-card .s { text-align: center; }
+  .summary-card .s + .s { border-left: 1px solid var(--line); }
+  .summary-card .s .v { font-size: 22px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
+  .summary-card .s .v small { font-size: 12px; font-weight: 500; color: var(--text-3); }
+  .summary-card .s.alert .v { color: var(--red); }
+  .summary-card .s .l { font-size: 10.5px; color: var(--text-3); margin-top: 5px; }
+
+  /* Tabs */
+  .tab { display: none; }
+  .tab.active { display: block; animation: fade 0.25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  /* ===== Agent / chat ===== */
+  .agent { min-height: calc(100vh - 64px - 80px); display: flex; flex-direction: column; }
+  .agent.empty { justify-content: center; }
+  .hero { text-align: center; padding: 8px 22px 22px; }
+  .hero .star { font-size: 26px; color: var(--accent); line-height: 1; }
+  .hero h1 { font-family: "Instrument Serif", serif; font-weight: 400; font-size: 34px; line-height: 1.1; margin: 14px 0 0; letter-spacing: 0; }
+  .hero h1 em { font-style: italic; color: var(--accent); }
+  .hero p { color: var(--text-3); font-size: 13px; margin: 8px 0 0; }
+
+  .composer-wrap { padding: 0 18px; }
+  .notice {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius-sm); padding: 11px 13px; margin-bottom: 10px;
+    font-size: 12.5px; color: var(--text-2);
+  }
+  .notice .x { all: unset; cursor: pointer; color: var(--text-3); display: inline-flex; }
+  .notice .ln { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+
+  .composer {
+    background: var(--surface); border: 1px solid var(--line-2);
+    border-radius: 20px; padding: 14px 15px 11px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+  }
+  [data-theme="light"] .composer { box-shadow: 0 6px 20px rgba(0,0,0,0.06); }
+  .composer textarea {
+    all: unset; display: block; width: 100%;
+    font: inherit; font-size: 15px; color: var(--text);
+    min-height: 24px; resize: none; line-height: 1.45;
+  }
+  .composer textarea::placeholder { color: var(--text-3); }
+  .composer .crow { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .composer .cbtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--text-2); transition: background 0.15s; }
+  .composer .cbtn:active { background: var(--surface-2); }
+  .composer .model { font-size: 12.5px; color: var(--text-2); font-weight: 500; display: inline-flex; align-items: center; gap: 5px; }
+  .composer .model .eff { color: var(--text-3); }
+  .composer .send { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 999px; background: var(--accent); color: #0c1416; transition: opacity 0.15s; }
+  [data-theme="light"] .composer .send { color: #fff; }
+  .composer .send:active { opacity: 0.8; }
+  .composer .mic.rec { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 14px 18px 4px; }
+  .chip { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; padding: 8px 13px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--text-2); font-size: 12.5px; font-weight: 500; transition: background 0.15s, color 0.15s; }
+  .chip:active { background: var(--surface-2); color: var(--text); }
+  .chip svg { color: var(--text-3); }
+
+  /* chat log (after sending) */
+  .chatlog { flex: 1; padding: 8px 18px 18px; display: flex; flex-direction: column; gap: 16px; }
+  .msg { max-width: 88%; }
+  .msg .who { font-size: 11px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-3); margin-bottom: 5px; }
+  .msg.user { align-self: flex-end; }
+  .msg.user .bubble { background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); color: var(--text); border-radius: 16px 16px 4px 16px; padding: 10px 13px; font-size: 14px; }
+  .msg.user .who { text-align: right; }
+  .msg.bot .bubble { color: var(--text); font-size: 14px; line-height: 1.55; }
+  .msg.cmd .bubble { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; font-family: ui-monospace, "SF Mono", monospace; font-size: 12.5px; color: var(--text-2); white-space: pre-wrap; }
+  .msg.cmd .who { color: var(--accent); }
+
+  /* Settings */
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .confrow { display: flex; align-items: center; gap: 14px; padding: 14px 15px; border-top: 1px solid var(--line); min-height: 56px; }
+  .confrow:first-child { border-top: 0; }
+  .confrow .k { flex: 1; min-width: 0; }
+  .confrow .k .label { font-size: 14px; font-weight: 500; }
+  .confrow .k .desc { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+  .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; }
+  .seg button { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 500; color: var(--text-2); transition: background 0.15s, color 0.15s; }
+  .seg button.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+  [data-theme="light"] .seg button.active { background: #fff; }
+  .switch { display: inline-flex; align-items: center; cursor: pointer; }
+  .switch .knob { width: 42px; height: 25px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line-2); position: relative; transition: background 0.2s, border-color 0.2s; }
+  .switch .knob::after { content: ""; position: absolute; left: 3px; top: 3px; width: 17px; height: 17px; border-radius: 50%; background: var(--text-3); transition: transform 0.2s, background 0.2s; }
+  .switch.on .knob { background: var(--accent); border-color: transparent; }
+  .switch.on .knob::after { transform: translateX(17px); background: #fff; }
+  .confrow input[type=text], .confrow input[type=password] { all: unset; flex: 1; min-width: 0; max-width: 170px; padding: 8px 11px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 13px; text-align: right; }
+
+  .swatches { display: inline-flex; gap: 8px; }
+  .swatch { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+  .swatch.active { border-color: var(--text); }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+</style>
+</head>
+<body data-theme="dark">
+
+  <div class="appbar">
+    <div class="brand"><span class="dot"></span>ctrl-b</div>
+    <div class="grow"></div>
+    <button class="iconbtn round" id="themeToggle" aria-label="toggle theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+  </div>
+
+  <!-- DASHBOARD TAB -->
+  <div class="tab active" id="tab-dash" data-screen-label="04 Minimal · Dashboard">
+
+    <!-- Now monitoring -->
+    <div class="now">
+      <div class="eyebrow"><span class="pip" id="now-pip"></span>Now monitoring</div>
+      <div class="name" id="now-name">pegasus</div>
+      <div class="role" id="now-role">NAS · Linux · 192.168.1.10</div>
+      <div class="stats">
+        <div class="stat"><div class="v" id="now-ping">1.8<small>ms</small></div><div class="l">Ping</div></div>
+        <div class="stat"><div class="v" id="now-uptime">14<small>d</small></div><div class="l">Uptime</div></div>
+        <div class="stat"><div class="v" id="now-cpu">12<small>%</small></div><div class="l">Load</div></div>
+        <div class="stat"><div class="v" id="now-temp">42<small>°</small></div><div class="l">Temp</div></div>
+      </div>
+      <div class="graph"><canvas id="wf"></canvas><div class="lg">Live ping · last 60s</div></div>
+      <div class="dots" id="dots">
+        <div class="active" data-i="0"></div><div data-i="1"></div><div data-i="2"></div><div data-i="3"></div><div data-i="4"></div>
+      </div>
+    </div>
+
+    <div class="wrap"><div class="sec"><span class="t">Fleet</span><span class="grow"></span><span class="hint">tap for services</span></div></div>
+    <div class="wrap"><div class="devices" id="devices"></div></div>
+
+    <!-- Summary -->
+    <div class="summary-card">
+      <div class="s"><div class="v">3<small>/5</small></div><div class="l">Awake</div></div>
+      <div class="s"><div class="v">2.1<small>ms</small></div><div class="l">Avg ping</div></div>
+      <div class="s alert"><div class="v">1</div><div class="l">Incident</div></div>
+    </div>
+    <div style="height:16px"></div>
+  </div>
+
+  <!-- AGENT TAB -->
+  <div class="tab" id="tab-chat" data-screen-label="04 Minimal · Agent">
+    <div class="agent empty" id="agent">
+      <div id="emptyState">
+        <div class="hero">
+          <div class="star">✳</div>
+          <h1>Evening, <em>operator</em></h1>
+          <p>Ask about your network, or run a command.</p>
+        </div>
+        <div class="composer-wrap">
+          <div class="notice" id="notice">
+            <span class="grow" style="flex:1">Local agent offline — using cloud fallback.</span>
+            <span class="ln">Configure</span>
+            <button class="x" onclick="document.getElementById('notice').remove()" aria-label="dismiss">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <form class="composer" id="chatform" onsubmit="event.preventDefault()">
+            <textarea id="chatinput" rows="1" placeholder="How can I help you today?" autocomplete="off"></textarea>
+            <div class="crow">
+              <button type="button" class="cbtn" aria-label="attach">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
+              <span class="grow" style="flex:1"></span>
+              <span class="model">qwen2.5:7b <span class="eff">· local</span></span>
+              <button type="button" class="cbtn mic" id="mic" aria-label="dictate">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+              </button>
+              <button type="submit" class="send" aria-label="send">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+          </form>
+          <div class="chips">
+            <button class="chip" data-q="Is pegasus alive?">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Health check
+            </button>
+            <button class="chip" data-q="Wake vega and start minecraft">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>Wake &amp; run
+            </button>
+            <button class="chip" data-q="Summarize today's incidents">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>Incidents
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS TAB -->
+  <div class="tab" id="tab-conf" data-screen-label="04 Minimal · Settings">
+    <div class="wrap"><div class="sec"><span class="t">Appearance</span></div></div>
+    <div class="wrap"><div class="card">
+      <div class="confrow"><div class="k"><div class="label">Theme</div><div class="desc">Match app to system or pick</div></div><div class="seg"><button class="active">Dark</button><button>Light</button><button>Auto</button></div></div>
+      <div class="confrow"><div class="k"><div class="label">Accent</div><div class="desc">A single, quiet highlight</div></div>
+        <div class="swatches" id="swatches">
+          <span class="swatch active" data-h="195" style="background:oklch(0.74 0.07 195)"></span>
+          <span class="swatch" data-h="155" style="background:oklch(0.74 0.07 155)"></span>
+          <span class="swatch" data-h="280" style="background:oklch(0.74 0.07 280)"></span>
+          <span class="swatch" data-h="60" style="background:oklch(0.74 0.07 60)"></span>
+        </div>
+      </div>
+      <div class="confrow"><div class="k"><div class="label">Reduce motion</div><div class="desc">Calmer transitions</div></div><div class="switch" onclick="this.classList.toggle('on')"><div class="knob"></div></div></div>
+    </div></div>
+
+    <div class="wrap"><div class="sec"><span class="t">Agent</span></div></div>
+    <div class="wrap"><div class="card">
+      <div class="confrow"><div class="k"><div class="label">Backend</div><div class="desc">Local model or cloud API</div></div><div class="seg"><button class="active">Local</button><button>Cloud</button></div></div>
+      <div class="confrow"><div class="k"><div class="label">Endpoint</div></div><input type="text" value="localhost:11434"/></div>
+      <div class="confrow"><div class="k"><div class="label">Temperature</div></div><input type="text" value="0.4"/></div>
+    </div></div>
+
+    <div class="wrap"><div class="sec"><span class="t">Notifications</span></div></div>
+    <div class="wrap"><div class="card">
+      <div class="confrow"><div class="k"><div class="label">Discord webhook</div></div><div class="switch on" onclick="this.classList.toggle('on')"><div class="knob"></div></div></div>
+      <div class="confrow"><div class="k"><div class="label">On wake</div></div><div class="switch on" onclick="this.classList.toggle('on')"><div class="knob"></div></div></div>
+      <div class="confrow"><div class="k"><div class="label">On incident</div></div><div class="switch on" onclick="this.classList.toggle('on')"><div class="knob"></div></div></div>
+    </div></div>
+
+    <div class="wrap"><div class="sec"><span class="t">API keys</span></div></div>
+    <div class="wrap"><div class="card">
+      <div class="confrow"><div class="k"><div class="label">OpenRouter</div></div><input type="password" value="sk-or-v1-9f8a"/></div>
+      <div class="confrow"><div class="k"><div class="label">OpenAI</div></div><input type="password" placeholder="—"/></div>
+    </div></div>
+    <div style="height:24px"></div>
+  </div>
+
+  <!-- Bottom tab bar -->
+  <nav class="tabbar">
+    <button class="tabbtn active" data-tab="dash">
+      <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-8 9 8M5 10v10h14V10"/></svg></span>
+      <span class="lbl">Fleet</span>
+    </button>
+    <button class="tabbtn" data-tab="chat">
+      <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-3.7A8.4 8.4 0 1 1 21 11.5z"/></svg></span>
+      <span class="lbl">Agent</span>
+    </button>
+    <button class="tabbtn" data-tab="conf">
+      <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9 2.6h.1A1.6 1.6 0 0 0 11 1.1V1a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.6 1z"/></svg></span>
+      <span class="lbl">Settings</span>
+    </button>
+  </nav>
+
+<script>
+  const DEVICES = [
+    { name: "pegasus", role: "NAS · Linux",       ip: "192.168.1.10", mac: "00:11:22:33:44:55", on: true,  uptime: "14d 06h", ping: 1.8,  cpu: 12, temp: 42 },
+    { name: "atlas",   role: "Workstation · Win", ip: "192.168.1.12", mac: "6c:0b:84:ad:e1:0f", on: false, uptime: "—",       ping: null, cpu: 0,  temp: 0  },
+    { name: "mercury", role: "Media · Win",       ip: "192.168.1.15", mac: "b8:27:eb:0a:9c:21", on: true,  uptime: "02d 11h", ping: 2.4,  cpu: 28, temp: 54 },
+    { name: "vega",    role: "Game · Linux",      ip: "192.168.1.20", mac: "04:7c:16:fe:88:2a", on: false, uptime: "—",       ping: null, cpu: 0,  temp: 0  },
+    { name: "titan",   role: "Render · Linux",    ip: "192.168.1.25", mac: "a4:5e:60:f1:cc:13", on: true,  uptime: "06d 19h", ping: 3.1,  cpu: 72, temp: 68 },
+  ];
+  const SERVICES = [
+    { name: "open-webui", host: "pegasus", port: 3000,  path: "" },
+    { name: "jellyfin",   host: "pegasus", port: 8096,  path: "" },
+    { name: "syncthing",  host: "pegasus", port: 8384,  path: "" },
+    { name: "comfyui",    host: "titan",   port: 8188,  path: "" },
+    { name: "llama.cpp",  host: "titan",   port: 8080,  path: "" },
+    { name: "ollama",     host: "titan",   port: 11434, path: "" },
+    { name: "plex",       host: "mercury", port: 32400, path: "/web" },
+    { name: "minecraft",  host: "vega",    port: 25565, path: "" },
+  ];
+  function svcUp(s) { const h = DEVICES.find(d => d.name === s.host); return h && h.on; }
+  function svcUrl(s) { const h = DEVICES.find(d => d.name === s.host); return h ? `http://${h.ip}:${s.port}${s.path}` : "#"; }
+
+  const OPEN = new Set();
+  let featured = 0;
+  const chev = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>';
+  const arr  = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17 17 7M9 7h8v8"/></svg>';
+  const bolt = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>';
+  const pwr  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v9"/><path d="M6.4 7.4a8 8 0 1 0 11.2 0"/></svg>';
+
+  function renderDevices() {
+    document.getElementById("devices").innerHTML = DEVICES.map((d, i) => {
+      const mine = SERVICES.filter(s => s.host === d.name);
+      const sub = `${d.role} · ${d.on ? d.ping + "ms" : "dormant"}${mine.length ? ` · ${mine.length} svc` : ""}`;
+      return `
+      <div class="device ${d.on?"on":"off"} ${i===featured?"featured":""} ${OPEN.has(d.name)?"open":""}" data-i="${i}" data-name="${d.name}">
+        <div class="row1" data-toggle="${d.name}">
+          <span class="led"></span>
+          <span class="nm"><span class="name">${d.name}</span><span class="role">${sub}</span></span>
+          ${d.on
+            ? `<button class="act stop" data-act="shutdown" data-i="${i}" aria-label="shut down ${d.name}">${pwr}</button>`
+            : `<button class="act wake" data-act="wake" data-i="${i}" aria-label="wake ${d.name}">${bolt}</button>`}
+          <span class="chev">${chev}</span>
+        </div>
+        <div class="body">
+          <div class="meta">
+            <span class="k">IP</span><span class="v">${d.ip}</span>
+            <span class="k">MAC</span><span class="v">${d.mac}</span>
+          </div>
+          <div class="svcs">
+            ${mine.length === 0
+              ? `<div class="no-svc">No services on this machine</div>`
+              : mine.map(s => {
+                  const on = svcUp(s);
+                  return `<a class="srow ${on?"on":"off"}" href="${svcUrl(s)}" target="_blank" rel="noopener">
+                    <span class="led"></span>
+                    <span class="nm2"><span class="name">${s.name}</span><span class="addr">${s.host}:${s.port}</span></span>
+                    <span class="arrow">${on ? arr : ""}</span>
+                  </a>`;
+                }).join("")}
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  function renderNow() {
+    const d = DEVICES[featured];
+    document.getElementById("now-pip").className = "pip" + (d.on ? "" : " off");
+    document.getElementById("now-name").textContent = d.name;
+    document.getElementById("now-role").textContent = `${d.role} · ${d.ip}`;
+    document.getElementById("now-ping").innerHTML   = d.on ? `${d.ping}<small>ms</small>` : `—`;
+    document.getElementById("now-uptime").innerHTML = d.on ? `${d.uptime.split("d")[0]}<small>d</small>` : `—`;
+    document.getElementById("now-cpu").innerHTML    = d.on ? `${d.cpu}<small>%</small>` : `—`;
+    document.getElementById("now-temp").innerHTML   = d.on ? `${d.temp}<small>°</small>` : `—`;
+    document.querySelectorAll("#dots div").forEach((dot, i) => dot.classList.toggle("active", i === featured));
+  }
+
+  /* Live ping graph */
+  const canvas = document.getElementById("wf");
+  const ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  function sizeCanvas() {
+    const r = canvas.getBoundingClientRect();
+    canvas.width = r.width * dpr; canvas.height = r.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function accentColor() {
+    const c = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+    return c || "#5bbccb";
+  }
+  let t = 0;
+  function draw() {
+    const r = canvas.getBoundingClientRect();
+    const w = r.width, h = r.height;
+    ctx.clearRect(0, 0, w, h);
+    const d = DEVICES[featured];
+    if (!d.on) {
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--text-3").trim();
+      ctx.font = "11px 'Hanken Grotesk', sans-serif";
+      ctx.fillText("Signal lost", 12, h / 2 + 4);
+      t += 0.05; requestAnimationFrame(draw); return;
+    }
+    const col = accentColor();
+    const pts = [];
+    const amp = Math.min((d.ping || 2) * 5, h / 2 - 8);
+    for (let x = 0; x <= w; x += 2) {
+      const p = x * 0.06 + t;
+      const n = Math.sin(p) * 0.6 + Math.sin(p * 2.3) * 0.25 + Math.sin(p * 5.1) * 0.12;
+      pts.push([x, h / 2 + n * amp]);
+    }
+    // area fill
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+    ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
+    ctx.save(); ctx.globalAlpha = 0.11; ctx.fillStyle = col; ctx.fill(); ctx.restore();
+    // line
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.lineJoin = "round"; ctx.stroke();
+    t += 0.06;
+    requestAnimationFrame(draw);
+  }
+  window.addEventListener("resize", sizeCanvas);
+
+  /* Auto-cycle featured machine among online ones */
+  setInterval(() => {
+    const onIdx = DEVICES.map((d, i) => d.on ? i : -1).filter(i => i >= 0);
+    if (!onIdx.length) return;
+    const cur = onIdx.indexOf(featured);
+    featured = onIdx[(cur + 1) % onIdx.length];
+    renderNow(); renderDevices();
+  }, 5000);
+
+  /* Expand row + feature it; dots switch featured */
+  document.addEventListener("click", (e) => {
+    const row = e.target.closest("[data-toggle]");
+    if (row && !e.target.closest("[data-act]")) {
+      const dev = row.closest(".device");
+      const name = dev.dataset.name;
+      featured = +dev.dataset.i;
+      OPEN.has(name) ? OPEN.delete(name) : OPEN.add(name);
+      renderDevices(); renderNow();
+      return;
+    }
+    const dot = e.target.closest("#dots div");
+    if (dot) { featured = +dot.dataset.i; renderNow(); renderDevices(); }
+  });
+
+  /* Wake / shutdown */
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-act]");
+    if (!btn) return;
+    const i = +btn.dataset.i; const d = DEVICES[i]; if (!d) return;
+    btn.classList.add("busy");
+    setTimeout(() => {
+      d.on = (btn.dataset.act === "wake");
+      d.uptime = d.on ? "00d 00h" : "—";
+      d.ping = d.on ? +(1.5 + Math.random()*2).toFixed(1) : null;
+      d.cpu  = d.on ? Math.floor(Math.random()*60 + 8) : 0;
+      d.temp = d.on ? Math.floor(Math.random()*30 + 38) : 0;
+      featured = i;
+      renderDevices(); renderNow();
+    }, 1000);
+  });
+
+  /* Tabs */
+  document.querySelectorAll(".tabbtn").forEach(b => {
+    b.addEventListener("click", () => {
+      document.querySelectorAll(".tabbtn").forEach(x => x.classList.toggle("active", x === b));
+      document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === "tab-" + b.dataset.tab));
+      window.scrollTo(0, 0);
+    });
+  });
+  /* Theme */
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    document.body.dataset.theme = document.body.dataset.theme === "dark" ? "light" : "dark";
+  });
+  /* Seg */
+  document.addEventListener("click", (e) => {
+    const sb = e.target.closest(".seg button");
+    if (sb) { sb.parentElement.querySelectorAll("button").forEach(b => b.classList.remove("active")); sb.classList.add("active"); }
+  });
+  /* Accent swatches */
+  document.getElementById("swatches").addEventListener("click", (e) => {
+    const sw = e.target.closest(".swatch"); if (!sw) return;
+    document.querySelectorAll(".swatch").forEach(x => x.classList.remove("active"));
+    sw.classList.add("active");
+    const h = sw.dataset.h;
+    document.documentElement.style.setProperty("--accent", `oklch(0.74 0.07 ${h})`);
+    document.documentElement.style.setProperty("--accent-soft", `oklch(0.74 0.07 ${h} / 0.14)`);
+  });
+
+  /* Composer: autosize + send -> chat view */
+  const input = document.getElementById("chatinput");
+  input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = input.scrollHeight + "px"; });
+  document.getElementById("mic").addEventListener("click", (e) => e.currentTarget.classList.toggle("rec"));
+  document.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => { input.value = c.dataset.q; input.focus(); input.dispatchEvent(new Event("input")); }));
+
+  function reply(q) {
+    const t = q.toLowerCase();
+    if (t.includes("pegasus") || t.includes("health") || t.includes("alive"))
+      return { bot: "pegasus is online — 1.8 ms, 14d uptime. SMB/445 responding, last write 3 min ago from atlas. All green." };
+    if (t.includes("wake") || t.includes("minecraft") || t.includes("vega"))
+      return { cmd: "$ wol vega && sleep 30 \\\n  && ssh vega 'systemctl start minecraft@survival'", bot: "Queued. I'll wake vega, wait for boot, then start the Minecraft service. Want a Discord ping when it's up?" };
+    if (t.includes("incident"))
+      return { bot: "1 incident today: atlas missed 2 heartbeats at 13:50 (offline). No data loss. Auto-recovery is off — wake it from the dashboard." };
+    return { bot: "Got it. I can check status, wake or stop machines, and start services. Try “wake vega and start minecraft.”" };
+  }
+  document.getElementById("chatform").addEventListener("submit", () => {
+    const q = input.value.trim(); if (!q) return;
+    const agent = document.getElementById("agent");
+    agent.classList.remove("empty");
+    let log = document.getElementById("chatlog");
+    if (!log) {
+      document.getElementById("emptyState").remove();
+      log = document.createElement("div");
+      log.className = "chatlog"; log.id = "chatlog";
+      agent.appendChild(log);
+    }
+    const r = reply(q);
+    let html = `<div class="msg user"><div class="who">You</div><div class="bubble">${q}</div></div>`;
+    if (r.cmd) html += `<div class="msg cmd"><div class="who">Proposed</div><div class="bubble">${r.cmd}</div></div>`;
+    html += `<div class="msg bot"><div class="who">Agent</div><div class="bubble">${r.bot}</div></div>`;
+    log.insertAdjacentHTML("beforeend", html);
+    input.value = ""; input.style.height = "auto";
+    window.scrollTo(0, document.body.scrollHeight);
+  });
+
+  sizeCanvas();
+  renderDevices();
+  renderNow();
+  requestAnimationFrame(draw);
+</script>
+</body>
+</html>

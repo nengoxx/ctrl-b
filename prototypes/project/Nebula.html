@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Nebula · AI design tools</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Serif:ital@1&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #08080b;
+    --bg-2: #0d0d12;
+    --panel: #131319;
+    --panel-2: #17171f;
+    --line: rgba(255,255,255,0.07);
+    --line-2: rgba(255,255,255,0.12);
+    --ink: #f3f2f7;
+    --ink-2: #b6b4c2;
+    --ink-3: #76747f;
+    --ink-4: #4a4954;
+    --violet: #7b6bff;
+    --violet-2: #a99dff;
+    --green: #4fd6a0;
+    --amber: #ffb054;
+    --pink: #ff6ec7;
+    --cyan: #62d8ff;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  #stars { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  .page { position: relative; z-index: 1; }
+  a { color: inherit; text-decoration: none; }
+  .serif { font-family: "Instrument Serif", serif; font-style: italic; font-weight: 400; }
+
+  /* glow helper */
+  .glow { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.5; z-index: 0; pointer-events: none; }
+
+  /* ===== Nav ===== */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px 28px;
+    backdrop-filter: blur(14px);
+    background: color-mix(in srgb, var(--bg) 72%, transparent);
+    border-bottom: 1px solid var(--line);
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
+  .logo .moon { width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(90deg, #fff 0 50%, #2b2b33 50% 100%); box-shadow: 0 0 14px rgba(255,255,255,0.25); }
+  .navlinks { display: flex; gap: 26px; margin: 0 auto; }
+  .navlinks a { color: var(--ink-2); font-size: 14.5px; transition: color 0.15s; }
+  .navlinks a:hover { color: var(--ink); }
+  .nav-cta { font-size: 14px; color: var(--ink-2); border: 1px solid var(--line-2); padding: 8px 16px; border-radius: 999px; transition: background 0.15s, color 0.15s; }
+  .nav-cta:hover { background: #fff; color: #000; border-color: #fff; }
+
+  /* ===== Layout ===== */
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+  section { position: relative; }
+
+  /* ===== Hero ===== */
+  .hero { text-align: center; padding: 96px 28px 0; position: relative; }
+  .hero h1 { font-size: clamp(44px, 7vw, 86px); line-height: 0.98; font-weight: 700; letter-spacing: -0.035em; margin: 0; }
+  .hero h1 .serif { font-size: 1.04em; letter-spacing: -0.01em; }
+  .hero .sub { color: var(--ink-2); font-size: 17px; max-width: 440px; margin: 24px auto 0; }
+  .pill-btn {
+    display: inline-flex; align-items: center; gap: 9px; margin-top: 28px;
+    padding: 11px 22px; border-radius: 999px; font-size: 15px; font-weight: 500;
+    background: rgba(255,255,255,0.05); border: 1px solid var(--line-2); color: var(--ink);
+    backdrop-filter: blur(6px); transition: background 0.15s, transform 0.15s;
+  }
+  .pill-btn:hover { background: rgba(255,255,255,0.1); transform: translateY(-1px); }
+  .pill-btn .moon { width: 15px; height: 15px; border-radius: 50%; background: linear-gradient(90deg,#fff 0 50%,#3a3a44 50% 100%); }
+
+  /* Solar system */
+  .solar { position: relative; height: 560px; margin: -40px auto 0; max-width: 720px; }
+  .orbit {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    border: 1px solid rgba(255,255,255,0.06); border-radius: 50%;
+  }
+  .o1 { width: 240px; height: 240px; }
+  .o2 { width: 400px; height: 400px; }
+  .o3 { width: 560px; height: 560px; }
+  .o4 { width: 720px; height: 720px; }
+  .spin { position: absolute; inset: 0; animation: spin linear infinite; }
+  .o1 .spin { animation-duration: 26s; }
+  .o2 .spin { animation-duration: 40s; }
+  .o3 .spin { animation-duration: 60s; reverse: 1; animation-direction: reverse; }
+  .o4 .spin { animation-duration: 90s; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+  .planet {
+    position: absolute; border-radius: 50%; top: 0; left: 50%;
+    transform: translate(-50%,-50%);
+  }
+  .p-mars { width: 26px; height: 26px; background: radial-gradient(circle at 35% 30%, #c98b6a, #7d3f2a); box-shadow: 0 0 18px rgba(201,139,106,0.5); }
+  .p-violet { width: 40px; height: 40px; background: radial-gradient(circle at 35% 30%, #b3a7ff, #6a4bd6); box-shadow: 0 0 26px rgba(123,107,255,0.6); }
+  .p-amber { width: 30px; height: 30px; background: radial-gradient(circle at 35% 30%, #ffd08a, #e07a1f); box-shadow: 0 0 22px rgba(255,176,84,0.55); }
+  .p-cyan { width: 18px; height: 18px; background: radial-gradient(circle at 35% 30%, #b6efff, #3aa6d8); box-shadow: 0 0 16px rgba(98,216,255,0.6); }
+  .p-green { width: 14px; height: 14px; background: radial-gradient(circle at 35% 30%, #9bf0cf, #2fae7e); box-shadow: 0 0 14px rgba(79,214,160,0.6); }
+
+  .sun {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 128px; height: 128px; border-radius: 50%;
+    background: linear-gradient(96deg, #ffffff 0 48%, #1a1a22 52% 100%);
+    box-shadow: 0 0 60px rgba(255,255,255,0.22), inset -8px 0 24px rgba(0,0,0,0.5);
+  }
+  .sun::after { content: ""; position: absolute; top: 14px; left: 16px; width: 9px; height: 9px; border-radius: 50%; background: var(--pink); box-shadow: 0 0 12px var(--pink); }
+
+  /* ===== Product section ===== */
+  .product { padding: 40px 0 30px; text-align: center; }
+  .emblem { width: 60px; height: 60px; margin: 0 auto 18px; border-radius: 16px; display: grid; place-items: center; position: relative; }
+  .emblem .core { width: 30px; height: 30px; border-radius: 50%; }
+  .product h2 { font-size: clamp(40px, 5.5vw, 60px); font-weight: 700; letter-spacing: -0.03em; margin: 0; line-height: 1; }
+  .product .tag { color: var(--ink-2); font-size: 16px; margin: 12px 0 0; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px; margin-top: 18px;
+    font-size: 13px; color: var(--ink-2); padding: 6px 14px; border-radius: 999px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--line);
+  }
+  .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--acc); }
+
+  /* Bento grid */
+  .bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-top: 40px; text-align: left; }
+  .card {
+    background: linear-gradient(180deg, var(--panel), var(--bg-2));
+    border: 1px solid var(--line); border-radius: 18px; padding: 22px;
+    position: relative; overflow: hidden; min-height: 200px;
+    display: flex; flex-direction: column;
+  }
+  .card:hover { border-color: var(--line-2); }
+  .card h3 { font-size: 16px; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .card p { font-size: 13.5px; color: var(--ink-3); margin: 0; line-height: 1.5; max-width: 30ch; }
+  .col-2 { grid-column: span 2; }
+  .col-3 { grid-column: span 3; }
+  .col-4 { grid-column: span 4; }
+  .col-6 { grid-column: span 6; }
+  .grow { flex: 1; }
+
+  /* card visuals */
+  .viz { margin-top: 18px; flex: 1; display: flex; align-items: center; justify-content: center; position: relative; }
+  .bigstar { font-size: 86px; line-height: 1; color: var(--acc); filter: drop-shadow(0 0 24px var(--acc)); }
+  .iconwall { display: grid; grid-template-columns: repeat(6, 1fr); gap: 9px; width: 100%; }
+  .iconwall span { aspect-ratio: 1; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--line); display: grid; place-items: center; font-size: 15px; color: var(--ink-2); }
+  .mockbar { width: 100%; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-3); }
+  .mockbar .gen { margin-left: auto; background: var(--acc); color: #08080b; font-weight: 600; padding: 5px 12px; border-radius: 8px; font-size: 12px; }
+  .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+  .swatches i { width: 34px; height: 34px; border-radius: 9px; display: block; }
+  .layers { width: 100%; display: flex; flex-direction: column; gap: 7px; }
+  .layers .lr { display: flex; align-items: center; gap: 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 8px 11px; font-size: 12.5px; color: var(--ink-2); }
+  .layers .lr .h { width: 13px; height: 13px; border-radius: 4px; background: var(--acc); opacity: 0.8; }
+  .layers .lr .nm { color: var(--ink-3); font-feature-settings: "tnum"; }
+  .lorem { font-size: 40px; font-weight: 700; color: var(--ink-4); letter-spacing: -0.02em; text-align: center; line-height: 1; }
+  .chatui { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+  .bubble { font-size: 12.5px; padding: 9px 12px; border-radius: 12px; max-width: 82%; line-height: 1.4; }
+  .bubble.u { align-self: flex-end; background: var(--acc); color: #08080b; border-bottom-right-radius: 4px; }
+  .bubble.b { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-2); border-bottom-left-radius: 4px; }
+  .blob { position: absolute; border-radius: 50%; filter: blur(46px); opacity: 0.5; }
+  .toolbar { width: 100%; background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px; padding: 8px; display: flex; gap: 6px; }
+  .toolbar span { flex: 1; height: 26px; border-radius: 7px; background: var(--bg-2); border: 1px solid var(--line); }
+  .toolbar span.on { background: var(--acc); border-color: transparent; }
+  .gradient-orb { width: 96px; height: 96px; border-radius: 50%; background: conic-gradient(from 0deg, #ff6ec7, #ffb054, #4fd6a0, #62d8ff, #7b6bff, #ff6ec7); filter: blur(2px); box-shadow: 0 0 40px rgba(255,110,199,0.35); }
+  .feed { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; width: 100%; }
+  .feed div { aspect-ratio: 4/3; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--line); }
+
+  /* badge above emblem */
+  .preheader { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 26px; }
+
+  /* ===== Footer ===== */
+  footer { border-top: 1px solid var(--line); margin-top: 90px; padding: 60px 0 50px; }
+  .foot-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 30px; }
+  .foot-brand .logo { margin-bottom: 14px; }
+  .foot-brand p { color: var(--ink-3); font-size: 14px; max-width: 24ch; }
+  .foot-col h4 { font-size: 13px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 14px; font-weight: 500; }
+  .foot-col a { display: block; color: var(--ink-2); font-size: 14.5px; margin-bottom: 9px; transition: color 0.15s; }
+  .foot-col a:hover { color: var(--ink); }
+  .foot-base { display: flex; align-items: center; justify-content: space-between; margin-top: 50px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--ink-4); font-size: 13px; }
+
+  @media (max-width: 760px) {
+    .navlinks { display: none; }
+    .bento { grid-template-columns: repeat(2, 1fr); }
+    .col-2,.col-3,.col-4,.col-6 { grid-column: span 2; }
+    .solar { transform: scale(0.7); margin-top: -70px; }
+    .foot-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+<div class="page">
+
+  <nav>
+    <a class="logo" href="#"><span class="moon"></span>Nebula</a>
+    <div class="navlinks">
+      <a href="#spark">Spark</a>
+      <a href="#sage">Sage</a>
+      <a href="#relay">Relay</a>
+      <a href="#loom">Loom</a>
+    </div>
+    <a class="nav-cta" href="#">Open app</a>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero" data-screen-label="Hero">
+    <h1>Creative tools<br><span class="serif">from the cosmos.</span></h1>
+    <p class="sub">Supercharge your craft with Nebula — a constellation of AI-powered design tools that live right inside your canvas.</p>
+    <a class="pill-btn" href="#spark"><span class="moon"></span>Explore the system</a>
+
+    <div class="solar">
+      <div class="glow" style="width:340px;height:340px;background:var(--violet);top:50%;left:50%;transform:translate(-50%,-50%)"></div>
+      <div class="orbit o4"><div class="spin"><span class="planet p-green"></span></div></div>
+      <div class="orbit o3"><div class="spin"><span class="planet p-cyan"></span></div></div>
+      <div class="orbit o2"><div class="spin"><span class="planet p-violet"></span></div></div>
+      <div class="orbit o1"><div class="spin"><span class="planet p-mars"></span></div></div>
+      <div class="orbit o2" style="width:400px;height:400px"><div class="spin" style="animation-duration:52s;animation-direction:reverse"><span class="planet p-amber" style="top:100%"></span></div></div>
+      <div class="sun"></div>
+    </div>
+  </section>
+
+  <!-- SPARK -->
+  <section class="product wrap" id="spark" style="--acc:var(--violet)" data-screen-label="Spark">
+    <div class="emblem" style="background:rgba(123,107,255,0.12);box-shadow:0 0 40px rgba(123,107,255,0.3)"><div class="core" style="background:radial-gradient(circle at 35% 30%,#b3a7ff,#6a4bd6)"></div></div>
+    <h2>Spark</h2>
+    <p class="tag">Cast AI magic onto your canvas.</p>
+    <span class="chip"><span class="dot"></span>spark.nebula</span>
+
+    <div class="bento">
+      <div class="card col-2">
+        <h3>Design with a thought</h3>
+        <p>Describe what you want and watch Spark assemble it from your component library.</p>
+        <div class="viz"><div class="bigstar">✦</div></div>
+      </div>
+      <div class="card col-2">
+        <h3>Vector icons, instantly</h3>
+        <p>Type a word, get a clean SVG icon set that matches your style.</p>
+        <div class="viz"><div class="iconwall"><span>★</span><span>◆</span><span>♪</span><span>◐</span><span>✿</span><span>☂</span><span>⚑</span><span>✈</span><span>◇</span><span>❄</span><span>⬡</span><span>✚</span></div></div>
+      </div>
+      <div class="card col-2">
+        <h3>Conjure compositions</h3>
+        <p>Spark studies your work and proposes layouts you'd never have sketched.</p>
+        <div class="viz"><div class="blob" style="width:120px;height:120px;background:var(--violet);top:30%;left:30%"></div><div class="feed"><div></div><div></div><div></div><div></div></div></div>
+      </div>
+
+      <div class="card col-3">
+        <h3>Magic visuals for any frame</h3>
+        <p>Drop in placeholder art, then let Spark replace it with on-brand imagery in seconds.</p>
+        <div class="viz"><div class="feed" style="grid-template-columns:1fr 1fr 1fr"><div></div><div></div><div></div></div></div>
+      </div>
+      <div class="card col-3">
+        <h3>Goodbye, Lorem Ipsum</h3>
+        <p>Real copy that fits the box, written in your product's voice.</p>
+        <div class="viz"><div class="lorem">Aa<br>Real words.</div></div>
+      </div>
+
+      <div class="card col-2">
+        <h3>A spellbook of styles</h3>
+        <p>Save prompts and recipes, reuse them across every project.</p>
+        <div class="viz"><div class="swatches"><i style="background:var(--violet)"></i><i style="background:var(--pink)"></i><i style="background:var(--amber)"></i><i style="background:var(--cyan)"></i><i style="background:var(--green)"></i></div></div>
+      </div>
+      <div class="card col-2">
+        <h3>Rename, magically</h3>
+        <p>Spark reads each layer and names it something a human can find.</p>
+        <div class="viz"><div class="layers"><div class="lr"><span class="h"></span>Hero / heading<span class="nm" style="margin-left:auto">L01</span></div><div class="lr"><span class="h"></span>CTA / button<span class="nm" style="margin-left:auto">L02</span></div><div class="lr"><span class="h"></span>Avatar group<span class="nm" style="margin-left:auto">L03</span></div></div></div>
+      </div>
+      <div class="card col-2">
+        <h3>New tricks, weekly</h3>
+        <p>Fresh AI abilities ship to Spark every Friday.</p>
+        <div class="viz"><div class="gradient-orb" style="width:70px;height:70px"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SAGE -->
+  <section class="product wrap" id="sage" style="--acc:var(--green)" data-screen-label="Sage">
+    <div class="emblem" style="background:rgba(79,214,160,0.12);box-shadow:0 0 40px rgba(79,214,160,0.28)"><div class="core" style="background:radial-gradient(circle at 35% 30%,#9bf0cf,#2fae7e)"></div></div>
+    <h2>Sage</h2>
+    <p class="tag">Your AI design companion in the canvas.</p>
+    <span class="chip"><span class="dot"></span>sage.nebula</span>
+
+    <div class="bento">
+      <div class="card col-3">
+        <h3>Turns ideas into designs</h3>
+        <p>Sage builds fully-editable UI from a one-line product description — every layer native, nothing flattened.</p>
+        <div class="viz"><div class="mockbar">An app to track migratory birds<span class="gen">Generate</span></div></div>
+      </div>
+      <div class="card col-3">
+        <h3>Suggests as you design</h3>
+        <p>Quiet, in-context nudges that improve flow and accessibility while you work.</p>
+        <div class="viz"><div class="toolbar"><span></span><span class="on"></span><span></span><span></span><span></span></div></div>
+      </div>
+
+      <div class="card col-3">
+        <h3>Iterates without limits</h3>
+        <p>Ask for ten directions and keep the one that sings — Sage never gets tired.</p>
+        <div class="viz"><div class="feed"><div></div><div></div><div></div><div></div></div></div>
+      </div>
+      <div class="card col-3">
+        <h3>Speaks your design system</h3>
+        <p>Sage reads your tokens and components, then produces work that already matches.</p>
+        <div class="viz"><div class="swatches"><i style="background:var(--green)"></i><i style="background:var(--cyan)"></i><i style="background:var(--violet)"></i><i style="background:#fff"></i><i style="background:var(--panel-2);border:1px solid var(--line)"></i></div></div>
+      </div>
+
+      <div class="card col-2">
+        <h3>Smart elements</h3>
+        <p>Reusable blocks that adapt to whatever data you feed them.</p>
+        <div class="viz"><div class="layers"><div class="lr"><span class="h"></span>Pricing table</div><div class="lr"><span class="h"></span>Testimonial</div></div></div>
+      </div>
+      <div class="card col-2">
+        <h3>Invite the whole crew</h3>
+        <p>Sage works alongside everyone in the file, in real time.</p>
+        <div class="viz"><div class="swatches"><i style="background:var(--pink);border-radius:50%"></i><i style="background:var(--amber);border-radius:50%"></i><i style="background:var(--cyan);border-radius:50%"></i></div></div>
+      </div>
+      <div class="card col-2">
+        <h3>Just ask Sage</h3>
+        <p>A chat that actually understands your layers.</p>
+        <div class="viz"><div class="chatui"><div class="bubble u">Tighten this hero</div><div class="bubble b">Done — reduced to a 4-col grid.</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RELAY -->
+  <section class="product wrap" id="relay" style="--acc:var(--amber)" data-screen-label="Relay">
+    <div class="emblem" style="background:rgba(255,176,84,0.12);box-shadow:0 0 40px rgba(255,176,84,0.28)"><div class="core gradient-orb" style="width:30px;height:30px"></div></div>
+    <h2>Relay</h2>
+    <p class="tag">Automate design chores with a single click.</p>
+    <span class="chip"><span class="dot"></span>relay.nebula</span>
+
+    <div class="bento">
+      <div class="card col-3">
+        <h3>Sweep away the busywork</h3>
+        <p>Rename, resize, restyle and export across hundreds of frames at once.</p>
+        <div class="viz"><div class="feed" style="grid-template-columns:1fr 1fr 1fr"><div></div><div></div><div></div></div></div>
+      </div>
+      <div class="card col-3">
+        <h3>Powerful flows, no code</h3>
+        <p>Chain steps into a recipe with a visual builder — no scripting required.</p>
+        <div class="viz"><div class="layers"><div class="lr"><span class="h"></span>1 · Find all images</div><div class="lr"><span class="h"></span>2 · Compress + export</div><div class="lr"><span class="h"></span>3 · Push to repo</div></div></div>
+      </div>
+
+      <div class="card col-3">
+        <h3>Sync with your team</h3>
+        <p>Share automations so the whole studio runs the same playbook.</p>
+        <div class="viz"><div class="iconwall" style="grid-template-columns:repeat(5,1fr)"><span>◆</span><span>★</span><span>◐</span><span>⬡</span><span>✦</span><span>♪</span><span>✿</span><span>⚑</span><span>◇</span><span>✚</span></div></div>
+      </div>
+      <div class="card col-3">
+        <h3>Tap into the community</h3>
+        <p>Browse hundreds of ready-made recipes built by designers like you.</p>
+        <div class="viz"><div class="feed"><div></div><div></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOOM -->
+  <section class="product wrap" id="loom" style="--acc:var(--cyan)" data-screen-label="Loom">
+    <div class="preheader">The frontier</div>
+    <div class="emblem" style="background:rgba(98,216,255,0.1);box-shadow:0 0 50px rgba(98,216,255,0.3)"><div class="core gradient-orb" style="width:34px;height:34px"></div></div>
+    <h2>Loom</h2>
+    <p class="tag">An interface model made by designers, for designers.</p>
+    <span class="chip"><span class="dot"></span>loom.nebula · coming soon</span>
+
+    <div class="bento">
+      <div class="card col-3">
+        <h3>A model trained on craft</h3>
+        <p>Loom learns from real, production-grade interfaces — not screenshots of the web.</p>
+        <div class="viz"><div class="gradient-orb"></div></div>
+      </div>
+      <div class="card col-3">
+        <h3>The Loom playground</h3>
+        <p>Describe a screen and Loom returns a living, editable design you can ship from.</p>
+        <div class="viz"><div class="mockbar">A calm meditation onboarding<span class="gen">Generate</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="wrap">
+      <div class="foot-grid">
+        <div class="foot-brand">
+          <a class="logo" href="#"><span class="moon"></span>Nebula</a>
+          <p>Creative tools from the cosmos.</p>
+        </div>
+        <div class="foot-col">
+          <h4>Products</h4>
+          <a href="#spark">Spark</a>
+          <a href="#sage">Sage</a>
+          <a href="#relay">Relay</a>
+          <a href="#loom">Loom</a>
+        </div>
+        <div class="foot-col">
+          <h4>Company</h4>
+          <a href="#">About</a>
+          <a href="#">Careers</a>
+          <a href="#">Blog</a>
+          <a href="#">Contact</a>
+        </div>
+        <div class="foot-col">
+          <h4>Legal</h4>
+          <a href="#">Privacy</a>
+          <a href="#">Terms</a>
+        </div>
+      </div>
+      <div class="foot-base">
+        <span>© 2026 Nebula Labs</span>
+        <span>Made among the stars</span>
+      </div>
+    </div>
+  </footer>
+
+</div>
+
+<template id="__bundler_thumbnail">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#08080b"/><circle cx="50" cy="50" r="18" fill="url(#g)"/><circle cx="50" cy="50" r="30" fill="none" stroke="#7b6bff" stroke-width="0.6" opacity="0.5"/><circle cx="80" cy="50" r="3" fill="#7b6bff"/><defs><linearGradient id="g" x1="0" x2="1"><stop offset="0.5" stop-color="#fff"/><stop offset="0.5" stop-color="#1a1a22"/></linearGradient></defs></svg>
+</template>
+
+<script>
+  // Starfield
+  const cv = document.getElementById("stars");
+  const cx = cv.getContext("2d");
+  let stars = [], W, H, dpr = Math.min(window.devicePixelRatio || 1, 2);
+  function resize() {
+    W = cv.width = innerWidth * dpr; H = cv.height = innerHeight * dpr;
+    cv.style.width = innerWidth + "px"; cv.style.height = innerHeight + "px";
+    const count = Math.floor((innerWidth * innerHeight) / 5500);
+    stars = Array.from({ length: count }, () => ({
+      x: Math.random() * W, y: Math.random() * H,
+      r: (Math.random() * 1.1 + 0.2) * dpr,
+      a: Math.random() * 0.6 + 0.2,
+      tw: Math.random() * 0.02 + 0.004,
+      ph: Math.random() * Math.PI * 2,
+    }));
+  }
+  function tick(t) {
+    cx.clearRect(0, 0, W, H);
+    for (const s of stars) {
+      const a = s.a + Math.sin(t * s.tw + s.ph) * 0.25;
+      cx.globalAlpha = Math.max(0, Math.min(1, a));
+      cx.fillStyle = "#ffffff";
+      cx.beginPath(); cx.arc(s.x, s.y, s.r, 0, 6.28); cx.fill();
+    }
+    requestAnimationFrame(tick);
+  }
+  addEventListener("resize", resize);
+  resize();
+  requestAnimationFrame(tick);
+</script>
+</body>
+</html>

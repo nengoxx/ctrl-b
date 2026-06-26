@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ctrl-b · cosmos</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0a0a0d;
+    --bg-2: #0e0e13;
+    --panel: #14141a;
+    --panel-2: #1a1a22;
+    --line: rgba(255,255,255,0.08);
+    --line-2: rgba(255,255,255,0.14);
+    --ink: #f3f2f7;
+    --ink-2: #b6b4c2;
+    --ink-3: #76747f;
+    --ink-4: #46454f;
+    --violet: #8a78ff;
+    --violet-2: #b3a7ff;
+    --green: #4fd6a0;
+    --amber: #ff9d3c;
+    --cyan: #56cfee;
+    --red: #ff5a6a;
+    --acc: var(--violet);
+  }
+  [data-theme="light"] {
+    --bg: #e9e7f0; --bg-2: #f1eff6; --panel: #ffffff; --panel-2: #f5f4fa;
+    --line: rgba(20,16,40,0.10); --line-2: rgba(20,16,40,0.16);
+    --ink: #16131f; --ink-2: #4b4858; --ink-3: #807d8d; --ink-4: #aaa7b5;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: radial-gradient(ellipse at 50% 30%, #121018, var(--bg) 70%);
+    color: var(--ink); font-family: "Space Grotesk", system-ui, sans-serif;
+    font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+    height: 100dvh; overflow: hidden;
+  }
+  [data-theme="light"] body { background: radial-gradient(ellipse at 50% 30%, #f4f2fb, var(--bg) 70%); }
+  #stars { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  [data-theme="light"] #stars { opacity: 0.3; }
+  .app { position: relative; z-index: 1; height: 100dvh; display: flex; flex-direction: column; }
+  .serif { font-family: "Instrument Serif", serif; font-style: italic; font-weight: 400; }
+
+  /* App bar */
+  .appbar { display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px; z-index: 30; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
+  .brand .moon { position: relative; width: 16px; height: 16px; border-radius: 50%; background: linear-gradient(157deg, #fff, #d8d8df); box-shadow: inset 0 -2px 3px rgba(110,110,122,0.35); }
+  .brand .moon::before { content: ""; position: absolute; left: 47%; top: 50%; transform: translateY(-50%); width: 5px; height: 10px; border-radius: 1px 5px 5px 1px; background: #15151b; }
+  .brand .st { font-size: 11px; color: var(--ink-3); letter-spacing: 0.08em; }
+  .grow { flex: 1; }
+  .iconbtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line-2); color: var(--ink-2); transition: background 0.15s, color 0.15s; }
+  .iconbtn:active { background: var(--panel-2); color: var(--ink); }
+  .iconbtn svg { display: block; }
+
+  /* Tabs */
+  .tab { display: none; flex: 1; min-height: 0; }
+  .tab.active { display: flex; flex-direction: column; }
+
+  /* ===== FLEET ===== */
+  #tab-fleet { position: relative; }
+  .viewport { position: relative; width: 100%; height: 100%; overflow: hidden; transition: height 0.55s cubic-bezier(.4,0,.2,1); }
+  #tab-fleet.focused .viewport { height: 47%; }
+
+  .solar { position: absolute; left: 0; top: 0; width: 380px; height: 380px; transform-origin: 0 0; will-change: transform; }
+  .ring { position: absolute; left: 190px; top: 190px; transform: translate(-50%,-50%); border: 1px solid rgba(255,255,255,0.055); border-radius: 50%; }
+  [data-theme="light"] .ring { border-color: rgba(20,16,40,0.07); }
+  .core-glow { position: absolute; left: 190px; top: 190px; transform: translate(-50%,-50%); width: 260px; height: 260px; border-radius: 50%; background: var(--acc); filter: blur(80px); opacity: 0.16; transition: background 0.3s; }
+
+  /* Central orb — flat 2.5D white coin with a see-through "D" cutout */
+  .sun { position: absolute; left: 190px; top: 190px; transform: translate(-50%,-50%); width: 94px; height: 94px; cursor: pointer; filter: drop-shadow(0 11px 15px rgba(0,0,0,0.5)); }
+  .sun svg { display: block; width: 94px; height: 94px; }
+  [data-theme="light"] .sun { filter: drop-shadow(0 9px 13px rgba(0,0,0,0.16)); }
+
+  /* incident dot */
+  .reddot { --face: #ff5a6a; position: absolute; left: 0; top: 0; width: 13px; height: 13px; border-radius: 50%; will-change: transform; overflow: hidden;
+    background: radial-gradient(circle at 50% 36%, color-mix(in srgb, var(--face) 90%, #fff) 0%, var(--face) 52%, color-mix(in srgb, var(--face) 84%, #000) 100%);
+    box-shadow: 0 0 10px rgba(255,90,106,0.6), 0 2px 4px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,255,255,0.25), inset 0 -2px 3px rgba(0,0,0,0.3); }
+  .reddot::before { content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+    background-image: radial-gradient(rgba(255,255,255,0.5) 0.5px, transparent 0.6px), radial-gradient(rgba(0,0,0,0.5) 0.5px, transparent 0.6px);
+    background-size: 4px 4px, 5px 5px; background-position: 0 0, 2px 1px; opacity: 0.12; mix-blend-mode: overlay; }
+
+  /* Planet buttons */
+  .pbtn { all: unset; position: absolute; left: 0; top: 0; cursor: pointer; will-change: transform; z-index: 4; }
+  .hit { position: absolute; left: 0; top: 0; width: 58px; height: 58px; transform: translate(-50%,-50%); border-radius: 50%; }
+  /* ===== Matte coin planets ===== */
+  .planet { position: absolute; left: 0; top: 0; transform: translate(-50%,-50%); border-radius: 50%; transition: filter 0.4s; display: grid; place-items: center; overflow: hidden;
+    background:
+      radial-gradient(circle at 50% 36%, color-mix(in srgb, var(--face) 90%, #fff) 0%, var(--face) 52%, color-mix(in srgb, var(--face) 84%, #000) 100%);
+    box-shadow: 0 3px 6px rgba(0,0,0,0.45), inset 0 2px 3px rgba(255,255,255,0.22), inset 0 -3px 6px rgba(0,0,0,0.28); }
+  /* fine matte grain */
+  .planet::before { content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+    background-image: radial-gradient(rgba(255,255,255,0.5) 0.5px, transparent 0.6px), radial-gradient(rgba(0,0,0,0.5) 0.5px, transparent 0.6px);
+    background-size: 4px 4px, 5px 5px; background-position: 0 0, 2px 1px; opacity: 0.10; mix-blend-mode: overlay; }
+  /* engraved / carved symbol, centered */
+  .planet .sym { position: relative; z-index: 1; font-style: normal; line-height: 1; font-weight: 800; font-size: 0.46em;
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    color: color-mix(in srgb, var(--face) 60%, #000);
+    text-shadow: 0 1px 0 color-mix(in srgb, var(--face) 52%, #fff), 0 -0.5px 1px rgba(0,0,0,0.4);
+    user-select: none; }
+  .planet.off { filter: grayscale(0.7) brightness(0.5); }
+  .pbtn.sel .planet { box-shadow: 0 0 0 3px color-mix(in srgb, var(--bg) 40%, transparent), 0 0 0 4px rgba(255,255,255,0.6), 0 3px 6px rgba(0,0,0,0.45); }
+
+  /* faces + sizes */
+  .p-violet { --face: #7d6bf0; width: 48px; height: 48px; }
+  .p-violet .sym { font-size: 22px; }
+  .p-amber  { --face: #ff9d3c; width: 40px; height: 40px; }
+  .p-amber  .sym { font-size: 18px; }
+  .p-cyan   { --face: #56cfee; width: 26px; height: 26px; }
+  .p-cyan   .sym { font-size: 12px; }
+  .p-mars   { --face: #3b3b46; width: 44px; height: 44px; }
+  .p-mars   .sym { font-size: 19px; color: color-mix(in srgb, var(--face) 42%, #000); text-shadow: 0 1px 0 color-mix(in srgb, var(--face) 60%, #fff); }
+  .p-green  { --face: #4fd6a0; width: 22px; height: 22px; }
+  .p-green  .sym { font-size: 10px; }
+
+  /* online halo pulse */
+  .planet.on::after { }
+  .halo { position: absolute; left: 0; top: 0; transform: translate(-50%,-50%); border-radius: 50%; border: 1px solid currentColor; opacity: 0; pointer-events: none; animation: halo 3.2s ease-out infinite; }
+  .halo.violet-h { color: var(--violet); } .halo.amber-h { color: var(--amber); } .halo.cyan-h { color: var(--cyan); } .halo.green-h { color: var(--green); }
+  @keyframes halo { 0% { opacity: 0.45; transform: translate(-50%,-50%) scale(0.9); } 100% { opacity: 0; transform: translate(-50%,-50%) scale(1.7); } }
+  @media (prefers-reduced-motion: reduce) { .halo { animation: none; display: none; } }
+
+  /* hint + back */
+  .hint { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); font-size: 12px; letter-spacing: 0.06em; color: var(--ink-3); transition: opacity 0.4s; pointer-events: none; }
+  #tab-fleet.focused .hint { opacity: 0; }
+  .backbtn { position: absolute; left: 16px; top: 14px; z-index: 6; display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px; background: color-mix(in srgb, var(--panel) 80%, transparent); border: 1px solid var(--line-2); color: var(--ink-2); font-size: 12.5px; cursor: pointer; backdrop-filter: blur(8px); opacity: 0; transform: translateY(-6px); pointer-events: none; transition: opacity 0.35s, transform 0.35s; }
+  #tab-fleet.focused .backbtn { opacity: 1; transform: none; pointer-events: auto; }
+
+  /* ===== Data panel ===== */
+  .panel { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding: 0 18px 14px; transform: translateY(8px); opacity: 0; transition: opacity 0.45s 0.1s, transform 0.45s 0.1s; pointer-events: none; }
+  #tab-fleet.focused .panel { opacity: 1; transform: none; pointer-events: auto; }
+  .panel .head { text-align: center; padding: 6px 0 0; }
+  .panel .led-row { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+  .panel .led-row .led { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .panel .led-row.off .led { background: var(--ink-4); box-shadow: none; }
+  .panel .dname { font-size: 40px; font-weight: 700; letter-spacing: -0.035em; line-height: 1; margin: 8px 0 0; }
+  .panel .drole { color: var(--ink-2); font-size: 13px; margin-top: 7px; font-variant-numeric: tabular-nums; }
+  .panel .chip { display: inline-flex; align-items: center; gap: 7px; margin-top: 14px; font-size: 12.5px; color: var(--ink-2); padding: 6px 14px; border-radius: 999px; background: rgba(255,255,255,0.04); border: 1px solid var(--line); }
+  .panel .chip .sp { color: var(--acc); }
+
+  .stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-top: 20px; }
+  .stat { background: linear-gradient(180deg, var(--panel), var(--bg-2)); border: 1px solid var(--line); border-radius: 13px; padding: 11px 8px; text-align: center; }
+  .stat .v { font-size: 19px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
+  .stat .v small { font-size: 10px; color: var(--ink-3); font-weight: 500; }
+  .stat .l { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-top: 5px; }
+
+  .graph { position: relative; height: 56px; margin-top: 12px; border: 1px solid var(--line); border-radius: 13px; background: var(--panel); overflow: hidden; }
+  .graph canvas { display: block; width: 100%; height: 100%; }
+  .graph .lg { position: absolute; left: 11px; bottom: 6px; font-size: 9.5px; color: var(--ink-3); letter-spacing: 0.04em; }
+
+  .actionbar { display: flex; align-items: center; gap: 10px; margin: 16px auto 0; padding: 7px 8px 7px 16px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line-2); position: relative; }
+  .actionbar::after { content: ""; position: absolute; left: 14%; right: 14%; bottom: -12px; height: 18px; background: var(--acc); filter: blur(17px); opacity: 0.5; border-radius: 50%; z-index: -1; }
+  .actionbar .st { flex: 1; text-align: left; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .actionbar .act { all: unset; cursor: pointer; padding: 9px 18px; border-radius: 999px; font-size: 12.5px; font-weight: 600; transition: opacity 0.2s, transform 0.15s; }
+  .actionbar .act:active { transform: scale(0.96); }
+  .actionbar .act.wake { background: var(--acc); color: #08080b; }
+  .actionbar .act.stop { background: rgba(255,90,106,0.14); color: var(--red); border: 1px solid rgba(255,90,106,0.35); }
+  .actionbar .act.busy { opacity: 0.5; pointer-events: none; }
+
+  .svc-head { display: flex; align-items: baseline; gap: 8px; padding: 26px 2px 4px; }
+  .svc-head .t { font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); }
+  .svc-head .grow { flex: 1; }
+  .svc-head .n { font-size: 10.5px; color: var(--ink-3); }
+  .svcs { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 8px; }
+  .svc { display: flex; align-items: center; gap: 10px; padding: 11px 13px; background: linear-gradient(180deg, var(--panel), var(--bg-2)); border: 1px solid var(--line); border-radius: 13px; text-decoration: none; color: inherit; min-height: 52px; }
+  .svc .led { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-4); flex: none; }
+  .svc.on .led { background: var(--green); box-shadow: 0 0 7px var(--green); }
+  .svc .info { min-width: 0; flex: 1; }
+  .svc .info .nm { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .svc.off .info .nm { color: var(--ink-2); }
+  .svc .info .ad { font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .svc .arrow { color: var(--acc); display: inline-flex; }
+  .svc.off .arrow { color: var(--ink-4); }
+  .svc-empty { grid-column: span 2; text-align: center; color: var(--ink-3); font-size: 12px; padding: 16px; border: 1px dashed var(--line-2); border-radius: 13px; }
+
+  /* ===== AGENT ===== */
+  .agent { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 18px 0; display: flex; flex-direction: column; }
+  .agent.empty { justify-content: center; text-align: center; }
+  .agent .hero-star { font-size: 30px; color: var(--acc); filter: drop-shadow(0 0 18px var(--acc)); }
+  .agent h2 { font-family: "Instrument Serif", serif; font-style: italic; font-weight: 400; font-size: 34px; margin: 12px 0 0; }
+  .agent .hp { color: var(--ink-3); font-size: 13px; margin: 6px 0 0; }
+  .composer { margin-top: 22px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 22px; padding: 14px 15px 11px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); text-align: left; }
+  .composer textarea { all: unset; display: block; width: 100%; font: inherit; font-size: 15px; color: var(--ink); min-height: 22px; resize: none; }
+  .composer textarea::placeholder { color: var(--ink-3); }
+  .composer .crow { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .composer .cbtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--ink-2); }
+  .composer .cbtn:active { background: var(--panel-2); }
+  .composer .model { font-size: 12px; color: var(--ink-2); }
+  .composer .model .eff { color: var(--ink-3); }
+  .composer .send { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 999px; background: var(--acc); color: #08080b; }
+  .composer .mic.rec { color: var(--red); border-color: rgba(255,90,106,0.4); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+  .chip2 { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--ink-2); font-size: 12.5px; }
+  .chip2:active { background: var(--panel-2); color: var(--ink); }
+  .chatlog { display: flex; flex-direction: column; gap: 14px; padding-top: 4px; }
+  .msg { max-width: 88%; }
+  .msg .who { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 5px; }
+  .msg.user { align-self: flex-end; }
+  .msg.user .who { text-align: right; }
+  .msg.user .bb { background: var(--acc); color: #08080b; border-radius: 16px 16px 4px 16px; padding: 10px 13px; font-size: 14px; }
+  .msg.bot .bb { color: var(--ink); font-size: 14px; line-height: 1.5; }
+  .msg.cmd .bb { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--ink-2); white-space: pre-wrap; }
+  .msg.cmd .who { color: var(--acc); }
+
+  /* ===== SETTINGS ===== */
+  .settings { flex: 1; min-height: 0; overflow-y: auto; padding: 0 18px; }
+  .sec { padding: 22px 2px 10px; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .confrow { display: flex; align-items: center; gap: 14px; padding: 14px 15px; border-top: 1px solid var(--line); min-height: 56px; }
+  .confrow:first-child { border-top: 0; }
+  .confrow .k { flex: 1; min-width: 0; }
+  .confrow .k .label { font-size: 14px; }
+  .confrow .k .desc { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+  .seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; }
+  .seg button { all: unset; cursor: pointer; padding: 6px 13px; border-radius: 999px; font-size: 12px; color: var(--ink-2); }
+  .seg button.active { background: var(--acc); color: #08080b; font-weight: 600; }
+  .switch { display: inline-flex; cursor: pointer; }
+  .switch .knob { width: 42px; height: 25px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line-2); position: relative; transition: background 0.2s; }
+  .switch .knob::after { content: ""; position: absolute; left: 3px; top: 3px; width: 17px; height: 17px; border-radius: 50%; background: var(--ink-3); transition: transform 0.2s, background 0.2s; }
+  .switch.on .knob { background: var(--acc); border-color: transparent; }
+  .switch.on .knob::after { transform: translateX(17px); background: #fff; }
+  .confrow input { all: unset; flex: 1; min-width: 0; max-width: 160px; padding: 8px 11px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); font: inherit; font-size: 13px; text-align: right; }
+  .pswatch { display: inline-flex; gap: 10px; }
+  .pswatch button { all: unset; cursor: pointer; width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; box-shadow: 0 2px 5px rgba(0,0,0,0.4); }
+  .pswatch button.active { border-color: var(--ink); }
+
+  /* ===== Tab bar ===== */
+  .tabbar { display: grid; grid-template-columns: repeat(3,1fr); padding: 6px 10px calc(8px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--bg) 84%, transparent); backdrop-filter: blur(14px); border-top: 1px solid var(--line); }
+  .tabbtn { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 7px; border-radius: 12px; color: var(--ink-3); }
+  .tabbtn.active { color: var(--ink); }
+  .tabbtn.active .ic { background: color-mix(in srgb, var(--acc) 18%, transparent); color: var(--acc); }
+  .tabbtn .ic { width: 38px; height: 26px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; }
+  .tabbtn .ic svg { display: block; }
+  .tabbtn .lbl { font-size: 10.5px; font-weight: 500; }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+</style>
+</head>
+<body data-theme="dark">
+<canvas id="stars"></canvas>
+<div class="app">
+
+  <div class="appbar">
+    <div class="brand"><span class="moon"></span>ctrl·b<span class="st" id="onlineStat">· 3/5 online</span></div>
+    <div class="grow"></div>
+    <button class="iconbtn" id="themeToggle" aria-label="toggle theme">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+  </div>
+
+  <!-- FLEET TAB -->
+  <div class="tab active" id="tab-fleet" data-screen-label="05 Cosmos · Fleet">
+    <div class="viewport" id="viewport">
+      <div class="solar" id="solar">
+        <div class="core-glow"></div>
+        <div class="ring" style="width:110px;height:110px"></div>
+        <div class="ring" style="width:160px;height:160px"></div>
+        <div class="ring" style="width:218px;height:218px"></div>
+        <div class="ring" style="width:280px;height:280px"></div>
+        <div class="ring" style="width:340px;height:340px"></div>
+        <div class="sun" id="sun" title="gateway · .1">
+          <svg viewBox="0 0 94 94" aria-hidden="true">
+            <defs>
+              <linearGradient id="coinGrad" x1="0" y1="0" x2="0.45" y2="1">
+                <stop offset="0" stop-color="#ffffff"/>
+                <stop offset="0.5" stop-color="#f1f1f5"/>
+                <stop offset="1" stop-color="#d6d6dd"/>
+              </linearGradient>
+            </defs>
+            <path fill="url(#coinGrad)" fill-rule="evenodd"
+              d="M47,0 A47,47 0 1,0 47,94 A47,47 0 1,0 47,0 Z M44,19 L44,75 Q44,80.5 49.5,79 A38,33 0 0,0 49.5,15 Q44,13.5 44,19 Z"/>
+          </svg>
+        </div>
+        <div class="reddot" id="reddot"></div>
+
+        <button class="pbtn" data-name="atlas"><span class="hit"></span><span class="halo mars-h"></span><span class="planet p-mars off"><span class="sym">&#9632;</span></span></button>
+        <button class="pbtn" data-name="titan"><span class="hit"></span><span class="halo amber-h"></span><span class="planet p-amber on"><span class="sym">&#9670;</span></span></button>
+        <button class="pbtn" data-name="pegasus"><span class="hit"></span><span class="halo violet-h"></span><span class="planet p-violet on"><span class="sym">&#9733;</span></span></button>
+        <button class="pbtn" data-name="mercury"><span class="hit"></span><span class="halo cyan-h"></span><span class="planet p-cyan on"><span class="sym">&#9650;</span></span></button>
+        <button class="pbtn" data-name="vega"><span class="hit"></span><span class="halo green-h"></span><span class="planet p-green off"><span class="sym">&#11042;</span></span></button>
+      </div>
+      <div class="hint" id="hint">Tap a world to focus</div>
+      <button class="backbtn" id="backbtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 6l-6 6 6 6"/></svg>All systems</button>
+    </div>
+
+    <div class="panel" id="panel"></div>
+  </div>
+
+  <!-- AGENT TAB -->
+  <div class="tab" id="tab-agent" data-screen-label="05 Cosmos · Agent">
+    <div class="agent empty" id="agent">
+      <div id="emptyState">
+        <div class="hero-star">✳</div>
+        <h2>Mission control</h2>
+        <p class="hp">Ask the agent to scan, wake, or command any world.</p>
+        <div class="composer">
+          <form id="chatform" onsubmit="event.preventDefault()" style="margin:0">
+            <textarea id="chatinput" rows="1" placeholder="How can I help you today?" autocomplete="off"></textarea>
+            <div class="crow">
+              <button type="button" class="cbtn" aria-label="attach"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
+              <span class="grow" style="flex:1"></span>
+              <span class="model">qwen2.5:7b <span class="eff">· local</span></span>
+              <button type="button" class="cbtn mic" id="mic" aria-label="dictate"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg></button>
+              <button type="submit" class="send" aria-label="send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+            </div>
+          </form>
+        </div>
+        <div class="chips">
+          <button class="chip2" data-q="Is pegasus alive?">Health check</button>
+          <button class="chip2" data-q="Wake vega and start minecraft">Wake &amp; run</button>
+          <button class="chip2" data-q="Summarize today's incidents">Incidents</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS TAB -->
+  <div class="tab" id="tab-conf" data-screen-label="05 Cosmos · Settings">
+    <div class="settings">
+      <div class="sec">Appearance</div>
+      <div class="card">
+        <div class="confrow"><div class="k"><div class="label">Theme</div><div class="desc">Deep space or daylight</div></div><div class="seg"><button class="active">Dark</button><button>Light</button><button>Auto</button></div></div>
+        <div class="confrow"><div class="k"><div class="label">Star accent</div><div class="desc">Colour of the system</div></div>
+          <div class="pswatch" id="swatches">
+            <button class="active" data-c="violet" style="background:radial-gradient(circle at 33% 28%,#d7d0ff,#7b66f0)"></button>
+            <button data-c="cyan" style="background:radial-gradient(circle at 33% 28%,#e0fbff,#56cfee)"></button>
+            <button data-c="green" style="background:radial-gradient(circle at 33% 28%,#d9fbe9,#4fd6a0)"></button>
+            <button data-c="amber" style="background:radial-gradient(circle at 33% 28%,#ffe6ad,#ff9433)"></button>
+          </div>
+        </div>
+        <div class="confrow"><div class="k"><div class="label">Orbital motion</div><div class="desc">Animate planets &amp; stars</div></div><div class="switch on" id="motionSw"><div class="knob"></div></div></div>
+      </div>
+      <div class="sec">Agent</div>
+      <div class="card">
+        <div class="confrow"><div class="k"><div class="label">Backend</div><div class="desc">Local model or cloud API</div></div><div class="seg"><button class="active">Local</button><button>Cloud</button></div></div>
+        <div class="confrow"><div class="k"><div class="label">Endpoint</div></div><input type="text" value="localhost:11434"/></div>
+        <div class="confrow"><div class="k"><div class="label">Temperature</div></div><input type="text" value="0.4"/></div>
+      </div>
+      <div class="sec">Notifications</div>
+      <div class="card">
+        <div class="confrow"><div class="k"><div class="label">Discord webhook</div></div><div class="switch on" onclick="this.classList.toggle('on')"><div class="knob"></div></div></div>
+        <div class="confrow"><div class="k"><div class="label">On wake</div></div><div class="switch on" onclick="this.classList.toggle('on')"><div class="knob"></div></div></div>
+        <div class="confrow"><div class="k"><div class="label">On incident</div></div><div class="switch on" onclick="this.classList.toggle('on')"><div class="knob"></div></div></div>
+      </div>
+      <div style="height:20px"></div>
+    </div>
+  </div>
+
+  <nav class="tabbar">
+    <button class="tabbtn active" data-tab="fleet">
+      <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="4.4"/><ellipse cx="12" cy="12" rx="10" ry="4.4" transform="rotate(62 12 12)"/></svg></span>
+      <span class="lbl">Fleet</span>
+    </button>
+    <button class="tabbtn" data-tab="agent">
+      <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-3.7A8.4 8.4 0 1 1 21 11.5z"/></svg></span>
+      <span class="lbl">Agent</span>
+    </button>
+    <button class="tabbtn" data-tab="conf">
+      <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9 2.6h.1A1.6 1.6 0 0 0 11 1.1V1a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.1a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.6 1z"/></svg></span>
+      <span class="lbl">Settings</span>
+    </button>
+  </nav>
+</div>
+
+<script>
+  const DEVICES = [
+    { name: "pegasus", role: "NAS · Linux",       ip: "192.168.1.10", on: true,  uptime: "14d 06h", ping: 1.8,  cpu: 12, temp: 42 },
+    { name: "titan",   role: "Render · Linux",    ip: "192.168.1.25", on: true,  uptime: "06d 19h", ping: 3.1,  cpu: 72, temp: 68 },
+    { name: "mercury", role: "Media · Windows",   ip: "192.168.1.15", on: true,  uptime: "02d 11h", ping: 2.4,  cpu: 28, temp: 54 },
+    { name: "atlas",   role: "Workstation · Win", ip: "192.168.1.12", on: false, uptime: "—",       ping: null, cpu: 0,  temp: 0  },
+    { name: "vega",    role: "Game · Linux",      ip: "192.168.1.20", on: false, uptime: "—",       ping: null, cpu: 0,  temp: 0  },
+  ];
+  const SERVICES = [
+    { name: "open-webui", host: "pegasus", port: 3000,  path: "" },
+    { name: "jellyfin",   host: "pegasus", port: 8096,  path: "" },
+    { name: "syncthing",  host: "pegasus", port: 8384,  path: "" },
+    { name: "comfyui",    host: "titan",   port: 8188,  path: "" },
+    { name: "llama.cpp",  host: "titan",   port: 8080,  path: "" },
+    { name: "ollama",     host: "titan",   port: 11434, path: "" },
+    { name: "plex",       host: "mercury", port: 32400, path: "/web" },
+    { name: "minecraft",  host: "vega",    port: 25565, path: "" },
+  ];
+  const arr = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17 17 7M9 7h8v8"/></svg>';
+  const dev = n => DEVICES.find(d => d.name === n);
+  const svcUp = s => { const h = dev(s.host); return h && h.on; };
+  const svcUrl = s => { const h = dev(s.host); return h ? `http://${h.ip}:${s.port}${s.path}` : "#"; };
+
+  const SUN = 190;
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let motion = !reduceMotion;
+  // Orbit config: r (radius), a (angle rad, 0=top cw), spd (rad/frame)
+  const ORBITS = {
+    pegasus: { r: 140, a:  1.75, spd:  0.00130 },
+    titan:   { r: 109, a:  1.25, spd: -0.00190 },
+    mercury: { r:  80, a:  2.70, spd:  0.00260 },
+    atlas:   { r: 140, a: -1.85, spd:  0.00075 },
+    vega:    { r: 170, a:  2.05, spd: -0.00045 },
+  };
+  const planets = [...document.querySelectorAll(".pbtn")].map(el => {
+    const name = el.dataset.name; const o = ORBITS[name];
+    return { name, el, halo: el.querySelector(".halo"), r: o.r, a: o.a, spd: o.spd };
+  });
+  const reddot = document.getElementById("reddot");
+  let redA = -0.6;
+  function pos(p) { return [SUN + p.r * Math.sin(p.a), SUN - p.r * Math.cos(p.a)]; }
+
+  const viewport = document.getElementById("viewport");
+  const solar = document.getElementById("solar");
+  const fleet = document.getElementById("tab-fleet");
+  let focus = null, zoom = 0, tx = 0, ty = 0;
+
+  function frame() {
+    if (motion) { for (const p of planets) p.a += p.spd; redA += 0.0034; }
+    for (const p of planets) {
+      const [px, py] = pos(p);
+      p.el.style.transform = `translate(${px}px,${py}px)`;
+      const sz = p.el.querySelector(".planet").offsetWidth || 30;
+      p.halo.style.width = p.halo.style.height = sz + "px";
+    }
+    const [rx, ry] = [SUN + 55 * Math.sin(redA), SUN - 55 * Math.cos(redA)];
+    reddot.style.transform = `translate(${rx}px,${ry}px) translate(-50%,-50%)`;
+
+    const vp = viewport.getBoundingClientRect();
+    const vw = vp.width, vh = vp.height;
+    const fit = Math.min(vw / 400, vh / 400, 1);
+    const ZOOM = 2.25;
+    zoom += ((focus ? 1 : 0) - zoom) * 0.11;
+    const S = fit + (ZOOM - fit) * zoom;
+    let dtx, dty;
+    if (focus) {
+      const p = planets.find(x => x.name === focus);
+      const [px, py] = pos(p);
+      dtx = vw / 2 - S * px; dty = vh * 0.44 - S * py;
+    } else {
+      dtx = vw / 2 - S * SUN; dty = vh / 2 - S * SUN;
+    }
+    tx += (dtx - tx) * 0.13; ty += (dty - ty) * 0.13;
+    solar.style.transform = `translate(${tx}px,${ty}px) scale(${S})`;
+    requestAnimationFrame(frame);
+  }
+
+  function renderPlanetStates() {
+    for (const p of planets) {
+      const d = dev(p.name);
+      const pl = p.el.querySelector(".planet");
+      pl.classList.toggle("off", !d.on);
+      p.halo.style.display = d.on && motion && !reduceMotion ? "" : "none";
+      p.el.classList.toggle("sel", p.name === focus);
+    }
+    const on = DEVICES.filter(d => d.on).length;
+    document.getElementById("onlineStat").textContent = `· ${on}/5 online`;
+  }
+
+  function renderPanel() {
+    const d = dev(focus); if (!d) return;
+    const mine = SERVICES.filter(s => s.host === d.name);
+    document.getElementById("panel").innerHTML = `
+      <div class="head">
+        <div class="led-row ${d.on?"":"off"}"><span class="led"></span>${d.on?"Online":"Dormant"} · ${d.role}</div>
+        <div class="dname">${d.name}</div>
+        <div class="drole">${d.ip}${d.on?` · ${d.ping}ms · ${d.uptime} up`:" · wake-on-LAN ready"}</div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="v">${d.on?d.ping:"—"}<small>${d.on?"ms":""}</small></div><div class="l">Ping</div></div>
+        <div class="stat"><div class="v">${d.on?d.uptime.split("d")[0]:"—"}<small>${d.on?"d":""}</small></div><div class="l">Uptime</div></div>
+        <div class="stat"><div class="v">${d.on?d.cpu:"—"}<small>${d.on?"%":""}</small></div><div class="l">Load</div></div>
+        <div class="stat"><div class="v">${d.on?d.temp:"—"}<small>${d.on?"°":""}</small></div><div class="l">Temp</div></div>
+      </div>
+      <div class="graph"><canvas id="wf"></canvas><div class="lg">Live ping · last 60s</div></div>
+      <div class="actionbar">
+        <span class="st">${d.on?`◐ ${d.cpu}% load · ${d.temp}°C`:"Powered down"}</span>
+        ${d.on ? `<button class="act stop" data-act="shutdown">Shut down</button>` : `<button class="act wake" data-act="wake">Wake</button>`}
+      </div>
+      <div class="svc-head"><span class="t">Services</span><span class="grow"></span><span class="n">${mine.length?`${mine.length} on ${d.name}`:""}</span></div>
+      <div class="svcs">
+        ${mine.length===0 ? `<div class="svc-empty">No services on this world</div>` :
+          mine.map(s => { const on = svcUp(s); return `<a class="svc ${on?"on":"off"}" href="${svcUrl(s)}" target="_blank" rel="noopener"><span class="led"></span><span class="info"><span class="nm">${s.name}</span><span class="ad">:${s.port}</span></span><span class="arrow">${on?arr:""}</span></a>`; }).join("")}
+      </div>
+      <div style="height:14px"></div>`;
+    setupWave();
+  }
+
+  // ping waveform
+  let waveRAF = null;
+  function setupWave() {
+    const cv = document.getElementById("wf"); if (!cv) return;
+    const ctx = cv.getContext("2d"); const dpr = Math.min(devicePixelRatio||1, 2);
+    function size() { const r = cv.getBoundingClientRect(); cv.width = r.width*dpr; cv.height = r.height*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); }
+    size();
+    let t = 0;
+    if (waveRAF) cancelAnimationFrame(waveRAF);
+    function draw() {
+      const r = cv.getBoundingClientRect(); const w = r.width, h = r.height;
+      ctx.clearRect(0,0,w,h);
+      const d = dev(focus);
+      const col = getComputedStyle(document.documentElement).getPropertyValue("--acc").trim() || "#8a78ff";
+      if (!d || !d.on) { ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--ink-3").trim(); ctx.font="11px 'Space Grotesk',sans-serif"; ctx.fillText("Signal lost", 12, h/2+4); t+=0.05; waveRAF=requestAnimationFrame(draw); return; }
+      const pts = []; const amp = Math.min((d.ping||2)*5, h/2-8);
+      for (let x=0;x<=w;x+=2){ const p=x*0.06+t; const n=Math.sin(p)*0.6+Math.sin(p*2.3)*0.25+Math.sin(p*5.1)*0.12; pts.push([x, h/2+n*amp]); }
+      ctx.beginPath(); pts.forEach(([x,y],i)=> i?ctx.lineTo(x,y):ctx.moveTo(x,y)); ctx.lineTo(w,h); ctx.lineTo(0,h); ctx.closePath();
+      ctx.save(); ctx.globalAlpha=0.12; ctx.fillStyle=col; ctx.fill(); ctx.restore();
+      ctx.beginPath(); pts.forEach(([x,y],i)=> i?ctx.lineTo(x,y):ctx.moveTo(x,y)); ctx.strokeStyle=col; ctx.lineWidth=1.6; ctx.lineJoin="round"; ctx.stroke();
+      t+=0.06; waveRAF=requestAnimationFrame(draw);
+    }
+    draw();
+  }
+
+  function setFocus(name) {
+    focus = name;
+    fleet.classList.toggle("focused", !!name);
+    renderPlanetStates();
+    if (name) renderPanel();
+    else if (waveRAF) cancelAnimationFrame(waveRAF);
+  }
+
+  // interactions
+  document.querySelectorAll(".pbtn").forEach(b => b.addEventListener("click", () => setFocus(b.dataset.name)));
+  document.getElementById("sun").addEventListener("click", () => setFocus(null));
+  document.getElementById("backbtn").addEventListener("click", () => setFocus(null));
+
+  // wake / shutdown
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("[data-act]"); if (!a) return;
+    const d = dev(focus); if (!d) return;
+    a.classList.add("busy"); a.textContent = a.dataset.act === "wake" ? "Waking…" : "Stopping…";
+    setTimeout(() => {
+      d.on = a.dataset.act === "wake";
+      d.uptime = d.on ? "00d 00h" : "—";
+      d.ping = d.on ? +(1.5 + Math.random()*2).toFixed(1) : null;
+      d.cpu = d.on ? Math.floor(Math.random()*60+8) : 0;
+      d.temp = d.on ? Math.floor(Math.random()*30+38) : 0;
+      renderPlanetStates(); renderPanel();
+    }, 1000);
+  });
+
+  // Tabs
+  document.querySelectorAll(".tabbtn").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll(".tabbtn").forEach(x => x.classList.toggle("active", x === b));
+    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === "tab-" + b.dataset.tab));
+  }));
+  // Theme
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    document.body.dataset.theme = document.body.dataset.theme === "dark" ? "light" : "dark";
+  });
+  // Seg
+  document.addEventListener("click", (e) => {
+    const sb = e.target.closest(".seg button");
+    if (sb) { sb.parentElement.querySelectorAll("button").forEach(b => b.classList.remove("active")); sb.classList.add("active"); }
+  });
+  // Accent
+  const ACC = { violet:"#8a78ff", cyan:"#56cfee", green:"#4fd6a0", amber:"#ff9d3c" };
+  document.getElementById("swatches").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    document.querySelectorAll("#swatches button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    document.documentElement.style.setProperty("--acc", ACC[b.dataset.c]);
+  });
+  // Motion toggle
+  document.getElementById("motionSw").addEventListener("click", function(){ this.classList.toggle("on"); motion = this.classList.contains("on"); renderPlanetStates(); });
+
+  // Composer
+  const input = document.getElementById("chatinput");
+  input.addEventListener("input", () => { input.style.height="auto"; input.style.height=input.scrollHeight+"px"; });
+  document.getElementById("mic").addEventListener("click", (e) => e.currentTarget.classList.toggle("rec"));
+  document.querySelectorAll(".chip2").forEach(c => c.addEventListener("click", () => { input.value=c.dataset.q; input.focus(); input.dispatchEvent(new Event("input")); }));
+  function reply(q) {
+    const t = q.toLowerCase();
+    if (t.includes("pegasus")||t.includes("health")||t.includes("alive")) return { bot:"pegasus is online — 1.8 ms, 14d uptime. SMB/445 responding. All green." };
+    if (t.includes("wake")||t.includes("minecraft")||t.includes("vega")) return { cmd:"$ wol vega && sleep 30 \\\n  && ssh vega 'systemctl start minecraft@survival'", bot:"Queued. I'll wake vega, wait for boot, then start Minecraft." };
+    if (t.includes("incident")) return { bot:"1 incident today: atlas missed 2 heartbeats at 13:50. No data loss." };
+    return { bot:"I can scan, wake, or stop any world, and start its services. Try “wake vega and start minecraft.”" };
+  }
+  document.getElementById("chatform").addEventListener("submit", () => {
+    const q = input.value.trim(); if (!q) return;
+    const agent = document.getElementById("agent"); agent.classList.remove("empty");
+    let log = document.getElementById("chatlog");
+    if (!log) { document.getElementById("emptyState").remove(); log = document.createElement("div"); log.className="chatlog"; log.id="chatlog"; agent.appendChild(log); }
+    const r = reply(q);
+    let html = `<div class="msg user"><div class="who">You</div><div class="bb">${q}</div></div>`;
+    if (r.cmd) html += `<div class="msg cmd"><div class="who">Proposed</div><div class="bb">${r.cmd}</div></div>`;
+    html += `<div class="msg bot"><div class="who">Agent</div><div class="bb">${r.bot}</div></div>`;
+    log.insertAdjacentHTML("beforeend", html);
+    input.value=""; input.style.height="auto";
+    agent.scrollTop = agent.scrollHeight;
+  });
+
+  // Starfield (sparse, subtle)
+  const cv = document.getElementById("stars"), cx = cv.getContext("2d");
+  let starsArr = [], W, H, dprS = Math.min(devicePixelRatio||1, 2);
+  function rs() {
+    W = cv.width = innerWidth*dprS; H = cv.height = innerHeight*dprS;
+    cv.style.width = innerWidth+"px"; cv.style.height = innerHeight+"px";
+    const n = Math.floor((innerWidth*innerHeight)/9000);
+    starsArr = Array.from({length:n}, () => ({ x:Math.random()*W, y:Math.random()*H, r:(Math.random()*1+0.2)*dprS, a:Math.random()*0.45+0.12, tw:Math.random()*0.018+0.003, ph:Math.random()*6.28 }));
+  }
+  function tickStars(t) {
+    cx.clearRect(0,0,W,H);
+    for (const s of starsArr){ const a=s.a+Math.sin(t*s.tw+s.ph)*0.18; cx.globalAlpha=Math.max(0,Math.min(1,a)); cx.fillStyle="#fff"; cx.beginPath(); cx.arc(s.x,s.y,s.r,0,6.28); cx.fill(); }
+    requestAnimationFrame(tickStars);
+  }
+  addEventListener("resize", rs); rs(); requestAnimationFrame(tickStars);
+
+  renderPlanetStates();
+  requestAnimationFrame(frame);
+</script>
+</body>
+</html>

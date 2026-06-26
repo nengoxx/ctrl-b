@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ctrl·b · frontier</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #2a1336;
+    --bg-2: #36193f;
+    --sky: #f6e7c8;
+    --panel: #2f1840;
+    --panel-2: #3a1f4c;
+    --line: rgba(255,255,255,0.10);
+    --line-2: rgba(255,255,255,0.18);
+    --ink: #fbeede;
+    --ink-2: #d9b8c4;
+    --ink-3: #a07f96;
+    --ink-4: #6f5570;
+    --black: #1a1018;
+    --coral: #ff6f7d;
+    --salmon: #ff9d6e;
+    --amber: #ffb24c;
+    --magenta: #d65a9c;
+    --violet: #9a7bf0;
+    --green: #54d39a;
+    --red: #ff5a6a;
+    --acc: var(--coral);
+  }
+  [data-theme="day"] {
+    --bg: #f0e3ce; --bg-2: #f6ecda; --panel: #fff7ec; --panel-2: #f3e6d4;
+    --line: rgba(80,30,50,0.12); --line-2: rgba(80,30,50,0.20);
+    --ink: #2a1430; --ink-2: #6b4358; --ink-3: #9a7286; --ink-4: #c0a0b0;
+    --black: #241522;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 13px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+    height: 100dvh; overflow: hidden;
+  }
+  .disp { font-family: "Chakra Petch", sans-serif; }
+  .app { position: relative; height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
+    background:
+      radial-gradient(120% 70% at 50% 0%, #4a2350 0%, var(--bg) 46%, #1e0f28 100%); }
+  [data-theme="day"] .app { background: radial-gradient(120% 70% at 50% 0%, #fff3df 0%, var(--bg) 60%, #e4d2bb 100%); }
+
+  /* ===== App bar ===== */
+  .appbar { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; z-index: 30; }
+  .brand { display: flex; align-items: center; gap: 9px; }
+  .brand .mk { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(150deg, var(--coral), var(--magenta)); position: relative; box-shadow: 0 2px 8px rgba(214,90,156,0.5); }
+  .brand .mk::after { content: ""; position: absolute; inset: 6px; border-radius: 2px; background: var(--black); clip-path: polygon(0 0,62% 0,100% 50%,62% 100%,0 100%,38% 50%); }
+  .brand .nm { font-family: "Chakra Petch", sans-serif; font-weight: 700; font-size: 17px; letter-spacing: 0.01em; }
+  .brand .st { font-size: 10px; color: var(--ink-3); letter-spacing: 0.06em; }
+  .grow { flex: 1; }
+  .iconbtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line-2); color: var(--ink-2); }
+  .iconbtn:active { background: var(--panel-2); }
+  .iconbtn svg { display: block; }
+
+  /* ===== Tabs ===== */
+  .tab { display: none; flex: 1; min-height: 0; }
+  .tab.active { display: flex; flex-direction: column; }
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; }
+
+  /* ===== FLEET ===== */
+  /* Map */
+  .map { position: relative; height: 248px; flex: none; margin: 0 14px; border-radius: 16px; overflow: hidden;
+    border: 1px solid var(--line-2); box-shadow: 0 14px 36px rgba(20,8,28,0.5); }
+  .map .pic { position: absolute; inset: 0; background-image: url("../assets/hero.png"); background-size: cover; background-position: 58% 42%; }
+  .map .grad { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(20,8,28,0) 40%, rgba(20,8,28,0.55) 100%); }
+  .map .sweep { position: absolute; top: 0; bottom: 0; width: 60px; left: -60px; pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(255,210,140,0.18), transparent); animation: sweep 6s linear infinite; }
+  @keyframes sweep { 0% { left: -60px; } 100% { left: 100%; } }
+  @media (prefers-reduced-motion: reduce){ .map .sweep { display: none; } }
+  .map .label { position: absolute; left: 13px; top: 11px; z-index: 5; }
+  .map .label .t { font-family: "Chakra Petch", sans-serif; font-weight: 700; font-size: 21px; letter-spacing: 0.02em; color: #fff; line-height: 1; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+  .map .label .s { font-size: 10px; color: rgba(255,255,255,0.82); margin-top: 4px; letter-spacing: 0.04em; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+  .map .count { position: absolute; right: 11px; top: 11px; z-index: 5; display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(26,16,24,0.6); border: 1px solid rgba(255,255,255,0.2); border-radius: 999px; padding: 5px 11px; font-size: 10.5px; color: #fff; backdrop-filter: blur(6px); }
+  .map .count .led { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 7px var(--green); }
+
+  .beacon { position: absolute; transform: translate(-50%,-50%); z-index: 4; cursor: pointer; border: 0; background: none; padding: 0; }
+  .beacon .pin { position: relative; width: 15px; height: 15px; }
+  .beacon .dot { position: absolute; inset: 0; margin: auto; width: 11px; height: 11px; border-radius: 50%;
+    background: radial-gradient(circle at 38% 32%, #fff, var(--bc) 70%);
+    box-shadow: 0 0 0 2px rgba(26,16,24,0.5), 0 0 10px var(--bc); }
+  .beacon .ring { position: absolute; inset: -4px; border-radius: 50%; border: 1.5px solid var(--bc); opacity: 0; animation: ping 2.6s ease-out infinite; }
+  @keyframes ping { 0% { transform: scale(0.6); opacity: 0.7; } 100% { transform: scale(2.3); opacity: 0; } }
+  .beacon.off .dot { background: #6a5560; box-shadow: 0 0 0 2px rgba(26,16,24,0.5); }
+  .beacon.off .ring { display: none; }
+  .beacon .tag { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); white-space: nowrap;
+    font-size: 9px; letter-spacing: 0.05em; color: #fff; background: rgba(26,16,24,0.66); border: 1px solid rgba(255,255,255,0.18);
+    padding: 2px 7px; border-radius: 999px; backdrop-filter: blur(4px); }
+  .beacon.sel .pin { transform: scale(1.25); }
+  @media (prefers-reduced-motion: reduce){ .beacon .ring { animation: none; } }
+
+  /* Rig list */
+  .sec-h { display: flex; align-items: baseline; gap: 8px; padding: 20px 18px 0; }
+  .sec-h .t { font-family: "Chakra Petch", sans-serif; font-weight: 600; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
+  .sec-h .n { font-size: 10px; color: var(--ink-3); }
+  .rigs { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; padding: 12px 14px 18px; }
+  .rig { all: unset; cursor: pointer; position: relative; border-radius: 14px; overflow: hidden;
+    background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(20,8,28,0.35); transition: transform 0.14s, border-color 0.2s; }
+  .rig:active { transform: scale(0.975); }
+  .rig.sel { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc), 0 6px 18px rgba(20,8,28,0.4); }
+  .rig .ph { position: relative; aspect-ratio: 1.18; background-size: cover; background-position: center; }
+  .rig .ph::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(20,8,28,0) 55%, rgba(20,8,28,0.7)); }
+  .rig.dim .ph { filter: grayscale(0.72) brightness(0.62); }
+  .rig .led { position: absolute; top: 9px; right: 9px; z-index: 2; width: 8px; height: 8px; border-radius: 50%; background: #6a5560; }
+  .rig.on .led { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .rig .meta { position: relative; padding: 9px 11px 11px; }
+  .rig .meta .nm { font-family: "Chakra Petch", sans-serif; font-weight: 700; font-size: 15px; letter-spacing: 0.01em; }
+  .rig .meta .ro { font-size: 10px; color: var(--ink-3); margin-top: 1px; }
+  .rig .plate { position: absolute; left: 11px; bottom: 46px; z-index: 2; font-size: 9px; letter-spacing: 0.08em; color: #ffdca6;
+    background: rgba(26,16,24,0.55); border: 1px solid rgba(255,210,140,0.4); padding: 2px 6px; border-radius: 5px; }
+
+  /* ===== Bottom sheet ===== */
+  .scrim { position: absolute; inset: 0; z-index: 40; background: rgba(12,5,16,0.55); opacity: 0; pointer-events: none; transition: opacity 0.3s; backdrop-filter: blur(2px); }
+  .scrim.show { opacity: 1; pointer-events: auto; }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 41; transform: translateY(102%); transition: transform 0.42s cubic-bezier(.4,0,.2,1);
+    background: var(--bg-2); border-radius: 22px 22px 0 0; border-top: 1px solid var(--line-2); box-shadow: 0 -18px 50px rgba(0,0,0,0.5); max-height: 92%; display: flex; flex-direction: column; }
+  .sheet.show { transform: none; }
+  .sheet .grip { width: 38px; height: 4px; border-radius: 999px; background: var(--ink-4); margin: 9px auto 0; flex: none; }
+  .sheet .body { overflow-y: auto; padding: 6px 18px calc(20px + env(safe-area-inset-bottom)); }
+  .banner { position: relative; margin-top: 10px; border-radius: 16px; overflow: hidden; height: 138px; border: 1px solid var(--line); }
+  .banner .img { position: absolute; inset: 0; background-size: cover; background-position: center; }
+  .banner.dim .img { filter: grayscale(0.7) brightness(0.6); }
+  .banner .ov { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(20,8,28,0.1), rgba(20,8,28,0.82)); }
+  .banner .nm { position: absolute; left: 14px; bottom: 11px; font-family: "Chakra Petch", sans-serif; font-weight: 700; font-size: 28px; color: #fff; letter-spacing: 0.01em; line-height: 1; }
+  .banner .plate { position: absolute; right: 12px; bottom: 13px; font-size: 11px; letter-spacing: 0.08em; color: #ffdca6; background: rgba(26,16,24,0.6); border: 1px solid rgba(255,210,140,0.45); padding: 4px 9px; border-radius: 6px; }
+  .banner .stat { position: absolute; left: 14px; top: 12px; display: inline-flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #fff; background: rgba(26,16,24,0.5); border: 1px solid rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 999px; }
+  .banner .stat .led { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 7px var(--green); }
+  .banner .stat.off .led { background: #6a5560; box-shadow: none; }
+
+  .ro2 { font-size: 11.5px; color: var(--ink-2); margin-top: 11px; }
+  .stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-top: 13px; }
+  .stat4 { background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 10px 6px; text-align: center; }
+  .stat4 .v { font-family: "Chakra Petch", sans-serif; font-weight: 700; font-size: 18px; line-height: 1; }
+  .stat4 .v small { font-size: 9px; color: var(--ink-3); font-weight: 500; }
+  .stat4 .l { font-size: 8.5px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-3); margin-top: 5px; }
+
+  .actbar { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+  .actbar .info { flex: 1; font-size: 11px; color: var(--ink-3); }
+  .pill { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; font-family: "Chakra Petch", sans-serif; font-weight: 600;
+    font-size: 12.5px; letter-spacing: 0.06em; text-transform: uppercase; padding: 11px 18px; border-radius: 999px; }
+  .pill.wake { background: var(--black); color: #fff; }
+  .pill.wake svg { color: var(--amber); }
+  .pill.stop { background: rgba(255,90,106,0.14); color: var(--red); border: 1px solid rgba(255,90,106,0.4); }
+  .pill.busy { opacity: 0.55; pointer-events: none; }
+
+  .svc-h { font-family: "Chakra Petch", sans-serif; font-weight: 600; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 22px 0 9px; }
+  .svcs { display: flex; flex-direction: column; gap: 8px; }
+  .svc { display: flex; align-items: center; gap: 11px; padding: 12px 13px; border-radius: 12px; text-decoration: none; color: inherit;
+    background: var(--panel); border: 1px solid var(--line); transition: border-color 0.18s, transform 0.12s; }
+  .svc:active { transform: scale(0.99); }
+  .svc.up { border-color: rgba(84,211,154,0.32); }
+  .svc .led { width: 8px; height: 8px; border-radius: 50%; background: #6a5560; flex: none; }
+  .svc.up .led { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .svc .info { flex: 1; min-width: 0; }
+  .svc .info .nm { font-size: 13px; font-weight: 500; }
+  .svc .info .ad { font-size: 10px; color: var(--ink-3); }
+  .svc .go { font-family: "Chakra Petch", sans-serif; font-weight: 600; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--acc); display: inline-flex; align-items: center; gap: 5px; }
+  .svc.down .go { color: var(--ink-4); }
+  .svc-empty { text-align: center; color: var(--ink-3); font-size: 11.5px; padding: 18px; border: 1px dashed var(--line-2); border-radius: 12px; }
+
+  /* ===== AGENT ===== */
+  .agent { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 18px 12px; display: flex; flex-direction: column; }
+  .agent.empty { justify-content: center; }
+  .agent .rigstack { display: block; position: relative; width: 200px; height: 238px; margin: 0 auto; }
+  .agent .rigstack .layer { position: absolute; left: 50%; background-position: center; background-repeat: no-repeat; background-size: contain; transform: translateX(-50%); }
+  .agent .rigstack .cube { width: 150px; height: 155px; top: 26px; z-index: 3; background-image: url("../assets/cube-only.png"); filter: drop-shadow(0 10px 22px rgba(214,90,156,0.45)); animation: bob 5s ease-in-out infinite; }
+  .agent .rigstack .mid { width: 132px; height: 27px; bottom: 30px; z-index: 2; background-image: url("../assets/platform-mid.png"); filter: drop-shadow(0 6px 12px rgba(214,90,156,0.35)); animation: bob 6.5s ease-in-out infinite; animation-delay: -2.2s; }
+  .agent .rigstack .base { width: 196px; height: 33px; bottom: 0; z-index: 1; background-image: url("../assets/platform-base.png"); }
+  @keyframes bob { 0%,100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-7px); } }
+  @media (prefers-reduced-motion: reduce){ .agent .rigstack .layer { animation: none; } }
+  .agent h2 { font-family: "Chakra Petch", sans-serif; font-weight: 700; font-size: 26px; text-align: center; margin: 6px 0 0; letter-spacing: 0.01em; }
+  .agent .hp { color: var(--ink-3); font-size: 12px; text-align: center; margin: 7px 0 0; }
+  .composer { margin-top: 20px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 18px; padding: 13px 14px 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+  .composer textarea { all: unset; display: block; width: 100%; font-family: "JetBrains Mono", monospace; font-size: 14px; color: var(--ink); min-height: 20px; resize: none; }
+  .composer textarea::placeholder { color: var(--ink-3); }
+  .crow { display: flex; align-items: center; gap: 8px; margin-top: 11px; }
+  .cbtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 9px; border: 1px solid var(--line-2); color: var(--ink-2); }
+  .cbtn:active { background: var(--panel-2); }
+  .cbtn.rec { color: var(--red); border-color: rgba(255,90,106,0.4); }
+  .model { font-size: 11px; color: var(--ink-3); }
+  .send { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 10px; background: var(--black); color: #fff; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 15px; }
+  .chip2 { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--ink-2); font-size: 11.5px; }
+  .chip2:active { background: var(--panel-2); color: var(--ink); }
+  .chatlog { display: flex; flex-direction: column; gap: 13px; }
+  .msg { max-width: 88%; }
+  .msg .who { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px; }
+  .msg.user { align-self: flex-end; }
+  .msg.user .who { text-align: right; }
+  .msg.user .bb { background: var(--black); color: #fff; border-radius: 14px 14px 4px 14px; padding: 10px 13px; font-size: 13.5px; }
+  .msg.bot .bb { color: var(--ink); font-size: 13.5px; }
+  .msg.cmd .who { color: var(--acc); }
+  .msg.cmd .bb { background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 11px 13px; font-size: 12px; color: var(--ink-2); white-space: pre-wrap; }
+
+  /* ===== SETTINGS ===== */
+  .settings { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 18px 16px; }
+  .sec { font-family: "Chakra Petch", sans-serif; font-weight: 600; padding: 22px 2px 10px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 15px; overflow: hidden; }
+  .confrow { display: flex; align-items: center; gap: 14px; padding: 14px 15px; border-top: 1px solid var(--line); min-height: 54px; }
+  .confrow:first-child { border-top: 0; }
+  .confrow .k { flex: 1; min-width: 0; }
+  .confrow .k .label { font-size: 13.5px; }
+  .confrow .k .desc { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+  .seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; }
+  .seg button { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 999px; font-size: 11.5px; color: var(--ink-2); }
+  .seg button.active { background: var(--black); color: #fff; font-weight: 500; }
+  .switch { cursor: pointer; }
+  .switch .knob { width: 42px; height: 25px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line-2); position: relative; transition: background 0.2s; }
+  .switch .knob::after { content: ""; position: absolute; left: 3px; top: 3px; width: 17px; height: 17px; border-radius: 50%; background: var(--ink-3); transition: transform 0.2s, background 0.2s; }
+  .switch.on .knob { background: var(--acc); border-color: transparent; }
+  .switch.on .knob::after { transform: translateX(17px); background: #fff; }
+  .confrow input { all: unset; max-width: 150px; padding: 8px 11px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); font: inherit; font-size: 12.5px; text-align: right; }
+  .pswatch { display: inline-flex; gap: 10px; }
+  .pswatch button { all: unset; cursor: pointer; width: 26px; height: 26px; border-radius: 7px; border: 2px solid transparent; box-shadow: 0 2px 5px rgba(0,0,0,0.4); }
+  .pswatch button.active { border-color: var(--ink); }
+
+  /* ===== Tab bar ===== */
+  .tabbar { display: grid; grid-template-columns: repeat(3,1fr); padding: 7px 12px calc(9px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(14px); border-top: 1px solid var(--line); z-index: 35; }
+  .tabbtn { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border-radius: 11px; color: var(--ink-3); }
+  .tabbtn.active { color: var(--ink); }
+  .tabbtn.active .ic { background: color-mix(in srgb, var(--acc) 20%, transparent); color: var(--acc); }
+  .tabbtn .ic { width: 40px; height: 26px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; }
+  .tabbtn .lbl { font-family: "Chakra Petch", sans-serif; font-weight: 600; font-size: 10px; letter-spacing: 0.05em; }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+</style>
+</head>
+<body data-theme="night">
+<div class="app">
+
+  <div class="appbar">
+    <div class="brand">
+      <span class="mk"></span>
+      <span>
+        <span class="nm">ctrl·b</span>
+        <span class="st" id="onlineStat">4/6 rigs · online</span>
+      </span>
+    </div>
+    <span class="grow"></span>
+    <button class="iconbtn" id="themeToggle" aria-label="toggle theme">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M5 5l1.8 1.8M17.2 17.2 19 19M19 5l-1.8 1.8M6.8 17.2 5 19"/></svg>
+    </button>
+  </div>
+
+  <!-- ===== FLEET ===== -->
+  <div class="tab active" id="tab-fleet" data-screen-label="06 Frontier · Fleet">
+    <div class="scroll">
+      <div class="map" id="map">
+        <div class="pic"></div>
+        <div class="grad"></div>
+        <div class="sweep"></div>
+        <div class="label">
+          <div class="t">THE FRONTIER</div>
+          <div class="s">6 rigs staked across the badlands</div>
+        </div>
+        <div class="count"><span class="led" id="mapLed"></span><span id="mapCount">4 live</span></div>
+        <!-- beacons injected -->
+      </div>
+
+      <div class="sec-h"><span class="t">Your Rigs</span><span class="grow"></span><span class="n">tap to deploy</span></div>
+      <div class="rigs" id="rigGrid"></div>
+    </div>
+  </div>
+
+  <!-- ===== AGENT ===== -->
+  <div class="tab" id="tab-agent" data-screen-label="06 Frontier · Agent">
+    <div class="agent empty" id="agent">
+      <div id="emptyState">
+        <div class="rigstack">
+          <div class="layer base"></div>
+          <div class="layer mid"></div>
+          <div class="layer cube"></div>
+        </div>
+        <h2>Frontier Comms</h2>
+        <p class="hp">Hail the agent to scan, wake, or command any rig.</p>
+        <div class="composer">
+          <form id="chatform" onsubmit="event.preventDefault()" style="margin:0">
+            <textarea id="chatinput" rows="1" placeholder="Transmit a command…" autocomplete="off"></textarea>
+            <div class="crow">
+              <button type="button" class="cbtn" aria-label="attach"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
+              <span class="grow"></span>
+              <span class="model">qwen2.5:7b · local</span>
+              <button type="button" class="cbtn" id="mic" aria-label="dictate"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg></button>
+              <button type="submit" class="send" aria-label="send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+            </div>
+          </form>
+        </div>
+        <div class="chips">
+          <button class="chip2" data-q="Is pegasus alive?">Health check</button>
+          <button class="chip2" data-q="Wake vega and start minecraft">Wake &amp; run</button>
+          <button class="chip2" data-q="Any incidents today?">Incidents</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SETTINGS ===== -->
+  <div class="tab" id="tab-conf" data-screen-label="06 Frontier · Settings">
+    <div class="settings">
+      <div class="sec">Appearance</div>
+      <div class="card">
+        <div class="confrow"><div class="k"><div class="label">Sky</div><div class="desc">Dusk frontier or daylight</div></div><div class="seg" id="skyseg"><button class="active" data-sky="night">Dusk</button><button data-sky="day">Day</button></div></div>
+        <div class="confrow"><div class="k"><div class="label">Beacon accent</div><div class="desc">Marker &amp; action colour</div></div>
+          <div class="pswatch" id="swatches">
+            <button class="active" data-c="coral" style="background:linear-gradient(150deg,#ff9d7a,#ff6f7d)"></button>
+            <button data-c="amber" style="background:linear-gradient(150deg,#ffd27a,#ffb24c)"></button>
+            <button data-c="magenta" style="background:linear-gradient(150deg,#ff8fc0,#d65a9c)"></button>
+            <button data-c="violet" style="background:linear-gradient(150deg,#c0a8ff,#9a7bf0)"></button>
+          </div>
+        </div>
+        <div class="confrow"><div class="k"><div class="label">Live motion</div><div class="desc">Beacons &amp; radar sweep</div></div><div class="switch on" id="motionSw"><div class="knob"></div></div></div>
+      </div>
+      <div class="sec">Agent</div>
+      <div class="card">
+        <div class="confrow"><div class="k"><div class="label">Backend</div><div class="desc">Local model or cloud API</div></div><div class="seg"><button class="active">Local</button><button>Cloud</button></div></div>
+        <div class="confrow"><div class="k"><div class="label">Endpoint</div></div><input type="text" value="localhost:11434"/></div>
+        <div class="confrow"><div class="k"><div class="label">Temperature</div></div><input type="text" value="0.4"/></div>
+      </div>
+      <div class="sec">Signals</div>
+      <div class="card">
+        <div class="confrow"><div class="k"><div class="label">Discord webhook</div></div><div class="switch on" onclick="this.classList.toggle('on')"><div class="knob"></div></div></div>
+        <div class="confrow"><div class="k"><div class="label">On rig wake</div></div><div class="switch on" onclick="this.classList.toggle('on')"><div class="knob"></div></div></div>
+        <div class="confrow"><div class="k"><div class="label">On incident</div></div><div class="switch on" onclick="this.classList.toggle('on')"><div class="knob"></div></div></div>
+      </div>
+      <div style="height:18px"></div>
+    </div>
+  </div>
+
+  <!-- ===== Bottom sheet ===== -->
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet">
+    <div class="grip"></div>
+    <div class="body" id="sheetBody"></div>
+  </div>
+
+  <nav class="tabbar">
+    <button class="tabbtn active" data-tab="fleet">
+      <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-5.2-7-10.5A7 7 0 0 1 19 10.5C19 15.8 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.4"/></svg></span>
+      <span class="lbl">Frontier</span>
+    </button>
+    <button class="tabbtn" data-tab="agent">
+      <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-3.7A8.4 8.4 0 1 1 21 11.5z"/></svg></span>
+      <span class="lbl">Comms</span>
+    </button>
+    <button class="tabbtn" data-tab="conf">
+      <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a8 8 0 0 0 .1-2l1.8-1.4-1.8-3-2.2.9a7.6 7.6 0 0 0-1.7-1l-.3-2.3H10l-.3 2.3a7.6 7.6 0 0 0-1.7 1l-2.2-.9-1.8 3L5.8 11a8 8 0 0 0 0 2L4 14.4l1.8 3 2.2-.9a7.6 7.6 0 0 0 1.7 1l.3 2.3h4l.3-2.3a7.6 7.6 0 0 0 1.7-1l2.2.9 1.8-3z"/></svg></span>
+      <span class="lbl">Settings</span>
+    </button>
+  </nav>
+</div>
+
+<script>
+  const RIGS = [
+    { name:"pegasus", role:"NAS · Linux",       img:"rig1", plate:"0xPEG01", ip:"192.168.1.10", on:true,  uptime:"14d 06h", ping:1.8, cpu:12, temp:42, x:23, y:60 },
+    { name:"titan",   role:"Render · Linux",    img:"rig4", plate:"0xTTN04", ip:"192.168.1.25", on:true,  uptime:"06d 19h", ping:3.1, cpu:72, temp:68, x:80, y:55 },
+    { name:"mercury", role:"Media · Windows",   img:"rig3", plate:"0xMRC03", ip:"192.168.1.15", on:true,  uptime:"02d 11h", ping:2.4, cpu:28, temp:54, x:43, y:73 },
+    { name:"orion",   role:"Backup · Linux",    img:"rig5", plate:"0xORN05", ip:"192.168.1.18", on:true,  uptime:"21d 02h", ping:2.0, cpu:8,  temp:39, x:55, y:45 },
+    { name:"atlas",   role:"Workstation · Win", img:"rig2", plate:"0xATL02", ip:"192.168.1.12", on:false, uptime:"—", ping:null, cpu:0, temp:0, x:14, y:80 },
+    { name:"vega",    role:"Game · Linux",      img:"rig6", plate:"0xVEG06", ip:"192.168.1.20", on:false, uptime:"—", ping:null, cpu:0, temp:0, x:68, y:82 },
+  ];
+  const SERVICES = [
+    { name:"open-webui", host:"pegasus", port:3000 },
+    { name:"jellyfin",   host:"pegasus", port:8096 },
+    { name:"syncthing",  host:"pegasus", port:8384 },
+    { name:"comfyui",    host:"titan",   port:8188 },
+    { name:"llama.cpp",  host:"titan",   port:8080 },
+    { name:"ollama",     host:"titan",   port:11434 },
+    { name:"plex",       host:"mercury", port:32400, path:"/web" },
+    { name:"restic-rest",host:"orion",   port:8000 },
+    { name:"minio",      host:"orion",   port:9001 },
+    { name:"minecraft",  host:"vega",    port:25565 },
+  ];
+  const BC = { coral:"#ff6f7d", amber:"#ffb24c", magenta:"#d65a9c", violet:"#9a7bf0" };
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let motion = !reduceMotion;
+  let current = null;
+
+  const rig = n => RIGS.find(r => r.name === n);
+  const svcOf = n => SERVICES.filter(s => s.host === n);
+  const svcUrl = s => `http://${rig(s.host).ip}:${s.port}${s.path||""}`;
+  const beaconColor = () => BC[document.querySelector("#swatches button.active").dataset.c];
+
+  // ----- render rig cards -----
+  const grid = document.getElementById("rigGrid");
+  function renderGrid() {
+    grid.innerHTML = RIGS.map(r => `
+      <button class="rig ${r.on?"on":"dim"}" data-name="${r.name}">
+        <span class="led"></span>
+        <div class="ph" style="background-image:url('../assets/${r.img}.png')"></div>
+        <span class="plate">${r.plate}</span>
+        <div class="meta"><div class="nm">${r.name}</div><div class="ro">${r.role}</div></div>
+      </button>`).join("");
+  }
+
+  // ----- render beacons -----
+  const map = document.getElementById("map");
+  function renderBeacons() {
+    map.querySelectorAll(".beacon").forEach(b => b.remove());
+    const col = beaconColor();
+    RIGS.forEach(r => {
+      const b = document.createElement("button");
+      b.className = "beacon" + (r.on?"":" off");
+      b.dataset.name = r.name;
+      b.style.left = r.x + "%"; b.style.top = r.y + "%";
+      b.style.setProperty("--bc", col);
+      b.innerHTML = `<span class="pin"><span class="ring"></span><span class="dot"></span></span><span class="tag">${r.name}</span>`;
+      map.appendChild(b);
+    });
+  }
+
+  function refreshStatus() {
+    const on = RIGS.filter(r => r.on).length;
+    document.getElementById("onlineStat").textContent = `${on}/6 rigs · online`;
+    document.getElementById("mapCount").textContent = `${on} live`;
+    grid.querySelectorAll(".rig").forEach(el => {
+      const r = rig(el.dataset.name);
+      el.classList.toggle("on", r.on); el.classList.toggle("dim", !r.on);
+    });
+    map.querySelectorAll(".beacon").forEach(el => el.classList.toggle("off", !rig(el.dataset.name).on));
+  }
+
+  function setSel(name) {
+    grid.querySelectorAll(".rig").forEach(el => el.classList.toggle("sel", el.dataset.name === name));
+    map.querySelectorAll(".beacon").forEach(el => el.classList.toggle("sel", el.dataset.name === name));
+  }
+
+  // ----- sheet -----
+  const sheet = document.getElementById("sheet"), scrim = document.getElementById("scrim"), sheetBody = document.getElementById("sheetBody");
+  function openSheet(name) {
+    current = name; setSel(name); renderSheet();
+    sheet.classList.add("show"); scrim.classList.add("show");
+  }
+  function closeSheet() {
+    sheet.classList.remove("show"); scrim.classList.remove("show"); setSel(null); current = null;
+  }
+  function renderSheet() {
+    const r = rig(current); if (!r) return;
+    const svcs = svcOf(r.name);
+    const arr = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M7 17 17 7M9 7h8v8"/></svg>';
+    sheetBody.innerHTML = `
+      <div class="banner ${r.on?"":"dim"}">
+        <div class="img" style="background-image:url('../assets/${r.img}.png')"></div>
+        <div class="ov"></div>
+        <div class="stat ${r.on?"":"off"}"><span class="led"></span>${r.on?"Online":"Dormant"}</div>
+        <div class="nm">${r.name}</div>
+        <div class="plate">${r.plate}</div>
+      </div>
+      <div class="ro2">${r.role} · ${r.ip}${r.on?` · ${r.ping}ms · ${r.uptime} up`:" · wake-on-LAN ready"}</div>
+      <div class="stats">
+        <div class="stat4"><div class="v">${r.on?r.ping:"—"}<small>${r.on?"ms":""}</small></div><div class="l">Ping</div></div>
+        <div class="stat4"><div class="v">${r.on?r.uptime.split("d")[0]:"—"}<small>${r.on?"d":""}</small></div><div class="l">Uptime</div></div>
+        <div class="stat4"><div class="v">${r.on?r.cpu:"—"}<small>${r.on?"%":""}</small></div><div class="l">Load</div></div>
+        <div class="stat4"><div class="v">${r.on?r.temp:"—"}<small>${r.on?"°":""}</small></div><div class="l">Temp</div></div>
+      </div>
+      <div class="actbar">
+        <span class="info">${r.on?`◐ ${r.cpu}% load · ${r.temp}°C core`:"Powered down · WOL armed"}</span>
+        ${r.on
+          ? `<button class="pill stop" data-act="shutdown">Shut down</button>`
+          : `<button class="pill wake" data-act="wake"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 3v9M6.5 7a8 8 0 1 0 11 0"/></svg>Wake rig</button>`}
+      </div>
+      <div class="svc-h">Services on ${r.name}</div>
+      <div class="svcs">
+        ${svcs.length===0 ? `<div class="svc-empty">No services parked on this rig</div>` :
+          svcs.map(s => `<a class="svc ${r.on?"up":"down"}" href="${svcUrl(s)}" target="_blank" rel="noopener">
+            <span class="led"></span>
+            <span class="info"><span class="nm">${s.name}</span><span class="ad">${r.ip}:${s.port}</span></span>
+            <span class="go">${r.on?`Open ${arr}`:"Offline"}</span></a>`).join("")}
+      </div>
+      <div style="height:8px"></div>`;
+  }
+
+  // ----- interactions -----
+  grid.addEventListener("click", e => { const b = e.target.closest(".rig"); if (b) openSheet(b.dataset.name); });
+  map.addEventListener("click", e => { const b = e.target.closest(".beacon"); if (b) openSheet(b.dataset.name); });
+  scrim.addEventListener("click", closeSheet);
+
+  sheetBody.addEventListener("click", e => {
+    const a = e.target.closest("[data-act]"); if (!a) return;
+    const r = rig(current); if (!r) return;
+    a.classList.add("busy"); a.textContent = a.dataset.act === "wake" ? "Waking…" : "Stopping…";
+    setTimeout(() => {
+      r.on = a.dataset.act === "wake";
+      r.uptime = r.on ? "00d 00h" : "—";
+      r.ping = r.on ? +(1.5 + Math.random()*2).toFixed(1) : null;
+      r.cpu = r.on ? Math.floor(Math.random()*60+8) : 0;
+      r.temp = r.on ? Math.floor(Math.random()*30+38) : 0;
+      refreshStatus(); renderSheet();
+    }, 1000);
+  });
+
+  // tabs
+  document.querySelectorAll(".tabbtn").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll(".tabbtn").forEach(x => x.classList.toggle("active", x === b));
+    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === "tab-" + b.dataset.tab));
+  }));
+
+  // theme toggle
+  function setSky(v) {
+    document.body.dataset.theme = v;
+    document.querySelectorAll("#skyseg button").forEach(x => x.classList.toggle("active", x.dataset.sky === v));
+  }
+  document.getElementById("themeToggle").addEventListener("click", () => setSky(document.body.dataset.theme === "night" ? "day" : "night"));
+  document.getElementById("skyseg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) setSky(b.dataset.sky); });
+
+  // seg (generic)
+  document.querySelectorAll(".seg").forEach(seg => seg.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b || seg.id === "skyseg") return;
+    seg.querySelectorAll("button").forEach(x => x.classList.remove("active")); b.classList.add("active");
+  }));
+
+  // accent
+  document.getElementById("swatches").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    document.querySelectorAll("#swatches button").forEach(x => x.classList.remove("active")); b.classList.add("active");
+    document.documentElement.style.setProperty("--acc", `var(--${b.dataset.c})`);
+    map.querySelectorAll(".beacon").forEach(el => el.style.setProperty("--bc", BC[b.dataset.c]));
+  });
+
+  // motion
+  document.getElementById("motionSw").addEventListener("click", function(){
+    this.classList.toggle("on"); motion = this.classList.contains("on");
+    document.documentElement.style.setProperty("--play", motion ? "running" : "paused");
+    map.querySelectorAll(".beacon .ring, .map .sweep, .agent .rigstack .layer").forEach(el => el.style.animationPlayState = motion ? "running" : "paused");
+  });
+
+  // composer
+  const input = document.getElementById("chatinput");
+  input.addEventListener("input", () => { input.style.height="auto"; input.style.height=input.scrollHeight+"px"; });
+  document.getElementById("mic").addEventListener("click", e => e.currentTarget.classList.toggle("rec"));
+  document.querySelectorAll(".chip2").forEach(c => c.addEventListener("click", () => { input.value=c.dataset.q; input.focus(); input.dispatchEvent(new Event("input")); }));
+  function reply(q) {
+    const t = q.toLowerCase();
+    if (t.includes("pegasus")||t.includes("health")||t.includes("alive")) return { bot:"pegasus is online — 1.8 ms, 14d uptime. SMB/445 responding. All green on the frontier." };
+    if (t.includes("wake")||t.includes("minecraft")||t.includes("vega")) return { cmd:"$ wol vega && sleep 30 \\\n  && ssh vega 'systemctl start minecraft@survival'", bot:"Copy. Waking vega, waiting for boot, then deploying Minecraft." };
+    if (t.includes("incident")) return { bot:"1 signal today: atlas dropped 2 heartbeats at 13:50. No data loss." };
+    return { bot:"I can scan, wake, or stop any rig and launch its services. Try “wake vega and start minecraft.”" };
+  }
+  document.getElementById("chatform").addEventListener("submit", () => {
+    const q = input.value.trim(); if (!q) return;
+    const agent = document.getElementById("agent"); agent.classList.remove("empty");
+    let log = document.getElementById("chatlog");
+    if (!log) { document.getElementById("emptyState").remove(); log = document.createElement("div"); log.className="chatlog"; log.id="chatlog"; agent.appendChild(log); }
+    const r = reply(q);
+    let html = `<div class="msg user"><div class="who">You</div><div class="bb">${q}</div></div>`;
+    if (r.cmd) html += `<div class="msg cmd"><div class="who">Proposed</div><div class="bb">${r.cmd}</div></div>`;
+    html += `<div class="msg bot"><div class="who">Agent</div><div class="bb">${r.bot}</div></div>`;
+    log.insertAdjacentHTML("beforeend", html);
+    input.value=""; input.style.height="auto"; agent.scrollTop = agent.scrollHeight;
+  });
+
+  // init
+  renderGrid(); renderBeacons(); refreshStatus();
+</script>
+</body>
+</html>
