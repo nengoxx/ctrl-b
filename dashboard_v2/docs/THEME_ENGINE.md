@@ -240,6 +240,40 @@ slice.**
 
 ## 9. Code-level design spec (LOCKED — build against this)
 
+### 9.0 The current architecture (AS-IS) — what T0 plugs into
+
+Mapped from the code (2026-06-26). This is *today's* reality the engine extends; §§9.1+ are the *target*.
+
+- **Component tree (`App.tsx`).** A `.app-shell` flex column → `.app-scroll` holding `<AppBar/>` + the four
+  tabs, then `<Composer/>` + `<TabBar/>` in-flow at the bottom. **Fleet/Agent/Utils are always mounted**;
+  **Conf is `React.lazy` + conditionally mounted** (`confMounted` latch, idle-preloaded, `ErrorBoundary`→
+  `Suspense` wrapper). Tab visibility is pure CSS: global `.tab{display:none}` / `.tab.active{display:block}`.
+  App also runs three shell effects: `--appbar-h` (ResizeObserver on `.appbar`), `--app-h` (visualViewport,
+  keyboard-aware), and a `beforeunload` dirty-guard. `showComposer = tab==="fleet"||"agent"` (hardcoded ids,
+  mirrored in `store/ui.ts`).
+- **The theme chokepoint (`store/ui.ts`).** A dep-free `createStore` external store, persisted to
+  `localStorage["ctrlb.ui"]`, that mirrors itself onto **`body[data-theme|tab|skyline|loz|motion]`** +
+  `.no-composer` via **`applyBodyAttrs`** (runs synchronously in `setUI`, and once at module load for
+  first-paint). Today `theme: "dark"|"aqua"|"ember"` (a single conflated field).
+- **CSS (`main.tsx` → `theme/`).** `vapor.css` (~1110 lines, all rules effectively global) + `extras.css`
+  (~2278 lines: app-shell + net-new components, reuses vapor tokens) are **statically imported** (always
+  loaded, global, unscoped). vapor's palette = a `:root` base (`--bg/--ink/--magenta/--accent-grad/…`) with
+  full ~48-prop **`[data-theme="aqua"]`/`[data-theme="ember"]`** override blocks (+ `.hero` `!important`
+  gradients). Only **4 `!important`** rules total, all vapor-only selectors.
+- **The Fleet signature surface.** `FleetTab` → `<Hero/>` (SVG sun/grid/skyline from `heroScene.ts`, gated by
+  `heroOn`; a `<Waveform/>` canvas that **live-reads `--accent-rgb`/`--accent-rgb-2`** each rAF frame, gated by
+  `waveformOn`) + the device list (`DeviceRow` — LED/expand/services) + `<FleetSummary/>`. `TabBar` indicator
+  slides via `grid repeat(4,1fr)` + `translateX(N*100%)` keyed on `.tabbar[data-tab]` (**4-tab-hardcoded CSS**).
+- **The theme-agnostic core (stays as-is).** All `hooks/*` (`useFleet`/`useActions`/`useSettings`/…) and all
+  `store/*` except `ui` have **zero theme/vapor coupling** — confirmed. `useSettings` is **Conf-tab-scoped**
+  (`useScopedQuery("conf",…)`) so it does *not* fetch on Fleet/Agent (the reason §9.11 needs `GET /api/appearance`).
+- **Appearance picker.** `ConfTab` → Appearance group: a `Seg<Theme>` (Vapor/Aqua/Ember) + skyline/loz/hero/
+  motion controls, all calling `setUI`. This is what the theme/mode/accent picker extends.
+
+**Net:** the seam already exists (`applyBodyAttrs` + a theme-agnostic data core). The engine adds an identity
+attribute, a slot layer, lazy CSS, and a richer palette model **around** vapor — it does not rewrite any of
+the above except `App.tsx` (→ slot host) and `store/ui.ts` (→ richer state). The exact deltas: §9.13.
+
 ### 9.1 Decisions resolved this phase (owner, 2026-06-26)
 
 1. **Shared base + per-theme slot overrides** (the main T0 granularity call). Build **one** new
@@ -299,6 +333,12 @@ Mirrors the backend action-registry pattern (typed descriptor per theme).
 export type ThemeId = "vapor" | "minimal" | "phosphor" | "cosmos" | "frontier" | "observatory";
 export type Mode = "dark" | "light";          // generalizes today's single `theme` enum's dark default
 
+// TabId = the existing `Tab` union (store/ui.ts: "fleet"|"agent"|"utils"|"conf") — reuse, don't redefine.
+// TabDef extends today's TabBar.tsx `{id,glyph,lbl}` array with the composer flag (§13.6 moves the hardcoded
+// `showComposer = tab==="fleet"||"agent"` here so a theme's tab set drives it).
+export type TabId = Tab;                        // import { type Tab } from "../store/ui"
+export interface TabDef { id: TabId; glyph: string; lbl: string; hasComposer: boolean; }
+
 // A theme declares WHICH palette axes it supports; the picker renders only the declared axes.
 export interface PaletteModel {
   modes?: Mode[];                               // e.g. minimal: ["dark","light"]; vapor: undefined (dark-only)
@@ -341,6 +381,11 @@ export const FALLBACK: ThemeId = "minimal";     // slot fallback when a theme om
 > implementations). `FALLBACK` names which *registered theme* is structurally closest to base for the rare
 > case a future exotic theme omits a slot the base can't render generically — minimal, per the owner. In
 > practice resolution is `registry[theme].slots[name] ?? BASE.slots[name]`; vapor never reaches it.
+>
+> **⏱️ BASE's slice: T1, not T0.** In **T0 only vapor is registered**, and vapor fills *every* slot, so the
+> `?? BASE.slots[name]` fallback is **never hit** — T0 ships an **empty/stub `BASE`** (the resolution wiring +
+> an empty slot map) and the `createContext` default points at it. The real **BASE token-driven chrome is
+> built in T1** (with minimal). So `FALLBACK="minimal"` is also inert until T1 — fine, no T0 path reads it.
 
 ### 9.4 Slot resolution — context, no prop-drilling
 
@@ -397,8 +442,10 @@ maintenance mode + RSC-hostile). vanilla-extract noted as a later graduation pat
   Layer + namespace is the robust pair.
 - **vapor's internal cascade is unchanged** (vapor + extras in one layer, same order as today; vapor is the
   only sheet rendering when active — non-vapor bundles are lazy/not loaded). **T0 must verify `vite build`
-  preserves `@import … layer()`** (Lightning CSS / postcss-import) — if it strips the token, fall back to the
-  namespacing-only path. First T0 task.
+  preserves `@import … layer()`** (Lightning CSS / postcss-import) — if it strips the token, the fallback is
+  **both** `cb-` namespacing (for the global *class* collisions) **and** renaming the 3 colliding contract
+  tokens (`--line→--border`, `--line-2→--border-2`, `--accent-glow→--glow`, §13.2 — namespacing alone does
+  NOT fix the *variable* inheritance). First T0 task.
 - **Switch lifecycle / FOUC:** rely on Vite's prod guarantee **and** React 19's native stylesheet handling —
   render the theme's lazy `<link rel="stylesheet" precedence>` (React blocks the reveal until it loads) /
   `preinit`, inside a `startTransition` so the old theme stays visible until the new CSS+components are ready
@@ -439,18 +486,24 @@ the owner's Android), tints/shades/alpha via `color-mix(in oklch, …)`. minimal
 `ui` store: `{ theme: ThemeId }` generalizes to `{ theme: ThemeId; mode: Mode; accent: string }`.
 **`applyBodyAttrs` writes a NEW identity attribute `body[data-skin] = theme`** (vapor/minimal/…) for slot +
 CSS scoping, and **leaves `body[data-theme]` meaning exactly what it does today — vapor's frozen accent axis
-(`dark`|`aqua`|`ember`)**, set only when `theme==="vapor"` (from the `accent` value). For non-vapor themes it
-additionally sets `body[data-mode]` and `body[data-accent]` (the prototypes scope palettes by attribute) and
+(`dark`|`aqua`|`ember`)**, set only when `theme==="vapor"` (from the `accent` value) — and **actively cleared
+(`delete body.dataset.theme`) when skin≠vapor**, since `applyBodyAttrs` rebuilds attrs each call and a stale
+`aqua` would otherwise leak. (`mode` and the vapor accent named "dark" are *different axes* that coincidentally
+share the string "dark" — benign: vapor declares no `mode` axis, so its `data-mode` is unused.) For non-vapor
+themes it additionally sets `body[data-mode]` and `body[data-accent]` (the prototypes scope palettes by attribute) and
 may inject `--accent`/`--accent-fill` for computed-OKLCH accents. `ThemeDef.palettes` declares which axes the
 Conf picker renders (vapor → named accents only; minimal → mode toggle + 4 hues; phosphor → amber/green; etc.).
 Existing vapor attrs (`data-theme`/`data-skyline`/`data-loz`/`data-motion`/`data-tab`) keep their current
 meaning — they're vapor's frozen attribute contract (full list in §13.1).
 
-> **⚠️ Migration is dedicated, not the generic `loadPersisted` merge (§13.4).** `loadPersisted` only
-> *fills missing fields* (`{...defaults, ...parsed}`), so an old blob `{theme:"aqua"}` would survive as an
-> invalid `ThemeId` → `data-skin="aqua"` → `registry["aqua"]` undefined → blank/crash for **returning users**.
-> A dedicated migration must run before the registry reads state: legacy `theme ∈ {dark,aqua,ember}` →
-> `{ theme:"vapor", mode:"dark", accent: theme==="dark" ? <vapor default> : theme }`.
+> **Note — a trivial one-time persisted-shape remap (single user, low-stakes).** The persisted field splits
+> from one conflated `theme:"dark"|"aqua"|"ember"` into `{theme,accent}`. `loadPersisted` only *fills missing
+> fields* (`{...defaults, ...parsed}`), so the owner's own existing `localStorage["ctrlb.ui"]` (e.g.
+> `{theme:"aqua"}`) would otherwise read back as an invalid `ThemeId`. A ~3-line read-time remap before the
+> registry reads state handles it: legacy `theme ∈ {dark,aqua,ember}` → `{theme:"vapor", mode:"dark", accent:
+> theme==="dark" ? <vapor default> : theme}`. (No returning-user base to protect — it's just so the owner's own
+> devices don't reset on the update. Bumping the persist key would also work but loses the other UI prefs;
+> the remap is cleaner.)
 
 ### 9.9 Per-host presentation layer (researched + locked)
 
@@ -477,11 +530,18 @@ type Present = (host: Host, index: number, override?: Record<string, unknown>) =
   — extended by adding a key, **never** a sibling map per theme (the named anti-pattern; CLAUDE.md "extend,
   not migrate"; corroborated by OpenAPI `x-` extensions + K8s annotations). A present() shallow-merges
   `override` over the derived channels.
-- **Backend (`domain/host.py`):** add `appearance: dict[str, dict[str, Any]] = {}` — **open pass-through**,
-  no per-theme Pydantic union (a union would force a server change per new theme = the migration we forbid).
-  Validate only keys the server reads (none today); unknown theme keys round-trip untouched. **The field +
-  the public-DTO passthrough are defined day 1 (T0, alongside the §9.11 backend work) so the host data model
-  is settled once;** it's first *consumed* by the first spatial theme (T3 observatory / T4 cosmos).
+- **Backend — open pass-through, `dict[str, dict[str, Any]]`** (no per-theme Pydantic union — a union forces a
+  server change per new theme = the migration we forbid; validate only keys the server reads = none today,
+  unknown theme keys round-trip untouched). **Scope (the full round-trip, so the build knows all sites):**
+  - **DAY 1 (T0) — settle the persisted schema only:** add `appearance: dict[str,dict[str,Any]] = {}` to the
+    **config-side host model (`ComputerCfg` in `backend/app/config.py`)**. That fixes the YAML shape so there's
+    never a migration. *(That's the only day-1 backend host change — the rest below is additive, not a refactor,
+    so it lands when first consumed.)*
+  - **T3/T5 (when a spatial theme first reads/authors it) — additive read+write wiring:** carry it onto the
+    runtime `Host` (`domain/host.py`) + the `Settings.hosts()` builder (`config.py`, currently hand-builds each
+    `Host` → would drop the key); expose it in the public host DTO (`_host_dto`, `api/hosts.py` — a hand-written
+    dict); and for *authoring* overrides, carry it through `HostIn` + `_apply_fields` (`api/hosts.py`). Each is a
+    one-line additive add against the already-fixed field shape — **not** a refactor.
 - **frontier art (spec'd now, owner 2026-06-26 — no deferred half):** `ThemeDef.assets` =
   `import.meta.glob('./frontier/art/*.png', { query:'?url' })`; `present()` assigns `asset = artKeys[index %
   artKeys.length]` as the zero-config default **and** honors an optional per-host override
@@ -507,18 +567,24 @@ backend is the source of truth on read; server-stamped last-write-wins on write;
 cache + offline truth.** For a single user this is the robust-simple shape — **no CRDT, no client clocks, no
 ETag/412, no Background Sync** (all over-engineering for one writer behind one authoritative backend).
 
-- **Backend.** `appearance: {theme, mode, accent, updated_at}` block in the **Settings config** (`config.py`) —
-  edited via the existing `PUT /api/settings` deep-merge (same path every other setting uses; additive). The
-  server stamps `updated_at` on write (its own clock → no cross-device skew).
+- **Backend.** A **typed `AppearanceCfg(BaseModel){theme:str; mode:str; accent:str; updated_at:datetime|None}`**
+  block on the Settings config (`backend/app/config.py`) — typed, **not** `extra="allow"` (small known shape;
+  the owner wants robust). Edited via the existing `PUT /api/settings` deep-merge (same path every setting uses;
+  additive). The server stamps `updated_at` on write (its own clock → no cross-device skew).
 - **⚠️ The full settings doc is Conf-tab-scoped** (`useSettings` = `useScopedQuery("conf", …)`, won't fetch on
   Fleet/Agent), so it **cannot** drive first-paint or cross-device reconcile. Add a **lightweight always-on
-  read** — `GET /api/appearance` → just `{theme,mode,accent,updated_at}` — that an app-level query reads on
-  mount. (Writes still go through the Conf picker's `PUT /api/settings {appearance}`, since the theme picker
-  lives in Conf where the settings doc is loaded.)
-- **Load sequence (no-flash).** (1) An **inline `<head>` script** reads `localStorage["ctrlb.ui"]` and sets
-  `body[data-skin]`/`data-theme`/`data-mode` **before first paint** (kills FOUC — better than the current
-  module-load apply; the current `<html data-theme="vapor">` static attr stays as the ultimate default). (2)
-  React + the `ui` store hydrate from localStorage (instant). (3) The always-on `GET /api/appearance` resolves
+  read** — **`GET /api/appearance`** (mount it in the existing settings router, `backend/app/api/settings.py`,
+  beside `GET/PUT /api/settings`) → just `{theme,mode,accent,updated_at}` — read by a small **`useAppearance()`
+  query hook (a plain `useQuery`, NOT `useScopedQuery` — it must fetch on mount regardless of the active tab)**;
+  the `ui` store reconciles against it (compare-then-set). Writes still go through the Conf picker's
+  `PUT /api/settings {appearance}` (the picker lives in Conf where the settings doc is loaded).
+- **Load sequence (no-flash).** (1) An **inline script at the TOP of `<body>`** (NOT `<head>` — `document.body`
+  is null there; a script at the start of `<body>` runs with `body` present, before `#root` paints) reads
+  `localStorage["ctrlb.ui"]` and sets **`body[data-skin]`/`data-theme`/`data-mode`** — keeping the attrs on
+  `body` so vapor's existing `body[data-*]` selectors + the §10 `body[data-skin="x"]` scoping stay consistent.
+  (Set `index.html`'s static initial to `data-skin="vapor"` too.) This kills FOUC tighter than the current
+  end-of-body module-load apply. (2) React + the `ui` store hydrate from localStorage (instant). (3) The
+  always-on `GET /api/appearance` resolves
   → **compare-then-set**: apply the server value **only if it differs** from the applied one (a matching value
   never re-switches → no visible flash). Fresh device (no localStorage) = one switch from default → server
   value, unavoidable + correct.
@@ -540,7 +606,8 @@ pattern (the **stable `flushSync` form**, NOT React's experimental `<ViewTransit
 
 ```ts
 async function switchTheme(next: ThemeId, mode, accent) {
-  await ensureThemeLoaded(next);                 // 1. SLOW WORK FIRST (lazy import CSS+slots) — never inside the callback
+  try { await ensureThemeLoaded(next); }         // 1. SLOW WORK FIRST (lazy import CSS+slots) — never inside the callback
+  catch (e) { pushToast("theme failed to load", "err"); return; }  // load failure → abort, stay on current theme
   const apply = () => flushSync(() => setUI({ theme: next, mode, accent }));   // synchronous DOM commit
   if (uiMotion === "reduced" || !document.startViewTransition) return void apply();  // 2. gate on the app's motion flag + support
   const t = document.startViewTransition(apply); // 3. default full-page cross-fade (name nothing)
@@ -566,11 +633,12 @@ frame. Leave a seam to migrate to React's native `<ViewTransition>` when it leav
 | `store/ui.ts` | `{theme}`→`{theme,mode,accent}`; `applyBodyAttrs` sets **`data-skin`** (+ `data-mode`/`data-accent` for non-vapor; `data-theme` stays vapor's accent); **dedicated legacy-`theme` migration** (§13.1, §13.4); reconcile-on-mount against `GET /api/appearance` (compare-then-set, §9.11) | extends, no vapor edit |
 | `App.tsx` | becomes the **slot host** (renders resolved slots; preserves shell orchestration §13.6) | shell infra; vapor renders identically |
 | `main.tsx` | `vapor.css`/`extras.css` → layered via `theme/index.css` (§9.6); mount `<ThemeProvider>` | additive, no vapor edit |
-| `index.html` | **inline `<head>` no-FOUC script** (read `localStorage["ctrlb.ui"]` → set `data-skin`/`data-theme` pre-paint, §9.11); vapor fonts stay; non-vapor fonts via FontFace | additive (keeps vapor default) |
+| `index.html` | **inline no-FOUC script at the TOP of `<body>`** (read `localStorage["ctrlb.ui"]` → set `body[data-skin/data-theme/data-mode]` pre-paint, §9.11; `<head>` can't — `body` is null); static initial `data-skin="vapor"`; vapor fonts stay; non-vapor fonts via FontFace | additive (keeps vapor default) |
 | `tabs/ConfTab.tsx` | Appearance group: `Seg<Theme>` → theme picker + declared-axis mode/accent controls; writes `setUI` + optimistic `PUT /api/settings {appearance}` (§9.11) | extends the picker |
-| `config.py` (backend) | **`appearance: {theme,mode,accent,updated_at}`** Settings block (server-stamped) — **day 1** (§9.11) | additive optional |
-| `api/` (backend) | **`GET /api/appearance`** lightweight always-on read (the Conf-scoped settings doc can't drive first-paint/reconcile) — **day 1** | additive endpoint |
-| `domain/host.py` | **`appearance: dict[str,dict[str,Any]] = {}`** per-host visual-override blob (open pass-through, §9.9) — defined day 1, consumed from T3/T4 | additive optional |
+| `config.py` (backend) | typed **`AppearanceCfg{theme,mode,accent,updated_at}`** Settings block (server-stamped) — **day 1** (§9.11); **+ `ComputerCfg.appearance: dict[str,dict[str,Any]]={}`** per-host override (schema only, §9.9) — **day 1** | additive optional |
+| `api/settings.py` (backend) | **`GET /api/appearance`** lightweight always-on read beside `GET/PUT /api/settings` — **day 1** | additive endpoint |
+| `hooks/useAppearance.ts` (new) | small always-on `useQuery` (NOT Conf-scoped) feeding the `ui`-store reconcile | additive |
+| `domain/host.py` · `api/hosts.py` | carry `appearance` onto runtime `Host` + `Settings.hosts()` builder + `_host_dto` (read) + `HostIn`/`_apply_fields` (authoring) — **additive at T3/T5 when first consumed** (§9.9), not day-1 | additive, not a refactor |
 | `theme/vapor.css`, `theme/extras.css`, `theme/heroScene.ts`, all vapor components | **untouched (D7)** — only caged in `layer(frozen)` via `theme/index.css`, no edit | ✅ frozen |
 
 ## 10. Prototype → theme-module porting playbook
@@ -669,9 +737,10 @@ large always-loaded global class surface (`.appbar .composer .tabbar .tab .dev .
 .seg .switch …`) — exactly the chrome surfaces BASE re-creates. **Fix:** `@layer` (frozen loses to base/theme)
 **plus** a disjoint `cb-` namespace on BASE/non-vapor chrome (belt-and-suspenders).
 
-**13.4 — `ui` store migration is dedicated (CONFIRMED — would blank returning users).** See §9.8 — remap
-legacy `theme ∈ {dark,aqua,ember}` before the registry reads it; `loadPersisted`'s field-fill merge can't do
-value remapping.
+**13.4 — `ui` store needs a trivial one-time persisted-shape remap (low-stakes, single user).** See §9.8 —
+remap legacy `theme ∈ {dark,aqua,ember}` before the registry reads it (`loadPersisted`'s field-fill merge
+can't do value remapping). Not a robustness pillar — just so the owner's own existing localStorage doesn't
+read back an invalid `ThemeId`. A ~3-line remap (or a persist-key bump, accepting the loss of other UI prefs).
 
 **13.5 — FOUC defended at two levels (§9.6, §12).** Vite prod guarantee + React 19 `precedence`/`preinit` in
 `startTransition`; verify with `vite build && vite preview`.

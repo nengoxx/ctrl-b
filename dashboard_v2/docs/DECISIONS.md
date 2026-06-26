@@ -1436,8 +1436,10 @@ and robustness gaps in the spec *wording*, all now fixed (THEME_ENGINE.md §§9.
 - **(CRITICAL) `data-skin`, not `data-theme`, carries the ThemeId.** vapor.css gates aqua/ember on bare
   `[data-theme="aqua"|"ember"]` — overloading the attribute would silently kill 2 of vapor's 3 palettes. ThemeId →
   new `body[data-skin]`; `data-theme` stays vapor's frozen accent axis. (§13.1 has vapor's full attribute contract.)
-- **(CRITICAL) Dedicated `ui`-store migration.** `loadPersisted`'s field-fill merge can't remap a value; legacy
-  `theme:"aqua"` must be remapped to `{theme:"vapor", accent:"aqua"}` or returning users blank out. (§13.4.)
+- **Trivial `ui`-store persisted-shape remap (low-stakes — single user).** `loadPersisted`'s field-fill merge
+  can't remap a value, so legacy `theme:"aqua"` → `{theme:"vapor", accent:"aqua"}` via a ~3-line read-time
+  remap. Not a robustness pillar (no returning-user base) — just so the owner's own localStorage doesn't read
+  back an invalid `ThemeId`. (§13.4.)
 - **(KEYSTONE hardening) CSS `@layer`** cages the always-loaded frozen vapor/extras in `layer(frozen)` so an active
   theme wins by **cascade order, not specificity** — dissolves the `--line`/`--line-2`/`--accent-glow` token collision
   *and* the global class-name collision **without editing the frozen files** (assign via `@import "./vapor.css"

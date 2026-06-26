@@ -111,8 +111,9 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > + web-cited best-practice) confirmed the architecture is the robust/efficient/reliable option and found **two
 > vapor-breaking bugs** + robustness gaps in the spec *wording*, all now fixed (THEME_ENGINE.md §§9.6/9.8/**11–13**;
 > **§13 is the T0 build checklist**): (1) **`data-skin` carries the ThemeId, NOT `data-theme`** (vapor.css gates
-> aqua/ember on bare `[data-theme=…]` — overloading it kills 2 of vapor's 3 palettes); (2) **dedicated `ui`-store
-> migration** for legacy `theme:"aqua"` (the field-fill merge can't remap → returning users would blank); (3)
+> aqua/ember on bare `[data-theme=…]` — overloading it kills 2 of vapor's 3 palettes); (2) a **trivial `ui`-store
+> persisted-shape remap** for the owner's own legacy `theme:"aqua"` (low-stakes, single user — the field-fill
+> merge can't value-remap, so a ~3-line read-time remap avoids reading back an invalid `ThemeId`); (3)
 > **CSS `@layer`** cages the always-loaded frozen vapor/extras so an active theme wins by cascade order, not
 > specificity — dissolving token + class-name collisions without editing the frozen files (T0 must `vite build`-
 > verify `@import…layer()` survives; else `cb-` namespacing). Plus React-19 `precedence`/`preinit` FOUC handling,
