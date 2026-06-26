@@ -4,7 +4,7 @@ import { useAgentChat } from "../hooks/useAgentChat";
 import { toggle as playMessage, usePlayback } from "../lib/audioController";
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
-import { planFrom } from "../lib/plan";
+import { advanceStep, NEXT_STATUS, planFrom } from "../lib/plan";
 import { PRIVILEGE_LEVELS, privilegeLabel, type Privilege } from "../lib/privilege";
 import {
   answerQuestion,
@@ -54,24 +54,24 @@ function callLine(call: ToolCallPart): string {
 }
 
 /** The checklist itself (shared by the inline breadcrumb's expansion and the pinned panel). When
- *  `onToggle` is given (the live pinned panel), each step's dot is a button that flips done/undone;
- *  historical breadcrumbs omit it and stay read-only. */
-function PlanSteps({ plan, onToggle }: { plan: Plan; onToggle?: (i: number) => void }) {
+ *  `onCycle` is given (the live pinned panel), each step's dot is a button that advances its status
+ *  (pending → active → done → pending); historical breadcrumbs omit it and stay read-only. */
+function PlanSteps({ plan, onCycle }: { plan: Plan; onCycle?: (i: number) => void }) {
   return (
     <ul className="plan-steps">
       {plan.steps.map((s, i) => (
         <li key={i} className={"plan-step " + s.status}>
-          {onToggle ? (
+          {onCycle ? (
             <span
               className="tick tick-btn"
               role="button"
               tabIndex={0}
-              aria-label={`toggle "${s.text}" ${s.status === "done" ? "incomplete" : "done"}`}
-              onClick={() => onToggle(i)}
+              aria-label={`step "${s.text}": ${s.status} — tap to set ${NEXT_STATUS[s.status]}`}
+              onClick={() => onCycle(i)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  onToggle(i);
+                  onCycle(i);
                 }
               }}
             />
@@ -107,13 +107,12 @@ function PinnedPlan({ plan }: { plan: Plan }) {
   const total = plan.steps.length;
   const done = plan.steps.filter((s) => s.status === "done").length;
   const [open, setOpen] = useState(false);
-  // Clicking a step's dot toggles done/undone, persists, and the agent sees it next turn (4-plan-edit).
-  const toggle = (i: number) =>
-    void editPlan(
-      plan.steps.map((s, j) =>
-        j === i ? { ...s, status: s.status === "done" ? "pending" : "done" } : s,
-      ),
-    );
+  // Clicking a step's dot advances its status (pending → active → done → pending), persists, and the
+  // agent sees it next turn (4-plan-edit). Three states so the owner can mark a step "in progress"
+  // (active, the lit look) before "done" (✓), matching the states the agent sets itself. EXACTLY ONE
+  // step is active at a time (the agent's own invariant): tapping a step to `active` demotes any other
+  // active step back to pending — so a manual edit can't leave two steps lit as the current one.
+  const cycle = (i: number) => void editPlan(advanceStep(plan.steps, i));
   return (
     <div className="plan-pin">
       <div className="plan-pin-wrap">
@@ -133,7 +132,7 @@ function PinnedPlan({ plan }: { plan: Plan }) {
         </button>
         {open && (
           <div className="plan-drop">
-            <PlanSteps plan={plan} onToggle={toggle} />
+            <PlanSteps plan={plan} onCycle={cycle} />
           </div>
         )}
       </div>

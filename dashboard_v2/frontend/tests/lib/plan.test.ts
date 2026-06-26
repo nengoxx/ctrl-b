@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { pairResults, planFrom } from "../../src/lib/plan";
-import type { ChatMessage, Part, ToolCallPart, ToolResult } from "../../src/types";
+import { advanceStep, pairResults, planFrom } from "../../src/lib/plan";
+import type { ChatMessage, Part, PlanStep, ToolCallPart, ToolResult } from "../../src/types";
 
 // lib/plan — the pure task_plan helpers the Agent-chat controller (useAgentChat) memoizes and the vapor
 // PlanBubble shares. Behavior-locked here so the M2.3 extraction can't silently drift the pairing/plan rules.
@@ -69,5 +69,38 @@ describe("pairResults", () => {
     const { currentPlan, resultByCall } = pairResults([msg("a1", "assistant", [call("c1", "wake_host")])]);
     expect(currentPlan).toBeNull();
     expect(resultByCall).toEqual({});
+  });
+});
+
+describe("advanceStep", () => {
+  const step = (text: string, status: PlanStep["status"]): PlanStep => ({ text, status });
+  const statuses = (steps: PlanStep[]) => steps.map((s) => s.status);
+
+  it("cycles a single step pending → active → done → pending", () => {
+    let steps = [step("a", "pending")];
+    steps = advanceStep(steps, 0);
+    expect(steps[0].status).toBe("active");
+    steps = advanceStep(steps, 0);
+    expect(steps[0].status).toBe("done");
+    steps = advanceStep(steps, 0);
+    expect(steps[0].status).toBe("pending");
+  });
+
+  it("keeps exactly one active: activating a step demotes the previously-active one to pending", () => {
+    const steps = [step("a", "active"), step("b", "pending"), step("c", "done")];
+    const next = advanceStep(steps, 1); // b: pending → active
+    expect(statuses(next)).toEqual(["pending", "active", "done"]); // a demoted, c untouched
+  });
+
+  it("self-heals a pre-existing multi-active plan on the next activate", () => {
+    const steps = [step("a", "active"), step("b", "active"), step("c", "pending")];
+    const next = advanceStep(steps, 2); // c → active demotes BOTH other actives
+    expect(statuses(next)).toEqual(["pending", "pending", "active"]);
+  });
+
+  it("does NOT touch other steps when the tapped step leaves active (→ done)", () => {
+    const steps = [step("a", "active"), step("b", "pending")];
+    const next = advanceStep(steps, 0); // a: active → done; b stays
+    expect(statuses(next)).toEqual(["done", "pending"]);
   });
 });

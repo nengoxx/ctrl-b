@@ -139,6 +139,7 @@ body[data-motion="reduced"] .hero .grid::before,
 body[data-motion="reduced"] .now .name,
 body[data-motion="reduced"] .dev.on .led,
 body[data-motion="reduced"] .dev.on .eq i,
+body[data-motion="reduced"] .plan-step.active .tick,
 body[data-motion="reduced"] .composer .send.brewing,
 body[data-motion="reduced"] .composer .mic.rec,
 body[data-motion="reduced"] .conn-badge.reconnecting .dot {
@@ -1056,9 +1057,10 @@ body {
 }
 .plan-count {
   font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.5px;
-  color: var(--ink-faint);
+  font-weight: 600;
+  color: var(--ink-soft); /* was --ink-faint (too dim to read the count against the tinted head) */
 }
 
 /* The checklist (shared) — per-step status ticks: pending = hollow ring, active = pulsing teal ring
@@ -1087,9 +1089,9 @@ body {
   box-sizing: border-box;
   display: block;
   padding: 0;
-  width: 11px;
-  height: 11px;
-  margin-top: 3px;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
   border-radius: 50%;
   border: 1.5px solid var(--ink-faint);
   position: relative;
@@ -1117,7 +1119,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 800;
   color: #06210d;
 }
