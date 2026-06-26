@@ -76,7 +76,28 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Theme Engine T0 SHIPPED** (the engine, vapor byte-for-byte unchanged) · NEXT = **build T1 (minimal — BASE chrome + OKLCH matrix)**; emma deploy → cutover still queued)
+## Current state (**Theme Engine T0 shipped; architecture REVISED → D29** · NEXT = **M0 (vapor migrated as a theme — shell inversion, byte-identical)**; emma deploy → cutover still queued)
+
+> ### 🟢 ARCHITECTURE REVISION — Theme engine v2 (D29) — 2026-06-26 — **read this before building**
+> The owner refined the requirement: a theme must be able to **restructure/relocate/hide/add** any element (minimal hides
+> the appbar; frontier's chat has animated squares) while **full functionality stays reachable**. T0's **fixed 7-slot
+> model can't do that**, so the architecture is revised (→ **DECISIONS D29**, spec **THEME_ENGINE.md §14**). **Build T1+
+> against §14, NOT the §§9–13 slot model.**
+> - **Invert ownership:** the **theme owns the whole presentation (`Root`)**; the app owns **functionality as headless,
+>   store-backed controllers** (`useFleet`/`useComposer`/`useAgentChat`/`useSections`/`useAppChrome`) mounted **above**
+>   `Root`; an optional **Kit** supplies reusable token-driven presenters (`DefaultRoot` + chrome + Conf + NowMonitoring +
+>   primitives). Reskin themes = `tokens.css` + fonts + a Fleet view; bespoke themes write their own `Root`.
+> - **vapor is migrated as a normal theme** (owner: full integration, no frozen special-case) — **default until each other
+>   theme is verified.** Migration is the careful part → the **M0–M3 verify-at-every-step runbook** (§14.7): M0 shell
+>   inversion (byte-identical) · M1 `@scope` CSS-scoping gate (vapor byte-identical scoped) · M2 controller extraction one
+>   feature at a time · M3 register vapor + per-theme settings. Then Kit + minimal, then T2–T5.
+> - **CSS isolation = `@scope([data-skin=X])`** (Baseline Dec 2025) — vapor.css stays verbatim except scope-root selectors;
+>   far lower risk than a PostCSS prefix (web-researched). `@layer base,theme` orders Kit-vs-theme. Default eager, others lazy.
+> - **Core invariant (no future refactor):** all state that must survive a switch / be shared lives in a controller/store
+>   above `Root`, never theme `useState`. **Only Fleet (+ frontier Agent) deviate structurally**; everything else is
+>   vapor's functionality restyled. T0 infra that **survives:** registry, provider, `ui {theme,mode,accent}`, cross-device
+>   sync, View-Transition switch, no-FOUC script, `@layer`. **Replaced:** the 7-slot `ThemeSlots`/`useThemeSlot`/slot-host.
+> - **⛔ NEXT = M0** (shell inversion, vapor verbatim under `<VaporRoot/>`, byte-identical). Audit each change before continuing.
 
 > ### 🟢 SESSION UPDATE — Theme Engine **T0 (the engine; vapor untouched) SHIPPED** — 2026-06-26
 > The foundation is built + fully green; **vapor renders byte-for-byte unchanged** (the acceptance test).

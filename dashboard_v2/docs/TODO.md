@@ -733,31 +733,48 @@ rule). **vapor stays byte-for-byte unchanged throughout.**
         kept, `modulePreload` untouched.)
   - [x] **Acceptance met: with only vapor registered, the app is byte-for-byte unchanged.** Unit-tested slot
         resolution path + the ui migration (legacy remap) + the appearance reconcile; backend test for
-        `GET /api/appearance` + the PUT round-trip + per-host blob (temp config). e2e green. **Owner 390px
-        eyeball pending** (the one thing tests don't cover — vapor fidelity + the new Appearance picker).
-- [ ] **T1 — minimal** (LOW–MED): the first real theme + the **BASE token-driven chrome** (AppBar/Composer/
-      TabBar shell/Conf rows/ChatBubble/HostDetail) consuming the semantic contract; the **mode×4-accent
-      OKLCH matrix** (build the richest palette model here so the abstraction is right); BASE FleetRows
-      (default FleetView) + the shared **NowMonitoring + Waveform** slot. Validates the engine on a near-reskin.
-- [ ] **T2 — phosphor** (LOW–MED): the **CRT overlay layer** (scanlines/grid/glow) + a **monochrome** palette
-      + the within-theme named-palette axis (amber/green). Reuses BASE chrome + FleetRows.
-- [ ] **T3 — observatory** (MED, low-priority — port once its prototype is finished): the first **FleetView
-      slot override** (SVG radial topology) + the first **`present()`** (per-host `angle`) + the
-      `host.appearance` backend field (additive). Proves slots + the presentation layer.
-- [ ] **T4 — cosmos** (HIGH): the orbital `FleetView` — rAF orbit + camera zoom/pan, per-host planet encoding
-      (golden-angle default + override), canvas starfield + waveform, viewport morph; `HostDetail` = slide
-      panel. The stress test for slots + presentation data + animation lifecycle (gated by `ui.motion`).
-- [ ] **T5 — frontier** (HIGH): art-map + GPS beacons (`x/y` via `present()`), photo rig-card grid (the
-      hand-drawn Mœbius art, copied into the module), the **bottom-sheet** `HostDetail` primitive, and the
-      per-theme **asset strategy** (`import.meta.glob`; built-in drawing set by index **+ the per-host
-      `host.appearance.frontier.image` override — both built here**, no deferred half). Heaviest net-new surface.
+        `GET /api/appearance` + the PUT round-trip + per-host blob (temp config). e2e green. **Owner eyeballed
+        at 390px.** ⚠️ **The 7-slot model T0 shipped is SUPERSEDED by D29** (theme-owned `Root` + controllers);
+        T0's other infra (registry/provider/sync/VT/`@layer`/no-FOUC script) survives. Build T1+ against §14.
 
-**Deferred within Phase 11 (don't build unless asked):** theme-switch `<link>` teardown (inert under
-`[data-skin]` scoping; a cheap future optimization); a theme with a non-4 tab set (the registry supports it,
-no theme needs it in v1); a multi-device write-conflict UI (LWW + reconcile-on-load is sufficient for one
-user — `updated_at` is carried if detection is ever wanted). _Cross-device sync + the View-Transition switch
-+ the frontier per-host art override were pulled forward to day-1/their owning slice (owner 2026-06-26) — no
-longer deferred._
+### Phase 11 v2 (D29) — re-sliced 2026-06-26: vapor migrated as a theme, then Kit + minimal, then the rest
+_Build against THEME_ENGINE.md **§14** (headless controllers + theme-owned `Root` + Kit), NOT the §§9–13 slot model.
+Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit each change before continuing._
+
+- [ ] **M0 — shell inversion, vapor behavior untouched.** `App`→thin host (providers, `--app-h`, `beforeunload`,
+      overlay mounting) renders `<VaporRoot/>` = today's body composing the existing vapor components verbatim
+      (move `--appbar-h` into it). Remove the T0 `useThemeSlots` host. **Acceptance: byte-identical build.**
+- [ ] **M1 — `@scope` CSS-scoping gate (FIRST CSS task).** Wrap `vapor.css` in `@scope([data-skin=vapor])`
+      (`:root`→`:scope`, `body[data-theme=…]`→`:scope[data-theme=…]`, `@keyframes` stay global). `vite build`-verify
+      `@scope` survives + **vapor byte-identical scoped**. Default-eager vapor CSS, lazy others (§14.6).
+- [ ] **M2 — controller extraction, ONE feature per step** (verify after each): `useFleet` (lift `featured`/`open`
+      into a store) → `useComposer` (prefix routing) → `useAgentChat` (tool-loop/confirm/resume/streaming) →
+      `useSections` → `useAppChrome`. Vapor's components consume them; behavior preserved by construction.
+- [ ] **M3 — register vapor as a `ThemeDef`** (`Root=VaporRoot`, eager scoped CSS, named-accent palettes) + the
+      **per-theme settings** mechanism (`ThemeDef.settings` → `ui.themeSettings[id]` open map, synced via the
+      appearance channel; `useThemeSetting`; Appearance picker auto-renders). Vapor = default selection.
+- [ ] **Kit + minimal.** The Kit: semantic 3-tier token contract + `DefaultRoot` scaffold + token-driven AppBar/NavBar
+      (count-driven indicator)/Composer/ConfShell/device-rows/**NowMonitoring**+waveform/ChatBubble/primitives;
+      reuse + CSS-skin the existing Conf editors; Kit/token-driven global overlays. **minimal** = `tokens.css`
+      (`@scope([data-skin=minimal])`) + Fontsource fonts + the **OKLCH mode×4-accent matrix** + its Fleet view
+      (NowMonitoring + rows, **real host data** — ping/last-seen/mac/ssh, not the mock uptime/cpu/temp) + an eyeball pass.
+- [ ] **T2 — phosphor** (LOW–MED): `tokens.css` + fonts + CRT overlay + monochrome amber/green named axis. Reuses the
+      whole Kit incl. the default Fleet. + a Fleet-data eyeball pass.
+- [ ] **T3 — observatory** (MED, low-pri — port once its prototype is finished): own Fleet view (SVG radial topology)
+      + first `present()` (per-host `angle`). Proves the per-theme Fleet + presentation layer.
+- [ ] **T4 — cosmos** (HIGH): own Fleet `Root`/orbital — rAF orbit + camera zoom/pan, per-host planet encoding
+      (golden-angle default + override), canvas starfield + waveform; `HostDetail` = slide panel; `present()`. Gated by `ui.motion`.
+- [ ] **T5 — frontier** (HIGH): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
+      (animated squares — the one non-Fleet structural deviation) + bottom-sheet `HostDetail` + asset strategy
+      (`import.meta.glob`; built-in Mœbius drawing set by index + per-host `host.appearance.frontier.image` override).
+
+**Per-theme Fleet eyeball passes (owner directive):** each theme's Fleet (and frontier's Agent) gets a 390px design pass
+to decide what host data to show / how to structure it — only the Fleet (+ frontier Agent) deviate; everything else is
+vapor's functionality restyled via the Kit + tokens.
+
+**Deferred within Phase 11 (don't build unless asked):** theme-switch `<link>` teardown (`@scope` makes coexisting
+bundles harmless); a non-4 tab set (a theme can declare its own nav, none needs it in v1); a multi-device write-conflict
+UI (LWW + reconcile suffices for one user).
 
 ---
 

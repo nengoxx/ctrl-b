@@ -768,3 +768,163 @@ color-parameterized pure fn to avoid duplicating the loop.)
 vapor's indicator hardcodes 4 tabs in CSS (`repeat(4,1fr)`, `width:25%`, `translateX(N*100%)` — vapor.css:243–
 255) — fine for frozen vapor (always 4). **BASE's TabBar/TabIndicator computes `100/n%` width + `index*100%`
 offset from `ThemeDef.tabs.length`** so a future non-4-tab theme works without touching the frozen sheet.
+
+---
+
+# §14 — REVISION 2 (LOCKED 2026-06-26): headless controllers + theme-owned `Root` + Kit (→DECISIONS D29)
+
+> **Supersedes the fixed-slot model of §§9–13.** The owner clarified the real requirement: a theme must be able to
+> **restructure / relocate / hide / add** any element (minimal hides the appbar; frontier's chat has animated squares)
+> while **full functionality stays reachable**. A fixed 7-slot layout structurally can't do that. So ownership inverts:
+> **the theme owns the whole presentation; the app owns functionality as headless controllers + shared state; an optional
+> Kit supplies reusable token-driven presenters.** vapor is **migrated as a normal theme** (default until others verified),
+> not frozen-and-separate. **Build against this section, not §§9.4–9.5/13.6 (the slot model).** What survives from T0:
+> §14.9. Web-grounded: headless-component pattern (Radix/TanStack/Headless UI), theme-as-plugin (layout not just color),
+> 3-tier design tokens, `@scope` (Baseline Dec 2025).
+
+## 14.1 The four layers
+
+```
+1 CORE (unchanged)        hooks/* · store/* · api/client                         — theme-agnostic data/domain
+2 CONTROLLERS (headless)  useFleet · useAgentChat · useComposer · useSections     — state+actions, NO markup,
+        │                 · useAppChrome · useTools · useConf                        STORE-BACKED, mounted in App
+3 THEME <Root>            owns the ENTIRE body; composes controllers + Kit +      — one per theme; the escape hatch
+        │                 bespoke elements (hide/relocate/add anything)              AND the norm
+4 KIT (optional reuse)    DefaultRoot · AppBar · NavBar · Composer · ConfShell ·  — token-driven presenters +
+                          device rows · NowMonitoring · ChatBubble · primitives      the semantic token contract
+```
+
+`App.tsx` = thin host: providers + app-global effects (viewport `--app-h`, `beforeunload`) + global-overlay mounting +
+`<ActiveTheme.Root/>`. Everything visual is below `Root`, owned by the theme.
+
+## 14.2 Feature controllers (the stable contract)
+
+One headless hook per functional area, returning `{ …state, …actions }`, **no JSX**. **Store-backed** (the D23
+`createStore` pattern) for any state shared across instances or surviving a theme switch — NOT component `useState`.
+Mounted in `App` (above `Root`). Initial set (extracted from today's components, behavior-preserving):
+
+| Controller | Owns | Extracted from |
+|---|---|---|
+| `useFleet` | hosts/services (via existing hooks) + **featured/open/auto-cycle** | `FleetTab` local state → a fleet store |
+| `useComposer` | input value, prefix routing (`!`/`/`/agent), inference mode, mic/dictation, submit | `Composer` |
+| `useAgentChat` | messages, send, streaming/buffered, confirm-bubble suspend/resume, plan | `AgentTab` + chat store |
+| `useSections` | active functional area + navigate + list (functional, not visual tabs) | `ui.tab` generalized |
+| `useAppChrome` | TTS-auto, voice status, mini-player | `AppBar`/voice hooks |
+| `useTools` / `useConf` | thin wrappers over existing registry/settings hooks | `UtilsTab`/`ConfTab` |
+
+Controllers are the **capability catalog**: a theme that hides a control doesn't remove the capability — any presentation
+can surface it. Document each controller's API (headless = the API IS the contract).
+
+## 14.3 Theme contract (`ThemeDef` revised)
+
+```ts
+interface ThemeDef {
+  id: ThemeId; label: string;
+  Root: React.ComponentType;            // owns the whole presentation
+  palettes: PaletteModel;               // §9.8 (kept) — mode/accent/named axes
+  loadStyles: () => Promise<unknown>;   // §9.6 (kept) — lazy CSS; DEFAULT theme is eager (§14.6)
+  loadFonts?: () => Promise<void>;      // §9.10 (kept)
+  present?: Present;                    // §9.9 (kept) — per-host encoding (cosmos/frontier)
+  settings?: ThemeSettingsSpec;         // NEW — theme-namespaced options (see below)
+}
+```
+
+**Per-theme settings (the "minimal hides the appbar" mechanism).** A theme declares `settings` = a small schema +
+defaults (e.g. `{ hideAppbar: { type:"switch", label:"Hide app bar", default:false } }`). The Appearance picker
+auto-renders the active theme's settings; values live in an **open `ui.themeSettings[themeId]` map**, persisted +
+**synced** via the appearance channel (extend `AppearanceCfg`, additive); read with `useThemeSetting(id, key)`. The
+theme's `Root` reads them and reflows. **No app/core change to add a theme's bespoke option.**
+
+## 14.4 The Kit (optional reuse) + token contract
+
+`theme-engine/kit/` — token-driven presenters consuming the **semantic contract** (§9.7, three-tier: global → semantic →
+component): `DefaultRoot` (the standard appbar+nav+sections+composer scaffold, parameterized by the theme's section
+views + `hideAppbar`-style settings), `AppBar`, `NavBar` (count-driven indicator §13.8), `Composer`, `ConfShell`, device
+rows, `NowMonitoring` (+ waveform reading `--accent` via `globalAlpha`, §13.7 alt), `ChatBubble`, and primitives
+(`Seg`/`Switch`/`Field`/`Card`). **Reskin themes** (minimal/phosphor) = `Root` is `<DefaultRoot sections={…}/>` + a
+`tokens.css` + fonts + a Fleet view. **Bespoke themes** (cosmos/frontier) write their own `Root`. **The deep Conf
+editors** (AgentsEditor/MachineEditor/Skills/Memory/Integrations/ToolCatalog) are **reused as-is and skinned by the
+Kit/theme CSS** (their classes styled token-driven) — not re-authored per theme. Global overlays (toasts/confirm/prompt/
+mini-player) become Kit/token-driven so they restyle per skin.
+
+## 14.5 The core invariant — state ownership (prevents future refactors)
+
+**All state that must (a) survive a theme switch or (b) be reachable by multiple parts of a presentation lives in a
+controller/store mounted ABOVE the theme `Root`.** Never a theme component's `useState`. Consequence: switching theme
+remounts only presentation — no refetch, no lost draft/featured/scroll, instant. (Today's offenders to lift: `FleetTab`
+`featured`/`open`; agent scroll; any composer draft not already in the composer store.)
+
+## 14.6 CSS isolation — `@scope` + `@layer` + eager-default
+
+- **Skin isolation = `@scope ([data-skin=X]) { … }`** wrapping each theme's CSS (Baseline Dec 2025 — covers the owner's
+  modern Android+desktop). Only the active skin's rules match; themes can't bleed even if bundles coexist during a switch.
+  The prototypes share class names (`.composer/.seg/.switch/.device/.hero`), so scoping (not bare globals) is required.
+- **vapor.css stays VERBATIM except scope-root selectors:** `:root`→`:scope` (vars on the skin element still inherit
+  down), `body[data-theme=aqua|ember]`→`:scope[data-theme=…]` (same-element accent axis), standalone `body`→`:scope`.
+  Most rules (`.appbar`/`.dev`/…) are descendant and stay unchanged inside `@scope`. `@keyframes` stay global (vapor's
+  names are vapor-specific; verify no cross-theme collision). **Far lower risk than a PostCSS prefix** (research: prefix
+  plugins *replace* `:root`, mis-prefix body-level same-element selectors, double-prefix `@keyframes`).
+- **`@layer base, theme`** still orders Kit-vs-theme overrides (theme wins). Composes with `@scope` (orthogonal: layer =
+  cascade order, scope = which elements match).
+- **Default theme (vapor) CSS eager** (static import → blocking `<link>`, no first-paint FOUC); others lazy (Vite
+  guarantees async-chunk CSS before chunk eval). Inline `<body>`-top script sets `data-skin` early (T0, kept). A
+  non-default returning user gets **one** View-Transition switch on cold load (accepted; single user, PWA-cached).
+- **M1 build-verify gate:** confirm the bundler preserves `@scope` (+ vapor byte-identical scoped) before scoping any
+  other theme — mirrors T0's `@layer` gate.
+
+## 14.7 Vapor migration runbook — verify at EVERY step (extra care: the only working theme)
+
+Full suite (92 unit + 32 e2e) + 390px eyeball must stay green at each milestone; a regression is then isolated to one step.
+
+- **M0 — shell inversion, vapor behavior untouched.** `App` → thin host (providers, `--app-h` viewport, `beforeunload`,
+  overlay mounting) rendering `<VaporRoot/>`. `VaporRoot` = today's App body composing the **existing vapor components
+  verbatim** (no controllers yet; move the layout-specific effects like `--appbar-h` into it). **Acceptance: byte-identical
+  build** (same bar as T0). De-risks the inversion alone. *(The T0 slot resolution / `useThemeSlots` is removed here —
+  App renders the theme `Root` directly.)*
+- **M1 — `@scope` CSS-scoping gate.** Build/verify the scoping mechanism; scope `vapor.css` under `@scope([data-skin=
+  vapor])`. **Acceptance: vapor renders byte-identical scoped** + `@scope` survives the bundler. Biggest vapor risk → own gate.
+- **M2 — controller extraction, ONE feature per step.** Extract `useFleet`→`useComposer`→`useAgentChat`→`useSections`→
+  `useAppChrome` (store-backed); migrate vapor's components to consume each, **verifying after each**. Behavior preserved
+  by construction (logic relocated). Composer prefix-routing + agent tool-loop (confirm/resume/streaming) get extra
+  scrutiny + targeted e2e. Lift `featured`/`open` into the fleet store here.
+- **M3 — register vapor as a `ThemeDef`** (`Root=VaporRoot`, scoped CSS via `loadStyles`/eager, `palettes`=named accents,
+  `settings` if any) + the per-theme settings mechanism. vapor is now a peer theme; default selection.
+
+Only after M0–M3 green: build the Kit + minimal.
+
+## 14.8 Edge cases (locked)
+
+| Concern | Resolution |
+|---|---|
+| Hide a control | Capability stays in its controller; another presentation can surface it |
+| Relocate composer (keyboard) | `useKeyboardInsets`/viewport hook the theme `Root` opts into |
+| Theme-specific anims (frontier) | Pure theme components; own effects/cleanup; `ui.motion`-gated |
+| State across theme switch | Controllers above `Root` (§14.5) |
+| Alt navigation (drawer/none) | `useSections` = active+navigate+list; theme renders nav freely |
+| Lazy heavy section (Conf) | Lazy-section helper; preserves `confMounted`/Suspense |
+| Broken theme `Root` | Root `ErrorBoundary` → fallback offers **revert to vapor** |
+| Global overlays | Kit/token-driven, scoped to active skin |
+| StrictMode double-invoke | Controllers + theme effects clean up (cycle interval, canvas rAF) |
+| PWA offline switch | Lazy chunks in build manifest → workbox-precached; verify |
+| Theme omits a section | `useSections` defaults active to first rendered |
+| Per-host visuals | `present()` + open `appearance` blob (§9.9) |
+| Theme-specific persisted option | `ui.themeSettings[id]` synced (§14.3) |
+| First-paint FOUC | Default eager, others lazy + one VT switch (§14.6) |
+| Add a future theme | `ThemeDef` + `Root` + scoped `tokens.css` + fonts + Fleet view; zero app/core/backend change |
+
+## 14.9 What survives T0 vs replaced
+
+**Survives unchanged:** `ThemeRegistry`, `ThemeProvider` (generalized to provide controllers/active-theme), `ui`-store
+`{theme,mode,accent}` (+ `themeSettings` added), cross-device sync (`AppearanceCfg` + `GET /api/appearance` + reconcile),
+View-Transition `switchTheme`, inline no-FOUC script, the `@layer` concept, the per-host `appearance` blob, the legacy-
+`theme` remap. **Replaced:** `ThemeSlots` (7 slots) + `useThemeSlot` + App-as-slot-host → `Root` + controllers (the slot
+idea survives *inside* the Kit's `DefaultRoot`). `theme/index.css`'s `layer(frozen)` cage → per-theme `@scope` + eager
+default.
+
+## 14.10 Build order (re-sliced)
+
+M0 → M1 → M2 → M3 (vapor migrated, default) → **Kit + minimal** (token contract + `DefaultRoot` + per-theme settings +
+minimal `tokens.css`/fonts/OKLCH matrix/Fleet, real data) → **T2 phosphor** (tokens+fonts+CRT, reuses Kit) → **T3
+observatory** (low-pri; FleetView + `present()`) → **T4 cosmos** (own Fleet Root/orbital + slide-panel HostDetail +
+`present()`) → **T5 frontier** (own Fleet + **bespoke Agent** anims + bottom-sheet + assets + `present()`). D7 per theme;
+390px eyeball + pause after each.

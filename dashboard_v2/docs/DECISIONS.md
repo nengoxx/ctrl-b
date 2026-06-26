@@ -1459,3 +1459,74 @@ and robustness gaps in the spec *wording*, all now fixed (THEME_ENGINE.md §§9.
   `--appbar-h`-ref / `showComposer`→`TabDef.hasComposer` / tab-container show-hide orchestration (§13.6); shared Waveform
   needs a `--accent-rgb` canvas channel (§13.7); BASE TabBar indicator is tab-count-driven (§13.8). Adopt container
   queries + same-document View Transitions; module-level slot map (avoid context fan-out). Full list: THEME_ENGINE.md §12.
+
+## D29 — Theme engine v2: headless controllers + theme-owned `Root` + optional Kit (supersedes D28's fixed-slot model) ✏️ LOCKED 2026-06-26
+
+**Why this supersedes D28's slot model.** D28 shipped T0 with the app owning the skeleton (appbar+tabs+composer+tabbar)
+and themes filling **7 fixed slots**. The owner clarified the real requirement: a theme must be able to **restructure,
+relocate, hide, or add** any element (e.g. "minimal hides the appbar", "frontier's chat tab has animated squares") while
+**full functionality stays reachable** — the fixed-slot layout structurally prevents that. So we **invert ownership**:
+the **theme owns the entire presentation tree**; the app owns **functionality as headless controllers + shared state**;
+an **optional Kit** supplies reusable token-driven presenters so reskin-class themes stay cheap. Web-researched +
+grounded in the headless-component pattern (Radix/TanStack/Headless UI), theme-as-plugin (layout not just color), and
+3-tier design tokens (global→semantic→component). Full spec: **THEME_ENGINE.md §§14+**.
+
+> **Owner decisions locked (2026-06-26):**
+> 1. **vapor is migrated as a normal theme** (NOT frozen-and-separate) — it's just the most-complete + currently the only
+>    fully-functional one, so it **stays the default until each other theme is verified**. No special-casing; vapor is a
+>    peer `ThemeDef` (its own `Root` + scoped CSS + palettes).
+> 2. **Only the Fleet tab deviates structurally per theme** (the signature surface), **+ frontier's Agent tab** (bespoke
+>    animated chat). Everything else — appbar, nav, composer, Agent (non-frontier), Tools, Conf incl. all editors — is the
+>    **same functionality/structure as vapor, restyled** per theme. Per-theme Fleet (and frontier Agent) get an **eyeball
+>    pass** to decide what host data each shows.
+> 3. **Robust + efficient + long-term, no future refactor** is the explicit bar. Adding a theme = one `ThemeDef` + `Root`
+>    (or `DefaultRoot` config) + scoped `tokens.css` + fonts + a Fleet view. Zero app/core/backend change.
+
+**The architecture (four layers).** (1) **Core** — TanStack hooks, stores, API client (unchanged, theme-agnostic). (2)
+**Feature controllers** — headless hooks (`useFleet`/`useAgentChat`/`useComposer`/`useSections`/`useAppChrome`/…) returning
+state+actions, **zero markup**, **store-backed** (so multiple presentation instances share state and it survives a theme
+switch). (3) **Theme presentation** — each theme's **`Root`** owns the whole body, composing controllers + Kit + bespoke
+elements. (4) **The Kit** — optional reusable token-driven presenters (`DefaultRoot` scaffold, AppBar, NavBar, Composer,
+ConfShell, device rows, NowMonitoring, ChatBubble, primitives) + the **semantic token contract**. Reskin themes reuse the
+Kit + a `tokens.css`; bespoke themes write their own `Root`.
+
+**The core invariant (prevents future refactors): state ownership.** All state that must survive a theme switch or be
+reachable by multiple parts of a presentation lives in a **controller/store mounted ABOVE the theme `Root`** (in `App`),
+never in a theme component's `useState`. A theme switch then remounts **only** presentation — no refetch, no lost state.
+
+**Theme contract (`ThemeDef` revised).** `{ id, label, Root, palettes, loadStyles, loadFonts?, present?, settings? }`.
+`settings` is a **theme-namespaced options schema** (the "minimal hides the appbar" mechanism) — declared by the theme,
+auto-rendered by the Appearance picker, stored in a `ui.themeSettings[id]` open map, **synced** via the appearance
+channel; read with `useThemeSetting(id, key)`. Tabs/slots/`hasComposer` stop being engine concerns (theme-internal now).
+
+**CSS isolation — `@scope` (Baseline Newly-Available, Dec 2025).** Each theme's CSS is wrapped in
+`@scope ([data-skin=X]) { … }` so only the active skin's rules match (themes can't bleed into each other even if bundles
+coexist during a switch). **vapor.css stays verbatim except a handful of scope-root selectors** (`:root`→`:scope`,
+`body[data-theme=aqua]`→`:scope[data-theme=aqua]`) — far lower risk than a PostCSS prefix transform (research confirmed
+prefix-plugins mishandle exactly `:root`/body-level/`@keyframes`). `@layer base, theme` still orders Kit-vs-theme
+overrides. **Default theme (vapor) CSS eager** (static import, no first-paint FOUC); others lazy (Vite guarantees
+async-chunk CSS loads before eval). A non-default returning user gets **one** View-Transition switch on cold load
+(accepted — single user, PWA-cached, matches the §9.11 reconcile model). **`@scope` survival through the bundler gets a
+build-verify gate at M1** (mirrors T0's `@layer` gate).
+
+**What survives from T0 vs what's replaced.** *Survives:* `ThemeRegistry`, `ThemeProvider`, `ui`-store `{theme,mode,accent}`,
+cross-device sync (`AppearanceCfg` + `GET /api/appearance` + reconcile), the View-Transition `switchTheme`, the inline
+no-FOUC script, the `@layer` cage concept. *Replaced:* the 7-slot `ThemeSlots` + `useThemeSlot` + App-as-slot-host →
+the `Root` + controllers model (the slot idea survives *inside* the Kit's `DefaultRoot` as an impl detail).
+
+**Vapor migration — verify-at-every-step runbook (the careful part; full detail THEME_ENGINE.md §14.x).** The risk is
+regressing the only working theme, so it migrates in independently-verifiable stages, full suite (92 unit + 32 e2e) +
+390px eyeball green at each: **M0** shell inversion (`App`→thin host renders `<VaporRoot/>` composing existing vapor
+components verbatim — **byte-identical** acceptance); **M1** the `@scope` CSS-scoping gate (scope vapor.css, byte-identical);
+**M2** controller extraction **one feature at a time** (vapor's components consume them, verify after each — composer
+prefix-routing + agent tool-loop get extra scrutiny); **M3** register vapor as a `ThemeDef` + per-theme settings. Only
+then build the Kit + minimal on the proven framework.
+
+**Edge cases locked (the systematic sweep).** Hide-a-control (capability stays in its controller); relocate composer
+(keyboard-aware viewport hook); theme-specific anims (own effects/cleanup, `ui.motion`-gated); alt navigation
+(`useSections`); broken theme `Root` → ErrorBoundary offers **revert to vapor**; global overlays → Kit/token-driven;
+StrictMode effect-cleanup; PWA precache of lazy theme chunks; a theme omitting a section (default to first rendered).
+Full table: THEME_ENGINE.md §14.
+
+**Build order.** M0→M3 (vapor) → Kit + minimal → T2 phosphor (cheap) → T3 observatory (low-pri) → T4 cosmos → T5
+frontier (bespoke Agent). D7 pixel-fidelity per theme; pause for the owner's 390px eyeball after each.
