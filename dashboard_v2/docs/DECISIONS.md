@@ -1306,10 +1306,23 @@ the resulting `memory` saves ride the normal `auto_write` path (on → saved, of
 Approve UI), and `state` saves auto-apply, all unchanged. **Proposal-batching when `auto_write` is off
 was the one open sub-decision → resolved as NOT built** (each `memory` call already yields its own
 proposal bubble; batching is a UI nicety, deferred). Frontend: Conf → Memory gains a "Periodic
-reflection" toggle + a gated "Reflection interval" field. Tests: `test_reflection_d27` (7 — fires at
-interval, silent off-interval / disabled / master-off, compaction-stable count, state-clause gating,
-nudge-position). Backend 30 test files green; frontend build + 85 unit + 32 e2e clean. **D27 complete
-(A+B+C).**
+reflection" toggle + a gated "Reflection interval" field. Tests: `test_reflection_d27` (9). Backend 30
+test files green; frontend build + 85 unit + 32 e2e clean. **D27 complete (A+B+C).**
+
+> **Audit fixes (independent review, folded in before push).** (1) **One-shot (MAJOR).** The nudge was
+> re-injected on *every* `_drive` iteration of the firing turn (the flag only cleared in `_finalize`),
+> so a weak model could re-save each round-trip (a reworded save dodges the loop-guard's exact-arg
+> dedup). Fixed: `_assemble` now **consumes** `_reflect_now` on first injection → exactly one model call
+> per firing turn. (2) **Subagent scope (MINOR).** `run_subagent` calls `run_turn`, so a headless
+> subagent (which *can* write memory) would reflect on its throwaway archived thread; at `interval=1`
+> every subagent turn would fire. Fixed: `_maybe_arm_reflection` gates on `self._depth == 0` (top-level
+> conversation only). Both locked by new tests (`test_reflection_is_one_shot_per_turn`,
+> `test_reflection_skipped_for_subagents`). **Verified-clean by the review:** count correctness +
+> compaction-stability (compaction marks `compacted=True`, never deletes; the summary is `role=system`),
+> gating order (no DB query when disabled), `_finalize` exclusion, frontend field-name wiring. Accepted
+> as-is: a turn that *suspends* before the model acts on the nudge drops that reflection (resume doesn't
+> re-arm — consistent with "reflection is turn-start"); the "{interval} turns" wording on later firings
+> (cosmetic).
 
 **Original design (still the spec):**
 

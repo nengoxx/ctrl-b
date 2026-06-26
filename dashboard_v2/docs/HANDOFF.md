@@ -92,6 +92,12 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >   *steers* — saves ride the normal `auto_write` path (on→saved, off→proposed), `state` auto-applies;
 >   **no propose-batching** (each `memory` call already yields its own bubble — deferred UI nicety).
 >   Frontend: Conf → Memory "Periodic reflection" toggle + gated "Reflection interval".
+> - **Audited (independent review) + fixed before push.** (1) **One-shot (MAJOR):** the nudge was
+>   re-injected every `_drive` iteration → `_assemble` now consumes `_reflect_now` on first injection
+>   (one model call/turn; a weak model could otherwise re-save). (2) **Subagent scope (MINOR):**
+>   `_maybe_arm_reflection` now gates on `self._depth == 0` so headless subagents don't reflect into
+>   durable memory. +2 tests (`test_reflection_d27` now 9). Review confirmed count/compaction-stability,
+>   gating order, `_finalize` exclusion, frontend wiring all clean.
 > - **Eyeball pending (390px):** the two new Conf → Memory rows. **NEXT = emma deploy** (TODO Phase 9
 >   systemd/install + Phase 10 cutover) — the memory roadmap is now fully shipped.
 

@@ -182,6 +182,43 @@ def test_reflection_state_clause_gated() -> None:
             assert any("`state`" in s for s in systems)
 
 
+def test_reflection_is_one_shot_per_turn() -> None:
+    """The nudge fires in exactly ONE model call per firing turn — a second `_assemble` on the same
+    session (the next `_drive` iteration) must NOT re-inject it (else a weak model re-saves)."""
+    with _workspace():
+        with _client() as c:
+            c.app.state.settings.memory.reflection_enabled = True
+            c.app.state.settings.memory.reflection_interval = 1
+            thread = _thread_with_users(c, 1)
+            sess = _session(c)
+            _run(sess._maybe_arm_reflection(thread))
+            first = _systems(_run(sess._assemble(thread)))   # iteration 1 — nudge present
+            second = _systems(_run(sess._assemble(thread)))  # iteration 2 — already consumed
+            assert _has_nudge(first)
+            assert not _has_nudge(second)
+
+
+def test_reflection_skipped_for_subagents() -> None:
+    """A headless subagent (depth > 0) must not reflect into durable memory from its throwaway thread,
+    even at an aggressive interval that its single task turn would otherwise hit."""
+    from app.services.agent.session import AgentSession
+
+    with _workspace():
+        with _client() as c:
+            c.app.state.settings.memory.reflection_enabled = True
+            c.app.state.settings.memory.reflection_interval = 1
+            s = c.app.state
+            sub = AgentSession(
+                s.threads, s.messages, s.inference, s.settings, s.actions,
+                s.settings.resolve_agent(None),
+                skills=getattr(s, "skills", None), selector=getattr(s, "skill_selector", None),
+                memory=getattr(s, "memory", None), interactive=False, depth=1,
+            )
+            thread = _thread_with_users(c, 1)
+            _run(sub._maybe_arm_reflection(thread))
+            assert not _has_nudge(_systems(_run(sub._assemble(thread))))
+
+
 def test_reflection_nudge_is_last_system_message() -> None:
     """The nudge sits after the skills note (the existing injection seam) → with memory present it
     still comes last among the system messages, before the chat history."""

@@ -337,6 +337,10 @@ class AgentSession:
             out.append({"role": "system", "content": self._skills_note})
         if self._reflect_now:  # periodic reflection nudge (D27-C), after the skills note
             out.append({"role": "system", "content": self._reflection_nudge()})
+            # One-shot: emit in exactly ONE model call, not on every `_drive` iteration of the turn —
+            # a re-instructed weak model would otherwise re-save (a reworded save dodges the loop-guard's
+            # exact-arg dedup). The model saw it once; that's the reflection prompt for the turn.
+            self._reflect_now = False
         for m in history:
             if m.role == "tool":
                 continue  # emitted inline after the assistant call below
@@ -405,9 +409,11 @@ class AgentSession:
         """Arm the periodic-reflection nudge for this turn (D27-C) when the thread's user-turn count
         is a multiple of `reflection_interval`. Counts the user message just persisted (so the cadence
         is every Nth turn) and **includes compacted messages** so it doesn't drift as history folds.
-        Opt-in: off unless both the master memory switch and `reflection_enabled` are on."""
+        Opt-in: off unless both the master memory switch and `reflection_enabled` are on, and only on
+        the **top-level** conversation — a headless subagent (`depth > 0`) runs a throwaway, archived
+        task thread and must not reflect its internal task into the owner's durable memory."""
         cfg = self._settings.memory
-        if not (cfg.enabled and cfg.reflection_enabled):
+        if self._depth > 0 or not (cfg.enabled and cfg.reflection_enabled):
             self._reflect_now = False
             return
         interval = cfg.reflection_interval
