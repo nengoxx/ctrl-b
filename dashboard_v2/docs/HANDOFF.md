@@ -76,7 +76,7 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Memory roadmap D27 COMPLETE + pushed** · the **v2 feature set is done** · NEXT = **emma (Linux) deploy → v1 cutover**, Phases 9–10 — the last track)
+## Current state (**Memory roadmap D27 COMPLETE + pushed** · the **v2 feature set is done** · NEXT = **the Theme Engine** (design phase — see [`THEME_ENGINE.md`](./THEME_ENGINE.md)); emma deploy → cutover is queued after)
 
 > ### 🟢 CLEAN-SESSION HANDOFF — D27 done & pushed · only the emma deploy / cutover remains — 2026-06-26
 > **Everything is pushed** (`origin/main` @ `af05a20`; tree clean except the untracked `prototypes/`
@@ -85,6 +85,22 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > (`npm run test:e2e`). Servers if needed: backend **5433** (`uvicorn app.main:app --port 5433`, **no
 > `--reload`** on Windows), frontend **5190** (`npm run dev -- --port 5190`). On Windows restart the
 > backend with the kill-by-port one-liner + a hidden `Start-Process` launch (a stray `&` exits the shell).
+>
+> **⭐ ACTIVE NEXT TRACK — the Theme Engine (analysis done, design open → [`THEME_ENGINE.md`](./THEME_ENGINE.md)).**
+> The owner built **6 full theme prototypes** (`prototypes/project/variations/*.html`): minimal, phosphor,
+> observatory, cosmos, frontier, + an evolved vapor. A deep analysis (4 parallel agents, 2026-06-26) found
+> these are **not palette swaps — they're distinct design systems** with disjoint token namespaces, their
+> own fonts, **restructured components** (cosmos = orbital planet fleet; frontier = photo-map + beacons +
+> bottom-sheet; observatory = SVG topology; vapor-proto = canvas carousel hero), and a richer palette model
+> (minimal = light/dark × 4 OKLCH accents). The proposed architecture is a **pluggable presentation layer**
+> over the shared data/logic core: a `ThemeRegistry` of `ThemeDef`s, **semantic-token normalization** of the
+> existing vapor components, **per-theme component slots** (esp. `FleetView`), a generalized `{theme,mode,
+> accent}` palette model, and a per-theme host-presentation layer. Phased T0 (engine + token-normalize,
+> ships vapor-only) → T1 minimal → T2 phosphor → T3 observatory → T4 cosmos → T5 frontier. **6 open
+> decisions + 3 discrepancies to confirm with the owner are listed in THEME_ENGINE.md §5–6** (notably:
+> frontier is a *dusk-badlands* theme, **not** the "comic" style the owner described — confirm; and which of
+> the 6 themes are in scope). **Read THEME_ENGINE.md before any theme work; lock the design as DECISIONS D28
+> + a TODO Phase 11 first.** D7 pixel-fidelity now applies *per theme*.
 >
 > **The v2 feature set is functionally complete** — Phases 0–8 shipped (fleet, agent tool-loop, voice,
 > integrations, Conf, guarded shell, Tools tab + manage layer) and the memory subsystem is now fully
