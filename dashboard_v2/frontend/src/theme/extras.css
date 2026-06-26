@@ -705,6 +705,14 @@ body {
    retry button rendered on the latest assistant bubble when chat status is "error". Flex
    row so the magenta retry pill sits next to the red message; wraps onto the next line at
    narrow widths. */
+/* Long unbreakable backend strings (a URL / file path / JSON token with no spaces) must wrap INSIDE
+   the bubble, never overflow it to the right — Chrome showed this on a backend-error bubble. `overflow-
+   wrap: anywhere` is inherited, so it reaches every bubble's text incl. the flex-row error message, and
+   (unlike `break-word`) it also shrinks the text's min-content size so a flex item can't push past the
+   bubble edge. vapor.css `.b .body` stays verbatim (D7); this overrides via cascade. */
+.b .body {
+  overflow-wrap: anywhere;
+}
 .b.bot .chat-err {
   display: flex;
   align-items: baseline;

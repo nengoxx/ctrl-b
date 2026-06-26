@@ -936,3 +936,39 @@ minimal `tokens.css`/fonts/OKLCH matrix/Fleet, real data) → **T2 phosphor** (t
 observatory** (low-pri; FleetView + `present()`) → **T4 cosmos** (own Fleet Root/orbital + slide-panel HostDetail +
 `present()`) → **T5 frontier** (own Fleet + **bespoke Agent** anims + bottom-sheet + assets + `present()`). D7 per theme;
 390px eyeball + pause after each.
+
+## 14.11 Cross-browser performance + robustness budget (RULE — every theme must pass) — owner directive 2026-06-26
+
+The owner runs the PWA on **Firefox/Fennec AND Chrome** (Fennec is the mic-over-HTTP browser). Vapor was
+built Chrome-first and shipped effects that are smooth on Blink but janky on Firefox-Android; the rules below
+exist so **no future theme repeats that**. A theme is not "done" until it's **smooth on Firefox/Fennec *and*
+Chrome at 390px with all effects ON** — that browser pair is part of the per-theme acceptance/eyeball pass,
+not an afterthought.
+
+**Animation — composite, don't repaint.** Continuous/ambient animations may only animate **`transform` and
+`opacity`** (the compositor handles these on the GPU; Firefox-Android cannot composite anything else and
+repaints every frame). **Never animate** `background-position`, `width`/`height`/`top`/`left`, `box-shadow`,
+or `filter` in a loop. Convert: a scrolling texture → a `transform: translate` on a taller child (see the
+neon-grid `:scope`/`.grid::before` precedent — 1:1 and GPU-cheap); a size pulse → `transform: scale`; a glow
+pulse → animate `opacity` of a glow layer, not `box-shadow`/`filter`. Promote a continuously-animated element
+with `will-change: transform` and bound its neighbours with `contain: layout` (or `paint`, if no glow
+overflows the box — `paint` clips).
+
+**`backdrop-filter: blur()` is the single heaviest effect on Firefox** (Mozilla rates CSS blur ~10× slower
+than Chrome; a sticky/fixed blurred bar re-blurs the scrolling page every frame). Use it sparingly, don't
+stack many blurred surfaces over the same scroll area, keep the radius modest, and **wire it to the `data-perf`
+lever** — lite mode drops the blur (opaque fallback bg). Likewise gate all ambient animation behind
+`data-motion`. **Both toggles (`body[data-motion]`, `body[data-perf]`) are part of the theme contract** — a
+theme that adds blur/animation must honor them (store/ui `motion`/`perf`; `perf` is **device-local**, not
+synced, since it's a per-device speed lever).
+
+**Canvas / `requestAnimationFrame` loops** (waveforms, frontier anims): cap the frame rate (~30fps is smooth
+for ambient), **pause when off-screen** (IntersectionObserver — the tab stays mounted but `display:none`), and
+**never call `getComputedStyle`/`getBoundingClientRect` per frame** — cache them (refresh on a low cadence /
+ResizeObserver). See `components/Waveform.tsx` for the reference implementation.
+
+**Layout robustness (any browser).** Text must never overflow its container horizontally. Long unbreakable
+strings — backend errors, URLs, paths, JSON tokens, host/model/agent names — must wrap: put `overflow-wrap:
+anywhere` on the text container (it's inherited and also shrinks min-content so flex items can't push past the
+edge), and give flex text items `min-width: 0`. This is a recurring bug class (the chat-bubble error overflow,
+the Conf label overflow); bake the wrap rule into any new text surface from the start.
