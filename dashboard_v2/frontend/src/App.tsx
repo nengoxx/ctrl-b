@@ -16,14 +16,28 @@ import { useActiveRoot } from "./theme-engine/ThemeProvider";
 // theme owns its own layout. App keeps only what every theme shares.)
 
 export default function App() {
-  useEventStream(); // live activity feed → refresh fleet on any recorded action
-  useAppearanceSync(); // reconcile theme/mode/accent against the server (cross-device LWW, §9.11)
-  useFleetCycle(); // SINGLETON featured-host auto-advance engine (above the Root, §14.5)
-  useAppViewport(); // --app-h tracks the visual viewport (keyboard-aware dvh)
-  useUnsavedGuard(); // warn before unload if any editor has unsaved changes
+  useEventStream(); // live activity feed → refresh fleet on any recorded action (effects only, no re-render)
+  useAppViewport(); // --app-h tracks the visual viewport (keyboard-aware dvh) — effect only
+  useUnsavedGuard(); // warn before unload if any editor has unsaved changes — effect only
 
+  // App re-renders ONLY on a theme change (the one reactive read it keeps). The data-subscribing engines
+  // live in a null-rendering child so their per-poll/appearance re-renders stay there and never cascade
+  // through `<ActiveRoot/>` into the whole theme tree.
   const ActiveRoot = useActiveRoot();
-  return <ActiveRoot />;
+  return (
+    <>
+      <AppEngines />
+      <ActiveRoot />
+    </>
+  );
+}
+
+// Headless controller engines mounted ABOVE the theme Root (D29 §14.5), isolated here so their query
+// subscriptions (hosts poll, appearance reconcile) re-render only this null component — not App.
+function AppEngines() {
+  useFleetCycle(); // SINGLETON featured-host auto-advance engine
+  useAppearanceSync(); // reconcile theme/mode/accent against the server (cross-device LWW, §9.11)
+  return null;
 }
 
 // Size the app shell to the VISUAL viewport. `100dvh` (CSS fallback) tracks the browser toolbar but NOT
