@@ -55,10 +55,17 @@ function groupTools(specs: ActionSpec[]): [string, ActionSpec[]][] {
     list.push(s);
     byCat.set(s.category, list);
   }
+  // Surface the tools that warrant attention first: severity (high → med → low), then confirm-gated,
+  // then core (always-on) tools, then name. The confirm + core tiebreakers keep a low-severity core
+  // tool grouped at the TOP of the low band instead of scattered alphabetically and lost (owner ask).
+  const coreFirst = (s: ActionSpec) => (agentModeOf(s) === "core" ? 0 : 1);
   for (const list of byCat.values()) {
     list.sort(
       (a, b) =>
-        RISK_ORDER.indexOf(a.risk) - RISK_ORDER.indexOf(b.risk) || a.name.localeCompare(b.name),
+        RISK_ORDER.indexOf(a.risk) - RISK_ORDER.indexOf(b.risk) ||
+        Number(b.confirm) - Number(a.confirm) ||
+        coreFirst(a) - coreFirst(b) ||
+        a.name.localeCompare(b.name),
     );
   }
   return [...byCat.entries()].sort(
