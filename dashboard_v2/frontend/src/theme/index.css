@@ -19,5 +19,10 @@
  * three shared names (--line/--line-2/--accent-glow) are won by vapor's theme-layer rules on a vapor page. */
 @import "../theme-engine/kit/tokens.css" layer(base);
 
+/* Kit component CSS — token-driven chrome (.kit-*) scoped under DefaultRoot's `.kit` marker (= Radix
+ * `.radix-themes` pattern); inert under vapor (its Root has no `.kit`). @layer base so a theme can still
+ * override in @layer theme, but reskins stay token-only (§14.4.1). */
+@import "../theme-engine/kit/kit.css" layer(base);
+
 @import "./vapor.css" layer(theme);
 @import "./extras.css" layer(theme);

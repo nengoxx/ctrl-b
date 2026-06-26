@@ -1,13 +1,10 @@
-import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
-import { AppBar } from "../../components/AppBar";
-import { Composer } from "../../components/Composer";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { MiniPlayer } from "../../components/MiniPlayer";
 import { PromptModal } from "../../components/PromptModal";
 import { SwUpdatePrompt } from "../../components/SwUpdatePrompt";
-import { TabBar } from "../../components/TabBar";
 import { Toasts } from "../../components/Toasts";
 import { useSections } from "../../hooks/useSections";
 import { prefetchOnIdle } from "../../lib/prefetch";
@@ -15,6 +12,9 @@ import { AgentTab } from "../../tabs/AgentTab";
 import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
 import { FleetTab } from "../../tabs/FleetTab";
 import { UtilsTab } from "../../tabs/UtilsTab";
+import { KitAppBar } from "./AppBar";
+import { KitComposer } from "./Composer";
+import { KitNavBar } from "./NavBar";
 
 // The Kit's DEFAULT root scaffold (D29 §14.4) — the standard appbar + scrolling sections + composer +
 // bottom-nav layout, generalized out of VaporRoot so a reskin theme's `Root` is just `<DefaultRoot/>` + a
@@ -53,11 +53,10 @@ export function DefaultRoot({ hideAppbar = false }: Props) {
   }, [tab]);
 
   // Expose the sticky appbar height as `--appbar-h` so the Agent plan tab pins just below it. When the
-  // appbar is hidden there's no `.appbar` node → the effect no-ops and the var stays unset (0 fallback).
+  // appbar is hidden there's no `.kit-appbar` node → pin content at the top (0), not a stale height.
   useEffect(() => {
-    const bar = scrollRef.current?.querySelector<HTMLElement>(".appbar");
+    const bar = scrollRef.current?.querySelector<HTMLElement>(".kit-appbar");
     if (!bar) {
-      // No app bar (hidden, or a theme that omits it) → pin content at the top, not a stale height.
       document.documentElement.style.setProperty("--appbar-h", "0px");
       return;
     }
@@ -79,16 +78,14 @@ export function DefaultRoot({ hideAppbar = false }: Props) {
     if (t === "conf") void preloadConfTab();
   }, []);
 
-  // `.no-composer` padding hook — layout-owned, written before paint (no flash on a section switch / first
-  // load), in the same commit the composer mounts/unmounts below.
-  useLayoutEffect(() => {
-    document.body.classList.toggle("no-composer", !showComposer);
-  }, [showComposer]);
+  // No `.no-composer` padding hook here: the Kit shell is an in-flow flex column, so a hidden composer is
+  // simply an absent flex child (the column reflows) — no bottom-padding bookkeeping needed (that hook is
+  // vapor-only, in VaporRoot).
 
   return (
-    <div className="app-shell">
-      <div className="app-scroll" id="app-scroll" ref={scrollRef}>
-        {!hideAppbar && <AppBar />}
+    <div className="kit">
+      <div className="kit-scroll" id="app-scroll" ref={scrollRef}>
+        {!hideAppbar && <KitAppBar />}
         <FleetTab active={tab === "fleet"} />
         <AgentTab active={tab === "agent"} />
         <UtilsTab active={tab === "utils"} />
@@ -101,8 +98,8 @@ export function DefaultRoot({ hideAppbar = false }: Props) {
         )}
       </div>
       <MiniPlayer />
-      {showComposer && <Composer />}
-      <TabBar onPrefetch={prefetch} />
+      {showComposer && <KitComposer />}
+      <KitNavBar onPrefetch={prefetch} />
       <Toasts />
       <ConfirmDialog />
       <PromptModal />

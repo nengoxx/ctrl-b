@@ -1,0 +1,286 @@
+/* Kit chrome stylesheet (D29 §14.4.1) — the ONE token-driven component stylesheet for reskin themes.
+ * Scoped under the `.kit` marker that DefaultRoot puts on its shell (= Radix Themes' `.radix-themes`
+ * pattern), so it can never leak into vapor (whose Root has no `.kit`). Imported into `@layer base`
+ * (theme/index.css); a theme may override a rule in `@layer theme`, but the norm is token-only — themes
+ * change only their tokens.css. Reads the semantic contract (kit/tokens.css §9.7); the new chrome uses
+ * fresh `.kit-*` class names (no collision with vapor's `.appbar`/`.composer`/…).
+ *
+ * LAYOUT: mirrors the shipped in-flow flex-column shell (extras.css `.app-shell`/`.app-scroll`) so the
+ * keyboard-aware `--app-h` sizing keeps working — a flex column, a flex:1 scroller, then composer + nav
+ * as in-flow `flex-shrink:0` children. VISUAL: ported from prototypes/project/variations/minimal.html.
+ * Deliberately OPAQUE (no backdrop-filter anywhere) — calm, and smooth on Firefox/Fennec (§14.11). The
+ * `--density-pad` multiplier (set by the theme's `density` setting) scales vertical padding. */
+
+/* box-sizing reset — vapor's global reset is scoped to [data-skin=vapor], so reskins need their own
+ * (the prototypes assume border-box; without it fixed-width/padded `.kit-*` boxes mis-size). */
+.kit,
+.kit *,
+.kit *::before,
+.kit *::after {
+  box-sizing: border-box;
+}
+
+/* ── shell (the `.kit` marker element IS the shell) ── */
+.kit {
+  height: 100dvh; /* fallback before JS / no visualViewport */
+  height: var(--app-h, 100dvh); /* App sizes this to the visual viewport (keyboard-aware) */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Hanken Grotesk", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.kit-scroll {
+  flex: 1 1 auto;
+  min-height: 0; /* let the flex child shrink + scroll */
+  overflow-y: auto;
+  overflow-x: hidden; /* vertical-only scroller; a too-wide child must never add an x scrollbar (§14.11) */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* section show/hide — the tab components emit the shared `.tab`/`.tab.active` classes; vapor.css styles
+ * them only under [data-skin=vapor], so the Kit must own the visibility for reskin themes. One-shot fade
+ * is transform/opacity-only (§14.11). */
+.kit .tab {
+  display: none;
+}
+.kit .tab.active {
+  display: block;
+  animation: kit-fade 0.25s ease;
+}
+@keyframes kit-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── app bar (opaque sticky; brand + conn badge + auto-tts toggle) ── */
+.kit-appbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(16px * var(--density-pad)) 18px calc(12px * var(--density-pad));
+  background: var(--bg);
+}
+.kit-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.kit-brand .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+.kit-brand .meta {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-3);
+  letter-spacing: 0;
+}
+.kit-iconbtn {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  flex: none;
+  transition: background 0.15s, color 0.15s;
+}
+.kit-iconbtn:active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.kit-iconbtn.muted {
+  color: var(--text-3);
+}
+.kit-iconbtn svg {
+  display: block;
+}
+/* connection badge — shown only when the live feed drops (mirrors vapor's .conn-badge) */
+.kit-conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  font-size: 11px;
+  color: var(--text-2);
+  flex: none;
+}
+.kit-conn .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+.kit-conn.reconnecting .dot {
+  background: var(--warn);
+}
+.kit-conn.disconnected .dot {
+  background: var(--danger);
+}
+
+/* ── bottom nav (in-flow flex child; icon pill + label; active = accent-soft pill) ── */
+.kit-tabbar {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  padding: 6px 10px calc(8px + env(safe-area-inset-bottom));
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+.kit-tabbtn {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: calc(7px * var(--density-pad)) 8px;
+  border-radius: 12px;
+  color: var(--text-3);
+  transition: color 0.15s;
+}
+.kit-tabbtn.active {
+  color: var(--text);
+}
+.kit-tabbtn .ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 26px;
+  border-radius: 999px;
+  transition: background 0.15s, color 0.15s;
+}
+.kit-tabbtn.active .ic {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.kit-tabbtn .ic svg {
+  display: block;
+}
+.kit-tabbtn .lbl {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* ── composer (in-flow flex child; rounded surface; textarea + mic + send) ── */
+.kit-composer {
+  flex-shrink: 0;
+  margin: 0 18px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: 20px;
+  padding: calc(12px * var(--density-pad)) 15px calc(10px * var(--density-pad));
+}
+.kit-composer .field {
+  display: block;
+}
+.kit-composer textarea {
+  all: unset;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 15px;
+  color: var(--text);
+  min-height: 24px;
+  max-height: 96px;
+  resize: none;
+  line-height: 1.45;
+  overflow-wrap: anywhere; /* long unbreakable strings must wrap, never overflow (§14.11) */
+}
+.kit-composer textarea::placeholder {
+  color: var(--text-3);
+}
+.kit-composer .crow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.kit-composer .crow .grow {
+  flex: 1;
+}
+.kit-cbtn {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+  transition: background 0.15s, color 0.15s, opacity 0.2s;
+}
+.kit-cbtn:active {
+  background: var(--surface-2);
+}
+.kit-cbtn svg {
+  display: block;
+}
+.kit-cbtn.mic.rec {
+  color: var(--danger);
+  border-color: color-mix(in oklch, var(--danger) 40%, transparent);
+}
+.kit-cbtn.mic.press {
+  transform: scale(0.92);
+}
+.kit-cbtn.mic.unavail {
+  opacity: 0.4;
+}
+.kit-send {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: var(--accent-fill);
+  color: var(--bg);
+  transition: opacity 0.15s;
+}
+.kit-send:active {
+  opacity: 0.8;
+}
+.kit-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.kit-send svg {
+  display: block;
+}
