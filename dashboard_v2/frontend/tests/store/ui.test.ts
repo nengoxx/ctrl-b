@@ -39,12 +39,8 @@ describe("ui store", () => {
     expect(document.body.dataset.accent).toBe("indigo");
   });
 
-  it("toggles body.no-composer for tabs without a composer (Conf/Utils)", () => {
-    setUI({ tab: "agent" });
-    expect(document.body.classList.contains("no-composer")).toBe(false);
-    setUI({ tab: "conf" });
-    expect(document.body.classList.contains("no-composer")).toBe(true);
-  });
+  // (`body.no-composer` is no longer written here — it moved to the theme `Root` (VaporRoot), driven by
+  //  the `useSections` controller's `hasComposer`. See tests/hooks/useSections.test.ts.)
 
   it("persists to localStorage", () => {
     setUI({ accent: "aqua" });

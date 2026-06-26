@@ -1,7 +1,7 @@
-// Pure tab-set data (Phase 11 / D28 §13.6). NO component imports — this module is read by `store/ui`
-// (composer-visibility on first paint) as well as App + the BASE TabBar, so it must stay free of any
-// import that would pull components back into `store/ui` (which would be a runtime cycle). `types.ts`
-// imports only the `Tab` TYPE from store/ui (erased at runtime), so this chain has no runtime cycle.
+// Pure tab-set data (Phase 11 / D28 §13.6). NO component imports — this module is read by the
+// `useSections` controller and the TabBar (active section list + composer-visibility), so it must stay
+// free of any import that would pull components in (which would risk a runtime cycle via `store/ui`).
+// `types.ts` imports only the `Tab` TYPE from store/ui (erased at runtime), so this chain has no cycle.
 //
 // v1: every theme returns the standard 4 tabs (D28 #4). The registry is genuinely flexible — a future
 // theme can register a different `TabDef[]` here without touching any other theme or the frozen vapor.

@@ -1,6 +1,7 @@
 import type { KeyboardEvent } from "react";
 
-import { setUI, useUISlice, type Tab } from "../store/ui";
+import { useSections } from "../hooks/useSections";
+import type { TabId } from "../theme-engine/types";
 
 // Bottom tab bar. The sliding neon indicator is pure CSS (.tabbar::before keyed off
 // .tabbar[data-tab]); we just keep data-tab + .active in sync with the store.
@@ -24,30 +25,26 @@ import { setUI, useUISlice, type Tab } from "../store/ui";
 //   back to it; that's wired in the four tab containers + the ConfLoading/confErrorFallback
 //   placeholders in App.tsx.
 
-const TABS: { id: Tab; glyph: string; lbl: string }[] = [
-  { id: "fleet", glyph: "◆", lbl: "fleet" },
-  { id: "agent", glyph: "▲", lbl: "chat" },
-  { id: "utils", glyph: "⌬", lbl: "tools" },
-  { id: "conf", glyph: "●", lbl: "conf" },
-];
-
 interface Props {
-  onPrefetch?: (tab: Tab) => void;
+  onPrefetch?: (tab: TabId) => void;
 }
 
 export function TabBar({ onPrefetch }: Props) {
-  const tab = useUISlice((s) => s.tab);
+  // The section list + active section + navigation come from the headless controller (D29 §14.2); the
+  // bottom-bar markup, the sliding indicator, and the WAI-ARIA tabs wiring stay vapor presentation.
+  const { sections, active, navigate } = useSections();
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
-    const i = TABS.findIndex((t) => t.id === tab);
-    let target: Tab | null = null;
-    if (e.key === "ArrowLeft") target = TABS[(i - 1 + TABS.length) % TABS.length].id;
-    else if (e.key === "ArrowRight") target = TABS[(i + 1) % TABS.length].id;
-    else if (e.key === "Home") target = TABS[0].id;
-    else if (e.key === "End") target = TABS[TABS.length - 1].id;
+    const n = sections.length;
+    const i = sections.findIndex((t) => t.id === active);
+    let target: TabId | null = null;
+    if (e.key === "ArrowLeft") target = sections[(i - 1 + n) % n].id;
+    else if (e.key === "ArrowRight") target = sections[(i + 1) % n].id;
+    else if (e.key === "Home") target = sections[0].id;
+    else if (e.key === "End") target = sections[n - 1].id;
     if (!target) return;
     e.preventDefault();
-    setUI({ tab: target });
+    navigate(target);
     // Move focus to the newly active tab so subsequent arrow keys continue the cycle.
     // Deferred a tick so React has re-rendered with the updated tabIndex values first.
     const targetId = `tabbtn-${target}`;
@@ -55,9 +52,9 @@ export function TabBar({ onPrefetch }: Props) {
   };
 
   return (
-    <nav className="tabbar" data-tab={tab} role="tablist" aria-label="primary navigation">
-      {TABS.map((t) => {
-        const selected = tab === t.id;
+    <nav className="tabbar" data-tab={active} role="tablist" aria-label="primary navigation">
+      {sections.map((t) => {
+        const selected = active === t.id;
         return (
           <button
             key={t.id}
@@ -68,7 +65,7 @@ export function TabBar({ onPrefetch }: Props) {
             tabIndex={selected ? 0 : -1}
             className={"tabbtn" + (selected ? " active" : "")}
             data-tab={t.id}
-            onClick={() => setUI({ tab: t.id })}
+            onClick={() => navigate(t.id)}
             onKeyDown={onKeyDown}
             // Pointer-enter covers desktop hover; touch-start fires the moment a finger lands —
             // typically 80-200ms before the click. Both are safe to fire repeatedly (the lazy

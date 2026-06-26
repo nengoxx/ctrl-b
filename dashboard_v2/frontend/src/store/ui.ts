@@ -1,6 +1,7 @@
 // Tiny UI store (DESIGN.md §13: "UI-only state"). Dependency-free external store on the shared
-// `createStore` binding (D23), persisted via `persist` helpers and mirrored to document.body
-// data-attrs + body.no-composer.
+// `createStore` binding (D23), persisted via `persist` helpers and mirrored to <html>/<body> data-attrs.
+// (Composer visibility is no longer a core concern — the `useSections` controller exposes `hasComposer`
+// from the theme's tab set, and each theme owns its composer + any `.no-composer`-style padding hook.)
 //
 // Theme-engine generalization (Phase 11 / D28 §9.8): the single conflated `theme` field splits into
 // **{theme, mode, accent}** — `theme` is the SKIN id ("vapor"|"minimal"|…, the slot+CSS identity),
@@ -9,7 +10,6 @@
 // (dark/aqua/ember) — set only when skin=vapor, cleared otherwise. Non-vapor themes additionally get
 // `body[data-mode]`/`body[data-accent]` (the prototypes scope palettes by attribute).
 
-import { hasComposer } from "../theme-engine/tabs";
 import type { Mode, ThemeId } from "../theme-engine/types";
 import { createStore } from "./createStore";
 import { loadPersisted, savePersisted } from "./persist";
@@ -82,7 +82,7 @@ export function migrateLegacyTheme(s: UIState): UIState {
 const { emit, useStore } = createStore();
 let state: UIState = migrateLegacyTheme(loadPersisted(KEY, DEFAULTS));
 
-// Mirror the UI store onto <html>/<body> data-attrs + the .no-composer class. Theme-engine model:
+// Mirror the UI store onto <html>/<body> data-attrs. Theme-engine model:
 // - `html[data-skin]` = the SKIN id (the `@scope ([data-skin=…])` identity for theme CSS isolation, §14.6).
 // - `body[data-theme]` keeps its FROZEN vapor meaning — the accent axis (dark/aqua/ember) — and is set
 //   ONLY when skin=vapor (from `accent`), and actively CLEARED for non-vapor skins (attrs are rebuilt
@@ -111,8 +111,6 @@ function applyBodyAttrs(s: UIState): void {
   b.dataset.loz = s.loz;
   b.dataset.motion = s.motion;
   b.dataset.perf = s.perf;
-  const showComposer = hasComposer(s.theme, s.tab);
-  b.classList.toggle("no-composer", !showComposer);
 }
 
 // One-time apply at module load so first paint has the correct attrs (no flash of un-themed

@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { AppBar } from "../../components/AppBar";
 import { Composer } from "../../components/Composer";
@@ -9,8 +9,8 @@ import { PromptModal } from "../../components/PromptModal";
 import { SwUpdatePrompt } from "../../components/SwUpdatePrompt";
 import { TabBar } from "../../components/TabBar";
 import { Toasts } from "../../components/Toasts";
+import { useSections } from "../../hooks/useSections";
 import { prefetchOnIdle } from "../../lib/prefetch";
-import { useUISlice } from "../../store/ui";
 import { AgentTab } from "../../tabs/AgentTab";
 import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
 import { FleetTab } from "../../tabs/FleetTab";
@@ -33,7 +33,10 @@ import { UtilsTab } from "../../tabs/UtilsTab";
 // lazy — mounted after its first activation, once-and-stays so its draft state survives tab switches.
 
 export function VaporRoot() {
-  const tab = useUISlice((s) => s.tab);
+  // Active section + composer-visibility from the headless sections controller (D29 §14.2). `active` is
+  // aliased to `tab` (vapor's local vocabulary) since the whole body keys off it; `showComposer` is the
+  // active section's composer flag (was the `tab==='fleet'||'agent'` hardcode).
+  const { active: tab, hasComposer: showComposer } = useSections();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Lazy Conf tab: conditional mount, strictly false→true, stays mounted to preserve form drafts.
@@ -72,8 +75,12 @@ export function VaporRoot() {
     if (t === "conf") void preloadConfTab();
   }, []);
 
-  // vapor's composer shows on Fleet + Agent (its own layout rule; ui.ts mirrors `.no-composer`).
-  const showComposer = tab === "fleet" || tab === "agent";
+  // `.no-composer` is vapor's OWN layout hook (vapor.css `body.no-composer { padding-bottom }`) — theme-
+  // owned now, not written by the core store. useLayoutEffect so the padding flips before paint (no flash
+  // on a tab switch / first load), in the same commit the composer mounts/unmounts below.
+  useLayoutEffect(() => {
+    document.body.classList.toggle("no-composer", !showComposer);
+  }, [showComposer]);
 
   return (
     <div className="app-shell">
