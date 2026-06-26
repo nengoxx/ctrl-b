@@ -3,13 +3,24 @@
     "frontend-design@claude-plugins-official": true
   },
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf %s '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"coding-discipline PRE-FLIGHT - if this turn begins or continues non-trivial implementation or design work, do this BEFORE writing code: (1) READ the actual code and docs you will touch; map the data flow, layer boundaries, and existing structures to REUSE (no duplicate or near-duplicate logic, no hardcoding, no bypassed chokepoint); (2) for any novel or non-trivial best-way design choice, WEB-RESEARCH the established pattern (design-system, framework, or standard) - do not guess; (3) write the design and key decisions in PROSE, name the pattern, state what you reuse vs build, and CONFIRM with the owner before building; (4) then build in SMALL slices and AUDIT each part (clean, robust, efficient, reliable, final-product fit) before the next. Trivial leaf edits take the fast-path. See the coding-discipline and audit skills.\"}}'",
+            "statusMessage": "coding-discipline pre-flight reminder"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "if grep -q 'git commit'; then printf %s '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"coding-discipline POST-FLIGHT - run these BEFORE this commit, not after: (1) self-review the full diff; (2) audit-lens pass over any STRUCTURAL change (agent loop / DB schema / SSE wire protocol / security boundaries - not just leaf edits); (3) verify against a real criterion (tests + live), report honestly; (4) strip instrumentation. Trivial fast-path edits: a quick confirm is enough. Reminder only - not blocking.\"}}'; fi",
+            "command": "if grep -q 'git commit'; then printf %s '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"coding-discipline POST-FLIGHT - run these BEFORE this commit, not after: (1) self-review the full diff; (2) for any non-trivial or STRUCTURAL change (agent loop, data model, SSE wire, security boundary, shared architecture, a pattern future code will follow), run an INDEPENDENT audit-lens pass - the audit skill - for robustness, efficiency, reliability, edge cases, design fit, and no duplication or hardcoding or bypassed chokepoint; not just leaf edits; (3) verify against a real criterion (build, tests, live), report honestly; (4) strip instrumentation. Trivial fast-path edits: a quick confirm is enough. Reminder only - not blocking.\"}}'; fi",
             "statusMessage": "coding-discipline post-flight reminder"
           }
         ]

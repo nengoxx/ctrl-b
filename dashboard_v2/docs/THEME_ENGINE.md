@@ -847,6 +847,35 @@ editors** (AgentsEditor/MachineEditor/Skills/Memory/Integrations/ToolCatalog) ar
 Kit/theme CSS** (their classes styled token-driven) — not re-authored per theme. Global overlays (toasts/confirm/prompt/
 mini-player) become Kit/token-driven so they restyle per skin.
 
+### 14.4.1 Locked CSS architecture — token-only reskins + a `.kit` marker (research-backed, K2 2026-06-27)
+
+Web-researched against **Radix Themes** + the design-token consensus (Material/Open-Props/shadcn). The Kit is a
+**token-driven component library**, NOT a per-theme override layer. This is the shape that keeps adding-a-theme cheap and
+never leaks into vapor — **follow it for every future theme:**
+
+- **Reskin themes contribute ONLY a `tokens.css`** (global→semantic values) — *zero* component CSS. "Adding a new theme
+  is as simple as defining a new token set" is the explicit best practice; per-theme component-CSS overrides are the
+  *discouraged, brittle* path (Angular Material warns exactly against it). minimal/phosphor/observatory = a token set +
+  `DefaultRoot`.
+- **One shared Kit stylesheet, scoped under a `.kit` marker** that `DefaultRoot` puts on its shell — this is precisely
+  Radix Themes' `.radix-themes` root-class scoping. Kit CSS lives in **`@layer base`** as `.kit .confrow { … }` /
+  `.kit-appbar { … }`, reading semantic tokens. Because vapor's Root never renders `.kit`, the Kit stylesheet **cannot
+  leak into vapor** (and the new chrome uses fresh `.kit-*` class names anyway, so no name collision). A bespoke theme
+  that wants to reuse a Kit piece adds the marker itself — opt-in reuse.
+- **vapor = the bespoke escape hatch:** its own Root + its own CSS (`@layer theme`, scoped `[data-skin="vapor"]`), no
+  marker. Its rules are independent selectors, **not** "overrides" of the Kit.
+- **Cascade layers order it:** `@layer base, theme` → a theme *may* override a Kit rule in `@layer theme` (the rare
+  escape hatch), but the norm is token-only. **Component tokens** (`--kit-appbar-bg: var(--surface)`) are introduced
+  only where a theme must diverge beyond what semantic tokens allow — never speculatively (YAGNI).
+- **Build the Kit lazily-by-need:** only build a Kit component a theme actually consumes. (`NowMonitoring` + its live
+  waveform are deferred until a theme renders a featured-host card — minimal dropped the monitoring section, vapor has
+  its own Hero — so K2 skips them; they land in the slice of the first theme that needs them.)
+
+**Recipe — add a future reskin theme (zero app/core/backend change):**
+1. `themes/<id>/tokens.css` — `@layer theme { @scope ([data-skin="<id>"]) { :scope { …semantic tokens… } body[data-mode=…] / body[data-accent=…] { …overrides… } } }`. (⚠️ tokens on `:scope`/`body`, mode/accent on `body[data-*]` — the §14.6 scope-root gotcha.)
+2. `themes/<id>/index.tsx` — a `ThemeDef`: `Root` = a thin wrapper that reads its settings and renders `<DefaultRoot hideAppbar=… />` (STRUCTURAL settings → `DefaultRoot` props; COSMETIC settings → a `body[data-*]` attr its `tokens.css` scopes, e.g. minimal's `data-density`); `palettes`; `loadStyles: () => import("./tokens.css")`; optional `loadFonts` (Fontsource, awaited via `document.fonts.load`); optional `settings`; optional `present` (spatial themes only).
+3. Register it in `theme-engine/registry.ts`. The Conf Appearance picker auto-renders its modes/accents/settings; `ThemeProvider` loads its lazy CSS/fonts on activation (and on cold-load if it's the persisted theme). Its Fleet view is the one surface it composes itself (from Kit `device-row`/`NowMonitoring` pieces); everything else is the shared Kit chrome + editors, skinned entirely by its tokens.
+
 ## 14.5 The core invariant — state ownership (prevents future refactors)
 
 **All state that must (a) survive a theme switch or (b) be reachable by multiple parts of a presentation lives in a

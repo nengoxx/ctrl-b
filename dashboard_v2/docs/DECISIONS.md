@@ -1538,6 +1538,19 @@ then build the Kit + minimal on the proven framework.
 > `switchTheme` (optimistic write re-reconciles during the async bundle-load) — unreachable while vapor is the only theme;
 > gate on `useIsMutating` when the first non-vapor theme lands. **NEXT = Kit + minimal.**
 
+> **✅ K1 DONE + Kit CSS architecture locked (research-backed, 2026-06-27).** K1 landed the engine plumbing: the semantic
+> token contract (`kit/tokens.css`, `@layer base`), the `minimal` theme module (OKLCH mode×4-accent `tokens.css`,
+> Fontsource fonts, `Root=DefaultRoot`, settings `hideAppbar`+`density`), and a cold-load fix (`ThemeProvider` loads the
+> active theme's lazy CSS/fonts on mount). vapor verified computed-identical. **The Kit CSS model is locked (full detail
+> THEME_ENGINE §14.4.1), web-researched against Radix Themes + the design-token consensus:** reskin themes contribute
+> **only a `tokens.css`** (token-only theming — per-theme component-CSS overrides are the discouraged/brittle path); the
+> Kit ships **one** component stylesheet scoped under a **`.kit` marker** on `DefaultRoot`'s shell (= Radix's
+> `.radix-themes`), in `@layer base`, so it can't leak into vapor (the bespoke escape hatch, no marker). Kit components
+> are built lazily-by-need (`NowMonitoring`/waveform deferred — minimal dropped the monitoring section). minimal: Dark/
+> Light only, no Auto. **A `coding-discipline` PRE-FLIGHT hook (`UserPromptSubmit`) + a strengthened audit POST-FLIGHT
+> hook (`PreToolUse` git-commit) now reliably trigger the read→research→confirm and the independent audit passes** — see
+> `.claude/settings.json`.
+
 **Edge cases locked (the systematic sweep).** Hide-a-control (capability stays in its controller); relocate composer
 (keyboard-aware viewport hook); theme-specific anims (own effects/cleanup, `ui.motion`-gated); alt navigation
 (`useSections`); broken theme `Root` → ErrorBoundary offers **revert to vapor**; global overlays → Kit/token-driven;
