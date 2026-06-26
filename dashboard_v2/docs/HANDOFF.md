@@ -76,7 +76,48 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Theme-engine v2 (D29): M2 COMPLETE — all 5 controllers extracted** · NEXT = **M3 (register vapor as a `ThemeDef` + per-theme settings)** → Kit + minimal; emma deploy still queued)
+## Current state (**Theme-engine v2 (D29): M3 COMPLETE — vapor is a fully-migrated peer `ThemeDef` + the per-theme-settings mechanism is built** · NEXT = **Kit + minimal**; emma deploy still queued)
+
+> ### 🟢 SESSION UPDATE — Theme-engine v2 (D29): **M3 DONE → NEXT = Kit + minimal** — 2026-06-26
+>
+> **What shipped (committed + green; the vapor migration runbook M0–M3 is now COMPLETE).** M3 finished vapor's
+> `ThemeDef` and built the **per-theme settings mechanism** (§14.3) — the reusable "minimal hides the appbar"
+> machinery every future theme rides:
+> - **`ThemeDef.settings`** — a namespaced schema (`{type:"switch"|"seg", label, desc, default}`), the VS-Code
+>   `configuration` contribution-point model (web-researched + owner-confirmed before coding). `theme-engine/
+>   types.ts` gained `ThemeSettingField`/`ThemeSettingsSpec`/`ThemeSettingValue`.
+> - **Open `ui.themeSettings[themeId]` map** + `setThemeSetting` (additive, "shape data to extend, not migrate") in
+>   `store/ui.ts`; `useThemeSetting(id,key)` (`theme-engine/settings.ts`) resolves override→declared default. The
+>   Conf **Appearance picker auto-renders** the active theme's settings (switch→Switch, seg→Seg) — adding a theme's
+>   option is now **zero Conf/core/backend change**.
+> - **vapor's `skyline/loz/heroOn/waveformOn` migrated** out of core `UIState` into `vapor.settings` (with a one-time
+>   `migrateVaporSettings` localStorage fold). **VaporRoot owns** writing `body[data-skyline]/[data-loz]` via a
+>   pre-paint `useLayoutEffect` (the M2.4 `.no-composer` precedent); FleetTab reads hero/waveform via `useThemeSetting`.
+> - **`motion` + `perf` now SYNC cross-device** (owner directive: device levers, but consistent) — folded ADDITIVELY
+>   into the LWW appearance channel alongside the new `theme_settings` map. Backend `AppearanceCfg` gained
+>   `motion`/`perf`/`theme_settings`; `useAppearance` (`AppearanceDoc`/reconcile/save/`currentAppearancePatch`) +
+>   `switchTheme` (optional `SwitchTarget` extras) carry them. Wire is snake (`theme_settings`, like `updated_at`);
+>   store is camel — bridged at the two sync points.
+> - **⭐ The robustness catch (independent audit):** the new backend fields **default to `None`, not their UI
+>   defaults** — a pre-M3 config has a stamped `updated_at`, so a concrete default would look *authored* and the
+>   LWW reconcile (`server.x ?? local.x`) would **wipe the owner's local reduced-motion / lite-blur / just-migrated
+>   per-theme prefs on the first upgrade load**. `None` = "unseeded" → client keeps local until the first real write
+>   seeds it (same contract as `updated_at`). Guarded by two reconcile tests. **Live-verified:** the owner's eyeball
+>   write seeded `theme_settings:{vapor:{skyline:"mountains",…}}` — end-to-end sync confirmed.
+> - **Deferred to its owning phase (T1):** a latent double-`switchTheme` on a self-initiated skin pick (the
+>   optimistic write re-fires the reconcile while `switchTheme`'s async bundle-load is pending). **Unreachable today**
+>   (vapor is the only registered theme → `pickTheme` early-returns), so per `fix-in-the-owning-phase` it's documented
+>   in `useAppearanceSync` for the first non-vapor theme to gate on `useIsMutating`.
+>
+> **VERIFIED:** frontend `npm run build` clean · `npm test` **120** (+12: settings resolution, migrations,
+> setThemeSetting, reconcile incl. the upgrade guard) · `npm run test:e2e` **34** · backend appearance tests green ·
+> live `GET /api/appearance` returns the extended shape. Servers restarted (backend 5433 no-reload, frontend 5190).
+>
+> **⛔ NEXT = Kit + minimal** (§14.4/§14.10 — the big slice): the token-driven shared chrome (`DefaultRoot` +
+> AppBar/NavBar/Composer/ConfShell/device-rows/NowMonitoring/ChatBubble/primitives) + the semantic-token contract +
+> reuse-and-skin the existing Conf editors + Kit overlays, then **minimal** (first new theme: `tokens.css` + Fontsource
+> fonts + OKLCH mode×4-accent matrix + its Fleet view with REAL host data). **minimal's `settings` (e.g. `hideAppbar`)
+> is the first consumer of the M3 mechanism — its `Root`/`DefaultRoot` reads `useThemeSetting("minimal", …)`.**
 
 > ### 🟢 CLEAN-SESSION HANDOFF — Theme-engine v2 (D29): **M2 DONE → M3 (register vapor + per-theme settings)**, then Kit + minimal — 2026-06-26
 >

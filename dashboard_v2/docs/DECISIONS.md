@@ -1522,6 +1522,22 @@ components verbatim — **byte-identical** acceptance); **M1** the `@scope` CSS-
 prefix-routing + agent tool-loop get extra scrutiny); **M3** register vapor as a `ThemeDef` + per-theme settings. Only
 then build the Kit + minimal on the proven framework.
 
+> **✅ M0–M3 COMPLETE (2026-06-26) — the vapor migration runbook is done; vapor is a fully-migrated peer `ThemeDef`,
+> still the default.** M3 built the **per-theme settings mechanism** (the reusable "minimal hides the appbar" machinery):
+> `ThemeDef.settings` = a namespaced schema (`{type:"switch"|"seg", label, desc, default}`, the VS-Code `configuration`
+> contribution-point model, web-researched + owner-confirmed); values in the open `ui.themeSettings[id]` map (additive,
+> `setThemeSetting`); `useThemeSetting(id,key)` resolves override→default; the Conf Appearance picker **auto-renders** the
+> active theme's settings (adding a theme's option = zero Conf/core/backend change). vapor's `skyline/loz/heroOn/waveformOn`
+> moved out of core `UIState` into `vapor.settings` (VaporRoot owns the `body[data-skyline]/[data-loz]` write); a one-time
+> `migrateVaporSettings` folds the legacy localStorage shape. **`motion`+`perf` now sync** cross-device (owner directive:
+> device levers kept consistent) — folded ADDITIVELY into the LWW appearance channel with the new `theme_settings` map (wire
+> snake / store camel, bridged). **Robustness catch (independent audit):** the new `AppearanceCfg` fields default to **`None`
+> ("unseeded"), not their UI defaults** — else a pre-M3 stamped config would look *authored* and the LWW reconcile (`?? local`)
+> would wipe the owner's local reduced-motion / lite-blur / migrated per-theme prefs on the first upgrade load (guarded by two
+> reconcile tests). **Latent T1 follow-up deferred to its owning phase:** a self-initiated skin pick double-fires
+> `switchTheme` (optimistic write re-reconciles during the async bundle-load) — unreachable while vapor is the only theme;
+> gate on `useIsMutating` when the first non-vapor theme lands. **NEXT = Kit + minimal.**
+
 **Edge cases locked (the systematic sweep).** Hide-a-control (capability stays in its controller); relocate composer
 (keyboard-aware viewport hook); theme-specific anims (own effects/cleanup, `ui.motion`-gated); alt navigation
 (`useSections`); broken theme `Root` → ErrorBoundary offers **revert to vapor**; global overlays → Kit/token-driven;

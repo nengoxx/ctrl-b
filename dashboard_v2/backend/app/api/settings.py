@@ -60,7 +60,8 @@ async def get_settings(request: Request) -> dict[str, Any]:
 
 @router.get("/appearance")
 async def get_appearance(request: Request) -> dict[str, Any]:
-    """The active appearance selection only (Phase 11 / D28 §9.11): `{theme, mode, accent, updated_at}`.
+    """The active appearance selection only (Phase 11 / D28 §9.11, extended M3 §14.3):
+    `{theme, mode, accent, motion, perf, theme_settings, updated_at}` (the M3 fields null until seeded).
 
     A lightweight always-on read — the `ui` store reconciles against it on mount (the full
     `GET /api/settings` is Conf-tab-scoped on the client, so it can't drive first-paint/reconcile).

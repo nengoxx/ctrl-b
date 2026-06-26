@@ -25,6 +25,9 @@ def test_appearance_defaults_config_layer() -> None:
     assert s.appearance.theme == "vapor"
     assert s.appearance.mode == "dark"
     assert s.appearance.accent == "dark"
+    assert s.appearance.motion is None  # M3: unseeded → client keeps local until first authored
+    assert s.appearance.perf is None
+    assert s.appearance.theme_settings is None  # M3: open per-theme options map, unseeded until written
     assert s.appearance.updated_at is None  # stamped only on first write
 
 
@@ -78,15 +81,38 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
         with _client() as c:
             # Defaults before any write.
             got = c.get("/api/appearance").json()
-            assert got == {"theme": "vapor", "mode": "dark", "accent": "dark", "updated_at": None}
+            assert got == {
+                "theme": "vapor",
+                "mode": "dark",
+                "accent": "dark",
+                "motion": None,  # unseeded → client keeps local until first authored
+                "perf": None,
+                "theme_settings": None,
+                "updated_at": None,
+            }
 
-            # Client writes the selection (no updated_at — the server stamps it).
-            r = c.put("/api/settings", json={"appearance": {"theme": "minimal", "mode": "light", "accent": "indigo"}})
+            # Client writes the full selection incl. the open per-theme map (M3 §14.3) + levers.
+            r = c.put(
+                "/api/settings",
+                json={
+                    "appearance": {
+                        "theme": "minimal",
+                        "mode": "light",
+                        "accent": "indigo",
+                        "motion": "reduced",
+                        "perf": "lite",
+                        "theme_settings": {"minimal": {"hideAppbar": True}},
+                    }
+                },
+            )
             assert r.status_code == 200, r.text
             saved = r.json()["settings"]["appearance"]
             assert saved["theme"] == "minimal"
             assert saved["mode"] == "light"
             assert saved["accent"] == "indigo"
+            assert saved["motion"] == "reduced"
+            assert saved["perf"] == "lite"
+            assert saved["theme_settings"] == {"minimal": {"hideAppbar": True}}
             assert saved["updated_at"] is not None  # server-stamped
 
             # GET reflects it (the cheap always-on read the ui store reconciles against).

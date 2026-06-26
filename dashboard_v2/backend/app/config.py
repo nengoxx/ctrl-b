@@ -555,17 +555,33 @@ class ToolOverride(BaseModel):
 
 
 class AppearanceCfg(BaseModel):
-    """Active appearance selection (Phase 11 / D28 §9.11) — the cross-device-synced theme picker state.
+    """Active appearance selection (Phase 11 / D28 §9.11, extended M3 §14.3) — the cross-device-synced
+    theme picker state.
 
-    Backend-authoritative, server-stamped last-write-wins: the client writes `{theme,mode,accent}`
+    Backend-authoritative, server-stamped last-write-wins: the client writes the whole selection
     through the normal `PUT /api/settings` deep-merge; the server stamps `updated_at` on its own clock
     (no cross-device skew). Read back cheaply via `GET /api/appearance` (the full settings doc is
-    Conf-tab-scoped, so it can't drive first-paint / reconcile). Typed (not `extra="allow"`) — it's a
-    small known shape. Defaults mirror the frontend `ui` store defaults (vapor / dark / dark)."""
+    Conf-tab-scoped, so it can't drive first-paint / reconcile). Defaults mirror the frontend `ui` store.
+
+    `theme_settings` is an OPEN per-theme options map (`{themeId: {key: value}}`, D29 §14.3) — the theme
+    owns the schema, so the server is a pass-through (no per-theme Pydantic union that would force a
+    server change per theme). `motion`/`perf` are device levers kept consistent across devices (owner
+    directive 2026-06-26). Typed (not `extra="allow"`) — the open map is a typed `dict` field, not a
+    free-for-all on the selection block.
+
+    The M3 fields default to **None** ("no opinion yet"), NOT to their UI defaults — a pre-M3 config has
+    a stamped `updated_at` (theme/mode/accent were synced since Phase 11), so a concrete default here
+    would look *authored* and the client's LWW reconcile (`server.x ?? local.x`) would wipe the owner's
+    local reduced-motion / lite-blur / just-migrated per-theme prefs on the first upgrade load. None lets
+    the client keep local until the first real appearance write seeds these (the patch sends the full
+    selection). Same unseeded-until-written contract as `updated_at`."""
 
     theme: str = "vapor"
     mode: str = "dark"
     accent: str = "dark"
+    motion: str | None = None  # ambient animations: "full" | "reduced"; None = unseeded → client keeps local
+    perf: str | None = None  # frosted-bar blur: "full" | "lite"; None = unseeded → client keeps local
+    theme_settings: dict[str, dict[str, Any]] | None = None  # open per-theme options (§14.3); None = unseeded
     updated_at: datetime | None = None  # server-stamped on each write; None until first saved
 
 

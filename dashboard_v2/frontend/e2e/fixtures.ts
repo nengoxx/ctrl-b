@@ -91,10 +91,15 @@ const ROUTES: Record<string, unknown> = {
  *  and `GET /api/appearance` returns it — so the theme-engine's optimistic-write→reconcile round-trip is
  *  deterministic (a static mock would let the always-on reconcile revert a just-made change). */
 export async function mockApi(page: Page): Promise<void> {
-  let appearance: { theme: string; mode: string; accent: string; updated_at: string | null } = {
+  // Mirrors the backend AppearanceCfg shape (M3 §14.3: + motion/perf/theme_settings). They default null
+  // ("unseeded") like the real backend — a write spreads concrete values in (and stamps updated_at).
+  let appearance: Record<string, unknown> = {
     theme: "vapor",
     mode: "dark",
     accent: "dark",
+    motion: null,
+    perf: null,
+    theme_settings: null,
     updated_at: null,
   };
   await page.route("**/api/**", async (route) => {
@@ -104,7 +109,7 @@ export async function mockApi(page: Page): Promise<void> {
       // Capture an appearance write so the subsequent reconcile read reflects it (server-stamped LWW).
       if (path.endsWith("/api/settings")) {
         try {
-          const body = req.postDataJSON() as { appearance?: Record<string, string> };
+          const body = req.postDataJSON() as { appearance?: Record<string, unknown> };
           if (body?.appearance) {
             appearance = { ...appearance, ...body.appearance, updated_at: new Date().toISOString() };
           }

@@ -1,7 +1,14 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { migrateLegacyTheme, setUI, useUISlice, type UIState } from "../../src/store/ui";
+import {
+  migrateLegacyTheme,
+  migrateVaporSettings,
+  setThemeSetting,
+  setUI,
+  useUISlice,
+  type UIState,
+} from "../../src/store/ui";
 
 // store/ui — UI-only state, persisted to localStorage and mirrored onto <body> data-attrs. Theme-engine
 // model (Phase 11 / D28 §9.8): {theme(skin), mode, accent}. `body[data-skin]` is the skin identity;
@@ -61,21 +68,18 @@ describe("ui store", () => {
 
   // §13.4 — the one-time persisted-shape remap: legacy `theme ∈ {dark,aqua,ember}` (the conflated vapor
   // accent) → {theme:"vapor", accent}. The field-fill merge already added mode/accent defaults.
-  describe("migrateLegacyTheme", () => {
-    const base: UIState = {
-      theme: "vapor",
-      mode: "dark",
-      accent: "dark",
-      tab: "fleet",
-      skyline: "city",
-      loz: "logo",
-      ttsAuto: true,
-      heroOn: true,
-      waveformOn: true,
-      motion: "full",
-      perf: "full",
-    };
+  const base: UIState = {
+    theme: "vapor",
+    mode: "dark",
+    accent: "dark",
+    tab: "fleet",
+    ttsAuto: true,
+    motion: "full",
+    perf: "full",
+    themeSettings: {},
+  };
 
+  describe("migrateLegacyTheme", () => {
     it("remaps a legacy accent-as-theme to {vapor, accent}", () => {
       expect(migrateLegacyTheme({ ...base, theme: "aqua" as never })).toMatchObject({
         theme: "vapor",
@@ -92,6 +96,56 @@ describe("ui store", () => {
     it("leaves an already-migrated (new-shape) state untouched", () => {
       const migrated = { ...base, theme: "vapor" as const, accent: "aqua" };
       expect(migrateLegacyTheme(migrated)).toEqual(migrated);
+    });
+  });
+
+  // §14.3 — the M3 remap: pre-M3 persisted state carried skyline/loz/heroOn/waveformOn as TOP-LEVEL
+  // fields (loadPersisted keeps them as extras). Fold them into themeSettings.vapor; drop the top-levels.
+  describe("migrateVaporSettings", () => {
+    it("folds legacy vapor toggles into themeSettings.vapor and drops the top-level keys", () => {
+      const legacy = {
+        ...base,
+        skyline: "mountains",
+        loz: "ring",
+        heroOn: false,
+        waveformOn: false,
+      } as unknown as UIState;
+      const out = migrateVaporSettings(legacy);
+      expect(out.themeSettings.vapor).toEqual({
+        skyline: "mountains",
+        loz: "ring",
+        heroOn: false,
+        waveformOn: false,
+      });
+      expect("skyline" in out).toBe(false);
+      expect("loz" in out).toBe(false);
+      expect("heroOn" in out).toBe(false);
+      expect("waveformOn" in out).toBe(false);
+    });
+
+    it("is a no-op on an already-migrated state (no legacy keys)", () => {
+      const migrated = { ...base, themeSettings: { vapor: { heroOn: true } } };
+      expect(migrateVaporSettings(migrated)).toEqual(migrated);
+    });
+
+    it("never overwrites an already-present themeSettings.vapor value", () => {
+      const mixed = {
+        ...base,
+        skyline: "mountains",
+        themeSettings: { vapor: { skyline: "city" } },
+      } as unknown as UIState;
+      expect(migrateVaporSettings(mixed).themeSettings.vapor.skyline).toBe("city"); // existing wins
+    });
+  });
+
+  describe("setThemeSetting", () => {
+    it("patches one key under the theme's open map without disturbing others", () => {
+      act(() => setUI({ themeSettings: { vapor: { heroOn: true } } }));
+      const { result } = renderHook(() => useUISlice((s) => s.themeSettings.vapor));
+      act(() => setThemeSetting("vapor", "skyline", "mountains"));
+      expect(result.current).toEqual({ heroOn: true, skyline: "mountains" });
+      act(() => setThemeSetting("vapor", "heroOn", false));
+      expect(result.current).toEqual({ heroOn: false, skyline: "mountains" });
     });
   });
 });

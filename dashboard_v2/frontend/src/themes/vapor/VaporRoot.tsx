@@ -15,6 +15,8 @@ import { AgentTab } from "../../tabs/AgentTab";
 import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
 import { FleetTab } from "../../tabs/FleetTab";
 import { UtilsTab } from "../../tabs/UtilsTab";
+import { useThemeSetting } from "../../theme-engine/settings";
+import type { Loz, Skyline } from "./index";
 
 // The vapor theme's Root (Phase 11 v2 / D29 §14.7 M0). This is today's App body verbatim — the
 // `.app-shell` dvh flex column (a scrolling `.app-scroll` with the appbar + tabs, then composer +
@@ -81,6 +83,23 @@ export function VaporRoot() {
   useLayoutEffect(() => {
     document.body.classList.toggle("no-composer", !showComposer);
   }, [showComposer]);
+
+  // vapor's decorative `body[data-skyline]`/`body[data-loz]` axes are THEME-OWNED (M3 §14.3): they come
+  // from vapor's `ThemeDef.settings`, written here (not by the core ui store) so the core stops knowing
+  // vapor-specific attrs. useLayoutEffect → set before paint (the CSS keys hard off both values, so a
+  // missing attr would show both skylines for a frame). Cleared on unmount so a switched-to skin can't
+  // inherit a stale vapor attr.
+  const skyline = useThemeSetting<Skyline>("vapor", "skyline");
+  const loz = useThemeSetting<Loz>("vapor", "loz");
+  useLayoutEffect(() => {
+    const b = document.body;
+    b.dataset.skyline = skyline;
+    b.dataset.loz = loz;
+    return () => {
+      delete b.dataset.skyline;
+      delete b.dataset.loz;
+    };
+  }, [skyline, loz]);
 
   return (
     <div className="app-shell">

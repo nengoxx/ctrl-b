@@ -897,8 +897,20 @@ Full suite (92 unit + 32 e2e) + 390px eyeball must stay green at each milestone;
   scrutiny + targeted e2e. Lift `featured`/`open` into the fleet store here.
 - **M3 — register vapor as a `ThemeDef`** (`Root=VaporRoot`, scoped CSS via `loadStyles`/eager, `palettes`=named accents,
   `settings` if any) + the per-theme settings mechanism. vapor is now a peer theme; default selection.
+  - **✅ DONE 2026-06-26.** `ThemeDef.settings` schema (`ThemeSettingField`/`ThemeSettingsSpec`, the VS-Code
+    `configuration` model) → open `ui.themeSettings[id]` map (`setThemeSetting`) → `useThemeSetting(id,key)`
+    (`theme-engine/settings.ts`, override→declared default) → the Conf Appearance picker **auto-renders** the active
+    theme's settings. vapor's `skyline/loz/heroOn/waveformOn` migrated into `vapor.settings` (VaporRoot owns the
+    `body[data-skyline]/[data-loz]` write via a pre-paint `useLayoutEffect`; `migrateVaporSettings` folds the legacy
+    localStorage shape). **`motion`+`perf` now sync** cross-device (owner directive) — folded additively into the LWW
+    channel with the new `theme_settings` map (wire snake / store camel). **⚠️ Robustness rule learned:** ADDITIVE
+    synced fields must default to **`None`/unseeded** on the backend, NOT to their UI defaults — a stamped pre-existing
+    appearance doc would otherwise make them look *authored* and the LWW reconcile (`?? local`) would wipe local prefs
+    on the first upgrade load (guarded by reconcile tests). **Latent T1 follow-up:** a self-initiated skin pick
+    double-fires `switchTheme` (optimistic write re-reconciles during the async bundle-load) — unreachable while vapor
+    is the only theme; gate on `useIsMutating` when the first non-vapor theme lands (commented in `useAppearanceSync`).
 
-Only after M0–M3 green: build the Kit + minimal.
+Only after M0–M3 green: build the Kit + minimal. **← M0–M3 are now all green; NEXT = Kit + minimal.**
 
 ## 14.8 Edge cases (locked)
 

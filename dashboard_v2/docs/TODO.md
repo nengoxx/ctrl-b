@@ -747,23 +747,27 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
       **`data-skin` on `<html>`**; `:root`→`:scope`, `html,body`→`:scope,body` (the scoped-selectors-don't-match-the-root
       gotcha); `@layer base,theme`. Bundler preserves `@scope`+`@keyframes`; e2e asserts the computed page bg = vapor `--bg`.
       (`8280ef7`; THEME_ENGINE §14.6 updated)
-- [ ] **M2 — controller extraction, ONE feature per step** (audit + verify + commit after each). Follow the established
-      pattern: store-backed state · a singleton engine in `<AppEngines/>` (NOT App's body — re-render isolation) · a pure
-      consumer hook · 95 unit + 34 e2e green throughout.
+- [x] **M2 — controller extraction, ONE feature per step** ✅ (all 5 controllers extracted; audited + verified + committed
+      after each). Pattern held: store-backed state · a singleton engine in `<AppEngines/>` (NOT App's body — re-render
+      isolation) · a pure consumer hook · full suite green throughout.
   - [x] **M2.1 `useFleet`** ✅ — `store/fleet.ts` (featured/open/hold) + singleton `useFleetCycle` engine + `useFleet`
         consumer; `FleetTab` pure presentation. + audit fix: isolated the engines into `<AppEngines/>` so the hosts poll
         doesn't re-render the whole theme tree. (`a746624`, `9487010`)
   - [x] **M2.2 `useComposer`** ✅ — draft + prefix-routed `send` + streaming gate + mic; `Composer` pure presentation. (`9ea7e8c`)
-  - [ ] **M2.3 `useAgentChat`** (NEXT — heaviest). The chat loop is ALREADY in `store/chat.ts` → COMPOSE, don't
-        re-implement. Extract: store exposure (messages/status/streamingId + actions) + the `resultByCall`/`currentPlan`
-        derivations + `resolvedDefault`/`ttsOn`. Mount `initChat`/`useAutoTts` once in `<AppEngines/>`. LEAVE the bubble
-        sub-components + the `#app-scroll` scroll-stick logic in vapor's AgentTab (theme-specific presentation).
-  - [ ] **M2.4 `useSections`** — active functional area + navigate (generalizes `ui.tab`); the vapor-specific `.no-composer`
-        body class becomes theme-owned.
-  - [ ] **M2.5 `useAppChrome`** — auto-TTS toggle / voice status / mini-player.
-- [ ] **M3 — register vapor as a `ThemeDef`** (`Root=VaporRoot`, eager scoped CSS, named-accent palettes) + the
-      **per-theme settings** mechanism (`ThemeDef.settings` → `ui.themeSettings[id]` open map, synced via the
-      appearance channel; `useThemeSetting`; Appearance picker auto-renders). Vapor = default selection.
+  - [x] **M2.3 `useAgentChat`** ✅ — COMPOSES `store/chat.ts`; `resultByCall`/`currentPlan` derivations in `lib/plan`;
+        `useChatInit`/`useAutoTts` mounted in `<AppEngines/>`; bubbles + `#app-scroll` stick stay in vapor's AgentTab.
+  - [x] **M2.4 `useSections`** ✅ — active functional area + navigate (generalizes `ui.tab`; TabBar's duplicate `TABS`
+        deleted); the vapor-specific `.no-composer` body class is now theme-owned in VaporRoot. (`491f960`)
+  - [x] **M2.5 `useAppChrome`** ✅ — auto-TTS toggle + `useNowPlaying` mini-player transport (split so the AppBar doesn't
+        re-render on the player's ~4×/sec progress). (`2edfcdd`)
+- [x] **M3 — register vapor as a `ThemeDef`** ✅ (`Root=VaporRoot`, eager scoped CSS, named-accent palettes) + the
+      **per-theme settings** mechanism (`ThemeDef.settings` → `ui.themeSettings[id]` open map · `setThemeSetting` ·
+      `useThemeSetting` override→default · Appearance picker auto-renders). vapor's `skyline/loz/heroOn/waveformOn`
+      migrated into `vapor.settings` (VaporRoot owns the `body[data-*]` write; `migrateVaporSettings` folds legacy
+      localStorage). **`motion`+`perf` now sync** cross-device — folded additively into the LWW channel with the new
+      `theme_settings` map (backend fields default **`None`/unseeded** so a pre-M3 stamped doc can't wipe local prefs;
+      reconcile-tested). Latent T1 double-`switchTheme` documented in `useAppearanceSync` (unreachable while vapor is the
+      only theme). vapor = default selection.
 - [ ] **Kit + minimal.** The Kit: semantic 3-tier token contract + `DefaultRoot` scaffold + token-driven AppBar/NavBar
       (count-driven indicator)/Composer/ConfShell/device-rows/**NowMonitoring**+waveform/ChatBubble/primitives;
       reuse + CSS-skin the existing Conf editors; Kit/token-driven global overlays. **minimal** = `tokens.css`

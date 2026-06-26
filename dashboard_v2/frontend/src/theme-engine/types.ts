@@ -59,6 +59,28 @@ export type Present = (
   override?: Record<string, unknown>,
 ) => VisualEncoding;
 
+// Per-theme settings (D29 §14.3) — the "minimal hides the appbar" mechanism. A theme declares a small
+// schema of namespaced options; the Appearance picker auto-renders it (switch→Switch, seg→Seg); values
+// live in the open `ui.themeSettings[id]` map and sync via the appearance channel. Mirrors VS Code's
+// `configuration` contribution points (each entry = {type, default, label/desc}; resolve to `default`
+// when there's no override) — the dominant external convention for plugin-namespaced settings.
+export type ThemeSettingField =
+  | { type: "switch"; label: string; desc?: string; default: boolean }
+  | {
+      type: "seg";
+      label: string;
+      desc?: string;
+      options: { val: string; label: string }[];
+      default: string;
+    };
+
+// An open record keyed by setting name. Open (not a closed union) so a theme adds an option additively
+// — no app/core/backend change (owner directive: shape data to extend, not migrate).
+export type ThemeSettingsSpec = Record<string, ThemeSettingField>;
+
+// A resolved setting value — a switch (boolean) or a seg (string).
+export type ThemeSettingValue = string | boolean;
+
 export interface ThemeDef {
   id: ThemeId;
   label: string;
@@ -71,7 +93,7 @@ export interface ThemeDef {
   loadStyles: () => Promise<unknown>;
   loadFonts?: () => Promise<void>;
   present?: Present; // §9.9 — per-host visual encoding (cosmos/frontier); omit → no spatial layout
-  // settings?: ThemeSettingsSpec — theme-namespaced options (§14.3); added in M3 with the mechanism.
+  settings?: ThemeSettingsSpec; // §14.3 — theme-namespaced options auto-rendered by the Appearance picker
   assets?: Record<string, () => Promise<string>>; // import.meta.glob map keyed by name (frontier art)
 }
 

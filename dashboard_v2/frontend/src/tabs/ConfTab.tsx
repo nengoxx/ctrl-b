@@ -9,7 +9,7 @@ import { ServerListEditor } from "../components/ServerListEditor";
 import { SkillsEditor } from "../components/SkillsEditor";
 import { Switch } from "../components/Switch";
 import { useAccessStatus, useSetServe } from "../hooks/useAccess";
-import { useSaveAppearance } from "../hooks/useAppearance";
+import { currentAppearancePatch, useSaveAppearance } from "../hooks/useAppearance";
 import { agentModeOf, useActionSpecs } from "../hooks/useActions";
 import { disclosureToggle } from "../lib/disclosure";
 import { useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
@@ -25,8 +25,8 @@ import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
 import { registry, registeredThemes } from "../theme-engine/registry";
 import { switchTheme } from "../theme-engine/switchTheme";
-import type { Mode, ThemeId } from "../theme-engine/types";
-import { setUI, useUISlice, type Skyline, type Loz } from "../store/ui";
+import type { Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
+import { setThemeSetting, setUI, useUISlice } from "../store/ui";
 
 // Conf tab. Appearance is wired to the live UI store (client display state). Phase 7a wires the
 // **Inference** + **Server** groups to the YAML-backed settings API (GET masked / PUT partial
@@ -193,24 +193,21 @@ const RISKS = [
  * visibility" pattern from the four top-level tabs (Fleet/Agent/Utils stay mounted; only `.tab.active`
  * is visible). Reload-survival is a future enhancement — see UI_AUDIT.md §6b. */
 export function ConfTab({ active }: Props) {
-  // One slice per Appearance field — each toggle only re-renders the consumers that
-  // actually read that specific field. Theme/skyline/loz/heroOn/waveformOn changes used
-  // to wake App + TabBar + AppBar + FleetTab through the old `useUI()` subscription;
-  // post-Slice-7 those consumers stay quiet unless they read the changed field.
+  // One slice per Appearance field — each toggle only re-renders the consumers that actually read that
+  // specific field. The active theme's per-theme settings (M3 §14.3) come from one slice on its
+  // `themeSettings[theme]` map (a stable ref until a setting changes); their schema comes from the
+  // ThemeDef so the rows auto-render (no hardcoded skyline/loz/hero/waveform rows).
   const theme = useUISlice((s) => s.theme); // the active skin id
   const accent = useUISlice((s) => s.accent); // named palette / hue (vapor: dark/aqua/ember)
   const mode = useUISlice((s) => s.mode); // light/dark (only shown when the active theme declares modes)
-  const skyline = useUISlice((s) => s.skyline);
-  const loz = useUISlice((s) => s.loz);
-  const heroOn = useUISlice((s) => s.heroOn);
-  const waveformOn = useUISlice((s) => s.waveformOn);
   const motion = useUISlice((s) => s.motion);
   const perf = useUISlice((s) => s.perf);
+  const themeVals = useUISlice((s) => s.themeSettings[theme]); // overrides for the active theme (or undefined)
   const saveAppearance = useSaveAppearance(); // optimistic cross-device write (§9.11)
 
   // Appearance picker is driven by the theme registry (D28 §9.8): the skin list + the active theme's
-  // declared palette axes (vapor → named accents only, no mode axis). Adding a theme makes it appear
-  // here automatically (one registry row). The skyline/loz/hero/waveform rows below are vapor controls.
+  // declared palette axes (vapor → named accents only, no mode axis) + its per-theme `settings` schema.
+  // Adding a theme makes all three appear here automatically (one registry row, zero Conf change).
   const themeOptions = registeredThemes().map((d) => ({ val: d.id, label: d.label }));
   const activeDef = registry[theme];
   const accentOptions = (activeDef?.palettes.accents ?? []).map((a) => ({ val: a.id, label: a.label }));
@@ -218,29 +215,41 @@ export function ConfTab({ active }: Props) {
     val: m,
     label: m === "dark" ? "Dark" : "Light",
   }));
+  const settingsSpec = Object.entries(activeDef?.settings ?? {}); // [key, field][] for the auto-render
+
   // Appearance changes apply LOCALLY first (instant, the existing synchronous setUI/switchTheme path)
-  // then write to the server optimistically for cross-device sync (§9.11). Switching skin adopts the
-  // target theme's default mode/accent (re-pick of the same skin is a no-op so it never resets accent)
-  // and animates via the View-Transition path (instant under reduced-motion / unsupported); within-theme
-  // accent/mode changes stay instant `setUI`.
+  // then write the FULL appearance doc to the server optimistically for cross-device sync (§9.11) —
+  // `currentAppearancePatch()` snapshots the just-applied store so motion/perf/themeSettings ride along.
+  // Switching skin adopts the target theme's default mode/accent (re-pick of the same skin is a no-op so
+  // it never resets accent) and animates via the View-Transition path (instant under reduced-motion /
+  // unsupported); within-theme accent/mode/settings changes stay instant `setUI`.
   const pickTheme = (id: ThemeId) => {
     if (id === theme) return;
     const def = registry[id];
-    const next = {
-      theme: id,
+    const target = {
       mode: def?.palettes.defaultMode ?? ("dark" as Mode),
       accent: def?.palettes.defaultAccent ?? "dark",
     };
-    void switchTheme(id, { mode: next.mode, accent: next.accent });
-    saveAppearance.mutate(next);
+    void switchTheme(id, target); // async (loads the bundle first) → DON'T read the store for theme below
+    // The skin/mode/accent are the explicit target; motion/perf/themeSettings ride along unchanged.
+    saveAppearance.mutate({ ...currentAppearancePatch(), theme: id, ...target });
   };
   const pickMode = (m: Mode) => {
     setUI({ mode: m });
-    saveAppearance.mutate({ theme, mode: m, accent });
+    saveAppearance.mutate(currentAppearancePatch());
   };
   const pickAccent = (a: string) => {
     setUI({ accent: a });
-    saveAppearance.mutate({ theme, mode, accent: a });
+    saveAppearance.mutate(currentAppearancePatch());
+  };
+  // Global levers (motion/perf) + per-theme settings all apply locally then sync the full doc.
+  const setGlobal = (patch: { motion?: typeof motion; perf?: typeof perf }) => {
+    setUI(patch);
+    saveAppearance.mutate(currentAppearancePatch());
+  };
+  const pickSetting = (key: string, value: ThemeSettingValue) => {
+    setThemeSetting(theme, key, value);
+    saveAppearance.mutate(currentAppearancePatch());
   };
   const { data: server } = useServerInfo();
   const { data: hosts = [] } = useHosts(server?.poll_seconds ?? 5);
@@ -992,27 +1001,31 @@ export function ConfTab({ active }: Props) {
               <Seg<string> current={accent} options={accentOptions} onPick={pickAccent} />
             </div>
           )}
-          <div className="confrow">
-            <div className="k">
-              <div className="label">App mark</div>
-              <div className="desc">logo · spinning ring</div>
-            </div>
-            <Seg<Loz>
-              current={loz}
-              options={[
-                { val: "logo", label: "Logo" },
-                { val: "ring", label: "Ring" },
-              ]}
-              onPick={(v) => setUI({ loz: v })}
-            />
-          </div>
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Sun &amp; grid</div>
-              <div className="desc">animated hero scene</div>
-            </div>
-            <Switch on={heroOn} onToggle={() => setUI({ heroOn: !heroOn })} />
-          </div>
+          {/* Per-theme settings (M3 §14.3) — auto-rendered from the active theme's `ThemeDef.settings`
+              schema (vapor → App mark / Sun & grid / Horizon / Live waveform). switch→Switch, seg→Seg;
+              values resolve against the theme's declared defaults. A new theme's options appear here with
+              zero Conf change. */}
+          {settingsSpec.map(([key, field]) => {
+            const value = themeVals?.[key] ?? field.default;
+            return (
+              <div className="confrow" key={key}>
+                <div className="k">
+                  <div className="label">{field.label}</div>
+                  {field.desc && <div className="desc">{field.desc}</div>}
+                </div>
+                {field.type === "switch" ? (
+                  <Switch on={value as boolean} onToggle={() => pickSetting(key, !value)} />
+                ) : (
+                  <Seg<string>
+                    current={value as string}
+                    options={field.options.map((o) => ({ val: o.val, label: o.label }))}
+                    onPick={(v) => pickSetting(key, v)}
+                  />
+                )}
+              </div>
+            );
+          })}
+          {/* Global levers (apply to every theme) — synced like the rest of appearance (owner directive). */}
           <div className="confrow">
             <div className="k">
               <div className="label">Motion</div>
@@ -1020,7 +1033,7 @@ export function ConfTab({ active }: Props) {
             </div>
             <Switch
               on={motion === "full"}
-              onToggle={() => setUI({ motion: motion === "full" ? "reduced" : "full" })}
+              onToggle={() => setGlobal({ motion: motion === "full" ? "reduced" : "full" })}
             />
           </div>
           <div className="confrow">
@@ -1030,29 +1043,8 @@ export function ConfTab({ active }: Props) {
             </div>
             <Switch
               on={perf === "full"}
-              onToggle={() => setUI({ perf: perf === "full" ? "lite" : "full" })}
+              onToggle={() => setGlobal({ perf: perf === "full" ? "lite" : "full" })}
             />
-          </div>
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Horizon</div>
-              <div className="desc">city · mountains</div>
-            </div>
-            <Seg<Skyline>
-              current={skyline}
-              options={[
-                { val: "city", label: "City" },
-                { val: "mountains", label: "Mountains" },
-              ]}
-              onPick={(v) => setUI({ skyline: v })}
-            />
-          </div>
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Live waveform</div>
-              <div className="desc">ping graph on hero</div>
-            </div>
-            <Switch on={waveformOn} onToggle={() => setUI({ waveformOn: !waveformOn })} />
           </div>
         </div>
       </ConfGroup>

@@ -2,7 +2,7 @@ import { DeviceRow } from "../components/DeviceRow";
 import { FleetSummary } from "../components/FleetSummary";
 import { Hero } from "../components/Hero";
 import { useFleet } from "../hooks/useFleet";
-import { useUISlice } from "../store/ui";
+import { useThemeSetting } from "../theme-engine/settings";
 
 // The ⭐ Phase 1 deliverable: the Vapor Fleet tab. M2 (D29 §14.2) made this a PURE CONSUMER of the
 // headless `useFleet` controller — all the carousel/expand state + the auto-advance engine now live in
@@ -14,9 +14,10 @@ interface Props {
 }
 
 export function FleetTab({ active }: Props) {
-  // heroOn/waveformOn are vapor-specific appearance toggles → still read from the ui store here.
-  const heroOn = useUISlice((s) => s.heroOn);
-  const waveformOn = useUISlice((s) => s.waveformOn);
+  // heroOn/waveformOn are vapor's per-theme settings (M3 §14.3) — resolved against vapor's declared
+  // ThemeDef.settings defaults (FleetTab is a vapor-only component, so reading "vapor" directly is correct).
+  const heroOn = useThemeSetting<boolean>("vapor", "heroOn");
+  const waveformOn = useThemeSetting<boolean>("vapor", "waveformOn");
   const { hosts, svcByHost, featured, open, poll, isLoading, error, busy, run, feature, toggleRow } =
     useFleet();
 

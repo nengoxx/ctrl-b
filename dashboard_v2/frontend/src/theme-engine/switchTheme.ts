@@ -15,7 +15,7 @@
 
 import { flushSync } from "react-dom";
 
-import { getUI, setUI } from "../store/ui";
+import { getUI, setUI, type Motion, type Perf, type ThemeSettingsMap } from "../store/ui";
 import { pushToast } from "../store/toast";
 import { registry } from "./registry";
 import type { Mode, ThemeId } from "./types";
@@ -51,6 +51,12 @@ export function ensureThemeLoaded(id: ThemeId): Promise<void> {
 export interface SwitchTarget {
   mode: Mode;
   accent: string;
+  // Optional global/per-theme fields applied atomically with the skin flip — only the cross-device
+  // reconcile passes these (when another device changed the whole appearance). A normal in-app pick
+  // (Conf) omits them so switching skin never resets motion/perf/themeSettings. (M3 §14.3.)
+  motion?: Motion;
+  perf?: Perf;
+  themeSettings?: ThemeSettingsMap;
 }
 
 /** Switch the active SKIN with a cross-fade. Loads the theme bundle first, then commits the `ui`
@@ -64,7 +70,17 @@ export async function switchTheme(next: ThemeId, target: SwitchTarget): Promise<
     return; // stay on the current theme
   }
 
-  const apply = () => flushSync(() => setUI({ theme: next, mode: target.mode, accent: target.accent }));
+  const apply = () =>
+    flushSync(() =>
+      setUI({
+        theme: next,
+        mode: target.mode,
+        accent: target.accent,
+        ...(target.motion !== undefined && { motion: target.motion }),
+        ...(target.perf !== undefined && { perf: target.perf }),
+        ...(target.themeSettings !== undefined && { themeSettings: target.themeSettings }),
+      }),
+    );
 
   const doc = document as VTDocument;
   const start = doc.startViewTransition?.bind(doc);

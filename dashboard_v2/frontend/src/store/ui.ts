@@ -10,32 +10,36 @@
 // (dark/aqua/ember) — set only when skin=vapor, cleared otherwise. Non-vapor themes additionally get
 // `body[data-mode]`/`body[data-accent]` (the prototypes scope palettes by attribute).
 
-import type { Mode, ThemeId } from "../theme-engine/types";
+import type { Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
 import { createStore } from "./createStore";
 import { loadPersisted, savePersisted } from "./persist";
 
 export type { Mode, ThemeId } from "../theme-engine/types";
 export type Tab = "fleet" | "agent" | "utils" | "conf";
-export type Skyline = "city" | "mountains";
-export type Loz = "logo" | "ring";
 export type Motion = "full" | "reduced";
 export type Perf = "full" | "lite";
+
+// Open per-theme settings (D29 §14.3): `{ themeId: { key: value } }`. Open so a theme adds an option
+// additively (no new top-level field). Values resolve via `useThemeSetting(id, key)`, which falls back
+// to the theme's declared `ThemeDef.settings[key].default` when there's no override here.
+export type ThemeSettingsMap = Record<string, Record<string, ThemeSettingValue>>;
 
 export interface UIState {
   theme: ThemeId; // the active SKIN ("vapor" in v1) — drives slot resolution + body[data-skin]
   mode: Mode; // light/dark axis — vapor is dark-only (unused for vapor); non-vapor sets body[data-mode]
   accent: string; // named palette OR hue id — vapor: "dark"|"aqua"|"ember" on body[data-theme]
   tab: Tab;
-  skyline: Skyline;
-  loz: Loz;
   ttsAuto: boolean;
-  heroOn: boolean; // animated sun/grid/skyline scene
-  waveformOn: boolean; // live ping waveform on the hero
-  motion: Motion; // ambient animations (LED pulse, equalizer, sun bob, grid scroll, …)
-  // backdrop-blur on the frosted bars: "full" (the glass look) vs "lite" (blur off → opaque bars).
-  // DEVICE-LOCAL (not cross-device synced like theme/mode/accent) — it's a per-device speed lever, since
-  // `backdrop-filter: blur()` is the heaviest effect on Firefox-Android (~10× slower than Chrome).
+  // ambient animations (LED pulse, equalizer, sun bob, grid scroll, …). SYNCED via the appearance
+  // channel (owner directive 2026-06-26: consistent across devices) — see useAppearance.
+  motion: Motion;
+  // backdrop-blur on the frosted bars: "full" (the glass look) vs "lite" (blur off → opaque bars). A
+  // per-device speed lever (`backdrop-filter: blur()` is ~10× slower on Firefox-Android than Chrome),
+  // but SYNCED with the rest of appearance (owner directive: consistent across devices).
   perf: Perf;
+  // Theme-namespaced options (skyline/loz/hero/waveform for vapor; "hide appbar" for minimal, …). The
+  // theme owns the schema (`ThemeDef.settings`); this is the override store. SYNCED via appearance.
+  themeSettings: ThemeSettingsMap;
 }
 
 // First-load default for `motion`: honor the OS `prefers-reduced-motion` preference once.
@@ -54,16 +58,17 @@ const DEFAULTS: UIState = {
   mode: "dark",
   accent: "dark", // vapor's default accent = the bare :root (vapor.css), matching the old `theme:"dark"`
   tab: "fleet",
-  skyline: "city",
-  loz: "logo",
   ttsAuto: true,
-  heroOn: true,
-  waveformOn: true,
   motion: defaultMotion(),
   perf: "full", // default to the full glass look; the owner opts into "lite" on a slow device
+  themeSettings: {}, // per-theme overrides resolve against each ThemeDef.settings default
 };
 
 const KEY = "ctrlb.ui";
+
+// vapor's former top-level decorative toggles, now its `ThemeDef.settings` (M3 / §14.3). Listed here
+// only so the one-time migration can fold a pre-M3 persisted shape into `themeSettings.vapor`.
+const LEGACY_VAPOR_SETTINGS = ["skyline", "loz", "heroOn", "waveformOn"] as const;
 
 // One-time persisted-shape remap (§13.4). The pre-Phase-11 shape stored the conflated
 // `theme ∈ {dark,aqua,ember}` (the vapor accent). `loadPersisted`'s field-fill merge can't VALUE-remap,
@@ -79,8 +84,25 @@ export function migrateLegacyTheme(s: UIState): UIState {
   return s;
 }
 
+// One-time M3 remap (§14.3): a pre-M3 persisted state carried `skyline/loz/heroOn/waveformOn` as
+// top-level fields. `loadPersisted` keeps them as extras (its merge is `{...defaults, ...parsed}`), so
+// fold any present ones into `themeSettings.vapor` (never overwriting an already-migrated value) and
+// drop the stale top-level keys. Idempotent; exported for unit testing.
+export function migrateVaporSettings(s: UIState): UIState {
+  const loose = s as UIState & Record<string, ThemeSettingValue>;
+  const present = LEGACY_VAPOR_SETTINGS.filter((k) => k in loose);
+  if (present.length === 0) return s;
+  const vapor = { ...s.themeSettings.vapor };
+  for (const k of present) {
+    if (!(k in vapor)) vapor[k] = loose[k];
+  }
+  const next: Record<string, unknown> = { ...s, themeSettings: { ...s.themeSettings, vapor } };
+  for (const k of present) delete next[k];
+  return next as unknown as UIState;
+}
+
 const { emit, useStore } = createStore();
-let state: UIState = migrateLegacyTheme(loadPersisted(KEY, DEFAULTS));
+let state: UIState = migrateVaporSettings(migrateLegacyTheme(loadPersisted(KEY, DEFAULTS)));
 
 // Mirror the UI store onto <html>/<body> data-attrs. Theme-engine model:
 // - `html[data-skin]` = the SKIN id (the `@scope ([data-skin=…])` identity for theme CSS isolation, §14.6).
@@ -88,14 +110,15 @@ let state: UIState = migrateLegacyTheme(loadPersisted(KEY, DEFAULTS));
 //   ONLY when skin=vapor (from `accent`), and actively CLEARED for non-vapor skins (attrs are rebuilt
 //   each call, so a stale `aqua` would otherwise leak and re-tint a non-vapor theme).
 // - Non-vapor skins additionally get `body[data-mode]`/`body[data-accent]` (their palettes scope by attr).
-// - skyline/loz/motion/tab keep their current meaning (vapor's frozen attribute contract, §13.1).
+// - motion/tab keep their current (global) meaning. The vapor-specific `data-skyline`/`data-loz` attrs
+//   are now THEME-OWNED — VaporRoot writes them from its `themeSettings` (M3 §14.3), like `.no-composer`.
 //
 // Slice 4: runs SYNCHRONOUSLY inside setUI() so the DOM reflects the new state in the same tick a
-// control toggles — App.tsx doesn't subscribe to theme/skyline/loz (only `tab`, for conditional render).
+// control toggles — App.tsx doesn't subscribe to theme (only `tab`, for conditional render).
 function applyBodyAttrs(s: UIState): void {
   const b = document.body;
   // `data-skin` (the @scope identity, §14.6) lives on <html> so a theme's `:root`/`html,body`/
-  // page-background rules all sit inside its scope. The accent axis + the other vapor attrs stay on <body>.
+  // page-background rules all sit inside its scope. The accent axis + the other global attrs stay on <body>.
   document.documentElement.dataset.skin = s.theme;
   if (s.theme === "vapor") {
     b.dataset.theme = s.accent; // dark/aqua/ember — "dark" is inert (no [data-theme=dark] rule → :root)
@@ -107,8 +130,6 @@ function applyBodyAttrs(s: UIState): void {
     b.dataset.accent = s.accent;
   }
   b.dataset.tab = s.tab;
-  b.dataset.skyline = s.skyline;
-  b.dataset.loz = s.loz;
   b.dataset.motion = s.motion;
   b.dataset.perf = s.perf;
 }
@@ -123,6 +144,14 @@ export function setUI(patch: Partial<UIState>): void {
   applyBodyAttrs(state); // synchronous, in the same tick the control toggled (before the React re-render)
   savePersisted(KEY, state);
   emit();
+}
+
+/** Set one per-theme setting override (M3 §14.3). Immutably patches `themeSettings[themeId][key]` so the
+ *  selector subscription on that theme's slice fires. The Appearance picker calls this, then writes the
+ *  full appearance doc through `useSaveAppearance` (cross-device sync, like the theme/mode/accent picks). */
+export function setThemeSetting(themeId: string, key: string, value: ThemeSettingValue): void {
+  const forTheme = { ...state.themeSettings[themeId], [key]: value };
+  setUI({ themeSettings: { ...state.themeSettings, [themeId]: forTheme } });
 }
 
 /** Non-reactive snapshot of the current UI state, for plain (non-hook) call sites — e.g. the
