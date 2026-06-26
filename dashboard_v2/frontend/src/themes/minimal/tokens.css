@@ -1,0 +1,100 @@
+/* minimal theme tokens (D29 §14.4 / §9.8) — the GLOBAL tier (raw OKLCH values) mapped onto the Kit's
+ * semantic contract (theme-engine/kit/tokens.css). Ported from prototypes/project/variations/minimal.html.
+ *
+ * Loaded LAZILY by `ThemeDef.loadStyles` (dynamic import → its own hashed <link>), so it self-declares
+ * its layer + scope (vapor.css gets `@layer theme` from the static @import in theme/index.css; a lazy
+ * import can't, so we wrap it here):
+ *   - `@layer theme` → wins over the Kit's `@layer base` defaults by cascade-layer order.
+ *   - `@scope ([data-skin="minimal"])` → only matches when minimal is the active skin (the data-skin
+ *     identity lives on <html>), so bundles can coexist during a View-Transition switch without bleeding.
+ *
+ * ⚠️ `@scope` gotcha (THEME_ENGINE §14.6): scoped selectors match DESCENDANTS of the scope root, not the
+ * root itself — so the token block uses `:scope` (= <html data-skin=minimal>) and the mode/accent/density
+ * axes use `body[data-*]` (applyBodyAttrs writes data-mode/data-accent on <body>; MinimalRoot writes
+ * data-density). Defining the `--accent` formula on :scope and overriding only its INPUTS (--accent-l/-c/-h)
+ * lower down is the standard "formula high, inputs low" custom-property pattern — substitution resolves
+ * against each element's inherited input values. */
+@layer theme {
+  @scope ([data-skin="minimal"]) {
+    :scope {
+      color-scheme: dark;
+
+      /* global tier — OKLCH accent inputs (mode sets L/C; accent sets H) */
+      --accent-l: 0.74;
+      --accent-c: 0.07;
+      --accent-h: 195;
+
+      /* semantic tier (dark, the default mode) */
+      --bg: #1b1b1a;
+      --surface: #232321;
+      --surface-2: #2a2a28;
+      --text: #ece9e3;
+      --text-2: #a8a59d;
+      --text-3: #74726b;
+      --line: rgba(255, 255, 255, 0.08);
+      --line-2: rgba(255, 255, 255, 0.13);
+
+      --accent: oklch(var(--accent-l) var(--accent-c) var(--accent-h));
+      --accent-fill: var(--accent);
+      --accent-soft: oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.14);
+      --accent-glow: none; /* minimal is flat — no glow layer */
+
+      --ok: oklch(0.76 0.1 155);
+      --ok-soft: oklch(0.76 0.1 155 / 0.16);
+      --warn: oklch(0.82 0.12 75);
+      --warn-soft: oklch(0.82 0.12 75 / 0.16);
+      --danger: oklch(0.68 0.13 28);
+      --danger-soft: oklch(0.68 0.13 28 / 0.14);
+
+      --radius: 16px;
+      --radius-sm: 11px;
+      --density-pad: 1;
+    }
+
+    /* page background — both <html> (overscroll) and <body> */
+    :scope,
+    body {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* ── light mode (body[data-mode=light]) — bump L down / C up per OKLCH dark↔light pairing ── */
+    body[data-mode="light"] {
+      color-scheme: light;
+      --accent-l: 0.58;
+      --accent-c: 0.08;
+      --bg: #f4f2ed;
+      --surface: #ffffff;
+      --surface-2: #faf8f4;
+      --text: #21201d;
+      --text-2: #5f5d57;
+      --text-3: #8f8d86;
+      --line: rgba(0, 0, 0, 0.08);
+      --line-2: rgba(0, 0, 0, 0.13);
+      --accent-soft: oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.12);
+      --ok: oklch(0.55 0.11 155);
+      --ok-soft: oklch(0.55 0.11 155 / 0.12);
+      --danger: oklch(0.55 0.16 28);
+      --danger-soft: oklch(0.55 0.16 28 / 0.1);
+    }
+
+    /* ── accent hue (body[data-accent=…]) — the mode×4-accent matrix is one --accent-h per accent ── */
+    body[data-accent="cyan"] {
+      --accent-h: 195;
+    }
+    body[data-accent="moss"] {
+      --accent-h: 155;
+    }
+    body[data-accent="iris"] {
+      --accent-h: 280;
+    }
+    body[data-accent="amber"] {
+      --accent-h: 60;
+    }
+
+    /* ── density (body[data-density=…], written by MinimalRoot from the per-theme `density` setting) ── */
+    body[data-density="compact"] {
+      --density-pad: 0.72;
+    }
+  }
+}

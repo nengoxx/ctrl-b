@@ -1,0 +1,47 @@
+/* Kit semantic token contract (D29 §9.7 / §14.4) — the THREE-TIER design-token model:
+ *   global (raw values, per theme) → semantic/alias (these names) → component (Kit CSS reads these).
+ *
+ * This file is the SEMANTIC tier's neutral fallback set. It's imported into `@layer base` (theme/index.css),
+ * so any non-vapor skin that doesn't override a token still renders with a sane value, and the Kit's
+ * token-driven component CSS (built in the Bucket-A slice) always resolves. Each theme's own `tokens.css`
+ * redefines these in `@layer theme`, which wins by CASCADE-LAYER ORDER (not specificity).
+ *
+ * ⚠️ Collision note (verified): vapor ALSO declares `--line`/`--line-2`/`--accent-glow` (vapor.css, in
+ * `@layer theme`, scoped to `[data-skin=vapor]`). On a vapor page both the base default (here) and vapor's
+ * value target <html>; the THEME layer beats the BASE layer on the same element, so vapor's value wins and
+ * vapor stays byte-identical. The base defaults only ever "show through" for a skin that declares none.
+ * vapor's other tokens (`--bg`/`--magenta`/`--accent-grad`/`--accent-rgb`) are vapor-private names not in
+ * this contract, so they never interact with it. */
+:root {
+  /* surfaces (bg ladder) */
+  --surface: #232321;
+  --surface-2: #2a2a28;
+  /* text ladder */
+  --text: #ece9e3;
+  --text-2: #a8a59d;
+  --text-3: #74726b;
+  /* borders / hairlines */
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.13);
+  /* status (+ -soft alpha variants) */
+  --ok: #7ec99a;
+  --ok-soft: rgba(126, 201, 154, 0.16);
+  --warn: #e8c069;
+  --warn-soft: rgba(232, 192, 105, 0.16);
+  --danger: #e07a6b;
+  --danger-soft: rgba(224, 122, 107, 0.14);
+  /* accent — two channels so a theme can be flat OR gradient without component changes (§9.7):
+   *   --accent       a TRUE <color> (color/border/fill-as-solid)
+   *   --accent-fill  what backgrounds use (flat color OR a gradient <image>)
+   *   --accent-soft  low-alpha accent (tints)
+   *   --accent-glow  optional shadow layer (phosphor text-shadow / cosmos blur); inert by default */
+  --accent: #5bbccb;
+  --accent-fill: #5bbccb;
+  --accent-soft: rgba(91, 188, 203, 0.14);
+  --accent-glow: none; /* valid for both filter: and box/text-shadow: — a theme sets a real glow */
+  /* shape */
+  --radius: 16px;
+  --radius-sm: 11px;
+  /* density multiplier — a cosmetic per-theme lever (1 = comfortable; a theme scopes <1 for compact) */
+  --density-pad: 1;
+}

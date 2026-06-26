@@ -2,11 +2,13 @@
 // here + one self-contained module (the north star). T0 = vapor only; the rest of the ThemeId union
 // is declared in types.ts and lands in its own Tn slice.
 
+import { minimal } from "../themes/minimal";
 import { vapor } from "../themes/vapor";
 import type { ThemeDef, ThemeRegistry } from "./types";
 
 export const registry: ThemeRegistry = {
   vapor,
+  minimal,
 };
 
 /** The registered (built) themes, for the Conf Appearance picker. T0 = [vapor]; grows per Tn slice. */

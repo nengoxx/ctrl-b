@@ -14,5 +14,10 @@
  */
 @layer base, theme;
 
+/* Kit semantic-token contract — neutral fallbacks in @layer base; each theme's tokens.css overrides them
+ * in @layer theme (wins by cascade-layer order). vapor's private tokens don't intersect this set; the
+ * three shared names (--line/--line-2/--accent-glow) are won by vapor's theme-layer rules on a vapor page. */
+@import "../theme-engine/kit/tokens.css" layer(base);
+
 @import "./vapor.css" layer(theme);
 @import "./extras.css" layer(theme);
