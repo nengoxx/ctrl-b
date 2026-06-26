@@ -16,11 +16,11 @@ interface Props {
   active: boolean;
 }
 
-// After the user manually features a host (taps a row or a now-dot), suspend the auto-cycle for this
-// long so their selection stays put instead of being cycled away on the next tick. A UX nicety; could
+// After the user manually features a host (taps a row or a now-dot), the auto-advance countdown is
+// reset to this longer hold so their selection stays put (vs the ~6s default cycle). A UX nicety; could
 // later be promoted to a config field (sibling of `server.feature_cycle_seconds`) if tuning is wanted.
-// NOTE: this Fleet auto-cycle (+ pause) logic moves into the `useFleet` controller in M2 (D29 §14.2).
-const INTERACTION_PAUSE_MS = 5000;
+// NOTE: this Fleet auto-cycle logic moves into the `useFleet` controller in M2 (D29 §14.2).
+const INTERACTION_HOLD_MS = 8000;
 
 export function FleetTab({ active }: Props) {
   // Two slices, one per field — each subscription is independent and only fires when
@@ -54,11 +54,16 @@ export function FleetTab({ active }: Props) {
   // would never reliably fire.
   const hostsRef = useRef(hosts);
   hostsRef.current = hosts;
-  // Timestamp until which the auto-cycle is paused (set when the user manually features a host).
-  const pauseUntilRef = useRef(0);
+  // Auto-advance via a SELF-RESCHEDULING timeout (not a fixed interval) so a manual selection can
+  // cleanly RESET the countdown — the selected host then holds for a full delay instead of being cut
+  // off whenever the next fixed grid tick happened to land (the old skip-a-tick approach let the cycle
+  // period "show through" the hold). `reschedule` is exposed via a ref so `feature` (a user action)
+  // can restart it with the longer hold. `hosts` is read through `hostsRef` so a poll (new array
+  // reference) doesn't churn the timer — only the period changing (`cycleMs`) re-arms it.
+  const cycleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const rescheduleRef = useRef<(delayMs: number) => void>(() => {});
   useEffect(() => {
-    const id = setInterval(() => {
-      if (Date.now() < pauseUntilRef.current) return; // paused after a manual selection
+    const advance = () => {
       setFeatured((f) => {
         const cur = hostsRef.current;
         const onIdx = cur.map((h, i) => (h.status?.online ? i : -1)).filter((i) => i >= 0);
@@ -66,15 +71,22 @@ export function FleetTab({ active }: Props) {
         const curPos = onIdx.indexOf(f);
         return onIdx[(curPos + 1) % onIdx.length];
       });
-    }, cycleMs);
-    return () => clearInterval(id);
+      reschedule(cycleMs); // after an auto-advance, wait a full period
+    };
+    const reschedule = (delayMs: number) => {
+      clearTimeout(cycleTimer.current);
+      cycleTimer.current = setTimeout(advance, delayMs);
+    };
+    rescheduleRef.current = reschedule;
+    reschedule(cycleMs);
+    return () => clearTimeout(cycleTimer.current);
   }, [cycleMs]);
 
-  // Feature a host from a user action — pauses the auto-cycle so the selection isn't cycled away.
-  // Stable identity (used by the Hero dots + the row toggle).
+  // Feature a host from a user action — restarts the auto-advance countdown with the longer hold so the
+  // selection stays put. Stable identity (used by the Hero dots + the row toggle).
   const feature = useCallback((i: number) => {
-    pauseUntilRef.current = Date.now() + INTERACTION_PAUSE_MS;
     setFeatured(i);
+    rescheduleRef.current(INTERACTION_HOLD_MS);
   }, []);
 
   function toggle(id: string, i: number) {
