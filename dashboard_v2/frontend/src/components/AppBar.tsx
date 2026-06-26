@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-import { useVoiceStatus } from "../hooks/useVoiceStatus";
-import { dismiss as stopAudio } from "../lib/audioController";
+import { useAppChrome } from "../hooks/useAppChrome";
 import { useConnection } from "../store/connection";
-import { setUI, useUISlice } from "../store/ui";
 
 // Top bar: brand lozenge (logo or spinning ring via body[data-loz]) + auto-TTS toggle.
 // The toggle flips a themed mask icon (speaker ↔ slashed-speaker) and flashes a toast — ported
@@ -15,8 +13,9 @@ import { setUI, useUISlice } from "../store/ui";
 // `flex: 1` so it shrinks to make room; CSS in extras.css (vapor.css untouched, D7).
 
 export function AppBar() {
-  const ttsAuto = useUISlice((s) => s.ttsAuto);
-  const ttsConfigured = useVoiceStatus().data?.tts ?? false;
+  // Voice control from the headless app-chrome controller (D29 §14.2); the muting-stops-audio behavior
+  // lives in `toggleAutoTts` now. The toast flash below stays vapor presentation.
+  const { ttsAuto, ttsConfigured, toggleAutoTts } = useAppChrome();
   const conn = useConnection();
   const [toast, setToast] = useState<{ on: boolean } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -31,7 +30,6 @@ export function AppBar() {
     setToast({ on: ttsAuto });
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setToast(null), 1100);
-    if (!ttsAuto) stopAudio(); // muting auto-TTS silences whatever's playing now
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
@@ -62,7 +60,7 @@ export function AppBar() {
             title={ttsAuto ? "auto-tts on — tap to mute" : "auto-tts muted — tap to enable"}
             aria-pressed={ttsAuto}
             aria-label="auto text-to-speech"
-            onClick={() => setUI({ ttsAuto: !ttsAuto })}
+            onClick={toggleAutoTts}
           />
         )}
       </div>
