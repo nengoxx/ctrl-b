@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { useAppearanceSync } from "./hooks/useAppearance";
 import { useEventStream } from "./hooks/useEvents";
+import { useFleetCycle } from "./hooks/useFleet";
 import { isAnyDirty } from "./store/dirty";
 import { useActiveRoot } from "./theme-engine/ThemeProvider";
 
@@ -17,6 +18,7 @@ import { useActiveRoot } from "./theme-engine/ThemeProvider";
 export default function App() {
   useEventStream(); // live activity feed → refresh fleet on any recorded action
   useAppearanceSync(); // reconcile theme/mode/accent against the server (cross-device LWW, §9.11)
+  useFleetCycle(); // SINGLETON featured-host auto-advance engine (above the Root, §14.5)
   useAppViewport(); // --app-h tracks the visual viewport (keyboard-aware dvh)
   useUnsavedGuard(); // warn before unload if any editor has unsaved changes
 
