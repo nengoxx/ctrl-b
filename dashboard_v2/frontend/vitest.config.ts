@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
@@ -8,6 +10,15 @@ import { defineConfig } from "vitest/config";
 // Net effect: `npm run build` output is byte-identical with or without this file present.
 export default defineConfig({
   plugins: [react()],
+  // Test-only alias: stub vite-plugin-pwa's virtual module (unavailable in jsdom). Lives here, NOT in
+  // vite.config.ts, so the production build is unaffected (the real module is exercised by e2e).
+  resolve: {
+    alias: {
+      "virtual:pwa-register/react": fileURLToPath(
+        new URL("./tests/stubs/pwa-register-react.ts", import.meta.url),
+      ),
+    },
+  },
   test: {
     environment: "jsdom",
     globals: false, // explicit imports from "vitest" — no global injection, no tsconfig globals types

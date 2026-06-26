@@ -2,8 +2,8 @@
 // here + one self-contained module (the north star). T0 = vapor only; the rest of the ThemeId union
 // is declared in types.ts and lands in its own Tn slice.
 
+import { vapor } from "../themes/vapor";
 import type { ThemeDef, ThemeRegistry } from "./types";
-import { vapor } from "./vapor";
 
 export const registry: ThemeRegistry = {
   vapor,

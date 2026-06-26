@@ -1,84 +1,33 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 
-import { ConfirmDialog } from "./components/ConfirmDialog";
-import { ErrorBoundary } from "./components/ErrorBoundary";
-import { MiniPlayer } from "./components/MiniPlayer";
-import { PromptModal } from "./components/PromptModal";
-import { SwUpdatePrompt } from "./components/SwUpdatePrompt";
-import { Toasts } from "./components/Toasts";
 import { useAppearanceSync } from "./hooks/useAppearance";
 import { useEventStream } from "./hooks/useEvents";
-import { prefetchOnIdle } from "./lib/prefetch";
-import { hasComposer } from "./theme-engine/tabs";
-import { useThemeSlots } from "./theme-engine/ThemeProvider";
 import { isAnyDirty } from "./store/dirty";
-import { useUISlice, type Tab } from "./store/ui";
-import { preloadConfTab } from "./tabs/ConfTab.lazy";
+import { useActiveRoot } from "./theme-engine/ThemeProvider";
 
-// The Vapor SPA shell. App-shell layout (extras.css): a 100dvh flex column — a scrolling content
-// pane (`.app-scroll`) with the appbar + tabs, then the composer + tab bar in-flow at the bottom.
-// This replaces window-scroll + fixed bottom bars, which broke on Android: with the bars in normal
-// flow inside a dvh-sized shell, they always sit at the visible bottom (tracking the browser
-// toolbar/keyboard) and the chat scrolls in its own pane — no body padding, no fixed/viewport
-// mismatch. Visuals are identical to the prototype (D7).
+// App is a THIN HOST (Phase 11 v2 / D29 §14.1, M0). The active theme owns the whole presentation —
+// App renders `<ActiveRoot/>` and runs the APP-GLOBAL effects that aren't part of any theme's visual
+// tree: the live event stream, cross-device appearance sync, the visual-viewport `--app-h` sizing, and
+// the unsaved-changes unload guard. Everything visual (the `.app-shell` layout, appbar, tabs, composer,
+// tab bar, overlays) lives below, owned by the theme (vapor → themes/vapor/VaporRoot).
 //
-// Vapor CSS keys off body data-attrs (theme/tab/skyline/loz) + body.no-composer. The store
-// (store/ui.ts) writes those attrs synchronously inside setUI(), so this shell only needs to
-// subscribe to `tab` for its own conditional rendering (composer visibility + scroll reset on
-// tab switch). Fleet/Agent/Utils are always mounted (the .tab CSS shows only the active one);
-// Conf is lazy — only mounted after its first activation (Slice 6 / F6), once-and-stays-mounted
-// so its draft state survives subsequent tab switches.
+// (Layout-specific effects — lazy-Conf, scroll-reset, `--appbar-h` — moved into VaporRoot since each
+// theme owns its own layout. App keeps only what every theme shares.)
 
 export default function App() {
-  const tab = useUISlice((s) => s.tab);
-  const theme = useUISlice((s) => s.theme); // the active skin — drives the resolved slot set + composer
-  const slots = useThemeSlots(); // resolved per-theme component slots (stable identity unless theme changes)
-  const scrollRef = useRef<HTMLDivElement>(null);
   useEventStream(); // live activity feed → refresh fleet on any recorded action
   useAppearanceSync(); // reconcile theme/mode/accent against the server (cross-device LWW, §9.11)
+  useAppViewport(); // --app-h tracks the visual viewport (keyboard-aware dvh)
+  useUnsavedGuard(); // warn before unload if any editor has unsaved changes
 
-  // Conditional mount for the lazy Conf tab (Slice 6 audit fixes — see UI_AUDIT.md). The
-  // initializer reads `tab` (resolved from localStorage at module load) so a hard reload while
-  // the user is on Conf mounts it immediately — otherwise the dvh layout would briefly show no
-  // active tab between first paint and the useEffect upgrade. State transitions are strictly
-  // false → true; ConfTab, once mounted, stays mounted to preserve form drafts across tab
-  // switches.
-  const [confMounted, setConfMounted] = useState(() => tab === "conf");
-  useEffect(() => {
-    if (tab === "conf" && !confMounted) setConfMounted(true);
-  }, [tab, confMounted]);
+  const ActiveRoot = useActiveRoot();
+  return <ActiveRoot />;
+}
 
-  // Reset the content pane to the top on tab switch (the pane scrolls now, not the window). The
-  // Agent tab is the exception — it scrolls itself to the newest message (AgentTab, on `active`).
-  useEffect(() => {
-    if (tab !== "agent") scrollRef.current?.scrollTo(0, 0);
-  }, [tab]);
-
-  // Expose the (sticky) appbar's height as `--appbar-h` so other sticky elements — the Agent tab's
-  // plan tab — can pin just *below* the menu bar instead of riding up over it. Re-measured on resize
-  // (theme/content/orientation changes shift it).
-  //
-  // §13.6: scope to the scroll container + match BOTH class names (vapor `.appbar` / BASE `.cb-appbar`)
-  // so the slot host finds the appbar regardless of the active theme — a bare `document.querySelector(
-  // ".appbar")` would return null under a non-vapor skin and the plan-pin would silently use its
-  // fallback offset. A wrapper-with-ref is unusable here: the appbar is `position:sticky`, and wrapping
-  // it would scope the sticking to the wrapper's own height (i.e. break it). Re-runs on skin change
-  // (the appbar element is replaced when the AppBar slot swaps).
-  useEffect(() => {
-    const bar = scrollRef.current?.querySelector<HTMLElement>(".appbar, .cb-appbar");
-    if (!bar) return;
-    const set = () =>
-      document.documentElement.style.setProperty("--appbar-h", `${bar.offsetHeight}px`);
-    set();
-    const ro = new ResizeObserver(set);
-    ro.observe(bar);
-    return () => ro.disconnect();
-  }, [theme]);
-
-  // Size the app-shell to the VISUAL viewport. `100dvh` (CSS fallback) tracks the browser toolbar
-  // but NOT the on-screen keyboard, so a pure-dvh shell leaves the in-flow composer hidden behind
-  // the keyboard. `visualViewport.height` shrinks when the keyboard opens, so the shell (and its
-  // bottom composer) stays above it. `--app-h` overrides the dvh fallback once JS runs.
+// Size the app shell to the VISUAL viewport. `100dvh` (CSS fallback) tracks the browser toolbar but NOT
+// the on-screen keyboard, so `visualViewport.height` is used to keep the in-flow composer above the
+// keyboard. `--app-h` overrides the dvh fallback once JS runs. App-global: every theme's layout uses it.
+function useAppViewport(): void {
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
@@ -91,13 +40,12 @@ export default function App() {
       vv.removeEventListener("scroll", apply);
     };
   }, []);
+}
 
-  // F19 — warn the browser before unload (refresh / close tab / navigate away) if any editor
-  // has unsaved changes. `isAnyDirty()` is a direct read of the registry rather than a React
-  // subscription so this useEffect only runs once at mount; the handler reads fresh state at
-  // the moment of unload. Both `preventDefault()` (modern spec) and `returnValue = ""` (legacy
-  // Chrome < 50) are included — that's the canonical pattern in 2026 docs. Browsers force a
-  // generic prompt anyway; no custom message survives.
+// F19 — warn the browser before unload (refresh / close / navigate) if any editor has unsaved changes.
+// `isAnyDirty()` is a direct registry read (not a subscription) so this runs once at mount and reads
+// fresh state at unload. Both `preventDefault()` + `returnValue=""` cover the modern + legacy specs.
+function useUnsavedGuard(): void {
   useEffect(() => {
     function handler(e: BeforeUnloadEvent) {
       if (!isAnyDirty()) return;
@@ -107,111 +55,4 @@ export default function App() {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, []);
-
-  // Slice 6 / F6: warm the Conf chunk after first paint so the first click on the Conf tab is
-  // typically zero-wait. Idle-scheduled — never competes with the critical render path. The
-  // hover/touch handlers below are the belt-and-suspenders fallback for users who click within
-  // the first ~800ms before idle fires. Meaningful only because ConfTab is conditionally
-  // mounted: without that, React.lazy would have already kicked off the fetch on App mount.
-  useEffect(() => {
-    const cancel = prefetchOnIdle(preloadConfTab);
-    return cancel;
-  }, []);
-
-  // Map of tab-name → preload function. The Conf tab is the only one currently lazy-loaded; future
-  // lazy tabs slot in here without touching TabBar's shape. Each call is safe to invoke repeatedly
-  // (the importer is cached at the ES-module layer, so subsequent calls resolve instantly).
-  // `useCallback` with empty deps so TabBar receives a stable reference — future memoization of
-  // TabBar (or strict prop-identity checks) won't churn.
-  const prefetch = useCallback((t: Tab): void => {
-    if (t === "conf") void preloadConfTab();
-  }, []);
-
-  // §13.6: composer visibility is tab-registry-driven (`TabDef.hasComposer`), not a hardcoded tab list —
-  // the flexible-tab-registry requirement. (ui.ts mirrors the same call for the body `.no-composer` class.)
-  const showComposer = hasComposer(theme, tab);
-
-  return (
-    <div className="app-shell">
-      <div className="app-scroll" id="app-scroll" ref={scrollRef}>
-        <slots.AppBar />
-        <slots.FleetView active={tab === "fleet"} />
-        <slots.AgentView active={tab === "agent"} />
-        <slots.UtilsView active={tab === "utils"} />
-        {confMounted && (
-          <ErrorBoundary fallback={confErrorFallback}>
-            <Suspense fallback={<ConfLoading />}>
-              <slots.ConfShell active={tab === "conf"} />
-            </Suspense>
-          </ErrorBoundary>
-        )}
-      </div>
-      {/* Floating TTS mini-player (6b-2): fixed-position pill just below the appbar (its own CSS),
-          so JSX placement here doesn't affect layout. Self-hides when nothing's playing. */}
-      <MiniPlayer />
-      {showComposer && <slots.Composer />}
-      <slots.TabBar onPrefetch={prefetch} />
-      <Toasts />
-      <ConfirmDialog />
-      <PromptModal />
-      <SwUpdatePrompt />
-    </div>
-  );
 }
-
-// Vapor-styled Suspense fallback for the Conf chunk. Shape mirrors the real Conf tab's section
-// header so there's no layout shift when the chunk resolves and ConfTab takes over. Only rendered
-// when ConfTab is the active tab (the outer `{confMounted && ...}` guard means we only enter the
-// Suspense boundary after the user has clicked Conf at least once), so `className="tab active"`
-// is correct in context.
-function ConfLoading() {
-  return (
-    <div
-      className="tab active"
-      id="tab-conf"
-      data-screen-label="04 Conf"
-      role="tabpanel"
-      aria-labelledby="tabbtn-conf"
-    >
-      <div className="sec">
-        <span className="num">04</span>
-        <b>Conf</b>
-        <span className="right">// loading…</span>
-      </div>
-    </div>
-  );
-}
-
-// Error fallback for the lazy Conf chunk. The most common failure mode is a stale chunk URL
-// after a deploy (the user has the old `index.html` loaded, a new build was deployed, the lazy
-// chunk hash changed → 404). React.lazy caches its rejection so the boundary can't recover by
-// clearing state — only a page reload picks up the new manifest. The button does exactly that.
-function confErrorFallback(error: Error, reload: () => void) {
-  return (
-    <div
-      className="tab active"
-      id="tab-conf"
-      data-screen-label="04 Conf"
-      role="tabpanel"
-      aria-labelledby="tabbtn-conf"
-    >
-      <div className="sec">
-        <span className="num">04</span>
-        <b>Conf</b>
-        <span className="right">// failed to load</span>
-      </div>
-      <div className="no-svc" style={{ padding: "16px 14px" }}>
-        // {error.message || "unknown error"}
-        <br />
-        <button
-          className="conf-save"
-          style={{ marginTop: 12 }}
-          onClick={reload}
-        >
-          Reload page
-        </button>
-      </div>
-    </div>
-  );
-}
-

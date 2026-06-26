@@ -38,31 +38,6 @@ export interface PaletteModel {
   defaultAccent?: string;
 }
 
-// The slot surfaces the engine resolves per-theme. `Partial<ThemeSlots>` in a ThemeDef — a theme
-// fills only what it overrides; the rest falls back to BASE (§9.4). vapor fills ALL of these.
-//
-// T0 models the SHELL + tab-body slots that App.tsx (the slot host) renders directly. Finer
-// overridable sub-slots that live *inside* a tab body — NowMonitoring (T1), HostDetail (T4/T5,
-// inline vs slide-panel vs bottom-sheet), ChatBubble, Hero, TabIndicator — are added to this
-// interface in their OWNING slice, once their prop contracts can be finalized against the real BASE
-// implementation (D28 open sub-decision (a)). They're purely additive optional fields; vapor never
-// uses them (its tab bodies are self-contained + frozen).
-export interface ThemeSlots {
-  // Shell chrome — hosted directly by App.tsx.
-  AppBar: ComponentType;
-  Composer: ComponentType;
-  TabBar: ComponentType<{ onPrefetch?: (t: TabId) => void }>;
-  // Tab bodies — one per tab; each takes `{ active }`. The FleetView is the signature surface a
-  // theme most often restructures (vapor: FleetTab incl. Hero+rows+summary; cosmos: orbital;
-  // frontier: art-map). The others restyle via tokens by default but can be overridden.
-  FleetView: ComponentType<{ active: boolean }>;
-  AgentView: ComponentType<{ active: boolean }>;
-  UtilsView: ComponentType<{ active: boolean }>;
-  ConfShell: ComponentType<{ active: boolean }>;
-}
-
-export type SlotName = keyof ThemeSlots;
-
 // Per-host visual encoding (§9.9) — the neutral output contract (data-viz "channels"). A theme owns
 // its `present()`; derive-by-default from neutral host fields, optional override merged on top.
 // Declared now for type stability; first CONSUMED at T3/T4 (no spatial theme exists yet in T0).
@@ -87,22 +62,19 @@ export type Present = (
 export interface ThemeDef {
   id: ThemeId;
   label: string;
-  palettes: PaletteModel;
-  tabs: TabDef[]; // v1: every theme returns the standard 4 (§9.8); the registry supports non-4.
-  slots: Partial<ThemeSlots>; // vapor = complete; others = only the surfaces they restructure.
-  // Lazy-load the theme's CSS bundle (code-split <link>) + activate its fonts. vapor's CSS is in
-  // `layer(frozen)` (always loaded) and its fonts are in index.html → both are no-ops for vapor.
+  // The theme owns its WHOLE presentation (D29 §14.3) — App renders the active theme's Root. Reskin
+  // themes set `Root = <DefaultRoot …/>` (the Kit scaffold); bespoke themes write their own.
+  Root: ComponentType;
+  palettes: PaletteModel; // §9.8 — declared mode/accent/named axes the Appearance picker renders
+  // Lazy-load the theme's CSS bundle (code-split <link>) + activate its fonts. The DEFAULT theme is
+  // eager-loaded (no first-paint FOUC), so its `loadStyles` is a no-op (§14.6).
   loadStyles: () => Promise<unknown>;
   loadFonts?: () => Promise<void>;
-  present?: Present; // omit → theme has no spatial/per-host layout
+  present?: Present; // §9.9 — per-host visual encoding (cosmos/frontier); omit → no spatial layout
+  // settings?: ThemeSettingsSpec — theme-namespaced options (§14.3); added in M3 with the mechanism.
   assets?: Record<string, () => Promise<string>>; // import.meta.glob map keyed by name (frontier art)
 }
 
-// Only BUILT themes appear here, so a Partial record — resolution falls back to BASE for any
-// missing theme/slot (§9.4). T0 = `{ vapor }`.
+// Only BUILT themes appear here (a Partial record) — `rootFor` falls back to the default (vapor) for an
+// unregistered id. Adding a theme = one row here + its module (D29 §14). M0 = `{ vapor }`.
 export type ThemeRegistry = Partial<Record<ThemeId, ThemeDef>>;
-
-// Which REGISTERED theme is structurally closest to BASE, for the rare future case an exotic theme
-// omits a slot BASE can't render generically (owner: minimal). Inert until T1 — T0's resolution
-// fallback is BASE.slots directly; nothing in T0 reads this. (§9.3 "BASE vs FALLBACK".)
-export const FALLBACK: ThemeId = "minimal";
