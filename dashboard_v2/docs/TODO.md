@@ -679,6 +679,65 @@ tools + confirm bubbles) are DONE.**
 - [ ] Run v2 alongside the old server; migrate `config.yaml`.
 - [ ] Flip the default; retire `wol_server/` (or keep as Linux-WOL fallback). Update README/AGENTS.
 
+## Phase 11 — Theme engine (pluggable presentation layer, D28) — **DESIGNED 2026-06-26; T0 next**
+
+Spec: `THEME_ENGINE.md §§9–10` · decision: `DECISIONS.md D28`. Build the engine on the cheapest theme
+first, hardest last; the foundation is paid once in T0. **D7 pixel-fidelity applies per theme.** Each Tn is
+an independently shippable slice — pause for the owner's 390px eyeball after each (per the standing review
+rule). **vapor stays byte-for-byte unchanged throughout.**
+
+- [ ] **T0 — Foundation (the engine; vapor untouched).** _Build against THEME_ENGINE.md §13 (the final-review
+      checklist) — the items below fold its corrections in._
+  - [ ] **FIRST: `vite build`-verify CSS `@layer` survives the bundler.** Add `theme/index.css` doing
+        `@layer frozen, base, theme;` + `@import "./vapor.css" layer(frozen); @import "./extras.css"
+        layer(frozen);`, swap `main.tsx`'s two JS imports for it, `vite build && vite preview`, confirm vapor
+        is byte-identical + the `layer()` token is preserved. **If stripped → fall back to `cb-` namespacing**
+        (§13.2–13.3). Gates the isolation strategy, so do it before writing theme code.
+  - [ ] `theme-engine/` dir: `types.ts` (`ThemeDef`/`ThemeSlots`/`PaletteModel`/`VisualEncoding` + `TabDef`
+        with `hasComposer`), `ThemeRegistry`, `ThemeProvider` (lazy CSS+font load + slot resolution; **prefer
+        a module-level slot map / stable-map-in-context + active-key-in-state** to avoid context fan-out;
+        default = BASE), `useThemeSlot`.
+  - [ ] Register the **vapor module as-is** (slots point at the existing components). No edits to vapor
+        components or `vapor.css`/`extras.css` (now caged in `layer(frozen)`).
+  - [ ] `App.tsx` → **slot host** — render resolved slots, **but preserve the shell orchestration** (§13.6):
+        lazy-Conf `confMounted`+Suspense wrapper (ConfShell slot renders inside it); `--appbar-h` measured via
+        a **stable ref** not `.appbar`; `showComposer` reads `TabDef.hasComposer` (in App **and** ui.ts);
+        BASE owns its own `.tab` show/hide (don't lean on the frozen global rule).
+  - [ ] `store/ui.ts`: `{theme}`→`{theme,mode,accent}`; **`applyBodyAttrs` sets `body[data-skin]=theme`** and
+        keeps `body[data-theme]` = vapor's accent (dark/aqua/ember) when skin=vapor (§13.1); sets
+        `data-mode`/`data-accent` for non-vapor; **injectable initial value** (sync seam). **Dedicated
+        legacy-`theme` migration** (`dark|aqua|ember` → `{theme:"vapor",accent}`), NOT the `loadPersisted`
+        field-fill (§13.4).
+  - [ ] Conf → Appearance: `Seg<Theme>` → theme picker + declared-axis mode/accent controls
+        (`ThemeDef.palettes`-driven; vapor shows named accents only).
+  - [ ] Flexible **tab registry** (`ThemeDef.tabs`); v1 every theme returns the standard 4 (prove it's
+        swappable without breaking the others). BASE TabBar indicator is **tab-count-driven** (§13.8).
+  - [ ] FOUC: theme CSS via React 19 `<link precedence>`/`preinit` inside `startTransition`; keep
+        `cssCodeSplit:true`, never `modulePreload:false` (§13.5).
+  - [ ] **Acceptance: with only vapor registered, the app is byte-for-byte unchanged** (the engine is
+        proven by adding a switch that changes nothing). Unit-test the registry/slot resolution + the ui
+        migration (incl. the legacy-`theme` remap); e2e still green; vapor verified at 390px.
+- [ ] **T1 — minimal** (LOW–MED): the first real theme + the **BASE token-driven chrome** (AppBar/Composer/
+      TabBar shell/Conf rows/ChatBubble/HostDetail) consuming the semantic contract; the **mode×4-accent
+      OKLCH matrix** (build the richest palette model here so the abstraction is right); BASE FleetRows
+      (default FleetView) + the shared **NowMonitoring + Waveform** slot. Validates the engine on a near-reskin.
+- [ ] **T2 — phosphor** (LOW–MED): the **CRT overlay layer** (scanlines/grid/glow) + a **monochrome** palette
+      + the within-theme named-palette axis (amber/green). Reuses BASE chrome + FleetRows.
+- [ ] **T3 — observatory** (MED, low-priority — port once its prototype is finished): the first **FleetView
+      slot override** (SVG radial topology) + the first **`present()`** (per-host `angle`) + the
+      `host.appearance` backend field (additive). Proves slots + the presentation layer.
+- [ ] **T4 — cosmos** (HIGH): the orbital `FleetView` — rAF orbit + camera zoom/pan, per-host planet encoding
+      (golden-angle default + override), canvas starfield + waveform, viewport morph; `HostDetail` = slide
+      panel. The stress test for slots + presentation data + animation lifecycle (gated by `ui.motion`).
+- [ ] **T5 — frontier** (HIGH): art-map + GPS beacons (`x/y` via `present()`), photo rig-card grid (the
+      hand-drawn Mœbius art, copied into the module), the **bottom-sheet** `HostDetail` primitive, and the
+      per-theme **asset strategy** (`import.meta.glob`; built-in drawing set by index, per-host `image`
+      override later). Heaviest net-new surface.
+
+**Deferred within Phase 11 (don't build unless asked):** the `config.yaml appearance` block + settings-API
+**cross-device sync** (seam built in T0, wiring post-v1); theme-switch `<link>` teardown (inert under
+`[data-theme]` scoping); a theme with a non-4 tab set (the registry supports it; no theme needs it in v1).
+
 ---
 
 ## Design audit — 2026-06-14 (loose ends + doc drift)

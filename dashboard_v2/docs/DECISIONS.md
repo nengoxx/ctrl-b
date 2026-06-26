@@ -1345,3 +1345,95 @@ in `MemoryEditor`; tests (fires at the interval, silent when off/off-interval).
 `reflection_enabled=False` + `reflection_interval=10` (slice C). Each gets a Conf → Memory control. **Remaining open
 sub-decisions, to settle at build:** the `api/agent.py` store-keyed route shape (generalize vs add aliases); the
 reflection proposal-batching when `auto_write` is off.
+
+## D28 — Theme engine: a pluggable presentation layer (registry + slots + semantic tokens) over the frozen vapor original ✏️ DESIGNED 2026-06-26
+
+The owner built six full single-file theme prototypes (`prototypes/project/variations/*.html`) and wants the app to
+switch between distinct, pixel-faithful design systems — not palette swaps. The prototypes **restructure
+components** (cosmos = orbital fleet; frontier = comic art-map + beacons + bottom-sheet; observatory = SVG
+topology), load **their own fonts**, define **disjoint token namespaces**, and carry **richer palette models**
+(minimal = light/dark × 4 OKLCH hues). This entry locks the architecture. The full code-level spec + porting
+playbook live in **[`THEME_ENGINE.md`](./THEME_ENGINE.md) §§9–10**; the TODO slices are **Phase 11 (T0–T5)**. **Nothing
+built yet** — research + design phase only (2026-06-26).
+
+**Validation (web-cited; full citations in THEME_ENGINE.md research).** Token/provider theming covers *aesthetics
+only, not structural composition* (Brad Frost's themeable-systems taxonomy) — structural divergence per theme needs a
+**theme-keyed component registry / headless-core + skin** split (Harry's "Forge" ships a popup cart vs a sidebar cart
+from one logic layer = our "fleet as rows vs planets vs map"). **CSS:** per-theme **plain `.css` bundles, dynamic-
+`import()`'d, scoped by `[data-theme]`** is the most prototype-faithful + lazy-loadable strategy (Vite `cssCodeSplit`
+guarantees the `<link>` loads before the chunk → no FOUC); CSS Modules / CSS-in-JS both *rename selectors* → increase
+drift, and CSS-in-JS is in maintenance mode + RSC-hostile. **Tokens:** three-tier semantic contract; the **flat-vs-
+gradient accent** problem is real (a gradient is an `<image>`, not a `<color>`) → **two channels** (`--accent` color +
+`--accent-fill` flat/gradient + a `::before` glow). **Per-host presentation:** Presenter/View-Model (derive visuals
+at render, don't store) + data-viz encoding-channels + "extend, not migrate" all converge on a **theme-owned pure
+`present()` + one open namespaced `host.appearance` override** (corroborated by OpenAPI `x-` extensions, K8s
+annotations, Pydantic `extra='allow'`; a discriminated union keyed by themeId is the anti-pattern — it forces a server
+change per theme). Zero-config defaults via **golden-angle placement (137.5°) + hash-to-palette** (GitHub-identicon
+lineage).
+
+> **Resolved decisions (owner, 2026-06-26):**
+> 1. **Scope:** minimal + phosphor + cosmos + frontier in scope; **observatory low-priority (port last** — its
+>    prototype isn't finished). **vapor FROZEN** (the refined "v1 / pre-themes" original); vapor-proto dropped.
+> 2. **Shared base + per-theme slot overrides** (the main granularity call): **one** new token-driven *base* chrome
+>    shared by all four non-vapor themes; each theme owns only what it *restructures*. Not full duplication; not
+>    base-for-reskins-only. Bias to faithful duplication only where a theme genuinely restructures (its slots).
+> 3. **vapor = default *selection*, NOT the structural *fallback*.** vapor is registered as a **fully self-contained
+>    module that overrides every slot** with its frozen components (never leans on base); unconfigured app → vapor.
+>    The **slot-resolution fallback is the BASE** (minimal is base made concrete); a missing slot on any *other* theme
+>    → base, never vapor. ("vapor as-is, like a pre-themes version; all themes slot in regardless.")
+> 4. **Tabs:** v1 = all themes mirror vapor's **4 tabs**, but the engine carries a **flexible tab registry** — a
+>    theme can later declare more/fewer tabs (and current tabs stay editable) **without breaking other themes**.
+> 5. **Per-host presentation:** theme-owned `present(host,index,override?)` + **derive-by-default** (golden-angle +
+>    hash palette) + **optional `host.appearance:{<themeId>:blob}}` override** (open pass-through on the backend, no
+>    migration). frontier art = built-in drawing set assigned by index; per-host `image` override added later.
+> 6. **Persistence:** v1 client-local (`ui` store localStorage); the cross-device `config.yaml appearance` block +
+>    settings-API sync is **designed** (store reads an injectable initial value) but **deferred** post-v1.
+
+**The architecture (one line each).** A `ThemeProvider` reads `ui.{theme,mode,accent}`, lazy-loads the active theme's
+CSS+fonts, and resolves component **slots** from a typed `ThemeRegistry` (`resolveSlot(name) =
+registry[theme].slots[name] ?? BASE.slots[name]`); `App.tsx` becomes the slot host. **vapor's *components* +
+`vapor.css` are untouched** — only the shell orchestration generalizes, so vapor renders **byte-for-byte
+identically** (the T0 acceptance test). Non-vapor themes = self-contained modules: a `[data-theme]`-scoped lazy
+`tokens.css` mapping the **semantic contract** (`--surface*/--text*/--line*/--ok/--warn/--danger/--accent/
+--accent-fill/--accent-soft/--accent-glow`), their fonts (Fontsource, FontFace-API-activated), assets
+(`import.meta.glob`), a declared `palettes` axis set (mode? accent? named?), `present()`, `tabs[]`, and **slot
+overrides only for surfaces they restructure** (FleetView always; HostDetail for cosmos panel / frontier bottom-sheet).
+The shared **NowMonitoring + Waveform** featured-host slot is built once (recurs in minimal/cosmos/frontier).
+
+**Why this is the robust shape (not the expedient one).** Adding or re-syncing a theme is **one registry row + one
+self-contained module + one verbatim scoped `.css`** — the north star. vapor is isolated by construction (complete on
+its own → the engine never substitutes a base part into it), so "frozen" is structural, not a discipline we have to
+remember. The per-host `appearance` field is a single additive optional object (the precedent set by Phase-8
+`tool_overrides`, the inverse of the `tool_descriptions{}`+`tool_agent_mode{}` sibling-map anti-pattern) — every future
+theme's per-host visuals are additive, never a migration.
+
+**Open sub-decisions, to settle at build (not blocking T0):** (a) the slot-component prop contracts (`HostDetailProps`/
+`ChatBubbleProps`) — finalize against the base implementation in T0/T1; (b) theme-switch `<link>` teardown (Vite leaves
+inactive bundles' links in place — inert under `[data-theme]` scoping; a teardown is a cheap future optimization, skip
+in v1); (c) cosmos central-body identity ("moon" vs the prototype's coin/"All systems" home control — cosmetic, confirm
+at T4); (d) exact `present()` derivation constants per spatial theme (golden-angle radius coefficient, palette size) —
+tune at T3/T4 against the prototypes.
+
+**Pre-flight (T0, read before building):** `THEME_ENGINE.md §§9–13`; `store/ui.ts` (the `applyBodyAttrs` chokepoint +
+`loadPersisted`); `App.tsx` (the tree that becomes slot-driven); `main.tsx` (static vapor import → layered `theme/index.css`);
+`tabs/ConfTab.tsx` Appearance group (`Seg<Theme>` → picker); `theme/vapor.css` + `extras.css` (read-only — the frozen
+reference). **D7 pixel-fidelity now applies per theme.** Touch list: THEME_ENGINE.md §9.12; **build checklist: §13.**
+
+**Final adversarial review (2026-06-26) — sound architecture, spec corrected.** Two streams (design-vs-code + web-cited
+best-practice) **validated the architecture as the robust/efficient/reliable option** (registry+slots, `[data-skin]`-scoped
+lazy CSS, semantic tokens + two-channel accent + OKLCH, `present()`+open-override). They found **two vapor-breaking bugs**
+and robustness gaps in the spec *wording*, all now fixed (THEME_ENGINE.md §§9.6/9.8/11–13):
+- **(CRITICAL) `data-skin`, not `data-theme`, carries the ThemeId.** vapor.css gates aqua/ember on bare
+  `[data-theme="aqua"|"ember"]` — overloading the attribute would silently kill 2 of vapor's 3 palettes. ThemeId →
+  new `body[data-skin]`; `data-theme` stays vapor's frozen accent axis. (§13.1 has vapor's full attribute contract.)
+- **(CRITICAL) Dedicated `ui`-store migration.** `loadPersisted`'s field-fill merge can't remap a value; legacy
+  `theme:"aqua"` must be remapped to `{theme:"vapor", accent:"aqua"}` or returning users blank out. (§13.4.)
+- **(KEYSTONE hardening) CSS `@layer`** cages the always-loaded frozen vapor/extras in `layer(frozen)` so an active
+  theme wins by **cascade order, not specificity** — dissolves the `--line`/`--line-2`/`--accent-glow` token collision
+  *and* the global class-name collision **without editing the frozen files** (assign via `@import "./vapor.css"
+  layer(frozen)`; `!important` audit = 4 rules, all vapor-only selectors → safe). **T0 must `vite build`-verify the
+  bundler preserves `@import … layer()`; else fall back to `cb-` namespacing.** (§13.2–13.3.)
+- **Plus:** React 19 `precedence`/`preinit` + `startTransition` for FOUC (§13.5); App.tsx must preserve the lazy-Conf /
+  `--appbar-h`-ref / `showComposer`→`TabDef.hasComposer` / tab-container show-hide orchestration (§13.6); shared Waveform
+  needs a `--accent-rgb` canvas channel (§13.7); BASE TabBar indicator is tab-count-driven (§13.8). Adopt container
+  queries + same-document View Transitions; module-level slot map (avoid context fan-out). Full list: THEME_ENGINE.md §12.

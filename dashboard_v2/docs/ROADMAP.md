@@ -432,7 +432,16 @@ homes later:
 - **Server** — host/port, poll interval, debug, Tailscale-Serve/HTTPS status.
 - **Notifications** — master on/off; default PWA-native (foreground + Web Push, auto); optional
   ntfy / Telegram-Discord channels; per-event toggles (F1).
-- **Appearance** — theme, skyline, hero, waveform (from Vapor).
+- **Appearance** — theme, skyline, hero, waveform (from Vapor). **Now the Theme Engine (DECISIONS D28,
+  TODO Phase 11, design in `THEME_ENGINE.md`):** a pluggable presentation layer — a `ThemeRegistry` of
+  `ThemeDef`s resolved via slots over the shared data/logic core, switching between distinct, pixel-faithful
+  design systems (vapor [frozen default] · minimal · phosphor · cosmos · frontier · observatory) each with its
+  own `[data-theme]`-scoped lazy CSS bundle, fonts, palette axes (`{theme,mode,accent}`), and `present(host)`
+  per-host visual encoding. **v1 seams to build now (Phase 11 T0):** the registry + slot system, the
+  `{theme,mode,accent}` `ui` store with an **injectable initial value** (the cross-device sync seam — a
+  `config.yaml appearance` block synced via the settings API, designed + deferred), the semantic-token contract
+  for non-vapor themes, and the per-host `host.appearance:{<themeId>:blob}}` override field (additive,
+  no-migration). Adding a future theme = one registry row + one self-contained module + one verbatim scoped CSS.
 - **Integrations** (D9) — **MCP servers** manager (add/edit/enable; stdio `command+args+env` or
   Streamable-HTTP `url+headers`; tool discovery per server); **SearXNG** endpoint (powers
   `web_search`); custom slash commands; Discord/Telegram bots (E1).

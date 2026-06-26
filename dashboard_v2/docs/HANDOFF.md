@@ -76,9 +76,52 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Memory roadmap D27 COMPLETE + pushed** · the **v2 feature set is done** · NEXT = **the Theme Engine** (design phase — see [`THEME_ENGINE.md`](./THEME_ENGINE.md)); emma deploy → cutover is queued after)
+## Current state (**Theme Engine RESEARCH + DESIGN phase COMPLETE** (D28 + Phase 11 locked) · NEXT = **build T0** (the engine, vapor untouched); emma deploy → cutover still queued)
 
-> ### 🟢 CLEAN-SESSION HANDOFF — D27 done & pushed · only the emma deploy / cutover remains — 2026-06-26
+> ### 🟢 CLEAN-SESSION HANDOFF — Theme Engine designed (D28); T0 is the next build slice — 2026-06-26
+> **The §8 research+design brief is DONE — no feature code written, per the owner directive.** The deliverables
+> are locked: **[`THEME_ENGINE.md`](./THEME_ENGINE.md) §§9–10** (the code-level design spec + the prototype→module
+> porting playbook), **DECISIONS [D28](./DECISIONS.md)** (the architecture + the resolved §5 decisions), **TODO
+> [Phase 11](./TODO.md)** (T0–T5 slices), and a ROADMAP Appearance expansion. Five research streams ran (existing-
+> code seam map · external best-practices, web-cited · prototype structural inventory · the per-host presentation-
+> data pattern). **The owner resolved the four open judgment calls** (D28 "Resolved decisions"): shared base +
+> per-theme slot overrides; **vapor = default *selection*, not the slot fallback** (fallback = the new BASE chrome,
+> minimal is base made concrete); v1 = all themes mirror vapor's 4 tabs (flexible registry underneath); theme-owned
+> `present()` + derive-by-default + optional open `host.appearance` override.
+>
+> **The architecture in one breath:** a `ThemeProvider` reads `ui.{theme,mode,accent}`, lazy-loads the active
+> theme's `[data-theme]`-scoped CSS+fonts, and resolves component **slots** from a typed `ThemeRegistry`
+> (`registry[theme].slots[name] ?? BASE.slots[name]`); `App.tsx` becomes the slot host. **vapor's components +
+> `vapor.css` are untouched** (only the shell generalizes → vapor renders byte-for-byte identically = the T0
+> acceptance test). Non-vapor themes are self-contained modules (scoped lazy `tokens.css` mapping a semantic
+> contract, own fonts/assets, declared palette axes, `present()`, `tabs[]`, slot overrides only for what they
+> restructure). Adding a theme = one registry row + one module + one verbatim scoped CSS.
+>
+> **A final adversarial review ran (2026-06-26) — design validated, spec corrected.** Two streams (design-vs-code
+> + web-cited best-practice) confirmed the architecture is the robust/efficient/reliable option and found **two
+> vapor-breaking bugs** + robustness gaps in the spec *wording*, all now fixed (THEME_ENGINE.md §§9.6/9.8/**11–13**;
+> **§13 is the T0 build checklist**): (1) **`data-skin` carries the ThemeId, NOT `data-theme`** (vapor.css gates
+> aqua/ember on bare `[data-theme=…]` — overloading it kills 2 of vapor's 3 palettes); (2) **dedicated `ui`-store
+> migration** for legacy `theme:"aqua"` (the field-fill merge can't remap → returning users would blank); (3)
+> **CSS `@layer`** cages the always-loaded frozen vapor/extras so an active theme wins by cascade order, not
+> specificity — dissolving token + class-name collisions without editing the frozen files (T0 must `vite build`-
+> verify `@import…layer()` survives; else `cb-` namespacing). Plus React-19 `precedence`/`preinit` FOUC handling,
+> App.tsx shell-orchestration preservation, a `--accent-rgb` waveform channel, a count-driven tab indicator,
+> container queries + View Transitions.
+>
+> **⛔ NEXT SESSION = BUILD T0** (the engine foundation — vapor untouched). **Read `THEME_ENGINE.md §§9–13`
+> (§13 = the build checklist, §9.12 = the touch list) + `DECISIONS.md D28` + `TODO.md Phase 11` first**, then
+> **pre-flight the actual code** the touch list names (`store/ui.ts`, `store/persist.ts`, `App.tsx`, `main.tsx`,
+> `theme/vapor.css`+`extras.css`, `components/{Waveform,TabBar,AppBar,Hero}.tsx`, `tabs/ConfTab.tsx`) before
+> writing anything — confirm each seam matches the spec. T0 ships nothing visible (vapor unchanged), just the
+> registry/slots/`ThemeProvider`/`ui`-store generalization/Appearance picker + the `@layer` cage; **acceptance =
+> byte-for-byte identical build**. T0's FIRST task is the `@layer` `vite build` verification. Then T1 (minimal)
+> builds the BASE chrome + the OKLCH mode×accent matrix. This v1 commit is the clean baseline *before* the build.
+>
+> **The emma (Linux) deploy → cutover (TODO Phases 9 & 10) stays queued** — see the block below for the
+> host-specific pre-flight; the owner chose the theme engine ahead of it.
+
+> ### 🟢 (prior) CLEAN-SESSION HANDOFF — D27 done & pushed · only the emma deploy / cutover remains — 2026-06-26
 > **Everything is pushed** (`origin/main` @ `af05a20`; tree clean except the untracked `prototypes/`
 > UI-exploration dir, unrelated). **All green:** backend **30 test files** (`./.venv/Scripts/python.exe
 > tests/<file>.py`; pytest not installed), frontend `npm run build` + **85 unit** + **32 e2e**
