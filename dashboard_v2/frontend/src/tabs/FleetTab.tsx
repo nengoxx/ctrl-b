@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { DeviceRow } from "../components/DeviceRow";
 import { FleetSummary } from "../components/FleetSummary";
@@ -15,6 +15,12 @@ import type { Service } from "../types";
 interface Props {
   active: boolean;
 }
+
+// After the user manually features a host (taps a row or a now-dot), suspend the auto-cycle for this
+// long so their selection stays put instead of being cycled away on the next tick. A UX nicety; could
+// later be promoted to a config field (sibling of `server.feature_cycle_seconds`) if tuning is wanted.
+// NOTE: this Fleet auto-cycle (+ pause) logic moves into the `useFleet` controller in M2 (D29 §14.2).
+const INTERACTION_PAUSE_MS = 5000;
 
 export function FleetTab({ active }: Props) {
   // Two slices, one per field — each subscription is independent and only fires when
@@ -48,8 +54,11 @@ export function FleetTab({ active }: Props) {
   // would never reliably fire.
   const hostsRef = useRef(hosts);
   hostsRef.current = hosts;
+  // Timestamp until which the auto-cycle is paused (set when the user manually features a host).
+  const pauseUntilRef = useRef(0);
   useEffect(() => {
     const id = setInterval(() => {
+      if (Date.now() < pauseUntilRef.current) return; // paused after a manual selection
       setFeatured((f) => {
         const cur = hostsRef.current;
         const onIdx = cur.map((h, i) => (h.status?.online ? i : -1)).filter((i) => i >= 0);
@@ -61,8 +70,15 @@ export function FleetTab({ active }: Props) {
     return () => clearInterval(id);
   }, [cycleMs]);
 
-  function toggle(id: string, i: number) {
+  // Feature a host from a user action — pauses the auto-cycle so the selection isn't cycled away.
+  // Stable identity (used by the Hero dots + the row toggle).
+  const feature = useCallback((i: number) => {
+    pauseUntilRef.current = Date.now() + INTERACTION_PAUSE_MS;
     setFeatured(i);
+  }, []);
+
+  function toggle(id: string, i: number) {
+    feature(i);
     setOpen((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
@@ -81,7 +97,7 @@ export function FleetTab({ active }: Props) {
       <Hero
         hosts={hosts}
         featured={clamped}
-        onFeature={setFeatured}
+        onFeature={feature}
         heroOn={heroOn}
         waveformOn={waveformOn}
       />
