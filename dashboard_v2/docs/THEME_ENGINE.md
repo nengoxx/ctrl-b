@@ -254,9 +254,16 @@ slice.**
    registry** — a theme can later declare more/fewer tabs (and the current tabs stay editable) **without
    breaking other themes**. Build the flexibility now; exercise the uniform-4 case in v1.
 4. **Per-host presentation = theme-owned `present()` + derive-by-default + optional override** (the §5.3 /
-   §5.4 questions, now researched + locked — see §9.9). Backend gains one additive optional field; no
-   migration; frontier art ships as a built-in drawing set assigned by index, per-host `image` override added
-   later.
+   §5.4 questions, now researched + locked — see §9.9). Backend gains one additive optional field (defined day
+   1); no migration; frontier art ships a built-in drawing set assigned by index **+ a per-host `image`
+   override, both built in T5** (owner 2026-06-26 — no deferred half).
+5. **Persistence + cross-device sync is BUILT DAY 1, not a deferred seam** (owner 2026-06-26: "always think
+   about the complete feature; build it from day 1 to avoid refactors"). Backend-authoritative server-stamped
+   LWW + localStorage instant-cache/offline-truth; the `ui` store is designed once with the reconcile/write
+   path so no later refactor. Full spec §9.11.
+6. **Theme-switch animation (View Transitions API) is BUILT DAY 1** (owner 2026-06-26). The `flushSync` +
+   `startViewTransition` pattern, gated on `ui.motion` + feature detection, lazy-load before the transition.
+   Full spec §9.12.
 
 ### 9.2 The spine (one diagram)
 
@@ -472,12 +479,14 @@ type Present = (host: Host, index: number, override?: Record<string, unknown>) =
   `override` over the derived channels.
 - **Backend (`domain/host.py`):** add `appearance: dict[str, dict[str, Any]] = {}` — **open pass-through**,
   no per-theme Pydantic union (a union would force a server change per new theme = the migration we forbid).
-  Validate only keys the server reads (none today); unknown theme keys round-trip untouched. **This is a
-  designed seam — the field + the public-DTO passthrough land when the first spatial theme (T3 observatory or
-  T4 cosmos) needs an override; T0–T2 don't touch the backend.**
-- **frontier art:** `ThemeDef.assets` = an `import.meta.glob('./frontier/art/*.png', { query:'?url' })` map;
-  `present()` assigns `asset = artKeys[index % artKeys.length]` by default; the per-host `image` override
-  (under `appearance.frontier.image`) is the later refinement.
+  Validate only keys the server reads (none today); unknown theme keys round-trip untouched. **The field +
+  the public-DTO passthrough are defined day 1 (T0, alongside the §9.11 backend work) so the host data model
+  is settled once;** it's first *consumed* by the first spatial theme (T3 observatory / T4 cosmos).
+- **frontier art (spec'd now, owner 2026-06-26 — no deferred half):** `ThemeDef.assets` =
+  `import.meta.glob('./frontier/art/*.png', { query:'?url' })`; `present()` assigns `asset = artKeys[index %
+  artKeys.length]` as the zero-config default **and** honors an optional per-host override
+  `host.appearance.frontier.image` — **both built in T5** (the override rides the open `appearance` blob, so
+  it's additive, not a later refactor).
 
 ### 9.10 Fonts + assets (no first-paint hit)
 
@@ -491,25 +500,78 @@ type Present = (host: Host, index: number, override?: Record<string, unknown>) =
   of `./<theme>/assets/*` by name at runtime. The frontier art (`rig1..6.png`, `hero.png`, etc. — currently
   in `prototypes/project/assets/`) is **copied** into the theme module on port (not imported from prototypes).
 
-### 9.11 Persistence + cross-device sync seam
+### 9.11 Persistence + cross-device sync — **BUILT DAY 1** (owner 2026-06-26: no deferred seam; full feature now)
 
-**v1 = client-local** (extend the existing `ui` store localStorage). **Designed, deferred:** an `appearance`
-block in `config.yaml` (`{theme, mode, accent}`) synced via the settings API; the `ui` store **reads an
-injectable initial value** so the backend block is a purely additive overlay reconciled on load (instant-apply
-path preserved). Build the seam (injectable init) in T0; ship local-only; wire the backend block post-v1.
+Web-researched (TanStack Query persistence/optimistic docs, offline-first SWR, next-themes no-FOUC). **Model:
+backend is the source of truth on read; server-stamped last-write-wins on write; localStorage is the instant
+cache + offline truth.** For a single user this is the robust-simple shape — **no CRDT, no client clocks, no
+ETag/412, no Background Sync** (all over-engineering for one writer behind one authoritative backend).
 
-### 9.12 Files that change (the vapor-safe touch list)
+- **Backend.** `appearance: {theme, mode, accent, updated_at}` block in the **Settings config** (`config.py`) —
+  edited via the existing `PUT /api/settings` deep-merge (same path every other setting uses; additive). The
+  server stamps `updated_at` on write (its own clock → no cross-device skew).
+- **⚠️ The full settings doc is Conf-tab-scoped** (`useSettings` = `useScopedQuery("conf", …)`, won't fetch on
+  Fleet/Agent), so it **cannot** drive first-paint or cross-device reconcile. Add a **lightweight always-on
+  read** — `GET /api/appearance` → just `{theme,mode,accent,updated_at}` — that an app-level query reads on
+  mount. (Writes still go through the Conf picker's `PUT /api/settings {appearance}`, since the theme picker
+  lives in Conf where the settings doc is loaded.)
+- **Load sequence (no-flash).** (1) An **inline `<head>` script** reads `localStorage["ctrlb.ui"]` and sets
+  `body[data-skin]`/`data-theme`/`data-mode` **before first paint** (kills FOUC — better than the current
+  module-load apply; the current `<html data-theme="vapor">` static attr stays as the ultimate default). (2)
+  React + the `ui` store hydrate from localStorage (instant). (3) The always-on `GET /api/appearance` resolves
+  → **compare-then-set**: apply the server value **only if it differs** from the applied one (a matching value
+  never re-switches → no visible flash). Fresh device (no localStorage) = one switch from default → server
+  value, unavoidable + correct.
+- **Write path.** Conf picker change → `setUI()` (instant localStorage + `applyBodyAttrs`, the existing
+  synchronous path) **+** an optimistic `PUT /api/settings {appearance}` via `useSaveSettings` with a mutation
+  **`scope:{id:"settings"}`** so rapid toggles serialize in order; `onError` rolls back, `onSettled`
+  invalidates. The PUT is idempotent (full deep-merge patch) so a retry/duplicate is harmless.
+- **Offline.** localStorage is the truth; the PUT **pauses and auto-resumes on reconnect** (TanStack
+  `networkMode:"online"` default). No service-worker Background Sync (not on iOS/FF; unnecessary here).
+- **Conflict.** Two devices change the theme → backend LWW (server-stamped); the other device reconciles on
+  its next mount/refocus refetch. `updated_at` is carried so a future "detect simultaneous write" check is
+  additive — but no conflict UI is built (cosmetic pref, not worth it).
+
+### 9.12 Theme-switch animation (View Transitions API) — **BUILT DAY 1** (owner 2026-06-26)
+
+Web-researched. Same-document View Transitions is **Baseline 2025** (Chrome 111 / Safari 18 / Firefox 144 —
+fully covers the owner's modern Android+desktop); progressive-enhancement (no support → instant swap). Locked
+pattern (the **stable `flushSync` form**, NOT React's experimental `<ViewTransition>` Canary component):
+
+```ts
+async function switchTheme(next: ThemeId, mode, accent) {
+  await ensureThemeLoaded(next);                 // 1. SLOW WORK FIRST (lazy import CSS+slots) — never inside the callback
+  const apply = () => flushSync(() => setUI({ theme: next, mode, accent }));   // synchronous DOM commit
+  if (uiMotion === "reduced" || !document.startViewTransition) return void apply();  // 2. gate on the app's motion flag + support
+  const t = document.startViewTransition(apply); // 3. default full-page cross-fade (name nothing)
+  t.ready.catch(() => {});                        // 4. swallow the skip/TimeoutError (DOM already applied)
+}
+```
+
+Rationale + the traps it avoids: the lazy `import()` happens **before** `startViewTransition` (the page is
+frozen during the callback; network work inside it risks the ~4s skip); `flushSync` forces React's commit
+**inside** the snapshot window (without it the old DOM is captured as both before+after → no animation); the
+switch is gated on the app's **`ui.motion`** setting (not the OS media query — CLAUDE.md), so the default
+cross-fade can't leak through under reduced-motion (gating the JS call beats `::view-transition-*` CSS that
+only sees the OS query); no `view-transition-name`s (a theme swap is a whole-page cross-fade — naming elements
+only adds cost + a duplicate-name skip footgun). `ensureThemeLoaded` must confirm the **CSS is applied before
+the `flushSync`** (await the dynamic `import()` of the CSS module) or the old snapshot captures an unstyled
+frame. Leave a seam to migrate to React's native `<ViewTransition>` when it leaves Canary.
+
+### 9.13 Files that change (the vapor-safe touch list)
 
 | File | Change | Vapor-safe? |
 |---|---|---|
-| `theme-engine/` (new dir) | registry, types, `ThemeProvider`, `useThemeSlot`, BASE chrome, per-theme modules | additive |
-| `store/ui.ts` | `{theme}`→`{theme,mode,accent}`; `applyBodyAttrs` sets **`data-skin`** (+ `data-mode`/`data-accent` for non-vapor; `data-theme` stays vapor's accent); **dedicated legacy-`theme` migration** (§13.1, §13.4) | extends, no vapor edit |
-| `App.tsx` | becomes the **slot host** (renders resolved slots, not the hardcoded tree) | shell infra; vapor renders identically |
-| `main.tsx` | keep `vapor.css`/`extras.css` static; mount `<ThemeProvider>` | additive |
-| `tabs/ConfTab.tsx` | Appearance group: `Seg<Theme>` → theme picker + declared-axis mode/accent controls | extends the picker |
-| `index.html` | unchanged (vapor fonts stay); non-vapor fonts load via FontFace | untouched |
-| `domain/host.py` | `appearance` field (T3/T4, not T0) | additive optional |
-| `theme/vapor.css`, `theme/heroScene.ts`, all vapor components | **untouched (D7)** | ✅ frozen |
+| `theme-engine/` (new dir) | registry, types, `ThemeProvider`, `useThemeSlot`, BASE chrome, per-theme modules, the `switchTheme` View-Transition path (§9.12) | additive |
+| `store/ui.ts` | `{theme}`→`{theme,mode,accent}`; `applyBodyAttrs` sets **`data-skin`** (+ `data-mode`/`data-accent` for non-vapor; `data-theme` stays vapor's accent); **dedicated legacy-`theme` migration** (§13.1, §13.4); reconcile-on-mount against `GET /api/appearance` (compare-then-set, §9.11) | extends, no vapor edit |
+| `App.tsx` | becomes the **slot host** (renders resolved slots; preserves shell orchestration §13.6) | shell infra; vapor renders identically |
+| `main.tsx` | `vapor.css`/`extras.css` → layered via `theme/index.css` (§9.6); mount `<ThemeProvider>` | additive, no vapor edit |
+| `index.html` | **inline `<head>` no-FOUC script** (read `localStorage["ctrlb.ui"]` → set `data-skin`/`data-theme` pre-paint, §9.11); vapor fonts stay; non-vapor fonts via FontFace | additive (keeps vapor default) |
+| `tabs/ConfTab.tsx` | Appearance group: `Seg<Theme>` → theme picker + declared-axis mode/accent controls; writes `setUI` + optimistic `PUT /api/settings {appearance}` (§9.11) | extends the picker |
+| `config.py` (backend) | **`appearance: {theme,mode,accent,updated_at}`** Settings block (server-stamped) — **day 1** (§9.11) | additive optional |
+| `api/` (backend) | **`GET /api/appearance`** lightweight always-on read (the Conf-scoped settings doc can't drive first-paint/reconcile) — **day 1** | additive endpoint |
+| `domain/host.py` | **`appearance: dict[str,dict[str,Any]] = {}`** per-host visual-override blob (open pass-through, §9.9) — defined day 1, consumed from T3/T4 | additive optional |
+| `theme/vapor.css`, `theme/extras.css`, `theme/heroScene.ts`, all vapor components | **untouched (D7)** — only caged in `layer(frozen)` via `theme/index.css`, no edit | ✅ frozen |
 
 ## 10. Prototype → theme-module porting playbook
 
@@ -562,9 +624,12 @@ consolidated as the build checklist in §13. The one external addition that mate
 - **Module-level slot map (or stable-map-in-context + active-key-in-state)** — avoid context fan-out (a
   provider `value` change re-renders all consumers; `React.memo` doesn't shield them). The `?? BASE.slots`
   fallback already guards unknown keys (§13.6).
-- **Adopt now:** CSS **container queries** (`@container`, ~94%) for per-theme responsive fleet surfaces (adapt
-  to container, not viewport — no per-theme media rewrites). **Same-document View Transitions API** (Baseline
-  Oct 2025; progressive-enhancement) for an intentional theme-switch animation.
+- **Same-document View Transitions API** (Baseline Oct 2025; progressive-enhancement) — **LOCKED day 1** for
+  the theme-switch animation; full pattern §9.12.
+- **Cross-device sync (config `appearance` block + `GET /api/appearance` + reconcile)** — **LOCKED day 1**;
+  full pattern §9.11. (Both were "deferred seams" pre-review; owner pulled them forward 2026-06-26.)
+- **Adopt where useful:** CSS **container queries** (`@container`, ~94%) for per-theme responsive fleet
+  surfaces (adapt to container, not viewport — no per-theme media rewrites).
 - **Within a theme:** `light-dark()` for the mode axis (pairs with OKLCH/`color-mix`); it only knows
   light/dark so it doesn't replace the skin switch.
 - **Hold/deferred:** `@scope` (Firefox-146 floor; not encapsulation) — `@layer`+namespacing suffices;

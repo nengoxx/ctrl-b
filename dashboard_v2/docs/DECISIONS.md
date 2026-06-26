@@ -1360,7 +1360,7 @@ built yet** — research + design phase only (2026-06-26).
 only, not structural composition* (Brad Frost's themeable-systems taxonomy) — structural divergence per theme needs a
 **theme-keyed component registry / headless-core + skin** split (Harry's "Forge" ships a popup cart vs a sidebar cart
 from one logic layer = our "fleet as rows vs planets vs map"). **CSS:** per-theme **plain `.css` bundles, dynamic-
-`import()`'d, scoped by `[data-theme]`** is the most prototype-faithful + lazy-loadable strategy (Vite `cssCodeSplit`
+`import()`'d, scoped by **`[data-skin]`** (a NEW identity attr, not `data-theme` — §13.1)** is the most prototype-faithful + lazy-loadable strategy (Vite `cssCodeSplit`
 guarantees the `<link>` loads before the chunk → no FOUC); CSS Modules / CSS-in-JS both *rename selectors* → increase
 drift, and CSS-in-JS is in maintenance mode + RSC-hostile. **Tokens:** three-tier semantic contract; the **flat-vs-
 gradient accent** problem is real (a gradient is an `<image>`, not a `<color>`) → **two channels** (`--accent` color +
@@ -1385,16 +1385,26 @@ lineage).
 >    theme can later declare more/fewer tabs (and current tabs stay editable) **without breaking other themes**.
 > 5. **Per-host presentation:** theme-owned `present(host,index,override?)` + **derive-by-default** (golden-angle +
 >    hash palette) + **optional `host.appearance:{<themeId>:blob}}` override** (open pass-through on the backend, no
->    migration). frontier art = built-in drawing set assigned by index; per-host `image` override added later.
-> 6. **Persistence:** v1 client-local (`ui` store localStorage); the cross-device `config.yaml appearance` block +
->    settings-API sync is **designed** (store reads an injectable initial value) but **deferred** post-v1.
+>    migration; field defined day 1). frontier art = built-in drawing set by index **+ a per-host `image` override,
+>    both built in T5** (no deferred half — owner 2026-06-26).
+> 6. **Persistence + cross-device sync = BUILT DAY 1** (owner 2026-06-26 pulled this forward from a deferred seam —
+>    "build the complete feature from day 1 to avoid refactors"). Backend-authoritative **server-stamped LWW**;
+>    localStorage = instant cache + offline truth; `appearance` block in the Settings config (`PUT /api/settings`
+>    deep-merge) + a **lightweight always-on `GET /api/appearance`** (the full settings doc is Conf-tab-scoped → can't
+>    drive first-paint/reconcile); inline `<head>` no-FOUC script + compare-then-set reconcile; optimistic write,
+>    `scope`-serialized PUT, offline pause/resume. No CRDT/clocks/ETag/Background-Sync (over-engineering for one user).
+>    Web-researched (TanStack persistence/optimistic, offline-first SWR, next-themes). Full spec THEME_ENGINE.md §9.11.
+> 7. **Theme-switch animation = BUILT DAY 1** (View Transitions API; owner 2026-06-26). Stable `flushSync` +
+>    `document.startViewTransition` pattern, lazy-load **before** the transition, gated on `ui.motion` + feature
+>    detection (no-support/reduced → instant swap), default full-page cross-fade. Web-researched; React's experimental
+>    `<ViewTransition>` left as a future migration. Full spec THEME_ENGINE.md §9.12.
 
 **The architecture (one line each).** A `ThemeProvider` reads `ui.{theme,mode,accent}`, lazy-loads the active theme's
 CSS+fonts, and resolves component **slots** from a typed `ThemeRegistry` (`resolveSlot(name) =
 registry[theme].slots[name] ?? BASE.slots[name]`); `App.tsx` becomes the slot host. **vapor's *components* +
 `vapor.css` are untouched** — only the shell orchestration generalizes, so vapor renders **byte-for-byte
-identically** (the T0 acceptance test). Non-vapor themes = self-contained modules: a `[data-theme]`-scoped lazy
-`tokens.css` mapping the **semantic contract** (`--surface*/--text*/--line*/--ok/--warn/--danger/--accent/
+identically** (the T0 acceptance test). Non-vapor themes = self-contained modules: a `[data-skin]`-scoped lazy
+`tokens.css` (in a CSS `@layer` above frozen vapor) mapping the **semantic contract** (`--surface*/--text*/--line*/--ok/--warn/--danger/--accent/
 --accent-fill/--accent-soft/--accent-glow`), their fonts (Fontsource, FontFace-API-activated), assets
 (`import.meta.glob`), a declared `palettes` axis set (mode? accent? named?), `present()`, `tabs[]`, and **slot
 overrides only for surfaces they restructure** (FleetView always; HostDetail for cosmos panel / frontier bottom-sheet).
@@ -1409,7 +1419,7 @@ theme's per-host visuals are additive, never a migration.
 
 **Open sub-decisions, to settle at build (not blocking T0):** (a) the slot-component prop contracts (`HostDetailProps`/
 `ChatBubbleProps`) — finalize against the base implementation in T0/T1; (b) theme-switch `<link>` teardown (Vite leaves
-inactive bundles' links in place — inert under `[data-theme]` scoping; a teardown is a cheap future optimization, skip
+inactive bundles' links in place — inert under `[data-skin]` scoping; a teardown is a cheap future optimization, skip
 in v1); (c) cosmos central-body identity ("moon" vs the prototype's coin/"All systems" home control — cosmetic, confirm
 at T4); (d) exact `present()` derivation constants per spatial theme (golden-angle radius coefficient, palette size) —
 tune at T3/T4 against the prototypes.
@@ -1417,7 +1427,7 @@ tune at T3/T4 against the prototypes.
 **Pre-flight (T0, read before building):** `THEME_ENGINE.md §§9–13`; `store/ui.ts` (the `applyBodyAttrs` chokepoint +
 `loadPersisted`); `App.tsx` (the tree that becomes slot-driven); `main.tsx` (static vapor import → layered `theme/index.css`);
 `tabs/ConfTab.tsx` Appearance group (`Seg<Theme>` → picker); `theme/vapor.css` + `extras.css` (read-only — the frozen
-reference). **D7 pixel-fidelity now applies per theme.** Touch list: THEME_ENGINE.md §9.12; **build checklist: §13.**
+reference). **D7 pixel-fidelity now applies per theme.** Touch list: THEME_ENGINE.md §9.13; **build checklist: §13.**
 
 **Final adversarial review (2026-06-26) — sound architecture, spec corrected.** Two streams (design-vs-code + web-cited
 best-practice) **validated the architecture as the robust/efficient/reliable option** (registry+slots, `[data-skin]`-scoped

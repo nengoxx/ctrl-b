@@ -705,18 +705,29 @@ rule). **vapor stays byte-for-byte unchanged throughout.**
         BASE owns its own `.tab` show/hide (don't lean on the frozen global rule).
   - [ ] `store/ui.ts`: `{theme}`→`{theme,mode,accent}`; **`applyBodyAttrs` sets `body[data-skin]=theme`** and
         keeps `body[data-theme]` = vapor's accent (dark/aqua/ember) when skin=vapor (§13.1); sets
-        `data-mode`/`data-accent` for non-vapor; **injectable initial value** (sync seam). **Dedicated
-        legacy-`theme` migration** (`dark|aqua|ember` → `{theme:"vapor",accent}`), NOT the `loadPersisted`
-        field-fill (§13.4).
+        `data-mode`/`data-accent` for non-vapor. **Dedicated legacy-`theme` migration** (`dark|aqua|ember` →
+        `{theme:"vapor",accent}`), NOT the `loadPersisted` field-fill (§13.4).
+  - [ ] **Cross-device sync — BUILT DAY 1 (§9.11):** backend `appearance:{theme,mode,accent,updated_at}`
+        Settings block (`config.py`, server-stamped) + a lightweight always-on **`GET /api/appearance`** (the
+        full settings doc is Conf-scoped → can't drive first-paint); `ui` store reconciles on mount
+        (compare-then-set, server wins); **inline `<head>` no-FOUC script** in `index.html`; Conf picker writes
+        `setUI` + optimistic `PUT /api/settings {appearance}` (`scope`-serialized, offline pause/resume).
+  - [ ] **Theme-switch animation — BUILT DAY 1 (§9.12):** the `switchTheme` path — lazy-load CSS+slots →
+        `flushSync(setUI)` inside `document.startViewTransition`, gated on `ui.motion` + feature detection
+        (no-support/reduced → instant swap). Default full-page cross-fade, no named elements.
   - [ ] Conf → Appearance: `Seg<Theme>` → theme picker + declared-axis mode/accent controls
         (`ThemeDef.palettes`-driven; vapor shows named accents only).
-  - [ ] Flexible **tab registry** (`ThemeDef.tabs`); v1 every theme returns the standard 4 (prove it's
-        swappable without breaking the others). BASE TabBar indicator is **tab-count-driven** (§13.8).
-  - [ ] FOUC: theme CSS via React 19 `<link precedence>`/`preinit` inside `startTransition`; keep
-        `cssCodeSplit:true`, never `modulePreload:false` (§13.5).
+  - [ ] Flexible **tab registry** (`ThemeDef.tabs` + `hasComposer`); v1 every theme returns the standard 4
+        (prove it's swappable without breaking the others). BASE TabBar indicator is **tab-count-driven** (§13.8).
+  - [ ] Backend `domain/host.py` **`appearance: dict[str,dict[str,Any]] = {}`** (open per-host override blob,
+        §9.9) — **defined day 1** so the host model is settled once; first consumed at T3/T4.
+  - [ ] FOUC at the React layer: theme CSS via React 19 `<link precedence>`/`preinit` inside `startTransition`;
+        keep `cssCodeSplit:true`, never `modulePreload:false` (§13.5).
   - [ ] **Acceptance: with only vapor registered, the app is byte-for-byte unchanged** (the engine is
-        proven by adding a switch that changes nothing). Unit-test the registry/slot resolution + the ui
-        migration (incl. the legacy-`theme` remap); e2e still green; vapor verified at 390px.
+        proven by adding a switch that changes nothing). Unit-test registry/slot resolution + the ui migration
+        (incl. legacy-`theme` remap) + the appearance reconcile (compare-then-set, server-wins); a backend test
+        for `GET /api/appearance` + the `appearance` PUT round-trip (temp config — never the real one); e2e
+        still green; vapor verified at 390px.
 - [ ] **T1 — minimal** (LOW–MED): the first real theme + the **BASE token-driven chrome** (AppBar/Composer/
       TabBar shell/Conf rows/ChatBubble/HostDetail) consuming the semantic contract; the **mode×4-accent
       OKLCH matrix** (build the richest palette model here so the abstraction is right); BASE FleetRows
@@ -731,12 +742,15 @@ rule). **vapor stays byte-for-byte unchanged throughout.**
       panel. The stress test for slots + presentation data + animation lifecycle (gated by `ui.motion`).
 - [ ] **T5 — frontier** (HIGH): art-map + GPS beacons (`x/y` via `present()`), photo rig-card grid (the
       hand-drawn Mœbius art, copied into the module), the **bottom-sheet** `HostDetail` primitive, and the
-      per-theme **asset strategy** (`import.meta.glob`; built-in drawing set by index, per-host `image`
-      override later). Heaviest net-new surface.
+      per-theme **asset strategy** (`import.meta.glob`; built-in drawing set by index **+ the per-host
+      `host.appearance.frontier.image` override — both built here**, no deferred half). Heaviest net-new surface.
 
-**Deferred within Phase 11 (don't build unless asked):** the `config.yaml appearance` block + settings-API
-**cross-device sync** (seam built in T0, wiring post-v1); theme-switch `<link>` teardown (inert under
-`[data-theme]` scoping); a theme with a non-4 tab set (the registry supports it; no theme needs it in v1).
+**Deferred within Phase 11 (don't build unless asked):** theme-switch `<link>` teardown (inert under
+`[data-skin]` scoping; a cheap future optimization); a theme with a non-4 tab set (the registry supports it,
+no theme needs it in v1); a multi-device write-conflict UI (LWW + reconcile-on-load is sufficient for one
+user — `updated_at` is carried if detection is ever wanted). _Cross-device sync + the View-Transition switch
++ the frontier per-host art override were pulled forward to day-1/their owning slice (owner 2026-06-26) — no
+longer deferred._
 
 ---
 

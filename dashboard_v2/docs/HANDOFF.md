@@ -89,8 +89,18 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > minimal is base made concrete); v1 = all themes mirror vapor's 4 tabs (flexible registry underneath); theme-owned
 > `present()` + derive-by-default + optional open `host.appearance` override.
 >
+> **⭐ Owner directive (2026-06-26) — build the complete robust feature day-1, don't ship deferred seams that
+> force a refactor.** Three items were pulled forward and are now **BUILT DAY 1** (or in their owning slice):
+> **cross-device config-sync** (backend `appearance` block + lightweight `GET /api/appearance` + `ui`-store
+> reconcile + no-FOUC inline script + optimistic write — §9.11), the **View-Transitions switch animation**
+> (§9.12), and **frontier's per-host art override** (T5). Both new features were web-researched before locking
+> (TanStack persistence/optimistic + offline-first SWR; View Transitions + React 19 `flushSync`). The standing
+> rule going forward: kill ambiguity (web-search **and** ask the owner) before locking; prefer day-1 robustness
+> over seams-for-later. (Recorded in memory: "prioritize-robust-over-seams".)
+>
 > **The architecture in one breath:** a `ThemeProvider` reads `ui.{theme,mode,accent}`, lazy-loads the active
-> theme's `[data-theme]`-scoped CSS+fonts, and resolves component **slots** from a typed `ThemeRegistry`
+> theme's `[data-skin]`-scoped CSS+fonts (caged from frozen vapor by CSS `@layer`), and resolves component
+> **slots** from a typed `ThemeRegistry`
 > (`registry[theme].slots[name] ?? BASE.slots[name]`); `App.tsx` becomes the slot host. **vapor's components +
 > `vapor.css` are untouched** (only the shell generalizes → vapor renders byte-for-byte identically = the T0
 > acceptance test). Non-vapor themes are self-contained modules (scoped lazy `tokens.css` mapping a semantic
@@ -110,7 +120,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > container queries + View Transitions.
 >
 > **⛔ NEXT SESSION = BUILD T0** (the engine foundation — vapor untouched). **Read `THEME_ENGINE.md §§9–13`
-> (§13 = the build checklist, §9.12 = the touch list) + `DECISIONS.md D28` + `TODO.md Phase 11` first**, then
+> (§13 = the build checklist, §9.13 = the touch list) + `DECISIONS.md D28` + `TODO.md Phase 11` first**, then
 > **pre-flight the actual code** the touch list names (`store/ui.ts`, `store/persist.ts`, `App.tsx`, `main.tsx`,
 > `theme/vapor.css`+`extras.css`, `components/{Waveform,TabBar,AppBar,Hero}.tsx`, `tabs/ConfTab.tsx`) before
 > writing anything — confirm each seam matches the spec. T0 ships nothing visible (vapor unchanged), just the
