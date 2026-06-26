@@ -95,12 +95,22 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > (minimal = light/dark × 4 OKLCH accents). The proposed architecture is a **pluggable presentation layer**
 > over the shared data/logic core: a `ThemeRegistry` of `ThemeDef`s, **semantic-token normalization** of the
 > existing vapor components, **per-theme component slots** (esp. `FleetView`), a generalized `{theme,mode,
-> accent}` palette model, and a per-theme host-presentation layer. Phased T0 (engine + token-normalize,
-> ships vapor-only) → T1 minimal → T2 phosphor → T3 observatory → T4 cosmos → T5 frontier. **6 open
-> decisions + 3 discrepancies to confirm with the owner are listed in THEME_ENGINE.md §5–6** (notably:
-> frontier is a *dusk-badlands* theme, **not** the "comic" style the owner described — confirm; and which of
-> the 6 themes are in scope). **Read THEME_ENGINE.md before any theme work; lock the design as DECISIONS D28
-> + a TODO Phase 11 first.** D7 pixel-fidelity now applies *per theme*.
+> accent}` palette model, and a per-theme host-presentation layer. Phased T0 (engine, **vapor untouched**)
+> → minimal → phosphor → cosmos → frontier (observatory low-priority, last). **Scope + key decisions are
+> RESOLVED** (owner 2026-06-26, in THEME_ENGINE.md): vapor **FROZEN/untouched**, vapor-proto dropped;
+> in-scope = minimal+phosphor+cosmos+frontier (+observatory low-pri); frontier **IS** a Mœbius comic (the
+> comic is in the owner's hand-drawn art, kept); persistence = v1 client-local with the cross-device
+> config-sync seam designed in.
+>
+> **⛔ THE NEXT SESSION IS A RESEARCH + DESIGN PHASE, NOT IMPLEMENTATION (owner directive).** Do **not**
+> write theme code yet. Read **[`THEME_ENGINE.md`](./THEME_ENGINE.md) §8** — it's the brief: research deeply
+> (a) our existing render/store/CSS/asset code to find theme-switch seams that touch **no vapor code**, and
+> (b) external best practices for skinnable React architectures (CSS strategy, component slots, token
+> systems, per-theme font/asset loading) — the north star is that **adding a future theme or re-syncing one
+> after the owner edits its prototype is cheap + mechanical**. Deliverables: a code-level design spec + a
+> prototype→module porting playbook + **DECISIONS D28** + **TODO Phase 11** (T0–T5). The prototypes (+ art)
+> are committed at `prototypes/project/variations/`. Then T0 (engine, vapor frozen) is the first build slice.
+> D7 pixel-fidelity now applies *per theme*.
 >
 > **The v2 feature set is functionally complete** — Phases 0–8 shipped (fleet, agent tool-loop, voice,
 > integrations, Conf, guarded shell, Tools tab + manage layer) and the memory subsystem is now fully

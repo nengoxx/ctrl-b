@@ -29,9 +29,10 @@ Recurring motif across minimal/cosmos/frontier: a **"now monitoring" featured ho
 `<canvas>` ping waveform, often auto-cycling every 5s). Worth treating as a shared concept.
 
 > **Scope (owner, 2026-06-26):** in scope = **minimal, phosphor, cosmos, frontier** (+ **vapor**, shipped,
-> **FROZEN — do not touch**). **`vapor.html` (proto) is DROPPED** — it's the *old* vapor design; the shipped
-> React vapor is the improved one. **observatory = TBC** (owner hasn't confirmed; treat as optional/later).
-> frontier is kept **exactly as-is including its hand-drawn art** (see §6).
+> **FROZEN — do not touch**). **observatory = in scope but LOW priority** — its prototype isn't fully built
+> yet, so port it **last / once its design is complete**. **`vapor.html` (proto) is DROPPED** — it's the
+> *old* vapor design; the shipped React vapor is the improved one. frontier is kept **exactly as-is
+> including its hand-drawn Mœbius art** (see §6).
 
 ## 2. The five findings that shape the architecture
 
@@ -143,7 +144,7 @@ Each theme is an independently shippable slice; the engine foundation is paid on
 ## 5. Open decisions — settle before/within T0 (owner input needed)
 
 1. ~~Scope~~ **RESOLVED (owner 2026-06-26):** minimal + phosphor + cosmos + frontier (+ vapor frozen).
-   vapor-proto dropped. **observatory still TBC** — the one remaining scope question (include or shelve?).
+   vapor-proto dropped. **observatory = in scope but LOW priority** (prototype incomplete — port last).
 2. ~~Persistence~~ **RESOLVED:** **v1 = client-local** (extend the existing `ui` store localStorage), but
    **design the complete cross-device feature** — an `appearance` block in `config.yaml` (active theme +
    mode + accent + any custom palette) synced via the settings API, with the `ui` store reconciling on
@@ -182,3 +183,46 @@ New **DECISIONS D28** (lock the architecture + the §5 decisions). A **ROADMAP**
 expansion (today a one-liner). A **TODO Phase 11 — Theme engine** with the T0–T5 slices. This doc stays
 the analysis reference. The standing **D7 (pixel-exact fidelity)** mandate now applies *per theme* — each
 ported theme must be visually indistinguishable from its prototype at phone width.
+
+## 8. ⭐ RESEARCH & DESIGN PHASE BRIEF — do this next, in a clean session (owner directive 2026-06-26)
+
+**This feature is NOT ready to implement.** The owner wants a **deliberate, thorough research + design
+phase first** — "research deeply how to better design this feature with our existing code; I want it
+flexible for future themes AND for the edits I'll keep making to the prototypes." Treat §§1–7 above as the
+*input analysis*; the next session's job is to turn it into a **locked, code-level architecture spec**.
+**Do not write feature code in that session — produce the design.**
+
+**North star:** adding a future theme (or re-syncing one after the owner edits its prototype) should be
+**cheap and mechanical** — a new self-contained module + a registry entry, with vapor untouched. Optimize
+the architecture for *that*.
+
+**Research deeply (both halves):**
+- **(a) Our existing code — find the cleanest seams.** Map exactly how the React app renders today: the
+  component tree (App → tabs → components), the `ui` store + `applyBodyAttrs` data-attr path, how
+  `vapor.css`/`extras.css` are loaded and scoped, asset/font loading (`index.html`), the TanStack-Query
+  data hooks the presentation consumes, and how `FleetTab`/`DeviceRow`/`Hero` are built. Identify the
+  precise injection points for a theme switch that **touches no vapor code**.
+- **(b) External best practices — pick the patterns deliberately.** Research and compare (web-sourced,
+  cite): multi-theme/skinnable architectures in React; **CSS strategy** options (per-theme stylesheet
+  bundles + `data-theme` scoping vs CSS Modules vs CSS-in-JS vs vanilla-extract) and which best keeps each
+  theme isolated, lazy-loaded, and faithful; **component-slot / variant registries**; **design-token**
+  systems (semantic tokens, the flat-vs-gradient accent problem, OKLCH); per-theme **font + asset**
+  loading without bloating first paint; and a **prototype→module workflow** that minimizes drift when the
+  owner re-edits a single-file prototype (e.g. keep the module's DOM/CSS structurally close to the
+  prototype; consider a documented porting convention).
+
+**Produce (the deliverables):**
+1. A **code-level design spec** (DESIGN.md-style) in this doc or a sibling: the `ThemeDef`/`ThemeRegistry`
+   types, the slot system + the exact slot list, the token convention, the chosen CSS/asset/font strategy
+   with rationale, the `{theme,mode,accent}` palette model, the client-local **+ designed-but-deferred**
+   config-sync persistence seam, and the per-host presentation layer.
+2. The **prototype→theme-module porting playbook** (how to add/refresh a theme cheaply + faithfully).
+3. **DECISIONS D28** locking the architecture + the §5 resolutions; **TODO Phase 11** (T0–T5); a ROADMAP
+   Appearance expansion. Re-confirm the few still-OPEN §5 items (frontier art assignment, Utils tab,
+   per-host data) as part of the spec.
+
+**Reference material is in the repo:** the prototypes live in `prototypes/project/variations/*.html`
+(+ art in `prototypes/project/assets/`), now committed. The four prior agent analyses (cosmos/frontier/
+minimal deep-dives + the observatory/phosphor classification) are summarized in §§1–2; re-run focused
+reads if needed. **Scope the research to a clean session — it's a big, careful design effort, not a quick
+slice.**
