@@ -859,11 +859,19 @@ remounts only presentation — no refetch, no lost draft/featured/scroll, instan
 - **Skin isolation = `@scope ([data-skin=X]) { … }`** wrapping each theme's CSS (Baseline Dec 2025 — covers the owner's
   modern Android+desktop). Only the active skin's rules match; themes can't bleed even if bundles coexist during a switch.
   The prototypes share class names (`.composer/.seg/.switch/.device/.hero`), so scoping (not bare globals) is required.
-- **vapor.css stays VERBATIM except scope-root selectors:** `:root`→`:scope` (vars on the skin element still inherit
-  down), `body[data-theme=aqua|ember]`→`:scope[data-theme=…]` (same-element accent axis), standalone `body`→`:scope`.
-  Most rules (`.appbar`/`.dev`/…) are descendant and stay unchanged inside `@scope`. `@keyframes` stay global (vapor's
-  names are vapor-specific; verify no cross-theme collision). **Far lower risk than a PostCSS prefix** (research: prefix
-  plugins *replace* `:root`, mis-prefix body-level same-element selectors, double-prefix `@keyframes`).
+- **AS-BUILT (M1):** `data-skin` lives on **`<html>`** (`documentElement`), so the scope is rooted at the document
+  root — vapor's `:root`/`html,body`/page-background rules all sit inside the scope, and its `body[data-*]` accent/
+  skyline/etc. rules match `<body>` as a descendant. The sheet is wrapped **verbatim** in `@scope ([data-skin="vapor"])
+  { … }` with only these scope-root selector edits (⚠️ **the critical gotcha — empirically caught in M1**: *scoped
+  selectors match DESCENDANTS of the scope root, NOT the root itself*, so selectors targeting `<html>` silently don't
+  apply unless they use `:scope`):
+  - `:root` → **`:scope`** (defines the vars on `<html>` — they inherit down; `:root` would *not* match inside the scope).
+  - `html, body` → **`:scope, body`** (so `<html>` keeps the page background/reset; bare `html` wouldn't match).
+  - Bare `[data-theme=aqua|ember]` (the accent axis, on `<body>`) and all `.class`/`body[data-*]` rules are **descendants
+    → unchanged**. `@keyframes`/`@media` stay inside the scope verbatim (the bundler preserves them — M1 gate).
+  - **A theme's own `tokens.css` must use `:scope` (not `:root`) for its variable block** — same reason. (Porting playbook §10.)
+  **Far lower risk than a PostCSS prefix** (research: prefix plugins *replace* `:root`, mis-prefix body-level same-element
+  selectors, double-prefix `@keyframes`). Verified: vapor renders byte-identical (e2e asserts the computed page background).
 - **`@layer base, theme`** still orders Kit-vs-theme overrides (theme wins). Composes with `@scope` (orthogonal: layer =
   cascade order, scope = which elements match).
 - **Default theme (vapor) CSS eager** (static import → blocking `<link>`, no first-paint FOUC); others lazy (Vite

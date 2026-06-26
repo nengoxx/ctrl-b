@@ -1,3 +1,6 @@
+/* Phase 11 v2 / D29 §14.6: wrapped in `@scope ([data-skin="vapor"])` (like vapor.css) so this net-new
+   vapor styling only applies under the vapor skin. Content is otherwise verbatim. */
+@scope ([data-skin="vapor"]) {
 /* ── Net-new v2 components (Phase 2): activity toasts + confirm dialog. ──
    vapor.html has no confirm dialog, so these aren't a port — but they're built ONLY from the
    vapor design tokens in vapor.css (colors / grads / glows / fonts) so they stay on-theme.
@@ -513,8 +516,8 @@ body[data-motion="reduced"] .conn-badge.reconnecting .dot {
    then the composer + tab bar in NORMAL FLOW at the bottom. `100dvh` tracks the toolbar, so the
    bars are always at the visible bottom and the chat pane scrolls within — no body padding, no
    fixed/viewport mismatch. Appearance is unchanged (D7); only the box model moves. */
-html,
-body {
+:scope,
+body { /* :scope = <html> (scope root); `html` wouldn't match inside @scope */
   height: 100%;
   overflow: hidden; /* the shell owns scrolling, not the window */
 }
@@ -2275,3 +2278,5 @@ body {
   color: var(--magenta);
   transform: rotate(90deg);
 }
+}
+/* end @scope ([data-skin="vapor"]) */

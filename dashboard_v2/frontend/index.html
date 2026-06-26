@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="vapor">
+<html lang="en" data-skin="vapor">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
@@ -17,16 +17,18 @@
     />
     <title>ctrl-b</title>
   </head>
-  <body data-skin="vapor">
-    <!-- No-FOUC theme bootstrap (Phase 11 / D28 §9.11). A synchronous inline script at the TOP of
-         <body> (where document.body exists — <head> can't, body is null there) sets the palette-
-         determining data-attrs from persisted ui state BEFORE #root paints, so first paint already
-         has the right colors. The `ui` store re-applies the full attr set when it loads (idempotent).
-         Mirrors store/ui.ts applyBodyAttrs + migrateLegacyTheme — keep in sync. -->
+  <body>
+    <!-- No-FOUC theme bootstrap (Phase 11 / D29 §14.6). A synchronous inline script at the TOP of
+         <body> (where document.body exists — <head> can't, body is null there) sets the
+         palette-determining data-attrs from persisted ui state BEFORE #root paints, so first paint
+         already has the right colors. `data-skin` (the @scope identity) lives on <html>; vapor's accent
+         axis (data-theme) + non-vapor mode/accent live on <body>. The `ui` store re-applies the full attr
+         set when it loads (idempotent). Mirrors store/ui.ts applyBodyAttrs + migrateLegacyTheme. -->
     <script>
       (function () {
         try {
-          var b = document.body;
+          var h = document.documentElement,
+            b = document.body;
           var s = JSON.parse(localStorage.getItem("ctrlb.ui") || "null");
           var theme = (s && s.theme) || "vapor";
           var mode = (s && s.mode) || "dark";
@@ -37,15 +39,15 @@
             theme = "vapor";
             mode = "dark";
           }
-          b.dataset.skin = theme;
+          h.dataset.skin = theme; // the @scope identity, on <html>
           if (theme === "vapor") {
-            b.dataset.theme = accent; // vapor's frozen accent axis (dark is inert → :root)
+            b.dataset.theme = accent; // vapor's accent axis (dark is inert → :root)
           } else {
             b.dataset.mode = mode;
             b.dataset.accent = accent;
           }
         } catch (e) {
-          /* private-mode / corrupt value — fall back to the static data-skin="vapor" */
+          /* private-mode / corrupt value — fall back to the static html[data-skin="vapor"] */
         }
       })();
     </script>

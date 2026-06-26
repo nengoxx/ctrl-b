@@ -105,10 +105,16 @@ export function Waveform({ online, ping }: Props) {
 
     sizeCanvas();
     draw();
-    window.addEventListener("resize", sizeCanvas);
+    // Re-size the backing store whenever the canvas's box changes — crucially including 0→N when the
+    // ALWAYS-MOUNTED Fleet tab becomes visible. `window.resize` alone missed this: if the canvas first
+    // mounted while Fleet was `display:none` (the user's last tab wasn't Fleet), `sizeCanvas` set a
+    // 0-pixel buffer and never re-ran on the later tab switch, so the live-ping waveform stayed blank
+    // until a reload/window-resize. A ResizeObserver catches the show + any layout change.
+    const ro = new ResizeObserver(() => sizeCanvas());
+    ro.observe(canvas);
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener("resize", sizeCanvas);
+      ro.disconnect();
     };
   }, []);
 

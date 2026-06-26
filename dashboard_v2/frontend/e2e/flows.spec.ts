@@ -109,11 +109,35 @@ test("Conf — an editor form's inputs are findable by their label (D25 associat
 
 test("Conf — changing the vapor palette updates body[data-theme]", async ({ page }) => {
   await page.goto("/");
+
+  // @scope proof (M1): vapor's CSS is wrapped in `@scope ([data-skin=vapor])` rooted at <html>. The dark
+  // page background (`html,body{background:var(--bg)}`, --bg #0a0316) must actually compute — it would be
+  // the default transparent if @scope silently failed to apply (e.g. an unsupported/ mis-emitted scope).
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(10, 3, 22)");
+
   await page.locator("#tabbtn-conf").click();
 
   // Appearance group is expanded by default. Theme-engine model (D28): the skin is "Vapor"; the
   // "Palette" segmented control switches vapor's frozen accent axis (Vapor/Aqua/Ember → body[data-theme]).
   await page.getByRole("button", { name: "Aqua", exact: true }).click();
-  await expect(page.locator("body")).toHaveAttribute("data-theme", "aqua");
-  await expect(page.locator("body")).toHaveAttribute("data-skin", "vapor");
+  await expect(page.locator("body")).toHaveAttribute("data-theme", "aqua"); // accent axis on <body>
+  await expect(page.locator("html")).toHaveAttribute("data-skin", "vapor"); // @scope identity on <html>
+});
+
+test("Fleet — live-ping canvas is sized even if Fleet wasn't the initial tab (no blank waveform)", async ({
+  page,
+}) => {
+  // Regression: FleetTab is ALWAYS mounted (display:none when inactive), so if the user's last tab wasn't
+  // Fleet, the waveform canvas first mounts hidden (0 size). The bug: `sizeCanvas` set a 0-pixel backing
+  // store and only re-ran on window.resize, so switching to Fleet left the live-ping blank until a reload.
+  // Fix = a ResizeObserver that re-sizes when the canvas becomes visible. So: boot on the Agent tab, switch
+  // to Fleet, and assert the canvas backing store actually sized (> 0) — fails with the old window-resize code.
+  await page.addInitScript(() => localStorage.setItem("ctrlb.ui", JSON.stringify({ tab: "agent" })));
+  await page.goto("/");
+  await page.locator("#tabbtn-fleet").click();
+  await expect
+    .poll(() =>
+      page.locator(".waveform canvas").first().evaluate((c) => (c as HTMLCanvasElement).width),
+    )
+    .toBeGreaterThan(0);
 });

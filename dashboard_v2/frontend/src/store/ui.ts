@@ -76,8 +76,8 @@ export function migrateLegacyTheme(s: UIState): UIState {
 const { emit, useStore } = createStore();
 let state: UIState = migrateLegacyTheme(loadPersisted(KEY, DEFAULTS));
 
-// Mirror the UI store onto <body> data-attrs + the .no-composer class. Theme-engine model (§9.8/§13.1):
-// - `body[data-skin]` = the SKIN id (NEW identity attr for slot + CSS scoping).
+// Mirror the UI store onto <html>/<body> data-attrs + the .no-composer class. Theme-engine model:
+// - `html[data-skin]` = the SKIN id (the `@scope ([data-skin=…])` identity for theme CSS isolation, §14.6).
 // - `body[data-theme]` keeps its FROZEN vapor meaning — the accent axis (dark/aqua/ember) — and is set
 //   ONLY when skin=vapor (from `accent`), and actively CLEARED for non-vapor skins (attrs are rebuilt
 //   each call, so a stale `aqua` would otherwise leak and re-tint a non-vapor theme).
@@ -88,7 +88,9 @@ let state: UIState = migrateLegacyTheme(loadPersisted(KEY, DEFAULTS));
 // control toggles — App.tsx doesn't subscribe to theme/skyline/loz (only `tab`, for conditional render).
 function applyBodyAttrs(s: UIState): void {
   const b = document.body;
-  b.dataset.skin = s.theme;
+  // `data-skin` (the @scope identity, §14.6) lives on <html> so a theme's `:root`/`html,body`/
+  // page-background rules all sit inside its scope. The accent axis + the other vapor attrs stay on <body>.
+  document.documentElement.dataset.skin = s.theme;
   if (s.theme === "vapor") {
     b.dataset.theme = s.accent; // dark/aqua/ember — "dark" is inert (no [data-theme=dark] rule → :root)
     delete b.dataset.mode;

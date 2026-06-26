@@ -1,26 +1,18 @@
-/* Theme-engine CSS entry (Phase 11 / D28, THEME_ENGINE.md §9.6).
+/* Theme-engine CSS entry (Phase 11 v2 / D29 §14.6). Loads the active theme's stylesheet(s). The
+ * DEFAULT theme (vapor) is eager (statically imported here → blocking <link>, no first-paint FOUC);
+ * non-default themes are lazy (dynamic import, added per Tn slice).
  *
- * The single import that main.tsx loads instead of vapor.css + extras.css directly. It declares the
- * cascade-layer order and assigns the FROZEN vapor sheets to the lowest layer, WITHOUT editing them.
+ * Skin isolation = each theme's CSS is wrapped in `@scope ([data-skin=<theme>]) { … }` (inside the file
+ * itself), so only the active skin's rules match — themes can't bleed into each other even if bundles
+ * coexist during a switch (the prototypes share class names). `@scope` is rooted at <html> (the
+ * `data-skin` attribute lives on documentElement), so a theme's `:root`/`html,body`/page-background and
+ * its `body[data-*]` rules all resolve naturally (M1; build-verified the bundler preserves @scope +
+ * @keyframes-inside-@scope, and vapor renders byte-identical scoped).
  *
- *   @layer frozen, base, theme;   — declares precedence: later layers win for NORMAL declarations.
- *
- * - `frozen`  — vapor.css + extras.css, always loaded, untouched (D7). Caged here so an active
- *               non-vapor theme's tokens/classes win by cascade ORDER, not specificity (§13.2–13.3).
- * - `base`    — the NEW token-driven BASE chrome (built in T1; empty until then).
- * - `theme`   — each non-vapor theme's lazy [data-skin]-scoped bundle (built per Tn slice).
- *
- * vapor + extras share ONE layer in their current order (extras after vapor) so their internal
- * cascade is byte-for-byte what it is today — vapor is the only sheet rendering when active, so
- * nothing about its effective styling changes. The four `!important` rules across both files are all
- * on vapor-only selectors, so they can never outrank a separately-namespaced theme. (§9.6)
- *
- * ⚠️ T0 GATE: `vite build` must preserve the `@import … layer()` token (Lightning CSS / esbuild may
- * inline `@import` — verify the emitted bundle wraps the vapor rules in `@layer frozen{…}`). If it
- * strips the layer assignment, fall back to `cb-`-namespacing BASE chrome + renaming the 3 colliding
- * contract tokens (--line/--line-2/--accent-glow). See THEME_ENGINE.md §13.2.
+ * `@layer base, theme` orders Kit-vs-theme overrides (the Kit's shared component CSS lands in
+ * `layer(base)` when it's built; the active theme wins via `layer(theme)`). vapor is a theme → layer(theme).
  */
-@layer frozen, base, theme;
+@layer base, theme;
 
-@import "./vapor.css" layer(frozen);
-@import "./extras.css" layer(frozen);
+@import "./vapor.css" layer(theme);
+@import "./extras.css" layer(theme);

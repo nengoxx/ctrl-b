@@ -1,4 +1,11 @@
-  :root {
+/* Phase 11 v2 / D29 §14.6: the whole sheet is wrapped in `@scope ([data-skin="vapor"])` so vapor's
+   rules only apply under the vapor skin (data-skin lives on <html>, so :root/html,body/[data-theme]
+   all resolve naturally). Content is otherwise VERBATIM — the bundler keeps @keyframes inside @scope
+   (M1 gate). Adding/removing this wrapper is the only edit; do not reindent the body. */
+@scope ([data-skin="vapor"]) {
+  /* :root → :scope: inside @scope, the document root (:root/html) is the scope ROOT, which scoped
+     selectors don't match as a descendant — :scope matches it, so the vars land on <html> + inherit. */
+  :scope {
     --bg: #0a0316;
     --bg-2: #150828;
     --bg-3: #1f0d3f;
@@ -156,7 +163,7 @@
     background: linear-gradient(180deg, #110603 0%, #3a1208 35%, #6a1f10 55%, #2e1a0a 75%, #110603 100%) !important;
   }
   * { box-sizing: border-box; }
-  html, body {
+  :scope, body { /* :scope = <html> (the scope root); `html` wouldn't match inside @scope */
     margin: 0; padding: 0; background: var(--bg); color: var(--ink);
     font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; line-height: 1.5;
     -webkit-font-smoothing: antialiased; min-height: 100%;
@@ -1107,3 +1114,5 @@
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-thumb { background: var(--magenta); border-radius: 2px; }
   ::selection { background: var(--magenta); color: #fff; }
+}
+/* end @scope ([data-skin="vapor"]) */

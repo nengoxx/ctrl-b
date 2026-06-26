@@ -20,10 +20,10 @@ describe("ui store", () => {
     expect(result.current).toBe("aqua");
   });
 
-  it("vapor: mirrors accent onto body[data-theme] + sets body[data-skin] (frozen vapor hooks)", () => {
+  it("vapor: mirrors accent onto body[data-theme] + sets html[data-skin] (@scope identity)", () => {
     setUI({ theme: "vapor", accent: "ember", tab: "agent" });
-    expect(document.body.dataset.skin).toBe("vapor");
-    expect(document.body.dataset.theme).toBe("ember"); // vapor's frozen accent axis
+    expect(document.documentElement.dataset.skin).toBe("vapor");
+    expect(document.body.dataset.theme).toBe("ember"); // vapor's accent axis on <body>
     expect(document.body.dataset.tab).toBe("agent");
     expect(document.body.dataset.mode).toBeUndefined(); // vapor declares no mode axis
     expect(document.body.dataset.accent).toBeUndefined();
@@ -33,7 +33,7 @@ describe("ui store", () => {
     setUI({ theme: "vapor", accent: "aqua" }); // leave a vapor accent behind
     expect(document.body.dataset.theme).toBe("aqua");
     setUI({ theme: "minimal", mode: "light", accent: "indigo" });
-    expect(document.body.dataset.skin).toBe("minimal");
+    expect(document.documentElement.dataset.skin).toBe("minimal");
     expect(document.body.dataset.theme).toBeUndefined(); // vapor's accent must not leak onto another skin
     expect(document.body.dataset.mode).toBe("light");
     expect(document.body.dataset.accent).toBe("indigo");
