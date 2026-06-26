@@ -424,20 +424,31 @@
   }
   .hero .grid {
     position: absolute; bottom: -40px; left: -50%; right: -50%; height: 120px;
-    background:
-      linear-gradient(var(--magenta) 1px, transparent 1px),
-      linear-gradient(90deg, var(--magenta) 1px, transparent 1px);
-    background-size: 40px 30px;
+    overflow: hidden; /* clip the taller, translating texture child */
     transform: perspective(140px) rotateX(60deg);
     transform-origin: center top;
     opacity: 0.5;
     mask-image: linear-gradient(to bottom, black, transparent);
     -webkit-mask-image: linear-gradient(to bottom, black, transparent);
+  }
+  /* The grid texture lives on a child one tile (30px) taller and scrolls via `transform: translateY`
+     (GPU-composited) instead of animating `background-position` (which repaints the whole tilted floor
+     every frame — costly on Firefox). 1:1 motion: the old keyframes scrolled ONLY the horizontal lines
+     one 30px period; vertical stripes are invariant under vertical translation, so translating the whole
+     texture 30px is identical. The -30px head start keeps the loop seamless (30px = one period). */
+  .hero .grid::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; top: -30px; bottom: 0;
+    background:
+      linear-gradient(var(--magenta) 1px, transparent 1px),
+      linear-gradient(90deg, var(--magenta) 1px, transparent 1px);
+    background-size: 40px 30px;
     animation: gridmove 4s linear infinite;
   }
   @keyframes gridmove {
-    from { background-position: 0 0, 0 0; }
-    to   { background-position: 0 30px, 0 0; }
+    from { transform: translateY(0); }
+    to   { transform: translateY(30px); }
   }
 
   /* Now monitoring panel */

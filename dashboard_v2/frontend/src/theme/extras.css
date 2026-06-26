@@ -122,7 +122,7 @@ body[data-motion="reduced"] .tts-btn:not(.muted),
 body[data-motion="reduced"] .hero .sun,
 body[data-motion="reduced"] .hero .sun::after,
 body[data-motion="reduced"] .hero .sky::before,
-body[data-motion="reduced"] .hero .grid,
+body[data-motion="reduced"] .hero .grid::before,
 body[data-motion="reduced"] .now .name,
 body[data-motion="reduced"] .dev.on .led,
 body[data-motion="reduced"] .dev.on .eq i,
@@ -153,8 +153,9 @@ body[data-perf="lite"] .composer {
      inside the .eq box instead of bubbling out to the device row / fleet list (which Firefox re-lays-out).
    - The heartbeat LED animates `transform` but wasn't layer-promoted, so Firefox repaints its glow each
      scale-frame; `will-change: transform` gives it its own compositor layer (what Chrome already does).
-   These don't fix the paint-bound animations (grid/shimmer/eq) — that needs the transform conversion
-   proposed in the handoff — but they're free and safe. */
+   These don't fix the paint-bound shimmer/eq animations (those would need a transform conversion too,
+   held for fidelity reasons), but they're free and safe. The neon-grid scroll IS converted — to a
+   composited `transform: translateY` — directly in vapor.css `.hero .grid::before` (owner-approved). */
 .eq {
   contain: layout;
 }
