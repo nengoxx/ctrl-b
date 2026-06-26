@@ -23,11 +23,15 @@ namespace**.
 | **phosphor** | amber CRT terminal | amber ↔ green-phosphor (both dark) + accent selector | device rows (restyled) + ASCII `<pre>` topology | **LOW–MED** (reskin + CRT overlay) |
 | **observatory** | astronomy mission-control | light/dark + accent hue | device rows + **SVG radial topology map** (per-host `angle`) | **MED** |
 | **cosmos** | orbital solar system | light/dark + 4 accent swatches | **orbital planets w/ rAF zoom-pan camera**; tap-to-focus; canvas starfield + per-host waveform | **HIGH** |
-| **frontier** | **dusk "badlands"** (see §6 — *not* comic) | night/day × 4 accent | **photographic map w/ GPS beacons + 2-col photo "rig-card" grid + modal bottom sheet** | **HIGH** |
-| **vapor (proto)** | evolved vapor | light/dark | **auto-cycling featured-device carousel + live canvas waveform hero** | **HIGH** (vs shipped static Hero) |
+| **frontier** | **Mœbius badlands comic** (hand-drawn art assets — §6) | night/day × 4 accent | **art-map w/ GPS beacons + 2-col "rig-card" grid (the drawings) + modal bottom sheet** | **HIGH** |
 
-Recurring motif across minimal/cosmos/frontier/vapor-proto: a **"now monitoring" featured host** (big
-stats + a live `<canvas>` ping waveform, often auto-cycling every 5s). Worth treating as a shared concept.
+Recurring motif across minimal/cosmos/frontier: a **"now monitoring" featured host** (big stats + a live
+`<canvas>` ping waveform, often auto-cycling every 5s). Worth treating as a shared concept.
+
+> **Scope (owner, 2026-06-26):** in scope = **minimal, phosphor, cosmos, frontier** (+ **vapor**, shipped,
+> **FROZEN — do not touch**). **`vapor.html` (proto) is DROPPED** — it's the *old* vapor design; the shipped
+> React vapor is the improved one. **observatory = TBC** (owner hasn't confirmed; treat as optional/later).
+> frontier is kept **exactly as-is including its hand-drawn art** (see §6).
 
 ## 2. The five findings that shape the architecture
 
@@ -85,12 +89,20 @@ is **theme-agnostic and stays as-is**. We make the *presentation* layer pluggabl
   TabBar shell, chat bubbles — ~70% of surface) and **slotted** (theme-overridable: `FleetView`,
   `HostDetail`, `Hero`/`NowMonitoring`, the tab-indicator). A slot resolves to the active theme's
   variant, else a default. cosmos/frontier ship a `FleetView`; minimal/phosphor reuse the default rows.
-- **Token normalization (the enabling refactor).** Define a semantic interface — `--accent` (resolved
-  to a gradient *or* flat color via a single `--accent-fill`), `--accent-soft`, `--surface{,-2}`,
-  `--text{,-2,-3}`, `--line{,-2}`, `--ok/--warn/--danger`, plus opt-in decoration tokens
-  (`--glow-*`, gradients) that themes may leave unset. Refactor the shipped vapor components to consume
-  these instead of `--magenta`/`--ink-soft`/`--accent-grad` directly; vapor's `vapor.css` becomes the
-  vapor *mapping* of the interface. This is behavior-preserving for vapor and unlocks every other theme.
+- **⛔ vapor is FROZEN (owner directive).** The shipped vapor components + `vapor.css` are **registered
+  as the vapor theme module exactly as they are — not refactored.** vapor is the special, hand-tuned
+  original; the engine must be **purely additive** around it. (So: no "normalize vapor onto semantic
+  tokens" refactor — that earlier idea is dropped.)
+- **Self-contained theme modules + an optional shared base.** Each new theme is a **self-contained
+  presentation module** (its own components + CSS + tokens + fonts + assets), mirroring how the
+  prototypes are self-contained single files — this is what keeps each theme pixel-faithful to its
+  prototype (D7-per-theme). To avoid duplicating ~70% identical chrome across the *reskin-class* themes,
+  the **structurally-similar themes (minimal, phosphor) may share a NEW token-driven base** (semantic
+  tokens `--accent`/`--surface{,-2}`/`--text{,-2,-3}`/`--line{,-2}`/`--ok/--warn/--danger`, accent
+  resolvable to flat-or-gradient) — *new code, not vapor's*. The **structurally-distinct themes (cosmos,
+  frontier)** bring their own `FleetView`/detail components via slots. **How much base to share vs
+  duplicate is the main T0 granularity decision** — bias toward faithful duplication over a leaky shared
+  abstraction.
 - **Palette model.** `ui` store gains `{ theme, mode, accent }` (today's single `theme` enum
   generalizes). A `ThemeDef.palettes` declares supported axes + values; `applyBodyAttrs` sets
   `body[data-theme][data-mode]` + (for accent) injects the accent token. Backwards-compatible: vapor's
@@ -106,11 +118,12 @@ is **theme-agnostic and stays as-is**. We make the *presentation* layer pluggabl
 
 Each theme is an independently shippable slice; the engine foundation is paid once.
 
-- **T0 — Foundation (the engine + token normalization).** Semantic token interface; refactor vapor
-  components onto it (behavior-preserving, vapor still pixel-exact — the D7 acceptance test); the
-  `ThemeRegistry` + slot resolution; generalize the `ui` store to `{theme,mode,accent}`; per-theme font
-  loading; the Conf → Appearance theme/palette picker. **Ships with vapor only** (proof: nothing changes
-  visually) — this de-risks everything.
+- **T0 — Foundation (the engine — vapor untouched).** The `ThemeRegistry` + slot resolution; register
+  the **existing vapor components as the vapor module as-is** (no edits); generalize the `ui` store to
+  `{theme,mode,accent}` (client-persisted now, sync seam designed — see §5.2); per-theme font + CSS
+  lazy-loading; the Conf → Appearance theme/palette picker. **Acceptance: vapor is byte-for-byte
+  unchanged and still default** — the engine is proven by adding a switch that, with only vapor
+  registered, changes nothing. De-risks everything.
 - **T1 — minimal** (LOW–MED): validates the engine on a near-reskin theme + the **mode×accent matrix**
   (the richest palette model — build it here so the abstraction is right). Mostly tokens + a couple of
   variant tweaks (tab-indicator pill, the featured "now monitoring" card).
@@ -123,39 +136,45 @@ Each theme is an independently shippable slice; the engine foundation is paid on
   lifecycle.
 - **T5 — frontier** (HIGH): map+beacons+`x/y`, photo rig-cards, the **bottom-sheet** detail primitive,
   and the **asset strategy** (per-host imagery / placeholders). Heaviest net-new surface.
-- **(optional) vapor-proto hero** — fold the auto-cycling canvas "now monitoring" carousel in as a
-  vapor `Hero` evolution, *or* as the shared `NowMonitoring` slot minimal/cosmos/frontier also use.
+- **Shared `NowMonitoring` slot** — the auto-cycling "featured host + live canvas waveform" recurs in
+  minimal/cosmos/frontier; build it once as a slot those themes style, rather than three times.
+  (vapor stays on its own existing Hero — untouched.)
 
 ## 5. Open decisions — settle before/within T0 (owner input needed)
 
-1. **Scope: which themes ship?** The owner named 3 (cosmos/frontier/minimal). There are **6** prototypes
-   (+ observatory, phosphor, and an evolved vapor-proto). Are observatory/phosphor in scope? Is
-   vapor-proto meant to **replace** the shipped static vapor Hero, or be a separate option?
-2. **Theme persistence: backend-synced vs client-local.** Sync across Android+desktop (config) vs simple
-   per-device (localStorage, as today). Recommendation: backend for selection+custom accent.
-3. **Per-host presentation data.** Deterministic derivation (role/status/index → planet/beacon) — zero
-   config, but the owner can't hand-place a planet — vs an explicit per-host `appearance` override block
-   (more faithful to the authored prototypes, more config). Likely both (derive + optional override).
-4. **frontier's assets.** The prototype uses real per-host **photos** (`rig1–6.png`) + a `hero.png` map.
-   The real app has no per-host imagery. Strategy: generated/placeholder art, an optional per-host image
-   field, or a non-photographic faithful reinterpretation? (Affects "exactly as they are.")
-5. **Utils/Tools tab.** All prototypes dropped it. Keep the 4th tab in a generic per-theme style, or let
-   themes declare a 3-tab set and fold Tools elsewhere?
-6. **OKLCH / `color-mix` baseline.** Prototypes use `color-mix` (srgb+oklch), `oklch()`, `100dvh`,
-   `backdrop-filter`. Fine on the owner's modern Android Chrome/Firefox; confirm no older target.
+1. ~~Scope~~ **RESOLVED (owner 2026-06-26):** minimal + phosphor + cosmos + frontier (+ vapor frozen).
+   vapor-proto dropped. **observatory still TBC** — the one remaining scope question (include or shelve?).
+2. ~~Persistence~~ **RESOLVED:** **v1 = client-local** (extend the existing `ui` store localStorage), but
+   **design the complete cross-device feature** — an `appearance` block in `config.yaml` (active theme +
+   mode + accent + any custom palette) synced via the settings API, with the `ui` store reconciling on
+   load. Build the seam now (the store reads an injectable initial value; the backend block is additive),
+   ship the local path first. ("Always think about the complete feature" — owner.)
+3. **Per-host presentation data (OPEN).** Deterministic derivation (role/status/index → planet/beacon/
+   angle) — zero config — vs an explicit per-host `appearance` override. Likely **both**: derive by
+   default, optional override. For **frontier specifically**, see #4 — the art assignment is the concrete
+   instance of this.
+4. ~~frontier assets~~ **RESOLVED (keep the art):** frontier's "photos" are the owner's **hand-drawn
+   Mœbius-style comic art** — they ARE the theme and must be kept. **OPEN sub-question:** how is art
+   assigned to *real* hosts? Options: a fixed set of the owner's drawings cycled by host index/role
+   (zero per-host config), or an optional per-host `image` field so the owner can pick a drawing per
+   machine. (Leaning: ship a built-in drawing set assigned by index, add the per-host override later.)
+5. **Utils/Tools tab (OPEN).** All prototypes dropped it (3-tab). Keep the 4th tab in a generic per-theme
+   style, or let a theme declare its tab set and fold Tools elsewhere? (Leaning: themes declare tabs;
+   default 4, a theme may omit/restyle — the engine already needs a flexible tab registry.)
+6. **OKLCH / `color-mix` baseline (low-risk).** Prototypes use `color-mix` (srgb+oklch), `oklch()`,
+   `100dvh`, `backdrop-filter` — fine on the owner's modern Android Chrome/Firefox. Confirm no older target.
 
 ## 6. ⚠️ Discrepancies to confirm with the owner
 
-- **frontier is NOT "comic".** The owner described frontier as "retro comic style," but `frontier.html`
-  is a **warm dusk "badlands/frontier territory"** theme (photographic map, glowing GPS beacons, photo
-  "rig cards," license-plate IDs, Chakra Petch font) — **no** halftone/ben-day/bold-outline/speech-bubble
-  comic elements anywhere. Either the comic styling is a *future* intent not yet in the file, or
-  "frontier" = territory-frontier (not comic). **Confirm which** before scoping T5.
-- **cosmos central body.** The owner said "planets rotating a **moon**." In the prototype the planets
-  orbit a central **coin/orb** (called `.sun` in code) that doubles as the "All systems / deselect" home
-  control; the brand glyph is a separate moon. Minor, but the central body's identity/role matters for a
-  faithful port.
-- **Theme count vs the shipped 4-tab app.** Every prototype is 3-tab; reconcile with Utils (decision 5).
+- ~~frontier "comic"~~ **RESOLVED:** frontier **IS** a comic theme — a **Mœbius (Jean Giraud) badlands
+  comic**. The comic-ness lives in the owner's **hand-drawn art assets** (the "rig" drawings + map art),
+  not in CSS halftone/outlines (the agent correctly found none of that). Keep the theme exactly as-is,
+  **art included** (decision §5.4).
+- ~~vapor-proto~~ **RESOLVED:** dropped — it's the *old* vapor design; the shipped React vapor is the
+  improved one and is **frozen/untouched**.
+- **cosmos central body (minor).** The owner said "planets rotating a **moon**"; the prototype's central
+  body is a coin/orb (`.sun` in code) that doubles as the "All systems / deselect" home control. Confirm
+  the central body's intended identity when porting T4 (cosmetic, not blocking).
 
 ## 7. Where this slots in the docs
 
