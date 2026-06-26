@@ -76,50 +76,60 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Theme-engine v2 (D29): vapor migration M0–M2.2 done** · NEXT = **M2.3 `useAgentChat`** then M2.4/M2.5 → M3 → Kit+minimal; emma deploy still queued)
+## Current state (**Theme-engine v2 (D29): M2 COMPLETE — all 5 controllers extracted** · NEXT = **M3 (register vapor as a `ThemeDef` + per-theme settings)** → Kit + minimal; emma deploy still queued)
 
-> ### 🟢 CLEAN-SESSION HANDOFF — Theme-engine v2 (D29): finish M2 (controllers) → M3, then Kit + minimal — 2026-06-26
+> ### 🟢 CLEAN-SESSION HANDOFF — Theme-engine v2 (D29): **M2 DONE → M3 (register vapor + per-theme settings)**, then Kit + minimal — 2026-06-26
 >
 > **⛔ READ FIRST, IN ORDER (don't skip):** (1) `DECISIONS.md` **D29** — the locked architecture; (2) `THEME_ENGINE.md` **§14**
 > — the buildable spec (four layers, the controller catalog, the `ThemeDef`/`Root` contract, the `@scope` CSS model, the
-> M0–M3 vapor runbook, the edge-case table); (3) this block. **The §§9–13 "slot model" is SUPERSEDED — build against §14,
-> NOT the 7-slot model.** Everything is pushed (`origin/main`).
+> M0–M3 vapor runbook, the edge-case table) **+ the NEW §14.11 — the cross-browser perf + robustness RULE every theme MUST
+> pass** (smooth on Firefox/Fennec AND Chrome at 390px; transform/opacity-only ambient anims; gate blur→`data-perf`,
+> motion→`data-motion`; cap+pause canvas loops; wrap long text; themed scrollbars); (3) this block. **The §§9–13 "slot
+> model" is SUPERSEDED — build against §14.** Everything is pushed (`origin/main`).
 >
 > **The architecture in one breath.** Ownership is INVERTED vs the old slot model: the **theme owns its whole presentation**
 > (a `Root` component); the **app owns functionality as headless, STORE-BACKED controllers** mounted ABOVE the Root; an
 > optional **Kit** (built later, with minimal) supplies reusable token-driven presenters. **vapor is being migrated as a
 > normal theme** (the default until each other theme is verified), via the **M0–M3 verify-at-every-step runbook** (§14.7).
 >
-> **What's DONE (each committed + pushed + green; verify the claims by reading the commits):**
-> - **M0** — shell inversion. `App` is a thin host that renders the active theme's `Root` (`useActiveRoot`); vapor's old
->   App body → `src/themes/vapor/VaporRoot.tsx`; `ThemeDef.Root` replaced the 7 slots. **Byte-identical** (CSS hash unchanged).
-> - **M1** — `@scope` CSS isolation. `vapor.css`+`extras.css` wrapped **verbatim** in `@scope ([data-skin="vapor"])`;
->   **`data-skin` moved to `<html>`** (so the scope is document-rooted); `@layer base,theme`. **Critical `@scope` gotcha
->   (caught empirically):** scoped selectors match DESCENDANTS, not the scope root → `:root`→`:scope`, `html,body`→
->   `:scope,body` (else `--bg` is undefined → transparent page). Build-verified the bundler preserves `@scope`+`@keyframes`;
->   an e2e asserts the **computed page background** = vapor's `--bg` (proof it applies). See THEME_ENGINE §14.6.
-> - **M2.1 `useFleet`** — `store/fleet.ts` (featured/open/hold, store-backed) + `useFleetCycle()` (the SINGLETON auto-advance
->   engine) + `useFleet()` (pure consumer); `FleetTab` is now pure presentation. **+ an audit fix** (see the pattern below).
-> - **M2.2 `useComposer`** — draft + prefix-routed `send` + streaming gate + dictation mic; `Composer` is pure presentation.
-> - **(separate bug fix)** the live-ping **waveform** went blank when Fleet wasn't the initial tab (canvas mounted hidden →
->   0-pixel backing store, only re-sized on `window.resize`). Fixed with a **ResizeObserver** on the canvas + a regression test.
+> **✅ M2 IS COMPLETE — all five controllers extracted (each committed + pushed + green; read the commits to verify):**
+> - **M0** shell inversion (`App` = thin host rendering the active theme's `Root`; vapor's old App body → `themes/vapor/VaporRoot.tsx`; byte-identical) · **M1** `@scope` CSS isolation (`vapor.css`+`extras.css` wrapped verbatim in `@scope([data-skin="vapor"])`; **`data-skin` on `<html>`**; the gotcha — scoped selectors match DESCENDANTS → `:root`→`:scope`, `html,body`→`:scope,body`; §14.6).
+> - **M2.1 `useFleet`** (`store/fleet` + the SINGLETON `useFleetCycle` engine in `<AppEngines/>` + pure `useFleet`) · **M2.2 `useComposer`** · **M2.3 `useAgentChat`** (COMPOSES `store/chat`; the `resultByCall`/`currentPlan` derivations live in `lib/plan`; `useChatInit`+`useAutoTts` mounted in `<AppEngines/>`; the bubbles + `#app-scroll` stick-to-bottom stay in AgentTab) · **M2.4 `useSections`** (generalizes `ui.tab`; TabBar's duplicate `TABS` deleted; `.no-composer` is now THEME-OWNED in VaporRoot via `useLayoutEffect`, not the core store) · **M2.5 `useAppChrome`** (`useAppChrome` = the auto-TTS toggle + `useNowPlaying` = the mini-player transport — split so the always-visible AppBar doesn't re-render on the player's ~4×/sec progress). **The CONTROLLER PATTERN that produced all five is the load-bearing reference below — reuse it for the Kit's shared controllers.**
 >
-> **⛔ NEXT = M2.3 `useAgentChat`** (the heaviest controller — start fresh, full focus). **Analyze first:** `tabs/AgentTab.tsx`
-> + `store/chat.ts` + `hooks/{useAgents,useAutoTts,useVoiceStatus}` + `lib/{markdown,audioController,privilege}`. **Key
-> finding to save you time:** the chat LOGIC already lives in `store/chat.ts` (a reducer-style store: `useChat`, `initChat`,
-> `resumeCall`, `answerQuestion`, `applyProposal`, `editPlan`, `retryLastTurn`, `setSessionPrivilege`) — so `useAgentChat`
-> mostly **composes + exposes** it, it does NOT re-implement the loop. Extract into `hooks/useAgentChat.ts`: the store
-> exposure (messages/status/streamingId + the actions), the **derivations** (`resultByCall`/`currentPlan` memo — pairing
-> tool results to calls + the latest plan), `resolvedDefault` (roster) + `ttsOn` (voice). Mount the once-only effects
-> (`initChat`, `useAutoTts`) in `<AppEngines/>` (App) so they run once regardless of theme/agent-view mounts. **LEAVE in the
-> vapor presentation (AgentTab):** all the bubble sub-components (`Bubbles`/`CmdBubble`/`QuestionBubble`/`PlanBubble`/
-> `PinnedPlan`/`SearchResults`/`ThinkBlock`/`TtsButton`/`PrivilegeChip`) AND the **scroll-stick-to-bottom** logic (it targets
-> `#app-scroll` — vapor's scroller — so it's theme-specific; a shared `useStickToBottom` helper is a Kit concern, later).
-> Then **M2.4 `useSections`** (active functional area + navigate — generalizes `ui.tab`; the `.no-composer` body class is
-> vapor-specific and should become theme-owned) and **M2.5 `useAppChrome`** (auto-TTS toggle / voice status / mini-player).
-> Then **M3**: register vapor as a complete `ThemeDef` + build the **per-theme settings** mechanism (`ThemeDef.settings` →
-> `ui.themeSettings[id]` open map, synced via the appearance channel; `useThemeSetting`; the Appearance picker auto-renders
-> it — §14.3). After M3 vapor is fully a migrated theme → then the **Kit + minimal** (the big slice; §14.4/§14.10).
+> **Also shipped this session (UI polish + Firefox perf — a fresh session should know the current state):** round plan dots · tap-highlight removal · button/composer long-press-selection off · themed scrollbar-corner (no white box) · **mic** is flag-aware (records over plain-HTTP when the origin is browser-flag-whitelisted; greys ONLY when truly incapable; Fennec sticky-`:active` press fix) · a device-local **"Blur" perf toggle** (`body[data-perf="lite"]` drops backdrop-blur on the 3 frosted bars) · the **neon grid** GPU-composited (`background-position`→`transform: translateY`, 1:1, in vapor.css) · the live-ping **waveform canvas** optimized (30fps cap · pause off-screen via IntersectionObserver · no per-frame `getComputedStyle`/`getBoundingClientRect`) · the **plan panel** 3-state click cycle (pending→active→done, exactly-one-active via `lib/plan.advanceStep`) + clearer dots/count · **Tools catalog** sorted severity→confirm→core · the **mini-player** scrubber is now a desynced, motion-gated waveform. **⭐ The durable output: `THEME_ENGINE.md` §14.11 — the cross-browser perf + robustness RULE** (saved to memory `themes-smooth-on-firefox-and-chrome`); **every future theme MUST pass it.** Also noted **ROADMAP §C3** (chunked TTS — split a reply by paragraph/sentence/list-item, synth+play progressively; big improvement, moderate refactor; deferred).
+>
+> **⛔ NEXT = M3 — register vapor as a complete `ThemeDef` + build the PER-THEME SETTINGS mechanism (§14.3 + §14.7-M3).**
+> vapor already has `Root=VaporRoot` (M0); M3 finishes its `ThemeDef` (palettes = named accents · eager `loadStyles` ·
+> `settings`) and — the meaty part — builds **per-theme settings**: `ThemeDef.settings` (a small schema + defaults) → an
+> open `ui.themeSettings[id]` map → **synced via the appearance channel** (extend `AppearanceCfg` ADDITIVELY, don't
+> restructure) → `useThemeSetting(id,key)` → the Conf **Appearance picker auto-renders the active theme's settings**.
+> After M3 vapor is a fully-migrated peer theme (still the default) → then **Kit + minimal** (the big slice; §14.4/§14.10).
+>   - **Analyze FIRST (read before writing a line):** `store/ui.ts` (vapor's global decorative toggles — `skyline`/`loz`/
+>     `heroOn`/`waveformOn` — are VAPOR-SPECIFIC and the natural first per-theme settings) · `tabs/ConfTab.tsx` (the
+>     Appearance group rendering them today) · `hooks/useAppearance.ts` + backend `AppearanceCfg` (the cross-device LWW
+>     sync — extend additively) · `theme-engine/{registry,types,ThemeProvider}` · `themes/vapor/index.tsx`.
+>   - **THE OPEN DESIGN DECISION (owner's call — CONFIRM IN PROSE BEFORE CODING):** which of vapor's global toggles migrate
+>     into `ThemeDef.settings` (skyline/loz/hero/waveform) vs stay global (theme/mode/accent/motion/perf). Shape
+>     `themeSettings` additive (owner directive "shape data to extend, not migrate"); migrating a sparse map now is cheap —
+>     but confirm the boundary + the `AppearanceCfg` extension with the owner first.
+>
+> **⭐⭐ BE EXTRA SURE BEFORE YOU IMPLEMENT — the owner's standing pre-flight (do NOT skip, ESPECIALLY for M3). A feature
+> STARTS by reading the code it touches, not by writing code:**
+> 1. **READ** every touch point above + the doc (D29, §14.3, §14.11) and CONFIRM you are reusing the existing data
+>    structures / stores / hooks, slotting into the right architecture layer (don't bypass a chokepoint like the
+>    appearance-sync or the theme registry), with **NO hardcoding** (tunables → config/AgentDef/ThemeDef/Settings) and **NO
+>    duplicated / near-duplicate code** (one source of truth, in BOTH directions — don't fork an existing pattern, don't
+>    re-own something you already have).
+> 2. **DESIGN it in prose FIRST, then SURFACE the seams you'll reuse + any deviation + the open decisions to the owner and
+>    WAIT for their confirmation BEFORE you code** (memories `check-patterns-before-implementing`, `converse-on-design-
+>    decisions`, `design-quality-is-first-class`, `prioritize-robust-over-seams`). The owner explicitly prefers a prose
+>    back-and-forth on architecture over a model that rushes into code — M3's "which settings migrate" + the sync extension
+>    are exactly that kind of decision. When a dominant external convention exists, follow it at the boundary
+>    (`follow-external-conventions-for-pluggability`); kill ambiguity with a web-search + a question, not a guess.
+> 3. **AUDIT each part before continuing** (`audit-each-part-before-continuing`): re-read the diff · behavior-equivalence ·
+>    re-render scope (the M2.1 lesson) · store-state survives a theme switch · run the FULL suite · then commit + push +
+>    continue. **Pause for the owner's 390px eyeball + a go-ahead after each slice** (`pause-between-phases-for-review`) —
+>    never batch or momentum-continue.
 >
 > **⭐ THE CONTROLLER PATTERN — FOLLOW IT EXACTLY (it's load-bearing):**
 > 1. **State that must survive a theme switch or be shared across presentation instances → a STORE** (the dep-free
@@ -132,7 +142,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >    re-render ONLY on a theme change.
 > 3. **A pure CONSUMER hook** (`useX`) the presentation reads — returns state + actions, **no markup.** References:
 >    `useFleet`/`useComposer`. Use imperative store getters (e.g. `getDraft()`) in actions to avoid stale closures.
-> 4. **Behavior-preserving:** the existing **95 unit + 34 e2e** must stay green at every step. The e2e flows (chat-send,
+> 4. **Behavior-preserving:** the existing **108 unit + 34 e2e** must stay green at every step. The e2e flows (chat-send,
 >    row-toggle, shutdown-confirm, theme-switch, live-ping-canvas) are your behavior guard — run them after each controller.
 >
 > **⚠️ DOUBLE-CHECK / BE CAREFUL ABOUT (the things that bite):**
@@ -141,17 +151,21 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >   confirm the store-backed state survives a theme switch, run the full suite. Then commit + push, then continue.
 > - **Don't re-implement logic that's already in a store/hook** (chat loop is in `store/chat.ts`; fleet data in `useHosts`).
 >   Controllers COMPOSE; they don't duplicate.
-> - **`@scope` discipline for any CSS you touch:** a theme's CSS lives inside `@scope ([data-skin=X])`; its `:root` must be
->   `:scope`; `data-skin` is on `<html>`. (Only relevant once you touch theme CSS — M3/Kit, not M2.)
-> - **Canvas components** (Waveform, and cosmos/frontier later): size the backing store via a **ResizeObserver**, not
->   `window.resize` (the always-mounted-but-hidden-tab trap — see the live-ping fix).
-> - **Vapor must stay byte-identical / behavior-identical** through the whole migration — it's the only fully-working theme
->   and stays the default. If a step changes vapor's render, it's a bug.
+> - **`@scope` discipline for any theme CSS (NOW relevant — M3 touches CSS):** a theme's CSS lives inside `@scope ([data-skin=X])`;
+>   its `:root` must be `:scope`; `data-skin` is on `<html>`; a theme's `tokens.css` var block uses `:scope`.
+> - **§14.11 perf + robustness rule governs EVERY theme** (transform/opacity-only ambient anims · blur→`data-perf` ·
+>   motion→`data-motion` · cap+pause canvas · wrap long text · themed scrollbars). **`@scope` support floor = Firefox 146** —
+>   an OUTDATED Fennec silently drops ALL scoped CSS → a near-blank page (the owner hit this, then updated; keep it in mind).
+> - **Canvas components** (Waveform, cosmos/frontier later): size the backing store via a **ResizeObserver**, cap FPS, and
+>   PAUSE off-screen via IntersectionObserver (the always-mounted-but-hidden-tab trap — see the live-ping + 30fps fixes).
+> - **Vapor must stay byte/behavior-identical** through M3 — it's the only fully-working theme + the default; a render change
+>   is a bug (unless it's an owner-approved fix). **TTS-idle note:** a slow (~24s) synth sends no bytes → an idle socket the
+>   Tailscale path can reset (SSE chat survives — it streams); real fix = ROADMAP §C3 (chunked TTS), deferred.
 > - **Windows env:** backend has **no `--reload`** (it breaks `asyncio.create_subprocess_exec`); restart it via the
 >   kill-by-port + hidden `Start-Process` one-liner. The **Bash tool's cwd resets between turns** — always `cd
 >   /c/Users/rovax/Documents/github/ctrl-b/dashboard_v2/frontend` before `npm`. LF→CRLF git warnings are benign.
 >
-> **VERIFICATION (run from `dashboard_v2/frontend`):** `npm run build` (tsc+vite) · `npm test` (vitest, **95**) ·
+> **VERIFICATION (run from `dashboard_v2/frontend`):** `npm run build` (tsc+vite) · `npm test` (vitest, **108**) ·
 > `npm run test:e2e` (playwright, **34**). Backend tests: from `dashboard_v2/backend`, `./.venv/Scripts/python.exe
 > tests/<file>.py` (pytest not installed). **Servers:** backend **5433** (`uvicorn app.main:app --port 5433`, no `--reload`),
 > frontend **5190** (`npm run dev -- --port 5190`). Restart the frontend after structural changes so the owner can eyeball;

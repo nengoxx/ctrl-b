@@ -233,6 +233,36 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
   active); battery; secure-context still required (same Tailscale-Serve HTTPS need as the mic).
   Feasibility flagged — "if possible."
 
+### C3. Chunked TTS synthesis (split the reply, play it progressively) — **noted 2026-06-26 (owner)**
+
+- **What:** instead of synthesizing a whole reply as ONE blob, split it into speakable **chunks** and
+  synth+play them **sequentially with synth-ahead** (synth chunk N+1 while chunk N plays). Two triggers:
+  (1) the per-bubble ▶ play button, (2) auto-TTS **as the reply streams in** — enqueue each chunk the
+  moment its boundary arrives, so it reads along with generation.
+- **Chunking strategy:** split on paragraph / sentence-ending punctuation; **list items individually**
+  (one chunk per `- `/`1.` item); **markdown-aware** so it never splits mid-element and never reads a
+  fenced code block aloud (parse the block, then decide). Tunable min/max chunk length so tiny fragments
+  merge and huge paragraphs split.
+- **Why it's worth it:** **time-to-first-audio** — you hear the first sentence in ~1–2s instead of waiting
+  for the whole reply (the "24s for a long message" pain). It also **sidesteps the idle-connection reset**
+  (each chunk is a short request, never a 24s-idle socket — see the TTS-idle note) and enables
+  read-along-while-streaming.
+- **vs C1/D19 (streaming TTS):** *simpler and complementary.* Chunking works with the **existing buffered
+  TTS endpoint** — no streaming TTS server / MSE needed; it's a client-side strategy on `audioController`.
+  D19's MSE byte-streaming is the deeper per-chunk optimization; chunking alone is the cheap, high-value
+  first step. They compose (stream each chunk), but chunking is the prerequisite win.
+- **v1 seams that already exist:** `lib/toSpeech` (markdown→plain text — already strips for TTS), the
+  hand-rolled block parser in `lib/markdown.tsx` (reuse its element list to chunk markdown-correctly), and
+  the `audioController` singleton (would gain a synth-ahead play **queue**).
+- **Effort (owner asked: "big improvement or refactor?"):** big *improvement*, **moderate refactor** —
+  NOT huge for the play-button case: `audioController` goes from single-blob to a small **play queue**
+  (synth-ahead, advance on `ended`, per-chunk blob cache), plus a new pure **chunker** helper
+  (markdown-aware split, unit-testable). The **stream-as-you-go** trigger is the larger, separable part
+  (boundary detection on the streaming text + enqueue from the chat reducer). UX decision: the now-playing
+  scrubber represents the whole message (concatenated) vs per-chunk.
+- **Settings:** `TtsServiceCfg` gains a chunk mode (`off | paragraph | sentence`) + min/max chunk length;
+  default `paragraph`. `off` = today's whole-message synth.
+
 ---
 
 ## D. Fleet automation
