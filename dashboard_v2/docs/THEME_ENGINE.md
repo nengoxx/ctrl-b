@@ -971,4 +971,7 @@ ResizeObserver). See `components/Waveform.tsx` for the reference implementation.
 strings — backend errors, URLs, paths, JSON tokens, host/model/agent names — must wrap: put `overflow-wrap:
 anywhere` on the text container (it's inherited and also shrinks min-content so flex items can't push past the
 edge), and give flex text items `min-width: 0`. This is a recurring bug class (the chat-bubble error overflow,
-the Conf label overflow); bake the wrap rule into any new text surface from the start.
+the Conf label overflow); bake the wrap rule into any new text surface from the start. Keep the app's main
+scroller `overflow-x: hidden` (a vertical-only scroller computes the x-axis to `auto` otherwise, so a stray-wide
+child adds a horizontal scrollbar), and theme the scrollbars — thin + themed thumb **and** a transparent
+`::-webkit-scrollbar-corner`, so Chrome's default light corner box never flashes against a dark theme.

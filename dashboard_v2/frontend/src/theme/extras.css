@@ -102,6 +102,19 @@ button,
   user-select: text;
 }
 
+/* Scrollbar corner + horizontal track. vapor.css styles the (vertical) scrollbar thin + magenta, but
+   left the `::-webkit-scrollbar-corner` default — Chrome paints a light box there where a horizontal
+   and vertical scrollbar meet, which flashes as a white box against the dark theme at the end of any
+   stray horizontal scrollbar. Make the corner transparent and give the horizontal bar the same 4px
+   thinness, so even if something ever scrolls sideways (e.g. a wide code block) it stays on-theme.
+   (`.app-scroll` itself is `overflow-x: hidden`, so the main shell never scrolls sideways at all.) */
+::-webkit-scrollbar {
+  height: 4px;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* ── F15 / Appearance · Motion — user-controlled ambient-animation gate.
    Toggled from Conf → Appearance → Motion (Switch in src/tabs/ConfTab.tsx; persists in
    the UI store as `motion: "full" | "reduced"`, mirrored to `body[data-motion]` by
@@ -617,6 +630,8 @@ body {
   flex: 1 1 auto;
   min-height: 0; /* let the flex child actually shrink + scroll */
   overflow-y: auto;
+  overflow-x: hidden; /* the shell scrolls vertically only — a too-wide child must never add a horizontal
+                         scrollbar (without this, overflow-y:auto makes the x-axis compute to auto too) */
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain; /* no scroll-chaining bounce that re-shows the toolbar oddly */
 }
