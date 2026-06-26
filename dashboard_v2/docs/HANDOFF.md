@@ -76,7 +76,93 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Theme Engine T0 shipped; architecture REVISED → D29** · NEXT = **M0 (vapor migrated as a theme — shell inversion, byte-identical)**; emma deploy → cutover still queued)
+## Current state (**Theme-engine v2 (D29): vapor migration M0–M2.2 done** · NEXT = **M2.3 `useAgentChat`** then M2.4/M2.5 → M3 → Kit+minimal; emma deploy still queued)
+
+> ### 🟢 CLEAN-SESSION HANDOFF — Theme-engine v2 (D29): finish M2 (controllers) → M3, then Kit + minimal — 2026-06-26
+>
+> **⛔ READ FIRST, IN ORDER (don't skip):** (1) `DECISIONS.md` **D29** — the locked architecture; (2) `THEME_ENGINE.md` **§14**
+> — the buildable spec (four layers, the controller catalog, the `ThemeDef`/`Root` contract, the `@scope` CSS model, the
+> M0–M3 vapor runbook, the edge-case table); (3) this block. **The §§9–13 "slot model" is SUPERSEDED — build against §14,
+> NOT the 7-slot model.** Everything is pushed (`origin/main`).
+>
+> **The architecture in one breath.** Ownership is INVERTED vs the old slot model: the **theme owns its whole presentation**
+> (a `Root` component); the **app owns functionality as headless, STORE-BACKED controllers** mounted ABOVE the Root; an
+> optional **Kit** (built later, with minimal) supplies reusable token-driven presenters. **vapor is being migrated as a
+> normal theme** (the default until each other theme is verified), via the **M0–M3 verify-at-every-step runbook** (§14.7).
+>
+> **What's DONE (each committed + pushed + green; verify the claims by reading the commits):**
+> - **M0** — shell inversion. `App` is a thin host that renders the active theme's `Root` (`useActiveRoot`); vapor's old
+>   App body → `src/themes/vapor/VaporRoot.tsx`; `ThemeDef.Root` replaced the 7 slots. **Byte-identical** (CSS hash unchanged).
+> - **M1** — `@scope` CSS isolation. `vapor.css`+`extras.css` wrapped **verbatim** in `@scope ([data-skin="vapor"])`;
+>   **`data-skin` moved to `<html>`** (so the scope is document-rooted); `@layer base,theme`. **Critical `@scope` gotcha
+>   (caught empirically):** scoped selectors match DESCENDANTS, not the scope root → `:root`→`:scope`, `html,body`→
+>   `:scope,body` (else `--bg` is undefined → transparent page). Build-verified the bundler preserves `@scope`+`@keyframes`;
+>   an e2e asserts the **computed page background** = vapor's `--bg` (proof it applies). See THEME_ENGINE §14.6.
+> - **M2.1 `useFleet`** — `store/fleet.ts` (featured/open/hold, store-backed) + `useFleetCycle()` (the SINGLETON auto-advance
+>   engine) + `useFleet()` (pure consumer); `FleetTab` is now pure presentation. **+ an audit fix** (see the pattern below).
+> - **M2.2 `useComposer`** — draft + prefix-routed `send` + streaming gate + dictation mic; `Composer` is pure presentation.
+> - **(separate bug fix)** the live-ping **waveform** went blank when Fleet wasn't the initial tab (canvas mounted hidden →
+>   0-pixel backing store, only re-sized on `window.resize`). Fixed with a **ResizeObserver** on the canvas + a regression test.
+>
+> **⛔ NEXT = M2.3 `useAgentChat`** (the heaviest controller — start fresh, full focus). **Analyze first:** `tabs/AgentTab.tsx`
+> + `store/chat.ts` + `hooks/{useAgents,useAutoTts,useVoiceStatus}` + `lib/{markdown,audioController,privilege}`. **Key
+> finding to save you time:** the chat LOGIC already lives in `store/chat.ts` (a reducer-style store: `useChat`, `initChat`,
+> `resumeCall`, `answerQuestion`, `applyProposal`, `editPlan`, `retryLastTurn`, `setSessionPrivilege`) — so `useAgentChat`
+> mostly **composes + exposes** it, it does NOT re-implement the loop. Extract into `hooks/useAgentChat.ts`: the store
+> exposure (messages/status/streamingId + the actions), the **derivations** (`resultByCall`/`currentPlan` memo — pairing
+> tool results to calls + the latest plan), `resolvedDefault` (roster) + `ttsOn` (voice). Mount the once-only effects
+> (`initChat`, `useAutoTts`) in `<AppEngines/>` (App) so they run once regardless of theme/agent-view mounts. **LEAVE in the
+> vapor presentation (AgentTab):** all the bubble sub-components (`Bubbles`/`CmdBubble`/`QuestionBubble`/`PlanBubble`/
+> `PinnedPlan`/`SearchResults`/`ThinkBlock`/`TtsButton`/`PrivilegeChip`) AND the **scroll-stick-to-bottom** logic (it targets
+> `#app-scroll` — vapor's scroller — so it's theme-specific; a shared `useStickToBottom` helper is a Kit concern, later).
+> Then **M2.4 `useSections`** (active functional area + navigate — generalizes `ui.tab`; the `.no-composer` body class is
+> vapor-specific and should become theme-owned) and **M2.5 `useAppChrome`** (auto-TTS toggle / voice status / mini-player).
+> Then **M3**: register vapor as a complete `ThemeDef` + build the **per-theme settings** mechanism (`ThemeDef.settings` →
+> `ui.themeSettings[id]` open map, synced via the appearance channel; `useThemeSetting`; the Appearance picker auto-renders
+> it — §14.3). After M3 vapor is fully a migrated theme → then the **Kit + minimal** (the big slice; §14.4/§14.10).
+>
+> **⭐ THE CONTROLLER PATTERN — FOLLOW IT EXACTLY (it's load-bearing):**
+> 1. **State that must survive a theme switch or be shared across presentation instances → a STORE** (the dep-free
+>    `store/createStore.ts` binding), never component `useState`. Reference: `store/fleet.ts`. Add a **unit test** for any
+>    real store logic (reference: `tests/store/fleet.test.ts` — uses `vi.useFakeTimers` for the hold).
+> 2. **A singleton ENGINE** (a timer or query-subscription that must run once) → a hook called ONCE inside **`<AppEngines/>`**
+>    (a null-rendering child of App), **NOT in App's body.** ⚠️ **This is the M2.1 audit lesson:** a query-subscribing hook in
+>    App's body makes App re-render every poll, and since `<ActiveRoot/>` is a fresh non-memoized element each render, the
+>    **entire theme tree re-renders every ~5s.** Isolating it in `<AppEngines/>` keeps the re-renders there. App must
+>    re-render ONLY on a theme change.
+> 3. **A pure CONSUMER hook** (`useX`) the presentation reads — returns state + actions, **no markup.** References:
+>    `useFleet`/`useComposer`. Use imperative store getters (e.g. `getDraft()`) in actions to avoid stale closures.
+> 4. **Behavior-preserving:** the existing **95 unit + 34 e2e** must stay green at every step. The e2e flows (chat-send,
+>    row-toggle, shutdown-confirm, theme-switch, live-ping-canvas) are your behavior guard — run them after each controller.
+>
+> **⚠️ DOUBLE-CHECK / BE CAREFUL ABOUT (the things that bite):**
+> - **AUDIT EACH CONTROLLER before moving to the next** (owner's standing rule — memory `audit-each-part-before-continuing`):
+>   re-read the diff, check behavior-equivalence vs the original, hunt for re-render scope regressions (the M2.1 lesson),
+>   confirm the store-backed state survives a theme switch, run the full suite. Then commit + push, then continue.
+> - **Don't re-implement logic that's already in a store/hook** (chat loop is in `store/chat.ts`; fleet data in `useHosts`).
+>   Controllers COMPOSE; they don't duplicate.
+> - **`@scope` discipline for any CSS you touch:** a theme's CSS lives inside `@scope ([data-skin=X])`; its `:root` must be
+>   `:scope`; `data-skin` is on `<html>`. (Only relevant once you touch theme CSS — M3/Kit, not M2.)
+> - **Canvas components** (Waveform, and cosmos/frontier later): size the backing store via a **ResizeObserver**, not
+>   `window.resize` (the always-mounted-but-hidden-tab trap — see the live-ping fix).
+> - **Vapor must stay byte-identical / behavior-identical** through the whole migration — it's the only fully-working theme
+>   and stays the default. If a step changes vapor's render, it's a bug.
+> - **Windows env:** backend has **no `--reload`** (it breaks `asyncio.create_subprocess_exec`); restart it via the
+>   kill-by-port + hidden `Start-Process` one-liner. The **Bash tool's cwd resets between turns** — always `cd
+>   /c/Users/rovax/Documents/github/ctrl-b/dashboard_v2/frontend` before `npm`. LF→CRLF git warnings are benign.
+>
+> **VERIFICATION (run from `dashboard_v2/frontend`):** `npm run build` (tsc+vite) · `npm test` (vitest, **95**) ·
+> `npm run test:e2e` (playwright, **34**). Backend tests: from `dashboard_v2/backend`, `./.venv/Scripts/python.exe
+> tests/<file>.py` (pytest not installed). **Servers:** backend **5433** (`uvicorn app.main:app --port 5433`, no `--reload`),
+> frontend **5190** (`npm run dev -- --port 5190`). Restart the frontend after structural changes so the owner can eyeball;
+> **pause for the owner's 390px eyeball + a go-ahead after each slice** (memory `pause-between-phases-for-review`).
+>
+> **The big picture after M2/M3:** vapor = a fully migrated theme (default). Then the **Kit** (token-driven shared chrome +
+> the semantic-token contract + `DefaultRoot` + reuse-and-skin the existing Conf editors + Kit overlays) and **minimal**
+> (the first new theme: `tokens.css` + Fontsource fonts + the OKLCH mode×4-accent matrix + its Fleet view with REAL host
+> data, not the prototype's mock uptime/cpu/temp). Then T2 phosphor (cheap, reuses the Kit) → T3 observatory → T4 cosmos →
+> T5 frontier (bespoke animated Agent tab). Per-theme Fleet (and frontier Agent) get a 390px eyeball pass (owner directive).
+
 
 > ### 🟢 ARCHITECTURE REVISION — Theme engine v2 (D29) — 2026-06-26 — **read this before building**
 > The owner refined the requirement: a theme must be able to **restructure/relocate/hide/add** any element (minimal hides

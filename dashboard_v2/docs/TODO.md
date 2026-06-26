@@ -741,15 +741,26 @@ rule). **vapor stays byte-for-byte unchanged throughout.**
 _Build against THEME_ENGINE.md **§14** (headless controllers + theme-owned `Root` + Kit), NOT the §§9–13 slot model.
 Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit each change before continuing._
 
-- [ ] **M0 — shell inversion, vapor behavior untouched.** `App`→thin host (providers, `--app-h`, `beforeunload`,
-      overlay mounting) renders `<VaporRoot/>` = today's body composing the existing vapor components verbatim
-      (move `--appbar-h` into it). Remove the T0 `useThemeSlots` host. **Acceptance: byte-identical build.**
-- [ ] **M1 — `@scope` CSS-scoping gate (FIRST CSS task).** Wrap `vapor.css` in `@scope([data-skin=vapor])`
-      (`:root`→`:scope`, `body[data-theme=…]`→`:scope[data-theme=…]`, `@keyframes` stay global). `vite build`-verify
-      `@scope` survives + **vapor byte-identical scoped**. Default-eager vapor CSS, lazy others (§14.6).
-- [ ] **M2 — controller extraction, ONE feature per step** (verify after each): `useFleet` (lift `featured`/`open`
-      into a store) → `useComposer` (prefix routing) → `useAgentChat` (tool-loop/confirm/resume/streaming) →
-      `useSections` → `useAppChrome`. Vapor's components consume them; behavior preserved by construction.
+- [x] **M0 — shell inversion ✅.** `App`→thin host rendering the active theme's `Root` (`useActiveRoot`); vapor's body →
+      `themes/vapor/VaporRoot`; `ThemeDef.Root` replaced the 7 slots. **Byte-identical** (CSS hash unchanged). (`cf7e9d4`)
+- [x] **M1 — `@scope` CSS-scoping gate ✅.** `vapor.css`+`extras.css` wrapped verbatim in `@scope([data-skin="vapor"])`;
+      **`data-skin` on `<html>`**; `:root`→`:scope`, `html,body`→`:scope,body` (the scoped-selectors-don't-match-the-root
+      gotcha); `@layer base,theme`. Bundler preserves `@scope`+`@keyframes`; e2e asserts the computed page bg = vapor `--bg`.
+      (`8280ef7`; THEME_ENGINE §14.6 updated)
+- [ ] **M2 — controller extraction, ONE feature per step** (audit + verify + commit after each). Follow the established
+      pattern: store-backed state · a singleton engine in `<AppEngines/>` (NOT App's body — re-render isolation) · a pure
+      consumer hook · 95 unit + 34 e2e green throughout.
+  - [x] **M2.1 `useFleet`** ✅ — `store/fleet.ts` (featured/open/hold) + singleton `useFleetCycle` engine + `useFleet`
+        consumer; `FleetTab` pure presentation. + audit fix: isolated the engines into `<AppEngines/>` so the hosts poll
+        doesn't re-render the whole theme tree. (`a746624`, `9487010`)
+  - [x] **M2.2 `useComposer`** ✅ — draft + prefix-routed `send` + streaming gate + mic; `Composer` pure presentation. (`9ea7e8c`)
+  - [ ] **M2.3 `useAgentChat`** (NEXT — heaviest). The chat loop is ALREADY in `store/chat.ts` → COMPOSE, don't
+        re-implement. Extract: store exposure (messages/status/streamingId + actions) + the `resultByCall`/`currentPlan`
+        derivations + `resolvedDefault`/`ttsOn`. Mount `initChat`/`useAutoTts` once in `<AppEngines/>`. LEAVE the bubble
+        sub-components + the `#app-scroll` scroll-stick logic in vapor's AgentTab (theme-specific presentation).
+  - [ ] **M2.4 `useSections`** — active functional area + navigate (generalizes `ui.tab`); the vapor-specific `.no-composer`
+        body class becomes theme-owned.
+  - [ ] **M2.5 `useAppChrome`** — auto-TTS toggle / voice status / mini-player.
 - [ ] **M3 — register vapor as a `ThemeDef`** (`Root=VaporRoot`, eager scoped CSS, named-accent palettes) + the
       **per-theme settings** mechanism (`ThemeDef.settings` → `ui.themeSettings[id]` open map, synced via the
       appearance channel; `useThemeSetting`; Appearance picker auto-renders). Vapor = default selection.
