@@ -67,6 +67,41 @@ textarea:focus-visible {
   outline: none;
 }
 
+/* Kill the mobile tap-highlight flash. Chrome/Android paints a translucent blue box over any tapped
+   element (tabs, device rows, buttons) — it reads like a desktop mouse-selection and looks wrong on a
+   touch-first PWA; Firefox doesn't paint it (hence Chrome-only). Purely cosmetic and NOT an a11y control:
+   the keyboard focus ring is the `:focus-visible` magenta above, which is untouched — so removing this
+   loses nothing for keyboard/AT users. Apps set this globally; `*` covers every interactive surface. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Interactive controls must not be text-selectable. vapor's buttons use `all: unset`, which resets
+   `user-select` to `auto` (buttons are normally non-selectable by UA default) — so a long-press, or a
+   slightly-off tap, starts a text selection and pops Android's selection toolbar over the mic/send/tabs,
+   making them hard to use. `user-select: none` stops the selection (covers Firefox/Fennec too) and
+   `-webkit-touch-callout: none` suppresses the long-press callout on Blink/WebKit. Scoped to buttons so
+   real text content (chat replies, KV detail) stays selectable. */
+button,
+[role="button"] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* The composer's non-input chrome — the `.field` padding and the gap between the textarea and the mic —
+   is a plain <div>, so a long-press *beside* the mic starts a text selection in Firefox/Fennec (Blink
+   doesn't). Make the whole composer non-selectable and re-enable ONLY the textarea: you can still
+   select/copy what you typed, but a stray press next to the mic no longer pops the selection toolbar. */
+.composer {
+  -webkit-user-select: none;
+  user-select: none;
+}
+.composer textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* ── F15 / Appearance · Motion — user-controlled ambient-animation gate.
    Toggled from Conf → Appearance → Motion (Switch in src/tabs/ConfTab.tsx; persists in
    the UI store as `motion: "full" | "reduced"`, mirrored to `body[data-motion]` by
@@ -97,6 +132,36 @@ body[data-motion="reduced"] .conn-badge.reconnecting .dot {
   animation: none !important;
 }
 
+/* ── Performance (lite) mode — Conf → Appearance → Blur (mirrored to body[data-perf], like data-motion).
+   `backdrop-filter: blur()` is by far the heaviest effect on Firefox-Android: the sticky appbar (and the
+   fixed tab bar + composer) re-blur the page scrolling underneath them EVERY frame, and Mozilla's own
+   tracker calls CSS blur ~10× slower than Chrome. Lite mode drops the blur on these three always-present,
+   scroll-overlapping bars and makes them opaque (they leaned on the blur to stay legible over moving
+   content). Full mode is untouched — pixel-exact vapor (D7). Other frosted surfaces (modals, plan panel,
+   mini-player) are transient / not over a live scroll, so they keep the look. Overrides via cascade. */
+body[data-perf="lite"] .appbar,
+body[data-perf="lite"] .tabbar,
+body[data-perf="lite"] .composer {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--bg);
+}
+
+/* ── Firefox smoothness, full effects ON — containment/layer hints (NO visual change). The goal is to
+   stop a continuously-animated element from forcing work on its neighbours:
+   - The equalizer animates `height` → a layout+paint EVERY frame; `contain: layout` keeps that reflow
+     inside the .eq box instead of bubbling out to the device row / fleet list (which Firefox re-lays-out).
+   - The heartbeat LED animates `transform` but wasn't layer-promoted, so Firefox repaints its glow each
+     scale-frame; `will-change: transform` gives it its own compositor layer (what Chrome already does).
+   These don't fix the paint-bound animations (grid/shimmer/eq) — that needs the transform conversion
+   proposed in the handoff — but they're free and safe. */
+.eq {
+  contain: layout;
+}
+.dev.on .led {
+  will-change: transform;
+}
+
 /* ── Phase 6b-1 — mic "unavailable" state. A recording attempt 502'd (the STT primary + fallback
    both failed), so the mic greys out + goes inert with a tooltip (reactive detection, owner-locked
    2026-06-22 — no proactive liveness probe). Overrides the vapor `.mic` background/glow via cascade
@@ -107,6 +172,19 @@ body[data-motion="reduced"] .conn-badge.reconnecting .dot {
   filter: none;
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Mic press feedback (fix 2026-06-26). vapor uses `:active { transform: scale(.88) }`, but
+   Firefox-Android (Fennec) leaves `:active` WEDGED after a tap — so once recording stopped the
+   button stayed shrunk (during recording the `.rec` pulse masks it; it only shows after). Drive the
+   press from a JS-toggled `.press` class instead (Composer: pointerdown → up/cancel/leave, plus a
+   safety auto-release) and neutralize the sticky `:active`, so the button reliably snaps back to full
+   size when idle. Overrides vapor.css via cascade (extras.css loads after); vapor.css verbatim (D7). */
+.composer .mic:active {
+  transform: none;
+}
+.composer .mic.press {
+  transform: scale(0.88);
 }
 
 /* ── Phase 6b-2 — TTS read-aloud. A per-bubble trigger (speaker in the assistant who-line) + a docked
@@ -979,9 +1057,15 @@ body {
 }
 .plan-step .tick {
   flex-shrink: 0;
-  width: 13px;
-  height: 13px;
-  margin-top: 2px;
+  /* Reset the generic `.tick` chip rule (it does `all: unset` → display:inline + box-sizing:content-box,
+     plus padding:4px 9px) so it can't leak in and stretch the dot into a wide pill. A plan dot is its
+     own thing that just happens to share the class name — pin it to a small, perfectly round block. */
+  box-sizing: border-box;
+  display: block;
+  padding: 0;
+  width: 11px;
+  height: 11px;
+  margin-top: 3px;
   border-radius: 50%;
   border: 1.5px solid var(--ink-faint);
   position: relative;

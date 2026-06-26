@@ -96,14 +96,17 @@ describe("useDictation", () => {
     expect(pushToast).toHaveBeenCalledWith("Voice servers unreachable", "err");
   });
 
-  it("insecure context (no getUserMedia) toasts and stays idle — NOT unavailable", async () => {
+  it("insecure context (no getUserMedia) reports `insecure` and re-explains the fix on tap", async () => {
     setMediaDevices(false);
     const { result } = renderHook(() => useDictation(opts(false)));
+    // Distinct status (greyed-but-tappable), NOT "idle" (looks dead) nor "unavailable" (a server 502).
+    expect(result.current.status).toBe("insecure");
     act(() => result.current.toggle());
     await waitFor(() =>
-      expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("secure"), "err"),
+      expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("secure"), "info"),
     );
-    expect(result.current.status).toBe("idle");
+    // A tap never starts a recording or wedges the control — it stays in the insecure state.
+    expect(result.current.status).toBe("insecure");
   });
 
   it("auto-send is held back when a turn is already streaming (left in the draft, not dropped)", async () => {

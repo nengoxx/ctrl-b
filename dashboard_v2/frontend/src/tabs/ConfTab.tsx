@@ -205,6 +205,7 @@ export function ConfTab({ active }: Props) {
   const heroOn = useUISlice((s) => s.heroOn);
   const waveformOn = useUISlice((s) => s.waveformOn);
   const motion = useUISlice((s) => s.motion);
+  const perf = useUISlice((s) => s.perf);
   const saveAppearance = useSaveAppearance(); // optimistic cross-device write (§9.11)
 
   // Appearance picker is driven by the theme registry (D28 §9.8): the skin list + the active theme's
@@ -1020,6 +1021,16 @@ export function ConfTab({ active }: Props) {
             <Switch
               on={motion === "full"}
               onToggle={() => setUI({ motion: motion === "full" ? "reduced" : "full" })}
+            />
+          </div>
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Blur</div>
+              <div className="desc">frosted glass bars · off is faster (esp. Firefox)</div>
+            </div>
+            <Switch
+              on={perf === "full"}
+              onToggle={() => setUI({ perf: perf === "full" ? "lite" : "full" })}
             />
           </div>
           <div className="confrow">

@@ -77,6 +77,7 @@ describe("ui store", () => {
       heroOn: true,
       waveformOn: true,
       motion: "full",
+      perf: "full",
     };
 
     it("remaps a legacy accent-as-theme to {vapor, accent}", () => {

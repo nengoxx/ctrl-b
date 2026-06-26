@@ -28,38 +28,46 @@ export function Waveform({ online, ping }: Props) {
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
+    // Cap the ambient ripple at ~30fps — it reads as perfectly smooth there and halves the per-frame
+    // work vs vsync (~60fps). `t` advances proportionally more per drawn frame so the wave keeps the
+    // same on-screen speed as the old 60fps loop (Firefox-Android especially feels the saved frames).
+    const FRAME_MS = 1000 / 30;
     let raf = 0;
+    let running = false;
+    let last = 0; // last drawn-frame timestamp (FPS throttle)
+    let frame = 0; // drawn-frame counter (colors refresh cadence)
     let t = 0;
+    let w = 0; // cached CSS size (set in sizeCanvas) — avoids a per-frame getBoundingClientRect reflow
+    let h = 0;
+    let colors = { a: "255, 82, 212", b: "165, 92, 255" }; // cached themed RGB (refreshed ~1×/s, below)
 
-    function sizeCanvas() {
-      const r = canvas!.getBoundingClientRect();
-      canvas!.width = r.width * dpr;
-      canvas!.height = r.height * dpr;
-      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0); // reset+scale (avoids compounding on resize)
-    }
-
-    function wfColors() {
+    function readColors() {
       const s = getComputedStyle(document.body);
-      return {
+      colors = {
         a: (s.getPropertyValue("--accent-rgb") || "255, 82, 212").trim(),
         b: (s.getPropertyValue("--accent-rgb-2") || "165, 92, 255").trim(),
       };
     }
 
-    function draw() {
+    function sizeCanvas() {
       const r = canvas!.getBoundingClientRect();
-      const w = r.width;
-      const h = r.height;
+      w = r.width;
+      h = r.height;
+      canvas!.width = w * dpr;
+      canvas!.height = h * dpr;
+      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0); // reset+scale (avoids compounding on resize)
+    }
+
+    function paint() {
       ctx!.clearRect(0, 0, w, h);
       const { online, ping } = stateRef.current;
-      const c = wfColors();
+      const c = colors;
 
       if (!online) {
         ctx!.fillStyle = "rgba(200,155,224,0.4)";
         ctx!.font = "10px JetBrains Mono";
         ctx!.fillText("// no echo · host asleep", 12, h / 2 + 4);
-        t += 0.05;
-        raf = requestAnimationFrame(draw);
+        t += 0.1;
         return;
       }
 
@@ -99,21 +107,49 @@ export function Waveform({ online, ping }: Props) {
       ctx!.lineTo(w, h / 2);
       ctx!.stroke();
 
-      t += 0.06;
-      raf = requestAnimationFrame(draw);
+      t += 0.12;
     }
 
-    sizeCanvas();
-    draw();
-    // Re-size the backing store whenever the canvas's box changes — crucially including 0→N when the
-    // ALWAYS-MOUNTED Fleet tab becomes visible. `window.resize` alone missed this: if the canvas first
-    // mounted while Fleet was `display:none` (the user's last tab wasn't Fleet), `sizeCanvas` set a
-    // 0-pixel buffer and never re-ran on the later tab switch, so the live-ping waveform stayed blank
-    // until a reload/window-resize. A ResizeObserver catches the show + any layout change.
+    function draw(now: number) {
+      if (!running) return; // a pause (stop) canceled us — don't reschedule
+      raf = requestAnimationFrame(draw);
+      if (now - last < FRAME_MS) return; // skip this vsync frame — throttle to ~30fps
+      last = now;
+      if (frame++ % 30 === 0) readColors(); // refresh themed colors ~1×/s, not every frame (style flush)
+      paint();
+    }
+
+    function start() {
+      if (running) return;
+      running = true;
+      sizeCanvas();
+      readColors();
+      last = 0;
+      raf = requestAnimationFrame(draw);
+    }
+    function stop() {
+      running = false;
+      cancelAnimationFrame(raf);
+    }
+
+    // Only run the loop while the canvas is actually on screen. The Fleet tab is ALWAYS mounted (just
+    // `display:none` on other tabs), and the hero scrolls away — without this the loop would burn the
+    // main thread ~30×/s even when you can't see it. IntersectionObserver reports a display:none /
+    // scrolled-off canvas as not-intersecting, so it cleanly pauses + resumes.
+    const io = new IntersectionObserver((entries) => {
+      if (entries[entries.length - 1].isIntersecting) start();
+      else stop();
+    });
+    io.observe(canvas);
+
+    // Re-size the backing store whenever the canvas's box changes — including 0→N when the Fleet tab
+    // becomes visible (the original blank-waveform fix). Sizes unconditionally (cheap, and keeps the
+    // canvas correct even while the loop is paused) and refreshes the cached w/h the loop reads.
     const ro = new ResizeObserver(() => sizeCanvas());
     ro.observe(canvas);
     return () => {
-      cancelAnimationFrame(raf);
+      stop();
+      io.disconnect();
       ro.disconnect();
     };
   }, []);

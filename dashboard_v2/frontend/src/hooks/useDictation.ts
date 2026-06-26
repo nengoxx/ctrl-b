@@ -14,7 +14,7 @@ import { pushToast } from "../store/toast";
 // transcript to the composer draft for review-then-send. The recorder's container mimeType and the
 // upload filename extension MUST agree — Whisper servers route by extension (the 6a↔6b contract).
 //
-// Four button states (owner-locked 2026-06-22), surfaced via `status`:
+// Five button states (owner-locked 2026-06-22; `insecure` added 2026-06-26), surfaced via `status`:
 //   idle        — armed, not recording (the default look)
 //   recording   — actively capturing (drives the vapor `.rec` red-pulse)
 //   sending     — clip uploaded, awaiting the transcript (briefly inert, idle look)
@@ -22,9 +22,32 @@ import { pushToast } from "../store/toast";
 //                 call: no proactive liveness probe — looks normal until an attempt fails, then greys
 //                 + goes inert. Re-arms on the next fresh /voice/status probe (Conf save / refocus),
 //                 an infra-free recovery path.
+//   insecure    — the browser blocks getUserMedia because this isn't a secure context (plain HTTP over
+//                 the tailnet, no Tailscale Serve / no browser-flag whitelist). Detected up front from
+//                 `navigator.mediaDevices` availability (which IS flag-aware: enabling Chrome's
+//                 `unsafely-treat-insecure-origin-as-secure` for this origin makes it a secure context,
+//                 so the mic then works on plain HTTP). Greyed like `unavailable` BUT still tappable, so
+//                 a tap re-explains the fix via a toast instead of looking dead/stuck (owner ask).
+
+const INSECURE_MSG =
+  "Mic needs a secure connection — use HTTPS via Tailscale Serve, or allow this origin in your browser flags.";
+
+// Shown when the mic DOES work but the page is plain HTTP (typically a browser-flag-whitelisted origin):
+// it records fine — never greyed — but nudge that real HTTPS is the proper setup. Once per page load.
+const HTTP_REMINDER =
+  "Mic is recording over plain HTTP — HTTPS via Tailscale Serve is the recommended setup.";
+
+// Whether the PAGE is served over HTTPS — deliberately distinct from `micCapable`: a browser flag can
+// make a plain-HTTP origin a secure context, so the mic works (mediaDevices present) while this stays
+// false. So greying keys off capability, the nudge keys off this.
+const httpsOn = typeof window !== "undefined" && window.location?.protocol === "https:";
+
+// Module-level → the plain-HTTP nudge fires once per page load, not once per composer mount (the composer
+// remounts when you visit Conf/Utils), so it doesn't pop on every mic use.
+let httpReminderShown = false;
 
 type Phase = "idle" | "recording" | "sending";
-export type MicStatus = Phase | "unavailable";
+export type MicStatus = Phase | "unavailable" | "insecure";
 
 // Container candidates in preference order — the first the browser can record wins. webm/opus is the
 // Android/Chrome default; mp4 covers Safari/iOS; ogg is a fallback. The recording mimeType picked here
@@ -80,6 +103,15 @@ export function useDictation({
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const armingRef = useRef(false); // true between a start() tap and the recorder actually arming
+
+  // Whether the browser will even hand us a mic. `navigator.mediaDevices` is undefined in an insecure
+  // context (plain HTTP) AND present once the origin is treated as secure (real HTTPS, localhost, or a
+  // browser flag), so this single check is the flag-aware gate — no `location.protocol` sniffing, which
+  // would wrongly block a user who whitelisted the origin. Stable per page load (read at render).
+  const micCapable =
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices?.getUserMedia &&
+    typeof MediaRecorder !== "undefined";
 
   // Re-arm after a fresh capability probe (Conf voice save / window refocus). /voice/status only
   // reports *configured*, not *reachable*, so this is an optimistic re-arm: worst case the next
@@ -144,12 +176,7 @@ export function useDictation({
     // Re-entrancy guard: a second tap during the getUserMedia await would open a *second* stream and
     // orphan the first (its tracks never stopped → the mic stays live). `arming` blocks that window.
     if (armingRef.current || recRef.current?.state === "recording") return;
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      // Insecure origin (plain HTTP over the tailnet) disables getUserMedia — that's what 6c (HTTPS
-      // via Tailscale Serve) fixes. Not a server outage, so don't mark the chain unavailable.
-      pushToast("Microphone needs a secure (HTTPS) connection", "err");
-      return;
-    }
+    if (!micCapable) return; // insecure context — `toggle` already surfaced the toast; defensive only
     armingRef.current = true;
     try {
       let stream: MediaStream;
@@ -188,23 +215,36 @@ export function useDictation({
     } finally {
       armingRef.current = false;
     }
-  }, [upload]);
+  }, [upload, micCapable]);
 
   const stop = useCallback(() => {
     const rec = recRef.current;
     if (rec && rec.state !== "inactive") rec.stop(); // fires onstop → upload
   }, []);
 
-  /** Tap handler: idle → start recording; recording → stop + transcribe. Inert while unavailable/sending. */
+  /** Tap handler. No mediaDevices → can't capture: re-explain the fix on every tap (greyed but tappable,
+   *  so it's never a dead/stuck control). Capable but plain HTTP (flag-whitelisted) → it WORKS (never
+   *  greyed); just nudge once per session that HTTPS is the proper setup. Then idle → start, recording →
+   *  stop + transcribe. Inert while unavailable/sending. */
   const toggle = useCallback(() => {
+    if (!micCapable) {
+      pushToast(INSECURE_MSG, "info");
+      return;
+    }
+    if (!httpsOn && !httpReminderShown) {
+      httpReminderShown = true;
+      pushToast(HTTP_REMINDER, "info");
+    }
     if (unavailable) return;
     if (phase === "recording") stop();
     else if (phase === "idle") void start();
-  }, [phase, unavailable, start, stop]);
+  }, [micCapable, phase, unavailable, start, stop]);
 
   // Stop any in-flight recording if the composer unmounts mid-capture (tab switch to Conf/Utils).
   useEffect(() => () => stop(), [stop]);
 
-  const status: MicStatus = unavailable ? "unavailable" : phase;
+  // `insecure` wins over `unavailable`: with no secure context a recording attempt can't even start,
+  // so the 502-driven `unavailable` flag never gets set — surface the actionable reason instead.
+  const status: MicStatus = !micCapable ? "insecure" : unavailable ? "unavailable" : phase;
   return { status, toggle };
 }

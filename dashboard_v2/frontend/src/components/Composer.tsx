@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { useComposer } from "../hooks/useComposer";
 
@@ -23,6 +23,7 @@ const MIC_LABEL: Record<string, string> = {
   recording: "stop dictation",
   sending: "transcribing…",
   unavailable: "voice servers unreachable",
+  insecure: "microphone needs a secure (HTTPS) connection",
 };
 
 export function Composer() {
@@ -30,6 +31,22 @@ export function Composer() {
   // All behaviour comes from the headless controller (draft, prefix-routed send, streaming gate, mic).
   // This component owns only vapor's composer DOM + presentation concerns (auto-grow, Enter-to-send).
   const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
+
+  // Mic press feedback as a JS-toggled class (not CSS `:active`, which Fennec leaves wedged after a
+  // tap → the button stayed shrunk). pointerdown shrinks; up/cancel/leave restore; a short safety
+  // timeout guarantees restore even if a release event is dropped, so it never wedges small.
+  const [micPressed, setMicPressed] = useState(false);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pressMic = () => {
+    setMicPressed(true);
+    clearTimeout(pressTimer.current);
+    pressTimer.current = setTimeout(() => setMicPressed(false), 200);
+  };
+  const releaseMic = () => {
+    clearTimeout(pressTimer.current);
+    setMicPressed(false);
+  };
+  useEffect(() => () => clearTimeout(pressTimer.current), []);
 
   // Auto-grow the textarea to fit content (max 96px). Runs whenever the draft changes,
   // including the initial render — so a saved draft loaded from localStorage gets the right
@@ -68,12 +85,19 @@ export function Composer() {
             className={
               "mic" +
               (mic.status === "recording" ? " rec" : "") +
-              (mic.status === "unavailable" ? " unavail" : "")
+              (micPressed ? " press" : "") +
+              // Grey for both blocked states; `insecure` stays tappable (not disabled) so a tap can
+              // re-explain the HTTPS fix instead of reading as a dead/stuck control.
+              (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
             }
             aria-label={MIC_LABEL[mic.status]}
             title={MIC_LABEL[mic.status]}
             aria-pressed={mic.status === "recording"}
             disabled={mic.status === "unavailable" || mic.status === "sending"}
+            onPointerDown={pressMic}
+            onPointerUp={releaseMic}
+            onPointerCancel={releaseMic}
+            onPointerLeave={releaseMic}
             onClick={mic.toggle}
           />
         )}

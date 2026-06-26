@@ -19,6 +19,7 @@ export type Tab = "fleet" | "agent" | "utils" | "conf";
 export type Skyline = "city" | "mountains";
 export type Loz = "logo" | "ring";
 export type Motion = "full" | "reduced";
+export type Perf = "full" | "lite";
 
 export interface UIState {
   theme: ThemeId; // the active SKIN ("vapor" in v1) — drives slot resolution + body[data-skin]
@@ -31,6 +32,10 @@ export interface UIState {
   heroOn: boolean; // animated sun/grid/skyline scene
   waveformOn: boolean; // live ping waveform on the hero
   motion: Motion; // ambient animations (LED pulse, equalizer, sun bob, grid scroll, …)
+  // backdrop-blur on the frosted bars: "full" (the glass look) vs "lite" (blur off → opaque bars).
+  // DEVICE-LOCAL (not cross-device synced like theme/mode/accent) — it's a per-device speed lever, since
+  // `backdrop-filter: blur()` is the heaviest effect on Firefox-Android (~10× slower than Chrome).
+  perf: Perf;
 }
 
 // First-load default for `motion`: honor the OS `prefers-reduced-motion` preference once.
@@ -55,6 +60,7 @@ const DEFAULTS: UIState = {
   heroOn: true,
   waveformOn: true,
   motion: defaultMotion(),
+  perf: "full", // default to the full glass look; the owner opts into "lite" on a slow device
 };
 
 const KEY = "ctrlb.ui";
@@ -104,6 +110,7 @@ function applyBodyAttrs(s: UIState): void {
   b.dataset.skyline = s.skyline;
   b.dataset.loz = s.loz;
   b.dataset.motion = s.motion;
+  b.dataset.perf = s.perf;
   const showComposer = hasComposer(s.theme, s.tab);
   b.classList.toggle("no-composer", !showComposer);
 }
