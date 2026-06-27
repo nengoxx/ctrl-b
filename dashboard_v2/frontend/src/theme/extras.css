@@ -855,6 +855,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: 6px;
+  padding-right: 12px; /* inset the right-edge chevron to match the preamble's 12px left inset */
 }
 .b.cmd .cmd-detail > summary::-webkit-details-marker {
   display: none;

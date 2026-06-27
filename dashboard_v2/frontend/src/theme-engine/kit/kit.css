@@ -2062,13 +2062,16 @@ body[data-motion="reduced"] .kit .b.bot .who .status-tag {
 .kit .b.cmd .think {
   margin: 8px 12px;
 }
-/* collapsed-by-default detail: the summary carries the tool name + a chevron; the $-pre reveals on tap */
+/* collapsed-by-default detail: the summary carries the tool name + a chevron; the $-pre reveals on tap.
+ * `padding-right` insets the right-edge chevron to match the preamble's 12px left inset (the summary is a
+ * direct child of the padding-0 `.body`, so without it the chevron sits flush against the bubble border). */
 .kit .b.cmd .cmd-detail > summary {
   cursor: pointer;
   list-style: none;
   display: flex;
   align-items: baseline;
   gap: 6px;
+  padding-right: 12px;
 }
 .kit .b.cmd .cmd-detail > summary::-webkit-details-marker {
   display: none;
