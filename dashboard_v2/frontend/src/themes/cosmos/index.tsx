@@ -9,6 +9,7 @@
 import { preloadableRoot } from "../../theme-engine/lazyRoot";
 import type { ThemeDef } from "../../theme-engine/types";
 import { loadFonts } from "./fonts";
+import { present } from "./present";
 
 // Code-split the Root so the cosmos presentation — its bespoke starfield canvas + orbital Fleet (C1/C2) —
 // never enters a vapor/minimal user's initial bundle; `loadRoot` (= preload) warms the chunk in switchTheme
@@ -63,5 +64,7 @@ export const cosmos: ThemeDef = {
       default: "normal",
     },
   },
-  // `present` (per-host orbital encoding, §9.9) + the bespoke FleetView land in C2.
+  // Per-host orbital encoding (§9.9) — golden-angle position + hashed planet color + symbol. CosmosFleet
+  // (the bespoke FleetView, passed via CosmosRoot → DefaultRoot's Fleet slot) consumes it.
+  present,
 };

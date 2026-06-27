@@ -37,5 +37,85 @@
       position: relative;
       z-index: 1;
     }
+
+    /* ── Orbital fleet (C2a — static layout) ─────────────────────────────────────────────────────────
+     * The solar system lives in a centered stage; planets are DOM <button>s placed by present() (polar →
+     * x/y inline transform). `.cosmos-solar` is the orbit origin (stage center) — C2b rotates IT. */
+    .cosmos-stage {
+      position: relative;
+      min-height: 64vh;
+      overflow: visible;
+    }
+    .cosmos-core {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 84px;
+      height: 84px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      /* a pale "moon" core (the prototype's central body), lit from the accent */
+      background: radial-gradient(circle at 50% 36%, #ffffff, #d6d5de 55%, #9a98a6 100%);
+      box-shadow:
+        0 0 40px 8px color-mix(in srgb, var(--accent) 28%, transparent),
+        inset 0 -7px 13px rgba(0, 0, 0, 0.28);
+    }
+    .cosmos-solar {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 0;
+      height: 0;
+    }
+    .cosmos-planet {
+      all: unset;
+      position: absolute;
+      left: 0;
+      top: 0;
+      box-sizing: border-box;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      will-change: transform; /* compositor hint — only the orbiting planets get a layer (perf research) */
+      /* matte coin, top-lit (ported from the prototype), colored by --planet (present() hashes per host) */
+      background: radial-gradient(
+        circle at 50% 34%,
+        color-mix(in srgb, var(--planet) 88%, #fff) 0%,
+        var(--planet) 52%,
+        color-mix(in srgb, var(--planet) 82%, #000) 100%
+      );
+      box-shadow: 0 3px 7px rgba(0, 0, 0, 0.45);
+      transition: filter 0.3s, box-shadow 0.3s;
+    }
+    .cosmos-planet .sym {
+      font-family: var(--font-body);
+      font-weight: 700;
+      font-size: 1em; /* = the button font-size, set inline to scale with planet diameter */
+      color: rgba(255, 255, 255, 0.92);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+      user-select: none;
+    }
+    /* offline → desaturated + dimmed + (C2b) frozen — the "asleep" star */
+    .cosmos-planet.off {
+      filter: grayscale(0.7) brightness(0.5);
+    }
+    /* selected/featured planet → a bright rim */
+    .cosmos-planet.sel {
+      box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--bg) 40%, transparent),
+        0 0 0 3px rgba(255, 255, 255, 0.7),
+        0 3px 8px rgba(0, 0, 0, 0.5);
+    }
+    .cosmos-planet:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: 3px;
+    }
+    .cosmos-msg {
+      position: absolute;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+    }
   }
 }
