@@ -67,6 +67,15 @@ export function useChat(): ChatState {
   return useStore(() => state);
 }
 
+/** Subscribe to ONE slice of chat state (mirror of `useUISlice`). The store `emit()`s on every streamed
+ *  token, so a consumer that needs only `status`/`sessionPrivilege` must NOT use `useChat()` (the whole
+ *  object changes each token → re-render). A sliced primitive is stable across tokens, so the consumer
+ *  re-renders only when ITS value changes. (`useAgentChat` legitimately needs `messages`, which change per
+ *  token regardless — it keeps `useChat`.) Selector must return a primitive/stable ref (createStore contract). */
+export function useChatSlice<T>(selector: (s: ChatState) => T): T {
+  return useStore(() => selector(state));
+}
+
 /** Read the current chat status imperatively (non-reactive) — for callers outside render, e.g. the
  *  mic auto-send guarding against firing into an in-flight turn (which would be silently dropped). */
 export function getChatStatus(): ChatStatus {

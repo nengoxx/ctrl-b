@@ -13,7 +13,7 @@ import {
   resumeCall,
   retryLastTurn,
   setSessionPrivilege,
-  useChat,
+  useChatSlice,
 } from "../store/chat";
 import type {
   ChatMessage,
@@ -478,7 +478,7 @@ const Bubbles = memo(function Bubbles({
  *  (or "default" = follow the agent's own privilege) and opens a small menu to change it. The
  *  `/privilege` composer verb sets the same sticky state; this is the tap-friendly setter for mobile. */
 function PrivilegeChip() {
-  const { sessionPrivilege } = useChat();
+  const sessionPrivilege = useChatSlice((s) => s.sessionPrivilege); // slice — don't re-render per token
   const [open, setOpen] = useState(false);
   const label = sessionPrivilege ? privilegeLabel(sessionPrivilege) : "Default";
   const pick = (p: Privilege | null) => {

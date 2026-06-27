@@ -6,7 +6,7 @@
 import { useDictation } from "./useDictation";
 import { useVoiceStatus } from "./useVoiceStatus";
 import { runComposer } from "../lib/composer";
-import { useChat } from "../store/chat";
+import { useChatSlice } from "../store/chat";
 import { clearDraft, getDraft, setDraft, useDraft } from "../store/composer";
 
 export interface ComposerController {
@@ -24,7 +24,8 @@ export interface ComposerController {
 
 export function useComposer(): ComposerController {
   const draft = useDraft();
-  const { status } = useChat();
+  // Slice only `status` — `useChat()` would re-render the composer/mic/voice subtree on every streamed token.
+  const status = useChatSlice((s) => s.status);
   const voice = useVoiceStatus();
   const sttReady = voice.data?.stt ?? false;
   const mic = useDictation({
