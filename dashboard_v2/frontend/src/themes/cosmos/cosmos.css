@@ -54,11 +54,30 @@
       height: 84px;
       border-radius: 50%;
       transform: translate(-50%, -50%);
-      /* a pale "moon" core (the prototype's central body), lit from the accent */
+      /* a pale "moon" core (the prototype's central body), with 2.5D depth */
       background: radial-gradient(circle at 50% 36%, #ffffff, #d6d5de 55%, #9a98a6 100%);
       box-shadow:
-        0 0 40px 8px color-mix(in srgb, var(--accent) 28%, transparent),
-        inset 0 -7px 13px rgba(0, 0, 0, 0.28);
+        0 6px 16px rgba(0, 0, 0, 0.5),
+        inset 0 2px 4px rgba(255, 255, 255, 0.3),
+        inset 0 -7px 13px rgba(0, 0, 0, 0.3);
+    }
+    /* soft accent corona behind the moon — a cheap radial-gradient disc (NOT a blur filter, per §14.11) */
+    .cosmos-core::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 300px;
+      height: 300px;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background: radial-gradient(
+        circle,
+        color-mix(in srgb, var(--accent) 22%, transparent) 0%,
+        transparent 62%
+      );
+      pointer-events: none;
+      z-index: -1;
     }
     .cosmos-solar {
       position: absolute;
@@ -66,6 +85,16 @@
       top: 50%;
       width: 0;
       height: 0;
+    }
+    /* faint orbit rings — one per host radius (decorative, behind the planets; the "orbital" read) */
+    .cosmos-orbit {
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      pointer-events: none;
     }
     .cosmos-planet {
       all: unset;
@@ -76,36 +105,63 @@
       border-radius: 50%;
       display: grid;
       place-items: center;
+      overflow: hidden; /* clip the grain texture to the disc */
       cursor: pointer;
       will-change: transform; /* compositor hint — only the orbiting planets get a layer (perf research) */
       /* matte coin, top-lit (ported from the prototype), colored by --planet (present() hashes per host) */
       background: radial-gradient(
-        circle at 50% 34%,
-        color-mix(in srgb, var(--planet) 88%, #fff) 0%,
+        circle at 50% 36%,
+        color-mix(in srgb, var(--planet) 90%, #fff) 0%,
         var(--planet) 52%,
-        color-mix(in srgb, var(--planet) 82%, #000) 100%
+        color-mix(in srgb, var(--planet) 84%, #000) 100%
       );
-      box-shadow: 0 3px 7px rgba(0, 0, 0, 0.45);
+      box-shadow:
+        0 3px 6px rgba(0, 0, 0, 0.45),
+        inset 0 2px 3px rgba(255, 255, 255, 0.22),
+        inset 0 -3px 6px rgba(0, 0, 0, 0.28);
       transition: filter 0.3s, box-shadow 0.3s;
     }
+    /* fine matte grain (ported from the prototype) — gives the coins their printed/matte surface */
+    .cosmos-planet::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      pointer-events: none;
+      background-image:
+        radial-gradient(rgba(255, 255, 255, 0.5) 0.5px, transparent 0.6px),
+        radial-gradient(rgba(0, 0, 0, 0.5) 0.5px, transparent 0.6px);
+      background-size: 4px 4px, 5px 5px;
+      background-position: 0 0, 2px 1px;
+      opacity: 0.1;
+      mix-blend-mode: overlay;
+    }
     .cosmos-planet .sym {
+      position: relative;
+      z-index: 1; /* above the grain ::before */
       font-family: var(--font-body);
-      font-weight: 700;
+      font-weight: 800;
+      line-height: 1;
       font-size: 1em; /* = the button font-size, set inline to scale with planet diameter */
-      color: rgba(255, 255, 255, 0.92);
-      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+      /* engraved/embossed glyph — a dark shade of the planet color with a light top edge (prototype) */
+      color: color-mix(in srgb, var(--planet) 58%, #000);
+      text-shadow:
+        0 1px 0 color-mix(in srgb, var(--planet) 52%, #fff),
+        0 -0.5px 1px rgba(0, 0, 0, 0.4);
       user-select: none;
     }
     /* offline → desaturated + dimmed + (C2b) frozen — the "asleep" star */
     .cosmos-planet.off {
       filter: grayscale(0.7) brightness(0.5);
     }
-    /* selected/featured planet → a bright rim */
+    /* selected/featured planet → a bright rim (keeps the coin's inset depth) */
     .cosmos-planet.sel {
       box-shadow:
         0 0 0 2px color-mix(in srgb, var(--bg) 40%, transparent),
         0 0 0 3px rgba(255, 255, 255, 0.7),
-        0 3px 8px rgba(0, 0, 0, 0.5);
+        0 3px 8px rgba(0, 0, 0, 0.5),
+        inset 0 2px 3px rgba(255, 255, 255, 0.22),
+        inset 0 -3px 6px rgba(0, 0, 0, 0.28);
     }
     .cosmos-planet:focus-visible {
       outline: 2px solid #fff;
