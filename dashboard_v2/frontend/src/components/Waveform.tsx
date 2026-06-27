@@ -23,9 +23,13 @@ export function Waveform({ online, ping }: Props) {
   const stateRef = useRef<Props>({ online, ping });
   stateRef.current = { online, ping };
   // §14.11 — the ambient ripple is an animation, so gate it on the app's motion flag (not the OS query;
-  // CLAUDE.md). Under reduced-motion we paint ONE static frame (so the panel isn't blank) and never
-  // schedule the rAF. `motion` is an effect dep → toggling it in Conf tears down + re-sets the loop.
+  // CLAUDE.md). Under reduced-motion we draw a STATIC frame (repainted on data change, see below) and
+  // never schedule the rAF. `motion` is an effect dep → toggling it in Conf tears down + re-sets the loop.
   const motion = useUISlice((s) => s.motion);
+  // Reduced-motion repaint hook: with no loop running, a featured-host swap (the 6s carousel) would
+  // otherwise leave a stale frame. The main effect publishes a one-shot repaint here; the prop-change
+  // effect below calls it so the static frame stays correct (online↔offline, ping) without animating.
+  const repaintRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -137,6 +141,14 @@ export function Waveform({ online, ping }: Props) {
       last = 0;
       raf = requestAnimationFrame(draw);
     }
+
+    // Published for the reduced-motion prop-change effect: redraw a single frame from current state,
+    // but only while the canvas is on-screen (the loop, when it runs in full-motion mode, owns redraws).
+    repaintRef.current = () => {
+      if (!running) return;
+      readColors();
+      paint();
+    };
     function stop() {
       running = false;
       cancelAnimationFrame(raf);
@@ -161,8 +173,15 @@ export function Waveform({ online, ping }: Props) {
       stop();
       io.disconnect();
       ro.disconnect();
+      repaintRef.current = null;
     };
   }, [motion]);
+
+  // Reduced-motion only: repaint the static frame when the featured host's data changes (the rAF that
+  // would reflect it isn't running). Full-motion mode no-ops here — its loop already redraws each frame.
+  useEffect(() => {
+    if (motion === "reduced") repaintRef.current?.();
+  }, [online, ping, motion]);
 
   return (
     <div className="waveform">

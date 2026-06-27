@@ -5,21 +5,23 @@
 //
 // CSS + fonts are LAZY (loaded by switchTheme before the skin flips); vapor stays the eager default.
 
-import { lazy } from "react";
-
+import { preloadableRoot } from "../../theme-engine/lazyRoot";
 import type { ThemeDef } from "../../theme-engine/types";
 import { loadFonts } from "./fonts";
 
-// Lazy the Root so a non-minimal user never bundles minimal's presentation; `loadRoot` preloads the chunk
-// in switchTheme before the skin flips (no Suspense flash). The descriptor below stays in the initial
-// bundle (it's tiny: palettes/loaders), only the Root component module is split out.
-const loadRoot = () => import("./MinimalRoot");
+// Code-split the Root so a non-minimal user never bundles minimal's presentation; `loadRoot` (= preload)
+// warms the chunk in switchTheme before the skin flips. `preloadableRoot` renders synchronously once
+// loaded → no one-tick Suspense flash inside the View-Transition flushSync (see lazyRoot.ts). The
+// descriptor below stays in the initial bundle (tiny: palettes/loaders); only the Root module splits out.
+const { Root, preload } = preloadableRoot(() =>
+  import("./MinimalRoot").then((m) => ({ default: m.MinimalRoot })),
+);
 
 export const minimal: ThemeDef = {
   id: "minimal",
   label: "Minimal",
-  Root: lazy(() => loadRoot().then((m) => ({ default: m.MinimalRoot }))),
-  loadRoot,
+  Root,
+  loadRoot: preload,
   // Two axes the Conf Appearance picker auto-renders: a Dark/Light mode toggle + 4 OKLCH accent hues
   // (the mode×4-accent matrix is `--accent-l/-c` per mode × `--accent-h` per accent, in tokens.css).
   palettes: {

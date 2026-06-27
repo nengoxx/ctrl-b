@@ -6,21 +6,23 @@
 //
 // CSS + fonts are LAZY (loaded by switchTheme before the skin flips); dark-only for now (deep space).
 
-import { lazy } from "react";
-
+import { preloadableRoot } from "../../theme-engine/lazyRoot";
 import type { ThemeDef } from "../../theme-engine/types";
 import { loadFonts } from "./fonts";
 
-// Lazy the Root so the cosmos presentation — its bespoke starfield canvas + orbital Fleet (C1/C2) — never
-// enters a vapor/minimal user's initial bundle; `loadRoot` preloads the chunk in switchTheme before the
-// skin flips (no Suspense flash). Only the descriptor (palettes/loaders) stays in the initial bundle.
-const loadRoot = () => import("./CosmosRoot");
+// Code-split the Root so the cosmos presentation — its bespoke starfield canvas + orbital Fleet (C1/C2) —
+// never enters a vapor/minimal user's initial bundle; `loadRoot` (= preload) warms the chunk in switchTheme
+// before the skin flips. `preloadableRoot` renders synchronously once loaded → no one-tick Suspense flash
+// inside the View-Transition flushSync (see lazyRoot.ts). Only the descriptor stays in the initial bundle.
+const { Root, preload } = preloadableRoot(() =>
+  import("./CosmosRoot").then((m) => ({ default: m.CosmosRoot })),
+);
 
 export const cosmos: ThemeDef = {
   id: "cosmos",
   label: "Cosmos",
-  Root: lazy(() => loadRoot().then((m) => ({ default: m.CosmosRoot }))),
-  loadRoot,
+  Root,
+  loadRoot: preload,
   // Dark-only for now; 4 named accent swatches (the prototype's --acc indirection). The Conf Appearance
   // picker auto-renders these as color chips via the shared Swatches component (planet-coin gradients).
   palettes: {

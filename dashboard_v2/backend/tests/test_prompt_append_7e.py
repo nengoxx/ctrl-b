@@ -269,6 +269,24 @@ def test_default_prompt_endpoint() -> None:
             assert "ctrl-b" in body["text"] and len(body["text"]) > 200
 
 
+def test_static_prefix_is_cached_per_turn() -> None:
+    """BE#1 — the invariant prompt prefix + tools are built ONCE per turn and reused byte-identically
+    across loop iterations (a stable prefix is what lets the local KV cache / cloud prefix cache hit).
+    Guards against a future edit reintroducing per-iteration jitter: on the SAME session, two assembles
+    must yield an identical static head, `_static_prefix()` must return the very same list object, and
+    `_tools()` must return the very same object."""
+    with _workspace():
+        with _client() as c:
+            sess = _session(c)
+            thread = _make_thread(c)
+            run = asyncio.get_event_loop().run_until_complete
+            first = _systems(run(sess._assemble(thread)))   # iteration 1
+            second = _systems(run(sess._assemble(thread)))  # iteration 2 — must match byte-for-byte
+            assert first == second
+            assert sess._static_prefix() is sess._static_prefix()  # memoized: same list object
+            assert sess._tools() is sess._tools()  # tool schema rendered once, reused
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:
