@@ -107,6 +107,16 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > OR T3–T5 (spatial themes, need `present()`). The deferred **SettingRow sweep** of the remaining Conf groups
 > also still stands (owner: incremental).
 >
+> **⚙️ Deferred — a future Agent-tab efficiency pass (owner-noted 2026-06-27).** The big wins shipped
+> (`408354f` memoize bubbles + markdown → per-token work O(streaming bubble) not O(all bubbles); `ad3e3ab`
+> halve the frosted-blur radius 14→8px). Remaining, ranked, for when more is wanted: (1) **block-level
+> markdown memo** — split a reply into top-level blocks so even the *streaming* bubble only re-parses its
+> growing tail block (LibreChat/Vercel-AI-SDK pattern; no deps); (2) **pause off-tab Fleet polling/carousel**
+> (the 5s/6s timers re-render the hidden Fleet while on Agent) + stop `setCallState`/`addToolResult` copying
+> ALL messages (preserve identity for messages without the call, like `addToolResult` already does for the
+> array) so memo survives tool-call events; (3) **virtualize the chat log** with `react-virtuoso` (adds a dep
+> — only if very long threads still hitch after 1–2). Full diagnosis was an independent recon this session.
+>
 > ---
 >
 > ### 🟢 SESSION UPDATE — Bucket-A.2 SHIPPED (deep Conf editors + Utils tab) — 2026-06-27 (cont.)
