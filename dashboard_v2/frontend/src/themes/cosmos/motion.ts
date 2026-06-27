@@ -8,14 +8,14 @@
 
 export type CosmosSpeed = "calm" | "normal" | "lively";
 
-/** Tempo multiplier applied to the animation clock (1 = the prototype's baseline speed). `calm` is a
- *  strong slowdown on purpose: per-star twinkle speed ranges up to 0.021/ms, so even the fastest star
- *  only cycles ~every 2s at calm (vs a too-lively ~0.5s at higher multipliers). `normal` keeps the
- *  prototype baseline. */
+/** Tempo multiplier applied to the animation clock. The whole scale is deliberately gentle (the
+ *  prototype's baseline of 1.0 read as too lively across all tiers — owner). Per-star twinkle speed
+ *  ranges up to 0.021/ms, so these give a calm progression for the FASTEST star: calm ~2s, normal ~1s,
+ *  lively ~0.6s per cycle (vs the old strobing ~0.3s/0.18s). Clear, distinguishable tiers, none jarring. */
 export const COSMOS_SPEED: Record<CosmosSpeed, number> = {
   calm: 0.15,
-  normal: 1,
-  lively: 1.7,
+  normal: 0.3,
+  lively: 0.5,
 };
 
 export const COSMOS_SPEED_DEFAULT: CosmosSpeed = "normal";

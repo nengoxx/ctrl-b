@@ -21,8 +21,11 @@ describe("speedMultiplier", () => {
     expect(speedMultiplier("lively")).toBe(COSMOS_SPEED.lively);
   });
 
-  it("falls back to normal tempo (1) for undefined or unknown values", () => {
-    expect(speedMultiplier(undefined)).toBe(1);
+  it("falls back to the normal tempo when the value is undefined (no override)", () => {
+    expect(speedMultiplier(undefined)).toBe(COSMOS_SPEED.normal);
+  });
+
+  it("falls back to a safe 1x for an unrecognized tempo value", () => {
     expect(speedMultiplier("warp-9")).toBe(1);
   });
 });
