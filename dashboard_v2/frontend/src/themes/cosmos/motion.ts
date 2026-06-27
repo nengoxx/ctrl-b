@@ -8,9 +8,12 @@
 
 export type CosmosSpeed = "calm" | "normal" | "lively";
 
-/** Tempo multiplier applied to the animation clock (1 = the prototype's baseline speed). */
+/** Tempo multiplier applied to the animation clock (1 = the prototype's baseline speed). `calm` is a
+ *  strong slowdown on purpose: per-star twinkle speed ranges up to 0.021/ms, so even the fastest star
+ *  only cycles ~every 2s at calm (vs a too-lively ~0.5s at higher multipliers). `normal` keeps the
+ *  prototype baseline. */
 export const COSMOS_SPEED: Record<CosmosSpeed, number> = {
-  calm: 0.55,
+  calm: 0.15,
   normal: 1,
   lively: 1.7,
 };
