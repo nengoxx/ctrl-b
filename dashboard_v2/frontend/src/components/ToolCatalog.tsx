@@ -151,6 +151,7 @@ export function ToolCatalog() {
                     value={mode}
                     def={s.default_agent_mode ?? agentModeOf(s)}
                     readOnly={isShell}
+                    small
                     onPick={(m) => setEdit(s.name, { mode: m })}
                   />
                   {isShell && <span className="tcat-faint">governed by Conf → Shell</span>}
