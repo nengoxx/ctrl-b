@@ -1639,6 +1639,245 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════════
+ * BUCKET-A.3a — Agent chat, base conversation: message list, who-line, user/bot/sys bubbles, notice, the
+ * streaming indicators (dots/caret/working-tag), the chat error row, and the reasoning disclosure.
+ * Owner-confirmed aesthetic (web-researched — differentiate by alignment + fill, muted tones): the USER
+ * bubble is a filled accent tint (right, flat bottom-right corner); the ASSISTANT is QUIET — borderless
+ * text on the page (left) so its prose/markdown reads as the main flow (boxed code/command bubbles land in
+ * A.3b/c); SYS is a muted dashed caption. Semantic tokens; distinct `kit-*` keyframes (vapor's are global);
+ * ambient anims motion-gated (§14.11). vapor untouched. */
+.kit .chat-log {
+  padding: 6px 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.kit .b .who {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kit .b .who::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.kit .b.bot .who::before {
+  background: var(--accent);
+}
+.kit .b.user .who::before {
+  background: var(--text-2);
+}
+.kit .b .body {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere; /* §14.11 — long URLs/paths/tokens wrap inside the bubble */
+}
+/* user — a filled accent-tint bubble, right-aligned, flat bottom-right corner */
+.kit .b.user {
+  align-self: flex-end;
+  max-width: 88%;
+}
+.kit .b.user .body {
+  background: var(--accent-soft);
+  padding: 9px 13px;
+  border-radius: 16px 16px 4px 16px;
+}
+/* assistant — quiet, borderless (inherits `.b .body`); the prose/markdown is the main flow */
+.kit .b.bot {
+  max-width: 92%;
+}
+/* sys — a muted dashed caption, centered */
+.kit .b.sys {
+  align-self: center;
+  max-width: 90%;
+}
+.kit .b.sys .body {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  text-align: center;
+  padding: 8px 12px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-sm);
+}
+.kit .notice {
+  margin: 8px 18px;
+  padding: 9px 12px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+}
+.kit .notice .heart {
+  color: var(--accent);
+}
+
+/* reasoning ("thinking") — a collapsed chip that expands to the scratchpad pre */
+.kit .b .think {
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.kit .b .think > summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--accent-soft);
+  user-select: none;
+}
+.kit .b .think > summary::-webkit-details-marker {
+  display: none;
+}
+.kit .b .think > summary::before {
+  content: "▸";
+  color: var(--accent);
+  font-size: 9px;
+  transition: transform 0.15s;
+}
+.kit .b .think[open] > summary::before {
+  transform: rotate(90deg);
+}
+.kit .b .think > summary:hover {
+  border-color: var(--accent);
+}
+.kit .b .think > summary .label {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: var(--accent);
+}
+.kit .b .think > summary .hint {
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.kit .b .think pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--line-2);
+  background: color-mix(in oklch, var(--accent) 5%, transparent);
+  border-radius: 0 6px 6px 0;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  opacity: 0.9;
+}
+
+/* ── streaming indicators ── */
+.kit .b.bot .caret {
+  display: inline-block;
+  margin-left: 1px;
+  color: var(--accent);
+  animation: kit-caret-blink 1s steps(2, start) infinite;
+}
+@keyframes kit-caret-blink {
+  to {
+    opacity: 0;
+  }
+}
+.kit .b.bot .dots {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  height: 18px;
+}
+.kit .b.bot .dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: kit-dot-bounce 1.2s ease-in-out infinite;
+}
+.kit .b.bot .dots i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.kit .b.bot .dots i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@keyframes kit-dot-bounce {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  35% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}
+.kit .b.bot .who .status-tag {
+  margin-left: 2px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  border: 1px solid var(--accent-soft);
+  background: var(--accent-soft);
+  animation: kit-tag-pulse 1.3s ease-in-out infinite;
+}
+@keyframes kit-tag-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+/* chat-level error + the inline retry pill (F20) */
+.kit .b.bot .chat-err {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--danger);
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+.kit .b.bot .chat-err-retry {
+  all: unset;
+  cursor: pointer;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.kit .b.bot .chat-err-retry:active {
+  background: var(--accent-soft);
+}
+/* motion gate — drop the ambient streaming anims under reduced motion (§14.11) */
+body[data-motion="reduced"] .kit .b.bot .dots i,
+body[data-motion="reduced"] .kit .b.bot .caret,
+body[data-motion="reduced"] .kit .b.bot .who .status-tag {
+  animation: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════
  * BUCKET-A.2a — deep Conf editors (Machine/Service · Inference fallbacks · Integrations kv · prompt-rows).
  * Token port of the editor-specific chrome (extras.css, `[data-skin=vapor]`) to semantic tokens under
  * `.kit`, following A.1's §14.4.1 pattern. Components emit these class names already; this is a faithful
