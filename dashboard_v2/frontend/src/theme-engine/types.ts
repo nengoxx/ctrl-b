@@ -33,7 +33,11 @@ export interface TabDef {
 // vapor → named accents only (aqua/ember, no mode axis). minimal → mode toggle + 4 OKLCH hues.
 export interface PaletteModel {
   modes?: Mode[]; // omitted → theme is single-mode (vapor: dark-only)
-  accents?: { id: string; label: string; value?: string }[]; // hue swatches OR named palettes
+  // Each accent/palette option carries an optional `swatch` for the Conf color-swatch picker (the theme
+  // owns its palette identity, co-located here). A single CSS color/gradient → one chip (minimal's hues,
+  // vapor's per-accent gradient); a string[] → a conic multi-token preview (the seam for richer "design
+  // framework" palettes — additive, no app/registry change). Omitted → a neutral chip.
+  accents?: { id: string; label: string; swatch?: string | string[] }[];
   defaultMode?: Mode;
   defaultAccent?: string;
 }

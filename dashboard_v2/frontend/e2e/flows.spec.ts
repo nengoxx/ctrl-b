@@ -118,8 +118,9 @@ test("Conf — changing the vapor palette updates body[data-theme]", async ({ pa
   await page.locator("#tabbtn-conf").click();
 
   // Appearance group is expanded by default. Theme-engine model (D28): the skin is "Vapor"; the
-  // "Palette" segmented control switches vapor's frozen accent axis (Vapor/Aqua/Ember → body[data-theme]).
-  await page.getByRole("button", { name: "Aqua", exact: true }).click();
+  // "Palette" swatch picker (a radiogroup of color chips) switches vapor's frozen accent axis
+  // (Vapor/Aqua/Ember → body[data-theme]). Each chip is a role=radio named by the palette.
+  await page.getByRole("radio", { name: "Aqua", exact: true }).click();
   await expect(page.locator("body")).toHaveAttribute("data-theme", "aqua"); // accent axis on <body>
   await expect(page.locator("html")).toHaveAttribute("data-skin", "vapor"); // @scope identity on <html>
 });

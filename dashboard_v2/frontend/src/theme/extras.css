@@ -615,6 +615,39 @@ body[data-perf="lite"] .composer {
   }
 }
 
+/* Palette swatch picker (net-new — the radiogroup of color chips for the Appearance Palette axis; mirrors
+   the Kit's `.swatches` but in vapor tokens). The selected chip gets the magenta ring + glow; each chip's
+   background is the per-accent identity gradient, set inline from the ThemeDef swatch. vapor.css verbatim (D7). */
+.swatches {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.swatches .sw {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.swatches .sw.active {
+  border-color: var(--magenta);
+  box-shadow: var(--m-glow);
+}
+.swatches .sw:focus-visible {
+  outline: 2px solid var(--magenta);
+  outline-offset: 2px;
+}
+.swatches .sw-chip {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+}
+
 /* ── Agent chat (Phase 4a). The .b.bot/.user/.sys bubbles are vapor.css (verbatim); these are the
    net-new bits vapor has no markup for: a thinking model's reasoning disclosure, the streaming
    caret, and a chat-level error line. All built from vapor tokens. */

@@ -17,10 +17,11 @@ export const vapor: ThemeDef = {
   label: "Vapor",
   Root: VaporRoot,
   palettes: {
+    // Swatches = each accent's magenta→violet identity gradient (the `--accent-grad` two-stop, vapor.css).
     accents: [
-      { id: "dark", label: "Vapor" },
-      { id: "aqua", label: "Aqua" },
-      { id: "ember", label: "Ember" },
+      { id: "dark", label: "Vapor", swatch: "linear-gradient(135deg, #ff52d4, #a55cff)" },
+      { id: "aqua", label: "Aqua", swatch: "linear-gradient(135deg, #5ce6ff, #6e7bff)" },
+      { id: "ember", label: "Ember", swatch: "linear-gradient(135deg, #ff8a3d, #ffd75c)" },
     ],
     defaultAccent: "dark",
   },

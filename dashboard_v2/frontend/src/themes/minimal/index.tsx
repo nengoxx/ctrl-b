@@ -18,11 +18,14 @@ export const minimal: ThemeDef = {
   palettes: {
     modes: ["dark", "light"],
     defaultMode: "dark",
+    // Swatches mirror each accent's hue but at a LEGIBLE chroma (~0.13) — the applied accent is
+    // intentionally quiet (--accent-c 0.07, near-grey), so the picker boosts saturation purely so the four
+    // hues are distinguishable as chips. Hues match the --accent-h matrix in tokens.css (195/155/280/60).
     accents: [
-      { id: "cyan", label: "Cyan" },
-      { id: "moss", label: "Moss" },
-      { id: "iris", label: "Iris" },
-      { id: "amber", label: "Amber" },
+      { id: "cyan", label: "Cyan", swatch: "oklch(0.74 0.13 195)" },
+      { id: "moss", label: "Moss", swatch: "oklch(0.74 0.13 155)" },
+      { id: "iris", label: "Iris", swatch: "oklch(0.74 0.13 280)" },
+      { id: "amber", label: "Amber", swatch: "oklch(0.78 0.13 60)" },
     ],
     defaultAccent: "cyan",
   },

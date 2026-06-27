@@ -6,9 +6,12 @@ import { MachineEditor } from "../components/MachineEditor";
 import { MemoryEditor } from "../components/MemoryEditor";
 import { Seg } from "../components/Seg";
 import { ServerListEditor } from "../components/ServerListEditor";
+import { SettingRow } from "../components/SettingRow";
 import { SkillsEditor } from "../components/SkillsEditor";
+import { Swatches } from "../components/Swatches";
 import { Switch } from "../components/Switch";
 import { useAccessStatus, useSetServe } from "../hooks/useAccess";
+import { useAppChrome } from "../hooks/useAppChrome";
 import { currentAppearancePatch, useSaveAppearance } from "../hooks/useAppearance";
 import { agentModeOf, useActionSpecs } from "../hooks/useActions";
 import { disclosureToggle } from "../lib/disclosure";
@@ -204,13 +207,21 @@ export function ConfTab({ active }: Props) {
   const perf = useUISlice((s) => s.perf);
   const themeVals = useUISlice((s) => s.themeSettings[theme]); // overrides for the active theme (or undefined)
   const saveAppearance = useSaveAppearance(); // optimistic cross-device write (§9.11)
+  // Auto-TTS — the SAME controller the appbar's toggle uses (no new state). Surfaced here so it's reachable
+  // even when a theme hides the app bar (minimal's `hideAppbar`); `ttsConfigured` gates it to a live TTS
+  // backend, and `toggleAutoTts` flips the LOCAL `ui.ttsAuto` (device-local, not part of the synced doc).
+  const { ttsAuto, ttsConfigured, toggleAutoTts } = useAppChrome();
 
   // Appearance picker is driven by the theme registry (D28 §9.8): the skin list + the active theme's
   // declared palette axes (vapor → named accents only, no mode axis) + its per-theme `settings` schema.
   // Adding a theme makes all three appear here automatically (one registry row, zero Conf change).
   const themeOptions = registeredThemes().map((d) => ({ val: d.id, label: d.label }));
   const activeDef = registry[theme];
-  const accentOptions = (activeDef?.palettes.accents ?? []).map((a) => ({ val: a.id, label: a.label }));
+  const accentOptions = (activeDef?.palettes.accents ?? []).map((a) => ({
+    val: a.id,
+    label: a.label,
+    swatch: a.swatch,
+  }));
   const modeOptions = (activeDef?.palettes.modes ?? []).map((m) => ({
     val: m,
     label: m === "dark" ? "Dark" : "Light",
@@ -868,6 +879,19 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup id="voice-tts" num="08" title="Voice · TTS" right="text-to-speech">
         <div className="conf-card">
+          {/* Auto read-aloud — a device-local UX toggle (the appbar's mirror, via the SAME useAppChrome
+              controller; flips local `ui.ttsAuto`, independent of this group's draft/Save). Shown only when
+              a TTS backend is live (`ttsConfigured`) so it's never a dead control; also the only way to
+              reach it when a theme hides the app bar (minimal's `hideAppbar`). */}
+          {ttsConfigured && (
+            <div className="confrow">
+              <div className="k">
+                <div className="label">Auto read-aloud</div>
+                <div className="desc">speak each reply aloud as it finishes</div>
+              </div>
+              <Switch on={ttsAuto} onToggle={toggleAutoTts} />
+            </div>
+          )}
           <div className="confrow">
             <div className="k">
               <div className="label">Format</div>
@@ -973,33 +997,21 @@ export function ConfTab({ active }: Props) {
       </ConfGroup>
 
       <ConfGroup id="appearance" num="15" title="Appearance">
+        {/* Every row uses the shared `SettingRow` (label + desc + trailing control) so the group has one
+            consistent shape; the Palette axis uses the `Swatches` color-chip radiogroup. */}
         <div className="conf-card">
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Theme</div>
-              <div className="desc">{themeOptions.map((t) => t.label.toLowerCase()).join(" · ")}</div>
-            </div>
+          <SettingRow label="Theme" desc={themeOptions.map((t) => t.label.toLowerCase()).join(" · ")}>
             <Seg<ThemeId> current={theme} options={themeOptions} onPick={pickTheme} />
-          </div>
+          </SettingRow>
           {modeOptions.length > 1 && (
-            <div className="confrow">
-              <div className="k">
-                <div className="label">Mode</div>
-                <div className="desc">light · dark</div>
-              </div>
+            <SettingRow label="Mode" desc="light · dark">
               <Seg<Mode> current={mode} options={modeOptions} onPick={pickMode} />
-            </div>
+            </SettingRow>
           )}
           {accentOptions.length > 0 && (
-            <div className="confrow">
-              <div className="k">
-                <div className="label">Palette</div>
-                <div className="desc">
-                  {accentOptions.map((a) => a.label.toLowerCase()).join(" · ")}
-                </div>
-              </div>
-              <Seg<string> current={accent} options={accentOptions} onPick={pickAccent} />
-            </div>
+            <SettingRow label="Palette" desc={accentOptions.map((a) => a.label.toLowerCase()).join(" · ")}>
+              <Swatches current={accent} options={accentOptions} onPick={pickAccent} ariaLabel="Palette" />
+            </SettingRow>
           )}
           {/* Per-theme settings (M3 §14.3) — auto-rendered from the active theme's `ThemeDef.settings`
               schema (vapor → App mark / Sun & grid / Horizon / Live waveform). switch→Switch, seg→Seg;
@@ -1008,11 +1020,7 @@ export function ConfTab({ active }: Props) {
           {settingsSpec.map(([key, field]) => {
             const value = themeVals?.[key] ?? field.default;
             return (
-              <div className="confrow" key={key}>
-                <div className="k">
-                  <div className="label">{field.label}</div>
-                  {field.desc && <div className="desc">{field.desc}</div>}
-                </div>
+              <SettingRow key={key} label={field.label} desc={field.desc}>
                 {field.type === "switch" ? (
                   <Switch on={value as boolean} onToggle={() => pickSetting(key, !value)} />
                 ) : (
@@ -1022,30 +1030,22 @@ export function ConfTab({ active }: Props) {
                     onPick={(v) => pickSetting(key, v)}
                   />
                 )}
-              </div>
+              </SettingRow>
             );
           })}
           {/* Global levers (apply to every theme) — synced like the rest of appearance (owner directive). */}
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Motion</div>
-              <div className="desc">ambient effects · LED · equalizer · sun bob</div>
-            </div>
+          <SettingRow label="Motion" desc="ambient effects · LED · equalizer · sun bob">
             <Switch
               on={motion === "full"}
               onToggle={() => setGlobal({ motion: motion === "full" ? "reduced" : "full" })}
             />
-          </div>
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Blur</div>
-              <div className="desc">frosted glass bars · off is faster (esp. Firefox)</div>
-            </div>
+          </SettingRow>
+          <SettingRow label="Blur" desc="frosted glass bars · off is faster (esp. Firefox)">
             <Switch
               on={perf === "full"}
               onToggle={() => setGlobal({ perf: perf === "full" ? "lite" : "full" })}
             />
-          </div>
+          </SettingRow>
         </div>
       </ConfGroup>
 

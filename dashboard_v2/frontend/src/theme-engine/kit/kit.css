@@ -36,9 +36,44 @@
   -webkit-font-smoothing: antialiased;
 }
 .kit-main {
-  position: relative; /* positioning context for the floating composer */
+  position: relative; /* positioning context for the floating composer + the bottom fade */
   flex: 1 1 auto;
   min-height: 0;
+}
+/* Edge scrims — content scrolling behind the floating composer / under the appbar hard-cuts at the
+ * scroller edges; these fade it into the page bg instead. Both are hosted on `.kit-main` (the non-scrolling
+ * context), NOT `.kit-scroll` (an absolute child of a scroll container scrolls with content → would only
+ * show at the extremes). Static gradients (no blur/animation, §14.11-safe); pointer-events:none so taps pass
+ * to the scroller; z-index 3 = above the scroll content (z 0), below the floating composer (z 4) AND below
+ * the sticky appbar (z 5) so both stay crisp.
+ *
+ * BOTTOM (`::after`) — gated to composer-bearing tabs via `.has-composer` (DefaultRoot) so Conf/Utils rows
+ * don't fade into the nav; height tracks `--composer-h` so it spans the composer-overlap zone.
+ * TOP (`::before`) — ungated (the appbar/top seam exists on every tab); `top: var(--appbar-h)` puts it just
+ * below the appbar when present and at the very top when hidden (DefaultRoot sets --appbar-h to 0 when
+ * there's no bar). Shorter + subtler than the bottom — the top section is very visible. */
+.kit-main.has-composer::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--composer-h, 64px) - 8px);
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--bg), transparent);
+}
+.kit-main::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--appbar-h, 0px);
+  height: 30px;
+  z-index: 3;
+  pointer-events: none;
+  /* subtler than the bottom — the top stop is only partial --bg (the top section is very visible) */
+  background: linear-gradient(to bottom, color-mix(in oklch, var(--bg) 75%, transparent), transparent);
 }
 .kit-scroll {
   position: absolute;
@@ -630,6 +665,37 @@ body[data-perf="lite"] .kit-composer {
 .kit .switch.on .knob::after {
   transform: translateX(20px);
   background: var(--bg);
+}
+
+/* ── primitive: palette swatch picker (Swatches) — a radiogroup of color chips; the selected chip shows a
+ *    ring (the accent), focus a visible outline. Chip background is set inline (the theme's swatch). ── */
+.kit .swatches {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.kit .swatches .sw {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  transition: border-color 0.15s;
+}
+.kit .swatches .sw.active {
+  border-color: var(--accent);
+}
+.kit .swatches .sw:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .swatches .sw-chip {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
 }
 
 /* ── overlay: ConfirmDialog (.modal) — a centered decision dialog (Material-3 default for confirms). ── */

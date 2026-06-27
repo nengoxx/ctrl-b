@@ -109,7 +109,7 @@ export function DefaultRoot({ hideAppbar = false, Fleet = KitFleet }: Props) {
       {/* `.kit-main` is the positioning context: the scroller fills it, the composer floats over it (so
           the content scrolls behind the composer and shows in the gaps around it). The nav bar stays an
           in-flow bar below. */}
-      <div className="kit-main" ref={mainRef}>
+      <div className={"kit-main" + (showComposer ? " has-composer" : "")} ref={mainRef}>
         <div className="kit-scroll" id="app-scroll" ref={scrollRef}>
           {!hideAppbar && <KitAppBar />}
           <Fleet active={tab === "fleet"} />
