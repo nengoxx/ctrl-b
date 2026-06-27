@@ -9,7 +9,7 @@
 // code, and inline **bold** / *italic* / `code` / [links](url) / bare http(s) autolinks. Deliberately
 // not a full CommonMark engine — chat replies don't need tables/nested lists/reference links.
 
-import { useState, type JSX, type ReactNode } from "react";
+import { memo, useState, type JSX, type ReactNode } from "react";
 
 import { fillComposer } from "./composer";
 
@@ -209,7 +209,10 @@ function blocks(src: string): ReactNode[] {
   return out;
 }
 
-/** Render a markdown string as Vapor-styled React nodes (see theme/extras.css `.md`). */
-export function Markdown({ text }: { text: string }) {
+/** Render a markdown string as themed React nodes (see `.md` in theme/extras.css + kit.css).
+ *  Memoized on `text`: during streaming the whole chat-log re-renders per token, but a COMPLETED bubble's
+ *  text is byte-stable, so it skips the full from-scratch re-parse (the LibreChat / Vercel-AI-SDK
+ *  block-memoization pattern at the message grain). Only the still-growing streaming bubble re-parses. */
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return <>{blocks(text)}</>;
-}
+});

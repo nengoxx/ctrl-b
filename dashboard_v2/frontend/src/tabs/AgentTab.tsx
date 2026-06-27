@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { useAgentChat } from "../hooks/useAgentChat";
 import { toggle as playMessage, usePlayback } from "../lib/audioController";
@@ -356,7 +356,12 @@ function QuestionBubble({
   );
 }
 
-function Bubbles({
+// React.memo so a streamed token re-renders ONLY the streaming bubble, not the whole log: during text
+// streaming the store preserves the identity of every non-streaming message (appendDelta returns the same
+// `m` for them), and all the other props are referentially stable (resultFor is ref-backed below;
+// resolvedDefault/ttsOn are config-derived; streaming/canRetry are `false` for completed bubbles), so the
+// default shallow compare skips every settled bubble. (LibreChat-style per-message memoization.)
+const Bubbles = memo(function Bubbles({
   m,
   streaming,
   resultFor,
@@ -467,7 +472,7 @@ function Bubbles({
       )}
     </>
   );
-}
+});
 
 /** The session privilege chip (A1/D16) in the chat section header: shows the active session override
  *  (or "default" = follow the agent's own privilege) and opens a small menu to change it. The
@@ -542,6 +547,13 @@ export function AgentTab({ active }: Props) {
   // not here. The scroll-stick-to-bottom below stays vapor-specific (it targets `#app-scroll`).
   const { messages, status, streamingId, resultByCall, currentPlan, resolvedDefault, ttsOn } =
     useAgentChat();
+  // A STABLE result lookup so it doesn't break `Bubbles`' memo each token (`resultByCall` is re-derived
+  // per delta → new identity). A ref holds the latest map; the callback identity never changes, and a
+  // bubble re-renders (reading the fresh map) exactly when its own message identity changes — which
+  // includes when a result lands (the store rebuilds the messages array on addToolResult).
+  const resultByCallRef = useRef(resultByCall);
+  resultByCallRef.current = resultByCall;
+  const resultFor = useCallback((id: string) => resultByCallRef.current[id], []);
   // The scroller is the app-shell content pane (`#app-scroll`), not the window — the composer/tab
   // bar are in-flow at the bottom of the shell. "Stick to bottom" only while the user is already
   // near the bottom, so streaming follows the bot without yanking them down if they scrolled up.
@@ -614,7 +626,7 @@ export function AgentTab({ active }: Props) {
             key={m.id}
             m={m}
             streaming={status === "streaming" && m.id === streamingId}
-            resultFor={(id) => resultByCall[id]}
+            resultFor={resultFor}
             // F20 — only the latest message is eligible for retry, and only when chat is in
             // error state. Historical errors elsewhere in the log stay quiet.
             canRetry={i === messages.length - 1 && status === "error"}
