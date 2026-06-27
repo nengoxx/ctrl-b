@@ -198,13 +198,16 @@
   background: var(--danger);
 }
 
-/* ── bottom nav (in-flow flex child; icon pill + label; active = accent-soft pill) ── */
+/* ── bottom nav (in-flow flex child; icon pill + label; active = accent-soft pill). Its vertical metrics
+ *    scale with `--density-pad` (the theme's density lever — minimal's "compact" drives it to 0.72), so the
+ *    nav noticeably shrinks in compact; `max()` floors keep it tappable + the 19px icon uncropped. ── */
 .kit-tabbar {
   flex-shrink: 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 0;
-  padding: 6px 10px calc(8px + env(safe-area-inset-bottom));
+  padding: calc(6px * var(--density-pad)) 10px
+    calc(8px * var(--density-pad) + env(safe-area-inset-bottom));
   background: color-mix(in oklch, var(--bg) 80%, transparent);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
@@ -216,7 +219,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: calc(4px * var(--density-pad));
   padding: calc(7px * var(--density-pad)) 8px;
   border-radius: 12px;
   color: var(--text-3);
@@ -230,7 +233,8 @@
   align-items: center;
   justify-content: center;
   width: 38px;
-  height: 26px;
+  /* shrink the pill in compact, but never below 22px (the 19px icon needs ~1.5px breathing room) */
+  height: max(22px, calc(26px * var(--density-pad)));
   border-radius: 999px;
   transition: background 0.15s, color 0.15s;
 }
@@ -242,7 +246,7 @@
   display: block;
 }
 .kit-tabbtn .lbl {
-  font-size: 10.5px;
+  font-size: max(9.5px, calc(10.5px * var(--density-pad)));
   font-weight: 500;
   letter-spacing: 0.01em;
 }
