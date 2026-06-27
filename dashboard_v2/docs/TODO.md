@@ -768,11 +768,23 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
       `theme_settings` map (backend fields default **`None`/unseeded** so a pre-M3 stamped doc can't wipe local prefs;
       reconcile-tested). Latent T1 double-`switchTheme` documented in `useAppearanceSync` (unreachable while vapor is the
       only theme). vapor = default selection.
-- [ ] **Kit + minimal.** The Kit: semantic 3-tier token contract + `DefaultRoot` scaffold + token-driven AppBar/NavBar
-      (count-driven indicator)/Composer/ConfShell/device-rows/**NowMonitoring**+waveform/ChatBubble/primitives;
-      reuse + CSS-skin the existing Conf editors; Kit/token-driven global overlays. **minimal** = `tokens.css`
-      (`@scope([data-skin=minimal])`) + Fontsource fonts + the **OKLCH mode×4-accent matrix** + its Fleet view
-      (NowMonitoring + rows, **real host data** — ping/last-seen/mac/ssh, not the mock uptime/cpu/temp) + an eyeball pass.
+- [ ] **Kit + minimal** — chrome + Fleet DONE; the shared BODIES + OVERLAYS (Bucket-A) remain. Kit CSS model LOCKED:
+      token-only reskins + ONE stylesheet under the `.kit` marker (= Radix `.radix-themes`), `@layer base`; vapor =
+      bespoke escape hatch (§14.4.1, web-researched). NowMonitoring + waveform DEFERRED (minimal dropped monitoring;
+      build when a theme needs a featured card).
+  - [x] **K1** semantic token contract (`kit/tokens.css`, `@layer base`) + the `minimal` module (`themes/minimal/`:
+        OKLCH dark/light×4-accent `tokens.css`, Fontsource `loadFonts`, `ThemeDef` Root=`DefaultRoot`, settings
+        `hideAppbar`+`density`) + registry row + a `ThemeProvider` cold-load fix (lazy CSS/fonts on mount). (`39c9068`)
+  - [x] **K2** token-driven Kit chrome (`kit/AppBar`/`NavBar`/`Composer` + `kit/kit.css`) under the `.kit` marker;
+        reuses the existing controllers (no new logic). (`7d47a25`)
+  - [x] **K4** minimal Fleet (`kit/Fleet.tsx` — device list + 3-stat summary, **REAL host data**: ping/last-seen/mac/
+        services, no Hero/monitoring) as DefaultRoot's `Fleet` seam; + `lib/relativeTime.ts`; + the eyeball polish:
+        floating composer (content scrolls behind it), perf-gated frosted glass (§14.11), body-margin reset. (`07063d2`)
+  - [ ] **Bucket-A** — token-drive the shared BODIES + global OVERLAYS under `.kit` (extend the one Kit stylesheet).
+        Sub-slices, each + a 390px eyeball: (1) overlays (`ConfirmDialog`/`PromptModal`/`Toasts`/`MiniPlayer`/
+        `SwUpdatePrompt`) + primitives (`Seg`/`Switch`) + Conf shell — **fixes the reachable broken confirm**; (2) the
+        deep Conf editors; (3) Agent chat bubbles. **⛔ RESEARCH the pattern + confirm the design BEFORE building
+        (owner directive 2026-06-27 — last session the research changed the design); see HANDOFF top.**
 - [ ] **T2 — phosphor** (LOW–MED): `tokens.css` + fonts + CRT overlay + monochrome amber/green named axis. Reuses the
       whole Kit incl. the default Fleet. + a Fleet-data eyeball pass.
 - [ ] **T3 — observatory** (MED, low-pri — port once its prototype is finished): own Fleet view (SVG radial topology)

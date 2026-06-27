@@ -76,8 +76,72 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Theme-engine v2 (D29): M3 COMPLETE — vapor is a fully-migrated peer `ThemeDef` + the per-theme-settings mechanism is built** · NEXT = **Kit + minimal**; emma deploy still queued)
+## Current state (**Theme-engine v2 (D29): Kit chrome + minimal Fleet shipped (K1/K2/K4) — minimal renders for real** · NEXT = **Bucket-A: token-drive the shared bodies + overlays under `.kit`**; emma deploy still queued)
 
+> ### 🟢 SESSION UPDATE — Kit + minimal: chrome + Fleet shipped → NEXT = Bucket-A (shared bodies + overlays) — 2026-06-27
+>
+> **What shipped (committed + green).** The Kit is real and **minimal renders for real** (chrome + Fleet); only the
+> shared tab BODIES + global OVERLAYS remain unstyled under minimal.
+> - **K1 `39c9068`** — the semantic token contract (`theme-engine/kit/tokens.css`, `@layer base`) + the `minimal` theme
+>   module (`themes/minimal/`: `tokens.css` OKLCH dark/light×4-accent, Fontsource fonts via `loadFonts`, a `ThemeDef`
+>   with `Root=DefaultRoot` + settings `hideAppbar`+`density`) + the registry row. **Bug fixed:** `ThemeProvider` now
+>   loads the active theme's lazy CSS/fonts on mount (a cold-load with a non-default theme persisted booted unstyled).
+> - **K2 `7d47a25`** — the token-driven Kit chrome (`kit/AppBar`/`NavBar`/`Composer` + `kit/kit.css`) under the **`.kit`
+>   marker** DefaultRoot puts on its shell; reuses the SAME controllers (`useAppChrome`/`useSections`/`useComposer`) — no new logic.
+> - **K4 `07063d2`** — `kit/Fleet.tsx` (`KitFleet`: device list + a 3-stat summary, **REAL host data only** — online/
+>   ping/last-seen/mac/services; NO Hero/monitoring/waveform) wired as DefaultRoot's default `Fleet` section (the §14.4
+>   signature seam) + `lib/relativeTime.ts`. Plus the 390px-eyeball polish: the composer **floats** over the scroller
+>   (content shows in the gaps around it), the chrome is **frosted glass** gated on `data-perf` (§14.11), and a global
+>   body-margin reset (the appbar edge-frame fix).
+> - **`0be020b`** — the **Kit CSS architecture is LOCKED** (`THEME_ENGINE.md` §14.4.1, web-researched vs **Radix Themes**
+>   + the design-token consensus): **reskin themes = a `tokens.css` ONLY** (token-only theming; per-theme component-CSS
+>   overrides are the discouraged path); ONE Kit stylesheet under the `.kit` marker (= Radix's `.radix-themes`); vapor =
+>   the bespoke escape hatch (no marker). **⚠️ This design CHANGED because of the research — see the directive below.**
+>   Same commit added the **coding-discipline hooks** (`.claude/settings.json`): a `UserPromptSubmit` PRE-FLIGHT
+>   (read→research→confirm) + a `git commit` POST-FLIGHT (independent audit). They fire every prompt/commit now.
+>
+> **VERIFIED:** `npm run build` clean · `npm test` **120** · `npm run test:e2e` **34** · an independent audit agent on
+> K4 found no blocker/high. vapor stays computed-identical (Kit CSS is inert without the `.kit` marker). Servers: backend
+> 5433 (no-reload), frontend **5173** (the config port; the old `5190` note was stale).
+>
+> **⛔ KNOWN GAP (= the next slice):** the shared tab BODIES (Conf editors, Agent bubbles, Utils) + the global OVERLAYS
+> (`ConfirmDialog`/`PromptModal`/`Toasts`/`MiniPlayer`/`SwUpdatePrompt`) are still **vapor-scoped**, so under minimal they
+> render unstyled — and the **reachable** ConfirmDialog/PromptModal (minimal Fleet wake/stop → confirm) render unstyled
+> at the bottom of the screen (a real broken-UX, audit-confirmed via screenshot). The next slice closes this.
+>
+> **⛔ NEXT = Bucket-A — token-drive the shared bodies + overlays under `.kit`** (extend the ONE Kit stylesheet, §14.4.1).
+> Sub-slice it (each with a 390px eyeball pause), recommended order:
+>   1. **Overlays + primitives + Conf shell** (`ConfirmDialog`/`PromptModal`/`Toasts`/`MiniPlayer`/`SwUpdatePrompt` +
+>      `Seg`/`Switch` + the Conf section/card/rows) — **fixes the reachable broken confirm**; start here.
+>   2. **The deep Conf editors** (Agents/Machine/Skills/Memory/ServerList/ToolCatalog).
+>   3. **Agent chat bubbles** (markdown · tool-call/confirm bubbles · plan panel) — styles the raw chat behind the composer.
+>
+> ## ⛔⛔ FOR THE NEXT SESSION — RESEARCH THE PATTERN + CONFIRM THE DESIGN *BEFORE* YOU BUILD (owner directive 2026-06-27, emphatic)
+>
+> **Last session the owner had to TELL the agent to research — and the research then CHANGED the design** (the
+> token-only + `.kit`-marker model came out of researching Radix Themes / Angular Material). **Do not repeat that.**
+> For Bucket-A, even though it "looks like just CSS," there are real net-new design decisions (modal/dialog positioning
+> + a11y + focus-trap over a floating layout; bottom-sheet vs centered modal on mobile; toast stacking; chat-bubble +
+> markdown patterns; the overlay scoping under `.kit`). So, **in order:**
+>   1. **READ** the code you'll touch — the overlay components + their CURRENT vapor CSS (`extras.css`,
+>      `@scope([data-skin=vapor])`), the primitives (`Seg`/`Switch`), `ConfTab` + its editors, `AgentTab` + `lib/markdown`,
+>      and `kit/kit.css` (the §14.4.1 model: ONE stylesheet, `.kit`-scoped, `@layer base`, token-driven; vapor untouched).
+>   2. **WEB-RESEARCH the established pattern for each net-new surface — do NOT guess** (the research may change the
+>      design again): accessible modal/dialog (focus-trap, `aria-modal`, scroll-lock, mobile bottom-sheet vs centered),
+>      toast stacking / `aria-live`, chat-message + markdown styling, and the token-driven overlay-scoping approach.
+>   3. **WRITE THE DESIGN IN PROSE — name the pattern, state reuse-vs-build — and CONFIRM with the owner BEFORE coding**
+>      (the owner prefers a prose back-and-forth: memories `converse-on-design-decisions`, `prioritize-robust-over-seams`).
+>   4. **BUILD IN SMALL, AUDITED SLICES** — token-only (no per-theme component CSS; extend the ONE `.kit` stylesheet),
+>      no vapor leak (scope everything under `.kit`/unique `.kit-*`; verify vapor computed-identical), §14.11 (perf-gated
+>      blur, wrapping text), run the FULL suite (**120 unit + 34 e2e**), an **independent audit pass on any structural
+>      change**, then commit + **pause for the owner's 390px eyeball (Firefox/Fennec AND Chrome)**.
+>
+> The `coding-discipline` PRE-FLIGHT/POST-FLIGHT hooks (`.claude/settings.json`) reinforce this every prompt/commit —
+> this block is the belt to that suspenders. **Read `THEME_ENGINE.md` §14.4.1 + the memories `kit-theming-pattern` +
+> `discipline-hooks-preflight-audit` first.**
+>
+> ---
+>
 > ### 🟢 SESSION UPDATE — Theme-engine v2 (D29): **M3 DONE → NEXT = Kit + minimal** — 2026-06-26
 >
 > **What shipped (committed + green; the vapor migration runbook M0–M3 is now COMPLETE).** M3 finished vapor's
@@ -121,7 +185,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >
 > ---
 >
-> ## ⛔⛔ FOR THE NEXT SESSION — DOUBLE-CHECK EVERYTHING + RESEARCH BEFORE YOU BUILD Kit + minimal (owner directive 2026-06-26)
+> ## (SUPERSEDED 2026-06-27 — Kit chrome + minimal Fleet are DONE; see the 2026-06-27 block at the top. The research → design-in-prose → confirm → audited-slices DISCIPLINE below STILL APPLIES to Bucket-A.) FOR THE NEXT SESSION — DOUBLE-CHECK EVERYTHING + RESEARCH BEFORE YOU BUILD Kit + minimal (owner directive 2026-06-26)
 >
 > The owner explicitly asked that the next session **double-check the whole state first** and **research before
 > implementing the new theme** — this is the biggest, most net-new slice yet (a token contract + a headless Kit + the
