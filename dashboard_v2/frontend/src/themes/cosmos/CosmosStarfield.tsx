@@ -60,12 +60,13 @@ export function CosmosStarfield() {
       const cssH = window.innerHeight;
       w = canvas!.width = Math.round(cssW * dpr);
       h = canvas!.height = Math.round(cssH * dpr);
-      // Density tuned to the prototype (~1 star / 9000 css px²), capped so a large desktop stays cheap.
-      const n = Math.min(Math.floor((cssW * cssH) / 9000), 320);
+      // A DENSE, FINE field (owner: the prototype's ~1/9000 + radius≤1.2px read sparse + chunky, "zoomed
+      // in"). ~1 star / 4000 css px², capped so a 4K desktop stays cheap; smaller radii (≤~0.78 css px).
+      const n = Math.min(Math.floor((cssW * cssH) / 4000), 800);
       stars = Array.from({ length: n }, () => ({
         x: Math.random() * w,
         y: Math.random() * h,
-        r: (Math.random() * 1 + 0.2) * dpr,
+        r: (Math.random() * 0.6 + 0.18) * dpr,
         a: Math.random() * 0.45 + 0.12,
         tw: Math.random() * 0.018 + 0.003,
         ph: Math.random() * 6.28,
