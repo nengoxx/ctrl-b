@@ -66,7 +66,10 @@ export function CosmosStarfield() {
       stars = Array.from({ length: n }, () => ({
         x: Math.random() * w,
         y: Math.random() * h,
-        r: (Math.random() * 0.6 + 0.18) * dpr,
+        // Size is power-skewed (random²) so MOST stars are tiny and large ones are rare + scattered —
+        // a uniform range made big stars common enough to clump into distracting pairs. Positions stay
+        // uniformly random (regenerated each load/resize), so the field has no fixed standout stars.
+        r: (Math.random() ** 2 * 0.62 + 0.16) * dpr,
         a: Math.random() * 0.45 + 0.12,
         tw: Math.random() * 0.018 + 0.003,
         ph: Math.random() * 6.28,
