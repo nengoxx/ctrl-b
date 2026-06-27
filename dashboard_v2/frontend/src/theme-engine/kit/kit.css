@@ -58,10 +58,12 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: calc(var(--composer-h, 64px) - 8px);
+  height: calc(var(--composer-h, 64px) - 24px);
   z-index: 3;
   pointer-events: none;
-  background: linear-gradient(to top, var(--bg), transparent);
+  /* shorter + gentler than the original: the bottom stop is a partial --bg (not fully opaque) so it's a
+   * soft veil rather than a hard fade-out (the composer itself covers content directly behind it). */
+  background: linear-gradient(to top, color-mix(in oklch, var(--bg) 80%, transparent), transparent);
 }
 .kit-main::before {
   content: "";
