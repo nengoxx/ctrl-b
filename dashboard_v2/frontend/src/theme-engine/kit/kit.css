@@ -5,11 +5,12 @@
  * change only their tokens.css. Reads the semantic contract (kit/tokens.css §9.7); the new chrome uses
  * fresh `.kit-*` class names (no collision with vapor's `.appbar`/`.composer`/…).
  *
- * LAYOUT: mirrors the shipped in-flow flex-column shell (extras.css `.app-shell`/`.app-scroll`) so the
- * keyboard-aware `--app-h` sizing keeps working — a flex column, a flex:1 scroller, then composer + nav
- * as in-flow `flex-shrink:0` children. VISUAL: ported from prototypes/project/variations/minimal.html.
- * Deliberately OPAQUE (no backdrop-filter anywhere) — calm, and smooth on Firefox/Fennec (§14.11). The
- * `--density-pad` multiplier (set by the theme's `density` setting) scales vertical padding. */
+ * LAYOUT: a flex column (`.kit`) height var(--app-h) so keyboard-aware sizing keeps working → a relative
+ * `.kit-main` holding the absolute scroller, with the composer floating OVER the scroller (content shows in
+ * the gaps around it) → the nav as the in-flow bottom bar. VISUAL: ported from
+ * prototypes/project/variations/minimal.html. The bars are frosted glass (backdrop-filter), GATED on
+ * body[data-perf="lite"] → opaque (the §14.11 Firefox/Fennec speed lever). The `--density-pad` multiplier
+ * (the theme's `density` setting) scales vertical padding. */
 
 /* box-sizing reset — vapor's global reset is scoped to [data-skin=vapor], so reskins need their own
  * (the prototypes assume border-box; without it fixed-width/padded `.kit-*` boxes mis-size). */
@@ -34,13 +35,20 @@
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
-.kit-scroll {
+.kit-main {
+  position: relative; /* positioning context for the floating composer */
   flex: 1 1 auto;
-  min-height: 0; /* let the flex child shrink + scroll */
+  min-height: 0;
+}
+.kit-scroll {
+  position: absolute;
+  inset: 0; /* fills .kit-main; the composer floats over it so content scrolls behind it */
   overflow-y: auto;
   overflow-x: hidden; /* vertical-only scroller; a too-wide child must never add an x scrollbar (§14.11) */
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  /* pad the bottom so the last content can scroll clear of the composer floating over it (measured) */
+  padding-bottom: calc(var(--composer-h, 0px) + 24px);
 }
 
 /* section show/hide — the tab components emit the shared `.tab`/`.tab.active` classes; vapor.css styles
@@ -73,7 +81,11 @@
   align-items: center;
   gap: 10px;
   padding: calc(16px * var(--density-pad)) 18px calc(12px * var(--density-pad));
-  background: var(--bg);
+  /* frosted glass — content stays visible (blurred) behind the bar as it scrolls under (vapor parity).
+   * backdrop-filter is the heaviest effect on Firefox, so it's gated on data-perf (lite → opaque below). */
+  background: color-mix(in oklch, var(--bg) 72%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
 }
 .kit-brand {
   display: flex;
@@ -154,7 +166,9 @@
   grid-template-columns: repeat(4, 1fr);
   gap: 0;
   padding: 6px 10px calc(8px + env(safe-area-inset-bottom));
-  background: var(--bg);
+  background: color-mix(in oklch, var(--bg) 80%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   border-top: 1px solid var(--line);
 }
 .kit-tabbtn {
@@ -196,12 +210,37 @@
 
 /* ── composer (in-flow flex child; rounded surface; textarea + mic + send) ── */
 .kit-composer {
-  flex-shrink: 0;
-  margin: 0 18px 12px;
-  background: var(--surface);
+  /* floats OVER the scrolling content, anchored above the nav bar, inset from the screen edges so the
+   * content shows in the gaps around it; frosted so the typed text stays readable over the busy content
+   * behind (perf-gated below). A moderate shadow lifts it without the heavy halo that darkened content. */
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 12px;
+  z-index: 4;
+  background: color-mix(in oklch, var(--surface) 85%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   border: 1px solid var(--line-2);
   border-radius: 20px;
   padding: calc(12px * var(--density-pad)) 15px calc(10px * var(--density-pad));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+body[data-mode="light"] .kit-composer {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.07);
+}
+
+/* data-perf=lite drops the blur (Firefox-Android speed lever, §14.11) → opaque fallbacks. */
+body[data-perf="lite"] .kit-appbar,
+body[data-perf="lite"] .kit-tabbar {
+  background: var(--bg);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+body[data-perf="lite"] .kit-composer {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .kit-composer .field {
   display: block;
@@ -283,4 +322,236 @@
 }
 .kit-send svg {
   display: block;
+}
+
+/* ── Fleet view (KitFleet) — device list + 3-stat summary; ported from the minimal prototype. Inner class
+ * names are generic (.led/.name/.role/.act/…), so every rule is scoped under a `.kit-*` container to avoid
+ * colliding with vapor (skin-scoped) or the shared Bucket-A classes. ── */
+.kit-sec {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 22px 18px 10px;
+}
+.kit-sec .t {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.kit-sec .grow {
+  flex: 1;
+}
+.kit-sec .hint {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.kit-wrap {
+  padding: 0 18px;
+}
+.kit-empty {
+  font-size: 12px;
+  color: var(--text-3);
+  padding: 16px 4px;
+  overflow-wrap: anywhere;
+}
+
+.kit-devices {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.kit-device {
+  border-top: 1px solid var(--line);
+}
+.kit-device:first-child {
+  border-top: 0;
+}
+.kit-device .row1 {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: calc(13px * var(--density-pad)) 14px;
+  cursor: pointer;
+  min-height: 56px;
+}
+.kit-device .led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-3);
+  flex: none;
+}
+.kit-device.on .led {
+  background: var(--ok);
+  box-shadow: 0 0 0 4px var(--ok-soft);
+}
+.kit-device .nm {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.kit-device .nm .name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.kit-device.off .nm .name {
+  color: var(--text-2);
+}
+.kit-device .nm .role {
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.kit-device .chev {
+  all: unset;
+  cursor: pointer;
+  color: var(--text-3);
+  display: inline-flex;
+  transition: transform 0.2s;
+}
+.kit-device.open .chev {
+  transform: rotate(90deg);
+  color: var(--text-2);
+}
+.kit-device .act {
+  all: unset;
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+  transition: background 0.15s, opacity 0.2s;
+}
+.kit-device .act.wake {
+  color: var(--accent);
+  border-color: color-mix(in oklch, var(--accent) 42%, transparent);
+}
+.kit-device .act.wake:active {
+  background: var(--accent-soft);
+}
+.kit-device .act.stop:active {
+  background: var(--surface-2);
+  color: var(--danger);
+}
+.kit-device.busy .act {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.kit-device .body {
+  padding: 0 14px 14px 34px;
+}
+.kit-device .meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  font-size: 12px;
+  padding: 2px 0 12px;
+}
+.kit-device .meta .k {
+  color: var(--text-3);
+}
+.kit-device .meta .v {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.kit-device .svcs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.kit-device .srow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+  min-height: 42px;
+}
+.kit-device .srow:active {
+  background: var(--surface-2);
+}
+.kit-device .srow .led {
+  width: 6px;
+  height: 6px;
+  box-shadow: none;
+}
+.kit-device .srow.on .led {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
+}
+.kit-device .srow .nm2 {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.kit-device .srow .nm2 .name {
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.kit-device .srow.off .nm2 .name {
+  color: var(--text-2);
+}
+.kit-device .srow .nm2 .addr {
+  font-size: 11px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.kit-device .srow .arrow {
+  color: var(--accent);
+  display: inline-flex;
+}
+.kit-device .no-svc {
+  font-size: 12px;
+  color: var(--text-3);
+  padding: 6px 10px 10px;
+}
+
+.kit-summary {
+  margin-top: 16px;
+  padding: 15px 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+.kit-summary .s {
+  text-align: center;
+}
+.kit-summary .s + .s {
+  border-left: 1px solid var(--line);
+}
+.kit-summary .s .v {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.kit-summary .s .v small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.kit-summary .s .l {
+  font-size: 10.5px;
+  color: var(--text-3);
+  margin-top: 5px;
 }

@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { type ComponentType, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
@@ -10,36 +10,37 @@ import { useSections } from "../../hooks/useSections";
 import { prefetchOnIdle } from "../../lib/prefetch";
 import { AgentTab } from "../../tabs/AgentTab";
 import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
-import { FleetTab } from "../../tabs/FleetTab";
 import { UtilsTab } from "../../tabs/UtilsTab";
 import { KitAppBar } from "./AppBar";
 import { KitComposer } from "./Composer";
+import { KitFleet } from "./Fleet";
 import { KitNavBar } from "./NavBar";
 
-// The Kit's DEFAULT root scaffold (D29 §14.4) — the standard appbar + scrolling sections + composer +
-// bottom-nav layout, generalized out of VaporRoot so a reskin theme's `Root` is just `<DefaultRoot/>` + a
-// `tokens.css`. It owns the theme-agnostic LAYOUT plumbing every standard theme shares: the `.app-shell`
-// dvh flex column, the lazy-Conf latch, scroll-reset on section change, the `--appbar-h` measurement, Conf
-// chunk prefetch, and the `.no-composer` padding hook. Theme-SPECIFIC decoration (vapor's hero/skyline)
-// stays in that theme's own Root; cosmetic options (minimal's density) stay attribute/token-driven.
+// The Kit's DEFAULT root scaffold (D29 §14.4) — the standard appbar + scrolling sections + floating
+// composer + bottom-nav layout, used by reskin themes (minimal/phosphor) so a theme's `Root` is just
+// `<DefaultRoot/>` + a `tokens.css`. It owns the theme-agnostic LAYOUT plumbing: the `.kit` dvh flex column,
+// the `.kit-main` positioning context (the composer floats over the scroller so content shows in the gaps
+// around it), the lazy-Conf latch, scroll-reset on section change, Conf-chunk prefetch, and the
+// `--appbar-h`/`--composer-h` measurements. It renders the token-driven Kit chrome (AppBar/NavBar/Composer)
+// + the shared tab bodies; theme-SPECIFIC decoration stays in a bespoke Root (e.g. vapor's hero).
 //
-// `hideAppbar` is a STRUCTURAL per-theme setting (it changes what's rendered), so it's an explicit prop the
-// theme passes down (e.g. minimal reads `useThemeSetting("minimal","hideAppbar")`). Cosmetic settings never
-// reach here — they're token/attr-driven, so the scaffold stays ignorant of any one theme's options.
-//
-// K1 NOTE: this reuses the existing (vapor-authored) chrome components — proven layout, but they carry
-// vapor's class vocabulary, so under a non-vapor skin they render unstyled until the Bucket-A token CSS +
-// Kit token-driven chrome land (K2/K3). The scaffold STRUCTURE is final; only which leaf components it
-// mounts evolves.
+// `hideAppbar` is a STRUCTURAL per-theme setting (it changes what's rendered) → an explicit prop the theme
+// passes down (minimal reads `useThemeSetting("minimal","hideAppbar")`). The Fleet view is the one
+// per-theme "signature" surface → the `Fleet` prop (defaults to the Kit's `KitFleet`). Cosmetic settings
+// never reach here — they're token/attr-driven (e.g. minimal's `density` → body[data-density]).
 
 interface Props {
   /** Hide the top app bar (a structural per-theme setting — e.g. minimal's `hideAppbar`). */
   hideAppbar?: boolean;
+  /** The Fleet section view (the one per-theme "signature" surface, §14.4). Defaults to the Kit's
+   *  device-list `KitFleet`; a theme with a bespoke Fleet (cosmos/frontier) passes its own. */
+  Fleet?: ComponentType<{ active: boolean }>;
 }
 
-export function DefaultRoot({ hideAppbar = false }: Props) {
+export function DefaultRoot({ hideAppbar = false, Fleet = KitFleet }: Props) {
   const { active: tab, hasComposer: showComposer } = useSections();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
 
   // Lazy Conf tab: conditional mount, strictly false→true, stays mounted to preserve form drafts.
   const [confMounted, setConfMounted] = useState(() => tab === "conf");
@@ -68,6 +69,27 @@ export function DefaultRoot({ hideAppbar = false }: Props) {
     return () => ro.disconnect();
   }, [hideAppbar]);
 
+  // The composer floats OVER the scrolling content (so the content shows in the gaps around it). Measure
+  // its height → `--composer-h` so the scroller pads its bottom enough for the last content to scroll clear
+  // (the textarea auto-grows, so a ResizeObserver keeps the padding in sync). 0 when no composer.
+  useEffect(() => {
+    const root = document.documentElement;
+    const comp = showComposer
+      ? mainRef.current?.querySelector<HTMLElement>(".kit-composer")
+      : null;
+    if (!comp) {
+      root.style.setProperty("--composer-h", "0px");
+      return;
+    }
+    const set = () => root.style.setProperty("--composer-h", `${comp.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(comp);
+    return () => ro.disconnect();
+    // `showComposer` fully captures composer mount/unmount; the node is identical across composer-bearing
+    // sections (fleet↔agent), so it needn't re-run on `tab`.
+  }, [showComposer]);
+
   // Warm the Conf chunk after first paint so the first Conf click is typically zero-wait.
   useEffect(() => {
     const cancel = prefetchOnIdle(preloadConfTab);
@@ -84,21 +106,26 @@ export function DefaultRoot({ hideAppbar = false }: Props) {
 
   return (
     <div className="kit">
-      <div className="kit-scroll" id="app-scroll" ref={scrollRef}>
-        {!hideAppbar && <KitAppBar />}
-        <FleetTab active={tab === "fleet"} />
-        <AgentTab active={tab === "agent"} />
-        <UtilsTab active={tab === "utils"} />
-        {confMounted && (
-          <ErrorBoundary fallback={confErrorFallback}>
-            <Suspense fallback={<ConfLoading />}>
-              <ConfTabLazy active={tab === "conf"} />
-            </Suspense>
-          </ErrorBoundary>
-        )}
+      {/* `.kit-main` is the positioning context: the scroller fills it, the composer floats over it (so
+          the content scrolls behind the composer and shows in the gaps around it). The nav bar stays an
+          in-flow bar below. */}
+      <div className="kit-main" ref={mainRef}>
+        <div className="kit-scroll" id="app-scroll" ref={scrollRef}>
+          {!hideAppbar && <KitAppBar />}
+          <Fleet active={tab === "fleet"} />
+          <AgentTab active={tab === "agent"} />
+          <UtilsTab active={tab === "utils"} />
+          {confMounted && (
+            <ErrorBoundary fallback={confErrorFallback}>
+              <Suspense fallback={<ConfLoading />}>
+                <ConfTabLazy active={tab === "conf"} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+        </div>
+        <MiniPlayer />
+        {showComposer && <KitComposer />}
       </div>
-      <MiniPlayer />
-      {showComposer && <KitComposer />}
       <KitNavBar onPrefetch={prefetch} />
       <Toasts />
       <ConfirmDialog />

@@ -12,6 +12,16 @@
  * vapor stays byte-identical. The base defaults only ever "show through" for a skin that declares none.
  * vapor's other tokens (`--bg`/`--magenta`/`--accent-grad`/`--accent-rgb`) are vapor-private names not in
  * this contract, so they never interact with it. */
+
+/* Global reset (base layer). vapor's `html,body{margin:0}` is scoped to [data-skin=vapor], so a non-vapor
+ * skin would otherwise inherit the browser's default `body { margin: 8px }` — insetting the whole shell and
+ * leaving a frame around the frosted bars. vapor re-asserts margin:0 in @layer theme, so this is inert for it. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
 :root {
   /* surfaces (bg ladder) */
   --surface: #232321;
