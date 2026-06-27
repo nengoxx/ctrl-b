@@ -444,22 +444,30 @@ export function AgentsEditor(props: {
           <div className="label">Auto-route to specialists</div>
           <div className="desc">when no /agent is pinned, pick the best-matching specialist per turn</div>
         </div>
-        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Switch
+          on={props.cfg.auto_rotate}
+          onToggle={() => saveSettings.mutate({ agent: { auto_rotate: !props.cfg.auto_rotate } })}
+        />
+      </div>
+      {/* The threshold is only meaningful while auto-route is on — show it as its own labelled sub-row
+          (like Memory's State-cap), not crammed next to the toggle, so the numeric field aligns with the
+          other right-edge inputs. */}
+      {props.cfg.auto_rotate && (
+        <div className="confrow">
+          <div className="k">
+            <div className="label">Min matching words</div>
+            <div className="desc">query words a specialist must match before a turn routes to it</div>
+          </div>
           <input
             className="lim-input"
             inputMode="numeric"
-            title="min matching words to route"
             aria-label="min matching words to route"
             value={minOverlap}
             onChange={(e) => setMinOverlap(e.target.value)}
             onBlur={commitMinOverlap}
           />
-          <Switch
-            on={props.cfg.auto_rotate}
-            onToggle={() => saveSettings.mutate({ agent: { auto_rotate: !props.cfg.auto_rotate } })}
-          />
-        </span>
-      </div>
+        </div>
+      )}
 
       <AgentRow
         name={DEFAULT_AGENT}

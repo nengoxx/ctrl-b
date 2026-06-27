@@ -2438,5 +2438,21 @@ body {
   color: var(--magenta);
   transform: rotate(90deg);
 }
+
+/* ── Add-row +/− glyph centering (override of vapor.css's text glyph) ──────────────────────────────
+   vapor.css draws the add-row's circle marker with a TEXT "+"/"−" (content + font), whose optical
+   centering varies by font/weight. Swap it for two DRAWN bars (background gradients), so the symbol is
+   font-independent and always perfectly centered — matching the Kit's `.kit .mwrap.add` fix. We only
+   override `content` + `background`; the circle's border/size/glow stay from vapor.css (verbatim, D7). */
+.mwrap.add > .confrow .label::before {
+  content: "";
+  background:
+    linear-gradient(var(--magenta), var(--magenta)) center / 8px 1.5px no-repeat,
+    linear-gradient(var(--magenta), var(--magenta)) center / 1.5px 8px no-repeat;
+}
+.mwrap.add.open > .confrow .label::before {
+  content: ""; /* open = "−": keep only the horizontal bar */
+  background: linear-gradient(var(--magenta), var(--magenta)) center / 8px 1.5px no-repeat;
+}
 }
 /* end @scope ([data-skin="vapor"]) */

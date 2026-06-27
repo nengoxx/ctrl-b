@@ -911,19 +911,30 @@ body[data-mode="light"] .kit .pm {
 .kit .pm-count.over {
   color: var(--danger);
 }
-/* The secondary defaults (Load/Restore) take their OWN full-width row so they never get crammed onto the
- * line with Cancel/Save at phone width (4 uppercase pills don't fit at 390px) — Cancel/Save then sit on
- * the next line, right-aligned. When there's no defaultText this group isn't rendered, so it's just the
- * count row + a right-aligned actions row. */
+/* Footer actions row (the count sits on its own row above). Standard dialog layout: the neutral/secondary
+ * utilities (Load/Restore default) sit LEFT as quiet TEXT buttons, the primary actions (Cancel/Save) sit
+ * RIGHT as pills — so all four read clearly and fit one row at 390px (the text defaults are narrow). If a
+ * very long label ever overflows, flex-wrap drops the actions to the next line, still right-aligned. */
 .kit .pm-defaults {
   display: flex;
-  gap: 8px;
-  flex: 1 1 100%;
+  gap: 2px;
+  margin-right: auto; /* hug left, push the actions group to the right edge */
 }
 .kit .pm-actions {
   display: flex;
   gap: 8px;
   margin-left: auto;
+}
+/* the defaults are quiet text buttons (not pills) — secondary to Cancel/Save, and narrow enough to fit */
+.kit .pm-defaults .pm-alt {
+  padding: 6px 8px;
+  background: transparent;
+  border: 0;
+  color: var(--text-3);
+}
+.kit .pm-defaults .pm-alt:active {
+  background: transparent;
+  color: var(--accent);
 }
 .kit .pm-alt {
   all: unset;
@@ -1375,22 +1386,24 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   align-items: center;
   gap: 8px;
 }
+/* The +/− is DRAWN from two centered bars (background gradients), not a text glyph — a glyph's optical
+ * centering varies by font (Hanken Grotesk sat the +/− off-centre), so this is font-independent and always
+ * perfectly centered. `--accent` is a true color (contract), so the solid-gradient bar trick is safe. */
 .kit .mwrap.add > .confrow .label::before {
-  content: "+";
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  content: "";
+  display: inline-block;
+  flex: none;
   width: 18px;
   height: 18px;
   border-radius: 50%;
   border: 1px solid var(--accent);
-  color: var(--accent);
-  font-size: 14px;
-  line-height: 1;
-  font-weight: 600;
+  background:
+    linear-gradient(var(--accent), var(--accent)) center / 8px 1.5px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) center / 1.5px 8px no-repeat;
 }
 .kit .mwrap.add.open > .confrow .label::before {
-  content: "−";
+  /* open = "−": keep only the horizontal bar */
+  background: linear-gradient(var(--accent), var(--accent)) center / 8px 1.5px no-repeat;
 }
 
 /* machine form grid (label column + value column) */

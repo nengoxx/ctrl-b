@@ -1029,3 +1029,27 @@ the Conf label overflow); bake the wrap rule into any new text surface from the 
 scroller `overflow-x: hidden` (a vertical-only scroller computes the x-axis to `auto` otherwise, so a stray-wide
 child adds a horizontal scrollbar), and theme the scrollbars — thin + themed thumb **and** a transparent
 `::-webkit-scrollbar-corner`, so Chrome's default light corner box never flashes against a dark theme.
+
+## 14.12 Shared-component UX conventions (learned in the A.2 reskin — apply to every theme + vapor)
+
+These three bugs surfaced reskinning the Conf editors under `minimal`; all are now fixed in the **shared
+Kit** (`kit.css` / a shared component) so every future reskin inherits the fix, and in **vapor** (via
+`extras.css` overrides, vapor.css verbatim). Bake them into any new component from the start:
+
+- **Draw simple symbols (`+ − ×`), don't render them as font glyphs.** A text glyph's optical centering
+  varies by font/weight — minimal's Hanken Grotesk sat the add-row `+`/`−` off-centre in a circle that
+  looked centered in vapor's font. Draw the symbol from CSS bars (two `linear-gradient(var(--accent),…)`
+  `background` slices at `center`) or an SVG mask, so it's font-independent and always centered. Precedent:
+  `.kit .mwrap.add .label::before` + the vapor `extras.css` override; the mini-player play/pause masks.
+- **A dependent setting gets its own conditional labelled sub-row — never cram two controls into one row's
+  right slot.** The "Auto-route to specialists" row jammed a number input *and* a Switch into one right-hand
+  `<span>` (cramped, the input unlabelled). Split it: a clean toggle row, then a labelled numeric sub-row
+  rendered only when the toggle is on (the Memory editor's State-cap / Reflection-interval precedent). The
+  numeric field then right-aligns with every other `.lim-input` row. This lives in the **shared component**
+  (`AgentsEditor`), so it's fixed for all skins at once.
+- **Dialog/modal footer = neutral-left / primary-right on ONE row; don't stack into staggered rows.** With a
+  secondary utility pair (Load/Restore default) *and* primary actions (Cancel/Save), make the utilities quiet
+  **text** buttons on the left and the primary actions **pills** on the right (`margin-right:auto` / `margin-
+  left:auto`, `flex-wrap` as the overflow fallback). Four equal pills don't fit at 390px → don't force them
+  onto their own full-width rows (that reads as a left/right stagger). Precedent: `.kit .pm-foot` /
+  `.pm-defaults .pm-alt`. (Material's "confirming action right, dismissive/neutral left" footer pattern.)
