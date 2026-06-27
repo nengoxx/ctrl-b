@@ -76,8 +76,41 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Theme-engine v2 (D29): Bucket-A.1 SHIPPED — overlays + primitives + Conf shell token-driven under `.kit`; + post-A.1 Conf polish (accent var()-fix · light-mode retune · top/bottom edge-fades · color-swatch palette picker + SettingRow · auto-TTS in Conf)** · NEXT = **Bucket-A.2: the deep Conf editors**; emma deploy still queued)
+## Current state (**Theme-engine v2 (D29): Bucket-A.1 + A.2 SHIPPED — overlays, primitives, Conf shell, ALL deep Conf editors + the Utils/Tools tab token-driven under `.kit`; minimal renders every shared surface EXCEPT the Agent chat** · NEXT = **Bucket-A.3: the Agent chat bubbles**; emma deploy still queued)
 
+> ### 🟢 SESSION UPDATE — Bucket-A.2 SHIPPED (deep Conf editors + Utils tab) — 2026-06-27 (cont.)
+>
+> **What shipped (committed + green).** A.2 token-ported every editor-specific + Utils-tab surface from
+> `[data-skin=vapor]` to `.kit`, in audited sub-slices (each: build → 120/34 → audit → commit → eyeball):
+> - **`a419c47` A.2a** — Machine/Service (`.svc-*` + small auto-switch) · Inference fallbacks · Integrations
+>   `.kv-text` · shared prompt-rows (`.conf-promptrow`/`.prompt-preview`/`.prompt-open`/`.kv-prompt`).
+> - **`b44415d`** — PromptModal footer fix + pulled-forward Memory/Skills raw-editor (`.kv-text.skill-md`,
+>   `.skill-md-bar`, `.mem-*`).
+> - **`8c33dc9` A.2b** — Agents allowlist tri-state (`.tick-grid .tick`, scoped off the A.3 plan dots) +
+>   limits grid (`.agent-lim`/`.lim-input`) + `.agent-store`/`.agent-slug`/`.agent-empty` · Tool descriptions.
+> - **`f29feeb`** — 3 owner-reported UX fixes across **Kit + vapor** + documented as `THEME_ENGINE.md` **§14.12**
+>   (draw symbols don't font them · dependent setting → own conditional sub-row · dialog footer neutral-left/
+>   primary-right). Auto-route row split; the `+/−` add-glyph is now CSS-drawn (font-independent) in both skins.
+> - **`da6ac44` A.2c** — Utils/Tools tab: `.util` run-cards (masked `.ico` yt/globe) + `.tcat-*` agent-tool
+>   catalog (risk ladder high=`--danger`, confirm=`--warn`) + ModeSeg tri-state additions.
+> - **`f938eb1`** — compact catalog tri-toggle (`small`) + sealed the Kit top-fade seam (opaque top stop).
+> - **`+ this commit`** — `.kit .no-svc` caption (the one whole-A.2 audit LOW).
+>
+> **VERIFIED:** every sub-slice green (`npm run build` · `npm test` **120** · `npm run test:e2e` **34**); FOUR
+> independent audits (A.2a/pm/mem, A.2c, the 3-UX-fixes, and a **whole-A.2 coverage sweep**) — all PASS/CLEAN,
+> 0 blocker/high; the coverage sweep confirmed **every** class the editors + Utils tab emit resolves to a `.kit`
+> rule. vapor stays computed-identical. Conventions match A.1 (inputs `--bg` @13px, cards `--surface`, flat
+> `--accent`, danger ladder, mono = system stack).
+>
+> **⛔ NEXT = Bucket-A.3 — the Agent chat bubbles** (the last vapor-scoped shared surface under minimal):
+> markdown replies + reasoning/thinking disclosure + `.b.cmd` tool-call/confirm bubbles (web-search/output
+> disclosures) + the plan-panel & step dots (`.tick.tick-btn` — deliberately left off the A.2b allowlist chip)
+> + the privilege chip/menu + the question bubble. Net-new patterns to research (chat-message + markdown
+> styling, the disclosure/bubble interactions) → research → design-in-prose → confirm → audited slices. The
+> **SettingRow sweep** of the remaining Conf groups is still deferred (owner: incremental).
+>
+> ---
+>
 > ### 🟢 SESSION UPDATE — Bucket-A.1 (overlays + Conf shell) + post-A.1 Conf polish — 2026-06-27 (cont.)
 >
 > **What shipped (committed + green).** Bucket-A.1 closed the reachable broken-UX (minimal Fleet wake/stop → an
