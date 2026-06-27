@@ -41,10 +41,14 @@ export function CosmosStarfield() {
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const FRAME_MS = 1000 / 30; // ~30fps — twinkle is slow, reads smooth, halves frame work vs vsync
-    type Star = { x: number; y: number; r: number; a: number; tw: number; ph: number };
+    // Positions are NORMALIZED [0,1] (scaled by w/h at paint time) so a resize REMAPS the field instead of
+    // regenerating it — the Android URL bar sliding during scroll (a height-only change) never reshuffles
+    // the sky. Radius is absolute (device px).
+    type Star = { nx: number; ny: number; r: number; a: number; tw: number; ph: number };
     let stars: Star[] = [];
-    let w = 0; // backing-store px (CSS px × dpr); the canvas is drawn in device px (no setTransform), as the prototype does
+    let w = 0; // backing-store px (CSS px × dpr); drawn in device px (no setTransform)
     let h = 0;
+    let genW = -1; // viewport CSS width the field was last generated at — regenerate only when WIDTH changes
     let raf = 0;
     let running = false;
     let last = 0;
@@ -55,25 +59,33 @@ export function CosmosStarfield() {
     function readColor() {
       color = getComputedStyle(canvas!).getPropertyValue("--star").trim() || "#ffffff";
     }
-    function size() {
+    // Backing store + EXPLICIT CSS pixel size. A <canvas> is a REPLACED element, so `position:fixed; inset:0`
+    // does NOT stretch it — without an explicit CSS size it renders at its intrinsic (attribute) size in CSS
+    // px = cssW×dpr, overflowing on dpr>1 screens (Android) so only the left 1/dpr is on-screen (sparse +
+    // left-shifted). Setting style width/height to the viewport (the prototype's `cv.style.width`) makes the
+    // backing store map 1:1 to the screen at every dpr. (dpr=1 desktop coincidentally matched, hence "fine on PC".)
+    function resizeCanvas() {
       const cssW = window.innerWidth;
       const cssH = window.innerHeight;
       w = canvas!.width = Math.round(cssW * dpr);
       h = canvas!.height = Math.round(cssH * dpr);
-      // A DENSE, FINE field (owner: the prototype's ~1/9000 + radius≤1.2px read sparse + chunky, "zoomed
-      // in"). ~1 star / 4000 css px², capped so a 4K desktop stays cheap; smaller radii (≤~0.78 css px).
-      const n = Math.min(Math.floor((cssW * cssH) / 4000), 800);
+      canvas!.style.width = cssW + "px";
+      canvas!.style.height = cssH + "px";
+    }
+    function generate() {
+      const cssW = window.innerWidth;
+      // ~1 star / 4000 css px², capped so a 4K desktop stays cheap. Radius is power-skewed (random²) so most
+      // stars are tiny and large ones are rare + scattered (no distracting clumps); ≤~0.78 css px.
+      const n = Math.min(Math.floor((cssW * window.innerHeight) / 4000), 800);
       stars = Array.from({ length: n }, () => ({
-        x: Math.random() * w,
-        y: Math.random() * h,
-        // Size is power-skewed (random²) so MOST stars are tiny and large ones are rare + scattered —
-        // a uniform range made big stars common enough to clump into distracting pairs. Positions stay
-        // uniformly random (regenerated each load/resize), so the field has no fixed standout stars.
+        nx: Math.random(),
+        ny: Math.random(),
         r: (Math.random() ** 2 * 0.62 + 0.16) * dpr,
         a: Math.random() * 0.45 + 0.12,
         tw: Math.random() * 0.018 + 0.003,
         ph: Math.random() * 6.28,
       }));
+      genW = cssW;
     }
     function paint(now: number) {
       ctx!.clearRect(0, 0, w, h);
@@ -84,7 +96,7 @@ export function CosmosStarfield() {
         const a = s.a + (twinkle ? Math.sin(now * s.tw * mult + s.ph) * 0.18 : 0);
         ctx!.globalAlpha = a < 0 ? 0 : a > 1 ? 1 : a;
         ctx!.beginPath();
-        ctx!.arc(s.x, s.y, s.r, 0, 6.28);
+        ctx!.arc(s.nx * w, s.ny * h, s.r, 0, 6.28);
         ctx!.fill();
       }
       ctx!.globalAlpha = 1;
@@ -107,17 +119,29 @@ export function CosmosStarfield() {
       cancelAnimationFrame(raf);
     }
 
-    size();
+    resizeCanvas();
+    generate();
     readColor();
     paint(0); // initial static frame; the [animate] effect starts the loop if motion is on
     ctrl.current = { start, stop, repaint: () => paint(0) };
 
-    // The fixed canvas's box == the viewport; ResizeObserver catches rotation / window resize.
-    const ro = new ResizeObserver(() => {
-      size();
+    // Re-size on viewport changes: window 'resize' = rotation / desktop drag; visualViewport 'resize' =
+    // Android URL bar + soft keyboard. Skip genuine no-ops; regenerate the field only when WIDTH changes
+    // (rotation/desktop) — a height-only change just rescales via normalized positions, no reshuffle.
+    let lastW = window.innerWidth;
+    let lastH = window.innerHeight;
+    const onResize = () => {
+      const cw = window.innerWidth;
+      const ch = window.innerHeight;
+      if (cw === lastW && ch === lastH) return;
+      lastW = cw;
+      lastH = ch;
+      resizeCanvas();
+      if (cw !== genW) generate();
       if (!running) paint(0); // a running loop repaints next frame
-    });
-    ro.observe(canvas);
+    };
+    window.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("resize", onResize);
 
     // Persistent full-screen layer → pause when the PWA is backgrounded (no IntersectionObserver: it's
     // always "on screen"). Resume only if animation is currently enabled.
@@ -129,7 +153,8 @@ export function CosmosStarfield() {
 
     return () => {
       stop();
-      ro.disconnect();
+      window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
       document.removeEventListener("visibilitychange", onVisibility);
       ctrl.current = null;
     };
