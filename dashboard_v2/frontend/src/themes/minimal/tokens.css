@@ -9,17 +9,22 @@
  *     identity lives on <html>), so bundles can coexist during a View-Transition switch without bleeding.
  *
  * ⚠️ `@scope` gotcha (THEME_ENGINE §14.6): scoped selectors match DESCENDANTS of the scope root, not the
- * root itself — so the token block uses `:scope` (= <html data-skin=minimal>) and the mode/accent/density
- * axes use `body[data-*]` (applyBodyAttrs writes data-mode/data-accent on <body>; MinimalRoot writes
- * data-density). Defining the `--accent` formula on :scope and overriding only its INPUTS (--accent-l/-c/-h)
- * lower down is the standard "formula high, inputs low" custom-property pattern — substitution resolves
- * against each element's inherited input values. */
+ * root itself — so the static token block uses `:scope` (= <html data-skin=minimal>) and the mode/accent/
+ * density axes use `body[data-*]` (applyBodyAttrs writes data-mode/data-accent on <body>; MinimalRoot
+ * writes data-density).
+ *
+ * ⚠️ The OKLCH accent is a FORMULA over inputs (--accent-l/-c/-h). The derived tokens (--accent/-fill/
+ * -soft) MUST be declared on `body`, NOT `:scope`: a var() formula is substituted at computed-value time
+ * on the element that DECLARES it, so on :scope (<html>) `--accent` computes once from <html>'s inputs and
+ * is only INHERITED down — the body[data-accent]/body[data-mode] overrides of the inputs would never
+ * re-derive it (the accent silently never changed). Declared on <body> (at/below where the axes are set)
+ * it recomputes against the resolved inputs. Inputs stay on :scope; only the formulas live on body. */
 @layer theme {
   @scope ([data-skin="minimal"]) {
     :scope {
       color-scheme: dark;
 
-      /* global tier — OKLCH accent inputs (mode sets L/C; accent sets H) */
+      /* global tier — OKLCH accent inputs (mode sets L/C; accent sets H). A quiet, low chroma. */
       --accent-l: 0.74;
       --accent-c: 0.07;
       --accent-h: 195;
@@ -34,10 +39,9 @@
       --line: rgba(255, 255, 255, 0.08);
       --line-2: rgba(255, 255, 255, 0.13);
 
-      --accent: oklch(var(--accent-l) var(--accent-c) var(--accent-h));
-      --accent-fill: var(--accent);
-      --accent-soft: oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.14);
       --accent-glow: none; /* minimal is flat — no glow layer */
+      /* NB: the derived accent tokens (--accent/-fill/-soft) are declared on `body`, not here — see the
+       * header note + the `body { --accent… }` block below (the var()-on-:scope bug). */
 
       --ok: oklch(0.76 0.1 155);
       --ok-soft: oklch(0.76 0.1 155 / 0.16);
@@ -58,24 +62,38 @@
       color: var(--text);
     }
 
-    /* ── light mode (body[data-mode=light]) — bump L down / C up per OKLCH dark↔light pairing ── */
+    /* derived accent tokens — declared on <body> so the var() formula recomputes against the inputs the
+     * body[data-accent]/body[data-mode] rules override (see the header note). On :scope these would compute
+     * once on <html> and only inherit, so switching accent/mode never recolored. */
+    body {
+      --accent: oklch(var(--accent-l) var(--accent-c) var(--accent-h));
+      --accent-fill: var(--accent);
+      --accent-soft: oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.12);
+    }
+
+    /* ── light mode (body[data-mode=light]) — a NEUTRAL warm-grey (not a near-white cream) with real
+     *    tonal variance: the page is a clear light grey, cards sit a step lighter (proper light-mode
+     *    elevation, but never pure white), and the hairlines/text carry more contrast. The accent goes
+     *    richer + darker (L 0.50) so it reads as color on the light ground. ── */
     body[data-mode="light"] {
       color-scheme: light;
       --accent-l: 0.58;
       --accent-c: 0.08;
-      --bg: #f4f2ed;
-      --surface: #ffffff;
-      --surface-2: #faf8f4;
-      --text: #21201d;
-      --text-2: #5f5d57;
-      --text-3: #8f8d86;
-      --line: rgba(0, 0, 0, 0.08);
-      --line-2: rgba(0, 0, 0, 0.13);
+      --bg: #e5e3df; /* page — a clear warm-grey, distinctly not white */
+      --surface: #f4f3f0; /* cards — a step lighter than the page, not pure white */
+      --surface-2: #ecebe7; /* nested / input fills — between page and card */
+      --text: #1d1c1a;
+      --text-2: #54524c;
+      --text-3: #817e77;
+      --line: rgba(0, 0, 0, 0.1);
+      --line-2: rgba(0, 0, 0, 0.16);
       --accent-soft: oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.12);
-      --ok: oklch(0.55 0.11 155);
-      --ok-soft: oklch(0.55 0.11 155 / 0.12);
-      --danger: oklch(0.55 0.16 28);
-      --danger-soft: oklch(0.55 0.16 28 / 0.1);
+      --ok: oklch(0.52 0.12 155);
+      --ok-soft: oklch(0.52 0.12 155 / 0.14);
+      --warn: oklch(0.62 0.13 75);
+      --warn-soft: oklch(0.62 0.13 75 / 0.14);
+      --danger: oklch(0.53 0.17 28);
+      --danger-soft: oklch(0.53 0.17 28 / 0.12);
     }
 
     /* ── accent hue (body[data-accent=…]) — the mode×4-accent matrix is one --accent-h per accent ── */

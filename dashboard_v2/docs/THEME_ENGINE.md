@@ -871,8 +871,21 @@ never leaks into vapor — **follow it for every future theme:**
   waveform are deferred until a theme renders a featured-host card — minimal dropped the monitoring section, vapor has
   its own Hero — so K2 skips them; they land in the slice of the first theme that needs them.)
 
+> **⚠️ Gotcha — a derived (formula) token must be DECLARED where its inputs vary, not on `:scope` (the
+> var()-on-html trap, caught in minimal 2026-06-27).** A `var()` formula is substituted at computed-value
+> time on the element that *declares* the property. minimal's OKLCH accent is a formula over inputs
+> (`--accent: oklch(var(--accent-l) var(--accent-c) var(--accent-h))`) whose inputs are overridden on
+> `body[data-accent=…]` / `body[data-mode=…]`. Declared on `:scope` (= `<html>`), `--accent` computed
+> **once** on `<html>` from `<html>`'s inputs and only *inherited* down — the body-level input overrides sat
+> *below* the derivation, so switching accent/mode **never recolored** (the accent was frozen at the default
+> hue). Fix: declare the **derived** tokens (`--accent`/`-fill`/`-soft`) on a `body { … }` rule (at/below
+> where the axes are set) so each recomputes against the resolved inputs; keep the raw **inputs**
+> (`--accent-l/-c/-h`) and the static semantic tokens on `:scope`. Rule of thumb: *raw values → `:scope`;
+> any token whose value is a `var()` formula over a per-mode/per-accent input → `body`.* (A theme with flat,
+> non-formula accents — a literal color per `data-accent` — is immune; this only bites formula accents.)
+
 **Recipe — add a future reskin theme (zero app/core/backend change):**
-1. `themes/<id>/tokens.css` — `@layer theme { @scope ([data-skin="<id>"]) { :scope { …semantic tokens… } body[data-mode=…] / body[data-accent=…] { …overrides… } } }`. (⚠️ tokens on `:scope`/`body`, mode/accent on `body[data-*]` — the §14.6 scope-root gotcha.)
+1. `themes/<id>/tokens.css` — `@layer theme { @scope ([data-skin="<id>"]) { :scope { …semantic tokens… } body[data-mode=…] / body[data-accent=…] { …overrides… } } }`. (⚠️ tokens on `:scope`/`body`, mode/accent on `body[data-*]` — the §14.6 scope-root gotcha; **derived formula tokens must live on `body`, not `:scope`** — see the gotcha box above.)
 2. `themes/<id>/index.tsx` — a `ThemeDef`: `Root` = a thin wrapper that reads its settings and renders `<DefaultRoot hideAppbar=… />` (STRUCTURAL settings → `DefaultRoot` props; COSMETIC settings → a `body[data-*]` attr its `tokens.css` scopes, e.g. minimal's `data-density`); `palettes`; `loadStyles: () => import("./tokens.css")`; optional `loadFonts` (Fontsource, awaited via `document.fonts.load`); optional `settings`; optional `present` (spatial themes only).
 3. Register it in `theme-engine/registry.ts`. The Conf Appearance picker auto-renders its modes/accents/settings; `ThemeProvider` loads its lazy CSS/fonts on activation (and on cold-load if it's the persisted theme). Its Fleet view is the one surface it composes itself (from Kit `device-row`/`NowMonitoring` pieces); everything else is the shared Kit chrome + editors, skinned entirely by its tokens.
 
