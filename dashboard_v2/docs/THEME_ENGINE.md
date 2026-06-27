@@ -1053,3 +1053,53 @@ Kit** (`kit.css` / a shared component) so every future reskin inherits the fix, 
   left:auto`, `flex-wrap` as the overflow fallback). Four equal pills don't fit at 390px → don't force them
   onto their own full-width rows (that reads as a left/right stagger). Precedent: `.kit .pm-foot` /
   `.pm-defaults .pm-alt`. (Material's "confirming action right, dismissive/neutral left" footer pattern.)
+
+## 14.13 New-theme slot-in contract — the pre-flight (hardened after minimal + vapor, 2026-06-27)
+
+**The whole point of the Kit + the semantic-token contract is that a new theme slots in by providing a
+`tokens.css` (+ optional fonts/effects) and *nothing structural breaks*.** This checklist consolidates every
+wire we actually hit shipping minimal + the vapor migration, so T2 (phosphor) → T5 each "just work" no matter
+what new tokens/effects/fonts they bring. Verify each before writing a theme:
+
+1. **Tokens — the contract is COMPLETE and is the safety net.** Every semantic token the Kit reads
+   (`--bg`/`--surface`/`--surface-2`/`--text`/`-2`/`-3`/`--line`/`--line-2`/`--accent`/`--accent-fill`/
+   `--accent-soft`/`--accent-glow`/`--ok`/`--ok-soft`/`--warn`/`--warn-soft`/`--danger`/`--danger-soft`/
+   `--radius`/`--radius-sm`/`--density-pad`) has a base fallback in `theme-engine/kit/tokens.css`
+   (`@layer base`). So a theme that ships a **partial** `tokens.css` degrades gracefully (base value shows
+   through); a complete one fully reskins. **Verified 2026-06-27: zero tokens are read without a fallback,
+   and kit.css has no hardcoded theme colors** (only neutral `rgba(0,0,0,…)` shadows). *If you add a NEW Kit
+   component that reads a NEW token, add its base fallback to `kit/tokens.css` in the same change* (the rule
+   that caught `--bg`).
+2. **`@scope`/`@layer` + the `:scope` gotcha (§14.6).** A theme's `tokens.css` is
+   `@layer theme { @scope ([data-skin="<id>"]) { … } }` (a lazy import self-declares BOTH — the static
+   `@import` can't pass the layer). The variable block goes on **`:scope`** (= `<html data-skin=id>`, NOT
+   `:root` — scoped selectors match descendants, not the root); mode/accent/density axes on `body[data-*]`;
+   page background on `:scope, body`.
+3. **Formula-derived tokens live on `body`, NOT `:scope` (the var()-on-:scope trap, §14.4.1).** Any token
+   whose value is a `var()` formula over a per-mode/accent input (minimal's OKLCH `--accent`) must be declared
+   on a `body{}` rule so it recomputes against the resolved inputs; raw inputs stay on `:scope`. Declared on
+   `:scope` it computes once on `<html>` and only inherits — the body-level overrides never re-derive it (the
+   accent silently froze). A theme with flat literal-per-accent colors is immune.
+4. **`@keyframes` names are GLOBAL — prefix every one with your theme id (`phosphor-…`).** `@scope` isolates
+   *selectors*, NOT animation names; the last-parsed `@keyframes <name>` wins document-wide, and theme bundles
+   coexist during a View-Transition switch. vapor's keyframes are **unprefixed** (`spin`, `shimmer`, `eq`,
+   `twinkle`, `float`, `brew`, `heartbeat`, `gridmove`, `micrec`, `ttsGlow`, `sun-stripes-static`, `inside`),
+   and the Kit's are `kit-*`. **A new theme that names a keyframe `spin`/`glow`/`shimmer`/etc. silently
+   collides with vapor and breaks it while both are loaded.** Rule: **prefix ALL your `@keyframes` with
+   `<theme-id>-`** and you can never collide (this is exactly why the Kit uses `kit-*`). Especially relevant
+   for phosphor's CRT (scanline/flicker/glow loops).
+5. **New effects must pass the §14.11 cross-browser budget.** CRT scanlines, glow, flicker, any ambient
+   animation → **transform/opacity only** (no animated `background-position`/`box-shadow`/`filter`/size),
+   **`will-change`/`contain`** the animated element, gate continuous anims behind `body[data-motion]` and any
+   `backdrop-filter`/heavy effect behind `body[data-perf]` (both are part of the theme contract). Canvas/rAF
+   loops: cap ~30fps, pause off-screen, cache layout reads. **A theme isn't done until it's smooth on
+   Firefox/Fennec AND Chrome at 390px with effects ON.** (phosphor's glow → animate the `opacity` of a glow
+   layer, not `box-shadow`; `--accent-glow` already exists in the contract for static glows.)
+6. **Reuse the Kit; don't fork shared components.** A reskin theme = `Root` → `<DefaultRoot/>` + `tokens.css`
+   (+ fonts + a Fleet view + settings). The shared overlays/editors/chat/primitives are already token-driven
+   under `.kit` — never re-style them per-theme (§14.4.1: token-only reskins). A bespoke theme (own `Root`,
+   own CSS, no `.kit`) opts INTO Kit pieces by adding the `.kit` marker itself. The §14.12 UX conventions
+   (draw symbols, dependent sub-rows, neutral-left/primary-right footers) are baked into the shared layer, so
+   you inherit them.
+7. **State lives above the `Root` (§14.5); per-host visuals via `present()` (§9.9).** A spatial theme
+   (cosmos/frontier, T4/T5) adds `present()` + its own Fleet `Root`; nothing else in the system changes.
