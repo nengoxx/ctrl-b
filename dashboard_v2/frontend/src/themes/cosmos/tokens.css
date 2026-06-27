@@ -37,11 +37,11 @@
       --font-body: "Space Grotesk", system-ui, sans-serif;
     }
 
-    /* page background — flat for C0 (the deep-space radial gradient + starfield land with the bespoke Root
-     * in C1, where the shell is layered over them). Both <html> (overscroll) + <body>. */
+    /* page text color. The page BACKGROUND (deep-space radial gradient) + the see-through Kit shell live in
+     * the bespoke cosmos.css (C1), layered over the starfield — kept out of the token map so there's no
+     * same-layer override race with this file (both load together via loadStyles). */
     :scope,
     body {
-      background: var(--bg);
       color: var(--text);
     }
 

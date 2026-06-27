@@ -1,12 +1,18 @@
 import { DefaultRoot } from "../../theme-engine/kit/DefaultRoot";
 import { useUISlice } from "../../store/ui";
+import { CosmosStarfield } from "./CosmosStarfield";
 
-// cosmos's Root (D29 §14.4 / §14.13). C0 SCAFFOLD: cosmos is a bespoke theme, but for now its presentation
-// IS the Kit scaffold — so the whole app renders in the cosmos palette (the reused chrome/Agent/Conf/Utils,
-// colored by cosmos's tokens.css). Later slices replace this with a bespoke Root that layers the starfield
-// (C1) and the orbital FleetView via DefaultRoot's `Fleet` slot (C2) while still reusing the Kit bodies.
-// Honors the global `ui.hideAppbar` lever (all themes); motion uses the global Appearance toggle.
+// cosmos's Root (D29 §14.4 / §14.13). C1: a BESPOKE Root that layers the deep-space starfield behind the
+// REUSED Kit shell — the chrome/Agent/Conf/Utils render via DefaultRoot (colored by cosmos's tokens.css),
+// while cosmos.css makes that shell see-through so the fixed starfield canvas shows in the gaps. The Fleet
+// is still the Kit's default device list; the bespoke ORBITAL FleetView (via DefaultRoot's `Fleet` slot)
+// + per-host `present()` land in C2. Honors the global `ui.hideAppbar` lever (all themes).
 export function CosmosRoot() {
   const hideAppbar = useUISlice((s) => s.hideAppbar);
-  return <DefaultRoot hideAppbar={hideAppbar} />;
+  return (
+    <>
+      <CosmosStarfield />
+      <DefaultRoot hideAppbar={hideAppbar} />
+    </>
+  );
 }

@@ -1,0 +1,41 @@
+/* cosmos bespoke structural CSS (D29 §14.4 / §14.13) — the parts that aren't token values: the deep-space
+ * page background, the see-through Kit shell, and the starfield canvas layer. cosmos is a BESPOKE theme, so
+ * (like vapor.css) it may ship structural CSS beyond the token map. Same envelope as tokens.css —
+ * @layer theme + @scope([data-skin=cosmos]) — so it can never leak into another skin and reliably wins over
+ * the Kit's @layer base rules (layer order base < theme), independent of stylesheet load order.
+ *
+ * The stack, back → front: body deep-space gradient → fixed starfield canvas (z 0) → the TRANSPARENT Kit
+ * shell (z 1) → its opaque `--surface` cards/appbar/composer (which occlude stars; the sky shows in the
+ * gaps around them). The C2 orbital fleet will mount in the same canvas layer. */
+@layer theme {
+  @scope ([data-skin="cosmos"]) {
+    /* Star color — a token so a future accent-tint / color-picker option can swap it (owner: white for
+     * now; light mode → black/deep-purple later, when a daylight mode lands). Read by the starfield canvas. */
+    :scope {
+      --star: #ffffff;
+    }
+
+    /* Deep-space page background (ported from the prototype) — a soft top-biased core glow fading to the
+     * flat --bg. Sits behind the fixed starfield. */
+    body {
+      background: radial-gradient(ellipse at 50% 30%, #121018, var(--bg) 70%);
+    }
+
+    /* The starfield canvas — fixed, full-viewport, behind the shell, never intercepting input. */
+    .cosmos-stars {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* See-through shell: drop the Kit's opaque page fill so the sky shows through the gaps, and lift the
+     * shell above the fixed canvas (z 1 over the canvas's z 0). The cards/appbar/composer keep their own
+     * opaque --surface backgrounds, so only the negative space reveals the stars. */
+    .kit {
+      background: transparent;
+      position: relative;
+      z-index: 1;
+    }
+  }
+}

@@ -36,7 +36,32 @@ export const cosmos: ThemeDef = {
     ],
     defaultAccent: "violet",
   },
-  loadStyles: () => import("./tokens.css"),
+  // Two stylesheets: the token map (semantic contract) + cosmos's bespoke structural CSS (deep-space
+  // gradient, see-through Kit shell, starfield canvas). cosmos is a BESPOKE theme → entitled to structural
+  // CSS beyond tokens (the vapor.css escape hatch); both are @scope([data-skin=cosmos]) @layer theme.
+  loadStyles: () => Promise.all([import("./tokens.css"), import("./cosmos.css")]),
   loadFonts,
+  // Per-theme settings (§14.3), auto-rendered in the Conf Appearance picker — cosmos is "more dynamic",
+  // so it owns its animation controls (the prototype's "Orbital motion" switch, here split into on/off +
+  // a tempo). Both gate/scale the C1 starfield now and the C2 orbital fleet later (tempo → motion.ts).
+  settings: {
+    orbitalMotion: {
+      type: "switch",
+      label: "Orbital motion",
+      desc: "animate the stars & planets",
+      default: true,
+    },
+    motionSpeed: {
+      type: "seg",
+      label: "Motion speed",
+      desc: "animation tempo",
+      options: [
+        { val: "calm", label: "Calm" },
+        { val: "normal", label: "Normal" },
+        { val: "lively", label: "Lively" },
+      ],
+      default: "normal",
+    },
+  },
   // `present` (per-host orbital encoding, §9.9) + the bespoke FleetView land in C2.
 };
