@@ -3,8 +3,9 @@
 Exercises the turn-counter + the conditional nudge injection: at turn start `_maybe_arm_reflection`
 counts the thread's user messages (including compacted ones, so the cadence doesn't drift) and arms a
 per-turn flag when the count is a multiple of `reflection_interval`; `_assemble` then injects a single
-reflection `system` message after the skills note. All opt-in (off unless the master memory switch and
-`reflection_enabled` are both on).
+reflection `system` message as an ephemeral TAIL layer — appended after the chat history so it never
+sits inside the cached static prompt head (BE efficiency pass). All opt-in (off unless the master memory
+switch and `reflection_enabled` are both on).
 
 What's exercised:
   1. fires at interval      — enabled + interval=2, 2 user turns → the nudge is injected.
@@ -13,7 +14,8 @@ What's exercised:
   4. silent when master off  — memory.enabled off → no nudge even with reflection on.
   5. compaction-stable count — a compacted user message still counts (cadence survives compaction).
   6. state clause gated      — the "update your state" clause appears only when state_enabled.
-  7. position                — the nudge is the LAST system message (after memory/roster/skills note).
+  7. position                — the nudge is an ephemeral tail layer: the LAST message overall, after
+                               the static head AND the chat history (keeps the cached prefix pristine).
 
 Each test runs in an isolated `$CTRLB_HOME` temp workspace; the real config/db are never touched.
 """
@@ -87,12 +89,10 @@ def _thread_with_users(c, n: int, *, compacted_last: bool = False):
 
 
 def _systems(messages: list[dict]) -> list[str]:
-    out: list[str] = []
-    for m in messages:
-        if m["role"] != "system":
-            break
-        out.append(m["content"])
-    return out
+    # ALL system-message contents, in array order. The reflection nudge is now an ephemeral TAIL layer
+    # (appended after history, BE efficiency pass), so this can't stop at the first non-system message —
+    # it must scan the whole array to see both the static head and the trailing nudge.
+    return [m["content"] for m in messages if m["role"] == "system"]
 
 
 def _arm_and_assemble(c, thread, agent_name: str | None = None) -> list[str]:
@@ -219,18 +219,25 @@ def test_reflection_skipped_for_subagents() -> None:
             assert not _has_nudge(_systems(_run(sub._assemble(thread))))
 
 
-def test_reflection_nudge_is_last_system_message() -> None:
-    """The nudge sits after the skills note (the existing injection seam) → with memory present it
-    still comes last among the system messages, before the chat history."""
+def test_reflection_nudge_is_tail_layer() -> None:
+    """The nudge is an ephemeral TAIL layer (BE efficiency pass): appended after the chat history, so
+    it's the LAST message of the whole array — past the static head (system prompt + memory) AND past
+    the user message. This is what keeps the cached prompt prefix (head + tools) byte-stable."""
     with _workspace() as (tmp, _cfg):
         with _client() as c:
             c.app.state.settings.memory.reflection_enabled = True
             c.app.state.settings.memory.reflection_interval = 1
             (tmp / "memories").mkdir(parents=True, exist_ok=True)
             (tmp / "memories" / "MEMORY.md").write_text("a durable fact", encoding="utf-8")
-            systems = _arm_and_assemble(c, _thread_with_users(c, 1))
-            assert "## Agent memory" in "\n".join(systems)  # memory injected
-            assert "turns" in systems[-1] and "memory` tool" in systems[-1]  # nudge is last
+            sess = _session(c)
+            _run(sess._maybe_arm_reflection(thread := _thread_with_users(c, 1)))
+            msgs = _run(sess._assemble(thread))
+            systems = _systems(msgs)
+            assert "## Agent memory" in "\n".join(systems)  # memory injected (in the static head)
+            # The nudge is the final message of the array — after the head and after the user turn.
+            assert msgs[-1]["role"] == "system"
+            assert "turns" in msgs[-1]["content"] and "memory` tool" in msgs[-1]["content"]
+            assert any(m["role"] == "user" for m in msgs[:-1])  # history really precedes the nudge
 
 
 if __name__ == "__main__":

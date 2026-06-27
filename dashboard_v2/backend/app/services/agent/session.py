@@ -218,6 +218,17 @@ class AgentSession:
         #: while set. Default off (also the resume path, which doesn't re-arm — reflection is a
         #: turn-start concern, not a mid-turn one).
         self._reflect_now = False
+        #: Per-turn caches for the INVARIANT prompt prefix (BE efficiency pass). `AgentSession` is built
+        #: per turn (stateless across turns), so these reset each turn for free. Computing the static
+        #: system head + the tool-schema list ONCE and reusing them byte-identically across every loop
+        #: iteration keeps a stable cache prefix → the local llama.cpp KV cache (`cache_prompt`) and the
+        #: cloud provider's automatic prefix cache hit on iterations 2..N, re-prefilling only the appended
+        #: tool result rather than the whole system+tools+history. (Pattern: Codex CLI / Hermes / opencode
+        #: all keep tools+system stable and append at the tail; caching is prefix-based + position-sensitive
+        #: so any per-iteration jitter in this prefix would defeat it.) Built lazily after `_activate_skills`
+        #: has set `_skills_note`/`_tool_allow` (the only turn-start inputs they depend on).
+        self._static_head: list[dict] | None = None
+        self._tools_cache: list[dict] | None = None
 
     def _system_prompt(self) -> str:
         """The agent's own prompt wins; then the global `inference.system_prompt` override; then the
@@ -292,10 +303,18 @@ class AgentSession:
 
     def _tools(self) -> list[dict]:
         """The OpenAI toolset for this turn — `agent_tools()` narrowed to the effective allowlist
-        (`self._tool_allow`): the `AgentDef`'s allowlist, further narrowed by any active skill."""
-        return self._actions.registry.to_openai_tools(
-            self._actions.registry.for_agent(self._tool_allow)
-        )
+        (`self._tool_allow`): the `AgentDef`'s allowlist, further narrowed by any active skill.
+
+        Rendered ONCE per turn and the same list reused on every `stream_chat` call. The toolset is
+        turn-invariant (the allowlist is fixed at turn start; the registry only rebuilds between turns),
+        and `tools` sits at the TOP of the prompt-cache hierarchy (tools → system → messages), so any
+        byte jitter here would invalidate the entire cache — re-rendering it per iteration is the most
+        expensive possible prefix churn. Reusing the same object guarantees a stable head."""
+        if self._tools_cache is None:
+            self._tools_cache = self._actions.registry.to_openai_tools(
+                self._actions.registry.for_agent(self._tool_allow)
+            )
+        return self._tools_cache
 
     def _activate_skills(self, user_text: str, invoked: list[str] | None) -> None:
         """Resolve the skills active for this turn (4.5) and stash the prompt addition + narrowed
@@ -313,34 +332,49 @@ class AgentSession:
         self._skills_note = skills_prompt(active)
         self._tool_allow = narrow_tools(active, self._agent.tools)
 
+    def _static_prefix(self) -> list[dict]:
+        """The INVARIANT system head for this turn — system prompt + appends + durable-memory block +
+        fleet roster + active-skill note, in that fixed order (7e-a/7e-d/D15 #4). Built ONCE per turn
+        and reused byte-identically every loop iteration so the cache prefix stays stable (see the
+        `_static_head` field note). The reflection nudge is deliberately NOT here — it's an ephemeral
+        tail layer appended in `_assemble`, so it never perturbs this cached head.
+
+        Turn-invariant by construction: the system prompt / appends / roster project from per-turn-stable
+        config + AgentDef, `_skills_note` is fixed at turn start by `_activate_skills`, and the memory
+        block is read ONCE here (its docstring's "fresh per turn" intent — a mid-turn `memory`-tool write
+        now lands next turn, not next iteration, which is also what keeps the prefix stable)."""
+        if self._static_head is None:
+            head: list[dict] = [{"role": "system", "content": self._system_prompt()}]
+            for extra in self._appends():  # additive guidance, base-first (7e-a)
+                head.append({"role": "system", "content": extra})
+            memory = self._memory_block()  # durable memory, after appends (7e-d, D15 #4)
+            if memory:
+                head.append({"role": "system", "content": memory})
+            roster = self._roster()
+            if roster:
+                head.append({"role": "system", "content": roster})
+            if self._skills_note:  # active skills' instructions (4.5)
+                head.append({"role": "system", "content": self._skills_note})
+            self._static_head = head
+        return self._static_head
+
     async def _assemble(self, thread: Thread) -> list[dict]:
-        """Build the OpenAI `messages` array from non-compacted history. Reasoning is dropped (the
+        """Build the OpenAI `messages` array: the cached static system head (`_static_prefix`) + the
+        non-compacted history + a one-shot reflection nudge at the tail. Reasoning is dropped (the
         model's scratchpad); tool calls + results round-trip as `assistant.tool_calls` followed by
         `tool` messages keyed by `call_id`. Any tool call left unresolved (an abandoned confirm)
-        gets a synthesized `skipped` result so the context is always valid for the API."""
+        gets a synthesized `skipped` result so the context is always valid for the API.
+
+        History is re-read every iteration on purpose: `_compactor.compact` runs before each model call
+        and can fold older turns into a summary, so the history (the cache TAIL) legitimately changes —
+        only the static head above is held stable."""
         history = await self._messages.list(thread.id, include_compacted=False)
         results: dict[str, ToolResult] = {}
         for m in history:
             for rp in m.tool_results():
                 results[rp.call_id] = rp.result
 
-        out: list[dict] = [{"role": "system", "content": self._system_prompt()}]
-        for extra in self._appends():  # additive guidance, base-first (7e-a)
-            out.append({"role": "system", "content": extra})
-        memory = self._memory_block()  # durable memory, after appends (7e-d, D15 #4)
-        if memory:
-            out.append({"role": "system", "content": memory})
-        roster = self._roster()
-        if roster:
-            out.append({"role": "system", "content": roster})
-        if self._skills_note:  # active skills' instructions (4.5)
-            out.append({"role": "system", "content": self._skills_note})
-        if self._reflect_now:  # periodic reflection nudge (D27-C), after the skills note
-            out.append({"role": "system", "content": self._reflection_nudge()})
-            # One-shot: emit in exactly ONE model call, not on every `_drive` iteration of the turn —
-            # a re-instructed weak model would otherwise re-save (a reworded save dodges the loop-guard's
-            # exact-arg dedup). The model saw it once; that's the reflection prompt for the turn.
-            self._reflect_now = False
+        out: list[dict] = list(self._static_prefix())  # shallow copy — append history below, never mutate the cached head
         for m in history:
             if m.role == "tool":
                 continue  # emitted inline after the assistant call below
@@ -382,6 +416,14 @@ class AgentSession:
                 text = m.text()
                 if text:
                     out.append({"role": m.role, "content": text})
+        # Periodic reflection nudge (D27-C) as an EPHEMERAL TAIL layer — appended AFTER history so it
+        # never sits inside the cached static head (Hermes ephemeral-layer pattern; volatile content goes
+        # after the stable prefix). One-shot: emit in exactly ONE model call per armed turn, not on every
+        # `_drive` iteration — a re-instructed weak model would otherwise re-save (a reworded save dodges
+        # the loop-guard's exact-arg dedup). The model saw it once; that's the reflection prompt for the turn.
+        if self._reflect_now:
+            out.append({"role": "system", "content": self._reflection_nudge()})
+            self._reflect_now = False
         return out
 
     async def run_turn(
