@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 // Theme-engine CSS entry (Phase 11 / D28). Loads vapor.css + extras.css (the frozen canonical
 // stylesheet, lifted verbatim from vapor.html — D7) caged in `@layer frozen` so future non-vapor
 // themes win by cascade order, not specificity. The frozen files themselves are untouched. §9.6.
+import "./theme/vapor-fonts.css"; // self-hosted JetBrains Mono + Major Mono Display (eager default theme)
 import "./theme/index.css";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";

@@ -7,14 +7,9 @@
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#15171c" />
-    <!-- Fonts: lifted verbatim from vapor.html for pixel-exact fidelity (D7).
-         Self-hosting for offline PWA is a Phase 9 concern. -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Major+Mono+Display&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Fonts (JetBrains Mono + Major Mono Display) are self-hosted via @fontsource, bundled by Vite
+         from src/theme/vapor-fonts.css (eager default theme). No Google Fonts CDN → offline PWA + no
+         third-party request / render-blocking <link> on first paint. -->
     <title>ctrl-b</title>
   </head>
   <body>

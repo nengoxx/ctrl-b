@@ -1,0 +1,25 @@
+/* vapor's webfonts, self-hosted (FE efficiency pass). vapor is the EAGER default theme, so unlike the
+ * lazy themes (minimal/cosmos use a dynamic-import `fonts.ts`, loaded by switchTheme on the flip) its
+ * fonts must ship with the initial bundle — statically imported in main.tsx. This replaces the
+ * render-blocking Google Fonts <link> that was in index.html: now the @font-face files are bundled +
+ * fingerprinted by Vite (offline-capable PWA, no third-party request, no CDN round-trip on first paint).
+ *
+ * SUBSETS: latin + latin-ext only — deliberately NOT the full fontsource imports the lazy themes use.
+ * vapor's CSS is eager + render-blocking, so every @font-face block shipped here is critical-path weight;
+ * importing the full package adds the cyrillic/greek/vietnamese @font-face rules (~27 KB gzipped of CSS
+ * this English homelab panel never renders). latin-ext covers em-dashes / smart-quotes / common accents.
+ * (The lazy themes can afford full imports — they're off the first-paint path. Eager ≠ lazy: the
+ * divergence is intentional, not an inconsistency.)
+ *
+ * Weights mirror the old CDN query: JetBrains Mono 400/500/600/700 (body/mono) + Major Mono Display 400
+ * (display/glyph face). Fontsource ships `font-display: swap` per face (matches the old `&display=swap`). */
+@import "@fontsource/jetbrains-mono/latin-400.css";
+@import "@fontsource/jetbrains-mono/latin-500.css";
+@import "@fontsource/jetbrains-mono/latin-600.css";
+@import "@fontsource/jetbrains-mono/latin-700.css";
+@import "@fontsource/jetbrains-mono/latin-ext-400.css";
+@import "@fontsource/jetbrains-mono/latin-ext-500.css";
+@import "@fontsource/jetbrains-mono/latin-ext-600.css";
+@import "@fontsource/jetbrains-mono/latin-ext-700.css";
+@import "@fontsource/major-mono-display/latin-400.css";
+@import "@fontsource/major-mono-display/latin-ext-400.css";
