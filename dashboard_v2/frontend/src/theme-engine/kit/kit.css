@@ -1880,6 +1880,162 @@ body[data-motion="reduced"] .kit .b.bot .who .status-tag {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════════
+ * BUCKET-A.3b — markdown bot replies (`.b.bot .md*`): the block/inline elements the hand-rolled renderer
+ * (lib/markdown.tsx) emits inside the assistant body. Inline code = a subtle `--surface-2` lozenge; a
+ * fenced `.md-code` = a `--bg` panel with a lang + copy/send actions bar. Headings = clean sans bold (vapor
+ * used Major Mono Display — no reskin equivalent); links/markers in the semantic palette; mono = system
+ * stack; long strings wrap (§14.11). */
+.kit .b.bot .md {
+  display: block;
+}
+.kit .b.bot .md > :first-child {
+  margin-top: 0;
+}
+.kit .b.bot .md > :last-child {
+  margin-bottom: 0;
+}
+.kit .b.bot .md p {
+  margin: 0 0 8px;
+}
+.kit .b.bot .md h1,
+.kit .b.bot .md h2,
+.kit .b.bot .md h3,
+.kit .b.bot .md h4,
+.kit .b.bot .md h5,
+.kit .b.bot .md h6 {
+  margin: 12px 0 6px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  line-height: 1.3;
+}
+.kit .b.bot .md h1 {
+  font-size: 17px;
+}
+.kit .b.bot .md h2 {
+  font-size: 15px;
+}
+.kit .b.bot .md h3,
+.kit .b.bot .md h4,
+.kit .b.bot .md h5,
+.kit .b.bot .md h6 {
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+.kit .b.bot .md ul,
+.kit .b.bot .md ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+.kit .b.bot .md li {
+  margin: 2px 0;
+}
+.kit .b.bot .md ul li::marker {
+  color: var(--accent);
+}
+.kit .b.bot .md ol li::marker {
+  color: var(--text-3);
+}
+.kit .b.bot .md a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+.kit .b.bot .md a:active {
+  opacity: 0.8;
+}
+.kit .b.bot .md strong {
+  font-weight: 700;
+  color: var(--text);
+}
+.kit .b.bot .md em {
+  font-style: italic;
+}
+.kit .b.bot .md blockquote {
+  margin: 0 0 8px;
+  padding: 4px 0 4px 10px;
+  border-left: 2px solid var(--accent-soft);
+  color: var(--text-2);
+}
+.kit .b.bot .md hr {
+  border: 0;
+  border-top: 1px solid var(--line-2);
+  margin: 10px 0;
+}
+/* inline code — a subtle lozenge (distinct from prose, not loud) */
+.kit .b.bot .md code {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+/* fenced code block — a panel with a header bar (lang label + copy / send-to-composer actions) */
+.kit .b.bot .md .md-code {
+  margin: 6px 0 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  overflow: hidden;
+}
+.kit .b.bot .md .md-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 4px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.kit .b.bot .md .md-code-bar .lang {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.kit .b.bot .md .md-code-bar .acts {
+  display: flex;
+  gap: 2px;
+}
+.kit .b.bot .md .md-code-bar .acts button {
+  all: unset;
+  cursor: pointer;
+  padding: 4px 9px;
+  border-radius: 6px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--accent);
+}
+.kit .b.bot .md .md-code-bar .acts button:active {
+  background: var(--accent-soft);
+}
+.kit .b.bot .md .md-code pre {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}
+/* the fenced block's <code> must NOT pick up the inline-lozenge box (it's already in a styled pre) */
+.kit .b.bot .md .md-code pre code {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════
  * BUCKET-A.2a — deep Conf editors (Machine/Service · Inference fallbacks · Integrations kv · prompt-rows).
  * Token port of the editor-specific chrome (extras.css, `[data-skin=vapor]`) to semantic tokens under
  * `.kit`, following A.1's §14.4.1 pattern. Components emit these class names already; this is a faithful
