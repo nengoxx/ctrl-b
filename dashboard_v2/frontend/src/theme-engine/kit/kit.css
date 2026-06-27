@@ -2331,6 +2331,261 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════════
+ * BUCKET-A.3d — the plan panel (`.plan-*`, a pinned checklist hanging from below the appbar) + the
+ * session-privilege chip/menu (`.priv-*`). FINAL A.3 slice → completes Bucket-A (every shared surface now
+ * renders under any reskin theme). Accent-themed; step ticks use the semantic ladder (active = `--accent`
+ * pulse, done = `--ok` ✓). Frosted surfaces perf-gated, the pulse + drop entrance motion-gated (§14.11).
+ * The pin sits at z 4 — below the Kit appbar (z 5, NOT vapor's z 20) so it tucks under the bar. */
+.kit .plan-pin {
+  position: sticky;
+  top: var(--appbar-h, 0px);
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+  pointer-events: none; /* empty sides stay click-through; the tab re-enables below */
+}
+.kit .plan-pin-wrap {
+  position: relative;
+  pointer-events: auto;
+}
+.kit .plan-pin-head {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 0 0 13px 13px; /* hangs from the top edge */
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+  border-top: 0;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+.kit .plan-pin-head .chev {
+  color: var(--accent);
+  font-size: 10px;
+  transition: transform 0.16s ease;
+}
+.kit .plan-pin-head.open .chev {
+  transform: rotate(180deg);
+}
+.kit .plan-title {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--accent);
+}
+.kit .plan-count {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  font-weight: 600;
+  color: var(--text-2);
+}
+/* the dropdown — an absolute overlay below the tab (opening doesn't reflow the chat) */
+.kit .plan-drop {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(86vw, 360px);
+  max-height: 52vh;
+  overflow-y: auto;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--surface) 94%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  animation: kit-plan-drop-in 0.16s ease;
+}
+@keyframes kit-plan-drop-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+.kit .plan-steps {
+  list-style: none;
+  margin: 0;
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.kit .plan-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kit .plan-step .tick {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  display: block;
+  padding: 0;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-3);
+  position: relative;
+}
+.kit .plan-step.active .tick {
+  border-color: var(--accent);
+  animation: kit-tag-pulse 1.3s ease-in-out infinite;
+}
+.kit .plan-step.active .tick::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.kit .plan-step.done .tick {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+.kit .plan-step.done .tick::after {
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--bg);
+}
+.kit .plan-step.active .txt {
+  color: var(--text);
+  font-weight: 600;
+}
+.kit .plan-step.done .txt {
+  color: var(--text-2);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklch, var(--ok) 50%, transparent);
+}
+/* clickable tick toggle (plan-edit) — the same dot, just a press feedback */
+.kit .plan-step .tick.tick-btn {
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+.kit .plan-step .tick.tick-btn:active {
+  transform: scale(0.82);
+}
+/* timeline breadcrumb — a dimmer sys line marking where the plan was set/revised */
+.kit .b.sys.plan-note .body {
+  opacity: 0.6;
+}
+
+/* ── session-privilege chip + menu (.priv-*) — the tap-friendly twin of /privilege ── */
+.kit .priv-chip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.kit .priv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  line-height: 1;
+}
+.kit .priv-chip:active {
+  background: var(--surface-2);
+}
+.kit .priv-chip .priv-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.kit .priv-chip .chev {
+  font-size: 8px;
+  opacity: 0.7;
+}
+/* an explicit override is set (not following the agent default) — accent it */
+.kit .priv-chip.set {
+  border-color: color-mix(in oklch, var(--accent) 55%, transparent);
+  color: var(--text);
+}
+.kit .priv-chip.set .priv-dot {
+  background: var(--accent);
+}
+.kit .priv-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: transparent;
+  border: 0;
+  cursor: default;
+}
+.kit .priv-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 61;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 124px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+.kit .priv-menu li {
+  margin: 0;
+}
+.kit .priv-menu button {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 7px;
+  color: var(--text-2);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.kit .priv-menu button:active {
+  background: var(--surface-2);
+}
+.kit .priv-menu button.active {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+/* perf gate — drop the frosted blur on the plan surfaces under data-perf=lite (§14.11) */
+body[data-perf="lite"] .kit .plan-pin-head,
+body[data-perf="lite"] .kit .plan-drop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--surface);
+}
+/* motion gate — the active-tick pulse (§14.11) */
+body[data-motion="reduced"] .kit .plan-step.active .tick {
+  animation: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════
  * BUCKET-A.2a — deep Conf editors (Machine/Service · Inference fallbacks · Integrations kv · prompt-rows).
  * Token port of the editor-specific chrome (extras.css, `[data-skin=vapor]`) to semantic tokens under
  * `.kit`, following A.1's §14.4.1 pattern. Components emit these class names already; this is a faithful
