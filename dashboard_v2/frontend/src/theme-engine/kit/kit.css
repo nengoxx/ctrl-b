@@ -1608,3 +1608,236 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   text-transform: uppercase;
   color: var(--text-3);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════
+ * BUCKET-A.2a — deep Conf editors (Machine/Service · Inference fallbacks · Integrations kv · prompt-rows).
+ * Token port of the editor-specific chrome (extras.css, `[data-skin=vapor]`) to semantic tokens under
+ * `.kit`, following A.1's §14.4.1 pattern. Components emit these class names already; this is a faithful
+ * reskin (no behavior change), vapor untouched. Conventions match the A.1 Conf shell: inputs = `--bg`
+ * fields @13px, cards = `--surface`, accents flat (`--accent`), the danger ladder via `--danger`/`-soft`,
+ * mono = the system stack (no webfont in reskins). */
+
+/* ── Machine row → service sub-editor (.svc-*) ── */
+.kit .svc-edit {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+.kit .svc-edit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  cursor: pointer;
+  user-select: none;
+}
+.kit .svc-chev {
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.2s;
+}
+.kit .svc-edit.open .svc-chev {
+  transform: rotate(90deg);
+}
+.kit .svc-body {
+  margin-top: 8px;
+}
+.kit .svc-empty {
+  font-size: 11px;
+  color: var(--text-3);
+  padding: 2px 0 8px;
+}
+.kit .svc-add {
+  all: unset;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-weight: 600;
+  color: var(--text-2);
+  border: 1px solid var(--line-2);
+}
+.kit .svc-add:active {
+  background: var(--surface-2);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.kit .svc-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kit .svc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.kit .svc-cmd {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kit .svc-card input {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  border: 1px solid var(--line);
+}
+.kit .svc-card input::placeholder {
+  color: var(--text-3);
+}
+.kit .svc-card input:focus {
+  border-color: var(--accent);
+}
+.kit .svc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.kit .svc-auto {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+  cursor: pointer;
+}
+/* small switch variant — narrower knob; slides via transform (matching the base .kit .switch, §14.11):
+ * knob 36 wide, ::after 13 from left:2 → on rests at left 19 (= translateX 17), a 4px right margin. */
+.kit .svc-auto .switch .knob {
+  width: 36px;
+  height: 19px;
+}
+.kit .svc-auto .switch .knob::after {
+  width: 13px;
+  height: 13px;
+}
+.kit .svc-auto .switch.on .knob::after {
+  transform: translateX(17px);
+}
+.kit .svc-rm {
+  all: unset;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-weight: 600;
+  color: var(--danger);
+  border: 1px solid var(--danger-soft);
+}
+.kit .svc-rm:active {
+  background: var(--danger-soft);
+}
+
+/* ── Inference · fallbacks list (.fallback-*) ── */
+.kit .fallback-section {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 13px 14px 5px;
+  border-top: 1px solid var(--line);
+}
+.kit .fallback-section .label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.kit .fallback-section .desc {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
+.kit .fallback-add {
+  padding: 10px 14px 4px;
+}
+
+/* ── Integrations · multi-line key/value textarea (.kv-text) ── */
+.kit .mform textarea.kv-text {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  line-height: 1.5;
+  border: 1px solid var(--line);
+  resize: vertical;
+  overflow-wrap: anywhere;
+}
+.kit .mform textarea.kv-text::placeholder {
+  color: var(--text-3);
+}
+.kit .mform textarea.kv-text:focus {
+  border-color: var(--accent);
+}
+
+/* ── shared prompt-rows (Inference/Agents) — 1-line preview + the "Edit fullscreen" opener (PromptModal) ── */
+.kit .confrow.conf-promptrow {
+  align-items: flex-start;
+}
+.kit .prompt-preview {
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-2);
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  overflow-wrap: anywhere;
+}
+.kit .prompt-open {
+  all: unset;
+  cursor: pointer;
+  flex: 0 0 auto;
+  padding: 7px 11px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+}
+.kit .prompt-open:active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.kit .kv-prompt {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.kit .kv-prompt .prompt-preview {
+  margin-top: 2px;
+  flex: 1;
+  min-width: 0;
+}
