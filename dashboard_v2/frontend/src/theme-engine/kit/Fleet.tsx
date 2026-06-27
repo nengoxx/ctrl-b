@@ -109,11 +109,10 @@ function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: Row
   const online = !!host.status?.online;
   const ping = host.status?.ping_ms ?? null;
   const svcCount = services.length ? ` · ${services.length} svc` : "";
-  // role · os · ping (online) / role · dormant (offline) — null role drops out.
+  // role · os (+ svc); "dormant" only when offline. Ping moved to the expanded meta (next to Last seen);
+  // the LED conveys online at a glance, so the collapsed subtitle no longer carries it. Null role drops out.
   const sub =
-    [host.role, host.os_type, online ? (ping != null ? `${ping}ms` : "online") : "dormant"]
-      .filter(Boolean)
-      .join(" · ") + svcCount;
+    [host.role, host.os_type, online ? null : "dormant"].filter(Boolean).join(" · ") + svcCount;
 
   return (
     <div
@@ -173,6 +172,8 @@ function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: Row
             <span className="v">{host.mac ?? "—"}</span>
             <span className="k">Last seen</span>
             <span className="v">{online ? "now" : relativeTime(host.status?.last_seen)}</span>
+            <span className="k">Ping</span>
+            <span className="v">{online && ping != null ? `${ping} ms` : "—"}</span>
           </div>
           <div className="svcs">
             {services.length === 0 ? (

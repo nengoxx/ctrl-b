@@ -417,16 +417,22 @@ body[data-perf="lite"] .kit-composer {
   cursor: pointer;
   min-height: 56px;
 }
+/* status LED — Slack-style filled/hollow presence pattern (web-researched), themed to the ACCENT (owner
+ * pick — "match the theme"): OFFLINE = a hollow dim grey ring (clearly "asleep / no signal"); ONLINE = a
+ * solid dot in the active accent + a soft accent glow ("a little bit of light"). Filled-vs-hollow SHAPE +
+ * vivid-accent-vs-grey make the two states explicit (not color-alone). Static (no animation) → §14.11-safe. */
 .kit-device .led {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: var(--text-3);
+  background: transparent;
+  border: 1.5px solid var(--text-3);
   flex: none;
 }
 .kit-device.on .led {
-  background: var(--ok);
-  box-shadow: 0 0 0 4px var(--ok-soft);
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft), 0 0 10px color-mix(in oklch, var(--accent) 45%, transparent);
 }
 .kit-device .nm {
   display: flex;
@@ -439,6 +445,11 @@ body[data-perf="lite"] .kit-composer {
   font-weight: 600;
   letter-spacing: -0.01em;
   overflow-wrap: anywhere;
+}
+/* offline device: fade the whole name+role block so dormant PCs clearly recede — kept OFF the LED + the
+ * wake button (the call-to-action), which stay at full strength. */
+.kit-device.off .nm {
+  opacity: 0.6;
 }
 .kit-device.off .nm .name {
   color: var(--text-2);
@@ -526,13 +537,15 @@ body[data-perf="lite"] .kit-composer {
   background: var(--surface-2);
 }
 .kit-device .srow .led {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
+  border-width: 1.25px; /* thinner hollow ring for the smaller service dot */
   box-shadow: none;
 }
 .kit-device .srow.on .led {
-  background: var(--ok);
-  box-shadow: 0 0 0 3px var(--ok-soft);
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft), 0 0 6px color-mix(in oklch, var(--accent) 45%, transparent);
 }
 .kit-device .srow .nm2 {
   display: flex;
@@ -544,6 +557,10 @@ body[data-perf="lite"] .kit-composer {
   font-size: 13px;
   font-weight: 500;
   overflow-wrap: anywhere;
+}
+/* offline service: fade the whole row so active services clearly stand out (no action button here) */
+.kit-device .srow.off {
+  opacity: 0.5;
 }
 .kit-device .srow.off .nm2 .name {
   color: var(--text-2);
