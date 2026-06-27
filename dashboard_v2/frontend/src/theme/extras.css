@@ -441,10 +441,11 @@ body[data-perf="lite"] .composer {
   }
 }
 
-/* Activity toasts — transient, top-center below the appbar (clear of the top-right tts-toast). */
+/* Activity toasts — transient, top-center below the appbar (clear of the top-right tts-toast). Rides the
+   measured `--appbar-h` so it re-pins to the top when the app bar is hidden (the global hideAppbar lever). */
 .toasts {
   position: fixed;
-  top: 58px;
+  top: calc(var(--appbar-h, 58px) + 2px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 40;

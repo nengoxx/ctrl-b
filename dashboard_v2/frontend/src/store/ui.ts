@@ -119,7 +119,7 @@ export function migrateHideAppbar(s: UIState): UIState {
     if (opts && "hideAppbar" in opts) {
       if (!hide && typeof opts.hideAppbar === "boolean") hide = opts.hideAppbar;
       const { hideAppbar: _drop, ...rest } = opts;
-      ts[id] = rest;
+      if (Object.keys(rest).length) ts[id] = rest; // prune a now-empty per-theme entry
       changed = true;
     } else {
       ts[id] = opts;

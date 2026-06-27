@@ -24,10 +24,11 @@ import { KitNavBar } from "./NavBar";
 // `--appbar-h`/`--composer-h` measurements. It renders the token-driven Kit chrome (AppBar/NavBar/Composer)
 // + the shared tab bodies; theme-SPECIFIC decoration stays in a bespoke Root (e.g. vapor's hero).
 //
-// `hideAppbar` is a STRUCTURAL per-theme setting (it changes what's rendered) → an explicit prop the theme
-// passes down (minimal reads `useThemeSetting("minimal","hideAppbar")`). The Fleet view is the one
-// per-theme "signature" surface → the `Fleet` prop (defaults to the Kit's `KitFleet`). Cosmetic settings
-// never reach here — they're token/attr-driven (e.g. minimal's `density` → body[data-density]).
+// `hideAppbar` is a STRUCTURAL toggle (it changes what's rendered) → an explicit prop the theme passes down.
+// It's the GLOBAL `ui.hideAppbar` lever (all themes share it); each theme's Root reads it (`useUISlice`) and
+// hands it here. The Fleet view is the one per-theme "signature" surface → the `Fleet` prop (defaults to the
+// Kit's `KitFleet`). Cosmetic settings never reach here — they're token/attr-driven (e.g. minimal's
+// `density` → body[data-density]).
 
 interface Props {
   /** Hide the top app bar (a structural per-theme setting — e.g. minimal's `hideAppbar`). */
