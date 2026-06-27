@@ -107,6 +107,22 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > OR T3–T5 (spatial themes, need `present()`). The deferred **SettingRow sweep** of the remaining Conf groups
 > also still stands (owner: incremental).
 >
+> **✅ Efficiency pass — FE + BE (owner-approved 2026-06-27, shipped).** A whole-app, web-researched
+> efficiency sweep (separate from the Agent-tab note below). **Frontend:** FE#1 lazy-load non-default theme
+> Roots (`loadRoot`+Suspense); FE#2 `useChatSlice` selector so the composer/mic/voice + PrivilegeChip don't
+> re-render per streamed token (`f87ad5f`); FE#3 self-host vapor fonts via `@fontsource` latin+latin-ext,
+> dropping the Google Fonts CDN — offline PWA, CSS held at 23.5 gz (`a79d1ee`); FE#4 `memo(DeviceRow)` (+
+> stable controller callbacks / memoized `svcByHost` / `EMPTY_SERVICES`), Waveform rAF gated on `ui.motion`,
+> Fleet carousel paused off-tab (`5e7fc59`). **Backend:** BE#1 stable per-turn prompt prefix (`a4b9265`) —
+> `_static_prefix()` builds the system head once per turn + `_tools()` rendered once, reused byte-identically
+> so the local llama.cpp KV cache (`cache_prompt`) and cloud auto-prefix cache hit on loop iterations 2..N
+> (re-prefill only the appended tool result). Reflection nudge moved to an ephemeral tail layer so it never
+> perturbs the cached head. Research: Codex CLI / Hermes / opencode / Claude Code all keep tools+system
+> stable + append at the tail (caching is prefix-based, tools at the top of the hierarchy).
+> **↳ Follow-up seam (not done):** add Anthropic `cache_control` breakpoint markers in `adapters/inference.py`
+> to extend the same prefix-cache win to the cloud Anthropic path (local + OpenAI already benefit with no
+> markers). **↳ React Compiler eval** still queued as a separate spike (owner: "spec it as a separate evaluation later").
+>
 > **⚙️ Deferred — a future Agent-tab efficiency pass (owner-noted 2026-06-27).** The big wins shipped
 > (`408354f` memoize bubbles + markdown → per-token work O(streaming bubble) not O(all bubbles); `ad3e3ab`
 > halve the frosted-blur radius 14→8px). Remaining, ranked, for when more is wanted: (1) **block-level
