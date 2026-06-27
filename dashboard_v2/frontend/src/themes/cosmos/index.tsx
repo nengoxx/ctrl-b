@@ -46,6 +46,18 @@ export const cosmos: ThemeDef = {
   // so it owns its animation controls (the prototype's "Orbital motion" switch, here split into on/off +
   // a tempo). Both gate/scale the C1 starfield now and the C2 orbital fleet later (tempo → motion.ts).
   settings: {
+    // Central-body style (C2a-fix) — two variants the owner compares live: the prototype's see-through "D"
+    // coin (cutout) vs the matte ball with the D engraved into it (carved). Auto-rendered as a Seg.
+    moonStyle: {
+      type: "seg",
+      label: "Moon",
+      desc: "central body style",
+      options: [
+        { val: "cutout", label: "Cutout" },
+        { val: "carved", label: "Carved" },
+      ],
+      default: "cutout",
+    },
     orbitalMotion: {
       type: "switch",
       label: "Orbital motion",
@@ -64,7 +76,7 @@ export const cosmos: ThemeDef = {
       default: "normal",
     },
   },
-  // Per-host orbital encoding (§9.9) — golden-angle position + hashed planet color + symbol. CosmosFleet
+  // Per-host orbital encoding (§9.9) — index-based golden-angle position + color + rune symbol. CosmosFleet
   // (the bespoke FleetView, passed via CosmosRoot → DefaultRoot's Fleet slot) consumes it.
   present,
 };

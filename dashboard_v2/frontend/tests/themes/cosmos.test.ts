@@ -28,7 +28,12 @@ describe("speedMultiplier", () => {
 });
 
 describe("cosmos animation settings", () => {
-  it("declares orbitalMotion (default on) + motionSpeed (default normal)", () => {
+  it("declares moonStyle (default cutout) + orbitalMotion (default on) + motionSpeed (default normal)", () => {
+    expect(cosmos.settings?.moonStyle).toMatchObject({ type: "seg", default: "cutout" });
+    const moonOpts = (cosmos.settings?.moonStyle as { options: { val: string }[] }).options.map(
+      (o) => o.val,
+    );
+    expect(moonOpts).toEqual(["cutout", "carved"]);
     expect(cosmos.settings?.orbitalMotion).toMatchObject({ type: "switch", default: true });
     expect(cosmos.settings?.motionSpeed).toMatchObject({ type: "seg", default: "normal" });
     const speedOpts = (cosmos.settings?.motionSpeed as { options: { val: string }[] }).options.map(

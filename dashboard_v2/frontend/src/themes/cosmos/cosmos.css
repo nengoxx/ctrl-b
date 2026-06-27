@@ -38,15 +38,48 @@
       z-index: 1;
     }
 
-    /* ── Orbital fleet (C2a — static layout) ─────────────────────────────────────────────────────────
-     * The solar system lives in a centered stage; planets are DOM <button>s placed by present() (polar →
-     * x/y inline transform). `.cosmos-solar` is the orbit origin (stage center) — C2b rotates IT. */
+    /* ── Orbital fleet (C2a) ─────────────────────────────────────────────────────────────────────────
+     * Planets are DOM <button>s placed by present() (polar → x/y inline transform) inside `.cosmos-camera`
+     * (fit-to-stage scale) → `.cosmos-solar` (the orbit origin; C2b rotates IT).
+     *
+     * The fleet tab + stage FILL the scroller below the appbar — NOT a fixed 64vh, which overflowed the
+     * shared .kit-scroll (→ a scrollbar, worse with the appbar shown) and didn't shrink when the Android
+     * keyboard collapsed the viewport (→ the system could be scrolled around). Heights chain off the
+     * definite-height .kit-scroll: the tab = scroller content minus the measured appbar (the composer is
+     * already reserved by the scroller's padding-bottom); the stage fills the tab. .kit height = --app-h
+     * (keyboard-aware), so the stage shrinks with the viewport and the fit-to-stage scale rescales the
+     * system to fit — nothing to scroll. */
+    #tab-fleet {
+      height: calc(100% - var(--appbar-h, 0px));
+    }
     .cosmos-stage {
       position: relative;
-      min-height: 64vh;
-      overflow: visible;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden; /* clip any edge spill so absolute planets can't add to the scroller's height */
     }
+    /* The camera: a zero-size box at the stage center carrying the fit-to-stage SCALE (set inline by
+     * CosmosFleet from a ResizeObserver) so the whole system — moon + orbits — scales together. Origin is
+     * its center point (= stage center). C2b folds the zoom-follow translate into this same transform. */
+    .cosmos-camera {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 0;
+      height: 0;
+    }
+    /* The central moon — a positioned <button> (also the "clear selection / all systems" affordance).
+     * Its look comes from a variant class (CosmosMoon reads the `moonStyle` setting): .carved (the matte
+     * ball with an engraved D) or .cutout (the prototype coin with a see-through D). Both keep the accent
+     * corona (::before) and center their SVG. Base = a button reset + positioning. */
     .cosmos-core {
+      appearance: none;
+      border: 0;
+      padding: 0;
+      margin: 0;
+      background: transparent;
+      font: inherit;
+      color: inherit;
       position: absolute;
       left: 50%;
       top: 50%;
@@ -54,12 +87,35 @@
       height: 84px;
       border-radius: 50%;
       transform: translate(-50%, -50%);
-      /* a pale "moon" core (the prototype's central body), with 2.5D depth */
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+    }
+    .cosmos-core svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    /* carved — the matte moon ball (the prototype's central body), with 2.5D depth. The "D" is engraved
+     * into it by the SVG inner-shadow filter (CosmosMoon) + this light lower-lip drop-shadow (the emboss
+     * logic the planet glyphs use). */
+    .cosmos-core.carved {
       background: radial-gradient(circle at 50% 36%, #ffffff, #d6d5de 55%, #9a98a6 100%);
       box-shadow:
         0 6px 16px rgba(0, 0, 0, 0.5),
         inset 0 2px 4px rgba(255, 255, 255, 0.3),
         inset 0 -7px 13px rgba(0, 0, 0, 0.3);
+    }
+    .cosmos-core.carved .cosmos-carve {
+      filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.55));
+    }
+    /* cutout — the prototype's flat 2.5D white coin with a see-through "D"; the corona glows through it. */
+    .cosmos-core.cutout .cosmos-coin {
+      filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.5));
+    }
+    .cosmos-core:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: 4px;
     }
     /* soft accent corona behind the moon — a cheap radial-gradient disc (NOT a blur filter, per §14.11) */
     .cosmos-core::before {
@@ -86,7 +142,8 @@
       width: 0;
       height: 0;
     }
-    /* faint orbit rings — one per host radius (decorative, behind the planets; the "orbital" read) */
+    /* faint orbit rings — one per planet, sized to its orbit radius so each planet sits on its ring
+     * (decorative, behind the planets; the "orbital" read). Radii come from CosmosFleet's placements. */
     .cosmos-orbit {
       position: absolute;
       left: 0;
@@ -108,7 +165,7 @@
       overflow: hidden; /* clip the grain texture to the disc */
       cursor: pointer;
       will-change: transform; /* compositor hint — only the orbiting planets get a layer (perf research) */
-      /* matte coin, top-lit (ported from the prototype), colored by --planet (present() hashes per host) */
+      /* matte coin, top-lit (ported from the prototype), colored by --planet (present(), index-based) */
       background: radial-gradient(
         circle at 50% 36%,
         color-mix(in srgb, var(--planet) 90%, #fff) 0%,
@@ -136,25 +193,29 @@
       opacity: 0.1;
       mix-blend-mode: overlay;
     }
+    /* the rune glyph — an inline SVG (runes.tsx). The svg sets fill:none/stroke:currentColor, so `color`
+     * here is the engrave tone driving its strokes; filled "points" override to currentColor inline. */
     .cosmos-planet .sym {
       position: relative;
       z-index: 1; /* above the grain ::before */
-      font-family: var(--font-body);
-      font-weight: 800;
-      line-height: 1;
-      font-size: 1em; /* = the button font-size, set inline to scale with planet diameter */
-      /* engraved/embossed glyph — a dark shade of the planet color with a light top edge (prototype) */
+      display: block; /* not inline — else baseline/line-box spacing nudges the glyph off-center */
+      width: 1em; /* = the button font-size, set inline to scale with planet diameter */
+      height: 1em;
       color: color-mix(in srgb, var(--planet) 58%, #000);
-      text-shadow:
-        0 1px 0 color-mix(in srgb, var(--planet) 52%, #fff),
-        0 -0.5px 1px rgba(0, 0, 0, 0.4);
-      user-select: none;
+      /* engraved look: a light lower-lip (the text-shadow emboss trick → drop-shadow for vector strokes) */
+      filter: drop-shadow(0 0.6px 0 color-mix(in srgb, var(--planet) 52%, #fff));
+    }
+    /* the decorative outer "Pluto" reuses the .cosmos-planet coin look as a non-interactive span */
+    .cosmos-planet.decor {
+      cursor: default;
+      pointer-events: none;
+      will-change: auto;
     }
     /* offline → desaturated + dimmed + (C2b) frozen — the "asleep" star */
     .cosmos-planet.off {
       filter: grayscale(0.7) brightness(0.5);
     }
-    /* selected/featured planet → a bright rim (keeps the coin's inset depth) */
+    /* selected planet (manual selection store) → a bright rim (keeps the coin's inset depth) */
     .cosmos-planet.sel {
       box-shadow:
         0 0 0 2px color-mix(in srgb, var(--bg) 40%, transparent),
