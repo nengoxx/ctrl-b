@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  migrateHideAppbar,
   migrateLegacyTheme,
   migrateVaporSettings,
   setThemeSetting,
@@ -77,6 +78,7 @@ describe("ui store", () => {
     motion: "full",
     perf: "full",
     themeSettings: {},
+    hideAppbar: false,
   };
 
   describe("migrateLegacyTheme", () => {
@@ -135,6 +137,33 @@ describe("ui store", () => {
         themeSettings: { vapor: { skyline: "city" } },
       } as unknown as UIState;
       expect(migrateVaporSettings(mixed).themeSettings.vapor.skyline).toBe("city"); // existing wins
+    });
+  });
+
+  describe("migrateHideAppbar", () => {
+    it("folds a per-theme hideAppbar up into the global field and drops the per-theme key", () => {
+      const legacy: UIState = {
+        ...base,
+        hideAppbar: false,
+        themeSettings: { minimal: { hideAppbar: true, density: "compact" } },
+      };
+      const out = migrateHideAppbar(legacy);
+      expect(out.hideAppbar).toBe(true);
+      expect(out.themeSettings.minimal).toEqual({ density: "compact" }); // hideAppbar dropped, density kept
+    });
+
+    it("is a no-op when no theme carries hideAppbar", () => {
+      const clean = { ...base, themeSettings: { minimal: { density: "comfortable" } } };
+      expect(migrateHideAppbar(clean)).toEqual(clean);
+    });
+
+    it("does not override a global hideAppbar that's already set", () => {
+      const both: UIState = {
+        ...base,
+        hideAppbar: true,
+        themeSettings: { minimal: { hideAppbar: false } },
+      };
+      expect(migrateHideAppbar(both).hideAppbar).toBe(true); // global wins; the per-theme key is still dropped
     });
   });
 

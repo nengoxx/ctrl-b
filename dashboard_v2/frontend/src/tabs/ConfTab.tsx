@@ -205,6 +205,7 @@ export function ConfTab({ active }: Props) {
   const mode = useUISlice((s) => s.mode); // light/dark (only shown when the active theme declares modes)
   const motion = useUISlice((s) => s.motion);
   const perf = useUISlice((s) => s.perf);
+  const hideAppbar = useUISlice((s) => s.hideAppbar); // global, per-device (local) — every theme honors it
   const themeVals = useUISlice((s) => s.themeSettings[theme]); // overrides for the active theme (or undefined)
   const saveAppearance = useSaveAppearance(); // optimistic cross-device write (§9.11)
   // Auto-TTS — the SAME controller the appbar's toggle uses (no new state). Surfaced here so it's reachable
@@ -1045,6 +1046,10 @@ export function ConfTab({ active }: Props) {
               on={perf === "full"}
               onToggle={() => setGlobal({ perf: perf === "full" ? "lite" : "full" })}
             />
+          </SettingRow>
+          {/* Global, per-device (local — not synced like motion/perf): every theme's Root honors it. */}
+          <SettingRow label="Hide app bar" desc="more screen for content · all themes">
+            <Switch on={hideAppbar} onToggle={() => setUI({ hideAppbar: !hideAppbar })} />
           </SettingRow>
         </div>
       </ConfGroup>

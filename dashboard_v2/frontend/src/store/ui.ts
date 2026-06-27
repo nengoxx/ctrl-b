@@ -37,9 +37,14 @@ export interface UIState {
   // per-device speed lever (`backdrop-filter: blur()` is ~10× slower on Firefox-Android than Chrome),
   // but SYNCED with the rest of appearance (owner directive: consistent across devices).
   perf: Perf;
-  // Theme-namespaced options (skyline/loz/hero/waveform for vapor; "hide appbar" for minimal, …). The
+  // Theme-namespaced options (skyline/loz/hero/waveform for vapor; "density" for minimal, …). The
   // theme owns the schema (`ThemeDef.settings`); this is the override store. SYNCED via appearance.
   themeSettings: ThemeSettingsMap;
+  // Hide the top app bar — a GLOBAL, cross-theme display lever (every theme's Root honors it: DefaultRoot
+  // themes via the `hideAppbar` prop, vapor by not rendering its AppBar). Per-DEVICE (persisted locally,
+  // NOT synced — a layout choice that can differ per screen). Was a per-theme `minimal` setting; promoted
+  // to global on owner request ("for all themes"); the one-time `migrateHideAppbar` folds the old value up.
+  hideAppbar: boolean;
 }
 
 // First-load default for `motion`: honor the OS `prefers-reduced-motion` preference once.
@@ -62,6 +67,7 @@ const DEFAULTS: UIState = {
   motion: defaultMotion(),
   perf: "full", // default to the full glass look; the owner opts into "lite" on a slow device
   themeSettings: {}, // per-theme overrides resolve against each ThemeDef.settings default
+  hideAppbar: false, // global per-device lever; every theme's Root honors it
 };
 
 const KEY = "ctrlb.ui";
@@ -101,8 +107,31 @@ export function migrateVaporSettings(s: UIState): UIState {
   return next as unknown as UIState;
 }
 
+// One-time (§13.4): "hide app bar" was a per-theme setting (`themeSettings.<id>.hideAppbar`, minimal only);
+// it's now the global `ui.hideAppbar`. Fold any per-theme value up into the global field (first one found,
+// only if the global is still its default) and drop the per-theme `hideAppbar` keys. Idempotent; exported
+// for unit testing.
+export function migrateHideAppbar(s: UIState): UIState {
+  let hide = s.hideAppbar;
+  let changed = false;
+  const ts: ThemeSettingsMap = {};
+  for (const [id, opts] of Object.entries(s.themeSettings)) {
+    if (opts && "hideAppbar" in opts) {
+      if (!hide && typeof opts.hideAppbar === "boolean") hide = opts.hideAppbar;
+      const { hideAppbar: _drop, ...rest } = opts;
+      ts[id] = rest;
+      changed = true;
+    } else {
+      ts[id] = opts;
+    }
+  }
+  return changed ? { ...s, hideAppbar: hide, themeSettings: ts } : s;
+}
+
 const { emit, useStore } = createStore();
-let state: UIState = migrateVaporSettings(migrateLegacyTheme(loadPersisted(KEY, DEFAULTS)));
+let state: UIState = migrateHideAppbar(
+  migrateVaporSettings(migrateLegacyTheme(loadPersisted(KEY, DEFAULTS))),
+);
 
 // Mirror the UI store onto <html>/<body> data-attrs. Theme-engine model:
 // - `html[data-skin]` = the SKIN id (the `@scope ([data-skin=…])` identity for theme CSS isolation, §14.6).

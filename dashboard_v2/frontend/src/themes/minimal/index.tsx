@@ -31,16 +31,10 @@ export const minimal: ThemeDef = {
   },
   loadStyles: () => import("./tokens.css"),
   loadFonts,
-  // Per-theme settings (§14.3), auto-rendered in the Appearance picker:
-  //  - hideAppbar (structural) → DefaultRoot drops the app bar.
+  // Per-theme settings (§14.3), auto-rendered in the Appearance picker. ("Hide app bar" used to live here
+  // but is now the GLOBAL `ui.hideAppbar` lever — all themes get it; see store/ui + ConfTab Appearance.)
   //  - density (cosmetic) → body[data-density] → minimal's tokens.css scales --density-pad.
   settings: {
-    hideAppbar: {
-      type: "switch",
-      label: "Hide app bar",
-      desc: "more screen for content",
-      default: false,
-    },
     density: {
       type: "seg",
       label: "Density",

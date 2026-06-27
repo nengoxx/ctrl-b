@@ -10,6 +10,7 @@ import { SwUpdatePrompt } from "../../components/SwUpdatePrompt";
 import { TabBar } from "../../components/TabBar";
 import { Toasts } from "../../components/Toasts";
 import { useSections } from "../../hooks/useSections";
+import { useUISlice } from "../../store/ui";
 import { prefetchOnIdle } from "../../lib/prefetch";
 import { AgentTab } from "../../tabs/AgentTab";
 import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
@@ -39,6 +40,8 @@ export function VaporRoot() {
   // aliased to `tab` (vapor's local vocabulary) since the whole body keys off it; `showComposer` is the
   // active section's composer flag (was the `tab==='fleet'||'agent'` hardcode).
   const { active: tab, hasComposer: showComposer } = useSections();
+  // The global "hide app bar" lever (all themes honor it; vapor renders its own AppBar, so it drops it here).
+  const hideAppbar = useUISlice((s) => s.hideAppbar);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Lazy Conf tab: conditional mount, strictly false→true, stays mounted to preserve form drafts.
@@ -57,14 +60,18 @@ export function VaporRoot() {
   // a different skin unmounts this Root). A wrapper-ref is unusable (the appbar is position:sticky).
   useEffect(() => {
     const bar = scrollRef.current?.querySelector<HTMLElement>(".appbar");
-    if (!bar) return;
+    if (!bar) {
+      // appbar hidden → pin content at the top (0), not a stale height (matches DefaultRoot).
+      document.documentElement.style.setProperty("--appbar-h", "0px");
+      return;
+    }
     const set = () =>
       document.documentElement.style.setProperty("--appbar-h", `${bar.offsetHeight}px`);
     set();
     const ro = new ResizeObserver(set);
     ro.observe(bar);
     return () => ro.disconnect();
-  }, []);
+  }, [hideAppbar]);
 
   // Warm the Conf chunk after first paint so the first Conf click is typically zero-wait.
   useEffect(() => {
@@ -104,7 +111,7 @@ export function VaporRoot() {
   return (
     <div className="app-shell">
       <div className="app-scroll" id="app-scroll" ref={scrollRef}>
-        <AppBar />
+        {!hideAppbar && <AppBar />}
         <FleetTab active={tab === "fleet"} />
         <AgentTab active={tab === "agent"} />
         <UtilsTab active={tab === "utils"} />
