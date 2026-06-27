@@ -20,7 +20,8 @@ export const COSMOS_SPEED: Record<CosmosSpeed, number> = {
 
 export const COSMOS_SPEED_DEFAULT: CosmosSpeed = "normal";
 
-/** Resolve a `motionSpeed` setting value to its multiplier, defaulting safely on an unknown value. */
+/** Resolve a `motionSpeed` setting value to its multiplier. Both undefined (no override) and an
+ *  unrecognized/corrupted value fall back to the normal tempo — never to an out-of-range value. */
 export function speedMultiplier(speed: string | undefined): number {
-  return COSMOS_SPEED[(speed as CosmosSpeed) ?? COSMOS_SPEED_DEFAULT] ?? 1;
+  return COSMOS_SPEED[speed as CosmosSpeed] ?? COSMOS_SPEED[COSMOS_SPEED_DEFAULT];
 }

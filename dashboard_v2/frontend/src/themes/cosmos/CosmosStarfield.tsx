@@ -7,7 +7,8 @@ import { speedMultiplier } from "./motion";
 // The cosmos starfield (C1) — a fixed, full-viewport canvas of twinkling stars behind the see-through Kit
 // shell (cosmos.css positions it at z 0). Ported from prototypes/.../cosmos.html (star params + the
 // `a + sin(t·tw+ph)·0.18` twinkle), wrapped in the same perf discipline as Waveform (§14.11): dpr capped
-// at 2, ResizeObserver-sized backing store, ~30fps cap, no per-frame layout/style reads.
+// at 2, viewport-sized backing store + explicit CSS px size (resized on window/visualViewport 'resize'),
+// ~30fps cap, no per-frame layout/style reads.
 //
 // Two differences from Waveform: (1) it's a PERSISTENT full-screen layer (mounted once at CosmosRoot,
 // survives tab switches), so it pauses on `document.hidden` rather than IntersectionObserver; (2) animation
@@ -39,7 +40,7 @@ export function CosmosStarfield() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const getDpr = () => Math.min(window.devicePixelRatio || 1, 2); // read fresh (desktop browser zoom changes it)
     const FRAME_MS = 1000 / 30; // ~30fps — twinkle is slow, reads smooth, halves frame work vs vsync
     // Positions are NORMALIZED [0,1] (scaled by w/h at paint time) so a resize REMAPS the field instead of
     // regenerating it — the Android URL bar sliding during scroll (a height-only change) never reshuffles
@@ -54,8 +55,9 @@ export function CosmosStarfield() {
     let last = 0;
     let color = "#ffffff";
 
-    // --star is a token (swappable later for an accent/picker option); constant in C1, so read once here
-    // + on re-arm, not per frame (efficiency). A future color setting adds itself as an effect dep.
+    // --star is a token (swappable later for an accent/picker option); constant in C1, so read ONCE at
+    // setup (below), never per frame (efficiency). NOTE: a future star-color setting must call this from a
+    // reactive path (effect dep), not rely on this one-time read.
     function readColor() {
       color = getComputedStyle(canvas!).getPropertyValue("--star").trim() || "#ffffff";
     }
@@ -67,8 +69,9 @@ export function CosmosStarfield() {
     function resizeCanvas() {
       const cssW = window.innerWidth;
       const cssH = window.innerHeight;
-      w = canvas!.width = Math.round(cssW * dpr);
-      h = canvas!.height = Math.round(cssH * dpr);
+      const d = getDpr();
+      w = canvas!.width = Math.round(cssW * d);
+      h = canvas!.height = Math.round(cssH * d);
       canvas!.style.width = cssW + "px";
       canvas!.style.height = cssH + "px";
     }
@@ -80,7 +83,7 @@ export function CosmosStarfield() {
       stars = Array.from({ length: n }, () => ({
         nx: Math.random(),
         ny: Math.random(),
-        r: (Math.random() ** 2 * 0.62 + 0.16) * dpr,
+        r: (Math.random() ** 2 * 0.62 + 0.16) * getDpr(),
         a: Math.random() * 0.45 + 0.12,
         tw: Math.random() * 0.018 + 0.003,
         ph: Math.random() * 6.28,
@@ -138,7 +141,10 @@ export function CosmosStarfield() {
       lastH = ch;
       resizeCanvas();
       if (cw !== genW) generate();
-      if (!running) paint(0); // a running loop repaints next frame
+      // resizeCanvas() cleared the backing store — repaint NOW rather than waiting for the next (throttled)
+      // rAF frame, which would composite a blank frame mid-resize (flicker during an Android URL-bar slide).
+      // `running` is captured in paint(): a running frame twinkles, a paused one settles on the static frame.
+      paint(performance.now());
     };
     window.addEventListener("resize", onResize);
     window.visualViewport?.addEventListener("resize", onResize);
