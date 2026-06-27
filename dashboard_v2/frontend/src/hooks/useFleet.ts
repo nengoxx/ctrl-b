@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { getJSON } from "../api/client";
+import { useTabActive } from "../store/ui";
 import {
   feature,
   featureAuto,
@@ -57,10 +58,15 @@ export function useFleetCycle(): void {
   const { data: hosts = [] } = useHosts(server?.poll_seconds ?? 5);
   const hostsRef = useRef(hosts);
   hostsRef.current = hosts;
+  // Only advance the carousel while the Fleet tab is showing — off-tab it's display:none, so each tick
+  // would `featureAuto` → re-render the (invisible) Hero now-dots + featured row for nothing. Gating the
+  // timer here (an effect dep) suspends it cleanly and resumes on return (the next tick re-features).
+  const onFleet = useTabActive("fleet");
 
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const rescheduleRef = useRef<(delayMs: number) => void>(() => {});
   useEffect(() => {
+    if (!onFleet) return; // paused off-tab — no timer scheduled
     const advance = () => {
       const held = holdRemainingMs();
       if (held > 0) {
@@ -82,7 +88,7 @@ export function useFleetCycle(): void {
     rescheduleRef.current = reschedule;
     reschedule(cycleMs);
     return () => clearTimeout(timer.current);
-  }, [cycleMs]);
+  }, [cycleMs, onFleet]);
 }
 
 export interface FleetView {
@@ -110,12 +116,17 @@ export function useFleet(): FleetView {
   const featured = useFeatured();
   const open = useOpenRows();
 
-  // Group services by host once per render so each row gets only its own.
-  const svcByHost = new Map<string, Service[]>();
-  for (const s of services) {
-    const list = svcByHost.get(s.host_id);
-    list ? list.push(s) : svcByHost.set(s.host_id, [s]);
-  }
+  // Group services by host. Memoized on the `services` query-data ref (stable across renders unless a
+  // poll changes it) so each host's array keeps a STABLE identity — that's what lets `memo(DeviceRow)`
+  // actually bail: the row's `services` prop only changes when that host's services really change.
+  const svcByHost = useMemo(() => {
+    const m = new Map<string, Service[]>();
+    for (const s of services) {
+      const list = m.get(s.host_id);
+      list ? list.push(s) : m.set(s.host_id, [s]);
+    }
+    return m;
+  }, [services]);
   const clamped = hosts.length ? Math.min(featured, hosts.length - 1) : 0;
 
   return { hosts, svcByHost, featured: clamped, open, poll, isLoading, error, busy, run, feature, toggleRow };

@@ -3,6 +3,11 @@ import { FleetSummary } from "../components/FleetSummary";
 import { Hero } from "../components/Hero";
 import { useFleet } from "../hooks/useFleet";
 import { useThemeSetting } from "../theme-engine/settings";
+import type { Service } from "../types";
+
+// Stable empty-services ref — a fresh `[]` per render would be a changing prop and defeat `memo(DeviceRow)`
+// for every host with no services. One shared array (never mutated — DeviceRow only reads it).
+const EMPTY_SERVICES: Service[] = [];
 
 // The ⭐ Phase 1 deliverable: the Vapor Fleet tab. M2 (D29 §14.2) made this a PURE CONSUMER of the
 // headless `useFleet` controller — all the carousel/expand state + the auto-advance engine now live in
@@ -52,13 +57,13 @@ export function FleetTab({ active }: Props) {
           <DeviceRow
             key={h.id}
             host={h}
-            services={svcByHost.get(h.id) ?? []}
+            services={svcByHost.get(h.id) ?? EMPTY_SERVICES}
             index={i}
             featured={i === featured}
             open={open.has(h.id)}
             busy={busy.has(h.id)}
-            onToggle={() => toggleRow(h.id, i)}
-            onAction={(action) => run(action, h)}
+            onToggle={toggleRow}
+            onAction={run}
           />
         ))}
       </div>

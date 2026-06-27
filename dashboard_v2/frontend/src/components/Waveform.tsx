@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import { useUISlice } from "../store/ui";
+
 // Live ping waveform — the canvas draw loop ported verbatim from vapor.html. Reads themed RGB
 // from CSS custom properties each frame so it tracks theme switches. Latest online/ping are held
 // in a ref so the RAF loop is set up once (not torn down on every poll).
@@ -20,6 +22,10 @@ export function Waveform({ online, ping }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<Props>({ online, ping });
   stateRef.current = { online, ping };
+  // §14.11 — the ambient ripple is an animation, so gate it on the app's motion flag (not the OS query;
+  // CLAUDE.md). Under reduced-motion we paint ONE static frame (so the panel isn't blank) and never
+  // schedule the rAF. `motion` is an effect dep → toggling it in Conf tears down + re-sets the loop.
+  const motion = useUISlice((s) => s.motion);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -124,6 +130,10 @@ export function Waveform({ online, ping }: Props) {
       running = true;
       sizeCanvas();
       readColors();
+      if (motion === "reduced") {
+        paint(); // one static frame, no loop — respects reduced-motion (the wave just sits still)
+        return;
+      }
       last = 0;
       raf = requestAnimationFrame(draw);
     }
@@ -152,7 +162,7 @@ export function Waveform({ online, ping }: Props) {
       io.disconnect();
       ro.disconnect();
     };
-  }, []);
+  }, [motion]);
 
   return (
     <div className="waveform">

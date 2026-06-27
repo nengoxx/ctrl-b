@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import { memo, type MouseEvent } from "react";
 
 import type { FleetAction } from "../hooks/useActions";
 import type { Host, Service } from "../types";
@@ -22,8 +22,11 @@ interface Props {
   featured: boolean;
   open: boolean;
   busy: boolean;
-  onToggle: () => void;
-  onAction: (action: FleetAction) => void;
+  // Host-PARAMETERIZED (not pre-bound to this row) so FleetTab can pass the controller's stable `toggleRow`
+  // / `run` refs directly — a per-row `() => toggleRow(id, i)` closure would be a fresh prop each render and
+  // defeat `memo`. The row supplies its own host/index back to the callback (see `toggle`/`invoke` below).
+  onToggle: (id: string, index: number) => void;
+  onAction: (action: FleetAction, host: Host) => void;
 }
 
 /** Stop an action-button click from also toggling the row (belt-and-braces; the toggle is now the
@@ -33,7 +36,12 @@ function act(e: MouseEvent, fn: () => void) {
   fn();
 }
 
-export function DeviceRow({ host, services, index, featured, open, busy, onToggle, onAction }: Props) {
+function DeviceRowImpl({ host, services, index, featured, open, busy, onToggle, onAction }: Props) {
+  // Re-bind the host-parameterized callbacks to THIS row. These closures are recreated each render, but
+  // they're only handed to DOM elements (not memoized children), so their identity is irrelevant to perf —
+  // the memo barrier is on `DeviceRow`'s incoming props, which stay stable.
+  const toggle = () => onToggle(host.id, index);
+  const invoke = (action: FleetAction) => onAction(action, host);
   const online = !!host.status?.online;
   const ping = host.status?.ping_ms ?? null;
   const svcCount = services.length ? ` · ${services.length} svc` : "";
@@ -57,7 +65,7 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
           "button containing buttons", so it sidesteps the old nested-interactive without losing the
           tap-anywhere-to-toggle behavior). Keyboard operability comes from the chevron `<button>` below;
           the action buttons stop propagation so they act without toggling. */}
-      <div className="top" onClick={onToggle}>
+      <div className="top" onClick={toggle}>
         <span className="led" />
         <div className="info">
           <div className="name">{host.name}</div>
@@ -77,14 +85,14 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
               data-act="reboot"
               aria-label={`reboot ${host.name}`}
               disabled={busy}
-              onClick={(e) => act(e, () => onAction("reboot"))}
+              onClick={(e) => act(e, () => invoke("reboot"))}
             />
             <button
               className="act stop"
               data-act="shutdown"
               aria-label={`shutdown ${host.name}`}
               disabled={busy}
-              onClick={(e) => act(e, () => onAction("shutdown"))}
+              onClick={(e) => act(e, () => invoke("shutdown"))}
             />
           </div>
         ) : (
@@ -93,7 +101,7 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
             data-act="wake"
             aria-label={`wake ${host.name}`}
             disabled={busy}
-            onClick={(e) => act(e, () => onAction("wake"))}
+            onClick={(e) => act(e, () => invoke("wake"))}
           />
         )}
         <button
@@ -101,7 +109,7 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
           className="chev"
           aria-expanded={open}
           aria-label={`${open ? "collapse" : "expand"} ${host.name} details`}
-          onClick={(e) => act(e, onToggle)}
+          onClick={(e) => act(e, toggle)}
         >
           ›
         </button>
@@ -158,7 +166,7 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
           </div>
         </div>
         <div className="dropfoot">
-          <button onClick={(e) => act(e, () => onAction("ping"))}>$ ping</button>
+          <button onClick={(e) => act(e, () => invoke("ping"))}>$ ping</button>
           <button onClick={(e) => e.stopPropagation()}>› ssh</button>
           {online ? (
             <a
@@ -171,7 +179,7 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
               ↗ http://{host.ip}
             </a>
           ) : (
-            <button disabled={busy} onClick={(e) => act(e, () => onAction("wake"))}>
+            <button disabled={busy} onClick={(e) => act(e, () => invoke("wake"))}>
               wake
             </button>
           )}
@@ -180,3 +188,9 @@ export function DeviceRow({ host, services, index, featured, open, busy, onToggl
     </div>
   );
 }
+
+// memo barrier — re-renders only when THIS row's data changes. The fleet poll / featured-cycle re-renders
+// FleetTab (new `featured`, maybe new host objects), but a row whose host/services/open/busy/featured are
+// reference-equal bails. Effective because: the callbacks are stable controller refs, `services` is the
+// memoized per-host array (useFleet), and `featured`/`open`/`busy` resolve to primitives in FleetTab.
+export const DeviceRow = memo(DeviceRowImpl);
