@@ -129,6 +129,19 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
 - **Open:** the concrete skill-selection algorithm; plan persistence shape (message `meta` vs own
   table); whether skills bundle their own MCP servers/tools; skill sandboxing for bundled scripts
   (respect privilege levels). Decide at build time (Phase 4).
+- **Deferred — make the active plan SALIENT to the model each turn (owner-noted 2026-06-27).** As built,
+  the `task_plan` plan round-trips correctly into the model's context (it's the model's own `task_plan`
+  tool-call `args.steps`; manual tick-edits update that call in place via `/api/agent/plan` so the model
+  sees them next turn) — but it's a **passive, buried prior tool call**, so the model doesn't reliably
+  acknowledge or continue the active step (and compaction can drop the steps on long threads). The fix is a
+  *salience* layer, NOT new storage: foreground the current plan every turn. Design options to weigh
+  (deferred for a more thought-out pass): (a) a small **per-turn system message** in `session.py`
+  `_build_messages`, derived from the latest `task_plan` call (alongside the existing memory/roster/
+  reflection system messages), e.g. "Current plan: ✓ … / ▶ active step / ▢ … — continue from the active
+  step"; (b) **prepend the plan to the current user request** instead of a standing system message; (c) a
+  hybrid (compact reminder only while a plan is active/incomplete). Considerations: token cost vs salience,
+  not duplicating the plan the model can already see, compaction interaction (re-inject after a fold), and
+  honoring manual edits immediately. Reuse the plan already in history — no separate plan store.
 
 ### A6. Multiple agents + subagents (configurable agent design)
 
