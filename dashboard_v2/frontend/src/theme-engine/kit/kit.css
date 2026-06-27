@@ -911,10 +911,14 @@ body[data-mode="light"] .kit .pm {
 .kit .pm-count.over {
   color: var(--danger);
 }
+/* The secondary defaults (Load/Restore) take their OWN full-width row so they never get crammed onto the
+ * line with Cancel/Save at phone width (4 uppercase pills don't fit at 390px) — Cancel/Save then sit on
+ * the next line, right-aligned. When there's no defaultText this group isn't rendered, so it's just the
+ * count row + a right-aligned actions row. */
 .kit .pm-defaults {
   display: flex;
   gap: 8px;
-  margin-right: auto; /* Load/Restore left, Cancel/Save right */
+  flex: 1 1 100%;
 }
 .kit .pm-actions {
   display: flex;
@@ -924,9 +928,9 @@ body[data-mode="light"] .kit .pm {
 .kit .pm-alt {
   all: unset;
   cursor: pointer;
-  padding: 9px 14px;
+  padding: 8px 13px;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-2);
   background: var(--surface-2);
@@ -942,9 +946,9 @@ body[data-mode="light"] .kit .pm {
 .kit .pm-save {
   all: unset;
   cursor: pointer;
-  padding: 9px 20px;
+  padding: 8px 18px;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--bg);
   background: var(--accent-fill);
@@ -1840,4 +1844,57 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   margin-top: 2px;
   flex: 1;
   min-width: 0;
+}
+
+/* ── shared raw-markdown editor (.kv-text.skill-md) + Memory bar (.mem-*) + Skills opener bar (.skill-md-bar).
+ *    Pulled forward from A.2b (Skills + Memory share these) — without them the Memory per-slot editor's
+ *    count/opener bar was an unstyled stack and the textarea a raw browser box. The editor is a code-style
+ *    surface (white-space:pre, horizontal scroll), so it keeps `--bg` + the system mono stack. ── */
+.kit .kv-text.skill-md {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  line-height: 1.6;
+  border: 1px solid var(--line);
+  resize: vertical;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow: auto;
+  tab-size: 2;
+}
+.kit .kv-text.skill-md::placeholder {
+  color: var(--text-3);
+}
+.kit .kv-text.skill-md:focus {
+  border-color: var(--accent);
+}
+.kit .skill-md-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+.kit .mem-md-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.kit .mem-count {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+.kit .mem-count.over {
+  color: var(--danger);
 }
