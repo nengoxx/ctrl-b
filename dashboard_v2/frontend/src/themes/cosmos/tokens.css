@@ -1,0 +1,67 @@
+/* cosmos theme tokens (D29 §14.4 / §14.13) — the deep-space palette mapped onto the Kit's semantic
+ * contract. Ported from prototypes/project/variations/cosmos.html. Cosmos is a BESPOKE theme (its own Root
+ * + a bespoke orbital Fleet land in later slices); C0 maps the palette so the REUSED Kit surfaces (chrome /
+ * Agent / Conf / Utils, under `.kit`) render in cosmos colors. Lazy-loaded → self-declares `@layer theme`
+ * + `@scope` (§14.6). Dark-only for now (deep space); a daylight mode is a later additive slice.
+ *
+ * §14.13: static tokens + the accent inputs on `:scope`; the DERIVED accent tokens (--accent-fill/-soft) on
+ * `body` so the per-accent overrides recompute (the var-on-:scope rule). Accents are flat LITERALS per
+ * `body[data-accent]` (no OKLCH formula → immune to the trap), the `--acc` indirection from the prototype.
+ * Keyframes (added with the bespoke Fleet) will be prefixed `cosmos-*` (§14.13 #4). */
+@layer theme {
+  @scope ([data-skin="cosmos"]) {
+    :scope {
+      color-scheme: dark;
+
+      /* semantic tier — deep space */
+      --bg: #0a0a0d;
+      --surface: #14141a; /* panel */
+      --surface-2: #1a1a22; /* panel-2 */
+      --text: #f3f2f7;
+      --text-2: #b6b4c2;
+      --text-3: #76747f;
+      --line: rgba(255, 255, 255, 0.08);
+      --line-2: rgba(255, 255, 255, 0.14);
+
+      --ok: #4fd6a0;
+      --ok-soft: color-mix(in srgb, var(--ok) 16%, transparent);
+      --warn: #ff9d3c;
+      --warn-soft: color-mix(in srgb, var(--warn) 16%, transparent);
+      --danger: #ff5a6a;
+      --danger-soft: color-mix(in srgb, var(--danger) 16%, transparent);
+
+      --accent-glow: none;
+      --radius: 16px;
+      --radius-sm: 12px;
+      --density-pad: 1;
+      --font-body: "Space Grotesk", system-ui, sans-serif;
+    }
+
+    /* page background — flat for C0 (the deep-space radial gradient + starfield land with the bespoke Root
+     * in C1, where the shell is layered over them). Both <html> (overscroll) + <body>. */
+    :scope,
+    body {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* derived accent tokens — on `body` so the per-accent override below recomputes them (§14.13 #3) */
+    body {
+      --accent: #8a78ff; /* violet (default) */
+      --accent-fill: var(--accent);
+      --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+    }
+    body[data-accent="violet"] {
+      --accent: #8a78ff;
+    }
+    body[data-accent="cyan"] {
+      --accent: #56cfee;
+    }
+    body[data-accent="green"] {
+      --accent: #4fd6a0;
+    }
+    body[data-accent="amber"] {
+      --accent: #ff9d3c;
+    }
+  }
+}

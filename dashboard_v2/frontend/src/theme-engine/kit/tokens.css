@@ -52,6 +52,9 @@ body {
   --accent-fill: #5bbccb;
   --accent-soft: rgba(91, 188, 203, 0.14);
   --accent-glow: none; /* valid for both filter: and box/text-shadow: — a theme sets a real glow */
+  /* body font — themeable so a theme can ship its own typeface (cosmos → Space Grotesk) without forking
+   * the Kit; the system-ui fallback covers a theme that doesn't load a webfont. */
+  --font-body: "Hanken Grotesk", system-ui, sans-serif;
   /* shape */
   --radius: 16px;
   --radius-sm: 11px;
