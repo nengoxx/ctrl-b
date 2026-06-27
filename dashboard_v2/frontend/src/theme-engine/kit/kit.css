@@ -2053,3 +2053,308 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   color: var(--accent);
   font-weight: 600;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════
+ * BUCKET-A.2c — the Utils/Tools tab: the `.util` run-card system + the `.tcat` agent-tool catalog +
+ * ModeSeg's tri-state additions (on the A.1 `.seg`). Token port under `.kit`, A.1/A.2 conventions: flat
+ * `--accent-fill` (text = `--bg`), no gradients/glows, the danger ladder (high = `--danger`, confirm-gated
+ * = `--warn`, owner-confirmed), the download affordance = the success token (`--ok`), titles = clean sans
+ * (vapor's Major Mono Display has no reskin equivalent), mono = system stack. Faithful reskin; vapor
+ * untouched. */
+
+/* ── tool run-card (.util) ── */
+.kit .util {
+  margin: 14px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+.kit .util .uhead {
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--accent-soft);
+}
+.kit .util .uhead .glyph {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.kit .util .uhead .glyph .ico {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  background: var(--accent-fill);
+  border-radius: 8px; /* a tool with no `icon` shows as a rounded accent tile (the masks below clip their own shape) */
+}
+.kit .util .uhead .glyph .ico.yt {
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M23.5 6.5s-.2-1.6-.9-2.3c-.9-.9-1.9-1-2.4-1C16.8 3 12 3 12 3h0s-4.8 0-8.2.3c-.5 0-1.5.1-2.4 1C.7 4.9.5 6.5.5 6.5S.3 8.4.3 10.3v1.7c0 1.9.2 3.8.2 3.8s.2 1.6.9 2.3c.9.9 2 .9 2.5 1 1.8.2 7.6.3 7.6.3s4.8 0 8.2-.3c.5-.1 1.5-.1 2.4-1 .7-.7.9-2.3.9-2.3s.2-1.9.2-3.8v-1.7c0-1.9-.2-3.8-.2-3.8zM9.6 14.6V7.9l6.3 3.4-6.3 3.3z' fill='black'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M23.5 6.5s-.2-1.6-.9-2.3c-.9-.9-1.9-1-2.4-1C16.8 3 12 3 12 3h0s-4.8 0-8.2.3c-.5 0-1.5.1-2.4 1C.7 4.9.5 6.5.5 6.5S.3 8.4.3 10.3v1.7c0 1.9.2 3.8.2 3.8s.2 1.6.9 2.3c.9.9 2 .9 2.5 1 1.8.2 7.6.3 7.6.3s4.8 0 8.2-.3c.5-.1 1.5-.1 2.4-1 .7-.7.9-2.3.9-2.3s.2-1.9.2-3.8v-1.7c0-1.9-.2-3.8-.2-3.8zM9.6 14.6V7.9l6.3 3.4-6.3 3.3z' fill='black'/></svg>") center/contain no-repeat;
+}
+.kit .util .uhead .glyph .ico.globe {
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'><circle cx='12' cy='12' r='9'/><ellipse cx='12' cy='12' rx='4' ry='9'/><path d='M3 12 h18'/><path d='M4.5 7 h15'/><path d='M4.5 17 h15'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'><circle cx='12' cy='12' r='9'/><ellipse cx='12' cy='12' rx='4' ry='9'/><path d='M3 12 h18'/><path d='M4.5 7 h15'/><path d='M4.5 17 h15'/></svg>") center/contain no-repeat;
+}
+.kit .util .uhead .t {
+  flex: 1;
+  min-width: 0;
+}
+.kit .util .uhead .t .util-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.kit .util .uhead .t .nm {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kit .util .uhead .t .desc {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+.kit .util .uhead .t .desc.util-desc {
+  cursor: pointer;
+}
+.kit .util .uhead .t .desc.util-desc:hover {
+  color: var(--text-2);
+}
+
+/* ── card body — the run input row + the result block ── */
+.kit .util .ubody {
+  padding: 12px 14px 14px;
+}
+.kit .util .field {
+  display: flex;
+  align-items: stretch;
+}
+.kit .util .field input {
+  all: unset;
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-right: 0;
+}
+.kit .util .field input::placeholder {
+  color: var(--text-3);
+}
+.kit .util .field input:focus {
+  border-color: var(--accent);
+  position: relative;
+  z-index: 1;
+}
+.kit .util .field button {
+  all: unset;
+  cursor: pointer;
+  padding: 0 16px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--accent-fill);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.kit .util .field button:active {
+  opacity: 0.85;
+}
+.kit .util .field button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.kit .util .result {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.kit .util .result.empty {
+  color: var(--text-3);
+  font-style: italic;
+  text-align: center;
+  background: transparent;
+  border-style: dashed;
+}
+.kit .util .result .tool-summary {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.kit .util .result .tool-summary.err {
+  color: var(--danger);
+}
+.kit .util .result .tool-err {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+.kit .util .result .kv {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 4px 10px;
+  font-size: 12px;
+}
+.kit .util .result .kv .k {
+  color: var(--text-3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  align-self: center;
+}
+.kit .util .result .kv .v {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kit .util .result .vtitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+/* download — a <button> here (client-side Blob), styled as the dashed success-token affordance */
+.kit .util .result .download {
+  all: unset;
+  cursor: pointer;
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--ok);
+  border: 1px dashed var(--ok-soft);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+}
+.kit .util .result .download:active {
+  background: var(--ok-soft);
+}
+
+/* ── agent-tool catalog (Section B, .tcat-*) ── */
+.kit .tcat-row {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.kit .tcat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.kit .tcat-name {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.kit .tcat-risk {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--text-3);
+  flex: none;
+}
+.kit .tcat-risk.r-high {
+  color: var(--danger);
+  border-color: var(--danger-soft);
+}
+.kit .tcat-risk.confirm {
+  color: var(--warn);
+  border-color: var(--warn-soft);
+}
+.kit .tcat-mod {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+  flex: none;
+}
+.kit .tcat-desc {
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+  cursor: pointer;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  overflow-wrap: anywhere;
+}
+.kit .tcat-desc:hover {
+  color: var(--text);
+}
+.kit .tcat-edit {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.kit .tcat-faint {
+  color: var(--text-3);
+}
+.kit .tcat-ctl {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── ModeSeg tri-state (.tcat-seg builds on the A.1 .seg): a "·" under the default mode, a read-only
+ *    (.ro) dim, and a compact inline variant (.tcat-seg-sm) for the card title row ── */
+.kit .tcat-seg button.def::after {
+  content: "·";
+  margin-left: 3px;
+  color: var(--text-3);
+}
+.kit .tcat-seg button.active.def::after {
+  color: var(--bg);
+}
+.kit .tcat-seg.ro {
+  opacity: 0.55;
+}
+.kit .tcat-seg button:disabled {
+  cursor: default;
+}
+.kit .tcat-seg-sm {
+  padding: 2px;
+  flex: 0 0 auto;
+}
+.kit .tcat-seg-sm button {
+  padding: 3px 7px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+.kit .tcat-seg-sm button.def::after {
+  margin-left: 2px;
+}
