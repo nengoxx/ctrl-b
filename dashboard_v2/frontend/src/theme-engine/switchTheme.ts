@@ -9,9 +9,11 @@
 // media query — CLAUDE.md) so the cross-fade can't leak under reduced-motion; no view-transition-names
 // (a theme swap is a whole-page cross-fade — naming elements only adds cost + a duplicate-name skip).
 //
-// NOTE (T0): only vapor is registered, and the Conf picker guards re-picking the same skin, so this
-// path is effectively never invoked yet — it's built ready for T1+ (the day-1 directive). Within-theme
-// accent/mode changes are instant `setUI` (not a skin switch → no cross-fade).
+// NOTE: vapor, minimal, and cosmos are registered + selectable, so this path IS live — picking a
+// different skin in Conf runs the cross-fade. The Conf picker still guards re-picking the SAME skin
+// (no-op). The lazy Roots render synchronously once preloaded (`preloadableRoot`), so the flushSync
+// below captures the real new theme, not a Suspense fallback. Within-theme accent/mode changes are
+// instant `setUI` (not a skin switch → no cross-fade).
 
 import { flushSync } from "react-dom";
 
