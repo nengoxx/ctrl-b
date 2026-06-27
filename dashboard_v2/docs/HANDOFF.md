@@ -76,8 +76,39 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Theme-engine v2 (D29): Bucket-A.1 + A.2 SHIPPED — overlays, primitives, Conf shell, ALL deep Conf editors + the Utils/Tools tab token-driven under `.kit`; minimal renders every shared surface EXCEPT the Agent chat** · NEXT = **Bucket-A.3: the Agent chat bubbles**; emma deploy still queued)
+## Current state (**Theme-engine v2 (D29): BUCKET-A COMPLETE — `minimal` is a full reskin: chrome + Fleet (A.1) · ALL Conf editors + Utils tab (A.2) · the entire Agent chat (A.3), all token-driven under `.kit`. Every shared surface now renders under any reskin theme.** · NEXT = **T2 phosphor** (the 2nd theme — tokens+fonts+CRT, reuses the Kit) *or* the queued **emma deploy**)
 
+> ### 🟢 SESSION UPDATE — BUCKET-A COMPLETE: A.3 Agent chat SHIPPED (+ A.1/A.2 recap) — 2026-06-27 (cont.)
+>
+> **What shipped (committed + green).** A.3 token-ported the entire Agent chat under `.kit` in audited
+> sub-slices — the last shared surface. **Bucket-A is now complete**: `minimal` renders every shared surface.
+> - **`ccc611f` A.3a** — base conversation: web-researched + owner-confirmed aesthetic (differentiate by
+>   ALIGNMENT + FILL, muted tones) → **user = a filled accent-tint bubble** (right, flat bottom-right corner),
+>   **assistant = QUIET, borderless** (left, prose/markdown is the main flow), sys = muted dashed caption;
+>   who-line + dots, `.notice`, reasoning `.think` disclosure, streaming `.dots`/`.caret`/`.status-tag`, `.chat-err`.
+> - **`57f8902` A.3b** — markdown (`.b.bot .md*`): prose/headings (clean sans), lists, links, blockquote/hr,
+>   inline-code lozenge, fenced `.md-code` panel (lang + copy/send bar).
+> - **`a5ba22f` A.3c** — tool/command bubbles: owner-confirmed **NEUTRAL `--surface` card** (not vapor green),
+>   `$`-code well, exec=`--accent`/dismiss=`--text-3` actions, the result **semantic ladder** (ok=`--ok`,
+>   error/denied/timeout=`--danger`, running=`--accent` pulse), web-search/output disclosures, the question
+>   bubble, and the per-bubble **TTS play/pause** (`.tts-play`).
+> - **`848dd85` A.3d** — the **plan panel** (`.plan-*`: pinned checklist + step ticks pending/active(`--accent`)/
+>   done(`--ok` ✓), z 4 under the Kit appbar z 5) + the **session-privilege chip/menu** (`.priv-*`).
+> - **`19b87b8`** — bottom edge-fade shortened + softened (owner eyeball).
+>
+> **VERIFIED:** every sub-slice green (`build` · `npm test` **120** · `test:e2e` **34**); an **A.3a audit** +
+> a **whole-A.3 coverage sweep** (every chat class an emitter renders resolves to a `.kit` rule) — both CLEAN,
+> 0 blocker/high. Distinct `kit-*` keyframes; all ambient anims motion-gated, frosted plan surfaces perf-gated
+> (§14.11). vapor computed-identical.
+>
+> **⛔ NEXT (owner's pick):** **T2 phosphor** (§14.10 — the second reskin theme: its own `tokens.css` + Fontsource
+> fonts + a CRT/scanline aesthetic, reusing the whole Kit + DefaultRoot — should be *mostly tokens now that the
+> Kit is complete*; research the CRT effects against §14.11 first) · **OR** the queued **emma (Linux) deploy** ·
+> OR T3–T5 (spatial themes, need `present()`). The deferred **SettingRow sweep** of the remaining Conf groups
+> also still stands (owner: incremental).
+>
+> ---
+>
 > ### 🟢 SESSION UPDATE — Bucket-A.2 SHIPPED (deep Conf editors + Utils tab) — 2026-06-27 (cont.)
 >
 > **What shipped (committed + green).** A.2 token-ported every editor-specific + Utils-tab surface from
