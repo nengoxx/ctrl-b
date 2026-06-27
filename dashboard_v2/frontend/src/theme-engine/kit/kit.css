@@ -555,3 +555,990 @@ body[data-perf="lite"] .kit-composer {
   color: var(--text-3);
   margin-top: 5px;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════
+ * BUCKET-A SUB-SLICE 1 — shared OVERLAYS + PRIMITIVES + CONF SHELL (token-driven, D29 §14.4.1).
+ *
+ * These surfaces are rendered by SHARED components (ConfirmDialog/PromptModal/Toasts/MiniPlayer; Seg/
+ * Switch; the Conf editors) that emit the SAME class names under every skin. vapor styles them under
+ * `@scope([data-skin=vapor])` (vapor.css/extras.css, @layer theme); the Kit owns the reskin look here,
+ * scoped under the `.kit` marker DefaultRoot puts on its shell — so these rules can never leak into vapor
+ * (its Root has no `.kit`) and only resolve for reskin themes. The components are UNCHANGED — all a11y
+ * (focus-trap, aria-modal, Escape, restore-focus — F17) is theme-independent; this is purely the skin.
+ *
+ * Conventions reused (no new tokens): accent-filled controls use `background: var(--accent-fill); color:
+ * var(--bg)` (the `.kit-send` precedent); secondary buttons = outline on `--surface-2` (the project's own
+ * `.conf-save.alt`/`.pm-alt`/`.mfoot button` pattern). Flat only — minimal has `--accent-glow: none`, no
+ * gradients. §14.11: blurred overlays are perf-gated to opaque under `data-perf=lite`; the mini-player
+ * shimmer is motion-gated; long strings wrap (`overflow-wrap: anywhere`); the switch knob slides via
+ * `transform` (compositor), not `left`. Distinct `kit-*` @keyframes names (keyframes are global — must not
+ * collide with vapor's `modal-fade`/`toast-in`/`mp-bar`). Conf SHELL only; deep editors are sub-slice 2. */
+
+/* ── primitives: segmented control (.seg) + on/off toggle (.switch) ── */
+.kit .seg {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.kit .seg button {
+  all: unset;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  transition: color 0.15s, background 0.15s;
+}
+.kit .seg button.active {
+  background: var(--accent-fill);
+  color: var(--bg);
+}
+.kit .switch {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  flex: none;
+}
+.kit .switch .knob {
+  width: 42px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  position: relative;
+  border: 1px solid var(--line-2);
+  transition: background 0.2s, border-color 0.2s;
+}
+.kit .switch .knob::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-3);
+  /* slide via transform (compositor-friendly, §14.11) — not `left` like vapor's legacy recipe */
+  transition: transform 0.2s, background 0.2s;
+}
+.kit .switch.on .knob {
+  background: var(--accent-fill);
+  border-color: transparent;
+}
+.kit .switch.on .knob::after {
+  transform: translateX(20px);
+  background: var(--bg);
+}
+
+/* ── overlay: ConfirmDialog (.modal) — a centered decision dialog (Material-3 default for confirms). ── */
+.kit .modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in oklch, var(--bg) 55%, transparent);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  animation: kit-modal-fade 0.18s ease;
+}
+.kit .modal {
+  width: 100%;
+  max-width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  padding: 18px 18px 16px;
+  color: var(--text);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+body[data-mode="light"] .kit .modal {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12);
+}
+.kit .modal h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kit .modal p {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.kit .modal .row {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.kit .modal button {
+  all: unset;
+  cursor: pointer;
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, opacity 0.15s;
+}
+.kit .modal button.cancel {
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--line-2);
+}
+.kit .modal button.cancel:active {
+  background: var(--line);
+  color: var(--text);
+}
+.kit .modal button.go {
+  background: var(--accent-fill);
+  color: var(--bg);
+}
+.kit .modal button.go:active {
+  opacity: 0.85;
+}
+.kit .modal button.go.danger {
+  background: var(--danger);
+}
+@keyframes kit-modal-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* §14.11 — drop the full-viewport scrim blur under data-perf=lite (the scrim color still dims the page).
+ * Covers both the ConfirmDialog (.modal-backdrop) and the PromptModal (.pm-backdrop, defined below). */
+body[data-perf="lite"] .kit .modal-backdrop,
+body[data-perf="lite"] .kit .pm-backdrop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* ── overlay: PromptModal (.pm-*) — the full-height prompt/markdown editor; sizes to --app-h so the
+ *    Android keyboard shrinks it (App.tsx). Effectively a near-fullscreen sheet already. ── */
+.kit .pm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60; /* above .modal-backdrop (50) — never co-open, but keep the order explicit */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  background: color-mix(in oklch, var(--bg) 60%, transparent);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  animation: kit-modal-fade 0.18s ease;
+}
+.kit .pm {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 640px;
+  height: var(--app-h, 100dvh);
+  max-height: calc(var(--app-h, 100dvh) - 28px);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+body[data-mode="light"] .kit .pm {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12);
+}
+.kit .pm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.kit .pm-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kit .pm-x {
+  all: unset;
+  cursor: pointer;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 14px;
+  color: var(--text-2);
+  border: 1px solid var(--line-2);
+  transition: background 0.15s, color 0.15s;
+}
+.kit .pm-x:active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.kit .pm-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  padding: 12px 16px;
+}
+.kit .pm-text {
+  all: unset;
+  box-sizing: border-box;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  border: 1px solid var(--line);
+  resize: none;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-overflow-scrolling: touch;
+}
+.kit .pm-text.mono {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 13px;
+}
+.kit .pm-text::placeholder {
+  color: var(--text-3);
+}
+.kit .pm-text:focus {
+  border-color: var(--accent);
+}
+.kit .pm-foot {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 10px 16px 12px;
+  border-top: 1px solid var(--line);
+}
+.kit .pm-count {
+  flex: 1 1 100%;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.kit .pm-count.over {
+  color: var(--danger);
+}
+.kit .pm-defaults {
+  display: flex;
+  gap: 8px;
+  margin-right: auto; /* Load/Restore left, Cancel/Save right */
+}
+.kit .pm-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.kit .pm-alt {
+  all: unset;
+  cursor: pointer;
+  padding: 9px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.kit .pm-alt:active {
+  background: var(--line);
+  color: var(--text);
+}
+.kit .pm-save {
+  all: unset;
+  cursor: pointer;
+  padding: 9px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent-fill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.kit .pm-save:active {
+  opacity: 0.85;
+}
+
+/* ── overlay: Toasts — transient activity stack, top-center below the appbar (rides --appbar-h, which
+ *    DefaultRoot sets to 0 when the bar is hidden). Solid surface (no blur to gate). ── */
+.kit .toasts {
+  position: fixed;
+  top: calc(var(--appbar-h, 56px) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: max-content;
+  max-width: min(92vw, 460px);
+  pointer-events: none;
+}
+.kit .toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  animation: kit-toast-in 0.22s ease;
+}
+body[data-mode="light"] .kit .toast {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+}
+.kit .toast::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-3);
+}
+.kit .toast.ok::before {
+  background: var(--ok);
+}
+.kit .toast.err::before {
+  background: var(--danger);
+}
+.kit .toast.info::before {
+  background: var(--accent);
+}
+.kit .toast-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.kit .toast-action {
+  all: unset;
+  cursor: pointer;
+  margin-left: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.kit .toast-action:active {
+  background: var(--accent-soft);
+}
+@keyframes kit-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── overlay: MiniPlayer — the floating TTS pill below the appbar; frosted (perf-gated). The play/pause
+ *    + close glyphs are masked SVGs (lifted from extras.css); the equalizer shimmer is motion-gated. ── */
+.kit .mini-player {
+  position: fixed;
+  top: calc(var(--appbar-h, 56px) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 16;
+  width: min(440px, calc(100vw - 28px));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--surface) 90%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+body[data-mode="light"] .kit .mini-player {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+body[data-perf="lite"] .kit .mini-player {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.kit .mini-player .mp-play {
+  all: unset;
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  background: var(--accent-fill);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
+}
+.kit .mini-player .mp-play:active {
+  transform: scale(0.9);
+}
+.kit .mini-player .mp-play.playing {
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
+          mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
+}
+.kit .mini-player .mp-play:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+.kit .mini-player .mp-wave {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  touch-action: none; /* a horizontal drag seeks, doesn't scroll */
+  outline: none;
+}
+.kit .mini-player .mp-wave i {
+  flex: 1;
+  min-width: 0;
+  min-height: 2px;
+  border-radius: 1px;
+  background: var(--line-2); /* unplayed */
+}
+.kit .mini-player .mp-wave i.on {
+  background: var(--accent); /* played */
+}
+.kit .mini-player .mp-wave.playing i {
+  animation: kit-mp-bar 1.1s ease-in-out infinite;
+}
+@keyframes kit-mp-bar {
+  0%,
+  100% {
+    transform: scaleY(0.7);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+.kit .mini-player .mp-wave.disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.kit .mini-player .mp-wave:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.kit .mini-player .mp-time {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  min-width: 38px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.kit .mini-player .mp-close {
+  all: unset;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  background: var(--text-2);
+  opacity: 0.7;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'><path d='M6 6l12 12M18 6L6 18'/></svg>") center/15px no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'><path d='M6 6l12 12M18 6L6 18'/></svg>") center/15px no-repeat;
+}
+.kit .mini-player .mp-close:active {
+  transform: scale(0.9);
+}
+/* motion gate — kill the equalizer shimmer when the user prefers reduced motion (§14.11/§15) */
+body[data-motion="reduced"] .kit .mini-player .mp-wave i {
+  animation: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════
+ * CONF SHELL (generic scaffold only — section headers, groups, cards, rows, inputs, machine-row
+ * dropdown, save bars). Editor-SPECIFIC chrome (svc, agent, tick-grid, kv-text, tooldesc, mem,
+ * prompt-rows) is sub-slice 2. The `.sec` header is shared by Agent/Utils too, so it's styled here
+ * for all three tabs. */
+
+/* section header (the "01 Fleet" / "04 Conf" rule line) */
+.kit .sec {
+  padding: 22px 18px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.kit .sec .num {
+  color: var(--accent);
+  font-weight: 700;
+}
+.kit .sec b {
+  color: var(--text);
+  font-weight: 600;
+}
+.kit .sec::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+  align-self: center;
+}
+.kit .sec .right {
+  color: var(--text-3);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* conf group + its title (collapsible) */
+.kit .confgroup {
+  margin: 8px 18px 0;
+}
+.kit .conftitle {
+  padding: 18px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.kit .conftitle .num {
+  color: var(--accent);
+}
+.kit .conftitle b {
+  color: var(--text);
+}
+.kit .conftitle::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+  align-self: center;
+}
+.kit .conftitle .right {
+  color: var(--text-3);
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.kit .conftitle.conf-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+.kit .conf-chev {
+  color: var(--accent);
+  font-size: 14px;
+  line-height: 1;
+  transition: transform 0.2s;
+  transform: rotate(90deg); /* expanded: points down */
+}
+.kit .confgroup.collapsed .conf-chev {
+  transform: rotate(0deg); /* collapsed: points right */
+}
+/* collapse hides the body but keeps children mounted (preserve in-progress edits) */
+.kit .confgroup.collapsed > *:not(.conftitle) {
+  display: none;
+}
+
+/* card + rows */
+.kit .conf-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.kit .conf-card.access-card {
+  margin-top: 10px;
+}
+.kit .confrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: calc(13px * var(--density-pad)) 14px;
+  min-height: 52px;
+  border-top: 1px solid var(--line);
+}
+.kit .conf-card .confrow:first-child {
+  border-top: 0;
+}
+.kit .confrow .k {
+  flex: 1;
+  min-width: 0;
+}
+.kit .confrow .k .label {
+  font-size: 14px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kit .confrow .k .label.code {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.kit .confrow .k .desc {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+.kit .confrow .k .desc.code {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  color: var(--text-2);
+}
+.kit .confrow input[type="text"],
+.kit .confrow input[type="password"] {
+  all: unset;
+  flex: 1;
+  min-width: 0;
+  max-width: 62%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--line);
+}
+.kit .confrow input:focus {
+  border-color: var(--accent);
+}
+.kit .confrow .chev {
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.2s;
+}
+.kit .confrow .badge {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--ok-soft);
+  color: var(--ok);
+  border: 1px solid var(--ok-soft);
+  flex: none;
+}
+.kit .confrow .badge.stale {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: var(--danger-soft);
+}
+.kit .confrow .badge.dim {
+  background: var(--surface-2);
+  color: var(--text-3);
+  border-color: var(--line);
+}
+
+/* expandable machine row: header (.confrow) + dropdown (.mconf) */
+.kit .mwrap {
+  border-top: 1px solid var(--line);
+}
+.kit .conf-card .mwrap:first-child {
+  border-top: 0;
+}
+.kit .mwrap > .confrow {
+  border-top: 0;
+  cursor: pointer;
+  user-select: none;
+}
+.kit .mwrap.open > .confrow {
+  background: var(--accent-soft);
+}
+.kit .mwrap.open > .confrow .chev {
+  transform: rotate(90deg);
+}
+.kit .mwrap .mconf {
+  display: none;
+  padding: 4px 14px 14px;
+  background: color-mix(in oklch, var(--bg) 40%, transparent);
+  border-top: 1px dashed var(--line);
+}
+.kit .mwrap.open .mconf {
+  display: block;
+}
+/* add-machine row — accent "+" that expands to an empty form */
+.kit .mwrap.add > .confrow .label {
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.kit .mwrap.add > .confrow .label::before {
+  content: "+";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 600;
+}
+.kit .mwrap.add.open > .confrow .label::before {
+  content: "−";
+}
+
+/* machine form grid (label column + value column) */
+.kit .mconf .mform {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  gap: 8px 12px;
+  align-items: center;
+}
+.kit .mconf .mform label {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  align-self: center;
+  line-height: 1.25;
+}
+.kit .mconf .mform input,
+.kit .mconf .mform select {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  border: 1px solid var(--line);
+}
+.kit .mconf .mform input:focus,
+.kit .mconf .mform select:focus {
+  border-color: var(--accent);
+}
+.kit .mconf .mform input::placeholder {
+  color: var(--text-3);
+}
+.kit .mconf .mform .split {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.kit .mconf .mform .split button,
+.kit .mconf .mform .pw button.reveal {
+  all: unset;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+  border: 1px solid var(--line-2);
+}
+.kit .mconf .mform .split button:active {
+  background: var(--surface-2);
+}
+.kit .mconf .mform .pw {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.kit .mconf .mform .pw button.reveal.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* machine form footer — outline buttons; .save = filled accent; .danger = outline danger */
+.kit .mconf .mfoot {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+.kit .mconf .mfoot button {
+  all: unset;
+  cursor: pointer;
+  flex: 1;
+  text-align: center;
+  padding: 9px 0;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+}
+.kit .mconf .mfoot button:active {
+  background: var(--surface-2);
+}
+.kit .mconf .mfoot button.save {
+  color: var(--bg);
+  background: var(--accent-fill);
+  border-color: transparent;
+}
+.kit .mconf .mfoot button.danger {
+  color: var(--danger);
+  border-color: var(--danger-soft);
+}
+.kit .mconf .mfoot button.danger:active {
+  background: var(--danger-soft);
+}
+
+/* settings textarea + save pill (7a) */
+.kit .confrow.conf-textrow {
+  align-items: flex-start;
+}
+.kit .conf-textarea {
+  all: unset;
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  max-width: 62%;
+  min-height: 64px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid var(--line);
+  resize: vertical;
+}
+.kit .conf-textarea:focus {
+  border-color: var(--accent);
+}
+.kit .conf-savebar {
+  display: flex;
+  margin-top: 10px;
+}
+.kit .conf-card > .conf-savebar {
+  margin: 10px 12px 12px;
+}
+.kit .conf-savebar.redisc {
+  align-items: center;
+  gap: 10px;
+}
+.kit .redisc-hint {
+  flex: 1;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
+.kit .conf-save {
+  all: unset;
+  cursor: pointer;
+  flex: 1;
+  text-align: center;
+  padding: 11px 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  color: var(--bg);
+  background: var(--accent-fill);
+  border: 1px solid transparent;
+  transition: opacity 0.15s;
+}
+.kit .conf-save:active {
+  opacity: 0.85;
+}
+.kit .conf-save:disabled {
+  cursor: default;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border-color: var(--line-2);
+}
+/* secondary (outline) save — rediscover / alt actions */
+.kit .conf-save.alt {
+  flex: 0 0 auto;
+  padding: 11px 18px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+}
+.kit .conf-save.alt:active:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Server HTTPS-access card (6c-2) */
+.kit .conf-card .conf-url {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+}
+.kit .conf-card .conf-copy {
+  all: unset;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  border: 1px solid var(--line-2);
+}
+.kit .conf-card .conf-copy:active {
+  background: var(--accent-soft);
+}
+
+/* conf footer caption */
+.kit .conf-foot {
+  margin: 18px 18px 0;
+  padding: 14px;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}

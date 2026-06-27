@@ -23,7 +23,10 @@ body {
 }
 
 :root {
-  /* surfaces (bg ladder) */
+  /* page + surfaces (bg ladder). `--bg` is the page/shell backdrop the Kit shell + overlays paint on;
+   * it's part of the contract because kit.css/overlay CSS read it (a theme that forgets it would render
+   * a transparent shell). The neutral fallback is a flat dark (matches minimal's dark `--bg`). */
+  --bg: #1b1b1a;
   --surface: #232321;
   --surface-2: #2a2a28;
   /* text ladder */
