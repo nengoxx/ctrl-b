@@ -76,7 +76,53 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Theme-engine v2 (D29): Kit chrome + minimal Fleet shipped (K1/K2/K4) — minimal renders for real** · NEXT = **Bucket-A: token-drive the shared bodies + overlays under `.kit`**; emma deploy still queued)
+## Current state (**Theme-engine v2 (D29): Bucket-A.1 SHIPPED — overlays + primitives + Conf shell token-driven under `.kit`; + post-A.1 Conf polish (accent var()-fix · light-mode retune · top/bottom edge-fades · color-swatch palette picker + SettingRow · auto-TTS in Conf)** · NEXT = **Bucket-A.2: the deep Conf editors**; emma deploy still queued)
+
+> ### 🟢 SESSION UPDATE — Bucket-A.1 (overlays + Conf shell) + post-A.1 Conf polish — 2026-06-27 (cont.)
+>
+> **What shipped (committed + green).** Bucket-A.1 closed the reachable broken-UX (minimal Fleet wake/stop → an
+> *unstyled* ConfirmDialog), then a run of owner-driven Conf/appearance polish landed on top.
+> - **`7067bc3` — Bucket-A.1.** Token-driven `.kit`-scoped CSS for the shared **overlays** (ConfirmDialog `.modal`,
+>   PromptModal `.pm-*`, Toasts, MiniPlayer), **primitives** (Seg/Switch), and the **Conf shell** (`.sec`/`.conftitle`/
+>   `.confgroup`/`.conf-card`/`.confrow`/`.mwrap`/`.mconf`/`.mform`/`.mfoot`/`.conf-save`/…) — all in the ONE Kit
+>   stylesheet (§14.4.1). Components unchanged (F17 a11y is theme-independent); flat fills (`--accent-fill` + text=`--bg`),
+>   outline-secondary buttons, §14.11 (perf-gated blur incl. modal backdrops, motion-gated mini-player, transform-not-left
+>   switch knob, overflow-wrap), distinct `kit-*` keyframes. `--bg` added to the base token contract. Research: Material-3
+>   → centered decision dialogs ⇒ re-skin in place (no bottom-sheet restructure of shared components).
+> - **minimal palette — the var()-on-:scope FIX (the big one).** Accent colors didn't change when switching cyan/moss/
+>   iris/amber: the derived `--accent` formula was declared on `:scope` (`<html>`), so it computed ONCE from html's inputs
+>   and only *inherited* — the `body[data-accent]`/`body[data-mode]` input overrides sat below the derivation and never
+>   re-derived it. **Fix:** declare the derived tokens (`--accent`/`-fill`/`-soft`) on a `body{}` rule (inputs stay on
+>   `:scope`). **Documented as a ⚠️ gotcha in `THEME_ENGINE.md` §14.4.1** so phosphor/observatory/etc. can't repeat it
+>   (rule: raw values → `:scope`; any `var()`-formula token over a per-mode/accent input → `body`).
+> - **minimal light-mode neutral retune** — page `#f4f2ed`→`#e5e3df` (a real warm-grey, not near-white), cards a step
+>   lighter (not pure white), stronger hairlines/text, light accents richer/darker; light got its own `--warn`.
+> - **Kit top/bottom edge-fade scrims** — `.kit-main::before/::after` (static `linear-gradient` to `--bg`, z-index 3 below
+>   the composer/appbar, `pointer-events:none`, §14.11-safe). Bottom gated to composer tabs (`.has-composer`, set by
+>   DefaultRoot) + height tracks `--composer-h`; top at `top:var(--appbar-h)` (just below the appbar, or page-top when
+>   hidden), shorter + subtler.
+> - **auto-TTS toggle in Conf → Voice · TTS** — reuses the appbar's `useAppChrome` controller (no new state; flips local
+>   `ui.ttsAuto`), gated on `ttsConfigured`. Fixes the gap where minimal's `hideAppbar` removed the only toggle.
+> - **Color-swatch palette picker + SettingRow.** New `Swatches` primitive — a **radiogroup** of color chips (W3C APG:
+>   role=radiogroup/radio, aria-checked, aria-label=palette name, roving tabindex + arrow keys, selection ring), dual-skin
+>   like Seg/Switch. **Extensible model:** `PaletteModel.accents[].swatch?: string | string[]` (single color/gradient now —
+>   vapor gradients, minimal hues; `string[]` = conic multi-token preview = the seam for future "design-framework"/complex
+>   palettes, additive). minimal chips use a boosted chroma so the quiet accents are still distinguishable as a picker.
+>   New **`SettingRow`** helper (label + desc + control slot — shadcn's horizontal `Field` pattern, web-validated) applied
+>   to the **whole Appearance group** (6 inline rows → one declarative shape). The `applyBodyAttrs` accent path (vapor
+>   `data-theme` vs reskin `data-accent`/`data-mode`) was checked — already centralized in one chokepoint, not spaghetti.
+>
+> **VERIFIED:** `npm run build` clean · `npm test` **120** · `npm run test:e2e` **34** (vapor-palette e2e updated to the new
+> `role=radio`; Conf axe a11y green). Two independent audit passes (A.1 CSS; swatch+SettingRow) — 0 blockers; all findings
+> folded in. vapor stays computed-identical (Kit CSS inert without `.kit`).
+>
+> **⛔ NEXT = Bucket-A.2 — the deep Conf editors** (`svc`/`agent`/`tick-grid`/`kv-text`/`tooldesc`/`mem`/prompt-rows) token-
+> driven under `.kit` (sub-slice 2 of §14.4.1; A.3 = Agent chat bubbles). **Carry-forward:** the `SettingRow` consistency
+> sweep across the remaining Conf groups (server/inference/voice/agents/memory/…) is **noted for later** — only the
+> Appearance group adopted it this slice (owner: do it incrementally, not one giant diff). Same research → design-in-prose
+> → confirm → audited-slices discipline applies.
+>
+> ---
 
 > ### 🟢 SESSION UPDATE — Kit + minimal: chrome + Fleet shipped → NEXT = Bucket-A (shared bodies + overlays) — 2026-06-27
 >
