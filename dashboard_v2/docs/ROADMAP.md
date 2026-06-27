@@ -395,6 +395,16 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
 
 ## F. Notifications
 
+### F2. Live-connection indicator when the app bar is hidden — **deferred, after the themes (owner 2026-06-27)**
+
+- **What:** the SSE "live feed dropped / reconnecting / offline" badge currently lives ONLY in the app bar
+  (`components/AppBar.tsx`, `theme-engine/kit/AppBar.tsx`, driven by `store/connection` via `useEvents`).
+  The new global **Hide app bar** lever removes the bar — and with it, the only connectivity indicator.
+- **Refine (later, once the theme work is done):** surface the disconnected/reconnecting state somewhere the
+  hidden-app-bar layouts still show it — e.g. a brief auto-dismissing toast on transition (reuse the existing
+  toast store), a small fixed corner dot, or a one-line banner. Reuse `store/connection` (no new state). Low
+  priority for a single-user tailnet app; noted so it isn't forgotten.
+
 ### F1. Push to phone on fleet events
 
 - **What:** notify when a host wakes/dies, an automation finishes, an action fails, or — key —
