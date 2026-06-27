@@ -42,6 +42,9 @@ export function ensureThemeLoaded(id: ThemeId): Promise<void> {
     p = Promise.all([
       def?.loadStyles() ?? Promise.resolve(),
       def?.loadFonts?.() ?? Promise.resolve(),
+      // Preload the Root component chunk too (lazy themes), so the `lazy(Root)` resolves inside the flushSync
+      // with no Suspense flash during the View-Transition snapshot. Eager themes (vapor) omit loadRoot.
+      def?.loadRoot?.() ?? Promise.resolve(),
     ]).then(() => undefined);
     loaded.set(id, p);
   }

@@ -96,6 +96,11 @@ export interface ThemeDef {
   // eager-loaded (no first-paint FOUC), so its `loadStyles` is a no-op (§14.6).
   loadStyles: () => Promise<unknown>;
   loadFonts?: () => Promise<void>;
+  // Lazy-load the Root COMPONENT module, so a non-active theme's presentation — esp. a bespoke theme's
+  // canvas / orbital Fleet — never enters the default user's initial bundle. `switchTheme` preloads it
+  // (alongside loadStyles/loadFonts) before the skin flips, so the `lazy(Root)` resolves with no Suspense
+  // flash. OMIT for the eager default theme (vapor) — its Root must render on first paint without Suspense.
+  loadRoot?: () => Promise<unknown>;
   present?: Present; // §9.9 — per-host visual encoding (cosmos/frontier); omit → no spatial layout
   settings?: ThemeSettingsSpec; // §14.3 — theme-namespaced options auto-rendered by the Appearance picker
   assets?: Record<string, () => Promise<string>>; // import.meta.glob map keyed by name (frontier art)

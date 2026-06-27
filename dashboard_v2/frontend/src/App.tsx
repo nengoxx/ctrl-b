@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 
 import { useChatInit } from "./hooks/useAgentChat";
 import { useAppearanceSync } from "./hooks/useAppearance";
@@ -29,7 +29,13 @@ export default function App() {
   return (
     <>
       <AppEngines />
-      <ActiveRoot />
+      {/* The active theme's Root may be a lazy chunk (non-default themes — keeps a bespoke theme's
+          canvas/Fleet out of the default bundle). switchTheme preloads it before the flip, so this
+          Suspense only ever shows on a cold load with a non-default theme persisted (brief, §14.6);
+          the eager default (vapor) never suspends. fallback=null → the page bg shows during the blip. */}
+      <Suspense fallback={null}>
+        <ActiveRoot />
+      </Suspense>
     </>
   );
 }
