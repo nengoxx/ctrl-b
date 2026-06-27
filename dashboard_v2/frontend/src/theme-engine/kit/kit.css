@@ -1898,3 +1898,145 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
 .kit .mem-count.over {
   color: var(--danger);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════
+ * BUCKET-A.2b — Agents editor (tool/skill allowlist tri-state · per-agent limits · storage caption) +
+ * Tool-description category rows. Token port of the editor chrome (extras.css `[data-skin=vapor]`) under
+ * `.kit`, A.1 conventions. (The Skills/Memory raw-markdown editor + `.kv-text.skill-md` landed earlier.)
+ *
+ * NB: the allowlist chip is scoped `.tick-grid .tick` (NOT bare `.tick`) — the SAME `.tick` class is the
+ * plan-panel step DOT (AgentTab), which is A.3's surface and resets `.tick` to a small round dot; scoping
+ * here keeps the chip style off those dots. */
+
+/* ── tool/skill allowlist (.agent-allow + .tick-grid) ── */
+.kit .agent-allow {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kit .agent-allow-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  color: var(--text-2);
+}
+.kit .tick-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kit .tick-grid .tick {
+  all: unset;
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.kit .tick-grid .tick.on {
+  color: var(--bg);
+  background: var(--accent-fill);
+  border-color: transparent;
+}
+/* a tool locked by the global tri-state (core = always-on, disabled = always-off) — not interactive */
+.kit .tick-grid .tick.locked {
+  cursor: default;
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+/* ── misc agent rows ── */
+.kit .agent-empty {
+  font-size: 11px;
+  color: var(--text-3);
+  letter-spacing: 0.01em;
+}
+.kit .agent-slug {
+  color: var(--text-3);
+  font-weight: 400;
+}
+/* storage-location caption atop an agent's edit form — spans the mform grid; wraps long paths (§14.11) */
+.kit .mform .agent-store {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  color: var(--text-3);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+  border-bottom: 1px dashed var(--line);
+  overflow-wrap: anywhere;
+}
+
+/* ── per-agent limits grid (.agent-lim) + the inline numeric cells (.lim-input) ── */
+.kit .agent-lim {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.kit .agent-lim-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.kit .agent-lim-cell span {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.kit .agent-lim-cell input,
+.kit .lim-input {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  border: 1px solid var(--line);
+  text-align: center;
+}
+.kit .lim-input {
+  flex: 0 0 70px;
+  text-align: right;
+}
+.kit .agent-lim-cell input:focus,
+.kit .lim-input:focus {
+  border-color: var(--accent);
+}
+/* 3 columns is tight at phone width — drop to 2 (mirrors the vapor breakpoint) */
+@media (max-width: 420px) {
+  .kit .agent-lim {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ── Tool-description category rows (7d) ── */
+.kit .tooldesc-cat {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 12px 0 4px;
+  padding: 0 14px 4px;
+  border-bottom: 1px dashed var(--line);
+}
+.kit .tooldesc-cat:first-child {
+  margin-top: 12px;
+}
+.kit .tooldesc-tag {
+  color: var(--accent);
+  font-weight: 600;
+}
