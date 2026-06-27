@@ -2036,6 +2036,301 @@ body[data-motion="reduced"] .kit .b.bot .who .status-tag {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════════
+ * BUCKET-A.3c — tool/command bubbles (`.b.cmd*`), the question bubble (`.q-*`), and the per-bubble TTS
+ * play button (`.tts-play`). Owner-confirmed: the command bubble is a NEUTRAL `--surface` card (not vapor's
+ * green terminal), the `$`-code well is `--bg` + mono `--text`, the exec action is `--accent` (primary) and
+ * dismiss `--text-3`; the result line + disclosures carry the semantic ladder (ok=`--ok`, error/denied/
+ * timeout=`--danger`, running=`--accent`). Disclosures (cmd-detail/links/output) reuse the chevron idiom. */
+.kit .b.cmd {
+  max-width: 92%;
+}
+.kit .b.cmd .body {
+  padding: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.kit .b.cmd .preamble {
+  padding: 8px 12px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  text-transform: capitalize;
+  letter-spacing: 0.01em;
+}
+.kit .b.cmd .think {
+  margin: 8px 12px;
+}
+/* collapsed-by-default detail: the summary carries the tool name + a chevron; the $-pre reveals on tap */
+.kit .b.cmd .cmd-detail > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.kit .b.cmd .cmd-detail > summary::-webkit-details-marker {
+  display: none;
+}
+.kit .b.cmd .cmd-detail > summary .chev {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+.kit .b.cmd .cmd-detail[open] > summary .chev {
+  transform: rotate(180deg);
+}
+.kit .b.cmd .cmd-detail > summary:hover .preamble {
+  color: var(--text);
+}
+.kit .b.cmd .preamble .cmd-gate {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 9px;
+  color: var(--accent);
+}
+.kit .b.cmd pre {
+  margin: 8px 12px 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}
+.kit .b.cmd pre::before {
+  content: "$";
+  color: var(--text-3);
+  margin-right: 6px;
+  font-weight: 600;
+}
+/* action row — exec (accent primary) · edit (quiet) · dismiss (muted) */
+.kit .b.cmd .actions {
+  display: flex;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+.kit .b.cmd .actions button {
+  all: unset;
+  cursor: pointer;
+  flex: 1;
+  text-align: center;
+  padding: 9px 0;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text-2);
+  border-right: 1px solid var(--line);
+}
+.kit .b.cmd .actions button:last-child {
+  border-right: 0;
+}
+.kit .b.cmd .actions button:active {
+  background: var(--surface-2);
+}
+.kit .b.cmd .actions .exec {
+  color: var(--accent);
+}
+.kit .b.cmd .actions .exec:active {
+  background: var(--accent-soft);
+}
+.kit .b.cmd .actions .edit {
+  color: var(--text-2);
+}
+.kit .b.cmd .actions .dismiss {
+  color: var(--text-3);
+}
+/* outcome line under the command, colored by run state */
+.kit .b.cmd .cmd-result {
+  margin: -2px 12px 10px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+  color: var(--text-2);
+}
+.kit .b.cmd .cmd-result.ok {
+  color: var(--ok);
+}
+.kit .b.cmd .cmd-result.error,
+.kit .b.cmd .cmd-result.denied,
+.kit .b.cmd .cmd-result.timeout {
+  color: var(--danger);
+}
+.kit .b.cmd .cmd-result.skipped {
+  color: var(--text-3);
+}
+.kit .b.cmd .cmd-result.running {
+  color: var(--accent);
+  animation: kit-tag-pulse 1.3s ease-in-out infinite;
+}
+/* resolved (already-ran) bubble: dim the code to read as "done" */
+.kit .b.cmd.cmd-resolved pre {
+  color: var(--text-2);
+}
+.kit .b.cmd.cmd-resolved pre::before {
+  color: var(--text-3);
+}
+
+/* web_search results + captured output — collapsed disclosures (label + chevron), reusing the idiom */
+.kit .b.cmd .cmd-links,
+.kit .b.cmd .cmd-output {
+  margin: -2px 12px 10px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+}
+.kit .b.cmd .cmd-links > summary,
+.kit .b.cmd .cmd-output > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+}
+.kit .b.cmd .cmd-links > summary::-webkit-details-marker,
+.kit .b.cmd .cmd-output > summary::-webkit-details-marker {
+  display: none;
+}
+.kit .b.cmd .cmd-links > summary .label,
+.kit .b.cmd .cmd-output > summary .label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+.kit .b.cmd .cmd-links > summary .label::before {
+  content: "▸ ";
+}
+.kit .b.cmd .cmd-links[open] > summary .label::before {
+  content: "▾ ";
+}
+.kit .b.cmd .cmd-output > summary .chev {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+.kit .b.cmd .cmd-output[open] > summary .chev {
+  transform: rotate(180deg);
+}
+.kit .b.cmd .cmd-links > summary .hint {
+  color: var(--text-3);
+}
+.kit .b.cmd .cmd-links ol {
+  margin: 8px 0 2px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kit .b.cmd .cmd-links li {
+  font-size: 11px;
+  line-height: 1.4;
+}
+.kit .b.cmd .cmd-links a {
+  color: var(--accent);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.kit .b.cmd .cmd-links a:hover {
+  text-decoration: underline;
+}
+.kit .b.cmd .cmd-links .src {
+  color: var(--text-3);
+  font-size: 9.5px;
+}
+.kit .b.cmd .cmd-links .snip {
+  margin: 2px 0 0;
+  color: var(--text-2);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.kit .b.cmd .cmd-output > pre {
+  margin: 8px 0 2px;
+  padding: 8px 10px;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+/* question bubble — reuses the `.b.cmd` shell + a reply input */
+.kit .b.cmd.question .q-prompt {
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.kit .b.cmd.question .q-input-wrap {
+  padding: 0 12px 10px;
+}
+.kit .q-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.kit .q-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* per-bubble TTS play/pause — a masked accent glyph in the bot who-line, hugging the right edge */
+.kit .b.bot .who .tts-play {
+  all: unset;
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  margin-left: auto;
+  background: var(--accent);
+  opacity: 0.72;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
+  transition: opacity 0.12s ease;
+}
+.kit .b.bot .who .tts-play:hover {
+  opacity: 1;
+}
+.kit .b.bot .who .tts-play:active {
+  transform: scale(0.86);
+}
+.kit .b.bot .who .tts-play.playing {
+  opacity: 1;
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
+          mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
+}
+.kit .b.bot .who .tts-play.loading {
+  opacity: 0.4;
+  cursor: progress;
+}
+/* motion gate — the running-result pulse (§14.11) */
+body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
+  animation: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════
  * BUCKET-A.2a — deep Conf editors (Machine/Service · Inference fallbacks · Integrations kv · prompt-rows).
  * Token port of the editor-specific chrome (extras.css, `[data-skin=vapor]`) to semantic tokens under
  * `.kit`, following A.1's §14.4.1 pattern. Components emit these class names already; this is a faithful
