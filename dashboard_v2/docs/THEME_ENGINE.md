@@ -1103,3 +1103,15 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
    you inherit them.
 7. **State lives above the `Root` (§14.5); per-host visuals via `present()` (§9.9).** A spatial theme
    (cosmos/frontier, T4/T5) adds `present()` + its own Fleet `Root`; nothing else in the system changes.
+8. **See-through / spatial themes: the signature layer is FULL-BLEED *under* the glass chrome — never boxed
+   at the chrome edges (hardened after cosmos C2b, 2026-06-28).** The Kit's floating chrome (appbar/composer)
+   is frosted glass (`backdrop-filter` on a translucent surface, perf-gated by `data-perf`). Glass only reads
+   when there's **high-contrast background BLEEDING behind it** (the iOS Control-Center / macOS-sidebar
+   pattern). So a theme's signature background (cosmos's orbital system; a fixed starfield; frontier's
+   terrain) must be a **full-bleed layer spanning the whole fleet area** — e.g. `position:absolute; inset:0`
+   filling `.kit-scroll` — so it sits *behind* the appbar (top) and composer (bottom). **Do NOT** size the
+   layer to the gap *between* the chrome (`height: calc(100% - appbar)` + `overflow:hidden`): it clips the
+   content at the composer line, leaving only `--bg` behind the composer, so the blur of near-uniform dark
+   reads as a flat **black box that crops the system** (the exact C2b bug). Bonus: an absolute layer is out
+   of scroll flow, so it can never add scroll height (no stray scrollbar) — more robust than clip+height.
+   The glass recipe itself lives ONCE in the Kit composer/appbar; the theme only has to bleed under it.

@@ -38,25 +38,39 @@
       z-index: 1;
     }
 
+    /* On the FLEET tab the orbital system fills the stage (no scrolling content), so the Kit edge-scrims —
+     * which exist to veil scrolling content into --bg near the appbar/composer — would only paint --bg over
+     * the starfield, a dark band around the floating composer (the §8 "scrim band"). Hide them on Fleet so
+     * the sky shows through the gaps around + below the composer; the other (scrolling) tabs keep theirs. */
+    body[data-tab="fleet"] .kit-main::before,
+    body[data-tab="fleet"] .kit-main.has-composer::after {
+      background: none;
+    }
+
     /* ── Orbital fleet (C2a) ─────────────────────────────────────────────────────────────────────────
      * Planets are DOM <button>s placed by present() (polar → x/y inline transform) inside `.cosmos-camera`
      * (fit-to-stage scale) → `.cosmos-solar` (the orbit origin; C2b rotates IT).
      *
-     * The fleet tab + stage FILL the scroller below the appbar — NOT a fixed 64vh, which overflowed the
-     * shared .kit-scroll (→ a scrollbar, worse with the appbar shown) and didn't shrink when the Android
-     * keyboard collapsed the viewport (→ the system could be scrolled around). Heights chain off the
-     * definite-height .kit-scroll: the tab = scroller content minus the measured appbar (the composer is
-     * already reserved by the scroller's padding-bottom); the stage fills the tab. .kit height = --app-h
-     * (keyboard-aware), so the stage shrinks with the viewport and the fit-to-stage scale rescales the
-     * system to fit — nothing to scroll. */
+     * The fleet panel + stage are FULL-BLEED absolute layers (`inset:0`) filling the whole scroller, so the
+     * orbital system bleeds edge-to-edge BEHIND the frosted appbar (top) and glass composer (bottom) instead
+     * of being boxed into the gap. That's what makes the composer read as real glass — `backdrop-filter`
+     * needs high-contrast background BLEEDING under it (iOS Control-Center / macOS-sidebar pattern); a stage
+     * clipped at the composer line left only near-black behind it, so the blur looked like a flat dark box
+     * (the reusable rule for spatial themes — THEME_ENGINE §14.13 #8). Being absolute also takes it out of
+     * scroll flow, so it can never add scroll height (no scrollbar) — more robust than the old clip+height.
+     * Anchoring `#tab-fleet` (containing block = the stable, positioned `.kit-scroll`) gives `.cosmos-stage`
+     * a reliable containing block so the kit-fade `transform` on `.tab.active` can't briefly reparent it.
+     * fit-to-stage measures the full area but the system fits + centers in the LIVE ZONE (chrome-aware, in
+     * CosmosFleet), so planets aren't tucked behind the composer. overflow:hidden clips only at the viewport
+     * edges (Pluto's far orbit), never at the chrome. */
     #tab-fleet {
-      height: calc(100% - var(--appbar-h, 0px));
+      position: absolute;
+      inset: 0;
     }
     .cosmos-stage {
-      position: relative;
-      height: 100%;
-      min-height: 0;
-      overflow: hidden; /* clip any edge spill so absolute planets can't add to the scroller's height */
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
     }
     /* The camera: a zero-size box at the stage center carrying the fit-to-stage SCALE (set inline by
      * CosmosFleet from a ResizeObserver) so the whole system — moon + orbits — scales together. Origin is
@@ -162,9 +176,8 @@
       border-radius: 50%;
       display: grid;
       place-items: center;
-      overflow: hidden; /* clip the grain texture to the disc */
       cursor: pointer;
-      will-change: transform; /* compositor hint — only the orbiting planets get a layer (perf research) */
+      will-change: transform; /* compositor hint — the orbiting planets each get a GPU layer (C2b orbit) */
       /* matte coin, top-lit (ported from the prototype), colored by --planet (present(), index-based) */
       background: radial-gradient(
         circle at 50% 36%,
@@ -204,6 +217,21 @@
       color: color-mix(in srgb, var(--planet) 58%, #000);
       /* engraved look: a light lower-lip (the text-shadow emboss trick → drop-shadow for vector strokes) */
       filter: drop-shadow(0 0.6px 0 color-mix(in srgb, var(--planet) 52%, #fff));
+    }
+    /* Tap-hit-area (C2b-2): a transparent expander so small planets still meet the 44px touch target
+     * (the prototype's separate `.hit`). max(44px, 100%) — never smaller than the planet, ≥44px when tiny.
+     * Part of the button → clicks on it fire the planet's onClick; the `.decor` span is pointer-events:none
+     * so its expander is inert too. */
+    .cosmos-planet::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 44px;
+      height: 44px;
+      min-width: 100%;
+      min-height: 100%;
+      transform: translate(-50%, -50%);
     }
     /* the decorative outer "Pluto" reuses the .cosmos-planet coin look as a non-interactive span (it orbits
      * too, so it keeps the base will-change: transform) */

@@ -4,6 +4,7 @@ import { useFleet } from "../../hooks/useFleet";
 import { setCosmosSelection, useCosmosSelection } from "../../store/cosmosSelection";
 import { useTabActive, useUISlice } from "../../store/ui";
 import { useThemeSetting } from "../../theme-engine/settings";
+import { useCameraFollow } from "./camera";
 import { CosmosMoon } from "./CosmosMoon";
 import { orbitPlaybackRate } from "./motion";
 import { decorOrbitSpec, orbitParams, useCosmosOrbit, type OrbitStyle, type OrbitTarget } from "./orbit";
@@ -35,18 +36,26 @@ const DECOR_GAP = 45; // clearance beyond the outermost real planet's orbit
 // also scales UP on a big desktop viewport, not just down). The fixed-px system is tuned for a ~390px
 // phone; on a large viewport it would sit tiny in the empty stage, so we measure the stage and scale the
 // whole system to fill the smaller dimension. C2b's camera (orbit rotate + zoom-follow) composes onto this.
-// Per-axis fill fractions (independent margins). Phone is WIDTH-bound (tall stage) → FILL_W governs it;
-// desktop is HEIGHT-bound (short, wide stage) → FILL_H governs it. FILL_H is the smaller value so the
-// desktop keeps top/bottom padding instead of hugging the appbar — phone is unaffected (width still binds).
+// Per-axis fill fractions (independent margins). Phone is WIDTH-bound (tall live zone) → FILL_W governs it;
+// desktop is HEIGHT-bound (short, wide live zone) → FILL_H governs it. FILL_H is the smaller value so the
+// desktop keeps top/bottom padding within the live zone — phone is unaffected (width still binds).
 const FIT_FILL_W = 0.95; // fraction of stage WIDTH the system spans
-const FIT_FILL_H = 0.85; // fraction of stage HEIGHT the system spans (leaves desktop top/bottom padding)
+const FIT_FILL_H = 0.85; // fraction of the LIVE-ZONE height the system spans (top/bottom padding)
 const FIT_MIN = 0.4; // never shrink below this (very small stage / huge fleet still legible)
 const FIT_MAX = 2.2; // never blow up past this on a giant monitor
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+const FOLLOW_ZOOM = 2.2; // selected planet's camera scale = fitScale × this (C2b-2 zoom-follow)
+
 export function CosmosFleet({ active }: { active: boolean }) {
   const { hosts, svcByHost, isLoading, error } = useFleet();
   const selected = useCosmosSelection();
+
+  // Clear a selection whose host has left the fleet (config change / removal) — so the camera eases back to
+  // idle and no stale `.sel` ghost lingers.
+  useEffect(() => {
+    if (selected && !hosts.some((h) => h.id === selected)) setCosmosSelection(null);
+  }, [selected, hosts]);
 
   // Orbit gating (mirrors the starfield, §14.11): animate only when the GLOBAL Motion lever is "full" AND
   // the orbit isn't set to "off" AND the Fleet tab is showing AND the PWA isn't backgrounded. Reduced-motion
@@ -66,20 +75,34 @@ export function CosmosFleet({ active }: { active: boolean }) {
   const animate = motion === "full" && orbitStyle !== "off" && onFleet && docVisible;
   const playbackRate = orbitPlaybackRate(speed);
 
-  // Measure the stage so the system can be scaled to fit it (responsive on desktop + phone). A synchronous
-  // first measure in the layout effect avoids a scale "pop" on mount; the ResizeObserver tracks resizes.
+  // Measure the LIVE ZONE so the system fits + centers between the chrome, even though the stage itself is
+  // full-bleed (it bleeds behind the appbar/composer for continuity + glass, but the system must sit in the
+  // clear area between them — not page-centered, which would tuck planets behind the composer). We measure
+  // the stage + the Kit's appbar/composer rects (the chrome publishes --appbar-h/--composer-h for exactly
+  // this alignment) and derive the live height + the vertical offset to the live-zone center. A synchronous
+  // first measure avoids a pop; the ResizeObserver tracks stage resize AND composer growth (textarea).
   const stageRef = useRef<HTMLDivElement>(null);
-  const [stage, setStage] = useState({ w: 0, h: 0 });
+  const [layout, setLayout] = useState({ w: 0, liveH: 0, offsetY: 0 });
   useLayoutEffect(() => {
     const el = stageRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const measure = () => {
-      const r = el.getBoundingClientRect();
-      setStage({ w: r.width, h: r.height });
+      const s = el.getBoundingClientRect();
+      const appbar = document.querySelector(".kit-appbar");
+      const composer = document.querySelector(".kit-composer");
+      const liveTop = appbar ? Math.max(0, appbar.getBoundingClientRect().bottom - s.top) : 0;
+      const liveBottom = composer ? composer.getBoundingClientRect().top - s.top : s.height;
+      const liveH = Math.max(0, liveBottom - liveTop);
+      const offsetY = (liveTop + liveBottom) / 2 - s.height / 2; // lift the system to the live-zone center
+      setLayout({ w: s.width, liveH, offsetY });
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
+    const appbar = document.querySelector(".kit-appbar");
+    if (appbar) ro.observe(appbar);
+    const composer = document.querySelector(".kit-composer");
+    if (composer) ro.observe(composer);
     return () => ro.disconnect();
   }, []);
 
@@ -113,13 +136,14 @@ export function CosmosFleet({ active }: { active: boolean }) {
   const decorX = Math.cos(DECOR_PLANET.angle) * decorRadius;
   const decorY = Math.sin(DECOR_PLANET.angle) * decorRadius;
 
-  // System extent (center → outermost edge) = Pluto's orbit + its half-size; scale to fill the smaller
-  // stage dimension. Falls back to 1 until the stage is measured (no pre-measure flash).
+  // System extent (center → outermost edge) = Pluto's orbit + its half-size; scale to fill the smaller of
+  // the stage WIDTH and the LIVE-ZONE height (so the whole system, incl Pluto's orbit, fits in the clear
+  // area and isn't cropped behind the composer). Falls back to 1 until measured (no pre-measure flash).
   const contentRadius = decorRadius + DECOR_PLANET.size / 2;
   const fitScale =
-    stage.w && stage.h
+    layout.w && layout.liveH
       ? clamp(
-          Math.min(stage.w * FIT_FILL_W, stage.h * FIT_FILL_H) / (2 * contentRadius),
+          Math.min(layout.w * FIT_FILL_W, layout.liveH * FIT_FILL_H) / (2 * contentRadius),
           FIT_MIN,
           FIT_MAX,
         )
@@ -132,7 +156,22 @@ export function CosmosFleet({ active }: { active: boolean }) {
     ...placements.map((p) => ({ key: p.host.id, spec: orbitParams(p.index, p.radius, orbitStyle) })),
     { key: "__pluto", spec: decorOrbitSpec(DECOR_PLANET.angle, decorRadius) },
   ];
-  const { register } = useCosmosOrbit(targets, animate, playbackRate);
+  const { register, animationsRef } = useCosmosOrbit(targets, animate, playbackRate);
+
+  // Camera zoom-follow (C2b-2): selecting a planet eases the camera to center + track it (reads the orbit
+  // animation's currentTime analytically). The hook owns `.cosmos-camera`'s transform (fit-scale + zoom).
+  const cameraRef = useRef<HTMLDivElement>(null);
+  const specByKey = new Map(targets.map((t) => [t.key, t.spec]));
+  useCameraFollow(cameraRef, {
+    active,
+    selected,
+    specByKey,
+    animationsRef,
+    fitScale,
+    zoomMult: FOLLOW_ZOOM,
+    centerOffsetY: layout.offsetY,
+    orbitAnimating: animate,
+  });
 
   return (
     <div
@@ -143,10 +182,11 @@ export function CosmosFleet({ active }: { active: boolean }) {
       aria-labelledby="tabbtn-fleet"
     >
       <div className="cosmos-stage" ref={stageRef}>
-        {/* `.cosmos-camera` carries the fit-to-stage scale (and, in C2b, the zoom-follow translate) for the
-            whole system — moon + orbits — so they scale together. The moon stays OUTSIDE `.cosmos-solar`,
-            which C2b rotates. */}
-        <div className="cosmos-camera" style={{ transform: `scale(${fitScale})` }}>
+        {/* `.cosmos-camera` carries ONE transform (fit-to-stage scale + the zoom-follow translate) for the
+            whole system — moon + orbits — so they scale together. useCameraFollow owns that transform
+            imperatively (no React inline transform → no fight); the moon stays here, the orbiting planets
+            are in `.cosmos-solar`. */}
+        <div className="cosmos-camera" ref={cameraRef}>
           <CosmosMoon />
           {/* `.cosmos-solar` is the orbit origin (camera center); C2b rotates THIS element. */}
           <div className="cosmos-solar">
