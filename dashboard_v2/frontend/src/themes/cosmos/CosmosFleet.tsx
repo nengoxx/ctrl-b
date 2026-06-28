@@ -5,6 +5,8 @@ import type { Host } from "../../types";
 import { useFleet } from "../../hooks/useFleet";
 import { CosmosHostDetail } from "./CosmosHostDetail";
 import { setCosmosSelection, useCosmosSelection } from "../../store/cosmosSelection";
+import { getSheetSnap, setSheetSnap } from "../../store/sheetSnap";
+import type { SheetDetent } from "../../components/BottomSheet";
 import { useCosmosDive } from "../../store/cosmosDive";
 import { setPlanSheetOpen } from "../../store/planSheet";
 import { useTabActive, useUISlice } from "../../store/ui";
@@ -43,6 +45,11 @@ import { Rune } from "./runes";
 // upper-left. (C2b's fit-to-stage scale will rescale the whole system for large fleets.)
 const DECOR_PLANET = { color: "#ff5a6a", angle: 3.9, size: 16 };
 const DECOR_MIN_RADIUS = 150; // keep it visibly outer even for a 1–2 host fleet
+
+// Persisted host-detail sheet detent (ISSUES #1): a stable key into the shared, theme-agnostic `sheetSnap`
+// store + a stable module-level setter (so `onSnapChange` keeps a constant identity per the prop's contract).
+const SHEET_KEY = "cosmos-host-detail";
+const persistSheetSnap = (snap: SheetDetent) => setSheetSnap(SHEET_KEY, snap);
 const DECOR_GAP = 45; // clearance beyond the outermost real planet's orbit
 
 // Fit-to-stage scale (the "scale-to-fit" pattern; the prototype's `fit = min(vw,vh)/…` generalized so it
@@ -370,6 +377,8 @@ export function CosmosFleet({ active }: { active: boolean }) {
         closeLabel="Close host detail"
         catchOutside={false}
         onHeightChange={setSheetH}
+        initialSnap={getSheetSnap(SHEET_KEY)}
+        onSnapChange={persistSheetSnap}
       >
         {/* `selectedHost ?? displayHost`: live host while open (so polls update the sheet), the retained last
             host through the slide-out (so content doesn't blank as it eases closed). */}

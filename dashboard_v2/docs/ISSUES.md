@@ -1,4 +1,4 @@
-the bottom sheet could save the last position and reopen as it was, either fully open or jut the peeking, so if you exit leaving it fully ooen, the next one you open will be fully open, and vice versa
+~~the bottom sheet could save the last position and reopen as it was, either fully open or jut the peeking, so if you exit leaving it fully ooen, the next one you open will be fully open, and vice versa~~ ✓ FIXED — the `<BottomSheet>` primitive gained a controlled-with-callback seam (`initialSnap` + `onSnapChange`, mirroring vaul/Radix; persistence stays the host's job). A generic KEYED store (`store/sheetSnap.ts`, `Record<id, "peek"|"full">` like `store/collapse`) persists the last detent per-device; cosmos wires it under key `"cosmos-host-detail"`. Reusable by any theme's sheet (frontier T5) via a different key — no per-theme store.
 
 
 

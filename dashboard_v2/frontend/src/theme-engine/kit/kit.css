@@ -2412,7 +2412,9 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
   font-size: 11px;
   letter-spacing: 0.02em;
   font-weight: 600;
-  color: var(--text-2);
+  /* accent-tinted (a tier below the bold accent title) so the count reads as part of the pill, not the same
+   * neutral grey as the composer field text. */
+  color: color-mix(in oklch, var(--accent) 70%, var(--text-2));
 }
 /* the sheet — a frosted panel that PEEKS up from the composer's top edge (D30). A sibling of `.kit-composer`
  * (rendered by the composer variant's `overlay` slot), anchored to the composer's top via `--composer-h`.

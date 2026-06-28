@@ -23,6 +23,39 @@ interface Props {
 // and is wired so it becomes additive later (COSMOS_HANDOFF §10.4 / memory cosmos-uptime-deferred).
 const ALIVE_PLACEHOLDER = "—";
 
+// Action-bar icons — inline SVG (cosmos uses no icon lib; the whole theme draws inline, like the prototype).
+// 24-viewBox, 2px round stroke, currentColor so each button's color drives the glyph. Power doubles for
+// Wake (accent) and Shut down (danger) — same universal on/off glyph, disambiguated by color + context.
+const ICON = {
+  width: 15,
+  height: 15,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+} as const;
+const IconPower = () => (
+  <svg {...ICON} aria-hidden>
+    <path d="M12 2v10" />
+    <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+  </svg>
+);
+const IconReboot = () => (
+  <svg {...ICON} aria-hidden>
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+    <path d="M21 3v5h-5" />
+    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+    <path d="M8 16H3v5" />
+  </svg>
+);
+const IconPing = () => (
+  <svg {...ICON} aria-hidden>
+    <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+  </svg>
+);
+
 export function CosmosHostDetail({ host, services, busy, run, titleId }: Props) {
   const online = !!host.status?.online;
   const ping = host.status?.ping_ms ?? null;
@@ -63,33 +96,40 @@ export function CosmosHostDetail({ host, services, busy, run, titleId }: Props) 
         </div>
       </div>
 
-      {/* action bar — Wake when offline; Reboot + Shutdown when online; Ping always. The typed-action `run`
-          handles the confirm dialog (shutdown/reboot) + optimistic flips + toasts; `busy` disables the bar. */}
+      {/* action bar — Wake when offline; Reboot + Shutdown when online; Ping always. The PRIMARY action (Wake /
+          Reboot) is the glowing accent pill; Shut down is a danger ghost; Ping a quiet ghost. The typed-action
+          `run` handles the confirm dialog (shutdown/reboot) + optimistic flips + toasts; `busy` disables it. */}
       <div className="hd-actions">
         {online ? (
           <>
-            <button className="hd-act" disabled={busy} onClick={() => run("reboot", host)}>
+            <button className="hd-act primary" disabled={busy} onClick={() => run("reboot", host)}>
+              <IconReboot />
               Reboot
             </button>
-            <button className="hd-act danger" disabled={busy} onClick={() => run("shutdown", host)}>
-              Shut down
+            <button
+              className="hd-act danger icon-only"
+              aria-label="Shut down"
+              disabled={busy}
+              onClick={() => run("shutdown", host)}
+            >
+              <IconPower />
             </button>
           </>
         ) : (
-          <button className="hd-act wake" disabled={busy} onClick={() => run("wake", host)}>
+          <button className="hd-act primary" disabled={busy} onClick={() => run("wake", host)}>
+            <IconPower />
             Wake
           </button>
         )}
         <button className="hd-act" disabled={busy} onClick={() => run("ping", host)}>
+          <IconPing />
           Ping
         </button>
       </div>
 
-      <div className="hd-svcs-head">
-        <span>Services</span>
-        <span className="grow" />
-        {services.length > 0 && <span className="n">{upCount} up</span>}
-      </div>
+      {/* a soft hairline (≈70% width, fades at both ends) separates the actions from the services — the old
+          "Services / N up" header is dropped to compact this region (the up-count still shows in the glance). */}
+      <div className="hd-sep" aria-hidden />
       <div className="hd-svcs">
         {services.length === 0 ? (
           <div className="hd-svc-empty">No services on this world</div>

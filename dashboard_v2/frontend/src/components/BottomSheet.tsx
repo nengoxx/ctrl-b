@@ -24,6 +24,10 @@ import {
 // the trigger; an sr-only Close button keeps keyboard/AT parity (no visible ✕ — owner dropped it).
 // Perf (§14.11): transform/opacity only; the skin drops its blur while `[data-dragging]` + under data-perf.
 
+/** The detent a sheet can rest at: the `[data-bs-peek]` reveal, or fully open. The canonical vocabulary for
+ *  this primitive — the persistence layer (`store/sheetSnap`) imports it rather than re-declaring the union. */
+export type SheetDetent = "peek" | "full";
+
 const FLICK_VELOCITY = 0.5; // px/ms — a faster release steps one snap in the drag direction (vaul behavior)
 const PEEK_PAD = 14; // breathing room (px) revealed below the [data-bs-peek] element at the peek fold
 const SNAP_MS = 420; // keep in sync with the .bs-sheet transition duration (CSS) — exit-unmount fallback
@@ -56,6 +60,12 @@ interface Props {
   /** Reports the sheet's currently-revealed height (peek or full) on open / snap / resize — and 0 on close.
    *  Lets a host lift content above the sheet (cosmos's camera-lift). Pass a STABLE callback. */
   onHeightChange?: (height: number) => void;
+  /** The detent to OPEN at when the content marks a `[data-bs-peek]` element (ignored otherwise — a sheet with
+   *  no detent is always full). Lets the host restore the last-left position (ISSUES #1). Default "peek". */
+  initialSnap?: SheetDetent;
+  /** Fired when a drag SETTLES on a detent (not on dismiss) — the host persists it to feed `initialSnap` next
+   *  open. Pass a STABLE callback. */
+  onSnapChange?: (snap: SheetDetent) => void;
 }
 
 export function BottomSheet({
@@ -67,6 +77,8 @@ export function BottomSheet({
   closeLabel = "Close",
   catchOutside = true,
   onHeightChange,
+  initialSnap,
+  onSnapChange,
 }: Props) {
   const [mounted, setMounted] = useState(open); // stays mounted through the slide-out
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -77,7 +89,7 @@ export function BottomSheet({
   // the peek reveal height (0 → no detent, plain closed/full); `snap` = the current resting detent.
   const full = useRef(0);
   const peek = useRef(0);
-  const snap = useRef<"peek" | "full">("full");
+  const snap = useRef<SheetDetent>("full");
   const dragging = useRef(false);
   const entering = useRef(false); // true during the enter slide — a mid-slide resize re-targets, never snaps
   const enterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -87,8 +99,11 @@ export function BottomSheet({
   const velocity = useRef(0);
   const startTy = useRef(0);
 
-  const restTy = (name: "peek" | "full") =>
+  const restTy = (name: SheetDetent) =>
     name === "full" ? 0 : Math.max(0, full.current - peek.current);
+  // The detent to open at: only meaningful when a peek detent exists (no detent → always full). Restores the
+  // host's remembered position (`initialSnap`), else the natural default (peek). Read fresh in each open path.
+  const openSnap = (): SheetDetent => (peek.current ? (initialSnap ?? "peek") : "full");
   const setTransform = (ty: number) => {
     const el = sheetRef.current;
     if (el) el.style.transform = `translateY(${ty}px)`;
@@ -109,7 +124,7 @@ export function BottomSheet({
       clearTimeout(exitTimer.current);
       triggerRef.current = (document.activeElement as HTMLElement | null) ?? triggerRef.current;
       if (mounted && sheetRef.current) {
-        snap.current = peek.current ? "peek" : "full";
+        snap.current = openSnap();
         setTransform(restTy(snap.current));
         sheetRef.current.style.opacity = "1"; // re-fade in if it was mid-exit
         report();
@@ -142,7 +157,7 @@ export function BottomSheet({
     const el = sheetRef.current;
     if (!el) return;
     measure();
-    snap.current = peek.current ? "peek" : "full";
+    snap.current = openSnap();
     // Mark the enter window: while sliding up, a content reflow (e.g. the Audiowide title's font swap) must
     // RE-TARGET the slide, not snap it (see onResize). Clears once the slide has had time to settle.
     entering.current = true;
@@ -240,6 +255,7 @@ export function BottomSheet({
     snap.current = target === 0 ? "full" : "peek";
     setTransform(target);
     report();
+    onSnapChange?.(snap.current); // the user settled here → the host persists it for the next open
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {

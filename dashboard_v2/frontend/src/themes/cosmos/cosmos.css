@@ -550,57 +550,105 @@
     .cosmos-hd .hd-ids span {
       white-space: nowrap;
     }
-    /* action bar — pills; neutral default, accent Wake, danger-tinted Shut down */
+    /* action bar — the PRIMARY action (Wake / Reboot) is a glowing accent "planet" pill (gradient fill + soft
+     * accent glow, echoing the moodboard's lit accent spheres + the prototype .actionbar under-glow); the rest
+     * are quiet ghost pills, Shut down danger-tinted. Icon + label; one-shot press-scale on tap (transform-only,
+     * §14.11-safe — like the prototype's .act:active). Hover gated to fine pointers so touch :active can't stick. */
     .cosmos-hd .hd-actions {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 9px;
       margin: 20px 0 0;
     }
     .cosmos-hd .hd-act {
       all: unset;
       flex: 1;
-      min-width: 84px;
+      min-width: 80px;
       box-sizing: border-box;
-      text-align: center;
-      padding: 11px 14px;
-      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 8px 14px;
+      border-radius: var(--radius-sm); /* rounded-RECT (not a full pill) — reads more compact/rectangular */
       font-size: 13px;
       font-weight: 600;
-      color: var(--text);
-      background: var(--surface-2);
-      border: 1px solid var(--line-2);
       cursor: pointer;
+      /* ghost (default) */
+      color: var(--text-2);
+      background: color-mix(in oklch, var(--surface-2) 72%, transparent);
+      border: 1px solid var(--line-2);
+      transition:
+        transform 0.14s ease,
+        background 0.18s ease,
+        border-color 0.18s ease,
+        color 0.18s ease;
+    }
+    .cosmos-hd .hd-act svg {
+      width: 15px;
+      height: 15px;
+      flex: none;
+      opacity: 0.92;
     }
     .cosmos-hd .hd-act:active {
-      background: var(--surface);
+      transform: scale(0.96);
     }
-    .cosmos-hd .hd-act.wake {
+    @media (hover: hover) {
+      .cosmos-hd .hd-act:hover {
+        color: var(--text);
+        border-color: color-mix(in oklch, var(--text-3) 50%, var(--line-2));
+      }
+    }
+    /* PRIMARY — Wake / Reboot: gradient accent fill + soft accent glow (the lit "planet") */
+    .cosmos-hd .hd-act.primary {
+      flex: 1.3;
       color: var(--bg);
-      background: var(--accent-fill);
+      background: linear-gradient(135deg, color-mix(in oklch, var(--accent) 82%, white), var(--accent));
       border-color: transparent;
+      box-shadow:
+        0 0 20px -3px color-mix(in oklch, var(--accent) 55%, transparent),
+        0 5px 16px -6px color-mix(in oklch, var(--accent) 70%, transparent);
     }
+    .cosmos-hd .hd-act.primary svg {
+      opacity: 1;
+    }
+    @media (hover: hover) {
+      .cosmos-hd .hd-act.primary:hover {
+        color: var(--bg);
+        border-color: transparent;
+      }
+    }
+    /* ICON-ONLY — Shut down: just the glyph, no label; doesn't grow, so it's the SMALLEST action (square-ish).
+     * `aria-label` on the button carries the accessible name in place of the visible text. */
+    .cosmos-hd .hd-act.icon-only {
+      flex: 0 0 auto;
+      min-width: 0;
+      padding: 8px 12px;
+    }
+    /* DANGER — Shut down: danger-tinted ghost */
     .cosmos-hd .hd-act.danger {
       color: var(--danger);
-      border-color: color-mix(in oklch, var(--danger) 40%, transparent);
+      background: var(--danger-soft);
+      border-color: color-mix(in oklch, var(--danger) 34%, transparent);
+    }
+    @media (hover: hover) {
+      .cosmos-hd .hd-act.danger:hover {
+        color: var(--danger);
+        border-color: color-mix(in oklch, var(--danger) 55%, transparent);
+      }
     }
     .cosmos-hd .hd-act[disabled] {
       opacity: 0.5;
       cursor: default;
+      box-shadow: none;
     }
-    /* services */
-    .cosmos-hd .hd-svcs-head {
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-      margin: 24px 2px 9px;
-      font-size: 10.5px;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--text-3);
-    }
-    .cosmos-hd .hd-svcs-head .grow {
-      flex: 1;
+    /* services — a soft ≈70% hairline (fades at both ends) replaces the old "Services / N up" header (compacted;
+     * the up-count still reads in the header glance). */
+    .cosmos-hd .hd-sep {
+      width: 70%;
+      height: 1px;
+      margin: 22px auto 16px;
+      background: linear-gradient(90deg, transparent, var(--line-2) 18%, var(--line-2) 82%, transparent);
     }
     .cosmos-hd .hd-svcs {
       display: flex;
@@ -669,6 +717,10 @@
       color: var(--accent);
       display: inline-flex;
       flex: none;
+      /* sits over arbitrary service-banner art (incl. light/white images) → a TIGHT dark contour (≈0 offset)
+       * outlines the stroked glyph so it reads on light art, + a soft drop for depth on dark art. The contour
+       * avoids the smudgy look a single offset shadow has over white. */
+      filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.85)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.4));
     }
     .cosmos-hd .hd-svc-empty {
       text-align: center;
