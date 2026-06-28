@@ -608,6 +608,7 @@
       gap: 8px;
     }
     .cosmos-hd .hd-svc {
+      --svc-veil: 42%; /* how much --surface-2 mutes the artwork (offline bumps it below) */
       display: flex;
       align-items: center;
       gap: 11px;
@@ -617,13 +618,22 @@
       border: 1px solid var(--line);
       text-decoration: none;
       color: inherit;
-      /* dot-matrix texture (the `patterns/` reference) — a faint dot field that FADES IN from the right (a
-       * surface-coloured gradient layered over the dots hides them on the left). All background layers, so the
-       * row content paints cleanly above with no z-index gymnastics. Echoes the header dots, quieter. */
+      /* per-service artwork (serviceBanners.ts — owner's `designs/asdff` crops, used as-is), calmed for the
+       * dark sheet via the scrim pattern: a LEFT→right scrim (opaque --surface-2 over the art on the left,
+       * fading off by mid-row) keeps the name readable, and a uniform `--svc-veil` mutes the bright art.
+       * `--svc-banner` is the per-row `url(...)`; `cover` fills the rounded banner (clipped by border-radius). */
       background:
-        linear-gradient(90deg, var(--surface-2) 24%, transparent 82%),
-        radial-gradient(rgba(255, 255, 255, 0.14) 1px, transparent 1.4px) 0 0 / 9px 9px,
+        linear-gradient(90deg, var(--surface-2) 22%, transparent 64%),
+        linear-gradient(
+          0deg,
+          color-mix(in oklch, var(--surface-2) var(--svc-veil), transparent),
+          color-mix(in oklch, var(--surface-2) var(--svc-veil), transparent)
+        ),
+        var(--svc-banner, none) right center / cover no-repeat,
         var(--surface-2);
+    }
+    .cosmos-hd .hd-svc.off {
+      --svc-veil: 68%; /* a disconnected service: dim its artwork further (echoes the dimmed led + name) */
     }
     .cosmos-hd .hd-svc .led {
       width: 7px;

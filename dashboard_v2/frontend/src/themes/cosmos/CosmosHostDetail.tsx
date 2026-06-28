@@ -1,6 +1,7 @@
 import type { FleetAction } from "../../hooks/useActions";
 import { relativeTime } from "../../lib/relativeTime";
 import type { Host, Service } from "../../types";
+import { assignBanners } from "./serviceBanners";
 
 // Cosmos host-detail sheet content (C3b) — rendered inside the shared <BottomSheet> (C3a). The host NAME is
 // the dotted-glass hero (replaces the prototype's ping line-graph, owner directive), then a COMPACT meta grid
@@ -30,6 +31,8 @@ export function CosmosHostDetail({ host, services, busy, run, titleId }: Props) 
   // Online → "alive" (uptime, deferred → "—"); offline → last seen. Shown next to the status, no caption.
   const aliveOrSeen = online ? ALIVE_PLACEHOLDER : relativeTime(host.status?.last_seen);
   const svcCount = services.length > 0 ? `${upCount}/${services.length}` : null;
+  // Distinct decorative banner per service (de-duped within this host so it never repeats — see assignBanners).
+  const banners = assignBanners(services.map((s) => s.id));
 
   return (
     <div className="cosmos-hd">
@@ -94,8 +97,19 @@ export function CosmosHostDetail({ host, services, busy, run, titleId }: Props) 
           services.map((s) => {
             const svcOn = !!s.status?.online;
             const addr = `${host.name}:${s.port ?? "—"}`;
+            const bannerUrl = banners.get(s.id);
+            const bannerStyle = bannerUrl
+              ? { ["--svc-banner" as string]: `url(${bannerUrl})` }
+              : undefined;
             return svcOn && s.url ? (
-              <a key={s.id} className="hd-svc on" href={s.url} target="_blank" rel="noopener">
+              <a
+                key={s.id}
+                className="hd-svc on"
+                href={s.url}
+                target="_blank"
+                rel="noopener"
+                style={bannerStyle}
+              >
                 <span className="led" aria-hidden />
                 <span className="nm">
                   <span className="name">{s.name}</span>
@@ -112,6 +126,7 @@ export function CosmosHostDetail({ host, services, busy, run, titleId }: Props) 
                 key={s.id}
                 className={"hd-svc" + (svcOn ? " on" : " off")}
                 aria-label={`${s.name} ${addr} — ${svcOn ? "online" : "offline"}`}
+                style={bannerStyle}
               >
                 <span className="led" aria-hidden />
                 <span className="nm">

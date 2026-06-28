@@ -1,3 +1,8 @@
+the bottom sheet could save the last position and reopen as it was, either fully open or jut the peeking, so if you exit leaving it fully ooen, the next one you open will be fully open, and vice versa
+
+
+
+
 The vapor theme cannot use the minimal appbar mode, i also want the menu icon to mimic the rest of the themed icons like the mic icon and such
 
 

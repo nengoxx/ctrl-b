@@ -16,13 +16,8 @@ const C = 12; // glyph center (viewBox units)
 export const RUNES: Record<string, ReactNode> = {
   // a filled point — the simplest mark (good for the smallest planets)
   dot: <circle cx={C} cy={C} r="4" fill="currentColor" stroke="none" />,
-  // a point riding the circumference (a moon on its orbit)
-  orbit: (
-    <>
-      <circle cx={C} cy={C} r="7" />
-      <circle cx={C} cy="5" r="1.8" fill="currentColor" stroke="none" />
-    </>
-  ),
+  // a plain circumference (owner: dropped the orbiting point, keep just the ring)
+  orbit: <circle cx={C} cy={C} r="7" />,
   // ☉ — circle + center point
   sun: (
     <>
