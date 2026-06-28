@@ -351,7 +351,8 @@ SitePoint 60fps-mobile, PubMed redundant-encoding (66%→88% identification).
 3. ~~**C3**~~ ✅ DONE — `BottomSheet` primitive `02c53e6` (C3a) → `CosmosHostDetail` + camera-lift + multi-snap
    + Audiowide + slide/fade `09ae361` (C3b/C3c). The app-like selection/tap-highlight fix `88bfa84` shipped
    alongside (all themes).
-4. **C4 (later, OPTIONAL)** — per-host `appearance.cosmos` override (additive on `present()`), if/when wanted.
+4. **C4 — PARKED (future idea, NOT planned; owner 2026-06-28)** — per-host `appearance.cosmos` override
+   (additive on `present()`). Kept as a noted seam only; not on the roadmap unless the owner revives it.
 
 ---
 

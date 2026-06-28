@@ -792,8 +792,8 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
 - [x] **T4 — cosmos** ✅ DONE (2026-06-28, pushed `2639ea2`→`88bfa84`): own Fleet `Root`/orbital — WAAPI orbit +
       rAF camera zoom-follow, per-host `present()` (golden-angle), canvas starfield, liveness pulse/halo, service-cue;
       `HostDetail` = a **draggable multi-snap bottom sheet** (the slide-panel idea, upgraded) on the reusable
-      `BottomSheet` primitive + sheet-aware camera-lift. Gated by `ui.motion`. C4 (per-host override) optional/later.
-      See `COSMOS_HANDOFF.md`.
+      `BottomSheet` primitive + sheet-aware camera-lift. Gated by `ui.motion`. See `COSMOS_HANDOFF.md`.
+      (C4 per-host `appearance.cosmos` override = PARKED future idea, not planned — owner 2026-06-28.)
 - [ ] **T5 — frontier** (HIGH): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
       (animated squares — the one non-Fleet structural deviation) + bottom-sheet `HostDetail` (**reuse cosmos's
       `components/BottomSheet.tsx` primitive** — multi-snap, see THEME_ENGINE §14.13 #9) + asset strategy

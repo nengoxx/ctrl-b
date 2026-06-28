@@ -587,13 +587,19 @@
       display: flex;
       align-items: center;
       gap: 11px;
-      padding: 11px 13px;
-      min-height: 48px;
+      padding: 8px 13px;
+      min-height: 40px;
       border-radius: var(--radius-sm);
-      background: var(--surface-2);
       border: 1px solid var(--line);
       text-decoration: none;
       color: inherit;
+      /* dot-matrix texture (the `patterns/` reference) — a faint dot field that FADES IN from the right (a
+       * surface-coloured gradient layered over the dots hides them on the left). All background layers, so the
+       * row content paints cleanly above with no z-index gymnastics. Echoes the header dots, quieter. */
+      background:
+        linear-gradient(90deg, var(--surface-2) 24%, transparent 82%),
+        radial-gradient(rgba(255, 255, 255, 0.14) 1px, transparent 1.4px) 0 0 / 9px 9px,
+        var(--surface-2);
     }
     .cosmos-hd .hd-svc .led {
       width: 7px;
