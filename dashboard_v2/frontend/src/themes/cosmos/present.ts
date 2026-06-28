@@ -10,7 +10,9 @@ import type { Present, VisualEncoding } from "../../theme-engine/types";
 import { runeIdFor } from "./runes";
 
 // ── Layout tuning (kept as named constants — the owner may expose these as settings later). ──
-const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)); // ≈137.5° — the sunflower angle for even, spoke-free spread
+// Exported so the orbit engine (orbit.ts) derives each planet's orbital PHASE from the SAME angle, keeping
+// the animated orbit's frame-0 position identical to this static layout (seamless freeze ↔ animate).
+export const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)); // ≈137.5° — the sunflower angle for even, spoke-free spread
 // px; radius = RING_SPACING·√(index+1) → rings grow outward, none at the dead center. Tuned to fit ~6 hosts
 // within a phone width; a fit-to-stage responsive scale (measure the stage, scale .cosmos-solar) is a C2b
 // refinement so larger fleets never clip.

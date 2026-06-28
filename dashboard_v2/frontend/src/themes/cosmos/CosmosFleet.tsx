@@ -1,8 +1,12 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useFleet } from "../../hooks/useFleet";
 import { setCosmosSelection, useCosmosSelection } from "../../store/cosmosSelection";
+import { useTabActive, useUISlice } from "../../store/ui";
+import { useThemeSetting } from "../../theme-engine/settings";
 import { CosmosMoon } from "./CosmosMoon";
+import { orbitPlaybackRate } from "./motion";
+import { decorOrbitSpec, orbitParams, useCosmosOrbit, type OrbitStyle, type OrbitTarget } from "./orbit";
 import { planetSize, present, serviceHealth } from "./present";
 import { Rune } from "./runes";
 
@@ -44,6 +48,24 @@ export function CosmosFleet({ active }: { active: boolean }) {
   const { hosts, svcByHost, isLoading, error } = useFleet();
   const selected = useCosmosSelection();
 
+  // Orbit gating (mirrors the starfield, §14.11): animate only when the GLOBAL Motion lever is "full" AND
+  // the orbit isn't set to "off" AND the Fleet tab is showing AND the PWA isn't backgrounded. Reduced-motion
+  // (motion !== "full") always wins. Tempo (playbackRate) is live-tunable without rebuilding the animations.
+  const motion = useUISlice((s) => s.motion);
+  const orbitStyle = useThemeSetting<string>("cosmos", "orbitStyle") as OrbitStyle;
+  const speed = useThemeSetting<string>("cosmos", "motionSpeed");
+  const onFleet = useTabActive("fleet");
+  const [docVisible, setDocVisible] = useState(
+    () => typeof document === "undefined" || !document.hidden,
+  );
+  useEffect(() => {
+    const on = () => setDocVisible(!document.hidden);
+    document.addEventListener("visibilitychange", on);
+    return () => document.removeEventListener("visibilitychange", on);
+  }, []);
+  const animate = motion === "full" && orbitStyle !== "off" && onFleet && docVisible;
+  const playbackRate = orbitPlaybackRate(speed);
+
   // Measure the stage so the system can be scaled to fit it (responsive on desktop + phone). A synchronous
   // first measure in the layout effect avoids a scale "pop" on mount; the ResizeObserver tracks resizes.
   const stageRef = useRef<HTMLDivElement>(null);
@@ -69,6 +91,7 @@ export function CosmosFleet({ active }: { active: boolean }) {
     const upCount = services.filter((s) => s.status?.online).length;
     return {
       host,
+      index: i,
       color: enc.color,
       symbol: enc.symbol,
       radius,
@@ -102,6 +125,15 @@ export function CosmosFleet({ active }: { active: boolean }) {
         )
       : 1;
 
+  // Orbit targets — each host (spec from orbitParams) + the decorative Pluto. The hook drives a WAAPI
+  // translate animation on each registered element; each animation's frame 0 == the static (x,y) used below,
+  // so freeze ↔ animate is seamless. `register(key)` returns a stable ref-callback per element.
+  const targets: OrbitTarget[] = [
+    ...placements.map((p) => ({ key: p.host.id, spec: orbitParams(p.index, p.radius, orbitStyle) })),
+    { key: "__pluto", spec: decorOrbitSpec(DECOR_PLANET.angle, decorRadius) },
+  ];
+  const { register } = useCosmosOrbit(targets, animate, playbackRate);
+
   return (
     <div
       className={"tab" + (active ? " active" : "")}
@@ -127,12 +159,13 @@ export function CosmosFleet({ active }: { active: boolean }) {
                 style={{ width: `${Math.round(2 * r)}px`, height: `${Math.round(2 * r)}px` }}
               />
             ))}
-            {/* decorative outer "Pluto" — non-interactive ambiance, reuses the planet coin look */}
+            {/* decorative outer "Pluto" — non-interactive ambiance, reuses the planet coin look; orbits too */}
             <span
+              ref={register("__pluto")}
               className="cosmos-planet decor"
               aria-hidden
               style={{
-                transform: `translate(calc(-50% + ${decorX}px), calc(-50% + ${decorY}px))`,
+                transform: `translate(-50%, -50%) translate(${decorX}px, ${decorY}px)`,
                 width: `${DECOR_PLANET.size}px`,
                 height: `${DECOR_PLANET.size}px`,
                 ["--planet" as string]: DECOR_PLANET.color,
@@ -143,10 +176,11 @@ export function CosmosFleet({ active }: { active: boolean }) {
               return (
                 <button
                   key={p.host.id}
+                  ref={register(p.host.id)}
                   type="button"
                   className={"cosmos-planet" + (p.online ? " on" : " off") + (isSel ? " sel" : "")}
                   style={{
-                    transform: `translate(calc(-50% + ${p.x}px), calc(-50% + ${p.y}px))`,
+                    transform: `translate(-50%, -50%) translate(${p.x}px, ${p.y}px)`,
                     width: `${p.size}px`,
                     height: `${p.size}px`,
                     fontSize: `${Math.round(p.size * 0.52)}px`, // rune glyph scales with the planet (.sym = 1em)

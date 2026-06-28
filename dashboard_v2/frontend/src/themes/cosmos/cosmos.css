@@ -205,11 +205,11 @@
       /* engraved look: a light lower-lip (the text-shadow emboss trick → drop-shadow for vector strokes) */
       filter: drop-shadow(0 0.6px 0 color-mix(in srgb, var(--planet) 52%, #fff));
     }
-    /* the decorative outer "Pluto" reuses the .cosmos-planet coin look as a non-interactive span */
+    /* the decorative outer "Pluto" reuses the .cosmos-planet coin look as a non-interactive span (it orbits
+     * too, so it keeps the base will-change: transform) */
     .cosmos-planet.decor {
       cursor: default;
       pointer-events: none;
-      will-change: auto;
     }
     /* offline → desaturated + dimmed + (C2b) frozen — the "asleep" star */
     .cosmos-planet.off {

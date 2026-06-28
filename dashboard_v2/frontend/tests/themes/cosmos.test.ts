@@ -28,26 +28,30 @@ describe("speedMultiplier", () => {
 });
 
 describe("cosmos animation settings", () => {
-  it("declares moonStyle (default cutout) + orbitalMotion (default on) + motionSpeed (default normal)", () => {
+  it("declares moonStyle (cutout) + motionSpeed (normal) + orbitStyle (perPlanet); NO redundant orbitalMotion", () => {
     expect(cosmos.settings?.moonStyle).toMatchObject({ type: "seg", default: "cutout" });
     const moonOpts = (cosmos.settings?.moonStyle as { options: { val: string }[] }).options.map(
       (o) => o.val,
     );
     expect(moonOpts).toEqual(["cutout", "carved"]);
-    expect(cosmos.settings?.orbitalMotion).toMatchObject({ type: "switch", default: true });
+    // orbitalMotion was removed — the global Motion lever (ui.motion) is the single on/off (no overlap).
+    expect(cosmos.settings?.orbitalMotion).toBeUndefined();
     expect(cosmos.settings?.motionSpeed).toMatchObject({ type: "seg", default: "normal" });
+    expect(cosmos.settings?.orbitStyle).toMatchObject({ type: "seg", default: "perPlanet" });
+    const orbitOpts = (cosmos.settings?.orbitStyle as { options: { val: string }[] }).options.map(
+      (o) => o.val,
+    );
+    expect(orbitOpts).toEqual(["perPlanet", "rigid", "off"]);
     const speedOpts = (cosmos.settings?.motionSpeed as { options: { val: string }[] }).options.map(
       (o) => o.val,
     );
     expect(speedOpts).toEqual(["calm", "normal", "lively"]);
   });
 
-  it("resolves to its declared defaults via useThemeSetting (animation on out of the box)", () => {
-    const { result: orbital } = renderHook(() =>
-      useThemeSetting<boolean>("cosmos", "orbitalMotion"),
-    );
-    expect(orbital.current).toBe(true);
+  it("resolves to its declared defaults via useThemeSetting", () => {
     const { result: speed } = renderHook(() => useThemeSetting<string>("cosmos", "motionSpeed"));
     expect(speed.current).toBe("normal");
+    const { result: orbit } = renderHook(() => useThemeSetting<string>("cosmos", "orbitStyle"));
+    expect(orbit.current).toBe("perPlanet");
   });
 });

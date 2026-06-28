@@ -42,9 +42,11 @@ export const cosmos: ThemeDef = {
   // CSS beyond tokens (the vapor.css escape hatch); both are @scope([data-skin=cosmos]) @layer theme.
   loadStyles: () => Promise.all([import("./tokens.css"), import("./cosmos.css")]),
   loadFonts,
-  // Per-theme settings (§14.3), auto-rendered in the Conf Appearance picker — cosmos is "more dynamic",
-  // so it owns its animation controls (the prototype's "Orbital motion" switch, here split into on/off +
-  // a tempo). Both gate/scale the C1 starfield now and the C2 orbital fleet later (tempo → motion.ts).
+  // Per-theme settings (§14.3), auto-rendered in the Conf Appearance picker. The MASTER motion on/off is the
+  // GLOBAL "Motion" lever (ui.motion, accessibility-aware) — cosmos does NOT duplicate it (there's no
+  // "global motion on but cosmos off" case, since only the active theme renders). Cosmos owns only the
+  // motion PARAMETERS: tempo + the orbit pattern (which includes "Off" to freeze just the orbit, keeping the
+  // starfield + the global setting untouched).
   settings: {
     // Central-body style (C2a-fix) — two variants the owner compares live: the prototype's see-through "D"
     // coin (cutout) vs the matte ball with the D engraved into it (carved). Auto-rendered as a Seg.
@@ -58,12 +60,6 @@ export const cosmos: ThemeDef = {
       ],
       default: "cutout",
     },
-    orbitalMotion: {
-      type: "switch",
-      label: "Orbital motion",
-      desc: "animate the stars & planets",
-      default: true,
-    },
     motionSpeed: {
       type: "seg",
       label: "Motion speed",
@@ -74,6 +70,19 @@ export const cosmos: ThemeDef = {
         { val: "lively", label: "Lively" },
       ],
       default: "normal",
+    },
+    // C2b: how the planets orbit — each at its own speed/direction (per-planet), all in lockstep (rigid), or
+    // frozen (off — planets static, starfield still twinkles under the global Motion lever).
+    orbitStyle: {
+      type: "seg",
+      label: "Orbit",
+      desc: "planet motion",
+      options: [
+        { val: "perPlanet", label: "Per-planet" },
+        { val: "rigid", label: "Rigid" },
+        { val: "off", label: "Off" },
+      ],
+      default: "perPlanet",
     },
   },
   // Per-host orbital encoding (§9.9) — index-based golden-angle position + color + rune symbol. CosmosFleet

@@ -12,16 +12,17 @@ import { speedMultiplier } from "./motion";
 //
 // Two differences from Waveform: (1) it's a PERSISTENT full-screen layer (mounted once at CosmosRoot,
 // survives tab switches), so it pauses on `document.hidden` rather than IntersectionObserver; (2) animation
-// is cosmos-owned — it runs only when the GLOBAL `ui.motion` is "full" AND the per-theme `orbitalMotion`
-// switch is on (reduced-motion always wins for a11y), at the `motionSpeed` tempo (motion.ts). When paused
-// it paints ONE static base-alpha frame (stars still visible, just still). `animate`/tempo are read through
-// refs so toggling a setting re-arms the loop WITHOUT regenerating (reshuffling) the star field.
+// runs only when the GLOBAL `ui.motion` is "full" (reduced-motion always wins for a11y), at the
+// `motionSpeed` tempo (motion.ts). When paused it paints ONE static base-alpha frame (stars still visible,
+// just still). `animate`/tempo are read through refs so toggling a setting re-arms the loop WITHOUT
+// regenerating (reshuffling) the star field.
 export function CosmosStarfield() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const motion = useUISlice((s) => s.motion);
-  const orbital = useThemeSetting<boolean>("cosmos", "orbitalMotion");
   const speed = useThemeSetting<string>("cosmos", "motionSpeed");
-  const animate = motion === "full" && orbital;
+  // Gated by the GLOBAL Motion lever only (the per-theme orbitalMotion switch was redundant with it and was
+  // removed — see index.tsx). Reduced-motion always wins for a11y.
+  const animate = motion === "full";
 
   // Live values the rAF reads each frame — so a tempo change is smooth and an on/off toggle doesn't
   // re-run the setup effect (which would regenerate the random star field).

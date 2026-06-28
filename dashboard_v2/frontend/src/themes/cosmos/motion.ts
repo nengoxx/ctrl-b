@@ -25,3 +25,10 @@ export const COSMOS_SPEED_DEFAULT: CosmosSpeed = "normal";
 export function speedMultiplier(speed: string | undefined): number {
   return COSMOS_SPEED[speed as CosmosSpeed] ?? COSMOS_SPEED[COSMOS_SPEED_DEFAULT];
 }
+
+/** Orbit speed as a WAAPI `playbackRate`, normalized so "normal" = 1× (calm ≈0.5×, lively ≈1.67×). Reuses
+ *  the single COSMOS_SPEED tempo source so the orbit and the starfield share one speed setting — change the
+ *  tempo live (playbackRate) without recreating the animations. */
+export function orbitPlaybackRate(speed: string | undefined): number {
+  return speedMultiplier(speed) / COSMOS_SPEED[COSMOS_SPEED_DEFAULT];
+}
