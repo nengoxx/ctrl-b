@@ -98,17 +98,18 @@ export const cosmos: ThemeDef = {
       ],
       default: "pulse",
     },
-    // C2b-4: per-service status cue — Auto picks moons (≤3 services, lit=up) or a fill-arc (>3, fraction up);
-    // Off hides it. Static (status, not motion).
+    // C2b-4: the per-host moon/ring cue. Data = real per-service status (moons ≤2, lit=up / fill-ring ≥3).
+    // Visual = decorative moons only (1–2 per planet, no rings, ignores data). Off = hidden.
     serviceCue: {
       type: "seg",
       label: "Service cue",
-      desc: "per-service status",
+      desc: "moons / ring",
       options: [
-        { val: "auto", label: "Auto" },
+        { val: "data", label: "Data" },
+        { val: "visual", label: "Visual" },
         { val: "off", label: "Off" },
       ],
-      default: "auto",
+      default: "data",
     },
   },
   // Per-host orbital encoding (§9.9) — index-based golden-angle position + color + rune symbol. CosmosFleet

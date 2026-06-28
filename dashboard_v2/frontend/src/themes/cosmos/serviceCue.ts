@@ -1,22 +1,39 @@
-// Cosmos service cue (C2b-4) — a per-service status indicator BESIDES size (size encodes AGGREGATE health;
-// this shows the per-service breakdown). ≤2 services → small "moons" that orbit the planet (one per service,
-// lit = up / dim = down) on two slightly different radii; ≥3 → a single arc ring whose filled fraction =
-// services up. Chosen by the `serviceCue` setting (Auto | Off). The representation is ONE pure function
-// returning a discriminated union so a future setting could force moons|arc|off without touching the render.
-// The moons ROTATE (Motion-gated, like the orbit); the arc is static.
+// Cosmos service cue (C2b-4) — a per-host moon/ring cue, chosen by the `serviceCue` setting:
+//  • DATA  — real per-service status: ≤2 services → "moons" (one per service, lit=up / dim=down) on two
+//            slightly different radii; ≥3 → a full ring whose STROKE-WIDTH = the up-fraction (besides size,
+//            which encodes aggregate health).
+//  • VISUAL — purely decorative: exactly THREE moons across the whole fleet (one host 2, one host 1, rest 0),
+//            re-rolled per page load; never a ring; ignores service data.
+//  • OFF   — nothing.
+// One pure function returns a discriminated union so the render layer never branches on the setting. The
+// moons ROTATE (Motion-gated, like the orbit); the ring is static.
 
 import type { Service } from "../../types";
 
-export const MOON_MAX = 2; // ≤ this many services → orbiting moons; more → the fill-arc
+export const MOON_MAX = 2; // ≤ this many services → orbiting moons; more → the fill-arc (DATA mode)
+
+/** The `serviceCue` setting: data-driven cue, decorative moons only, or hidden. (A legacy "auto" → data.) */
+export type ServiceCueMode = "data" | "visual" | "off";
 
 export type ServiceCue =
   | { kind: "none" }
-  | { kind: "moons"; states: boolean[] } // per-service up/down, in svcByHost order
+  | { kind: "moons"; states: boolean[] } // per-service up/down (data) — or all-up muted (visual)
   | { kind: "arc"; up: number; total: number };
 
-/** The cue for a host's services. `enabled` = the `serviceCue` setting isn't "off". */
-export function serviceCue(services: Service[], enabled: boolean): ServiceCue {
-  if (!enabled || services.length === 0) return { kind: "none" };
+/**
+ * The cue for a host. DATA: per-service status — moons (≤MOON_MAX, lit=up/dim=down) or a fill-ring (more).
+ * VISUAL: purely decorative — `visualCount` muted moons (0–2, NEVER a ring), ignoring service data; the
+ * fleet-wide assignment lives in `visualMoonCounts`. OFF: none.
+ */
+export function serviceCue(services: Service[], mode: ServiceCueMode, visualCount: number): ServiceCue {
+  if (mode === "off") return { kind: "none" };
+  if (mode === "visual") {
+    return visualCount > 0
+      ? { kind: "moons", states: Array<boolean>(visualCount).fill(true) }
+      : { kind: "none" };
+  }
+  // data
+  if (services.length === 0) return { kind: "none" };
   if (services.length <= MOON_MAX) {
     return { kind: "moons", states: services.map((s) => !!s.status?.online) };
   }
@@ -25,6 +42,31 @@ export function serviceCue(services: Service[], enabled: boolean): ServiceCue {
     up: services.filter((s) => s.status?.online).length,
     total: services.length,
   };
+}
+
+/** djb2 — stable per-id hash (for the pseudo-random, jitter-free visual pick). */
+function hashStr(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 33) + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+/**
+ * Decorative-moon assignment for VISUAL mode — exactly THREE moons across the whole fleet: one host gets 2,
+ * one gets 1, the rest 0. The two hosts are picked by hashing `id + salt`: pass a fresh `salt` per page load
+ * (CosmosFleet does) → different planets each refresh, but STABLE within the session (no jitter across the
+ * 5s-poll re-renders). Pure given (ids, salt). Returns a host-id → count map (default 0).
+ */
+export function visualMoonCounts(ids: string[], salt = ""): Map<string, number> {
+  const counts = new Map<string, number>(ids.map((id) => [id, 0]));
+  // XOR each id's hash with the salt's hash — XOR isn't order-preserving, so a different salt genuinely
+  // re-orders (appending the salt wouldn't: equal-length ids keep their order under a linear hash).
+  const sh = hashStr(salt);
+  const key = (id: string): number => (hashStr(id) ^ sh) >>> 0;
+  const ranked = [...ids].sort((a, b) => key(a) - key(b));
+  if (ranked[0] !== undefined) counts.set(ranked[0], 2);
+  if (ranked[1] !== undefined) counts.set(ranked[1], 1);
+  return counts;
 }
 
 // Per-moon orbit tuning — the (up to 2) moons ride DIFFERENT radii + drift at DIFFERENT speeds so they read

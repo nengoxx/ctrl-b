@@ -8,7 +8,13 @@ import { useCameraFollow } from "./camera";
 import { CosmosMoon } from "./CosmosMoon";
 import { livenessParts, pulsePeriodMs } from "./liveness";
 import { orbitPlaybackRate } from "./motion";
-import { moonOrbits, serviceCue, type ServiceCue } from "./serviceCue";
+import {
+  moonOrbits,
+  serviceCue,
+  visualMoonCounts,
+  type ServiceCue,
+  type ServiceCueMode,
+} from "./serviceCue";
 import { decorOrbitSpec, orbitParams, useCosmosOrbit, type OrbitStyle, type OrbitTarget } from "./orbit";
 import { planetSize, present, serviceHealth } from "./present";
 import { Rune } from "./runes";
@@ -66,7 +72,17 @@ export function CosmosFleet({ active }: { active: boolean }) {
   const orbitStyle = useThemeSetting<string>("cosmos", "orbitStyle") as OrbitStyle;
   const speed = useThemeSetting<string>("cosmos", "motionSpeed");
   const live = livenessParts(useThemeSetting<string>("cosmos", "liveness"));
-  const cueOn = useThemeSetting<string>("cosmos", "serviceCue") !== "off";
+  // serviceCue mode (a legacy "auto" → "data"); validated to the union so an odd stored value is safe.
+  const cueRaw = useThemeSetting<string>("cosmos", "serviceCue");
+  const cueMode: ServiceCueMode = cueRaw === "off" || cueRaw === "visual" ? cueRaw : "data";
+  // Visual mode: a fleet-wide decorative assignment (3 moons total — one host 2, one host 1, rest 0). The
+  // salt re-rolls the pick each page load (random per refresh) but is fixed for the session (lazy useState),
+  // so it never jitters across the 5s-poll re-renders.
+  const [moonSalt] = useState(() =>
+    typeof Math.random === "function" ? Math.random().toString(36).slice(2) : "",
+  );
+  const visualCounts =
+    cueMode === "visual" ? visualMoonCounts(hosts.map((h) => h.id), moonSalt) : null;
   const onFleet = useTabActive("fleet");
   const [docVisible, setDocVisible] = useState(
     () => typeof document === "undefined" || !document.hidden,
@@ -248,7 +264,11 @@ export function CosmosFleet({ active }: { active: boolean }) {
                     />
                   )}
                   {p.online && live.halo && <span className="cosmos-halo" aria-hidden />}
-                  <ServiceCueLayer cue={serviceCue(p.services, cueOn)} size={p.size} seed={p.index} />
+                  <ServiceCueLayer
+                    cue={serviceCue(p.services, cueMode, visualCounts?.get(p.host.id) ?? 0)}
+                    size={p.size}
+                    seed={p.index}
+                  />
                   <Rune id={p.symbol} />
                 </button>
               );
@@ -265,11 +285,12 @@ export function CosmosFleet({ active }: { active: boolean }) {
   );
 }
 
-// Service cue (C2b-4): per-service status drawn on a planet — orbiting moons (≤2) or a fill-arc (≥3).
-// Children of the planet button, so they orbit the moon with it; positioned/styled by cosmos.css. Each moon
-// rides a rotating "arm" (transform-origin = planet center) — the arm spins (Motion-gated; cosmos.css), the
-// dot is pinned at its radius. Phase is the arm's static rotate (reduced-motion) AND its negative
-// animation-delay (animated) so the moons sit on opposite sides either way. The arc is static.
+// Service cue (C2b-4): the moon/ring cue drawn on a planet — orbiting moons or a fill-ring. Children of the
+// planet button, so they orbit the moon with it; positioned/styled by cosmos.css. Each moon rides a rotating
+// "arm" (transform-origin = planet center) — the arm spins (Motion-gated; cosmos.css), the dot is pinned at
+// its radius. Start angle = the arm's static `rotate(phase)` (reduced-motion) and, when animating, its
+// negative animation-delay; a host's two moons still read as distinct (different radii + periods + some
+// counter-orbit). The ring is static, full-circle, width = up-fraction.
 const ARC_R = 46; // SVG ring radius in the 0..100 viewBox
 const ARC_W_MIN = 1.2; // ring stroke-width when all services are down
 const ARC_W_MAX = 4; // ring stroke-width when all services are up (thinner overall than before)
