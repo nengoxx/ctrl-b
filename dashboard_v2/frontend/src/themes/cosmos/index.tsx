@@ -84,6 +84,20 @@ export const cosmos: ThemeDef = {
       ],
       default: "perPlanet",
     },
+    // C2b-3: the online "alive" indicator — a breathing glow whose cadence = ping (Pulse), an expanding halo
+    // ring (Halo), Both, or Off. Gated by the global Motion lever (reduced-motion → a static glow).
+    liveness: {
+      type: "seg",
+      label: "Liveness",
+      desc: "online indicator",
+      options: [
+        { val: "pulse", label: "Pulse" },
+        { val: "halo", label: "Halo" },
+        { val: "both", label: "Both" },
+        { val: "off", label: "Off" },
+      ],
+      default: "pulse",
+    },
   },
   // Per-host orbital encoding (§9.9) — index-based golden-angle position + color + rune symbol. CosmosFleet
   // (the bespoke FleetView, passed via CosmosRoot → DefaultRoot's Fleet slot) consumes it.

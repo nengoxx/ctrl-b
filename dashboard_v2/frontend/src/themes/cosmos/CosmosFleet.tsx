@@ -6,6 +6,7 @@ import { useTabActive, useUISlice } from "../../store/ui";
 import { useThemeSetting } from "../../theme-engine/settings";
 import { useCameraFollow } from "./camera";
 import { CosmosMoon } from "./CosmosMoon";
+import { livenessParts, pulsePeriodMs } from "./liveness";
 import { orbitPlaybackRate } from "./motion";
 import { decorOrbitSpec, orbitParams, useCosmosOrbit, type OrbitStyle, type OrbitTarget } from "./orbit";
 import { planetSize, present, serviceHealth } from "./present";
@@ -63,6 +64,7 @@ export function CosmosFleet({ active }: { active: boolean }) {
   const motion = useUISlice((s) => s.motion);
   const orbitStyle = useThemeSetting<string>("cosmos", "orbitStyle") as OrbitStyle;
   const speed = useThemeSetting<string>("cosmos", "motionSpeed");
+  const live = livenessParts(useThemeSetting<string>("cosmos", "liveness"));
   const onFleet = useTabActive("fleet");
   const [docVisible, setDocVisible] = useState(
     () => typeof document === "undefined" || !document.hidden,
@@ -121,6 +123,7 @@ export function CosmosFleet({ active }: { active: boolean }) {
       x: Math.cos(angle) * radius,
       y: Math.sin(angle) * radius,
       online: !!host.status?.online,
+      ping: host.status?.ping_ms ?? null,
       services,
       upCount,
       size: planetSize(services.length, serviceHealth(upCount, services.length)),
@@ -233,6 +236,16 @@ export function CosmosFleet({ active }: { active: boolean }) {
                     (p.services.length ? `, ${p.upCount}/${p.services.length} services up` : "")
                   }
                 >
+                  {/* liveness (C2b-3): glow/ring behind the coin for ONLINE planets only, gated by the
+                      `liveness` setting; cosmos.css gates the animation on the global Motion lever. */}
+                  {p.online && live.pulse && (
+                    <span
+                      className="cosmos-pulse"
+                      aria-hidden
+                      style={{ ["--pulse-dur" as string]: `${pulsePeriodMs(p.ping)}ms` }}
+                    />
+                  )}
+                  {p.online && live.halo && <span className="cosmos-halo" aria-hidden />}
                   <Rune id={p.symbol} />
                 </button>
               );

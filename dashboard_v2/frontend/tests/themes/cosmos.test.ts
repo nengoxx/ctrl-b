@@ -42,6 +42,11 @@ describe("cosmos animation settings", () => {
       (o) => o.val,
     );
     expect(orbitOpts).toEqual(["perPlanet", "rigid", "off"]);
+    expect(cosmos.settings?.liveness).toMatchObject({ type: "seg", default: "pulse" });
+    const liveOpts = (cosmos.settings?.liveness as { options: { val: string }[] }).options.map(
+      (o) => o.val,
+    );
+    expect(liveOpts).toEqual(["pulse", "halo", "both", "off"]);
     const speedOpts = (cosmos.settings?.motionSpeed as { options: { val: string }[] }).options.map(
       (o) => o.val,
     );

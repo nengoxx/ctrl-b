@@ -233,6 +233,63 @@
       min-height: 100%;
       transform: translate(-50%, -50%);
     }
+    /* ── Liveness (C2b-3): ONLINE indicators — children of the planet (so they orbit with it), z-index:-1 +
+     * sized beyond the coin so they read as a glow/ring AROUND it (the coin bg occludes the part behind it,
+     * like the moon corona). CosmosFleet renders them only for online planets + only the parts the `liveness`
+     * setting enables. Animate only when the global Motion lever is full; reduced-motion leaves the static
+     * base (online stays distinguishable). Transform/opacity only (§14.11); distinct cosmos-* keyframes. */
+    .cosmos-pulse {
+      position: absolute;
+      inset: -18%; /* hug the coin — a tight glow at the perimeter, not a wide halo */
+      z-index: -1;
+      border-radius: 50%;
+      pointer-events: none;
+      /* a ring-glow (transparent center so the coin shows, glow at the coin's edge) tinted by --planet */
+      background: radial-gradient(
+        circle,
+        transparent 42%,
+        color-mix(in srgb, var(--planet) 55%, transparent) 60%,
+        transparent 84%
+      );
+      opacity: 0.5; /* static glow — the reduced-motion fallback */
+    }
+    body[data-motion="full"] .cosmos-pulse {
+      /* breath: cadence (--pulse-dur) = ping, set inline by CosmosFleet (pulsePeriodMs) */
+      animation: cosmos-pulse var(--pulse-dur, 3000ms) ease-in-out infinite;
+    }
+    @keyframes cosmos-pulse {
+      0%,
+      100% {
+        transform: scale(0.96);
+        opacity: 0.3;
+      }
+      50% {
+        transform: scale(1.06);
+        opacity: 0.6;
+      }
+    }
+    .cosmos-halo {
+      position: absolute;
+      inset: -6%;
+      z-index: -1;
+      border-radius: 50%;
+      pointer-events: none;
+      border: 1px solid color-mix(in srgb, var(--planet) 65%, #fff);
+      opacity: 0.3; /* static ring — the reduced-motion fallback */
+    }
+    body[data-motion="full"] .cosmos-halo {
+      animation: cosmos-halo 3200ms ease-out infinite;
+    }
+    @keyframes cosmos-halo {
+      0% {
+        transform: scale(0.85);
+        opacity: 0.55;
+      }
+      100% {
+        transform: scale(1.7);
+        opacity: 0;
+      }
+    }
     /* the decorative outer "Pluto" reuses the .cosmos-planet coin look as a non-interactive span (it orbits
      * too, so it keeps the base will-change: transform) */
     .cosmos-planet.decor {
