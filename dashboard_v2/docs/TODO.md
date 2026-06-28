@@ -789,10 +789,14 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
       whole Kit incl. the default Fleet. + a Fleet-data eyeball pass.
 - [ ] **T3 — observatory** (MED, low-pri — port once its prototype is finished): own Fleet view (SVG radial topology)
       + first `present()` (per-host `angle`). Proves the per-theme Fleet + presentation layer.
-- [ ] **T4 — cosmos** (HIGH): own Fleet `Root`/orbital — rAF orbit + camera zoom/pan, per-host planet encoding
-      (golden-angle default + override), canvas starfield + waveform; `HostDetail` = slide panel; `present()`. Gated by `ui.motion`.
+- [x] **T4 — cosmos** ✅ DONE (2026-06-28, pushed `2639ea2`→`88bfa84`): own Fleet `Root`/orbital — WAAPI orbit +
+      rAF camera zoom-follow, per-host `present()` (golden-angle), canvas starfield, liveness pulse/halo, service-cue;
+      `HostDetail` = a **draggable multi-snap bottom sheet** (the slide-panel idea, upgraded) on the reusable
+      `BottomSheet` primitive + sheet-aware camera-lift. Gated by `ui.motion`. C4 (per-host override) optional/later.
+      See `COSMOS_HANDOFF.md`.
 - [ ] **T5 — frontier** (HIGH): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
-      (animated squares — the one non-Fleet structural deviation) + bottom-sheet `HostDetail` + asset strategy
+      (animated squares — the one non-Fleet structural deviation) + bottom-sheet `HostDetail` (**reuse cosmos's
+      `components/BottomSheet.tsx` primitive** — multi-snap, see THEME_ENGINE §14.13 #9) + asset strategy
       (`import.meta.glob`; built-in Mœbius drawing set by index + per-host `host.appearance.frontier.image` override).
 
 **Per-theme Fleet eyeball passes (owner directive):** each theme's Fleet (and frontier's Agent) gets a 390px design pass

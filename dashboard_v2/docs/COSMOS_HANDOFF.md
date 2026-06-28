@@ -1,12 +1,19 @@
 # Cosmos theme — implementation handoff (C2a-fix → C2b → C3)
 
-**Read this first, then the doc map below.** This is a focused handoff for finishing the **cosmos** theme
-(the bespoke orbital/space theme). It assumes you've read `CLAUDE.md` + `AGENTS.md` + the canonical
-[`HANDOFF.md`](./HANDOFF.md). **C1 (starfield), C2a-fix (palette/runes/sizing/selection/rings/moon-toggle/
-Pluto/fit-to-stage), and ALL of C2b (orbit · camera zoom-follow + tap-hit-area · liveness pulse/halo ·
-service-cue moons/ring) are shipped + pushed on `main`.** The ONLY remaining cosmos work is **C3 — the
-bottom-sheet HostDetail** (tap a planet → zoom → a draggable sheet with stats/services/actions). **C3's
-design is LOCKED — jump to [§10](#10-c3--locked-design--build-plan-start-here) and build.**
+**Read this first, then the doc map below.** This is a focused handoff for the **cosmos** theme (the bespoke
+orbital/space theme). It assumes you've read `CLAUDE.md` + `AGENTS.md` + the canonical
+[`HANDOFF.md`](./HANDOFF.md).
+
+> ## ✅ COSMOS IS COMPLETE (C1–C3 shipped + pushed on `main`, 2026-06-28)
+> **C1** (starfield) · **C2a-fix** (palette/runes/sizing/selection/rings/moon-toggle/Pluto/fit-to-stage) ·
+> **C2b** (orbit · camera zoom-follow + tap-hit-area · liveness pulse/halo · service-cue moons/ring) ·
+> **C3** (the bottom-sheet HostDetail — reusable `BottomSheet` primitive + `CosmosHostDetail` content +
+> sheet-aware camera-lift + multi-snap peek/full + Audiowide title + slide/fade). Commits `02c53e6` (C3a),
+> `09ae361` (C3b/C3c), `88bfa84` (the all-theme app-like text-selection / tap-highlight fix done alongside).
+> **The only OPTIONAL remaining work is C4** — per-host `appearance.cosmos` override (additive on `present()`),
+> built only if/when wanted. The reusable learnings have been lifted into `THEME_ENGINE.md` (§14.11/§14.13)
+> for the next spatial theme (frontier). §10 below is the (now-historical) C3 design + build plan, kept for
+> reference; §2 is the shipped inventory.
 
 > **Owner's standing expectations (do not skip):** match the prototype design closely **with the agreed
 > improvements**; be **informed before you build** — read the code you touch, **web-research any net-new
@@ -91,13 +98,38 @@ Everything below C1 is DONE, committed, pushed, audited, and green. Cosmos file 
   `useState`-lazy salt (stable within the session), no rings. `ServiceCueLayer` lives at the bottom of
   `CosmosFleet.tsx`.
 
+- **C3 host-detail sheet** — the signature interaction. Files: `components/BottomSheet.tsx` (a reusable,
+  dependency-free **multi-snap** sheet — kit-level, frontier reuses it), `themes/cosmos/CosmosHostDetail.tsx`
+  (cosmos content). Tap a planet → camera zoom-follows (C2b-2) → the sheet slides up to a **peek** detent
+  (name + compact info) → drag-up → **full** (actions + services) → drag-down/tap-sky/Escape → close.
+  - **`BottomSheet`** (C3a + C3c): snap points (closed/peek/full) driven IMPERATIVELY via `transform:
+    translateY` (no per-pixel re-render); content marks the peek line with `[data-bs-peek]`; `pickSnap`
+    (nearest-or-velocity-flick, unit-tested); quick **fade-in + slide-up** on enter, opaque **slide-down**
+    on exit (a proper bottom sheet); an **`entering` guard** so a mid-slide content reflow (the Audiowide
+    font swap) RE-TARGETS the slide instead of snapping it; reports its active-snap height for the camera-
+    lift; enlarged drag hit-area (covers the title); non-modal a11y (Escape, sr-only close, focus return);
+    the slide gates on **`data-motion`** (NOT raw OS `prefers-reduced-motion`) so it follows the in-app
+    Motion switch like every other animation.
+  - **`CosmosHostDetail`** (C3b): name hero in **Audiowide** (`--font-display`), a centred status row
+    (`● online·role` · alive-or-last-seen · services count, no captions) + a single muted ping·ip·mac line,
+    an action bar (Wake/Reboot/Shutdown/Ping → `useFleet.run`), and the services list. Pure `useFleet`
+    consumer; meta is an ARRAY so future telemetry slots in. **"Alive" (uptime) is DEFERRED → "—"** (backend
+    has no boot time yet; see §10.4 for how to make it real later).
+  - **Sheet-aware camera-lift** (C3b, `CosmosFleet`): when the sheet is open, the live-zone bottom shrinks to
+    the sheet's top so the focused planet floats ABOVE it; raw geometry sits in state and `offsetY` is derived
+    per render (the rAF stays layout-free), and `fitScale` stays on the CLOSED zone so the zoom SIZE never
+    changes when the sheet opens. The composer is hidden while open (scoped `visibility`, measure-safe).
+  - **Selection skin** (cosmos.css): glass / dot-texture / rounded; the radial dot glow is anchored at the
+    name + aligned to (and occluded by) the opaque grip; blur kept during drag, gated to opaque by `data-perf`.
+
 **Cosmos settings (auto-rendered in Conf · Appearance):** `moonStyle` · `motionSpeed` · `orbitStyle` ·
 `liveness` · `serviceCue`. (Global Motion is the master on/off.)
 
-**Commits (newest → oldest):** `2d44741` (serviceCue Visual) · `5dbdb51` (C2b-4) · `6fbf3d6` (C2b-3) ·
-`723f93e` (C2b-2) · `12bc5e9` (C2b-1) · `2639ea2` (C2a-fix).
+**Commits (newest → oldest):** `88bfa84` (app-like selection/tap-highlight, all themes) · `09ae361` (C3b/C3c
+host-detail sheet) · `02c53e6` (C3a BottomSheet primitive) · `2d44741` (serviceCue Visual) · `5dbdb51` (C2b-4)
+· `6fbf3d6` (C2b-3) · `723f93e` (C2b-2) · `12bc5e9` (C2b-1) · `2639ea2` (C2a-fix).
 
-**Tests:** **178 unit / 34 e2e** green. Run in `dashboard_v2/frontend`: `npm test` · `npm run test:e2e` ·
+**Tests:** **184 unit / 34 e2e** green (the C3 add was the `pickSnap` snap-math helper). Run in `dashboard_v2/frontend`: `npm test` · `npm run test:e2e` ·
 `npm run build` · `npm run typecheck`. Dev server is usually ALREADY running — backend `uvicorn
 app.main:app --port 5433` (NO `--reload` on Windows), frontend `npm run dev` (port **5173**); **check
 `netstat` first**. Live visual checks use Playwright scripts in the scratchpad that intercept
@@ -316,9 +348,10 @@ SitePoint 60fps-mobile, PubMed redundant-encoding (66%→88% identification).
 1. ~~**C2a-fix**~~ ✅ DONE (commit `2639ea2`).
 2. ~~**C2b**~~ ✅ DONE — orbit `12bc5e9` · camera+hit `723f93e` · liveness `6fbf3d6` · service-cue `5dbdb51`
    · visual-cue `2d44741`. (fit-to-stage landed inside C2a-fix.)
-3. **C3** ← **NEXT. Design LOCKED — see §10.** Reusable `BottomSheet` primitive (C3a) → `CosmosHostDetail`
-   content wired to selection + camera lift (C3b).
-4. **C4 (later)** — per-host `appearance.cosmos` override (additive on `present()`), if/when wanted.
+3. ~~**C3**~~ ✅ DONE — `BottomSheet` primitive `02c53e6` (C3a) → `CosmosHostDetail` + camera-lift + multi-snap
+   + Audiowide + slide/fade `09ae361` (C3b/C3c). The app-like selection/tap-highlight fix `88bfa84` shipped
+   alongside (all themes).
+4. **C4 (later, OPTIONAL)** — per-host `appearance.cosmos` override (additive on `present()`), if/when wanted.
 
 ---
 
@@ -440,10 +473,12 @@ Small audited parts; pause for owner review between slices; the owner reviews vi
   at Pixel-5 (phone) AND a desktop viewport; the owner reviews the images. Scratchpad dir is in the harness
   env; copy any `*.mjs` into `frontend/` before `node`-running so it resolves `@playwright/test`.
 
-### 10.8 After C3
-- Update this doc + `HANDOFF.md` to mark cosmos **done**; consider lifting `present()`/orbit/camera learnings
-  into `THEME_ENGINE.md` for the next spatial theme (frontier). C4 (per-host `appearance.cosmos` override) is
-  optional/later.
-
-Then: update `HANDOFF.md` (mark cosmos done) and consider lifting `present()` learnings into
-`THEME_ENGINE.md` for the next spatial theme (frontier).
+### 10.8 After C3 ✅ DONE (2026-06-28)
+- ~~Update this doc + `HANDOFF.md` to mark cosmos **done**~~ ✅ (this doc's top banner + §2; HANDOFF current-
+  state + a session-update entry).
+- ~~Lift `present()`/orbit/camera/sheet learnings into `THEME_ENGINE.md` for the next spatial theme
+  (frontier)~~ ✅ — **§14.13 #9** (the reusable `BottomSheet` primitive), **#10** (the app-like selection /
+  tap-highlight model), and **§14.11** (gate interaction animations on `data-motion` not the raw OS query;
+  the font-swap-reflow-interrupts-a-transition gotcha + the `entering` re-target pattern; the sheet-aware
+  camera-lift derive-don't-measure rule).
+- **C4** (per-host `appearance.cosmos` override) remains optional/later.

@@ -1030,6 +1030,22 @@ scroller `overflow-x: hidden` (a vertical-only scroller computes the x-axis to `
 child adds a horizontal scrollbar), and theme the scrollbars — thin + themed thumb **and** a transparent
 `::-webkit-scrollbar-corner`, so Chrome's default light corner box never flashes against a dark theme.
 
+**Gate motion on `data-motion`, NOT the raw OS `prefers-reduced-motion` query (cosmos C3, 2026-06-28).** The
+app's Motion switch (`store/ui`) is the master lever: `defaultMotion()` SEEDS it from `prefers-reduced-motion`
+(so reduced-motion users get `reduced` by default), but the switch lets a user turn it back ON. So gate
+EVERY animation — ambient *and* one-shot interaction transitions (a sheet slide, a modal) — on
+`body[data-motion="reduced"]`, never on a second `@media (prefers-reduced-motion: reduce)` rule. Keying off
+the raw OS query is a bug: it ignores the in-app override, so an animation silently dies for a user who has
+OS reduced-motion ON but app Motion `full` (the cosmos sheet "wouldn't slide" — orbit gated on `data-motion`
+animated, the sheet gated on the OS query did not). One signal, user-overridable, app-wide.
+
+**Spatial-theme camera math: DERIVE per render, don't measure per frame (cosmos C2b/C3).** A camera/lift that
+follows or re-centers reads geometry ONCE (a ResizeObserver writes raw rects into state), then derives the
+transform target in the React render (cheap arithmetic) — the rAF only reads the resulting value, never
+`getBoundingClientRect`. When a new dimension changes the centering (cosmos's sheet-aware lift shrinks the
+live zone by the open sheet's height), change only the *derived offset*, and keep the *scale* (zoom
+magnification) on the original basis so the focused node's on-screen SIZE doesn't jump.
+
 ## 14.12 Shared-component UX conventions (learned in the A.2 reskin — apply to every theme + vapor)
 
 These three bugs surfaced reskinning the Conf editors under `minimal`; all are now fixed in the **shared
@@ -1115,3 +1131,33 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
    reads as a flat **black box that crops the system** (the exact C2b bug). Bonus: an absolute layer is out
    of scroll flow, so it can never add scroll height (no stray scrollbar) — more robust than clip+height.
    The glass recipe itself lives ONCE in the Kit composer/appbar; the theme only has to bleed under it.
+9. **Reusable `BottomSheet` primitive (`components/BottomSheet.tsx`) — use it, don't re-roll a sheet
+   (added cosmos C3, 2026-06-28).** A dependency-free, kit-level draggable bottom sheet. Controlled
+   (`<BottomSheet open onClose>`); **multi-snap** closed/peek/full — the CONTENT marks its peek line with
+   `[data-bs-peek]` (no marker → plain closed/full). Mechanics worth not re-discovering: the transform is
+   driven IMPERATIVELY (`el.style.transform = translateY(px)` on a ref — never a CSS var, vaul's lesson:
+   a var offset recalcs every descendant → drops frames; never animate `height`); drag on the **handle**
+   only (`touch-action:none`) to sidestep the scroll-vs-drag gate; release = `pickSnap` (nearest snap, or a
+   velocity flick steps one snap / dismisses); `[data-dragging]` kills the CSS transition for a 1:1 drag.
+   **Enter/exit animation** = a quick fade-in + slide-up on open, opaque slide-down on close (a *proper*
+   bottom sheet — the slide is the primary motion, the fade just softens it). **`onHeightChange`** reports
+   the active-snap height (for a spatial theme's camera-lift). Non-modal a11y: `role=dialog` WITHOUT
+   `aria-modal`, no focus trap, Escape + an sr-only Close + return-focus; an optional invisible tap-outside
+   catcher (`catchOutside`, default on — cosmos turns it OFF so taps fall through to the orbital stage).
+   The theme only adds a **skin** (cosmos.css: glass/dots/rounded under `@layer theme`); the `.bs-*`
+   STRUCTURE lives once in `kit.css`. *Gotcha baked in:* a content reflow mid-enter (a display-font swap, an
+   async height change) fires the sheet's ResizeObserver, whose `transition:none` re-apply would SNAP the
+   sheet and kill the enter animation — the `entering` ref makes a mid-slide resize RE-TARGET the slide
+   (keep the transition) instead; only an at-rest resize re-applies instantly.
+10. **App-like text-selection / tap-highlight model (`@layer reset` in `theme/index.css`) — net-new CONTENT
+    must opt INTO selectability (added 2026-06-28).** The app is **non-selectable by default** (`body {
+    user-select: none }`) with the tap-highlight killed everywhere (`* { -webkit-tap-highlight-color:
+    transparent }`), so every control — buttons, `role=slider`, `all: unset` controls (a planet inherits
+    `none`), even touch-scroll-over-text — is clean with no per-widget chasing. This lives in a LAST-ordered
+    cascade layer (`@layer base, theme, reset`), so it beats any theme's `all: unset` by layer order with
+    **no `!important`**. Three sub-layers `defaults < content < controls`: **content** opts selectable islands
+    back in (`.b .body`/markdown/code, device + host info VALUES, conf labels, inputs, `.selectable`);
+    **controls** keep `none` even when nested in selectable content (the chat retry button, disclosure
+    summaries). **Implication for a new theme:** your interactive surfaces are non-selectable for free, but
+    any net-new **content text a user should be able to copy** (a new info value, a new message region) must
+    be added to the `content` sub-layer's selector list — or just give it `class="selectable"`.

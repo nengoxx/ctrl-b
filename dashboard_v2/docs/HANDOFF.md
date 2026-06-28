@@ -76,7 +76,7 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Theme-engine v2 (D29): BUCKET-A COMPLETE — `minimal` is a full reskin: chrome + Fleet (A.1) · ALL Conf editors + Utils tab (A.2) · the entire Agent chat (A.3), all token-driven under `.kit`. Every shared surface now renders under any reskin theme.** · NEXT = **T2 phosphor** (the 2nd theme — tokens+fonts+CRT, reuses the Kit) *or* the queued **emma deploy**)
+## Current state (**Theme-engine v2 (D29): BUCKET-A COMPLETE — `minimal` is a full reskin: chrome + Fleet (A.1) · ALL Conf editors + Utils tab (A.2) · the entire Agent chat (A.3), all token-driven under `.kit`. Every shared surface now renders under any reskin theme.** · **cosmos (T4, the bespoke orbital theme) is COMPLETE — C1–C3 shipped + pushed: starfield · orbital fleet (orbit/camera/liveness/service-cue) · the host-detail bottom sheet (reusable `BottomSheet` primitive + `CosmosHostDetail` + sheet-aware camera-lift + multi-snap + Audiowide + slide/fade). See [`COSMOS_HANDOFF.md`](./COSMOS_HANDOFF.md). The app-like text-selection / tap-highlight model shipped alongside (all themes).** · NEXT = **T2 phosphor** (the 2nd reskin theme — tokens+fonts+CRT, reuses the Kit) *or* the queued **emma deploy**)
 
 > ### 🟢 SESSION UPDATE — BUCKET-A COMPLETE: A.3 Agent chat SHIPPED (+ A.1/A.2 recap) — 2026-06-27 (cont.)
 >
@@ -1458,6 +1458,35 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > dev` defaults to 5173 unless `--port 5190`). Phone: `http://corsair:5173`. Both tearable down
 > without state loss. **Heads-up:** pytest is **not installed** in the backend venv — every test file
 > has a `__main__` runner; run `./.venv/Scripts/python.exe tests/<file>.py`.
+
+### ⭐ Session update — 2026-06-28 (**cosmos T4 COMPLETE — C1–C3 + the app-like selection model** · pushed `2639ea2`→`88bfa84`)
+
+Built the bespoke **cosmos** orbital theme end-to-end across several sessions and finished it this day. Full
+detail lives in [`COSMOS_HANDOFF.md`](./COSMOS_HANDOFF.md) (its top banner + §2 are the shipped inventory).
+Highlights + the reusable bits a future theme should know:
+
+- **The orbital fleet** (C1/C2): a fixed starfield canvas + DOM planets placed by `present()` (golden-angle),
+  sized by service health, on faint rings; WAAPI orbit, rAF camera zoom-follow, breathing-pulse/halo liveness,
+  service-cue moons/ring. All compositor-only + `data-motion`/`data-perf`-gated (§14.11).
+- **C3 — the host-detail bottom sheet.** A **reusable, dependency-free `BottomSheet` primitive**
+  (`components/BottomSheet.tsx`, kit-level — frontier reuses it): **multi-snap** closed/peek/full (content
+  marks the peek line with `[data-bs-peek]`), imperative `translateY` (no per-pixel re-render), `pickSnap`
+  (nearest-or-velocity-flick, unit-tested), quick fade-in + slide-up enter / opaque slide-down exit, an
+  `entering` guard so a mid-slide font-swap reflow re-targets instead of snapping, non-modal a11y. Cosmos
+  content = `CosmosHostDetail` (Audiowide name hero + compact status/id info + action bar + services). A
+  **sheet-aware camera-lift** floats the focused planet above the sheet (derive `offsetY` per render; keep
+  `fitScale` on the closed zone so zoom size is constant).
+- **App-like text-selection + tap-highlight model (ALL themes)** — a last-ordered `@layer reset`: nothing
+  selectable by default (kills the Chrome/Android tap box + stray selection on every control incl. `all:
+  unset`, the mini-player, and scrolling), content islands opt back in, controls stay `none` even nested in
+  content (sub-layers). Lifted into `THEME_ENGINE.md` §14.13 #10.
+- **A subtle-but-important fix:** interaction animations must gate on the **`data-motion`** lever, NOT the
+  raw OS `prefers-reduced-motion` query — the sheet "wouldn't slide" for the owner because OS reduced-motion
+  was on while their in-app Motion was `full`. Lifted into §14.11.
+
+Commits `2639ea2` (C2a-fix) · `12bc5e9`/`723f93e`/`6fbf3d6`/`5dbdb51`/`2d44741` (C2b) · `02c53e6` (C3a) ·
+`09ae361` (C3b/C3c) · `88bfa84` (selection model). 184 unit / 34 e2e green. **NEXT: T2 phosphor or emma
+deploy.** Cosmos C4 (per-host `appearance.cosmos` override) is optional/later.
 
 ### ⭐ Session update — 2026-06-21 (build session #10 — **Phase 5 guarded local shell shipped** · pushed `a5deb24`+`a6618e7`)
 
