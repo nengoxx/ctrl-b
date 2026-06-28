@@ -377,10 +377,31 @@ New file: `src/components/BottomSheet.tsx` (kit-level, shared — frontier reuse
 ### 10.4 C3b — `CosmosHostDetail` + wiring
 New file: `src/themes/cosmos/CosmosHostDetail.tsx`. Rendered by `CosmosRoot` (or `CosmosFleet`) inside a
 `<BottomSheet open={selected != null} onClose={() => setCosmosSelection(null)}>`.
-- **Content (cosmos-styled, token-driven):** a header (host name + online/role), a stats grid (IP · MAC ·
-  Last seen · Ping — mirror `KitFleet`'s `DeviceRow` fields), a services list (name · `host:port` · status
-  dot · open `s.url` ↗ when online), and an **action bar** (Wake when offline; Reboot + Shutdown when online;
-  Ping always) → `useFleet().run(...)`, disabled while `busy.has(host.id)`. **No ping line-graph.**
+- **Content (cosmos-styled, token-driven · LOCKED 2026-06-28):** the sheet is a **glass, rounded-top,
+  dot-textured** surface (the dark variant of `docs/screenshot/dotted_background_round_cornered_bottomSheet/`).
+  A **header** with the **host name as the bold hero title** on the dotted-glass zone (this REPLACES the ping
+  line-graph entirely — owner: "name at the top with a dotted background, glass for texture") + LED/role
+  subline. Then a **compact key/value meta grid** (small, not big stat tiles — owner): **Ping · Last seen ·
+  Alive · Services(up/total) · IP · MAC** (same approach as `KitFleet`'s `DeviceRow` `.meta`). Then an
+  **action bar** (Wake when offline; Reboot + Shutdown when online; Ping always) → `useFleet().run(...)`,
+  disabled while `busy.has(host.id)`. Then the **services list** (name · `host:port` · status dot · open
+  `s.url` ↗ when online). **No ping line-graph.**
+  - **⚠ "Alive / time-alive" is DEFERRED (owner OK'd "a, note it for later" 2026-06-28).** The backend does
+    NOT collect boot time / uptime today (only `last_seen` + online). Render the slot as "—" now, wired into
+    the meta array so it's purely additive later. To make it real: add an `uptime`/`boot_time` field to the
+    host status (SSH `uptime -s` on Linux / WMI `LastBootUpTime` on Windows — per-OS, needs SSH creds → its
+    own backend slice, a ROADMAP host-telemetry seam). Do NOT approximate from poll history (resets on server
+    restart, not true uptime).
+  - **Glass perf (researched, §14.11):** ONE blurred surface (~14px), gated behind `data-perf=lite` (→ opaque
+    `--surface`, no blur) like the Kit composer/appbar recipe, and **blur DROPPED while dragging** (`data-
+    dragging` → `backdrop-filter:none` + opaque fill) so it never re-blurs per drag frame (Firefox-Android's
+    worst case). Dot texture = a cheap `repeating` radial-gradient (paints once, composited), NOT a 2nd filter.
+  - **No scrim / no dim** (LOCKED): the orbital system stays crisp above the sheet; only the sheet itself is
+    glass. **Tap-outside** dismiss via an INVISIBLE catcher (no dim). **No ✕ button** (owner dropped it) —
+    dismiss = drag-handle-down OR tap-outside OR Escape (+ an sr-only close button for AT).
+  - **Composer hidden while the sheet is open** (owner): a scoped cosmos rule fades+slides it down via
+    `transition-behavior: allow-discrete` + `@starting-style` (FF 129+/Chrome 121+/Safari 17.5+) — the **Kit
+    composer is NOT forked**, cosmos just translates it out. (Perf bonus: avoids stacking 2 blur surfaces.)
 - **Camera lift:** when the sheet is open it covers the lower area, so the focused planet must sit ABOVE it.
   The camera (`camera.ts`) already lifts to the live-zone center via `centerOffsetY`; shrink the effective
   live zone by the sheet's height when open (pass a larger upward offset), so the planet floats above the

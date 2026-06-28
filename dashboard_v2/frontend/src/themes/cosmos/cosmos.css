@@ -373,5 +373,100 @@
       bottom: 18px;
       transform: translateX(-50%);
     }
+
+    /* ── Bottom sheet (C3 HostDetail) — cosmos skin over the shared `.bs-*` primitive (kit.css). A glass,
+     * rounded-top, dot-textured panel that slides up over the lower stage; the orbital system stays crisp
+     * ABOVE it (NO scrim — the catcher is invisible). @layer theme so these win over kit.css's @layer base
+     * structure regardless of specificity. §14.11: ONE backdrop-filter surface (~14px), DROPPED while
+     * dragging (never re-blurs per drag frame — Firefox-Android's worst case) and under data-perf=lite
+     * (opaque fallback, matching the Kit composer/appbar recipe); the dot texture is a cheap repeating
+     * radial-gradient (painted once into the layer, composited — NOT a 2nd filter). */
+    .bs-sheet {
+      max-height: 62vh; /* fixed open height; the body scrolls (curate live) */
+      border-radius: 26px 26px 0 0;
+      border: 1px solid var(--line-2);
+      border-bottom: 0;
+      background: color-mix(in oklch, var(--surface) 82%, transparent);
+      -webkit-backdrop-filter: blur(14px);
+      backdrop-filter: blur(14px);
+      box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.45);
+    }
+    /* dot grid — a fine dot field RADIALLY masked from the top-centre so it's densest behind the host-name
+     * header and fades outward in every direction (the reference sheets' "glow from the centre" texture),
+     * not a hard vertical cut. Subtle: the dot alpha × the layer opacity set the strength (curated w/ owner). */
+    .bs-sheet::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      z-index: -1; /* behind the in-flow content (handle/body) so the opaque grip + text OCCLUDE the dots —
+                      they read as a texture *under* the chrome, not painted over it (the reference look) */
+      background-image: radial-gradient(rgba(255, 255, 255, 0.9) 1px, transparent 1.5px);
+      background-size: 13px 13px;
+      /* `center` x → the grid is symmetric about the sheet centre (a dot column on the centre line, equal
+       * margins), so it's not shifted to one side. y `6px` lands a dot ROW on the grab bar (grip centre
+       * ≈13.5px from the top; a row naturally sits at ≈7.5px → +6px aligns it) like the reference sheets. */
+      background-position: center 6px;
+      opacity: 0.13;
+      /* centre the glow at the host name (~46px down, just below the handle) in PX — so it tracks the name
+       * the same way whether the sheet is short (placeholder) or tall (C3b), not a % that drifts with height.
+       * Fixed-px ellipse → a contained pool around the header that fades out before the body content. */
+      -webkit-mask-image: radial-gradient(260px 200px at 50% 46px, #000 0%, #000 22%, transparent 72%);
+      mask-image: radial-gradient(260px 200px at 50% 46px, #000 0%, #000 22%, transparent 72%);
+    }
+    /* The glass STAYS during the drag (a transient interaction — §14.11's blur budget targets continuous/
+     * ambient blur, not a brief drag; owner wants the transparency kept). Only the data-perf=lite lever drops
+     * it to an opaque fill (the low-end Firefox-Android escape hatch). `[data-dragging]` still kills the
+     * transition (kit.css) for a 1:1 drag — it just no longer changes the surface. */
+    body[data-perf="lite"] .bs-sheet {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      background: var(--surface);
+    }
+    /* OPAQUE grab bar (both inputs opaque → no alpha) so it fully hides the dot row behind it — the dots feel
+     * tucked under the handle, not showing through it (the kit default `--line-2` is translucent → dots leak). */
+    .bs-grip {
+      background: color-mix(in oklch, var(--text-3) 70%, var(--surface));
+    }
+
+    /* Hide the Kit composer while a host sheet is open — cosmos does NOT fork the composer; it gives it a
+     * transition (so BOTH hide + show animate) and slides it out. Uses `visibility` (NOT `display:none`) on
+     * purpose: CosmosFleet's fit/camera measure reads the composer's getBoundingClientRect, and display:none
+     * reports a 0-rect that would corrupt the live-zone calc; visibility:hidden keeps the layout box stable
+     * (so the measure is unaffected) while stopping paint — its backdrop blur isn't painted either, so we
+     * still avoid stacking two blur surfaces. The `visibility` transition holds it visible through the fade
+     * out and flips it on immediately when showing (the allow-discrete pattern, but layout-safe here).
+     * CosmosFleet sets body[data-sheet=open]. */
+    .kit-composer {
+      transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+    }
+    body[data-sheet="open"] .kit-composer {
+      opacity: 0;
+      transform: translateY(10px);
+      visibility: hidden;
+    }
+
+    /* C3a placeholder content (replaced by CosmosHostDetail in C3b) — the host name as the dotted-glass hero,
+     * so the look can be curated before the real stats/services/actions land. */
+    .bs-host {
+      padding: 2px 20px calc(20px + env(safe-area-inset-bottom));
+    }
+    .bs-host h2 {
+      margin: 4px 0 2px;
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
+    }
+    .bs-host .sub {
+      color: var(--text-2);
+      font-size: 13px;
+    }
+    .bs-host .ph {
+      margin-top: 18px;
+      color: var(--text-3);
+      font-size: 13px;
+    }
   }
 }

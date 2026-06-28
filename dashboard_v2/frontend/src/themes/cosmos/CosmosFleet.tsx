@@ -1,5 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
+import { BottomSheet } from "../../components/BottomSheet";
+import type { Host } from "../../types";
 import { useFleet } from "../../hooks/useFleet";
 import { setCosmosSelection, useCosmosSelection } from "../../store/cosmosSelection";
 import { useTabActive, useUISlice } from "../../store/ui";
@@ -179,6 +181,25 @@ export function CosmosFleet({ active }: { active: boolean }) {
   ];
   const { register, animationsRef } = useCosmosOrbit(targets, animate, playbackRate);
 
+  // C3 bottom sheet — open when the Fleet tab is showing AND a planet is selected. `displayHost` retains the
+  // last host through the slide-OUT so the content doesn't blank while the sheet eases closed (selected→null).
+  // `body[data-sheet=open]` drives the scoped cosmos rule that hides the Kit composer while the sheet is up.
+  const selectedHost = selected ? hosts.find((h) => h.id === selected) ?? null : null;
+  const sheetOpen = active && !!selectedHost;
+  const titleId = useId();
+  const [displayHost, setDisplayHost] = useState<Host | null>(null);
+  useEffect(() => {
+    if (selectedHost) setDisplayHost(selectedHost);
+  }, [selectedHost]);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (sheetOpen) document.body.dataset.sheet = "open";
+    else delete document.body.dataset.sheet;
+    return () => {
+      delete document.body.dataset.sheet;
+    };
+  }, [sheetOpen]);
+
   // Camera zoom-follow (C2b-2): selecting a planet eases the camera to center + track it (reads the orbit
   // animation's currentTime analytically). The hook owns `.cosmos-camera`'s transform (fit-scale + zoom).
   const cameraRef = useRef<HTMLDivElement>(null);
@@ -202,7 +223,17 @@ export function CosmosFleet({ active }: { active: boolean }) {
       role="tabpanel"
       aria-labelledby="tabbtn-fleet"
     >
-      <div className="cosmos-stage" ref={stageRef}>
+      {/* Tap empty sky → clear selection (close the sheet). Only a DIRECT stage-background click counts
+          (target === the stage div) — a planet/moon click has a deeper target, so it reaches the planet and
+          SWAPS selection (or the moon clears it) instead of being swallowed. This is why cosmos passes
+          `catchOutside={false}` to the sheet — the orbital stage stays interactive behind it. */}
+      <div
+        className="cosmos-stage"
+        ref={stageRef}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setCosmosSelection(null);
+        }}
+      >
         {/* `.cosmos-camera` carries ONE transform (fit-to-stage scale + the zoom-follow translate) for the
             whole system — moon + orbits — so they scale together. useCameraFollow owns that transform
             imperatively (no React inline transform → no fight); the moon stays here, the orbiting planets
@@ -281,6 +312,28 @@ export function CosmosFleet({ active }: { active: boolean }) {
           <div className="no-svc cosmos-msg">// no hosts in config.yaml</div>
         )}
       </div>
+
+      {/* C3 host-detail sheet — rendered OUTSIDE `.cosmos-stage`/`.cosmos-camera` (the camera owns its own
+          transform; the sheet is fixed-positioned and must not be clipped by the stage's overflow). C3a
+          ships the glass/dotted/rounded primitive + placeholder content; C3b swaps in CosmosHostDetail. */}
+      <BottomSheet
+        open={sheetOpen}
+        onClose={() => setCosmosSelection(null)}
+        labelledBy={titleId}
+        closeLabel="Close host detail"
+        catchOutside={false}
+      >
+        {displayHost && (
+          <div className="bs-host">
+            <h2 id={titleId}>{displayHost.name}</h2>
+            <div className="sub">
+              {displayHost.status?.online ? "online" : "asleep"}
+              {displayHost.role ? ` · ${displayHost.role}` : ""}
+            </div>
+            <div className="ph">{"// host detail — stats · services · actions land in C3b"}</div>
+          </div>
+        )}
+      </BottomSheet>
     </div>
   );
 }

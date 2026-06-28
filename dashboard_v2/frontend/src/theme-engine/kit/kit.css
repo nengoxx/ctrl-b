@@ -3341,3 +3341,82 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
 .kit .tcat-seg-sm button.def::after {
   margin-left: 2px;
 }
+
+/* ── overlay: BottomSheet (.bs-*) — the dependency-free draggable bottom-sheet primitive (Cosmos C3a;
+ *    frontier reuses it). STRUCTURE + the open/close gesture only — the SKIN (glass / dot texture / radius /
+ *    height) is the theme's (cosmos.css, @layer theme, overrides these base rules). Stacks BELOW the
+ *    ConfirmDialog (z 50, so an action-bar shutdown/reboot confirm overlays the sheet) and ABOVE the chrome
+ *    (composer z 4). §14.11: the sheet moves by `transform` only; the snap is a CSS transition, cleared while
+ *    `[data-dragging]` so the finger-drag is 1:1; the skin drops its blur while dragging + under data-perf. */
+.kit .bs-root {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none; /* only the catcher + the sheet take input; taps elsewhere pass through */
+}
+.kit .bs-catch {
+  all: unset;
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  cursor: default; /* invisible tap-outside catcher — NO dim (the no-scrim decision); closes on tap */
+}
+.kit .bs-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin-inline: auto;
+  max-width: 520px; /* desktop: a centered column; phone: full width */
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  transform: translateY(100%); /* closed; data-state="open" raises it */
+  transition: transform 0.42s cubic-bezier(0.32, 0.72, 0, 1); /* iOS sheet curve (Ionic/vaul) */
+  will-change: transform;
+  overflow-wrap: anywhere; /* §14.11 — long host/service names wrap, never overflow */
+}
+.kit .bs-sheet[data-state="open"] {
+  transform: translateY(0);
+}
+.kit .bs-sheet[data-dragging] {
+  transition: none; /* 1:1 finger track while dragging */
+}
+@media (prefers-reduced-motion: reduce) {
+  .kit .bs-sheet {
+    transition-duration: 0.001s; /* honor reduced-motion — snap, don't slide */
+  }
+}
+.kit .bs-handle {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 6px;
+  cursor: grab;
+  touch-action: none; /* the handle owns the gesture — the browser must not scroll/zoom on it */
+}
+.kit .bs-grip {
+  width: 40px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--line-2);
+}
+.kit .bs-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain; /* scrolling the body never chains to the page behind the sheet */
+}
+/* sr-only close — keyboard/AT parity without a visible ✕ */
+.kit .bs-close-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
