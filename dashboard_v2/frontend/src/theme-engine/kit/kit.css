@@ -2412,9 +2412,7 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
   font-size: 11px;
   letter-spacing: 0.02em;
   font-weight: 600;
-  /* accent-tinted (a tier below the bold accent title) so the count reads as part of the pill, not the same
-   * neutral grey as the composer field text. */
-  color: color-mix(in oklch, var(--accent) 70%, var(--text-2));
+  color: var(--text-2);
 }
 /* the sheet — a frosted panel that PEEKS up from the composer's top edge (D30). A sibling of `.kit-composer`
  * (rendered by the composer variant's `overlay` slot), anchored to the composer's top via `--composer-h`.
@@ -2432,8 +2430,9 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
   padding-bottom: 20px;
   border-radius: 16px 16px 0 0;
   /* Frosted glass — matches the bottom sheet (`.bs-sheet`, 82%) + composer (85%): translucent so the
-   * `backdrop-filter` blur of the chat behind reads as glass (perf-lite → opaque `--surface`, block below). */
-  background: color-mix(in oklch, var(--surface) 82%, transparent);
+   * `backdrop-filter` blur of the chat behind reads as glass (perf-lite → opaque tinted surface, block below).
+   * The surface base carries a slight accent WASH (≈9%) so the panel reads as accent-themed, not plain surface. */
+  background: color-mix(in oklch, color-mix(in oklch, var(--surface) 91%, var(--accent)) 82%, transparent);
   border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
   border-bottom: 0;
   -webkit-backdrop-filter: blur(8px);
@@ -2619,7 +2618,7 @@ body[data-motion="reduced"] .kit .plan-sheet {
 body[data-perf="lite"] .kit .plan-sheet {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-  background: var(--surface);
+  background: color-mix(in oklch, var(--surface) 91%, var(--accent)); /* opaque, same ≈9% accent wash */
 }
 /* motion gate — the active-tick pulse (§14.11) */
 body[data-motion="reduced"] .kit .plan-step.active .tick {
