@@ -3,6 +3,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
 import type { Host } from "../../types";
 import { useFleet } from "../../hooks/useFleet";
+import { CosmosHostDetail } from "./CosmosHostDetail";
 import { setCosmosSelection, useCosmosSelection } from "../../store/cosmosSelection";
 import { useTabActive, useUISlice } from "../../store/ui";
 import { useThemeSetting } from "../../theme-engine/settings";
@@ -58,7 +59,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 const FOLLOW_ZOOM = 2.2; // selected planet's camera scale = fitScale × this (C2b-2 zoom-follow)
 
 export function CosmosFleet({ active }: { active: boolean }) {
-  const { hosts, svcByHost, isLoading, error } = useFleet();
+  const { hosts, svcByHost, isLoading, error, run, busy } = useFleet();
   const selected = useCosmosSelection();
 
   // Clear a selection whose host has left the fleet (config change / removal) — so the camera eases back to
@@ -104,7 +105,17 @@ export function CosmosFleet({ active }: { active: boolean }) {
   // this alignment) and derive the live height + the vertical offset to the live-zone center. A synchronous
   // first measure avoids a pop; the ResizeObserver tracks stage resize AND composer growth (textarea).
   const stageRef = useRef<HTMLDivElement>(null);
-  const [layout, setLayout] = useState({ w: 0, liveH: 0, offsetY: 0 });
+  // Store the RAW geometry (not a pre-baked offsetY) so the sheet-aware lift can re-derive the center each
+  // render without re-measuring: `liveH` (closed zone) feeds fitScale unchanged; the rest feeds offsetY.
+  const [layout, setLayout] = useState({
+    w: 0,
+    liveH: 0,
+    liveTop: 0,
+    liveBottomClosed: 0,
+    stageTop: 0,
+    stageH: 0,
+    innerH: 0,
+  });
   useLayoutEffect(() => {
     const el = stageRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -113,10 +124,17 @@ export function CosmosFleet({ active }: { active: boolean }) {
       const appbar = document.querySelector(".kit-appbar");
       const composer = document.querySelector(".kit-composer");
       const liveTop = appbar ? Math.max(0, appbar.getBoundingClientRect().bottom - s.top) : 0;
-      const liveBottom = composer ? composer.getBoundingClientRect().top - s.top : s.height;
-      const liveH = Math.max(0, liveBottom - liveTop);
-      const offsetY = (liveTop + liveBottom) / 2 - s.height / 2; // lift the system to the live-zone center
-      setLayout({ w: s.width, liveH, offsetY });
+      const liveBottomClosed = composer ? composer.getBoundingClientRect().top - s.top : s.height;
+      const liveH = Math.max(0, liveBottomClosed - liveTop);
+      setLayout({
+        w: s.width,
+        liveH,
+        liveTop,
+        liveBottomClosed,
+        stageTop: s.top,
+        stageH: s.height,
+        innerH: window.innerHeight,
+      });
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -187,6 +205,7 @@ export function CosmosFleet({ active }: { active: boolean }) {
   const selectedHost = selected ? hosts.find((h) => h.id === selected) ?? null : null;
   const sheetOpen = active && !!selectedHost;
   const titleId = useId();
+  const [sheetH, setSheetH] = useState(0); // the sheet's resting height (reported by <BottomSheet>) for the lift
   const [displayHost, setDisplayHost] = useState<Host | null>(null);
   useEffect(() => {
     if (selectedHost) setDisplayHost(selectedHost);
@@ -200,6 +219,16 @@ export function CosmosFleet({ active }: { active: boolean }) {
     };
   }, [sheetOpen]);
 
+  // Sheet-aware camera lift (C3b): when the sheet is open it covers the lower stage, so move the live-zone
+  // BOTTOM up to the sheet's resting top (innerH − sheetH) and re-center — lifting the focused planet into the
+  // clear gap above the sheet (the prototype's "focused ≈ upper area" feel). fitScale stays on the CLOSED zone
+  // (above), so the zoom magnification — the planet's on-screen SIZE — never changes when the sheet opens; only
+  // the vertical centre shifts. Pure per-render math; the camera rAF just reads the resulting centerOffsetY,
+  // so there's no per-frame layout work. The camera eases between the two centres via its existing damping.
+  const liveBottom =
+    sheetOpen && sheetH ? layout.innerH - sheetH - layout.stageTop : layout.liveBottomClosed;
+  const offsetY = layout.stageH ? (layout.liveTop + liveBottom) / 2 - layout.stageH / 2 : 0;
+
   // Camera zoom-follow (C2b-2): selecting a planet eases the camera to center + track it (reads the orbit
   // animation's currentTime analytically). The hook owns `.cosmos-camera`'s transform (fit-scale + zoom).
   const cameraRef = useRef<HTMLDivElement>(null);
@@ -211,7 +240,7 @@ export function CosmosFleet({ active }: { active: boolean }) {
     animationsRef,
     fitScale,
     zoomMult: FOLLOW_ZOOM,
-    centerOffsetY: layout.offsetY,
+    centerOffsetY: offsetY,
     orbitAnimating: animate,
   });
 
@@ -322,16 +351,18 @@ export function CosmosFleet({ active }: { active: boolean }) {
         labelledBy={titleId}
         closeLabel="Close host detail"
         catchOutside={false}
+        onHeightChange={setSheetH}
       >
-        {displayHost && (
-          <div className="bs-host">
-            <h2 id={titleId}>{displayHost.name}</h2>
-            <div className="sub">
-              {displayHost.status?.online ? "online" : "asleep"}
-              {displayHost.role ? ` · ${displayHost.role}` : ""}
-            </div>
-            <div className="ph">{"// host detail — stats · services · actions land in C3b"}</div>
-          </div>
+        {/* `selectedHost ?? displayHost`: live host while open (so polls update the sheet), the retained last
+            host through the slide-out (so content doesn't blank as it eases closed). */}
+        {(selectedHost ?? displayHost) && (
+          <CosmosHostDetail
+            host={(selectedHost ?? displayHost)!}
+            services={svcByHost.get((selectedHost ?? displayHost)!.id) ?? []}
+            busy={busy.has((selectedHost ?? displayHost)!.id)}
+            run={run}
+            titleId={titleId}
+          />
         )}
       </BottomSheet>
     </div>

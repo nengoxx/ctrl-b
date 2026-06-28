@@ -35,6 +35,8 @@
       --radius-sm: 12px;
       --density-pad: 1;
       --font-body: "Space Grotesk", system-ui, sans-serif;
+      /* display face for bespoke titles (the host-detail name) — retro-futuristic, single weight */
+      --font-display: "Audiowide", var(--font-body);
     }
 
     /* page text color. The page BACKGROUND (deep-space radial gradient) + the see-through Kit shell live in

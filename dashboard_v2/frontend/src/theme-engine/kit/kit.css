@@ -3372,29 +3372,46 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   display: flex;
   flex-direction: column;
   pointer-events: auto;
-  transform: translateY(100%); /* closed; data-state="open" raises it */
-  transition: transform 0.42s cubic-bezier(0.32, 0.72, 0, 1); /* iOS sheet curve (Ionic/vaul) */
-  will-change: transform;
+  transform: translateY(100%); /* initial off-screen; BottomSheet then drives translateY imperatively (px,
+                                  for the closed/peek/full snap points) — this is just the pre-JS paint */
+  opacity: 0; /* a QUICK fade-in on enter (BottomSheet drives it) so the sheet is opaque for most of the
+                 slide-up — the slide is the primary, visible motion (a proper bottom sheet); the close is a
+                 clean slide-down (no fade). Only the open transition touches opacity, never the drag. */
+  transition: transform 0.42s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.16s ease-out; /* iOS sheet curve (Ionic/vaul) */
+  will-change: transform, opacity;
   overflow-wrap: anywhere; /* §14.11 — long host/service names wrap, never overflow */
-}
-.kit .bs-sheet[data-state="open"] {
-  transform: translateY(0);
 }
 .kit .bs-sheet[data-dragging] {
   transition: none; /* 1:1 finger track while dragging */
 }
-@media (prefers-reduced-motion: reduce) {
-  .kit .bs-sheet {
-    transition-duration: 0.001s; /* honor reduced-motion — snap, don't slide */
-  }
+/* Follow the app's Motion lever — NOT the raw OS `prefers-reduced-motion` query. `store/ui` `defaultMotion`
+ * already SEEDS `data-motion` from the OS preference (so reduced-motion users get `reduced` by default), but
+ * the Motion switch lets them turn it back on — and a user on `data-motion="full"` must get the slide even
+ * with OS reduced-motion set. This matches how every themed animation (orbit/starfield/pulse) gates, so the
+ * sheet is consistent with the rest of the app instead of keying off a second, non-overridable signal. */
+body[data-motion="reduced"] .kit .bs-sheet {
+  transition-duration: 0.001s; /* reduced motion → snap, don't slide */
 }
 .kit .bs-handle {
   flex: none;
+  position: relative; /* anchors the extended hit-strip below */
+  z-index: 1; /* so that strip sits above the body's (non-interactive) header top, not under it */
   display: flex;
   justify-content: center;
   padding: 10px 0 6px;
   cursor: grab;
   touch-action: none; /* the handle owns the gesture — the browser must not scroll/zoom on it */
+}
+/* Enlarge the DRAG hit-area below the grip without any visual/layout change — a transparent, out-of-flow
+ * strip that's part of the handle (so it triggers the same pointer handlers + touch-action). Better touch UX
+ * (the visible grip stays tiny; the grabbable zone is ~taller). */
+.kit .bs-handle::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 16px;
 }
 .kit .bs-grip {
   width: 40px;

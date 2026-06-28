@@ -13,12 +13,15 @@ export async function loadFonts(): Promise<void> {
     import("@fontsource/space-grotesk/500.css"),
     import("@fontsource/space-grotesk/600.css"),
     import("@fontsource/space-grotesk/700.css"),
+    // Audiowide — the retro-futuristic display face for the host-detail title (--font-display). Single weight.
+    import("@fontsource/audiowide/400.css"),
   ]);
   try {
     await Promise.all([
       document.fonts.load("400 1em 'Space Grotesk'"),
       document.fonts.load("600 1em 'Space Grotesk'"),
       document.fonts.load("700 1em 'Space Grotesk'"),
+      document.fonts.load("400 1em 'Audiowide'"),
     ]);
   } catch {
     /* fall back to font-display behaviour */

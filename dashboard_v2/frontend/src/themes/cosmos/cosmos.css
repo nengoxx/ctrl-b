@@ -447,26 +447,196 @@
       visibility: hidden;
     }
 
-    /* C3a placeholder content (replaced by CosmosHostDetail in C3b) — the host name as the dotted-glass hero,
-     * so the look can be curated before the real stats/services/actions land. */
-    .bs-host {
-      padding: 2px 20px calc(20px + env(safe-area-inset-bottom));
+    /* C3b host detail — the sheet content (CosmosHostDetail). Name hero on the dotted-glass header, a COMPACT
+     * meta grid (small, not big tiles), the action bar, then the services list. Token-driven (cosmos palette);
+     * all text wraps (§14.11). The dots (::before, z-1) sit behind this in-flow content. */
+    .cosmos-hd {
+      padding: 2px 18px calc(18px + env(safe-area-inset-bottom));
     }
-    .bs-host h2 {
-      margin: 4px 0 2px;
-      font-size: 30px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      line-height: 1.05;
+    .cosmos-hd .hd-name {
+      margin: 14px 0 10px; /* breathing room above (from the grip/dots) + below (to the status) */
+      font-family: var(--font-display); /* Audiowide — retro-futuristic display face */
+      font-size: 25px; /* Audiowide runs wide + tall → smaller than the Space Grotesk size */
+      font-weight: 400; /* single-weight face — avoid faux-bold distortion */
+      letter-spacing: 0;
+      line-height: 1.15;
+      text-align: center;
+      overflow-wrap: anywhere;
     }
-    .bs-host .sub {
+    /* status row — `● online · role` + alive/last-seen + services count, centred under the name */
+    .cosmos-hd .hd-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 4px;
+    }
+    .cosmos-hd .hd-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      font-size: 12.5px;
       color: var(--text-2);
-      font-size: 13px;
     }
-    .bs-host .ph {
-      margin-top: 18px;
+    .cosmos-hd .hd-status .t {
+      overflow-wrap: anywhere;
+    }
+    .cosmos-hd .hd-status .led {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex: none;
+      background: var(--text-3);
+    }
+    .cosmos-hd .hd-status.on .led {
+      background: var(--ok);
+      box-shadow: 0 0 8px var(--ok);
+    }
+    .cosmos-hd .hd-row .grow {
+      flex: 1;
+    }
+    .cosmos-hd .hd-glance {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 12px;
+      flex: none;
+      font-size: 11.5px; /* a touch smaller + muted (like the ping/ip/mac line) so it reads as quiet info */
       color: var(--text-3);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    /* secondary id line — ping · ip · mac, ONE muted colour (captions + values), small + tight to fit one
+     * line; each pair stays intact (nowrap) and only the row wraps as a last resort on a very narrow screen. */
+    .cosmos-hd .hd-ids {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 3px 13px;
+      margin-top: 11px;
+      font-size: 11px;
+      color: var(--text-3);
+      font-variant-numeric: tabular-nums;
+    }
+    /* cosmos extends the sheet's drag hit-area to cover the TITLE (drag from the name up) — the visible grip
+     * is unchanged; this just enlarges the transparent strip below the handle (kit default stays modest). */
+    .bs-handle::after {
+      height: 38px;
+    }
+    .cosmos-hd .hd-ids span {
+      white-space: nowrap;
+    }
+    /* action bar — pills; neutral default, accent Wake, danger-tinted Shut down */
+    .cosmos-hd .hd-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 20px 0 0;
+    }
+    .cosmos-hd .hd-act {
+      all: unset;
+      flex: 1;
+      min-width: 84px;
+      box-sizing: border-box;
+      text-align: center;
+      padding: 11px 14px;
+      border-radius: 999px;
       font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      background: var(--surface-2);
+      border: 1px solid var(--line-2);
+      cursor: pointer;
+    }
+    .cosmos-hd .hd-act:active {
+      background: var(--surface);
+    }
+    .cosmos-hd .hd-act.wake {
+      color: var(--bg);
+      background: var(--accent-fill);
+      border-color: transparent;
+    }
+    .cosmos-hd .hd-act.danger {
+      color: var(--danger);
+      border-color: color-mix(in oklch, var(--danger) 40%, transparent);
+    }
+    .cosmos-hd .hd-act[disabled] {
+      opacity: 0.5;
+      cursor: default;
+    }
+    /* services */
+    .cosmos-hd .hd-svcs-head {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin: 24px 2px 9px;
+      font-size: 10.5px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+    .cosmos-hd .hd-svcs-head .grow {
+      flex: 1;
+    }
+    .cosmos-hd .hd-svcs {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .cosmos-hd .hd-svc {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 11px 13px;
+      min-height: 48px;
+      border-radius: var(--radius-sm);
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      text-decoration: none;
+      color: inherit;
+    }
+    .cosmos-hd .hd-svc .led {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex: none;
+      background: var(--text-3);
+    }
+    .cosmos-hd .hd-svc.on .led {
+      background: var(--ok);
+      box-shadow: 0 0 7px var(--ok);
+    }
+    .cosmos-hd .hd-svc .nm {
+      min-width: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .cosmos-hd .hd-svc .nm .name {
+      font-size: 13px;
+      font-weight: 500;
+      overflow-wrap: anywhere;
+    }
+    .cosmos-hd .hd-svc.off .nm .name {
+      color: var(--text-2);
+    }
+    .cosmos-hd .hd-svc .nm .addr {
+      font-size: 10.5px;
+      color: var(--text-3);
+      font-variant-numeric: tabular-nums;
+    }
+    .cosmos-hd .hd-svc .arrow {
+      color: var(--accent);
+      display: inline-flex;
+      flex: none;
+    }
+    .cosmos-hd .hd-svc-empty {
+      text-align: center;
+      color: var(--text-3);
+      font-size: 12px;
+      padding: 16px;
+      border: 1px dashed var(--line-2);
+      border-radius: var(--radius-sm);
     }
   }
 }
