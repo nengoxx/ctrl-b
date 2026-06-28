@@ -3,6 +3,8 @@ the bottom sheet could save the last position and reopen as it was, either fully
 
 
 
+**DEFERRED (owner, 2026-06-29).** Make the cosmos service banners OPTIONAL/composable like the D30 plan-pill addon — today they're a reusable helper (`lib/assignFromSet` + the `--svc-banner`/`--svc-veil` CSS recipe) but the rendering is hardwired into `CosmosHostDetail` (always-on, no slot/flag). Two paths when wanted: (1) cheap — a cosmos `banners` on/off theme-setting (like `moonStyle`) gating the `--svc-banner` application, making it user-toggleable; (2) bigger — a shared `HostDetail` component with a banner SLOT so any theme's bottom sheet opts in by a prop (premature until a 2nd theme has a host-detail sheet, e.g. frontier — decide then, driven by real duplication, not a guess).
+
 The vapor theme cannot use the minimal appbar mode, i also want the menu icon to mimic the rest of the themed icons like the mic icon and such
 
 
