@@ -107,10 +107,12 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > OR T3–T5 (spatial themes, need `present()`). The deferred **SettingRow sweep** of the remaining Conf groups
 > also still stands (owner: incremental).
 >
-> **🪐 Cosmos theme in progress — see [`COSMOS_HANDOFF.md`](./COSMOS_HANDOFF.md).** C1 (starfield) + C2a
-> (static orbital fleet) shipped on `main`; the remaining C2a-fix → C2b → C3 (prototype-faithful redesign:
-> D-moon, prototype colors, varied sizes, Greek glyphs, manual-select + camera zoom-follow + draggable
-> bottom sheet, space indicators) is fully speced in that dedicated handoff — **read it before resuming cosmos.**
+> **🪐 Cosmos theme — see [`COSMOS_HANDOFF.md`](./COSMOS_HANDOFF.md).** C1 (starfield), **C2a-fix**, and **ALL
+> of C2b** (per-planet compositor orbit · camera zoom-follow + tap-hit-area · liveness pulse/halo · service-cue
+> moons/ring · Data/Visual/Off) are shipped + pushed on `main` (commits `2639ea2`→`2d44741`; FE 178 unit / 34
+> e2e). **The ONLY remaining cosmos work is C3 — the bottom-sheet HostDetail**, with its design LOCKED in
+> COSMOS_HANDOFF **§10** (cosmos-specific `CosmosHostDetail` + a shared dep-free `BottomSheet`; no scrim).
+> **Read COSMOS_HANDOFF §2 + §10 before resuming cosmos.**
 >
 > **✅ Efficiency pass — FE + BE (owner-approved 2026-06-27, shipped).** A whole-app, web-researched
 > efficiency sweep (separate from the Agent-tab note below). **Frontend:** FE#1 lazy-load non-default theme

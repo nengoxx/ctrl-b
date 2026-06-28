@@ -2,8 +2,11 @@
 
 **Read this first, then the doc map below.** This is a focused handoff for finishing the **cosmos** theme
 (the bespoke orbital/space theme). It assumes you've read `CLAUDE.md` + `AGENTS.md` + the canonical
-[`HANDOFF.md`](./HANDOFF.md). Cosmos C1 (starfield) and C2a (static orbital fleet) are shipped + pushed on
-`main`; what remains is a faithful-to-the-prototype redesign of the fleet interaction, captured here.
+[`HANDOFF.md`](./HANDOFF.md). **C1 (starfield), C2a-fix (palette/runes/sizing/selection/rings/moon-toggle/
+Pluto/fit-to-stage), and ALL of C2b (orbit · camera zoom-follow + tap-hit-area · liveness pulse/halo ·
+service-cue moons/ring) are shipped + pushed on `main`.** The ONLY remaining cosmos work is **C3 — the
+bottom-sheet HostDetail** (tap a planet → zoom → a draggable sheet with stats/services/actions). **C3's
+design is LOCKED — jump to [§10](#10-c3--locked-design--build-plan-start-here) and build.**
 
 > **Owner's standing expectations (do not skip):** match the prototype design closely **with the agreed
 > improvements**; be **informed before you build** — read the code you touch, **web-research any net-new
@@ -53,24 +56,52 @@ orbiting it over a twinkling **starfield** — **with these agreed improvements 
 
 ---
 
-## 2. Current state (shipped on `main`)
+## 2. Current state (shipped + pushed on `main`)
 
-- **C1 (starfield)** — `CosmosStarfield.tsx`: fixed full-viewport canvas of twinkling stars behind a
-  see-through Kit shell. Perf-disciplined (dpr≤2, ~30fps cap, motion-gated, pauses on `document.hidden`,
-  normalized positions + explicit CSS-px sizing — fixed a high-dpi/Android bug; see its header comment).
-  Tuned to the owner's eye (density `/4000` cap 800, power-skewed radius, gentle tempo).
-- **C2a (static orbital fleet)** — `CosmosFleet.tsx` + `present.ts` + `cosmos.css`: DOM planet `<button>`s
-  placed by `present()` (golden-angle), sized by service health, matte coin styling (depth + grain +
-  embossed symbol) matching the prototype, a moon core, faint orbit rings.
-- Settings (`orbitalMotion` switch + `motionSpeed` seg) live in `index.tsx` → `motion.ts` (the tempo source
-  of truth, shared by the starfield now + the orbit later).
+Everything below C1 is DONE, committed, pushed, audited, and green. Cosmos file inventory lives in
+`frontend/src/themes/cosmos/`: `index.tsx` (ThemeDef + settings), `CosmosRoot.tsx`, `CosmosStarfield.tsx`,
+`CosmosFleet.tsx`, `CosmosMoon.tsx`, `present.ts`, `runes.tsx`, `motion.ts`, `orbit.ts`, `camera.ts`,
+`liveness.ts`, `serviceCue.ts`, `fonts.ts`, `tokens.css`, `cosmos.css`. Selection store:
+`src/store/cosmosSelection.ts`. Tests: `tests/themes/{cosmos,present,orbit,camera,liveness,serviceCue}.test.ts`
++ `tests/store/cosmosSelection.test.ts`.
 
-**Latest cosmos commits:** `9c3fb1b` (coin fidelity) ← `f2bec34` (C2a) ← `a70da3f`/`421229f` (C1 + audit).
+- **C1 (starfield)** — `CosmosStarfield.tsx`: fixed full-viewport twinkle canvas; perf-disciplined; gated by
+  the GLOBAL Motion lever only (the old per-theme `orbitalMotion` switch was removed as redundant).
+- **C2a-fix** — `present.ts` (index-based 10-color palette + rune-id symbol; `planetSize` by service count ×
+  health), `runes.tsx` (SVG "rune" glyphs — drawn not fonted, §14.12), `CosmosMoon.tsx` (Cutout/Carved moon
+  toggle), manual-selection store, per-planet orbit rings, decorative in-view "Pluto", and the **fit-to-stage
+  camera** (full-bleed `.cosmos-stage` absolute layer → system fits/centers the LIVE ZONE between appbar +
+  composer; fixed the scrollbar + the "black box / no-glass" composer by letting the system bleed behind the
+  glass chrome — see THEME_ENGINE §14.13 #8).
+- **C2b-1 orbit** (`orbit.ts`) — per-planet WAAPI `transform` orbit (translate, glyph upright, no
+  counter-rotate). `offset-path` rejected (NOT composited on Firefox-Android). All planets PROGRADE
+  (realistic); de-synced by radius-based periods + golden-angle phase. `orbitStyle` setting (Per-planet /
+  Rigid / Off). Gated by global Motion + Fleet-tab-active + `document.hidden`; tempo → WAAPI `playbackRate`.
+- **C2b-2 camera** (`camera.ts`) — `useCameraFollow` OWNS `.cosmos-camera`'s transform (fit-scale + zoom +
+  follow); selecting a planet eases (frame-rate-independent exp damping) to `scale×2.2` and TRACKS it via the
+  orbit's `currentTime` (layout-free). rAF runs only while tracking-a-moving-selection or easing; stops when
+  idle/frozen/deselected. + the 44px tap-hit-area (`::after`).
+- **C2b-3 liveness** (`liveness.ts`) — `liveness` setting Pulse / Halo / Both / Off. Pulse = a tight tinted
+  glow that breathes at a **ping-cadence**; Halo = expanding ring. Online-only children, z-index:-1, Motion-
+  gated (reduced-motion → static glow). Transform/opacity only.
+- **C2b-4 service cue** (`serviceCue.ts`) — `serviceCue` setting **Data / Visual / Off**. Data: ≤2 services →
+  orbiting muted moons (lit=up/dim=down, de-synced — globally distinct periods + seeded direction + per-host
+  phase); ≥3 → a full ring whose **stroke-WIDTH** = up-fraction (never drops a segment). Visual: exactly THREE
+  decorative moons across the fleet (one host 2, one host 1, rest 0), **re-rolled per page load** via a
+  `useState`-lazy salt (stable within the session), no rings. `ServiceCueLayer` lives at the bottom of
+  `CosmosFleet.tsx`.
 
-**Tests:** `tests/themes/cosmos.test.ts` (settings/tempo) + `tests/themes/present.test.ts` (encoding).
-FE suite is **132 unit / 34 e2e** green. Run: `npm test` / `npm run test:e2e` / `npm run build` /
-`npm run typecheck` in `dashboard_v2/frontend`. Dev server: backend `uvicorn app.main:app --port 5433`
-(no `--reload` on Windows), frontend `npm run dev` (port **5173**) — **check if already running first**.
+**Cosmos settings (auto-rendered in Conf · Appearance):** `moonStyle` · `motionSpeed` · `orbitStyle` ·
+`liveness` · `serviceCue`. (Global Motion is the master on/off.)
+
+**Commits (newest → oldest):** `2d44741` (serviceCue Visual) · `5dbdb51` (C2b-4) · `6fbf3d6` (C2b-3) ·
+`723f93e` (C2b-2) · `12bc5e9` (C2b-1) · `2639ea2` (C2a-fix).
+
+**Tests:** **178 unit / 34 e2e** green. Run in `dashboard_v2/frontend`: `npm test` · `npm run test:e2e` ·
+`npm run build` · `npm run typecheck`. Dev server is usually ALREADY running — backend `uvicorn
+app.main:app --port 5433` (NO `--reload` on Windows), frontend `npm run dev` (port **5173**); **check
+`netstat` first**. Live visual checks use Playwright scripts in the scratchpad that intercept
+`GET /api/appearance` to force `theme:"cosmos"` + the setting under test (see §10.7).
 
 ---
 
@@ -256,26 +287,142 @@ SitePoint 60fps-mobile, PubMed redundant-encoding (66%→88% identification).
 - **Manual selection** in cosmos (no auto-cycle/auto-highlight). Tap → **zoom-follow** the planet → a
   **draggable bottom sheet** (improved from the prototype's panel). **No full-screen** sheet yet (future).
 - **No ping line-graph** → space indicators (breathing-pulse latency primary).
-- **Size:** varied base (per host) **×** service health.
-- **Colors:** the prototype's exact palette (incl. red + mars-grey).
-- **Glyphs:** decorative **Greek letters** — experiment with sets (keep swappable).
-- **Service cue:** moons ≤3 services, fill-arc >3 — **designed configurably** (future toggle/edit).
-- **Motion:** gentle tempo (Calm/Normal/Lively already tuned in `motion.ts`); orbit reuses these.
-- **Starfield:** density/size/tempo already tuned to the owner's eye — don't change without asking.
-- **Scrim band finding** (Kit edge scrims paint `--bg` over the starfield under the transparent shell): the
-  owner chose to **leave it for now** (looks fine). Revisit only if asked.
+- **Size:** varied base (per host) **×** service health. *(shipped)*
+- **Colors (FINAL):** a fixed **index of 10 distinct colors** (amber, cyan, purple, green, …), assigned by
+  host position — NOT id-hash, NOT the prototype's exact palette. The red is last so a new host won't mimic
+  the decorative Pluto. *(shipped — C2a-fix)*
+- **Glyphs (FINAL):** **custom SVG "runes"** (circle/point/radius marks), drawn not fonted (§14.12). NOT
+  Greek letters (that was an earlier experiment). *(shipped)*
+- **Service cue (FINAL):** moons for **≤2** services / fill-**ring** for **≥3** (ring width = up-fraction,
+  not a missing segment). Setting = **Data / Visual / Off**; Visual = exactly 3 decorative moons fleet-wide,
+  random per refresh. *(shipped — C2b-4)*
+- **Planets all PROGRADE** (same direction — realistic); **moons can retrograde** (realistic captured moons)
+  and are de-synced. *(shipped — C2b)*
+- **Motion:** gentle tempo (Calm/Normal/Lively in `motion.ts`); orbit + moons reuse it. The GLOBAL Motion
+  lever is the master on/off (the per-theme `orbitalMotion` switch was REMOVED as redundant). *(shipped)*
+- **Starfield:** density/size/tempo tuned to the owner's eye — don't change without asking.
+- **Scrim band:** RESOLVED — the full-bleed `.cosmos-stage` + a Fleet-tab scrim-off means the system bleeds
+  behind the glass composer (no dark band). See THEME_ENGINE §14.13 #8.
+- **C3 decisions (LOCKED this session):** (1) **cosmos-specific `CosmosHostDetail`** — do NOT extract a
+  shared-with-vapor component (vapor's `DeviceRow` is frozen; the Kit's `KitFleet` already has its OWN inline
+  `DeviceRow` — each presentation owns its markup, all sharing `useFleet`; cosmos is the 3rd, promotable to a
+  shared kit component only when frontier needs it). (2) **NO backdrop scrim** behind the sheet (keep the
+  orbital system visible; the sheet's own shadow/glass gives depth). Full plan in §10.
 
 ---
 
-## 9. Suggested execution order (each = its own slice + review)
+## 9. Execution order
 
-1. **C2a-fix** — D-moon SVG · prototype palette · varied base size (× health) · Greek glyphs · manual-select
-   store (decouple from `featured`) · decorative ambient rings. Tests for size/glyph/selection logic. Review.
-2. **C2b** — compositor orbit (motion-gated) + counter-rotate · breathing-pulse latency + halo · service
-   moons/arc (configurable) · fit-to-stage scale · camera zoom-follow on select. Review (perf on Android!).
-3. **C3** — reusable `BottomSheet` primitive (a11y + drag + snap) · cosmos HostDetail content (stats/services/
-   actions via `useFleet.run`, no ping graph) wired to selection. Review.
+1. ~~**C2a-fix**~~ ✅ DONE (commit `2639ea2`).
+2. ~~**C2b**~~ ✅ DONE — orbit `12bc5e9` · camera+hit `723f93e` · liveness `6fbf3d6` · service-cue `5dbdb51`
+   · visual-cue `2d44741`. (fit-to-stage landed inside C2a-fix.)
+3. **C3** ← **NEXT. Design LOCKED — see §10.** Reusable `BottomSheet` primitive (C3a) → `CosmosHostDetail`
+   content wired to selection + camera lift (C3b).
 4. **C4 (later)** — per-host `appearance.cosmos` override (additive on `present()`), if/when wanted.
+
+---
+
+## 10. C3 — LOCKED design + build plan (START HERE)
+
+**Goal:** tap a planet → (camera already zoom-follows, C2b-2) → a **draggable bottom sheet** slides up with
+that host's detail (stats + services + actions). Two slices, each its own commit + owner review.
+
+### 10.1 Decisions already locked (do NOT relitigate — owner confirmed this session)
+- **`CosmosHostDetail` is cosmos-specific** (its own component + cosmos/token styling). Do NOT extract a
+  shared-with-vapor component and do NOT touch vapor's `components/DeviceRow.tsx` (frozen, D7). Rationale:
+  the *data layer* (`useFleet`) is the shared part and IS reused; markup legitimately differs per theme —
+  vapor's `DeviceRow` and the Kit's inline `DeviceRow` (in `kit/Fleet.tsx`) are already two separate
+  presentations sharing `useFleet`. Cosmos is the 3rd. Promote to a shared kit component only when **frontier**
+  exists (a real 2nd consumer) — not before.
+- **No backdrop scrim.** The sheet is a glass panel over the lower area; the orbital system stays fully
+  visible above it (the zoomed planet floats above the sheet). Depth comes from the sheet's own shadow/glass.
+  (Non-modal anyway — see 10.3.)
+
+### 10.2 Reuse map (what to lean on)
+- **`useFleet()`** (`hooks/useFleet.ts`) — `hosts`, `svcByHost`, `run(action, host)`, `busy`. `run` handles
+  the confirm dialog + optimistic flips + toasts already (`useActions.ts` `FleetAction = wake|shutdown|reboot|
+  ping`). The action bar just calls `run("wake"|"shutdown"|"reboot"|"ping", host)` and disables on `busy.has(id)`.
+- **Content reference (NOT to import — to mirror):** the Kit's inline `DeviceRow` in
+  `src/theme-engine/kit/Fleet.tsx` (lines ~108–221) shows the exact fields to surface: stats grid (IP,
+  MAC, Last seen via `lib/relativeTime`, Ping), services list (name · `host:port` · LED · open `s.url` in a new
+  tab when `s.status.online && s.url`), wake/stop buttons. Cosmos shows the SAME data + reboot + ping, styled
+  for space, **no ping line-graph** (use the liveness/space indicators instead).
+- **Types:** `Host`/`HostStatus`/`Service` in `src/types.ts` (see §6 of the explore — ping_ms, last_seen,
+  ip, mac, ssh_*, os_type, role; service: name, port, url, status.online, controls).
+- **Selection store:** `src/store/cosmosSelection.ts` (`useCosmosSelection` / `setCosmosSelection`) — the
+  sheet is OPEN when `selected != null`. CosmosFleet already clears a stale selection if the host leaves.
+- **`createStore.ts`** if any new shared state is needed (dep-free).
+
+### 10.3 C3a — the `BottomSheet` primitive (dependency-free, reusable)
+New file: `src/components/BottomSheet.tsx` (kit-level, shared — frontier reuses it). Web-research is DONE
+(§6b — cite emilkowalski/vaul/react-spring-bottom-sheet; re-verify only if deviating). Mechanics:
+- **Ref-driven `transform: translateY`** drag — transform the element directly; do NOT animate a CSS var or
+  `height` (vaul's lesson: CSS-var offset recalcs descendants → drops frames). Never re-render per pixel.
+- **Pointer Events + `setPointerCapture`**, drag on a **handle** only (sidesteps the scroll-vs-drag gate);
+  `touch-action: none` on the handle.
+- **Snap:** velocity (`|Δy|/Δt`) over a threshold **OR** dragged > ~25% of the sheet height → dismiss; else
+  snap back open. **CSS-transition** for the snap (add a `transitioning` class; clear the transition on the
+  next `pointerdown` so the drag is 1:1). No JS spring.
+- **Non-modal a11y:** `role="dialog"` **WITHOUT** `aria-modal`; **no focus trap**; **Escape** closes; a real
+  **Close** button; **return focus** to the trigger on close. Snap points as an array `[closed, open]` — leave
+  a future "expanded/tall" point as a purely-additive entry.
+- **Desktop:** `max-width` centered, same gesture. **No scrim** (10.1).
+- **API (controlled):** `<BottomSheet open onClose>{children}</BottomSheet>` — `open` mounts/raises it;
+  drag-dismiss / Escape / Close → `onClose()`. Keep it presentational (no host logic inside).
+- **Perf/§14.11:** transform/opacity only; the sheet gets `will-change: transform` while dragging only; gate
+  any blur behind `data-perf`; respect reduced-motion (snap instantly, no spring feel).
+- **Tests** (jsdom-safe): the snap-decision math (velocity-or-distance → dismiss vs snap-back) as a pure
+  helper (e.g. `shouldDismiss(dragPx, sheetH, velocity)`); the drag/transform itself is verified live.
+
+### 10.4 C3b — `CosmosHostDetail` + wiring
+New file: `src/themes/cosmos/CosmosHostDetail.tsx`. Rendered by `CosmosRoot` (or `CosmosFleet`) inside a
+`<BottomSheet open={selected != null} onClose={() => setCosmosSelection(null)}>`.
+- **Content (cosmos-styled, token-driven):** a header (host name + online/role), a stats grid (IP · MAC ·
+  Last seen · Ping — mirror `KitFleet`'s `DeviceRow` fields), a services list (name · `host:port` · status
+  dot · open `s.url` ↗ when online), and an **action bar** (Wake when offline; Reboot + Shutdown when online;
+  Ping always) → `useFleet().run(...)`, disabled while `busy.has(host.id)`. **No ping line-graph.**
+- **Camera lift:** when the sheet is open it covers the lower area, so the focused planet must sit ABOVE it.
+  The camera (`camera.ts`) already lifts to the live-zone center via `centerOffsetY`; shrink the effective
+  live zone by the sheet's height when open (pass a larger upward offset), so the planet floats above the
+  sheet (prototype's "focused ≈0.44h" feel). The sheet height is known (its snap-open height) — thread it
+  into the `centerOffsetY` calc in `CosmosFleet`.
+- **Selection ↔ sheet:** open iff `selected`; the host = `hosts.find(h => h.id === selected)`. Dismiss →
+  `setCosmosSelection(null)` → sheet closes + camera eases back (already wired). Tapping a different planet
+  swaps the host (selection changes; sheet stays open with new content).
+- **Reusability seam:** keep the stats/services/action sub-bits as small local components so they can be
+  lifted to a shared kit module when frontier lands (don't pre-abstract now).
+
+### 10.5 Slicing & cadence
+C3a (BottomSheet primitive, placeholder content) → **review** → C3b (HostDetail + camera lift) → **review**.
+Small audited parts; pause for owner review between slices; the owner reviews visually on Android + desktop.
+
+### 10.6 Gotchas / invariants (bitten this cycle — don't repeat)
+- **Firefox-Android (Fennec) is the primary device.** Two things are NOT composited there and were rejected:
+  CSS **`offset-path`** and **WAAPI `composite:"add"`**. Use plain `transform` (translate/rotate/scale).
+- The **camera owns `.cosmos-camera`'s transform** imperatively (`useCameraFollow`) — do NOT also set it in
+  React/JSX (single owner; no fight). The sheet must not write that transform.
+- **No Math.random/Date.now in pure modules** (keep them pure + testable); isolate randomness to the
+  component (the visual-cue salt is a `useState` lazy-init in `CosmosFleet`).
+- Keyframes are GLOBAL — prefix every cosmos one `cosmos-*` (§14.13 #4).
+- The full-bleed stage means the sheet, the camera, and the chrome all share the same area — verify the
+  sheet sits above the navbar (z-index) and the composer doesn't fight it (the Fleet tab has the composer;
+  the sheet covers the lower area — decide stacking: sheet over composer, or hide the composer while the
+  sheet is open? Confirm with the owner during C3b).
+
+### 10.7 Verify like this session did
+- `npm run typecheck` · `npm test` · `npm run build` · `npm run test:e2e` (all must stay green; 178/34 now).
+- **Live visual + behavior** via a Playwright script against the running dev server (port 5173) that
+  intercepts `**/api/appearance` to force `doc.theme="cosmos"` (+ `motion`, + `theme_settings.cosmos.<setting>`),
+  then drives/inspects the DOM. Use `click({force:true})` on planets (they orbit → "not stable" otherwise).
+  Sample `.cosmos-camera` `style.transform`, element rects, `getAnimations()`, `getComputedStyle(...).animationName`
+  to assert behavior (zoom on select, sheet translateY on drag, no scroll, reduced-motion freeze). Screenshot
+  at Pixel-5 (phone) AND a desktop viewport; the owner reviews the images. Scratchpad dir is in the harness
+  env; copy any `*.mjs` into `frontend/` before `node`-running so it resolves `@playwright/test`.
+
+### 10.8 After C3
+- Update this doc + `HANDOFF.md` to mark cosmos **done**; consider lifting `present()`/orbit/camera learnings
+  into `THEME_ENGINE.md` for the next spatial theme (frontier). C4 (per-host `appearance.cosmos` override) is
+  optional/later.
 
 Then: update `HANDOFF.md` (mark cosmos done) and consider lifting `present()` learnings into
 `THEME_ENGINE.md` for the next spatial theme (frontier).
