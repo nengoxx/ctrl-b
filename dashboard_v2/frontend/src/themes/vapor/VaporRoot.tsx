@@ -40,8 +40,11 @@ export function VaporRoot() {
   // aliased to `tab` (vapor's local vocabulary) since the whole body keys off it; `showComposer` is the
   // active section's composer flag (was the `tab==='fleet'||'agent'` hardcode).
   const { active: tab, hasComposer: showComposer } = useSections();
-  // The global "hide app bar" lever (all themes honor it; vapor renders its own AppBar, so it drops it here).
-  const hideAppbar = useUISlice((s) => s.hideAppbar);
+  // The global chrome lever (visible/off/minimal). vapor renders its OWN AppBar, so it maps the mode here:
+  // appbar shows only in `visible`. vapor's `minimal` is DEFERRED — it behaves like `off` (no appbar) and
+  // keeps vapor's bottom TabBar (no floating NavMenu yet — THEME_ENGINE §14.13, the bespoke-Root TODO).
+  const appbarMode = useUISlice((s) => s.appbarMode);
+  const showAppbar = appbarMode === "visible";
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Lazy Conf tab: conditional mount, strictly false→true, stays mounted to preserve form drafts.
@@ -71,7 +74,7 @@ export function VaporRoot() {
     const ro = new ResizeObserver(set);
     ro.observe(bar);
     return () => ro.disconnect();
-  }, [hideAppbar]);
+  }, [appbarMode]);
 
   // Warm the Conf chunk after first paint so the first Conf click is typically zero-wait.
   useEffect(() => {
@@ -111,7 +114,7 @@ export function VaporRoot() {
   return (
     <div className="app-shell">
       <div className="app-scroll" id="app-scroll" ref={scrollRef}>
-        {!hideAppbar && <AppBar />}
+        {showAppbar && <AppBar />}
         <FleetTab active={tab === "fleet"} />
         <AgentTab active={tab === "agent"} />
         <UtilsTab active={tab === "utils"} />

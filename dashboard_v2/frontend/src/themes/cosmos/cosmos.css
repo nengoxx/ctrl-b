@@ -447,6 +447,20 @@
       visibility: hidden;
     }
 
+    /* minimal-mode nav launcher (the ORBIT glyph) — a clean muted SILVER tone in cosmos (the planet-coin
+     * family, but grey); other themes keep the Kit's --text-2. @layer theme beats the Kit's @layer base. */
+    .navmenu-launch {
+      color: #c4c5cf;
+    }
+    .navmenu[data-open] .navmenu-launch {
+      color: #e3e4ec; /* brighter silver when the menu is open */
+    }
+    @media (hover: hover) {
+      .navmenu-launch:hover {
+        color: #e3e4ec; /* brighter silver on hover (pointer devices only — touch :hover sticks) */
+      }
+    }
+
     /* C3b host detail — the sheet content (CosmosHostDetail). Name hero on the dotted-glass header, a COMPACT
      * meta grid (small, not big tiles), the action bar, then the services list. Token-driven (cosmos palette);
      * all text wraps (§14.11). The dots (::before, z-1) sit behind this in-flow content. */

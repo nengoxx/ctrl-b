@@ -495,6 +495,13 @@ homes later:
   `config.yaml appearance` block synced via the settings API, designed + deferred), the semantic-token contract
   for non-vapor themes, and the per-host `host.appearance:{<themeId>:blob}}` override field (additive,
   no-migration). Adding a future theme = one registry row + one self-contained module + one verbatim scoped CSS.
+- **Icon tooling (DX, noted 2026-06-28)** — icons are currently **hand-inlined SVGs** (the shared Kit chrome,
+  the NavMenu, action buttons), which is fine at this scale but tedious + easy to mis-trace. Future: adopt
+  **`unplugin-icons` + Iconify** (build-time, on-demand, tree-shaken, **offline-friendly** — inlined at build,
+  no runtime CDN) so any Lucide/Material/etc. icon is `import X from "~icons/<set>/<name>"`. Purely additive —
+  migrate the **shared Kit icons** opportunistically for consistency; **leave frozen vapor + the bespoke cosmos
+  art alone** (`lucide-react` is the Lucide-only alternative). Until then: inline the *exact* official SVG
+  (never a path into `docs/screenshot/`, which is reference-only).
 - **Integrations** (D9) — **MCP servers** manager (add/edit/enable; stdio `command+args+env` or
   Streamable-HTTP `url+headers`; tool discovery per server); **SearXNG** endpoint (powers
   `web_search`); custom slash commands; Discord/Telegram bots (E1).

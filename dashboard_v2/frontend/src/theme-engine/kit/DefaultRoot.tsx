@@ -3,6 +3,7 @@ import { type ComponentType, Suspense, useCallback, useEffect, useRef, useState 
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { MiniPlayer } from "../../components/MiniPlayer";
+import { NavMenu } from "../../components/NavMenu";
 import { PromptModal } from "../../components/PromptModal";
 import { SwUpdatePrompt } from "../../components/SwUpdatePrompt";
 import { Toasts } from "../../components/Toasts";
@@ -15,6 +16,7 @@ import { KitAppBar } from "./AppBar";
 import { KitComposer } from "./Composer";
 import { KitFleet } from "./Fleet";
 import { KitNavBar } from "./NavBar";
+import type { AppbarMode } from "../../store/ui";
 
 // The Kit's DEFAULT root scaffold (D29 §14.4) — the standard appbar + scrolling sections + floating
 // composer + bottom-nav layout, used by reskin themes (minimal/phosphor) so a theme's `Root` is just
@@ -31,14 +33,16 @@ import { KitNavBar } from "./NavBar";
 // `density` → body[data-density]).
 
 interface Props {
-  /** Hide the top app bar (a structural per-theme setting — e.g. minimal's `hideAppbar`). */
-  hideAppbar?: boolean;
+  /** The chrome/nav mode (the GLOBAL `ui.appbarMode` lever; the theme reads it + passes it here).
+   *  `visible` = appbar + tab bar; `off` = no appbar, tab bar only; `minimal` = no appbar in layout + no
+   *  tab bar, navigation via the floating `<NavMenu/>`. */
+  appbarMode?: AppbarMode;
   /** The Fleet section view (the one per-theme "signature" surface, §14.4). Defaults to the Kit's
    *  device-list `KitFleet`; a theme with a bespoke Fleet (cosmos/frontier) passes its own. */
   Fleet?: ComponentType<{ active: boolean }>;
 }
 
-export function DefaultRoot({ hideAppbar = false, Fleet = KitFleet }: Props) {
+export function DefaultRoot({ appbarMode = "visible", Fleet = KitFleet }: Props) {
   const { active: tab, hasComposer: showComposer } = useSections();
   const scrollRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
@@ -68,7 +72,7 @@ export function DefaultRoot({ hideAppbar = false, Fleet = KitFleet }: Props) {
     const ro = new ResizeObserver(set);
     ro.observe(bar);
     return () => ro.disconnect();
-  }, [hideAppbar]);
+  }, [appbarMode]);
 
   // The composer floats OVER the scrolling content (so the content shows in the gaps around it). Measure
   // its height → `--composer-h` so the scroller pads its bottom enough for the last content to scroll clear
@@ -112,7 +116,7 @@ export function DefaultRoot({ hideAppbar = false, Fleet = KitFleet }: Props) {
           in-flow bar below. */}
       <div className={"kit-main" + (showComposer ? " has-composer" : "")} ref={mainRef}>
         <div className="kit-scroll" id="app-scroll" ref={scrollRef}>
-          {!hideAppbar && <KitAppBar />}
+          {appbarMode === "visible" && <KitAppBar />}
           <Fleet active={tab === "fleet"} />
           <AgentTab active={tab === "agent"} />
           <UtilsTab active={tab === "utils"} />
@@ -127,7 +131,10 @@ export function DefaultRoot({ hideAppbar = false, Fleet = KitFleet }: Props) {
         <MiniPlayer />
         {showComposer && <KitComposer />}
       </div>
-      <KitNavBar onPrefetch={prefetch} />
+      {/* minimal → the floating NavMenu replaces the bottom tab bar (and there's no appbar); visible/off keep
+          the in-flow tab bar. The lunar/fleet view fills the freed height (CosmosFleet measures `--appbar-h`,
+          which is 0 with no appbar). */}
+      {appbarMode === "minimal" ? <NavMenu /> : <KitNavBar onPrefetch={prefetch} />}
       <Toasts />
       <ConfirmDialog />
       <PromptModal />

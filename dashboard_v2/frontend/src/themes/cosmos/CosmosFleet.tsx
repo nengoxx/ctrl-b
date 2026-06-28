@@ -72,6 +72,10 @@ export function CosmosFleet({ active }: { active: boolean }) {
   // the orbit isn't set to "off" AND the Fleet tab is showing AND the PWA isn't backgrounded. Reduced-motion
   // (motion !== "full") always wins. Tempo (playbackRate) is live-tunable without rebuilding the animations.
   const motion = useUISlice((s) => s.motion);
+  // The chrome mode — so the live-zone measure re-runs when the appbar appears/disappears (toggling to/from
+  // `minimal` adds/removes `.kit-appbar`, which the stage ResizeObserver wouldn't otherwise catch → stale
+  // layout that reserves the old appbar space).
+  const appbarMode = useUISlice((s) => s.appbarMode);
   const orbitStyle = useThemeSetting<string>("cosmos", "orbitStyle") as OrbitStyle;
   const speed = useThemeSetting<string>("cosmos", "motionSpeed");
   const live = livenessParts(useThemeSetting<string>("cosmos", "liveness"));
@@ -144,7 +148,9 @@ export function CosmosFleet({ active }: { active: boolean }) {
     const composer = document.querySelector(".kit-composer");
     if (composer) ro.observe(composer);
     return () => ro.disconnect();
-  }, []);
+    // Re-measure + re-observe when the appbar appears/disappears (minimal mode) so the system uses the
+    // freed height instead of reserving the old appbar band.
+  }, [appbarMode]);
 
   // Resolve each host's placement + presentation once.
   const placements = hosts.map((host, i) => {

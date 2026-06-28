@@ -8,12 +8,12 @@ import { useUISlice } from "../../store/ui";
 // its settings into the scaffold. This is the canonical reskin-theme shape: read the settings, hand the
 // STRUCTURAL ones to DefaultRoot as props, and apply the COSMETIC ones as attrs/tokens.
 //
-//  - `hideAppbar` (structural) → the GLOBAL `ui.hideAppbar` lever (all themes share it) → DefaultRoot prop.
+//  - `appbarMode` (structural) → the GLOBAL `ui.appbarMode` lever (visible/off/minimal; all themes) → DefaultRoot prop.
 //  - `density` (cosmetic, per-theme) → a `body[data-density]` attr minimal's tokens.css scopes
 //    `--density-pad` off — the M3 `VaporRoot` precedent (settings → pre-paint body attr).
 
 export function MinimalRoot() {
-  const hideAppbar = useUISlice((s) => s.hideAppbar);
+  const appbarMode = useUISlice((s) => s.appbarMode);
   const density = useThemeSetting<string>("minimal", "density");
 
   // Pre-paint so the spacing is correct on the first frame (no reflow flash). Cleared on unmount so a
@@ -25,5 +25,5 @@ export function MinimalRoot() {
     };
   }, [density]);
 
-  return <DefaultRoot hideAppbar={hideAppbar} />;
+  return <DefaultRoot appbarMode={appbarMode} />;
 }

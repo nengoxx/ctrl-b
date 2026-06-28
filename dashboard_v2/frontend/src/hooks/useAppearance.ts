@@ -15,7 +15,7 @@ import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getJSON, putJSON } from "../api/client";
-import { getUI, setUI, type Motion, type Perf, type ThemeSettingsMap } from "../store/ui";
+import { getUI, setUI, stripLegacyAppbar, type Motion, type Perf, type ThemeSettingsMap } from "../store/ui";
 import { pushToast } from "../store/toast";
 import { switchTheme } from "../theme-engine/switchTheme";
 import type { Mode, ThemeId } from "../theme-engine/types";
@@ -78,7 +78,10 @@ export function reconcileAppearance(
   if (server.updated_at == null) return null; // server has no opinion → keep local
   const motion = server.motion ?? local.motion;
   const perf = server.perf ?? local.perf;
-  const themeSettings = server.theme_settings ?? local.themeSettings;
+  // Strip the dead per-theme `hideAppbar` (now the global appbarMode) so a stale SYNCED copy can't re-dirty
+  // local each load (it's already stripped from local by the migration → compares clean, no spurious apply;
+  // a later appearance save then propagates the clean value to the server).
+  const themeSettings = stripLegacyAppbar(server.theme_settings ?? local.themeSettings);
   if (
     server.theme === local.theme &&
     server.mode === local.mode &&

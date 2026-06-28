@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
-  migrateHideAppbar,
+  migrateAppbarMode,
   migrateLegacyTheme,
   migrateVaporSettings,
   setThemeSetting,
@@ -78,7 +78,7 @@ describe("ui store", () => {
     motion: "full",
     perf: "full",
     themeSettings: {},
-    hideAppbar: false,
+    appbarMode: "visible",
   };
 
   describe("migrateLegacyTheme", () => {
@@ -140,30 +140,58 @@ describe("ui store", () => {
     });
   });
 
-  describe("migrateHideAppbar", () => {
-    it("folds a per-theme hideAppbar up into the global field and drops the per-theme key", () => {
-      const legacy: UIState = {
+  describe("migrateAppbarMode", () => {
+    // PRE-migration states (the persisted blob had no `appbarMode` → hasAppbarMode=false) seed it from legacy.
+    it("seeds appbarMode from the old global hideAppbar boolean + drops it (pre-migration)", () => {
+      const off = migrateAppbarMode({ ...base, hideAppbar: true } as unknown as UIState, false);
+      expect(off.appbarMode).toBe("off");
+      expect("hideAppbar" in off).toBe(false);
+      const vis = migrateAppbarMode({ ...base, hideAppbar: false } as unknown as UIState, false);
+      expect(vis.appbarMode).toBe("visible");
+      expect("hideAppbar" in vis).toBe(false);
+    });
+
+    it("seeds from an older per-theme hideAppbar + drops the per-theme key (pre-migration)", () => {
+      const legacy = {
         ...base,
-        hideAppbar: false,
         themeSettings: { minimal: { hideAppbar: true, density: "compact" } },
-      };
-      const out = migrateHideAppbar(legacy);
-      expect(out.hideAppbar).toBe(true);
+      } as unknown as UIState;
+      const out = migrateAppbarMode(legacy, false);
+      expect(out.appbarMode).toBe("off");
       expect(out.themeSettings.minimal).toEqual({ density: "compact" }); // hideAppbar dropped, density kept
     });
 
-    it("is a no-op when no theme carries hideAppbar", () => {
-      const clean = { ...base, themeSettings: { minimal: { density: "comfortable" } } };
-      expect(migrateHideAppbar(clean)).toEqual(clean);
+    it("is a no-op on an already-enum state with no legacy keys", () => {
+      const clean = {
+        ...base,
+        appbarMode: "minimal" as const,
+        themeSettings: { minimal: { density: "comfortable" } },
+      };
+      expect(migrateAppbarMode(clean, true)).toEqual(clean);
     });
 
-    it("does not override a global hideAppbar that's already set", () => {
-      const both: UIState = {
+    // The regression: a stale per-theme hideAppbar is SYNCED, so it keeps returning. Once the user has an
+    // explicit appbarMode, the migration must STRIP the stale key but NEVER override the chosen mode.
+    it("keeps an explicit appbarMode + strips a stale synced per-theme hideAppbar (post-migration)", () => {
+      const dirty = {
+        ...base,
+        appbarMode: "minimal" as const,
+        themeSettings: { minimal: { hideAppbar: true, density: "compact" } },
+      } as unknown as UIState;
+      const out = migrateAppbarMode(dirty, true);
+      expect(out.appbarMode).toBe("minimal"); // NOT clobbered to "off"
+      expect(out.themeSettings.minimal).toEqual({ density: "compact" }); // stale key stripped
+    });
+
+    it("prefers the global legacy boolean over a per-theme one + prunes an emptied entry (pre-migration)", () => {
+      const both = {
         ...base,
         hideAppbar: true,
         themeSettings: { minimal: { hideAppbar: false } },
-      };
-      expect(migrateHideAppbar(both).hideAppbar).toBe(true); // global wins; the per-theme key is still dropped
+      } as unknown as UIState;
+      const out = migrateAppbarMode(both, false);
+      expect(out.appbarMode).toBe("off"); // global true wins
+      expect(out.themeSettings.minimal).toBeUndefined(); // sole per-theme key dropped → entry pruned
     });
   });
 

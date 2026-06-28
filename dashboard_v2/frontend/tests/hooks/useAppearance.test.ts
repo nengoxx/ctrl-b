@@ -59,6 +59,24 @@ describe("reconcileAppearance", () => {
     expect(out?.themeSettings).toEqual({ vapor: { heroOn: false } });
   });
 
+  // The dead per-theme `hideAppbar` (now global appbarMode) lingers in a SYNCED doc. It's stripped so a
+  // stale synced copy can't re-dirty local each load (local is already migration-stripped).
+  it("a stale synced hideAppbar alone causes no spurious apply (stripped → matches clean local)", () => {
+    const out = reconcileAppearance(
+      server({ theme_settings: { vapor: { heroOn: true, hideAppbar: true } } }),
+      local,
+    );
+    expect(out).toBeNull();
+  });
+
+  it("strips the stale hideAppbar from an applied themeSettings", () => {
+    const out = reconcileAppearance(
+      server({ theme_settings: { vapor: { heroOn: false, hideAppbar: true } } }),
+      local,
+    );
+    expect(out?.themeSettings).toEqual({ vapor: { heroOn: false } }); // heroOn change applies, hideAppbar dropped
+  });
+
   // The upgrade guard (the M3 blocker): a pre-M3 server has a stamped updated_at (theme/mode/accent were
   // synced since Phase 11) but null motion/perf/theme_settings. Those must NOT look authored — they
   // coalesce to local, so the owner's reduced-motion / lite / migrated per-theme prefs survive.

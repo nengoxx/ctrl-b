@@ -9,11 +9,11 @@ import { CosmosStarfield } from "./CosmosStarfield";
 // signature surface: the bespoke ORBITAL FleetView (C2) is passed into DefaultRoot's `Fleet` slot — the
 // rest of the Kit is reused unchanged. Honors the global `ui.hideAppbar` lever (all themes).
 export function CosmosRoot() {
-  const hideAppbar = useUISlice((s) => s.hideAppbar);
+  const appbarMode = useUISlice((s) => s.appbarMode);
   return (
     <>
       <CosmosStarfield />
-      <DefaultRoot hideAppbar={hideAppbar} Fleet={CosmosFleet} />
+      <DefaultRoot appbarMode={appbarMode} Fleet={CosmosFleet} />
     </>
   );
 }

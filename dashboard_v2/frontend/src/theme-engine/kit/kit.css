@@ -3437,3 +3437,113 @@ body[data-motion="reduced"] .kit .bs-sheet {
   white-space: nowrap;
   border: 0;
 }
+
+/* ── minimal-mode navigation (.navmenu-*) — a floating orbit launcher (top-right) + an icon dropdown,
+ *    rendered by DefaultRoot when appbarMode="minimal" (it replaces the appbar + the bottom tab bar). Pure
+ *    `useSections` consumer; token-driven so any theme's palette applies. z 30: above the chrome (composer
+ *    z 4), below the ConfirmDialog (z 50). §14.11: transform/opacity only, motion- + perf-gated. */
+.kit .navmenu {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.kit .navmenu-launch {
+  /* just the orbit icon — no circle/background (owner directive), a transparent tap target. Sized to the
+   * menu items (44px) and inset by the popover's 6px padding, so the launcher icon centers exactly over the
+   * dropdown's icon column when it opens. */
+  all: unset;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-right: 6px;
+  cursor: pointer;
+  color: var(--text-2);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5)); /* keep it legible over the bright starfield/planets */
+  transition: color 0.15s, transform 0.12s;
+}
+/* hover/press feedback ONLY on real pointer devices — on touch, `:active`/`:hover` STICK until the next tap
+ * (Android quirk), which read as the button being "stuck clicked". The open state (`[data-open]`) is the
+ * touch feedback instead. */
+@media (hover: hover) {
+  .kit .navmenu-launch:hover {
+    color: var(--text);
+  }
+  .kit .navmenu-launch:active {
+    transform: scale(0.9);
+  }
+}
+.kit .navmenu[data-open] .navmenu-launch {
+  color: var(--accent);
+}
+.kit .navmenu-launch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .navmenu-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 16px;
+  /* frosted glass — more transparent so the orbital backdrop reads through the blur (like the host sheet) */
+  background: color-mix(in oklch, var(--surface) 66%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  transform-origin: top right;
+  animation: kit-navmenu-in 0.16s ease;
+}
+body[data-motion="reduced"] .kit .navmenu-pop {
+  animation: none;
+}
+@keyframes kit-navmenu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.kit .navmenu-item {
+  all: unset;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  cursor: pointer;
+  color: var(--text-2);
+  transition: background 0.12s, color 0.12s;
+}
+.kit .navmenu-item:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.kit .navmenu-item.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.kit .navmenu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.kit .navmenu-glyph {
+  font-size: 18px;
+  line-height: 1;
+}
+/* perf lever: drop the frosted blur on the dropdown under data-perf=lite (§14.11). The launcher is just an
+ * icon (no blur), so it needs no perf gate. */
+body[data-perf="lite"] .kit .navmenu-pop {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

@@ -29,7 +29,7 @@ import { pushToast } from "../store/toast";
 import { registry, registeredThemes } from "../theme-engine/registry";
 import { switchTheme } from "../theme-engine/switchTheme";
 import type { Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
-import { setThemeSetting, setUI, useUISlice } from "../store/ui";
+import { setThemeSetting, setUI, useUISlice, type AppbarMode } from "../store/ui";
 
 // Conf tab. Appearance is wired to the live UI store (client display state). Phase 7a wires the
 // **Inference** + **Server** groups to the YAML-backed settings API (GET masked / PUT partial
@@ -205,7 +205,7 @@ export function ConfTab({ active }: Props) {
   const mode = useUISlice((s) => s.mode); // light/dark (only shown when the active theme declares modes)
   const motion = useUISlice((s) => s.motion);
   const perf = useUISlice((s) => s.perf);
-  const hideAppbar = useUISlice((s) => s.hideAppbar); // global, per-device (local) — every theme honors it
+  const appbarMode = useUISlice((s) => s.appbarMode); // global, per-device (local) — every theme honors it
   const themeVals = useUISlice((s) => s.themeSettings[theme]); // overrides for the active theme (or undefined)
   const saveAppearance = useSaveAppearance(); // optimistic cross-device write (§9.11)
   // Auto-TTS — the SAME controller the appbar's toggle uses (no new state). Surfaced here so it's reachable
@@ -1047,9 +1047,19 @@ export function ConfTab({ active }: Props) {
               onToggle={() => setGlobal({ perf: perf === "full" ? "lite" : "full" })}
             />
           </SettingRow>
-          {/* Global, per-device (local — not synced like motion/perf): every theme's Root honors it. */}
-          <SettingRow label="Hide app bar" desc="more screen for content · all themes">
-            <Switch on={hideAppbar} onToggle={() => setUI({ hideAppbar: !hideAppbar })} />
+          {/* Global, per-device (local — not synced like motion/perf): every theme's Root honors it.
+              minimal = no app bar + no tab bar; nav via the floating orbit menu (DefaultRoot themes;
+              vapor treats minimal as off for now). */}
+          <SettingRow label="App bar" desc="on · off (more screen) · minimal (orbit-menu nav)">
+            <Seg<AppbarMode>
+              current={appbarMode}
+              options={[
+                { val: "visible", label: "On" },
+                { val: "off", label: "Off" },
+                { val: "minimal", label: "Min" },
+              ]}
+              onPick={(v) => setUI({ appbarMode: v })}
+            />
           </SettingRow>
         </div>
       </ConfGroup>

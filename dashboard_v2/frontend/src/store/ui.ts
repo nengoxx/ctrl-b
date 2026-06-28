@@ -18,6 +18,11 @@ export type { Mode, ThemeId } from "../theme-engine/types";
 export type Tab = "fleet" | "agent" | "utils" | "conf";
 export type Motion = "full" | "reduced";
 export type Perf = "full" | "lite";
+/** Top-bar / navigation chrome mode (global, per-device). `visible` = appbar + bottom tab bar; `off` = no
+ *  appbar, tab bar only; `minimal` = no appbar in layout + no tab bar, navigation via the floating NavMenu.
+ *  DefaultRoot themes honor all three; bespoke Roots (vapor) honor visible/off and treat minimal as off for
+ *  now (THEME_ENGINE §14.13 — the bespoke-Root minimal contract + the vapor TODO). */
+export type AppbarMode = "visible" | "off" | "minimal";
 
 // Open per-theme settings (D29 §14.3): `{ themeId: { key: value } }`. Open so a theme adds an option
 // additively (no new top-level field). Values resolve via `useThemeSetting(id, key)`, which falls back
@@ -40,11 +45,12 @@ export interface UIState {
   // Theme-namespaced options (skyline/loz/hero/waveform for vapor; "density" for minimal, …). The
   // theme owns the schema (`ThemeDef.settings`); this is the override store. SYNCED via appearance.
   themeSettings: ThemeSettingsMap;
-  // Hide the top app bar — a GLOBAL, cross-theme display lever (every theme's Root honors it: DefaultRoot
-  // themes via the `hideAppbar` prop, vapor by not rendering its AppBar). Per-DEVICE (persisted locally,
-  // NOT synced — a layout choice that can differ per screen). Was a per-theme `minimal` setting; promoted
-  // to global on owner request ("for all themes"); the one-time `migrateHideAppbar` folds the old value up.
-  hideAppbar: boolean;
+  // The top-bar / nav chrome mode — a GLOBAL, cross-theme display lever, per-DEVICE (persisted locally, NOT
+  // synced — a layout choice that can differ per screen). `visible`/`off`/`minimal` (see AppbarMode): every
+  // theme's Root honors it (DefaultRoot via the `appbarMode` prop; vapor maps it to its own AppBar render).
+  // Migrated from the old boolean `hideAppbar` (and an earlier per-theme `minimal` setting) by
+  // `migrateAppbarMode`.
+  appbarMode: AppbarMode;
 }
 
 // First-load default for `motion`: honor the OS `prefers-reduced-motion` preference once.
@@ -67,7 +73,7 @@ const DEFAULTS: UIState = {
   motion: defaultMotion(),
   perf: "full", // default to the full glass look; the owner opts into "lite" on a slow device
   themeSettings: {}, // per-theme overrides resolve against each ThemeDef.settings default
-  hideAppbar: false, // global per-device lever; every theme's Root honors it
+  appbarMode: "visible", // global per-device chrome lever; every theme's Root honors it
 };
 
 const KEY = "ctrlb.ui";
@@ -107,30 +113,70 @@ export function migrateVaporSettings(s: UIState): UIState {
   return next as unknown as UIState;
 }
 
-// One-time (§13.4): "hide app bar" was a per-theme setting (`themeSettings.<id>.hideAppbar`, minimal only);
-// it's now the global `ui.hideAppbar`. Fold any per-theme value up into the global field (first one found,
-// only if the global is still its default) and drop the per-theme `hideAppbar` keys. Idempotent; exported
-// for unit testing.
-export function migrateHideAppbar(s: UIState): UIState {
-  let hide = s.hideAppbar;
+/** Strip the legacy per-theme `hideAppbar` from a themeSettings map (it's now the global `appbarMode`),
+ *  pruning any entry left empty. Returns the SAME ref when nothing changed (so callers can detect a change).
+ *  The old key was SYNCED in the appearance doc, so it keeps coming back — hence we strip it every load. */
+export function stripLegacyAppbar(ts: ThemeSettingsMap): ThemeSettingsMap {
   let changed = false;
-  const ts: ThemeSettingsMap = {};
-  for (const [id, opts] of Object.entries(s.themeSettings)) {
+  const out: ThemeSettingsMap = {};
+  for (const [id, opts] of Object.entries(ts)) {
     if (opts && "hideAppbar" in opts) {
-      if (!hide && typeof opts.hideAppbar === "boolean") hide = opts.hideAppbar;
-      const { hideAppbar: _drop, ...rest } = opts;
-      if (Object.keys(rest).length) ts[id] = rest; // prune a now-empty per-theme entry
       changed = true;
+      const { hideAppbar: _drop, ...rest } = opts;
+      if (Object.keys(rest).length) out[id] = rest;
     } else {
-      ts[id] = opts;
+      out[id] = opts;
     }
   }
-  return changed ? { ...s, hideAppbar: hide, themeSettings: ts } : s;
+  return changed ? out : ts;
+}
+
+// One-time (§13.4): the appbar lever was the boolean `hideAppbar` (global, after an earlier per-theme→global
+// fold); it's now the tri-state `appbarMode` ("visible"|"off"|"minimal"). SEED it from a legacy boolean — the
+// old global `hideAppbar`, or (older still) a per-theme `themeSettings.<id>.hideAppbar` — ONLY for a genuine
+// pre-migration state (`hasAppbarMode` = the persisted blob had no `appbarMode` key). Once the user has an
+// explicit `appbarMode`, NEVER override it (the per-theme key is synced + keeps returning — that bug forced
+// the choice back to "off" every reload). The stale `hideAppbar` keys are always stripped. Exported for tests.
+export function migrateAppbarMode(s: UIState, hasAppbarMode: boolean): UIState {
+  const loose = s as UIState & { hideAppbar?: boolean };
+  const themeSettings = stripLegacyAppbar(s.themeSettings);
+  const hadGlobalLegacy = "hideAppbar" in loose;
+  const hadThemeLegacy = themeSettings !== s.themeSettings;
+  if (!hadGlobalLegacy && !hadThemeLegacy) return s; // no legacy keys anywhere → nothing to do
+  let appbarMode = s.appbarMode;
+  if (!hasAppbarMode) {
+    // pre-migration: derive from the first legacy boolean found (global wins, then per-theme)
+    let legacy = typeof loose.hideAppbar === "boolean" ? loose.hideAppbar : undefined;
+    if (legacy === undefined) {
+      for (const opts of Object.values(s.themeSettings)) {
+        if (opts && typeof opts.hideAppbar === "boolean") {
+          legacy = opts.hideAppbar;
+          break;
+        }
+      }
+    }
+    appbarMode = legacy ? "off" : "visible";
+  }
+  const next: Record<string, unknown> = { ...s, appbarMode, themeSettings };
+  delete next.hideAppbar;
+  return next as unknown as UIState;
 }
 
 const { emit, useStore } = createStore();
-let state: UIState = migrateHideAppbar(
+// Whether the PERSISTED blob already carried the new `appbarMode` (vs being filled by DEFAULTS) — read the raw
+// value, since `loadPersisted` merges over defaults. Distinguishes a pre-migration state (seed appbarMode from
+// the legacy hideAppbar) from a user who has set it (keep their choice; the synced legacy key must not override).
+function rawHasAppbarMode(): boolean {
+  try {
+    const raw = localStorage.getItem(KEY);
+    return raw != null && typeof JSON.parse(raw) === "object" && "appbarMode" in JSON.parse(raw);
+  } catch {
+    return false;
+  }
+}
+let state: UIState = migrateAppbarMode(
   migrateVaporSettings(migrateLegacyTheme(loadPersisted(KEY, DEFAULTS))),
+  rawHasAppbarMode(),
 );
 
 // Mirror the UI store onto <html>/<body> data-attrs. Theme-engine model:
