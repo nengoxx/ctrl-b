@@ -36,21 +36,17 @@ function periodForRadius(radius: number): number {
 
 /**
  * Per-host orbit spec. Phase = the host's golden-angle slot (matches present()), so the orbit's frame 0 IS
- * the current static position. In `rigid` mode every planet shares one period + direction (the whole system
- * turns in lockstep); in `perPlanet` mode the period grows with radius (outer = slower) and the direction
- * alternates by index for variety. `off` returns the same specs as `perPlanet` — the orbit is frozen by the
- * caller's animate gate (paused at frame 0 = static), not here. All INDEX-derived, so adding a host never
- * changes existing planets' motion.
+ * the current static position. Planets all orbit the SAME direction (prograde) — like a real solar system,
+ * where every planet shares the disk's spin (retrograde planets essentially don't exist); they still read as
+ * de-synced because the period grows with radius (outer = slower) and each starts at its golden-angle phase.
+ * In `rigid` mode every planet also shares one period (the whole system turns in lockstep). `off` returns the
+ * same specs as `perPlanet` — the orbit is frozen by the caller's animate gate (paused at frame 0 = static),
+ * not here. All INDEX-derived, so adding a host never changes existing planets' motion.
  */
 export function orbitParams(index: number, radius: number, style: OrbitStyle): OrbitSpec {
   const phaseRad = index * GOLDEN_ANGLE;
   if (style === "rigid") return { periodMs: ORBIT_BASE_PERIOD_MS, direction: 1, phaseRad, radius };
-  return {
-    periodMs: periodForRadius(radius),
-    direction: index % 2 === 0 ? 1 : -1,
-    phaseRad,
-    radius,
-  };
+  return { periodMs: periodForRadius(radius), direction: 1, phaseRad, radius };
 }
 
 /** Orbit spec for the decorative outer "Pluto" — its own (slow) drift, independent of the host index. */

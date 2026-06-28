@@ -47,6 +47,11 @@ describe("cosmos animation settings", () => {
       (o) => o.val,
     );
     expect(liveOpts).toEqual(["pulse", "halo", "both", "off"]);
+    expect(cosmos.settings?.serviceCue).toMatchObject({ type: "seg", default: "auto" });
+    const cueOpts = (cosmos.settings?.serviceCue as { options: { val: string }[] }).options.map(
+      (o) => o.val,
+    );
+    expect(cueOpts).toEqual(["auto", "off"]);
     const speedOpts = (cosmos.settings?.motionSpeed as { options: { val: string }[] }).options.map(
       (o) => o.val,
     );

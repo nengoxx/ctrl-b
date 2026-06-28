@@ -290,6 +290,60 @@
         opacity: 0;
       }
     }
+    /* ── Service cue (C2b-4): per-service status — children of the planet (orbit the moon with it). Moons
+     * (≤2 services): small dots that ORBIT the planet on a rotating arm (transform-origin = planet center),
+     * one per service, muted (up = light, down = dark). Arc (≥3): a static ring, filled fraction = up.
+     * The arm spins only when the global Motion lever is full (reduced-motion → static at its phase). */
+    .cosmos-moon-arm {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 0;
+      height: 0;
+      transform-origin: center; /* the 0-size box's center = the planet center */
+    }
+    body[data-motion="full"] .cosmos-moon-arm {
+      /* duration + delay (phase) set inline per moon */
+      animation-name: cosmos-moon-spin;
+      animation-timing-function: linear;
+      animation-iteration-count: infinite;
+    }
+    @keyframes cosmos-moon-spin {
+      /* BOTH stops pinned so every loop is a full 360° (phase comes from the negative animation-delay). With
+       * only a `to` stop the implicit `from` is the element's base rotate(phase) → a partial, resetting sweep. */
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    .cosmos-moon {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      pointer-events: none;
+      /* muted, slightly planet-tinted — not vivid */
+      background: color-mix(in srgb, var(--planet) 22%, #3a3942); /* down — muted dark */
+    }
+    .cosmos-moon.up {
+      background: color-mix(in srgb, var(--planet) 28%, #bbb9c4); /* up — muted light */
+    }
+    /* the fill-arc is a FULL ring whose STROKE-WIDTH (set inline) = the up-fraction — thinner when services
+     * are off, never losing a segment. Muted tint (matches the moons), thin overall. */
+    .cosmos-arc {
+      position: absolute;
+      inset: -12%; /* just outside the coin edge */
+      pointer-events: none;
+      overflow: visible;
+    }
+    .cosmos-arc circle {
+      fill: none;
+      stroke: color-mix(in srgb, var(--planet) 38%, #c4c2cd);
+    }
     /* the decorative outer "Pluto" reuses the .cosmos-planet coin look as a non-interactive span (it orbits
      * too, so it keeps the base will-change: transform) */
     .cosmos-planet.decor {

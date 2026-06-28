@@ -98,6 +98,18 @@ export const cosmos: ThemeDef = {
       ],
       default: "pulse",
     },
+    // C2b-4: per-service status cue — Auto picks moons (≤3 services, lit=up) or a fill-arc (>3, fraction up);
+    // Off hides it. Static (status, not motion).
+    serviceCue: {
+      type: "seg",
+      label: "Service cue",
+      desc: "per-service status",
+      options: [
+        { val: "auto", label: "Auto" },
+        { val: "off", label: "Off" },
+      ],
+      default: "auto",
+    },
   },
   // Per-host orbital encoding (§9.9) — index-based golden-angle position + color + rune symbol. CosmosFleet
   // (the bespoke FleetView, passed via CosmosRoot → DefaultRoot's Fleet slot) consumes it.

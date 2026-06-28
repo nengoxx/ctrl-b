@@ -20,9 +20,9 @@ describe("orbitParams — per-planet", () => {
     );
   });
 
-  it("alternates direction by index", () => {
+  it("orbits all planets the same direction (prograde, like a real solar system)", () => {
     expect(orbitParams(0, 64, "perPlanet").direction).toBe(1);
-    expect(orbitParams(1, 90, "perPlanet").direction).toBe(-1);
+    expect(orbitParams(1, 90, "perPlanet").direction).toBe(1);
     expect(orbitParams(2, 110, "perPlanet").direction).toBe(1);
   });
 });
@@ -62,8 +62,9 @@ describe("angleAt", () => {
     expect(angleAt(spec, spec.periodMs)).toBeCloseTo(2 * Math.PI, 10);
   });
 
-  it("respects direction (negative dir decreases the angle)", () => {
-    const spec = orbitParams(1, 90, "perPlanet"); // dir -1
+  it("respects direction (a retrograde spec decreases the angle)", () => {
+    // orbitParams only emits prograde (+1) now, but angleAt must still honor direction (moons can retrograde)
+    const spec = { periodMs: 1000, direction: -1 as const, phaseRad: 1, radius: 90 };
     expect(angleAt(spec, spec.periodMs / 4)).toBeLessThan(spec.phaseRad);
   });
 });

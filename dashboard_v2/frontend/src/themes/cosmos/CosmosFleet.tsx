@@ -8,6 +8,7 @@ import { useCameraFollow } from "./camera";
 import { CosmosMoon } from "./CosmosMoon";
 import { livenessParts, pulsePeriodMs } from "./liveness";
 import { orbitPlaybackRate } from "./motion";
+import { moonOrbits, serviceCue, type ServiceCue } from "./serviceCue";
 import { decorOrbitSpec, orbitParams, useCosmosOrbit, type OrbitStyle, type OrbitTarget } from "./orbit";
 import { planetSize, present, serviceHealth } from "./present";
 import { Rune } from "./runes";
@@ -65,6 +66,7 @@ export function CosmosFleet({ active }: { active: boolean }) {
   const orbitStyle = useThemeSetting<string>("cosmos", "orbitStyle") as OrbitStyle;
   const speed = useThemeSetting<string>("cosmos", "motionSpeed");
   const live = livenessParts(useThemeSetting<string>("cosmos", "liveness"));
+  const cueOn = useThemeSetting<string>("cosmos", "serviceCue") !== "off";
   const onFleet = useTabActive("fleet");
   const [docVisible, setDocVisible] = useState(
     () => typeof document === "undefined" || !document.hidden,
@@ -246,6 +248,7 @@ export function CosmosFleet({ active }: { active: boolean }) {
                     />
                   )}
                   {p.online && live.halo && <span className="cosmos-halo" aria-hidden />}
+                  <ServiceCueLayer cue={serviceCue(p.services, cueOn)} size={p.size} seed={p.index} />
                   <Rune id={p.symbol} />
                 </button>
               );
@@ -260,4 +263,50 @@ export function CosmosFleet({ active }: { active: boolean }) {
       </div>
     </div>
   );
+}
+
+// Service cue (C2b-4): per-service status drawn on a planet — orbiting moons (≤2) or a fill-arc (≥3).
+// Children of the planet button, so they orbit the moon with it; positioned/styled by cosmos.css. Each moon
+// rides a rotating "arm" (transform-origin = planet center) — the arm spins (Motion-gated; cosmos.css), the
+// dot is pinned at its radius. Phase is the arm's static rotate (reduced-motion) AND its negative
+// animation-delay (animated) so the moons sit on opposite sides either way. The arc is static.
+const ARC_R = 46; // SVG ring radius in the 0..100 viewBox
+const ARC_W_MIN = 1.2; // ring stroke-width when all services are down
+const ARC_W_MAX = 4; // ring stroke-width when all services are up (thinner overall than before)
+
+function ServiceCueLayer({ cue, size, seed }: { cue: ServiceCue; size: number; seed: number }) {
+  if (cue.kind === "moons") {
+    return (
+      <>
+        {moonOrbits(cue.states, size / 2, seed).map((m, i) => (
+          <span
+            key={i}
+            aria-hidden
+            className="cosmos-moon-arm"
+            style={{
+              transform: `rotate(${m.phaseDeg}deg)`, // static phase (reduced-motion)
+              animationDuration: `${m.durMs}ms`,
+              animationDelay: `${-(m.phaseDeg / 360) * m.durMs}ms`, // animated phase
+              animationDirection: m.dir === -1 ? "reverse" : "normal", // some moons counter-orbit
+            }}
+          >
+            <span
+              className={"cosmos-moon" + (m.up ? " up" : "")}
+              style={{ transform: `translate(-50%, -50%) translateY(-${m.r.toFixed(1)}px)` }}
+            />
+          </span>
+        ))}
+      </>
+    );
+  }
+  if (cue.kind === "arc") {
+    const frac = cue.total ? cue.up / cue.total : 0;
+    const w = ARC_W_MIN + (ARC_W_MAX - ARC_W_MIN) * frac; // full ring; width encodes up-fraction
+    return (
+      <svg className="cosmos-arc" viewBox="0 0 100 100" aria-hidden>
+        <circle cx="50" cy="50" r={ARC_R} style={{ strokeWidth: w.toFixed(2) }} />
+      </svg>
+    );
+  }
+  return null;
 }
