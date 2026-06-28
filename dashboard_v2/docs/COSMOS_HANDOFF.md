@@ -14,6 +14,12 @@ orbital/space theme). It assumes you've read `CLAUDE.md` + `AGENTS.md` + the can
 > built only if/when wanted. The reusable learnings have been lifted into `THEME_ENGINE.md` (§14.11/§14.13)
 > for the next spatial theme (frontier). §10 below is the (now-historical) C3 design + build plan, kept for
 > reference; §2 is the shipped inventory.
+>
+> **↪ AFTER C3, cosmos gained the Kit-wide `minimal-nav` chrome mode** (`ui.appbarMode` + a floating `NavMenu`;
+> cosmos uses it via the silver orbit launcher + the moon). It's tracked in the canonical
+> [`HANDOFF.md`](./HANDOFF.md) **2026-06-28 block** (not here — it's Kit-wide, not cosmos-specific). **The
+> in-flight loose end is minimal-nav Slice 2** (cosmos **moon→Agent**, tab-transition motion-gate/fade-through,
+> §14.13 docs) — read that block before touching the moon or the chrome.
 
 > **Owner's standing expectations (do not skip):** match the prototype design closely **with the agreed
 > improvements**; be **informed before you build** — read the code you touch, **web-research any net-new

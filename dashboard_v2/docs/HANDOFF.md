@@ -76,7 +76,89 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Theme-engine v2 (D29): BUCKET-A COMPLETE — `minimal` is a full reskin: chrome + Fleet (A.1) · ALL Conf editors + Utils tab (A.2) · the entire Agent chat (A.3), all token-driven under `.kit`. Every shared surface now renders under any reskin theme.** · **cosmos (T4, the bespoke orbital theme) is COMPLETE — C1–C3 shipped + pushed: starfield · orbital fleet (orbit/camera/liveness/service-cue) · the host-detail bottom sheet (reusable `BottomSheet` primitive + `CosmosHostDetail` + sheet-aware camera-lift + multi-snap + Audiowide + slide/fade). See [`COSMOS_HANDOFF.md`](./COSMOS_HANDOFF.md). The app-like text-selection / tap-highlight model shipped alongside (all themes).** · NEXT = **T2 phosphor** (the 2nd reskin theme — tokens+fonts+CRT, reuses the Kit) *or* the queued **emma deploy**)
+## Current state (**Theme-engine v2 (D29): BUCKET-A COMPLETE — `minimal` is a full reskin: chrome + Fleet (A.1) · ALL Conf editors + Utils tab (A.2) · the entire Agent chat (A.3), all token-driven under `.kit`. Every shared surface now renders under any reskin theme.** · **cosmos (T4, the bespoke orbital theme) is COMPLETE — C1–C3 shipped + pushed: starfield · orbital fleet (orbit/camera/liveness/service-cue) · the host-detail bottom sheet (reusable `BottomSheet` primitive + `CosmosHostDetail` + sheet-aware camera-lift + multi-snap + Audiowide + slide/fade). See [`COSMOS_HANDOFF.md`](./COSMOS_HANDOFF.md). The app-like text-selection / tap-highlight model shipped alongside (all themes).** · Since then, **minimal-nav chrome mode** shipped (`ui.appbarMode` visible/off/minimal + a floating `NavMenu`; Kit-wide) — see the 2026-06-28 block directly below. **NEXT = minimal-nav Slice 2** (cosmos moon→Agent · motion-gate + maybe fade-through tab transitions · the §14.13 minimal contract docs — two design forks to confirm first), then **T2 phosphor** / the queued **emma deploy**)
+
+> ### 🧭 SESSION UPDATE — MINIMAL-NAV chrome mode SHIPPED (core) · Slice 2 = the loose end — 2026-06-28
+>
+> **Kit-wide feature, grew out of cosmos but applies to every DefaultRoot theme.** Read this block before
+> resuming; the canonical contract lands in `THEME_ENGINE §14.13` once Slice 2c ships.
+>
+> **✅ What shipped + committed on `main` (local; push pending owner OK):**
+> - **`53c2c4f` minimal-nav core.** `ui.appbarMode` is a GLOBAL tri-state lever **`"visible" | "off" | "minimal"`**
+>   (replaced the old `hideAppbar` bool). `minimal` = no appbar **and** no bottom tab bar — navigation moves to a
+>   floating **orbit `NavMenu`** (top-right launcher → icon dropdown of the theme's sections). It's **per-device /
+>   LOCAL** (NOT synced — unlike the rest of appearance). Key files: `components/NavMenu.tsx` (NEW; a pure
+>   `useSections` consumer — the designed "render sections as a menu" seam, no nav-state fork; non-modal a11y:
+>   Esc/outside-close/roving focus; press feedback gated `@media (hover: hover)` so touch `:active` can't stick),
+>   `store/ui.ts` (`AppbarMode` type + `migrateAppbarMode(s, hasAppbarMode)` seed-from-legacy guard +
+>   `stripLegacyAppbar`), `theme-engine/kit/DefaultRoot.tsx` (`visible`→appbar; `minimal`→`<NavMenu/>` replaces the
+>   tab bar), `tabs/ConfTab.tsx` (3-way `Seg` On/Off/Min), `kit/kit.css` (`.navmenu-*`), `themes/cosmos/cosmos.css`
+>   (silver launcher), `CosmosFleet.tsx` (re-measure the live zone on `appbarMode` change → lunar uses freed
+>   height), Cosmos/Minimal/VaporRoot (read `appbarMode`, pass down), `hooks/useAppearance.ts` (reconcile strips a
+>   stale synced `hideAppbar` so it can't re-dirty local). **vapor is a bespoke Root → it maps `minimal`→`off` for
+>   now (deferred; see Slice 2c).**
+> - **`d29e184` polish.** ISSUES **#1** — in minimal the floating NavMenu (z 30) buried the mini-player's ✕ (z 16);
+>   fixed with `kit.css .kit:has(.navmenu) .mini-player { left/right anchor }` (the player makes room for the
+>   launcher; `:has` keys off the rendered menu — no state mirror). ISSUES **#3** + floating player — rounded the
+>   TTS play-triangle (fill + `stroke-linejoin:round`) and pause bars (`rx`) for `.tts-play` + `.mp-play`.
+> - **ISSUES #2 (per-response model-source badge) — DEFERRED** (owner: not worth the full-stack cost now). Full
+>   seam map preserved in [`ISSUES.md`](./ISSUES.md) for a cheap future pickup.
+>
+> **VERIFIED:** `npm run typecheck` clean · `npx vitest run` **188** green (migration-guard + reconcile-strip
+> regressions) · `npm run build` green · live (toggle/persist across reload; minimal nav on cosmos; touch-stick
+> fixed). Snapshot audit done (dead `data-appbar` removed; sync re-dirty fixed).
+>
+> **⛔ NEXT — Minimal-nav Slice 2 (small; the in-flight loose end — do this first). Three parts; the first two
+> carry a genuine DESIGN FORK → CONFIRM with the owner BEFORE coding (don't guess):**
+>
+> **2a · cosmos moon → Agent.** Goal: tapping the central moon opens the Agent chat (a fast affordance in
+> minimal, where there's no tab bar — Agent is *already* reachable via the NavMenu dropdown, so this is an
+> EXTRA convenience, not the only path).
+>   - **Seam:** `themes/cosmos/CosmosMoon.tsx:31` — the moon's `onClick` is currently `setCosmosSelection(null)`
+>     ("clear selection / all systems"). Navigate via the chokepoint: `useSections().navigate("agent")` — **never**
+>     `setUI({tab})` directly.
+>   - **⚠️ FORK (confirm first):** the moon already has a job (deselect). Options — (i) moon→Agent **only when nothing
+>     is selected** (deselect would be a no-op then); (ii) moon always deselects, a **distinct gesture**
+>     (double-tap/long-press) → Agent; (iii) **minimal-mode only**: in minimal the moon tap = `navigate("agent")`,
+>     otherwise it deselects. Recommend (i) or (iii). Also confirm: minimal-only, or all chrome modes?
+>   - **Double-check:** if a host is selected / the BottomSheet is open, should navigating also clear selection /
+>     close the sheet? Read `store/cosmosSelection.ts` + the `BottomSheet` open logic before wiring.
+>
+> **2b · tab transitions (verify, maybe upgrade).** A one-shot fade-IN **already exists**: `kit.css:99-102`
+> `.kit .tab.active { animation: kit-fade 0.25s }` (transform/opacity, §14.11-OK), and it fires on every
+> `navigate()` — including NavMenu-driven nav (navigate→`ui.tab`→active class flips). So "transitions are present."
+>   - **🔴 REAL GAP to fix regardless:** `kit-fade` is **NOT motion-gated** (every other `.kit` anim is — grep
+>     `body[data-motion="reduced"] .kit`). Add `body[data-motion="reduced"] .kit .tab.active { animation: none; }`
+>     (§14.11 budget; [[themes-smooth-on-firefox-and-chrome]]).
+>   - **⚠️ FORK (confirm):** is the existing fade-in enough, or does the owner want a true **fade-through** (outgoing
+>     tab animates out + incoming in, Material-style)? A true cross-fade needs the outgoing tab kept mounted during
+>     exit (`display:none` kills exit anims) → either the **View Transitions API** (already used by
+>     `theme-engine/switchTheme.ts` for theme swaps — check it; mind Firefox VT support per §14.11) or a small
+>     transition wrapper. **Web-research the pattern + perf before building**; likely just verify the fade reads
+>     well in minimal and only build the upgrade if asked.
+>
+> **2c · docs (no code).** (1) `THEME_ENGINE.md §14.13` ("New-theme slot-in contract", line ~1073) — add an item:
+> **the minimal chrome contract.** `ui.appbarMode` is the global tri-state lever; **DefaultRoot themes inherit
+> minimal (the NavMenu) for free**; a **bespoke Root** (own `Root`, no DefaultRoot — e.g. vapor/cosmos*) MUST read
+> `appbarMode` and either implement minimal or **explicitly map `minimal`→`off`**. (2) Note the **vapor-minimal
+> TODO**: `VaporRoot` is the one bespoke Root not yet wired for minimal (maps minimal→off); to wire it, mount the
+> Kit `NavMenu` under a `.kit` marker or a vapor-native equivalent. (*cosmos uses DefaultRoot, so it already has
+> minimal.) (3) This `COSMOS_HANDOFF.md` already points here.
+>
+> **🔎 Pre-flight before you touch Slice 2 (owner asked for thoroughness — double-check anything extra):**
+> 1. **Re-read the touch files** above (NavMenu, ui.ts, DefaultRoot, CosmosMoon, kit.css `.navmenu-*`/`.tab`) —
+>    confirm you're reusing `useSections().navigate` + `appbarMode`, not forking nav state.
+> 2. **Confirm the two forks** (2a moon behavior, 2b fade-through scope) with the owner in prose **before coding** —
+>    these are real product decisions, and the owner prefers conversation on design ([[converse-on-design-decisions]]).
+> 3. **Keep NavMenu a11y intact** (Esc / outside-pointerdown close / roving arrows / focus-restore) after any edit.
+> 4. **§14.11 budget** holds: transform/opacity only, motion-gated, perf-gated. Verify on **Android (primary) +
+>    Firefox + Chrome** ([[themes-smooth-on-firefox-and-chrome]]) — esp. the moon tap + tab fade.
+> 5. **Don't touch frozen vapor art (D7)**; `appbarMode` stays **per-device/not-synced**; no hardcoding (any tunable
+>    → config/Settings, [[prefer-configurable-no-hardcoding]]).
+> 6. **Verify like every slice:** `npm run typecheck` · `npx vitest run` · `npm run build` + a live eyeball; pause
+>    for review between 2a / 2b / 2c ([[pause-between-phases-for-review]], [[audit-each-part-before-continuing]]).
+> 7. **Then** consider the broader roadmap (NOT in-flight): T2 **phosphor**, the queued **emma (Linux) deploy**,
+>    **vapor-minimal** full wiring (2c's TODO), cosmos **C4** (parked), **unplugin-icons/Iconify** DX adoption.
 
 > ### 🟢 SESSION UPDATE — BUCKET-A COMPLETE: A.3 Agent chat SHIPPED (+ A.1/A.2 recap) — 2026-06-27 (cont.)
 >
