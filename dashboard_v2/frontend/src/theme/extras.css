@@ -67,40 +67,10 @@ textarea:focus-visible {
   outline: none;
 }
 
-/* Kill the mobile tap-highlight flash. Chrome/Android paints a translucent blue box over any tapped
-   element (tabs, device rows, buttons) — it reads like a desktop mouse-selection and looks wrong on a
-   touch-first PWA; Firefox doesn't paint it (hence Chrome-only). Purely cosmetic and NOT an a11y control:
-   the keyboard focus ring is the `:focus-visible` magenta above, which is untouched — so removing this
-   loses nothing for keyboard/AT users. Apps set this globally; `*` covers every interactive surface. */
-* {
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* Interactive controls must not be text-selectable. vapor's buttons use `all: unset`, which resets
-   `user-select` to `auto` (buttons are normally non-selectable by UA default) — so a long-press, or a
-   slightly-off tap, starts a text selection and pops Android's selection toolbar over the mic/send/tabs,
-   making them hard to use. `user-select: none` stops the selection (covers Firefox/Fennec too) and
-   `-webkit-touch-callout: none` suppresses the long-press callout on Blink/WebKit. Scoped to buttons so
-   real text content (chat replies, KV detail) stays selectable. */
-button,
-[role="button"] {
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-/* The composer's non-input chrome — the `.field` padding and the gap between the textarea and the mic —
-   is a plain <div>, so a long-press *beside* the mic starts a text selection in Firefox/Fennec (Blink
-   doesn't). Make the whole composer non-selectable and re-enable ONLY the textarea: you can still
-   select/copy what you typed, but a stray press next to the mic no longer pops the selection toolbar. */
-.composer {
-  -webkit-user-select: none;
-  user-select: none;
-}
-.composer textarea {
-  -webkit-user-select: text;
-  user-select: text;
-}
+/* NOTE: the mobile tap-highlight kill (`* { -webkit-tap-highlight-color: transparent }`) and the
+   non-selectable-chrome / selectable-content model (incl. the composer + its textarea) now live in the
+   app-like `@layer reset` in theme/index.css — a LAST-ordered layer that wins over every theme's `all:
+   unset` controls. They were removed from here to avoid duplication (the reset layer supersedes them). */
 
 /* Scrollbar corner + horizontal track. vapor.css styles the (vertical) scrollbar thin + magenta, but
    left the `::-webkit-scrollbar-corner` default — Chrome paints a light box there where a horizontal

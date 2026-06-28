@@ -12,7 +12,7 @@
  * `@layer base, theme` orders Kit-vs-theme overrides (the Kit's shared component CSS lands in
  * `layer(base)` when it's built; the active theme wins via `layer(theme)`). vapor is a theme → layer(theme).
  */
-@layer base, theme;
+@layer base, theme, reset;
 
 /* Kit semantic-token contract — neutral fallbacks in @layer base; each theme's tokens.css overrides them
  * in @layer theme (wins by cascade-layer order). vapor's private tokens don't intersect this set; the
@@ -26,3 +26,99 @@
 
 @import "./vapor.css" layer(theme);
 @import "./extras.css" layer(theme);
+
+/* App-like text-selection model (owner directive 2026-06-28 — the Ionic/native pattern), in a LAST-ordered
+ * layer so it wins over any theme's `all: unset` with NO `!important`. Nothing is selectable by DEFAULT: this
+ * kills Chrome/Android's tap-selection box on EVERY interactive surface — buttons, the mini-player slider,
+ * device-row toggles, toasts, and touch-scrolling over text — without chasing each widget, and CONTENT opts
+ * back in below. `user-select` is inherited in Blink/WebKit, so `body { none }` cascades to all descendants
+ * (an `all: unset` control's `unset` → `inherit` → `none`, e.g. the cosmos planet). Applies to ALL themes. */
+@layer reset {
+  /* Sub-order defaults < content < controls, so a control NESTED in a selectable content container (the chat
+   * "retry" button, a disclosure summary, a device-row toggle) still wins `none` regardless of specificity. */
+  @layer defaults, content, controls;
+
+  @layer defaults {
+    /* tap-highlight: transparent on EVERY element — a `*` in this last layer beats any theme's `all: unset`
+     * (cascade layers outrank specificity), so even `all: unset` controls (the cosmos planet) lose the UA
+     * blue box. The standard global idiom, made bulletproof by the layer order. */
+    * {
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* suppress the long-press callout on interactive controls (links/buttons) */
+    button,
+    [role="button"],
+    [role="slider"],
+    a,
+    label,
+    summary {
+      -webkit-touch-callout: none;
+    }
+    /* the default: a non-selectable app shell (user-select is inherited in Blink/WebKit, so this cascades to
+     * every descendant — incl. `all: unset` controls, whose `unset` → `inherit` → `none`). */
+    body {
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      user-select: none;
+    }
+  }
+
+  @layer content {
+    /* selectable CONTENT islands — coarse containers (descendants inherit `text`). Everything a user may want
+     * to copy: form fields; chat text + markdown + code + tool output; device/host info VALUES (ip/mac/ports/
+     * names); conf labels + descriptions; summary stats; toasts; notices; dialog + question + error text.
+     * `.selectable` is a reusable opt-in for any future content surface. */
+    input,
+    textarea,
+    [contenteditable]:not([contenteditable="false"]),
+    .selectable,
+    .b .body,
+    .b .preamble,
+    .b pre,
+    .b .cmd-result,
+    .b .cmd-output,
+    .b .cmd-links,
+    .chat-err-msg,
+    .kit-device .meta,
+    .kit-device .nm,
+    .kit-device .srow,
+    .kit-summary,
+    .dev .kvgrid,
+    .dev .svc-row,
+    .dev .info,
+    .summary,
+    .cosmos-hd .hd-status,
+    .cosmos-hd .hd-glance,
+    .cosmos-hd .hd-ids,
+    .cosmos-hd .hd-svc,
+    .confrow .k,
+    .prompt-preview,
+    .mem-count,
+    .toast-text,
+    .notice,
+    .q-prompt,
+    .root-error,
+    .modal h3,
+    .modal p {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      user-select: text;
+    }
+  }
+
+  @layer controls {
+    /* controls stay non-selectable even when nested in selectable content (chat retry button, disclosure
+     * summaries, device-row value+toggle). Links (`a`) are intentionally OMITTED — chat/markdown URLs +
+     * service addresses should stay copyable. */
+    button,
+    [role="button"],
+    [role="slider"],
+    [role="tab"],
+    summary,
+    select {
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      user-select: none;
+    }
+  }
+}
