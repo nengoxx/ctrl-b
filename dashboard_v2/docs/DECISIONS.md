@@ -1559,3 +1559,21 @@ Full table: THEME_ENGINE.md §14.
 
 **Build order.** M0→M3 (vapor) → Kit + minimal → T2 phosphor (cheap) → T3 observatory (low-pri) → T4 cosmos → T5
 frontier (bespoke Agent). D7 pixel-fidelity per theme; pause for the owner's 390px eyeball after each.
+
+## D30 — Composer composition: a base variant + slot addons, both theme-selected (composition over configuration) ✏️ LOCKED 2026-06-28
+
+**Why.** The owner wants themes to pick a **composer style** (the kit stacked composer · eventually a vapor-style "peek" composer · future styles) AND optionally layer **features** on top (the plan pill · future addons) — "either the base composer or the one with the plan pill, and use one or the other in future themes." A boolean-config composer (`<Composer plan sheet …>` with internal `if` branches) doesn't scale; the established React answer (Radix/Headless UI/React Aria, web-researched) is **composition over configuration** via **slots + variants**. It also reuses a seam this repo already has: `DefaultRoot` injects per-theme pieces by prop (`Fleet`).
+
+**The model — two orthogonal axes, both theme-selected via `DefaultRoot` props:**
+- **STYLE = the composer VARIANT** (`ComposerVariant` = `ComponentType<ComposerSlots>`). `KitComposer` (stacked, default) · the stubbed `SheetComposer` (vapor-peek, future) · … . Every variant shares the **headless `useComposer()`** controller — only markup/style differ, so a new style is a new component, never new logic. Selected via `DefaultRoot Composer={…}` (defaults to `KitComposer`).
+- **ADDONS = `ComposerSlots`** composed INTO the variant: `{ controlsStart?, overlay? }`. The variant decides WHERE each slot renders (its layout); the theme decides WHAT fills it. A new addon adds a named slot — purely additive, no churn. Selected via `DefaultRoot composerSlots={…}`.
+
+So the four cases fall out with no special-casing: base = `<DefaultRoot/>`; base+plan = `composerSlots={kitPlanComposerSlots}`; peek = `Composer={SheetComposer}`; peek+plan = both. (A future *live user-setting* to switch styles is a thin id→component registry on top — the injection is the foundation.)
+
+**The plan-pill addon (first consumer).** Self-contained + store-backed so the slot nodes are STATIC (no state in the Root → toggling never re-renders the app shell): `PlanPill` (in `controlsStart`) + `PlanSheet` (in `overlay`, a frosted panel that PEEKS up from the composer's top edge — a *sibling* of `.kit-composer` so the composer's rounded top tucks the sheet's bottom; a child would paint in front). Both **self-subscribe** to `useCurrentPlan()` (memo-stable snapshot → the shared composer doesn't re-render per streamed token) + the `planSheet` open-store, and render `null` when there's no plan. Plan derivation stays in ONE place (`lib/plan.ts currentPlanOf`; `pairResults` delegates); the checklist is the shared `components/PlanSteps`.
+
+**Where the plan renders, per theme.** KIT themes → the composer (this decision). **Vapor → its frozen in-tab `.plan-pin`/`.plan-drop`** (extras.css), gated in `AgentTab` by `theme === "vapor"` — D7, untouched. Moving the frosted plan OUT of the kit Agent tab is what let the Agent tab run its `kit-fade` entrance again (a `backdrop-filter` can't composite cleanly under an animating ancestor). Cosmos additionally **auto-collapses** the plan sheet when its host detail sheet opens (the sheet's downward slide-close reads as sliding away with the composer, which cosmos hides via `body[data-sheet=open]`).
+
+**Files.** `theme-engine/kit/composer/` (`Composer.tsx` variant + `types.ts` `ComposerSlots`/`ComposerVariant` + `SheetComposer.tsx` stub + `plan/{PlanPill,PlanSheet,index}`); `components/PlanSteps.tsx`; `store/planSheet.ts`; `store/chat.ts` `useCurrentPlan`; `lib/plan.ts` `currentPlanOf`. Contract detail: **THEME_ENGINE.md** (composer variants + slots).
+
+**Deferred (seams ready).** `SheetComposer` styling (vapor-peek look, no drag — reuse `useComposer`); a live composer-style user-setting; the keyboard+plan-sheet scroll hardening (ISSUES.md — fix only if it recurs).

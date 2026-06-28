@@ -1161,3 +1161,30 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
     summaries). **Implication for a new theme:** your interactive surfaces are non-selectable for free, but
     any net-new **content text a user should be able to copy** (a new info value, a new message region) must
     be added to the `content` sub-layer's selector list — or just give it `class="selectable"`.
+11. **Minimal chrome (`ui.appbarMode`) — DefaultRoot themes inherit it; a bespoke Root MUST handle it (added
+    minimal-nav, 2026-06-28).** `ui.appbarMode` is a GLOBAL tri-state lever — **`"visible" | "off" | "minimal"`**
+    — and it's **per-device / LOCAL (not synced)** unlike the rest of appearance. `visible` = appbar + bottom
+    tab bar; `off` = no appbar, tab bar only; `minimal` = **no appbar AND no tab bar** — navigation moves to a
+    floating **orbit `NavMenu`** (top-right launcher → icon dropdown of the theme's sections). **DefaultRoot
+    themes get all three for free** (DefaultRoot reads the prop: `visible`→`<KitAppBar/>`; `minimal`→`<NavMenu/>`
+    replaces `<KitNavBar/>`). The `NavMenu` is a pure `useSections()` consumer — it renders the theme's sections
+    as a menu, no nav-state fork. **A bespoke Root (its own `Root`, no DefaultRoot — e.g. vapor) MUST read
+    `appbarMode` and either implement minimal or explicitly map `minimal`→`off`.** *Status:* cosmos uses
+    DefaultRoot → has minimal. **vapor is the one bespoke Root not yet wired** — `VaporRoot` maps `minimal`→`off`
+    for now; to wire it, mount the Kit `NavMenu` under a `.kit` marker (or a vapor-native equivalent). §14.11
+    budget applies to any nav transition (the `kit-fade` tab entrance is motion-gated).
+12. **Composer = a base VARIANT + slot ADDONS, theme-selected (D30, added 2026-06-28).** The composer is
+    composable, not configurable. Two `DefaultRoot` props mirror the `Fleet` injection: **`Composer`** = the
+    VARIANT/style (`ComposerVariant = ComponentType<ComposerSlots>`; defaults to the stacked `KitComposer`; a
+    theme can pick another, e.g. the stubbed `SheetComposer` vapor-peek style) and **`composerSlots`** = the
+    ADDONS (`{ controlsStart?, overlay? }`) composed INTO the variant. A variant decides WHERE each slot renders
+    (its layout); the theme decides WHAT fills it. **All variants reuse the headless `useComposer()`** — only
+    markup/style differ, so a new style is a new component, never new logic; a new addon is a new named slot,
+    purely additive. The plan-pill addon (`kitPlanComposerSlots` = `<PlanPill/>` in `controlsStart` + the peek
+    `<PlanSheet/>` in `overlay`) is the first consumer — its nodes are STATIC (the pill/sheet self-subscribe to
+    `useCurrentPlan()` + the `planSheet` store, render `null` with no plan), so dropping it into a variant adds
+    zero wiring and never re-renders the app shell. The peek `.plan-sheet` is a SIBLING of `.kit-composer` (so
+    the composer's rounded top tucks its bottom — a child would paint in front). **Vapor keeps its own frozen
+    in-tab plan** (`AgentTab` gates it on `theme === "vapor"`); moving the frosted plan out of the kit Agent tab
+    is what restored that tab's `kit-fade` entrance (a `backdrop-filter` can't composite under an animating
+    ancestor). Full rationale: **DECISIONS.md D30**.
