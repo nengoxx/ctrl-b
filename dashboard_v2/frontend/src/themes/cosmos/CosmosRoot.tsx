@@ -1,4 +1,5 @@
 import { DefaultRoot } from "../../theme-engine/kit/DefaultRoot";
+import { kitPlanComposerSlots } from "../../theme-engine/kit/composer/plan";
 import { useUISlice } from "../../store/ui";
 import { CosmosFleet } from "./CosmosFleet";
 import { CosmosStarfield } from "./CosmosStarfield";
@@ -13,7 +14,8 @@ export function CosmosRoot() {
   return (
     <>
       <CosmosStarfield />
-      <DefaultRoot appbarMode={appbarMode} Fleet={CosmosFleet} />
+      {/* cosmos opts into the plan-pill composer addon (D30); the orbital Fleet stays its signature view. */}
+      <DefaultRoot appbarMode={appbarMode} Fleet={CosmosFleet} composerSlots={kitPlanComposerSlots} />
     </>
   );
 }

@@ -1,10 +1,11 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
+import { PlanSteps } from "../components/PlanSteps";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { toggle as playMessage, usePlayback } from "../lib/audioController";
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
-import { advanceStep, NEXT_STATUS, planFrom } from "../lib/plan";
+import { advanceStep, planFrom } from "../lib/plan";
 import { PRIVILEGE_LEVELS, privilegeLabel, type Privilege } from "../lib/privilege";
 import {
   answerQuestion,
@@ -15,6 +16,7 @@ import {
   setSessionPrivilege,
   useChatSlice,
 } from "../store/chat";
+import { useUISlice } from "../store/ui";
 import type {
   ChatMessage,
   Part,
@@ -53,38 +55,6 @@ function callLine(call: ToolCallPart): string {
   return args ? `${call.tool} ${args}` : call.tool;
 }
 
-/** The checklist itself (shared by the inline breadcrumb's expansion and the pinned panel). When
- *  `onCycle` is given (the live pinned panel), each step's dot is a button that advances its status
- *  (pending → active → done → pending); historical breadcrumbs omit it and stay read-only. */
-function PlanSteps({ plan, onCycle }: { plan: Plan; onCycle?: (i: number) => void }) {
-  return (
-    <ul className="plan-steps">
-      {plan.steps.map((s, i) => (
-        <li key={i} className={"plan-step " + s.status}>
-          {onCycle ? (
-            <span
-              className="tick tick-btn"
-              role="button"
-              tabIndex={0}
-              aria-label={`step "${s.text}": ${s.status} — tap to set ${NEXT_STATUS[s.status]}`}
-              onClick={() => onCycle(i)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onCycle(i);
-                }
-              }}
-            />
-          ) : (
-            <span className="tick" aria-hidden />
-          )}
-          <span className="txt">{s.text}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 /** A task_plan call in the transcript — just a timeline breadcrumb. The live, always-visible view is
  *  the pinned panel at the top of the chat (the model rewrites the whole list each call). */
 function PlanBubble({ call, result }: { call: ToolCallPart; result: ToolResult | undefined }) {
@@ -100,9 +70,11 @@ function PlanBubble({ call, result }: { call: ToolCallPart; result: ToolResult |
   );
 }
 
-/** The current plan as a minimized tab that hangs from the top of the chat and drops the checklist
- *  down when tapped. Sticky so it stays reachable while the transcript scrolls; collapsed by default
- *  (the dropdown overlays the chat, so opening it doesn't reflow the messages). */
+/** VAPOR-ONLY (D30): the in-tab pinned plan — a minimized tab hanging from the top of the chat that drops
+ *  the checklist down when tapped. Kit themes moved the plan into the composer (the `plan-pill` + peek
+ *  `plan-sheet`) so the Agent tab can run its `kit-fade` entrance without a frosted surface inside it; vapor
+ *  keeps this frozen (extras.css styles `.plan-pin`/`.plan-drop`). Sticky so it stays reachable while the
+ *  transcript scrolls; collapsed by default (the dropdown overlays the chat, so it doesn't reflow messages). */
 function PinnedPlan({ plan }: { plan: Plan }) {
   const total = plan.steps.length;
   const done = plan.steps.filter((s) => s.status === "done").length;
@@ -547,6 +519,9 @@ export function AgentTab({ active }: Props) {
   // not here. The scroll-stick-to-bottom below stays vapor-specific (it targets `#app-scroll`).
   const { messages, status, streamingId, resultByCall, currentPlan, resolvedDefault, ttsOn } =
     useAgentChat();
+  // The in-tab pinned plan is vapor-only — kit themes render it in the composer (D30). Non-vapor (kit)
+  // themes are the ones that use the kit composer + the `kit-fade` Agent entrance.
+  const isVapor = useUISlice((s) => s.theme === "vapor");
   // A STABLE result lookup so it doesn't break `Bubbles`' memo each token (`resultByCall` is re-derived
   // per delta → new identity). A ref holds the latest map; the callback identity never changes, and a
   // bubble re-renders (reading the fresh map) exactly when its own message identity changes — which
@@ -614,7 +589,7 @@ export function AgentTab({ active }: Props) {
           <PrivilegeChip />
         </span>
       </div>
-      {currentPlan && currentPlan.steps.length > 0 && <PinnedPlan plan={currentPlan} />}
+      {isVapor && currentPlan && currentPlan.steps.length > 0 && <PinnedPlan plan={currentPlan} />}
       <div className="chat-log" id="chatlog">
         {!messages.length && (
           <div className="b sys">

@@ -16,6 +16,13 @@ const FOLLOW_RATE = 7; // damping rate (1/s) — higher = snappier catch-up; 7 �
 const SETTLE_S = 0.001; // scale within this of target → settled
 const SETTLE_PX = 0.3; // translate within this (px) of target → settled
 
+// Moon-dive (Slice 2a): tapping the central moon zooms the camera INTO it (center, x=y=0) then navigates to
+// Agent. A stronger zoom than the planet follow so the moon fills the view as it goes; DIVE_MS is how long
+// the dive plays before the tab switch (≈ the camera's ~0.4s settle so the zoom is most of the way there).
+// The orbital stage's CSS opacity fade is kept in sync with DIVE_MS in cosmos.css.
+export const DIVE_ZOOM = 4; // dive scale = fitScale × this (vs FOLLOW_ZOOM 2.2 for a planet select)
+export const DIVE_MS = 300; // dive duration before navigate("agent")
+
 export interface CameraState {
   s: number;
   tx: number;
@@ -61,6 +68,7 @@ export interface CameraOpts {
   zoomMult: number; // selected scale = fitScale × this
   centerOffsetY: number; // lift the system to the live-zone center (between appbar + composer), px
   orbitAnimating: boolean; // is the orbit actually moving — so we only keep the rAF alive to TRACK motion
+  dive: boolean; // moon-dive in progress — overrides selection, eases to a center zoom (DIVE_ZOOM)
 }
 
 /**
@@ -87,7 +95,12 @@ export function useCameraFollow(cameraRef: RefObject<HTMLElement | null>, opts: 
     };
     // Returns the camera target + whether we're actively following a real (present) selected planet.
     const computeTarget = (): { target: CameraState; following: boolean } => {
-      const { selected, specByKey, fitScale, zoomMult, animationsRef, centerOffsetY } = live.current;
+      const { dive, selected, specByKey, fitScale, zoomMult, animationsRef, centerOffsetY } = live.current;
+      // Moon-dive wins over any selection: ease to a strong zoom centered on the moon (system center, 0,0).
+      // `following: false` → no orbit tracking; the rAF eases there and stops (we navigate mid-ease anyway).
+      if (dive) {
+        return { target: followTarget(0, 0, fitScale * DIVE_ZOOM, centerOffsetY), following: false };
+      }
       const spec = selected ? specByKey.get(selected) : undefined;
       if (!spec) return { target: { s: fitScale, tx: 0, ty: centerOffsetY }, following: false };
       const anim = animationsRef.current?.get(selected!);
@@ -134,5 +147,5 @@ export function useCameraFollow(cameraRef: RefObject<HTMLElement | null>, opts: 
     // changes (the last so it re-arms to track once the orbit starts, or settles+stops when it freezes).
     // Specs are read live.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.active, opts.selected, opts.fitScale, opts.zoomMult, opts.centerOffsetY, opts.orbitAnimating]);
+  }, [opts.active, opts.selected, opts.fitScale, opts.zoomMult, opts.centerOffsetY, opts.orbitAnimating, opts.dive]);
 }

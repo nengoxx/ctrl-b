@@ -71,6 +71,16 @@
       position: absolute;
       inset: 0;
       overflow: hidden;
+      transition: opacity 0.3s ease; /* moon-dive fade — duration ≈ DIVE_MS in camera.ts */
+    }
+    /* Moon-dive (Slice 2a): tapping the moon eases the camera INTO it (camera.ts) while the orbital stage
+     * fades, then navigates to Agent. Opacity-only (§14.11); the dive is JS-gated to motion="full" in
+     * CosmosMoon, so `.diving` is never applied under reduced motion (no redundant CSS gate needed). The
+     * starfield is a separate page layer (not inside the stage), so it stays — the chat appears over the
+     * same space backdrop. */
+    .cosmos-stage.diving {
+      opacity: 0;
+      will-change: opacity;
     }
     /* The camera: a zero-size box at the stage center carrying the fit-to-stage SCALE (set inline by
      * CosmosFleet from a ResizeObserver) so the whole system — moon + orbits — scales together. Origin is

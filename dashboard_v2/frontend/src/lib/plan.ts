@@ -35,22 +35,48 @@ export function planFrom(call: ToolCallPart, result: ToolResult | undefined): Pl
 }
 
 /**
+ * The *current* plan: the most-recent task_plan call's plan (the model rewrites the whole list each call),
+ * or null. THE single plan-extraction point — `pairResults` (agent view) and `useCurrentPlan` (the composer
+ * pill) both go through here, so plan derivation lives in ONE place. Scans from the END so it stops at the
+ * first task_plan (cheap when only the plan is needed — `useCurrentPlan` runs per streamed token), then
+ * pairs just that call's result (results can land in a separate reloaded `tool` message). Reuses `planFrom`.
+ */
+export function currentPlanOf(messages: ChatMessage[]): Plan | null {
+  let call: ToolCallPart | null = null;
+  outer: for (let i = messages.length - 1; i >= 0; i--) {
+    const parts = messages[i].parts;
+    for (let j = parts.length - 1; j >= 0; j--) {
+      const p = parts[j];
+      if (p.type === "tool_call" && p.tool === "task_plan") {
+        call = p;
+        break outer;
+      }
+    }
+  }
+  if (!call) return null;
+  let result: ToolResult | undefined;
+  for (const m of messages) {
+    for (const p of m.parts) {
+      if (p.type === "tool_result" && p.call_id === call.call_id) result = p.result;
+    }
+  }
+  return planFrom(call, result);
+}
+
+/**
  * Pair every tool result to its call by id across the whole thread (live appends + reloaded separate
- * `tool` messages both land here), and resolve the *current* plan: the most-recent task_plan call's plan
- * (the model rewrites the whole list each call). One linear scan — the Agent tab memoizes it on `messages`.
+ * `tool` messages both land here), and resolve the current plan (delegated to `currentPlanOf` so there's a
+ * single derivation). One linear scan for the pairing — the Agent tab memoizes it on `messages`.
  */
 export function pairResults(messages: ChatMessage[]): {
   resultByCall: Record<string, ToolResult>;
   currentPlan: Plan | null;
 } {
   const byCall: Record<string, ToolResult> = {};
-  let latestPlanCall: ToolCallPart | null = null;
   for (const m of messages) {
     for (const p of m.parts) {
       if (p.type === "tool_result") byCall[p.call_id] = p.result;
-      if (p.type === "tool_call" && p.tool === "task_plan") latestPlanCall = p;
     }
   }
-  const currentPlan = latestPlanCall ? planFrom(latestPlanCall, byCall[latestPlanCall.call_id]) : null;
-  return { resultByCall: byCall, currentPlan };
+  return { resultByCall: byCall, currentPlan: currentPlanOf(messages) };
 }

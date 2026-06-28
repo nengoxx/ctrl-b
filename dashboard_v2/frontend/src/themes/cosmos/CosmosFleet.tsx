@@ -5,6 +5,8 @@ import type { Host } from "../../types";
 import { useFleet } from "../../hooks/useFleet";
 import { CosmosHostDetail } from "./CosmosHostDetail";
 import { setCosmosSelection, useCosmosSelection } from "../../store/cosmosSelection";
+import { useCosmosDive } from "../../store/cosmosDive";
+import { setPlanSheetOpen } from "../../store/planSheet";
 import { useTabActive, useUISlice } from "../../store/ui";
 import { useThemeSetting } from "../../theme-engine/settings";
 import { useCameraFollow } from "./camera";
@@ -224,6 +226,14 @@ export function CosmosFleet({ active }: { active: boolean }) {
       delete document.body.dataset.sheet;
     };
   }, [sheetOpen]);
+  // When the host detail sheet opens, collapse the composer plan sheet (D30) — otherwise it pokes out above
+  // the host sheet. Its close is a downward slide+fade, so it slides away in step with the kit composer
+  // (which cosmos hides via body[data-sheet=open] above). Cosmos drives this since it owns the host sheet;
+  // the plan sheet is kit chrome (so this reaches into the kit `planSheet` store, which cosmos already does
+  // for the moon-dive). The pill rides inside the composer, so it hides with it.
+  useEffect(() => {
+    if (sheetOpen) setPlanSheetOpen(false);
+  }, [sheetOpen]);
 
   // Sheet-aware camera lift (C3b): when the sheet is open it covers the lower stage, so move the live-zone
   // BOTTOM up to the sheet's resting top (innerH − sheetH) and re-center — lifting the focused planet into the
@@ -239,6 +249,7 @@ export function CosmosFleet({ active }: { active: boolean }) {
   // animation's currentTime analytically). The hook owns `.cosmos-camera`'s transform (fit-scale + zoom).
   const cameraRef = useRef<HTMLDivElement>(null);
   const specByKey = new Map(targets.map((t) => [t.key, t.spec]));
+  const diving = useCosmosDive();
   useCameraFollow(cameraRef, {
     active,
     selected,
@@ -248,6 +259,7 @@ export function CosmosFleet({ active }: { active: boolean }) {
     zoomMult: FOLLOW_ZOOM,
     centerOffsetY: offsetY,
     orbitAnimating: animate,
+    dive: diving,
   });
 
   return (
@@ -263,7 +275,7 @@ export function CosmosFleet({ active }: { active: boolean }) {
           SWAPS selection (or the moon clears it) instead of being swallowed. This is why cosmos passes
           `catchOutside={false}` to the sheet — the orbital stage stays interactive behind it. */}
       <div
-        className="cosmos-stage"
+        className={"cosmos-stage" + (diving ? " diving" : "")}
         ref={stageRef}
         onClick={(e) => {
           if (e.target === e.currentTarget) setCosmosSelection(null);

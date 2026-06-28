@@ -1,8 +1,18 @@
-import { useThemeSetting } from "../../theme-engine/settings";
-import { setCosmosSelection } from "../../store/cosmosSelection";
+import { useEffect, useRef } from "react";
 
-// The central moon — the orbital fleet's core body, also the "clear selection / all systems" affordance
-// (tap it to deselect; the camera back-out lands in C2b/C3). Two owner-requested variants, switched by the
+import { useThemeSetting } from "../../theme-engine/settings";
+import { useSections } from "../../hooks/useSections";
+import { useUISlice } from "../../store/ui";
+import { setCosmosDive } from "../../store/cosmosDive";
+import { DIVE_MS } from "./camera";
+
+// The central moon — the orbital fleet's core body, also the "open the Agent chat" affordance. Tapping it
+// DIVES the camera into the moon (a center-zoom flourish; reuses the planet zoom machinery) while the orbital
+// stage fades, then navigates to the Agent tab — a fast path, especially in minimal-nav where there's no tab
+// bar. Reduced-motion skips the dive and navigates immediately. Deselect is NOT the moon's job anymore —
+// that's an empty-space tap (the moon's old deselect was a pre-empty-tap workaround). Navigation always goes
+// through the `useSections` chokepoint, never `setUI({tab})` directly. Two owner-requested variants, switched
+// by the
 // `moonStyle` per-theme setting (auto-rendered in Conf · Appearance) so they can be compared live:
 //
 //  • "cutout"  — the prototype's flat 2.5D white coin with a SEE-THROUGH "D" hole (even-odd path). The
@@ -23,12 +33,37 @@ const D_PATH = "M44,19 L44,75 Q44,80.5 49.5,79 A38,33 0 0,0 49.5,15 Q44,13.5 44,
 
 export function CosmosMoon() {
   const carved = useThemeSetting<string>("cosmos", "moonStyle") === "carved";
+  const { navigate } = useSections();
+  const motion = useUISlice((s) => s.motion);
+  // Hold the pending dive→navigate timer so unmount can clear it (and reset the dive flag) if the moon goes
+  // away mid-dive — e.g. the user navigates elsewhere before the timer fires.
+  const diveTimer = useRef(0);
+  useEffect(
+    () => () => {
+      if (diveTimer.current) clearTimeout(diveTimer.current);
+      setCosmosDive(false);
+    },
+    [],
+  );
+
+  const onTap = () => {
+    if (motion !== "full") {
+      navigate("agent"); // reduced motion: no dive flourish, jump straight to chat
+      return;
+    }
+    setCosmosDive(true); // CosmosFleet eases the camera into the moon + fades the stage
+    diveTimer.current = window.setTimeout(() => {
+      navigate("agent");
+      setCosmosDive(false);
+    }, DIVE_MS);
+  };
+
   return (
     <button
       type="button"
       className={"cosmos-core " + (carved ? "carved" : "cutout")}
-      aria-label="Clear selection"
-      onClick={() => setCosmosSelection(null)}
+      aria-label="Open Agent chat"
+      onClick={onTap}
     >
       {carved ? (
         <svg className="cosmos-carve" viewBox="0 0 94 94" aria-hidden="true">

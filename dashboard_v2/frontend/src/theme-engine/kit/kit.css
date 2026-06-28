@@ -110,6 +110,12 @@
     transform: none;
   }
 }
+/* The Agent tab animates like every other kit tab again (D30): the plan moved OUT of the tab into the
+ * composer (`.plan-pill` + the peek `.plan-sheet`), so there's no longer a frosted `backdrop-filter` surface
+ * inside the tab for the entrance opacity to flatten (the old reason this tab had to opt out). */
+body[data-motion="reduced"] .kit .tab.active {
+  animation: none; /* §14.11: motion-gated like every other .kit animation */
+}
 
 /* ── app bar (opaque sticky; brand + conn badge + auto-tts toggle) ── */
 .kit-appbar {
@@ -2367,44 +2373,31 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════════
- * BUCKET-A.3d — the plan panel (`.plan-*`, a pinned checklist hanging from below the appbar) + the
- * session-privilege chip/menu (`.priv-*`). FINAL A.3 slice → completes Bucket-A (every shared surface now
- * renders under any reskin theme). Accent-themed; step ticks use the semantic ladder (active = `--accent`
- * pulse, done = `--ok` ✓). Frosted surfaces perf-gated, the pulse + drop entrance motion-gated (§14.11).
- * The pin sits at z 4 — below the Kit appbar (z 5, NOT vapor's z 20) so it tucks under the bar. */
-.kit .plan-pin {
-  position: sticky;
-  top: var(--appbar-h, 0px);
-  z-index: 4;
-  display: flex;
-  justify-content: center;
-  pointer-events: none; /* empty sides stay click-through; the tab re-enables below */
-}
-.kit .plan-pin-wrap {
-  position: relative;
-  pointer-events: auto;
-}
-.kit .plan-pin-head {
+ * Plan widget (D30) — KIT themes render it in the COMPOSER: a `.plan-pill` trigger in the controls row +
+ * a `.plan-sheet` frosted panel that peeks up from the composer's top edge. (Vapor keeps its own in-tab
+ * `.plan-pin`/`.plan-drop` in extras.css — frozen.) Accent-themed; step ticks use the semantic ladder
+ * (active = `--accent` pulse, done = `--ok` ✓). The sheet's blur is perf-gated, the pulse + slide are
+ * motion-gated (§14.11). `.plan-title`/`.plan-count`/`.plan-steps`/`.plan-step` are shared by pill + sheet. */
+.kit .plan-pill {
   all: unset;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  border-radius: 0 0 13px 13px; /* hangs from the top edge */
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px; /* a lozenge inline in the controls row (vs the old top-hanging tab) */
   background: var(--accent-soft);
   border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
-  border-top: 0;
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
 }
-.kit .plan-pin-head .chev {
+.kit .plan-pill:active {
+  background: color-mix(in oklch, var(--accent) 22%, transparent);
+}
+.kit .plan-pill .chev {
   color: var(--accent);
-  font-size: 10px;
-  transition: transform 0.16s ease;
+  font-size: 9px;
+  transition: transform 0.16s ease; /* ▴ points up (sheet rises); rotates when open */
 }
-.kit .plan-pin-head.open .chev {
+.kit .plan-pill.open .chev {
   transform: rotate(180deg);
 }
 .kit .plan-title {
@@ -2421,32 +2414,42 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
   font-weight: 600;
   color: var(--text-2);
 }
-/* the dropdown — an absolute overlay below the tab (opening doesn't reflow the chat) */
-.kit .plan-drop {
+/* the sheet — a frosted panel that PEEKS up from the composer's top edge (D30). A sibling of `.kit-composer`
+ * (rendered by the composer variant's `overlay` slot), anchored to the composer's top via `--composer-h`.
+ * Its bottom TUCKS ~18px behind the composer (z 3 < composer z 4) so the composer's rounded top overlaps it
+ * and it reads as emerging from the composer; `padding-bottom` keeps the checklist clear of that tuck.
+ * Toggled open/closed by the pill — slide + fade (transform/opacity only, §14.11). */
+.kit .plan-sheet {
   position: absolute;
-  top: calc(100% + 5px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(86vw, 360px);
+  left: 18px;
+  right: 18px;
+  bottom: calc(var(--composer-h, 64px) + 12px - 18px);
+  z-index: 3;
   max-height: 52vh;
   overflow-y: auto;
-  border-radius: var(--radius-sm);
-  background: color-mix(in oklch, var(--surface) 94%, transparent);
+  padding-bottom: 20px;
+  border-radius: 16px 16px 0 0;
+  /* Frosted glass — matches the bottom sheet (`.bs-sheet`, 82%) + composer (85%): translucent so the
+   * `backdrop-filter` blur of the chat behind reads as glass (perf-lite → opaque `--surface`, block below). */
+  background: color-mix(in oklch, var(--surface) 82%, transparent);
   border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+  border-bottom: 0;
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-  animation: kit-plan-drop-in 0.16s ease;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.32);
+  /* closed: tucked down + faded + non-interactive; .open slides it up into view */
+  opacity: 0;
+  transform: translateY(14px);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
-@keyframes kit-plan-drop-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -6px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
+.kit .plan-sheet.open {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+body[data-motion="reduced"] .kit .plan-sheet {
+  transition: none; /* §14.11: reduced motion → snap open/closed, no slide */
 }
 .kit .plan-steps {
   list-style: none;
@@ -2609,9 +2612,9 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
   background: var(--accent-soft);
 }
 
-/* perf gate — drop the frosted blur on the plan surfaces under data-perf=lite (§14.11) */
-body[data-perf="lite"] .kit .plan-pin-head,
-body[data-perf="lite"] .kit .plan-drop {
+/* perf gate — drop the frosted blur on the plan sheet under data-perf=lite (§14.11) → opaque surface (the
+ * translucent 82% needs the blur to read as glass). The pill carries no blur, so it's unaffected. */
+body[data-perf="lite"] .kit .plan-sheet {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   background: var(--surface);
