@@ -26,8 +26,8 @@ import type { AppbarMode } from "../../store/ui";
 // `--appbar-h`/`--composer-h` measurements. It renders the token-driven Kit chrome (AppBar/NavBar/Composer)
 // + the shared tab bodies; theme-SPECIFIC decoration stays in a bespoke Root (e.g. vapor's hero).
 //
-// `hideAppbar` is a STRUCTURAL toggle (it changes what's rendered) → an explicit prop the theme passes down.
-// It's the GLOBAL `ui.hideAppbar` lever (all themes share it); each theme's Root reads it (`useUISlice`) and
+// `appbarMode` is a STRUCTURAL toggle (it changes what's rendered) → an explicit prop the theme passes down.
+// It's the GLOBAL `ui.appbarMode` lever (all themes share it); each theme's Root reads it (`useUISlice`) and
 // hands it here. The Fleet view is the one per-theme "signature" surface → the `Fleet` prop (defaults to the
 // Kit's `KitFleet`). Cosmetic settings never reach here — they're token/attr-driven (e.g. minimal's
 // `density` → body[data-density]).

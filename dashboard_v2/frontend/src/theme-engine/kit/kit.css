@@ -1096,6 +1096,18 @@ body[data-mode="light"] .kit .toast {
   border: 1px solid var(--line-2);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
+/* minimal chrome: the floating NavMenu owns the top-right corner (z 30, over the player's z 16), so a
+ * full-width centered player buries its own ✕ under the launcher (ISSUES #1). When the NavMenu is present
+ * (minimal mode — the only thing that renders `.navmenu`), anchor the player left→right with a gap that
+ * clears the launcher (44px + 12px inset + breathing room) so every control stays tappable; the waveform
+ * (flex:1) absorbs the width change. `:has` keys off the rendered NavMenu, so no body-attr/state mirror —
+ * the DefaultRoot conditional render stays the single source of truth. */
+.kit:has(.navmenu) .mini-player {
+  left: calc(14px + env(safe-area-inset-left));
+  right: calc(64px + env(safe-area-inset-right));
+  width: auto;
+  transform: none;
+}
 body[data-mode="light"] .kit .mini-player {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
 }
@@ -1111,15 +1123,15 @@ body[data-perf="lite"] .kit .mini-player {
   height: 26px;
   flex-shrink: 0;
   background: var(--accent-fill);
-  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
-          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black' stroke='black' stroke-width='2.4' stroke-linejoin='round'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black' stroke='black' stroke-width='2.4' stroke-linejoin='round'/></svg>") center/contain no-repeat;
 }
 .kit .mini-player .mp-play:active {
   transform: scale(0.9);
 }
 .kit .mini-player .mp-play.playing {
-  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
-          mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' rx='1.5' fill='black'/><rect x='14' y='5' width='4' height='14' rx='1.5' fill='black'/></svg>");
+          mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' rx='1.5' fill='black'/><rect x='14' y='5' width='4' height='14' rx='1.5' fill='black'/></svg>");
 }
 .kit .mini-player .mp-play:disabled {
   opacity: 0.5;
@@ -2330,8 +2342,8 @@ body[data-motion="reduced"] .kit .b.bot .who .status-tag {
   margin-left: auto;
   background: var(--accent);
   opacity: 0.72;
-  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
-          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black' stroke='black' stroke-width='2.4' stroke-linejoin='round'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black' stroke='black' stroke-width='2.4' stroke-linejoin='round'/></svg>") center/contain no-repeat;
   transition: opacity 0.12s ease;
 }
 .kit .b.bot .who .tts-play:hover {
@@ -2342,8 +2354,8 @@ body[data-motion="reduced"] .kit .b.bot .who .status-tag {
 }
 .kit .b.bot .who .tts-play.playing {
   opacity: 1;
-  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
-          mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' fill='black'/><rect x='14' y='5' width='4' height='14' fill='black'/></svg>");
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' rx='1.5' fill='black'/><rect x='14' y='5' width='4' height='14' rx='1.5' fill='black'/></svg>");
+          mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='5' width='4' height='14' rx='1.5' fill='black'/><rect x='14' y='5' width='4' height='14' rx='1.5' fill='black'/></svg>");
 }
 .kit .b.bot .who .tts-play.loading {
   opacity: 0.4;

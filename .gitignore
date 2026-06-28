@@ -21,3 +21,6 @@ __pycache__/
 *.log
 .env
 .env.*
+
+# Local design/reference images (kept on-disk as references only — never used by code; not versioned)
+dashboard_v2/docs/screenshot/
