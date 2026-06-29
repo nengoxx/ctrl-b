@@ -1,0 +1,64 @@
+#Requires -Version 5.1
+# One-time setup to run the ctrl-b dashboard (v2) on Windows: backend venv (Python 3.14 preferred) + deps,
+# frontend deps + a production build. Re-runnable (idempotent). Run by double-clicking setup.cmd.
+# Paths are resolved relative to this script, so this keeps working after the repo reorg (deploy/windows stays
+# two levels under the app root, which has backend/ + frontend/).
+[CmdletBinding()]
+param()
+$ErrorActionPreference = "Stop"
+$ROOT = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path   # the app root (has backend/, frontend/, config.yaml)
+$VENV = Join-Path $ROOT "backend\.venv"
+$VPY  = Join-Path $VENV "Scripts\python.exe"
+
+Write-Host "== ctrl-b dashboard (v2) - Windows setup ==" -ForegroundColor Cyan
+Write-Host "app root: $ROOT"
+
+function Test-Cmd($n) { return [bool](Get-Command $n -ErrorAction SilentlyContinue) }
+if (-not (Test-Cmd npm))  { throw "npm not found - install Node 20+ from nodejs.org, then re-run." }
+
+# Backend venv: reuse an existing one (>=3.11), else create with the best available Python (prefer 3.14).
+function Resolve-Py {
+  foreach ($c in @(@("py","-3.14"), @("py","-3"), @("python"), @("python3"))) {
+    $exe = $c[0]; $a = @($c[1..($c.Count-1)])
+    if (-not (Test-Cmd $exe)) { continue }
+    try { $v = (& $exe @a -c "import sys;print('%d.%d'%sys.version_info[:2])" 2>$null) } catch { continue }
+    if ($v -match '^\d+\.\d+$') {
+      $parts = $v -split '\.'
+      if (([int]$parts[0] -gt 3) -or ([int]$parts[0] -eq 3 -and [int]$parts[1] -ge 11)) {
+        return @{ exe = $exe; args = $a; ver = $v }
+      }
+    }
+  }
+  return $null
+}
+
+if (Test-Path $VPY) {
+  $have = (& $VPY -c "import sys;print('%d.%d'%sys.version_info[:2])")
+  Write-Host "-- existing backend venv: Python $have"
+} else {
+  $py = Resolve-Py
+  if (-not $py) { throw "No Python >=3.11 found - install Python 3.14 from python.org (with the 'py' launcher), then re-run." }
+  Write-Host "-- creating backend venv with Python $($py.ver)"
+  & $py.exe @($py.args) -m venv $VENV
+}
+Write-Host "-- installing backend deps (pip install -e backend)"
+& $VPY -m pip install --upgrade pip --quiet
+& $VPY -m pip install -e (Join-Path $ROOT "backend") --quiet
+
+# Frontend deps + production build (the start script serves this dist).
+Push-Location (Join-Path $ROOT "frontend")
+try {
+  if (-not (Test-Path "node_modules")) { Write-Host "-- npm ci (frontend deps)"; npm ci } else { Write-Host "-- frontend node_modules present" }
+  Write-Host "-- building frontend bundle (npm run build)"
+  npm run build
+} finally { Pop-Location }
+
+$cfg = Join-Path $ROOT "config.yaml"
+if (Test-Path $cfg) { Write-Host "-- config.yaml present" }
+else { Write-Warning "config.yaml not found at $cfg - fleet/integrations/secrets live there; add it before starting." }
+
+Write-Host ""
+Write-Host "[OK] Setup complete. Start the dashboard with:" -ForegroundColor Green
+Write-Host "       start.cmd                 # PROD on http://127.0.0.1:5433 (alongside your Flask app on :5432)"
+Write-Host "       start.cmd -Tailscale      # also expose HTTPS on your tailnet (phone access + mic)"
+Write-Host "       start.cmd -Dev            # dev: Vite hot-reload (:5173) + backend (:5433)"

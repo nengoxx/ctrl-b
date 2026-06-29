@@ -90,12 +90,12 @@ deploy/
 │   ├── serve-https.sh              # Tailscale Serve 443→5433
 │   ├── migrate-layout.sh           # one-time two-tree setup (Linux)
 │   └── systemd/                    # 3 unit TEMPLATES (__REPO__/__CTRLB_HOME__/__NPM__)
-└── windows/
-    ├── README.md
-    ├── setup.ps1                   # NEW one-time: create backend\.venv, pip install -e, npm ci
-    ├── run-dev.cmd  + run-dev.ps1  # NEW double-click DEV: uvicorn :5433 + vite :5173 (+ optional tailscale serve)
-    ├── run-prod.cmd + run-prod.ps1 # NEW double-click PROD: npm build → uvicorn serves dist :5433 + tailscale serve --https=443 5433
-    └── serve-tailscale.ps1         # NEW: `tailscale serve --bg --https=443 5433` (Windows; mic via HTTPS)
+└── windows/                       # ✅ BUILT EARLY 2026-06-29 (owner wanted to daily-drive v2 on Windows now).
+    ├── README.md                  #    Lives at dashboard_v2/deploy/windows/ now → moves to deploy/windows/ in reorg.
+    ├── setup.{ps1,cmd}            #    one-time: backend venv (3.14) + pip install -e + npm ci + npm run build
+    └── start.{ps1,cmd}            #    double-click = PROD :5433; flags: -Dev (vite :5173) / -Tailscale / -Build
+    #    Paths are $PSScriptRoot\..\.. relative → reorg-proof (app root has backend/+frontend/ before AND after).
+    #    NB: these intentionally never use uvicorn --reload (Windows fleet-ping gotcha).
 ```
 Windows launcher spec (Decision 2):
 - **Double-click = `.cmd`** wrappers that call the matching `.ps1` with `-ExecutionPolicy Bypass` (so .ps1 runs on double-click).
