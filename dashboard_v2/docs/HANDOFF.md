@@ -1,5 +1,36 @@
 # Handoff — start here for a fresh session
 
+> ## ▶ ACTIVE TASK — when the owner says "lets continue with the handoff"
+> **Execute the repo "face-wash" to ship v1.0.** Full spec: **[`REORG_PLAN.md`](./REORG_PLAN.md)** — read it AND
+> priority item 0 below, then DO it. Everything is approved; do NOT re-ask the settled decisions — just execute.
+> Nobody else is on the repo (no live tandem agent) — refactor freely.
+>
+> **What:** restructure the whole repo so the v2 app IS the root (= official **v1.0**) and all legacy is archived:
+> `dashboard_v2/{backend,frontend,docs,deploy}` → repo root · `ctrl-b (Vapor)/`+`prototypes/` → `design/prototypes/`
+> (de-duped; the 112 KB `vapor.html` is the canonical D7 spec) · `wol_server/`+root v0.1 scripts+gitignored v1
+> secrets → `archive/v0.1-flask/` · `inference_server/` → `archive/v0.1-inference/` · `ws_*` → `archive/ui-prototypes/`
+> · `start_claude_remote.*` → `tools/` (harmonize the Claude Code dev launchers for both OS) · drop the 142 MB
+> `assets/demo.mp4` · generalize `deploy/` (emma→`deploy/linux`; keep the already-built `deploy/windows`). Then
+> sweep EVERY `dashboard_v2/` + `ctrl-b (Vapor)/` + `deploy/emma` reference, fix the 2 code spots (`config.py`
+> `_PROJECT_ROOT`, `main.py` dist), rewrite root README/AGENTS/CLAUDE, update `.gitignore`/`.gitattributes`.
+>
+> **Locked decisions (do NOT relitigate):** v0.1 = old Flask (archived) · v1.0 = the new app ("dashboard_v2" name
+> retired) · first tag **`v1.0.0`** at deploy · keep "v2" in dev docs as history (+ a 1-line clarifier) · git
+> history = **B (filter-repo)** to purge the 142 MB mp4 + dead-dir blobs.
+>
+> **How (REORG_PLAN §8–§9):** (1) all moves + dedup + path-sweep + doc rewrites as ONE atomic commit; (2) VERIFY
+> before committing — `cd backend && .venv/Scripts/python -m pytest -q` (229 pass) · `python deploy/bootstrap.py
+> --dry-run` exit 0 · `cd frontend && npm run build` OK · grep proves ZERO stale `dashboard_v2/`/`ctrl-b (Vapor)/`/
+> `deploy/emma` refs; (3) commit + push; (4) THEN the filter-repo purge + force-push — **this workspace is the
+> rewrite source: re-add `origin`, `--force`, do NOT re-clone it** (REORG_PLAN §1). ⚠ `config.yaml` COLLISION:
+> move v0.1's root `config.yaml` to the archive BEFORE moving v2's to the new root; gitignored files use plain
+> `mv`, not `git mv` (REORG_PLAN §4).
+>
+> **Then (a SEPARATE later session):** the emma deploy — [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) + `deploy/linux`,
+> `migrate-layout.sh` then `bootstrap.py`, tag `v1.0.0`. (All deploy paths get corrected during the reorg above.)
+>
+> *(Everything below this block is older per-phase history — context, not the active task.)*
+
 **Purpose:** **Phases 0–3, 4a (text round-trip), 4b (agent tools + confirm bubbles), 4c (composer
 prefix routing + markdown), 4d (`task_plan` + plan panel), and now 4e (context compaction) are
 done** — the Vapor Fleet tab drives real fleet/action/service typed-actions, and the **Agent tab is
