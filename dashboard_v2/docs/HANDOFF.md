@@ -76,8 +76,37 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Theme-engine v2 (D29): BUCKET-A COMPLETE — `minimal` is a full reskin: chrome + Fleet (A.1) · ALL Conf editors + Utils tab (A.2) · the entire Agent chat (A.3), all token-driven under `.kit`. Every shared surface now renders under any reskin theme.** · **cosmos (T4, the bespoke orbital theme) is COMPLETE — C1–C3 shipped + pushed: starfield · orbital fleet (orbit/camera/liveness/service-cue) · the host-detail bottom sheet (reusable `BottomSheet` primitive + `CosmosHostDetail` + sheet-aware camera-lift + multi-snap + Audiowide + slide/fade). See [`COSMOS_HANDOFF.md`](./COSMOS_HANDOFF.md). The app-like text-selection / tap-highlight model shipped alongside (all themes).** · Since then, **minimal-nav chrome mode** shipped (`ui.appbarMode` visible/off/minimal + a floating `NavMenu`; Kit-wide), then **Slice 2a + the D30 composer-composition refactor**. Most recently (2026-06-29) the **bottom-sheet detent memory** (ISSUES #1) + cosmos host-detail polish shipped (`c098739`/`bc17d99`), and a full **theme-engine design-system architecture pass** was researched + LOCKED: **Swappable Surfaces** (DECISIONS **D31** + THEME_ENGINE **§14.14**) — the routing rule for every future themeable element. **NEXT = the Composer Surface** — build `SheetComposer` (docked variant) + a user-selectable composer setting, per the fully-specified [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) (start there). Then **vapor-minimal wiring** (§14.13 #11) · **T2 phosphor** · the queued **emma deploy**)
+## Current state (**Theme-engine v2 (D29): BUCKET-A COMPLETE — `minimal` is a full reskin: chrome + Fleet (A.1) · ALL Conf editors + Utils tab (A.2) · the entire Agent chat (A.3), all token-driven under `.kit`. Every shared surface now renders under any reskin theme.** · **cosmos (T4, the bespoke orbital theme) is COMPLETE — C1–C3 shipped + pushed: starfield · orbital fleet (orbit/camera/liveness/service-cue) · the host-detail bottom sheet (reusable `BottomSheet` primitive + `CosmosHostDetail` + sheet-aware camera-lift + multi-snap + Audiowide + slide/fade). See [`COSMOS_HANDOFF.md`](./COSMOS_HANDOFF.md). The app-like text-selection / tap-highlight model shipped alongside (all themes).** · Since then, **minimal-nav chrome mode** shipped (`ui.appbarMode` visible/off/minimal + a floating `NavMenu`; Kit-wide), then **Slice 2a + the D30 composer-composition refactor**. Most recently (2026-06-29) the **bottom-sheet detent memory** (ISSUES #1) + cosmos host-detail polish shipped (`c098739`/`bc17d99`), and a full **theme-engine design-system architecture pass** was researched + LOCKED: **Swappable Surfaces** (DECISIONS **D31** + THEME_ENGINE **§14.14**) — the routing rule for every future themeable element. **▶ ACTIVE PRIORITY = emma (Linux) DEPLOY — see [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) (start there).** The theme engine is **⏸ PARKED** (the Composer Surface + audit hardening are fully specified + ready to resume: [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md), architecture D31/§14.14, audit backlog [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md)). See the priority block in the newest session update below)
 
+> ### 🧭 SESSION UPDATE — PRIORITY PIVOT: theme engine PARKED · emma (Linux) DEPLOY is now ACTIVE — 2026-06-29 (cont.)
+>
+> **Read this priority list first — it supersedes the per-feature "NEXT" notes scattered in older blocks below.**
+>
+> 1. **▶ ACTIVE — Deploy to emma (the Linux/Kubuntu LAN server).** Stand up TWO things on emma: (a) the **dashboard**
+>    as an always-on service, and (b) the **Claude Code remote agent** so dev/audit continues on the target machine.
+>    Full understanding + recommended architecture + the OPEN DECISIONS (a real conversation, not yet built) live in
+>    **[`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) — START THERE for deploy.** This subsumes TODO **Phase 9** (the dashboard
+>    systemd unit + Linux install script + smoke tests) and adds the Claude-Code-agent service.
+> 2. **⏸ PARKED — Theme engine (Composer Surface + audit hardening).** Fully specified, resume any time:
+>    [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) (build A1→A2→A3) · locked architecture **D31 / §14.14** ·
+>    audit theme-engine backlog in [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md) 🟡.
+> 3. **📋 The external audit (HIGH visibility).** [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md) routes EVERY
+>    finding. Its **SECURITY subset is pulled FORWARD into the deploy** (priority 1): `SECURITY_MODEL.md` (S1),
+>    debug-off-by-default, shell-off-by-default, secrets-masked, stale-confirm-token recovery — these matter the moment
+>    the dashboard is reachable over Tailscale. Review them DURING the deploy, not after.
+> 4. **🔧 Deferred small items** — [`ISSUES.md`](./ISSUES.md) (owner's-call polish).
+> 5. **Later** — cutover (Phase 10) + the parked theme-engine hardening (TRIAGE 🟡).
+>
+> **Key researched constraint:** Claude Code `--remote-control` **requires a TTY** → it can NOT be a bare systemd/daemon
+> process; the reliable headless pattern is **tmux** (the dashboard's uvicorn IS a clean systemd daemon). Details +
+> sources in DEPLOY_EMMA.md. The Windows `--reload` gotcha does NOT apply on emma's Linux.
+>
+> **⚠️ emma operational cautions (carry into every emma session):** the dashboard can **shut down / reboot fleet
+> hosts** — do NOT shut down PCs while testing; do NOT modify emma's system / MCP config beyond what's strictly needed;
+> a **SECOND agent works in tandem** on emma (its own checkout ~`~/git*/ctrl-b` — treat as read-only; never commit
+> there). Cross-agent coordination via files (e.g. the `external_audit/` folder). config.yaml/secrets are gitignored —
+> they must reach emma out-of-band (not via git).
+>
 > ### 🧭 SESSION UPDATE — Swappable Surfaces design system LOCKED + Composer Surface fully specified (planning + docs only) — 2026-06-29
 >
 > **No app code changed this session** beyond the already-pushed detent-memory + cosmos polish (`c098739`, `bc17d99`).
