@@ -15,6 +15,6 @@ tailscale serve --bg --https=443 5433
 # OPTIONAL — also expose the DEV server over HTTPS (so the mic works in dev too), on :8443:
 #   tailscale serve --bg --https=8443 5173
 
-echo "✓ Done. Current serve config:"
+echo "✓ Done. The HTTPS dashboard URL (emma's MagicDNS name) is shown in the serve config below:"
 tailscale serve status
-echo "Dashboard URL:  https://$(tailscale status --json 2>/dev/null | grep -oE '\"DNSName\":\"emma[^\"]*' | head -1 | cut -d'\"' -f3 | sed 's/\.$//')"
+echo "(persists across reboots automatically — 'tailscale serve --https=443 off' to remove.)"

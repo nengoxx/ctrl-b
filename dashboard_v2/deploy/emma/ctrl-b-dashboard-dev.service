@@ -1,12 +1,11 @@
 # ctrl-b dashboard — DEV (systemd USER service for emma). OPTIONAL / always-on "watch latest changes".
 # Runs the Vite dev server (hot-reload) on 0.0.0.0:5173; Vite proxies /api → 127.0.0.1:5433 (the PROD
-# backend above), so this shows the latest FRONTEND against the running backend. Reach it on the tailnet at
+# backend), so this shows the latest FRONTEND against the running backend. Reach it on the tailnet at
 # http://emma:5173 (HTTP — no mic; dev is for visual iteration). Backend changes → restart ctrl-b-dashboard.
 # Manage:  systemctl --user {start,stop,restart} ctrl-b-dashboard-dev   (enable only if you want it always-on)
+# (No network-online.target ordering — system target, no user equivalent; see the prod unit's note.)
 [Unit]
 Description=ctrl-b dashboard (v2, dev / Vite hot-reload)
-After=network-online.target
-Wants=network-online.target
 
 [Service]
 Type=simple

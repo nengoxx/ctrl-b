@@ -9,6 +9,11 @@ V2="$REPO/dashboard_v2"
 CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b}"
 HERE="$V2/deploy/emma"
 
+# `systemctl --user` needs the user bus address — NOT set on a non-interactive SSH exec (how bootstrap.py
+# runs this). linger=yes keeps /run/user/UID (+ its bus) alive, so pointing at it makes --user work over SSH.
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR}/bus}"
+
 echo "== ctrl-b dashboard install (repo=$REPO, CTRLB_HOME=$CTRLB_HOME) =="
 
 # 1) Prereqs that need root — DON'T auto-sudo; report so the owner runs them deliberately.
