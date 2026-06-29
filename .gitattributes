@@ -1,0 +1,4 @@
+# Deploy scripts run on Linux (emma) — force LF so a CRLF working tree can never break them
+# (a CRLF shebang fails with `bad interpreter: /usr/bin/env bash^M`). Scoped to the deploy kit
+# to avoid renormalizing the rest of the repo.
+dashboard_v2/deploy/emma/** text eol=lf
