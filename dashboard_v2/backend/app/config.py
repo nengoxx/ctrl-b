@@ -396,16 +396,17 @@ class ShellCfg(BaseModel):
     running ctrl-b — corsair/emma), distinct from open-terminal (a *remote* box). Output feeds the
     agent's context (the command + result are persisted into the thread) so a later turn can read it.
 
-    Two independent gates: `user_exec_enabled` governs the `!` path (on by default — the user typing
-    it *is* the authorization); `agent_exec_enabled` governs the agent's own `run_shell` tool (off by
-    default — it's arbitrary local shell, so the agent only gets it on an explicit opt-in, and even
-    then HIGH risk makes it confirm). `enabled` is the master switch that registers the action at all.
+    Two independent gates: `user_exec_enabled` governs the `!` path; `agent_exec_enabled` governs the
+    agent's own `run_shell` tool. BOTH default OFF (owner directive 2026-06-29 + external_audit S/R15):
+    arbitrary local shell is a real RCE surface, so it's opt-in even for the owner — the owner drives all
+    shell work through the agent's curated tools (open-terminal), not the raw `!` escape hatch. `enabled`
+    is the master switch that still registers the action so it can be turned on per-deployment when wanted.
     """
 
     model_config = {"extra": "allow"}
 
     enabled: bool = True                 # master switch — registers the run_shell action
-    user_exec_enabled: bool = True       # the `!<cmd>` composer escape hatch (POST /api/exec)
+    user_exec_enabled: bool = False      # the `!<cmd>` composer escape hatch (POST /api/exec) — OFF by default
     agent_exec_enabled: bool = False     # the agent's run_shell tool (D3 gate; off → confirm only at FULL)
     workdir: str = ""                    # cwd for commands; blank → $CTRLB_HOME (home_dir())
     timeout_s: float = 60.0              # kill the process after this many seconds

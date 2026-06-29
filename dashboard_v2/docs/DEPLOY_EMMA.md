@@ -28,6 +28,31 @@ installs set `CTRLB_HOME=~/.ctrl-b`"* → config at `/home/emma/.ctrl-b/config.y
 `ctrl-b-dashboard-dev.service` (dev/Vite) · `serve-https.sh` (Tailscale Serve) · `start-claude.sh` (tmux agent) ·
 `bootstrap.py` (Windows→emma: SFTP secret + git pull + install) · `README.md` (the runbook).
 
+## Execution plan + ownership (who runs what) — owner asked 2026-06-29
+
+**Recommendation: I (a Windows Claude session) drive the bootstrap; the tandem agent takes over ON emma afterward.**
+Why: the bootstrap is the one step needing a machine with **both** the gitignored `config.yaml` *and* emma SSH access —
+that's **this Windows checkout** (verified: paramiko reaches emma `192.168.1.160`). The on-emma agent can't pull the
+secret from Windows, so it's not the right place to *start*. Once the dashboard + the Claude tmux session are up, the
+on-emma agent owns ongoing dev/audit; coordination via `docs/agent_coordination/` + `external_audit/`.
+
+**Step-by-step (run together, confirm each step):**
+1. **Prereqs needing root → OWNER runs once** (the SSH user `emma` may lack passwordless sudo; don't assume):
+   `sudo apt install -y tmux` · `sudo tailscale set --operator=emma`.
+2. **Bootstrap from Windows (me):** `backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py --dry-run` → review →
+   `…/bootstrap.py`. It SFTPs `config.yaml`→`~/.ctrl-b/` (0600), `git pull --ff-only`s emma's checkout (gets the deploy
+   artifacts), runs `install.sh` (venv + build + enable the prod user service).
+3. **Verify (me, read-only over SSH):** `systemctl --user status ctrl-b-dashboard` active · `curl -s localhost:5433/api/health` ok.
+4. **HTTPS + agent (on emma):** `bash deploy/emma/serve-https.sh` (→ `https://emma.<tailnet>.ts.net`, mic-ready) ·
+   `bash deploy/emma/start-claude.sh` (the agent in tmux → `tmux attach -t ctrl-b`). Optional always-on dev:
+   `systemctl --user enable --now ctrl-b-dashboard-dev.service` (→ `http://emma:5173`).
+5. **Handover:** future Claude work runs in the emma tmux session; this Windows session's job ends at a healthy deploy.
+
+**What I can do vs what needs the owner:** I can do **2–3** end-to-end (paramiko access proven) and *read-only* drive 4
+over SSH; **step 1 (sudo) is the owner's** unless emma grants the SSH user passwordless sudo. If you'd rather the
+**on-emma agent** run 2–4 locally, it works too — but then *you* must place `config.yaml` on emma first (scp), since
+that agent has no Windows access. **Net: easiest path = I bootstrap from Windows; you run the two sudo prereqs.**
+
 ## ✅ Decisions (owner, 2026-06-29)
 
 1. **Dashboard mode: BOTH, always-on.** A **prod** instance (behind **Tailscale Serve**, HTTPS) to use, AND an

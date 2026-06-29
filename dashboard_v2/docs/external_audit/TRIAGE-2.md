@@ -86,6 +86,49 @@ backlog:
 3. **Storybook now?** → **No — defer** (rule of three; over-tooling for 3 themes). Revisit once the Composer Surface
    lands + a 4th theme is real. Contract tests give most of the safety net cheaply.
 
+## Python 3.14 readiness (owner question, 2026-06-29 — researched + code-checked)
+
+**Question:** emma's *system* python is 3.14.4 (the deploy venv is deliberately 3.11.15). Can we move to 3.14 for
+modernity/efficiency, and are we using deprecated functions?
+
+**Findings:**
+- **App code (`app/`) is 3.14-CLEAN.** Grepped for every relevant break: NO `asyncio.get_event_loop()`, NO
+  `datetime.utcnow()`, NO removed stdlib (`distutils`/`imp`/`cgi`/…), NO `pkg_resources`, NO `loop=` kwargs. The only
+  "old function" in the repo is the TEST-harness `get_event_loop().run_until_complete()` (R1) — **not production** —
+  and 3.14 is exactly what makes it *raise* (`get_event_loop()` now raises `RuntimeError` with no set loop; the
+  `DefaultEventLoopPolicy` is removed in 3.16). So fixing R1 is *also* the 3.14 enabler.
+- **Pinned libraries are NOT yet 3.14-ready — verified by version.** `pydantic 2.13.4` ships `pydantic-core 2.46.4`;
+  **3.14 wheels first appear in `pydantic-core 2.47.0` (May 2026)**. So a `pip install -e .` on a 3.14 interpreter
+  would try to **source-build pydantic-core (needs a Rust toolchain) and fail**. `uvloop` (via `uvicorn[standard]`,
+  Linux-only) is the other historical laggard to verify. fastapi/starlette/cryptography already have 3.14 wheels.
+- **Net:** the *code* is ready; the *pins* are ~one minor version behind 3.14. Nothing here is "inefficient old
+  functions in the app" — it's a dependency-freshness + test-harness matter.
+
+**Recommendation (sequenced, low-risk):**
+1. **Deploy on the proven Python 3.11 venv now** — it works; do NOT risk the deploy on an unverified interpreter swap.
+2. Fix **R1** (centralize the async test strategy) — required for 3.14 *and* fixes the broken suite regardless.
+3. As a clean follow-up: **bump `pydantic` to a release using `pydantic-core ≥ 2.47.0`** (+ verify `uvloop` 3.14 / or
+   drop to plain `uvicorn` if it lags), build a **throwaway 3.14 venv**, run the (now-fixed) suite, then switch. Each
+   step is independently verifiable. Sources: [pydantic-core PyPI](https://pypi.org/project/pydantic_core/) ·
+   [py3.14 readiness](https://pyreadiness.org/3.14/) · [asyncio event-loop docs](https://docs.python.org/3/library/asyncio-eventloop.html).
+
+> ⚠️ Test-fixture note for the R1 fix: now that `shell.user_exec_enabled` defaults **False** (owner directive), the
+> `test_shell_5` exec-path tests must explicitly set it `True` (the OFF-gate test already toggles it) — fold this into
+> the harness modernization.
+
+## Storybook (owner question — noted for RIGHT AFTER the deploy, alongside the next theme + composer layout)
+
+**Decision: adopt it as part of the next theme / Composer-Surface slice, not before.** The owner is adding **another
+theme + the docked composer variant** immediately post-deploy — that's exactly the point where component-in-isolation
+dev, per-theme visual review, and visual-regression snapshots earn their keep (rule of three: 3 themes → 4 + multiple
+composer variants). Storybook 9 + React/Vite is first-class, and its **`@storybook/addon-themes` `withThemeByClassName`
+decorator maps directly onto our theming** (`html[data-skin]` / the `.kit` marker) — so a story can render every
+variant under every theme with no bespoke harness. Use it to drive the Composer Surface's slot-contract + the B2
+theme-contract visual checks. Keep it lazy/dev-only (zero prod-bundle impact). Sources:
+[Storybook React-Vite](https://storybook.js.org/docs/get-started/frameworks/react-vite) ·
+[addon-themes](https://storybook.js.org/docs/essentials/themes). **Captured as a P2 design-system-workflow item in the
+parked theme-engine backlog; not started.**
+
 ## What changed in the docs from this triage
 - `HANDOFF.md` priority block: added the **R1 test-harness** finding as a flagged P0-maintainability item (independent
   of the parked theme engine) + pointers to both audits/triages.
