@@ -97,8 +97,12 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >    ships cp314 wheels** (pydantic-core 2.46.4 / uvloop 0.22.1 / cryptography 49 / fastapi / uvicorn / mcp); the only
 >    change was **`pydantic-settings 2.14.1 → 2.14.2`** (= the Dependabot fix too). **The deploy now targets native
 >    3.14** (`deploy/emma/install.sh` builds the venv with `python3`, rebuilds a mismatched venv). Commits
->    `…f0296d1`. Minor leftover (non-blocking): two deprecation *warnings* — test `httpx`/`starlette.testclient`
->    (→`httpx2`) + `mcp` `streamable_http_client` rename. Detail: [`external_audit/TRIAGE-2.md`](./external_audit/TRIAGE-2.md) R1.
+>    `…f0296d1`. **Then a full backend MODERNIZATION pass (commit `cd85a14`, audit
+>    [`external_audit/MODERNIZATION_2026-06-29.md`](./external_audit/MODERNIZATION_2026-06-29.md)):** code was already
+>    modern (Pydantic v2 / lifespan / modern typing+datetime / asyncio TaskGroup); fixed 4 dead imports, migrated the
+>    **MCP `streamable_http_client`** deprecation (warning gone), bumped deps (fastapi 0.138.1 / openai 2.44 / mcp 1.28.1
+>    `<2` cap / sse-starlette 3.4.5 / ruamel 0.18.17), and added **ruff** (clean). 229/229 still green on 3.11 + emma 3.14.
+>    Only remaining warning is test-only (`starlette.testclient`→`httpx2`). Detail: [`external_audit/TRIAGE-2.md`](./external_audit/TRIAGE-2.md) R1.
 > 3. **⏸ PARKED — Theme engine (Composer Surface + audit hardening).** Fully specified, resume any time:
 >    [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) (build A1→A2→A3) · locked architecture **D31 / §14.14** ·
 >    audit theme-engine backlog in [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md) + [`TRIAGE-2.md`](./external_audit/TRIAGE-2.md) 🟡
