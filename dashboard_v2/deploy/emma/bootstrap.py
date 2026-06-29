@@ -30,6 +30,14 @@ This makes WRITES on emma — only run it to deploy (not for recon). Idempotent:
 from __future__ import annotations
 import sys, posixpath, yaml, paramiko
 
+# Windows consoles default to cp1252 → the ✓/→/⚠ in our output (and emma's streamed echoes) crash on encode.
+# Force UTF-8 on our streams (no-op where already UTF-8); errors="replace" so output can never crash the deploy.
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 WIN_CONFIG = r"C:\Users\rovax\Documents\github\ctrl-b\dashboard_v2\config.yaml"  # source of truth + ssh creds
 PROD_REPO = "/home/emma/github/ctrl-b"          # clean, sparse, tag-pinned
 DEV_REPO = "/home/emma/github/ctrl-b-dev"       # full, `dev` branch
