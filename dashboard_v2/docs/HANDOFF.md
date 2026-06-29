@@ -90,12 +90,15 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >    the bootstrap** — from the Windows checkout: `backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py`
 >    (SFTPs the gitignored `config.yaml` → emma, git-pulls, runs `install.sh`), then `serve-https.sh` +
 >    `start-claude.sh` on emma. Subsumes TODO **Phase 9**.
-> 2. **⚠️ FLAGGED P0 (maintainability, NOT parked, NOT a deploy blocker) — backend test harness is broken.** Audit #2
->    **verified + reproduced: `76 failed / 153 passed`** — 13 test files use `asyncio.get_event_loop().run_until_complete()`
->    which raises under modern pytest/pytest-asyncio (fails on Python 3.11 too, not just 3.12). The **app runs fine**
->    (uvicorn/deps healthy) so the deploy is unaffected, but there's **no reliable backend test signal**. Fix =
->    centralize one async strategy (`pytest.mark.asyncio`/`asyncio.run`, never per-file `get_event_loop`). Contained
->    ~13-file slice; do it soon (own call: before or after the deploy lands). Detail: [`external_audit/TRIAGE-2.md`](./external_audit/TRIAGE-2.md) R1.
+> 2. **✅ DONE — backend test harness fixed + Python 3.14 readiness VERIFIED (2026-06-29).** The broken harness (audit
+>    #2 R1: `76 failed / 153 passed` from `get_event_loop().run_until_complete()` in 13 files) is fixed via a shared
+>    3.14-safe runner (`tests/_async.py` `run_async`) → **229 passed, 0 failed** on Python 3.11 **and** on emma's
+>    **native 3.14.4** (validated in a throwaway 3.14 venv on emma). Empirically confirmed the **entire pinned stack
+>    ships cp314 wheels** (pydantic-core 2.46.4 / uvloop 0.22.1 / cryptography 49 / fastapi / uvicorn / mcp); the only
+>    change was **`pydantic-settings 2.14.1 → 2.14.2`** (= the Dependabot fix too). **The deploy now targets native
+>    3.14** (`deploy/emma/install.sh` builds the venv with `python3`, rebuilds a mismatched venv). Commits
+>    `…f0296d1`. Minor leftover (non-blocking): two deprecation *warnings* — test `httpx`/`starlette.testclient`
+>    (→`httpx2`) + `mcp` `streamable_http_client` rename. Detail: [`external_audit/TRIAGE-2.md`](./external_audit/TRIAGE-2.md) R1.
 > 3. **⏸ PARKED — Theme engine (Composer Surface + audit hardening).** Fully specified, resume any time:
 >    [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) (build A1→A2→A3) · locked architecture **D31 / §14.14** ·
 >    audit theme-engine backlog in [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md) + [`TRIAGE-2.md`](./external_audit/TRIAGE-2.md) 🟡

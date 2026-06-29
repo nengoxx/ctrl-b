@@ -11,7 +11,7 @@
 |---|---|---|
 | Address | tailnet **`emma`** / `100.109.206.88` (LAN `192.168.1.160`); `.138` was the OLD decommissioned box | use `.160` / MagicDNS `emma` |
 | OS | Ubuntu 26.04 LTS, kernel 7.0, x86_64 · 16 cores · 30 GiB RAM · 392 GB free | ample |
-| Backend venv | **Python 3.11.15** (not system 3.14), deps healthy (uvicorn 0.48 / fastapi 0.136 / pydantic 2.13), `uvicorn` runs | **no 3.14 risk**; reuse venv |
+| Backend venv | recon found a 3.11.15 venv, but the **deploy now targets native 3.14** — the whole stack ships cp314 wheels + the suite passes 229/229 on 3.14 (verified 2026-06-29) | `install.sh` builds with `python3` (3.14), rebuilds the old 3.11 venv |
 | Node | v24.16 / npm 11.13 | fine |
 | `claude` CLI | **installed** (2.1.177, `~/.local/bin/claude`) | agent ready |
 | tmux | **NOT installed** | `sudo apt install -y tmux` (prereq) |

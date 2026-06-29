@@ -15,7 +15,13 @@ emma deploy. So nothing here is a surprise on the theme-engine side.
 
 Its standout contribution is the **backend test-harness finding (R1)** — new, and **verified**.
 
-## 🔴 R1 (P0) — Backend async test harness is broken — VERIFIED, REPRODUCED
+## ✅ R1 (P0) — Backend async test harness — VERIFIED, then FIXED (2026-06-29)
+
+> **STATUS: DONE.** Fixed via a shared 3.14-safe runner `tests/_async.py` (`run_async` over one explicitly-created
+> persistent loop — preserves the shared-loop semantics the tests rely on, never calls the deprecated
+> `get_event_loop()`); 13 files repointed; `test_shell_5` updated for the new shell-OFF default. **229 passed, 0
+> failed** on Python 3.11 (Windows) AND on emma's **native 3.14.4** (throwaway-venv validation). Commits `…f0296d1`.
+> The original analysis (kept below for the record):
 
 - **Claim:** 13 test files use `asyncio.get_event_loop().run_until_complete(...)`; under modern pytest/pytest-asyncio
   this raises `RuntimeError: There is no current event loop` → **76 failed / 153 passed**.
@@ -97,20 +103,21 @@ modernity/efficiency, and are we using deprecated functions?
   "old function" in the repo is the TEST-harness `get_event_loop().run_until_complete()` (R1) — **not production** —
   and 3.14 is exactly what makes it *raise* (`get_event_loop()` now raises `RuntimeError` with no set loop; the
   `DefaultEventLoopPolicy` is removed in 3.16). So fixing R1 is *also* the 3.14 enabler.
-- **Pinned libraries are NOT yet 3.14-ready — verified by version.** `pydantic 2.13.4` ships `pydantic-core 2.46.4`;
-  **3.14 wheels first appear in `pydantic-core 2.47.0` (May 2026)**. So a `pip install -e .` on a 3.14 interpreter
-  would try to **source-build pydantic-core (needs a Rust toolchain) and fail**. `uvloop` (via `uvicorn[standard]`,
-  Linux-only) is the other historical laggard to verify. fastapi/starlette/cryptography already have 3.14 wheels.
+- ~~**Pinned libraries are NOT yet 3.14-ready** — `pydantic-core 2.46.4` predates the 2.47.0 (May 2026) 3.14
+  wheels.~~ **❌ WRONG — corrected by the empirical resolve below.** This was based on readiness-table dates;
+  resolving wheels-only on emma's actual 3.14 showed `pydantic-core 2.46.4`, `uvloop 0.22.1`, `cryptography 49` all
+  **do** ship cp314 wheels. Only `pydantic-settings` needed a bump (2.14.1→2.14.2). See OUTCOME.
 - **Net:** the *code* is ready; the *pins* are ~one minor version behind 3.14. Nothing here is "inefficient old
   functions in the app" — it's a dependency-freshness + test-harness matter.
 
-**Recommendation (sequenced, low-risk):**
-1. **Deploy on the proven Python 3.11 venv now** — it works; do NOT risk the deploy on an unverified interpreter swap.
-2. Fix **R1** (centralize the async test strategy) — required for 3.14 *and* fixes the broken suite regardless.
-3. As a clean follow-up: **bump `pydantic` to a release using `pydantic-core ≥ 2.47.0`** (+ verify `uvloop` 3.14 / or
-   drop to plain `uvicorn` if it lags), build a **throwaway 3.14 venv**, run the (now-fixed) suite, then switch. Each
-   step is independently verifiable. Sources: [pydantic-core PyPI](https://pypi.org/project/pydantic_core/) ·
-   [py3.14 readiness](https://pyreadiness.org/3.14/) · [asyncio event-loop docs](https://docs.python.org/3/library/asyncio-eventloop.html).
+**OUTCOME (✅ DONE 2026-06-29 — empirically verified, supersedes the speculative plan):** An actual wheels-only resolve
+on emma's native 3.14 **overturned the research-based assumption** — the ENTIRE pinned stack already ships **cp314
+wheels**: `pydantic 2.13.4`/`pydantic-core 2.46.4` (the "needs 2.47.0" claim was wrong — 2.46.4 has a 3.14 wheel; and
+there is no pydantic 2.14 stable), `uvloop 0.22.1`, `cryptography 49.0.0`, fastapi/uvicorn[standard]/paramiko/mcp. The
+**only** dependency change needed was **`pydantic-settings 2.14.1 → 2.14.2`** (which is *also* the Dependabot fix).
+Then: R1 fixed + the deploy flipped to native 3.14 (`install.sh` uses `python3`) → **229 passed on emma's 3.14.4**.
+*Lesson: resolve on the real interpreter, don't trust readiness-table dates.* (Two non-blocking deprecation warnings
+remain: test `httpx`/`starlette.testclient` → `httpx2`; `mcp` `streamable_http_client` rename — minor modernization.)
 
 > ⚠️ Test-fixture note for the R1 fix: now that `shell.user_exec_enabled` defaults **False** (owner directive), the
 > `test_shell_5` exec-path tests must explicitly set it `True` (the OFF-gate test already toggles it) — fold this into
