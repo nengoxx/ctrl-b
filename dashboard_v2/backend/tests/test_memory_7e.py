@@ -19,6 +19,7 @@ Each test runs in an isolated `$CTRLB_HOME` temp workspace; the real config/db a
 from __future__ import annotations
 
 import asyncio
+from _async import run_async
 import contextlib
 import os
 import tempfile
@@ -78,7 +79,7 @@ def _make_thread(c):
         )
         return t
 
-    return asyncio.get_event_loop().run_until_complete(go())
+    return run_async(go())
 
 
 def _systems(messages: list[dict]) -> list[str]:
@@ -91,7 +92,7 @@ def _systems(messages: list[dict]) -> list[str]:
 
 
 def _assemble(c, thread, agent_name: str | None = None) -> list[dict]:
-    return asyncio.get_event_loop().run_until_complete(_session(c, agent_name)._assemble(thread))
+    return run_async(_session(c, agent_name)._assemble(thread))
 
 
 def test_memory_injected_after_base_with_usage_header() -> None:

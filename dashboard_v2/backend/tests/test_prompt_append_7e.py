@@ -29,6 +29,7 @@ Writes go through the APIs on a **temp** workspace (audit E3); the real `config.
 from __future__ import annotations
 
 import asyncio
+from _async import run_async
 import contextlib
 import os
 import tempfile
@@ -96,7 +97,7 @@ def _make_thread(c):
         ))
         return t
 
-    return asyncio.get_event_loop().run_until_complete(go())
+    return run_async(go())
 
 
 def _systems(messages: list[dict]) -> list[str]:
@@ -111,7 +112,7 @@ def _systems(messages: list[dict]) -> list[str]:
 
 
 def _assemble(c, thread, agent_name: str | None = None) -> list[dict]:
-    return asyncio.get_event_loop().run_until_complete(_session(c, agent_name)._assemble(thread))
+    return run_async(_session(c, agent_name)._assemble(thread))
 
 
 def test_prompt_append_round_trip() -> None:
@@ -279,7 +280,7 @@ def test_static_prefix_is_cached_per_turn() -> None:
         with _client() as c:
             sess = _session(c)
             thread = _make_thread(c)
-            run = asyncio.get_event_loop().run_until_complete
+            run = run_async
             first = _systems(run(sess._assemble(thread)))   # iteration 1
             second = _systems(run(sess._assemble(thread)))  # iteration 2 — must match byte-for-byte
             assert first == second

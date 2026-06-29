@@ -20,6 +20,7 @@ The endpoint tests spy on `api.agent._session` to feed scripted events (no model
 from __future__ import annotations
 
 import asyncio
+from _async import run_async
 import contextlib
 import json
 import os
@@ -51,7 +52,7 @@ def _env_cleanup():
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return run_async(coro)
 
 
 def _ev(event: str, **data):

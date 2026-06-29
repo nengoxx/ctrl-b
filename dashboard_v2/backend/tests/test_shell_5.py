@@ -27,6 +27,7 @@ The shell is the *host's* (powershell on Windows, bash elsewhere), so commands s
 from __future__ import annotations
 
 import asyncio
+from _async import run_async
 import contextlib
 import os
 import platform
@@ -60,7 +61,7 @@ def _workspace(config_text: str = "server:\n  port: 5433\n"):
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return run_async(coro)
 
 
 def _exec(c, command: str, *, privilege=None, agent_exec=False):
@@ -183,6 +184,7 @@ def test_agent_optin_still_confirms() -> None:
 def test_endpoint_persists_command_and_result() -> None:
     with _workspace():
         with _client() as c:
+            c.app.state.settings.shell.user_exec_enabled = True  # `!` path is now OFF by default — enable it
             r = c.post("/api/exec", json={"command": "echo from-endpoint"})
             assert r.status_code == 200
             tid = r.json()["threadId"]

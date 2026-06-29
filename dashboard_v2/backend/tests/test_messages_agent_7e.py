@@ -18,6 +18,7 @@ Each test runs in an isolated `$CTRLB_HOME` temp workspace; the real config/db a
 from __future__ import annotations
 
 import asyncio
+from _async import run_async
 import contextlib
 import os
 import tempfile
@@ -49,7 +50,7 @@ def _workspace(config_text: str = "server:\n  port: 5433\n"):
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return run_async(coro)
 
 
 async def _thread(c, agent: str | None = None):
