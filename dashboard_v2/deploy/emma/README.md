@@ -8,15 +8,21 @@ Deploy the **ctrl-b dashboard** as **two isolated instances** + the **Claude Cod
 
 | | **PROD** (daily driver) | **DEV** (sandbox) |
 |---|---|---|
-| Code tree | `~/github/ctrl-b` — clean, **sparse**, **tag-pinned** clone (only `dashboard_v2` + root docs on disk); pulls GitHub | `~/github/ctrl-b-dev` — full tree on **`dev`** (the agent works here) |
+| Code tree | `~/github/ctrl-b` — clean, **sparse**, **tag-pinned** clone (only `dashboard_v2` + root files); pulls GitHub. **Never developed on.** | `~/github/ctrl-b-dev` — full tree on **`dev`**; where **ALL development happens** (1+ agents) |
 | Data root | `~/.ctrl-b` (real config + db + memories/skills/agents) | `~/.ctrl-b-dev` (own copy; seeded from prod once) |
 | Backend | `uvicorn :5433` serving built `dist` | `uvicorn :5434 --reload` |
 | Frontend | built into `dist` | Vite `:5173` HMR → `/api` → `:5434` |
 | Ingress | **Tailscale Serve HTTPS :443** (mic works) | `http://emma:5173` (HTTP, no mic) |
 | Units | `ctrl-b-dashboard.service` | `ctrl-b-dashboard-dev.service` + `ctrl-b-dashboard-dev-web.service` |
 
-Branches: **`main`** = always-deployable prod; **`dev`** = WIP. **Tags `vX.Y.Z`** mark releases — prod checks
-out a tag. **Promote** = merge `dev→main`, tag, push → prod `git fetch --tags && checkout vX.Y && install.sh prod`.
+Branches: **`main`** = always-deployable prod (untouched except by releases); **`dev`** = where development lives.
+**Tags `vX.Y.Z`** mark releases — prod checks out a tag. **Promote** = merge `dev→main`, tag, push → prod
+`git fetch --tags && checkout vX.Y && install.sh prod`.
+
+**Who works where:** **no agent ever touches PROD** — the service runs it and the owner uses it daily. **All dev is
+on the DEV side** — one or more agents on `dev`; a *second* agent (feature/audit) gets its **own** tree so it doesn't
+disturb the dev instance: `git -C ~/github/ctrl-b-dev worktree add ~/github/ctrl-b-feat -b feat/x` then
+`start-claude.sh feat ~/github/ctrl-b-feat`. There's no "main = one agent, dev = another" — main has no agent.
 
 ## Files
 - `install.sh [prod|dev]` — builds + enables ONE instance from the tree it's in (venv + deps; prod also builds `dist`).
@@ -86,8 +92,9 @@ cd ~/github/ctrl-b-dev && git pull --ff-only
 - Both instances can **shut down / reboot fleet hosts** (DEV seeds prod's fleet config). Do NOT trigger
   shutdown/reboot actions while testing — DEV is isolated for *data*, not for the real machines it controls.
 - Don't modify emma's system/MCP config beyond the prereqs. Bind both backends to **127.0.0.1**.
-- `~/github/ctrl-b-dev` is the **tandem agent's** tree — its working state is the agent's; coordinate before
-  moving/migrating it. One canonical GitHub `main`; never commit into the prod sparse clone.
+- `~/github/ctrl-b-dev` is the **DEV side** — where the agent(s) develop; coordinate before moving/migrating it
+  (the agents' working state lives there). **PROD is never developed on** — no agent, no commits; the prod sparse
+  clone only ever checks out released tags. One canonical GitHub `main`.
 - `config.yaml` holds SSH/API secrets — 0600, never commit it, never echo it.
 
 ## Rollback / stop

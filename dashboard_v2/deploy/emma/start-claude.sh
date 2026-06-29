@@ -6,20 +6,27 @@
 # phone / Windows over SSH, while the --remote-control channel also drives it from claude.ai/code. The
 # `while true … sleep 5` loop restarts the agent on crash / auth-timeout / network blip.
 #
-# Usage (owner manages sessions MANUALLY, per decision 3):
-#   ./start-claude.sh                 # creates+detaches the tmux session 'ctrl-b' running the agent
-#   ssh emma -t 'tmux attach -t ctrl-b'   # attach from anywhere (phone / Windows); Ctrl-b d to detach
-#   tmux kill-session -t ctrl-b       # stop it
+# ALL development is on the DEV SIDE — one OR MORE agents. PROD (~/github/ctrl-b) is NEVER worked on by any
+# agent: it's a clean sparse clone the systemd service just runs + the owner uses daily (D32). This script
+# only ever launches an agent in a DEV-side tree.
+#
+# Usage (owner manages sessions MANUALLY):  ./start-claude.sh [session] [project_dir]
+#   ./start-claude.sh                            # default: session 'ctrl-b' in the main DEV tree (~/github/ctrl-b-dev, `dev`)
+#   ssh emma -t 'tmux attach -t ctrl-b'          # attach from anywhere (phone / Windows); Ctrl-b d to detach
+#   tmux kill-session -t ctrl-b                  # stop it
+#   MODEL=… EFFORT=… ./start-claude.sh           # override model/effort (env)
+# SECOND agent (a feature or audit branch) — give it its OWN tree + session so it doesn't disturb the dev
+# instance (which serves ~/github/ctrl-b-dev on `dev`). A git worktree off the dev repo is ideal:
+#   git -C ~/github/ctrl-b-dev worktree add ~/github/ctrl-b-feat -b feat/x
+#   ./start-claude.sh feat ~/github/ctrl-b-feat
 # Prereq: tmux installed (sudo apt install -y tmux) and `claude` on PATH (already: ~/.local/bin/claude).
 set -euo pipefail
 
-SESSION="ctrl-b"
-# The agent works in the DEV tree (D32): full checkout on the `dev` branch, which the dev instance also
-# serves. PROD (~/github/ctrl-b) is a clean, sparse, tag-pinned clone — the agent never works there.
-PROJECT="/home/emma/github/ctrl-b-dev"
-MODEL="claude-opus-4-8"
-EFFORT="high"
-PERM="bypassPermissions"
+SESSION="${1:-ctrl-b}"                              # tmux session + --remote-control channel name
+PROJECT="${2:-/home/emma/github/ctrl-b-dev}"        # a DEV-side tree (default: the main dev tree); never prod
+MODEL="${MODEL:-claude-opus-4-8}"
+EFFORT="${EFFORT:-high}"
+PERM="${PERM:-bypassPermissions}"
 
 command -v tmux  >/dev/null || { echo "tmux not found — sudo apt install -y tmux"; exit 1; }
 command -v claude >/dev/null || { echo "claude not found on PATH"; exit 1; }

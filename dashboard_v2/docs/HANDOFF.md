@@ -85,7 +85,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > 1. **▶ ACTIVE — Deploy to emma (Ubuntu 26.04 LAN/tailnet server). TOPOLOGY LOCKED (D32) · ARTIFACTS READY · execute next.**
 >    **Topology = DECISIONS.md [D32](./DECISIONS.md): TWO fully isolated instances, one repo.** PROD `~/github/ctrl-b`
 >    (clean **sparse**, **tag-pinned** clone) → `~/.ctrl-b` → uvicorn **:5433** + **Tailscale Serve HTTPS**; DEV
->    `~/github/ctrl-b-dev` (`dev` branch, the tandem agent's tree) → `~/.ctrl-b-dev` → uvicorn **:5434 --reload** +
+>    `~/github/ctrl-b-dev` (`dev` branch — the dev side, ALL dev work, 1+ agents) → `~/.ctrl-b-dev` → uvicorn **:5434 --reload** +
 >    **Vite :5173**. Separate data roots → dev experiments never touch the daily driver. Branches `main`(prod)/`dev`(WIP)
 >    + release **tags**; promote = merge dev→main, tag, push, prod `checkout vX.Y`. Artifacts + runbook under
 >    **[`../deploy/emma/`](../deploy/emma/)** (`install.sh [prod|dev]`, 3 systemd units, `bootstrap.py`, `serve-https.sh`,

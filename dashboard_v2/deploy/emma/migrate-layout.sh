@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ONE-TIME, coordinated layout migration to the D32 two-tree topology. Run ON emma. Idempotent + resumable.
 # Converts the legacy single full checkout (~/github/ctrl-b on `main`, the tandem agent's) into:
-#   ~/github/ctrl-b-dev  → full tree on `dev`  (the agent's new home + the DEV instance source)
+#   ~/github/ctrl-b-dev  → full tree on `dev`  (the DEV side — where all dev agents work + the DEV instance source)
 #   ~/github/ctrl-b      → CLEAN sparse, tag-pinned PROD clone (cone mode: dashboard_v2 + top-level files;
 #                          the legacy prototype DIRS — ws_claude*, ctrl-b (Vapor), wol_server — are excluded)
 # SAFE: everything is on GitHub; it REFUSES on uncommitted changes (never loses unpushed work) and REFUSES if
