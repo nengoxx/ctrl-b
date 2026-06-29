@@ -15,6 +15,14 @@ $DIST = Join-Path $FE "dist"
 
 if (-not (Test-Path $VPY)) { throw "backend venv missing - run setup.cmd first." }
 
+# Fail fast with a friendly message if :5433 is already serving (e.g. an instance is already running), rather
+# than letting uvicorn fail to bind with a stack trace.
+if (Get-NetTCPConnection -LocalPort 5433 -State Listen -ErrorAction SilentlyContinue) {
+  Write-Warning "Port 5433 is already in use - a dashboard may already be running. Open http://127.0.0.1:5433 to use it,"
+  Write-Warning "or stop that instance first (close its window / End Task its python.exe), then re-run. Exiting."
+  exit 1
+}
+
 # PROD serves the built dist; build it if missing or -Build. (DEV uses Vite live, so no build needed there.)
 if (-not $Dev -and ($Build -or -not (Test-Path $DIST))) {
   Write-Host "-- building frontend (npm run build)"
