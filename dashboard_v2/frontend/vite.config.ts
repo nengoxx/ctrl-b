@@ -5,6 +5,9 @@ import { visualizer } from "rollup-plugin-visualizer";
 
 // Dev: proxy /api to the FastAPI backend (single origin → no CORS, no mixed content).
 // Backend runs on 5433 so v2 coexists with the live Flask app on 5432 until cutover.
+// The proxy target is `VITE_API_TARGET` (default :5433) so the SAME config serves both the local
+// Windows dev backend AND emma's isolated DEV instance, which points at its own backend on :5434
+// (D32 — prod :5433/~/.ctrl-b vs dev :5434/~/.ctrl-b-dev). No hardcoded port branch.
 // PWA is wired here; the real manifest/precache tuning is Phase 9 (kept minimal for now).
 //
 // Bundle analyzer (F12 in docs/UI_AUDIT.md): `npm run build` always writes `dist/stats.html`
@@ -55,6 +58,6 @@ export default defineConfig({
     // http://corsair:5190) or the Tailscale Serve *.ts.net FQDN. Safe here: tailnet-only,
     // no public bind (AGENTS.md §6 security model).
     allowedHosts: true,
-    proxy: { "/api": "http://127.0.0.1:5433" },
+    proxy: { "/api": process.env.VITE_API_TARGET || "http://127.0.0.1:5433" },
   },
 });

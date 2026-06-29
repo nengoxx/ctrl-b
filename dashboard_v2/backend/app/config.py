@@ -178,7 +178,7 @@ class AgentCfg(BaseModel):
     #: True (default) is the safe choice; set False if you deliberately want a configured subagent
     #: to run at a higher privilege than the agent that spawned it.
     subagent_clamp_privilege: bool = True
-    skills_dir: str = "skills"           # dir scanned for <name>/SKILL.md (relative → project root)
+    skills_dir: str = "skills"           # dir scanned for <name>/SKILL.md (relative → $CTRLB_HOME)
     skills_enabled: bool = True          # master switch for the skills subsystem (4.5)
     # The `skill_manage` self-author tool may write SKILL.md autonomously; off → propose-only
     # (returns data["proposed"], never writes/blocks), mirroring `memory.auto_write` (7e-f-2, D14).
@@ -732,11 +732,12 @@ class Settings(BaseModel):
         return secret_values(self.model_dump())
 
     def skills_dir_path(self) -> Path:
-        """Absolute path to the skills directory. A relative `agent.skills_dir` resolves against the
-        project root (alongside `config.yaml`), so a dropped-in `skills/<name>/SKILL.md` is found
-        wherever the config lives."""
+        """Absolute path to the skills directory. `agent.skills_dir` (default `skills`) resolved against
+        `$CTRLB_HOME` — the same root as `memories_dir_path`/`agents_dir_path`, so every workspace dir
+        shares one root (the `CTRLB_CONFIG` file override never splits skills off) — or honored as-is if
+        absolute."""
         p = Path(self.agent.skills_dir).expanduser()
-        return p if p.is_absolute() else (config_path().parent / p)
+        return p if p.is_absolute() else (self.home_dir() / p)
 
     @staticmethod
     def _read_soul(folder: Path) -> str:

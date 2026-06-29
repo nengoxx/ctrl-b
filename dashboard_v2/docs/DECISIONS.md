@@ -1601,3 +1601,31 @@ So the four cases fall out with no special-casing: base = `<DefaultRoot/>`; base
 **Why (research-backed).** Tokens re-skin, can't restructure (W3C DTCG 2025-10 stable, Material 3, Radix Themes, shadcn). Structural swaps = slot/registry over a headless controller (MUI `slots`, Radix/React-Aria, VS Code/Backstage descriptor registries). The 3-gate prevents the "wrong abstraction"/"registry-of-one" and speculative generality (Metz "duplication is far cheaper than the wrong abstraction"; Dodds AHA; Frost Components/Recipes/Snowflakes; Rule of Three). React state-preservation rules force stable variant refs + fallback.
 
 **Status.** LOCKED. **Generalizes/supersedes D30's `Composer`-prop injection** with the registry+setting mechanism (D30's composition-over-configuration principle stands; selection generalizes to the resolver). **Full engineering contract + how-to + anti-patterns: THEME_ENGINE.md §14.14.**
+
+## D32 — emma deployment topology: two isolated instances (prod + dev), one repo, tags + sparse-checkout ✏️ LOCKED 2026-06-29
+
+**Context.** emma (Ubuntu 26.04, tailnet) is the always-on home for v2. The owner wants BOTH a **production** dashboard for daily use (stable, HTTPS via Tailscale Serve) AND an always-available **development** instance to test changes — **without** dev experiments ever touching prod's config/DB/chat. The coding happens via a **tandem Claude Code agent running on emma in tmux** (alongside the instances; its checkout is read-only to me, one canonical GitHub `main`). Best-practice research (CloudBees env-separation; git worktree-vs-clone; solo-dev branch workflow 2026; GitHub sparse-checkout) backs every choice below.
+
+**Decision — two fully isolated instances on emma, separated on every axis:**
+
+| Axis | PROD (daily driver) | DEV (sandbox) |
+|---|---|---|
+| **Code tree** | `~/github/ctrl-b` — a **CLEAN, sparse, tag-pinned clone** (only `dashboard_v2` + root docs on disk; prototypes never materialize). Pulls from **GitHub** (so prod runs only pushed+merged code). | `~/github/ctrl-b-dev` — full tree on the **`dev`** branch; where the tandem agent works AND what the dev instance serves. |
+| **Data root** (`CTRLB_HOME`) | `~/.ctrl-b` (real `config.yaml` + `ctrlb.db` + memories/skills/agents) | `~/.ctrl-b-dev` (its own copy; seeded from prod's config on first dev install) |
+| **Backend** | `uvicorn :5433` serving the **built `dist`** (no `--reload`) | `uvicorn :5434 --reload` (Linux reload is safe; Windows gotcha is OS-specific) |
+| **Frontend** | built into `dist`, served by uvicorn | Vite `:5173` HMR → proxies `/api` → `:5434` (via `VITE_API_TARGET`) |
+| **Ingress** | **Tailscale Serve HTTPS :443** (mic works) | `http://emma:5173` (LAN/tailnet, HTTP, no mic — visual iteration) |
+| **systemd user units** | `ctrl-b-dashboard.service` (enabled, always-on) | `ctrl-b-dashboard-dev.service` (backend) + `ctrl-b-dashboard-dev-web.service` (Vite) — start when iterating |
+| **Agent files** | **none** — prod is just the dashboard + its service + Serve | the tmux Claude agent (`start-claude.sh`) lives here (`PROJECT=~/github/ctrl-b-dev`) |
+
+**Branches + releases.** One repo, two branches: **`main`** = always-deployable production line; **`dev`** = WIP (the agent's branch, drives the dev instance). **Tags `vX.Y.Z`** mark releases — prod checks out a **tag** (detached, frozen, named) for reproducibility + instant rollback (`git checkout v(prev)`). **Promote** = agent merges `dev → main`, tags `vX.Y`, pushes → prod `git fetch --tags && git checkout vX.Y && install.sh prod`.
+
+**Clean production = sparse-checkout, NOT a divergent branch or a separate repo.** The prod clone runs `git sparse-checkout set dashboard_v2 AGENTS.md CLAUDE.md` so only those paths exist on disk; the prototype folders (`ws_claude*`, `ctrl-b (Vapor)`, `wol_server`, `ws_codex*`) stay in history but never appear in the prod tree — **zero merge conflicts** (nothing is deleted, just not checked out). Rejected: a `prod` branch that deletes prototypes (every dev→main merge re-collides — known anti-pattern); a separate repo (fragments history, double remotes). The eventual permanent cleanup is a **one-time** delete commit on `main` when v2 fully replaces the live Flask app ("graduation"), not an ongoing divergence.
+
+**Clone, not worktree** for the prod tree even though both run on emma: with an autonomous agent mutating `~/github/ctrl-b-dev` and the read-only constraint, **isolation beats the marginal disk/fetch savings**; a separate clone keeps prod's git state fully decoupled and lets prod pull only from GitHub (the agent's unpushed WIP physically can't leak into the daily driver).
+
+**`CTRLB_HOME` is the isolation seam** (D14/D15 #2) — it already existed; this just points each instance at a different root. All workspace data (`config.yaml`, `ctrlb.db`, `memories/`, `skills/`, `agents/`) resolves under it; the coarse `CTRLB_HOME` knob relocates everything together, the fine `CTRLB_CONFIG`/`CTRLB_DB` knobs override single files (test/back-compat only). Audited 2026-06-29: every data path resolves under `CTRLB_HOME` — fixed `skills_dir_path()` (was keyed to `config_path().parent` → now `home_dir()`, matching memories/agents) so a `CTRLB_CONFIG`-only override can never split skills off.
+
+**One-time migration (coordinated with the tandem agent — NOT auto-run).** emma currently has a single full checkout at `~/github/ctrl-b` (the agent's, on `main`). To adopt this layout: (1) the agent relocates to `~/github/ctrl-b-dev` on `dev`; (2) `~/github/ctrl-b` is converted **in place** to the prod clone (`git sparse-checkout init --cone` + `set` + `checkout <tag>`) — no re-clone, no data loss (everything is on GitHub). `bootstrap.py` **detects and instructs**; it never silently mutates the agent's tree.
+
+**Status.** LOCKED 2026-06-29. Supersedes the earlier single-tree, shared-backend deploy sketch (dev was Vite-only proxying to the prod backend → NOT isolated). Artifacts: `deploy/emma/` (`install.sh [prod|dev]`, the three service units, `bootstrap.py`, `serve-https.sh`, `start-claude.sh`); runbook `deploy/emma/README.md`; rationale `docs/DEPLOY_EMMA.md`.

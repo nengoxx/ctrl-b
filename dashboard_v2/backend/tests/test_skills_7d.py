@@ -24,7 +24,8 @@ def _client():
 def test_skill_file_crud() -> None:
     tmp = Path(tempfile.mkdtemp())
     cfg = tmp / "config.yaml"
-    cfg.write_text("server:\n  port: 5433\n", encoding="utf-8")  # skills_dir defaults to ./skills
+    cfg.write_text("server:\n  port: 5433\n", encoding="utf-8")  # skills_dir defaults to $CTRLB_HOME/skills
+    os.environ["CTRLB_HOME"] = str(tmp)
     os.environ["CTRLB_CONFIG"] = str(cfg)
     os.environ["CTRLB_DB"] = str(tmp / "t.db")
     try:
@@ -60,6 +61,7 @@ def test_skill_file_crud() -> None:
             assert c.delete("/api/skills/my-skill").status_code == 404
             assert c.get("/api/skills").json() == []
     finally:
+        os.environ.pop("CTRLB_HOME", None)
         os.environ.pop("CTRLB_CONFIG", None)
         os.environ.pop("CTRLB_DB", None)
 

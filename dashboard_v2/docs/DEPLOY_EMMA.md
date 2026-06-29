@@ -1,9 +1,15 @@
 # Deploy to emma (Linux) — planning + conversation record
 
-> **Status: ✅ DECISIONS MADE · ✅ RECON DONE · ✅ ARTIFACTS READY (2026-06-29) — execute in the clean session.**
-> The read-only recon of emma is complete; the deploy artifacts + runbook are written under **[`../deploy/emma/`](../deploy/emma/)**
-> (start at its `README.md`). The only remaining step is **executing the bootstrap** (transfer `config.yaml` + run
-> `install.sh` + Tailscale Serve + start the agent) — done in the clean session via `deploy/emma/bootstrap.py`.
+> **Status: ✅ DECISIONS MADE · ✅ RECON DONE · ✅ ARTIFACTS READY (2026-06-29).**
+> **Authoritative topology: [DECISIONS.md **D32**](./DECISIONS.md) — two fully isolated instances (PROD + DEV),
+> one repo, `main`/`dev` branches + release **tags**, prod a clean **sparse** clone.** The runbook is
+> **[`../deploy/emma/README.md`](../deploy/emma/README.md)**. Remaining: the **one-time, agent-coordinated layout
+> migration** (`migrate-layout.sh`) then `bootstrap.py` (transfer `config.yaml` → ensure prod tree → `install.sh
+> prod` → Tailscale Serve; `--with-dev` for the sandbox; `--start-agent` for the tmux agent).
+>
+> **Topology in one line:** PROD `~/github/ctrl-b` (sparse, tag-pinned) → `~/.ctrl-b` → uvicorn :5433 + Serve HTTPS;
+> DEV `~/github/ctrl-b-dev` (`dev` branch) → `~/.ctrl-b-dev` → uvicorn :5434 + Vite :5173. Fully isolated data;
+> dev experiments never touch the daily driver. The earlier single-tree/shared-backend sketch below is SUPERSEDED.
 
 ## ✅ Verified emma environment (read-only recon, 2026-06-29 — via paramiko + config.yaml creds)
 
@@ -24,9 +30,12 @@
 **Config path (from `config.py`):** `CTRLB_HOME` holds `config.yaml`+db+workspace; the code documents *"emma / new
 installs set `CTRLB_HOME=~/.ctrl-b`"* → config at `/home/emma/.ctrl-b/config.yaml`; the systemd service sets that env.
 
-**Artifacts (`deploy/emma/`):** `install.sh` (idempotent on-emma setup) · `ctrl-b-dashboard.service` (prod) ·
-`ctrl-b-dashboard-dev.service` (dev/Vite) · `serve-https.sh` (Tailscale Serve) · `start-claude.sh` (tmux agent) ·
-`bootstrap.py` (Windows→emma: SFTP secret + git pull + install) · `README.md` (the runbook).
+**Artifacts (`deploy/emma/`) — D32 two-tree:** `install.sh [prod|dev]` (idempotent per-instance setup) ·
+`ctrl-b-dashboard.service` (PROD backend :5433) · `ctrl-b-dashboard-dev.service` (DEV backend :5434, `--reload`) ·
+`ctrl-b-dashboard-dev-web.service` (DEV Vite :5173 → :5434) · `serve-https.sh` (Tailscale Serve 443→5433) ·
+`start-claude.sh` (tmux agent, **dev tree**) · `migrate-layout.sh` (one-time legacy→two-tree conversion) ·
+`bootstrap.py` (Windows→emma: SFTP secret → ensure prod tree → install → serve; `--with-dev`/`--start-agent`) ·
+`README.md` (the runbook).
 
 ## Execution plan + ownership — I can self-deploy END-TO-END (verified 2026-06-29)
 
@@ -44,11 +53,13 @@ or run later) since it's the interactive runtime, not the dashboard.
 
 **The command (I run it):**
 ```
-backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py --dry-run   # preview the plan
-backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py             # full deploy (prereqs→config→pull→install→https)
-backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py --start-agent   # also bring up the Claude agent in tmux
+backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py --dry-run     # preview the plan
+backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py               # prod deploy (prereqs→config→prod-tree→install→https)
+backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py --with-dev    # also stand up the isolated DEV instance
+backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py --start-agent # also bring up the Claude agent in tmux (dev tree)
 ```
-(Bash tool needs `dangerouslyDisableSandbox: true` for LAN. Idempotent — safe to re-run.)
+(Bash tool needs `dangerouslyDisableSandbox: true` for LAN. Idempotent — safe to re-run.) **First run only:** if the
+prod tree hasn't been migrated yet, bootstrap stops and points at the one-time `migrate-layout.sh` (§ below).
 
 **Options / who-runs-what (flexible):**
 - **Me, fully (default, recommended):** `bootstrap.py` does 0–4 end-to-end; I verify health; I start the agent
@@ -108,9 +119,11 @@ A Vite/React app is **built** (`npm run build`) into static files (`frontend/dis
 | See a code change | **rebuild** (`npm run build`) | **instant** (hot-reload) |
 | Use for | *using* the dashboard (stable, fast, one port) | *iterating* on the dashboard (live edits) |
 
-**Recommendation:** the always-on **systemd service runs PROD** (stable, one port, what you "use"); when actively
-iterating, launch **dev** on-demand (a tmux window running `vite dev` + `uvicorn --reload`). Optionally a *second*
-always-on dev service on different ports — but that's more moving parts; start simple. ❓DECISION-1 below.
+**Decided (D32, supersedes the "start simple" note):** run BOTH as **fully isolated** instances — PROD (built
+`dist`, :5433, `~/.ctrl-b`, Serve HTTPS) AND a separate DEV stack (own backend `uvicorn --reload :5434` + Vite
+:5173, `~/.ctrl-b-dev`). Separate data roots mean dev experiments — backend edits, config changes, chat — never
+touch the daily driver. The earlier "dev = Vite-only proxying to the prod backend" idea is dropped (it shared
+prod's backend + data → not isolated). Per-instance control via the three systemd user units.
 
 ## Recommended architecture (researched)
 

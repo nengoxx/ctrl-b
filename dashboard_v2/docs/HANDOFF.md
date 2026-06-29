@@ -82,14 +82,19 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >
 > **Read this priority list first — it supersedes the per-feature "NEXT" notes scattered in older blocks below.**
 >
-> 1. **▶ ACTIVE — Deploy to emma (Ubuntu 26.04 LAN/tailnet server). RECON DONE · ARTIFACTS READY · execute next.**
->    Stand up (a) the **dashboard** as an always-on service (prod via Tailscale Serve HTTPS + an always-on dev/Vite)
->    and (b) the **Claude Code remote agent** (tmux). Decisions made, emma recon'd read-only, and all artifacts +
->    runbook are written under **[`../deploy/emma/`](../deploy/emma/)** (start at its `README.md`); full context +
->    verified-environment table in **[`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md)**. **The only remaining step is executing
->    the bootstrap** — from the Windows checkout: `backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py`
->    (SFTPs the gitignored `config.yaml` → emma, git-pulls, runs `install.sh`), then `serve-https.sh` +
->    `start-claude.sh` on emma. Subsumes TODO **Phase 9**.
+> 1. **▶ ACTIVE — Deploy to emma (Ubuntu 26.04 LAN/tailnet server). TOPOLOGY LOCKED (D32) · ARTIFACTS READY · execute next.**
+>    **Topology = DECISIONS.md [D32](./DECISIONS.md): TWO fully isolated instances, one repo.** PROD `~/github/ctrl-b`
+>    (clean **sparse**, **tag-pinned** clone) → `~/.ctrl-b` → uvicorn **:5433** + **Tailscale Serve HTTPS**; DEV
+>    `~/github/ctrl-b-dev` (`dev` branch, the tandem agent's tree) → `~/.ctrl-b-dev` → uvicorn **:5434 --reload** +
+>    **Vite :5173**. Separate data roots → dev experiments never touch the daily driver. Branches `main`(prod)/`dev`(WIP)
+>    + release **tags**; promote = merge dev→main, tag, push, prod `checkout vX.Y`. Artifacts + runbook under
+>    **[`../deploy/emma/`](../deploy/emma/)** (`install.sh [prod|dev]`, 3 systemd units, `bootstrap.py`, `serve-https.sh`,
+>    `start-claude.sh`, **`migrate-layout.sh`**); rationale in **[`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md)**.
+>    **Execute:** (1) ONE-TIME, agent-coordinated **`migrate-layout.sh`** on emma (stop the agent → converts the legacy
+>    single checkout into the two trees); (2) `backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py` (SFTP secret →
+>    ensure prod tree → `install.sh prod` → Serve; `--with-dev`, `--start-agent`). Subsumes TODO **Phase 9**.
+>    Data-path audit (2026-06-29) confirmed every workspace path resolves under `CTRLB_HOME`; fixed `skills_dir_path()`
+>    (was `config_path().parent` → now `home_dir()`, matching memories/agents) — 229/229 green.
 > 2. **✅ DONE — backend test harness fixed + Python 3.14 readiness VERIFIED (2026-06-29).** The broken harness (audit
 >    #2 R1: `76 failed / 153 passed` from `get_event_loop().run_until_complete()` in 13 files) is fixed via a shared
 >    3.14-safe runner (`tests/_async.py` `run_async`) → **229 passed, 0 failed** on Python 3.11 **and** on emma's

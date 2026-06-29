@@ -14,7 +14,9 @@
 set -euo pipefail
 
 SESSION="ctrl-b"
-PROJECT="/home/emma/github/ctrl-b"
+# The agent works in the DEV tree (D32): full checkout on the `dev` branch, which the dev instance also
+# serves. PROD (~/github/ctrl-b) is a clean, sparse, tag-pinned clone — the agent never works there.
+PROJECT="/home/emma/github/ctrl-b-dev"
 MODEL="claude-opus-4-8"
 EFFORT="high"
 PERM="bypassPermissions"

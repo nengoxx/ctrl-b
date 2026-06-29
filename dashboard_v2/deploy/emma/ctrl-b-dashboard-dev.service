@@ -1,17 +1,19 @@
-# ctrl-b dashboard — DEV (systemd USER service for emma). OPTIONAL / always-on "watch latest changes".
-# Runs the Vite dev server (hot-reload) on 0.0.0.0:5173; Vite proxies /api → 127.0.0.1:5433 (the PROD
-# backend), so this shows the latest FRONTEND against the running backend. Reach it on the tailnet at
-# http://emma:5173 (HTTP — no mic; dev is for visual iteration). Backend changes → restart ctrl-b-dashboard.
-# Manage:  systemctl --user {start,stop,restart} ctrl-b-dashboard-dev   (enable only if you want it always-on)
-# (No network-online.target ordering — system target, no user equivalent; see the prod unit's note.)
+# ctrl-b dashboard — DEV BACKEND (systemd USER service for emma). OPTIONAL / on-demand when iterating.
+# FULLY ISOLATED from prod (D32): its own port (5434), its own data root (~/.ctrl-b-dev), its own code
+# tree (~/github/ctrl-b-dev on the `dev` branch — where the tandem agent works). Nothing here can touch
+# the prod backend (:5433) or prod data (~/.ctrl-b). uvicorn --reload (safe on Linux) so backend edits
+# hot-reload. Pair with ctrl-b-dashboard-dev-web.service (Vite :5173 → proxies /api here).
+# Manage:  systemctl --user {start,stop,restart} ctrl-b-dashboard-dev
+# (No network-online.target / NoNewPrivileges — same rationale as the prod unit's notes.)
 [Unit]
-Description=ctrl-b dashboard (v2, dev / Vite hot-reload)
+Description=ctrl-b dashboard (v2, DEV backend — isolated :5434 / ~/.ctrl-b-dev)
 
 [Service]
 Type=simple
-WorkingDirectory=/home/emma/github/ctrl-b/dashboard_v2/frontend
-# `npm run dev` = vite --host 0.0.0.0 (port 5173, proxy /api → 127.0.0.1:5433). Linux reload is safe.
-ExecStart=/usr/bin/npm run dev
+WorkingDirectory=/home/emma/github/ctrl-b-dev/dashboard_v2/backend
+Environment=CTRLB_HOME=/home/emma/.ctrl-b-dev
+# DEV: own data root, own port, --reload picks up backend edits live.
+ExecStart=/home/emma/github/ctrl-b-dev/dashboard_v2/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 5434 --reload
 Restart=on-failure
 RestartSec=5
 
