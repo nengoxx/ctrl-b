@@ -23,6 +23,20 @@ warns if `config.yaml` (fleet/integrations/secrets) is missing from the app root
 
 Stop it with **Ctrl-C** in its window.
 
+## Auto-start at logon (run it like a service)
+For an always-on daily driver (starts automatically, hidden, in the background — the Windows equivalent of
+emma's systemd service):
+| Command | What it does |
+|---|---|
+| **`autostart-enable.cmd`** (double-click) | register a Scheduled Task: runs PROD `:5433` at logon, hidden, crash-restart. **Approve the UAC prompt** (registering a task needs admin; the script self-elevates). |
+| `autostart-enable.cmd -Tailscale` | same, and also (re)applies `tailscale serve` HTTPS at logon |
+| **`autostart-disable.cmd`** (double-click) | remove the task (stops auto-starting). Doesn't stop an already-running instance. |
+
+Notes: the task stores `start.ps1`'s absolute path — **re-run `autostart-enable` after moving the repo**.
+`tailscale serve` persists across reboots on its own once set, so plain auto-start is reachable on the tailnet
+if you've ever run `start.cmd -Tailscale`. Inspect/trigger it in **Task Scheduler → `ctrl-b-dashboard`**
+(or `Start-ScheduledTask -TaskName ctrl-b-dashboard`).
+
 ## Notes
 - **Never `--reload` on Windows** (the scripts don't): the uvicorn reload worker breaks `asyncio` subprocesses,
   so fleet pings return empty and every host shows offline. Backend code changes need a manual restart; the
