@@ -667,9 +667,11 @@ tools + confirm bubbles) are DONE.**
 - [x] Prod: FastAPI serves `frontend/dist` (StaticFiles `/assets` mount + SPA `FileResponse` fallback,
       gated on the dist dir existing so dev is unaffected) — `main.py`. Single origin.
 - [x] `debug=False` default (config.py); backend deps pinned (`pyproject.toml`, exact versions).
-- [ ] **Deploy profile for emma (Linux): a `systemd` unit** (uvicorn on boot, no `--reload`) + a Linux
-      install/run script (venv + `pip install`, `npm ci && npm run build`, start). _v2 has no install
-      script yet — the existing `*.bat` are the **legacy** Flask server's._ (Termux notes optional, later.)
+- [~] **Deploy profile for emma (Linux): systemd units + install/runbook — BUILT, awaiting execution.** All
+      artifacts under [`../deploy/emma/`](../deploy/emma/): `ctrl-b-dashboard.service` (prod, user service, uvicorn
+      5433 no-reload) + `ctrl-b-dashboard-dev.service` (Vite) + `install.sh` + `serve-https.sh` (Tailscale Serve) +
+      `start-claude.sh` (tmux agent) + `bootstrap.py` (Windows→emma) + `README.md`. Recon + decisions + verified env
+      in [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md). **Remaining: run `deploy/emma/bootstrap.py` (the execution step).**
 - [ ] Minimal smoke tests (Playwright desktop + Android viewport; a couple of backend action tests).
 
 ## Phase 10 — Cutover

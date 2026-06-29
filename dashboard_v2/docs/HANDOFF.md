@@ -82,11 +82,14 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >
 > **Read this priority list first — it supersedes the per-feature "NEXT" notes scattered in older blocks below.**
 >
-> 1. **▶ ACTIVE — Deploy to emma (the Linux/Kubuntu LAN server).** Stand up TWO things on emma: (a) the **dashboard**
->    as an always-on service, and (b) the **Claude Code remote agent** so dev/audit continues on the target machine.
->    Full understanding + recommended architecture + the OPEN DECISIONS (a real conversation, not yet built) live in
->    **[`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) — START THERE for deploy.** This subsumes TODO **Phase 9** (the dashboard
->    systemd unit + Linux install script + smoke tests) and adds the Claude-Code-agent service.
+> 1. **▶ ACTIVE — Deploy to emma (Ubuntu 26.04 LAN/tailnet server). RECON DONE · ARTIFACTS READY · execute next.**
+>    Stand up (a) the **dashboard** as an always-on service (prod via Tailscale Serve HTTPS + an always-on dev/Vite)
+>    and (b) the **Claude Code remote agent** (tmux). Decisions made, emma recon'd read-only, and all artifacts +
+>    runbook are written under **[`../deploy/emma/`](../deploy/emma/)** (start at its `README.md`); full context +
+>    verified-environment table in **[`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md)**. **The only remaining step is executing
+>    the bootstrap** — from the Windows checkout: `backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py`
+>    (SFTPs the gitignored `config.yaml` → emma, git-pulls, runs `install.sh`), then `serve-https.sh` +
+>    `start-claude.sh` on emma. Subsumes TODO **Phase 9**.
 > 2. **⏸ PARKED — Theme engine (Composer Surface + audit hardening).** Fully specified, resume any time:
 >    [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) (build A1→A2→A3) · locked architecture **D31 / §14.14** ·
 >    audit theme-engine backlog in [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md) 🟡.

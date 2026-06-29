@@ -1,0 +1,23 @@
+# ctrl-b dashboard — PRODUCTION (systemd USER service for emma).
+# Install: ~/.config/systemd/user/ctrl-b-dashboard.service  (emma has linger=yes → persists without login).
+# uvicorn serves the API + the built frontend/dist on 127.0.0.1:5433; Tailscale Serve fronts it with HTTPS
+# (serve-https.sh). Bound to localhost ONLY — never the LAN — so the tailnet (via Serve) is the sole ingress.
+# Manage:  systemctl --user {start,stop,restart,status} ctrl-b-dashboard
+[Unit]
+Description=ctrl-b dashboard (v2, production)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/emma/github/ctrl-b/dashboard_v2/backend
+Environment=CTRLB_HOME=/home/emma/.ctrl-b
+# PROD: serve the built dist, no --reload. Bind localhost; Tailscale Serve is the HTTPS ingress.
+ExecStart=/home/emma/github/ctrl-b/dashboard_v2/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 5433
+Restart=on-failure
+RestartSec=5
+# Light hardening (a user service can't do much more without root):
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

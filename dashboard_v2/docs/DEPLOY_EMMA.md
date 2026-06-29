@@ -1,8 +1,45 @@
 # Deploy to emma (Linux) — planning + conversation record
 
-> **Status: 🗣️ PLANNING / DECISIONS PENDING.** This is the live record of the deployment conversation (started
-> 2026-06-29), NOT a finalized build plan. Sections marked **❓DECISION** are open and need the owner's answer before
-> building. Once decided, this becomes the build runbook.
+> **Status: ✅ DECISIONS MADE · ✅ RECON DONE · ✅ ARTIFACTS READY (2026-06-29) — execute in the clean session.**
+> The read-only recon of emma is complete; the deploy artifacts + runbook are written under **[`../deploy/emma/`](../deploy/emma/)**
+> (start at its `README.md`). The only remaining step is **executing the bootstrap** (transfer `config.yaml` + run
+> `install.sh` + Tailscale Serve + start the agent) — done in the clean session via `deploy/emma/bootstrap.py`.
+
+## ✅ Verified emma environment (read-only recon, 2026-06-29 — via paramiko + config.yaml creds)
+
+| Fact | Value | Deploy impact |
+|---|---|---|
+| Address | tailnet **`emma`** / `100.109.206.88` (LAN `192.168.1.160`); `.138` was the OLD decommissioned box | use `.160` / MagicDNS `emma` |
+| OS | Ubuntu 26.04 LTS, kernel 7.0, x86_64 · 16 cores · 30 GiB RAM · 392 GB free | ample |
+| Backend venv | **Python 3.11.15** (not system 3.14), deps healthy (uvicorn 0.48 / fastapi 0.136 / pydantic 2.13), `uvicorn` runs | **no 3.14 risk**; reuse venv |
+| Node | v24.16 / npm 11.13 | fine |
+| `claude` CLI | **installed** (2.1.177, `~/.local/bin/claude`) | agent ready |
+| tmux | **NOT installed** | `sudo apt install -y tmux` (prereq) |
+| systemd user-linger | **ON** | user services persist w/o login ✓ |
+| Tailscale | up, 1.98.4 | `tailscale serve --bg --https=443 5433` |
+| Repo | `/home/emma/github/ctrl-b`, clean on `main` @ `4f277b5`; **node_modules + dist present** | mostly prepped |
+| **`config.yaml`** | **MISSING** (CTRLB_HOME default `~/.ctrl-b`) | **must transfer** (gitignored secret) |
+| Ports | 5433 / 5173 / 443 **free**; 8888/9999/3003/9000 = emma's SearXNG/terminal/MCP/voice | no collision |
+
+**Config path (from `config.py`):** `CTRLB_HOME` holds `config.yaml`+db+workspace; the code documents *"emma / new
+installs set `CTRLB_HOME=~/.ctrl-b`"* → config at `/home/emma/.ctrl-b/config.yaml`; the systemd service sets that env.
+
+**Artifacts (`deploy/emma/`):** `install.sh` (idempotent on-emma setup) · `ctrl-b-dashboard.service` (prod) ·
+`ctrl-b-dashboard-dev.service` (dev/Vite) · `serve-https.sh` (Tailscale Serve) · `start-claude.sh` (tmux agent) ·
+`bootstrap.py` (Windows→emma: SFTP secret + git pull + install) · `README.md` (the runbook).
+
+## ✅ Decisions (owner, 2026-06-29)
+
+1. **Dashboard mode: BOTH, always-on.** A **prod** instance (behind **Tailscale Serve**, HTTPS) to use, AND an
+   **always-on dev** instance (hot-reload) to watch what we're changing. → two services, different ports.
+2. **Tailscale: already up on emma.** Recon the tailnet name + emma's MagicDNS host/URL during the environment check.
+3. **Claude Code agent: tmux + crash-restart `while true` loop, sessions managed MANUALLY** by the owner (start/attach
+   by hand). Provide the launcher; auto-boot systemd unit optional (owner starts it manually).
+4. **First deploy: I plan AND execute over SSH.** Secrets are copied from **this Windows checkout** (which has a
+   ready `config.yaml`/`clients`) to emma's correct folder. SSH keys are configured here.
+5. **Repo path on emma:** confirm during recon (owner guessed `~/git*/ctrl-b`).
+6. **Two-agent coordination:** **`external_audit/`** is the audit drop folder; **`docs/agent_coordination/`** log
+   approved (lightweight who's-doing-what). The other agent's checkout stays read-only to me; one canonical GitHub `main`.
 
 ## Goal
 
