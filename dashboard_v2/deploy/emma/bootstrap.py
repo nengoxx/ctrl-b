@@ -140,7 +140,7 @@ def ensure_prod_tree(m: "Emma") -> int:
               "migrate-layout.sh on the existing checkout.")
         return 1
     m.run(f"git clone --filter=blob:none --sparse {gh} {PROD_REPO} && "
-          f"git -C {PROD_REPO} sparse-checkout set dashboard_v2 AGENTS.md CLAUDE.md && "
+          f"git -C {PROD_REPO} sparse-checkout set dashboard_v2 && "  # cone mode: + top-level files; prototype dirs drop
           f'TAG=$(git -C {PROD_REPO} describe --tags --abbrev=0 2>/dev/null || true); '
           f'[ -n "$TAG" ] && git -C {PROD_REPO} checkout --quiet "$TAG" || git -C {PROD_REPO} checkout --quiet main')
     return 0

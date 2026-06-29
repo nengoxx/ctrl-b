@@ -2,14 +2,17 @@
 # ONE-TIME, coordinated layout migration to the D32 two-tree topology. Run ON emma. Idempotent + resumable.
 # Converts the legacy single full checkout (~/github/ctrl-b on `main`, the tandem agent's) into:
 #   ~/github/ctrl-b-dev  → full tree on `dev`  (the agent's new home + the DEV instance source)
-#   ~/github/ctrl-b      → CLEAN sparse, tag-pinned PROD clone (only dashboard_v2 + root docs on disk)
+#   ~/github/ctrl-b      → CLEAN sparse, tag-pinned PROD clone (cone mode: dashboard_v2 + top-level files;
+#                          the legacy prototype DIRS — ws_claude*, ctrl-b (Vapor), wol_server — are excluded)
 # SAFE: everything is on GitHub; it REFUSES on uncommitted changes (never loses unpushed work) and REFUSES if
 # the Claude agent tmux session is running — coordinate first (stop it / detach it from this box).
 set -euo pipefail
 
 PROD="$HOME/github/ctrl-b"
 DEV="$HOME/github/ctrl-b-dev"
-SPARSE=(dashboard_v2 AGENTS.md CLAUDE.md)
+# Cone mode (the modern `set` default): args are DIRECTORIES; top-level files (AGENTS.md, CLAUDE.md, …) are
+# always included. So `set dashboard_v2` = the app tree + root files; only the legacy prototype dirs drop out.
+SPARSE=(dashboard_v2)
 
 is_sparse() { [ -d "$1/.git" ] && [ "$(git -C "$1" config --get core.sparseCheckout 2>/dev/null)" = "true" ]; }
 
