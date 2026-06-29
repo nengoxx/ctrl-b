@@ -11,7 +11,7 @@ Steps, each flag-gated so you can hand any of them to the owner:
   1. secret          — SFTP the gitignored dashboard_v2/config.yaml -> emma ~/.ctrl-b/config.yaml (0600)
   2. prod tree       — ensure ~/github/ctrl-b is the sparse, tag-pinned PROD clone (detect + update; the
                        ONE-TIME migration off the legacy full checkout is the coordinated migrate-layout.sh)
-  3. install (prod)  — deploy/emma/install.sh prod (native-3.14 venv + pip install -e . + npm build + service)
+  3. install (prod)  — deploy/emma/scripts/install.sh prod (native-3.14 venv + pip install -e . + npm build + service)
   4. https           — serve-https.sh (Tailscale Serve 443->5433; mic-ready)                          [--no-serve]
   5. dev (optional)  — install.sh dev on ~/github/ctrl-b-dev (isolated :5434 + Vite :5173)            [--with-dev]
   6. agent           — start-claude.sh (the Claude agent in tmux, IN THE DEV TREE)                    [--start-agent]
@@ -128,8 +128,8 @@ def ensure_prod_tree(m: "Emma") -> int:
     if state == "full":
         print("  ⚠ ~/github/ctrl-b is still the LEGACY full checkout (the tandem agent's).")
         print("    The D32 layout needs a ONE-TIME, agent-coordinated migration (stop the agent, then):")
-        print(f"      ssh emma -t 'bash {DEV_REPO}/dashboard_v2/deploy/emma/migrate-layout.sh'  # if dev tree exists")
-        print(f"      ssh emma -t 'bash {PROD_REPO}/dashboard_v2/deploy/emma/migrate-layout.sh'  # otherwise")
+        print(f"      ssh emma -t 'bash {DEV_REPO}/dashboard_v2/deploy/emma/scripts/migrate-layout.sh'  # if dev tree exists")
+        print(f"      ssh emma -t 'bash {PROD_REPO}/dashboard_v2/deploy/emma/scripts/migrate-layout.sh'  # otherwise")
         print("    It moves the checkout → ~/github/ctrl-b-dev (branch dev) and re-creates ~/github/ctrl-b")
         print("    as a clean sparse clone. Re-run bootstrap.py afterward. (Not auto-run — it touches the agent.)")
         return 2
@@ -187,7 +187,7 @@ def main() -> int:
         m.run(f"git -C {PROD_REPO} log --oneline -1")
 
         step(3, "install.sh prod (native-3.14 venv + dist + enable prod service)")
-        rc = m.run(f"cd {PROD_REPO}/dashboard_v2 && CTRLB_HOME={PROD_HOME} bash deploy/emma/install.sh prod")
+        rc = m.run(f"cd {PROD_REPO}/dashboard_v2 && CTRLB_HOME={PROD_HOME} bash deploy/emma/scripts/install.sh prod")
         if rc:
             print(f"ERROR: install.sh prod exited {rc}."); return rc
         m.run("systemctl --user status ctrl-b-dashboard --no-pager | head -4 || true")
@@ -195,7 +195,7 @@ def main() -> int:
 
         if not NO_SERVE:
             step(4, "Tailscale Serve (HTTPS 443 -> 5433)")
-            m.run(f"cd {PROD_REPO}/dashboard_v2 && bash deploy/emma/serve-https.sh")
+            m.run(f"cd {PROD_REPO}/dashboard_v2 && bash deploy/emma/scripts/serve-https.sh")
 
         if WITH_DEV:
             step(5, "install.sh dev (isolated DEV instance)")
@@ -203,7 +203,7 @@ def main() -> int:
             if has_dev != "yes":
                 print(f"  ⚠ no DEV tree at {DEV_REPO} — run migrate-layout.sh first (it creates it). Skipping dev.")
             else:
-                rc = m.run(f"cd {DEV_REPO}/dashboard_v2 && CTRLB_HOME={DEV_HOME} bash deploy/emma/install.sh dev")
+                rc = m.run(f"cd {DEV_REPO}/dashboard_v2 && CTRLB_HOME={DEV_HOME} bash deploy/emma/scripts/install.sh dev")
                 if rc:
                     print(f"  ⚠ install.sh dev exited {rc} (prod is unaffected).")
                 else:
@@ -211,12 +211,12 @@ def main() -> int:
 
         if START_AGENT:
             step(6, "start the Claude agent (tmux, dev tree)")
-            m.run(f"cd {DEV_REPO}/dashboard_v2 && bash deploy/emma/start-claude.sh || "
+            m.run(f"cd {DEV_REPO}/dashboard_v2 && bash deploy/emma/scripts/start-claude.sh || "
                   f"echo '(start-claude needs the dev tree — run migrate-layout.sh first)'")
 
         print("\nDEPLOY COMPLETE. Dashboard: https://emma.<tailnet>.ts.net (see `tailscale serve status`).")
         if not START_AGENT:
-            print(f"  Start the agent when ready:  ssh emma -t 'cd {DEV_REPO}/dashboard_v2 && bash deploy/emma/start-claude.sh'")
+            print(f"  Start the agent when ready:  ssh emma -t 'cd {DEV_REPO}/dashboard_v2 && bash deploy/emma/scripts/start-claude.sh'")
         return 0
     finally:
         m.close()

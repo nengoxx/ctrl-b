@@ -4,7 +4,7 @@
 # instance from the tree it's run in. It never touches secrets beyond the one-time dev seed-copy, and only
 # ever manages the user's own systemd.
 #
-# Usage:  bash deploy/emma/install.sh [prod|dev]      (default: prod)
+# Usage:  bash deploy/emma/scripts/install.sh [prod|dev]      (default: prod)
 #
 #   prod →  PROD instance (D32).  Tree: ~/github/ctrl-b (CLEAN, sparse, tag-pinned).  Data: ~/.ctrl-b.
 #           Builds the native-3.14 venv + the PROD dist (served by uvicorn :5433); enables
@@ -22,7 +22,9 @@ case "$ROLE" in
   *)    echo "usage: install.sh [prod|dev]"; exit 2 ;;
 esac
 V2="$REPO/dashboard_v2"
-HERE="$V2/deploy/emma"
+DEPLOY="$V2/deploy/emma"          # README + bootstrap.py live here; units in systemd/, shell helpers in scripts/
+UNIT_DIR="$DEPLOY/systemd"
+SCRIPTS="$DEPLOY/scripts"
 
 # `systemctl --user` needs the user bus address — NOT set on a non-interactive SSH exec (how bootstrap.py
 # runs this). linger=yes keeps /run/user/UID (+ its bus) alive, so pointing at it makes --user work over SSH.
@@ -75,7 +77,7 @@ fi
 
 # 5) Install + enable the systemd USER units (linger=yes → they run without an active login).
 mkdir -p "$HOME/.config/systemd/user"
-for u in "${UNITS[@]}"; do cp "$HERE/$u" "$HOME/.config/systemd/user/"; done
+for u in "${UNITS[@]}"; do cp "$UNIT_DIR/$u" "$HOME/.config/systemd/user/"; done
 systemctl --user daemon-reload
 systemctl --user enable --now "${UNITS[@]}"
 echo "-- [$ROLE] units enabled: ${UNITS[*]}"
@@ -84,9 +86,9 @@ echo ""
 if [ "$ROLE" = prod ]; then
   echo "✓ PROD install done. Verify:  systemctl --user status ctrl-b-dashboard  |  curl -s localhost:5433/api/health"
   echo "Next:"
-  echo "  • HTTPS on the tailnet:   bash $HERE/serve-https.sh"
-  echo "  • Set up the DEV sandbox: clone ~/github/ctrl-b-dev (dev branch), then  bash deploy/emma/install.sh dev"
+  echo "  • HTTPS on the tailnet:   bash $SCRIPTS/serve-https.sh"
+  echo "  • Set up the DEV sandbox: clone ~/github/ctrl-b-dev (dev branch), then  bash deploy/emma/scripts/install.sh dev"
 else
   echo "✓ DEV install done. Verify:  systemctl --user status ctrl-b-dashboard-dev  |  curl -s localhost:5434/api/health"
-  echo "  Dev UI: http://emma:5173 (Vite → :5434).  The Claude agent runs here:  bash $HERE/start-claude.sh"
+  echo "  Dev UI: http://emma:5173 (Vite → :5434).  The Claude agent runs here:  bash $SCRIPTS/start-claude.sh"
 fi

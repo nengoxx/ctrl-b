@@ -70,6 +70,6 @@ fi
 
 echo ""
 echo "✓ Migration done."
-echo "   PROD: $PROD   (sparse$( [ -n "$TAG" ] && echo ", $TAG" || echo ", main" ))   → bash deploy/emma/install.sh prod"
-echo "   DEV : $DEV   (branch dev, full)               → bash deploy/emma/install.sh dev   + start-claude.sh"
-echo "   Re-launch the agent IN THE DEV TREE:  bash $DEV/dashboard_v2/deploy/emma/start-claude.sh"
+echo "   PROD: $PROD   (sparse$( [ -n "$TAG" ] && echo ", $TAG" || echo ", main" ))   → bash deploy/emma/scripts/install.sh prod"
+echo "   DEV : $DEV   (branch dev, full)               → bash deploy/emma/scripts/install.sh dev   + start-claude.sh"
+echo "   Re-launch the agent IN THE DEV TREE:  bash $DEV/dashboard_v2/deploy/emma/scripts/start-claude.sh"

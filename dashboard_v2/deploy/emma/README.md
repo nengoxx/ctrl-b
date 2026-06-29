@@ -24,15 +24,23 @@ on the DEV side** — one or more agents on `dev`; a *second* agent (feature/aud
 disturb the dev instance: `git -C ~/github/ctrl-b-dev worktree add ~/github/ctrl-b-feat -b feat/x` then
 `start-claude.sh feat ~/github/ctrl-b-feat`. There's no "main = one agent, dev = another" — main has no agent.
 
-## Files
-- `install.sh [prod|dev]` — builds + enables ONE instance from the tree it's in (venv + deps; prod also builds `dist`).
-- `ctrl-b-dashboard.service` — PROD backend (:5433, `~/.ctrl-b`).
-- `ctrl-b-dashboard-dev.service` — DEV backend (:5434 `--reload`, `~/.ctrl-b-dev`).
-- `ctrl-b-dashboard-dev-web.service` — DEV Vite (:5173 → `:5434`).
-- `serve-https.sh` — Tailscale Serve HTTPS :443 → :5433 (prod).
-- `start-claude.sh` — `claude --remote-control` in tmux, **in the dev tree** (`~/github/ctrl-b-dev`).
-- `migrate-layout.sh` — **one-time, coordinated** conversion of the legacy single checkout into the two trees.
-- `bootstrap.py` — Windows→emma orchestrator (SFTP secret + ensure prod tree + install + serve; `--with-dev`, `--start-agent`).
+## Files (tidy layout)
+```
+deploy/emma/
+├── README.md                 # this runbook
+├── bootstrap.py              # Windows→emma orchestrator (the entry point you run)
+├── systemd/                  # the user units (copied to ~/.config/systemd/user/ by install.sh)
+│   ├── ctrl-b-dashboard.service          # PROD backend (:5433, ~/.ctrl-b)
+│   ├── ctrl-b-dashboard-dev.service      # DEV backend (:5434 --reload, ~/.ctrl-b-dev)
+│   └── ctrl-b-dashboard-dev-web.service  # DEV Vite (:5173 → :5434)
+└── scripts/                  # the on-emma shell helpers
+    ├── install.sh            # [prod|dev] — build + enable ONE instance from the tree it's in
+    ├── serve-https.sh        # Tailscale Serve HTTPS :443 → :5433 (prod)
+    ├── start-claude.sh       # [session] [dir] — claude --remote-control in tmux (DEV-side only)
+    ├── migrate-layout.sh     # ONE-TIME, coordinated legacy→two-tree conversion
+    └── add-dev-worktree.sh   # <name> [branch] — sibling worktree for a SECOND parallel dev agent
+```
+`bootstrap.py` (orchestrator) + `README.md` stay at the top; units live in `systemd/`, shell helpers in `scripts/`.
 
 ## ⚠️ First time only: the layout migration (coordinated with the agent)
 emma currently has ONE full checkout at `~/github/ctrl-b` (the tandem agent's). Convert it ONCE to the
@@ -40,7 +48,7 @@ two-tree layout — **stop the agent first** (the script refuses while the tmux 
 ```bash
 tmux kill-session -t ctrl-b 2>/dev/null            # stop/detach the agent (coordinate!)
 cd ~/github/ctrl-b && git pull --ff-only           # make sure work is pushed
-bash dashboard_v2/deploy/emma/migrate-layout.sh    # → ~/github/ctrl-b-dev (dev) + clean sparse ~/github/ctrl-b
+bash dashboard_v2/deploy/emma/scripts/migrate-layout.sh   # → ~/github/ctrl-b-dev (dev) + clean sparse ~/github/ctrl-b
 ```
 `bootstrap.py` detects the un-migrated state and points you here; it never moves the agent's tree itself.
 
@@ -62,9 +70,9 @@ If the prod tree isn't migrated yet, it stops with the migrate-layout step above
 ```bash
 sudo apt install -y tmux && sudo tailscale set --operator="$USER"          # prereqs
 scp dashboard_v2/config.yaml emma:~/.ctrl-b/config.yaml                    # the secret (from Windows)
-cd ~/github/ctrl-b/dashboard_v2     && CTRLB_HOME=~/.ctrl-b     bash deploy/emma/install.sh prod
-bash deploy/emma/serve-https.sh                                            # HTTPS on the tailnet
-cd ~/github/ctrl-b-dev/dashboard_v2 && CTRLB_HOME=~/.ctrl-b-dev bash deploy/emma/install.sh dev   # optional sandbox
+cd ~/github/ctrl-b/dashboard_v2     && CTRLB_HOME=~/.ctrl-b     bash deploy/emma/scripts/install.sh prod
+bash deploy/emma/scripts/serve-https.sh                                    # HTTPS on the tailnet
+cd ~/github/ctrl-b-dev/dashboard_v2 && CTRLB_HOME=~/.ctrl-b-dev bash deploy/emma/scripts/install.sh dev   # optional sandbox
 ```
 
 ## After install
@@ -74,7 +82,7 @@ curl -s localhost:5433/api/health                 # {"status":"ok",...}
 # dev (optional):
 systemctl --user status ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web
 curl -s localhost:5434/api/health                 # dev backend
-bash ~/github/ctrl-b-dev/dashboard_v2/deploy/emma/start-claude.sh   # the agent → tmux attach -t ctrl-b
+bash ~/github/ctrl-b-dev/dashboard_v2/deploy/emma/scripts/start-claude.sh   # the agent → tmux attach -t ctrl-b
 ```
 
 ## Update later
@@ -82,7 +90,7 @@ bash ~/github/ctrl-b-dev/dashboard_v2/deploy/emma/start-claude.sh   # the agent 
 # PROD — promote a release (run from the dev tree, which has write):
 cd ~/github/ctrl-b-dev && git checkout main && git merge --ff-only dev && git tag -a vX.Y.Z -m "..." && git push --tags origin main
 # then update the prod tree + restart:
-cd ~/github/ctrl-b && git fetch --tags && git checkout vX.Y.Z && cd dashboard_v2 && bash deploy/emma/install.sh prod
+cd ~/github/ctrl-b && git fetch --tags && git checkout vX.Y.Z && cd dashboard_v2 && bash deploy/emma/scripts/install.sh prod
 systemctl --user restart ctrl-b-dashboard
 # DEV — just pull on dev; the backend --reloads and Vite hot-reloads:
 cd ~/github/ctrl-b-dev && git pull --ff-only

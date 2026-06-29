@@ -101,7 +101,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >    **native 3.14.4** (validated in a throwaway 3.14 venv on emma). Empirically confirmed the **entire pinned stack
 >    ships cp314 wheels** (pydantic-core 2.46.4 / uvloop 0.22.1 / cryptography 49 / fastapi / uvicorn / mcp); the only
 >    change was **`pydantic-settings 2.14.1 → 2.14.2`** (= the Dependabot fix too). **The deploy now targets native
->    3.14** (`deploy/emma/install.sh` builds the venv with `python3`, rebuilds a mismatched venv). Commits
+>    3.14** (`deploy/emma/scripts/install.sh` builds the venv with `python3`, rebuilds a mismatched venv). Commits
 >    `…f0296d1`. **Then a full backend MODERNIZATION pass (commit `cd85a14`, audit
 >    [`external_audit/MODERNIZATION_2026-06-29.md`](./external_audit/MODERNIZATION_2026-06-29.md)):** code was already
 >    modern (Pydantic v2 / lifespan / modern typing+datetime / asyncio TaskGroup); fixed 4 dead imports, migrated the
