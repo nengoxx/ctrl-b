@@ -23,7 +23,7 @@
 set -euo pipefail
 
 SESSION="${1:-ctrl-b}"                              # tmux session + --remote-control channel name
-PROJECT="${2:-/home/emma/github/ctrl-b-dev}"        # a DEV-side tree (default: the main dev tree); never prod
+PROJECT="${2:-$HOME/github/ctrl-b-dev}"             # a DEV-side tree (default: the main dev tree); never prod
 MODEL="${MODEL:-claude-opus-4-8}"
 EFFORT="${EFFORT:-high}"
 PERM="${PERM:-bypassPermissions}"

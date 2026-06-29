@@ -96,6 +96,31 @@ systemctl --user restart ctrl-b-dashboard
 cd ~/github/ctrl-b-dev && git pull --ff-only
 ```
 
+## Fresh machine vs. emma (the installer handles both)
+The scripts are **portable** — every path resolves against the target user's `$HOME` and the systemd units are
+**templates** (`__REPO__`/`__CTRLB_HOME__`/`__NPM__`) that `install.sh` renders to real paths, so this works for
+any user/host, not just `emma`.
+- **emma (folder already exists, legacy checkout):** run the one-time `migrate-layout.sh` (above), then `bootstrap.py`.
+- **clean Linux box (nothing checked out):** just run `bootstrap.py` — it learns the GitHub URL from this Windows
+  checkout and **clones** the prod tree (and the dev tree with `--with-dev`); no migration needed.
+- **Prereqs on a fresh box:** `bootstrap.py` step 0 installs `git`+`tmux`, enables linger, sets the tailscale
+  operator (apt/Ubuntu). It does **not** install Python/Node (versions matter) — `install.sh` checks for
+  `git` / `python3` ≥3.11 / `node` / `npm` and **fails loudly with the exact install hint** if any is missing.
+  On a non-apt distro, install git+tmux yourself and pass `--no-prereqs`.
+
+## If something fails (debug / finish manually)
+Every step is **idempotent** — fix the cause and re-run `bootstrap.py`; completed steps no-op. On failure it prints
+where it stopped + an actionable hint. To finish by hand on the box:
+```bash
+systemctl --user status ctrl-b-dashboard                 # is the prod service up?
+journalctl --user -u ctrl-b-dashboard -n 50 --no-pager   # why did it fail to start?
+curl -s localhost:5433/api/health                        # backend reachable?
+cd ~/github/ctrl-b/dashboard_v2 && CTRLB_HOME=~/.ctrl-b bash deploy/emma/scripts/install.sh prod   # re-run install
+ls ~/.config/systemd/user/ctrl-b-dashboard.service       # was the unit rendered? (no __REPO__ placeholders)
+```
+Common causes: missing prereq (install.sh names it), `~/.ctrl-b/config.yaml` absent (SFTP/scp it), user-linger off
+(`sudo loginctl enable-linger $USER`), or `tailscale serve` needing the operator (`sudo tailscale set --operator=$USER`).
+
 ## ⚠️ Cautions
 - Both instances can **shut down / reboot fleet hosts** (DEV seeds prod's fleet config). Do NOT trigger
   shutdown/reboot actions while testing — DEV is isolated for *data*, not for the real machines it controls.

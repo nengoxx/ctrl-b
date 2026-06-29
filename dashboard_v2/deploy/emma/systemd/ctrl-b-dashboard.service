@@ -8,18 +8,19 @@
 # sole ingress. Egress (SSH/ping/WOL to the fleet) is unaffected by the bind.
 # Manage:  systemctl --user {start,stop,restart,status} ctrl-b-dashboard
 #
-# NOTE (deliberate): NO `network-online.target` ordering — that's a SYSTEM target with no user equivalent
-# (never reached in a user instance → would block start), and binding localhost needs no network anyway.
-# NO `NoNewPrivileges` — it can strip `ping`'s file capabilities (CAP_NET_RAW) → every host reads offline.
+# TEMPLATE: install.sh renders __REPO__/__CTRLB_HOME__ to this machine's actual paths (any user/host) — do
+# NOT copy this file directly. NOTE (deliberate): NO `network-online.target` ordering — that's a SYSTEM target
+# with no user equivalent (never reached in a user instance → would block start), and binding localhost needs
+# no network anyway. NO `NoNewPrivileges` — it can strip `ping`'s file caps (CAP_NET_RAW) → every host offline.
 [Unit]
 Description=ctrl-b dashboard (v2, production)
 
 [Service]
 Type=simple
-WorkingDirectory=/home/emma/github/ctrl-b/dashboard_v2/backend
-Environment=CTRLB_HOME=/home/emma/.ctrl-b
+WorkingDirectory=__REPO__/dashboard_v2/backend
+Environment=CTRLB_HOME=__CTRLB_HOME__
 # PROD: serve the built dist, no --reload. Bind localhost; Tailscale Serve is the HTTPS ingress.
-ExecStart=/home/emma/github/ctrl-b/dashboard_v2/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 5433
+ExecStart=__REPO__/dashboard_v2/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 5433
 Restart=on-failure
 RestartSec=5
 

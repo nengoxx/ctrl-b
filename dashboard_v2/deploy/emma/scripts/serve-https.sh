@@ -9,8 +9,14 @@ set -euo pipefail
 #   sudo tailscale set --operator="$USER"
 # (then re-run this script). Otherwise prefix the serve command with sudo.
 
+command -v tailscale >/dev/null || { echo "✗ tailscale not installed on this host — install it, then re-run."; exit 1; }
+tailscale status >/dev/null 2>&1 || { echo "✗ tailscale is not connected — run 'sudo tailscale up' first, then re-run."; exit 1; }
+
 echo "Configuring Tailscale Serve: HTTPS :443 → localhost:5433 ..."
-tailscale serve --bg --https=443 5433
+if ! tailscale serve --bg --https=443 5433; then
+  echo "✗ 'tailscale serve' failed. If it needs privileges, run once:  sudo tailscale set --operator=\"\$USER\"  then re-run."
+  exit 1
+fi
 
 # OPTIONAL — also expose the DEV server over HTTPS (so the mic works in dev too), on :8443:
 #   tailscale serve --bg --https=8443 5173

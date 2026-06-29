@@ -34,13 +34,27 @@ export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUN
 echo "== ctrl-b dashboard install [$ROLE]  (repo=$REPO, CTRLB_HOME=$CTRLB_HOME) =="
 [ -d "$V2" ] || { echo "ERROR: $V2 not found — is the $ROLE tree cloned? (see bootstrap.py / README)"; exit 1; }
 
-# 1) Prereqs that need root — DON'T auto-sudo; report so the owner runs them deliberately.
-command -v tmux >/dev/null || echo "⚠ tmux missing → run:  sudo apt install -y tmux   (needed for the Claude agent)"
+# 1) Prerequisites. HARD-require the build tools — clear error + install hint if missing, so a CLEAN machine
+#    fails loudly HERE rather than cryptically mid-build. tmux + linger are soft (needed later / for persistence).
+miss=0
+req() { command -v "$1" >/dev/null || { echo "  ✗ missing: $1 — $2"; miss=1; }; }
+req git     "sudo apt install -y git"
+req python3 "sudo apt install -y python3 python3-venv   (need 3.11+)"
+req node    "install Node 20+ (nodesource.com / nodejs.org)"
+req npm     "comes with Node (nodesource.com / nodejs.org)"
+[ "$miss" = 1 ] && { echo "→ install the missing prerequisite(s) above, then re-run."; exit 1; }
+command -v tmux >/dev/null || echo "⚠ tmux missing (only needed for the Claude agent later) → sudo apt install -y tmux"
+[ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = yes ] || \
+  echo "⚠ user-linger is OFF → services won't survive logout/reboot. Enable: sudo loginctl enable-linger $(id -un)"
 
-# 2) Backend venv — NATIVE Python 3.14 (the whole pinned stack is 3.14-wheel-ready; verified on emma
-#    2026-06-29). Use the system python3 (3.14 on emma); REBUILD if an existing venv is a different version.
+# 2) Backend venv — NATIVE Python 3.14 where available (the whole pinned stack is 3.14-wheel-ready; verified on
+#    emma 2026-06-29), else any python3 ≥ 3.11. REBUILD if an existing venv is a different version.
 VENV="$V2/backend/.venv"
-PY="$(command -v python3.14 || command -v python3)"
+PY="$(command -v python3.14 || command -v python3 || true)"
+[ -n "$PY" ] || { echo "✗ no python3 on PATH — sudo apt install -y python3 python3-venv"; exit 1; }
+"$PY" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,11) else 1)' \
+  || { echo "✗ $PY is too old ($("$PY" -V 2>&1)) — need Python 3.11+"; exit 1; }
+"$PY" -c 'import venv' 2>/dev/null || { echo "✗ python venv module missing — sudo apt install -y python3-venv"; exit 1; }
 WANT="$("$PY" -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 if [ -d "$VENV" ]; then
   HAVE="$("$VENV/bin/python" -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo none)"
@@ -75,12 +89,21 @@ if [ ! -f "$CTRLB_HOME/config.yaml" ]; then
   fi
 fi
 
-# 5) Install + enable the systemd USER units (linger=yes → they run without an active login).
+# 5) Render + install + enable the systemd USER units. The units are TEMPLATES — render __REPO__/__CTRLB_HOME__/
+#    __NPM__ to this machine's real paths so they work for ANY user/host, not just emma.
 mkdir -p "$HOME/.config/systemd/user"
-for u in "${UNITS[@]}"; do cp "$UNIT_DIR/$u" "$HOME/.config/systemd/user/"; done
+NPM="$(command -v npm)"
+for u in "${UNITS[@]}"; do
+  sed -e "s#__REPO__#$REPO#g" -e "s#__CTRLB_HOME__#$CTRLB_HOME#g" -e "s#__NPM__#$NPM#g" \
+      "$UNIT_DIR/$u" > "$HOME/.config/systemd/user/$u"
+done
 systemctl --user daemon-reload
-systemctl --user enable --now "${UNITS[@]}"
-echo "-- [$ROLE] units enabled: ${UNITS[*]}"
+if ! systemctl --user enable --now "${UNITS[@]}"; then
+  echo "✗ systemctl --user enable failed. Common causes: user bus not reachable over SSH (need linger:"
+  echo "    sudo loginctl enable-linger $(id -un)), or a unit error → inspect:  systemctl --user status ${UNITS[0]}"
+  exit 1
+fi
+echo "-- [$ROLE] units rendered + enabled: ${UNITS[*]}"
 
 echo ""
 if [ "$ROLE" = prod ]; then

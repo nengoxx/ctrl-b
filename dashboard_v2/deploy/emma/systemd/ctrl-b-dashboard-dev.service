@@ -5,16 +5,17 @@
 # uvicorn --reload (safe on Linux) so backend edits
 # hot-reload. Pair with ctrl-b-dashboard-dev-web.service (Vite :5173 → proxies /api here).
 # Manage:  systemctl --user {start,stop,restart} ctrl-b-dashboard-dev
+# TEMPLATE: install.sh renders __REPO__/__CTRLB_HOME__ to real paths — do NOT copy directly.
 # (No network-online.target / NoNewPrivileges — same rationale as the prod unit's notes.)
 [Unit]
 Description=ctrl-b dashboard (v2, DEV backend — isolated :5434 / ~/.ctrl-b-dev)
 
 [Service]
 Type=simple
-WorkingDirectory=/home/emma/github/ctrl-b-dev/dashboard_v2/backend
-Environment=CTRLB_HOME=/home/emma/.ctrl-b-dev
+WorkingDirectory=__REPO__/dashboard_v2/backend
+Environment=CTRLB_HOME=__CTRLB_HOME__
 # DEV: own data root, own port, --reload picks up backend edits live.
-ExecStart=/home/emma/github/ctrl-b-dev/dashboard_v2/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 5434 --reload
+ExecStart=__REPO__/dashboard_v2/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 5434 --reload
 Restart=on-failure
 RestartSec=5
 
