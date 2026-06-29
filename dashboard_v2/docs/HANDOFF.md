@@ -76,8 +76,36 @@ The **visual source of truth** is `../../ctrl-b (Vapor)/variations/vapor.html` (
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
 auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
-## Current state (**Theme-engine v2 (D29): BUCKET-A COMPLETE — `minimal` is a full reskin: chrome + Fleet (A.1) · ALL Conf editors + Utils tab (A.2) · the entire Agent chat (A.3), all token-driven under `.kit`. Every shared surface now renders under any reskin theme.** · **cosmos (T4, the bespoke orbital theme) is COMPLETE — C1–C3 shipped + pushed: starfield · orbital fleet (orbit/camera/liveness/service-cue) · the host-detail bottom sheet (reusable `BottomSheet` primitive + `CosmosHostDetail` + sheet-aware camera-lift + multi-snap + Audiowide + slide/fade). See [`COSMOS_HANDOFF.md`](./COSMOS_HANDOFF.md). The app-like text-selection / tap-highlight model shipped alongside (all themes).** · Since then, **minimal-nav chrome mode** shipped (`ui.appbarMode` visible/off/minimal + a floating `NavMenu`; Kit-wide), then **Slice 2a + the D30 composer-composition refactor** — see the newest block directly below. **NEXT = `SheetComposer` styling (the vapor-peek composer variant; seam stubbed)** · **vapor-minimal wiring** (§14.13 #11) · **T2 phosphor** · the queued **emma deploy**)
+## Current state (**Theme-engine v2 (D29): BUCKET-A COMPLETE — `minimal` is a full reskin: chrome + Fleet (A.1) · ALL Conf editors + Utils tab (A.2) · the entire Agent chat (A.3), all token-driven under `.kit`. Every shared surface now renders under any reskin theme.** · **cosmos (T4, the bespoke orbital theme) is COMPLETE — C1–C3 shipped + pushed: starfield · orbital fleet (orbit/camera/liveness/service-cue) · the host-detail bottom sheet (reusable `BottomSheet` primitive + `CosmosHostDetail` + sheet-aware camera-lift + multi-snap + Audiowide + slide/fade). See [`COSMOS_HANDOFF.md`](./COSMOS_HANDOFF.md). The app-like text-selection / tap-highlight model shipped alongside (all themes).** · Since then, **minimal-nav chrome mode** shipped (`ui.appbarMode` visible/off/minimal + a floating `NavMenu`; Kit-wide), then **Slice 2a + the D30 composer-composition refactor**. Most recently (2026-06-29) the **bottom-sheet detent memory** (ISSUES #1) + cosmos host-detail polish shipped (`c098739`/`bc17d99`), and a full **theme-engine design-system architecture pass** was researched + LOCKED: **Swappable Surfaces** (DECISIONS **D31** + THEME_ENGINE **§14.14**) — the routing rule for every future themeable element. **NEXT = the Composer Surface** — build `SheetComposer` (docked variant) + a user-selectable composer setting, per the fully-specified [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) (start there). Then **vapor-minimal wiring** (§14.13 #11) · **T2 phosphor** · the queued **emma deploy**)
 
+> ### 🧭 SESSION UPDATE — Swappable Surfaces design system LOCKED + Composer Surface fully specified (planning + docs only) — 2026-06-29
+>
+> **No app code changed this session** beyond the already-pushed detent-memory + cosmos polish (`c098739`, `bc17d99`).
+> This was a deep **architecture + documentation** pass to make the theme engine cleanly extensible before building.
+> **Two parallel research streams** (existing-code map + web best-practices: Radix/React-Aria headless, W3C DTCG /
+> Material 3 / Radix Themes tokens, MUI slots, VS Code/Backstage registries, Metz/Frost/Dodds on abstraction) backed
+> every decision.
+>
+> **What got LOCKED + documented (read these before building):**
+> - **DECISIONS D31 + THEME_ENGINE §14.14 — "Swappable Surfaces".** The standing routing rule for every future
+>   themeable element: a **3-band spectrum** — **Tokens** (cosmetic reskin; covers chrome, **Tools tab**, **Conf/
+>   settings** — confirmed in code: no per-theme Tools/Conf component) → **Surface** (a registry of variants over one
+>   headless controller, ONLY when the **3-gate** passes: structural divergence + ≥2 real impls + a shared controller)
+>   → **Bespoke** (one-off snowflake). **Today only Fleet + Composer are Surfaces.** Tools/Conf/AppBar = tokens
+>   (matches VS Code/Primer/MUI/Backstage). Two variant-SELECTION mechanisms: **Root-pinned** (the `Fleet=` prop, one
+>   per theme) vs **user-selectable** (registry + per-theme `seg` setting + resolver, e.g. composer). A surface
+>   *graduates* pinned→selectable on the 2nd variant; the `createSurface` factory is **concrete-first** (extract on the
+>   2nd user-selectable surface, not speculatively).
+> - **[`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md)** — the self-contained, edge-case-complete build spec
+>   for the next feature (the Composer Surface). File-by-file (A1 mechanism → A2 `SheetComposer` → A3 wire themes),
+>   13 enumerated edge cases (notably **#10** `--composer-h` re-measure on live swap, **#7** keep `.kit-composer`
+>   class), characterization-test strategy, and the **non-breaking guarantee** (vapor untouched; cosmos orbit
+>   untouched; Fleet stays Root-pinned).
+>
+> **⛔ NEXT (clean session): execute `COMPOSER_SURFACE_PLAN.md`.** Build A1→A2→A3, pausing for the owner's 390px
+> eyeball between slices. Confirm the design (D31/§14.14) still reads right, then build. Out of scope until later:
+> Fleet→registry migration, the `createSurface` factory, vapor wiring (all deferred + specified in the plan §6).
+>
 > ### 🧭 SESSION UPDATE — moon-dive (Slice 2a) + D30 composer composition (plan pill → composer) — 2026-06-28 (cont.)
 >
 > **All committed on `main`; verified `typecheck` · `build` · 188 unit · 34 e2e green throughout.**

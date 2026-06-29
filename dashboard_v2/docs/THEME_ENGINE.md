@@ -1174,10 +1174,12 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
     for now; to wire it, mount the Kit `NavMenu` under a `.kit` marker (or a vapor-native equivalent). §14.11
     budget applies to any nav transition (the `kit-fade` tab entrance is motion-gated).
 12. **Composer = a base VARIANT + slot ADDONS, theme-selected (D30, added 2026-06-28).** The composer is
-    composable, not configurable. Two `DefaultRoot` props mirror the `Fleet` injection: **`Composer`** = the
-    VARIANT/style (`ComposerVariant = ComponentType<ComposerSlots>`; defaults to the stacked `KitComposer`; a
-    theme can pick another, e.g. the stubbed `SheetComposer` vapor-peek style) and **`composerSlots`** = the
-    ADDONS (`{ controlsStart?, overlay? }`) composed INTO the variant. A variant decides WHERE each slot renders
+    composable, not configurable. The two axes are the **VARIANT/style** (`ComposerVariant =
+    ComponentType<ComposerSlots>`; the stacked `KitComposer` default + the `SheetComposer` docked style) and the
+    **ADDONS** (`composerSlots = { controlsStart?, overlay? }`) composed INTO the variant. ⚠️ **Selection
+    SUPERSEDED by D31/§14.14:** the variant is no longer a `DefaultRoot Composer=` prop — it's a USER-SELECTABLE
+    Surface (the `composerVariants` registry + a per-theme `composer` `seg` setting + the `ThemedComposer`
+    resolver). `composerSlots` stays a `DefaultRoot` prop (the addon axis is orthogonal + theme-decided). A variant decides WHERE each slot renders
     (its layout); the theme decides WHAT fills it. **All variants reuse the headless `useComposer()`** — only
     markup/style differ, so a new style is a new component, never new logic; a new addon is a new named slot,
     purely additive. The plan-pill addon (`kitPlanComposerSlots` = `<PlanPill/>` in `controlsStart` + the peek
@@ -1188,3 +1190,116 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
     in-tab plan** (`AgentTab` gates it on `theme === "vapor"`); moving the frosted plan out of the kit Agent tab
     is what restored that tab's `kit-fade` entrance (a `backdrop-filter` can't composite under an animating
     ancestor). Full rationale: **DECISIONS.md D30**.
+
+## 14.14 Swappable Surfaces — Tokens vs Variants vs Bespoke (the element-extension contract, D31)
+
+**The question this answers:** when we add a themeable element (or a new variation of one) for a new theme, do we
+(a) restyle it with tokens, (b) make it a swappable component variant, or (c) let the theme own bespoke markup?
+Getting this wrong **either way** rots the system — over-abstracting utility surfaces into registries (the "wrong
+abstraction"), or hardcoding structural divergence that should be a clean variant. This is the **locked routing
+rule**; follow it for every new element/variant. (Web-researched: W3C DTCG / Material 3 / Radix Themes / shadcn on
+tokens; MUI `slots` + Radix/React-Aria headless on variants; VS Code/Backstage registries; Metz/Dodds/Frost/Rule-of-
+Three on abstraction. Full rationale: **DECISIONS.md D31**.)
+
+### The 3-band spectrum — the cheapest band that can express the difference WINS
+
+| Band | Mechanism | Use when | Add a theme = |
+|---|---|---|---|
+| **Tokens** | the semantic contract (`tokens.css` under `.kit`, §14.4.1) | the difference is **cosmetic** — color, spacing, type, radius, elevation, motion | a `tokens.css` |
+| **Surface (variant)** | a registry of interchangeable components over ONE headless controller | the difference is **structural** — different DOM/layout/interaction — AND ≥2 real impls | register a variant + list it |
+| **Bespoke** | the theme owns the markup (escape hatch) | a genuine one-off (vapor's frozen hero/composer; a single-theme snowflake) | the theme's own file |
+
+**Tokens re-skin; they cannot restructure.** A token is a name→value for a *visual* decision; nothing in token-space
+can add/remove a DOM part, change layout topology, or alter behavior. The moment a theme difference crosses into
+structure, it has left token-space — that, and only that, is when a Surface is earned.
+
+### The decision gate — a region earns a Surface ONLY if ALL THREE hold
+
+1. **Structural divergence** — DOM shape / composition / interaction genuinely differs across themes, not just
+   color/space/type/radius. *(Only tokens differ → use Tokens.)*
+2. **≥2 real divergent implementations** exist or are imminent (prefer 3). A hypothetical future theme does **not**
+   count (speculative generality). *(One special structure → a **bespoke** snowflake, never a registry-of-one.)*
+3. **A shared headless controller** can back every variant — the invariant behavior (state, a11y, keyboard, data)
+   factors into ONE hook; only rendering swaps. *(Behavior can't be shared → these aren't variants of one thing.)*
+
+**The map today** (re-run the gate before adding any region):
+
+| Region | Verdict | Why |
+|---|---|---|
+| **Fleet** (list / orbital / map) | **Surface** | radically different DOM + interaction; ≥2 impls (`KitFleet`, `CosmosFleet`); backed by `useFleet` |
+| **Composer** (stacked / docked) | **Surface** | structural layout differs; ≥2 impls (`KitComposer`, `SheetComposer`); backed by `useComposer` |
+| **Tools tab** | **Tokens** | one schema-driven `UtilCard` structure, reskinned; no per-theme component |
+| **Conf / settings** | **Tokens** | one `ConfGroup`/`SettingRow` structure, reskinned; matches VS Code/Primer/MUI/Backstage — none component-swap settings |
+| **AppBar / nav / chrome** | **Tokens** | same nav contract restyled (promote ONLY if a theme truly restructures navigation) |
+
+⚠️ The **"shape & design"** of a token-themed region (e.g. the tool card's radius/surface/borders/spacing) is fully
+theme-controllable **via tokens** — that is NOT a reason to make it a Surface. A Surface is earned only by *structural*
+divergence + a *second* implementation.
+
+### The Surface model — controller + variants, selected one of TWO ways
+
+A Surface = a region + **one headless controller** + **interchangeable variant components**. Every variant is a pure
+presenter over the controller (`useComposer`, `useFleet`; §14.2) — behavior is never duplicated. Variants read **only**
+the semantic contract, so they're portable across any contract-providing theme.
+
+**Variant selection has two mechanisms — pick the simplest that fits (do NOT conflate them):**
+
+1. **Root-pinned (prop injection)** — the theme's `Root` passes the variant component straight into the layout
+   (`DefaultRoot Fleet={CosmosFleet}`). **No registry, no setting.** Use when a theme has exactly ONE variant for that
+   surface and the user shouldn't choose. Simplest; zero indirection. **This is Fleet today** (each theme pins its
+   signature view).
+2. **User-selectable (registry + per-theme `seg` setting + resolver)** — an open `Record<variantId, Component>` of
+   **STABLE module-level references** (never a `lazy()`/fresh identity built in render — React would remount the
+   subtree and **reset controller state**), object-lookup **+ a default fallback** (unknown/removed id degrades, never
+   crashes); the theme lists the offered ids + default as a `seg` setting (§14.3, auto-rendered in Appearance +
+   auto-synced); a shared resolver maps `active theme → its <surface> setting → variant` and renders it. The resolver
+   is usable by **any** Root — `DefaultRoot` AND bespoke Roots (vapor/frontier) — so the switch is **not Kit-only**.
+   **This is Composer** (stacked/docked, user-picked).
+
+**Graduation path:** a surface starts Root-pinned and **graduates** to user-selectable the moment ≥2 variants + a user
+choice are actually wanted (the second-instance trigger). Composer just graduated (the `SheetComposer` build); **Fleet
+stays Root-pinned** — and cosmos's orbital fleet is therefore *untouched* — until a theme genuinely offers a fleet
+*choice*. Don't pre-graduate a surface that only has one variant per theme; the prop is correct and cheaper.
+
+**The factory is concrete-first.** Today there is exactly ONE user-selectable surface (Composer), so its registry +
+resolver are built **concretely** in `kit/composer/` (`composerVariants` map + `composerLayoutSetting` spec +
+`ThemedComposer` resolver). The generic `createSurface(name, fallback)` factory below is the **extraction target for
+the SECOND user-selectable surface** (rule of three) — write it then, by factoring the two identical concretes, not
+speculatively for one:
+```ts
+// FUTURE (extract on the 2nd user-selectable surface, not before):
+const composer = createSurface<ComposerSlots>("composer", KitComposer); // name = the per-theme setting key
+composer.register("docked", SheetComposer);                            // stable module-level ref
+// <composer.Themed {...slots}/>  → resolves active theme → its "composer" setting → variant, fallback-safe
+```
+
+### How to extend — the additive moves (no churn to existing code)
+
+- **Add a Root-pinned variant** (one-per-theme) → pass it via the Root prop (`Fleet={…}`). Nothing else.
+- **Add a user-selectable variant** → put it in the registry (stable ref) + list its id in each offering theme's
+  `<surface>` setting `options`. A *bespoke* variant registers in its theme's **lazy chunk**; `switchTheme`'s preload
+  guarantees it's registered before that theme's Root renders. *Kit* default variants register eagerly (they're the
+  fallback + used by reskins). A picker auto-appears once a theme lists ≥2 options.
+- **Graduate a pinned surface to user-selectable** → only when ≥2 variants + user choice are real; build/extract the
+  registry+resolver then (Composer is the worked reference).
+- **Add a whole new Surface type** → a new headless controller + (pinned prop OR registry) — but ONLY after the 3-gate
+  passes (a second *structural* implementation actually exists).
+- **Add an addon** (the orthogonal composition axis, §14.13 #12) → a new named slot in `ComposerSlots`; additive, no
+  variant churn. The plan-pill (`kitPlanComposerSlots`) is the first.
+
+### vapor & frontier (and any bespoke Root)
+A bespoke theme registers its OWN variants and renders `<surface.Themed/>` in its Root → first-class participation, no
+special-casing. **vapor** registers its frozen composer/fleet as variants so it joins the switch UI **without touching
+its frozen look**. Letting vapor host the *Kit* variants is a deferred, additive opt-in (vapor maps its vocabulary onto
+the contract — `--accent: var(--magenta)`, … — and marks the subtree `.kit`); it's a small step, not a refactor,
+because everything already reads the contract.
+
+### Anti-patterns — do NOT
+- ❌ Make a utility/forms/settings/chrome surface a Surface (registry-of-one / wrong abstraction — every mature system
+  token-themes these).
+- ❌ Stand up a variant registry for a *hypothetical* future theme (speculative generality — wait for the 2nd real
+  implementation; **duplicate until then**).
+- ❌ Build a variant `lazy()` inside render or return fresh component identities (remount → controller state reset).
+- ❌ Put behavior in a variant — it belongs in the headless controller (one source of truth).
+- ↩️ **Reversal rule:** if a built variant slot won't fit a new theme cleanly, inline it back and re-abstract on the
+  real shape — "the fastest way forward is back" (Metz). Don't defend a wrong seam from sunk cost.
