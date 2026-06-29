@@ -28,30 +28,39 @@ installs set `CTRLB_HOME=~/.ctrl-b`"* → config at `/home/emma/.ctrl-b/config.y
 `ctrl-b-dashboard-dev.service` (dev/Vite) · `serve-https.sh` (Tailscale Serve) · `start-claude.sh` (tmux agent) ·
 `bootstrap.py` (Windows→emma: SFTP secret + git pull + install) · `README.md` (the runbook).
 
-## Execution plan + ownership (who runs what) — owner asked 2026-06-29
+## Execution plan + ownership — I can self-deploy END-TO-END (verified 2026-06-29)
 
-**Recommendation: I (a Windows Claude session) drive the bootstrap; the tandem agent takes over ON emma afterward.**
-Why: the bootstrap is the one step needing a machine with **both** the gitignored `config.yaml` *and* emma SSH access —
-that's **this Windows checkout** (verified: paramiko reaches emma `192.168.1.160`). The on-emma agent can't pull the
-secret from Windows, so it's not the right place to *start*. Once the dashboard + the Claude tmux session are up, the
-on-emma agent owns ongoing dev/audit; coordination via `docs/agent_coordination/` + `external_audit/`.
+**`bootstrap.py` from the Windows checkout does the WHOLE deploy in one command** — I run it; no owner steps needed.
+Why this works: the Windows checkout has **both** the gitignored `config.yaml` *and* SSH access to emma, and **`emma`
+has `sudo` via the SSH password** (verified — `emma` is in the `sudo` group; `sudo -S <pw>` → root, the same mechanism
+the backend uses). So the orchestrator can also do the two root prereqs itself. The tandem agent on emma takes over
+ongoing dev/audit afterward (coordination via `docs/agent_coordination/` + `external_audit/`).
 
-**Step-by-step (run together, confirm each step):**
-1. **Prereqs needing root → OWNER runs once** (the SSH user `emma` may lack passwordless sudo; don't assume):
-   `sudo apt install -y tmux` · `sudo tailscale set --operator=emma`.
-2. **Bootstrap from Windows (me):** `backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py --dry-run` → review →
-   `…/bootstrap.py`. It SFTPs `config.yaml`→`~/.ctrl-b/` (0600), `git pull --ff-only`s emma's checkout (gets the deploy
-   artifacts), runs `install.sh` (venv + build + enable the prod user service).
-3. **Verify (me, read-only over SSH):** `systemctl --user status ctrl-b-dashboard` active · `curl -s localhost:5433/api/health` ok.
-4. **HTTPS + agent (on emma):** `bash deploy/emma/serve-https.sh` (→ `https://emma.<tailnet>.ts.net`, mic-ready) ·
-   `bash deploy/emma/start-claude.sh` (the agent in tmux → `tmux attach -t ctrl-b`). Optional always-on dev:
-   `systemctl --user enable --now ctrl-b-dashboard-dev.service` (→ `http://emma:5173`).
-5. **Handover:** future Claude work runs in the emma tmux session; this Windows session's job ends at a healthy deploy.
+**`bootstrap.py` steps (each flag-gated so any can be handed off):**
+`0 prereqs (sudo: apt tmux + tailscale operator)` → `1 SFTP config.yaml → ~/.ctrl-b/ (0600)` →
+`2 git pull --ff-only` → `3 install.sh (native-3.14 venv + pip install -e . + npm build + enable prod service)` →
+`4 serve-https (Tailscale HTTPS 443→5433)`. The Claude agent (`start-claude.sh`, tmux) is a separate step (`--start-agent`
+or run later) since it's the interactive runtime, not the dashboard.
 
-**What I can do vs what needs the owner:** I can do **2–3** end-to-end (paramiko access proven) and *read-only* drive 4
-over SSH; **step 1 (sudo) is the owner's** unless emma grants the SSH user passwordless sudo. If you'd rather the
-**on-emma agent** run 2–4 locally, it works too — but then *you* must place `config.yaml` on emma first (scp), since
-that agent has no Windows access. **Net: easiest path = I bootstrap from Windows; you run the two sudo prereqs.**
+**The command (I run it):**
+```
+backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py --dry-run   # preview the plan
+backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py             # full deploy (prereqs→config→pull→install→https)
+backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py --start-agent   # also bring up the Claude agent in tmux
+```
+(Bash tool needs `dangerouslyDisableSandbox: true` for LAN. Idempotent — safe to re-run.)
+
+**Options / who-runs-what (flexible):**
+- **Me, fully (default, recommended):** `bootstrap.py` does 0–4 end-to-end; I verify health; I start the agent
+  (`--start-agent`) when ready. This is the "deploy by yourself" path.
+- **Me + owner does sudo:** you run `sudo apt install -y tmux` + `sudo tailscale set --operator=emma`, I run
+  `bootstrap.py --no-prereqs`.
+- **On-emma tandem agent runs it locally:** works too, but then the secret must reach emma first (I SFTP it, or you
+  scp `config.yaml`), since that agent has no Windows access.
+
+**After deploy:** dashboard at `https://emma.<tailnet>.ts.net` (mic-ready); optional always-on dev with
+`systemctl --user enable --now ctrl-b-dashboard-dev.service` (→ `http://emma:5173`); attach the agent with
+`ssh emma -t 'tmux attach -t ctrl-b'`. Backend is **native Python 3.14** (229/229 suite green on emma's 3.14).
 
 ## ✅ Decisions (owner, 2026-06-29)
 

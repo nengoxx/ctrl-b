@@ -17,10 +17,13 @@ Its standout contribution is the **backend test-harness finding (R1)** — new, 
 
 ## ✅ R1 (P0) — Backend async test harness — VERIFIED, then FIXED (2026-06-29)
 
-> **STATUS: DONE.** Fixed via a shared 3.14-safe runner `tests/_async.py` (`run_async` over one explicitly-created
-> persistent loop — preserves the shared-loop semantics the tests rely on, never calls the deprecated
-> `get_event_loop()`); 13 files repointed; `test_shell_5` updated for the new shell-OFF default. **229 passed, 0
-> failed** on Python 3.11 (Windows) AND on emma's **native 3.14.4** (throwaway-venv validation). Commits `…f0296d1`.
+> **STATUS: DONE.** Fixed via a shared 3.14-safe runner `tests/_async.py` using **`asyncio.Runner`** (the documented
+> 3.11+ high-level API for running multiple top-level coroutines on one shared context — researched against the 3.14
+> docs, which explicitly discourage raw `new_event_loop()`; Runner also finalizes async-gens/executor on close).
+> Preserves the shared-loop semantics the tests rely on; never calls the deprecated `get_event_loop()`. 13 files
+> repointed; `test_shell_5` updated for the new shell-OFF default. **229 passed, 0 failed** on Python 3.11 (Windows)
+> AND on emma's **native 3.14.4** (throwaway-venv validation). Full pytest-asyncio `asyncio_mode=auto` conversion (all
+> tests → `async def`) is the maximally-idiomatic future option (large refactor; deferred). Commits `…2520dfa`.
 > The original analysis (kept below for the record):
 
 - **Claim:** 13 test files use `asyncio.get_event_loop().run_until_complete(...)`; under modern pytest/pytest-asyncio

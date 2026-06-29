@@ -11,34 +11,37 @@ Deploy the **ctrl-b dashboard** + the **Claude Code remote agent** onto **emma**
 - **Claude agent** — `start-claude.sh`: `claude --remote-control` inside **tmux** (it needs a TTY), crash-restart loop.
 
 ## Verified emma facts (recon 2026-06-29)
-Ubuntu 26.04 · 16 cores / 30 GiB · **backend venv = Python 3.11.15, deps healthy** · Node 24 / npm 11 · `claude`
-2.1.177 installed · **tmux NOT installed** · user-linger ON · Tailscale up · repo present with venv + dist built ·
-**`config.yaml` NOT yet on emma** · ports 5433/5173/443 free.
+Ubuntu 26.04 · 16 cores / 30 GiB · **deploy builds a native Python 3.14 venv** (whole stack ships cp314 wheels;
+backend suite 229/229 green on emma's 3.14) · Node 24 / npm 11 · `claude` 2.1.177 installed · `emma` has sudo (SSH
+pw) · user-linger ON · Tailscale up · repo present · **`config.yaml` NOT yet on emma** · ports 5433/5173/443 free.
 
-## Prerequisites (one-time, need root — owner runs these)
+## Prerequisites
+**`bootstrap.py` now does the root prereqs itself** (`emma` has sudo via the SSH password). No manual root steps —
+unless you prefer to run them yourself (then use `bootstrap.py --no-prereqs`):
 ```bash
 sudo apt install -y tmux                 # the agent's TTY host
-sudo tailscale set --operator="$USER"    # let the emma user run `tailscale serve` without sudo (else prefix sudo)
-# python3.11 is already present (the venv uses it). If ever rebuilding from scratch and it's gone:
-#   sudo apt install -y python3.11-venv
+sudo tailscale set --operator="$USER"    # let the emma user run `tailscale serve` without sudo
 ```
 
 ## Deploy — two paths
 
-### A) Automated, from the Windows checkout (recommended; transfers the secret + installs in one shot)
+### A) Automated, one command from the Windows checkout (recommended — the full self-deploy)
 ```bash
 # from C:\Users\rovax\Documents\github\ctrl-b\dashboard_v2  (Bash tool needs dangerouslyDisableSandbox for LAN)
-backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py --dry-run   # preview
-backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py             # sftp config.yaml → git pull → install.sh
+backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py --dry-run     # preview the plan
+backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py               # prereqs→config→pull→install→https
+backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py --start-agent # also start the Claude agent (tmux)
+#   --no-prereqs  skip sudo (you ran them)   --no-serve  skip Tailscale Serve
 ```
-`bootstrap.py` SFTPs `config.yaml` → `~/.ctrl-b/config.yaml` (0600), `git pull --ff-only`s emma's checkout, then
-runs `install.sh`. Reads SSH creds from `config.yaml`; never prints the password; makes writes only when run
-without `--dry-run`.
+`bootstrap.py` runs: **(0)** sudo `apt install tmux` + `tailscale set --operator` · **(1)** SFTP `config.yaml` →
+`~/.ctrl-b/config.yaml` (0600) · **(2)** `git pull --ff-only` · **(3)** `install.sh` (native-3.14 venv + `pip install
+-e .` + `npm build` + enable the prod user service) · **(4)** `serve-https.sh`. Reads SSH creds from `config.yaml`;
+never prints the password; idempotent (safe to re-run); makes writes only without `--dry-run`.
 
 ### B) Manual, on emma
 ```bash
-# 1. put the secret on emma (from Windows):  scp dashboard_v2/config.yaml emma:~/.ctrl-b/config.yaml
-# 2. on emma:
+sudo apt install -y tmux && sudo tailscale set --operator="$USER"     # prereqs
+# put the secret on emma (from Windows):  scp dashboard_v2/config.yaml emma:~/.ctrl-b/config.yaml
 cd ~/github/ctrl-b && git pull --ff-only
 cd dashboard_v2 && CTRLB_HOME=~/.ctrl-b bash deploy/emma/install.sh
 ```
