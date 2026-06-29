@@ -78,11 +78,21 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 
 ## Current state (**Theme-engine v2 (D29): BUCKET-A COMPLETE — `minimal` is a full reskin: chrome + Fleet (A.1) · ALL Conf editors + Utils tab (A.2) · the entire Agent chat (A.3), all token-driven under `.kit`. Every shared surface now renders under any reskin theme.** · **cosmos (T4, the bespoke orbital theme) is COMPLETE — C1–C3 shipped + pushed: starfield · orbital fleet (orbit/camera/liveness/service-cue) · the host-detail bottom sheet (reusable `BottomSheet` primitive + `CosmosHostDetail` + sheet-aware camera-lift + multi-snap + Audiowide + slide/fade). See [`COSMOS_HANDOFF.md`](./COSMOS_HANDOFF.md). The app-like text-selection / tap-highlight model shipped alongside (all themes).** · Since then, **minimal-nav chrome mode** shipped (`ui.appbarMode` visible/off/minimal + a floating `NavMenu`; Kit-wide), then **Slice 2a + the D30 composer-composition refactor**. Most recently (2026-06-29) the **bottom-sheet detent memory** (ISSUES #1) + cosmos host-detail polish shipped (`c098739`/`bc17d99`), and a full **theme-engine design-system architecture pass** was researched + LOCKED: **Swappable Surfaces** (DECISIONS **D31** + THEME_ENGINE **§14.14**) — the routing rule for every future themeable element. **▶ ACTIVE PRIORITY = emma (Linux) DEPLOY — see [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) (start there).** The theme engine is **⏸ PARKED** (the Composer Surface + audit hardening are fully specified + ready to resume: [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md), architecture D31/§14.14, audit backlog [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md)). See the priority block in the newest session update below)
 
-> ### 🧭 SESSION UPDATE — PRIORITY PIVOT: theme engine PARKED · emma (Linux) DEPLOY is now ACTIVE — 2026-06-29 (cont.)
+> ### 🧭 SESSION UPDATE — PRIORITY PIVOT: theme engine PARKED · REPO REORG (v1.0 face-wash) then emma DEPLOY — 2026-06-29 (cont.)
 >
 > **Read this priority list first — it supersedes the per-feature "NEXT" notes scattered in older blocks below.**
+> **Note:** "v2"/"dashboard_v2" throughout these docs is the **development name** for what ships as **ctrl-b v1.0**.
 >
-> 1. **▶ ACTIVE — Deploy to emma (Ubuntu 26.04 LAN/tailnet server). TOPOLOGY LOCKED (D32) · ARTIFACTS READY · execute next.**
+> 0. **▶▶ ACTIVE / DO FIRST — Repo "face wash" to ship v1.0. FULL SPEC: [`REORG_PLAN.md`](./REORG_PLAN.md).**
+>    Restructure the whole repo so the v2 app **is** the root (= official **v1.0**) and all legacy is archived:
+>    `dashboard_v2/{backend,frontend,docs,deploy}` → repo root; `ctrl-b (Vapor)/`+`prototypes/` → `design/` (de-duped);
+>    `wol_server/`+root v0.1 scripts+gitignored v1 secrets → `archive/v0.1-flask/`; `inference_server/` → `archive/v0.1-inference/`;
+>    `ws_*` → `archive/ui-prototypes/`; `start_claude_remote.*` → `tools/`; drop the 142 MB `demo.mp4`; **generalize
+>    `deploy/`** (→ `deploy/linux` + `deploy/windows` double-click launchers + manual `run.sh`). One atomic, verified
+>    commit (pytest 229 + dry-run + build + zero stale `dashboard_v2/`/`ctrl-b (Vapor)/` refs). **OPEN: git-history choice
+>    (clean tree only / filter-repo purge / squash) — REORG_PLAN §1.** Do this BEFORE deploy so paths are written once.
+>
+> 1. **▶ THEN — Deploy to emma (Ubuntu 26.04 LAN/tailnet server). TOPOLOGY LOCKED (D32) · ARTIFACTS READY (paths get updated by the reorg).**
 >    **Topology = DECISIONS.md [D32](./DECISIONS.md): TWO fully isolated instances, one repo.** PROD `~/github/ctrl-b`
 >    (clean **sparse**, **tag-pinned** clone) → `~/.ctrl-b` → uvicorn **:5433** + **Tailscale Serve HTTPS**; DEV
 >    `~/github/ctrl-b-dev` (`dev` branch — the dev side, ALL dev work, 1+ agents) → `~/.ctrl-b-dev` → uvicorn **:5434 --reload** +
