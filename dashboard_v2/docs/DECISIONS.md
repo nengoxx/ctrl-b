@@ -1562,6 +1562,13 @@ frontier (bespoke Agent). D7 pixel-fidelity per theme; pause for the owner's 390
 
 ## D30 — Composer composition: a base variant + slot addons, both theme-selected (composition over configuration) ✏️ LOCKED 2026-06-28
 
+> ⚠️ **VARIANT SELECTION SUPERSEDED by D31 (2026-06-29).** D30's *composition-over-configuration* principle (variant
+> + orthogonal slot addons, all over the headless `useComposer()`) **stands**. What changed: the variant is **no
+> longer chosen by a `DefaultRoot Composer=` prop** — it's a **user-selectable Surface** (a `composerVariants`
+> registry + a per-theme `composer` `seg` setting + the `ThemedComposer` resolver; D31/§14.14). `composerSlots`
+> (the addon axis) **stays** a `DefaultRoot` prop. Build per `COMPOSER_SURFACE_PLAN.md`. Read references to
+> `Composer={…}` below as historical.
+
 **Why.** The owner wants themes to pick a **composer style** (the kit stacked composer · eventually a vapor-style "peek" composer · future styles) AND optionally layer **features** on top (the plan pill · future addons) — "either the base composer or the one with the plan pill, and use one or the other in future themes." A boolean-config composer (`<Composer plan sheet …>` with internal `if` branches) doesn't scale; the established React answer (Radix/Headless UI/React Aria, web-researched) is **composition over configuration** via **slots + variants**. It also reuses a seam this repo already has: `DefaultRoot` injects per-theme pieces by prop (`Fleet`).
 
 **The model — two orthogonal axes, both theme-selected via `DefaultRoot` props:**

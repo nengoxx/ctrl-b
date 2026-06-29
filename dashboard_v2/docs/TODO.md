@@ -785,6 +785,13 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
         `SwUpdatePrompt`) + primitives (`Seg`/`Switch`) + Conf shell — **fixes the reachable broken confirm**; (2) the
         deep Conf editors; (3) Agent chat bubbles. **⛔ RESEARCH the pattern + confirm the design BEFORE building
         (owner directive 2026-06-27 — last session the research changed the design); see HANDOFF top.**
+- [ ] **Composer Surface (D31 / §14.14) — ACTIVE NEXT.** Build `SheetComposer` (the **docked** composer variant, vapor's
+      look Kit-tokened) + make the composer layout a **user-selectable Surface** (the `composerVariants` registry + a
+      per-theme `composer` `seg` setting + the `ThemedComposer` resolver, reusing `useComposer()`). **Fully specified,
+      edge-case-complete, in [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) — start there.** Slices: A1
+      mechanism (no visual change) → A2 SheetComposer markup + `.kit-composer.sheet` CSS → A3 wire minimal+cosmos
+      (default `stacked`). **Non-breaking: vapor untouched, cosmos orbit untouched, Fleet stays Root-pinned.** Out of
+      scope (deferred, see plan §6): Fleet→registry migration, the `createSurface` factory, vapor wiring.
 - [ ] **T2 — phosphor** (LOW–MED): `tokens.css` + fonts + CRT overlay + monochrome amber/green named axis. Reuses the
       whole Kit incl. the default Fleet. + a Fleet-data eyeball pass.
 - [ ] **T3 — observatory** (MED, low-pri — port once its prototype is finished): own Fleet view (SVG radial topology)
