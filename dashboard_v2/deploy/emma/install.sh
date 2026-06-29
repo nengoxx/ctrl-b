@@ -19,16 +19,19 @@ echo "== ctrl-b dashboard install (repo=$REPO, CTRLB_HOME=$CTRLB_HOME) =="
 # 1) Prereqs that need root — DON'T auto-sudo; report so the owner runs them deliberately.
 command -v tmux >/dev/null || echo "⚠ tmux missing → run:  sudo apt install -y tmux   (needed for the Claude agent)"
 
-# 2) Backend venv — REUSE if present (recon showed a healthy py3.11 venv). Pin to python3.11 (system python3
-#    is 3.14; project requires >=3.11 but the existing venv + wheels are 3.11 — keep them consistent).
-if [ ! -d "$V2/backend/.venv" ]; then
-  PY311="$(command -v python3.11 || true)"
-  [ -n "$PY311" ] || { echo "ERROR: no python3.11 (system python3 is 3.14). Install python3.11 first."; exit 1; }
-  echo "-- creating backend venv with $PY311"
-  "$PY311" -m venv "$V2/backend/.venv"
+# 2) Backend venv — NATIVE Python 3.14 (the whole pinned stack is 3.14-wheel-ready; verified on emma
+#    2026-06-29: pydantic-core 2.46.4 / uvloop 0.22.1 / cryptography 49 all ship cp314 wheels). Use the
+#    system python3 (3.14 on emma); REBUILD if an existing venv is a different version (e.g. the old 3.11 one).
+VENV="$V2/backend/.venv"
+PY="$(command -v python3.14 || command -v python3)"
+WANT="$("$PY" -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+if [ -d "$VENV" ]; then
+  HAVE="$("$VENV/bin/python" -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo none)"
+  [ "$HAVE" = "$WANT" ] || { echo "-- existing venv is Python $HAVE, want $WANT → rebuilding"; rm -rf "$VENV"; }
 fi
+[ -d "$VENV" ] || { echo "-- creating backend venv with $PY (Python $WANT)"; "$PY" -m venv "$VENV"; }
 echo "-- ensuring backend deps (pip install -e .)"
-"$V2/backend/.venv/bin/pip" install -e "$V2/backend" --quiet
+"$VENV/bin/pip" install -e "$V2/backend" --quiet
 
 # 3) Frontend — install deps if missing, then build the PROD bundle (dist served by uvicorn).
 echo "-- frontend build"
