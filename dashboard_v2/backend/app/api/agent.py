@@ -27,7 +27,7 @@ from app.config import deep_merge
 from app.core.fsutil import write_text_eol
 from app.core.memory import StoreScope, StoreSpec, store_by_key
 from app.domain.agent import AgentDef
-from app.domain.conversation import Message, ToolCallPart, ToolResultPart, Thread
+from app.domain.conversation import Message, Thread, ToolCallPart, ToolResultPart
 from app.domain.enums import Actor, Privilege, RunState
 from app.domain.event import Event
 from app.domain.plan import Plan

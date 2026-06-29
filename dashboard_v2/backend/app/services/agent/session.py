@@ -40,7 +40,6 @@ from app.core.memory import MemoryProvider
 from app.core.skills import SkillProvider, SkillSelector
 from app.core.tool import UnknownTool
 from app.domain.agent import AgentDef
-from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
 from app.domain.conversation import (
     ErrorPart,
     Message,
@@ -55,6 +54,7 @@ from app.domain.enums import Actor, RunState
 from app.domain.result import ToolResult
 from app.services.action_service import ActionService
 from app.services.agent.compaction import Compactor
+from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
 from app.services.conversation import MessageRepo, ThreadRepo
 
 DEFAULT_SYSTEM_PROMPT = (

@@ -19,7 +19,6 @@ registers nothing, never breaking startup.
 
 from __future__ import annotations
 
-import copy
 import logging
 import re
 from dataclasses import dataclass

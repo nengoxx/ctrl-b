@@ -144,11 +144,17 @@ class McpClient:
         if server.transport == "streamable_http":
             if not server.url:
                 raise McpError("no url configured for streamable_http server")
-            from mcp.client.streamable_http import streamablehttp_client
+            import httpx
+            from mcp.client.streamable_http import streamable_http_client
 
-            async with streamablehttp_client(
-                server.url, headers=server.headers or None, timeout=server.connect_timeout_s
-            ) as (read, write, _get_session_id):
+            # New SDK API (mcp>=1.24, replaces the deprecated `streamablehttp_client`): pass a pre-built
+            # httpx client carrying our headers/timeout rather than per-call kwargs. The yielded 3-tuple
+            # (read, write, get-session-id) is unchanged. The httpx client stays open for the session and
+            # closes when this `async with` exits.
+            async with (
+                httpx.AsyncClient(headers=server.headers or None, timeout=server.connect_timeout_s) as _http,
+                streamable_http_client(server.url, http_client=_http) as (read, write, _get_session_id),
+            ):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     yield session

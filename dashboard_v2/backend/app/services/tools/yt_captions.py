@@ -17,8 +17,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api import YouTubeTranscriptApiException
+from youtube_transcript_api import YouTubeTranscriptApi, YouTubeTranscriptApiException
 
 from app.core.tool import InvocationContext, tool
 from app.domain.enums import RunState

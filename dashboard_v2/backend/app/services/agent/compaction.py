@@ -31,7 +31,6 @@ from app.adapters.inference import InferenceClient, InferenceError
 from app.config import CompactionCfg
 from app.domain.conversation import (
     Message,
-    ReasoningPart,
     TextPart,
     Thread,
     ToolCallPart,

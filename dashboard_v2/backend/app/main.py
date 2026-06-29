@@ -30,6 +30,8 @@ from app.adapters.mcp_client import McpClient
 from app.adapters.openapi_tools import OpenApiToolProvider
 from app.api import (
     access as access_api,
+)
+from app.api import (
     actions,
     agent,
     events,
@@ -37,11 +39,19 @@ from app.api import (
     hosts,
     integrations,
     services,
+)
+from app.api import (
     settings as settings_api,
+)
+from app.api import (
     tools as tools_api,
+)
+from app.api import (
     voice as voice_api,
 )
 from app.config import load_dotenv, load_settings
+from app.core.events import EventBus
+from app.db import Database
 from app.runtime import (
     apply_tool_overrides,
     set_embeddings,
@@ -50,8 +60,6 @@ from app.runtime import (
     set_searxng,
     set_voice,
 )
-from app.core.events import EventBus
-from app.db import Database
 from app.services.action_service import ActionService
 from app.services.actions import build_registry
 from app.services.actions.terminal import register_openterminal
