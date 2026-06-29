@@ -14,11 +14,19 @@
 - First release tag (at deploy): **`v1.0.0`**.
 - Internal dev docs (HANDOFF, DECISIONS D1–D32, etc.) keep saying "v2" as **development history** — add a one-line clarifier at the top of HANDOFF + DECISIONS: *"'v2' is the development name for what ships as ctrl-b v1.0."* Do NOT mass-rewrite "v2"→"v1" in dev docs (lossy + confusing).
 
-## 1. OPEN DECISION — git history (ask owner; affects approach)
-- **A. Clean working tree only** — `git rm` the mp4 etc.; history keeps the 142 MB blob + old dirs. Simplest.
-- **B. Purge big blobs (`git filter-repo`)** — drop `assets/demo.mp4` (142 MB) + the dead prototype/flask dirs from history → small clones; keeps commit messages. Rewrites all hashes (safe — no other clones in use). **Recommended.**
-- **C. Squash to a fresh v1.0 initial commit** — loses granular dev history. Not recommended (D-decision rationale lives in the log).
-- If **B**: do the file MOVES + ref-sweep as a normal commit FIRST, verify, push; THEN run `git filter-repo` to drop the big blobs from history as a separate, clearly-flagged step; force-push; re-clone emma fresh at deploy time. (filter-repo install: `pip install git-filter-repo`.)
+## 1. Git history — DECISION: **B (filter-repo purge), LOCKED 2026-06-29**
+Drop `assets/demo.mp4` (142 MB) + the heaviest dead dirs (the archived prototypes/flask, `node_modules`/`dist`
+if ever committed) from history → genuinely small clones, while KEEPING commit messages + the D1–D32 rationale.
+Procedure:
+1. Do the file MOVES + ref-sweep + doc rewrites as a **normal commit first**; run the §9 verification; push.
+2. THEN, as a **separate, clearly-flagged step**: `pip install git-filter-repo`; purge the blobs/paths
+   (e.g. `git filter-repo --invert-paths --path assets/demo.mp4 --path-glob '*/node_modules/*'`, plus the
+   dead-dir paths under their OLD names since history is by old path); re-add the `origin` remote; **force-push**.
+3. **⚠ Re-clone caveat (the cost of B):** the rewrite changes ALL commit hashes, so existing clones CANNOT
+   cleanly `git pull` afterward (divergent histories). They must **re-clone** (or `git fetch && git reset --hard
+   origin/main`, discarding local). This costs nothing here: emma is re-cloned at deploy anyway, and the owner's
+   separate live local copy is never pulled. **Do NOT `git pull` any old clone post-rewrite — re-clone it.**
+- (Rejected: A = keeps the 142 MB in every clone; C = squash loses the decision history.)
 
 ## 2. Target structure
 ```
@@ -87,7 +95,18 @@ Windows launcher spec (Decision 2):
 - `run-prod` = `npm run build` then uvicorn serving `dist` on :5433, then `tailscale serve --bg --https=443 5433` (mic works). The "use it" path on Windows.
 - All resolve the repo root from the script's own location (`$PSScriptRoot\..\..`), set `CTRLB_HOME` to the repo root (Windows default) or a chosen dir — keep parity with Linux: no hardcoded user paths.
 - **Linux `run.sh`** mirrors this: `run.sh prod` builds + runs uvicorn(+serve), `run.sh dev` runs uvicorn + vite — for users who don't want systemd.
-**tools/** (repo root) holds the agent/dev launchers (NOT app-deploy): `start_claude_remote.{ps1,cmd}` (Windows agent), `start-claude.sh` (Linux tmux agent), `add-dev-worktree.sh`. Update their internal path refs (they already use `$HOME`/`$PSScriptRoot`-style; verify) and any docs pointing at `deploy/emma/scripts/...`.
+**tools/** (repo root) = **DEVELOPMENT tooling, NOT deployment.** The owner primarily drives coding via **Claude
+Code**, so the Claude Code launchers are first-class here, for **BOTH** systems, harmonized:
+- **`start-claude.ps1` + `start-claude.cmd`** (Windows, double-click) — launch Claude Code on this repo. Rename
+  from the existing root `start_claude_remote.ps1`/`.cmd`. Double-click `.cmd` calls the `.ps1` with `-ExecutionPolicy Bypass`.
+- **`start-claude.sh`** (Linux) — launch Claude Code in tmux remote-control (the existing `deploy/emma/scripts/start-claude.sh`).
+- **`add-dev-worktree.sh`** (Linux) — the parallel-agent dev worktree helper.
+Harmonize all three: same defaults (model `claude-opus-4-8`, effort `high`, `bypassPermissions`), overridable via
+args/env, resolve the repo root from the script's own location (no hardcoded user/paths), and a header stating
+"start a Claude Code coding session on this repo (development, not deployment)." These are general dev launchers
+the owner uses to work on the app on either OS — independent of the emma deploy. NOTE the one cross-link: the
+deploy's `bootstrap.py --start-agent` invokes the Linux `tools/start-claude.sh` (it doubles as the on-emma dev
+agent) — update that path ref (`deploy/emma/scripts/start-claude.sh` → `tools/start-claude.sh`) in §6.
 
 ## 6. Path-reference sweep (systematic — leave ZERO stale refs)
 Run after the moves; grep the whole tree and fix each:
