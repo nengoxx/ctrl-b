@@ -74,6 +74,15 @@ export function resolveThemeSetting(
 liveness/serviceCue, minimal density) read settings that HAVE specs → validation is a no-op for valid values and only
 coerces corrupt/stale ones (it also makes cosmos's existing `as OrbitStyle` casts sound). Unit-test in 2.5.
 
+> **Theme-safety scope extension (external_audit #2 — TRIAGE-2 R3/R4, fold in here when the theme engine un-parks):**
+> the same validation discipline applies to the **theme/mode IDs**, not just settings. (R3) `hooks/useAppearance.ts`
+> currently casts `server.theme as ThemeId` / `server.mode as Mode` without checking the value is *registered* (the
+> `ThemeId` union includes unbuilt `phosphor/frontier/observatory`) — add `isRegisteredThemeId` / `isMode` guards
+> before `switchTheme`, fall back to current on a bad value. (R4) `ConfTab.pickTheme` persists the server appearance to
+> the new theme **before** confirming `switchTheme` succeeded — make it **transactional**: persist only *after*
+> successful activation, so a failed lazy chunk can't leave UI/server diverged (reload-loop on a broken theme). Both
+> are the natural siblings of `resolveThemeSetting` + the B2 contract tests; add their cases to the §7 suite.
+
 ### 2.1 `kit/composer/variants.ts` (NEW)
 ```ts
 import type { ComposerVariant } from "./types";

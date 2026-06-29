@@ -90,15 +90,24 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >    the bootstrap** — from the Windows checkout: `backend/.venv/Scripts/python.exe deploy/emma/bootstrap.py`
 >    (SFTPs the gitignored `config.yaml` → emma, git-pulls, runs `install.sh`), then `serve-https.sh` +
 >    `start-claude.sh` on emma. Subsumes TODO **Phase 9**.
-> 2. **⏸ PARKED — Theme engine (Composer Surface + audit hardening).** Fully specified, resume any time:
+> 2. **⚠️ FLAGGED P0 (maintainability, NOT parked, NOT a deploy blocker) — backend test harness is broken.** Audit #2
+>    **verified + reproduced: `76 failed / 153 passed`** — 13 test files use `asyncio.get_event_loop().run_until_complete()`
+>    which raises under modern pytest/pytest-asyncio (fails on Python 3.11 too, not just 3.12). The **app runs fine**
+>    (uvicorn/deps healthy) so the deploy is unaffected, but there's **no reliable backend test signal**. Fix =
+>    centralize one async strategy (`pytest.mark.asyncio`/`asyncio.run`, never per-file `get_event_loop`). Contained
+>    ~13-file slice; do it soon (own call: before or after the deploy lands). Detail: [`external_audit/TRIAGE-2.md`](./external_audit/TRIAGE-2.md) R1.
+> 3. **⏸ PARKED — Theme engine (Composer Surface + audit hardening).** Fully specified, resume any time:
 >    [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) (build A1→A2→A3) · locked architecture **D31 / §14.14** ·
->    audit theme-engine backlog in [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md) 🟡.
-> 3. **📋 The external audit (HIGH visibility).** [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md) routes EVERY
->    finding. Its **SECURITY subset is pulled FORWARD into the deploy** (priority 1): `SECURITY_MODEL.md` (S1),
->    debug-off-by-default, shell-off-by-default, secrets-masked, stale-confirm-token recovery — these matter the moment
->    the dashboard is reachable over Tailscale. Review them DURING the deploy, not after.
-> 4. **🔧 Deferred small items** — [`ISSUES.md`](./ISSUES.md) (owner's-call polish).
-> 5. **Later** — cutover (Phase 10) + the parked theme-engine hardening (TRIAGE 🟡).
+>    audit theme-engine backlog in [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md) + [`TRIAGE-2.md`](./external_audit/TRIAGE-2.md) 🟡
+>    (audit #2 adds R3 theme-ID validation + R4 transactional theme-switch to the theme-safety scope — folded into the plan).
+> 4. **📋 The external audits (HIGH visibility).** TWO independent audits, both routed: [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md)
+>    (audit #1) + [`external_audit/TRIAGE-2.md`](./external_audit/TRIAGE-2.md) (audit #2 — theme engine + maintainability;
+>    strongly corroborates #1). Their **SECURITY subset is pulled FORWARD into the deploy** (priority 1):
+>    `SECURITY_MODEL.md`, debug-off, shell-off-by-default, secrets-masked, stale-confirm-token recovery, OpenAPI tool
+>    hardening — these matter the moment the dashboard is reachable over Tailscale. Review DURING the deploy.
+> 5. **🔧 Deferred small items** — [`ISSUES.md`](./ISSUES.md) (owner's-call polish).
+> 6. **Later** — cutover (Phase 10) + the parked theme-engine hardening (TRIAGE 🟡) + the audit-#2 product-edge backlog
+>    (IME guard, BottomSheet focus, API-DTO contract, SSE-disconnect test, dedicated `PUT /api/appearance`; TRIAGE-2 🔵).
 >
 > **Key researched constraint:** Claude Code `--remote-control` **requires a TTY** → it can NOT be a bare systemd/daemon
 > process; the reliable headless pattern is **tmux** (the dashboard's uvicorn IS a clean systemd daemon). Details +
