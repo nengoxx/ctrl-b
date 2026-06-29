@@ -26,6 +26,14 @@ Procedure:
    cleanly `git pull` afterward (divergent histories). They must **re-clone** (or `git fetch && git reset --hard
    origin/main`, discarding local). This costs nothing here: emma is re-cloned at deploy anyway, and the owner's
    separate live local copy is never pulled. **Do NOT `git pull` any old clone post-rewrite — re-clone it.**
+- **THIS active clone (the Windows workspace) is the EXCEPTION — do NOT re-clone it.** It is where `filter-repo`
+  runs, so it BECOMES the rewritten source of truth. `filter-repo` rewrites only TRACKED history — untracked/
+  gitignored files (`config.yaml` secrets, `.venv/`, etc.) are left untouched. `filter-repo` drops the `origin`
+  remote as a safety measure → `git remote add origin <url>` then `git push --force`. After that this clone ≡ origin.
+  Run with `--force` (filter-repo warns on a non-fresh clone). Safety nets: the pre-rewrite normal commit is already
+  on origin until the force-push, and filter-repo keeps original refs under `.git/filter-repo/`. (Max-caution
+  alternative: rewrite in a throwaway fresh clone, force-push from there, then `git fetch && git reset --hard
+  origin/main` here — re-syncs without re-cloning, preserves untracked secrets.)
 - (Rejected: A = keeps the 142 MB in every clone; C = squash loses the decision history.)
 
 ## 2. Target structure
