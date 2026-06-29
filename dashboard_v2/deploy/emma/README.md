@@ -20,9 +20,9 @@ Branches: **`main`** = always-deployable prod (untouched except by releases); **
 `git fetch --tags && checkout vX.Y && install.sh prod`.
 
 **Who works where:** **no agent ever touches PROD** — the service runs it and the owner uses it daily. **All dev is
-on the DEV side** — one or more agents on `dev`; a *second* agent (feature/audit) gets its **own** tree so it doesn't
-disturb the dev instance: `git -C ~/github/ctrl-b-dev worktree add ~/github/ctrl-b-feat -b feat/x` then
-`start-claude.sh feat ~/github/ctrl-b-feat`. There's no "main = one agent, dev = another" — main has no agent.
+on the DEV side** — one or more agents share the one dev tree, **one writer at a time** (the other reads/audits).
+For a *second simultaneous writer*, give it its **own** branch + sibling worktree via `scripts/add-dev-worktree.sh`
+(below) so it doesn't disturb the dev instance. There's no "main = one agent, dev = another" — main has no agent.
 
 ## Files (tidy layout)
 ```

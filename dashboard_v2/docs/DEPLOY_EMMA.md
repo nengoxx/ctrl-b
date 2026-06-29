@@ -127,11 +127,22 @@ prod's backend + data → not isolated). Per-instance control via the three syst
 
 ## Recommended architecture (researched)
 
+> ⚠️ **The single-`ctrl-b` diagram below is the EARLY sketch — superseded by D32 (two isolated instances).** The
+> TTY/tmux reasoning still holds; only the dashboard side grew from one service to two trees + three units. The
+> current, authoritative picture is in **D32** and `deploy/emma/README.md`:
+> ```
+> emma
+> ├─ PROD: ~/github/ctrl-b (sparse, tag-pinned) → ~/.ctrl-b → uvicorn :5433 → Tailscale Serve HTTPS :443   [no agent]
+> ├─ DEV : ~/github/ctrl-b-dev (dev branch)      → ~/.ctrl-b-dev → uvicorn :5434 --reload + Vite :5173
+> └─ tmux "ctrl-b": claude --remote-control … IN THE DEV TREE (1+ agents; 2nd writer → its own worktree)
+> ```
+
 The split is forced by one fact: **Claude Code `--remote-control` requires a TTY** — it cannot be a bare
 systemd/daemon process; the reliable headless pattern is **tmux/screen** (GitHub issues #29479, #30447; the
 known-working stack is exactly *SSH-via-Tailscale → Linux → tmux → Claude Code*). The dashboard has no such constraint.
 
 ```
+[EARLY SKETCH — superseded by D32; see the box above]
 emma (Kubuntu, SSH-only)
 ├─ systemd: ctrl-b-dashboard.service     [Type=simple, Restart=on-failure, boot]
 │     └─ uvicorn app.main:app --port 5433   (PROD: serves API + built SPA)
@@ -153,20 +164,19 @@ emma (Kubuntu, SSH-only)
 - **Install/run script** (`deploy/emma/` — Linux): create venv + `pip install`, `npm ci && npm run build`, install +
   enable the systemd units. Plus the Tailscale Serve wiring.
 
-## ❓ Open decisions (need the owner)
+## ✅ Decisions — ALL RESOLVED (see D32); kept as a record
 
-1. **Dashboard mode for the always-on service:** PROD-only (rebuild to see changes) + dev on-demand *(recommended)*,
-   or a second always-on DEV instance too (different ports)?
-2. **Tailscale on emma:** is Tailscale already up on emma, and what hostname/port should the dashboard serve as
-   (`https://emma.<tailnet>` via Tailscale Serve → :5433)? Mic/HTTPS depends on this.
-3. **Claude Code service:** systemd-starts-the-tmux-session (boots automatically) vs you start it manually after SSH?
-   And the crash-restart `while true` loop — keep it?
-4. **Multiplexer:** tmux OK, or a preference (zellij/screen)?
-5. **Who runs the first deploy** — me over SSH (you said the project + creds are in the repo; I can connect), the
-   tandem agent, or you by hand the first time? And the **first-run config**: `config.yaml`/secrets are gitignored, so
-   how do they reach emma (manual copy / scp / already present)?
-6. **Repo location on emma:** confirm the path (you guessed `~/git*/ctrl-b`). My checkout vs the tandem agent's —
-   should we share one checkout or keep separate ones?
+1. **Dashboard mode** → BOTH, **fully isolated** (D32): PROD built-`dist` + a separate always-available DEV stack
+   (own backend :5434 + Vite :5173, own `~/.ctrl-b-dev`). Not the earlier "PROD-only + dev-on-demand" nor a
+   shared-backend dev.
+2. **Tailscale** → up on emma; serves `https://emma.<tailnet>.ts.net` via Tailscale Serve → :5433 (mic-ready).
+3. **Claude Code service** → tmux + `while true` crash-restart loop, **started manually** (`start-claude.sh`), in the
+   **dev** tree. Kept the loop.
+4. **Multiplexer** → tmux.
+5. **First deploy** → I run it over SSH via `bootstrap.py` (the one-time `migrate-layout.sh` is agent-coordinated);
+   the secret is SFTP'd from the Windows checkout to `~/.ctrl-b/config.yaml`.
+6. **Repo location / checkouts** → two trees (D32): PROD `~/github/ctrl-b` (clean sparse, no agent) + DEV
+   `~/github/ctrl-b-dev` (the agent(s) work here). Separate, not shared.
 
 ## Two-agent coordination (conversation point)
 
