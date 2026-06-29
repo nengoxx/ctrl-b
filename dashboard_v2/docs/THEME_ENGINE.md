@@ -1294,6 +1294,28 @@ its frozen look**. Letting vapor host the *Kit* variants is a deferred, additive
 the contract — `--accent: var(--magenta)`, … — and marks the subtree `.kit`); it's a small step, not a refactor,
 because everything already reads the contract.
 
+### Invariants & runtime safety (audit-hardened, 2026-06-29 — external_audit B4/D1/H3)
+
+1. **No theme-id branching (the load-bearing invariant).** Neither `DefaultRoot` nor any resolver may
+   `if (theme === "cosmos")`. A Surface resolves a variant by reading the **per-theme setting** + the registry —
+   theme identity flows in only as the *key* into the generic settings map, never as a `switch`. (Verified:
+   `DefaultRoot` has zero theme branches.) This is what lets a new theme slot in without editing shared code.
+   *"No theme ID conditionals inside `DefaultRoot`. Ever."* (audit D1 / agent-rule #2).
+2. **Per-theme settings are VALIDATED at read, not cast.** `useThemeSetting` runs the raw (persisted/synced/possibly
+   stale) value through `resolveThemeSetting(themeId, key, raw)`: a `seg` value must be one of the spec's `options`
+   (else → `default`); a `switch` value must be boolean (else → `default`); an unknown key → `undefined`. Non-negotiable
+   for Surfaces because the setting drives *which component renders*. **Bonus — this enforces the capability list for
+   free:** a theme only declares the ids it offers in its setting `options`, so a validated value can only ever be a
+   variant the theme actually offers (a stale `sheet` under a stacked-only theme coerces back to `stacked`). The
+   resolver still keeps a final `registry[id] ?? fallback` as defence in depth.
+3. **A user-selectable surface's `seg` `options` ARE its capability list.** The menu of variants a theme offers; the
+   `default` is its pinned choice. Adding/removing an offering = editing that one list — no registry/resolver change.
+4. **Slot semantics are fixed + documented (don't let themes invent gravity).** `ComposerSlots` placement is contract:
+   `controlsStart` = leading edge of the controls row (plan pill); `overlay` = a positioned sibling ABOVE the composer
+   (plan sheet, tucking behind the rounded top — rendered *before* the bar so the composer paints over its tucked
+   edge). Reserve `controlsEnd` (trailing controls) + `below` (a strip under the bar) as the next additive slots —
+   **add only when a real consumer exists** (audit H3), never speculatively.
+
 ### Anti-patterns — do NOT
 - ❌ Make a utility/forms/settings/chrome surface a Surface (registry-of-one / wrong abstraction — every mature system
   token-themes these).

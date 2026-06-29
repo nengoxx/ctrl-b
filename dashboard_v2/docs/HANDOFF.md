@@ -98,13 +98,21 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >   2nd user-selectable surface, not speculatively).
 > - **[`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md)** — the self-contained, edge-case-complete build spec
 >   for the next feature (the Composer Surface). File-by-file (A1 mechanism → A2 `SheetComposer` → A3 wire themes),
->   13 enumerated edge cases (notably **#10** `--composer-h` re-measure on live swap, **#7** keep `.kit-composer`
->   class), characterization-test strategy, and the **non-breaking guarantee** (vapor untouched; cosmos orbit
->   untouched; Fleet stays Root-pinned).
+>   15 enumerated edge cases (notably **#10** `--composer-h` re-measure on live swap, **#7** keep `.kit-composer`
+>   class), characterization + theme-contract test strategy, and the **non-breaking guarantee** (vapor untouched;
+>   cosmos orbit untouched; Fleet stays Root-pinned).
+> - **An external static audit** (`external_audit/ctrl_b_dashboard_v2_systematic_audit.md`) was read + triaged in
+>   **[`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md)**. It **validates the architecture** (theme engine 8/10)
+>   and our exact direction. Its theme-engine fixes that intersect the composer work are **folded into the plan**:
+>   **B4** (validate per-theme settings → `resolveThemeSetting`; also self-enforces D31's capability list), **B2** (a
+>   `themeContract.test.ts` — "best ROI in the theme engine"), **D1** (no theme-id branching — now an explicit §14.14
+>   invariant), **H3** (composer slot semantics). The rest (D2 shared root hooks, E2 cosmos perf-lite/rAF pause, F2/F3
+>   sanitization, plus out-of-scope backend/security) are the **next hardening pass**, routed in TRIAGE.md.
 >
-> **⛔ NEXT (clean session): execute `COMPOSER_SURFACE_PLAN.md`.** Build A1→A2→A3, pausing for the owner's 390px
-> eyeball between slices. Confirm the design (D31/§14.14) still reads right, then build. Out of scope until later:
-> Fleet→registry migration, the `createSurface` factory, vapor wiring (all deferred + specified in the plan §6).
+> **⛔ NEXT (clean session): execute `COMPOSER_SURFACE_PLAN.md`.** Build A1 (incl. the B4 `resolveThemeSetting` step +
+> the B2 contract suite) → A2 → A3, pausing for the owner's 390px eyeball between slices. Confirm the design
+> (D31/§14.14) still reads right, then build. Out of scope until later: Fleet→registry migration, the `createSurface`
+> factory, vapor wiring (plan §6), and the theme-engine hardening backlog (TRIAGE.md 🟡).
 >
 > ### 🧭 SESSION UPDATE — moon-dive (Slice 2a) + D30 composer composition (plan pill → composer) — 2026-06-28 (cont.)
 >

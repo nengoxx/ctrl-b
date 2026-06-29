@@ -53,6 +53,27 @@ All new files live in `frontend/src/theme-engine/kit/composer/`. The registry ho
 (KitComposer, SheetComposer are both in the kit bundle → no lazy-registration timing issue; that only arises for
 bespoke variants, which is the deferred Fleet case).
 
+### 2.0 `theme-engine/settings.ts` (EDIT) — validate the setting at read (audit B4; do this FIRST)
+The Surface resolver reads a per-theme setting to decide *which component renders*, so the value must be validated, not
+cast. Add a pure, exported `resolveThemeSetting` and route `useThemeSetting` through it. This hardens **all** theme
+settings (not just composer) and **enforces D31's capability list for free** (a value can only resolve to a variant the
+theme declared in its `options`).
+```ts
+export function resolveThemeSetting(
+  themeId: ThemeId, key: string, raw: ThemeSettingValue | undefined,
+): ThemeSettingValue | undefined {
+  const spec = registry[themeId]?.settings?.[key];
+  if (!spec) return undefined;                                    // unknown key
+  if (spec.type === "switch") return typeof raw === "boolean" ? raw : spec.default;
+  return typeof raw === "string" && spec.options.some((o) => o.val === raw) ? raw : spec.default; // seg
+}
+// useThemeSetting: const raw = useUISlice(s => s.themeSettings[themeId]?.[key]);
+//                  return resolveThemeSetting(themeId, key, raw) as T;
+```
+**Safe:** all 14 existing call sites (vapor heroOn/waveformOn/skyline/loz, cosmos moonStyle/motionSpeed/orbitStyle/
+liveness/serviceCue, minimal density) read settings that HAVE specs → validation is a no-op for valid values and only
+coerces corrupt/stale ones (it also makes cosmos's existing `as OrbitStyle` casts sound). Unit-test in 2.5.
+
 ### 2.1 `kit/composer/variants.ts` (NEW)
 ```ts
 import type { ComposerVariant } from "./types";
@@ -259,6 +280,18 @@ is **unchanged** (no composer row). Switch themes and back — no FOUC, no stale
 12. **Setting value vs label** — persisted value is the variant id (`stacked`/`sheet`); "Docked" is display-only. An
     unknown stored value coerces to `stacked` (fallback in `useComposerLayout`).
 13. **`Composer=` prop removal** — no theme uses it (verified); the §14.13 #12 doc note is reconciled to the registry.
+14. **Capability enforcement via validation (audit B4)** — because `useThemeSetting` now validates against the theme's
+    declared `composer` `options`, a theme can NEVER resolve to a variant it didn't offer (a stale/synced `sheet` under
+    a stacked-only theme coerces to `stacked`). The resolver's `registry[id] ?? KitComposer` is the second safety net.
+    So D31's per-theme capability list is self-enforcing — no extra guard code.
+15. **Slot semantics fixed (audit H3)** — `controlsStart` (controls-row leading edge) + `overlay` (sibling above,
+    tucks behind the rounded top, rendered BEFORE the bar) are the only two slots; `controlsEnd`/`below` are reserved
+    but NOT added (no consumer yet). `SheetComposer` must honor the same placement contract as `KitComposer`.
+
+> **Audit alignment.** This plan folds external_audit **B4** (settings validation — §2.0), **B2** (theme contract
+> tests — §7), **D1** (no theme-id branching — invariant in §14.14 + the resolver reads a setting, not the theme id),
+> and **H3** (slot semantics — #15). The remaining audit findings (theme-engine backlog + out-of-scope) are routed in
+> [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md) — do them in the follow-up hardening pass, not this slice.
 
 ---
 
@@ -278,7 +311,17 @@ is **unchanged** (no composer row). Switch themes and back — no FOUC, no stale
 ## 7. Verification strategy (every slice)
 - **Characterization tests** (`tests/theme-engine/composerSurface.test.ts`, write in A1 BEFORE refactoring): resolver
   returns the expected component per theme default; falls back when the setting is unset; falls back on unknown id;
-  `composerLayoutSetting` shape. Lock current behavior so the refactor is provably non-breaking.
+  `composerLayoutSetting` shape; `resolveThemeSetting` validates (seg∈options else default · switch→bool · unknown
+  key→undefined). Lock current behavior so the refactor is provably non-breaking.
+- **Theme contract suite** (`tests/theme-engine/themeContract.test.ts` — audit B2, "best ROI in the theme engine";
+  write alongside A1). `it.each(registeredThemes())` asserting, for EVERY registered theme: (a) `defaultAccent` ∈
+  `palettes.accents` ids and `defaultMode` ∈ `palettes.modes`; (b) every `settings` entry's `default` is valid
+  (switch→boolean, seg→∈options); (c) `loadStyles()/loadFonts?()/loadRoot?()` resolve; (d) `tabsFor(theme)` returns a
+  non-empty set with unique ids. Plus a **switch-cleanup** test (vapor→minimal→cosmos→vapor): assert the **root-owned**
+  attrs are cleared when their theme isn't active — `data-density` (MinimalRoot), `data-skyline`/`data-loz`/
+  `.no-composer` (VaporRoot), `data-sheet` (CosmosFleet) — while the **global** attrs (`data-skin/theme/mode/accent/
+  motion/perf/tab`, rebuilt by `applyBodyAttrs`) reflect the active theme. This turns "remember the architecture" into
+  "the test fails when you violate it" — it guards every future theme, not just the composer.
 - **Per slice:** `npm run typecheck` clean · `npx vitest run` (≥198 + new) green · `npm run build` green.
 - **Per-theme live 390px eyeball** after A2 and A3: vapor (unchanged), cosmos (orbit + composer + plan), minimal —
   pixel + behavior parity, draft-preserving swap, no stale `--composer-h`, no FOUC.
