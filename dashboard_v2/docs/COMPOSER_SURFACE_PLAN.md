@@ -53,7 +53,14 @@ All new files live in `frontend/src/theme-engine/kit/composer/`. The registry ho
 (KitComposer, SheetComposer are both in the kit bundle → no lazy-registration timing issue; that only arises for
 bespoke variants, which is the deferred Fleet case).
 
-### 2.0 `theme-engine/settings.ts` (EDIT) — validate the setting at read (audit B4; do this FIRST)
+### 2.0 `theme-engine/settings.ts` (EDIT) — validate the setting at read (audit B4)
+> **⚠️ MOVED (audit #3 consolidation, 2026-06-30).** This validation — plus appearance-ID validation (R3), the
+> transactional switch (R4), and the `themeContract.test.ts` suite (B2/§7) — is now owned by the **standalone
+> Theme-Engine Hardening slice that ships BEFORE this composer work** (the owner's locked sequencing; routing in
+> [`external_audit/TRIAGE-3.md`](./external_audit/TRIAGE-3.md)). By the time A1 runs, `resolveThemeSetting` + the
+> contract suite already exist — **A1 assumes them, does not re-implement them.** The spec below is kept as the
+> reference for what the Hardening slice builds; the §7 test strategy likewise moves into that slice.
+
 The Surface resolver reads a per-theme setting to decide *which component renders*, so the value must be validated, not
 cast. Add a pure, exported `resolveThemeSetting` and route `useThemeSetting` through it. This hardens **all** theme
 settings (not just composer) and **enforces D31's capability list for free** (a value can only resolve to a variant the

@@ -1099,11 +1099,16 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
 4. **`@keyframes` names are GLOBAL — prefix every one with your theme id (`phosphor-…`).** `@scope` isolates
    *selectors*, NOT animation names; the last-parsed `@keyframes <name>` wins document-wide, and theme bundles
    coexist during a View-Transition switch. vapor's keyframes are **unprefixed** (`spin`, `shimmer`, `eq`,
-   `twinkle`, `float`, `brew`, `heartbeat`, `gridmove`, `micrec`, `ttsGlow`, `sun-stripes-static`, `inside`),
+   `twinkle`, `float`, `brew`, `heartbeat`, `gridmove`, `micrec`, `ttsGlow`, `sun-stripes-static`),
    and the Kit's are `kit-*`. **A new theme that names a keyframe `spin`/`glow`/`shimmer`/etc. silently
    collides with vapor and breaks it while both are loaded.** Rule: **prefix ALL your `@keyframes` with
    `<theme-id>-`** and you can never collide (this is exactly why the Kit uses `kit-*`). Especially relevant
-   for phosphor's CRT (scanline/flicker/glow loops).
+   for phosphor's CRT (scanline/flicker/glow loops). *(`inside` is NOT a vapor keyframe — an earlier prose list
+   here included it, but it's a regex false-positive: `vapor.css:3` has the words "keeps @keyframes inside @scope"
+   in a comment. Caught by external_audit #3 — exactly why the keyframe inventory should be **executable**, not
+   hand-maintained.)* **`enforced by:` stylelint `keyframes-name-pattern` (per-dir `overrides`: `kit/**`→`kit-`,
+   `themes/<t>/**`→`<t>-`; legacy `theme/vapor.css`+`theme/extras.css` allowlisted) — see §14.13's Enforcement &
+   coverage below.**
 5. **New effects must pass the §14.11 cross-browser budget.** CRT scanlines, glow, flicker, any ambient
    animation → **transform/opacity only** (no animated `background-position`/`box-shadow`/`filter`/size),
    **`will-change`/`contain`** the animated element, gate continuous anims behind `body[data-motion]` and any
@@ -1190,6 +1195,56 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
     in-tab plan** (`AgentTab` gates it on `theme === "vapor"`); moving the frosted plan out of the kit Agent tab
     is what restored that tab's `kit-fade` entrance (a `backdrop-filter` can't composite under an animating
     ancestor). Full rationale: **DECISIONS.md D30**.
+
+### 14.13.1 Enforcement & coverage — making the contract EXECUTABLE (audit #3, 2026-06-30)
+
+The §14.11 budget and the §14.13 checklist are the prose **source of truth**; reliability decays when prose contracts
+outrun their guards (three independent audits' core thesis: *make the documented contracts executable*). Four
+**complementary** enforcement layers cover the contract — they are NOT substitutes, each catches what the others
+structurally can't:
+
+| Layer | Enforces | Why it can't move to another layer |
+|---|---|---|
+| **TS `ThemeDef`** (`types.ts`) | *shape* — field presence/types | types can't express `defaultMode ∈ modes`, `seg.default ∈ options`, or behavior |
+| **Runtime guards** — `resolveThemeSetting` / `isRegisteredThemeId` / resolver `?? fallback` | *resilience* — never crash the user on stale/corrupt synced data | its job is to *silence* bad data (degrade), so it can't also be what *tells the dev to fix it* |
+| **`themeContract.test.ts`** (B2) | *conformance* — value invariants types can't express **+ behavioral** (attr-cleanup across a switch chain, loaders resolve) | behavioral invariants need **mount + switch** — impossible at registry-load or in the type system; CI **fails the build** so the theme gets fixed pre-merge |
+| **stylelint** (CSS) | keyframe prefixes · animation budget · token-only colors | CSS-invisible to all of the above |
+
+`themeContract.test.ts` is the standard **interface-contract / conformance-suite pattern** — one reusable suite run
+against every implementation via `it.each(registeredThemes())`, so a new theme is verified with **zero new test code**.
+Layers 2 and 3 look redundant (both know `seg.default ∈ options`) but have opposite jobs: runtime **coerces** a bad
+value (user fine); the test **fails the build** (dev fixes the theme). Keep both.
+
+**stylelint rule → prose-contract map** (adopted minimal + **warn-first**; CSS-only; one `npm run lint:css`; grown via
+the loop below):
+
+| Rule | Enforces |
+|---|---|
+| `keyframes-name-pattern` (built-in, per-dir `overrides`) | §14.13 #4 — `kit-*` in `kit/**`, `<t>-*` in `themes/<t>/**`; allowlist legacy `theme/vapor.css`+`theme/extras.css` |
+| `stylelint-high-performance-animation` | §14.11 — animate only `transform`/`opacity` (the rule that would have caught vapor's Firefox jank) |
+| `stylelint-declaration-strict-value` | §14.13 #1 — colors come from `var()` tokens, no hardcoded theme colors in Kit |
+| `custom-property-pattern` (built-in) | token naming |
+
+**The "grow the ruleset" governance loop** (so guards never lag the contracts):
+1. **Auto-iterating guards.** Never enumerate themes by hand — `themeContract.test.ts` iterates `registeredThemes()`;
+   stylelint uses directory-glob `overrides`. A new `registry.ts` row is auto-tested; a new `themes/<t>/` folder is
+   auto-linted. Coverage grows with the data, not with discipline.
+2. **Doc-as-coverage-map.** Every enforceable §14.11/§14.13 item carries an **`enforced by:`** marker
+   (`stylelint:<rule>` / `test:themeContract` / `eyeball-only`). A new prose rule with no marker is then a *visible*
+   hole, not a forgotten one. (E.g. #1 token completeness → `test:themeContract` token-list; #4 → `stylelint:keyframes-
+   name-pattern`; #5 animation budget → `stylelint:high-performance-animation`; the §14.13 token-fallback rule →
+   `test:themeContract`.)
+3. **Definition-of-done.** A slice that adds or hardens a contract **adds/extends its executable guard in the same
+   slice** (a stylelint rule or a B2 assertion) — or marks it `eyeball-only` with a reason. Covered by the standing
+   pre-flight/audit discipline; not a separate chore.
+- *Optional (P2) meta-guard:* a test asserting every registered theme has a `tokens.css`, every theme folder is matched
+  by a stylelint override, and every checklist item has an `enforced by:` marker — the guard that guards the guards.
+
+> **`themeContract.test.ts` token-list assertion (audit #3 Δ3).** The token check must distinguish three classes:
+> **semantic tokens** every non-vapor Kit-consuming theme must provide; **base fallbacks** Kit declares in
+> `kit/tokens.css` (the safety net); and **runtime vars** set by JS/layout (`--app-h`/`--appbar-h`/`--composer-h`) —
+> documented exceptions that must NOT be flagged missing. Add a light/dark contrast smoke once a 2nd light-capable
+> theme lands.
 
 ## 14.14 Swappable Surfaces — Tokens vs Variants vs Bespoke (the element-extension contract, D31)
 

@@ -149,10 +149,17 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >    **MCP `streamable_http_client`** deprecation (warning gone), bumped deps (fastapi 0.138.1 / openai 2.44 / mcp 1.28.1
 >    `<2` cap / sse-starlette 3.4.5 / ruamel 0.18.17), and added **ruff** (clean). 229/229 still green on 3.11 + emma 3.14.
 >    Only remaining warning is test-only (`starlette.testclient`→`httpx2`). Detail: [`external_audit/TRIAGE-2.md`](./external_audit/TRIAGE-2.md) R1.
-> 3. **⏸ PARKED — Theme engine (Composer Surface + audit hardening).** Fully specified, resume any time:
->    [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) (build A1→A2→A3) · locked architecture **D31 / §14.14** ·
->    audit theme-engine backlog in [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md) + [`TRIAGE-2.md`](./external_audit/TRIAGE-2.md) 🟡
->    (audit #2 adds R3 theme-ID validation + R4 transactional theme-switch to the theme-safety scope — folded into the plan).
+> 3. **⏸ PARKED — Theme engine. When it un-parks, order is locked (audit #3 consolidation, 2026-06-30):**
+>    **(a) the standalone Theme-Engine Hardening slice FIRST**, then **(b) the Composer Surface.** Full routing +
+>    decisions: **[`external_audit/TRIAGE-3.md`](./external_audit/TRIAGE-3.md)** (3rd audit — verified at HEAD, strongly
+>    corroborates #1/#2). The **Hardening slice** (behavior-preserving, ships before any visual work):
+>    `resolveThemeSetting` (B4) → appearance-ID validation (R3) → transactional switch (R4) **+ the now-stale T1
+>    reconcile fix** (minimal/cosmos are registered, so it's reachable) → `themeContract.test.ts` (B2, the
+>    interface-contract suite) → a **stylelint** micro-slice (warn-first: keyframe-prefix + high-perf-animation +
+>    token-only colors — the CSS half of "make the contracts executable"; governance loop in **§14.13.1**). Then
+>    **(b)** [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) (A1→A2→A3; its §2.0 validation is now done by the
+>    Hardening slice) · locked architecture **D31 / §14.14** · remaining theme-engine backlog in
+>    [`TRIAGE.md`](./external_audit/TRIAGE.md) + [`TRIAGE-2.md`](./external_audit/TRIAGE-2.md) 🟡.
 > 4. **📋 The external audits (HIGH visibility).** TWO independent audits, both routed: [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md)
 >    (audit #1) + [`external_audit/TRIAGE-2.md`](./external_audit/TRIAGE-2.md) (audit #2 — theme engine + maintainability;
 >    strongly corroborates #1). Their **SECURITY subset is pulled FORWARD into the deploy** (priority 1):
@@ -171,6 +178,33 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > a **SECOND agent works in tandem** on emma (its own checkout ~`~/git*/ctrl-b` — treat as read-only; never commit
 > there). Cross-agent coordination via files (e.g. the `external_audit/` folder). config.yaml/secrets are gitignored —
 > they must reach emma out-of-band (not via git).
+>
+> ### 🧭 SESSION UPDATE — Audit-#3 consolidation + multi-homed addressing design (docs only) — 2026-06-30
+>
+> Deep audit-consolidation + plan-revision pass. **No app code changed.** Next active task is unchanged, but
+> **PRE-FLIGHT it first (owner directive 2026-06-30):** in a clean session, *review + validate* `REORG_PLAN` against
+> the **current tree** before executing — re-verify the moves/dedup, the path-sweep targets, the 2 code spots
+> (`config.py` `_PROJECT_ROOT`, `main.py` dist), the `config.yaml` collision + the filter-repo "this workspace is the
+> rewrite source" caveat, and account for tree drift since the plan was written (this session committed 3 new files
+> under `docs/external_audit/`; there's also an **unrelated unstaged `.claude/settings.json`** to resolve first).
+> Surface anything stale/risky and **confirm before** the atomic commit + history purge. (Priority 0 in the block
+> above; the approved *decisions* don't need re-litigating — this is execution validation, not a redesign.)
+> - **Two new external audits triaged → [`external_audit/TRIAGE-3.md`](./external_audit/TRIAGE-3.md):** (1) a 3rd
+>   theme-engine audit (verified at HEAD `8780e99`; strongly corroborates #1/#2 — "make the documented contracts
+>   executable"); (2) the Corsair shutdown audit (separate, backend).
+> - **Theme-engine un-park order LOCKED:** a standalone **Hardening slice** — `resolveThemeSetting` (B4) →
+>   appearance-ID validation (R3) → transactional switch (R4) + the now-stale **T1** reconcile fix →
+>   `themeContract.test.ts` (B2) → a **stylelint** warn-first micro-slice — ships **FIRST**, then the Composer
+>   Surface. **stylelint** adopted as the CSS-contract layer; the **4-layer enforcement model + governance loop** is
+>   documented in **§14.13.1**; fixed a doc bug (`inside` was never a vapor keyframe). **Owner: theme engine = right
+>   after the deploy.**
+> - **Corsair → multi-homed host addressing (ROADMAP D3): designed, DEFERRED to post-deploy.** Two address fields on
+>   the unified Host — `ip` (LAN) + generic **`vpn_host`** — + per-host **`ssh_prefer_vpn`** toggle (default
+>   **LAN>VPN**); one `host_addresses()` chokepoint; SSH failover (connection errors only); **vantage-aware** service
+>   links (name-preferred). **Measured: Tailscale-direct ≈ LAN +1 ms** (same-LAN, not relayed). **Meanwhile, to
+>   control the Windows hosts now (their LAN SSH is firewall-blocked): set each host's `ip` to its MagicDNS name**
+>   (e.g. `corsair`/`g5`/`vault`) — ~0 latency cost. D3 slices 1+2 land post-deploy, with the theme hardening.
+>   Hardcoding-checked: the only `tailscale` coupling is the legit Serve integration; the addressing path is generic.
 >
 > ### 🧭 SESSION UPDATE — Swappable Surfaces design system LOCKED + Composer Surface fully specified (planning + docs only) — 2026-06-29
 >

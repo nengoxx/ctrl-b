@@ -315,6 +315,69 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
 - **Timing:** post-v1; the **A** build pairs with the **A3 scheduler / monitor subsystem** (none exists
   yet). **B** can ship independently of the scheduler. Detection (A) reuses `tailscale`, never a public surface.
 
+### D3. Multi-homed host addressing (LAN + VPN) — **designed 2026-06-30 (external_audit: Corsair shutdown)**
+
+A host is **multi-homed** — reachable at a LAN address *and* a VPN/overlay address — and the right one depends on the
+**consumer's vantage**: the backend (always on LAN + VPN) picks/fails-over server-side; the **browser's** vantage
+varies (LAN / VPN app / TS Serve), so a service link's correct host depends on *how the SPA was reached* — no static
+config value can be right. Web-researched: [MagicDNS — prefer names over IPs](https://tailscale.com/docs/features/magicdns),
+[vantage via `window.location`](https://medium.com/@neocities_1123/making-my-homelab-services-available-to-me-anywhere-in-the-world-with-nginx-proxy-manager-13f04b7835d7),
+[`tailscale status --json` peer map](https://tailscale.com/docs/reference/tailscale-cli). (Homepage/Homarr make the
+user configure URLs manually + split `href`/`siteMonitor`; this design auto-resolves instead.)
+
+- **Why (verified):** Corsair's LAN SSH (`192.168.1.128:22`) **times out** while Tailscale MagicDNS (`corsair:22`)
+  works — Windows Firewall almost certainly allows sshd on the Tailscale interface but blocks the LAN profile (same on
+  G5; Vault was just off). Over MagicDNS the **existing** shutdown path succeeds end-to-end (238 ms vs a 10 s timeout)
+  — **not a code bug**; `ip` is just overloaded (LAN/service/display **and** SSH/ping target — 5 uses, one field:
+  `_common.py:100` SSH, `svc.py:127` URLs, `svc.py:82` probe, `fleet.py:46` ping, `CosmosHostDetail.tsx:94` display).
+  Also: service links are built from `ip`, so when browsing over MagicDNS / TS Serve they point at an unreachable LAN
+  IP. Blocks controlling the Windows hosts from emma post-migration.
+- **Data model (additive on the unified `Host`/`ComputerCfg`; generic naming — owner directive "shape data to extend,
+  not migrate" + "don't hardcode the VPN name"):**
+  - `ip` (existing) = **LAN address** (display line 1, service URLs, port probe, ping — unchanged).
+  - `vpn_host: str | None` (new) = **VPN/overlay address**: a name (MagicDNS — *preferred*) or IP. **Generic** —
+    Tailscale is today's VPN but neither the field nor the resolver names it. (Display line 2.)
+  - `ssh_prefer_vpn: bool = False` (new) = the per-host **SSH toggle**. `False` ⇒ the general **LAN > VPN** order;
+    `True` ⇒ VPN-first for SSH (Corsair). No third `ssh_host` field — the toggle + failover cover it.
+- **Resolution — ONE chokepoint helper, no per-call-site duplication:** `host_addresses(host, prefer_vpn) ->
+  list[str]` returns ordered non-empty candidates — general default `[ip, vpn_host]`, flipped to `[vpn_host, ip]` when
+  `prefer_vpn`. **Single source of truth for the LAN>VPN preference** (never hardcoded at call sites).
+  - **SSH** → `host_addresses(host, host.ssh_prefer_vpn)`, tried in order with a short **connect timeout**, failing
+    over to the next candidate on a **connection** error only (timeout/refused) — **never** on auth (connected +
+    wrong-password is a real error, not a retry). Reuses `adapters/ssh.py`.
+    - **Measured (2026-06-30, corsair→emma, same LAN):** LAN IP avg **0 ms**; MagicDNS name + Tailscale IP both
+      avg **1 ms** (`tailscale ping` → `direct 192.168.1.160:41641 in 1 ms`, NOT relayed). The VPN path adds ~1 ms
+      (WireGuard + interface hop) when peers are direct on the LAN; **name vs IP is identical** steady-state (the
+      name is just a one-time DNS lookup). ⇒ **no meaningful latency cost** to a VPN-first SSH target or to the
+      stopgap of typing the MagicDNS name as `ip`. (Remote/DERP-relayed would add real latency — but that's the only
+      path that works remotely anyway.)
+  - **Service links (frontend)** → **vantage-aware**: if the SPA's `window.location.hostname` is a VPN origin
+    (`*.ts.net` or `100.64.0.0/10`) use the target host's `vpn_host` (the **name**), else `ip`, other as fallback.
+    Requires exposing both `ip` + `vpn_host` in the host DTO. (An `http://host:port` link opened as a top-level
+    navigation from the HTTPS Serve origin is fine — mixed-content blocking only hits subresources.)
+  - **Ping / port-probe** → stay on `ip` (LAN). Corsair's LAN ping works, so status stays accurate. (A
+    LAN-unreachable host could later fall back to probing `vpn_host` — minor future refinement.)
+  - **Display** → both `ip` + `vpn_host` in the sheet / PC info / Kit DeviceRow.
+- **⚠️ Hardcoding note (owner asked; verified 2026-06-30):** the **only** `tailscale` coupling in the codebase is the
+  **Serve / HTTPS-access integration** (`TailscaleCfg`, `actions/tailscale.py`, `api/access.py`, the Conf Access panel,
+  `useAccess`/`useDictation` — 81 refs) — *legitimately* product-specific (it drives the real `tailscale serve`
+  binary). The **host-addressing / SSH / link path has ZERO VPN coupling today** (all `ip`), so the new field +
+  resolver are introduced **generic** (`vpn_host`, no "tailscale" string in logic). Keep the Serve integration as-is;
+  the UI may *label* `vpn_host` "VPN (Tailscale)" while config/logic stay neutral.
+- **Slices (1 unblocks Corsair on its own):**
+  1. **Backend** — `vpn_host` + `ssh_prefer_vpn` on `ComputerCfg`/`Host`/`to_hosts`; the `host_addresses()` helper;
+     SSH callers (shutdown/reboot/`_common` service control) use ordered failover. Tests: order + failover-on-connect
+     + no-failover-on-auth + shutdown still confirms.
+  2. **Frontend** — host DTO exposes `ip`+`vpn_host`; a `serviceBase(host, location)` util (name-preferred,
+     vantage-aware) for the svc-row links + `url_for`/`open_service_url`; the VPN line in `CosmosHostDetail` + Kit
+     DeviceRow; Conf host editor gains the two address fields + the SSH toggle.
+  3. **(Later improvement) VPN discovery** — a backend `tailscale status --json` peer read (reuses
+     `actions/tailscale.py` CLI plumbing) → a Conf "Discover from Tailscale" button that auto-fills `vpn_host` by
+     **HostName** match (LAN-IP match is unreliable; browser can't enumerate the tailnet). Opt-in, not on every load.
+- **Open:** ship slice 1 as its own near-term backend slice (it affects the daily driver — you can't shut Windows
+  hosts down from emma until it lands)? Full diagnosis:
+  [`external_audit/CTRL-B Corsair Shutdown Audit 2026-06-29.md`](./external_audit/CTRL-B%20Corsair%20Shutdown%20Audit%202026-06-29.md) · routing in [`external_audit/TRIAGE-3.md`](./external_audit/TRIAGE-3.md).
+
 ---
 
 ## E0. More tools (the extensible Utils registry — D8)
