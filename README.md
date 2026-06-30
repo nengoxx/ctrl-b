@@ -1,64 +1,77 @@
-> ### 🚧 Active project: `dashboard_v2/`
-> This repo is being rebuilt. The **current work** is the ground-up v2 in
-> **[`dashboard_v2/`](./dashboard_v2/)** — start at
-> **[`dashboard_v2/docs/HANDOFF.md`](./dashboard_v2/docs/HANDOFF.md)** (the single source for
-> current status + next steps). Everything below describes the **legacy Flask app**, which keeps
-> running until v2 reaches cutover.
+# ctrl-b
 
----
-
-# AI Dashboard
-
-Easy control over your services.
+Easy control over your fleet. A **single-user homelab control panel** for waking, monitoring, and
+managing a personal fleet of PCs over LAN + Tailscale, with a text/voice **LLM agent** that drives
+**typed, allowlisted actions** instead of raw shell.
 
 ![Demo](./assets/demo.gif)
 
-Dashboard:
+> **v1.0** — a ground-up rewrite (React + TypeScript + Vite PWA · FastAPI + Uvicorn backend). The
+> earlier hand-built Flask dashboard is archived under [`archive/v0.1-flask/`](./archive/v0.1-flask/).
+> *(Internal dev docs call this rewrite "v2"/"dashboard_v2" — that's the development name for what
+> ships here as ctrl-b v1.0.)*
 
-- Monitor server, WOL & shutdown.
-- Direct commands (preceded with '$' or '>') or assisted with Koboldcpp/OpenAI backend (default or preceded by 'k:' or 'o:').
-- Switch models & start/stop services via assisted command execution. Provide a list of commands, read the sample_prompt.txt for more info.
-- Simple prompt & after user input prompt files (command_prompt.txt & command_post_prompt.txt).
+## What it is
 
-## To Do
+- **Frontend** — a mobile-first, installable **PWA** (React + TS + Vite) porting the **Vapor** design
+  ([`design/prototypes/variations/vapor.html`](./design/prototypes/variations/vapor.html)): 4 tabs
+  (Fleet / Agent / Utils / Conf), per-host services, swappable themes, a shared chat composer with
+  push-to-talk mic + auto-TTS. Widens gracefully to desktop.
+- **Backend** — a **FastAPI + Uvicorn** service exposing a typed JSON API + SSE streaming (`paramiko`,
+  `wakeonlan`, `openai`, …). Serves the built frontend on **:5433**.
+- **Agent** — OpenAI-compatible chat (cloud, e.g. OpenRouter, **or** local `llama.cpp`) with
+  tool-calling wired to the typed-action registry; voice via OpenAI-compatible **STT**/**TTS**.
+- **Persistence** — **SQLite** (`ctrlb.db`) for chat / memory / events; **YAML** (`config.yaml`) for
+  human-editable config, round-tripped by the Conf tab.
+- **Security** — Tailscale-only, single trusted user, **no public bind**. Typed actions are the
+  primary execution path; raw shell is quarantined. See [`AGENTS.md`](./AGENTS.md) §6.
 
-- Prompt formatting support
-- [x] Openai endpoint integration (forced if instruction preceded by 'o:')
-- [ ] Simple chatbot (needs history support 4 now)
-- Whisper & alltalk integration
-- Auto shutdown on idle & wake on connection to local/vpn?
-- Discord/Telegram voice bot
+## Quickstart
 
-## Installation
+Config is optional (built-in defaults apply): copy `config.example.yaml` → `config.yaml` and
+`.env.example` → `.env` (both gitignored) to set hosts / endpoints / secrets. `ctrlb.db` is created
+on first run.
 
-You will need python 3.11, and also Koboldcpp if you want to use the assistant locally.
+**Windows (double-click):**
+```
+deploy\windows\setup.cmd     # once: backend venv (3.14) + deps + frontend build
+deploy\windows\start.cmd     # PROD on http://127.0.0.1:5433   (-Dev / -Tailscale / -Build)
+```
 
-Clone the repository and run the install.bat file to install the required packages in a virtual environment.
+**Linux/macOS (manual, no systemd):**
+```bash
+deploy/linux/run.sh prod     # build + uvicorn :5433 serving the dist
+deploy/linux/run.sh dev      # uvicorn :5433 (--reload) + Vite :5173 HMR
+```
 
-## Usage
+**Linux server (systemd, always-on + HTTPS):** from a Windows checkout, `python deploy/bootstrap.py`
+sets up the two-instance topology over SSH. Full runbook: [`deploy/linux/README.md`](./deploy/linux/README.md).
 
-Create or copy the '_sample' files into config.yaml & command_prompt.txt respectively, edit them with your own settings. The configuration file & prompt files will be copied from those '_sample' files provided if they're not present at runtime.
+**From source, by hand:**
+```bash
+cd backend && python3 -m venv .venv && .venv/bin/pip install -e .   # Windows: .venv\Scripts\python.exe
+cd ../frontend && npm install
+# backend (Windows: do NOT pass --reload — see note), then frontend:
+.venv/bin/uvicorn app.main:app --port 5433        # http://127.0.0.1:5433
+npm run dev                                        # http://localhost:5173 (proxies /api → 5433)
+```
 
-Check the config_sample.yaml file for available settings.
+> **Windows + `--reload` gotcha.** Don't run the backend with `--reload` on Windows — uvicorn's reload
+> worker uses an event loop that breaks `asyncio.create_subprocess_exec`, so `fleet.ping_host` returns
+> empty and every host shows offline. Linux/macOS are unaffected.
 
-Run the start_wol_server.bat file to start the dashboard. You can connect on <http://127.0.0.1:5432>
+## Layout
 
-Note that Linux users will need to run the start_wol_server.sh file, and it's not up to date, just the wake-on-lan/monitoring functionality is working.
+```
+backend/    FastAPI + Uvicorn service (the typed-action registry, agent loop, SSE API)
+frontend/   React + TS + Vite PWA (the Vapor UI)
+docs/       architecture, decisions, handoff, design — START at docs/HANDOFF.md
+deploy/     bootstrap.py + linux/ (systemd) + windows/ (double-click)
+tools/      dev launchers (Claude Code agent, dev worktrees)
+design/     source design prototypes + the Vapor visual spec (reference only)
+agents/  skills/   bundled agent definitions + skills
+archive/    v0.1 Flask (v0.1-flask), the dead inference helpers, and earlier UI prototypes
+```
 
-### Dashboard
-
-- You can send commands directly if you precede them with '$' or '>'
-- By default, the user request will be sent to the backend of choice (in the config.yaml file) and it will return the crafted command to the textbox, ready to send it after reviewing it.
-- You can also use the 'k:' or 'o:' prefix to send the command to the Koboldcpp or OpenAI backend respectively.
-
-- The contents of 'command_prompt.txt' will be sent as system prompt to the AI for the command auto-completion (sample_prompt.txt will be used as default).
-- The contents of 'command_post_prompt.txt', if it exists, will be sent after the user input.
-
-### Chat
-
-- You can add a system_prompt.txt file to the chat folder to add a system prompt to the chat.
-- You can also add a post_prompt.txt file to the chat folder to add a prompt to the chat after the user input.
-
-### IP Lookup
-
-- Placeholder test, input an IP and returns some info about it.
+**Contributing / agents:** read [`AGENTS.md`](./AGENTS.md) (canonical guide) and
+[`docs/HANDOFF.md`](./docs/HANDOFF.md) (living status + next steps).

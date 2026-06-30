@@ -5,68 +5,64 @@ Guidance for Claude Code working in this repo.
 ## Source of truth
 
 **Read [`AGENTS.md`](./AGENTS.md) first.** It is the canonical, agent-agnostic guide and covers:
-project purpose, repository map, run/build commands, current backend & frontend architecture, the
-**security model**, the **target architecture** (React + TS + Vite UI, typed action registry,
-voice via OpenAI-compatible STT/TTS, SearXNG MCP), conventions, and known gotchas.
+project purpose, repository map, run/build commands, backend & frontend architecture, the
+**security model**, conventions, and known gotchas.
 
 Everything in `AGENTS.md` applies to Claude. This file only adds Claude-Code-specific notes so the
 two don't drift — when project facts change, **update `AGENTS.md`, not this file**.
 
 ## TL;DR for a new session
 
-- This is a **single-user homelab control panel** (Flask) for waking/monitoring/managing PCs over
-  LAN + Tailscale, with an LLM command box and chat. No internet exposure; Tailscale-only.
-- The live server is **`wol_server/wol_server_win.py`** (Windows, port 5432). `wol_server.py` is an
-  outdated Linux variant — don't edit it unless the task is explicitly Linux WOL/monitor.
-- **The active rebuild is `dashboard_v2/` — START AT [`dashboard_v2/docs/HANDOFF.md`](./dashboard_v2/docs/HANDOFF.md)**,
-  the single source for current status + next steps. It's a ground-up v2: a mobile-first
-  React/TS/Vite **PWA** backed by a **FastAPI + Uvicorn** service, porting the **Vapor** design
-  (`ctrl-b (Vapor)/variations/vapor.html`). Phases 0–7 are shipped (fleet, agent tool-loop,
-  integrations, Conf, voice, guarded shell) plus **Phase 8a** (the Tools tab utility registry);
-  **Phase 8b** (tool manage layer — tri-state access + descriptions, DECISIONS D22) is the active
-  next slice. All v2 work happens in `dashboard_v2/` — see HANDOFF.md for the full 8b plan.
+- This is a **single-user homelab control panel** for waking/monitoring/managing PCs over LAN +
+  Tailscale, with a tool-using LLM agent + voice. No internet exposure; Tailscale-only.
+- **The app IS this repo (ctrl-b v1.0)** — a mobile-first React/TS/Vite **PWA** backed by a
+  **FastAPI + Uvicorn** service (`backend/app/main.py`, port 5433), porting the **Vapor** design
+  (`design/prototypes/variations/vapor.html`). **START AT [`docs/HANDOFF.md`](./docs/HANDOFF.md)** —
+  the single source for current status + next steps. *(Dev docs say "v2"/"dashboard_v2" — the
+  development name for what ships as v1.0.)* The old Flask app is in `archive/v0.1-flask/`.
 
-  **Doc map — read these before designing or implementing a v2 feature:**
+  **Doc map — read these before designing or implementing a feature:**
   | File | Use it for |
   |---|---|
-  | [`dashboard_v2/docs/HANDOFF.md`](./dashboard_v2/docs/HANDOFF.md) | Current status + the locked next slice. **Always read first.** |
-  | [`dashboard_v2/docs/DECISIONS.md`](./dashboard_v2/docs/DECISIONS.md) | Locked architectural choices (D1–D13) — don't relitigate. |
-  | [`dashboard_v2/docs/ARCHITECTURE.md`](./dashboard_v2/docs/ARCHITECTURE.md) | System design: backend/frontend layers, deployment profiles, security. |
-  | [`dashboard_v2/docs/DESIGN.md`](./dashboard_v2/docs/DESIGN.md) | Concrete code design: data structures, registry, agent loop, SSE wire protocol, extension cookbook. |
-  | [`dashboard_v2/docs/TODO.md`](./dashboard_v2/docs/TODO.md) | Phased checkbox plan — find the right phase, follow the slice. |
-  | [`dashboard_v2/docs/ROADMAP.md`](./dashboard_v2/docs/ROADMAP.md) | **Future features** + the v1 seams to keep cheap. Start here for anything not in TODO. |
-  | [`dashboard_v2/docs/VAPOR_PATTERNS.md`](./dashboard_v2/docs/VAPOR_PATTERNS.md) | Vapor design tokens/components — read **before** styling any net-new UI. |
-  | [`dashboard_v2/docs/RESEARCH.md`](./dashboard_v2/docs/RESEARCH.md) | Library/version pins + sourced rationale (incl. the mic secure-context analysis). |
-  | [`dashboard_v2/docs/AUDIT_settings.md`](./dashboard_v2/docs/AUDIT_settings.md) | Historical pre-7a audit; findings already folded in. Reference, not a checklist. |
-  | [`dashboard_v2/docs/UI_AUDIT.md`](./dashboard_v2/docs/UI_AUDIT.md) | Two-pass frontend audit. §1–6b: perf + best-practices pass (F1–F13) — Slices 1–8 shipped (10 of 13; F9/F13 deferred). §6c: a11y/resilience pass (F14–F27) — **shipped** (F14–F26 in the 2026-06-08 session, F27 on 2026-06-24). **Only F24** (component/axe a11y tests) remains → Phase 9. |
+  | [`docs/HANDOFF.md`](./docs/HANDOFF.md) | Current status + the locked next slice. **Always read first.** |
+  | [`docs/DECISIONS.md`](./docs/DECISIONS.md) | Locked architectural choices (D1–D32) — don't relitigate. |
+  | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | System design: backend/frontend layers, deployment, security. |
+  | [`docs/DESIGN.md`](./docs/DESIGN.md) | Concrete code design: data structures, registry, agent loop, SSE wire protocol, extension cookbook. |
+  | [`docs/TODO.md`](./docs/TODO.md) | Phased checkbox plan — find the right phase, follow the slice. |
+  | [`docs/ROADMAP.md`](./docs/ROADMAP.md) | **Future features** + the v1 seams to keep cheap. Start here for anything not in TODO. |
+  | [`docs/THEME_ENGINE.md`](./docs/THEME_ENGINE.md) | The theme engine (Swappable Surfaces, D31) — read before themeable UI. |
+  | [`docs/VAPOR_PATTERNS.md`](./docs/VAPOR_PATTERNS.md) | Vapor design tokens/components — read **before** styling any net-new UI. |
+  | [`docs/RESEARCH.md`](./docs/RESEARCH.md) | Library/version pins + sourced rationale (incl. the mic secure-context analysis). |
+  | [`docs/UI_AUDIT.md`](./docs/UI_AUDIT.md) | Two-pass frontend audit (perf F1–F13 + a11y/resilience F14–F27). |
+  | [`docs/DEPLOY_EMMA.md`](./docs/DEPLOY_EMMA.md) | The emma (Linux) deploy runbook + topology (D32). |
 
   When designing a new feature, the canonical flow is: **HANDOFF (where we are) → ROADMAP (is this listed? what seams already exist?) → DECISIONS (any locked choice that constrains it?) → DESIGN/ARCHITECTURE (how does it slot in?) → TODO (which phase owns it? add the slice).** If a feature isn't in any of these, propose where it goes *before* coding.
-- The earlier prototype folders (`ws_claude/`, `ws_claude_2/`, `ws_codex*/`) and `ctrl-b (Vapor)/`
-  are **reference only** — superseded by `dashboard_v2/`. Don't import or modify them or the live
-  Flask app; the live app keeps running until cutover.
+- The earlier prototype folders and the old Flask app are **archived** under `archive/` — reference
+  only. Don't import or modify them.
 
 ## Environment
 
-- Host OS is **Windows 11** today (corsair); the owner is **migrating dashboard_v2 to emma (Linux)**.
+- Host OS is **Windows 11** today (corsair); the owner is **migrating to emma (Linux)** for deploy.
   Default shell here is **PowerShell** (use `$null`, `$env:VAR`, backtick continuation); a Bash tool
-  is also available for POSIX scripts. **Keep all v2 code OS-agnostic** — branch on `host.os_type`
+  is also available for POSIX scripts. **Keep all code OS-agnostic** — branch on `host.os_type`
   (managed host), never on the server's OS. The only legitimate server-OS branch is the local ping
-  syntax (`fleet._ping_cmd`); see `ARCHITECTURE.md` §6 for the design invariant.
-- Python **3.11**, venv in `.venv/`. Legacy live server: install via `./install.bat`, run via
-  `./start_wol_server.bat`. v2 backend: `dashboard_v2/backend/.venv` + `uvicorn app.main:app --port 5433`.
-- **Windows gotcha:** do **not** run the v2 backend with `uvicorn --reload` on Windows — the reload
+  syntax (`fleet._ping_cmd`); see `docs/ARCHITECTURE.md` §6 for the design invariant.
+- Python **3.11+** (deploy targets native 3.14), backend venv at `backend/.venv`. Run:
+  `uvicorn app.main:app --port 5433` from `backend/`. One-command: `deploy/windows/start.cmd` /
+  `deploy/linux/run.sh`.
+- **Windows gotcha:** do **not** run the backend with `uvicorn --reload` on Windows — the reload
   worker uses an event loop that breaks `asyncio.create_subprocess_exec`, so `fleet.ping_host` returns
-  empty output and every host shows offline. Linux/macOS reload is fine. (Documented in
-  `dashboard_v2/README.md` + `ARCHITECTURE.md` §6.)
-- Tests live in `dashboard_v2/backend/tests/`; run with the venv's `pytest`. No linter or CI yet — if
+  empty output and every host shows offline. Linux/macOS reload is fine. (Documented in `README.md`
+  + `docs/ARCHITECTURE.md` §6.)
+- Tests live in `backend/tests/`; run with the venv's `pytest` (229). No CI gate beyond `ruff` — if
   you add code, add a minimal way to verify it. Never live-test config writes against the real
   `config.yaml`; use `CTRLB_CONFIG`/`CTRLB_DB` to point at a temp copy.
 
 ## Hard rules (see AGENTS.md §6 for full security model)
 
-- **Never weaken the security boundary.** No public bind, no auth removal, no exposing `/execute`
-  (arbitrary shell) beyond the tailnet. Prefer the typed-action approach for new execution paths.
-- **Never commit or echo secrets.** `config.yaml`, `clients`, and `*_prompt.*` are gitignored and
+- **Never weaken the security boundary.** No public bind, no auth removal, no exposing a raw-shell
+  path beyond the tailnet. Prefer the typed-action approach for new execution paths.
+- **Never commit or echo secrets.** `config.yaml`, `clients`, `*_prompt.*`, `.env` are gitignored and
   contain SSH passwords / API keys. Keep them out of code, logs, and commit messages.
 - **Don't duplicate existing patterns — in either direction.** Before writing new code or adding
   a dep for X, find how X is already done in this codebase and extend it. Two failure modes to
@@ -88,27 +84,25 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   + `tool_settings{}`. Before adding a second name-keyed map next to an existing one, stop and ask
   whether the two belong in one object; if migrating now is cheap (the map is sparse/empty), do it now.
 - **Check the design before you implement — mandatory pre-flight (owner directive 2026-06-16; full
-  text in AGENTS.md §9).** A feature starts by *reading* the code it touches, not writing code.
+  text in AGENTS.md §8).** A feature starts by *reading* the code it touches, not writing code.
   Confirm you're reusing the existing **data structures/classes/functions**, slotting into the
   right **architecture layer** (don't bypass a chokepoint), with **no hardcoding** (tunables →
   config/AgentDef/Settings) and **no duplicated/near-duplicate code** (one source of truth).
   Surface the seams you'll reuse + any deviation, and confirm **before** coding.
-- **Commit only when asked**, scope commits tightly, and **don't sweep the untracked `ws_codex*`
-  dirs into a commit** unless that's the explicit intent.
-- Confirm before destructive/hard-to-reverse actions (rewriting the live server, deleting
-  templates, force-push).
+- **Commit only when asked**, scope commits tightly.
+- Confirm before destructive/hard-to-reverse actions (rewriting shared architecture, deleting
+  docs, force-push).
 
 ## When asked to improve the dashboard
 
-Default to **`dashboard_v2/`** and follow the doc map above — `HANDOFF` → `ROADMAP` → `DECISIONS` →
-`DESIGN`/`ARCHITECTURE` → `TODO`. The agreed shape: mobile-first React + TS + Vite **PWA**
-(TanStack Query, lucide-react), porting the **Vapor** design (`VAPOR_PATTERNS.md` governs net-new
-UI); **FastAPI + Uvicorn** backend; **typed-action registry** as the primary execution path with a
-deferred guarded `$` raw-shell escape hatch (Phase 5, deprioritized — open-terminal already provides
-remote shell); **SQLite** for chat/memory/events + **YAML** for config; voice via OpenAI-compatible
-**STT/TTS** and chat via OpenAI-compatible **llama.cpp**/cloud. The owner connects from Android —
-keep changes testable at narrow viewport widths (mic needs HTTPS via Tailscale Serve). Don't
-re-theme the old Bootstrap UI.
+Default to this repo and follow the doc map above — `HANDOFF` → `ROADMAP` → `DECISIONS` →
+`DESIGN`/`ARCHITECTURE` → `TODO`. The shape: mobile-first React + TS + Vite **PWA** (TanStack Query,
+lucide-react), porting the **Vapor** design (`VAPOR_PATTERNS.md` governs net-new UI); **FastAPI +
+Uvicorn** backend; **typed-action registry** as the primary execution path with a deferred guarded
+`$` raw-shell escape hatch (Phase 5, deprioritized — open-terminal already provides remote shell);
+**SQLite** for chat/memory/events + **YAML** for config; voice via OpenAI-compatible **STT/TTS** and
+chat via OpenAI-compatible **llama.cpp**/cloud. The owner connects from Android — keep changes
+testable at narrow viewport widths (mic needs HTTPS via Tailscale Serve).
 
 **Future-feature workflow.** If the request isn't a phase in `TODO.md`, check `ROADMAP.md` first —
 most future features (privilege levels, automations, scheduled agents, wake word, idle shutdown,

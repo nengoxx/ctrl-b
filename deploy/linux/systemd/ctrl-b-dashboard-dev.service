@@ -1,0 +1,23 @@
+# ctrl-b dashboard — DEV BACKEND (systemd USER service for emma). OPTIONAL / on-demand when iterating.
+# FULLY ISOLATED from prod (D32): its own port (5434), its own data root (~/.ctrl-b-dev), its own code
+# tree (~/github/ctrl-b-dev on the `dev` branch — where ALL development happens; one or more agents work
+# the dev side, never prod). Nothing here can touch the prod backend (:5433) or prod data (~/.ctrl-b).
+# uvicorn --reload (safe on Linux) so backend edits
+# hot-reload. Pair with ctrl-b-dashboard-dev-web.service (Vite :5173 → proxies /api here).
+# Manage:  systemctl --user {start,stop,restart} ctrl-b-dashboard-dev
+# TEMPLATE: install.sh renders __REPO__/__CTRLB_HOME__ to real paths — do NOT copy directly.
+# (No network-online.target / NoNewPrivileges — same rationale as the prod unit's notes.)
+[Unit]
+Description=ctrl-b dashboard (v2, DEV backend — isolated :5434 / ~/.ctrl-b-dev)
+
+[Service]
+Type=simple
+WorkingDirectory=__REPO__/backend
+Environment=CTRLB_HOME=__CTRLB_HOME__
+# DEV: own data root, own port, --reload picks up backend edits live.
+ExecStart=__REPO__/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 5434 --reload
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

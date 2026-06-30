@@ -153,7 +153,7 @@ A change isn't done when it compiles. Run this gate on every diff:
    before you call it fixed.
 4. **Verify against a real criterion.** Turn the task into a checkable goal and
    check it: run the relevant tests with the venv's `pytest`
-   (`dashboard_v2/backend/tests/`), or run the app and observe (`run`/`verify`).
+   (`backend/tests/`), or run the app and observe (`run`/`verify`).
    Never live-test config writes against the real `config.yaml` — point
    `CTRLB_CONFIG`/`CTRLB_DB` at a temp copy. On Windows, don't run the v2 backend
    with `--reload` (breaks subprocess pings). If you couldn't verify, **say so

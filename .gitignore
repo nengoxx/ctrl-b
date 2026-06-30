@@ -1,26 +1,43 @@
+# ── secrets / runtime config (never commit — see CLAUDE.md hard rules) ──
 config.yaml
+.env
+.env.*
 clients
 *_prompt.*
-assets/demo.mp4
 
-.DS_Store
-.venv
+# ── agent memory / personal data (D14: per-agent MEMORY.md + global USER.md) ──
+memories/
+agents/*/memories/
 
-# Dependencies & build output (regenerable — never commit; npm install / vite build recreate them)
+# ── databases ──
+*.db
+*.db-wal
+*.db-shm
+
+# ── python ──
+__pycache__/
+*.py[cod]
+.venv/
+.venv*/
+*.egg-info/
+.pytest_cache/
+
+# ── node / frontend build output (regenerable — npm install / vite build recreate) ──
 node_modules/
 dist/
 build/
 .vite/
+*.local
 *.tsbuildinfo
 
-# Python caches
-__pycache__/
-*.py[cod]
-
-# Logs / env
+# ── logs ──
 *.log
-.env
-.env.*
 
-# Local design/reference images (kept on-disk as references only — never used by code; not versioned)
-dashboard_v2/docs/screenshot/
+# ── editor / OS ──
+.DS_Store
+
+# ── local design/reference images (kept on-disk as references only; never versioned) ──
+docs/screenshot/
+
+# ── legacy demo video (142 MB; never committed — demo.gif is the tracked one) ──
+assets/demo.mp4

@@ -1,0 +1,224 @@
+# ctrl-b config — copy to config.yaml (gitignored) and fill in.
+# Phase 0 reads only `server`; later phases add inference/voice/agents/hosts/mcp/... blocks
+# (see docs/ARCHITECTURE.md §3 and docs/DESIGN.md §9). Unknown keys round-trip losslessly.
+#
+# This file is the UI-managed source of truth, INCLUDING nested secrets (per-host SSH creds,
+# per-endpoint API keys). To keep a specific key out of here, override it from .env with
+# CTRLB_<SECTION>__<KEY> (env wins) — see .env.example.
+
+server:
+  host: 127.0.0.1        # tailnet-only; front with Tailscale Serve for HTTPS (mic needs it)
+  port: 5433             # 5433 coexists with the live Flask app on 5432 until cutover
+  poll_seconds: 5        # fleet status poll cadence
+  debug: false           # keep false — debug is an RCE surface
+
+# Chat inference (Phase 4). Two OpenAI-compatible backends; `default_mode` picks one (the
+# /local //cloud composer prefixes switch per-message, 4c). `local` needs no api_key (llama.cpp).
+# Thinking models cold-load slowly — keep request_timeout_s generous.
+inference:
+  default_mode: local
+  request_timeout_s: 600
+  system_prompt: ""      # optional; blank = the built-in ctrl-b assistant prompt
+  local:
+    base_url: http://192.168.1.137:5001/v1
+    model: minig+
+  cloud:
+    base_url: https://openrouter.ai/api/v1
+    api_key: sk-or-v1-...
+    model: google/gemini-2.0-flash-exp:free
+
+# Agent runtime (Phase 4e+). `compaction` folds the oldest complete turns of a thread into a single
+# summary once the working context passes `threshold_tokens` (or on a manual `/compact`); the full
+# history stays in SQLite, only the model's live context shrinks. The `summarizer` is independently
+# selectable — leave mode/model blank to reuse the chat backend, or point it at a cheap/fast model.
+agent:
+  default_agent: ""          # name of the agents[] entry new threads use; blank = built-in default
+  global_subagent_limit: 6   # process-wide cap on concurrent subagents across the whole tree (4.5)
+  subagent_clamp_privilege: true  # clamp a subagent's privilege to never exceed its parent's (4.5);
+                                  # false lets a configured subagent run at a higher privilege
+  skills_enabled: true       # master switch for the skills subsystem (4.5)
+  skills_dir: skills         # dir scanned for <name>/SKILL.md (relative → alongside this config)
+  compaction:                # global context-window default; an agent/subagent can override it below
+    enabled: true
+    threshold_tokens: 6000   # working-context size (~chars/4 estimate) that triggers auto-compaction
+    keep_last_messages: 8    # recent-message floor kept verbatim (snapped back to a turn boundary)
+    summarizer:
+      mode: ""               # ""/local/cloud — blank inherits inference.default_mode
+      model: ""              # blank inherits the endpoint's model
+
+# Agent definitions (Phase 4.5, D11). Optional — with none configured a built-in default chat agent
+# is used (all agent-exposed tools, CONFIRM privilege, the chat model). Add entries to run/select
+# alternate agents (and to spawn them as subagents). Each is selectable per thread; one is default.
+#
+# Subagents INHERIT every parameter from the agent that spawns them — model, context-window
+# (compaction), privilege, tool/skill allowlists, iteration & fan-out caps. A subagent named in
+# spawn_subagents that you define below overrides ONLY the fields you set here (e.g. just prompt +
+# tools); everything else is inherited from the parent. With no named subagent, a child is a full
+# clone of the parent. (Privilege is still clamped to the parent unless subagent_clamp_privilege:false.)
+# Tool selection & the weak-model opt-out (Phase 4.5 skills + capability layer):
+#   A weak local model gets confused by a large, namespaced toolset (it hallucinates tool names like
+#   `mcp__fleet_ping` and falls back to web search). Skills fix this WITHOUT globally restricting the
+#   agent: an intent skill (skills/<name>/SKILL.md with `allowed_tools`) AUTO-ACTIVATES when the
+#   request matches its description (KeywordSkillSelector, the little-coder approach) and narrows the
+#   toolset for that turn. Keep `skills: "*"` so all intent skills can self-select.
+#   OPT OUT for a capable model: set `skills: []` on its agent — no auto-narrowing, it sees every tool
+#   and picks for itself (the Claude-Code approach). The selector itself is swappable (D11).
+# agents:
+#   - name: local              # weak local model — let intent skills auto-narrow the toolset
+#     model: { mode: local, model: "minig+" }
+#     tools: "*"               # full registry; skills narrow per-turn by intent
+#     skills: "*"              # all discovered skills may auto-activate (fleet, web-research, ...)
+#     privilege: confirm       # readonly | confirm | auto_low | full — gates med/high-risk tools
+#     # Loop-discipline guards (capability layer C1) — raise for a research-heavy agent:
+#     max_iterations: 16
+#     max_repeat_calls: 2          # identical (tool,args) calls before suppression
+#     max_calls_per_tool: 6        # total calls to any one tool per turn before refusal
+#     max_stall_iterations: 2      # consecutive no-progress iterations before a forced final answer
+#   - name: capable            # strong model — OPT OUT of auto-narrowing; full toolset, own judgment
+#     model: { mode: cloud, model: "anthropic/claude-sonnet-4.5" }
+#     tools: "*"
+#     skills: []               # <- the opt-out: no skill auto-selection / no tool narrowing
+#     max_calls_per_tool: 20   # a capable model can be trusted with a looser leash
+#   - name: researcher         # e.g. spawned as a subagent — set only what differs; rest inherits parent
+#     prompt: "You research topics with web tools and report concisely."
+#     tools: [web_search, "mcp__*"]
+
+# Per-tool description overrides (Phase 7d) — sharpen the model-facing wording of any tool, keyed by
+# tool name. The agent selects tools by description, so clearer wording steers a weak local model
+# without code changes. Applied live (no restart); edit these in Conf → Agent tools. A blank/absent
+# value uses the tool's built-in description. Names are the registry names (`ping_host`,
+# `mcp__web-tools__search_web`, `api__<server>__<opId>`, ...).
+# tool_descriptions:
+#   ping_host: "Check whether a fleet host is reachable right now (ICMP). Use before assuming a host is up."
+#   web_search: "Search the public internet. Use ONLY for information that isn't about the local fleet."
+
+# Embeddings backend (Phase 4f, D9) — one OpenAI-compatible `/v1/embeddings` endpoint, local
+# (llama.cpp) or cloud (e.g. OpenRouter `qwen/qwen3-embedding-4b`, which does serve embeddings).
+# Powers the vector MemoryProvider + semantic search when Phase 7 lands; no consumer before then.
+embeddings:
+  base_url: https://openrouter.ai/api/v1   # or http://192.168.1.137:5002/v1 for a local server
+  api_key: changeme                        # provider key (local servers ignore it)
+  model: qwen/qwen3-embedding-4b
+  enabled: true
+  dim: 2560                # optional: known vector size (qwen3-embedding-4b = 2560)
+
+# SearXNG metasearch → the agent's `web_search` tool (Phase 4f, D9). Point base_url at your
+# instance (no trailing /search). The instance must enable the JSON format in its settings.yml
+# (`search: { formats: [html, json] }`) — a stock SearXNG serves HTML only and web_search will
+# report that. Leave it out or set enabled:false to disable the tool.
+searxng:
+  base_url: http://192.168.1.160:8888
+  enabled: true
+  timeout_s: 10
+  language: ""             # optional default UI language (e.g. "en"); blank = instance default
+
+# open-webui/open-terminal → curated agent shell + file tools (Phase 4f). A Bearer-auth REST API
+# (a "computer you can curl") giving the agent a remote shell + file ops on the host it runs on.
+# Risk is per-operation: reads (read/list/grep/glob) auto-run; exec + writes confirm by default —
+# it's arbitrary remote shell, so keep those gated unless you really trust it. `api_key` must match
+# the server's --api-key / OPEN_TERMINAL_API_KEY. Omit the block (or enabled:false) to disable.
+open_terminal:
+  base_url: http://192.168.1.160:9999
+  api_key: changeme
+  enabled: true
+  timeout_s: 30
+  default_wait_s: 30       # synchronous-exec wait window (seconds)
+  exec_risk: high          # low | med | high  (HIGH → the agent confirms before running)
+  write_risk: high
+  read_risk: low
+
+# Generic OpenAPI/REST tool servers (Phase 4f) — the HTTP sibling of mcp_servers, for Open WebUI
+# "tool servers" or any service exposing an OpenAPI doc. Each operation becomes a tool
+# `api__<server>__<operationId>`. GET/HEAD ops auto-run (reads); mutating verbs use `risk` (default
+# med → confirm). A server whose spec won't load is skipped. `include` optionally allowlists ops.
+openapi_servers:
+  - name: my-tools
+    base_url: http://192.168.1.160:8080   # spec fetched from base_url + /openapi.json …
+    # spec_url: http://192.168.1.160:8080/openapi.json   # … or set explicitly
+    api_key: ""              # optional bearer token
+    auth_scheme: Bearer      # header value prefix ("" → send the raw key)
+    risk: med                # risk for mutating ops; GET/HEAD always auto-run
+    enabled: true
+    # include: [search, fetch]   # optional operationId/path allowlist
+
+# MCP servers the agent connects to as a client (Phase 4f, D9). Each server's tools are discovered
+# at startup and merged into the agent's toolset, namespaced `mcp__<server>__<tool>`. A down server
+# is skipped (its tools just won't be present that run) — it never blocks startup. `risk` gates ALL
+# of that server's tools: med/high → the agent confirms before each call (safe for remote tools);
+# set `low` for a server you trust to let its tools auto-run. Streamable HTTP is wired; stdio TODO.
+mcp_servers:
+  - name: web-tools
+    transport: streamable_http   # streamable_http | stdio
+    url: http://192.168.1.160:3003/mcp
+    # headers: { Authorization: "Bearer …" }   # optional, for an authenticated server
+    risk: med                    # low | med | high
+    enabled: true
+  # A stdio (local subprocess) server — transport not yet wired, shown for shape:
+  # - name: filesystem
+  #   transport: stdio
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
+  #   risk: high
+
+# The fleet, keyed by host name (the live wol_server_win.py `computers{}` shape — copy yours in).
+# Each host's stable id is a slug of its name. ssh_password is a secret: masked on API read,
+# never logged. Omit mac for hosts you won't Wake-on-LAN; omit ssh_* for ping-only hosts.
+computers:
+  pegasus:
+    ip: 192.168.1.10
+    mac: "00:11:22:33:44:55"
+    ssh_username: nengo
+    ssh_password: changeme
+    ssh_port: 22
+    os_type: linux
+    role: nas
+    # Services nest under their host (Phase 3). Each gets a stable id "<host-slug>.<svc-slug>".
+    # Liveness is DERIVED, not stored: the `port` is TCP-probed each poll (a port-less service
+    # just tracks its host being up). The svc-row links to http://<ip>:<port><path> when online.
+    # `cmd` holds the per-OS start/stop/restart commands — only the host's os_type variant runs;
+    # a missing one yields a clean "no <action> command configured" instead of an error.
+    services:
+      jellyfin:
+        kind: jellyfin
+        port: 8096
+        cmd:
+          start:   {linux: "sudo systemctl start jellyfin"}
+          stop:    {linux: "sudo systemctl stop jellyfin"}
+          restart: {linux: "sudo systemctl restart jellyfin"}
+      syncthing:
+        port: 8384          # no cmd → shows status + URL only (no control actions)
+  atlas:
+    ip: 192.168.1.12
+    mac: "6c:0b:84:ad:e1:0f"
+    ssh_username: admin
+    ssh_password: changeme
+    ssh_port: 22
+    os_type: windows
+    services:
+      plex:
+        kind: plex
+        port: 32400
+        path: /web         # opens http://192.168.1.12:32400/web
+        cmd:
+          start:   {windows: "net start PlexService"}
+          stop:    {windows: "net stop PlexService"}
+          restart: {windows: "net stop PlexService & net start PlexService"}
+  mercury:
+    ip: 192.168.1.15
+    mac: "b8:27:eb:0a:9c:21"
+    ssh_username: media
+    ssh_password: changeme
+    os_type: windows
+  vega:
+    ip: 192.168.1.20
+    mac: "04:7c:16:fe:88:2a"
+    ssh_username: nengo
+    ssh_password: changeme
+    ssh_port: 2222
+    os_type: linux
+  titan:
+    ip: 192.168.1.25
+    mac: "a4:5e:60:f1:cc:13"
+    ssh_username: render
+    ssh_password: changeme
+    os_type: linux

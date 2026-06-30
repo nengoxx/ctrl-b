@@ -1,0 +1,23 @@
+# ctrl-b dashboard — DEV FRONTEND (systemd USER service for emma). OPTIONAL / on-demand when iterating.
+# Runs the Vite dev server (hot-reload) on 0.0.0.0:5173, proxying /api → the DEV backend on :5434 (set via
+# VITE_API_TARGET — D32), so dev frontend + dev backend are one isolated stack, never touching prod.
+# Reach it on the tailnet at http://emma:5173 (HTTP — no mic; dev is for visual iteration; prod has HTTPS).
+# Pair with ctrl-b-dashboard-dev.service (the :5434 backend).
+# Manage:  systemctl --user {start,stop,restart} ctrl-b-dashboard-dev-web
+# TEMPLATE: install.sh renders __REPO__ + __NPM__ (the machine's actual npm path) — do NOT copy directly.
+# (No network-online.target ordering — system target, no user equivalent; see the prod unit's note.)
+[Unit]
+Description=ctrl-b dashboard (v2, DEV frontend — Vite hot-reload :5173 → :5434)
+After=ctrl-b-dashboard-dev.service
+
+[Service]
+Type=simple
+WorkingDirectory=__REPO__/frontend
+# Vite proxies /api → the DEV backend (not prod). `npm run dev` = vite --host 0.0.0.0 (port 5173).
+Environment=VITE_API_TARGET=http://127.0.0.1:5434
+ExecStart=__NPM__ run dev
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
