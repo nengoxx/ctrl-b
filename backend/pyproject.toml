@@ -1,7 +1,7 @@
 [project]
 name = "ctrl-b-dashboard"
 version = "0.1.0"
-description = "ctrl-b dashboard_v2 — FastAPI backend for the homelab control panel"
+description = "ctrl-b — FastAPI backend for the homelab control panel"
 requires-python = ">=3.11"
 
 # Pinned baseline (RESEARCH.md §Backend). Treat as starting pins; bump deliberately.
