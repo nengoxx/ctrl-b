@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if grep -q 'git commit'; then printf %s '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"coding-discipline POST-FLIGHT - run these BEFORE this commit, not after: (1) self-review the full diff; (2) for any non-trivial or STRUCTURAL change (agent loop, data model, SSE wire, security boundary, shared architecture, a pattern future code will follow), run an INDEPENDENT audit-lens pass - the audit skill - for robustness, efficiency, reliability, edge cases, design fit, and no duplication or hardcoding or bypassed chokepoint; not just leaf edits; (3) verify against a real criterion (build, tests, live), report honestly; (4) strip instrumentation. Trivial fast-path edits: a quick confirm is enough. Reminder only - not blocking.\"}}'; fi",
+            "command": "if grep -q 'git commit'; then printf %s '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"coding-discipline POST-FLIGHT - run these BEFORE this commit, not after: (1) self-review the full diff; (2) for any non-trivial or STRUCTURAL change (agent loop, data model, SSE wire, security boundary, shared architecture, a pattern future code will follow), run an INDEPENDENT audit-lens pass - the audit skill - for robustness, efficiency, reliability, edge cases, design fit, and no duplication or hardcoding or bypassed chokepoint; not just leaf edits; (3) verify against a real criterion (build, tests, live), report honestly; (4) strip instrumentation. Trivial fast-path edits: a quick confirm is enough.\"}}'; fi",
             "statusMessage": "coding-discipline post-flight reminder"
           }
         ]
