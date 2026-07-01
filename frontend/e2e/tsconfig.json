@@ -1,0 +1,10 @@
+{
+  "//": "Type-checking + editor support for the Playwright e2e suite. Run via `tsc -p e2e/tsconfig.json --noEmit` in `npm run typecheck` — Playwright transpiles specs but does NOT type-check them, and esbuild-based runners never type-check. e2e code never ships (not reachable from the app entry), so this has zero production-bundle impact; it only adds a dev-time correctness gate.",
+  "extends": "../tsconfig.app.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["./"]
+}

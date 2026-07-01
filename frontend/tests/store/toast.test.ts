@@ -28,14 +28,18 @@ describe("toast store", () => {
     const { result } = renderHook(() => useToasts());
     act(() => pushToast("ephemeral"));
     expect(result.current.some((x) => x.text === "ephemeral")).toBe(true);
-    act(() => vi.advanceTimersByTime(3200));
+    act(() => {
+      vi.advanceTimersByTime(3200);
+    });
     expect(result.current.some((x) => x.text === "ephemeral")).toBe(false);
   });
 
   it("a sticky toast survives the TTL until explicitly dismissed", () => {
     const { result } = renderHook(() => useToasts());
     act(() => pushToast("stuck", "info", { sticky: true }));
-    act(() => vi.advanceTimersByTime(10_000));
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
     const t = result.current.find((x) => x.text === "stuck");
     expect(t).toBeTruthy();
     act(() => dismissToast(t!.id));

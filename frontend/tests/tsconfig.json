@@ -1,5 +1,5 @@
 {
-  "//": "Editor/type support for the test suite ONLY. Intentionally NOT referenced by the root tsconfig.json, so `tsc -b` (the production build's typecheck) never processes test files — the production build stays untouched. Vitest itself transpiles via esbuild and doesn't need this.",
+  "//": "Type-checking + editor support for the vitest suite. Run via `tsc -p tests/tsconfig.json --noEmit` in `npm run typecheck` — vitest transpiles via esbuild but does NOT type-check, so this is the tests' only type gate. Kept as a standalone `tsc -p` (not a root `tsc -b` reference) to sidestep project-references/composite overlap with `../src`. NOTE: test files never ship regardless (they're unreachable from the app entry, so vite never bundles them) — type-checking them has zero production-bundle impact.",
   "extends": "../tsconfig.app.json",
   "compilerOptions": {
     "types": ["vitest"],

@@ -27,7 +27,7 @@ describe("assignFromSet", () => {
     const ids = Array.from({ length: SET.length + 4 }, (_, i) => `svc${i}`);
     const m = assignFromSet(ids, SET);
     expect(m.size).toBe(ids.length);
-    expect([...m.values()].every((v) => SET.includes(v as (typeof SET)[number]))).toBe(true);
+    expect([...m.values()].every((v) => SET.includes(v))).toBe(true);
   });
 
   it("returns an empty map for an empty set (graceful, no throw)", () => {

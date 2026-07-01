@@ -47,7 +47,7 @@ class FakeAudio {
 }
 
 beforeEach(() => {
-  vi.stubGlobal("Audio", FakeAudio as unknown as typeof Audio);
+  vi.stubGlobal("Audio", FakeAudio);
   globalThis.fetch = vi.fn(
     async () => ({ ok: true, blob: async () => new Blob(["a"]) }) as unknown as Response,
   );

@@ -64,10 +64,29 @@ export default tseslint.config(
     },
   },
 
-  // Tests / e2e / root config files / scripts — keep linting, drop the type-aware
-  // rules (not in a TS project yet; 1b-2b gives tests/e2e their own tsconfig).
+  // Tests + e2e — TYPE-AWARE lint (projectService finds tests/tsconfig.json + e2e/tsconfig.json,
+  // 1b-2b). Keeps the high-value rules (no-floating-promises catches a genuinely-missing `await`),
+  // with targeted test-idiom relaxations below.
   {
-    files: ["tests/**", "e2e/**", "scripts/**", "*.{js,mjs,ts}"],
+    files: ["tests/**/*.{ts,tsx}", "e2e/**/*.ts"],
+    extends: [...tseslint.configs.recommendedTypeChecked],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    rules: {
+      // Mocks must be `async` to match real async interfaces (Audio.play/fetch/Response.json/
+      // getUserMedia) even with no `await`; and `act(async () => …)` is the RTL flush idiom.
+      "@typescript-eslint/require-await": "off",
+      // Assertions legitimately poke loosely-typed parsed JSON (localStorage round-trips).
+      "@typescript-eslint/no-unsafe-member-access": "off",
+      // String() in mocks/assertions on loosely-typed values (RequestInfo|URL); FP-prone in tests.
+      "@typescript-eslint/no-base-to-string": "off",
+    },
+  },
+
+  // Root config files + scripts — non-type-checked (not in a TS project; low value).
+  {
+    files: ["scripts/**", "*.{js,mjs,cjs,ts}"],
     extends: [tseslint.configs.disableTypeChecked],
   },
 
