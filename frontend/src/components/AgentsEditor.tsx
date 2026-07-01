@@ -261,17 +261,21 @@ function AgentFieldsForm(props: {
 
       <label>Limits</label>
       <div className="agent-lim">
-        {LIMITS.map((l) => (
-          <div className="agent-lim-cell" key={l.key as string}>
-            <span>{l.label}</span>
-            <input
-              aria-label={l.label}
-              inputMode="numeric"
-              value={String(a[l.key] ?? "")}
-              onChange={(e) => set({ [l.key]: Number(e.target.value) || 0 } as Partial<AgentDef>)}
-            />
-          </div>
-        ))}
+        {LIMITS.map((l) => {
+          // eslint-disable-next-line @typescript-eslint/no-base-to-string -- limit fields are numeric; String() is safe (the rule can't narrow the indexed-access union)
+          const shown = String(a[l.key] ?? "");
+          return (
+            <div className="agent-lim-cell" key={l.key}>
+              <span>{l.label}</span>
+              <input
+                aria-label={l.label}
+                inputMode="numeric"
+                value={shown}
+                onChange={(e) => set({ [l.key]: Number(e.target.value) || 0 })}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
   );

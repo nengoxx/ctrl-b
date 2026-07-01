@@ -40,11 +40,11 @@ function kvRows(data: Record<string, unknown>): [string, string][] {
   const rows: [string, string][] = [];
   for (const [k, v] of Object.entries(data)) {
     if (k === "download" || v == null || v === "") continue;
-    const val = Array.isArray(v)
-      ? v.join(", ")
-      : typeof v === "object"
-        ? JSON.stringify(v)
-        : String(v);
+    let val: string;
+    if (Array.isArray(v)) val = v.join(", ");
+    else if (typeof v === "object") val = JSON.stringify(v);
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- v is a primitive here (array/object handled above); the rule can't narrow the union
+    else val = String(v);
     rows.push([k, val]);
   }
   return rows;
@@ -61,7 +61,16 @@ export function UtilCard({ tool }: { tool: UtilTool }) {
 
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(
-      fieldNames.map((n) => [n, props[n].default != null ? String(props[n].default) : ""]),
+      fieldNames.map((n) => {
+        const d = props[n].default;
+        let init: string;
+        if (d == null) init = "";
+        else if (typeof d === "object")
+          init = JSON.stringify(d); // an object default would else stringify to "[object Object]"
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- d is primitive here (null/object handled); schema form-field defaults are never fn/symbol
+        else init = String(d);
+        return [n, init];
+      }),
     ),
   );
   const [busy, setBusy] = useState(false);
@@ -116,6 +125,7 @@ export function UtilCard({ tool }: { tool: UtilTool }) {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- FP: result.data is loosely typed, so this assertion provides the download shape used below (union-narrowing limitation #12277).
   const download = (result?.data?.download ?? null) as {
     filename?: string;
     content?: unknown;

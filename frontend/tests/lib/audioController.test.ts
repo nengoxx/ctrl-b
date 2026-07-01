@@ -23,6 +23,7 @@ class FakeAudio {
   paused = true;
   private listeners: Record<string, (() => void)[]> = {};
   constructor() {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- test mock captures its own instance for assertions
     lastAudio = this;
   }
   addEventListener(type: string, cb: () => void) {

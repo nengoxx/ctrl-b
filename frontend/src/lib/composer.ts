@@ -21,7 +21,6 @@ import {
   setSessionMode,
   setSessionPrivilege,
   startNewThread,
-  type ChatMode,
 } from "../store/chat";
 import { setUI } from "../store/ui";
 import { PRIVILEGE_VALUES, privilegeLabel, type Privilege } from "./privilege";
@@ -123,7 +122,7 @@ function routeSlash(text: string): void {
   switch (verb) {
     case "local":
     case "cloud": {
-      const mode = verb as ChatMode;
+      const mode = verb; // narrowed to "local" | "cloud" by the switch cases
       if (rest) {
         void sendMessage(rest, { mode }); // one-shot: this message only
       } else {

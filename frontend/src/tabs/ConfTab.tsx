@@ -243,7 +243,7 @@ export function ConfTab({ active }: Props) {
     if (id === theme) return;
     const def = registry[id];
     const target = {
-      mode: def?.palettes.defaultMode ?? ("dark" as Mode),
+      mode: def?.palettes.defaultMode ?? "dark",
       accent: def?.palettes.defaultAccent ?? "dark",
     };
     void switchTheme(id, target); // async (loads the bundle first) → DON'T read the store for theme below
@@ -290,12 +290,9 @@ export function ConfTab({ active }: Props) {
     default_title: agentSection?.default_title ?? "",
     global_subagent_limit: agentSection?.global_subagent_limit ?? 6,
     subagent_clamp_privilege: agentSection?.subagent_clamp_privilege ?? true,
-    auto_rotate: (agentSection as { auto_rotate?: boolean } | undefined)?.auto_rotate ?? false,
-    auto_rotate_min_overlap:
-      (agentSection as { auto_rotate_min_overlap?: number } | undefined)?.auto_rotate_min_overlap ??
-      2,
-    streaming:
-      (agentSection as { streaming?: "auto" | "on" | "off" } | undefined)?.streaming ?? "auto",
+    auto_rotate: agentSection?.auto_rotate ?? false,
+    auto_rotate_min_overlap: agentSection?.auto_rotate_min_overlap ?? 2,
+    streaming: agentSection?.streaming ?? "auto",
   };
   // The per-agent tool grid mirrors the global tri-state (8b, D22): show every tool that's an agent
   // tool *by default* (so a globally-disabled tool still appears, locked-off, rather than vanishing)
@@ -464,7 +461,7 @@ export function ConfTab({ active }: Props) {
         },
       },
     };
-    save.mutate(patch as unknown as Record<string, unknown>);
+    save.mutate(patch);
   }
 
   // The five "scalar settings" groups below (Inference / Server / SearXNG / Embeddings /

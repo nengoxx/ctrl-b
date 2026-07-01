@@ -29,7 +29,7 @@ export interface AgentDef {
   tools: string[] | "*";
   skills: string[] | "*";
   privilege: Privilege;
-  compaction: unknown | null; // not edited here — preserved on round-trip
+  compaction: unknown; // not edited here — preserved on round-trip (unknown already admits null)
   max_iterations: number;
   max_repeat_calls: number;
   max_calls_per_tool: number;
@@ -67,7 +67,7 @@ export type AgentFields = Omit<AgentDef, "name" | "prompt" | "compaction">;
 
 export function pickFields(a: AgentDef): AgentFields {
   const { name: _n, prompt: _p, compaction: _c, ...rest } = a;
-  return rest as AgentFields;
+  return rest;
 }
 
 /** Discovered specialist names + the resolved default slug (tab-scoped — Conf-only data). */

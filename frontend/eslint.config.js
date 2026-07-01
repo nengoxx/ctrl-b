@@ -1,4 +1,5 @@
 import js from "@eslint/js";
+import globals from "globals";
 import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
@@ -68,6 +69,29 @@ export default tseslint.config(
   {
     files: ["tests/**", "e2e/**", "scripts/**", "*.{js,mjs,ts}"],
     extends: [tseslint.configs.disableTypeChecked],
+  },
+
+  // Node globals for build scripts + root config files (they run under Node, not the browser).
+  {
+    files: ["scripts/**", "*.{js,mjs,cjs}"],
+    languageOptions: { globals: { ...globals.node } },
+  },
+
+  // Shared rule tweaks (apply everywhere):
+  // - honor the `_`-prefix "intentionally unused" convention (omit-destructures, drop args);
+  // - allow ternary / short-circuit expressions used purely for side effects (the codebase's
+  //   terse `cond ? a() : b()` idiom) — the rule still flags genuinely no-op expressions.
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
+      "@typescript-eslint/no-unused-expressions": [
+        "error",
+        { allowTernary: true, allowShortCircuit: true },
+      ],
+    },
   },
 
   // Turn off ESLint rules that conflict with Prettier — must be last.

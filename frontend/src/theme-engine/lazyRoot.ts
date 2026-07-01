@@ -28,6 +28,7 @@ export function preloadableRoot(load: () => Promise<{ default: ComponentType }>)
     }));
   const Root: ComponentType = (props) => {
     if (mod) return createElement(mod, props); // hot path: synchronous, no Suspense
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- Suspense contract: throw a Promise to suspend until the lazy chunk resolves (parity with React.lazy).
     throw preload(); // cold path: suspend until the chunk resolves
   };
   return { Root, preload };
