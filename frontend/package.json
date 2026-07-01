@@ -11,7 +11,8 @@
     "icons": "node scripts/gen-pwa-icons.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "check-all": "npm run typecheck && npm test"
   },
   "dependencies": {
     "@fontsource/audiowide": "^5.2.7",
