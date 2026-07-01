@@ -24,11 +24,14 @@ import { useSyncExternalStore } from "react";
 
 export interface StoreBinding {
   /** Subscribe a listener; returns an unsubscribe. For wiring non-React side-effects to changes. */
-  subscribe(cb: () => void): () => void;
+  subscribe: (cb: () => void) => () => void;
   /** Notify all listeners — call after mutating the store's state. */
-  emit(): void;
+  emit: () => void;
   /** Bind a snapshot to React. `getSnapshot` must return a primitive or a stable reference. */
-  useStore<T>(getSnapshot: () => T): T;
+  // Arrow-property (not method) signatures: these are function-valued properties with no `this`,
+  // so destructuring them (`const { emit } = createStore()`) is safe — this also stops the
+  // `@typescript-eslint/unbound-method` false positive that method-shorthand would trigger.
+  useStore: <T>(getSnapshot: () => T) => T;
 }
 
 export function createStore(): StoreBinding {
