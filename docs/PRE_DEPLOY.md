@@ -1,6 +1,7 @@
 # Pre-deploy hardening — the gate before the emma v1.0 deploy
 
-**Status: PLANNED (2026-07-01). Not started.** The app is *feature-complete* (Phases 0–8 shipped,
+**Status: IN PROGRESS (2026-07-02). Step 1 (quality harness): 1a + 1b SHIPPED; 1c (pyright) + 1d (git hooks)
+remain — see §1's SESSION HANDOFF block. Steps 2–7 not started.** The app is *feature-complete* (Phases 0–8 shipped,
 incl. all of 7e workspaces/memory/skills and Phase 8 tools). What remains before shipping v1.0 to
 emma is **hardening + verification**, not features. This doc is the sequenced checklist for that work.
 
@@ -70,26 +71,51 @@ step's pre-flight reveals a cheaper path.
   `.prettierrc`; scripts `lint`/`lint:fix`/`format`/`format:check`. Run warn-first (tune noisy type-checked
   rules like `no-unnecessary-condition` to `warn`); **rules-of-hooks = error**; Prettier reflow = its **own
   commit**. Add `eslint .` + `prettier --check .` into the FE `check-all`. *(`@eslint-react` = post-baseline ratchet.)*
-- **1c — Backend `pyright[nodejs]`.** Add `pyright[nodejs]` (pinned, e.g. `==1.1.x`) to
-  `[project.optional-dependencies] dev` (installed via `pip install -e ".[dev]"`; the `nodejs` extra uses
-  `nodejs-wheel` → reliable hermetic bundled-Node, no flaky first-run fetch) + `[tool.pyright]`
-  (`typeCheckingMode = "basic"`, `pythonVersion = "3.14"`, venv path). Triage to green in `basic`; append to
-  `check.py`. *(Ratchet → `strict` later, not blocking. basedpyright/Pyrefly = documented alts.)*
+- **1c — Backend `pyright[nodejs]`. ▶ NEXT.** *Fresh-session steps:* (1) pre-flight — read `backend/pyproject.toml`
+  (deps + `[tool.ruff]`; note there's no `[project.optional-dependencies]` yet), a couple of `backend/app/`
+  modules to gauge typing density, and `tools/check.py` (the `build_checks()` list you'll append to). (2) Add
+  `pyright[nodejs]` (pinned, e.g. `==1.1.x`) to a new `[project.optional-dependencies] dev` (install via
+  `backend/.venv/Scripts/python.exe -m pip install -e ".[dev]"`; the `nodejs` extra uses `nodejs-wheel` → reliable
+  hermetic bundled-Node, no flaky first-run fetch). (3) `[tool.pyright]` in pyproject: `typeCheckingMode = "basic"`,
+  `pythonVersion = "3.14"`, `venvPath`/`venv` pointing at `.venv`, `include = ["app"]`. (4) Run
+  `.venv/Scripts/python.exe -m pyright` → **triage the findings for the owner before fixing** (same batch cadence
+  as 1b: the backend is already modern-typed, so `basic` should be near-green — expect a handful; distinguish real
+  fixes from FP-prone ones like `reportMissingModuleSource`/optional-dep imports, which get `[tool.pyright]`
+  ignores or `# type: ignore` with rationale). (5) Append a `Check("pyright", [py, "-m", "pyright"], BACKEND, fast=False)`
+  entry to `tools/check.py` `build_checks()`. Verify `python tools/check.py` green. *(Ratchet → `strict` later, not
+  blocking. basedpyright/Pyrefly = documented alternatives in QUALITY.md if the owner prefers no bundled Node.)*
 - **1d — Native `core.hooksPath` enforcement (fast/full split).** Add a tracked `.githooks/` dir +
-  `git config core.hooksPath .githooks` (in `install.sh` / a documented one-liner; ensure the exec bit).
-  `pre-commit` = `python tools/check.py --staged` (fast, staged-file subset: ruff/prettier/eslint);
-  `pre-push` = full `python tools/check.py` (types + tests). Hooks are 2-liners delegating to `check.py` (no
-  re-listing). Rationale: a slow pre-commit gets `--no-verify`-bypassed; native+python dodges lefthook's
-  Windows PATH edges. *(lefthook = documented alt if we want a managed runner.)*
+  `git config core.hooksPath .githooks` (in `deploy/linux/install.sh` + a documented Windows one-liner; ensure the
+  exec bit on the hook files). `pre-commit` = fast checks; `pre-push` = full `python tools/check.py` (types + tests).
+  Hooks are 2-liners delegating to `check.py` (no re-listing). Rationale: a slow pre-commit gets `--no-verify`-bypassed;
+  native+`python` dodges lefthook's Windows PATH edges (D33). **⚠ check.py gap to close first:** `check.py` today has
+  `--fast` (backend ruff lint+format only — it does NOT run the FE eslint/prettier) but **no `--staged`**. So 1d must
+  either (a) implement `--staged` (git `diff --cached --name-only --diff-filter=ACMR`, scope ruff/eslint/prettier to
+  changed files — the documented plan, more work), OR (b) the simpler MVP: add fast-tagged FE lint/format checks to
+  `build_checks()` so `--fast` covers both halves quickly, and use `check.py --fast` on pre-commit. Decide at
+  pre-flight. *(lefthook = documented alt if we want a managed runner.)*
 - **Acceptance:** `python tools/check.py` runs green across both halves; a bad commit is blocked
   (fast) pre-commit and a bad push (full) pre-push; harness documented in `AGENTS.md` §3 + `QUALITY.md` + D33.
 - **Locked edge-case handling (2026-07-01):** (1) line endings → `.gitattributes` normalize-to-LF (applied in
   1b with the Prettier reflow); (2) partial-staged files → *simple* (lint the working tree, documented caveat),
   add stashing only if it bites; (3) aggregation → *run-all-and-summarise* (every check runs even if one fails).
-- [x] **1a — SHIPPED 2026-07-01** (`a507200`). Runner built + verified (all 4 checks green). It earned its keep
-  immediately: caught a UTF-8 output bug in itself (fixed) and surfaced pre-existing ruff drift the old
-  "clean" claim missed — burned down in `e11f679` (ruff `--fix`, 31 issues) + `5bad302` (ruff format, 57
-  files, inert); 229 tests still green.  ·  [ ] 1b  ·  [ ] 1c  ·  [ ] 1d
+**▶ SESSION HANDOFF (2026-07-02) — 1a + 1b SHIPPED & pushed (through `ebdf17b` on `main`). NEXT = 1c (pyright),
+then 1d (git hooks).** A fresh session: read [`QUALITY.md`](./QUALITY.md) + [D33](./DECISIONS.md#d33) for the
+locked design, then execute 1c below. The FE gate (`tools/check.py --frontend` → typecheck+eslint+prettier+vitest)
+is fully green; backend gate is ruff+pytest (no type checker yet — that's 1c). `python tools/check.py` runs both.
+
+- [x] **1a — SHIPPED 2026-07-01** (`a507200`, `e11f679`, `5bad302`). `tools/check.py` runner (flags: `--fast`,
+  `--backend`, `--frontend`; **no `--staged` yet — see 1d**) + FE `check-all`. Caught a UTF-8 bug in itself +
+  pre-existing ruff drift (fixed, inert). 229 backend tests green.
+- [x] **1b — SHIPPED 2026-07-02.** Frontend ESLint (type-aware) + Prettier, incl. tests/e2e.
+  - **1b-1** Prettier — `48d8d84` (reflow) + `c2f7d2c` (wire). printWidth 100, endOfLine auto, CSS excluded (D7/stylelint later).
+  - **1b-2a** ESLint type-aware on `src`: **209 → 0 errors**. Switch a11y fix + drop jsx-a11y (`b45499f`/`120d52a`);
+    batch (a) promises `335837e`; batch (b) hooks `f100d59`; unbound-method `a3f812b`; batch (c+d) `a714e94` + gate `a832762`.
+  - **1b-2b** tests/e2e now type-checked (separate `tsc -p`) + type-aware-linted — `ebdf17b`.
+  - **⚠ Left behind (intentional, documented in QUALITY.md):** **27 non-blocking eslint `warn`s** = the
+    React-Compiler-prep backlog (`set-state-in-effect` 11 / `refs` 8 at `warn`) + `exhaustive-deps` 2 + react-refresh 6.
+    They are the checklist to clear **at React Compiler adoption** (UI_AUDIT F13). Do NOT "fix" piecemeal now.
+- [ ] **1c** (pyright) · [ ] **1d** (git hooks) — **▶ the remaining harness work; execution specs in the two slices above.**
 
 ### 2. `docs/SECURITY_MODEL.md` — write the trust boundary  ·  *audit S1/L3 (P1)*
 - **Goal:** make the security model *executable-adjacent* documentation before exposure.
