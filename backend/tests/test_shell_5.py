@@ -26,13 +26,13 @@ The shell is the *host's* (powershell on Windows, bash elsewhere), so commands s
 
 from __future__ import annotations
 
-import asyncio
-from _async import run_async
 import contextlib
 import os
 import platform
 import tempfile
 from pathlib import Path
+
+from _async import run_async
 
 _WIN = platform.system().lower() == "windows"
 

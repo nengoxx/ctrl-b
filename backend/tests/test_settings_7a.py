@@ -20,7 +20,6 @@ import tempfile
 from pathlib import Path
 
 # --- config-layer tests (no app needed) -------------------------------------------------------
-
 from app.config import (
     Settings,
     _mask,

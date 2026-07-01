@@ -50,7 +50,14 @@ def _provider():
 
 
 def test_registry_has_all_stores_with_structural_facts() -> None:
-    from app.core.memory import MEMORY_STORE, STATE_STORE, USER_STORE, StorePosition, StoreScope, StoreSemantics
+    from app.core.memory import (
+        MEMORY_STORE,
+        STATE_STORE,
+        USER_STORE,
+        StorePosition,
+        StoreScope,
+        StoreSemantics,
+    )
 
     with _workspace():
         _s, prov, _agent = _provider()
@@ -155,8 +162,8 @@ def test_every_store_is_explicitly_wired_no_silent_fallback() -> None:
 def test_inject_order_is_persona_first_then_facts() -> None:
     """Both current stores are FACTS, so the stable sort must preserve registration order (memory →
     user) — the property the `## Agent memory` < `## User profile` section ordering relies on."""
-    from app.services.agent.memory import _POSITION_RANK
     from app.core.memory import StorePosition
+    from app.services.agent.memory import _POSITION_RANK
 
     assert _POSITION_RANK[StorePosition.PERSONA] < _POSITION_RANK[StorePosition.FACTS]
 

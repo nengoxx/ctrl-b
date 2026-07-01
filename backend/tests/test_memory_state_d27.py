@@ -26,14 +26,14 @@ Each test runs in an isolated `$CTRLB_HOME` temp workspace; the real config/db a
 
 from __future__ import annotations
 
-import asyncio
-from _async import run_async
 import contextlib
 import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+
+from _async import run_async
 
 _HAS_GIT = shutil.which("git") is not None
 

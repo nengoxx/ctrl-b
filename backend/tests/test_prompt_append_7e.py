@@ -28,12 +28,12 @@ Writes go through the APIs on a **temp** workspace (audit E3); the real `config.
 
 from __future__ import annotations
 
-import asyncio
-from _async import run_async
 import contextlib
 import os
 import tempfile
 from pathlib import Path
+
+from _async import run_async
 
 
 def _client():

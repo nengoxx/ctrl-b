@@ -19,13 +19,12 @@ The endpoint tests spy on `api.agent._session` to feed scripted events (no model
 
 from __future__ import annotations
 
-import asyncio
-from _async import run_async
 import contextlib
-import json
 import os
 import tempfile
 from pathlib import Path
+
+from _async import run_async
 
 
 def _client(config_text: str = "server:\n  port: 5433\n"):

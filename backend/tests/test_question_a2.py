@@ -16,13 +16,13 @@ Each test runs in an isolated `$CTRLB_HOME` temp workspace; the real config/db a
 
 from __future__ import annotations
 
-import asyncio
-from _async import run_async
 import contextlib
 import os
 import tempfile
 import uuid
 from pathlib import Path
+
+from _async import run_async
 
 
 def _client():

@@ -155,8 +155,9 @@ def test_rediscover_busy_409_and_empty_ok() -> None:
 
 
 def test_registry_remove_category() -> None:
-    from app.core.tool import FunctionTool, ToolRegistry, ToolSpec
     from pydantic import BaseModel
+
+    from app.core.tool import FunctionTool, ToolRegistry, ToolSpec
 
     class _In(BaseModel):
         pass
