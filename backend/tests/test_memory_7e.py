@@ -60,7 +60,11 @@ def _session(c, agent_name: str | None = None):
 
     s = c.app.state
     return AgentSession(
-        s.threads, s.messages, s.inference, s.settings, s.actions,
+        s.threads,
+        s.messages,
+        s.inference,
+        s.settings,
+        s.actions,
         s.settings.resolve_agent(agent_name),
         skills=getattr(s, "skills", None),
         selector=getattr(s, "skill_selector", None),

@@ -88,9 +88,7 @@ def _invoke(c, args: dict):
     from app.domain.enums import Actor, Privilege
 
     return _run(
-        c.app.state.actions.invoke(
-            "session_search", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM
-        )
+        c.app.state.actions.invoke("session_search", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM)
     )
 
 

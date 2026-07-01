@@ -55,15 +55,15 @@ class StoreSpec:
     hot-applies. `FileMemoryProvider` builds its behaviour by iterating these instead of hardcoding
     each store, so adding a store (state.md) is one more entry rather than a new branch at ~6 sites."""
 
-    key: str                              # stable id used by the tool / API / config (memory|user|state)
-    label: str                            # human + header label ("Agent memory")
+    key: str  # stable id used by the tool / API / config (memory|user|state)
+    label: str  # human + header label ("Agent memory")
     scope: StoreScope
-    filename: str                         # MEMORY.md / USER.md / STATE.md
+    filename: str  # MEMORY.md / USER.md / STATE.md
     semantics: StoreSemantics
     position: StorePosition
-    injected: bool = True                 # part of the injected `load_context` block
-    writable: bool = True                 # the `memory` tool may write it
-    backed_up: bool = True                # versioned in the D26 git repo (False → future ephemeral store)
+    injected: bool = True  # part of the injected `load_context` block
+    writable: bool = True  # the `memory` tool may write it
+    backed_up: bool = True  # versioned in the D26 git repo (False → future ephemeral store)
 
 
 # ── The canonical store registry (D27) ────────────────────────────────────────────────────────────
@@ -72,18 +72,30 @@ class StoreSpec:
 # consumer; these descriptors are pure. Adding a store = one entry here + its caps/gate in `MemoryCfg`.
 
 MEMORY_STORE = StoreSpec(
-    key="memory", label="Agent memory", scope=StoreScope.AGENT, filename="MEMORY.md",
-    semantics=StoreSemantics.APPEND, position=StorePosition.FACTS,
+    key="memory",
+    label="Agent memory",
+    scope=StoreScope.AGENT,
+    filename="MEMORY.md",
+    semantics=StoreSemantics.APPEND,
+    position=StorePosition.FACTS,
 )
 USER_STORE = StoreSpec(
-    key="user", label="User profile", scope=StoreScope.GLOBAL, filename="USER.md",
-    semantics=StoreSemantics.APPEND, position=StorePosition.FACTS,
+    key="user",
+    label="User profile",
+    scope=StoreScope.GLOBAL,
+    filename="USER.md",
+    semantics=StoreSemantics.APPEND,
+    position=StorePosition.FACTS,
 )
 #: Emotional/affective state (D27 slice B) — one value the model rewrites (SET), injected next to the
 #: persona (PERSONA-first). Opt-in via `MemoryCfg.state_enabled`; small cap; auto-applies (no propose).
 STATE_STORE = StoreSpec(
-    key="state", label="Emotional state", scope=StoreScope.AGENT, filename="STATE.md",
-    semantics=StoreSemantics.SET, position=StorePosition.PERSONA,
+    key="state",
+    label="Emotional state",
+    scope=StoreScope.AGENT,
+    filename="STATE.md",
+    semantics=StoreSemantics.SET,
+    position=StorePosition.PERSONA,
 )
 
 #: The registry, in registration order (also spec-lookup order). Injection order is computed separately

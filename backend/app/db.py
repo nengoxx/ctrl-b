@@ -177,9 +177,7 @@ class Database:
             return list(await cur.fetchall())
 
     async def _current_version(self) -> int:
-        await self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)"
-        )
+        await self.conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)")
         async with self.conn.execute("SELECT MAX(version) FROM schema_version") as cur:
             row = await cur.fetchone()
         return row[0] if row and row[0] is not None else 0
@@ -190,9 +188,7 @@ class Database:
             for version, sql in MIGRATIONS:
                 if version > current:
                     await self.conn.executescript(sql)
-                    await self.conn.execute(
-                        "INSERT INTO schema_version (version) VALUES (?)", (version,)
-                    )
+                    await self.conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
                     await self.conn.commit()
 
     async def schema_version(self) -> int:

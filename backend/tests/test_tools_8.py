@@ -65,6 +65,7 @@ def _patch(obj, name, value):
 
 # --- fakes for the mocked network boundaries -------------------------------------------------
 
+
 class _FakeResp:
     def __init__(self, payload: dict):
         self._p = payload
@@ -103,6 +104,7 @@ class _FakeFetched:
 
 
 # --- tests -----------------------------------------------------------------------------------
+
 
 def test_list_returns_only_util_cards() -> None:
     with _workspace(), _client() as c:
@@ -195,8 +197,10 @@ def test_yt_captions_mocked_ok() -> None:
         return "Rick Astley - Never Gonna Give You Up"
 
     with _workspace(), _client() as c:
-        with _patch(mod.YouTubeTranscriptApi, "fetch", lambda self, vid, **k: _FakeFetched()), \
-             _patch(mod, "_fetch_title", _fake_title):
+        with (
+            _patch(mod.YouTubeTranscriptApi, "fetch", lambda self, vid, **k: _FakeFetched()),
+            _patch(mod, "_fetch_title", _fake_title),
+        ):
             r = c.post(
                 "/api/tools/yt_captions",
                 json={"args": {"url": "https://youtu.be/dQw4w9WgXcQ"}},

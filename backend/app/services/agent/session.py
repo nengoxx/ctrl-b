@@ -206,9 +206,7 @@ class AgentSession:
         self._depth = depth
         # Context-window settings are per-agent (4.5): the AgentDef's `compaction` wins, else the
         # global default. A subagent inherits the parent's effective value (resolved at spawn).
-        self._compactor = Compactor(
-            inference, messages, self._agent.compaction or settings.agent.compaction
-        )
+        self._compactor = Compactor(inference, messages, self._agent.compaction or settings.agent.compaction)
         #: Per-turn skill state (4.5), set by `_activate_skills` at the start of run_turn. The
         #: effective tool allowlist defaults to the agent's; active skills may narrow it.
         self._skills_note: str | None = None
@@ -374,7 +372,9 @@ class AgentSession:
             for rp in m.tool_results():
                 results[rp.call_id] = rp.result
 
-        out: list[dict] = list(self._static_prefix())  # shallow copy — append history below, never mutate the cached head
+        out: list[dict] = list(
+            self._static_prefix()
+        )  # shallow copy — append history below, never mutate the cached head
         for m in history:
             if m.role == "tool":
                 continue  # emitted inline after the assistant call below
@@ -487,9 +487,7 @@ class AgentSession:
         call's result, A2). Anything else is treated as execute."""
         assistant = await self._find_pending(thread, call_id)
         if assistant is None:
-            yield AgentEvent(
-                "error", {"message": "no pending action for this call", "retryable": False}
-            )
+            yield AgentEvent("error", {"message": "no pending action for this call", "retryable": False})
             yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
             return
         if decision == "answer":
@@ -583,9 +581,7 @@ class AgentSession:
                         )
                     if delta.text:
                         text_buf.append(delta.text)
-                        yield AgentEvent(
-                            "text.delta", {"messageId": assistant.id, "delta": delta.text}
-                        )
+                        yield AgentEvent("text.delta", {"messageId": assistant.id, "delta": delta.text})
                     if delta.tool_calls:
                         reqs = delta.tool_calls
             except InferenceError as exc:
@@ -599,7 +595,9 @@ class AgentSession:
             # D18 — the request fell over to a fallback inference endpoint. Surface a breadcrumb so a
             # down primary (e.g. the local model) is visible + actionable, not silent (it's logged too).
             if report.degraded:
-                yield AgentEvent("notice", {"text": f"// inference failover → {report.served} (primary unavailable)"})
+                yield AgentEvent(
+                    "notice", {"text": f"// inference failover → {report.served} (primary unavailable)"}
+                )
 
             parts: list[Part] = []
             if reasoning_buf:
@@ -616,7 +614,10 @@ class AgentSession:
                 yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})
                 return
 
-            call_parts = [ToolCallPart(call_id=r.id or uuid.uuid4().hex, tool=r.name, args=_parse_args(r.arguments)) for r in reqs]
+            call_parts = [
+                ToolCallPart(call_id=r.id or uuid.uuid4().hex, tool=r.name, args=_parse_args(r.arguments))
+                for r in reqs
+            ]
             parts.extend(call_parts)
             assistant.parts = parts
             await self._messages.add(assistant)
@@ -660,7 +661,9 @@ class AgentSession:
         one **tool-less** model call (so it can only produce text) with a nudge to wrap up, instead
         of the old silent `capped` dead-end. Always ends the turn with a reply; only if this call
         itself fails do we fall back to `capped` so there's still a terminal event."""
-        self._reflect_now = False  # the wrap-up call is tool-less — don't carry the "use the memory tool" nudge
+        self._reflect_now = (
+            False  # the wrap-up call is tool-less — don't carry the "use the memory tool" nudge
+        )
         messages = await self._assemble(thread)
         messages.append(
             {
@@ -674,9 +677,7 @@ class AgentSession:
                 ),
             }
         )
-        assistant = Message(
-            thread_id=thread.id, role="assistant", actor=AGENT_ACTOR, agent=self._agent.name
-        )
+        assistant = Message(thread_id=thread.id, role="assistant", actor=AGENT_ACTOR, agent=self._agent.name)
         yield AgentEvent(
             "message.start",
             {"messageId": assistant.id, "role": "assistant", "agent": self._agent.name},
@@ -689,9 +690,7 @@ class AgentSession:
             ):
                 if delta.reasoning:
                     reasoning_buf.append(delta.reasoning)
-                    yield AgentEvent(
-                        "reasoning.delta", {"messageId": assistant.id, "delta": delta.reasoning}
-                    )
+                    yield AgentEvent("reasoning.delta", {"messageId": assistant.id, "delta": delta.reasoning})
                 if delta.text:
                     text_buf.append(delta.text)
                     yield AgentEvent("text.delta", {"messageId": assistant.id, "delta": delta.text})
@@ -752,7 +751,9 @@ class AgentSession:
                 made_progress = True
                 result_parts.append(ToolResultPart(call_id=cp.call_id, result=result))
                 events.append(
-                    AgentEvent("tool.result", {"callId": cp.call_id, "result": result.model_dump(mode="json")})
+                    AgentEvent(
+                        "tool.result", {"callId": cp.call_id, "result": result.model_dump(mode="json")}
+                    )
                 )
                 continue
 
@@ -870,7 +871,12 @@ class AgentSession:
                         events.append(
                             AgentEvent(
                                 "tool.question",
-                                {"callId": cp.call_id, "tool": cp.tool, "question": result.summary, "args": cp.args},
+                                {
+                                    "callId": cp.call_id,
+                                    "tool": cp.tool,
+                                    "question": result.summary,
+                                    "args": cp.args,
+                                },
                             )
                         )
                         suspended = True
@@ -898,9 +904,7 @@ class AgentSession:
         await self._messages.update(assistant)
         if result_parts:
             await self._messages.add(
-                Message(
-                    thread_id=thread.id, role="tool", actor=AGENT_ACTOR, parts=list(result_parts)
-                )
+                Message(thread_id=thread.id, role="tool", actor=AGENT_ACTOR, parts=list(result_parts))
             )
         return events, suspended, made_progress
 

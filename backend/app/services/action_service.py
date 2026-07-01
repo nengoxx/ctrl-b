@@ -110,8 +110,13 @@ class ActionService:
                 )
 
         result = await self._execute(
-            tool, inp, actor=actor, privilege=privilege, interactive=interactive,
-            depth=depth, agent=agent,
+            tool,
+            inp,
+            actor=actor,
+            privilege=privilege,
+            interactive=interactive,
+            depth=depth,
+            agent=agent,
         )
         event = await self._record(actor, name, raw_args, result)
         return InvokeOutcome(needs_confirm=False, result=result, event=event)
@@ -151,22 +156,18 @@ class ActionService:
                 result = await asyncio.wait_for(tool.run(inp, ctx), timeout)
             else:
                 result = await tool.run(inp, ctx)
-        except (asyncio.TimeoutError, TimeoutError):
+        except asyncio.TimeoutError, TimeoutError:
             result = ToolResult(
                 state=RunState.TIMEOUT,
                 summary=f"{tool.spec.title} timed out after {timeout:.0f}s",
             )
         except Exception as exc:  # noqa: BLE001 — normalize any escape into a clean result
-            result = ToolResult(
-                state=RunState.ERROR, summary=f"{tool.spec.title} failed", error=str(exc)
-            )
+            result = ToolResult(state=RunState.ERROR, summary=f"{tool.spec.title} failed", error=str(exc))
         if result.duration_ms is None:
             result.duration_ms = int((time.monotonic() - started) * 1000)
         return result
 
-    async def _record(
-        self, actor: Actor, name: str, raw_args: dict, result: ToolResult
-    ) -> Event:
+    async def _record(self, actor: Actor, name: str, raw_args: dict, result: ToolResult) -> Event:
         event = Event(
             actor=actor,
             action=name,

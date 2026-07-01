@@ -117,9 +117,7 @@ class ResumeRequest(BaseModel):
         return _coerce_privilege(v)
 
 
-def resolve_session_agent(
-    settings, name: str | None, privilege: Privilege | None
-) -> AgentDef:
+def resolve_session_agent(settings, name: str | None, privilege: Privilege | None) -> AgentDef:
     """Resolve the `AgentDef` driving a turn + apply the per-session privilege override (A1/D16). The
     resolution chain is most-specific-wins: `resolve_agent` already layers per-agent over the global
     `agent.defaults`; this copies that agent with the session `privilege` when one is set (the
@@ -326,6 +324,7 @@ async def get_default_prompt() -> dict[str, str]:
     the override → the loop falls back to baked at runtime). Removes the "blank = mystery" UX
     of the empty override field."""
     from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
+
     return {"text": DEFAULT_SYSTEM_PROMPT}
 
 
@@ -674,7 +673,9 @@ async def edit_plan(body: PlanEditRequest, request: Request) -> dict[str, Any]:
         thread_id=body.thread_id,
         role="assistant",
         actor=Actor.USER,
-        parts=[ToolCallPart(call_id=call_id, tool="task_plan", args={"steps": steps_dump}, state=RunState.OK)],
+        parts=[
+            ToolCallPart(call_id=call_id, tool="task_plan", args={"steps": steps_dump}, state=RunState.OK)
+        ],
     )
     await messages.add(assistant)
     tool_msg = Message(
@@ -765,8 +766,12 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
     if body.decision == "dismiss":
         result_part.result = _resolved(result_part.result, applied=False, summary="proposal dismissed")
         await messages.update(result_msg)
-        return {"call_id": body.call_id, "decision": "dismiss", "applied": False,
-                "result": result_part.result.model_dump(mode="json")}
+        return {
+            "call_id": body.call_id,
+            "decision": "dismiss",
+            "applied": False,
+            "result": result_part.result.model_dump(mode="json"),
+        }
 
     # apply — re-run the proposing agent's write, auto-write gate aside.
     deps = request.app.state.deps
@@ -774,8 +779,12 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
     written = await apply_proposal(deps, agent, call_part.tool, dict(call_part.args))
     if written.state is not RunState.OK:
         # Leave the proposal pending (it stays approvable/dismissable) and surface the failure.
-        return {"call_id": body.call_id, "decision": "apply", "applied": False,
-                "result": written.model_dump(mode="json")}
+        return {
+            "call_id": body.call_id,
+            "decision": "apply",
+            "applied": False,
+            "result": written.model_dump(mode="json"),
+        }
 
     result_part.result = _resolved(written, applied=True)
     call_part.state = RunState.OK
@@ -785,5 +794,9 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
     await deps.events.record(
         Event(actor=Actor.USER, action=call_part.tool, status=written.state, summary=written.summary)
     )
-    return {"call_id": body.call_id, "decision": "apply", "applied": True,
-            "result": result_part.result.model_dump(mode="json")}
+    return {
+        "call_id": body.call_id,
+        "decision": "apply",
+        "applied": True,
+        "result": result_part.result.model_dump(mode="json"),
+    }

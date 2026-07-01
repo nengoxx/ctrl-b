@@ -46,9 +46,7 @@ async def access_serve(body: ServeRequest, request: Request) -> dict[str, Any]:
     if not cfg.enabled:
         raise HTTPException(status_code=403, detail="Tailscale control is disabled (tailscale.enabled)")
     name = "tailscale_serve_enable" if body.enable else "tailscale_serve_disable"
-    outcome = await request.app.state.actions.invoke(
-        name, {}, actor=Actor.USER, privilege=Privilege.FULL
-    )
+    outcome = await request.app.state.actions.invoke(name, {}, actor=Actor.USER, privilege=Privilege.FULL)
     result = outcome.result or ToolResult(state=RunState.ERROR, summary="no result")
     st = await _status(request)
     st["last"] = {"state": result.state.value, "summary": result.summary, "error": result.error}

@@ -63,6 +63,7 @@ def _agent(name: str, desc: str = ""):
 
 # ── 1–4: the keyword selector's decision logic (pure, no workspace) ───────────────────────────
 
+
 def test_clear_winner_picked() -> None:
     from app.services.agent.selector import KeywordAgentSelector
 
@@ -102,6 +103,7 @@ def test_empty_message_none() -> None:
 
 # ── 5: select_agent — name resolution + malformed-agent skip ──────────────────────────────────
 
+
 def test_select_agent_resolves_and_skips_malformed() -> None:
     with _workspace() as (tmp, _cfg):
         with _client() as c:
@@ -119,6 +121,7 @@ def test_select_agent_resolves_and_skips_malformed() -> None:
 
 
 # ── 6: the chat endpoint gate (spy on _session, never drive the model) ────────────────────────
+
 
 class _DummySession:
     """Stands in for `AgentSession` so the chat endpoint streams nothing (no LLM call) — we only
@@ -180,6 +183,7 @@ def test_chat_routes_only_when_enabled() -> None:
 
 
 # ── 7: the shared-matcher refactor didn't change skill scoring ────────────────────────────────
+
 
 def test_skill_selector_unchanged_after_refactor() -> None:
     from app.core.skills import Skill

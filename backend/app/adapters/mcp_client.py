@@ -182,9 +182,7 @@ class McpClient:
         for server in self._servers:
             try:
                 async with self._session(server) as session:
-                    resp = await asyncio.wait_for(
-                        session.list_tools(), timeout=server.connect_timeout_s
-                    )
+                    resp = await asyncio.wait_for(session.list_tools(), timeout=server.connect_timeout_s)
                 tools = list(resp.tools)
             except Exception as exc:  # noqa: BLE001 — a bad server must not break startup
                 log.warning("MCP server %r discovery failed: %s", server.name, exc)
@@ -227,7 +225,9 @@ class McpClient:
                     session.call_tool(remote_name, args), timeout=server.connect_timeout_s
                 )
         except McpError as exc:
-            return ToolResult(state=RunState.ERROR, summary=f"{remote_name} unavailable", error=str(exc)[:300])
+            return ToolResult(
+                state=RunState.ERROR, summary=f"{remote_name} unavailable", error=str(exc)[:300]
+            )
         except asyncio.TimeoutError:
             return ToolResult(
                 state=RunState.TIMEOUT, summary=f"{remote_name} timed out", error="MCP call timed out"

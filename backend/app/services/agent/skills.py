@@ -45,6 +45,7 @@ def valid_skill_slug(name: str) -> bool:
     """Whether `name` is a safe skill/agent folder slug (one source of truth for the API + tool)."""
     return bool(SKILL_SLUG.match(name))
 
+
 _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.DOTALL)
 
 
@@ -124,9 +125,7 @@ def _allowed_by(allow: list[str] | str, name: str) -> bool:
     return allow == "*" or any(fnmatch(name, p) for p in allow)
 
 
-def available_skills(
-    global_provider: SkillProvider, settings: "Settings", agent: "AgentDef"
-) -> list[Skill]:
+def available_skills(global_provider: SkillProvider, settings: "Settings", agent: "AgentDef") -> list[Skill]:
     """The effective skill set for one agent (7e-f-1, D14): the agent's OWN `agents/<name>/skills/`
     (always available) merged over the GLOBAL `skills/` it inherits. Global inheritance reuses the
     agent's existing `skills` allowlist — `"*"` inherits all, a list a subset, `[]` none — so there's
@@ -202,15 +201,10 @@ def skills_prompt(active: list[Skill]) -> str | None:
     """Render the active skills' instructions as a system-prompt addition, or `None` if empty."""
     if not active:
         return None
-    blocks = [
-        f"## Skill: {s.name}\n{s.instructions}" for s in active if s.instructions
-    ]
+    blocks = [f"## Skill: {s.name}\n{s.instructions}" for s in active if s.instructions]
     if not blocks:
         return None
-    return (
-        "The following skill instructions apply to this task — follow them:\n\n"
-        + "\n\n".join(blocks)
-    )
+    return "The following skill instructions apply to this task — follow them:\n\n" + "\n\n".join(blocks)
 
 
 def narrow_tools(active: list[Skill], agent_allow: list[str] | str) -> list[str] | str:

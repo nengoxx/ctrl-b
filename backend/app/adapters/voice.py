@@ -107,7 +107,7 @@ class VoiceClient:
             extra["hotwords"] = svc.hotwords.strip()
         extra.update(svc.extra_body or {})
         kwargs: dict = {"extra_body": extra}
-        if svc.language.strip():          # blank → omit so the server auto-detects
+        if svc.language.strip():  # blank → omit so the server auto-detects
             kwargs["language"] = svc.language.strip()
 
         async def attempt(ep: VoiceEndpointCfg) -> str:
@@ -124,9 +124,7 @@ class VoiceClient:
             raise VoiceError(str(exc)) from exc
         return result.value, _reply(result)
 
-    async def synthesize(
-        self, *, text: str, voice: str | None = None
-    ) -> tuple[bytes, str, VoiceReply]:
+    async def synthesize(self, *, text: str, voice: str | None = None) -> tuple[bytes, str, VoiceReply]:
         """Read-aloud TTS: synthesize the **whole clip** (buffered, for a seekable blob) via each
         endpoint's `/v1/audio/speech` until one answers. `voice` overrides the endpoint's configured
         voice (best-effort — a voice id valid on one server may 4xx on another and simply fall

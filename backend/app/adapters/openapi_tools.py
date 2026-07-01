@@ -78,8 +78,8 @@ class _Op:
 
     name: str
     method: str
-    path: str                      # may contain {param} templates
-    params: list[dict]             # OpenAPI parameter objects (in: path|query|header)
+    path: str  # may contain {param} templates
+    params: list[dict]  # OpenAPI parameter objects (in: path|query|header)
     has_body: bool
     risk: Risk
     description: str
@@ -106,7 +106,9 @@ class OpenApiToolProvider:
         if server.name not in self._clients:
             headers = {"User-Agent": "ctrl-b/1.0", **server.headers}
             if server.api_key:
-                val = f"{server.auth_scheme} {server.api_key}".strip() if server.auth_scheme else server.api_key
+                val = (
+                    f"{server.auth_scheme} {server.api_key}".strip() if server.auth_scheme else server.api_key
+                )
                 headers[server.auth_header] = val
             self._clients[server.name] = httpx.AsyncClient(
                 base_url=server.base_url.rstrip("/"),

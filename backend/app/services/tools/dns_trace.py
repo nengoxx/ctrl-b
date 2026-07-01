@@ -34,7 +34,7 @@ def _resolve(host: str) -> dict:
     if addrs:
         try:
             ptr = socket.gethostbyaddr(addrs[0])[0]
-        except (socket.herror, socket.gaierror):
+        except socket.herror, socket.gaierror:
             ptr = None
     return {"host": host, "addresses": addrs, "ptr": ptr}
 
@@ -59,9 +59,7 @@ async def dns_trace(inp: DnsTraceInput, ctx: InvocationContext) -> ToolResult:
     try:
         data = await asyncio.to_thread(_resolve, host)
     except (socket.gaierror, socket.herror) as exc:
-        return ToolResult(
-            state=RunState.ERROR, summary=f"Could not resolve '{host}'.", error=str(exc)[:200]
-        )
+        return ToolResult(state=RunState.ERROR, summary=f"Could not resolve '{host}'.", error=str(exc)[:200])
     n = len(data["addresses"])
     ptr = f" · {data['ptr']}" if data["ptr"] else ""
     return ToolResult(

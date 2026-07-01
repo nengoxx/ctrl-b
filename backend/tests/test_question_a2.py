@@ -76,7 +76,9 @@ def _session_and_call(c, *, interactive: bool = True, prompt: str = "Which host 
         role="assistant",
         actor=Actor.AGENT,
         agent="default",
-        parts=[ToolCallPart(call_id=call_id, tool="question", args={"prompt": prompt}, state=RunState.PENDING)],
+        parts=[
+            ToolCallPart(call_id=call_id, tool="question", args={"prompt": prompt}, state=RunState.PENDING)
+        ],
     )
     _run(s.messages.add(assistant))
     return session, thread, assistant, call_id

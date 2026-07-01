@@ -73,12 +73,11 @@ def _app(config_text: str = "computers: {}\n"):
 
 # --- 1. legacy migration (pure, no app) ------------------------------------------------------
 
+
 def test_legacy_tool_descriptions_fold_into_overrides() -> None:
     from app.config import Settings
 
-    s = Settings.model_validate(
-        {"computers": {}, "tool_descriptions": {"wake_host": "Wake a machine"}}
-    )
+    s = Settings.model_validate({"computers": {}, "tool_descriptions": {"wake_host": "Wake a machine"}})
     assert s.tool_overrides["wake_host"].description == "Wake a machine"
     assert s.tool_overrides["wake_host"].agent_mode is None
     # The legacy key is dropped — it must not survive (extra="allow" would otherwise round-trip it).
@@ -117,6 +116,7 @@ def test_explicit_blank_override_beats_lingering_legacy() -> None:
 
 
 # --- 2. overlay truth table ------------------------------------------------------------------
+
 
 def test_overlay_agent_mode_truth_table() -> None:
     from app.config import ToolOverride
@@ -164,6 +164,7 @@ def test_overlay_description_blank_restores_builtin() -> None:
 
 # --- 3. for_agent semantics ------------------------------------------------------------------
 
+
 def test_core_survives_empty_allowlist_and_demotion_drops() -> None:
     from app.config import ToolOverride
     from app.runtime import apply_tool_overrides
@@ -202,6 +203,7 @@ def test_disabled_leaves_agent_tools() -> None:
 
 # --- 4. default_agent_mode DTO ---------------------------------------------------------------
 
+
 def test_dto_reports_default_mode_even_when_overridden() -> None:
     from app.config import ToolOverride
     from app.runtime import apply_tool_overrides
@@ -225,9 +227,12 @@ def test_disabled_utility_still_user_runnable() -> None:
     the card is still listed by `GET /api/tools` and still invokable via `POST /api/tools/{name}`
     (USER). The toggle governs the agent only — the user can always run the tool."""
     with _app() as c:
-        assert c.put(
-            "/api/settings", json={"tool_overrides": {"dns_trace": {"agent_mode": "disabled"}}}
-        ).status_code == 200
+        assert (
+            c.put(
+                "/api/settings", json={"tool_overrides": {"dns_trace": {"agent_mode": "disabled"}}}
+            ).status_code
+            == 200
+        )
         # The agent no longer sees it...
         assert "dns_trace" not in {t.spec.name for t in c.app.state.actions.registry.agent_tools()}
         # ...but it's still a run card, and still runs for the user.
@@ -247,6 +252,7 @@ def test_tools_dto_carries_default_agent_mode() -> None:
 
 
 # --- 5. clear restores ------------------------------------------------------------------------
+
 
 def test_clear_override_restores_builtin() -> None:
     from app.config import ToolOverride
@@ -271,6 +277,7 @@ def test_clear_override_restores_builtin() -> None:
 
 # --- 6. membership ≠ privilege ----------------------------------------------------------------
 
+
 def test_agent_mode_does_not_touch_execution_gating() -> None:
     from app.config import ToolOverride
     from app.domain.enums import Risk
@@ -291,6 +298,7 @@ def test_agent_mode_does_not_touch_execution_gating() -> None:
 
 # --- 7. end-to-end PUT round-trip + on-disk legacy migration ---------------------------------
 
+
 def test_api_put_overrides_round_trip() -> None:
     """PUT /api/settings {tool_overrides: …} applies live (registry spec + GET /api/actions reflect
     it, no restart), persists to disk, and a cleared (all-None) override restores the built-in."""
@@ -300,7 +308,9 @@ def test_api_put_overrides_round_trip() -> None:
 
         r = c.put(
             "/api/settings",
-            json={"tool_overrides": {"ping_host": {"description": "Custom probe.", "agent_mode": "disabled"}}},
+            json={
+                "tool_overrides": {"ping_host": {"description": "Custom probe.", "agent_mode": "disabled"}}
+            },
         )
         assert r.status_code == 200, r.text
         spec = c.app.state.actions.registry.get("ping_host").spec
@@ -310,7 +320,9 @@ def test_api_put_overrides_round_trip() -> None:
         assert "Custom probe." in cfg.read_text(encoding="utf-8")  # persisted
 
         # Clear it (an all-None override — deep_merge can't delete a map key) → built-in restored.
-        r2 = c.put("/api/settings", json={"tool_overrides": {"ping_host": {"description": "", "agent_mode": None}}})
+        r2 = c.put(
+            "/api/settings", json={"tool_overrides": {"ping_host": {"description": "", "agent_mode": None}}}
+        )
         assert r2.status_code == 200, r2.text
         spec = c.app.state.actions.registry.get("ping_host").spec
         assert spec.description == builtin and spec.agent_exposed is True
@@ -323,19 +335,28 @@ def test_api_put_partial_axis_preserves_other() -> None:
     with _app() as c:
         reg = c.app.state.actions.registry
         # 1) set a description override.
-        assert c.put(
-            "/api/settings", json={"tool_overrides": {"ping_host": {"description": "Probe a host."}}}
-        ).status_code == 200
+        assert (
+            c.put(
+                "/api/settings", json={"tool_overrides": {"ping_host": {"description": "Probe a host."}}}
+            ).status_code
+            == 200
+        )
         # 2) a MODE-only PUT (no description key) must keep the description.
-        assert c.put(
-            "/api/settings", json={"tool_overrides": {"ping_host": {"agent_mode": "disabled"}}}
-        ).status_code == 200
+        assert (
+            c.put(
+                "/api/settings", json={"tool_overrides": {"ping_host": {"agent_mode": "disabled"}}}
+            ).status_code
+            == 200
+        )
         spec = reg.get("ping_host").spec
         assert spec.description == "Probe a host." and spec.agent_exposed is False
         # 3) a DESCRIPTION-only PUT must keep the mode.
-        assert c.put(
-            "/api/settings", json={"tool_overrides": {"ping_host": {"description": "Sharper."}}}
-        ).status_code == 200
+        assert (
+            c.put(
+                "/api/settings", json={"tool_overrides": {"ping_host": {"description": "Sharper."}}}
+            ).status_code
+            == 200
+        )
         spec = reg.get("ping_host").spec
         assert spec.description == "Sharper." and spec.agent_exposed is False  # mode preserved
 

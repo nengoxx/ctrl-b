@@ -26,10 +26,8 @@ _MAX_CONCURRENT = 16
 async def probe_port(ip: str, port: int, timeout_s: float = _PROBE_TIMEOUT_S) -> bool:
     """True if a TCP connection to `ip:port` opens within the timeout. Never raises."""
     try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(ip, port), timeout=timeout_s
-        )
-    except (OSError, asyncio.TimeoutError):
+        reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout_s)
+    except OSError, asyncio.TimeoutError:
         return False
     writer.close()
     try:
@@ -46,9 +44,7 @@ class ServiceService:
     offline immediately (and the two caches stay coherent at the same `poll_seconds` cadence).
     """
 
-    def __init__(
-        self, settings, fleet: FleetService, *, max_concurrent: int = _MAX_CONCURRENT
-    ) -> None:
+    def __init__(self, settings, fleet: FleetService, *, max_concurrent: int = _MAX_CONCURRENT) -> None:
         self._settings = settings
         self._fleet = fleet
         self._sem = asyncio.Semaphore(max_concurrent)
@@ -65,14 +61,10 @@ class ServiceService:
     def services_for(self, host_id: str) -> list[Service]:
         return [s for s in self.services() if s.host_id == host_id]
 
-    async def _status(
-        self, svc: Service, host: Host | None, host_online: bool
-    ) -> ServiceStatus:
+    async def _status(self, svc: Service, host: Host | None, host_online: bool) -> ServiceStatus:
         now = datetime.now(timezone.utc)
         if host is None:
-            return ServiceStatus(
-                service_id=svc.id, online=False, checked_at=now, error="host not found"
-            )
+            return ServiceStatus(service_id=svc.id, online=False, checked_at=now, error="host not found")
         if not host_online:
             return ServiceStatus(service_id=svc.id, online=False, checked_at=now)
         if svc.port is None:

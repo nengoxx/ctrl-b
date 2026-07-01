@@ -62,7 +62,11 @@ def _session(c, agent_name: str | None = None):
 
     s = c.app.state
     return AgentSession(
-        s.threads, s.messages, s.inference, s.settings, s.actions,
+        s.threads,
+        s.messages,
+        s.inference,
+        s.settings,
+        s.actions,
         s.settings.resolve_agent(agent_name),
         skills=getattr(s, "skills", None),
         selector=getattr(s, "skill_selector", None),
@@ -80,7 +84,10 @@ def _thread_with_users(c, n: int, *, compacted_last: bool = False):
         for i in range(n):
             await c.app.state.messages.add(
                 Message(
-                    thread_id=t.id, role="user", actor=Actor.USER, parts=[TextPart(text=f"msg {i}")],
+                    thread_id=t.id,
+                    role="user",
+                    actor=Actor.USER,
+                    parts=[TextPart(text=f"msg {i}")],
                     compacted=(compacted_last and i == n - 1),
                 )
             )
@@ -156,12 +163,14 @@ def test_reflection_count_includes_compacted() -> None:
             c.app.state.settings.memory.reflection_interval = 2
             # 2 user messages, the first folded into a summary (compacted). Count must still read 2.
             thread = _thread_with_users(c, 2, compacted_last=False)
+
             # mark the FIRST user message compacted
             async def fold_first():
                 msgs = await c.app.state.messages.list(thread.id)
                 first = next(m for m in msgs if m.role == "user")
                 first.compacted = True
                 await c.app.state.messages.update(first)
+
             _run(fold_first())
             assert _run(c.app.state.messages.count_user_messages(thread.id)) == 2
             assert _has_nudge(_arm_and_assemble(c, thread))
@@ -193,7 +202,7 @@ def test_reflection_is_one_shot_per_turn() -> None:
             thread = _thread_with_users(c, 1)
             sess = _session(c)
             _run(sess._maybe_arm_reflection(thread))
-            first = _systems(_run(sess._assemble(thread)))   # iteration 1 — nudge present
+            first = _systems(_run(sess._assemble(thread)))  # iteration 1 — nudge present
             second = _systems(_run(sess._assemble(thread)))  # iteration 2 — already consumed
             assert _has_nudge(first)
             assert not _has_nudge(second)
@@ -210,10 +219,17 @@ def test_reflection_skipped_for_subagents() -> None:
             c.app.state.settings.memory.reflection_interval = 1
             s = c.app.state
             sub = AgentSession(
-                s.threads, s.messages, s.inference, s.settings, s.actions,
+                s.threads,
+                s.messages,
+                s.inference,
+                s.settings,
+                s.actions,
                 s.settings.resolve_agent(None),
-                skills=getattr(s, "skills", None), selector=getattr(s, "skill_selector", None),
-                memory=getattr(s, "memory", None), interactive=False, depth=1,
+                skills=getattr(s, "skills", None),
+                selector=getattr(s, "skill_selector", None),
+                memory=getattr(s, "memory", None),
+                interactive=False,
+                depth=1,
             )
             thread = _thread_with_users(c, 1)
             _run(sub._maybe_arm_reflection(thread))

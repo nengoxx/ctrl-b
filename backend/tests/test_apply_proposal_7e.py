@@ -120,7 +120,9 @@ def _result_part(c, thread_id: str, call_id: str) -> dict:
 def test_apply_memory_writes_and_audits() -> None:
     with _workspace() as (tmp, _cfg):
         with _client() as c:
-            tid, cid = _seed_proposal(c, "memory", {"target": "memory", "action": "add", "content": "approved note"})
+            tid, cid = _seed_proposal(
+                c, "memory", {"target": "memory", "action": "add", "content": "approved note"}
+            )
             r = _apply(c, tid, cid)
             assert r.status_code == 200 and r.json()["applied"] is True
             assert "approved note" in (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
@@ -136,7 +138,9 @@ def test_apply_skill_writes_to_agent_folder() -> None:
     body = "---\nname: triage\ndescription: triage\n---\n\nDo it.\n"
     with _workspace() as (tmp, _cfg):
         with _client() as c:
-            tid, cid = _seed_proposal(c, "skill_manage", {"action": "save", "name": "triage", "content": body})
+            tid, cid = _seed_proposal(
+                c, "skill_manage", {"action": "save", "name": "triage", "content": body}
+            )
             r = _apply(c, tid, cid)
             assert r.json()["applied"] is True
             assert (tmp / "skills" / "triage" / "SKILL.md").is_file()
@@ -196,10 +200,29 @@ def test_non_proposal_409() -> None:
             threads, messages = c.app.state.threads, c.app.state.messages
             thread = _run(threads.create(Thread()))
             cid = uuid.uuid4().hex
-            _run(messages.add(Message(thread_id=thread.id, role="assistant", actor=Actor.AGENT, agent="default",
-                                      parts=[ToolCallPart(call_id=cid, tool="ping_host", args={}, state=RunState.OK)])))
-            _run(messages.add(Message(thread_id=thread.id, role="tool", actor=Actor.AGENT,
-                                      parts=[ToolResultPart(call_id=cid, result=ToolResult(state=RunState.OK, summary="ok"))])))
+            _run(
+                messages.add(
+                    Message(
+                        thread_id=thread.id,
+                        role="assistant",
+                        actor=Actor.AGENT,
+                        agent="default",
+                        parts=[ToolCallPart(call_id=cid, tool="ping_host", args={}, state=RunState.OK)],
+                    )
+                )
+            )
+            _run(
+                messages.add(
+                    Message(
+                        thread_id=thread.id,
+                        role="tool",
+                        actor=Actor.AGENT,
+                        parts=[
+                            ToolResultPart(call_id=cid, result=ToolResult(state=RunState.OK, summary="ok"))
+                        ],
+                    )
+                )
+            )
             assert _apply(c, thread.id, cid).status_code == 409
 
 

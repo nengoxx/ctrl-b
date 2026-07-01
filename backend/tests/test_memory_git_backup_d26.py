@@ -67,9 +67,11 @@ def _build():
 
 def test_first_write_inits_repo_and_commits_verbatim() -> None:
     with _workspace() as tmp:
+
         async def go():
             _s, prov, _b, agent = _build()
             await prov.write(agent, "memory", "add", "the owner runs a 3090")
+
         asyncio.run(go())
         root = tmp / "memories"
         assert (root / ".git").is_dir()
@@ -78,11 +80,13 @@ def test_first_write_inits_repo_and_commits_verbatim() -> None:
 
 def test_each_write_is_its_own_commit() -> None:
     with _workspace() as tmp:
+
         async def go():
             _s, prov, _b, agent = _build()
             await prov.write(agent, "memory", "add", "fact one")
             await prov.write(agent, "memory", "add", "fact two")
             await prov.write(agent, "memory", "add", "fact three")
+
         asyncio.run(go())
         root = tmp / "memories"
         commits = [ln for ln in _git(root, "log", "--format=%s").splitlines() if ln]
@@ -92,13 +96,15 @@ def test_each_write_is_its_own_commit() -> None:
 
 def test_blank_overwrite_commits_a_removal() -> None:
     with _workspace() as tmp:
+
         async def go():
             _s, prov, _b, agent = _build()
             await prov.overwrite(agent, "memory", "temporary note")
             await prov.overwrite(agent, "memory", "   ")  # blank → delete
+
         asyncio.run(go())
         root = tmp / "memories"
-        assert not (root / "MEMORY.md").exists()              # removed from the working tree
+        assert not (root / "MEMORY.md").exists()  # removed from the working tree
         assert _git(root, "log", "--format=%s", "--", "MEMORY.md")  # it has history (add then remove)
         # the file is absent at HEAD (a deletion was committed)
         assert _git(root, "ls-files", "MEMORY.md") == ""
@@ -106,9 +112,11 @@ def test_blank_overwrite_commits_a_removal() -> None:
 
 def test_commit_identity_is_configured_not_global() -> None:
     with _workspace() as tmp:
+
         async def go():
             _s, prov, _b, agent = _build()
             await prov.write(agent, "memory", "add", "who am I")
+
         asyncio.run(go())
         root = tmp / "memories"
         assert _git(root, "log", "-1", "--format=%an") == "ctrl-b memory"
@@ -117,10 +125,12 @@ def test_commit_identity_is_configured_not_global() -> None:
 
 def test_secrets_guard_disables_backup_but_write_still_lands() -> None:
     with _workspace() as tmp:
+
         async def go():
             settings, prov, _b, agent = _build()
             settings.memory.memory_dir = "."  # → repo root would be $CTRLB_HOME (holds config.yaml + db)
             await prov.write(agent, "memory", "add", "still saved")
+
         asyncio.run(go())
         assert (tmp / "MEMORY.md").read_text(encoding="utf-8").strip().endswith("still saved")  # write landed
         assert not (tmp / ".git").exists()  # backup refused to version a dir holding secrets
@@ -128,10 +138,12 @@ def test_secrets_guard_disables_backup_but_write_still_lands() -> None:
 
 def test_disabled_backup_still_writes_no_repo() -> None:
     with _workspace() as tmp:
+
         async def go():
             settings, prov, _b, agent = _build()
             settings.memory.git_backup.enabled = False
             await prov.write(agent, "memory", "add", "no git here")
+
         asyncio.run(go())
         root = tmp / "memories"
         assert "no git here" in (root / "MEMORY.md").read_text(encoding="utf-8")
@@ -140,22 +152,25 @@ def test_disabled_backup_still_writes_no_repo() -> None:
 
 def test_reconcile_captures_external_edit() -> None:
     with _workspace() as tmp:
+
         async def go():
             _s, prov, backup, agent = _build()
             await prov.write(agent, "memory", "add", "agent-written")
             # simulate the owner editing the file directly on disk (outside the app)
             (tmp / "memories" / "MEMORY.md").write_text("§ hand edited by the owner\n", encoding="utf-8")
             await backup.reconcile()
+
         asyncio.run(go())
         root = tmp / "memories"
         assert "hand edited by the owner" in _git(root, "show", "HEAD:MEMORY.md")  # external edit committed
-        assert "external" in _git(root, "log", "-1", "--format=%s")               # as a reconcile commit
+        assert "external" in _git(root, "log", "-1", "--format=%s")  # as a reconcile commit
 
 
 def test_tree_clean_after_write_no_churn() -> None:
     """After an app write the working tree must read clean (no CRLF/autocrlf churn), so the reconcile
     sweep is a true no-op and the 'dirty tree = external edit' invariant holds."""
     with _workspace() as tmp:
+
         async def go():
             _s, prov, backup, agent = _build()
             await prov.write(agent, "memory", "add", "a durable fact")
@@ -163,6 +178,7 @@ def test_tree_clean_after_write_no_churn() -> None:
             await backup.reconcile()  # nothing external changed → must commit nothing
             after = _git(tmp / "memories", "rev-parse", "HEAD")
             return before, after
+
         before, after = asyncio.run(go())
         root = tmp / "memories"
         assert _git(root, "status", "--porcelain") == ""  # clean: no perpetually-"modified" file
@@ -171,9 +187,11 @@ def test_tree_clean_after_write_no_churn() -> None:
 
 def test_gitignore_written_at_init() -> None:
     with _workspace() as tmp:
+
         async def go():
             _s, prov, _b, agent = _build()
             await prov.write(agent, "memory", "add", "x")
+
         asyncio.run(go())
         gi = (tmp / "memories" / ".gitignore").read_text(encoding="utf-8")
         assert "config.yaml" in gi and "*.db" in gi

@@ -65,7 +65,10 @@ def _invoke(c, args: dict, *, agent_name: str | None = None):
 
     return _run(
         c.app.state.actions.invoke(
-            "skill_manage", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM,
+            "skill_manage",
+            args,
+            actor=Actor.AGENT,
+            privilege=Privilege.CONFIRM,
             agent=_agent(c, agent_name),
         )
     )
@@ -154,9 +157,7 @@ def test_specialist_writes_own_folder() -> None:
     with _workspace() as (tmp, _cfg):
         with _client() as c:
             assert c.put("/api/agents/coder", json={"agent": {}}).status_code == 200
-            out = _invoke(
-                c, {"action": "save", "name": "triage", "content": _BODY}, agent_name="coder"
-            )
+            out = _invoke(c, {"action": "save", "name": "triage", "content": _BODY}, agent_name="coder")
             assert out.result.state == RunState.OK
             assert (tmp / "agents" / "coder" / "skills" / "triage" / "SKILL.md").is_file()
             assert not (tmp / "skills" / "triage").exists()  # global dir untouched

@@ -75,6 +75,7 @@ def test_migration_and_column_round_trip() -> None:
     agent, a user turn stays NULL (the default)."""
     with _workspace():
         with _client() as c:
+
             async def go():
                 s = c.app.state
                 assert await s.db.schema_version() >= 2

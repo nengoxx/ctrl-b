@@ -54,9 +54,7 @@ class HostTargetInput(BaseModel):
 class ServiceTargetInput(BaseModel):
     """Service-targeted actions (start/stop/restart/open)."""
 
-    service_id: str = Field(
-        description="Stable slug id of the target service (GET /api/services → id)"
-    )
+    service_id: str = Field(description="Stable slug id of the target service (GET /api/services → id)")
 
 
 async def run_service_command(
@@ -73,9 +71,7 @@ async def run_service_command(
         return ToolResult(state=RunState.ERROR, summary=f"unknown service '{inp.service_id}'")
     host = ctx.deps.fleet.host(svc.host_id)
     if host is None:
-        return ToolResult(
-            state=RunState.ERROR, summary=f"service '{svc.name}' references unknown host"
-        )
+        return ToolResult(state=RunState.ERROR, summary=f"service '{svc.name}' references unknown host")
 
     command = svc.command_for(action, host.os_type)
     if not command:

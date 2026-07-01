@@ -67,27 +67,42 @@ async def _stream(events):
 
 # ── 1: collect_turn folds each terminal shape ─────────────────────────────────────────────────
 
+
 def test_collect_completed() -> None:
     from app.services.agent.session import collect_turn
 
-    out = _run(collect_turn(_stream([
-        _ev("message.start", messageId="m1", role="assistant"),
-        _ev("text.delta", messageId="m1", delta="hi"),  # discarded
-        _ev("message.end", messageId="m1"),
-        _ev("done", threadId="t1", state="completed"),
-    ])))
+    out = _run(
+        collect_turn(
+            _stream(
+                [
+                    _ev("message.start", messageId="m1", role="assistant"),
+                    _ev("text.delta", messageId="m1", delta="hi"),  # discarded
+                    _ev("message.end", messageId="m1"),
+                    _ev("done", threadId="t1", state="completed"),
+                ]
+            )
+        )
+    )
     assert out == {"state": "completed", "messageId": "m1"}
 
 
 def test_collect_suspended_confirm_carries_token() -> None:
     from app.services.agent.session import collect_turn
 
-    out = _run(collect_turn(_stream([
-        _ev("message.start", messageId="m1"),
-        _ev("message.end", messageId="m1"),
-        _ev("tool.permission", callId="c1", tool="reboot_host", token="tok-123", prompt="confirm?"),
-        _ev("done", threadId="t1", state="suspended"),
-    ])))
+    out = _run(
+        collect_turn(
+            _stream(
+                [
+                    _ev("message.start", messageId="m1"),
+                    _ev("message.end", messageId="m1"),
+                    _ev(
+                        "tool.permission", callId="c1", tool="reboot_host", token="tok-123", prompt="confirm?"
+                    ),
+                    _ev("done", threadId="t1", state="suspended"),
+                ]
+            )
+        )
+    )
     assert out["state"] == "suspended"
     # The token is the one thing not persisted — buffered resume depends on it riding the payload.
     assert out["permission"]["token"] == "tok-123"
@@ -97,11 +112,17 @@ def test_collect_suspended_confirm_carries_token() -> None:
 def test_collect_suspended_question() -> None:
     from app.services.agent.session import collect_turn
 
-    out = _run(collect_turn(_stream([
-        _ev("message.start", messageId="m1"),
-        _ev("tool.question", callId="q1", tool="question", question="which host?"),
-        _ev("done", threadId="t1", state="suspended"),
-    ])))
+    out = _run(
+        collect_turn(
+            _stream(
+                [
+                    _ev("message.start", messageId="m1"),
+                    _ev("tool.question", callId="q1", tool="question", question="which host?"),
+                    _ev("done", threadId="t1", state="suspended"),
+                ]
+            )
+        )
+    )
     assert out["state"] == "suspended"
     assert out["question"]["question"] == "which host?"
 
@@ -109,20 +130,33 @@ def test_collect_suspended_question() -> None:
 def test_collect_error_and_capped() -> None:
     from app.services.agent.session import collect_turn
 
-    err = _run(collect_turn(_stream([
-        _ev("error", message="backend down", retryable=True),
-        _ev("done", threadId="t1", state="error"),
-    ])))
+    err = _run(
+        collect_turn(
+            _stream(
+                [
+                    _ev("error", message="backend down", retryable=True),
+                    _ev("done", threadId="t1", state="error"),
+                ]
+            )
+        )
+    )
     assert err["state"] == "error" and err["error"]["message"] == "backend down"
 
-    capped = _run(collect_turn(_stream([
-        _ev("message.end", messageId="m1"),
-        _ev("done", threadId="t1", state="capped"),
-    ])))
+    capped = _run(
+        collect_turn(
+            _stream(
+                [
+                    _ev("message.end", messageId="m1"),
+                    _ev("done", threadId="t1", state="capped"),
+                ]
+            )
+        )
+    )
     assert capped["state"] == "capped" and capped["messageId"] == "m1"
 
 
 # ── 2: the resolver ───────────────────────────────────────────────────────────────────────────
+
 
 def test_effective_stream_truth_table() -> None:
     from app.api.agent import _effective_stream
@@ -133,6 +167,7 @@ def test_effective_stream_truth_table() -> None:
 
 
 # ── 3 + 4: endpoint content-negotiation + parity (scripted session, no model) ──────────────────
+
 
 class _FakeSession:
     """Yields a scripted event stream for both run_turn and resume — stands in for AgentSession so the

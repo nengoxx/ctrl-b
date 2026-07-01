@@ -168,9 +168,7 @@ async def run_subagent(
     # cycle through this module's `Deps` typing. Imported here, the cycle is broken.
     from app.services.agent.session import AgentSession
 
-    thread = Thread(
-        title=f"[subagent:{agent_def.name}] {task[:48]}", agent=agent_def.name, archived=True
-    )
+    thread = Thread(title=f"[subagent:{agent_def.name}] {task[:48]}", agent=agent_def.name, archived=True)
     await deps.threads.create(thread)
     session = AgentSession(
         deps.threads,
@@ -189,23 +187,21 @@ async def run_subagent(
         async with asyncio.timeout(timeout_s):
             async for _ in session.run_turn(thread, task):
                 pass
-    except (asyncio.CancelledError, KeyboardInterrupt):
+    except asyncio.CancelledError, KeyboardInterrupt:
         raise  # let cancellation propagate so the TaskGroup unwinds the subtree
     except TimeoutError:
         return SubResult(
-            index=index, agent=agent_def.name, state=RunState.TIMEOUT,
+            index=index,
+            agent=agent_def.name,
+            state=RunState.TIMEOUT,
             summary=f"subagent timed out after {int(timeout_s)}s",
         )
     except Exception as exc:  # noqa: BLE001 — a child failure must not crash the parent turn
         log.warning("subagent %s failed: %s", agent_def.name, exc)
-        return SubResult(
-            index=index, agent=agent_def.name, state=RunState.ERROR, summary=str(exc)[:200]
-        )
+        return SubResult(index=index, agent=agent_def.name, state=RunState.ERROR, summary=str(exc)[:200])
 
     msgs = await deps.messages.list(thread.id)
-    text = next(
-        (m.text() for m in reversed(msgs) if m.role == "assistant" and m.text().strip()), ""
-    )
+    text = next((m.text() for m in reversed(msgs) if m.role == "assistant" and m.text().strip()), "")
     return SubResult(
         index=index,
         agent=agent_def.name,
@@ -260,8 +256,7 @@ async def spawn_subagents(inp: SpawnInput, ctx: InvocationContext) -> ToolResult
 
     clamp = deps.settings.agent.subagent_clamp_privilege
     children: list[tuple[AgentDef, str]] = [
-        (resolve_child(deps.settings, parent, t.agent or inp.agent, clamp=clamp), t.task)
-        for t in inp.tasks
+        (resolve_child(deps.settings, parent, t.agent or inp.agent, clamp=clamp), t.task) for t in inp.tasks
     ]
 
     orchestrator = ParallelOrchestrator(

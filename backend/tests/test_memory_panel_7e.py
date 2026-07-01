@@ -115,7 +115,9 @@ def test_api_specialist_memory_and_404() -> None:
             r = c.put("/api/agents/coder/memory", json={"content": "coder note"})
             assert r.status_code == 200
             # D26: specialist memory under the memory dir, not the agent workspace folder.
-            assert "coder note" in (tmp / "memories" / "agents" / "coder" / "MEMORY.md").read_text(encoding="utf-8")
+            assert "coder note" in (tmp / "memories" / "agents" / "coder" / "MEMORY.md").read_text(
+                encoding="utf-8"
+            )
             assert not (tmp / "memories" / "MEMORY.md").exists()  # root agent untouched
 
 

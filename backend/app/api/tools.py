@@ -54,9 +54,7 @@ async def invoke_tool(name: str, body: ToolInvokeRequest, request: Request) -> d
     if not _is_util_card(tool.spec):
         raise HTTPException(status_code=404, detail=f"'{name}' is not a Tools-tab utility") from None
     try:
-        outcome = await svc.invoke(
-            name, body.args, actor=Actor.USER, privilege=Privilege.CONFIRM
-        )
+        outcome = await svc.invoke(name, body.args, actor=Actor.USER, privilege=Privilege.CONFIRM)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from None
     return {

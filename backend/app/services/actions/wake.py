@@ -21,9 +21,7 @@ async def wake_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolResult:
     if host is None:
         return ToolResult(state=RunState.ERROR, summary=f"unknown host '{inp.host_id}'")
     if not host.mac:
-        return ToolResult(
-            state=RunState.DENIED, summary=f"no MAC configured for {host.name} — cannot wake"
-        )
+        return ToolResult(state=RunState.DENIED, summary=f"no MAC configured for {host.name} — cannot wake")
 
     try:
         await asyncio.to_thread(wol.send_magic, host.mac)

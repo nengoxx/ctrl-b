@@ -37,11 +37,7 @@ class ServiceActionRequest(BaseModel):
 def _service_dto(
     svc: Service, host: Host | None, status: ServiceStatus | None, url: str | None
 ) -> dict[str, Any]:
-    controls = (
-        [a for a in ("start", "stop", "restart") if svc.command_for(a, host.os_type)]
-        if host
-        else []
-    )
+    controls = [a for a in ("start", "stop", "restart") if svc.command_for(a, host.os_type)] if host else []
     return {
         "id": svc.id,
         "host_id": svc.host_id,
@@ -85,9 +81,7 @@ async def invoke_service_action(
 
     actions = request.app.state.actions
     try:
-        outcome = await actions.invoke(
-            name, {"service_id": service_id}, confirm_token=body.confirm_token
-        )
+        outcome = await actions.invoke(name, {"service_id": service_id}, confirm_token=body.confirm_token)
     except UnknownTool:
         raise HTTPException(status_code=404, detail=f"unknown action '{name}'") from None
     except ValidationError as exc:

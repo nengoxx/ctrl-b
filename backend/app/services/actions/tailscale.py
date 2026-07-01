@@ -98,7 +98,7 @@ async def resolve_status(cfg: TailscaleCfg) -> dict:
 
     try:
         sv = await run_capture([binpath, "serve", "status", "--json"], timeout_s=cfg.timeout_s)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return out  # available, but couldn't read serve state → serving stays False
     if not sv.timed_out and sv.code == 0:
         out["serving"] = _serves_port(sv.output, cfg.target_port)
@@ -116,7 +116,9 @@ async def _serve_cmd(ctx: InvocationContext, *, off: bool) -> ToolResult:
         return ToolResult(state=RunState.DENIED, summary="Tailscale control is disabled (tailscale.enabled)")
     binpath = _bin()
     if not binpath:
-        return ToolResult(state=RunState.ERROR, summary="tailscale CLI not found", error="tailscale not on PATH")
+        return ToolResult(
+            state=RunState.ERROR, summary="tailscale CLI not found", error="tailscale not on PATH"
+        )
     # `serve` only — funnel is never constructed (no public exposure; the no-public-bind rule).
     argv = [binpath, "serve", "--bg", str(cfg.target_port)]
     if off:

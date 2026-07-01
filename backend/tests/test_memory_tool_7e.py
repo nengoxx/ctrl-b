@@ -277,10 +277,14 @@ def test_tool_specialist_writes_own_file() -> None:
     with _workspace() as (tmp, _cfg):
         with _client() as c:
             assert c.put("/api/agents/coder", json={"agent": {}}).status_code == 200
-            out = _invoke(c, {"target": "memory", "action": "add", "content": "coder note"}, agent_name="coder")
+            out = _invoke(
+                c, {"target": "memory", "action": "add", "content": "coder note"}, agent_name="coder"
+            )
             assert out.result.state == RunState.OK
             # D26: specialist memory now lives under the memory dir, not the agent workspace folder.
-            assert "coder note" in (tmp / "memories" / "agents" / "coder" / "MEMORY.md").read_text(encoding="utf-8")
+            assert "coder note" in (tmp / "memories" / "agents" / "coder" / "MEMORY.md").read_text(
+                encoding="utf-8"
+            )
             assert not (tmp / "memories" / "MEMORY.md").exists()  # root agent untouched
 
 

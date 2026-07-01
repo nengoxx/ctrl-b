@@ -34,8 +34,8 @@ def test_core_set_is_the_cognitive_set() -> None:
 def test_core_survives_a_narrow_allowlist() -> None:
     reg = _registry()
     names = {t.spec.name for t in reg.for_agent(["ping_host"])}
-    assert _CORE <= names           # all core builtins reachable
-    assert "ping_host" in names     # the explicit allow still applies
+    assert _CORE <= names  # all core builtins reachable
+    assert "ping_host" in names  # the explicit allow still applies
 
 
 def test_core_survives_skill_narrowing() -> None:
@@ -59,9 +59,7 @@ def test_non_core_builtins_need_an_explicit_grant() -> None:
 
 def test_star_allowlist_is_unchanged_by_core() -> None:
     reg = _registry()
-    assert {t.spec.name for t in reg.for_agent("*")} == {
-        t.spec.name for t in reg.agent_tools()
-    }
+    assert {t.spec.name for t in reg.for_agent("*")} == {t.spec.name for t in reg.agent_tools()}
 
 
 if __name__ == "__main__":

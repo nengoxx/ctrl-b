@@ -59,7 +59,7 @@ class RunState(StrEnum):
 
     PENDING = "pending"
     AWAITING_CONFIRM = "awaiting_confirm"  # a confirm-gated call, suspended for the owner's approval
-    AWAITING_ANSWER = "awaiting_answer"    # a `question` builtin, suspended for the owner's reply (A2)
+    AWAITING_ANSWER = "awaiting_answer"  # a `question` builtin, suspended for the owner's reply (A2)
     RUNNING = "running"
     OK = "ok"
     ERROR = "error"

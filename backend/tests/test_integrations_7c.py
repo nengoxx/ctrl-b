@@ -46,11 +46,14 @@ def test_scalar_integrations_hot_apply() -> None:
         client, cfg = _client(tmp)
         with client as c:
             old_searx = c.app.state.searxng
-            r = c.put("/api/settings", json={
-                "searxng": {"base_url": "http://new-searx:9"},
-                "embeddings": {"base_url": "http://new-emb/v1"},
-                "open_terminal": {"base_url": "http://new-term:1"},
-            })
+            r = c.put(
+                "/api/settings",
+                json={
+                    "searxng": {"base_url": "http://new-searx:9"},
+                    "embeddings": {"base_url": "http://new-emb/v1"},
+                    "open_terminal": {"base_url": "http://new-term:1"},
+                },
+            )
             assert r.status_code == 200, r.text
             # client rebuilt (new instance) + repointed on app.state AND deps
             assert c.app.state.searxng is not old_searx
@@ -102,13 +105,18 @@ def test_mcp_crud_and_dirty() -> None:
             from app.config import load_settings
 
             # add a server → 201, dirty flips, persisted
-            r = c.post("/api/integrations/mcp", json={"name": "extra", "url": "http://h:1/mcp", "risk": "med"})
+            r = c.post(
+                "/api/integrations/mcp", json={"name": "extra", "url": "http://h:1/mcp", "risk": "med"}
+            )
             assert r.status_code == 201, r.text
             assert r.json()["status"]["dirty"] is True
             assert any(s.name == "extra" for s in load_settings(cfg).mcp_servers)
             assert "# integrations" in cfg.read_text(encoding="utf-8")  # comment preserved
             # duplicate → 409
-            assert c.post("/api/integrations/mcp", json={"name": "extra", "url": "http://h:2"}).status_code == 409
+            assert (
+                c.post("/api/integrations/mcp", json={"name": "extra", "url": "http://h:2"}).status_code
+                == 409
+            )
 
             # update web-tools risk, echo the masked header key back → real secret kept
             masked = c.get("/api/settings").json()["mcp_servers"]
@@ -164,7 +172,9 @@ def test_registry_remove_category() -> None:
 
     reg = ToolRegistry()
     for name, cat in [("a", "mcp"), ("b", "mcp"), ("c", "action")]:
-        reg.register(FunctionTool(spec=ToolSpec(name=name, title=name, category=cat, input_model=_In), fn=None))  # type: ignore[arg-type]
+        reg.register(
+            FunctionTool(spec=ToolSpec(name=name, title=name, category=cat, input_model=_In), fn=None)
+        )  # type: ignore[arg-type]
     assert reg.remove_category("mcp") == 2
     assert {t.spec.name for t in reg.all()} == {"c"}
     assert reg.remove("c") is True and reg.remove("c") is False

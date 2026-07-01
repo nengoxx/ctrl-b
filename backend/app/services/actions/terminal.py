@@ -126,7 +126,12 @@ async def terminal_read_file(inp: TerminalReadInput, ctx: InvocationContext) -> 
     except OpenTerminalError as exc:
         return ToolResult(state=RunState.ERROR, summary=f"could not read {inp.path}", error=str(exc)[:300])
     content = res.get("content") if isinstance(res, dict) else None
-    return ToolResult(state=RunState.OK, summary=f"read {inp.path}", output=_clip(content), data=res if isinstance(res, dict) else {})
+    return ToolResult(
+        state=RunState.OK,
+        summary=f"read {inp.path}",
+        output=_clip(content),
+        data=res if isinstance(res, dict) else {},
+    )
 
 
 async def terminal_list(inp: TerminalListInput, ctx: InvocationContext) -> ToolResult:
@@ -138,10 +143,12 @@ async def terminal_list(inp: TerminalListInput, ctx: InvocationContext) -> ToolR
     except OpenTerminalError as exc:
         return ToolResult(state=RunState.ERROR, summary="could not list directory", error=str(exc)[:300])
     entries = res.get("entries", []) if isinstance(res, dict) else []
-    listing = "\n".join(f"{e.get('type','?')[:1]} {e.get('name')}" for e in entries)
+    listing = "\n".join(f"{e.get('type', '?')[:1]} {e.get('name')}" for e in entries)
     return ToolResult(
-        state=RunState.OK, summary=f"{res.get('dir', inp.directory or '.')} · {len(entries)} entries",
-        output=_clip(listing), data=res if isinstance(res, dict) else {},
+        state=RunState.OK,
+        summary=f"{res.get('dir', inp.directory or '.')} · {len(entries)} entries",
+        output=_clip(listing),
+        data=res if isinstance(res, dict) else {},
     )
 
 
@@ -151,13 +158,23 @@ async def terminal_grep(inp: TerminalGrepInput, ctx: InvocationContext) -> ToolR
         return _unconfigured()
     try:
         res = await client.grep(
-            inp.query, path=inp.path, regex=inp.regex, case_insensitive=inp.case_insensitive,
-            include=inp.include, max_results=inp.max_results,
+            inp.query,
+            path=inp.path,
+            regex=inp.regex,
+            case_insensitive=inp.case_insensitive,
+            include=inp.include,
+            max_results=inp.max_results,
         )
     except OpenTerminalError as exc:
         return ToolResult(state=RunState.ERROR, summary="grep failed", error=str(exc)[:300])
     import json as _json
-    return ToolResult(state=RunState.OK, summary=f"grep '{inp.query}'", output=_clip(_json.dumps(res, indent=1)), data=res if isinstance(res, dict) else {})
+
+    return ToolResult(
+        state=RunState.OK,
+        summary=f"grep '{inp.query}'",
+        output=_clip(_json.dumps(res, indent=1)),
+        data=res if isinstance(res, dict) else {},
+    )
 
 
 async def terminal_glob(inp: TerminalGlobInput, ctx: InvocationContext) -> ToolResult:
@@ -169,7 +186,13 @@ async def terminal_glob(inp: TerminalGlobInput, ctx: InvocationContext) -> ToolR
     except OpenTerminalError as exc:
         return ToolResult(state=RunState.ERROR, summary="glob failed", error=str(exc)[:300])
     import json as _json
-    return ToolResult(state=RunState.OK, summary=f"glob '{inp.pattern}'", output=_clip(_json.dumps(res, indent=1)), data=res if isinstance(res, dict) else {})
+
+    return ToolResult(
+        state=RunState.OK,
+        summary=f"glob '{inp.pattern}'",
+        output=_clip(_json.dumps(res, indent=1)),
+        data=res if isinstance(res, dict) else {},
+    )
 
 
 async def terminal_write_file(inp: TerminalWriteInput, ctx: InvocationContext) -> ToolResult:
@@ -180,7 +203,11 @@ async def terminal_write_file(inp: TerminalWriteInput, ctx: InvocationContext) -
         res = await client.write_file(inp.path, inp.content)
     except OpenTerminalError as exc:
         return ToolResult(state=RunState.ERROR, summary=f"could not write {inp.path}", error=str(exc)[:300])
-    return ToolResult(state=RunState.OK, summary=f"wrote {inp.path} ({len(inp.content)} chars)", data=res if isinstance(res, dict) else {})
+    return ToolResult(
+        state=RunState.OK,
+        summary=f"wrote {inp.path} ({len(inp.content)} chars)",
+        data=res if isinstance(res, dict) else {},
+    )
 
 
 # ── dynamic registration (risk from config) ─────────────────────────────────────────────────────
@@ -190,18 +217,60 @@ def register_openterminal(registry: "ToolRegistry", cfg: "OpenTerminalCfg") -> i
     if not (cfg.enabled and cfg.base_url):
         return 0
     table = [
-        (terminal_exec, "terminal_exec", TerminalExecInput, cfg.exec_risk, "action", "terminal",
-         "Run a shell command on the terminal host (open-terminal)."),
-        (terminal_read_file, "terminal_read_file", TerminalReadInput, cfg.read_risk, "utility", "file-text",
-         "Read a file on the terminal host."),
-        (terminal_list, "terminal_list", TerminalListInput, cfg.read_risk, "utility", "folder",
-         "List a directory on the terminal host."),
-        (terminal_grep, "terminal_grep", TerminalGrepInput, cfg.read_risk, "utility", "search",
-         "Search file contents on the terminal host (grep)."),
-        (terminal_glob, "terminal_glob", TerminalGlobInput, cfg.read_risk, "utility", "search",
-         "Find files by glob on the terminal host."),
-        (terminal_write_file, "terminal_write_file", TerminalWriteInput, cfg.write_risk, "action", "file-plus",
-         "Write (create/overwrite) a file on the terminal host."),
+        (
+            terminal_exec,
+            "terminal_exec",
+            TerminalExecInput,
+            cfg.exec_risk,
+            "action",
+            "terminal",
+            "Run a shell command on the terminal host (open-terminal).",
+        ),
+        (
+            terminal_read_file,
+            "terminal_read_file",
+            TerminalReadInput,
+            cfg.read_risk,
+            "utility",
+            "file-text",
+            "Read a file on the terminal host.",
+        ),
+        (
+            terminal_list,
+            "terminal_list",
+            TerminalListInput,
+            cfg.read_risk,
+            "utility",
+            "folder",
+            "List a directory on the terminal host.",
+        ),
+        (
+            terminal_grep,
+            "terminal_grep",
+            TerminalGrepInput,
+            cfg.read_risk,
+            "utility",
+            "search",
+            "Search file contents on the terminal host (grep).",
+        ),
+        (
+            terminal_glob,
+            "terminal_glob",
+            TerminalGlobInput,
+            cfg.read_risk,
+            "utility",
+            "search",
+            "Find files by glob on the terminal host.",
+        ),
+        (
+            terminal_write_file,
+            "terminal_write_file",
+            TerminalWriteInput,
+            cfg.write_risk,
+            "action",
+            "file-plus",
+            "Write (create/overwrite) a file on the terminal host.",
+        ),
     ]
     n = 0
     for fn, name, model, risk, category, icon, desc in table:

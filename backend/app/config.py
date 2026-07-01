@@ -33,9 +33,21 @@ from app.domain.host import Host
 from app.domain.service import Service
 
 __all__ = [
-    "Settings", "ModelRef", "AgentDef", "CompactionCfg",
-    "load_settings", "save_settings", "mask_secrets", "secret_values", "unmask_secrets", "deep_merge",
-    "apply_patch_to_yaml", "prune_unchanged", "edit_config_yaml", "sync_mapping", "host_slug",
+    "Settings",
+    "ModelRef",
+    "AgentDef",
+    "CompactionCfg",
+    "load_settings",
+    "save_settings",
+    "mask_secrets",
+    "secret_values",
+    "unmask_secrets",
+    "deep_merge",
+    "apply_patch_to_yaml",
+    "prune_unchanged",
+    "edit_config_yaml",
+    "sync_mapping",
+    "host_slug",
 ]
 
 # backend/app/config.py -> repo root (where config.yaml / ctrlb.db / skills / agents default)
@@ -80,20 +92,20 @@ def config_path() -> Path:
 
 
 class ServerCfg(BaseModel):
-    host: str = "127.0.0.1"          # tailnet-only; fronted by Tailscale Serve for HTTPS
-    port: int = 5433                 # 5433 so v2 runs alongside the live Flask app on 5432
-    poll_seconds: int = 5            # fleet status poll cadence
-    feature_cycle_seconds: int = 6   # hero "now monitoring" auto-cycle period (online hosts only)
-    debug: bool = False              # off by default — debug is an RCE surface (ARCHITECTURE §7)
+    host: str = "127.0.0.1"  # tailnet-only; fronted by Tailscale Serve for HTTPS
+    port: int = 5433  # 5433 so v2 runs alongside the live Flask app on 5432
+    poll_seconds: int = 5  # fleet status poll cadence
+    feature_cycle_seconds: int = 6  # hero "now monitoring" auto-cycle period (online hosts only)
+    debug: bool = False  # off by default — debug is an RCE surface (ARCHITECTURE §7)
 
 
 class InferenceEndpointCfg(BaseModel):
     """One OpenAI-compatible chat backend (DESIGN §7). `api_key` is optional — local llama.cpp
     needs none (the client sends a placeholder)."""
 
-    base_url: str = ""               # e.g. http://192.168.1.137:5001/v1
+    base_url: str = ""  # e.g. http://192.168.1.137:5001/v1
     api_key: str | None = None
-    model: str = ""                  # model id the backend loads, e.g. "minig+"
+    model: str = ""  # model id the backend loads, e.g. "minig+"
 
 
 class InferenceCfg(BaseModel):
@@ -101,9 +113,9 @@ class InferenceCfg(BaseModel):
     `default_mode`; the `/local`//`/cloud` composer prefixes (4c) switch per-message. One
     `openai` client shape covers both (just a different base_url/key/model)."""
 
-    default_mode: str = "local"      # "local" | "cloud"
+    default_mode: str = "local"  # "local" | "cloud"
     request_timeout_s: float = 600.0  # thinking models load slowly + stream slowly — be generous
-    system_prompt: str = ""          # optional override of the built-in default agent prompt (replace)
+    system_prompt: str = ""  # optional override of the built-in default agent prompt (replace)
     #: Additive guidance appended to whichever base prompt is active (7e-a). Emitted as its own
     #: `system` message after the base — mirrors how the roster + active skills are injected. The
     #: per-agent equivalent is `AgentDef.prompt_append`; both apply unless the agent opts out
@@ -165,21 +177,21 @@ class AgentCfg(BaseModel):
     model_config = {"extra": "allow"}
 
     compaction: CompactionCfg = Field(default_factory=CompactionCfg)
-    default_agent: str = ""              # name of the default agent folder; "" → built-in default
-    default_title: str = ""              # optional display name for the default/root agent (slug stays "default")
+    default_agent: str = ""  # name of the default agent folder; "" → built-in default
+    default_title: str = ""  # optional display name for the default/root agent (slug stays "default")
     #: Inheritance base for folder-discovered agents (D14/D15 #1). An `AgentDef`-shaped mapping
     #: (no `name`/`prompt`) whose fields a specialist's `agent.yaml` overrides via
     #: `deep_merge(defaults, agent_yaml)` at load. Absent → the `AgentDef` code defaults. May set
     #: `model` (a per-agent `ModelRef` still wins; `inference.default_mode` is the floor when neither
     #: sets it). The default agent (no `agent.yaml`) is built from this + globals.
     defaults: dict[str, Any] = Field(default_factory=dict)
-    global_subagent_limit: int = 6       # process-wide cap on concurrent subagents (tree-wide)
+    global_subagent_limit: int = 6  # process-wide cap on concurrent subagents (tree-wide)
     #: Security rail: clamp a subagent's privilege so it can never exceed its parent's (§5.5).
     #: True (default) is the safe choice; set False if you deliberately want a configured subagent
     #: to run at a higher privilege than the agent that spawned it.
     subagent_clamp_privilege: bool = True
-    skills_dir: str = "skills"           # dir scanned for <name>/SKILL.md (relative → $CTRLB_HOME)
-    skills_enabled: bool = True          # master switch for the skills subsystem (4.5)
+    skills_dir: str = "skills"  # dir scanned for <name>/SKILL.md (relative → $CTRLB_HOME)
+    skills_enabled: bool = True  # master switch for the skills subsystem (4.5)
     # The `skill_manage` self-author tool may write SKILL.md autonomously; off → propose-only
     # (returns data["proposed"], never writes/blocks), mirroring `memory.auto_write` (7e-f-2, D14).
     skills_auto_write: bool = True
@@ -215,10 +227,10 @@ class MemoryGitCfg(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    enabled: bool = True                          # master switch for the git backup
-    author_name: str = "ctrl-b memory"            # commit identity (per-commit -c, never global)
+    enabled: bool = True  # master switch for the git backup
+    author_name: str = "ctrl-b memory"  # commit identity (per-commit -c, never global)
     author_email: str = "memory@ctrl-b.local"
-    commit_timeout_s: float = Field(10.0, gt=0)   # per git invocation; the hang backstop
+    commit_timeout_s: float = Field(10.0, gt=0)  # per git invocation; the hang backstop
     reconcile_interval_s: int = Field(120, ge=0)  # external-edit sweep cadence; 0 = off
 
 
@@ -231,9 +243,9 @@ class MemoryCfg(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    enabled: bool = True                 # master switch for the memory subsystem
-    user_profile_enabled: bool = True    # inject + (7e-d-2) allow writes to the global USER.md
-    auto_write: bool = True              # agent may write memory autonomously; off → propose-only (D15 #6)
+    enabled: bool = True  # master switch for the memory subsystem
+    user_profile_enabled: bool = True  # inject + (7e-d-2) allow writes to the global USER.md
+    auto_write: bool = True  # agent may write memory autonomously; off → propose-only (D15 #6)
     # Proactive consolidation nudge (Slice 1b): when a store's usage ≥ `consolidation_nudge_pct`, the
     # injected memory block adds a "consolidate before adding" line (merge with replace / drop stale with
     # remove / reconcile contradictions). Default OFF (owner's call) — opt in per deployment. Hermes-style
@@ -247,13 +259,13 @@ class MemoryCfg(BaseModel):
     # Floored at 1 so a blanked Conf field (→ 0) can't silently wedge the agent's memory writes:
     # at cap 0 every non-empty write over-caps. The PUT 422s instead, surfacing the bad value.
     memory_char_limit: int = Field(2200, ge=1)  # per-agent MEMORY.md cap (~800 tokens, Hermes default)
-    user_char_limit: int = Field(1375, ge=1)    # global USER.md cap (~500 tokens, Hermes default)
+    user_char_limit: int = Field(1375, ge=1)  # global USER.md cap (~500 tokens, Hermes default)
     # Emotional/affective state (D27 slice B) — a per-agent `STATE.md` the model rewrites (SET
     # semantics) and that's injected next to the persona. Opt-in (default OFF, like the nudge); small
     # cap so it stays a terse "Mood / Energy / Lately …", not a journal. Writes auto-apply (the agent's
     # own mood isn't a fact-about-the-world that needs the auto_write Approve gate — D27 #1).
     state_enabled: bool = False
-    state_char_limit: int = Field(600, ge=1)    # per-agent STATE.md cap (~220 tokens)
+    state_char_limit: int = Field(600, ge=1)  # per-agent STATE.md cap (~220 tokens)
     # Periodic reflection (D27 slice C, Hermes-style) — every `reflection_interval` user turns, inject a
     # one-shot nudge to review the conversation and save anything durably worth remembering (memory saves
     # follow the normal auto_write/propose path; state saves auto-apply). Opt-in (default OFF, like the
@@ -271,12 +283,12 @@ class EmbeddingsCfg(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    base_url: str = ""               # e.g. https://openrouter.ai/api/v1 or http://192.168.1.137:5002/v1
+    base_url: str = ""  # e.g. https://openrouter.ai/api/v1 or http://192.168.1.137:5002/v1
     api_key: str | None = None
-    model: str = ""                  # e.g. qwen/qwen3-embedding-4b
+    model: str = ""  # e.g. qwen/qwen3-embedding-4b
     enabled: bool = True
     timeout_s: float = 60.0
-    dim: int | None = None           # optional: known embedding dimension
+    dim: int | None = None  # optional: known embedding dimension
 
 
 class VoiceEndpointCfg(BaseModel):
@@ -287,10 +299,10 @@ class VoiceEndpointCfg(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    base_url: str = ""               # e.g. http://vault:8001/v1
+    base_url: str = ""  # e.g. http://vault:8001/v1
     api_key: str | None = None
-    model: str = ""                  # e.g. "whisper-large-v3" (STT) or "tts-1"/a voice model (TTS)
-    voice: str = ""                  # TTS only — server voice id; STT ignores it
+    model: str = ""  # e.g. "whisper-large-v3" (STT) or "tts-1"/a voice model (TTS)
+    voice: str = ""  # TTS only — server voice id; STT ignores it
 
 
 class VoiceServiceCfg(BaseModel):
@@ -306,8 +318,8 @@ class VoiceServiceCfg(BaseModel):
 
     # Floored >0 so a blanked Conf field (→ 0) can't silently wedge voice (a 0s timeout fails every
     # call instantly); the PUT 422s instead, surfacing the bad value — mirrors the memory-cap floors.
-    connect_timeout_s: float = Field(3.0, gt=0)   # fail-fast on an unreachable endpoint → fall over
-    timeout_s: float = Field(30.0, gt=0)          # read window for the transcription/synthesis itself
+    connect_timeout_s: float = Field(3.0, gt=0)  # fail-fast on an unreachable endpoint → fall over
+    timeout_s: float = Field(30.0, gt=0)  # read window for the transcription/synthesis itself
     extra_body: dict[str, Any] = Field(default_factory=dict)  # advanced: passthrough to the server
     primary: VoiceEndpointCfg = Field(default_factory=VoiceEndpointCfg)
     fallback: VoiceEndpointCfg = Field(default_factory=VoiceEndpointCfg)
@@ -326,9 +338,9 @@ class SttServiceCfg(VoiceServiceCfg):
     faster-whisper/Speaches extras, sent to the server via `extra_body` by the adapter (they're not
     standard OpenAI params), so a non-faster-whisper fallback just ignores/rejects them."""
 
-    language: str = "en"             # default English; "" → auto-detect
-    vad_filter: bool = True          # voice-activity-detection: skip silence
-    hotwords: str = ""               # space-separated recognition bias (fleet names, jargon)
+    language: str = "en"  # default English; "" → auto-detect
+    vad_filter: bool = True  # voice-activity-detection: skip silence
+    hotwords: str = ""  # space-separated recognition bias (fleet names, jargon)
     # Client behavior (not a transcription param): True → the PWA mic *sends* the transcript
     # immediately; False (default) → fills the composer for review-before-send. Surfaced to the
     # always-on mic via `GET /voice/status` (the Conf-scoped settings query isn't read on Fleet/Agent).
@@ -340,7 +352,7 @@ class TtsServiceCfg(VoiceServiceCfg):
     `<audio>`-seekable choice the mini-player needs. Playback speed stays **client-side**
     (`<audio>.playbackRate`, live-adjustable without re-synth — owner's call), so it's not here."""
 
-    format: str = "mp3"              # response_format (mp3|opus|aac|flac|wav|pcm)
+    format: str = "mp3"  # response_format (mp3|opus|aac|flac|wav|pcm)
 
 
 class VoiceCfg(BaseModel):
@@ -365,10 +377,10 @@ class SearxngCfg(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    base_url: str = ""               # e.g. http://192.168.1.160:8888 (no trailing /search)
+    base_url: str = ""  # e.g. http://192.168.1.160:8888 (no trailing /search)
     enabled: bool = True
-    timeout_s: float = 10.0          # a metasearch fan-out can be slow-ish; keep it bounded
-    language: str | None = None      # optional default UI language passed to SearXNG (e.g. "en")
+    timeout_s: float = 10.0  # a metasearch fan-out can be slow-ish; keep it bounded
+    language: str | None = None  # optional default UI language passed to SearXNG (e.g. "en")
 
 
 class OpenTerminalCfg(BaseModel):
@@ -380,14 +392,14 @@ class OpenTerminalCfg(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    base_url: str = ""               # e.g. http://192.168.1.160:9999 (no trailing slash)
-    api_key: str = ""                # HTTP Bearer token
+    base_url: str = ""  # e.g. http://192.168.1.160:9999 (no trailing slash)
+    api_key: str = ""  # HTTP Bearer token
     enabled: bool = True
-    timeout_s: float = 30.0          # per-request timeout
-    default_wait_s: float = 30.0     # synchronous-execute wait window (server returns when done/elapsed)
-    exec_risk: str = "high"          # risk for terminal_exec (low|med|high) — HIGH gates on confirm
-    write_risk: str = "high"         # risk for file writes/replace
-    read_risk: str = "low"           # risk for read/list/grep/glob (LOW auto-runs)
+    timeout_s: float = 30.0  # per-request timeout
+    default_wait_s: float = 30.0  # synchronous-execute wait window (server returns when done/elapsed)
+    exec_risk: str = "high"  # risk for terminal_exec (low|med|high) — HIGH gates on confirm
+    write_risk: str = "high"  # risk for file writes/replace
+    read_risk: str = "low"  # risk for read/list/grep/glob (LOW auto-runs)
 
 
 class ShellCfg(BaseModel):
@@ -405,12 +417,12 @@ class ShellCfg(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    enabled: bool = True                 # master switch — registers the run_shell action
-    user_exec_enabled: bool = False      # the `!<cmd>` composer escape hatch (POST /api/exec) — OFF by default
-    agent_exec_enabled: bool = False     # the agent's run_shell tool (D3 gate; off → confirm only at FULL)
-    workdir: str = ""                    # cwd for commands; blank → $CTRLB_HOME (home_dir())
-    timeout_s: float = 60.0              # kill the process after this many seconds
-    max_output_chars: int = 6000         # truncate captured stdout/stderr to this length
+    enabled: bool = True  # master switch — registers the run_shell action
+    user_exec_enabled: bool = False  # the `!<cmd>` composer escape hatch (POST /api/exec) — OFF by default
+    agent_exec_enabled: bool = False  # the agent's run_shell tool (D3 gate; off → confirm only at FULL)
+    workdir: str = ""  # cwd for commands; blank → $CTRLB_HOME (home_dir())
+    timeout_s: float = 60.0  # kill the process after this many seconds
+    max_output_chars: int = 6000  # truncate captured stdout/stderr to this length
 
 
 class TailscaleCfg(BaseModel):
@@ -422,9 +434,9 @@ class TailscaleCfg(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    enabled: bool = True                 # whether the Conf → Access panel + actions are active
-    target_port: int = 5173              # the local port Tailscale Serve proxies (the frontend)
-    timeout_s: float = 15.0              # subprocess timeout for the `tailscale` CLI calls
+    enabled: bool = True  # whether the Conf → Access panel + actions are active
+    target_port: int = 5173  # the local port Tailscale Serve proxies (the frontend)
+    timeout_s: float = 15.0  # subprocess timeout for the `tailscale` CLI calls
 
 
 class OpenApiServerCfg(BaseModel):
@@ -438,13 +450,13 @@ class OpenApiServerCfg(BaseModel):
     model_config = {"extra": "allow"}
 
     name: str
-    base_url: str = ""               # service root, e.g. http://host:port
-    spec_url: str = ""               # explicit OpenAPI doc URL; blank → base_url + /openapi.json
+    base_url: str = ""  # service root, e.g. http://host:port
+    spec_url: str = ""  # explicit OpenAPI doc URL; blank → base_url + /openapi.json
     enabled: bool = True
-    risk: str = "med"                # risk for mutating ops (low|med|high); GET/HEAD always LOW
+    risk: str = "med"  # risk for mutating ops (low|med|high); GET/HEAD always LOW
     connect_timeout_s: float = 15.0
-    api_key: str = ""                # optional bearer/api token
-    auth_scheme: str = "Bearer"      # prefix for the auth header value ("" → raw key)
+    api_key: str = ""  # optional bearer/api token
+    auth_scheme: str = "Bearer"  # prefix for the auth header value ("" → raw key)
     auth_header: str = "Authorization"
     headers: dict[str, str] = Field(default_factory=dict)
     include: list[str] = Field(default_factory=list)  # optional operationId/path allowlist
@@ -462,12 +474,12 @@ class McpServerCfg(BaseModel):
     model_config = {"extra": "allow"}
 
     name: str
-    transport: str = "streamable_http"     # "streamable_http" | "stdio"
+    transport: str = "streamable_http"  # "streamable_http" | "stdio"
     enabled: bool = True
-    risk: str = "med"                       # low | med | high — gate for this server's tools
-    connect_timeout_s: float = 10.0         # bound startup discovery + per-call connect
+    risk: str = "med"  # low | med | high — gate for this server's tools
+    connect_timeout_s: float = 10.0  # bound startup discovery + per-call connect
     # streamable_http
-    url: str = ""                           # e.g. http://192.168.1.160:3003/mcp
+    url: str = ""  # e.g. http://192.168.1.160:3003/mcp
     headers: dict[str, str] = Field(default_factory=dict)
     # stdio (later slice)
     command: str = ""
@@ -696,9 +708,7 @@ class Settings(BaseModel):
                         path=svc.path,
                         autostart=svc.autostart,
                         cmd={
-                            action: {
-                                OSType.coerce(os): command for os, command in by_os.items()
-                            }
+                            action: {OSType.coerce(os): command for os, command in by_os.items()}
                             for action, by_os in svc.cmd.items()
                         },
                     )
@@ -829,7 +839,7 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
     for full, value in os.environ.items():
         if not full.startswith(ENV_PREFIX):
             continue
-        body = full[len(ENV_PREFIX):]
+        body = full[len(ENV_PREFIX) :]
         if body in _BOOTSTRAP_KEYS or "__" not in body:
             continue
         section, _, key = body.partition("__")
@@ -911,9 +921,9 @@ def prune_unchanged(patch: Any, current: Any) -> Any:
 
 def _yaml_rt() -> YAML:
     """A round-trip YAML configured to preserve the operator's file as faithfully as possible."""
-    y = YAML()                       # round-trip mode (keeps comments, key order, anchors)
+    y = YAML()  # round-trip mode (keeps comments, key order, anchors)
     y.preserve_quotes = True
-    y.width = 4096                   # don't wrap long URLs / keys onto continuation lines
+    y.width = 4096  # don't wrap long URLs / keys onto continuation lines
     y.indent(mapping=2, sequence=4, offset=2)
     return y
 
@@ -925,7 +935,7 @@ def _deep_set(node: Any, patch: dict[str, Any]) -> None:
     for k, v in patch.items():
         if isinstance(v, dict):
             child = node.get(k)
-            if not hasattr(child, "get"):       # missing or not a mapping → create one
+            if not hasattr(child, "get"):  # missing or not a mapping → create one
                 node[k] = {}
                 child = node[k]
             _deep_set(child, v)
@@ -963,7 +973,7 @@ def edit_config_yaml(mutate: Any, path: Path | None = None) -> None:
     newline = "\r\n" if b"\r\n" in raw_bytes else "\n"
     y = _yaml_rt()
     doc = y.load(raw_bytes.decode("utf-8")) if raw_bytes else None
-    if not hasattr(doc, "get"):                 # empty/new file → start from a fresh mapping
+    if not hasattr(doc, "get"):  # empty/new file → start from a fresh mapping
         doc = {}
     mutate(doc)
     buf = io.StringIO()
@@ -1047,9 +1057,9 @@ def unmask_secrets(incoming: Any, stored: Any) -> Any:
             sv = stored_d.get(k)
             if _is_secret_key(k):
                 if (v is None or v == "" or (isinstance(v, str) and v == _mask(sv))) and sv:
-                    out[k] = sv          # masked/blank → unchanged: keep the stored real secret
+                    out[k] = sv  # masked/blank → unchanged: keep the stored real secret
                 else:
-                    out[k] = v           # a new value was typed
+                    out[k] = v  # a new value was typed
             else:
                 out[k] = unmask_secrets(v, sv)
         return out
@@ -1059,19 +1069,20 @@ def unmask_secrets(incoming: Any, stored: Any) -> Any:
         # *other* entry's stored secret (positional matching would shift them onto the wrong stored item
         # and clobber real keys with masks). Fall back to index when no identity field is present.
         id_key = next(
-            (k for k in ("base_url", "url", "name")
-             if incoming and isinstance(incoming[0], dict) and incoming[0].get(k)),
+            (
+                k
+                for k in ("base_url", "url", "name")
+                if incoming and isinstance(incoming[0], dict) and incoming[0].get(k)
+            ),
             None,
         )
         if id_key:
             by_id = {s.get(id_key): s for s in stored_l if s.get(id_key)}
             return [
-                unmask_secrets(v, by_id.get(v.get(id_key)) if isinstance(v, dict) else None)
-                for v in incoming
+                unmask_secrets(v, by_id.get(v.get(id_key)) if isinstance(v, dict) else None) for v in incoming
             ]
         stored_seq = stored if isinstance(stored, list) else []
         return [
-            unmask_secrets(v, stored_seq[i] if i < len(stored_seq) else None)
-            for i, v in enumerate(incoming)
+            unmask_secrets(v, stored_seq[i] if i < len(stored_seq) else None) for i, v in enumerate(incoming)
         ]
     return incoming

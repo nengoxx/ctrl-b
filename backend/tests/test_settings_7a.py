@@ -45,7 +45,7 @@ def test_save_roundtrips_config() -> None:
                 "inference": {"local": {"base_url": "http://x/v1", "api_key": "supersecret", "model": "m"}},
             }
         )
-        save_settings(s, p)                       # must not raise
+        save_settings(s, p)  # must not raise
         reloaded = load_settings(p)
         assert reloaded.agent.default_agent == "ops"
         assert reloaded.agent.defaults["privilege"] == "full"
@@ -63,9 +63,7 @@ def test_unmask_preserves_and_updates() -> None:
     assert restored["inference"]["local"]["api_key"] == "REALKEY-123"
 
     # a genuinely new value → keep it
-    changed = unmask_secrets(
-        {"inference": {"local": {"api_key": "NEWKEY-999", "model": "m"}}}, stored
-    )
+    changed = unmask_secrets({"inference": {"local": {"api_key": "NEWKEY-999", "model": "m"}}}, stored)
     assert changed["inference"]["local"]["api_key"] == "NEWKEY-999"
 
     # empty string → treated as unchanged (don't wipe a credential with "")
@@ -76,8 +74,8 @@ def test_unmask_preserves_and_updates() -> None:
 def test_deep_merge_partial() -> None:
     base = {"server": {"port": 5433, "poll_seconds": 5}, "inference": {"default_mode": "local"}}
     out = deep_merge(base, {"server": {"poll_seconds": 9}})
-    assert out["server"] == {"port": 5433, "poll_seconds": 9}      # other key untouched
-    assert out["inference"] == {"default_mode": "local"}            # other section untouched
+    assert out["server"] == {"port": 5433, "poll_seconds": 9}  # other key untouched
+    assert out["inference"] == {"default_mode": "local"}  # other section untouched
 
 
 def test_prune_unchanged() -> None:
@@ -98,7 +96,7 @@ def test_apply_patch_preserves_comments() -> None:
             "  poll_seconds: 5\n"
             "# inference section\n"
             "inference:\n"
-            '  cloud:\n'
+            "  cloud:\n"
             '    api_key: "sk-real-123"   # secret\n'
             "  model: minig+\n"
         )
@@ -109,14 +107,17 @@ def test_apply_patch_preserves_comments() -> None:
         assert "# inference section" in out
         assert "# bind" in out
         assert "poll_seconds: 9" in out
-        assert 'api_key: "sk-real-123"   # secret' in out   # untouched secret line verbatim
-        assert "host: 127.0.0.1" in out                     # sibling untouched
+        assert 'api_key: "sk-real-123"   # secret' in out  # untouched secret line verbatim
+        assert "host: 127.0.0.1" in out  # sibling untouched
 
 
 def test_apply_patch_preserves_line_endings() -> None:
     """A Windows host must not silently rewrite an LF config to CRLF (would churn every line)."""
     with tempfile.TemporaryDirectory() as d:
-        for raw, label in ((b"server:\n  poll_seconds: 5\n", "LF"), (b"server:\r\n  poll_seconds: 5\r\n", "CRLF")):
+        for raw, label in (
+            (b"server:\n  poll_seconds: 5\n", "LF"),
+            (b"server:\r\n  poll_seconds: 5\r\n", "CRLF"),
+        ):
             p = Path(d) / f"cfg_{label}.yaml"
             p.write_bytes(raw)
             apply_patch_to_yaml({"server": {"poll_seconds": 9}}, p)
@@ -168,7 +169,7 @@ def test_api_get_put_roundtrip() -> None:
             assert r.status_code == 200, r.text
             body = r.json()
             assert body["settings"]["server"]["poll_seconds"] == 9
-            assert body["restart_required"] == []                  # poll_seconds applies live
+            assert body["restart_required"] == []  # poll_seconds applies live
 
             # the real secret survived on disk (not overwritten with the mask)
             assert load_settings(cfg).inference.local.api_key == "REALKEY-123"

@@ -152,7 +152,9 @@ def test_tool_state_set_auto_applies_even_with_auto_write_off() -> None:
     with _workspace() as (tmp, _cfg):
         with _client() as c:
             c.app.state.settings.memory.state_enabled = True
-            c.app.state.settings.memory.auto_write = False  # would propose for memory/user — but state auto-applies
+            c.app.state.settings.memory.auto_write = (
+                False  # would propose for memory/user — but state auto-applies
+            )
             out = _invoke(c, {"target": "state", "action": "set", "content": "Mood: resolved"})
             assert out.result.state == RunState.OK
             assert "proposed" not in (out.result.summary or "")
@@ -190,9 +192,13 @@ def test_tool_specialist_state_is_isolated() -> None:
         with _client() as c:
             c.app.state.settings.memory.state_enabled = True
             assert c.put("/api/agents/coder", json={"agent": {}}).status_code == 200
-            out = _invoke(c, {"target": "state", "action": "set", "content": "Mood: coding"}, agent_name="coder")
+            out = _invoke(
+                c, {"target": "state", "action": "set", "content": "Mood: coding"}, agent_name="coder"
+            )
             assert out.result.state == RunState.OK
-            assert "Mood: coding" in (tmp / "memories" / "agents" / "coder" / "STATE.md").read_text(encoding="utf-8")
+            assert "Mood: coding" in (tmp / "memories" / "agents" / "coder" / "STATE.md").read_text(
+                encoding="utf-8"
+            )
             assert not (tmp / "memories" / "STATE.md").exists()  # root agent untouched
 
 

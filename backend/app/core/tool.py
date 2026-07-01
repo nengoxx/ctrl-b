@@ -151,11 +151,7 @@ class ToolRegistry:
         if allow == "*":
             return tools
         patterns = list(allow)
-        return [
-            t
-            for t in tools
-            if t.spec.core or any(fnmatch(t.spec.name, p) for p in patterns)
-        ]
+        return [t for t in tools if t.spec.core or any(fnmatch(t.spec.name, p) for p in patterns)]
 
     def to_openai_tools(self, tools: list[Tool] | None = None) -> list[dict[str, Any]]:
         """Render tools as OpenAI `tools` function defs (the input model → JSON Schema). Defaults

@@ -137,19 +137,25 @@ class GitMemoryBackup:
             return None
         cfg = self._cfg
         argv = [
-            self._git_bin, "-C", str(root),
-            "-c", f"user.name={cfg.author_name}",
-            "-c", f"user.email={cfg.author_email}",
+            self._git_bin,
+            "-C",
+            str(root),
+            "-c",
+            f"user.name={cfg.author_name}",
+            "-c",
+            f"user.email={cfg.author_email}",
             # Treat files byte-for-byte: our files are LF, and the host's global core.autocrlf (true by
             # default on Git for Windows) would otherwise make every LF file read as perpetually
             # "modified", churning the sweep and breaking the "dirty tree = external edit" invariant.
-            "-c", "core.autocrlf=false",
-            "-c", "core.safecrlf=false",
+            "-c",
+            "core.autocrlf=false",
+            "-c",
+            "core.safecrlf=false",
             *args,
         ]
         try:
             cap = await run_capture(argv, timeout_s=cfg.commit_timeout_s)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return None
         if cap.timed_out:
             logger.warning("memory git %s timed out after %ss", args[:1], cfg.commit_timeout_s)

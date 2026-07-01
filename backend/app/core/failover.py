@@ -79,7 +79,9 @@ async def failover(
         if failures:
             log.warning(
                 "failover: served by endpoint %d/%d after %d failure(s)",
-                i + 1, len(endpoints), len(failures),
+                i + 1,
+                len(endpoints),
+                len(failures),
             )
         return FailoverResult(value=value, served_index=i, failures=failures)
     raise FailoverError(failures)

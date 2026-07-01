@@ -45,6 +45,7 @@ def _run(coro):
 
 # --- core.failover ----------------------------------------------------------------------------
 
+
 def test_failover_primary_served() -> None:
     async def go():
         async def attempt(ep):
@@ -106,6 +107,7 @@ def test_failover_empty_chain_raises() -> None:
 
 # --- config: endpoints() + secret round-trip --------------------------------------------------
 
+
 def test_endpoints_drops_blank_base_url() -> None:
     cfg = VoiceCfg.model_validate(
         {"tts": {"primary": {"base_url": "http://p/v1"}, "fallback": {"base_url": ""}}}
@@ -151,6 +153,7 @@ def test_voice_secret_roundtrip() -> None:
 
 # --- VoiceClient with a stubbed SDK client ----------------------------------------------------
 
+
 class _FakeBinary:
     def __init__(self, data: bytes) -> None:
         self._data = data
@@ -188,8 +191,12 @@ def _voice_client(cfg: dict, *, by_url) -> VoiceClient:
 def test_transcribe_failover_any_error() -> None:
     async def go():
         vc = _voice_client(
-            {"stt": {"primary": {"base_url": "http://p/v1", "model": "w"},
-                     "fallback": {"base_url": "http://f/v1", "model": "w"}}},
+            {
+                "stt": {
+                    "primary": {"base_url": "http://p/v1", "model": "w"},
+                    "fallback": {"base_url": "http://f/v1", "model": "w"},
+                }
+            },
             by_url={
                 "http://p/v1": _fake_client(on_transcribe=ValueError("400 bad request")),  # 4xx too
                 "http://f/v1": _fake_client(on_transcribe=lambda m, f: "hello world"),
@@ -219,6 +226,7 @@ def test_synthesize_returns_bytes_and_media_type() -> None:
 def test_stt_passes_language_and_extras() -> None:
     """STT sends `language` natively and `vad_filter`/`hotwords`/`extra_body` via the SDK escape
     hatch; a user `extra_body` merges on top."""
+
     async def go():
         captured: dict = {}
 
@@ -228,9 +236,15 @@ def test_stt_passes_language_and_extras() -> None:
 
         fake = SimpleNamespace(audio=SimpleNamespace(transcriptions=SimpleNamespace(create=t_create)))
         vc = _voice_client(
-            {"stt": {"language": "sv", "vad_filter": True, "hotwords": "vault minig",
-                     "extra_body": {"temperature": 0.2},
-                     "primary": {"base_url": "http://p/v1", "model": "w"}}},
+            {
+                "stt": {
+                    "language": "sv",
+                    "vad_filter": True,
+                    "hotwords": "vault minig",
+                    "extra_body": {"temperature": 0.2},
+                    "primary": {"base_url": "http://p/v1", "model": "w"},
+                }
+            },
             by_url={"http://p/v1": fake},
         )
         await vc.transcribe(content=b"x", filename="a.webm", content_type="audio/webm")
@@ -242,6 +256,7 @@ def test_stt_passes_language_and_extras() -> None:
 
 def test_stt_blank_language_omitted() -> None:
     """Blank language → omit the param (server auto-detects)."""
+
     async def go():
         captured: dict = {}
 
@@ -279,6 +294,7 @@ def test_unconfigured_raises() -> None:
 
 
 # --- API endpoints ----------------------------------------------------------------------------
+
 
 class _StubVoice:
     """Mimics the VoiceClient surface the router uses, no SDK/network."""

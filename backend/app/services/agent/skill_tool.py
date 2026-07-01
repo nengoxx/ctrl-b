@@ -41,9 +41,7 @@ if TYPE_CHECKING:
 
 class SkillManageInput(BaseModel):
     action: Literal["save", "remove"] = Field(
-        description=(
-            "`save` to create or overwrite a skill, or `remove` to delete one of yours by `name`."
-        ),
+        description=("`save` to create or overwrite a skill, or `remove` to delete one of yours by `name`."),
     )
     name: str = Field(
         description=(

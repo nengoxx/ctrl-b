@@ -23,6 +23,4 @@ class AgentSelector(Protocol):
     """Picks one specialist `AgentDef` for a turn, or `None` to fall through to the configured
     default (the swappable strategy, D15 #8). `agents` is the specialist candidates only."""
 
-    def select(
-        self, user_msg: str, agents: list[AgentDef], *, min_overlap: int = 1
-    ) -> AgentDef | None: ...
+    def select(self, user_msg: str, agents: list[AgentDef], *, min_overlap: int = 1) -> AgentDef | None: ...

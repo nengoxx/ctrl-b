@@ -56,6 +56,8 @@ async def question(inp: QuestionInput, ctx: InvocationContext) -> ToolResult:
     text = inp.prompt.strip()
     if not text:
         return ToolResult(
-            state=RunState.ERROR, summary="empty question", error="`prompt` is required — what do you want to ask?"
+            state=RunState.ERROR,
+            summary="empty question",
+            error="`prompt` is required — what do you want to ask?",
         )
     return ToolResult(state=RunState.AWAITING_ANSWER, summary=text)

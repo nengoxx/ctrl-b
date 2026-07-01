@@ -40,7 +40,7 @@ def _patch(monkeypatch_pairs, *, has_bin=True):
     async def fake_capture(argv, *, timeout_s, cwd=None):
         return outputs.pop(0)
 
-    ts._bin = lambda: ("/usr/bin/tailscale" if has_bin else None)  # type: ignore[assignment]
+    ts._bin = lambda: "/usr/bin/tailscale" if has_bin else None  # type: ignore[assignment]
     ts.run_capture = fake_capture  # type: ignore[assignment]
 
 

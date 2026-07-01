@@ -128,7 +128,9 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
 
             # A second write re-stamps a newer time (monotonic-ish; at least not older).
             first_stamp = reloaded.appearance.updated_at
-            r2 = c.put("/api/settings", json={"appearance": {"theme": "vapor", "mode": "dark", "accent": "aqua"}})
+            r2 = c.put(
+                "/api/settings", json={"appearance": {"theme": "vapor", "mode": "dark", "accent": "aqua"}}
+            )
             assert r2.status_code == 200, r2.text
             assert load_settings(cfg).appearance.updated_at >= first_stamp
     finally:

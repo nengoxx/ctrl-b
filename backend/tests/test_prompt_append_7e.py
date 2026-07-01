@@ -76,7 +76,12 @@ def _session(c, agent_name: str | None = None):
     s = c.app.state
     agent = s.settings.resolve_agent(agent_name)
     return AgentSession(
-        s.threads, s.messages, s.inference, s.settings, s.actions, agent,
+        s.threads,
+        s.messages,
+        s.inference,
+        s.settings,
+        s.actions,
+        agent,
         skills=getattr(s, "skills", None),
         selector=getattr(s, "skill_selector", None),
     )
@@ -92,9 +97,9 @@ def _make_thread(c):
 
     async def go():
         t = await s.threads.create(Thread())
-        await s.messages.add(Message(
-            thread_id=t.id, role="user", actor=Actor.USER, parts=[TextPart(text="hi")]
-        ))
+        await s.messages.add(
+            Message(thread_id=t.id, role="user", actor=Actor.USER, parts=[TextPart(text="hi")])
+        )
         return t
 
     return run_async(go())
@@ -134,9 +139,7 @@ def test_prompt_append_round_trip() -> None:
             # 3. add a folder agent with prompt_append → three system messages (base, global, per-agent)
             _put_agent(c, "writer", prompt_append="AGENT-Y")
             c.put("/api/settings", json={"agent": {"default_agent": "writer"}})
-            assert _systems(_assemble(c, thread, "writer")) == [
-                DEFAULT_SYSTEM_PROMPT, "GLOBAL-X", "AGENT-Y"
-            ]
+            assert _systems(_assemble(c, thread, "writer")) == [DEFAULT_SYSTEM_PROMPT, "GLOBAL-X", "AGENT-Y"]
 
             # 4. flip inherit_append=False → global is skipped; only per-agent appears
             _put_agent(c, "writer", prompt_append="AGENT-Y", inherit_append=False)
@@ -144,11 +147,14 @@ def test_prompt_append_round_trip() -> None:
 
             # 5. replace axis (inference.system_prompt) coexists with the append — base becomes the
             #    override; the append still appears as its own message after it
-            assert c.delete("/api/agents/writer").status_code == 200      # drop the writer agent
-            r = c.put("/api/settings", json={
-                "inference": {"system_prompt": "REPLACED-BASE"},
-                "agent": {"default_agent": ""},                          # fall back to the default
-            })
+            assert c.delete("/api/agents/writer").status_code == 200  # drop the writer agent
+            r = c.put(
+                "/api/settings",
+                json={
+                    "inference": {"system_prompt": "REPLACED-BASE"},
+                    "agent": {"default_agent": ""},  # fall back to the default
+                },
+            )
             assert r.status_code == 200, r.text
             assert _systems(_assemble(c, thread)) == ["REPLACED-BASE", "GLOBAL-X"]
 
@@ -247,10 +253,12 @@ def test_multiline_append_yaml_roundtrip() -> None:
             assert "system_prompt_append" in disk
             # The append value survives byte-equivalent through a re-load + re-assemble
             from app.config import load_settings
+
             reloaded = load_settings(cfg)
             assert reloaded.inference.system_prompt_append == text
             # And the loop sees the exact stored content in the assembled messages
             from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
+
             thread = _make_thread(c)
             assert _systems(_assemble(c, thread)) == [DEFAULT_SYSTEM_PROMPT, text]
 
@@ -281,7 +289,7 @@ def test_static_prefix_is_cached_per_turn() -> None:
             sess = _session(c)
             thread = _make_thread(c)
             run = run_async
-            first = _systems(run(sess._assemble(thread)))   # iteration 1
+            first = _systems(run(sess._assemble(thread)))  # iteration 1
             second = _systems(run(sess._assemble(thread)))  # iteration 2 — must match byte-for-byte
             assert first == second
             assert sess._static_prefix() is sess._static_prefix()  # memoized: same list object

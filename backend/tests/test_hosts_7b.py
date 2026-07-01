@@ -62,7 +62,7 @@ def test_hosts_crud_roundtrip() -> None:
             alpha = _host(c, "alpha")
             assert alpha is not None
             assert alpha["has_password"] is True
-            assert "ssh_password" not in alpha            # secret never leaves the server
+            assert "ssh_password" not in alpha  # secret never leaves the server
             assert alpha["services"][0]["name"] == "web"
             assert alpha["services"][0]["cmd"]["start"]["windows"] == "net start nginx"
 
@@ -71,31 +71,47 @@ def test_hosts_crud_roundtrip() -> None:
             assert r.status_code == 201, r.text
             assert _host(c, "beta") is not None
             after_add = cfg.read_text(encoding="utf-8")
-            assert "# my fleet" in after_add and "# trailing note" in after_add  # non-destructive add keeps all
+            assert (
+                "# my fleet" in after_add and "# trailing note" in after_add
+            )  # non-destructive add keeps all
             assert c.post("/api/hosts", json={"name": "Alpha", "ip": "1.2.3.4"}).status_code == 409
 
             # --- edit: change ip, blank password (keep), swap services (remove web, add db),
             #     re-submit web? no — only db now, so web should be deleted by the sync ---
-            r = c.put("/api/hosts/alpha", json={
-                "name": "alpha", "ip": "192.168.1.11", "ssh_username": "root",
-                "ssh_password": "", "ssh_port": 22, "os_type": "linux", "role": "nas",
-                "services": [{"name": "db", "kind": "postgres", "port": 5432}],
-            })
+            r = c.put(
+                "/api/hosts/alpha",
+                json={
+                    "name": "alpha",
+                    "ip": "192.168.1.11",
+                    "ssh_username": "root",
+                    "ssh_password": "",
+                    "ssh_port": 22,
+                    "os_type": "linux",
+                    "role": "nas",
+                    "services": [{"name": "db", "kind": "postgres", "port": 5432}],
+                },
+            )
             assert r.status_code == 200, r.text
             s = load_settings(cfg)
             assert s.computers["alpha"].ip == "192.168.1.11"
-            assert s.computers["alpha"].ssh_password == "SECRET-A"        # blank kept the secret
-            assert set(s.computers["alpha"].services) == {"db"}          # web removed, db added
+            assert s.computers["alpha"].ssh_password == "SECRET-A"  # blank kept the secret
+            assert set(s.computers["alpha"].services) == {"db"}  # web removed, db added
             # Leading comments (the owner's style — attached to the following key) survive deletions.
             # (A comment physically trailing a *deleted* element is dropped with it — ruamel limitation.)
             assert "# my fleet" in cfg.read_text(encoding="utf-8")
 
             # --- rename: alpha -> gamma (id re-slugs, services carried, secret kept) ---
-            r = c.put("/api/hosts/alpha", json={
-                "name": "gamma node", "ip": "192.168.1.11", "ssh_password": "",
-                "ssh_port": 22, "os_type": "linux",
-                "services": [{"name": "db", "kind": "postgres", "port": 5432}],
-            })
+            r = c.put(
+                "/api/hosts/alpha",
+                json={
+                    "name": "gamma node",
+                    "ip": "192.168.1.11",
+                    "ssh_password": "",
+                    "ssh_port": 22,
+                    "os_type": "linux",
+                    "services": [{"name": "db", "kind": "postgres", "port": 5432}],
+                },
+            )
             assert r.status_code == 200, r.text
             assert r.json()["id"] == "gamma-node"
             s = load_settings(cfg)
@@ -121,14 +137,21 @@ def test_multi_os_cmd_preserved() -> None:
     try:
         client, cfg = _client(tmp)
         with client as c:
-            web = _host(c, "alpha")["services"][0]                 # carries both-OS start cmd
-            r = c.put("/api/hosts/alpha", json={
-                "name": "alpha", "ip": "192.168.1.10", "ssh_port": 22, "os_type": "linux",
-                "ssh_password": "", "services": [web],             # echo the full service back
-            })
+            web = _host(c, "alpha")["services"][0]  # carries both-OS start cmd
+            r = c.put(
+                "/api/hosts/alpha",
+                json={
+                    "name": "alpha",
+                    "ip": "192.168.1.10",
+                    "ssh_port": 22,
+                    "os_type": "linux",
+                    "ssh_password": "",
+                    "services": [web],  # echo the full service back
+                },
+            )
             assert r.status_code == 200, r.text
             cmd = load_settings(cfg).computers["alpha"].services["web"].cmd
-            assert cmd["start"]["windows"] == "net start nginx"    # other-OS entry survived
+            assert cmd["start"]["windows"] == "net start nginx"  # other-OS entry survived
     finally:
         os.environ.pop("CTRLB_CONFIG", None)
         os.environ.pop("CTRLB_DB", None)

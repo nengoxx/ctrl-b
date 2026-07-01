@@ -25,8 +25,8 @@ class ModelRef(BaseModel):
     (`model=None` → the endpoint's configured model). Set one or both to override — used by the
     selectable compaction summarizer and by each `AgentDef.model`."""
 
-    mode: str | None = None      # "local" | "cloud" | None → InferenceCfg.default_mode
-    model: str | None = None     # None → the endpoint's configured model id
+    mode: str | None = None  # "local" | "cloud" | None → InferenceCfg.default_mode
+    model: str | None = None  # None → the endpoint's configured model id
 
 
 class CompactionCfg(BaseModel):
@@ -40,8 +40,8 @@ class CompactionCfg(BaseModel):
     wins for that agent (and is inherited by its subagents)."""
 
     enabled: bool = True
-    threshold_tokens: int = 6000     # working-context size that triggers auto-compaction
-    keep_last_messages: int = 8      # recent-message floor kept verbatim (snapped to a turn boundary)
+    threshold_tokens: int = 6000  # working-context size that triggers auto-compaction
+    keep_last_messages: int = 8  # recent-message floor kept verbatim (snapped to a turn boundary)
     summarizer: ModelRef = Field(default_factory=ModelRef)
 
 
@@ -54,13 +54,13 @@ class AgentDef(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    name: str                                           # slug = folder name; the stable /agent id
-    title: str = ""                                     # optional display name (UI only); "" → show the slug
+    name: str  # slug = folder name; the stable /agent id
+    title: str = ""  # optional display name (UI only); "" → show the slug
     #: Short routing summary (7e-g, D15 #8) — the text the `AgentSelector` matches the user message
     #: against (with `name`) to auto-route a turn when `agent.auto_rotate` is on and no `/agent` is
     #: pinned. The persona stays in SOUL.md (`prompt`); this is just "when to pick me".
     description: str = ""
-    prompt: str = ""                                    # system prompt; "" → the built-in default
+    prompt: str = ""  # system prompt; "" → the built-in default
     #: Additive guidance (7e-a). When non-empty, emitted as its own `system` message *after* the
     #: base prompt — so the persona/base stays a stable cache-key candidate and the extra is easy
     #: to attribute when reading logs. The global `inference.system_prompt_append` is emitted too
@@ -70,19 +70,19 @@ class AgentDef(BaseModel):
     #: mirrors Claude Code's CLAUDE.md model (always added) — flip it for an agent that needs to
     #: escape the global guidance (e.g. a sandboxed/clean-room persona).
     inherit_append: bool = True
-    model: ModelRef = Field(default_factory=ModelRef)   # backend+model; inherits chat default when unset
+    model: ModelRef = Field(default_factory=ModelRef)  # backend+model; inherits chat default when unset
     #: This agent's memory subdirectory (D26), resolved **relative to** `MemoryCfg.memory_dir` (the
     #: memory-directory git repo root). `None` → the default `agents/<slug>`. Absolute paths and `..`
     #: escapes are rejected by the provider (falls back to the safe default) so every memory file stays
     #: inside the one repo. The default/root agent ignores this — it lives at the memory-dir root.
     memory_dir: str | None = None
-    tools: list[str] | Literal["*"] = "*"               # tool-name allowlist (globs) or all agent tools
-    skills: list[str] | Literal["*"] = "*"              # skill allowlist or all discovered skills
+    tools: list[str] | Literal["*"] = "*"  # tool-name allowlist (globs) or all agent tools
+    skills: list[str] | Literal["*"] = "*"  # skill allowlist or all discovered skills
     privilege: Privilege = Privilege.CONFIRM
     #: Per-agent context-window override. `None` → inherit `Settings.agent.compaction` (the global
     #: default). A subagent inherits its parent's effective value unless its own def sets this.
     compaction: CompactionCfg | None = None
-    max_iterations: int = 16                             # tool-call loop safety cap
+    max_iterations: int = 16  # tool-call loop safety cap
     #: Loop-discipline guards (capability layer C1). A weak model can spiral — repeating one tool
     #: or churning many calls without ever answering. `max_repeat_calls` is how many *identical*
     #: (tool, args) calls run before the rest are suppressed with a steering note (2 still allows a
@@ -93,5 +93,5 @@ class AgentDef(BaseModel):
     max_repeat_calls: int = 2
     max_calls_per_tool: int = 6
     max_stall_iterations: int = 2
-    max_subagent_depth: int = 2                          # how deep spawn_subagents may nest
-    max_concurrent_subagents: int = 3                    # per-agent fan-out cap (global cap in settings)
+    max_subagent_depth: int = 2  # how deep spawn_subagents may nest
+    max_concurrent_subagents: int = 3  # per-agent fan-out cap (global cap in settings)

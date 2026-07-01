@@ -54,15 +54,23 @@ def test_agent_folder_crud_and_default() -> None:
             assert c.get("/api/agents").json() == {"agents": [], "default": "default"}
 
             # create a specialist via the file API; a new folder scaffolds agent.yaml + SOUL.md
-            r = c.put("/api/agents/ops", json={
-                "agent": {"title": "Ops Bot", "privilege": "full", "tools": ["wake_host", "ping_host"], "skills": []}
-            })
+            r = c.put(
+                "/api/agents/ops",
+                json={
+                    "agent": {
+                        "title": "Ops Bot",
+                        "privilege": "full",
+                        "tools": ["wake_host", "ping_host"],
+                        "skills": [],
+                    }
+                },
+            )
             assert r.status_code == 200, r.text
             body = r.json()
             assert body["name"] == "ops" and body["is_default"] is False
-            assert body["agent"]["privilege"] == "full"          # StrEnum → str (the A1 round-trip)
-            assert body["agent"]["name"] == "ops"                # folder slug wins
-            assert body["agent"]["title"] == "Ops Bot"           # display name round-trips
+            assert body["agent"]["privilege"] == "full"  # StrEnum → str (the A1 round-trip)
+            assert body["agent"]["name"] == "ops"  # folder slug wins
+            assert body["agent"]["title"] == "Ops Bot"  # display name round-trips
             assert c.app.state.settings.resolve_agent("ops").title == "Ops Bot"
 
             # the default agent's display name comes from agent.default_title (slug stays "default")
@@ -71,7 +79,7 @@ def test_agent_folder_crud_and_default() -> None:
             # title never leaks from defaults into specialists
             assert c.put("/api/settings", json={"agent": {"defaults": {"title": "LEAK"}}}).status_code == 200
             assert c.get("/api/agents/ops").json()["agent"]["title"] == "Ops Bot"
-            assert body["soul"]                                  # SOUL.md scaffolded from the baked default
+            assert body["soul"]  # SOUL.md scaffolded from the baked default
 
             # on disk: a folder with agent.yaml + SOUL.md
             folder = tmp / "agents" / "ops"
@@ -117,16 +125,20 @@ def test_agent_defaults_inheritance() -> None:
     with _workspace("server:\n  port: 5433\n") as (_tmp, _cfg):
         with _client() as c:
             # set an inheritance base
-            assert c.put("/api/settings", json={
-                "agent": {"defaults": {"privilege": "readonly", "max_iterations": 30}}
-            }).status_code == 200
+            assert (
+                c.put(
+                    "/api/settings",
+                    json={"agent": {"defaults": {"privilege": "readonly", "max_iterations": 30}}},
+                ).status_code
+                == 200
+            )
 
             # an agent that overrides only max_iterations → privilege inherits the default
             r = c.put("/api/agents/coder", json={"agent": {"max_iterations": 99}})
             assert r.status_code == 200, r.text
             a = r.json()["agent"]
-            assert a["max_iterations"] == 99            # override wins
-            assert a["privilege"] == "readonly"          # inherited from agent.defaults
+            assert a["max_iterations"] == 99  # override wins
+            assert a["privilege"] == "readonly"  # inherited from agent.defaults
 
             resolved = c.app.state.settings.resolve_agent("coder")
             assert resolved.max_iterations == 99 and resolved.privilege.value == "readonly"
@@ -156,7 +168,9 @@ def test_soul_editing_and_fallback() -> None:
             # a specialist's SOUL.md edit is isolated to its folder
             c.put("/api/agents/coder", json={"agent": {}})
             assert c.put("/api/agents/coder/soul", json={"content": "I write code."}).status_code == 200
-            assert (tmp / "agents" / "coder" / "SOUL.md").read_text(encoding="utf-8").strip() == "I write code."
+            assert (tmp / "agents" / "coder" / "SOUL.md").read_text(
+                encoding="utf-8"
+            ).strip() == "I write code."
             assert c.app.state.settings.resolve_agent("coder").prompt == "I write code."
             # unknown specialist soul → 404
             assert c.get("/api/agents/ghost/soul").status_code == 404

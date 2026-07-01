@@ -33,9 +33,7 @@ class KeywordAgentSelector(AgentSelector):
     Deterministic + model-agnostic; swap in an LLM/embeddings router via the `AgentSelector`
     protocol."""
 
-    def select(
-        self, user_msg: str, agents: list[AgentDef], *, min_overlap: int = 2
-    ) -> AgentDef | None:
+    def select(self, user_msg: str, agents: list[AgentDef], *, min_overlap: int = 2) -> AgentDef | None:
         ranked = rank_by_overlap(
             user_msg, agents, lambda a: f"{a.name} {a.description}", min_overlap=min_overlap
         )
@@ -46,9 +44,7 @@ class KeywordAgentSelector(AgentSelector):
         return ranked[0][1]
 
 
-def select_agent(
-    settings: "Settings", selector: AgentSelector, user_msg: str
-) -> str | None:
+def select_agent(settings: "Settings", selector: AgentSelector, user_msg: str) -> str | None:
     """Resolve the auto-routed specialist name for a turn, or `None` → the configured default.
 
     Loads each specialist `AgentDef` (a malformed one is skipped, never fatal — like a malformed
@@ -65,7 +61,5 @@ def select_agent(
             specialists.append(agent)
     if not specialists:
         return None
-    picked = selector.select(
-        user_msg, specialists, min_overlap=settings.agent.auto_rotate_min_overlap
-    )
+    picked = selector.select(user_msg, specialists, min_overlap=settings.agent.auto_rotate_min_overlap)
     return picked.name if picked else None

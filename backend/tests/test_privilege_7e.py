@@ -56,7 +56,7 @@ def test_override_applies_and_none_is_unchanged() -> None:
 
     s = Settings()
     default_priv = s.default_agent_def().privilege
-    assert resolve_session_agent(s, None, None).privilege == default_priv      # unchanged
+    assert resolve_session_agent(s, None, None).privilege == default_priv  # unchanged
     assert resolve_session_agent(s, None, Privilege.FULL).privilege == Privilege.FULL
 
 

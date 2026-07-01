@@ -56,9 +56,9 @@ _SUMMARIZER_SYSTEM = (
 
 @dataclass
 class CompactionResult:
-    summary_id: str   # id of the inserted summary system message
-    removed: int      # how many messages were folded away (now `compacted`)
-    truncated: bool   # True if the summarizer failed and we fell back to a placeholder
+    summary_id: str  # id of the inserted summary system message
+    removed: int  # how many messages were folded away (now `compacted`)
+    truncated: bool  # True if the summarizer failed and we fell back to a placeholder
 
 
 def estimate_tokens(messages: list[Message]) -> int:
@@ -86,9 +86,7 @@ class Compactor:
     """Folds the oldest turns of a thread into a summary when the context grows too large. One
     instance per session is fine — it's stateless (all state is the thread in the DB)."""
 
-    def __init__(
-        self, inference: InferenceClient, messages: MessageRepo, cfg: CompactionCfg
-    ) -> None:
+    def __init__(self, inference: InferenceClient, messages: MessageRepo, cfg: CompactionCfg) -> None:
         self._inference = inference
         self._messages = messages
         self._cfg = cfg
