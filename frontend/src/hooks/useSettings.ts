@@ -40,7 +40,13 @@ export interface VoiceTts extends VoiceServiceCommon {
 }
 
 export interface SettingsDoc {
-  server: { host: string; port: number; poll_seconds: number; feature_cycle_seconds: number; debug: boolean };
+  server: {
+    host: string;
+    port: number;
+    poll_seconds: number;
+    feature_cycle_seconds: number;
+    debug: boolean;
+  };
   inference: {
     default_mode: string;
     request_timeout_s: number;

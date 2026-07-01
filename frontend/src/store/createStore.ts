@@ -42,7 +42,7 @@ export function createStore(): StoreBinding {
   const emit = (): void => {
     for (const l of listeners) l();
   };
-  const useStore = <T,>(getSnapshot: () => T): T =>
+  const useStore = <T>(getSnapshot: () => T): T =>
     useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   return { subscribe, emit, useStore };
 }

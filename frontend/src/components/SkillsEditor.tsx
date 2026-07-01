@@ -98,8 +98,10 @@ export function SkillsEditor({ enabled }: { enabled: boolean }) {
 
   const commitNew = () => {
     const name = newName.trim().toLowerCase();
-    if (!/^[a-z0-9][a-z0-9_-]*$/.test(name)) return pushToast("name: lowercase letters, digits, - or _", "err");
-    if (skills.some((s) => s.name === name)) return pushToast("a skill with that name exists", "err");
+    if (!/^[a-z0-9][a-z0-9_-]*$/.test(name))
+      return pushToast("name: lowercase letters, digits, - or _", "err");
+    if (skills.some((s) => s.name === name))
+      return pushToast("a skill with that name exists", "err");
     // Blank content → the backend writes a scaffold; then open it for editing.
     saveSkill.mutate(
       { name, content: "" },
@@ -128,38 +130,78 @@ export function SkillsEditor({ enabled }: { enabled: boolean }) {
 
       {skills.map((s: SkillInfo) => (
         <div className={"mwrap" + (openName === s.name ? " open" : "")} key={s.name}>
-          <div className="confrow" {...disclosureToggle(openName === s.name, () => { setOpenName(openName === s.name ? null : s.name); setAdding(false); })}>
+          <div
+            className="confrow"
+            {...disclosureToggle(openName === s.name, () => {
+              setOpenName(openName === s.name ? null : s.name);
+              setAdding(false);
+            })}
+          >
             <div className="k">
               <div className="label">{s.name}</div>
               <div className="desc">{s.description || "(no description)"}</div>
             </div>
-            {s.allowed_tools != null && <span className="badge">{s.allowed_tools.length} tools</span>}
-            <span className="chev" aria-hidden>›</span>
+            {s.allowed_tools != null && (
+              <span className="badge">{s.allowed_tools.length} tools</span>
+            )}
+            <span className="chev" aria-hidden>
+              ›
+            </span>
           </div>
-          <div className="mconf">{openName === s.name && <SkillFileEditor name={s.name} onClose={() => setOpenName(null)} />}</div>
+          <div className="mconf">
+            {openName === s.name && (
+              <SkillFileEditor name={s.name} onClose={() => setOpenName(null)} />
+            )}
+          </div>
         </div>
       ))}
 
       <div className={"mwrap add" + (adding ? " open" : "")}>
-        <div className="confrow" {...disclosureToggle(adding, () => { setAdding(!adding); setOpenName(null); })}>
+        <div
+          className="confrow"
+          {...disclosureToggle(adding, () => {
+            setAdding(!adding);
+            setOpenName(null);
+          })}
+        >
           <div className="k">
             <div className="label">add skill</div>
             <div className="desc">creates skills/&lt;name&gt;/SKILL.md from a template</div>
           </div>
-          <span className="chev" aria-hidden>›</span>
+          <span className="chev" aria-hidden>
+            ›
+          </span>
         </div>
         <div className="mconf">
           {adding && (
             <>
               <div className="mform">
                 <label>Name</label>
-                <input aria-label="skill name" value={newName} placeholder="my-skill" onChange={(e) => setNewName(e.target.value)} />
+                <input
+                  aria-label="skill name"
+                  value={newName}
+                  placeholder="my-skill"
+                  onChange={(e) => setNewName(e.target.value)}
+                />
               </div>
               {/* .mfoot as a sibling of .mform (not inside the grid) — the canonical double-button
                   footer, matching MachineEditor's add-machine form. */}
               <div className="mfoot">
-                <button type="button" onClick={() => { setAdding(false); setNewName(""); }}>cancel</button>
-                <button type="button" className="save" disabled={saveSkill.isPending} onClick={commitNew}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdding(false);
+                    setNewName("");
+                  }}
+                >
+                  cancel
+                </button>
+                <button
+                  type="button"
+                  className="save"
+                  disabled={saveSkill.isPending}
+                  onClick={commitNew}
+                >
                   {saveSkill.isPending ? "creating…" : "create"}
                 </button>
               </div>

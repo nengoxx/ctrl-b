@@ -11,8 +11,7 @@ import type { Service } from "../../src/types";
 // Cosmos service cue (C2b-4) — pure logic: representation choice (moons ≤3 / arc >3 / none) + moon layout.
 // The visuals are CSS, reviewed live.
 
-const svc = (online: boolean): Service =>
-  ({ status: { online } }) as unknown as Service;
+const svc = (online: boolean): Service => ({ status: { online } }) as unknown as Service;
 
 describe("serviceCue — data mode", () => {
   it("is none when off or there are no services", () => {
@@ -75,7 +74,8 @@ describe("visualMoonCounts", () => {
   it("re-picks with a different salt (random per refresh), stable for a given salt", () => {
     const ids = ["a", "b", "c", "d", "e"];
     expect(visualMoonCounts(ids, "s1")).toEqual(visualMoonCounts(ids, "s1")); // stable per salt
-    const twoHost = (salt: string) => [...visualMoonCounts(ids, salt)].find(([, v]) => v === 2)?.[0];
+    const twoHost = (salt: string) =>
+      [...visualMoonCounts(ids, salt)].find(([, v]) => v === 2)?.[0];
     const picks = new Set(["s1", "s2", "s3", "s4", "s5", "s6"].map(twoHost));
     expect(picks.size).toBeGreaterThan(1); // different salts move the moons to different planets
   });

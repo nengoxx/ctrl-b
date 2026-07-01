@@ -34,7 +34,9 @@ for (const t of TABS) {
       .analyze();
 
     // Readable failure: list the rule ids + node counts rather than a wall of JSON.
-    const summary = violations.map((v) => `${v.id} (${v.impact}, ${v.nodes.length} nodes)`).join("\n");
+    const summary = violations
+      .map((v) => `${v.id} (${v.impact}, ${v.nodes.length} nodes)`)
+      .join("\n");
     expect(violations, `\n${summary}`).toEqual([]);
   });
 }

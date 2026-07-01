@@ -42,15 +42,9 @@ export function useActionSpecs() {
 }
 
 /** Optimistically flip one host's online flag in the ['hosts'] cache. */
-function patchHostOnline(
-  qc: ReturnType<typeof useQueryClient>,
-  id: string,
-  online: boolean,
-): void {
+function patchHostOnline(qc: ReturnType<typeof useQueryClient>, id: string, online: boolean): void {
   qc.setQueryData<Host[]>(["hosts"], (cur) =>
-    cur?.map((h) =>
-      h.id === id && h.status ? { ...h, status: { ...h.status, online } } : h,
-    ),
+    cur?.map((h) => (h.id === id && h.status ? { ...h, status: { ...h.status, online } } : h)),
   );
 }
 

@@ -6,10 +6,10 @@ import { test, expect } from "./fixtures";
 // the test) AND no uncaught page exception fired.
 
 const TABS = [
-  { id: "fleet", label: "Fleet", content: "vault" },        // a fixture host row
-  { id: "agent", label: "Agent", content: null },           // empty thread → just assert the panel
-  { id: "utils", label: "Tools", content: "Yt Captions" },  // a util run card
-  { id: "conf", label: "Conf", content: "Inference" },       // a ConfGroup title (lazy chunk)
+  { id: "fleet", label: "Fleet", content: "vault" }, // a fixture host row
+  { id: "agent", label: "Agent", content: null }, // empty thread → just assert the panel
+  { id: "utils", label: "Tools", content: "Yt Captions" }, // a util run card
+  { id: "conf", label: "Conf", content: "Inference" }, // a ConfGroup title (lazy chunk)
 ] as const;
 
 for (const t of TABS) {
@@ -24,6 +24,8 @@ for (const t of TABS) {
       await expect(page.getByText(t.content, { exact: false }).first()).toBeVisible();
     }
 
-    expect(pageErrors, `uncaught exceptions on ${t.label}: ${pageErrors.join("; ")}`).toHaveLength(0);
+    expect(pageErrors, `uncaught exceptions on ${t.label}: ${pageErrors.join("; ")}`).toHaveLength(
+      0,
+    );
   });
 }

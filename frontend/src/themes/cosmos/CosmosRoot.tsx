@@ -15,7 +15,11 @@ export function CosmosRoot() {
     <>
       <CosmosStarfield />
       {/* cosmos opts into the plan-pill composer addon (D30); the orbital Fleet stays its signature view. */}
-      <DefaultRoot appbarMode={appbarMode} Fleet={CosmosFleet} composerSlots={kitPlanComposerSlots} />
+      <DefaultRoot
+        appbarMode={appbarMode}
+        Fleet={CosmosFleet}
+        composerSlots={kitPlanComposerSlots}
+      />
     </>
   );
 }

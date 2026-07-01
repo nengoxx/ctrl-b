@@ -57,7 +57,9 @@ export function MiniPlayer() {
         onClick={np.togglePlay}
       />
       <div
-        className={"mp-wave" + (np.seekDisabled ? " disabled" : "") + (np.playing ? " playing" : "")}
+        className={
+          "mp-wave" + (np.seekDisabled ? " disabled" : "") + (np.playing ? " playing" : "")
+        }
         role="slider"
         aria-label="seek"
         aria-valuemin={0}

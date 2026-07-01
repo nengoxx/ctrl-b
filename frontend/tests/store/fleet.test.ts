@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { feature, featureAuto, fleetState, holdRemainingMs, toggleRow } from "../../src/store/fleet";
+import {
+  feature,
+  featureAuto,
+  fleetState,
+  holdRemainingMs,
+  toggleRow,
+} from "../../src/store/fleet";
 
 // store/fleet — the Fleet controller's carousel/expand state (D29 §14.2/§14.5). The auto-advance engine
 // (hooks/useFleet `useFleetCycle`) reads `holdRemainingMs` to defer advancing after a manual pick.

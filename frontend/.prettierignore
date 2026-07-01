@@ -1,0 +1,14 @@
+# Build outputs & tool artifacts
+dist
+dev-dist
+coverage
+test-results
+playwright-report
+*.tsbuildinfo
+
+# Brand / static assets — never reformat
+public
+
+# CSS is owned by the future stylelint slice (theme engine, THEME_ENGINE.md §14.13);
+# keep the bespoke vapor.css verbatim for D7 fidelity.
+*.css

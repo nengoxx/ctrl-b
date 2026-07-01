@@ -62,8 +62,16 @@ function draftFromHost(h: Host): Draft {
 
 function blankDraft(): Draft {
   return {
-    name: "", ip: "", mac: "", ssh_username: "", ssh_password: "",
-    ssh_port: "22", os_type: "linux", role: "", services: [], hasPassword: false,
+    name: "",
+    ip: "",
+    mac: "",
+    ssh_username: "",
+    ssh_password: "",
+    ssh_port: "22",
+    os_type: "linux",
+    role: "",
+    services: [],
+    hasPassword: false,
   };
 }
 
@@ -115,10 +123,31 @@ function ServiceCard(props: {
   return (
     <div className="svc-card">
       <div className="svc-grid">
-        <input aria-label="service name" placeholder="name" value={svc.name} onChange={(e) => set({ name: e.target.value })} />
-        <input aria-label="service kind" placeholder="kind" value={svc.kind} onChange={(e) => set({ kind: e.target.value })} />
-        <input aria-label="service port" placeholder="port" inputMode="numeric" value={svc.port} onChange={(e) => set({ port: e.target.value })} />
-        <input aria-label="service path" placeholder="path" value={svc.path} onChange={(e) => set({ path: e.target.value })} />
+        <input
+          aria-label="service name"
+          placeholder="name"
+          value={svc.name}
+          onChange={(e) => set({ name: e.target.value })}
+        />
+        <input
+          aria-label="service kind"
+          placeholder="kind"
+          value={svc.kind}
+          onChange={(e) => set({ kind: e.target.value })}
+        />
+        <input
+          aria-label="service port"
+          placeholder="port"
+          inputMode="numeric"
+          value={svc.port}
+          onChange={(e) => set({ port: e.target.value })}
+        />
+        <input
+          aria-label="service path"
+          placeholder="path"
+          value={svc.path}
+          onChange={(e) => set({ path: e.target.value })}
+        />
       </div>
       <div className="svc-cmd">
         {CMD_ACTIONS.map((a) => (
@@ -134,11 +163,16 @@ function ServiceCard(props: {
       <div className="svc-foot">
         <label className="svc-auto">
           <span>autostart</span>
-          <div className={"switch" + (svc.autostart ? " on" : "")} onClick={() => set({ autostart: !svc.autostart })}>
+          <div
+            className={"switch" + (svc.autostart ? " on" : "")}
+            onClick={() => set({ autostart: !svc.autostart })}
+          >
             <div className="knob" />
           </div>
         </label>
-        <button type="button" className="svc-rm" onClick={props.onRemove}>remove</button>
+        <button type="button" className="svc-rm" onClick={props.onRemove}>
+          remove
+        </button>
       </div>
     </div>
   );
@@ -163,19 +197,46 @@ function MachineForm(props: {
     <>
       <div className="mform">
         <label>Hostname</label>
-        <input aria-label="Hostname" value={d.name} placeholder={props.isNew ? "pegasus" : ""} onChange={(e) => set({ name: e.target.value })} />
+        <input
+          aria-label="Hostname"
+          value={d.name}
+          placeholder={props.isNew ? "pegasus" : ""}
+          onChange={(e) => set({ name: e.target.value })}
+        />
 
         <label>IP address</label>
-        <input aria-label="IP address" value={d.ip} placeholder="192.168.1.x" inputMode="decimal" onChange={(e) => set({ ip: e.target.value })} />
+        <input
+          aria-label="IP address"
+          value={d.ip}
+          placeholder="192.168.1.x"
+          inputMode="decimal"
+          onChange={(e) => set({ ip: e.target.value })}
+        />
 
         <label>MAC</label>
-        <input aria-label="MAC" value={d.mac} placeholder="aa:bb:cc:dd:ee:ff" onChange={(e) => set({ mac: e.target.value })} />
+        <input
+          aria-label="MAC"
+          value={d.mac}
+          placeholder="aa:bb:cc:dd:ee:ff"
+          onChange={(e) => set({ mac: e.target.value })}
+        />
 
         <label>SSH user</label>
-        <input aria-label="SSH user" value={d.ssh_username} placeholder="root" onChange={(e) => set({ ssh_username: e.target.value })} />
+        <input
+          aria-label="SSH user"
+          value={d.ssh_username}
+          placeholder="root"
+          onChange={(e) => set({ ssh_username: e.target.value })}
+        />
 
         <label>SSH port</label>
-        <input aria-label="SSH port" value={d.ssh_port} placeholder="22" inputMode="numeric" onChange={(e) => set({ ssh_port: e.target.value })} />
+        <input
+          aria-label="SSH port"
+          value={d.ssh_port}
+          placeholder="22"
+          inputMode="numeric"
+          onChange={(e) => set({ ssh_port: e.target.value })}
+        />
 
         <label>SSH pass</label>
         <div className="pw">
@@ -187,15 +248,25 @@ function MachineForm(props: {
             autoComplete="new-password"
             onChange={(e) => set({ ssh_password: e.target.value })}
           />
-          <button type="button" className={"reveal" + (showPw ? " on" : "")} onClick={() => setShowPw(!showPw)}>
+          <button
+            type="button"
+            className={"reveal" + (showPw ? " on" : "")}
+            onClick={() => setShowPw(!showPw)}
+          >
             {showPw ? "hide" : "show"}
           </button>
         </div>
 
         <label>OS</label>
-        <select aria-label="OS" value={d.os_type} onChange={(e) => set({ os_type: e.target.value as OSType })}>
+        <select
+          aria-label="OS"
+          value={d.os_type}
+          onChange={(e) => set({ os_type: e.target.value as OSType })}
+        >
           {OSES.map((o) => (
-            <option key={o} value={o}>{o}</option>
+            <option key={o} value={o}>
+              {o}
+            </option>
           ))}
         </select>
       </div>
@@ -203,7 +274,9 @@ function MachineForm(props: {
       <div className={"svc-edit" + (svcOpen ? " open" : "")}>
         <div className="svc-edit-head" {...disclosureToggle(svcOpen, () => setSvcOpen(!svcOpen))}>
           <span>Services{d.services.length ? ` · ${d.services.length}` : ""}</span>
-          <span className="svc-chev" aria-hidden>›</span>
+          <span className="svc-chev" aria-hidden>
+            ›
+          </span>
         </div>
         {svcOpen && (
           <div className="svc-body">
@@ -221,7 +294,12 @@ function MachineForm(props: {
               type="button"
               className="svc-add"
               onClick={() =>
-                set({ services: [...d.services, { name: "", kind: "", port: "", path: "", autostart: false, cmd: {} }] })
+                set({
+                  services: [
+                    ...d.services,
+                    { name: "", kind: "", port: "", path: "", autostart: false, cmd: {} },
+                  ],
+                })
               }
             >
               + service
@@ -233,15 +311,29 @@ function MachineForm(props: {
       <div className="mfoot">
         {props.isNew ? (
           <>
-            <button type="button" onClick={props.onCancel}>cancel</button>
-            <button type="button" className="save" disabled={props.busy} onClick={() => props.onSave(d)}>
+            <button type="button" onClick={props.onCancel}>
+              cancel
+            </button>
+            <button
+              type="button"
+              className="save"
+              disabled={props.busy}
+              onClick={() => props.onSave(d)}
+            >
               {props.busy ? "adding…" : "add machine"}
             </button>
           </>
         ) : (
           <>
-            <button type="button" className="danger" disabled={props.busy} onClick={props.onDelete}>remove</button>
-            <button type="button" className="save" disabled={props.busy} onClick={() => props.onSave(d)}>
+            <button type="button" className="danger" disabled={props.busy} onClick={props.onDelete}>
+              remove
+            </button>
+            <button
+              type="button"
+              className="save"
+              disabled={props.busy}
+              onClick={() => props.onSave(d)}
+            >
               {props.busy ? "saving…" : "save"}
             </button>
           </>
@@ -279,7 +371,13 @@ export function MachineEditor({ hosts }: { hosts: Host[] }) {
     <div className="conf-card">
       {hosts.map((h) => (
         <div className={"mwrap" + (openId === h.id ? " open" : "")} key={h.id}>
-          <div className="confrow" {...disclosureToggle(openId === h.id, () => { setOpenId(openId === h.id ? null : h.id); setAdding(false); })}>
+          <div
+            className="confrow"
+            {...disclosureToggle(openId === h.id, () => {
+              setOpenId(openId === h.id ? null : h.id);
+              setAdding(false);
+            })}
+          >
             <div className="k">
               <div className="label">{h.name}</div>
               <div className="desc code">
@@ -289,7 +387,9 @@ export function MachineEditor({ hosts }: { hosts: Host[] }) {
             <span className={"badge" + (h.status?.online ? "" : " stale")}>
               {h.status?.online ? "awake" : "asleep"}
             </span>
-            <span className="chev" aria-hidden>›</span>
+            <span className="chev" aria-hidden>
+              ›
+            </span>
           </div>
           <div className="mconf">
             {openId === h.id && (
@@ -307,12 +407,20 @@ export function MachineEditor({ hosts }: { hosts: Host[] }) {
       ))}
 
       <div className={"mwrap add" + (adding ? " open" : "")}>
-        <div className="confrow" {...disclosureToggle(adding, () => { setAdding(!adding); setOpenId(null); })}>
+        <div
+          className="confrow"
+          {...disclosureToggle(adding, () => {
+            setAdding(!adding);
+            setOpenId(null);
+          })}
+        >
           <div className="k">
             <div className="label">add machine</div>
             <div className="desc">writes a new entry to config.yaml</div>
           </div>
-          <span className="chev" aria-hidden>›</span>
+          <span className="chev" aria-hidden>
+            ›
+          </span>
         </div>
         <div className="mconf">
           {adding && (

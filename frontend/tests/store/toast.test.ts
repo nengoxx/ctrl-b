@@ -44,7 +44,9 @@ describe("toast store", () => {
 
   it("carries an inline action through to the rendered toast", () => {
     const { result } = renderHook(() => useToasts());
-    act(() => pushToast("act", "info", { action: { label: "Go", onClick: () => {} }, sticky: true }));
+    act(() =>
+      pushToast("act", "info", { action: { label: "Go", onClick: () => {} }, sticky: true }),
+    );
     const t = result.current.find((x) => x.text === "act");
     expect(t!.action?.label).toBe("Go");
     act(() => dismissToast(t!.id));

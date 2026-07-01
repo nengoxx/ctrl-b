@@ -57,15 +57,28 @@ interface NowPanelProps {
   waveformOn: boolean;
 }
 const NowPanel = memo(function NowPanel({
-  subnet, name, role, online, ping, macHead, macTail, sshPort, sshUser, waveformOn,
+  subnet,
+  name,
+  role,
+  online,
+  ping,
+  macHead,
+  macTail,
+  sshPort,
+  sshUser,
+  waveformOn,
 }: NowPanelProps) {
   return (
     <>
       <div className="eyebrow">// now monitoring · {subnet}</div>
       <div className="row">
         <div>
-          <div className="name" id="now-name">{name}</div>
-          <div className="role" id="now-role">{role}</div>
+          <div className="name" id="now-name">
+            {name}
+          </div>
+          <div className="role" id="now-role">
+            {role}
+          </div>
         </div>
       </div>
       <div className="stats">

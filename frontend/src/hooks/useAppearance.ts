@@ -15,7 +15,14 @@ import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getJSON, putJSON } from "../api/client";
-import { getUI, setUI, stripLegacyAppbar, type Motion, type Perf, type ThemeSettingsMap } from "../store/ui";
+import {
+  getUI,
+  setUI,
+  stripLegacyAppbar,
+  type Motion,
+  type Perf,
+  type ThemeSettingsMap,
+} from "../store/ui";
 import { pushToast } from "../store/toast";
 import { switchTheme } from "../theme-engine/switchTheme";
 import type { Mode, ThemeId } from "../theme-engine/types";

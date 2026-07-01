@@ -129,5 +129,17 @@ export function useFleet(): FleetView {
   }, [services]);
   const clamped = hosts.length ? Math.min(featured, hosts.length - 1) : 0;
 
-  return { hosts, svcByHost, featured: clamped, open, poll, isLoading, error, busy, run, feature, toggleRow };
+  return {
+    hosts,
+    svcByHost,
+    featured: clamped,
+    open,
+    poll,
+    isLoading,
+    error,
+    busy,
+    run,
+    feature,
+    toggleRow,
+  };
 }

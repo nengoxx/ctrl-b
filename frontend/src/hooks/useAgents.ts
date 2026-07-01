@@ -5,7 +5,7 @@ import type { Privilege } from "../lib/privilege";
 import { pushToast } from "../store/toast";
 import { useScopedQuery } from "./useScopedQuery";
 
-export type { Privilege };  // re-export so existing `import { Privilege } from "../hooks/useAgents"` keeps working
+export type { Privilege }; // re-export so existing `import { Privilege } from "../hooks/useAgents"` keeps working
 
 // Phase 7e-c (D14). Agents are folder-only: discovered via `GET /api/agents`, each managed through
 // the file-per-agent API (`GET/PUT/DELETE /api/agents/{name}` for agent.yaml + `…/soul` for SOUL.md).

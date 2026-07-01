@@ -104,7 +104,8 @@ function AgentFieldsForm(props: {
 }) {
   const { draft: a, onChange } = props;
   const set = (p: Partial<AgentDef>) => onChange({ ...a, ...p });
-  const setModel = (p: Partial<AgentDef["model"]>) => onChange({ ...a, model: { ...a.model, ...p } });
+  const setModel = (p: Partial<AgentDef["model"]>) =>
+    onChange({ ...a, model: { ...a.model, ...p } });
 
   const toolsAll = a.tools === "*";
   const toolSet = new Set(toolsAll ? [] : (a.tools as string[]));
@@ -157,7 +158,12 @@ function AgentFieldsForm(props: {
       <div className="agent-store">{store}</div>
 
       <label>Display name</label>
-      <input aria-label="Display name" value={a.title} placeholder={a.name} onChange={(e) => set({ title: e.target.value })} />
+      <input
+        aria-label="Display name"
+        value={a.title}
+        placeholder={a.name}
+        onChange={(e) => set({ title: e.target.value })}
+      />
 
       {!props.isDefault && (
         <>
@@ -182,10 +188,19 @@ function AgentFieldsForm(props: {
         ]}
       />
       <label>Model</label>
-      <input aria-label="Model" value={a.model.model ?? ""} placeholder="(inherit endpoint model)" onChange={(e) => setModel({ model: e.target.value })} />
+      <input
+        aria-label="Model"
+        value={a.model.model ?? ""}
+        placeholder="(inherit endpoint model)"
+        onChange={(e) => setModel({ model: e.target.value })}
+      />
 
       <label>Privilege</label>
-      <Seg<Privilege> current={a.privilege} onPick={(v) => set({ privilege: v })} options={PRIVILEGE_LEVELS} />
+      <Seg<Privilege>
+        current={a.privilege}
+        onPick={(v) => set({ privilege: v })}
+        options={PRIVILEGE_LEVELS}
+      />
 
       <label>Persona · SOUL.md</label>
       <div className="kv-prompt">
@@ -199,7 +214,9 @@ function AgentFieldsForm(props: {
 
       <label>Prompt append</label>
       <div className="kv-prompt">
-        <div className="prompt-preview">{promptPreview(a.prompt_append, "blank → nothing appended")}</div>
+        <div className="prompt-preview">
+          {promptPreview(a.prompt_append, "blank → nothing appended")}
+        </div>
         <button type="button" className="prompt-open" onClick={editAppend}>
           Edit fullscreen ↗
         </button>
@@ -221,7 +238,14 @@ function AgentFieldsForm(props: {
           <span>{toolsAll ? "all agent tools" : `${toolSet.size} selected`}</span>
           <Switch on={toolsAll} onToggle={() => set({ tools: toolsAll ? [] : "*" })} />
         </div>
-        {!toolsAll && <TickGrid all={props.toolNames} selected={toolSet} onToggle={toggleTool} modes={props.toolModes} />}
+        {!toolsAll && (
+          <TickGrid
+            all={props.toolNames}
+            selected={toolSet}
+            onToggle={toggleTool}
+            modes={props.toolModes}
+          />
+        )}
       </div>
 
       <label>Skills</label>
@@ -230,7 +254,9 @@ function AgentFieldsForm(props: {
           <span>{skillsAll ? "all skills" : `${skillSet.size} selected`}</span>
           <Switch on={skillsAll} onToggle={() => set({ skills: skillsAll ? [] : "*" })} />
         </div>
-        {!skillsAll && <TickGrid all={props.skillNames} selected={skillSet} onToggle={toggleSkill} />}
+        {!skillsAll && (
+          <TickGrid all={props.skillNames} selected={skillSet} onToggle={toggleSkill} />
+        )}
       </div>
 
       <label>Limits</label>
@@ -277,7 +303,11 @@ function AgentRow(props: {
     if (detail) setDraft(detail.agent);
   }, [detail]);
 
-  const dirty = !!(detail && draft && JSON.stringify(pickFields(draft)) !== JSON.stringify(pickFields(detail.agent)));
+  const dirty = !!(
+    detail &&
+    draft &&
+    JSON.stringify(pickFields(draft)) !== JSON.stringify(pickFields(detail.agent))
+  );
   useRegisterDirty(`agent:${name}`, props.open && dirty);
 
   const onSave = () => {
@@ -321,10 +351,14 @@ function AgentRow(props: {
             {titleLabel}
             {titleLabel !== name ? <span className="agent-slug"> · {name}</span> : ""}
           </div>
-          <div className="desc">{isDefault ? "default agent · workspace root" : `specialist · /agent ${name}`}</div>
+          <div className="desc">
+            {isDefault ? "default agent · workspace root" : `specialist · /agent ${name}`}
+          </div>
         </div>
         {props.isResolvedDefault && <span className="badge">default</span>}
-        <span className="chev" aria-hidden>›</span>
+        <span className="chev" aria-hidden>
+          ›
+        </span>
       </div>
       <div className="mconf">
         {props.open &&
@@ -345,7 +379,12 @@ function AgentRow(props: {
               />
               <div className="mfoot">
                 {!isDefault && (
-                  <button type="button" className="danger" disabled={delAgent.isPending} onClick={onRemove}>
+                  <button
+                    type="button"
+                    className="danger"
+                    disabled={delAgent.isPending}
+                    onClick={onRemove}
+                  >
                     remove
                   </button>
                 )}
@@ -385,10 +424,14 @@ export function AgentsEditor(props: {
   // read straight off the server doc (props.cfg) rather than the savebar draft. The min-overlap
   // input keeps a local draft and commits on blur to avoid a save per keystroke.
   const [minOverlap, setMinOverlap] = useState(String(props.cfg.auto_rotate_min_overlap));
-  useEffect(() => setMinOverlap(String(props.cfg.auto_rotate_min_overlap)), [props.cfg.auto_rotate_min_overlap]);
+  useEffect(
+    () => setMinOverlap(String(props.cfg.auto_rotate_min_overlap)),
+    [props.cfg.auto_rotate_min_overlap],
+  );
   const commitMinOverlap = () => {
     const n = Math.max(1, Number(minOverlap) || 1);
-    if (n !== props.cfg.auto_rotate_min_overlap) saveSettings.mutate({ agent: { auto_rotate_min_overlap: n } });
+    if (n !== props.cfg.auto_rotate_min_overlap)
+      saveSettings.mutate({ agent: { auto_rotate_min_overlap: n } });
     else setMinOverlap(String(props.cfg.auto_rotate_min_overlap)); // normalize a junk entry back
   };
 
@@ -406,7 +449,8 @@ export function AgentsEditor(props: {
   const commitNew = () => {
     const slug = newSlug.trim().toLowerCase();
     if (!SLUG.test(slug)) return pushToast("slug: lowercase letters, digits, - or _", "err");
-    if (slug === DEFAULT_AGENT || specialists.includes(slug)) return pushToast("an agent with that slug exists", "err");
+    if (slug === DEFAULT_AGENT || specialists.includes(slug))
+      return pushToast("an agent with that slug exists", "err");
     saveAgent.mutate(
       { name: slug, agent: { title: newTitle.trim() } },
       {
@@ -442,7 +486,9 @@ export function AgentsEditor(props: {
       <div className="confrow">
         <div className="k">
           <div className="label">Auto-route to specialists</div>
-          <div className="desc">when no /agent is pinned, pick the best-matching specialist per turn</div>
+          <div className="desc">
+            when no /agent is pinned, pick the best-matching specialist per turn
+          </div>
         </div>
         <Switch
           on={props.cfg.auto_rotate}
@@ -456,7 +502,9 @@ export function AgentsEditor(props: {
         <div className="confrow">
           <div className="k">
             <div className="label">Min matching words</div>
-            <div className="desc">query words a specialist must match before a turn routes to it</div>
+            <div className="desc">
+              query words a specialist must match before a turn routes to it
+            </div>
           </div>
           <input
             className="lim-input"
@@ -497,27 +545,59 @@ export function AgentsEditor(props: {
       ))}
 
       <div className={"mwrap add" + (adding ? " open" : "")}>
-        <div className="confrow" {...disclosureToggle(adding, () => { setAdding(!adding); setOpen(null); })}>
+        <div
+          className="confrow"
+          {...disclosureToggle(adding, () => {
+            setAdding(!adding);
+            setOpen(null);
+          })}
+        >
           <div className="k">
             <div className="label">add agent</div>
             <div className="desc">scaffolds agents/&lt;slug&gt;/ (agent.yaml + SOUL.md)</div>
           </div>
-          <span className="chev" aria-hidden>›</span>
+          <span className="chev" aria-hidden>
+            ›
+          </span>
         </div>
         <div className="mconf">
           {adding && (
             <>
               <div className="mform">
                 <label>Slug</label>
-                <input aria-label="Slug" value={newSlug} placeholder="coder" onChange={(e) => setNewSlug(e.target.value)} />
+                <input
+                  aria-label="Slug"
+                  value={newSlug}
+                  placeholder="coder"
+                  onChange={(e) => setNewSlug(e.target.value)}
+                />
                 <label>Display name</label>
-                <input aria-label="Display name" value={newTitle} placeholder="(optional, e.g. Bob the Coder)" onChange={(e) => setNewTitle(e.target.value)} />
+                <input
+                  aria-label="Display name"
+                  value={newTitle}
+                  placeholder="(optional, e.g. Bob the Coder)"
+                  onChange={(e) => setNewTitle(e.target.value)}
+                />
               </div>
               {/* .mfoot outside the .mform grid — the canonical double-button footer (matches the edit
                   form + MachineEditor); inside the grid it gets squeezed into the 90px label column. */}
               <div className="mfoot">
-                <button type="button" onClick={() => { setAdding(false); setNewSlug(""); setNewTitle(""); }}>cancel</button>
-                <button type="button" className="save" disabled={saveAgent.isPending} onClick={commitNew}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdding(false);
+                    setNewSlug("");
+                    setNewTitle("");
+                  }}
+                >
+                  cancel
+                </button>
+                <button
+                  type="button"
+                  className="save"
+                  disabled={saveAgent.isPending}
+                  onClick={commitNew}
+                >
                   {saveAgent.isPending ? "creating…" : "create"}
                 </button>
               </div>
@@ -531,7 +611,11 @@ export function AgentsEditor(props: {
           <div className="label">Default agent</div>
           <div className="desc">which agent new threads use · /agent switches per session</div>
         </div>
-        <Seg<string> current={cfg.default_agent} onPick={(v) => setCfg({ ...cfg, default_agent: v })} options={defaultOpts} />
+        <Seg<string>
+          current={cfg.default_agent}
+          onPick={(v) => setCfg({ ...cfg, default_agent: v })}
+          options={defaultOpts}
+        />
       </div>
       <div className="confrow">
         <div className="k">
@@ -551,12 +635,19 @@ export function AgentsEditor(props: {
           <div className="label">Clamp subagent privilege</div>
           <div className="desc">a subagent can never exceed its parent's privilege</div>
         </div>
-        <Switch on={cfg.subagent_clamp_privilege} onToggle={() => setCfg({ ...cfg, subagent_clamp_privilege: !cfg.subagent_clamp_privilege })} />
+        <Switch
+          on={cfg.subagent_clamp_privilege}
+          onToggle={() =>
+            setCfg({ ...cfg, subagent_clamp_privilege: !cfg.subagent_clamp_privilege })
+          }
+        />
       </div>
       <div className="confrow">
         <div className="k">
           <div className="label">Chat delivery</div>
-          <div className="desc">auto = client decides · on = always stream · off = buffer whole reply (flaky link)</div>
+          <div className="desc">
+            auto = client decides · on = always stream · off = buffer whole reply (flaky link)
+          </div>
         </div>
         <Seg<"auto" | "on" | "off">
           current={cfg.streaming}
@@ -570,7 +661,11 @@ export function AgentsEditor(props: {
       </div>
 
       <div className="conf-savebar">
-        <button className="conf-save" disabled={!globalsDirty || saveSettings.isPending} onClick={saveGlobals}>
+        <button
+          className="conf-save"
+          disabled={!globalsDirty || saveSettings.isPending}
+          onClick={saveGlobals}
+        >
           {saveSettings.isPending ? "Saving…" : globalsDirty ? "Save agent settings" : "Saved"}
         </button>
       </div>

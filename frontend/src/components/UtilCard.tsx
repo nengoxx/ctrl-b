@@ -40,20 +40,29 @@ function kvRows(data: Record<string, unknown>): [string, string][] {
   const rows: [string, string][] = [];
   for (const [k, v] of Object.entries(data)) {
     if (k === "download" || v == null || v === "") continue;
-    const val = Array.isArray(v) ? v.join(", ") : typeof v === "object" ? JSON.stringify(v) : String(v);
+    const val = Array.isArray(v)
+      ? v.join(", ")
+      : typeof v === "object"
+        ? JSON.stringify(v)
+        : String(v);
     rows.push([k, val]);
   }
   return rows;
 }
 
 export function UtilCard({ tool }: { tool: UtilTool }) {
-  const schema = tool.input_schema as { properties?: Record<string, SchemaProp>; required?: string[] };
+  const schema = tool.input_schema as {
+    properties?: Record<string, SchemaProp>;
+    required?: string[];
+  };
   const props = schema.properties ?? {};
   const required = new Set(schema.required ?? []);
   const fieldNames = Object.keys(props);
 
   const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(fieldNames.map((n) => [n, props[n].default != null ? String(props[n].default) : ""])),
+    Object.fromEntries(
+      fieldNames.map((n) => [n, props[n].default != null ? String(props[n].default) : ""]),
+    ),
   );
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ToolResult | null>(null);
@@ -107,7 +116,10 @@ export function UtilCard({ tool }: { tool: UtilTool }) {
     }
   }
 
-  const download = (result?.data?.download ?? null) as { filename?: string; content?: unknown } | null;
+  const download = (result?.data?.download ?? null) as {
+    filename?: string;
+    content?: unknown;
+  } | null;
   const rows = result ? kvRows(result.data) : [];
   const isErr = result != null && result.state !== "ok";
 

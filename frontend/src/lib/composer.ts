@@ -143,7 +143,11 @@ function routeSlash(text: string): void {
       } else {
         setSessionAgent(name);
         const known = knownAgents.has(name);
-        pushSystemNote(known ? `// agent → ${name}` : `// agent → ${name} (not configured — will fall back to default)`);
+        pushSystemNote(
+          known
+            ? `// agent → ${name}`
+            : `// agent → ${name} (not configured — will fall back to default)`,
+        );
       }
       break;
     }

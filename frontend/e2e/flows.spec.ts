@@ -41,7 +41,11 @@ test("Fleet — shutdown opens the confirm dialog and confirming dismisses it", 
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ needs_confirm: false, result: { state: "ok", summary: "shutting down" }, event: { id: "e" } }),
+      body: JSON.stringify({
+        needs_confirm: false,
+        result: { state: "ok", summary: "shutting down" },
+        event: { id: "e" },
+      }),
     }),
   );
   await page.goto("/");
@@ -73,7 +77,11 @@ test("Fleet — cancelling the confirm dialog makes no request", async ({ page }
 test("Agent — sending a message shows the user's bubble", async ({ page }) => {
   // Benign chat endpoint so the send path doesn't error; we assert the user-side echo.
   await page.route("**/api/agent/chat", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ thread_id: "t1", messages: [] }) }),
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ thread_id: "t1", messages: [] }),
+    }),
   );
   await page.goto("/");
   await page.locator("#tabbtn-agent").click();
@@ -97,7 +105,9 @@ test("Conf — a settings group toggles via the keyboard (D25 disclosure)", asyn
   expect(after).toBe(!before); // Enter toggled it (the disclosure key handler)
 });
 
-test("Conf — an editor form's inputs are findable by their label (D25 association)", async ({ page }) => {
+test("Conf — an editor form's inputs are findable by their label (D25 association)", async ({
+  page,
+}) => {
   await page.goto("/");
   await page.locator("#tabbtn-conf").click();
   // The Computers group is expanded by default; expand the vault machine row to reveal its form.
@@ -133,12 +143,17 @@ test("Fleet — live-ping canvas is sized even if Fleet wasn't the initial tab (
   // store and only re-ran on window.resize, so switching to Fleet left the live-ping blank until a reload.
   // Fix = a ResizeObserver that re-sizes when the canvas becomes visible. So: boot on the Agent tab, switch
   // to Fleet, and assert the canvas backing store actually sized (> 0) — fails with the old window-resize code.
-  await page.addInitScript(() => localStorage.setItem("ctrlb.ui", JSON.stringify({ tab: "agent" })));
+  await page.addInitScript(() =>
+    localStorage.setItem("ctrlb.ui", JSON.stringify({ tab: "agent" })),
+  );
   await page.goto("/");
   await page.locator("#tabbtn-fleet").click();
   await expect
     .poll(() =>
-      page.locator(".waveform canvas").first().evaluate((c) => (c as HTMLCanvasElement).width),
+      page
+        .locator(".waveform canvas")
+        .first()
+        .evaluate((c) => (c as HTMLCanvasElement).width),
     )
     .toBeGreaterThan(0);
 });

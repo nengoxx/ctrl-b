@@ -27,7 +27,9 @@ export function KitFleet({ active }: Props) {
   const total = hosts.length;
   const awake = hosts.filter((h) => h.status?.online).length;
   const pings = hosts.map((h) => h.status?.ping_ms).filter((p): p is number => p != null);
-  const avgPing = pings.length ? (pings.reduce((a, b) => a + b, 0) / pings.length).toFixed(1) : null;
+  const avgPing = pings.length
+    ? (pings.reduce((a, b) => a + b, 0) / pings.length).toFixed(1)
+    : null;
   const allSvc = hosts.flatMap((h) => svcByHost.get(h.id) ?? []);
   const svcUp = allSvc.filter((s) => s.status?.online).length;
 
@@ -48,7 +50,9 @@ export function KitFleet({ active }: Props) {
       <div className="kit-wrap">
         <div className="kit-devices">
           {error && <div className="kit-empty">backend unreachable — {error.message}</div>}
-          {!error && !total && !isLoading && <div className="kit-empty">no hosts in config.yaml</div>}
+          {!error && !total && !isLoading && (
+            <div className="kit-empty">no hosts in config.yaml</div>
+          )}
           {hosts.map((h, i) => (
             <DeviceRow
               key={h.id}
@@ -116,7 +120,9 @@ function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: Row
 
   return (
     <div
-      className={"kit-device " + (online ? "on" : "off") + (open ? " open" : "") + (busy ? " busy" : "")}
+      className={
+        "kit-device " + (online ? "on" : "off") + (open ? " open" : "") + (busy ? " busy" : "")
+      }
       data-name={host.name}
     >
       {/* div+onClick (not a button) so the inner action/chevron buttons aren't nested-interactive. */}
@@ -133,7 +139,17 @@ function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: Row
             disabled={busy}
             onClick={(e) => act(e, onStop)}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
               <path d="M12 3v9" />
               <path d="M6.4 7.4a8 8 0 1 0 11.2 0" />
             </svg>
@@ -145,7 +161,17 @@ function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: Row
             disabled={busy}
             onClick={(e) => act(e, onWake)}
           >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
               <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" />
             </svg>
           </button>
@@ -157,7 +183,17 @@ function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: Row
           aria-label={`${open ? "collapse" : "expand"} ${host.name} details`}
           onClick={(e) => act(e, onToggle)}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
             <path d="M9 6l6 6-6 6" />
           </svg>
         </button>
@@ -197,7 +233,16 @@ function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: Row
                       <span className="addr">{addr}</span>
                     </span>
                     <span className="arrow" aria-hidden>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
                         <path d="M7 17 17 7M9 7h8v8" />
                       </svg>
                     </span>

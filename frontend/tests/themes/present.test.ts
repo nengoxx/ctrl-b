@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { PLANET_PALETTE, planetSize, present, serviceHealth } from "../../src/themes/cosmos/present";
+import {
+  PLANET_PALETTE,
+  planetSize,
+  present,
+  serviceHealth,
+} from "../../src/themes/cosmos/present";
 import { RUNE_IDS, runeIdFor } from "../../src/themes/cosmos/runes";
 
 // cosmos present() (§9.9) + its pure encoding helpers — the jsdom-safe parts to lock (the planet rendering

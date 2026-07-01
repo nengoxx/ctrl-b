@@ -23,8 +23,19 @@ export function FleetTab({ active }: Props) {
   // ThemeDef.settings defaults (FleetTab is a vapor-only component, so reading "vapor" directly is correct).
   const heroOn = useThemeSetting<boolean>("vapor", "heroOn");
   const waveformOn = useThemeSetting<boolean>("vapor", "waveformOn");
-  const { hosts, svcByHost, featured, open, poll, isLoading, error, busy, run, feature, toggleRow } =
-    useFleet();
+  const {
+    hosts,
+    svcByHost,
+    featured,
+    open,
+    poll,
+    isLoading,
+    error,
+    busy,
+    run,
+    feature,
+    toggleRow,
+  } = useFleet();
 
   return (
     <div

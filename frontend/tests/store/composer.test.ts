@@ -14,7 +14,9 @@ describe("composer draft store", () => {
   it("setDraft / getDraft round-trips and persists to localStorage", () => {
     setDraft("wake the vault");
     expect(getDraft()).toBe("wake the vault");
-    expect(JSON.parse(localStorage.getItem("ctrlb.composer")!)).toEqual({ draft: "wake the vault" });
+    expect(JSON.parse(localStorage.getItem("ctrlb.composer")!)).toEqual({
+      draft: "wake the vault",
+    });
   });
 
   it("clearDraft empties it", () => {

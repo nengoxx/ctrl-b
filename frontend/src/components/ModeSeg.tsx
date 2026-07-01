@@ -20,7 +20,9 @@ export function ModeSeg(props: {
 }) {
   return (
     <div
-      className={"seg tcat-seg" + (props.small ? " tcat-seg-sm" : "") + (props.readOnly ? " ro" : "")}
+      className={
+        "seg tcat-seg" + (props.small ? " tcat-seg-sm" : "") + (props.readOnly ? " ro" : "")
+      }
     >
       {MODES.map((m) => (
         <button

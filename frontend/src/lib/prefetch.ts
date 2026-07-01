@@ -24,7 +24,9 @@ interface IdleWindow {
 export function prefetchOnIdle(load: () => Promise<unknown>, timeoutMs = 2000): () => void {
   const w = window as Window & IdleWindow;
   if (typeof w.requestIdleCallback === "function") {
-    const id = w.requestIdleCallback(() => void load().catch(() => undefined), { timeout: timeoutMs });
+    const id = w.requestIdleCallback(() => void load().catch(() => undefined), {
+      timeout: timeoutMs,
+    });
     return () => w.cancelIdleCallback?.(id);
   }
   const id = window.setTimeout(() => void load().catch(() => undefined), 800);

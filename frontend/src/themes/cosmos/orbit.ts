@@ -51,7 +51,12 @@ export function orbitParams(index: number, radius: number, style: OrbitStyle): O
 
 /** Orbit spec for the decorative outer "Pluto" — its own (slow) drift, independent of the host index. */
 export function decorOrbitSpec(phaseRad: number, radius: number): OrbitSpec {
-  return { periodMs: periodForRadius(radius) * DECOR_PERIOD_FACTOR, direction: 1, phaseRad, radius };
+  return {
+    periodMs: periodForRadius(radius) * DECOR_PERIOD_FACTOR,
+    direction: 1,
+    phaseRad,
+    radius,
+  };
 }
 
 /** The angle (rad) a spec is at, at a given elapsed time — used by the C2b-2 camera follow (analytic, no DOM). */
@@ -67,7 +72,9 @@ export function orbitKeyframes(spec: OrbitSpec): Keyframe[] {
     const a = angleAt(spec, (k / ORBIT_KEYFRAMES) * spec.periodMs);
     const x = Math.cos(a) * spec.radius;
     const y = Math.sin(a) * spec.radius;
-    frames.push({ transform: `translate(-50%, -50%) translate(${x.toFixed(2)}px, ${y.toFixed(2)}px)` });
+    frames.push({
+      transform: `translate(-50%, -50%) translate(${x.toFixed(2)}px, ${y.toFixed(2)}px)`,
+    });
   }
   return frames;
 }
@@ -113,7 +120,10 @@ export function useCosmosOrbit(
 
   // Signature of the target set + specs — rebuild only when something structural changes.
   const sig = targets
-    .map((t) => `${t.key}:${t.spec.periodMs}:${t.spec.direction}:${t.spec.phaseRad.toFixed(4)}:${t.spec.radius}`)
+    .map(
+      (t) =>
+        `${t.key}:${t.spec.periodMs}:${t.spec.direction}:${t.spec.phaseRad.toFixed(4)}:${t.spec.radius}`,
+    )
     .join("|");
 
   // (Re)build the animations (paused at frame 0). Runs after commit, so the ref callbacks have populated nodes.

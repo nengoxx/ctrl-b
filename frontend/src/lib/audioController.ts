@@ -95,7 +95,10 @@ async function synth(id: string, markdown: string): Promise<string | null> {
     return null;
   }
   if (!res.ok) {
-    pushToast(res.status === 502 ? "Voice servers unreachable" : `Read-aloud failed (${res.status})`, "err");
+    pushToast(
+      res.status === 502 ? "Voice servers unreachable" : `Read-aloud failed (${res.status})`,
+      "err",
+    );
     return null;
   }
   const url = URL.createObjectURL(await res.blob());

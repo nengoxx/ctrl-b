@@ -30,10 +30,22 @@ export const cosmos: ThemeDef = {
     modes: ["dark"],
     defaultMode: "dark",
     accents: [
-      { id: "violet", label: "Violet", swatch: "radial-gradient(circle at 33% 28%, #d7d0ff, #7b66f0)" },
+      {
+        id: "violet",
+        label: "Violet",
+        swatch: "radial-gradient(circle at 33% 28%, #d7d0ff, #7b66f0)",
+      },
       { id: "cyan", label: "Cyan", swatch: "radial-gradient(circle at 33% 28%, #e0fbff, #56cfee)" },
-      { id: "green", label: "Green", swatch: "radial-gradient(circle at 33% 28%, #d9fbe9, #4fd6a0)" },
-      { id: "amber", label: "Amber", swatch: "radial-gradient(circle at 33% 28%, #ffe6ad, #ff9433)" },
+      {
+        id: "green",
+        label: "Green",
+        swatch: "radial-gradient(circle at 33% 28%, #d9fbe9, #4fd6a0)",
+      },
+      {
+        id: "amber",
+        label: "Amber",
+        swatch: "radial-gradient(circle at 33% 28%, #ffe6ad, #ff9433)",
+      },
     ],
     defaultAccent: "violet",
   },

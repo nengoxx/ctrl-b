@@ -13,7 +13,9 @@ type Frame = { event: string; data: unknown };
 
 /** A fake `fetch` Response whose body streams the given SSE frames (one chunk, then close). */
 function sseResponse(frames: Frame[]): Response {
-  const text = frames.map((f) => `event: ${f.event}\r\ndata: ${JSON.stringify(f.data)}\r\n\r\n`).join("");
+  const text = frames
+    .map((f) => `event: ${f.event}\r\ndata: ${JSON.stringify(f.data)}\r\n\r\n`)
+    .join("");
   const bytes = new TextEncoder().encode(text);
   const body = new ReadableStream<Uint8Array>({
     start(c) {
@@ -24,7 +26,9 @@ function sseResponse(frames: Frame[]): Response {
   return {
     ok: true,
     body,
-    headers: { get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null) },
+    headers: {
+      get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
+    },
   } as unknown as Response;
 }
 
@@ -45,13 +49,18 @@ function mockChunks(chunks: string[]) {
     Promise.resolve({
       ok: true,
       body,
-      headers: { get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null) },
+      headers: {
+        get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
+      },
     } as unknown as Response),
   );
 }
 
 function textOf(parts: Part[]): string {
-  return parts.filter((p) => p.type === "text").map((p) => (p.type === "text" ? p.text : "")).join("");
+  return parts
+    .filter((p) => p.type === "text")
+    .map((p) => (p.type === "text" ? p.text : ""))
+    .join("");
 }
 
 beforeEach(() => {
@@ -103,7 +112,16 @@ describe("chat streaming reducer", () => {
       { event: "message.start", data: { messageId: "m1" } },
       {
         event: "part.added",
-        data: { messageId: "m1", part: { type: "tool_call", call_id: "c1", tool: "wake_host", args: { host: "vault" }, state: "pending" } },
+        data: {
+          messageId: "m1",
+          part: {
+            type: "tool_call",
+            call_id: "c1",
+            tool: "wake_host",
+            args: { host: "vault" },
+            state: "pending",
+          },
+        },
       },
       { event: "tool.permission", data: { callId: "c1", token: "tok-1" } },
       { event: "done", data: { state: "suspended" } },
@@ -125,7 +143,13 @@ describe("chat streaming reducer", () => {
     mockStream([
       { event: "thread", data: { threadId: "t1" } },
       { event: "message.start", data: { messageId: "m1" } },
-      { event: "part.added", data: { messageId: "m1", part: { type: "tool_call", call_id: "c1", tool: "wake_host", args: {}, state: "pending" } } },
+      {
+        event: "part.added",
+        data: {
+          messageId: "m1",
+          part: { type: "tool_call", call_id: "c1", tool: "wake_host", args: {}, state: "pending" },
+        },
+      },
       { event: "tool.permission", data: { callId: "c1", token: "tok-1" } },
       { event: "done", data: { state: "suspended" } },
     ]);
@@ -136,7 +160,10 @@ describe("chat streaming reducer", () => {
 
     // Resume: the tool result lands + a final answer + done completed.
     mockStream([
-      { event: "tool.result", data: { callId: "c1", result: { state: "ok", summary: "woke vault" } } },
+      {
+        event: "tool.result",
+        data: { callId: "c1", result: { state: "ok", summary: "woke vault" } },
+      },
       { event: "message.start", data: { messageId: "m2" } },
       { event: "text.delta", data: { messageId: "m2", delta: "done" } },
       { event: "done", data: { state: "completed" } },
@@ -168,7 +195,8 @@ describe("chat streaming reducer", () => {
   // ── SSE byte-parser robustness (the historical \n-framing bug + multi-chunk reassembly) ──
 
   it("tolerates bare \\n frame separators (not only \\r\\n)", async () => {
-    const f = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    const f = (event: string, data: unknown) =>
+      `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
     mockChunks([
       f("message.start", { messageId: "m1" }),
       f("text.delta", { messageId: "m1", delta: "hi" }),
@@ -186,7 +214,8 @@ describe("chat streaming reducer", () => {
     const frame = `event: text.delta\r\ndata: ${JSON.stringify({ messageId: "m1", delta: "spliced" })}\r\n\r\n`;
     const cut = Math.floor(frame.length / 2);
     mockChunks([
-      `event: message.start\r\ndata: ${JSON.stringify({ messageId: "m1" })}\r\n\r\n` + frame.slice(0, cut),
+      `event: message.start\r\ndata: ${JSON.stringify({ messageId: "m1" })}\r\n\r\n` +
+        frame.slice(0, cut),
       frame.slice(cut) + `event: done\r\ndata: ${JSON.stringify({ state: "completed" })}\r\n\r\n`,
     ]);
     const { result } = renderHook(() => useChat());
@@ -225,8 +254,16 @@ describe("chat streaming reducer", () => {
     globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
       Promise.resolve(
         String(url).includes("/agent/chat")
-          ? ({ ok: true, body: {}, headers: { get: () => "application/json" }, json: async () => ({ threadId: "t1", state: "completed" }) } as unknown as Response)
-          : ({ ok: true, json: async () => [msg("u1", "user", "q"), msg("a1", "assistant", "buffered answer")] } as unknown as Response),
+          ? ({
+              ok: true,
+              body: {},
+              headers: { get: () => "application/json" },
+              json: async () => ({ threadId: "t1", state: "completed" }),
+            } as unknown as Response)
+          : ({
+              ok: true,
+              json: async () => [msg("u1", "user", "q"), msg("a1", "assistant", "buffered answer")],
+            } as unknown as Response),
       ),
     );
     const { result } = renderHook(() => useChat());

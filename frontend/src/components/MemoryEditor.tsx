@@ -80,7 +80,12 @@ function MemoryFileEditor({ slot }: { slot: MemorySlot }) {
         onChange={(e) => setText(e.target.value)}
       />
       <div className="mfoot">
-        <button type="button" className="danger" disabled={save.isPending || !text.trim()} onClick={onClear}>
+        <button
+          type="button"
+          className="danger"
+          disabled={save.isPending || !text.trim()}
+          onClick={onClear}
+        >
           clear
         </button>
         <button
@@ -159,7 +164,10 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
           <div className="label">User profile</div>
           <div className="desc">inject + allow writes to the global USER.md</div>
         </div>
-        <Switch on={cfg.user_profile_enabled} onToggle={() => setCfg({ user_profile_enabled: !cfg.user_profile_enabled })} />
+        <Switch
+          on={cfg.user_profile_enabled}
+          onToggle={() => setCfg({ user_profile_enabled: !cfg.user_profile_enabled })}
+        />
       </div>
       <div className="confrow">
         <div className="k">
@@ -173,21 +181,34 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
           <div className="label">Consolidation nudge</div>
           <div className="desc">near cap → tell the agent to consolidate before adding</div>
         </div>
-        <Switch on={cfg.consolidation_nudge} onToggle={() => setCfg({ consolidation_nudge: !cfg.consolidation_nudge })} />
+        <Switch
+          on={cfg.consolidation_nudge}
+          onToggle={() => setCfg({ consolidation_nudge: !cfg.consolidation_nudge })}
+        />
       </div>
       <div className="confrow">
         <div className="k">
           <div className="label">Emotional state</div>
-          <div className="desc">inject + let the agent rewrite a per-agent STATE.md (mood/energy)</div>
+          <div className="desc">
+            inject + let the agent rewrite a per-agent STATE.md (mood/energy)
+          </div>
         </div>
-        <Switch on={cfg.state_enabled} onToggle={() => setCfg({ state_enabled: !cfg.state_enabled })} />
+        <Switch
+          on={cfg.state_enabled}
+          onToggle={() => setCfg({ state_enabled: !cfg.state_enabled })}
+        />
       </div>
       <div className="confrow">
         <div className="k">
           <div className="label">Periodic reflection</div>
-          <div className="desc">every N turns → nudge the agent to save anything worth remembering</div>
+          <div className="desc">
+            every N turns → nudge the agent to save anything worth remembering
+          </div>
         </div>
-        <Switch on={cfg.reflection_enabled} onToggle={() => setCfg({ reflection_enabled: !cfg.reflection_enabled })} />
+        <Switch
+          on={cfg.reflection_enabled}
+          onToggle={() => setCfg({ reflection_enabled: !cfg.reflection_enabled })}
+        />
       </div>
 
       <div className="confrow">
@@ -195,21 +216,39 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
           <div className="label">Agent cap</div>
           <div className="desc">per-agent MEMORY.md char limit</div>
         </div>
-        <input aria-label="Agent cap" type="text" value={memCap} inputMode="numeric" onChange={(e) => setMemCap(e.target.value)} />
+        <input
+          aria-label="Agent cap"
+          type="text"
+          value={memCap}
+          inputMode="numeric"
+          onChange={(e) => setMemCap(e.target.value)}
+        />
       </div>
       <div className="confrow">
         <div className="k">
           <div className="label">User cap</div>
           <div className="desc">global USER.md char limit</div>
         </div>
-        <input aria-label="User cap" type="text" value={userCap} inputMode="numeric" onChange={(e) => setUserCap(e.target.value)} />
+        <input
+          aria-label="User cap"
+          type="text"
+          value={userCap}
+          inputMode="numeric"
+          onChange={(e) => setUserCap(e.target.value)}
+        />
       </div>
       <div className="confrow">
         <div className="k">
           <div className="label">Nudge threshold</div>
           <div className="desc">store % full that triggers the nudge (1–100)</div>
         </div>
-        <input aria-label="Nudge threshold" type="text" value={nudgePct} inputMode="numeric" onChange={(e) => setNudgePct(e.target.value)} />
+        <input
+          aria-label="Nudge threshold"
+          type="text"
+          value={nudgePct}
+          inputMode="numeric"
+          onChange={(e) => setNudgePct(e.target.value)}
+        />
       </div>
       {cfg.state_enabled && (
         <div className="confrow">
@@ -217,7 +256,13 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
             <div className="label">State cap</div>
             <div className="desc">per-agent STATE.md char limit</div>
           </div>
-          <input aria-label="State cap" type="text" value={stateCap} inputMode="numeric" onChange={(e) => setStateCap(e.target.value)} />
+          <input
+            aria-label="State cap"
+            type="text"
+            value={stateCap}
+            inputMode="numeric"
+            onChange={(e) => setStateCap(e.target.value)}
+          />
         </div>
       )}
       {cfg.reflection_enabled && (
@@ -226,7 +271,13 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
             <div className="label">Reflection interval</div>
             <div className="desc">user turns between reflection nudges (≥1)</div>
           </div>
-          <input aria-label="Reflection interval" type="text" value={reflectN} inputMode="numeric" onChange={(e) => setReflectN(e.target.value)} />
+          <input
+            aria-label="Reflection interval"
+            type="text"
+            value={reflectN}
+            inputMode="numeric"
+            onChange={(e) => setReflectN(e.target.value)}
+          />
         </div>
       )}
       <div className="conf-savebar">
@@ -249,12 +300,19 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
 
       {slots.map((slot) => (
         <div className={"mwrap" + (openKey === slot.key ? " open" : "")} key={slot.key}>
-          <div className="confrow" {...disclosureToggle(openKey === slot.key, () => setOpenKey(openKey === slot.key ? null : slot.key))}>
+          <div
+            className="confrow"
+            {...disclosureToggle(openKey === slot.key, () =>
+              setOpenKey(openKey === slot.key ? null : slot.key),
+            )}
+          >
             <div className="k">
               <div className="label">{slot.label}</div>
               <div className="desc">{slot.sublabel}</div>
             </div>
-            <span className="chev" aria-hidden>›</span>
+            <span className="chev" aria-hidden>
+              ›
+            </span>
           </div>
           <div className="mconf">{openKey === slot.key && <MemoryFileEditor slot={slot} />}</div>
         </div>

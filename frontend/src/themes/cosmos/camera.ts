@@ -95,11 +95,15 @@ export function useCameraFollow(cameraRef: RefObject<HTMLElement | null>, opts: 
     };
     // Returns the camera target + whether we're actively following a real (present) selected planet.
     const computeTarget = (): { target: CameraState; following: boolean } => {
-      const { dive, selected, specByKey, fitScale, zoomMult, animationsRef, centerOffsetY } = live.current;
+      const { dive, selected, specByKey, fitScale, zoomMult, animationsRef, centerOffsetY } =
+        live.current;
       // Moon-dive wins over any selection: ease to a strong zoom centered on the moon (system center, 0,0).
       // `following: false` → no orbit tracking; the rAF eases there and stops (we navigate mid-ease anyway).
       if (dive) {
-        return { target: followTarget(0, 0, fitScale * DIVE_ZOOM, centerOffsetY), following: false };
+        return {
+          target: followTarget(0, 0, fitScale * DIVE_ZOOM, centerOffsetY),
+          following: false,
+        };
       }
       const spec = selected ? specByKey.get(selected) : undefined;
       if (!spec) return { target: { s: fitScale, tx: 0, ty: centerOffsetY }, following: false };
@@ -147,5 +151,13 @@ export function useCameraFollow(cameraRef: RefObject<HTMLElement | null>, opts: 
     // changes (the last so it re-arms to track once the orbit starts, or settles+stops when it freezes).
     // Specs are read live.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.active, opts.selected, opts.fitScale, opts.zoomMult, opts.centerOffsetY, opts.orbitAnimating, opts.dive]);
+  }, [
+    opts.active,
+    opts.selected,
+    opts.fitScale,
+    opts.zoomMult,
+    opts.centerOffsetY,
+    opts.orbitAnimating,
+    opts.dive,
+  ]);
 }

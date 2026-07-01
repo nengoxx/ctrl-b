@@ -61,7 +61,9 @@ function TailscaleAccessCard() {
         <div className="confrow">
           <div className="k">
             <div className="label">HTTPS access (Tailscale Serve)</div>
-            <div className="desc">unavailable — {data.reason ?? "tailscale not ready"} · see HTTPS_TAILSCALE.md</div>
+            <div className="desc">
+              unavailable — {data.reason ?? "tailscale not ready"} · see HTTPS_TAILSCALE.md
+            </div>
           </div>
         </div>
       </div>
@@ -121,7 +123,9 @@ function Field(props: {
   return (
     <div className="confrow">
       <div className="k">
-        <div className="label" id={labelId}>{props.label}</div>
+        <div className="label" id={labelId}>
+          {props.label}
+        </div>
         <div className="desc">
           {props.desc}
           {props.restart ? " · restart to apply" : ""}
@@ -288,8 +292,10 @@ export function ConfTab({ active }: Props) {
     subagent_clamp_privilege: agentSection?.subagent_clamp_privilege ?? true,
     auto_rotate: (agentSection as { auto_rotate?: boolean } | undefined)?.auto_rotate ?? false,
     auto_rotate_min_overlap:
-      (agentSection as { auto_rotate_min_overlap?: number } | undefined)?.auto_rotate_min_overlap ?? 2,
-    streaming: (agentSection as { streaming?: "auto" | "on" | "off" } | undefined)?.streaming ?? "auto",
+      (agentSection as { auto_rotate_min_overlap?: number } | undefined)?.auto_rotate_min_overlap ??
+      2,
+    streaming:
+      (agentSection as { streaming?: "auto" | "on" | "off" } | undefined)?.streaming ?? "auto",
   };
   // The per-agent tool grid mirrors the global tri-state (8b, D22): show every tool that's an agent
   // tool *by default* (so a globally-disabled tool still appears, locked-off, rather than vanishing)
@@ -317,7 +323,8 @@ export function ConfTab({ active }: Props) {
     reflection_enabled: memorySection?.reflection_enabled ?? false,
     reflection_interval: memorySection?.reflection_interval ?? 10,
   };
-  const skillsEnabled = (agentSection as { skills_enabled?: boolean } | undefined)?.skills_enabled ?? true;
+  const skillsEnabled =
+    (agentSection as { skills_enabled?: boolean } | undefined)?.skills_enabled ?? true;
 
   // Reseed the draft whenever the server doc changes (initial load + after a successful save, which
   // replaces the cache with the masked echo → clears the dirty state).
@@ -337,9 +344,15 @@ export function ConfTab({ active }: Props) {
   function setInf<K extends keyof Draft["inference"]>(key: K, val: Draft["inference"][K]) {
     setDraft((d) => (d ? { ...d, inference: { ...d.inference, [key]: val } } : d));
   }
-  function setEndpoint(which: "local" | "cloud", key: "base_url" | "api_key" | "model", val: string) {
+  function setEndpoint(
+    which: "local" | "cloud",
+    key: "base_url" | "api_key" | "model",
+    val: string,
+  ) {
     setDraft((d) =>
-      d ? { ...d, inference: { ...d.inference, [which]: { ...d.inference[which], [key]: val } } } : d,
+      d
+        ? { ...d, inference: { ...d.inference, [which]: { ...d.inference[which], [key]: val } } }
+        : d,
     );
   }
   // D18 — the inference `fallbacks` list (edited inline; saved by the Inference saveBar like the other
@@ -348,10 +361,15 @@ export function ConfTab({ active }: Props) {
     setDraft((d) => (d ? { ...d, inference: { ...d.inference, fallbacks: next } } : d));
   }
   function setFallback(idx: number, key: "base_url" | "api_key" | "model", val: string) {
-    setFallbacks((draft?.inference.fallbacks ?? []).map((fb, i) => (i === idx ? { ...fb, [key]: val } : fb)));
+    setFallbacks(
+      (draft?.inference.fallbacks ?? []).map((fb, i) => (i === idx ? { ...fb, [key]: val } : fb)),
+    );
   }
   function addFallback() {
-    const next = [...(draft?.inference.fallbacks ?? []), { base_url: "", api_key: null, model: "" }];
+    const next = [
+      ...(draft?.inference.fallbacks ?? []),
+      { base_url: "", api_key: null, model: "" },
+    ];
     setFallbacks(next);
     setOpenFallback(next.length - 1); // open the new row so its fields are immediately editable
   }
@@ -492,9 +510,14 @@ export function ConfTab({ active }: Props) {
           <div className="confrow">
             <div className="k">
               <div className="label">Failover</div>
-              <div className="desc">on failure, fall through local↔cloud (+ any configured fallbacks)</div>
+              <div className="desc">
+                on failure, fall through local↔cloud (+ any configured fallbacks)
+              </div>
             </div>
-            <Switch on={inf?.failover ?? true} onToggle={() => setInf("failover", !(inf?.failover ?? true))} />
+            <Switch
+              on={inf?.failover ?? true}
+              onToggle={() => setInf("failover", !(inf?.failover ?? true))}
+            />
           </div>
           <Field
             label="Local endpoint"
@@ -545,26 +568,53 @@ export function ConfTab({ active }: Props) {
           </div>
           {(inf?.fallbacks ?? []).map((fb, i) => (
             <div className={"mwrap" + (openFallback === i ? " open" : "")} key={i}>
-              <div className="confrow" {...disclosureToggle(openFallback === i, () => setOpenFallback(openFallback === i ? null : i))}>
+              <div
+                className="confrow"
+                {...disclosureToggle(openFallback === i, () =>
+                  setOpenFallback(openFallback === i ? null : i),
+                )}
+              >
                 <div className="k">
                   <div className="label">Fallback #{i + 1}</div>
                   <div className="desc">{fb.base_url || "tap to configure"}</div>
                 </div>
-                <span className="chev" aria-hidden>›</span>
+                <span className="chev" aria-hidden>
+                  ›
+                </span>
               </div>
               <div className="mconf">
                 {openFallback === i && (
                   <>
                     <div className="mform">
                       <label>Endpoint</label>
-                      <input aria-label="Fallback endpoint" type="text" value={fb.base_url} placeholder="https://host/v1" onChange={(e) => setFallback(i, "base_url", e.target.value)} />
+                      <input
+                        aria-label="Fallback endpoint"
+                        type="text"
+                        value={fb.base_url}
+                        placeholder="https://host/v1"
+                        onChange={(e) => setFallback(i, "base_url", e.target.value)}
+                      />
                       <label>Model</label>
-                      <input aria-label="Fallback model" type="text" value={fb.model} placeholder="model id" onChange={(e) => setFallback(i, "model", e.target.value)} />
+                      <input
+                        aria-label="Fallback model"
+                        type="text"
+                        value={fb.model}
+                        placeholder="model id"
+                        onChange={(e) => setFallback(i, "model", e.target.value)}
+                      />
                       <label>Key</label>
-                      <input aria-label="Fallback API key" type="password" value={fb.api_key ?? ""} placeholder="optional — masked" onChange={(e) => setFallback(i, "api_key", e.target.value)} />
+                      <input
+                        aria-label="Fallback API key"
+                        type="password"
+                        value={fb.api_key ?? ""}
+                        placeholder="optional — masked"
+                        onChange={(e) => setFallback(i, "api_key", e.target.value)}
+                      />
                     </div>
                     <div className="mfoot">
-                      <button type="button" className="danger" onClick={() => removeFallback(i)}>remove</button>
+                      <button type="button" className="danger" onClick={() => removeFallback(i)}>
+                        remove
+                      </button>
                     </div>
                   </>
                 )}
@@ -572,7 +622,9 @@ export function ConfTab({ active }: Props) {
             </div>
           ))}
           <div className="fallback-add">
-            <button type="button" className="svc-add" onClick={addFallback}>+ add fallback</button>
+            <button type="button" className="svc-add" onClick={addFallback}>
+              + add fallback
+            </button>
           </div>
           <Field
             label="Request timeout"
@@ -744,21 +796,33 @@ export function ConfTab({ active }: Props) {
               <div className="label">Exec risk</div>
               <div className="desc">terminal_exec gate — high = confirm</div>
             </div>
-            <Seg<string> current={term?.exec_risk ?? "high"} options={RISKS} onPick={(v) => setTerm("exec_risk", v)} />
+            <Seg<string>
+              current={term?.exec_risk ?? "high"}
+              options={RISKS}
+              onPick={(v) => setTerm("exec_risk", v)}
+            />
           </div>
           <div className="confrow">
             <div className="k">
               <div className="label">Write risk</div>
               <div className="desc">file write/replace gate</div>
             </div>
-            <Seg<string> current={term?.write_risk ?? "high"} options={RISKS} onPick={(v) => setTerm("write_risk", v)} />
+            <Seg<string>
+              current={term?.write_risk ?? "high"}
+              options={RISKS}
+              onPick={(v) => setTerm("write_risk", v)}
+            />
           </div>
           <div className="confrow">
             <div className="k">
               <div className="label">Read risk</div>
               <div className="desc">read/list/grep/glob gate</div>
             </div>
-            <Seg<string> current={term?.read_risk ?? "low"} options={RISKS} onPick={(v) => setTerm("read_risk", v)} />
+            <Seg<string>
+              current={term?.read_risk ?? "low"}
+              options={RISKS}
+              onPick={(v) => setTerm("read_risk", v)}
+            />
           </div>
           <div className="confrow">
             <div className="k">
@@ -778,14 +842,20 @@ export function ConfTab({ active }: Props) {
               <div className="label">User exec</div>
               <div className="desc">the !&lt;cmd&gt; composer escape hatch</div>
             </div>
-            <Switch on={!!sh?.user_exec_enabled} onToggle={() => setShell("user_exec_enabled", !sh?.user_exec_enabled)} />
+            <Switch
+              on={!!sh?.user_exec_enabled}
+              onToggle={() => setShell("user_exec_enabled", !sh?.user_exec_enabled)}
+            />
           </div>
           <div className="confrow">
             <div className="k">
               <div className="label">Agent run_shell</div>
               <div className="desc">let the agent call run_shell (else confirm at full only)</div>
             </div>
-            <Switch on={!!sh?.agent_exec_enabled} onToggle={() => setShell("agent_exec_enabled", !sh?.agent_exec_enabled)} />
+            <Switch
+              on={!!sh?.agent_exec_enabled}
+              onToggle={() => setShell("agent_exec_enabled", !sh?.agent_exec_enabled)}
+            />
           </div>
           <Field
             label="Workdir"
@@ -824,7 +894,10 @@ export function ConfTab({ active }: Props) {
               <div className="label">Enabled</div>
               <div className="desc">master switch — disables STT and TTS</div>
             </div>
-            <Switch on={!!draft?.voice.enabled} onToggle={() => setVoiceEnabled(!draft?.voice.enabled)} />
+            <Switch
+              on={!!draft?.voice.enabled}
+              onToggle={() => setVoiceEnabled(!draft?.voice.enabled)}
+            />
           </div>
           <Field
             label="Language"
@@ -838,7 +911,10 @@ export function ConfTab({ active }: Props) {
               <div className="label">VAD filter</div>
               <div className="desc">skip silence (avoids whisper silence-hallucinations)</div>
             </div>
-            <Switch on={!!vstt?.vad_filter} onToggle={() => setStt("vad_filter", !vstt?.vad_filter)} />
+            <Switch
+              on={!!vstt?.vad_filter}
+              onToggle={() => setStt("vad_filter", !vstt?.vad_filter)}
+            />
           </div>
           <Field
             label="Hotwords"
@@ -850,7 +926,9 @@ export function ConfTab({ active }: Props) {
           <div className="confrow">
             <div className="k">
               <div className="label">Auto-send</div>
-              <div className="desc">send the transcript immediately; off → fill the composer to review first</div>
+              <div className="desc">
+                send the transcript immediately; off → fill the composer to review first
+              </div>
             </div>
             <Switch on={!!vstt?.auto_send} onToggle={() => setStt("auto_send", !vstt?.auto_send)} />
           </div>
@@ -861,8 +939,19 @@ export function ConfTab({ active }: Props) {
             onChange={(v) => setVoiceEp("stt", "primary", "base_url", v)}
             placeholder="http://host:9000/v1"
           />
-          <Field label="Primary model" desc="whisper model id" value={vstt?.primary.model ?? ""} onChange={(v) => setVoiceEp("stt", "primary", "model", v)} />
-          <Field label="Primary key" desc="optional — local servers ignore it" type="password" value={vstt?.primary.api_key ?? ""} onChange={(v) => setVoiceEp("stt", "primary", "api_key", v)} />
+          <Field
+            label="Primary model"
+            desc="whisper model id"
+            value={vstt?.primary.model ?? ""}
+            onChange={(v) => setVoiceEp("stt", "primary", "model", v)}
+          />
+          <Field
+            label="Primary key"
+            desc="optional — local servers ignore it"
+            type="password"
+            value={vstt?.primary.api_key ?? ""}
+            onChange={(v) => setVoiceEp("stt", "primary", "api_key", v)}
+          />
           <Field
             label="Fallback endpoint"
             desc="emma · tried only if primary fails"
@@ -870,10 +959,31 @@ export function ConfTab({ active }: Props) {
             onChange={(v) => setVoiceEp("stt", "fallback", "base_url", v)}
             placeholder="http://host:9000/v1 (blank → no fallback)"
           />
-          <Field label="Fallback model" desc="whisper model id" value={vstt?.fallback.model ?? ""} onChange={(v) => setVoiceEp("stt", "fallback", "model", v)} />
-          <Field label="Fallback key" desc="optional" type="password" value={vstt?.fallback.api_key ?? ""} onChange={(v) => setVoiceEp("stt", "fallback", "api_key", v)} />
-          <Field label="Connect timeout" desc="seconds — fail-fast to fall over" value={String(vstt?.connect_timeout_s ?? "")} onChange={(v) => setStt("connect_timeout_s", v as unknown as number)} />
-          <Field label="Read timeout" desc="seconds — transcription window" value={String(vstt?.timeout_s ?? "")} onChange={(v) => setStt("timeout_s", v as unknown as number)} />
+          <Field
+            label="Fallback model"
+            desc="whisper model id"
+            value={vstt?.fallback.model ?? ""}
+            onChange={(v) => setVoiceEp("stt", "fallback", "model", v)}
+          />
+          <Field
+            label="Fallback key"
+            desc="optional"
+            type="password"
+            value={vstt?.fallback.api_key ?? ""}
+            onChange={(v) => setVoiceEp("stt", "fallback", "api_key", v)}
+          />
+          <Field
+            label="Connect timeout"
+            desc="seconds — fail-fast to fall over"
+            value={String(vstt?.connect_timeout_s ?? "")}
+            onChange={(v) => setStt("connect_timeout_s", v as unknown as number)}
+          />
+          <Field
+            label="Read timeout"
+            desc="seconds — transcription window"
+            value={String(vstt?.timeout_s ?? "")}
+            onChange={(v) => setStt("timeout_s", v as unknown as number)}
+          />
         </div>
         {saveBar}
       </ConfGroup>
@@ -896,7 +1006,9 @@ export function ConfTab({ active }: Props) {
           <div className="confrow">
             <div className="k">
               <div className="label">Format</div>
-              <div className="desc">audio container — mp3 is universally seekable (mini-player)</div>
+              <div className="desc">
+                audio container — mp3 is universally seekable (mini-player)
+              </div>
             </div>
             <Seg<string>
               current={vtts?.format ?? "mp3"}
@@ -915,9 +1027,26 @@ export function ConfTab({ active }: Props) {
             onChange={(v) => setVoiceEp("tts", "primary", "base_url", v)}
             placeholder="http://host:7851/v1"
           />
-          <Field label="Primary model" desc="tts model id" value={vtts?.primary.model ?? ""} onChange={(v) => setVoiceEp("tts", "primary", "model", v)} />
-          <Field label="Primary voice" desc="server voice id" value={vtts?.primary.voice ?? ""} onChange={(v) => setVoiceEp("tts", "primary", "voice", v)} placeholder="echo" />
-          <Field label="Primary key" desc="optional" type="password" value={vtts?.primary.api_key ?? ""} onChange={(v) => setVoiceEp("tts", "primary", "api_key", v)} />
+          <Field
+            label="Primary model"
+            desc="tts model id"
+            value={vtts?.primary.model ?? ""}
+            onChange={(v) => setVoiceEp("tts", "primary", "model", v)}
+          />
+          <Field
+            label="Primary voice"
+            desc="server voice id"
+            value={vtts?.primary.voice ?? ""}
+            onChange={(v) => setVoiceEp("tts", "primary", "voice", v)}
+            placeholder="echo"
+          />
+          <Field
+            label="Primary key"
+            desc="optional"
+            type="password"
+            value={vtts?.primary.api_key ?? ""}
+            onChange={(v) => setVoiceEp("tts", "primary", "api_key", v)}
+          />
           <Field
             label="Fallback endpoint"
             desc="emma · tried only if primary fails"
@@ -925,11 +1054,38 @@ export function ConfTab({ active }: Props) {
             onChange={(v) => setVoiceEp("tts", "fallback", "base_url", v)}
             placeholder="http://host:7851/v1 (blank → no fallback)"
           />
-          <Field label="Fallback model" desc="tts model id" value={vtts?.fallback.model ?? ""} onChange={(v) => setVoiceEp("tts", "fallback", "model", v)} />
-          <Field label="Fallback voice" desc="server voice id" value={vtts?.fallback.voice ?? ""} onChange={(v) => setVoiceEp("tts", "fallback", "voice", v)} placeholder="echo" />
-          <Field label="Fallback key" desc="optional" type="password" value={vtts?.fallback.api_key ?? ""} onChange={(v) => setVoiceEp("tts", "fallback", "api_key", v)} />
-          <Field label="Connect timeout" desc="seconds — fail-fast to fall over" value={String(vtts?.connect_timeout_s ?? "")} onChange={(v) => setTts("connect_timeout_s", v as unknown as number)} />
-          <Field label="Read timeout" desc="seconds — synthesis window" value={String(vtts?.timeout_s ?? "")} onChange={(v) => setTts("timeout_s", v as unknown as number)} />
+          <Field
+            label="Fallback model"
+            desc="tts model id"
+            value={vtts?.fallback.model ?? ""}
+            onChange={(v) => setVoiceEp("tts", "fallback", "model", v)}
+          />
+          <Field
+            label="Fallback voice"
+            desc="server voice id"
+            value={vtts?.fallback.voice ?? ""}
+            onChange={(v) => setVoiceEp("tts", "fallback", "voice", v)}
+            placeholder="echo"
+          />
+          <Field
+            label="Fallback key"
+            desc="optional"
+            type="password"
+            value={vtts?.fallback.api_key ?? ""}
+            onChange={(v) => setVoiceEp("tts", "fallback", "api_key", v)}
+          />
+          <Field
+            label="Connect timeout"
+            desc="seconds — fail-fast to fall over"
+            value={String(vtts?.connect_timeout_s ?? "")}
+            onChange={(v) => setTts("connect_timeout_s", v as unknown as number)}
+          />
+          <Field
+            label="Read timeout"
+            desc="seconds — synthesis window"
+            value={String(vtts?.timeout_s ?? "")}
+            onChange={(v) => setTts("timeout_s", v as unknown as number)}
+          />
         </div>
         {saveBar}
       </ConfGroup>
@@ -940,7 +1096,11 @@ export function ConfTab({ active }: Props) {
         title="MCP servers"
         right={`${settings?.mcp_servers?.length ?? 0} server${(settings?.mcp_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
-        <ServerListEditor kind="mcp" servers={settings?.mcp_servers ?? []} summaries={integrations?.mcp ?? []} />
+        <ServerListEditor
+          kind="mcp"
+          servers={settings?.mcp_servers ?? []}
+          summaries={integrations?.mcp ?? []}
+        />
       </ConfGroup>
 
       <ConfGroup
@@ -949,10 +1109,20 @@ export function ConfTab({ active }: Props) {
         title="OpenAPI tool servers"
         right={`${settings?.openapi_servers?.length ?? 0} server${(settings?.openapi_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
-        <ServerListEditor kind="openapi" servers={settings?.openapi_servers ?? []} summaries={integrations?.openapi ?? []} />
+        <ServerListEditor
+          kind="openapi"
+          servers={settings?.openapi_servers ?? []}
+          summaries={integrations?.openapi ?? []}
+        />
         <div className="conf-savebar redisc">
-          {integrations?.dirty && <span className="redisc-hint">// changes apply on next chat · or</span>}
-          <button className="conf-save alt" disabled={rediscover.isPending} onClick={() => rediscover.mutate()}>
+          {integrations?.dirty && (
+            <span className="redisc-hint">// changes apply on next chat · or</span>
+          )}
+          <button
+            className="conf-save alt"
+            disabled={rediscover.isPending}
+            onClick={() => rediscover.mutate()}
+          >
             {rediscover.isPending ? "Rediscovering…" : "Rediscover tools"}
           </button>
         </div>
@@ -965,7 +1135,12 @@ export function ConfTab({ active }: Props) {
         right={`${agentCount} agent${agentCount === 1 ? "" : "s"}`}
         defaultCollapsed
       >
-        <AgentsEditor cfg={agentCfg} toolNames={agentToolNames} toolModes={agentToolModes} skillNames={skillNames} />
+        <AgentsEditor
+          cfg={agentCfg}
+          toolNames={agentToolNames}
+          toolModes={agentToolModes}
+          skillNames={skillNames}
+        />
       </ConfGroup>
 
       <ConfGroup
@@ -1001,7 +1176,10 @@ export function ConfTab({ active }: Props) {
         {/* Every row uses the shared `SettingRow` (label + desc + trailing control) so the group has one
             consistent shape; the Palette axis uses the `Swatches` color-chip radiogroup. */}
         <div className="conf-card">
-          <SettingRow label="Theme" desc={themeOptions.map((t) => t.label.toLowerCase()).join(" · ")}>
+          <SettingRow
+            label="Theme"
+            desc={themeOptions.map((t) => t.label.toLowerCase()).join(" · ")}
+          >
             <Seg<ThemeId> current={theme} options={themeOptions} onPick={pickTheme} />
           </SettingRow>
           {modeOptions.length > 1 && (
@@ -1010,8 +1188,16 @@ export function ConfTab({ active }: Props) {
             </SettingRow>
           )}
           {accentOptions.length > 0 && (
-            <SettingRow label="Palette" desc={accentOptions.map((a) => a.label.toLowerCase()).join(" · ")}>
-              <Swatches current={accent} options={accentOptions} onPick={pickAccent} ariaLabel="Palette" />
+            <SettingRow
+              label="Palette"
+              desc={accentOptions.map((a) => a.label.toLowerCase()).join(" · ")}
+            >
+              <Swatches
+                current={accent}
+                options={accentOptions}
+                onPick={pickAccent}
+                ariaLabel="Palette"
+              />
             </SettingRow>
           )}
           {/* Per-theme settings (M3 §14.3) — auto-rendered from the active theme's `ThemeDef.settings`

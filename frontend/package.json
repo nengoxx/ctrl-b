@@ -12,6 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "check-all": "npm run typecheck && npm test"
   },
   "dependencies": {
@@ -34,6 +36,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.1.1",
     "jsdom": "^29.1.1",
+    "prettier": "^3.9.4",
     "rollup-plugin-visualizer": "^7.0.1",
     "sharp": "^0.34.5",
     "typescript": "^5.9.3",

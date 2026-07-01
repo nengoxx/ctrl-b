@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { angleAt, decorOrbitSpec, orbitKeyframes, orbitParams } from "../../src/themes/cosmos/orbit";
+import {
+  angleAt,
+  decorOrbitSpec,
+  orbitKeyframes,
+  orbitParams,
+} from "../../src/themes/cosmos/orbit";
 import { GOLDEN_ANGLE, present } from "../../src/themes/cosmos/present";
 
 // Cosmos orbit engine (C2b-1) — the jsdom-safe pure logic (specs/keyframes/angle math). The WAAPI driver

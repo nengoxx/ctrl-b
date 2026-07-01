@@ -162,11 +162,7 @@ export function ToolCatalog() {
         </div>
       ))}
       <div className="conf-savebar">
-        <button
-          className="conf-save"
-          disabled={!changed.length || save.isPending}
-          onClick={onSave}
-        >
+        <button className="conf-save" disabled={!changed.length || save.isPending} onClick={onSave}>
           {save.isPending
             ? "Saving…"
             : changed.length

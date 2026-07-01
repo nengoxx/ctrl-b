@@ -51,6 +51,11 @@ export const vapor: ThemeDef = {
       ],
       default: "city",
     },
-    waveformOn: { type: "switch", label: "Live waveform", desc: "ping graph on hero", default: true },
+    waveformOn: {
+      type: "switch",
+      label: "Live waveform",
+      desc: "ping graph on hero",
+      default: true,
+    },
   },
 };

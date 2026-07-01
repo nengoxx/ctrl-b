@@ -35,7 +35,13 @@ export interface MemorySlot {
 }
 
 export function userSlot(cap: number): MemorySlot {
-  return { key: "user", label: "User profile", sublabel: "memories/USER.md · shared across agents", url: "/api/memory/user", cap };
+  return {
+    key: "user",
+    label: "User profile",
+    sublabel: "memories/USER.md · shared across agents",
+    url: "/api/memory/user",
+    cap,
+  };
 }
 
 export function agentSlot(slug: string, isDefault: boolean, cap: number): MemorySlot {
@@ -53,7 +59,9 @@ export function stateSlot(slug: string, isDefault: boolean, cap: number): Memory
   return {
     key: `state:${slug}`,
     label: `${slug} · state`,
-    sublabel: isDefault ? "STATE.md · root agent emotional state" : `agents/${slug}/STATE.md · emotional state`,
+    sublabel: isDefault
+      ? "STATE.md · root agent emotional state"
+      : `agents/${slug}/STATE.md · emotional state`,
     url: `/api/agents/${encodeURIComponent(slug)}/memory/state`,
     cap,
   };

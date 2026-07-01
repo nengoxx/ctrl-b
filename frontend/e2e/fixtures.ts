@@ -11,60 +11,167 @@ const json = (route: Route, body: unknown, status = 200) =>
 // A couple of fixture hosts so the Fleet tab renders real rows (online + offline service each).
 const HOSTS = [
   {
-    id: "vault", name: "vault", ip: "192.168.1.137", mac: "aa:bb:cc:dd:ee:ff",
-    os_type: "linux", role: "server", tags: ["nas"],
+    id: "vault",
+    name: "vault",
+    ip: "192.168.1.137",
+    mac: "aa:bb:cc:dd:ee:ff",
+    os_type: "linux",
+    role: "server",
+    tags: ["nas"],
     status: { online: true, latency_ms: 3, checked_at: "2026-06-24T00:00:00Z" },
   },
   {
-    id: "corsair", name: "corsair", ip: "192.168.1.128", mac: null,
-    os_type: "windows", role: "desktop", tags: [],
+    id: "corsair",
+    name: "corsair",
+    ip: "192.168.1.128",
+    mac: null,
+    os_type: "windows",
+    role: "desktop",
+    tags: [],
     status: { online: false, latency_ms: null, checked_at: "2026-06-24T00:00:00Z" },
   },
 ];
 
 const SERVICES = [
-  { id: "vault.ssh", host_id: "vault", name: "ssh", url: null, online: true, addr: "192.168.1.137:22" },
-  { id: "vault.web", host_id: "vault", name: "web", url: "http://192.168.1.137:8080", online: false, addr: "192.168.1.137:8080" },
+  {
+    id: "vault.ssh",
+    host_id: "vault",
+    name: "ssh",
+    url: null,
+    online: true,
+    addr: "192.168.1.137:22",
+  },
+  {
+    id: "vault.web",
+    host_id: "vault",
+    name: "web",
+    url: "http://192.168.1.137:8080",
+    online: false,
+    addr: "192.168.1.137:8080",
+  },
 ];
 
 const util = (name: string, title: string, icon: string) => ({
-  name, title, description: `${title} utility`, icon, category: "utility",
-  risk: "low", confirm: false, ui_exposed: true, agent_exposed: true, core: false,
+  name,
+  title,
+  description: `${title} utility`,
+  icon,
+  category: "utility",
+  risk: "low",
+  confirm: false,
+  ui_exposed: true,
+  agent_exposed: true,
+  core: false,
   default_agent_mode: "enabled",
   input_schema: { type: "object", properties: { q: { type: "string", title: "q" } }, required: [] },
 });
 
-const TOOLS = [util("yt_captions", "Yt Captions", "yt"), util("ip_info", "Ip Info", "globe"), util("dns_trace", "Dns Trace", "globe")];
+const TOOLS = [
+  util("yt_captions", "Yt Captions", "yt"),
+  util("ip_info", "Ip Info", "globe"),
+  util("dns_trace", "Dns Trace", "globe"),
+];
 
 const ACTIONS = [
-  { name: "wake_host", title: "Wake Host", description: "Wake a host", icon: null, category: "action", risk: "low", confirm: false, ui_exposed: true, agent_exposed: true, core: false, default_agent_mode: "enabled", input_schema: { type: "object", properties: {} } },
-  { name: "shutdown_host", title: "Shutdown Host", description: "Shut down a host", icon: null, category: "action", risk: "high", confirm: true, ui_exposed: true, agent_exposed: true, core: false, default_agent_mode: "enabled", input_schema: { type: "object", properties: {} } },
+  {
+    name: "wake_host",
+    title: "Wake Host",
+    description: "Wake a host",
+    icon: null,
+    category: "action",
+    risk: "low",
+    confirm: false,
+    ui_exposed: true,
+    agent_exposed: true,
+    core: false,
+    default_agent_mode: "enabled",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "shutdown_host",
+    title: "Shutdown Host",
+    description: "Shut down a host",
+    icon: null,
+    category: "action",
+    risk: "high",
+    confirm: true,
+    ui_exposed: true,
+    agent_exposed: true,
+    core: false,
+    default_agent_mode: "enabled",
+    input_schema: { type: "object", properties: {} },
+  },
   ...TOOLS,
 ];
 
 const endpoint = (b: Record<string, unknown>) => ({ base_url: "", api_key: null, model: "", ...b });
-const voiceSvc = { connect_timeout_s: 3, timeout_s: 30, extra_body: {}, primary: endpoint({}), fallback: endpoint({}) };
+const voiceSvc = {
+  connect_timeout_s: 3,
+  timeout_s: 30,
+  extra_body: {},
+  primary: endpoint({}),
+  fallback: endpoint({}),
+};
 
 const SETTINGS = {
   server: { host: "0.0.0.0", port: 5433, poll_seconds: 5, feature_cycle_seconds: 8, debug: false },
   inference: {
-    default_mode: "local", request_timeout_s: 120, system_prompt: "", system_prompt_append: "",
-    failover: true, local: endpoint({}), cloud: endpoint({}), fallbacks: [],
+    default_mode: "local",
+    request_timeout_s: 120,
+    system_prompt: "",
+    system_prompt_append: "",
+    failover: true,
+    local: endpoint({}),
+    cloud: endpoint({}),
+    fallbacks: [],
   },
   searxng: { base_url: "", enabled: false, language: null },
   embeddings: { base_url: "", api_key: null, model: "", enabled: false, dim: null },
-  open_terminal: { base_url: "", api_key: null, enabled: false, exec_risk: "high", write_risk: "med", read_risk: "low" },
-  shell: { enabled: true, user_exec_enabled: true, agent_exec_enabled: false, workdir: "", timeout_s: 60, max_output_chars: 6000 },
-  voice: { enabled: false, stt: { ...voiceSvc, language: "en", vad_filter: true, hotwords: "", auto_send: false }, tts: { ...voiceSvc, format: "mp3" } },
-  mcp_servers: [], openapi_servers: [],
-  agent: {
-    default_agent: "", default_title: "", defaults: {}, global_subagent_limit: 6,
-    subagent_clamp_privilege: true, auto_rotate: false, auto_rotate_min_overlap: 2,
-    streaming: "auto", skills_enabled: true, skills_auto_write: true,
+  open_terminal: {
+    base_url: "",
+    api_key: null,
+    enabled: false,
+    exec_risk: "high",
+    write_risk: "med",
+    read_risk: "low",
   },
-  memory: { enabled: true, auto_write: true, user_profile_enabled: true, max_chars: 8000, max_user_chars: 4000 },
+  shell: {
+    enabled: true,
+    user_exec_enabled: true,
+    agent_exec_enabled: false,
+    workdir: "",
+    timeout_s: 60,
+    max_output_chars: 6000,
+  },
+  voice: {
+    enabled: false,
+    stt: { ...voiceSvc, language: "en", vad_filter: true, hotwords: "", auto_send: false },
+    tts: { ...voiceSvc, format: "mp3" },
+  },
+  mcp_servers: [],
+  openapi_servers: [],
+  agent: {
+    default_agent: "",
+    default_title: "",
+    defaults: {},
+    global_subagent_limit: 6,
+    subagent_clamp_privilege: true,
+    auto_rotate: false,
+    auto_rotate_min_overlap: 2,
+    streaming: "auto",
+    skills_enabled: true,
+    skills_auto_write: true,
+  },
+  memory: {
+    enabled: true,
+    auto_write: true,
+    user_profile_enabled: true,
+    max_chars: 8000,
+    max_user_chars: 4000,
+  },
   tailscale: { target_port: 5173, enabled: false, timeout_s: 5 },
-  tool_overrides: {}, computers: {},
+  tool_overrides: {},
+  computers: {},
 };
 
 /** Route table for on-load GETs. Keys are matched by `pathname.endsWith` (longest first). */
@@ -111,7 +218,11 @@ export async function mockApi(page: Page): Promise<void> {
         try {
           const body = req.postDataJSON() as { appearance?: Record<string, unknown> };
           if (body?.appearance) {
-            appearance = { ...appearance, ...body.appearance, updated_at: new Date().toISOString() };
+            appearance = {
+              ...appearance,
+              ...body.appearance,
+              updated_at: new Date().toISOString(),
+            };
           }
         } catch {
           /* non-JSON body — ignore */

@@ -24,13 +24,17 @@ function rootErrorFallback(error: Error, reload: () => void) {
   return (
     <div className="root-error">
       <div className="sec">
-        <span className="num" aria-hidden>!!</span>
+        <span className="num" aria-hidden>
+          !!
+        </span>
         <b>ctrl·b</b>
         <span className="right">// the app hit a snag</span>
       </div>
       <div className="root-error-body">
         <p>// {error.message || "unknown error"}</p>
-        <button className="conf-save" onClick={reload}>Reload page</button>
+        <button className="conf-save" onClick={reload}>
+          Reload page
+        </button>
       </div>
     </div>
   );

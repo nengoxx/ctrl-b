@@ -29,7 +29,8 @@ export function useSkills() {
 export function useSkillFile(name: string | null) {
   return useQuery({
     queryKey: ["skill-file", name],
-    queryFn: () => getJSON<{ name: string; content: string }>(`/api/skills/${encodeURIComponent(name!)}`),
+    queryFn: () =>
+      getJSON<{ name: string; content: string }>(`/api/skills/${encodeURIComponent(name!)}`),
     enabled: !!name,
     staleTime: 0,
   });
@@ -49,7 +50,9 @@ export function useSaveSkill() {
   const invalidate = useInvalidateSkills();
   return useMutation({
     mutationFn: ({ name, content }: { name: string; content: string }) =>
-      putJSON<{ name: string; content: string }>(`/api/skills/${encodeURIComponent(name)}`, { content }),
+      putJSON<{ name: string; content: string }>(`/api/skills/${encodeURIComponent(name)}`, {
+        content,
+      }),
     onSuccess: (res) => {
       qc.setQueryData(["skill-file", res.name], res);
       invalidate();

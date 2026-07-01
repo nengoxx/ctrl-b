@@ -55,7 +55,10 @@ describe("reconcileAppearance", () => {
   });
 
   it("server wins on a differing per-theme setting", () => {
-    const out = reconcileAppearance(server({ theme_settings: { vapor: { heroOn: false } } }), local);
+    const out = reconcileAppearance(
+      server({ theme_settings: { vapor: { heroOn: false } } }),
+      local,
+    );
     expect(out?.themeSettings).toEqual({ vapor: { heroOn: false } });
   });
 

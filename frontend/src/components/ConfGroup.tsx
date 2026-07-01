@@ -24,7 +24,9 @@ export function ConfGroup(props: {
     <div className={"confgroup" + (collapsed ? " collapsed" : "")}>
       {/* D25 — keyboard-operable disclosure (header is button-free, so role=button is safe here). */}
       <div className="conftitle conf-toggle" {...disclosureToggle(!collapsed, toggle)}>
-        <span className="conf-chev" aria-hidden>›</span>
+        <span className="conf-chev" aria-hidden>
+          ›
+        </span>
         <span className="num">{props.num}</span>
         <b>{props.title}</b>
         {props.right != null && <span className="right">{props.right}</span>}

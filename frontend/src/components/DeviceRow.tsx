@@ -135,7 +135,9 @@ function DeviceRowImpl({ host, services, index, featured, open, busy, onToggle, 
                   <div className="name">{s.name}</div>
                   <div className="addr">{addr}</div>
                 </div>
-                <span className="arrow" aria-hidden>↗</span>
+                <span className="arrow" aria-hidden>
+                  ↗
+                </span>
               </a>
             ) : (
               // F27: the offline state is visual-only (faded + dash); an aria-label gives screen
@@ -146,7 +148,9 @@ function DeviceRowImpl({ host, services, index, featured, open, busy, onToggle, 
                   <div className="name">{s.name}</div>
                   <div className="addr">{addr}</div>
                 </div>
-                <span className="arrow" aria-hidden>—</span>
+                <span className="arrow" aria-hidden>
+                  —
+                </span>
               </div>
             );
           })

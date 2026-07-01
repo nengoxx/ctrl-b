@@ -38,7 +38,13 @@ export function UtilsTab({ active }: Props) {
         <UtilCard key={t.name} tool={t} />
       ))}
 
-      <ConfGroup id="agent-tools" num="04" title="agent tools" right="access & descriptions" defaultCollapsed>
+      <ConfGroup
+        id="agent-tools"
+        num="04"
+        title="agent tools"
+        right="access & descriptions"
+        defaultCollapsed
+      >
         <ToolCatalog />
       </ConfGroup>
 

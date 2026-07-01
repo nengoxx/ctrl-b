@@ -63,7 +63,8 @@ export function serviceHealth(upCount: number, total: number): number {
  * larger hit-area (`.hit`) is deferred to the C2b interaction slice.
  */
 export function planetSize(serviceCount: number, health: number): number {
-  const base = SIZE_MIN + (SIZE_MAX - SIZE_MIN) * (Math.min(serviceCount, SIZE_COUNT_CAP) / SIZE_COUNT_CAP);
+  const base =
+    SIZE_MIN + (SIZE_MAX - SIZE_MIN) * (Math.min(serviceCount, SIZE_COUNT_CAP) / SIZE_COUNT_CAP);
   const clampedHealth = Math.max(0, Math.min(1, health));
   return Math.round(base * (MIN_HEALTH_SCALE + (1 - MIN_HEALTH_SCALE) * clampedHealth));
 }

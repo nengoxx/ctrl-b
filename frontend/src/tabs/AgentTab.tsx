@@ -17,14 +17,7 @@ import {
   useChatSlice,
 } from "../store/chat";
 import { useUISlice } from "../store/ui";
-import type {
-  ChatMessage,
-  Part,
-  Plan,
-  ToolCallPart,
-  ToolResult,
-  WebSearchHit,
-} from "../types";
+import type { ChatMessage, Part, Plan, ToolCallPart, ToolResult, WebSearchHit } from "../types";
 
 // Agent chat tab (Phase 4a + 4b). Renders the live thread from the chat store as Vapor bubbles
 // (sys / user / bot), streaming token-by-token, with a thinking model's reasoning in a dimmed
@@ -37,10 +30,16 @@ function hm(iso: string): string {
 }
 
 function reasoningOf(parts: Part[]): string {
-  return parts.filter((p) => p.type === "reasoning").map((p) => p.text).join("");
+  return parts
+    .filter((p) => p.type === "reasoning")
+    .map((p) => p.text)
+    .join("");
 }
 function textOf(parts: Part[]): string {
-  return parts.filter((p) => p.type === "text").map((p) => p.text).join("");
+  return parts
+    .filter((p) => p.type === "text")
+    .map((p) => p.text)
+    .join("");
 }
 function errorOf(parts: Part[]): { message: string; retryable: boolean } | null {
   const e = parts.find((p) => p.type === "error");
@@ -212,7 +211,9 @@ function CmdBubble({
           <summary>
             <span className="preamble">{call.tool.replace(/_/g, " ")}</span>
             {awaiting && <span className="cmd-gate"> · confirm to run</span>}
-            <span className="chev" aria-hidden>▾</span>
+            <span className="chev" aria-hidden>
+              ▾
+            </span>
           </summary>
           <pre>{line}</pre>
         </details>
@@ -243,7 +244,9 @@ function CmdBubble({
           <details className="cmd-output">
             <summary>
               <span className="label">output</span>
-              <span className="chev" aria-hidden>▾</span>
+              <span className="chev" aria-hidden>
+                ▾
+              </span>
             </summary>
             <pre>{result.output}</pre>
           </details>
@@ -382,7 +385,9 @@ const Bubbles = memo(function Bubbles({
   const working = streaming && !text && !err && !calls.length;
   // The first non-plan, non-question tool call hosts the thinking (plan + question render their own
   // bubbles, so reasoning rides into a CmdBubble or, failing that, the bot bubble).
-  const reasoningHostId = calls.find((c) => c.tool !== "task_plan" && c.tool !== "question")?.call_id;
+  const reasoningHostId = calls.find(
+    (c) => c.tool !== "task_plan" && c.tool !== "question",
+  )?.call_id;
   const reasoningInBot = !!reasoning && !reasoningHostId;
   const showBot = !!(text || err || working || reasoningInBot);
 
@@ -469,11 +474,18 @@ function PrivilegeChip() {
       >
         <span className="priv-dot" aria-hidden />
         <span className="priv-lbl">{label}</span>
-        <span className="chev" aria-hidden>▾</span>
+        <span className="chev" aria-hidden>
+          ▾
+        </span>
       </button>
       {open && (
         <>
-          <button className="priv-backdrop" aria-hidden tabIndex={-1} onClick={() => setOpen(false)} />
+          <button
+            className="priv-backdrop"
+            aria-hidden
+            tabIndex={-1}
+            onClick={() => setOpen(false)}
+          />
           <ul className="priv-menu" role="menu">
             {PRIVILEGE_LEVELS.map((l) => (
               <li key={l.val}>

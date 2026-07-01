@@ -25,7 +25,11 @@ export type ServiceCue =
  * VISUAL: purely decorative — `visualCount` muted moons (0–2, NEVER a ring), ignoring service data; the
  * fleet-wide assignment lives in `visualMoonCounts`. OFF: none.
  */
-export function serviceCue(services: Service[], mode: ServiceCueMode, visualCount: number): ServiceCue {
+export function serviceCue(
+  services: Service[],
+  mode: ServiceCueMode,
+  visualCount: number,
+): ServiceCue {
   if (mode === "off") return { kind: "none" };
   if (mode === "visual") {
     return visualCount > 0

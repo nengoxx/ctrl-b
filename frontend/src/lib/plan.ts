@@ -2,7 +2,14 @@
 // vapor Agent-tab presentation (PlanBubble), so plan derivation lives in ONE place. Dependency-free +
 // React-free, so it's directly unit-testable (tests/lib/plan.test.ts).
 
-import type { ChatMessage, Plan, PlanStep, PlanStepStatus, ToolCallPart, ToolResult } from "../types";
+import type {
+  ChatMessage,
+  Plan,
+  PlanStep,
+  PlanStepStatus,
+  ToolCallPart,
+  ToolResult,
+} from "../types";
 
 /** The status a tap advances a plan step to — pending → active → done → pending. Mirrors the three
  *  states the agent itself sets, so a manual tap reads identically (used for the dot + its aria-label). */

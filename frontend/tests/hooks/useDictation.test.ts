@@ -50,7 +50,11 @@ function setMediaDevices(present: boolean) {
 function mockStt(status: number, body: unknown) {
   globalThis.fetch = vi.fn(
     async () =>
-      ({ status, ok: status >= 200 && status < 300, json: async () => body }) as unknown as Response,
+      ({
+        status,
+        ok: status >= 200 && status < 300,
+        json: async () => body,
+      }) as unknown as Response,
   );
 }
 
@@ -122,7 +126,9 @@ describe("useDictation", () => {
     mockStt(200, { text: "   " });
     const { result } = renderHook(() => useDictation(opts(false)));
     await recordOnce(result);
-    await waitFor(() => expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("Didn't catch"), "info"));
+    await waitFor(() =>
+      expect(pushToast).toHaveBeenCalledWith(expect.stringContaining("Didn't catch"), "info"),
+    );
     expect(getDraft()).toBe("");
   });
 });

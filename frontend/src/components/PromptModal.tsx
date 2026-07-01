@@ -68,9 +68,9 @@ export function PromptModal() {
       // textarea moves focus by default, so without this it could escape once more items change).
       const panel = panelRef.current;
       if (!panel) return;
-      const items = Array.from(
-        panel.querySelectorAll<HTMLElement>("textarea, button"),
-      ).filter((el) => !el.hasAttribute("disabled"));
+      const items = Array.from(panel.querySelectorAll<HTMLElement>("textarea, button")).filter(
+        (el) => !el.hasAttribute("disabled"),
+      );
       if (!items.length) return;
       e.preventDefault();
       const i = items.indexOf(document.activeElement as HTMLElement);
@@ -83,13 +83,7 @@ export function PromptModal() {
 
   return (
     <div className="pm-backdrop" onKeyDown={onKeyDown}>
-      <div
-        className="pm"
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={labelId}
-      >
+      <div className="pm" ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={labelId}>
         <div className="pm-head">
           <h3 id={labelId}>{req.title}</h3>
           <button className="pm-x" aria-label="Close" onClick={() => resolvePrompt(null)}>

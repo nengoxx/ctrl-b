@@ -22,7 +22,13 @@ import {
   type ServiceCue,
   type ServiceCueMode,
 } from "./serviceCue";
-import { decorOrbitSpec, orbitParams, useCosmosOrbit, type OrbitStyle, type OrbitTarget } from "./orbit";
+import {
+  decorOrbitSpec,
+  orbitParams,
+  useCosmosOrbit,
+  type OrbitStyle,
+  type OrbitTarget,
+} from "./orbit";
 import { planetSize, present, serviceHealth } from "./present";
 import { Rune } from "./runes";
 
@@ -98,7 +104,12 @@ export function CosmosFleet({ active }: { active: boolean }) {
     typeof Math.random === "function" ? Math.random().toString(36).slice(2) : "",
   );
   const visualCounts =
-    cueMode === "visual" ? visualMoonCounts(hosts.map((h) => h.id), moonSalt) : null;
+    cueMode === "visual"
+      ? visualMoonCounts(
+          hosts.map((h) => h.id),
+          moonSalt,
+        )
+      : null;
   const onFleet = useTabActive("fleet");
   const [docVisible, setDocVisible] = useState(
     () => typeof document === "undefined" || !document.hidden,
@@ -209,7 +220,10 @@ export function CosmosFleet({ active }: { active: boolean }) {
   // translate animation on each registered element; each animation's frame 0 == the static (x,y) used below,
   // so freeze ↔ animate is seamless. `register(key)` returns a stable ref-callback per element.
   const targets: OrbitTarget[] = [
-    ...placements.map((p) => ({ key: p.host.id, spec: orbitParams(p.index, p.radius, orbitStyle) })),
+    ...placements.map((p) => ({
+      key: p.host.id,
+      spec: orbitParams(p.index, p.radius, orbitStyle),
+    })),
     { key: "__pluto", spec: decorOrbitSpec(DECOR_PLANET.angle, decorRadius) },
   ];
   const { register, animationsRef } = useCosmosOrbit(targets, animate, playbackRate);
@@ -217,7 +231,7 @@ export function CosmosFleet({ active }: { active: boolean }) {
   // C3 bottom sheet — open when the Fleet tab is showing AND a planet is selected. `displayHost` retains the
   // last host through the slide-OUT so the content doesn't blank while the sheet eases closed (selected→null).
   // `body[data-sheet=open]` drives the scoped cosmos rule that hides the Kit composer while the sheet is up.
-  const selectedHost = selected ? hosts.find((h) => h.id === selected) ?? null : null;
+  const selectedHost = selected ? (hosts.find((h) => h.id === selected) ?? null) : null;
   const sheetOpen = active && !!selectedHost;
   const titleId = useId();
   const [sheetH, setSheetH] = useState(0); // the sheet's resting height (reported by <BottomSheet>) for the lift

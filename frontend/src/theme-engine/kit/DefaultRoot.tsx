@@ -91,9 +91,7 @@ export function DefaultRoot({
   // (the textarea auto-grows, so a ResizeObserver keeps the padding in sync). 0 when no composer.
   useEffect(() => {
     const root = document.documentElement;
-    const comp = showComposer
-      ? mainRef.current?.querySelector<HTMLElement>(".kit-composer")
-      : null;
+    const comp = showComposer ? mainRef.current?.querySelector<HTMLElement>(".kit-composer") : null;
     if (!comp) {
       root.style.setProperty("--composer-h", "0px");
       return;
