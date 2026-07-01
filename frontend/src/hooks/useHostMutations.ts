@@ -23,8 +23,8 @@ export interface HostPayload {
 function useInvalidate() {
   const qc = useQueryClient();
   return () => {
-    qc.invalidateQueries({ queryKey: ["hosts"] });
-    qc.invalidateQueries({ queryKey: ["settings"] }); // computers section changed
+    void qc.invalidateQueries({ queryKey: ["hosts"] });
+    void qc.invalidateQueries({ queryKey: ["settings"] }); // computers section changed
   };
 }
 

@@ -153,7 +153,7 @@ export function UtilCard({ tool }: { tool: UtilTool }) {
               disabled={busy}
               onChange={(e) => setValues((v) => ({ ...v, [n]: e.target.value }))}
               onKeyDown={(e) => {
-                if (e.key === "Enter") run();
+                if (e.key === "Enter") void run();
               }}
             />
           ))}

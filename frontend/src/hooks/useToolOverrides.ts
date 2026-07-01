@@ -17,9 +17,9 @@ export function useSaveToolOverrides() {
     mutationFn: (overrides: Record<string, ToolOverride>) =>
       putJSON("/api/settings", { tool_overrides: overrides }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["tools"] });
-      qc.invalidateQueries({ queryKey: ["actions"] });
-      qc.invalidateQueries({ queryKey: ["settings"] });
+      void qc.invalidateQueries({ queryKey: ["tools"] });
+      void qc.invalidateQueries({ queryKey: ["actions"] });
+      void qc.invalidateQueries({ queryKey: ["settings"] });
       pushToast("Tool settings saved", "ok");
     },
     onError: (e: Error) => pushToast(e.message || "Save failed", "err"),

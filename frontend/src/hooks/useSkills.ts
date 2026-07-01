@@ -39,8 +39,8 @@ export function useSkillFile(name: string | null) {
 function useInvalidateSkills() {
   const qc = useQueryClient();
   return () => {
-    qc.invalidateQueries({ queryKey: ["skills"] });
-    qc.invalidateQueries({ queryKey: ["actions"] }); // a skill's allowed_tools can affect routing
+    void qc.invalidateQueries({ queryKey: ["skills"] });
+    void qc.invalidateQueries({ queryKey: ["actions"] }); // a skill's allowed_tools can affect routing
   };
 }
 

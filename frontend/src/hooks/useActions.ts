@@ -111,7 +111,7 @@ export function useFleetActions() {
         pushToast((e as Error).message, "err");
       } finally {
         setBusyId(host.id, false);
-        qc.invalidateQueries({ queryKey: ["hosts"] }); // reconcile with reality on next sweep
+        void qc.invalidateQueries({ queryKey: ["hosts"] }); // reconcile with reality on next sweep
       }
     },
     [qc, specs, setBusyId],

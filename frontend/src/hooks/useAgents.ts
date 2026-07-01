@@ -101,10 +101,10 @@ export function useAgent(name: string | null) {
 }
 
 function invalidateAgents(qc: ReturnType<typeof useQueryClient>, name?: string) {
-  qc.invalidateQueries({ queryKey: ["agentlist"] });
-  if (name) qc.invalidateQueries({ queryKey: ["agent", name] });
-  qc.invalidateQueries({ queryKey: ["actions"] }); // a toolset/agent change
-  qc.invalidateQueries({ queryKey: ["agents"] }); // the composer's /agent reference list
+  void qc.invalidateQueries({ queryKey: ["agentlist"] });
+  if (name) void qc.invalidateQueries({ queryKey: ["agent", name] });
+  void qc.invalidateQueries({ queryKey: ["actions"] }); // a toolset/agent change
+  void qc.invalidateQueries({ queryKey: ["agents"] }); // the composer's /agent reference list
 }
 
 /** Create or update a specialist's agent.yaml. */
@@ -141,7 +141,7 @@ export function useSaveAgentSoul() {
     mutationFn: ({ name, content }: { name: string; content: string }) =>
       putJSON(`/api/agents/${name}/soul`, { content }),
     onSuccess: (_d, v) => {
-      qc.invalidateQueries({ queryKey: ["agent", v.name] });
+      void qc.invalidateQueries({ queryKey: ["agent", v.name] });
       pushToast("Persona saved", "ok");
     },
     onError: (e: Error) => pushToast(e.message || "Save failed", "err"),

@@ -319,8 +319,8 @@ function AgentRow(props: {
         { agent: { default_title: title, defaults } },
         {
           onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ["agent", name] });
-            qc.invalidateQueries({ queryKey: ["agentlist"] });
+            void qc.invalidateQueries({ queryKey: ["agent", name] });
+            void qc.invalidateQueries({ queryKey: ["agentlist"] });
           },
         },
       );

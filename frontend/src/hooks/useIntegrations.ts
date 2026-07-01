@@ -59,8 +59,8 @@ export function useIntegrationsStatus() {
 function useInvalidate() {
   const qc = useQueryClient();
   return () => {
-    qc.invalidateQueries({ queryKey: ["settings"] }); // server lists live in the config
-    qc.invalidateQueries({ queryKey: ["integrations"] }); // status/dirty
+    void qc.invalidateQueries({ queryKey: ["settings"] }); // server lists live in the config
+    void qc.invalidateQueries({ queryKey: ["integrations"] }); // status/dirty
   };
 }
 
@@ -97,8 +97,8 @@ export function useRediscover() {
   return useMutation({
     mutationFn: () => postJSON<IntegrationsStatus>("/api/integrations/rediscover", {}),
     onSuccess: (status) => {
-      qc.invalidateQueries({ queryKey: ["integrations"] });
-      qc.invalidateQueries({ queryKey: ["actions"] }); // the agent toolset changed
+      void qc.invalidateQueries({ queryKey: ["integrations"] });
+      void qc.invalidateQueries({ queryKey: ["actions"] }); // the agent toolset changed
       const n = [...status.mcp, ...status.openapi].reduce((a, s) => a + s.tools, 0);
       pushToast(`Rediscovered · ${n} tool${n === 1 ? "" : "s"}`, "ok");
     },

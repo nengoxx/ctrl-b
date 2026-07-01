@@ -42,6 +42,13 @@ export default tseslint.config(
     rules: {
       ...reactHooks.configs["recommended-latest"].rules,
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
+      // Async functions ARE fine as JSX event handlers (React discards the return; the
+      // called fns self-handle errors). Keep the check for the dangerous `arguments`
+      // position (async passed to forEach/setTimeout/etc.). typescript-eslint docs.
+      "@typescript-eslint/no-misused-promises": [
+        "error",
+        { checksVoidReturn: { attributes: false } },
+      ],
     },
   },
 

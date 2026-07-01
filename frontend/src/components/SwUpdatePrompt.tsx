@@ -21,7 +21,7 @@ export function SwUpdatePrompt() {
   const { updateServiceWorker } = useRegisterSW({
     onNeedRefresh() {
       pushToast("// new version available", "info", {
-        action: { label: "refresh", onClick: () => updateServiceWorker(true) },
+        action: { label: "refresh", onClick: () => void updateServiceWorker(true) },
         sticky: true,
       });
     },

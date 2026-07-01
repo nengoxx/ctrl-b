@@ -49,9 +49,9 @@ export function useEventStream(): void {
     // Per-event invalidation: only the live fleet caches that the activity feed actually mutates
     // (a recorded Event is a host/service/action change). Cheap; runs on every event.
     function invalidateLiveCaches() {
-      qc.invalidateQueries({ queryKey: ["hosts"] });
-      qc.invalidateQueries({ queryKey: ["services"] });
-      qc.invalidateQueries({ queryKey: ["events"] });
+      void qc.invalidateQueries({ queryKey: ["hosts"] });
+      void qc.invalidateQueries({ queryKey: ["services"] });
+      void qc.invalidateQueries({ queryKey: ["events"] });
     }
 
     // Reconcile after a reconnect: invalidate ALL React Query caches (settings, integrations,
@@ -59,7 +59,7 @@ export function useEventStream(): void {
     // chat reducer to reload too (it's not a React Query consumer). Disabled-by-tab queries
     // just become stale and refetch when their tab next becomes active — no wasted requests.
     function reconcileAfterReconnect() {
-      qc.invalidateQueries();
+      void qc.invalidateQueries();
       void reloadChat();
     }
 
