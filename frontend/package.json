@@ -14,7 +14,7 @@
     "test:e2e": "playwright test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check-all": "npm run typecheck && npm test"
+    "check-all": "npm run typecheck && npm run format:check && npm test"
   },
   "dependencies": {
     "@fontsource/audiowide": "^5.2.7",
