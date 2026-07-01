@@ -9,6 +9,13 @@
 > [`REORG_PLAN.md`](./REORG_PLAN.md). Git history was **NOT** rewritten (filter-repo deferred — the 142 MB mp4 was
 > never committed; `.git` is 44 MB), so existing clones just `git pull`.
 >
+> **⚠ GATE (2026-07-01): pre-deploy hardening comes FIRST — do NOT execute the deploy until it's done.**
+> The app is feature-complete; what's left before v1.0 ships is hardening + verification. The sequenced,
+> one-at-a-time checklist (must-dos + cheap fixes, each with its own pre-flight + review pause) is
+> **[`PRE_DEPLOY.md`](./PRE_DEPLOY.md)** — start there. The deploy block below is queued behind it.
+> **For every phase: EXPLAIN the issue to the owner and get a go-ahead BEFORE executing anything —
+> the owner is reviewing each pre-deploy phase.**
+>
 > **▶ NEXT (a fresh session): the emma deploy — ✅ PRE-FLIGHTED 2026-07-01, ready to execute (not yet run).**
 > **Start at the PRE-FLIGHT block at the top of [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md)** — it has the verified-ready
 > checklist, the exact command sequence, decision points, cautions, AND the 5 PREP gaps found in review (most
