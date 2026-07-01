@@ -83,7 +83,13 @@ step's pre-flight reveals a cheaper path.
   Windows PATH edges. *(lefthook = documented alt if we want a managed runner.)*
 - **Acceptance:** `python tools/check.py` runs green across both halves; a bad commit is blocked
   (fast) pre-commit and a bad push (full) pre-push; harness documented in `AGENTS.md` §3 + `QUALITY.md` + D33.
-- [ ] 1a  ·  [ ] 1b  ·  [ ] 1c  ·  [ ] 1d
+- **Locked edge-case handling (2026-07-01):** (1) line endings → `.gitattributes` normalize-to-LF (applied in
+  1b with the Prettier reflow); (2) partial-staged files → *simple* (lint the working tree, documented caveat),
+  add stashing only if it bites; (3) aggregation → *run-all-and-summarise* (every check runs even if one fails).
+- [x] **1a — SHIPPED 2026-07-01** (`a507200`). Runner built + verified (all 4 checks green). It earned its keep
+  immediately: caught a UTF-8 output bug in itself (fixed) and surfaced pre-existing ruff drift the old
+  "clean" claim missed — burned down in `e11f679` (ruff `--fix`, 31 issues) + `5bad302` (ruff format, 57
+  files, inert); 229 tests still green.  ·  [ ] 1b  ·  [ ] 1c  ·  [ ] 1d
 
 ### 2. `docs/SECURITY_MODEL.md` — write the trust boundary  ·  *audit S1/L3 (P1)*
 - **Goal:** make the security model *executable-adjacent* documentation before exposure.
