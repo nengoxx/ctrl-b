@@ -38,15 +38,52 @@ step's pre-flight reveals a cheaper path.
 
 ## MUST — these gate the deploy
 
-### 1. Dev-hygiene scripts — `lint` / `format` / `check-all`  ·  *audit T1*
-- **Goal:** one command to lint+format+typecheck+test across frontend & backend, so every later step
-  verifies uniformly.
-- **Why:** frontend `package.json` has **no** `lint`/`format`/`check-all` scripts today; backend has
-  `ruff` + `pytest` but no single entry point. Cheap, and it de-risks all steps that follow.
-- **Pre-flight reads:** `frontend/package.json`, `backend/pyproject.toml` (ruff config), any existing
-  `tools/` launchers. Confirm the frontend already has eslint/prettier/tsc available before adding scripts.
-- **Acceptance:** `npm run check-all` (frontend) + a backend equivalent run green; documented in `AGENTS.md` run section.
-- [ ] Done
+### 1. Code-quality harness — lint / format / typecheck / `check-all` + enforcement  ·  *audit T1*
+- **Goal:** stand up the full quality harness so every later step verifies uniformly and v1.0 ships clean.
+  **Harness spec + conventions + locked decisions: [`QUALITY.md`](./QUALITY.md).** This section is the
+  *sliced rollout* of that spec.
+- **Why:** frontend has **no** lint/format/typecheck-gate config at all; backend has `ruff` + `pytest`
+  but **no type checker** (the biggest single quality gap) and no single entry point. Quality-first =
+  close both gaps, at convention, before exposure.
+- **Design (deep-audited + caveat-verified 2026-07-01 → [DECISIONS D33](./DECISIONS.md#d33)):** type-aware
+  **ESLint + Prettier** (FE) · official **`pyright[nodejs]`** (BE) · one stdlib **`tools/check.py`** runner ·
+  native **`core.hooksPath`** hooks (fast pre-commit / full pre-push). Adopted **warn-first → burn down to
+  clean**; the Prettier reflow is its own commit. Full rationale, caveats + mitigations, and rejected
+  alternatives (twin shell scripts, basedpyright fork, lefthook Windows edges, nox/just) in `QUALITY.md`.
+- **Pre-flight reads (already done for scoping):** `frontend/package.json` + `frontend/tsconfig.app.json`
+  (✅ `strict` already on — modest cleanup), `backend/pyproject.toml` (ruff config, no type checker),
+  `backend/app/main.py` (✅ already modern-typed → pyright `basic` ≈ near-green), `AGENTS.md` §3 (the
+  anchor to update — done), `tools/` (launcher pattern), `ARCHITECTURE.md` §6 (OS-agnostic chokepoint spirit).
+
+**Slices — each its own pre-flight + scope + review pause (do NOT batch):**
+- **1a — `tools/check.py` runner + FE `check-all` (zero new deps).** One stdlib chokepoint
+  (`subprocess`/`pathlib`): resolves the venv python (single OS-branch), runs a **data-driven check list**,
+  delegates FE to `npm run check-all`. Frontend `check-all` **composes existing scripts**
+  (`npm run typecheck && npm test && npm run build`) — no re-inlining. Wire only what is *already green* (FE
+  tsc/vitest/build; BE ruff + `ruff format --check` + pytest). Document in `AGENTS.md` §3. *Everything after appends to the list.*
+- **1b — Frontend ESLint + Prettier (type-aware).** Add `eslint @eslint/js typescript-eslint
+  eslint-plugin-react-hooks eslint-plugin-react-refresh eslint-config-prettier prettier` (pin
+  `typescript-eslint` to a **TS-5.9-compatible** version); flat `eslint.config.js` (`recommendedTypeChecked` +
+  `projectService: true`; **react-hooks via `reactHooks.configs['recommended-latest']`** — NOT the legacy
+  array-format `recommended`, which breaks flat config; react-refresh `warn`; **`disableTypeChecked` override
+  for non-project files** — `vite.config.ts`/`eslint.config.js`/`tools/*.mjs`; `prettier` config last);
+  `.prettierrc`; scripts `lint`/`lint:fix`/`format`/`format:check`. Run warn-first (tune noisy type-checked
+  rules like `no-unnecessary-condition` to `warn`); **rules-of-hooks = error**; Prettier reflow = its **own
+  commit**. Add `eslint .` + `prettier --check .` into the FE `check-all`. *(`@eslint-react` = post-baseline ratchet.)*
+- **1c — Backend `pyright[nodejs]`.** Add `pyright[nodejs]` (pinned, e.g. `==1.1.x`) to
+  `[project.optional-dependencies] dev` (installed via `pip install -e ".[dev]"`; the `nodejs` extra uses
+  `nodejs-wheel` → reliable hermetic bundled-Node, no flaky first-run fetch) + `[tool.pyright]`
+  (`typeCheckingMode = "basic"`, `pythonVersion = "3.14"`, venv path). Triage to green in `basic`; append to
+  `check.py`. *(Ratchet → `strict` later, not blocking. basedpyright/Pyrefly = documented alts.)*
+- **1d — Native `core.hooksPath` enforcement (fast/full split).** Add a tracked `.githooks/` dir +
+  `git config core.hooksPath .githooks` (in `install.sh` / a documented one-liner; ensure the exec bit).
+  `pre-commit` = `python tools/check.py --staged` (fast, staged-file subset: ruff/prettier/eslint);
+  `pre-push` = full `python tools/check.py` (types + tests). Hooks are 2-liners delegating to `check.py` (no
+  re-listing). Rationale: a slow pre-commit gets `--no-verify`-bypassed; native+python dodges lefthook's
+  Windows PATH edges. *(lefthook = documented alt if we want a managed runner.)*
+- **Acceptance:** `python tools/check.py` runs green across both halves; a bad commit is blocked
+  (fast) pre-commit and a bad push (full) pre-push; harness documented in `AGENTS.md` §3 + `QUALITY.md` + D33.
+- [ ] 1a  ·  [ ] 1b  ·  [ ] 1c  ·  [ ] 1d
 
 ### 2. `docs/SECURITY_MODEL.md` — write the trust boundary  ·  *audit S1/L3 (P1)*
 - **Goal:** make the security model *executable-adjacent* documentation before exposure.

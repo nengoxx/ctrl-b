@@ -86,8 +86,12 @@ cd backend && python3 -m venv .venv && .venv/bin/pip install -e .
 
 - **One-command runners:** `deploy/windows/start.cmd` (Windows) · `deploy/linux/run.sh [prod|dev]`
   (manual) · `python deploy/bootstrap.py` (Linux server, systemd + HTTPS). See [`deploy/README.md`](./deploy/README.md).
-- **Tests:** from `backend/`, `.venv/Scripts/python.exe -m pytest -q` (229). **No linter/CI gate yet**
-  beyond `ruff` (clean). Frontend: `npm test` (vitest) · `npm run test:e2e` (playwright) · `npm run build`.
+- **Tests:** from `backend/`, `.venv/Scripts/python.exe -m pytest -q` (229). Frontend: `npm test`
+  (vitest) · `npm run test:e2e` (playwright) · `npm run build`.
+- **Quality harness:** the layered lint/format/typecheck/test standard + the one-command `check-all`
+  contract is defined in [`docs/QUALITY.md`](./docs/QUALITY.md); rollout is sliced in
+  [`docs/PRE_DEPLOY.md`](./docs/PRE_DEPLOY.md) §1. Today only `ruff` (BE, clean) + `tsc`/`vitest` (FE)
+  are wired — ESLint/Prettier, Pyright, `check-all`, and the lefthook pre-commit gate land in that rollout.
 - **Config:** hybrid (`docs/DESIGN.md §9`). `config.yaml` (UI-managed, incl. nested secrets) is the source
   of truth; `.env` adds bootstrap paths + scalar `CTRLB_<SECTION>__<KEY>` overrides that win over the YAML.
   Both optional — built-in defaults apply. **Never live-test config writes against the real `config.yaml`;
