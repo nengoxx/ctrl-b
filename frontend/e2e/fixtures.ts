@@ -236,7 +236,6 @@ export async function mockApi(page: Page): Promise<void> {
     if (path.endsWith("/api/appearance")) return json(route, appearance);
     const key = Object.keys(ROUTES).find((k) => path.endsWith(k));
     if (key) return json(route, ROUTES[key]);
-    // eslint-disable-next-line no-console
     console.warn(`[mockApi] unmocked GET ${path} → default {}`);
     return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });

@@ -49,6 +49,17 @@ export default tseslint.config(
         "error",
         { checksVoidReturn: { attributes: false } },
       ],
+      // React Compiler-era rules (react-hooks v7) — DEFERRED to `warn`, deliberately.
+      // These flag real Rules-of-React patterns (NOT false positives), but every current hit
+      // is an intentional, correct pattern here: "sync an editable draft from async-loaded
+      // data" (set-state-in-effect) and the ubiquitous, concurrent-safe "latest ref" idiom
+      // (refs). A violating component is only *skipped for optimization* by React Compiler —
+      // never broken — and the Compiler itself is deferred (UI_AUDIT F13). So fixing these now
+      // is high-churn / near-zero benefit. We keep them at `warn` so the warnings ARE the
+      // React-Compiler-readiness checklist (clear them when F13 lands). Do NOT set to `off` —
+      // that hides the backlog and any future genuine violation. Full rationale: docs/QUALITY.md.
+      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/refs": "warn",
     },
   },
 

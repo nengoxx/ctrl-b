@@ -34,6 +34,7 @@ export default function App() {
           Suspense only ever shows on a cold load with a non-default theme persisted (brief, §14.6);
           the eager default (vapor) never suspends. fallback=null → the page bg shows during the blip. */}
       <Suspense fallback={null}>
+        {/* eslint-disable-next-line react-hooks/static-components -- ActiveRoot is a STABLE registry component (rootFor(theme), D29 §14), not an inline definition; the lint can't see through the registry lookup. */}
         <ActiveRoot />
       </Suspense>
     </>

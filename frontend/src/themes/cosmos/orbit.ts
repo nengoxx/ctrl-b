@@ -128,8 +128,11 @@ export function useCosmosOrbit(
 
   // (Re)build the animations (paused at frame 0). Runs after commit, so the ref callbacks have populated nodes.
   useEffect(() => {
-    for (const a of animations.current.values()) a.cancel();
-    animations.current.clear();
+    // Capture the (stable) animation Map up front so the cleanup closes over the same
+    // reference (react-hooks/refs) — it's a persistent Map, not a swapped DOM node.
+    const anims = animations.current;
+    for (const a of anims.values()) a.cancel();
+    anims.clear();
     for (const t of targets) {
       const el = nodes.current.get(t.key);
       if (!el || typeof el.animate !== "function") continue;
@@ -139,11 +142,11 @@ export function useCosmosOrbit(
         easing: "linear",
       });
       anim.pause(); // start frozen at frame 0; the gate effect plays it if enabled
-      animations.current.set(t.key, anim);
+      anims.set(t.key, anim);
     }
     return () => {
-      for (const a of animations.current.values()) a.cancel();
-      animations.current.clear();
+      for (const a of anims.values()) a.cancel();
+      anims.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sig captures the targets/specs identity
   }, [sig]);

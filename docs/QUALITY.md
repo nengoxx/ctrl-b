@@ -121,6 +121,32 @@ python tools/check.py --staged   # fast staged-file subset the pre-commit hook c
   type/lint rule → the config. A rule with no enforcing tool is a *visible* hole (the theme-engine `enforced by:`
   marker convention, generalized).
 
+## Deferred lint rules = the React-Compiler-readiness backlog (2026-07-02)
+
+Two **react-hooks v7** rules are set to **`warn` (not `error`, not `off`)** in `eslint.config.js` on purpose —
+`react-hooks/set-state-in-effect` and `react-hooks/refs`. This is a **deliberate deferral, not a false-positive
+dodge** (an earlier read wrongly called them false positives; the React docs confirm they flag *real*
+Rules-of-React patterns).
+
+**Why deferred (assessed thoroughly 2026-07-02, all ~19 sites reviewed):**
+- Every current hit is an **intentional, correct, concurrent-safe** pattern: "sync an editable draft from
+  *async-loaded* server data" (`set-state-in-effect`, in the Conf editors) and the ubiquitous **"latest ref"
+  idiom** (`refs`, e.g. `Waveform`/`useFleet`/`AgentTab`/cosmos — a ref updated in render but read only later in
+  rAF/effects, never for render output). **No correctness bug, no tearing, no user-visible flicker** — verified.
+- The *only* real cost is **React Compiler** coverage: per React's docs a violating component is **skipped for
+  optimization** (never broken), and the Compiler is itself deferred (**[UI_AUDIT](./UI_AUDIT.md) F13**). So
+  fixing these ~19 now is **high-churn / near-zero benefit** — the payoff only lands *with* Compiler adoption,
+  which also deletes our ~50 manual `useMemo`/`useCallback`/`memo` sites in the same pass.
+
+**The mitigation that makes this safe:** keep them at **`warn`** so the warnings **ARE the checklist** — when F13
+(React Compiler) is picked up, `npm run lint` lists exactly the components to fix, bundled with the manual-memo
+deletion. **Never set to `off`** (that hides the backlog + any future genuine violation). Revisit at F13.
+
+*Handled now (so the `warn` list is all "real-but-deferred", not polluted):* `react-hooks/static-components`
+stays **`error`** — its one hit (`App.tsx` `<ActiveRoot/>`) is a genuine false positive (a stable registry
+component, D29) and carries a scoped `eslint-disable` with rationale; the `exhaustive-deps` ref-in-cleanup in
+`orbit.ts` was a real cheap fix (capture the Map ref before cleanup).
+
 ## Locked decisions (2026-07-01) — [DECISIONS D33](./DECISIONS.md#d33)
 
 | # | Decision | Choice |
