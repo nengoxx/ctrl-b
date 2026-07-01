@@ -1,5 +1,59 @@
 # Deploy to emma (Linux) — planning + conversation record
 
+> ## 🧭 PRE-FLIGHT (2026-07-01) — REVIEWED + READY · execute in a FRESH clean session · NOT yet run
+> The v1.0 reorg shipped + verified (commit `7503fcf` on `main`; dual audit green). The whole deploy kit was
+> re-reviewed end-to-end against the current tree. This block is the **execution handoff** — read it, do the PREP,
+> then run the sequence. The planning record below is rationale; **DECISIONS D32 is authoritative** for topology.
+>
+> **✅ Verified ready (re-checked at `7503fcf`):** `deploy/bootstrap.py --dry-run` → exit 0 (resolves `emma@192.168.1.160:22`
+> from the root `config.yaml`; emma entry has `os_type: linux` + ip + ssh_* + password). All deploy paths correct
+> post-reorg: `WIN_CONFIG` → repo-root `config.yaml`; sparse-checkout → `set backend frontend deploy`; the 3 systemd units
+> → `__REPO__/backend|frontend`; `install.sh`/`migrate-layout.sh` cross-refs → `tools/start-claude.sh` + `deploy/linux/`.
+> Every shell script `bash -n` clean; both `.ps1` launchers parse. **History was NOT rewritten** → emma's existing clone
+> **fast-forwards with a plain `git pull`** (no re-clone). App proven bootable from the new layout (pytest 229 · live
+> API+SPA on :5433).
+>
+> **⚠ PREP — resolve these BEFORE running (gaps found in pre-flight):**
+> 1. **No `dev` branch exists yet** — origin has only `main`. D32 needs `main`(prod) + `dev`(dev). **Create it from the
+>    reorg'd main first:** `git checkout -b dev && git push -u origin dev && git checkout main`. Without `origin/dev`,
+>    `migrate-layout.sh` creates a *local* `dev` from whatever emma's HEAD is → risks a **pre-reorg** dev tree.
+> 2. **emma's checkout is pre-reorg** (recon @ `4f277b5`). On emma, BEFORE migrate: `cd ~/github/ctrl-b && git checkout
+>    main && git pull --ff-only` (→ `7503fcf`), so the moved DEV tree carries the new layout — else `install.sh dev`
+>    looks for `backend/` that isn't there yet.
+> 3. **Tandem-agent coordination (mandatory).** `migrate-layout.sh` ABORTS if the tmux `ctrl-b` session runs OR the tree
+>    has uncommitted changes. So (a) coordinate + stop the other agent (`tmux kill-session -t ctrl-b`), (b) ensure its
+>    work is committed + pushed, (c) THEN migrate. Never lose its unpushed work.
+> 4. **Reachability.** config → emma LAN `192.168.1.160` (Linux sshd; recon connected OK, but LAN can drift). Confirm
+>    reachable at deploy time; if LAN is blocked, set emma's `ip` to MagicDNS `emma` / tailnet `100.109.206.88`
+>    (`vpn_host` D3 field is not wired yet). The Bash tool needs **`dangerouslyDisableSandbox: true`** for LAN/SSH.
+> 5. **Secret out-of-band.** `config.yaml` is gitignored; `bootstrap.py` SFTPs it from THIS Windows checkout →
+>    `~/.ctrl-b/config.yaml` (0600). Keep the checkout's `config.yaml` current before deploying.
+>
+> **▶ EXACT SEQUENCE (fresh session; from the Windows checkout unless noted):**
+> 0. **Prep:** do gaps 1 (push `dev`), 3 (stop+drain the tandem agent), 4 (confirm emma reachable).
+> 1. `backend/.venv/Scripts/python.exe deploy/bootstrap.py --dry-run` — preview (must exit 0, no `dashboard_v2`).
+> 2. **ON EMMA (one-time, agent-coordinated):** `cd ~/github/ctrl-b && git checkout main && git pull --ff-only` (gap 2),
+>    then `bash deploy/linux/migrate-layout.sh` → moves the tree → `~/github/ctrl-b-dev` (`dev`) + fresh sparse prod at
+>    `~/github/ctrl-b`.
+> 3. `backend/.venv/Scripts/python.exe deploy/bootstrap.py` *(dangerouslyDisableSandbox)* → SFTP secret → ensure prod
+>    tree → `install.sh prod` (native-3.14 venv + `npm run build` + enable service) → `serve-https`. Add **`--with-dev`**
+>    for the isolated DEV instance, **`--start-agent`** for the tmux agent.
+> 4. **Verify:** `ssh emma -t 'systemctl --user status ctrl-b-dashboard; curl -s localhost:5433/api/health'`; open
+>    **`https://emma.lobster-vector.ts.net`** on the phone (mic-ready).
+> 5. **Tag the release:** `git tag -a v1.0.0 -m "ctrl-b v1.0" && git push origin v1.0.0`; then pin prod:
+>    on emma `cd ~/github/ctrl-b && git fetch --tags && git checkout v1.0.0 && bash deploy/linux/install.sh prod`.
+>
+> **Decisions to confirm at deploy:** `--with-dev` (stand up DEV now — recommended) · `--start-agent` (tmux agent now vs
+> start manually later) · tag = `v1.0.0`.
+>
+> **Cautions:** do NOT shut down/reboot fleet hosts while testing (ping/status only); do NOT modify emma's system/MCP
+> config beyond the deploy; the Windows `--reload` gotcha does NOT apply on emma; the second agent's checkout is
+> read-only to you (never commit there); review the SECURITY subset (debug-off, shell-off-by-default, secrets-masked,
+> stale-confirm-token recovery, OpenAPI hardening) **as part of** exposing over Tailscale. After deploy, dev sessions
+> run ON emma (Linux) — keep everything OS-agnostic.
+>
+> ---
+
 > **Status: ✅ DECISIONS MADE · ✅ RECON DONE · ✅ ARTIFACTS READY (2026-06-29).**
 > **Authoritative topology: [DECISIONS.md **D32**](./DECISIONS.md) — two fully isolated instances (PROD + DEV),
 > one repo, `main`/`dev` branches + release **tags**, prod a clean **sparse** clone.** The runbook is
@@ -33,7 +87,7 @@ installs set `CTRLB_HOME=~/.ctrl-b`"* → config at `/home/emma/.ctrl-b/config.y
 **Artifacts (`deploy/linux/`) — D32 two-tree:** `install.sh [prod|dev]` (idempotent per-instance setup) ·
 `ctrl-b-dashboard.service` (PROD backend :5433) · `ctrl-b-dashboard-dev.service` (DEV backend :5434, `--reload`) ·
 `ctrl-b-dashboard-dev-web.service` (DEV Vite :5173 → :5434) · `serve-https.sh` (Tailscale Serve 443→5433) ·
-`start-claude.sh` (tmux agent, **dev tree**) · `migrate-layout.sh` (one-time legacy→two-tree conversion) ·
+`tools/start-claude.sh` (tmux agent, **dev tree** — now in repo-root `tools/`, not `deploy/`) · `migrate-layout.sh` (one-time legacy→two-tree conversion) ·
 `bootstrap.py` (Windows→emma: SFTP secret → ensure prod tree → install → serve; `--with-dev`/`--start-agent`) ·
 `README.md` (the runbook).
 
@@ -105,7 +159,7 @@ This subsumes TODO **Phase 9** (dashboard systemd unit + Linux install/run scrip
 - **Dev is two processes.** uvicorn `5433` + Vite dev `5173` (Vite proxies `/api` → backend). Hot-reload.
 - **The Windows `--reload` gotcha does NOT apply on Linux** — `uvicorn --reload` is safe on emma (the gotcha is a
   Windows event-loop/subprocess issue only). So a dev instance on emma can hot-reload.
-- **The Claude Code launcher today** (`start_claude_remote.ps1`, Windows): `claude --remote-control ctrl-b
+- **The Claude Code launcher today** (`tools/start-claude.ps1`, Windows; the Linux twin is `tools/start-claude.sh`): `claude --remote-control ctrl-b
   --permission-mode bypassPermissions --model claude-opus-4-8 --effort high`. emma needs a **Linux equivalent**.
 
 ## Dev vs prod, explained (since frontend build/serve isn't obvious)

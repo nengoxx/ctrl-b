@@ -9,10 +9,16 @@
 > [`REORG_PLAN.md`](./REORG_PLAN.md). Git history was **NOT** rewritten (filter-repo deferred — the 142 MB mp4 was
 > never committed; `.git` is 44 MB), so existing clones just `git pull`.
 >
-> **▶ NEXT (a fresh session): the emma deploy.** Start at [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md). Topology = DECISIONS
-> **D32** (two isolated instances, one repo). Execute: (1) ONE-TIME, agent-coordinated `deploy/linux/migrate-layout.sh`
-> on emma; (2) `backend/.venv/Scripts/python.exe deploy/bootstrap.py` (SFTP secret → prod tree → `install.sh prod` →
-> Serve; `--with-dev`, `--start-agent`); (3) tag **`v1.0.0`**. All deploy paths are already correct from the reorg.
+> **▶ NEXT (a fresh session): the emma deploy — ✅ PRE-FLIGHTED 2026-07-01, ready to execute (not yet run).**
+> **Start at the PRE-FLIGHT block at the top of [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md)** — it has the verified-ready
+> checklist, the exact command sequence, decision points, cautions, AND the 5 PREP gaps found in review (most
+> important: **(1) create + push a `dev` branch from `main@7503fcf` FIRST** — origin has only `main`, and D32 needs
+> `main`+`dev` or migrate-layout risks a pre-reorg dev tree; **(2)** `git pull` emma's tree to `7503fcf` before
+> migrate; **(3)** stop + drain the tandem agent before migrate; **(4)** confirm emma LAN `192.168.1.160` reachable
+> (Bash needs `dangerouslyDisableSandbox`); **(5)** `config.yaml` reaches emma via bootstrap SFTP). Topology = DECISIONS
+> **D32**. Sequence: prep → `bootstrap.py --dry-run` → on-emma `migrate-layout.sh` → `bootstrap.py [--with-dev]
+> [--start-agent]` → verify `https://emma.lobster-vector.ts.net` → tag **`v1.0.0`** + pin prod. History wasn't
+> rewritten → emma just `git pull`s (no re-clone).
 > Then (post-deploy): the parked **theme-engine hardening** + **Composer Surface**, and the **multi-homed addressing**
 > (ROADMAP D3) — see the priority block in the 2026-06-29 session update below.
 >
