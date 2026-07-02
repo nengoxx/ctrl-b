@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field, SecretStr, field_validator, model_validat
 from ruamel.yaml import YAML
 
 from app.domain.agent import AgentDef, CompactionCfg, ModelRef
-from app.domain.enums import OSType
+from app.domain.enums import OSType, Risk
 from app.domain.host import Host
 from app.domain.service import Service
 
@@ -416,9 +416,11 @@ class OpenTerminalCfg(BaseModel):
     enabled: bool = True
     timeout_s: float = 30.0  # per-request timeout
     default_wait_s: float = 30.0  # synchronous-execute wait window (server returns when done/elapsed)
-    exec_risk: str = "high"  # risk for terminal_exec (low|med|high) — HIGH gates on confirm
-    write_risk: str = "high"  # risk for file writes/replace
-    read_risk: str = "low"  # risk for read/list/grep/glob (LOW auto-runs)
+    # Coerced to Risk at load (Pydantic boundary): a valid low|med|high string → the enum; a bad value
+    # fails validation at startup rather than silently defaulting (which would weaken the confirm gate).
+    exec_risk: Risk = Risk.HIGH  # risk for terminal_exec — HIGH gates on confirm
+    write_risk: Risk = Risk.HIGH  # risk for file writes/replace
+    read_risk: Risk = Risk.LOW  # risk for read/list/grep/glob (LOW auto-runs)
 
 
 class ShellCfg(BaseModel):
@@ -472,7 +474,7 @@ class OpenApiServerCfg(BaseModel):
     base_url: str = ""  # service root, e.g. http://host:port
     spec_url: str = ""  # explicit OpenAPI doc URL; blank → base_url + /openapi.json
     enabled: bool = True
-    risk: str = "med"  # risk for mutating ops (low|med|high); GET/HEAD always LOW
+    risk: Risk = Risk.MED  # risk for mutating ops (low|med|high); GET/HEAD always LOW
     connect_timeout_s: float = 15.0
     api_key: str = ""  # optional bearer/api token
     auth_scheme: str = "Bearer"  # prefix for the auth header value ("" → raw key)
@@ -495,7 +497,7 @@ class McpServerCfg(BaseModel):
     name: str
     transport: str = "streamable_http"  # "streamable_http" | "stdio"
     enabled: bool = True
-    risk: str = "med"  # low | med | high — gate for this server's tools
+    risk: Risk = Risk.MED  # low | med | high — gate for this server's tools
     connect_timeout_s: float = 10.0  # bound startup discovery + per-call connect
     # streamable_http
     url: str = ""  # e.g. http://192.168.1.160:3003/mcp

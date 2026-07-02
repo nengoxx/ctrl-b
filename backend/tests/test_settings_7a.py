@@ -52,6 +52,55 @@ def test_save_roundtrips_config() -> None:
         assert reloaded.inference.local.api_key == "supersecret"
 
 
+def test_integration_risk_coerces_at_the_config_boundary() -> None:
+    """Integration-tool `risk` fields are typed `Risk` (not `str`), so a valid low|med|high config
+    string coerces to the enum at load and the adapters read `server.risk` directly (no per-adapter
+    conversion). Per-field defaults hold: MCP/OpenAPI → MED; open-terminal exec/write → HIGH, read → LOW."""
+    from app.domain.enums import Risk
+
+    s = Settings.model_validate(
+        {
+            "mcp_servers": [{"name": "web", "transport": "streamable_http", "risk": "high"}],
+            "openapi_servers": [{"name": "api", "risk": "low"}],
+            "open_terminal": {"base_url": "http://x"},  # risks omitted → defaults
+        }
+    )
+    assert s.mcp_servers[0].risk is Risk.HIGH
+    assert s.openapi_servers[0].risk is Risk.LOW
+    assert s.open_terminal.exec_risk is Risk.HIGH  # default
+    assert s.open_terminal.write_risk is Risk.HIGH  # default
+    assert s.open_terminal.read_risk is Risk.LOW  # default
+    # omitted MCP risk → the field default (MED), same as the old `.get(..., Risk.MED)` fallback
+    plain = Settings.model_validate({"mcp_servers": [{"name": "y", "transport": "streamable_http"}]})
+    assert plain.mcp_servers[0].risk is Risk.MED
+
+
+def test_invalid_risk_fails_fast() -> None:
+    """A typo'd risk (`hihg`) must raise at load, not silently default — the whole point of coercing
+    at the boundary (a silent default would quietly weaken the confirm gate for that server)."""
+    raised = False
+    try:
+        Settings.model_validate(
+            {"mcp_servers": [{"name": "bad", "transport": "streamable_http", "risk": "hihg"}]}
+        )
+    except Exception:  # pydantic ValidationError (kept broad so the test runs standalone too)
+        raised = True
+    assert raised, "an invalid risk string must fail validation, not silently default to MED/HIGH"
+
+
+def test_risk_roundtrips_to_string_in_yaml() -> None:
+    """save→reload keeps risk as its `low|med|high` string (`mode='json'` StrEnum dump), so the YAML
+    stays human-editable and the reload re-coerces to the enum — the same StrEnum round-trip as A1."""
+    from app.domain.enums import Risk
+
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "config.yaml"
+        s = Settings.model_validate({"open_terminal": {"base_url": "http://x", "exec_risk": "med"}})
+        save_settings(s, p)
+        assert "exec_risk: med" in p.read_text(encoding="utf-8")  # the string, not "Risk.MED"
+        assert load_settings(p).open_terminal.exec_risk is Risk.MED  # re-coerced on reload
+
+
 def test_unmask_preserves_and_updates() -> None:
     """A2: masked/blank secret → keep stored; a new value → take it."""
     stored = {"inference": {"local": {"api_key": "REALKEY-123", "model": "m"}}}

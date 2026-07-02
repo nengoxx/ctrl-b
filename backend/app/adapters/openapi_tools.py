@@ -38,7 +38,6 @@ if TYPE_CHECKING:
 log = logging.getLogger("ctrlb.openapi")
 
 _MAX_OUTPUT_CHARS = 6000
-_RISK = {"low": Risk.LOW, "med": Risk.MED, "high": Risk.HIGH}
 _READ_METHODS = {"get", "head"}
 
 
@@ -143,7 +142,7 @@ class OpenApiToolProvider:
             schema["$defs"] = defs
 
         opid = op.get("operationId") or f"{method}_{path.strip('/').replace('/', '_') or 'root'}"
-        risk = Risk.LOW if method in _READ_METHODS else _RISK.get(server.risk, Risk.MED)
+        risk = Risk.LOW if method in _READ_METHODS else server.risk  # server.risk: Risk (default MED)
         desc = op.get("summary") or op.get("description") or f"{method.upper()} {path}"
         return _Op(
             name=_qualified(server.name, opid),

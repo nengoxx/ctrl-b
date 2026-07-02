@@ -46,8 +46,6 @@ log = logging.getLogger("ctrlb.mcp")
 #: re-call narrower if it needs more). The UI still shows this `output`.
 _MAX_OUTPUT_CHARS = 6000
 
-_RISK = {"low": Risk.LOW, "med": Risk.MED, "high": Risk.HIGH}
-
 
 class McpError(RuntimeError):
     """Any MCP failure (server down, transport unsupported, bad response) — normalized to a result."""
@@ -81,7 +79,7 @@ def _risk_for(tool, server: McpServerCfg) -> Risk:
             return Risk.HIGH
         if getattr(ann, "readOnlyHint", None) is True:
             return Risk.LOW
-    return _RISK.get(server.risk, Risk.MED)
+    return server.risk  # already a Risk (coerced at the config boundary; default MED)
 
 
 def _retry_hints_for(tool) -> tuple[bool, bool]:

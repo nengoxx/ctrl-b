@@ -16,14 +16,13 @@ from pydantic import BaseModel, Field
 
 from app.adapters.openterminal import OpenTerminalError
 from app.core.tool import FunctionTool, InvocationContext, ToolSpec
-from app.domain.enums import Risk, RunState
+from app.domain.enums import RunState
 from app.domain.result import ToolResult
 
 if TYPE_CHECKING:
     from app.config import OpenTerminalCfg
     from app.core.tool import ToolRegistry
 
-_RISK = {"low": Risk.LOW, "med": Risk.MED, "high": Risk.HIGH}
 _MAX_OUTPUT_CHARS = 6000
 
 
@@ -281,7 +280,7 @@ def register_openterminal(registry: "ToolRegistry", cfg: "OpenTerminalCfg") -> i
             icon=icon,
             category=category,
             input_model=model,
-            risk=_RISK.get(risk, Risk.HIGH),
+            risk=risk,  # cfg.{exec,write,read}_risk — already a Risk (coerced at the config boundary)
             agent_exposed=True,
             ui_exposed=False,
         )
