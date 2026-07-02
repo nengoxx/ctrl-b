@@ -23,6 +23,7 @@ from app.services.actions._common import ServiceTargetInput
     ),
     icon="external-link",
     risk=Risk.LOW,
+    read_only=True,  # only builds a URL string, contacts nothing → retry-safe
     ui_exposed=False,
 )
 async def open_service_url(inp: ServiceTargetInput, ctx: InvocationContext) -> ToolResult:

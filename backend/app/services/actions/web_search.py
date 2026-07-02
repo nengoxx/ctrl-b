@@ -50,6 +50,7 @@ def _format(results: list) -> str:
     icon="search",
     category="utility",
     risk=Risk.LOW,
+    read_only=True,  # queries the web, changes nothing → retry-safe
     ui_exposed=False,
     agent_exposed=True,
 )

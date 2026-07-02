@@ -37,7 +37,7 @@ _SUDO_FAILED = (
 )
 
 
-@action("shutdown_host", title="Shut down", icon="power", risk=Risk.HIGH, confirm=True)
+@action("shutdown_host", title="Shut down", icon="power", risk=Risk.HIGH, confirm=True, idempotent=True)
 async def shutdown_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolResult:
     """Shut down a host over SSH (per-OS command; requires configured SSH credentials)."""
     host = ctx.require_deps().fleet.host(inp.host_id)

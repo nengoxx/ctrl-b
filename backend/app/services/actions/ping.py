@@ -13,7 +13,7 @@ from app.services import fleet as fleet_mod
 from app.services.actions._common import HostTargetInput
 
 
-@action("ping_host", title="Ping", icon="activity", risk=Risk.LOW)
+@action("ping_host", title="Ping", icon="activity", risk=Risk.LOW, read_only=True)
 async def ping_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolResult:
     """Send one ICMP echo to a host and report whether it is reachable and its latency."""
     host = ctx.require_deps().fleet.host(inp.host_id)

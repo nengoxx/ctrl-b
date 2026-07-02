@@ -26,6 +26,7 @@ from app.services.actions._common import ServiceTargetInput
     ),
     icon="activity",
     risk=Risk.LOW,
+    read_only=True,  # a live probe, modifies nothing → retry-safe
     ui_exposed=False,
 )
 async def check_service(inp: ServiceTargetInput, ctx: InvocationContext) -> ToolResult:

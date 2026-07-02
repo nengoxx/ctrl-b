@@ -1,8 +1,8 @@
 # Pre-deploy hardening — the gate before the emma v1.0 deploy
 
-**Status: IN PROGRESS (2026-07-02). Steps 1 (quality harness), 2 (SECURITY_MODEL.md) + 3 (secret-hygiene
-tests) COMPLETE. ▶ NEXT = step 4 (robustness P1s: 4a SSE guards · 4b stale confirm-token · 4c risk-aware
-retry). Steps 5–7 not started.** The app is *feature-complete* (Phases 0–8 shipped,
+**Status: IN PROGRESS (2026-07-02). Steps 1 (quality harness), 2 (SECURITY_MODEL.md), 3 (secret-hygiene
+tests) + 4 (robustness P1s: 4a SSE guards · 4b confirm-token recovery · 4c risk-aware retry) COMPLETE.
+▶ NEXT = step 5 (Phase-9 smoke tests). Steps 6–7 (cheap-nice) not started.** The app is *feature-complete* (Phases 0–8 shipped,
 incl. all of 7e workspaces/memory/skills and Phase 8 tools). What remains before shipping v1.0 to
 emma is **hardening + verification**, not features. This doc is the sequenced checklist for that work.
 
@@ -184,7 +184,7 @@ reads below. (New clone / Windows dev: enable hooks once with `git config core.h
   hot-path cost). Chose precise-over-catch-all deliberately (single-user tailnet: a false-positive can
   corrupt config, a false-negative only shows the owner their own secret in their own browser). **▶ NEXT = step 4.**
 
-### 4. Robustness P1s (agent chat correctness)  ·  *audit J2 / J3 / I4*
+### 4. Robustness P1s (agent chat correctness)  ·  *audit J2 / J3 / I4*  ·  ✅ COMPLETE (4a+4b+4c) 2026-07-02
 Three distinct fixes — each is its own pre-flight/scope/review. Do NOT bundle blindly.
 - **4a — J2 SSE payload guards (P1). ✅ SHIPPED 2026-07-02.** A hand-written validator layer in
   `store/chat.ts` (`asPart`/`asToolResult`/`str`/`nonEmpty`/`isRunState`) is the single point the wire is
@@ -206,10 +206,17 @@ Three distinct fixes — each is its own pre-flight/scope/review. Do NOT bundle 
   opencode/Claude Code keep approvals ephemeral only because their loop is — we already persist ours).
   Tests: `tests/test_confirm_recovery_j3.py` (4) — mechanism, execute-recovers-after-token-loss, dismiss
   still works, no double-execute. 241 backend tests green.
-- **4c — I4 risk-aware retry (P1):** never one-click-retry a side-effectful failed turn. Add
-  `side_effect`/`mutates` to `ToolSpec`; for a mutating tool, copy-to-draft instead of auto-resend.
-  *Reads:* `ToolSpec`, the retry UI on failed turns, `ActionService.invoke`.
-- [x] **4a — SHIPPED 2026-07-02** (SSE payload guards; `store/chat.ts` validator layer + 5 tests).  ·  [x] **4b — SHIPPED 2026-07-02** (stale confirm-token recovery; server-side re-mint + 4 tests).  ·  [ ] 4c
+- **4c — I4 risk-aware retry (P1). ✅ SHIPPED 2026-07-02.** `ToolSpec` gains MCP-aligned `read_only` +
+  `idempotent` (defaults false) → derived `retry_safe = read_only or idempotent`, exposed in the action
+  DTO; built-ins annotated, MCP/OpenAPI derive theirs from `readOnlyHint`/`idempotentHint` (GET → read-only).
+  Frontend `retryLastTurn(isRetrySafe)` — if the failed turn ran a non-retry-safe tool, copy the message
+  to the composer for review instead of auto-resending (so a retry can't silently repeat reboot/restart/
+  run_shell/spawn/memory); read-only/idempotent turns auto-resend as before. `failStream` now preserves the
+  turn's parts + appends the error (so the retry can see what ran, and the error is more transparent).
+  `retry_safe` is a UX signal only — the confirm/privilege gate is unchanged (MCP: hints ≠ guarantees).
+  Tests: `test_retry_safety_i4.py` (3, classification + DTO + drift-guard) · `store/chat.test.ts` (+3 retry
+  cases). Full gate green.
+- [x] **4a** (SSE payload guards; validator layer + 5 tests) · [x] **4b** (stale confirm-token recovery; server-side re-mint + 4 tests) · [x] **4c — SHIPPED 2026-07-02** (risk-aware retry; MCP-aligned `retry_safe` + copy-to-draft + 6 tests). **→ Step 4 COMPLETE.**
 
 ### 5. Phase 9 smoke tests  ·  *TODO Phase 9 (unchecked)*
 - **Goal:** prove the whole app runs — desktop + phone viewport + core backend actions — before it ships.

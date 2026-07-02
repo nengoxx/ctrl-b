@@ -1,7 +1,14 @@
 import { renderHook, act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resumeCall, sendMessage, startNewThread, useChat } from "../../src/store/chat";
+import { clearDraft, getDraft } from "../../src/store/composer";
+import {
+  resumeCall,
+  retryLastTurn,
+  sendMessage,
+  startNewThread,
+  useChat,
+} from "../../src/store/chat";
 import type { Part } from "../../src/types";
 
 // store/chat — the streaming reducer (the most intricate frontend logic). We drive the REAL public API
@@ -401,5 +408,77 @@ describe("malformed frame resilience (J2)", () => {
       await sendMessage("q");
     });
     expect(result.current.status).toBe("idle"); // graceful: turn produced no text, no crash
+  });
+});
+
+// ── I4: risk-aware retry. A failed turn that ran a NON-retry-safe tool must not one-click auto-resend
+// (it could silently repeat a reboot/restart/shell); it's copied to the composer for a conscious re-send.
+// A read-only/idempotent turn auto-resends as before. `retryLastTurn(isRetrySafe)` takes the predicate.
+describe("risk-aware retry (I4)", () => {
+  async function failedTurnWith(tool: string) {
+    // A turn that runs `tool`, then errors — leaving a retryable errored assistant bubble.
+    mockStream([
+      { event: "message.start", data: { messageId: "m1" } },
+      {
+        event: "part.added",
+        data: {
+          messageId: "m1",
+          part: { type: "tool_call", call_id: "c1", tool, args: {}, state: "ok" },
+        },
+      },
+      { event: "error", data: { message: "boom" } },
+    ]);
+    const hook = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage(`do ${tool}`);
+    });
+    expect(hook.result.current.status).toBe("error");
+    return hook;
+  }
+
+  it("copies to the composer (no auto-resend) when the failed turn ran a mutating tool", async () => {
+    clearDraft();
+    const { result } = await failedTurnWith("reboot_host");
+    const before = vi.mocked(globalThis.fetch).mock.calls.length;
+
+    act(() => {
+      retryLastTurn((tool) => tool !== "reboot_host"); // reboot_host is NOT retry-safe
+    });
+
+    expect(getDraft()).toBe("do reboot_host"); // handed to the composer for review
+    expect(vi.mocked(globalThis.fetch).mock.calls.length).toBe(before); // did NOT auto-resend
+    expect(result.current.messages.some((m) => m.parts.some((p) => p.type === "error"))).toBe(
+      false,
+    );
+  });
+
+  it("auto-resends (no draft copy) when the failed turn only ran retry-safe tools", async () => {
+    clearDraft();
+    await failedTurnWith("ping_host");
+    const before = vi.mocked(globalThis.fetch).mock.calls.length;
+
+    await act(async () => {
+      retryLastTurn(() => true); // ping_host is retry-safe → auto-resend
+    });
+
+    expect(getDraft()).toBe(""); // NOT copied to the composer
+    expect(vi.mocked(globalThis.fetch).mock.calls.length).toBeGreaterThan(before); // a resend fired
+  });
+
+  it("treats an unknown tool as unsafe (conservative — catalog gaps copy to the composer)", async () => {
+    clearDraft();
+    const { result } = await failedTurnWith("some_future_tool");
+    const before = vi.mocked(globalThis.fetch).mock.calls.length;
+
+    act(() => {
+      retryLastTurn(() => false); // predicate: nothing known-safe (e.g. catalog not loaded)
+    });
+
+    expect(getDraft()).toBe("do some_future_tool");
+    expect(vi.mocked(globalThis.fetch).mock.calls.length).toBe(before);
+    // errored turn cleared; only the "review and send" system breadcrumb remains.
+    expect(result.current.messages.some((m) => m.parts.some((p) => p.type === "error"))).toBe(
+      false,
+    );
   });
 });

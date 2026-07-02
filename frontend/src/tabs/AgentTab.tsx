@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { PlanSteps } from "../components/PlanSteps";
+import { useActionSpecs } from "../hooks/useActions";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { toggle as playMessage, usePlayback } from "../lib/audioController";
 import { fillComposer } from "../lib/composer";
@@ -341,6 +342,7 @@ const Bubbles = memo(function Bubbles({
   streaming,
   resultFor,
   canRetry,
+  onRetry,
   resolvedDefault,
   ttsOn,
 }: {
@@ -350,6 +352,8 @@ const Bubbles = memo(function Bubbles({
   /** F20 — render the retry affordance on this assistant bubble. Only true on the latest
    * message when chat status === "error", so historical errors don't grow phantom buttons. */
   canRetry: boolean;
+  /** Risk-aware retry handler (I4) — stable; auto-resends a retry-safe turn, else copies to composer. */
+  onRetry: () => void;
   /** The resolved default agent slug (7e-c). An assistant turn is labelled with its `agent` only
    * when it differs from this — so default turns stay clean and specialist turns are attributed. */
   resolvedDefault: string | undefined;
@@ -410,7 +414,7 @@ const Bubbles = memo(function Bubbles({
                   <button
                     type="button"
                     className="chat-err-retry"
-                    onClick={retryLastTurn}
+                    onClick={onRetry}
                     aria-label="Retry the last message"
                   >
                     retry
@@ -541,6 +545,14 @@ export function AgentTab({ active }: Props) {
   const resultByCallRef = useRef(resultByCall);
   resultByCallRef.current = resultByCall;
   const resultFor = useCallback((id: string) => resultByCallRef.current[id], []);
+  // I4 — risk-aware retry. The catalog carries each tool's `retry_safe`; a stable handler feeds a
+  // name→retry_safe lookup into the store's retry (unknown tool → unsafe). `retryLastTurn` then
+  // auto-resends a read-only/idempotent turn but copies a mutating one to the composer for review.
+  const { data: actionSpecs } = useActionSpecs();
+  const onRetry = useCallback(() => {
+    const safe = new Map((actionSpecs ?? []).map((s) => [s.name, s.retry_safe]));
+    retryLastTurn((tool) => safe.get(tool) ?? false);
+  }, [actionSpecs]);
   // The scroller is the app-shell content pane (`#app-scroll`), not the window — the composer/tab
   // bar are in-flow at the bottom of the shell. "Stick to bottom" only while the user is already
   // near the bottom, so streaming follows the bot without yanking them down if they scrolled up.
@@ -617,6 +629,7 @@ export function AgentTab({ active }: Props) {
             // F20 — only the latest message is eligible for retry, and only when chat is in
             // error state. Historical errors elsewhere in the log stay quiet.
             canRetry={i === messages.length - 1 && status === "error"}
+            onRetry={onRetry}
             resolvedDefault={resolvedDefault}
             ttsOn={ttsOn}
           />

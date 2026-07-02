@@ -52,6 +52,15 @@ class ToolSpec(BaseModel):
     raw_schema: dict[str, Any] | None = None
     risk: Risk = Risk.LOW
     confirm: bool = False  # force confirmation regardless of privilege
+    #: Retry-safety hints, aligned with MCP tool annotations (`readOnlyHint`/`idempotentHint`, same
+    #: false defaults). `read_only` = doesn't modify anything; `idempotent` = re-running with the same
+    #: args has no additional effect. `retry_safe` (below) = `read_only or idempotent` — a **UX** signal
+    #: (I4/J-audit): the failed-turn retry auto-resends a retry-safe turn but copies a non-safe one to
+    #: the composer for review, so it can't silently repeat a `reboot`/`restart`/`run_shell`/`spawn`.
+    #: A UX hint only — NOT a safety control (that stays the confirm/privilege gate; MCP says treat
+    #: hints as advisory). MCP/OpenAPI tools derive these from their own annotations.
+    read_only: bool = False
+    idempotent: bool = False
     agent_exposed: bool = True
     ui_exposed: bool = False  # shows as a Utils card / host button
     #: A core builtin every agent can always reach: `for_agent` unions these in regardless of the
@@ -62,6 +71,11 @@ class ToolSpec(BaseModel):
     timeout_s: float | None = None
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @property
+    def retry_safe(self) -> bool:
+        """Safe to blindly re-run (read-only or idempotent) — the retry-of-a-failed-turn UX signal."""
+        return self.read_only or self.idempotent
 
 
 @dataclass
@@ -235,6 +249,8 @@ def action(
     category: ToolCategory = "action",
     risk: Risk = Risk.LOW,
     confirm: bool = False,
+    read_only: bool = False,
+    idempotent: bool = False,
     ui_exposed: bool = True,
     agent_exposed: bool = True,
     core: bool = False,
@@ -244,6 +260,7 @@ def action(
     """Register an action into the registry. The function keeps its identity (returned as-is) so
     it stays unit-testable directly; the registry holds the wrapped `Tool`. `category` defaults to
     `action` (fleet/service ops); agent-only builtins like `task_plan` pass `category="builtin"`.
+    `read_only`/`idempotent` (MCP-aligned) drive retry-safety (see `ToolSpec.retry_safe`).
 
     Generic in `TInput` so the decorated function's precise input-model type is preserved (see the
     `ToolFn` note); the single narrow→base erasure is the `cast` at registration below."""
@@ -258,6 +275,8 @@ def action(
             input_model=_infer_input_model(fn),
             risk=risk,
             confirm=confirm,
+            read_only=read_only,
+            idempotent=idempotent,
             ui_exposed=ui_exposed,
             agent_exposed=agent_exposed,
             core=core,
@@ -276,6 +295,8 @@ def tool(
     description: str | None = None,
     icon: str | None = None,
     risk: Risk = Risk.LOW,
+    read_only: bool = False,
+    idempotent: bool = False,
     agent_exposed: bool = True,
     timeout_s: float | None = None,
     into: ToolRegistry | None = None,
@@ -294,6 +315,8 @@ def tool(
         category="utility",
         risk=risk,
         confirm=False,
+        read_only=read_only,
+        idempotent=idempotent,
         ui_exposed=True,
         agent_exposed=agent_exposed,
         timeout_s=timeout_s,
@@ -311,6 +334,7 @@ def spec_to_dict(spec: ToolSpec) -> dict[str, Any]:
         "category": spec.category,
         "risk": spec.risk.value,
         "confirm": spec.confirm,
+        "retry_safe": spec.retry_safe,  # UX signal for the failed-turn retry guard (I4)
         "ui_exposed": spec.ui_exposed,
         "agent_exposed": spec.agent_exposed,
         "core": spec.core,

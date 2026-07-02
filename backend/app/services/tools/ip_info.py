@@ -40,6 +40,7 @@ def _summary(d: dict) -> str:
         "address or hostname. Leave the query blank to look up this host's own public IP."
     ),
     icon="globe",
+    read_only=True,  # a lookup, changes nothing → retry-safe
 )
 async def ip_info(inp: IpInfoInput, ctx: InvocationContext) -> ToolResult:
     """Geolocate an IP/hostname (or this host's public IP) via ip-api.com."""

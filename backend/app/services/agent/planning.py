@@ -59,6 +59,7 @@ class TaskPlanInput(BaseModel):
     icon="list-checks",
     category="builtin",
     risk=Risk.LOW,
+    idempotent=True,  # replaces the plan wholesale; re-running with the same steps = same state
     ui_exposed=False,
     core=True,  # cognitive builtin — always reachable regardless of an agent's tools allowlist
 )

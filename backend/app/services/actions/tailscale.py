@@ -149,6 +149,7 @@ async def _serve_cmd(ctx: InvocationContext, *, off: bool) -> ToolResult:
     icon="lock",
     category="action",
     risk=Risk.MED,
+    idempotent=True,  # enabling serve when already on is a no-op → retry-safe
     ui_exposed=False,
     agent_exposed=False,
 )
@@ -164,6 +165,7 @@ async def tailscale_serve_enable(inp: _NoArgs, ctx: InvocationContext) -> ToolRe
     icon="lock-open",
     category="action",
     risk=Risk.MED,
+    idempotent=True,  # disabling serve when already off is a no-op → retry-safe
     ui_exposed=False,
     agent_exposed=False,
 )

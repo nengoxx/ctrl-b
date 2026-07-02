@@ -78,6 +78,7 @@ class YtCaptionsInput(BaseModel):
         "timestamps). Use when the owner gives a YouTube URL and wants the captions or a transcript."
     ),
     icon="yt",
+    read_only=True,  # fetches captions, changes nothing → retry-safe
     # The transcript fetch (youtube-transcript-api) has no internal timeout; 60s is generous enough
     # that even a long video's fetch completes well under it, while bounding a true hang.
     timeout_s=60,

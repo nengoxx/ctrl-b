@@ -47,6 +47,7 @@ class QuestionInput(BaseModel):
     icon="help-circle",
     category="builtin",
     risk=Risk.LOW,
+    read_only=True,  # just prompts the owner; no external effect → retry-safe
     ui_exposed=False,
     core=True,
 )

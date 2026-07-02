@@ -195,6 +195,7 @@ class OpenApiToolProvider:
                         input_model=_PassthroughArgs,
                         raw_schema=built.schema,
                         risk=built.risk,
+                        read_only=built.method in _READ_METHODS,  # GET/HEAD → retry-safe (no state change)
                         agent_exposed=True,
                         ui_exposed=False,
                     )

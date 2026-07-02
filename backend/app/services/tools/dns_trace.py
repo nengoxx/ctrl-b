@@ -47,6 +47,7 @@ def _resolve(host: str) -> dict:
         "Use to check what a domain or host resolves to."
     ),
     icon="globe",
+    read_only=True,  # a DNS lookup, changes nothing → retry-safe
     # getaddrinfo has no internal timeout and can hang on bad DNS; 20s is far above any legitimate
     # resolution, so it bounds a true hang without ever cutting a slow-but-working lookup.
     timeout_s=20,

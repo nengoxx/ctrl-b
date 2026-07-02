@@ -53,6 +53,7 @@ def _format(hits: list[dict[str, Any]]) -> str:
     icon="history",
     category="builtin",
     risk=Risk.LOW,
+    read_only=True,  # searches history only, takes no action → retry-safe
     ui_exposed=False,
     core=True,  # cognitive builtin — always reachable regardless of an agent's tools allowlist
 )

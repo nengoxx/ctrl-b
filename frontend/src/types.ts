@@ -110,6 +110,10 @@ export interface ActionSpec {
   category: string;
   risk: Risk;
   confirm: boolean;
+  /** Safe to blindly re-run — read-only or idempotent (MCP `readOnlyHint`/`idempotentHint`). Gates the
+   *  failed-turn retry UX (I4): a turn that ran a non-retry-safe tool is copied to the composer for
+   *  review instead of auto-resent, so a retry can't silently repeat reboot/restart/shell/spawn. */
+  retry_safe: boolean;
   ui_exposed: boolean;
   agent_exposed: boolean;
   /** Whether the tool is a `core` builtin (bypasses allowlist + skill narrowing). */

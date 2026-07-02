@@ -14,7 +14,7 @@ from app.domain.result import ToolResult
 from app.services.actions._common import HostTargetInput
 
 
-@action("wake_host", title="Wake", icon="zap", risk=Risk.LOW)
+@action("wake_host", title="Wake", icon="zap", risk=Risk.LOW, idempotent=True)
 async def wake_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolResult:
     """Send a Wake-on-LAN magic packet to power on a host (requires a configured MAC)."""
     host = ctx.require_deps().fleet.host(inp.host_id)

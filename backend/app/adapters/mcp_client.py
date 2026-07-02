@@ -84,6 +84,16 @@ def _risk_for(tool, server: McpServerCfg) -> Risk:
     return _RISK.get(server.risk, Risk.MED)
 
 
+def _retry_hints_for(tool) -> tuple[bool, bool]:
+    """`(read_only, idempotent)` from the MCP `readOnlyHint`/`idempotentHint` annotations → the
+    retry-safety signal (`ToolSpec.retry_safe`). Advisory (UX only): an unset or even a lying hint just
+    makes the failed-turn retry copy-to-draft — it never bypasses the confirm/privilege gate."""
+    ann = getattr(tool, "annotations", None)
+    if ann is None:
+        return False, False
+    return getattr(ann, "readOnlyHint", None) is True, getattr(ann, "idempotentHint", None) is True
+
+
 @dataclass
 class McpTool:
     """A remote MCP tool wrapped as a `Tool`. Holds the client + server so `run` opens a session,
@@ -192,6 +202,7 @@ class McpClient:
             registered = 0
             for tool in tools:
                 name = _qualified(server.name, tool.name)
+                read_only, idempotent = _retry_hints_for(tool)
                 spec = ToolSpec(
                     name=name,
                     title=getattr(tool, "title", None) or tool.name,
@@ -200,6 +211,8 @@ class McpClient:
                     input_model=_PassthroughArgs,
                     raw_schema=tool.inputSchema or {"type": "object", "properties": {}},
                     risk=_risk_for(tool, server),
+                    read_only=read_only,
+                    idempotent=idempotent,
                     agent_exposed=True,
                     ui_exposed=False,
                 )
