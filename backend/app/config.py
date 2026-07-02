@@ -57,7 +57,24 @@ ENV_PREFIX = "CTRLB_"
 #: Env vars handled as bootstrap paths, not as config-section overrides.
 _BOOTSTRAP_KEYS = {"HOME", "CONFIG", "DB", "ENV"}
 
-#: Substrings that mark a leaf value as secret (masked on read, never logged).
+#: Secret identification (see the mask/secret_values/unmask helpers below). Two disjoint rules:
+#:  1. `_SECRET_LEAF_KEYS` — DECLARED config keys whose value is a secret. **Exact names, not
+#:     substrings**, so non-secret fields like `threshold_tokens`/`max_tokens`/`*_key` are never
+#:     masked. Adding a secret field = add its exact name here (the secret-hygiene test fails if a
+#:     secret-looking field is left unclassified — see `SECRET_HINTS`).
+#:  2. `_SECRET_MAP_KEYS` — config keys holding an arbitrary USER-keyed credential map (MCP/OpenAPI
+#:     `env`/`headers`). Their keys aren't known up front, so inside them a value is masked only when
+#:     its OWN key matches `_MAP_SECRET_HINTS` — keeping routine headers (`Content-Type`) visible
+#:     while masking `Authorization`/`X-API-Key`/tokens.
+_SECRET_LEAF_KEYS = frozenset({"api_key", "ssh_password"})
+_SECRET_MAP_KEYS = frozenset({"env", "headers"})
+#: Sub-key hints for the arbitrary maps ONLY (never applied to declared config field names). Broad on
+#: purpose: inside a credential map, under-masking a token is the real risk while a wrongly-masked
+#: value is merely cosmetic (a string shown as ••••; `unmask` restores it).
+_MAP_SECRET_HINTS = ("password", "secret", "token", "key", "auth", "bearer", "credential", "cookie")
+#: Broad candidate hints for the **drift-guard test only** (not used at runtime): the test flags any
+#: config field whose name matches one of these and fails unless it's classified (secret set, or the
+#: test's known-non-secret allowlist) — so a future `client_secret` can't silently go unmasked.
 SECRET_HINTS = ("password", "secret", "token", "key")
 
 
@@ -1004,17 +1021,35 @@ def _mask(value: object) -> str:  # stringifies internally → accepts any value
     return f"{s[:2]}…{s[-2:]}"
 
 
-def _is_secret_key(key: Any) -> bool:
-    return isinstance(key, str) and any(h in key.lower() for h in SECRET_HINTS)
+def _map_key_is_secret(key: Any) -> bool:
+    """True if a sub-key *inside an arbitrary credential map* (`env`/`headers`) names a secret. Applied
+    ONLY within `_SECRET_MAP_KEYS`, never to declared config field names (rule 2 above)."""
+    return isinstance(key, str) and any(h in key.lower() for h in _MAP_SECRET_HINTS)
+
+
+def _is_unchanged_secret(incoming: Any, stored: Any) -> bool:
+    """Write-path predicate: the incoming secret is *unchanged* (→ keep `stored`) when it's empty/None
+    or equals `_mask(stored)`, AND a real stored value exists. Shared by leaf + map unmasking."""
+    return (
+        incoming is None or incoming == "" or (isinstance(incoming, str) and incoming == _mask(stored))
+    ) and bool(stored)
 
 
 def mask_secrets(data: Any) -> Any:
-    """Recursively mask values whose key looks secret. Use on every settings response/log line."""
+    """Recursively mask secret values for a settings response/log line. A DECLARED secret leaf
+    (`_SECRET_LEAF_KEYS`) is masked; an arbitrary credential map (`_SECRET_MAP_KEYS`) has only its
+    secret-named entries masked (routine headers stay visible). Everything else passes through — so
+    non-secret fields like `threshold_tokens` are never touched."""
     if isinstance(data, dict):
         out: dict[str, Any] = {}
         for k, v in data.items():
-            if _is_secret_key(k) and v:
+            if k in _SECRET_LEAF_KEYS and v:
                 out[k] = _mask(v) if isinstance(v, (str, int)) else v
+            elif k in _SECRET_MAP_KEYS and isinstance(v, dict):
+                out[k] = {
+                    mk: (_mask(mv) if _map_key_is_secret(mk) and mv and isinstance(mv, (str, int)) else mv)
+                    for mk, mv in v.items()
+                }
             else:
                 out[k] = mask_secrets(v)
         return out
@@ -1024,14 +1059,18 @@ def mask_secrets(data: Any) -> Any:
 
 
 def secret_values(data: Any) -> list[str]:
-    """Collect the non-empty secret *leaf values* (keys matching `SECRET_HINTS`) from a settings/dict
-    tree — the value-level analog of `mask_secrets` (which masks by key). Used to redact those
-    secrets out of free text (e.g. `session_search` snippets) via `core.redact.redact`."""
+    """Collect the non-empty secret *leaf values* from a settings/dict tree — the value-level analog of
+    `mask_secrets` (declared leaves + secret-named entries of the `env`/`headers` maps). Used to redact
+    those secrets out of free text (e.g. `session_search` snippets) via `core.redact.redact`."""
     out: list[str] = []
     if isinstance(data, dict):
         for k, v in data.items():
-            if _is_secret_key(k) and isinstance(v, str) and v:
+            if k in _SECRET_LEAF_KEYS and isinstance(v, str) and v:
                 out.append(v)
+            elif k in _SECRET_MAP_KEYS and isinstance(v, dict):
+                out.extend(
+                    mv for mk, mv in v.items() if _map_key_is_secret(mk) and isinstance(mv, str) and mv
+                )
             else:
                 out.extend(secret_values(v))
     elif isinstance(data, list):
@@ -1057,11 +1096,18 @@ def unmask_secrets(incoming: Any, stored: Any) -> Any:
         stored_d = stored if isinstance(stored, dict) else {}
         for k, v in incoming.items():
             sv = stored_d.get(k)
-            if _is_secret_key(k):
-                if (v is None or v == "" or (isinstance(v, str) and v == _mask(sv))) and sv:
-                    out[k] = sv  # masked/blank → unchanged: keep the stored real secret
-                else:
-                    out[k] = v  # a new value was typed
+            if k in _SECRET_LEAF_KEYS:
+                out[k] = (
+                    sv if _is_unchanged_secret(v, sv) else v
+                )  # keep stored on masked/blank, else take new
+            elif k in _SECRET_MAP_KEYS and isinstance(v, dict):
+                sm = sv if isinstance(sv, dict) else {}
+                out[k] = {
+                    mk: (
+                        sm.get(mk) if _map_key_is_secret(mk) and _is_unchanged_secret(mv, sm.get(mk)) else mv
+                    )
+                    for mk, mv in v.items()
+                }
             else:
                 out[k] = unmask_secrets(v, sv)
         return out

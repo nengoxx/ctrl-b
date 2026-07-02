@@ -86,8 +86,15 @@ When `decide()` returns `CONFIRM`, `services/action_service.py` mints a **single
 Secrets live in config, never in code (§4). The chokepoint that keeps them out of outputs is
 **`core/redact.py` `redact(text, secrets)`** — it masks each secret value (`••••`) in any captured `output`
 before it becomes a `ToolResult` / `Event` / log line / SSE frame. Secret values are enumerated by
-`config.py secret_values()` (recursively, by key-name heuristic: `password`/`secret`/`token`/`key`), and the
-config API read masks them via `mask_secrets()`/`_mask()`.
+`config.py secret_values()`, and the config API read masks them via `mask_secrets()`/`_mask()`.
+
+Secrets are identified by **two explicit rules** (not name-substring guessing, which collided with
+non-secret fields like `threshold_tokens`): (1) an **exact-name allowlist** of declared secret fields
+(`api_key`, `ssh_password`) — so a non-secret field is *never* masked; (2) the arbitrary user-keyed
+credential maps (`env`/`headers`) mask only entries whose own key looks secret (`Authorization`,
+`X-API-Key`, `*_token`…) while routine ones (`Content-Type`) stay visible. A **drift-guard test**
+introspects the whole `Settings` model and fails if a future secret-looking field is left unclassified,
+so the classification can't silently rot. (Tests: `backend/tests/test_secret_hygiene.py`.)
 
 ---
 
@@ -100,7 +107,7 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 |---|---|---|
 | Confirm-tokens don't authenticate | **accepted** | The tailnet is the auth (§1/§2.3). By design. |
 | **Confirm-tokens are in-memory** — a backend restart between mint and confirm orphans the pending bubble | **gap → step 4b** | Robustness, not a breach: recovery (re-mint / "expired → ask again") is PRE_DEPLOY step 4b (J3). |
-| **Secret redaction is convention-upheld, not test-locked** — nothing yet proves a secret can't slip through a surface that forgot to call `redact()` | **gap → step 3** | Secret-leak / mask round-trip / policy-table tests are PRE_DEPLOY step 3 (K4/N1/L2). |
+| Secret redaction / masking correctness | **test-locked (step 3 ✓)** | `test_secret_hygiene.py` proves every real secret is masked/collected/redacted, non-secrets never are, and the policy gate can't drift. Note redaction is still *best-effort within* the `env`/`headers` maps (secret-named entries only) — by design (§2.4). |
 | `paramiko` uses `AutoAddPolicy` (accepts unknown SSH host keys; no `known_hosts` pinning) | **accepted** | Acceptable only inside the trusted tailnet (`adapters/ssh.py`). Would need pinning if the boundary widened. |
 | Local shell (`!`) + agent `run_shell` = remote code execution by design | **accepted, off by default** | See §5. Gated + off by default; RCE is the point when enabled. |
 | `debug` = RCE surface | **accepted, off by default** | `ServerCfg.debug=False`; never enable on anything reachable. |
@@ -120,7 +127,7 @@ code. Upheld by:
 - **Display:** the config API read masks secret-keyed values (`mask_secrets`); a masked value round-trips back
   to the stored real secret on save, so editing config in the UI never blanks a secret.
 
-*(The tests that turn this from convention into an enforced invariant are PRE_DEPLOY step 3.)*
+*(Enforced by `backend/tests/test_secret_hygiene.py` — PRE_DEPLOY step 3 ✓.)*
 
 ---
 

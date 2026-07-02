@@ -1,7 +1,8 @@
 # Pre-deploy hardening — the gate before the emma v1.0 deploy
 
-**Status: IN PROGRESS (2026-07-02). Step 1 (quality harness) COMPLETE — 1a + 1b + 1c + 1d all SHIPPED.
-▶ NEXT = step 2 (`docs/SECURITY_MODEL.md`). Steps 2–7 not started.** The app is *feature-complete* (Phases 0–8 shipped,
+**Status: IN PROGRESS (2026-07-02). Steps 1 (quality harness), 2 (SECURITY_MODEL.md) + 3 (secret-hygiene
+tests) COMPLETE. ▶ NEXT = step 4 (robustness P1s: 4a SSE guards · 4b stale confirm-token · 4c risk-aware
+retry). Steps 5–7 not started.** The app is *feature-complete* (Phases 0–8 shipped,
 incl. all of 7e workspaces/memory/skills and Phase 8 tools). What remains before shipping v1.0 to
 emma is **hardening + verification**, not features. This doc is the sequenced checklist for that work.
 
@@ -170,7 +171,18 @@ reads below. (New clone / Windows dev: enable hooks once with `git config core.h
   gate, the config mask path (`/api/settings` read), existing `backend/tests/` patterns. **Use a temp
   config/db (`CTRLB_CONFIG`/`CTRLB_DB`) — never the live `config.yaml`.**
 - **Acceptance:** new tests fail if a secret can appear in any output surface or a policy drifts.
-- [ ] Done
+- [x] **Done 2026-07-02.** `backend/tests/test_secret_hygiene.py` (8 tests). **K4:** two-way masking
+  (every real secret masked/collected/redacted; non-secrets never), `secret_values` completeness, redact
+  leak-scrub, unmask round-trip (leaf + maps), + a **Settings drift-guard** (fails if a future
+  secret-looking field is unclassified). **L2:** destructive-action risk/confirm pinned + `decide()`
+  outcomes per privilege. **N1** already covered by `test_settings_7a.py` (not duplicated).
+  **Root fix landed in `config.py`:** secret identification moved from name-substring guessing (which
+  masked `threshold_tokens`, a collision) to **two explicit rules** — exact-name leaves
+  (`api_key`/`ssh_password`) + scoped hints inside the `env`/`headers` maps (masks `Authorization`,
+  keeps `Content-Type`). Also *fixes* a prior false-negative (`Authorization` header now caught).
+  No `safe_output()` runtime layer added — redaction stays at the existing discrete output points (no
+  hot-path cost). Chose precise-over-catch-all deliberately (single-user tailnet: a false-positive can
+  corrupt config, a false-negative only shows the owner their own secret in their own browser). **▶ NEXT = step 4.**
 
 ### 4. Robustness P1s (agent chat correctness)  ·  *audit J2 / J3 / I4*
 Three distinct fixes — each is its own pre-flight/scope/review. Do NOT bundle blindly.
