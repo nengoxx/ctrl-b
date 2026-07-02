@@ -11,6 +11,7 @@ Usage (from anywhere — cwd-independent):
     python tools/check.py --backend   # backend checks only
     python tools/check.py --frontend  # frontend checks only
     python tools/check.py --fast      # only the fast checks (skip slow tests)
+    python tools/check.py --e2e       # full gate + the Playwright e2e/a11y suite (PRE-DEPLOY gate)
 
 Exit codes: 0 = all green · 1 = a check failed · 2 = environment/setup problem
 (missing venv, deps not installed) — reported with an actionable hint.
@@ -137,6 +138,9 @@ def main() -> int:
 
     ap = argparse.ArgumentParser(description="ctrl-b quality gate (docs/QUALITY.md)")
     ap.add_argument("--fast", action="store_true", help="only fast checks (skip slow tests)")
+    ap.add_argument(
+        "--e2e", action="store_true", help="also run the Playwright e2e/a11y suite (PRE-DEPLOY gate; heavy)"
+    )
     scope = ap.add_mutually_exclusive_group()
     scope.add_argument("--backend", action="store_true", help="backend checks only")
     scope.add_argument("--frontend", action="store_true", help="frontend checks only")
@@ -156,13 +160,24 @@ def main() -> int:
         checks = [c for c in checks if c.cwd == FRONTEND]
     if args.fast:
         checks = [c for c in checks if c.fast]
-    if not checks:
+    # e2e (`--e2e`, PRE-DEPLOY gate) runs SEQUENTIALLY after the parallel batch — never in the pool: it
+    # builds the dist + boots a preview server + a headless browser, which starves/races the other checks
+    # (concurrent pytest flaked with async RuntimeErrors under the contention). Skipped for --fast/--backend.
+    run_e2e = args.e2e and not args.fast and not args.backend
+
+    results: list[Check] = []
+    if checks:
+        print(f"running {len(checks)} checks in parallel...\n")
+        with ThreadPoolExecutor(max_workers=len(checks)) as ex:
+            results = list(ex.map(run_check, checks))
+    if run_e2e:
+        print("running e2e (playwright) sequentially — build + preview + browser...\n")
+        results.append(
+            run_check(Check("e2e (playwright)", npm_argv(["run", "test:e2e"]), FRONTEND, fast=False))
+        )
+    if not results:
         print("no checks selected")
         return 0
-
-    print(f"running {len(checks)} checks in parallel...\n")
-    with ThreadPoolExecutor(max_workers=len(checks)) as ex:
-        results = list(ex.map(run_check, checks))
 
     for c in results:
         mark = "PASS" if c.code == 0 else "FAIL"

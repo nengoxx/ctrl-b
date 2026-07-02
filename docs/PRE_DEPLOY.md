@@ -1,8 +1,9 @@
 # Pre-deploy hardening — the gate before the emma v1.0 deploy
 
-**Status: IN PROGRESS (2026-07-02). Steps 1 (quality harness), 2 (SECURITY_MODEL.md), 3 (secret-hygiene
-tests) + 4 (robustness P1s: 4a SSE guards · 4b confirm-token recovery · 4c risk-aware retry) COMPLETE.
-▶ NEXT = step 5 (Phase-9 smoke tests). Steps 6–7 (cheap-nice) not started.** The app is *feature-complete* (Phases 0–8 shipped,
+**Status: IN PROGRESS (2026-07-02). All MUST steps COMPLETE — 1 (quality harness) · 2 (SECURITY_MODEL.md) ·
+3 (secret-hygiene) · 4 (robustness P1s) · 5 (Phase-9 smoke tests + a11y, e2e wired as a pre-deploy gate).
+▶ NEXT = the CHEAP-NICE items only: 6 (QR-to-phone) · 7 (tri-state access 390px eyeball) — both optional.
+Then the emma deploy itself ([`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md)).** The app is *feature-complete* (Phases 0–8 shipped,
 incl. all of 7e workspaces/memory/skills and Phase 8 tools). What remains before shipping v1.0 to
 emma is **hardening + verification**, not features. This doc is the sequenced checklist for that work.
 
@@ -230,7 +231,16 @@ Three distinct fixes — each is its own pre-flight/scope/review. Do NOT bundle 
   steps 4b/4c can add a smoke case as their acceptance — decide at pre-flight.
 - **Acceptance:** a small suite: desktop + 390px Android viewport happy-paths + a couple of backend
   action tests, runnable from `check-all`.
-- [ ] Done
+- [x] **Done 2026-07-02.** Pre-flight found the D24 Playwright suite **already built** (`frontend/e2e/`:
+  `render.spec.ts` 4-tab no-crash · `flows.spec.ts` critical flows — Fleet shutdown→confirm→execute,
+  confirm-cancel-makes-no-request, agent send, Tools card, Conf a11y, theme · `a11y.spec.ts` = **F24** axe
+  WCAG A/AA per tab · mobile 390px + desktop · mocked `/api`). Running it caught a **real a11y bug** — the
+  shared `Switch` had no accessible name (`aria-toggle-field-name`, 15 nodes on Conf); **fixed** by a required
+  `label` prop → `aria-label` on all ~27 call sites (compile-enforced, drift-proof). Suite now **34/34 green**.
+  **Wired as a PRE-DEPLOY gate (not pre-push — too heavy):** `python tools/check.py --e2e` runs the full gate +
+  Playwright; it's a hard step-0 item in [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) + a `.claude/settings.json`
+  PreToolUse deploy-checklist hook (fires on `bootstrap.py`/`install.sh`) so it can't be missed. Native-`<button>`
+  Switch conversion noted for later ([`UI_AUDIT.md`](./UI_AUDIT.md) §6b). **→ Step 5 COMPLETE.**
 
 ---
 

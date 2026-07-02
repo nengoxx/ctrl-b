@@ -124,6 +124,7 @@ export function SkillsEditor({ enabled }: { enabled: boolean }) {
         </div>
         <Switch
           on={enabled}
+          label="Skills enabled"
           onToggle={() => saveSettings.mutate({ agent: { skills_enabled: !enabled } })}
         />
       </div>

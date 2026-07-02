@@ -103,7 +103,13 @@ npm run check-all   →  npm run typecheck  &&  eslint .  &&  prettier --check .
 # Whole repo  (one stdlib chokepoint — resolves the venv, runs a data-driven check list)
 python tools/check.py            # full gate (pre-push): FE check-all + BE ruff, ruff format --check, pyright, pytest
 python tools/check.py --fast     # instant subset the pre-commit hook calls: ruff (lint+format) + FE prettier
+python tools/check.py --e2e      # full gate + Playwright e2e/a11y (the PRE-DEPLOY gate; heavy — build+preview+browser)
 ```
+
+**e2e gate (Phase-9/step-5):** the Playwright smoke + axe-a11y suite (`frontend/e2e/`) is **opt-in via `--e2e`**,
+NOT in the default/pre-push gate (it builds the dist + boots a browser, ~20-30s). It's the **pre-deploy gate** —
+a hard step-0 item in `DEPLOY_EMMA.md` + a `.claude/settings.json` deploy-checklist hook (fires on
+`bootstrap.py`/`install.sh`) — so it can't be skipped when shipping, while commits/pushes stay fast.
 
 `tools/check.py` finds the backend interpreter via `sys.executable` when run under the venv, else resolves
 `backend/.venv/{Scripts,bin}/python` in its single OS-branch. Wired into `AGENTS.md` §3.

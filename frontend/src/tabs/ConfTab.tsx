@@ -84,6 +84,7 @@ function TailscaleAccessCard() {
         </div>
         <Switch
           on={data.serving}
+          label="HTTPS (Tailscale Serve)"
           onToggle={() => {
             if (!setServe.isPending) setServe.mutate(!data.serving);
           }}
@@ -513,6 +514,7 @@ export function ConfTab({ active }: Props) {
             </div>
             <Switch
               on={inf?.failover ?? true}
+              label="Inference failover"
               onToggle={() => setInf("failover", !(inf?.failover ?? true))}
             />
           </div>
@@ -695,7 +697,7 @@ export function ConfTab({ active }: Props) {
               <div className="label">Debug</div>
               <div className="desc">verbose errors — off in prod · restart to apply</div>
             </div>
-            <Switch on={!!srv?.debug} onToggle={() => setSrv("debug", !srv?.debug)} />
+            <Switch on={!!srv?.debug} onToggle={() => setSrv("debug", !srv?.debug)} label="Debug" />
           </div>
         </div>
         {/* HTTPS access (Tailscale Serve) — a live toggle (acts immediately, not part of the saved
@@ -725,7 +727,11 @@ export function ConfTab({ active }: Props) {
               <div className="label">Enabled</div>
               <div className="desc">powers the agent web_search tool</div>
             </div>
-            <Switch on={!!sx?.enabled} onToggle={() => setSearx("enabled", !sx?.enabled)} />
+            <Switch
+              on={!!sx?.enabled}
+              onToggle={() => setSearx("enabled", !sx?.enabled)}
+              label="SearXNG enabled"
+            />
           </div>
         </div>
         {saveBar}
@@ -766,7 +772,11 @@ export function ConfTab({ active }: Props) {
               <div className="label">Enabled</div>
               <div className="desc">semantic recall (Phase 7e)</div>
             </div>
-            <Switch on={!!emb?.enabled} onToggle={() => setEmb("enabled", !emb?.enabled)} />
+            <Switch
+              on={!!emb?.enabled}
+              onToggle={() => setEmb("enabled", !emb?.enabled)}
+              label="Embeddings enabled"
+            />
           </div>
         </div>
         {saveBar}
@@ -826,7 +836,11 @@ export function ConfTab({ active }: Props) {
               <div className="label">Enabled</div>
               <div className="desc">curated remote shell + file tools</div>
             </div>
-            <Switch on={!!term?.enabled} onToggle={() => setTerm("enabled", !term?.enabled)} />
+            <Switch
+              on={!!term?.enabled}
+              onToggle={() => setTerm("enabled", !term?.enabled)}
+              label="Open-terminal enabled"
+            />
           </div>
         </div>
         {saveBar}
@@ -841,6 +855,7 @@ export function ConfTab({ active }: Props) {
             </div>
             <Switch
               on={!!sh?.user_exec_enabled}
+              label="Shell user exec"
               onToggle={() => setShell("user_exec_enabled", !sh?.user_exec_enabled)}
             />
           </div>
@@ -851,6 +866,7 @@ export function ConfTab({ active }: Props) {
             </div>
             <Switch
               on={!!sh?.agent_exec_enabled}
+              label="Agent run_shell"
               onToggle={() => setShell("agent_exec_enabled", !sh?.agent_exec_enabled)}
             />
           </div>
@@ -878,7 +894,11 @@ export function ConfTab({ active }: Props) {
               <div className="label">Enabled</div>
               <div className="desc">master switch for local shell exec</div>
             </div>
-            <Switch on={!!sh?.enabled} onToggle={() => setShell("enabled", !sh?.enabled)} />
+            <Switch
+              on={!!sh?.enabled}
+              onToggle={() => setShell("enabled", !sh?.enabled)}
+              label="Local shell enabled"
+            />
           </div>
         </div>
         {saveBar}
@@ -893,6 +913,7 @@ export function ConfTab({ active }: Props) {
             </div>
             <Switch
               on={!!draft?.voice.enabled}
+              label="Voice enabled"
               onToggle={() => setVoiceEnabled(!draft?.voice.enabled)}
             />
           </div>
@@ -910,6 +931,7 @@ export function ConfTab({ active }: Props) {
             </div>
             <Switch
               on={!!vstt?.vad_filter}
+              label="STT VAD filter"
               onToggle={() => setStt("vad_filter", !vstt?.vad_filter)}
             />
           </div>
@@ -927,7 +949,11 @@ export function ConfTab({ active }: Props) {
                 send the transcript immediately; off → fill the composer to review first
               </div>
             </div>
-            <Switch on={!!vstt?.auto_send} onToggle={() => setStt("auto_send", !vstt?.auto_send)} />
+            <Switch
+              on={!!vstt?.auto_send}
+              onToggle={() => setStt("auto_send", !vstt?.auto_send)}
+              label="STT auto-send"
+            />
           </div>
           <Field
             label="Primary endpoint"
@@ -997,7 +1023,7 @@ export function ConfTab({ active }: Props) {
                 <div className="label">Auto read-aloud</div>
                 <div className="desc">speak each reply aloud as it finishes</div>
               </div>
-              <Switch on={ttsAuto} onToggle={toggleAutoTts} />
+              <Switch on={ttsAuto} onToggle={toggleAutoTts} label="Auto read-aloud" />
             </div>
           )}
           <div className="confrow">
@@ -1206,7 +1232,11 @@ export function ConfTab({ active }: Props) {
             return (
               <SettingRow key={key} label={field.label} desc={field.desc}>
                 {field.type === "switch" ? (
-                  <Switch on={value as boolean} onToggle={() => pickSetting(key, !value)} />
+                  <Switch
+                    on={value as boolean}
+                    onToggle={() => pickSetting(key, !value)}
+                    label={field.label}
+                  />
                 ) : (
                   <Seg<string>
                     current={value as string}
@@ -1221,12 +1251,14 @@ export function ConfTab({ active }: Props) {
           <SettingRow label="Motion" desc="ambient effects · LED · equalizer · sun bob">
             <Switch
               on={motion === "full"}
+              label="Motion"
               onToggle={() => setGlobal({ motion: motion === "full" ? "reduced" : "full" })}
             />
           </SettingRow>
           <SettingRow label="Blur" desc="frosted glass bars · off is faster (esp. Firefox)">
             <Switch
               on={perf === "full"}
+              label="Blur"
               onToggle={() => setGlobal({ perf: perf === "full" ? "lite" : "full" })}
             />
           </SettingRow>

@@ -581,6 +581,16 @@ the offline row the equivalent auditory cue. (Minimal fix per the owner — low-
 
 ## 6b. Noted for later (not part of any current slice)
 
+- **`Switch` → native `<button role="switch">` (a11y/semantics polish).** The shared `Switch` is a
+  `<div role="switch" tabindex=0>` with a hand-rolled Enter/Space handler — the div-with-role
+  anti-pattern MDN warns against. The **accessible-name gap is already fixed** (Phase-9: a required
+  `label` prop → `aria-label`, axe-green). The remaining improvement is converting the `<div>` to a
+  native `<button role="switch">` (free focus/keyboard, drops the manual keydown). Deferred for the
+  **visual-regression risk**: `.switch` in `vapor.css` + `.kit .switch` in `kit.css` set no
+  background/border/padding, so a `<button>` needs `appearance:none; background:none; border:0;
+  padding:0; font:inherit` resets in both, plus `type="button"` — a small but real risk to eyeball at
+  390px + re-run the render/theme e2e. Do it when touching the toggle styling anyway.
+
 - **HMR-safe store modules (dev ergonomics, not a prod issue).** Our `store/*.ts` modules
   hold module-scope state (`let state = …; const listeners = new Set<…>()`) — the
   `useSyncExternalStore` pattern from React docs. In production this is rock-solid; every
@@ -636,4 +646,4 @@ the offline row the equivalent auditory cue. (Minimal fix per the owner — low-
 ---
 
 **Next action (perf pass):** complete — Slices 1–8 shipped.
-**Next action (follow-up audit):** ✅ COMPLETE — the 2026-06-08 a11y session shipped the backlog in this order: Slice A = F25+F14 (`ab24a27`) → Slice B = F15 (`fa0742d`) → Slice C1 = F23 (`98f30f0`) → Slice C2 = F22 (`f647ee7`) → Slice D1 = F17 (`c7bd0d9`) → Slice D2 = F18 (`25d942c`) → Slice E0 = F28 (`3b2e45c`) → Slice E1 = F19 (`4ea10a9`) → Slice E3 = F26 (`76b8490`) → Slice F1 = F16 (`be86f40`) → Slice F2 = F20 (`40f94e8`); F29 (`6f6c7e9`) folded in; F21 → Phase 6 (done). **Remaining:** only F24 (component/axe a11y tests — D21 vitest *logic* foundation shipped; component layer deferred to Phase 9). F27 (offline-row SR indicator) shipped 2026-06-24. F9/F13 perf items remain deferred until measured pressure.
+**Next action (follow-up audit):** ✅ COMPLETE — the 2026-06-08 a11y session shipped the backlog in this order: Slice A = F25+F14 (`ab24a27`) → Slice B = F15 (`fa0742d`) → Slice C1 = F23 (`98f30f0`) → Slice C2 = F22 (`f647ee7`) → Slice D1 = F17 (`c7bd0d9`) → Slice D2 = F18 (`25d942c`) → Slice E0 = F28 (`3b2e45c`) → Slice E1 = F19 (`4ea10a9`) → Slice E3 = F26 (`76b8490`) → Slice F1 = F16 (`be86f40`) → Slice F2 = F20 (`40f94e8`); F29 (`6f6c7e9`) folded in; F21 → Phase 6 (done). **F24 ✅ SHIPPED** (PRE_DEPLOY step 5, 2026-07-02): the Playwright `e2e/a11y.spec.ts` axe (WCAG A/AA) suite scans all 4 tabs in the real built app — it caught + drove the fix of a real `aria-toggle-field-name` violation (the unlabelled `Switch`, now a required `label` prop). F27 (offline-row SR indicator) shipped 2026-06-24. F9/F13 perf items remain deferred until measured pressure.

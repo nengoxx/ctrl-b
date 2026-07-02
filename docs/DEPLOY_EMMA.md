@@ -30,7 +30,11 @@
 >    `~/.ctrl-b/config.yaml` (0600). Keep the checkout's `config.yaml` current before deploying.
 >
 > **▶ EXACT SEQUENCE (fresh session; from the Windows checkout unless noted):**
-> 0. **Prep:** do gaps 1 (push `dev`), 3 (stop+drain the tandem agent), 4 (confirm emma reachable).
+> 0. **GATE + prep.** ⛔ **`backend/.venv/Scripts/python.exe tools/check.py --e2e` must be GREEN** — the full
+>    gate PLUS the Playwright smoke/a11y suite (builds the real dist, boots preview, headless browser). Do NOT
+>    deploy on red. Also run the SECURITY_MODEL.md safe-defaults checklist (bind 127.0.0.1 · debug off · Serve
+>    HTTPS only · shell toggles intended · no secrets tracked). Then do gaps 1 (push `dev`), 3 (stop+drain the
+>    tandem agent), 4 (confirm emma reachable).
 > 1. `backend/.venv/Scripts/python.exe deploy/bootstrap.py --dry-run` — preview (must exit 0, no `dashboard_v2`).
 > 2. **ON EMMA (one-time, agent-coordinated):** `cd ~/github/ctrl-b && git checkout main && git pull --ff-only` (gap 2),
 >    then `bash deploy/linux/migrate-layout.sh` → moves the tree → `~/github/ctrl-b-dev` (`dev`) + fresh sparse prod at

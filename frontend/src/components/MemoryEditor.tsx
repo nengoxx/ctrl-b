@@ -157,7 +157,11 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
           <div className="label">Enabled</div>
           <div className="desc">master switch · inject saved notes each turn</div>
         </div>
-        <Switch on={cfg.enabled} onToggle={() => setCfg({ enabled: !cfg.enabled })} />
+        <Switch
+          on={cfg.enabled}
+          onToggle={() => setCfg({ enabled: !cfg.enabled })}
+          label="Memory enabled"
+        />
       </div>
       <div className="confrow">
         <div className="k">
@@ -166,6 +170,7 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
         </div>
         <Switch
           on={cfg.user_profile_enabled}
+          label="User profile"
           onToggle={() => setCfg({ user_profile_enabled: !cfg.user_profile_enabled })}
         />
       </div>
@@ -174,7 +179,11 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
           <div className="label">Auto-write</div>
           <div className="desc">agent may save memory itself · off → propose only</div>
         </div>
-        <Switch on={cfg.auto_write} onToggle={() => setCfg({ auto_write: !cfg.auto_write })} />
+        <Switch
+          on={cfg.auto_write}
+          onToggle={() => setCfg({ auto_write: !cfg.auto_write })}
+          label="Auto-write"
+        />
       </div>
       <div className="confrow">
         <div className="k">
@@ -183,6 +192,7 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
         </div>
         <Switch
           on={cfg.consolidation_nudge}
+          label="Consolidation nudge"
           onToggle={() => setCfg({ consolidation_nudge: !cfg.consolidation_nudge })}
         />
       </div>
@@ -195,6 +205,7 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
         </div>
         <Switch
           on={cfg.state_enabled}
+          label="Emotional state"
           onToggle={() => setCfg({ state_enabled: !cfg.state_enabled })}
         />
       </div>
@@ -207,6 +218,7 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
         </div>
         <Switch
           on={cfg.reflection_enabled}
+          label="Periodic reflection"
           onToggle={() => setCfg({ reflection_enabled: !cfg.reflection_enabled })}
         />
       </div>

@@ -236,7 +236,11 @@ function AgentFieldsForm(props: {
       <div className="agent-allow">
         <div className="agent-allow-head">
           <span>{toolsAll ? "all agent tools" : `${toolSet.size} selected`}</span>
-          <Switch on={toolsAll} onToggle={() => set({ tools: toolsAll ? [] : "*" })} />
+          <Switch
+            on={toolsAll}
+            onToggle={() => set({ tools: toolsAll ? [] : "*" })}
+            label="All tools"
+          />
         </div>
         {!toolsAll && (
           <TickGrid
@@ -252,7 +256,11 @@ function AgentFieldsForm(props: {
       <div className="agent-allow">
         <div className="agent-allow-head">
           <span>{skillsAll ? "all skills" : `${skillSet.size} selected`}</span>
-          <Switch on={skillsAll} onToggle={() => set({ skills: skillsAll ? [] : "*" })} />
+          <Switch
+            on={skillsAll}
+            onToggle={() => set({ skills: skillsAll ? [] : "*" })}
+            label="All skills"
+          />
         </div>
         {!skillsAll && (
           <TickGrid all={props.skillNames} selected={skillSet} onToggle={toggleSkill} />
@@ -496,6 +504,7 @@ export function AgentsEditor(props: {
         </div>
         <Switch
           on={props.cfg.auto_rotate}
+          label="Auto-route to specialists"
           onToggle={() => saveSettings.mutate({ agent: { auto_rotate: !props.cfg.auto_rotate } })}
         />
       </div>
@@ -641,6 +650,7 @@ export function AgentsEditor(props: {
         </div>
         <Switch
           on={cfg.subagent_clamp_privilege}
+          label="Clamp subagent privilege"
           onToggle={() =>
             setCfg({ ...cfg, subagent_clamp_privilege: !cfg.subagent_clamp_privilege })
           }
