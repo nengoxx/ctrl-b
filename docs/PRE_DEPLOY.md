@@ -1,9 +1,12 @@
 # Pre-deploy hardening — the gate before the emma v1.0 deploy
 
-**Status: IN PROGRESS (2026-07-02). All MUST steps COMPLETE — 1 (quality harness) · 2 (SECURITY_MODEL.md) ·
-3 (secret-hygiene) · 4 (robustness P1s) · 5 (Phase-9 smoke tests + a11y, e2e wired as a pre-deploy gate).
-▶ NEXT = the CHEAP-NICE items only: 6 (QR-to-phone) · 7 (tri-state access 390px eyeball) — both optional.
-Then the emma deploy itself ([`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md)).** The app is *feature-complete* (Phases 0–8 shipped,
+**Status: HARDENING COMPLETE (2026-07-02, main @ `43919f1`). All MUST steps done — 1 (quality harness) ·
+2 (SECURITY_MODEL.md) · 3 (secret-hygiene) · 4 (robustness P1s) · 5 (Phase-9 smoke + a11y, e2e pre-deploy gate).
+Cheap-nice: 6 (QR-to-phone) DROPPED by owner; 7 (tri-state access) done via the inline tri-switch + 390px eyeball.
+PLUS a 4-agent adversarial audit → 9 fixes, Python-3.14-canon, and the `risk`→`Risk` Pydantic-boundary refactor
+all shipped. ▶ NEXT = the deploy pre-flight (`check.py --e2e` green + SECURITY_MODEL safe-defaults check against the
+real `config.yaml` + `bootstrap.py --dry-run`), then the emma deploy ([`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md)); see
+[`HANDOFF.md`](./HANDOFF.md) for the final-touches menu.** The app is *feature-complete* (Phases 0–8 shipped,
 incl. all of 7e workspaces/memory/skills and Phase 8 tools). What remains before shipping v1.0 to
 emma is **hardening + verification**, not features. This doc is the sequenced checklist for that work.
 

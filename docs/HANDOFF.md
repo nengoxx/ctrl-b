@@ -9,25 +9,47 @@
 > [`REORG_PLAN.md`](./REORG_PLAN.md). Git history was **NOT** rewritten (filter-repo deferred — the 142 MB mp4 was
 > never committed; `.git` is 44 MB), so existing clones just `git pull`.
 >
-> **⚠ GATE (2026-07-01): pre-deploy hardening comes FIRST — do NOT execute the deploy until it's done.**
-> The app is feature-complete; what's left before v1.0 ships is hardening + verification. The sequenced,
-> one-at-a-time checklist (must-dos + cheap fixes, each with its own pre-flight + review pause) is
-> **[`PRE_DEPLOY.md`](./PRE_DEPLOY.md)** — start there. The deploy block below is queued behind it.
-> **For every phase: EXPLAIN the issue to the owner and get a go-ahead BEFORE executing anything —
-> the owner is reviewing each pre-deploy phase.**
+> **✅ PRE-DEPLOY HARDENING + POST-AUDIT FIXES ARE COMPLETE (2026-07-02, main @ `43919f1`, clean + synced).**
+> The app is feature-complete (Phases 0–8) and now independently audited. Shipped since the last handoff:
+> - **`PRE_DEPLOY.md` steps 1–5 ✅** — quality harness (D33: `python tools/check.py`) · `SECURITY_MODEL.md` ·
+>   secret-hygiene tests · robustness P1s (SSE payload guards · stale-confirm-token recovery · risk-aware retry) ·
+>   **Phase-9 Playwright smoke + axe-a11y suite** wired as an opt-in **pre-deploy gate** (`python tools/check.py
+>   --e2e` — step-0 in `DEPLOY_EMMA.md` + a `.claude/settings.json` deploy-checklist hook).
+> - **A 4-agent adversarial audit of the whole session → 9 findings fixed** (bypassed a11y toggles → shared `Switch`;
+>   `resume(execute)` re-mint guard vs a 500/stuck bubble; a single-flight guard vs concurrent double-execute of a
+>   non-idempotent action; chat frame guards; vapor `.tcat` 390px overflow; hook grep; doc reconciliation).
+> - **Python 3.14 declared the canonical floor** (owner decision — `requires-python>=3.14` now consistent with ruff
+>   `target-version=py314`; the code uses PEP 758 syntax). **Integration `risk` typed as `Risk` at the Pydantic
+>   boundary** (eliminated the `_RISK` triplication; fail-fast on a bad config value; verified live against the real
+>   `config.yaml`). Full context: memory [[predeploy-hardening-progress]] + `git log`.
 >
-> **▶ NEXT (a fresh session): the emma deploy — ✅ PRE-FLIGHTED 2026-07-01, ready to execute (not yet run).**
-> **Start at the PRE-FLIGHT block at the top of [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md)** — it has the verified-ready
-> checklist, the exact command sequence, decision points, cautions, AND the 5 PREP gaps found in review (most
-> important: **(1) create + push a `dev` branch from `main@7503fcf` FIRST** — origin has only `main`, and D32 needs
-> `main`+`dev` or migrate-layout risks a pre-reorg dev tree; **(2)** `git pull` emma's tree to `7503fcf` before
-> migrate; **(3)** stop + drain the tandem agent before migrate; **(4)** confirm emma LAN `192.168.1.160` reachable
-> (Bash needs `dangerouslyDisableSandbox`); **(5)** `config.yaml` reaches emma via bootstrap SFTP). Topology = DECISIONS
-> **D32**. Sequence: prep → `bootstrap.py --dry-run` → on-emma `migrate-layout.sh` → `bootstrap.py [--with-dev]
-> [--start-agent]` → verify `https://emma.lobster-vector.ts.net` → tag **`v1.0.0`** + pin prod. History wasn't
-> rewritten → emma just `git pull`s (no re-clone).
-> Then (post-deploy): the parked **theme-engine hardening** + **Composer Surface**, and the **multi-homed addressing**
-> (ROADMAP D3) — see the priority block in the 2026-06-29 session update below.
+> **▶ FINAL TOUCHES before the deploy (a fresh session) — highest value first:**
+> 1. **The deploy pre-flight IS the real gate.** Run `python tools/check.py --e2e` (must be GREEN), then verify the
+>    owner-managed **`config.yaml`** against the `SECURITY_MODEL.md` safe-defaults checklist (bind `127.0.0.1`, debug
+>    off, Tailscale-Serve-HTTPS the only ingress, `shell.*_exec` toggles as intended, no secrets tracked) + run
+>    `bootstrap.py --dry-run`. The *code* defaults are already safe; it's the live config to confirm.
+> 2. **Optional de-risk build:** `vpn_host` / tailnet (MagicDNS) addressing (ROADMAP **D3**) so deploy + monitoring
+>    survive a LAN drift — the one worthwhile *build* to harden the Tailscale-first deploy. Or defer post-deploy.
+> 3. **Optional polish (deferrable, NOT deploy-blocking):** `Switch`→native `<button role="switch">` (`UI_AUDIT.md`
+>    §6b) · chat handler DEV-warn · PWA manifest/precache tuning.
+> - **Theme engine (hardening + Composer Surface) is SAFE TO DEFER post-deploy** — the architecture + the D31/§14.14
+>   extension contract + the data seams are already built/locked, so delaying adds **no structural refactor**. Only
+>   rule: land the warn-first hardening slice BEFORE the *next themeable-UI feature wave*, not before the deploy.
+>
+> **▶ THEN the emma deploy — ✅ PRE-FLIGHTED, ready to execute (not yet run). Start at the PRE-FLIGHT block atop
+> [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md)** — verified-ready checklist, exact command sequence, decision points, cautions,
+> + the 5 PREP gaps: **(1) create + push a `dev` branch from `main` FIRST** (origin has only `main`; D32 needs
+> `main`+`dev` or migrate risks a pre-reorg dev tree); **(2)** `git pull` emma's tree current before migrate;
+> **(3)** stop + drain the tandem agent; **(4)** confirm emma LAN `192.168.1.160` reachable (Bash needs
+> `dangerouslyDisableSandbox`); **(5)** `config.yaml` reaches emma via bootstrap SFTP. Topology = DECISIONS **D32**.
+> Sequence: `--e2e` gate green → prep → `bootstrap.py --dry-run` → on-emma `migrate-layout.sh` → `bootstrap.py
+> [--with-dev] [--start-agent]` → verify `https://emma.lobster-vector.ts.net` → tag **`v1.0.0`** + pin prod. History
+> wasn't rewritten → emma just `git pull`s (no re-clone).
+>
+> **Working agreements (owner):** explain the issue + get a go-ahead BEFORE building each phase; research the
+> conventional pattern + double-check every assumption; commit autonomously when the change is clearly stated but
+> **CONFIRM before pushing**; pause for review between slices; audit each part before the next. Dev servers may be
+> left running for eyeballing (backend `:5433` · frontend `:5173`).
 >
 > *(Everything below this block is older per-phase history — context, not the active task.)*
 
