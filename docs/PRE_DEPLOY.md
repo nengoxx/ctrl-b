@@ -153,7 +153,12 @@ reads below. (New clone / Windows dev: enable hooks once with `git config core.h
   path, `core/redact.py` / `safe_output` usage, `DECISIONS.md` (D-entries on the boundary).
 - **Acceptance:** doc covers threat model, what confirm-tokens do/don't guarantee, the shell escape
   hatch's risk, secret-handling rules; linked from `AGENTS.md` + the CLAUDE.md doc map.
-- [ ] Done
+- [x] **Done 2026-07-02.** [`SECURITY_MODEL.md`](./SECURITY_MODEL.md) written — descriptive, single-user,
+  every claim code-anchored: trust boundary + threat model (incl. non-goals), the layers (127.0.0.1 bind +
+  Serve HTTPS · `permissions.decide` privilege table · confirm-tokens = UX gate not auth · `redact()`),
+  residual-risk register that flags the two known gaps (in-memory tokens **→ step 4b**, redaction
+  convention-not-tested **→ step 3**), secret-handling rules, and a pre-exposure safe-defaults checklist.
+  Linked from AGENTS §6 (TL;DR → deep ref) + the CLAUDE.md doc map. **▶ NEXT = step 3 (secret-hygiene tests).**
 
 ### 3. Secret-hygiene tests  ·  *audit K4 + N1 + L2 (all P1)*
 - **Goal:** lock the "secrets never leak" invariant with tests, not discipline.

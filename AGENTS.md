@@ -134,6 +134,9 @@ composer with push-to-talk + auto-TTS. Net-new UI follows `docs/VAPOR_PATTERNS.m
 
 ## 6. ⚠️ Security model — read before touching anything that executes
 
+> **Full model + rationale + residual-risk register + safe-defaults checklist:
+> [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md).** This section is the enforced-rules TL;DR.
+
 The app's safety rests **entirely** on Tailscale + no open ports + single trusted user. Within that
 boundary it is permissive, but several things are genuinely dangerous and any agent must **preserve or
 improve — never weaken** them:
