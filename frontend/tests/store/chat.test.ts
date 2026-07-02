@@ -274,3 +274,102 @@ describe("chat streaming reducer", () => {
     expect(textOf(result.current.messages.at(-1)!.parts)).toBe("buffered answer");
   });
 });
+
+// ── J2: malformed-frame resilience. A valid-JSON but wrong-shape frame (backend edge / proxy mangling)
+// must be DROPPED — never crash the reducer, never fail the turn — while valid frames still apply.
+describe("malformed frame resilience (J2)", () => {
+  it("drops a part.added with a garbage part but finishes the turn", async () => {
+    mockStream([
+      { event: "message.start", data: { messageId: "m1" } },
+      { event: "part.added", data: { messageId: "m1", part: { type: "bogus" } } }, // unknown Part type
+      { event: "part.added", data: { messageId: "m1", part: { nope: true } } }, // not a Part at all
+      { event: "text.delta", data: { messageId: "m1", delta: "ok" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    const parts = result.current.messages[1].parts;
+    expect(parts.some((p) => p.type === "tool_call" || p.type === "tool_result")).toBe(false);
+    expect(textOf(parts)).toBe("ok"); // the valid frame still applied
+    expect(result.current.status).toBe("idle"); // no crash, turn completed
+  });
+
+  it("drops a tool.result with an invalid state (no garbage result attached, call kept)", async () => {
+    mockStream([
+      { event: "message.start", data: { messageId: "m1" } },
+      {
+        event: "part.added",
+        data: {
+          messageId: "m1",
+          part: { type: "tool_call", call_id: "c1", tool: "wake_host", args: {}, state: "pending" },
+        },
+      },
+      { event: "tool.result", data: { callId: "c1", result: { state: "NOPE", summary: "x" } } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    const flat = result.current.messages.flatMap((m) => m.parts);
+    expect(flat.some((p) => p.type === "tool_result")).toBe(false); // bad result dropped
+    expect(flat.some((p) => p.type === "tool_call" && p.call_id === "c1")).toBe(true); // call intact
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("accepts a well-formed tool.result carrying unknown extra fields (passthrough-tolerant)", async () => {
+    mockStream([
+      { event: "message.start", data: { messageId: "m1" } },
+      {
+        event: "part.added",
+        data: {
+          messageId: "m1",
+          part: { type: "tool_call", call_id: "c1", tool: "t", args: {}, state: "pending" },
+        },
+      },
+      {
+        event: "tool.result",
+        data: { callId: "c1", result: { state: "ok", summary: "done", futureField: 2 } },
+      },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    const tr = result.current.messages
+      .flatMap((m) => m.parts)
+      .find((p) => p.type === "tool_result");
+    expect(tr).toMatchObject({ result: { state: "ok", summary: "done" } });
+  });
+
+  it("ignores an unknown event type and still processes the turn (forward-compat)", async () => {
+    mockStream([
+      { event: "message.start", data: { messageId: "m1" } },
+      { event: "future.thing", data: { anything: [1, 2, 3] } }, // unknown → ignored, not an error
+      { event: "text.delta", data: { messageId: "m1", delta: "hi" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    expect(textOf(result.current.messages[1].parts)).toBe("hi");
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("drops a message.start / delta with no messageId without crashing", async () => {
+    mockStream([
+      { event: "message.start", data: { agent: null } }, // no messageId → dropped
+      { event: "text.delta", data: { delta: "orphan" } }, // no messageId → dropped
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    expect(result.current.status).toBe("idle"); // graceful: turn produced no text, no crash
+  });
+});
