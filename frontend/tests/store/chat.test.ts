@@ -360,6 +360,36 @@ describe("malformed frame resilience (J2)", () => {
     expect(result.current.status).toBe("idle");
   });
 
+  it("normalizes a non-object result.data / tool_call args to {} (no array masquerade)", async () => {
+    mockStream([
+      { event: "message.start", data: { messageId: "m1" } },
+      {
+        event: "part.added",
+        data: {
+          messageId: "m1",
+          part: { type: "tool_call", call_id: "c1", tool: "t", args: [1, 2], state: "pending" },
+        },
+      },
+      {
+        event: "tool.result",
+        data: { callId: "c1", result: { state: "ok", summary: "s", data: [1, 2, 3] } },
+      },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    const flat = result.current.messages.flatMap((m) => m.parts);
+    const call = flat.find((p) => p.type === "tool_call");
+    if (call?.type === "tool_call") {
+      expect(Array.isArray(call.args)).toBe(false);
+      expect(typeof call.args).toBe("object");
+    }
+    const tr = flat.find((p) => p.type === "tool_result");
+    if (tr?.type === "tool_result") expect(Array.isArray(tr.result.data)).toBe(false);
+  });
+
   it("drops a message.start / delta with no messageId without crashing", async () => {
     mockStream([
       { event: "message.start", data: { agent: null } }, // no messageId → dropped
