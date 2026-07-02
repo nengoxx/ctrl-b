@@ -141,12 +141,8 @@ export function ToolCatalog() {
                   <span className={"tcat-risk r-" + s.risk}>{s.risk}</span>
                   {s.confirm && <span className="tcat-risk confirm">confirm</span>}
                   {modeDeviates && <span className="tcat-mod">modified</span>}
-                </div>
-                <div className="tcat-desc" onClick={() => editDesc(s)} title="Edit description">
-                  {descOf(s) || <span className="tcat-faint">no description</span>}
-                  <span className="tcat-edit"> ✎</span>
-                </div>
-                <div className="tcat-ctl">
+                  {/* The tri-state agent-access seg sits at the right of the name row, mirroring the
+                      Section-A run-card title row (`.util-title-row`) — `.tcat-seg` is pushed right. */}
                   <ModeSeg
                     value={mode}
                     def={s.default_agent_mode ?? agentModeOf(s)}
@@ -154,8 +150,14 @@ export function ToolCatalog() {
                     small
                     onPick={(m) => setEdit(s.name, { mode: m })}
                   />
-                  {isShell && <span className="tcat-faint">governed by Conf → Shell</span>}
                 </div>
+                <div className="tcat-desc" onClick={() => editDesc(s)} title="Edit description">
+                  {descOf(s) || <span className="tcat-faint">no description</span>}
+                  <span className="tcat-edit"> ✎</span>
+                </div>
+                {isShell && (
+                  <div className="tcat-shellnote tcat-faint">governed by Conf → Shell</div>
+                )}
               </div>
             );
           })}

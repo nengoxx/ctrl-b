@@ -3265,6 +3265,11 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap; /* narrow (390px): long name + badges + seg wrap instead of overflowing */
+}
+/* tri-state seg at the right of the name row (mirrors the Section-A run-card title row) */
+.kit .tcat-head .tcat-seg {
+  margin-left: auto;
 }
 .kit .tcat-name {
   font-family: ui-monospace, "JetBrains Mono", monospace;
@@ -3294,7 +3299,6 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   border-color: var(--warn-soft);
 }
 .kit .tcat-mod {
-  margin-left: auto;
   font-size: 10px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -3321,12 +3325,9 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
 .kit .tcat-faint {
   color: var(--text-3);
 }
-.kit .tcat-ctl {
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+.kit .tcat-shellnote {
+  margin-top: 6px;
+  font-size: 11px;
 }
 
 /* ── ModeSeg tri-state (.tcat-seg builds on the A.1 .seg): a "·" under the default mode, a read-only

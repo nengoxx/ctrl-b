@@ -2302,6 +2302,12 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap; /* narrow (390px): a long name + badges + seg wrap gracefully instead of overflowing */
+}
+/* The tri-state seg sits at the right edge of the name row (mirrors the Section-A run-card
+   `.util-title-row`). Scoped to the catalog head so the shared `.tcat-seg` is untouched elsewhere. */
+.tcat-head .tcat-seg {
+  margin-left: auto;
 }
 .tcat-name {
   font-family: "JetBrains Mono", ui-monospace, monospace;
@@ -2328,7 +2334,6 @@ body {
   border-color: color-mix(in srgb, var(--violet) 50%, transparent);
 }
 .tcat-mod {
-  margin-left: auto;
   font-size: 8px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
@@ -2353,12 +2358,9 @@ body {
 .tcat-faint {
   color: var(--ink-faint);
 }
-.tcat-ctl {
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+.tcat-shellnote {
+  margin-top: 6px;
+  font-size: 10px;
 }
 /* the default mode in the tri-state gets a subtle dot under it so "pick the dotted one = reset" reads */
 .tcat-seg button.def::after {
