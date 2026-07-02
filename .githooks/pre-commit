@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+# ctrl-b pre-commit — the FAST gate (backend ruff + FE prettier; instant). QUALITY.md / DECISIONS D33.
+# Fast on purpose: a slow pre-commit just gets `--no-verify`-bypassed. The FULL gate runs on pre-push.
+#
+# ▶ To run the FULL suite on every commit instead, delete the `--fast` argument below (same as pre-push).
+# Bypass once (emergency): `git commit --no-verify`.
+exec "$(dirname "$0")/_gate.sh" --fast

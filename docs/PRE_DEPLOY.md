@@ -1,7 +1,7 @@
 # Pre-deploy hardening — the gate before the emma v1.0 deploy
 
-**Status: IN PROGRESS (2026-07-02). Step 1 (quality harness): 1a + 1b + 1c SHIPPED; only 1d (git hooks)
-remains — see §1's SESSION HANDOFF block. Steps 2–7 not started.** The app is *feature-complete* (Phases 0–8 shipped,
+**Status: IN PROGRESS (2026-07-02). Step 1 (quality harness) COMPLETE — 1a + 1b + 1c + 1d all SHIPPED.
+▶ NEXT = step 2 (`docs/SECURITY_MODEL.md`). Steps 2–7 not started.** The app is *feature-complete* (Phases 0–8 shipped,
 incl. all of 7e workspaces/memory/skills and Phase 8 tools). What remains before shipping v1.0 to
 emma is **hardening + verification**, not features. This doc is the sequenced checklist for that work.
 
@@ -94,26 +94,36 @@ step's pre-flight reveals a cheaper path.
   ignores or `# type: ignore` with rationale). (5) Append a `Check("pyright", [py, "-m", "pyright"], BACKEND, fast=False)`
   entry to `tools/check.py` `build_checks()`. Verify `python tools/check.py` green. *(Ratchet → `strict` later, not
   blocking. basedpyright/Pyrefly = documented alternatives in QUALITY.md if the owner prefers no bundled Node.)*
-- **1d — Native `core.hooksPath` enforcement (fast/full split).** Add a tracked `.githooks/` dir +
-  `git config core.hooksPath .githooks` (in `deploy/linux/install.sh` + a documented Windows one-liner; ensure the
-  exec bit on the hook files). `pre-commit` = fast checks; `pre-push` = full `python tools/check.py` (types + tests).
-  Hooks are 2-liners delegating to `check.py` (no re-listing). Rationale: a slow pre-commit gets `--no-verify`-bypassed;
-  native+`python` dodges lefthook's Windows PATH edges (D33). **⚠ check.py gap to close first:** `check.py` today has
-  `--fast` (backend ruff lint+format only — it does NOT run the FE eslint/prettier) but **no `--staged`**. So 1d must
-  either (a) implement `--staged` (git `diff --cached --name-only --diff-filter=ACMR`, scope ruff/eslint/prettier to
-  changed files — the documented plan, more work), OR (b) the simpler MVP: add fast-tagged FE lint/format checks to
-  `build_checks()` so `--fast` covers both halves quickly, and use `check.py --fast` on pre-commit. Decide at
-  pre-flight. *(lefthook = documented alt if we want a managed runner.)*
+- **1d — Native `core.hooksPath` enforcement (fast/full split). ✅ SHIPPED 2026-07-02.** Tracked `.githooks/`
+  (`pre-commit` → `check.py --fast`, `pre-push` → full `check.py`) + a shared `_gate.sh` launcher; `git config
+  core.hooksPath .githooks` in `deploy/linux/install.sh` (+ the Windows one-liner in AGENTS §3). **Decision (b),
+  whole-tree:** added a fast-tagged FE `prettier` check to `build_checks()` so `--fast` = ruff (lint+format) + FE
+  prettier (~2s) — `--staged` was **dropped**: measured timing (ruff 0.1s / prettier 2s whole-tree) shows staged
+  scoping buys nothing but adds machinery; eslint (~11s) stays on pre-push (a slow pre-commit gets bypassed). The
+  `_gate.sh` launcher prefers the **backend venv python** — dodges the Windows "python from Microsoft Store" PATH
+  stub that broke a bare `python`/`python3` (caught in acceptance testing). Exec bit tracked via
+  `git update-index --chmod=+x`; hooks forced `eol=lf` in `.gitattributes`. Acceptance verified: a ruff violation
+  blocks the commit; the full gate blocks a bad push. *Original fresh-session spec kept below for reference:*
+
+  <details><summary>original 1d spec</summary>
+
+  Add a tracked `.githooks/` dir + `git config core.hooksPath .githooks` (in `deploy/linux/install.sh` + a
+  documented Windows one-liner; ensure the exec bit on the hook files). `pre-commit` = fast checks; `pre-push` =
+  full `python tools/check.py` (types + tests). Hooks are 2-liners delegating to `check.py` (no re-listing).
+  Rationale: a slow pre-commit gets `--no-verify`-bypassed; native+`python` dodges lefthook's Windows PATH edges
+  (D33). check.py `--fast` was backend-ruff-only with no `--staged`; 1d either implements `--staged` OR the MVP:
+  fast-tagged FE checks so `--fast` covers both halves. *(lefthook = documented alt if we want a managed runner.)*
+  </details>
 - **Acceptance:** `python tools/check.py` runs green across both halves; a bad commit is blocked
   (fast) pre-commit and a bad push (full) pre-push; harness documented in `AGENTS.md` §3 + `QUALITY.md` + D33.
-- **Locked edge-case handling (2026-07-01):** (1) line endings → `.gitattributes` normalize-to-LF (applied in
-  1b with the Prettier reflow); (2) partial-staged files → *simple* (lint the working tree, documented caveat),
-  add stashing only if it bites; (3) aggregation → *run-all-and-summarise* (every check runs even if one fails).
-**▶ SESSION HANDOFF (2026-07-02) — 1a + 1b + 1c SHIPPED. NEXT = 1d (git hooks) — the last harness slice.**
-A fresh session: read [`QUALITY.md`](./QUALITY.md) + [D33](./DECISIONS.md#d33) for the locked design, then
-execute 1d below. **`python tools/check.py` is now fully green across both halves** (BE: ruff lint+format +
-pyright + 229 pytest · FE: tsc + eslint + prettier + vitest). 1d's only open decision is the `check.py`
-`--staged` gap flagged in the 1d slice (implement `--staged`, or the simpler `--fast`-covers-both MVP).
+- **Locked edge-case handling (2026-07-01):** (1) line endings → `.gitattributes` normalize-to-LF (applied
+  narrowly to `deploy/linux/**`, `tools/*.sh`, `.githooks/**` — the LF-sensitive scripts); (2) partial-staged
+  files → *simple* (the pre-commit lints the working tree whole, documented caveat); (3) aggregation →
+  *run-all-and-summarise* (every check runs even if one fails).
+**▶ SESSION HANDOFF (2026-07-02) — STEP 1 COMPLETE: 1a + 1b + 1c + 1d all SHIPPED.** The quality harness is
+fully stood up + enforced: `python tools/check.py` green across both halves; `.githooks/` (pre-commit `--fast`
+· pre-push full) live via `core.hooksPath`. **▶ NEXT = step 2 (`docs/SECURITY_MODEL.md`)** — see its pre-flight
+reads below. (New clone / Windows dev: enable hooks once with `git config core.hooksPath .githooks`.)
 
 - [x] **1a — SHIPPED 2026-07-01** (`a507200`, `e11f679`, `5bad302`). `tools/check.py` runner (flags: `--fast`,
   `--backend`, `--frontend`; **no `--staged` yet — see 1d**) + FE `check-all`. Caught a UTF-8 bug in itself +
@@ -129,7 +139,10 @@ pyright + 229 pytest · FE: tsc + eslint + prettier + vitest). 1d's only open de
 - [x] **1c — SHIPPED 2026-07-02.** `pyright[nodejs]==1.1.409` (basic) wired into `check.py`; 76 → 0, all
   root-caused (generic `ToolFn`+cast · `require_deps()` · `MemoryBackup` Protocol fix · `Field(default=…)` ·
   boundary casts). Ratchet to `strict` later (non-blocking). Full gate green.
-- [ ] **1d** (git hooks) — **▶ the last remaining harness slice; execution spec in the 1d slice above.**
+- [x] **1d — SHIPPED 2026-07-02.** `.githooks/` (pre-commit `check.py --fast` · pre-push full · shared
+  `_gate.sh` venv-python launcher) via `core.hooksPath`; whole-tree `--fast` (ruff + FE prettier), eslint on
+  pre-push. install.sh enables it; Windows one-liner in AGENTS §3. Acceptance verified (bad commit/push blocked).
+  **→ Step 1 (quality harness) COMPLETE.**
 
 ### 2. `docs/SECURITY_MODEL.md` — write the trust boundary  ·  *audit S1/L3 (P1)*
 - **Goal:** make the security model *executable-adjacent* documentation before exposure.

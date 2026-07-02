@@ -3,3 +3,5 @@
 # to avoid renormalizing the rest of the repo.
 deploy/linux/** text eol=lf
 tools/*.sh     text eol=lf
+# Git hooks run via sh on emma — force LF so a CRLF checkout can't break the shebang (1d).
+.githooks/**   text eol=lf

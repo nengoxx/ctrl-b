@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# ctrl-b pre-push — the FULL gate (ruff + pyright + pytest + FE typecheck/eslint/prettier/vitest).
+# QUALITY.md / DECISIONS D33. This is the real quality bar; the commit stays fast (see pre-commit).
+# Bypass once (emergency): `git push --no-verify`.
+exec "$(dirname "$0")/_gate.sh"

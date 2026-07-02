@@ -44,7 +44,7 @@ Quality is not one linter — it is a set of complementary layers, each catching
 | **BE tests** | **pytest** (229, temp-config safe) | backend logic | ✅ |
 | **CSS contracts** | **stylelint** (keyframe-prefix · anim budget · token-only color) | theme CSS invariants | ⏸ owned by the theme-engine hardening slice (post-deploy) |
 | **Runner** | one **`tools/check.py`** (stdlib chokepoint) + `npm run check-all` (FE) | "is the repo green?" in one command | ✅ (1a) |
-| **Enforcement** | native **`core.hooksPath=.githooks/`** → `check.py` (fast pre-commit · full pre-push) | stops a bad commit/push at the source | ➕ add (1d) |
+| **Enforcement** | native **`core.hooksPath=.githooks/`** → `check.py` (fast pre-commit · full pre-push) | stops a bad commit/push at the source | ✅ (1d) |
 
 Nothing overlaps: ruff/pyright (Python) · ESLint/Prettier/tsc (JS-TS) · stylelint (CSS) each own a disjoint
 surface. `stylelint` stays a separate later slice (theme-engine, `THEME_ENGINE.md` §14.13) — its plugins
@@ -101,12 +101,18 @@ npm run check-all   →  npm run typecheck  &&  eslint .  &&  prettier --check .
 # (Playwright e2e is heavier → its own `npm run test:e2e`, run in the smoke slice / pre-push.)
 
 # Whole repo  (one stdlib chokepoint — resolves the venv, runs a data-driven check list)
-python tools/check.py            # full gate: FE (npm run check-all) + BE (ruff, ruff format --check, pyright, pytest)
-python tools/check.py --staged   # fast staged-file subset the pre-commit hook calls
+python tools/check.py            # full gate (pre-push): FE check-all + BE ruff, ruff format --check, pyright, pytest
+python tools/check.py --fast     # instant subset the pre-commit hook calls: ruff (lint+format) + FE prettier
 ```
 
 `tools/check.py` finds the backend interpreter via `sys.executable` when run under the venv, else resolves
-`backend/.venv/{Scripts,bin}/python` in its single OS-branch. Documented in [`AGENTS.md`](../AGENTS.md) §3 once 1a lands.
+`backend/.venv/{Scripts,bin}/python` in its single OS-branch. Wired into `AGENTS.md` §3.
+
+**Enforcement (1d):** the pre-commit hook runs `--fast` — *whole-tree*, not staged. The instant checks (ruff
+~0.1s, prettier ~2s) are already fast enough on the whole tree that `git diff --cached` scoping buys nothing
+but adds machinery, so `--staged` was dropped in favour of `--fast` (decided at 1d's pre-flight from measured
+timing; the locked "staged" intent in D33 was about *speed*, which `--fast` already meets). eslint (~11s) is
+**not** in the commit gate — a slow pre-commit gets `--no-verify`-bypassed — it runs on pre-push via check-all.
 
 ## Adoption & governance rules
 

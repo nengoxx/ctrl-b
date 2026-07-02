@@ -89,6 +89,16 @@ if [ ! -f "$CTRLB_HOME/config.yaml" ]; then
   fi
 fi
 
+# 4.5) Git-hook quality gate (D33). Point git at the tracked .githooks/ so a bad commit (fast: ruff +
+#      prettier) / push (full: tools/check.py) is blocked at the source. Harmless for the clean prod
+#      checkout (it doesn't commit); essential for the dev tree where agents commit. Idempotent; the
+#      exec bit is tracked in git but re-ensured here in case a checkout dropped it.
+if git -C "$APP" rev-parse --git-dir >/dev/null 2>&1; then
+  git -C "$APP" config core.hooksPath .githooks
+  chmod +x "$APP/.githooks/"* 2>/dev/null || true
+  echo "-- git hooks enabled (core.hooksPath=.githooks)"
+fi
+
 # 5) Render + install + enable the systemd USER units. The units are TEMPLATES — render __REPO__/__CTRLB_HOME__/
 #    __NPM__ to this machine's real paths so they work for ANY user/host, not just emma.
 mkdir -p "$HOME/.config/systemd/user"

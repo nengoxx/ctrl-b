@@ -22,8 +22,9 @@ problems. The frontend half is delegated to `npm run check-all` (single source o
 truth in package.json); the backend half runs the venv's tools directly.
 
 The backend half runs ruff (lint+format), pyright (1c), and pytest; the frontend half is
-`npm run check-all` (tsc + eslint + prettier + vitest, wired in 1b). The git-hook
-`--staged` fast path (1d) adds a flag later.
+`npm run check-all` (tsc + eslint + prettier + vitest, wired in 1b). `--fast` is the
+pre-commit subset (the instant checks: ruff + FE prettier); the full gate runs on pre-push
+(1d — `.githooks/` via `core.hooksPath`).
 """
 
 from __future__ import annotations
@@ -98,6 +99,10 @@ def build_checks() -> list[Check]:
         Check("pytest", [py, "-m", "pytest", "-q"], BACKEND, fast=False),
         # --- frontend: delegated to the single npm entry point (package.json) ---
         Check("frontend check-all", npm_argv(["run", "check-all"]), FRONTEND, fast=False),
+        # The instant FE half of the --fast (pre-commit) gate: prettier only (eslint is ~10s → too slow
+        # for a commit hook, so it stays on pre-push via check-all). This re-runs prettier inside a FULL
+        # gate (also in check-all) — an intentional ~2s overlap, kept for a simpler runner (no FE split).
+        Check("prettier (fe)", npm_argv(["run", "format:check"]), FRONTEND, fast=True),
     ]
 
 

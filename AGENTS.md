@@ -92,8 +92,12 @@ cd backend && python3 -m venv .venv && .venv/bin/pip install -e .
   everything in parallel: BE `ruff` lint+format · `pyright` (type check) · `pytest`; FE `npm run
   check-all` = `tsc` + ESLint + Prettier + `vitest`). Flags: `--backend`/`--frontend`/`--fast`. The
   layered standard + conventions live in [`docs/QUALITY.md`](./docs/QUALITY.md); the sliced rollout is
-  [`docs/PRE_DEPLOY.md`](./docs/PRE_DEPLOY.md) §1 (1a–1c shipped; the native `core.hooksPath` pre-commit/
-  pre-push gate is 1d). Backend pyright deps: `pip install -e "backend/.[dev]"` (installs `pyright[nodejs]`).
+  [`docs/PRE_DEPLOY.md`](./docs/PRE_DEPLOY.md) §1 (1a–1d shipped). Backend pyright deps:
+  `pip install -e "backend/.[dev]"` (installs `pyright[nodejs]`).
+- **Git-hook gate (1d):** tracked `.githooks/` via `core.hooksPath` — **pre-commit** runs `check.py --fast`
+  (ruff + FE prettier, instant), **pre-push** runs the full `check.py`. `deploy/linux/install.sh` enables it
+  on emma; **on Windows enable once per clone:** `git config core.hooksPath .githooks`. Bypass an emergency
+  commit/push with `--no-verify`. To gate commits on the *full* suite, drop `--fast` from `.githooks/pre-commit`.
 - **Config:** hybrid (`docs/DESIGN.md §9`). `config.yaml` (UI-managed, incl. nested secrets) is the source
   of truth; `.env` adds bootstrap paths + scalar `CTRLB_<SECTION>__<KEY>` overrides that win over the YAML.
   Both optional — built-in defaults apply. **Never live-test config writes against the real `config.yaml`;
