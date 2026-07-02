@@ -50,11 +50,12 @@ def _clip(text: str, limit: int) -> str:
 
 async def _run(command: str, ctx: InvocationContext) -> ToolResult:
     """The shared exec core. Never raises — any failure normalizes into a ToolResult."""
-    cfg = ctx.deps.settings.shell
+    deps = ctx.require_deps()
+    cfg = deps.settings.shell
     if not cfg.enabled:
         return ToolResult(state=RunState.DENIED, summary="local shell is disabled (shell.enabled)")
 
-    cwd = cfg.workdir.strip() or str(ctx.deps.settings.home_dir())
+    cwd = cfg.workdir.strip() or str(deps.settings.home_dir())
     try:
         cap = await run_capture(_shell_argv(command), timeout_s=cfg.timeout_s, cwd=cwd)
     except (OSError, ValueError) as exc:  # shell binary missing / bad cwd
@@ -68,7 +69,7 @@ async def _run(command: str, ctx: InvocationContext) -> ToolResult:
             data={"timed_out": True},
         )
 
-    output = redact(cap.output, ctx.deps.settings.secret_values()) or ""
+    output = redact(cap.output, deps.settings.secret_values()) or ""
     output = _clip(output.strip(), cfg.max_output_chars)
     code = cap.code
     data = {"exit_code": code}

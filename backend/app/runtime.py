@@ -126,7 +126,7 @@ def apply_tool_overrides(app: "FastAPI", settings: Settings | None = None) -> No
     settings = settings or app.state.settings
     overrides: dict = getattr(settings, "tool_overrides", None) or {}
     registry = app.state.actions.registry
-    orig: dict = getattr(app.state, "tool_spec_orig", None)
+    orig: dict | None = getattr(app.state, "tool_spec_orig", None)
     if orig is None:
         orig = {}
         app.state.tool_spec_orig = orig
@@ -140,7 +140,8 @@ def apply_tool_overrides(app: "FastAPI", settings: Settings | None = None) -> No
         desc = getattr(ov, "description", None)
         spec.description = desc.strip() if isinstance(desc, str) and desc.strip() else base_desc
         mode = getattr(ov, "agent_mode", None)
-        spec.agent_exposed, spec.core = _MODE_FIELDS.get(mode, (base_exposed, base_core))
+        # `mode or ""`: a None/absent override falls to the "" miss → the compile-time default tuple.
+        spec.agent_exposed, spec.core = _MODE_FIELDS.get(mode or "", (base_exposed, base_core))
 
 
 async def rediscover_integrations(app: "FastAPI") -> dict:

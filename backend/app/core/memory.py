@@ -13,7 +13,8 @@ this protocol in their slices (7e-d-2 / 7e-d-3); this slice defines just the rea
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import Sequence
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -154,7 +155,7 @@ class MemoryBackup(Protocol):
     acquires `guard()` itself (it's driven by startup + the background sweep, outside any write).
     All operations are best-effort — a git failure never propagates to the memory write."""
 
-    def guard(self) -> "AsyncIterator[None]":  # an @asynccontextmanager
+    def guard(self) -> AbstractAsyncContextManager[None]:  # `@asynccontextmanager` → an async CM
         ...
 
     async def commit(self, paths: Sequence[Path], message: str) -> None: ...

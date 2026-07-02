@@ -16,7 +16,7 @@ from app.services.actions._common import HostTargetInput
 @action("ping_host", title="Ping", icon="activity", risk=Risk.LOW)
 async def ping_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolResult:
     """Send one ICMP echo to a host and report whether it is reachable and its latency."""
-    host = ctx.deps.fleet.host(inp.host_id)
+    host = ctx.require_deps().fleet.host(inp.host_id)
     if host is None:
         return ToolResult(state=RunState.ERROR, summary=f"unknown host '{inp.host_id}'")
 

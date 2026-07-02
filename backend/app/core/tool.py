@@ -14,7 +14,17 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Protocol, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Literal,
+    Protocol,
+    TypeVar,
+    cast,
+    runtime_checkable,
+)
 
 from pydantic import BaseModel
 
@@ -71,6 +81,18 @@ class InvocationContext:
     depth: int = 0
     agent: "AgentDef | None" = None
 
+    def require_deps(self) -> "Deps":
+        """The world-handle a deps-using tool needs, narrowed to non-`None`. `deps` is optional on
+        the context by construction (a deps-free tool — e.g. `question` — runs with a deps-less
+        ctx, and tests build one), but every *real* invocation through `ActionService` injects it.
+        A tool that reaches for `deps` calls this once at the top: `deps = ctx.require_deps()`. A
+        missing `deps` here is a programming error (a deps-using tool invoked without a world), so
+        it raises rather than returning `None` — turning an invisible invariant into a clear failure
+        and giving the type checker the non-`None` `Deps` it needs for every `deps.…` access."""
+        if self.deps is None:
+            raise RuntimeError("this tool requires InvocationContext.deps, but none was provided")
+        return self.deps
+
 
 @runtime_checkable
 class Tool(Protocol):
@@ -79,8 +101,16 @@ class Tool(Protocol):
     async def run(self, inp: BaseModel, ctx: InvocationContext) -> ToolResult: ...
 
 
-# A built-in action/tool is a plain async fn (inp, ctx) -> ToolResult.
-ToolFn = Callable[[BaseModel, InvocationContext], Awaitable[ToolResult]]
+# A built-in action/tool is a plain async fn (inp, ctx) -> ToolResult. `ToolFn` is **generic in the
+# input model** (`TInput`) so the `@action`/`@tool` decorators preserve each tool's *precise*
+# signature (`question(inp: QuestionInput, ...)` stays typed as such) instead of widening it to
+# `BaseModel`. The registry, however, stores handlers *heterogeneously* under one `dict[str, Tool]`,
+# which necessarily erases each narrow input back to the common `ToolFn[BaseModel]` — an inherently
+# contravariant step. That single erasure lives at one `cast` in `action()` below (never per-tool),
+# and is runtime-safe because a tool is only ever called with an instance of exactly its
+# `input_model` (validated JSON → that model, in `ActionService`).
+TInput = TypeVar("TInput", bound=BaseModel)
+ToolFn = Callable[[TInput, InvocationContext], Awaitable[ToolResult]]
 
 
 @dataclass
@@ -88,7 +118,7 @@ class FunctionTool:
     """Wraps a decorated function as a `Tool`."""
 
     spec: ToolSpec
-    fn: ToolFn
+    fn: "ToolFn[BaseModel]"  # erased storage form (see the ToolFn note above)
 
     async def run(self, inp: BaseModel, ctx: InvocationContext) -> ToolResult:
         return await self.fn(inp, ctx)
@@ -175,7 +205,7 @@ class ToolRegistry:
 registry = ToolRegistry()
 
 
-def _infer_input_model(fn: ToolFn) -> type[BaseModel]:
+def _infer_input_model(fn: Callable[..., Any]) -> type[BaseModel]:
     """Pull the input BaseModel from the first parameter's annotation. `eval_str=True` resolves
     string annotations (action modules use `from __future__ import annotations`)."""
     params = list(inspect.signature(fn, eval_str=True).parameters.values())
@@ -187,7 +217,7 @@ def _infer_input_model(fn: ToolFn) -> type[BaseModel]:
     return ann
 
 
-def _docsummary(fn: ToolFn) -> str:
+def _docsummary(fn: Callable[..., Any]) -> str:
     """Fallback tool description from the function docstring: the first *paragraph* (up to a blank
     line), with wrapped lines collapsed to one — so a description that spans several physical lines
     isn't truncated mid-sentence. An explicit `description=` always wins over this."""
@@ -210,12 +240,15 @@ def action(
     core: bool = False,
     timeout_s: float | None = None,
     into: ToolRegistry | None = None,
-) -> Callable[[ToolFn], ToolFn]:
+) -> Callable[[ToolFn[TInput]], ToolFn[TInput]]:
     """Register an action into the registry. The function keeps its identity (returned as-is) so
     it stays unit-testable directly; the registry holds the wrapped `Tool`. `category` defaults to
-    `action` (fleet/service ops); agent-only builtins like `task_plan` pass `category="builtin"`."""
+    `action` (fleet/service ops); agent-only builtins like `task_plan` pass `category="builtin"`.
 
-    def deco(fn: ToolFn) -> ToolFn:
+    Generic in `TInput` so the decorated function's precise input-model type is preserved (see the
+    `ToolFn` note); the single narrow→base erasure is the `cast` at registration below."""
+
+    def deco(fn: ToolFn[TInput]) -> ToolFn[TInput]:
         spec = ToolSpec(
             name=name,
             title=title or name.replace("_", " ").title(),
@@ -230,7 +263,7 @@ def action(
             core=core,
             timeout_s=timeout_s,
         )
-        (into or registry).register(FunctionTool(spec=spec, fn=fn))
+        (into or registry).register(FunctionTool(spec=spec, fn=cast("ToolFn[BaseModel]", fn)))
         return fn
 
     return deco
@@ -246,7 +279,7 @@ def tool(
     agent_exposed: bool = True,
     timeout_s: float | None = None,
     into: ToolRegistry | None = None,
-) -> Callable[[ToolFn], ToolFn]:
+) -> Callable[[ToolFn[TInput]], ToolFn[TInput]]:
     """Register a **utility tool** — a self-contained, context-free capability (no host_id / chat
     context) the owner runs from the Tools tab card *and* the agent may call. Thin sugar over
     `action` presetting `category="utility"` + `ui_exposed=True` (and `confirm=False`); everything

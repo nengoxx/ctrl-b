@@ -66,10 +66,11 @@ async def run_service_command(
     summaries ("started"). Missing service/host/command/credentials each surface as a clean
     DENIED/ERROR result — never an exception. The host password is redacted from any output.
     """
-    svc = ctx.deps.services.service(inp.service_id)
+    deps = ctx.require_deps()
+    svc = deps.services.service(inp.service_id)
     if svc is None:
         return ToolResult(state=RunState.ERROR, summary=f"unknown service '{inp.service_id}'")
-    host = ctx.deps.fleet.host(svc.host_id)
+    host = deps.fleet.host(svc.host_id)
     if host is None:
         return ToolResult(state=RunState.ERROR, summary=f"service '{svc.name}' references unknown host")
 

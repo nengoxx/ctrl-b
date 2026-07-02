@@ -27,7 +27,7 @@ def _resolve(host: str) -> dict:
     infos = socket.getaddrinfo(host, None)
     addrs: list[str] = []
     for fam, _type, _proto, _canon, sockaddr in infos:
-        ip = sockaddr[0]
+        ip = str(sockaddr[0])  # sockaddr[0] is the address; str() pins it (typeshed widens to str|int)
         if ip not in addrs:
             addrs.append(ip)
     ptr: str | None = None

@@ -77,7 +77,7 @@ class SkillManageInput(BaseModel):
 async def skill_manage(inp: SkillManageInput, ctx: InvocationContext) -> ToolResult:
     """Author or update one of your own skills (a reusable SKILL.md). `save` to create/overwrite by
     `name`, `remove` to delete one. Writes to your own skills folder; live on your next turn."""
-    deps = ctx.deps
+    deps = ctx.require_deps()
     gated = gate_skill(deps, inp)
     if gated is not None:
         return gated

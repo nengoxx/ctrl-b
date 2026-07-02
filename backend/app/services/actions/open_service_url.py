@@ -27,10 +27,11 @@ from app.services.actions._common import ServiceTargetInput
 )
 async def open_service_url(inp: ServiceTargetInput, ctx: InvocationContext) -> ToolResult:
     """Return the browser URL for a service (http://host:port/path). Does not test reachability."""
-    svc = ctx.deps.services.service(inp.service_id)
+    deps = ctx.require_deps()
+    svc = deps.services.service(inp.service_id)
     if svc is None:
         return ToolResult(state=RunState.ERROR, summary=f"unknown service '{inp.service_id}'")
-    url = ctx.deps.services.url_for(svc.id)
+    url = deps.services.url_for(svc.id)
     if url is None:
         return ToolResult(
             state=RunState.DENIED,

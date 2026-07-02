@@ -168,14 +168,26 @@ async def run_subagent(
     # cycle through this module's `Deps` typing. Imported here, the cycle is broken.
     from app.services.agent.session import AgentSession
 
+    # The subagent path needs the full chat stack wired (lifespan back-fills these after the loop is
+    # built); it's only reachable once spawn_subagents is exposed, so a missing piece is a wiring
+    # error, not a user path. Narrow the Optional sub-deps once → a clean ERROR result (never raise).
+    threads, messages, inference, actions = deps.threads, deps.messages, deps.inference, deps.actions
+    if threads is None or messages is None or inference is None or actions is None:
+        return SubResult(
+            index=index,
+            agent=agent_def.name,
+            state=RunState.ERROR,
+            summary="subagent runtime is not fully wired",
+        )
+
     thread = Thread(title=f"[subagent:{agent_def.name}] {task[:48]}", agent=agent_def.name, archived=True)
-    await deps.threads.create(thread)
+    await threads.create(thread)
     session = AgentSession(
-        deps.threads,
-        deps.messages,
-        deps.inference,
+        threads,
+        messages,
+        inference,
         deps.settings,
-        deps.actions,
+        actions,
         agent=agent_def,
         skills=deps.skills,
         selector=deps.selector,
@@ -200,7 +212,7 @@ async def run_subagent(
         log.warning("subagent %s failed: %s", agent_def.name, exc)
         return SubResult(index=index, agent=agent_def.name, state=RunState.ERROR, summary=str(exc)[:200])
 
-    msgs = await deps.messages.list(thread.id)
+    msgs = await messages.list(thread.id)
     text = next((m.text() for m in reversed(msgs) if m.role == "assistant" and m.text().strip()), "")
     return SubResult(
         index=index,

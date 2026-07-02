@@ -30,10 +30,11 @@ from app.services.actions._common import ServiceTargetInput
 )
 async def check_service(inp: ServiceTargetInput, ctx: InvocationContext) -> ToolResult:
     """Live TCP-probe a service and report whether it is reachable."""
-    svc = ctx.deps.services.service(inp.service_id)
+    deps = ctx.require_deps()
+    svc = deps.services.service(inp.service_id)
     if svc is None:
         return ToolResult(state=RunState.ERROR, summary=f"unknown service '{inp.service_id}'")
-    status = await ctx.deps.services.status_of(inp.service_id)
+    status = await deps.services.status_of(inp.service_id)
     if status is None:
         return ToolResult(state=RunState.ERROR, summary=f"could not probe '{inp.service_id}'")
     where = f" on port {svc.port}" if svc.port is not None else " (no port; tracks host)"

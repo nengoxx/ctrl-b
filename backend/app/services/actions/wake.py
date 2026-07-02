@@ -17,7 +17,7 @@ from app.services.actions._common import HostTargetInput
 @action("wake_host", title="Wake", icon="zap", risk=Risk.LOW)
 async def wake_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolResult:
     """Send a Wake-on-LAN magic packet to power on a host (requires a configured MAC)."""
-    host = ctx.deps.fleet.host(inp.host_id)
+    host = ctx.require_deps().fleet.host(inp.host_id)
     if host is None:
         return ToolResult(state=RunState.ERROR, summary=f"unknown host '{inp.host_id}'")
     if not host.mac:

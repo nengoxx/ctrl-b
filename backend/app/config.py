@@ -201,7 +201,7 @@ class AgentCfg(BaseModel):
     auto_rotate: bool = False
     # Min matching tokens for an auto-route pick (conservative; a tie or below-threshold → the
     # default agent). Floored at 1 so a blanked Conf field can't make every message route.
-    auto_rotate_min_overlap: int = Field(2, ge=1)
+    auto_rotate_min_overlap: int = Field(default=2, ge=1)
     # Dual-mode chat delivery (D17). Authoritative server-side: `on` always streams (SSE), `off`
     # always buffers (one JSON response — e.g. for a flaky link), `auto` honors the request's
     # `stream` field (the PWA always sends true). Enforced in api/agent.py `_effective_stream`.
@@ -230,8 +230,8 @@ class MemoryGitCfg(BaseModel):
     enabled: bool = True  # master switch for the git backup
     author_name: str = "ctrl-b memory"  # commit identity (per-commit -c, never global)
     author_email: str = "memory@ctrl-b.local"
-    commit_timeout_s: float = Field(10.0, gt=0)  # per git invocation; the hang backstop
-    reconcile_interval_s: int = Field(120, ge=0)  # external-edit sweep cadence; 0 = off
+    commit_timeout_s: float = Field(default=10.0, gt=0)  # per git invocation; the hang backstop
+    reconcile_interval_s: int = Field(default=120, ge=0)  # external-edit sweep cadence; 0 = off
 
 
 class MemoryCfg(BaseModel):
@@ -251,27 +251,29 @@ class MemoryCfg(BaseModel):
     # remove / reconcile contradictions). Default OFF (owner's call) — opt in per deployment. Hermes-style
     # cap-pressure guidance; the hard over-cap error still fires regardless.
     consolidation_nudge: bool = False
-    consolidation_nudge_pct: int = Field(80, ge=1, le=100)
+    consolidation_nudge_pct: int = Field(default=80, ge=1, le=100)
     # The memory directory (D26): all memory files + the git repo root. Relative → resolved against
     # $CTRLB_HOME; absolute honored as-is. Renamed from the hardcoded "memories" so it's relocatable.
     memory_dir: str = "memories"
     git_backup: MemoryGitCfg = Field(default_factory=MemoryGitCfg)
     # Floored at 1 so a blanked Conf field (→ 0) can't silently wedge the agent's memory writes:
     # at cap 0 every non-empty write over-caps. The PUT 422s instead, surfacing the bad value.
-    memory_char_limit: int = Field(2200, ge=1)  # per-agent MEMORY.md cap (~800 tokens, Hermes default)
-    user_char_limit: int = Field(1375, ge=1)  # global USER.md cap (~500 tokens, Hermes default)
+    memory_char_limit: int = Field(
+        default=2200, ge=1
+    )  # per-agent MEMORY.md cap (~800 tokens, Hermes default)
+    user_char_limit: int = Field(default=1375, ge=1)  # global USER.md cap (~500 tokens, Hermes default)
     # Emotional/affective state (D27 slice B) — a per-agent `STATE.md` the model rewrites (SET
     # semantics) and that's injected next to the persona. Opt-in (default OFF, like the nudge); small
     # cap so it stays a terse "Mood / Energy / Lately …", not a journal. Writes auto-apply (the agent's
     # own mood isn't a fact-about-the-world that needs the auto_write Approve gate — D27 #1).
     state_enabled: bool = False
-    state_char_limit: int = Field(600, ge=1)  # per-agent STATE.md cap (~220 tokens)
+    state_char_limit: int = Field(default=600, ge=1)  # per-agent STATE.md cap (~220 tokens)
     # Periodic reflection (D27 slice C, Hermes-style) — every `reflection_interval` user turns, inject a
     # one-shot nudge to review the conversation and save anything durably worth remembering (memory saves
     # follow the normal auto_write/propose path; state saves auto-apply). Opt-in (default OFF, like the
     # nudge + state). Gated by the master `enabled` switch too.
     reflection_enabled: bool = False
-    reflection_interval: int = Field(10, ge=1)  # user turns between reflection nudges
+    reflection_interval: int = Field(default=10, ge=1)  # user turns between reflection nudges
 
 
 class EmbeddingsCfg(BaseModel):
@@ -318,8 +320,8 @@ class VoiceServiceCfg(BaseModel):
 
     # Floored >0 so a blanked Conf field (→ 0) can't silently wedge voice (a 0s timeout fails every
     # call instantly); the PUT 422s instead, surfacing the bad value — mirrors the memory-cap floors.
-    connect_timeout_s: float = Field(3.0, gt=0)  # fail-fast on an unreachable endpoint → fall over
-    timeout_s: float = Field(30.0, gt=0)  # read window for the transcription/synthesis itself
+    connect_timeout_s: float = Field(default=3.0, gt=0)  # fail-fast on an unreachable endpoint → fall over
+    timeout_s: float = Field(default=30.0, gt=0)  # read window for the transcription/synthesis itself
     extra_body: dict[str, Any] = Field(default_factory=dict)  # advanced: passthrough to the server
     primary: VoiceEndpointCfg = Field(default_factory=VoiceEndpointCfg)
     fallback: VoiceEndpointCfg = Field(default_factory=VoiceEndpointCfg)
@@ -995,7 +997,7 @@ def apply_patch_to_yaml(patch: dict[str, Any], path: Path | None = None) -> None
     edit_config_yaml(lambda doc: _deep_set(doc, patch), path)
 
 
-def _mask(value: str) -> str:
+def _mask(value: object) -> str:  # stringifies internally → accepts any value (str/int/stored secret)
     s = str(value)
     if len(s) <= 4:
         return "••••"

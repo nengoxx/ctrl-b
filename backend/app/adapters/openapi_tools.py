@@ -216,7 +216,7 @@ class OpenApiToolProvider:
         extra_headers: dict[str, str] = {}
         for p in op.params:
             name, loc = p.get("name"), p.get("in")
-            if name not in args or args[name] is None:
+            if not isinstance(name, str) or name not in args or args[name] is None:
                 continue
             val = args[name]
             if loc == "path":

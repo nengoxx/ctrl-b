@@ -27,6 +27,16 @@ dependencies = [
     "mcp==1.28.1",                 # exact pin caps the imminent breaking v2 (drops the 3rd stream tuple element)
 ]
 
+# Dev-only tooling (not shipped with the app). Install with:
+#   .venv/Scripts/python.exe -m pip install -e ".[dev]"
+# pyright[nodejs] uses the nodejs-wheel extra → hermetic bundled Node (reliable, no flaky
+# first-run nodeenv download). Pip version tracks the pyright engine version, so this pin is
+# reproducible. basic mode → ratchet to strict later (QUALITY.md / DECISIONS D33).
+[project.optional-dependencies]
+dev = [
+    "pyright[nodejs]==1.1.409",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -40,6 +50,16 @@ packages = ["app"]
 [tool.ruff]
 target-version = "py314"
 line-length = 110
+
+# pyright = the backend type checker (QUALITY.md / DECISIONS D33). basic mode is the warn-first
+# baseline; ratchet to strict once green. venvPath/venv point at the local .venv so pyright
+# resolves the same interpreter + installed deps. Run from backend/: `python -m pyright`.
+[tool.pyright]
+typeCheckingMode = "basic"
+pythonVersion = "3.14"
+venvPath = "."
+venv = ".venv"
+include = ["app"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

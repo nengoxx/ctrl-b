@@ -21,9 +21,9 @@ even if one fails (run-all-and-summarise), so a single invocation surfaces *all*
 problems. The frontend half is delegated to `npm run check-all` (single source of
 truth in package.json); the backend half runs the venv's tools directly.
 
-This slice (PRE_DEPLOY 1a) wires only the already-green checks — ruff, pytest, and
-the frontend `tsc`/vitest. ESLint/Prettier (1b), pyright (1c) and the git-hook
-`--staged` fast path (1d) append to the list / add flags later.
+The backend half runs ruff (lint+format), pyright (1c), and pytest; the frontend half is
+`npm run check-all` (tsc + eslint + prettier + vitest, wired in 1b). The git-hook
+`--staged` fast path (1d) adds a flag later.
 """
 
 from __future__ import annotations
@@ -94,6 +94,7 @@ def build_checks() -> list[Check]:
         # --- backend: the venv's tools, run from backend/ (ruff config lives there) ---
         Check("ruff  (lint)", [py, "-m", "ruff", "check", "."], BACKEND, fast=True),
         Check("ruff  (format)", [py, "-m", "ruff", "format", "--check", "."], BACKEND, fast=True),
+        Check("pyright", [py, "-m", "pyright"], BACKEND, fast=False),
         Check("pytest", [py, "-m", "pytest", "-q"], BACKEND, fast=False),
         # --- frontend: delegated to the single npm entry point (package.json) ---
         Check("frontend check-all", npm_argv(["run", "check-all"]), FRONTEND, fast=False),

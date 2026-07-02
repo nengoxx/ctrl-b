@@ -21,12 +21,15 @@ session boundary turns it into a clean SSE `error` event + an `ErrorPart`, never
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from typing import TYPE_CHECKING, Any, AsyncIterator, cast
 
 from openai import AsyncOpenAI
 
 from app.config import InferenceCfg, InferenceEndpointCfg
 from app.core.failover import FailoverError, failover
+
+if TYPE_CHECKING:  # SDK param type — only needed to satisfy the typed `.create()` overload
+    from openai.types.chat import ChatCompletionMessageParam
 
 # llama.cpp / many local servers ignore the key but the SDK requires a non-empty string.
 _PLACEHOLDER_KEY = "sk-no-key-required"
@@ -161,8 +164,12 @@ class InferenceClient:
             name, ep, use_model = entry
             if not use_model:
                 raise InferenceError(f"no model configured for '{name}'")
+            # We carry messages as our own `list[dict]` (OpenAI wire shape, built across the loop);
+            # cast to the SDK's param type at this boundary rather than retyping the whole loop.
             resp = await self._client(ep).chat.completions.create(
-                model=use_model, messages=messages, stream=False
+                model=use_model,
+                messages=cast("list[ChatCompletionMessageParam]", messages),
+                stream=False,
             )
             if not resp.choices:
                 raise InferenceError("inference returned no choices")

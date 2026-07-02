@@ -1,7 +1,7 @@
 # Pre-deploy hardening — the gate before the emma v1.0 deploy
 
-**Status: IN PROGRESS (2026-07-02). Step 1 (quality harness): 1a + 1b SHIPPED; 1c (pyright) + 1d (git hooks)
-remain — see §1's SESSION HANDOFF block. Steps 2–7 not started.** The app is *feature-complete* (Phases 0–8 shipped,
+**Status: IN PROGRESS (2026-07-02). Step 1 (quality harness): 1a + 1b + 1c SHIPPED; only 1d (git hooks)
+remains — see §1's SESSION HANDOFF block. Steps 2–7 not started.** The app is *feature-complete* (Phases 0–8 shipped,
 incl. all of 7e workspaces/memory/skills and Phase 8 tools). What remains before shipping v1.0 to
 emma is **hardening + verification**, not features. This doc is the sequenced checklist for that work.
 
@@ -71,7 +71,17 @@ step's pre-flight reveals a cheaper path.
   `.prettierrc`; scripts `lint`/`lint:fix`/`format`/`format:check`. Run warn-first (tune noisy type-checked
   rules like `no-unnecessary-condition` to `warn`); **rules-of-hooks = error**; Prettier reflow = its **own
   commit**. Add `eslint .` + `prettier --check .` into the FE `check-all`. *(`@eslint-react` = post-baseline ratchet.)*
-- **1c — Backend `pyright[nodejs]`. ▶ NEXT.** *Fresh-session steps:* (1) pre-flight — read `backend/pyproject.toml`
+- **1c — Backend `pyright[nodejs]`. ✅ SHIPPED 2026-07-02.** Added `pyright[nodejs]==1.1.409` to a new
+  `[project.optional-dependencies] dev` + `[tool.pyright]` (`basic`, `pythonVersion="3.14"`, `venvPath="."`/
+  `venv=".venv"`, `include=["app"]`); wired `Check("pyright", …)` into `tools/check.py`. **76 findings → 0**,
+  all root-caused (no blanket suppressions): generic `ToolFn`/`@action` decorator + one `cast` at the
+  registry-erasure boundary (contravariance, ~22); `InvocationContext.require_deps()` narrowing chokepoint
+  + local sub-dep guards (~32); the `MemoryBackup.guard` Protocol annotation fixed to
+  `AbstractAsyncContextManager[None]` (a real bug pyright caught); `Field(<positional default>, …)` →
+  `Field(default=…, …)` in the 4 config models pyright saw as having required fields (the true root of the
+  "default_factory=Model" errors — *not* a lambda workaround); an openai-SDK `cast` at the inference
+  boundary; and small coerce/guard fixes. Full gate green (`python tools/check.py`: ruff, pyright, 229
+  pytest, FE check-all). *Original fresh-session steps below, kept for reference:* (1) pre-flight — read `backend/pyproject.toml`
   (deps + `[tool.ruff]`; note there's no `[project.optional-dependencies]` yet), a couple of `backend/app/`
   modules to gauge typing density, and `tools/check.py` (the `build_checks()` list you'll append to). (2) Add
   `pyright[nodejs]` (pinned, e.g. `==1.1.x`) to a new `[project.optional-dependencies] dev` (install via
@@ -99,10 +109,11 @@ step's pre-flight reveals a cheaper path.
 - **Locked edge-case handling (2026-07-01):** (1) line endings → `.gitattributes` normalize-to-LF (applied in
   1b with the Prettier reflow); (2) partial-staged files → *simple* (lint the working tree, documented caveat),
   add stashing only if it bites; (3) aggregation → *run-all-and-summarise* (every check runs even if one fails).
-**▶ SESSION HANDOFF (2026-07-02) — 1a + 1b SHIPPED & pushed (through `ebdf17b` on `main`). NEXT = 1c (pyright),
-then 1d (git hooks).** A fresh session: read [`QUALITY.md`](./QUALITY.md) + [D33](./DECISIONS.md#d33) for the
-locked design, then execute 1c below. The FE gate (`tools/check.py --frontend` → typecheck+eslint+prettier+vitest)
-is fully green; backend gate is ruff+pytest (no type checker yet — that's 1c). `python tools/check.py` runs both.
+**▶ SESSION HANDOFF (2026-07-02) — 1a + 1b + 1c SHIPPED. NEXT = 1d (git hooks) — the last harness slice.**
+A fresh session: read [`QUALITY.md`](./QUALITY.md) + [D33](./DECISIONS.md#d33) for the locked design, then
+execute 1d below. **`python tools/check.py` is now fully green across both halves** (BE: ruff lint+format +
+pyright + 229 pytest · FE: tsc + eslint + prettier + vitest). 1d's only open decision is the `check.py`
+`--staged` gap flagged in the 1d slice (implement `--staged`, or the simpler `--fast`-covers-both MVP).
 
 - [x] **1a — SHIPPED 2026-07-01** (`a507200`, `e11f679`, `5bad302`). `tools/check.py` runner (flags: `--fast`,
   `--backend`, `--frontend`; **no `--staged` yet — see 1d**) + FE `check-all`. Caught a UTF-8 bug in itself +
@@ -115,7 +126,10 @@ is fully green; backend gate is ruff+pytest (no type checker yet — that's 1c).
   - **⚠ Left behind (intentional, documented in QUALITY.md):** **27 non-blocking eslint `warn`s** = the
     React-Compiler-prep backlog (`set-state-in-effect` 11 / `refs` 8 at `warn`) + `exhaustive-deps` 2 + react-refresh 6.
     They are the checklist to clear **at React Compiler adoption** (UI_AUDIT F13). Do NOT "fix" piecemeal now.
-- [ ] **1c** (pyright) · [ ] **1d** (git hooks) — **▶ the remaining harness work; execution specs in the two slices above.**
+- [x] **1c — SHIPPED 2026-07-02.** `pyright[nodejs]==1.1.409` (basic) wired into `check.py`; 76 → 0, all
+  root-caused (generic `ToolFn`+cast · `require_deps()` · `MemoryBackup` Protocol fix · `Field(default=…)` ·
+  boundary casts). Ratchet to `strict` later (non-blocking). Full gate green.
+- [ ] **1d** (git hooks) — **▶ the last remaining harness slice; execution spec in the 1d slice above.**
 
 ### 2. `docs/SECURITY_MODEL.md` — write the trust boundary  ·  *audit S1/L3 (P1)*
 - **Goal:** make the security model *executable-adjacent* documentation before exposure.

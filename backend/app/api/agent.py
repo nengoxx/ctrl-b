@@ -758,7 +758,9 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
         for rp in m.tool_results():
             if rp.call_id == body.call_id:
                 result_msg, result_part = m, rp
-    if call_part is None or result_part is None:
+    if call_msg is None or call_part is None or result_msg is None or result_part is None:
+        # each msg/part is set as a pair in the loops above, so the parts imply the msgs — checking
+        # both keeps that invariant explicit for the type checker (and guards a truly missing pair).
         raise HTTPException(status_code=404, detail=f"no tool call '{body.call_id}' in this thread")
     if not isinstance(result_part.result.data, dict) or "proposed" not in result_part.result.data:
         raise HTTPException(status_code=409, detail="no pending proposal for this call")

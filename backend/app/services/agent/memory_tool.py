@@ -88,7 +88,7 @@ async def memory(inp: MemoryInput, ctx: InvocationContext) -> ToolResult:
     """Save something to your durable memory so you remember it across sessions. `add` a note, or
     `replace`/`remove` one by its exact `old_text`. No read needed — your memory is injected each
     turn. Use `target=user` for a durable fact about the person you're helping."""
-    deps = ctx.deps
+    deps = ctx.require_deps()
     gated = gate_memory(deps, inp)
     if gated is not None:
         return gated
@@ -163,8 +163,11 @@ async def apply_memory(deps: "Deps", agent: "AgentDef", inp: MemoryInput) -> Too
     """Perform the memory write (assumes `gate_memory` passed). Called by the tool when `auto_write`
     is on, and by the Approve-to-apply endpoint on owner approval. A cap/write failure comes back as
     an ERROR result (the caller keeps a pending proposal so the owner can retry/dismiss)."""
+    mem = deps.memory
+    if mem is None:  # gate_memory already guards this on both call paths; re-narrow at this boundary
+        return ToolResult(state=RunState.DENIED, summary="memory is not available")
     try:
-        summary = await deps.memory.write(agent, inp.target, inp.action, inp.content, inp.old_text)
+        summary = await mem.write(agent, inp.target, inp.action, inp.content, inp.old_text)
     except MemoryCapError as exc:
         return ToolResult(state=RunState.ERROR, summary="memory over its cap", error=str(exc))
     except MemoryWriteError as exc:

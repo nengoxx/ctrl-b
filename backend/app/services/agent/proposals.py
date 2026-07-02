@@ -15,7 +15,7 @@ switches, arg validity); `apply` performs the write and may itself return ERROR 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING, Awaitable, Callable, cast
 
 from pydantic import BaseModel
 
@@ -43,9 +43,15 @@ class Proposable:
 
 #: Tools whose `data["proposed"]` the Approve-to-apply endpoint can carry out. Keyed by tool name (the
 #: `tool` on the stored `ToolCallPart`), so the endpoint stays tool-agnostic.
+#
+#: Each tool's `gate_*`/`apply_*` narrows its input to a concrete model (`MemoryInput`, …); storing
+#: them in one registry erases that to the common `BaseModel`-input `_Gate`/`_Apply` — the same
+#: heterogeneous-registry contravariance as `ToolFn` (see `core/tool.py`). The `cast`s are that single
+#: erasure and are runtime-safe: `apply_proposal` validates `args` into the entry's own `input_model`
+#: before calling gate/apply, so each only ever sees its concrete type.
 PROPOSABLE: dict[str, Proposable] = {
-    "memory": Proposable(MemoryInput, gate_memory, apply_memory),
-    "skill_manage": Proposable(SkillManageInput, gate_skill, apply_skill),
+    "memory": Proposable(MemoryInput, cast(_Gate, gate_memory), cast(_Apply, apply_memory)),
+    "skill_manage": Proposable(SkillManageInput, cast(_Gate, gate_skill), cast(_Apply, apply_skill)),
 }
 
 

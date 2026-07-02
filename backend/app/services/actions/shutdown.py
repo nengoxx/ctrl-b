@@ -40,7 +40,7 @@ _SUDO_FAILED = (
 @action("shutdown_host", title="Shut down", icon="power", risk=Risk.HIGH, confirm=True)
 async def shutdown_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolResult:
     """Shut down a host over SSH (per-OS command; requires configured SSH credentials)."""
-    host = ctx.deps.fleet.host(inp.host_id)
+    host = ctx.require_deps().fleet.host(inp.host_id)
     if host is None:
         return ToolResult(state=RunState.ERROR, summary=f"unknown host '{inp.host_id}'")
     if not host.ssh_username or host.ssh_password is None:

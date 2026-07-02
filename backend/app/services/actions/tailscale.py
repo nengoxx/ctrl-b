@@ -111,7 +111,7 @@ class _NoArgs(BaseModel):
 
 async def _serve_cmd(ctx: InvocationContext, *, off: bool) -> ToolResult:
     """Run `tailscale serve --bg <port> [off]`. Never raises — normalizes into a ToolResult."""
-    cfg = ctx.deps.settings.tailscale
+    cfg = ctx.require_deps().settings.tailscale
     if not cfg.enabled:
         return ToolResult(state=RunState.DENIED, summary="Tailscale control is disabled (tailscale.enabled)")
     binpath = _bin()

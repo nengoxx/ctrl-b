@@ -88,10 +88,12 @@ cd backend && python3 -m venv .venv && .venv/bin/pip install -e .
   (manual) · `python deploy/bootstrap.py` (Linux server, systemd + HTTPS). See [`deploy/README.md`](./deploy/README.md).
 - **Tests:** from `backend/`, `.venv/Scripts/python.exe -m pytest -q` (229). Frontend: `npm test`
   (vitest) · `npm run test:e2e` (playwright) · `npm run build`.
-- **Quality harness:** the layered lint/format/typecheck/test standard + the one-command `check-all`
-  contract is defined in [`docs/QUALITY.md`](./docs/QUALITY.md); rollout is sliced in
-  [`docs/PRE_DEPLOY.md`](./docs/PRE_DEPLOY.md) §1. Today only `ruff` (BE, clean) + `tsc`/`vitest` (FE)
-  are wired — ESLint/Prettier, Pyright, `check-all`, and the lefthook pre-commit gate land in that rollout.
+- **Quality harness:** one command answers "is the repo green?" — **`python tools/check.py`** (runs
+  everything in parallel: BE `ruff` lint+format · `pyright` (type check) · `pytest`; FE `npm run
+  check-all` = `tsc` + ESLint + Prettier + `vitest`). Flags: `--backend`/`--frontend`/`--fast`. The
+  layered standard + conventions live in [`docs/QUALITY.md`](./docs/QUALITY.md); the sliced rollout is
+  [`docs/PRE_DEPLOY.md`](./docs/PRE_DEPLOY.md) §1 (1a–1c shipped; the native `core.hooksPath` pre-commit/
+  pre-push gate is 1d). Backend pyright deps: `pip install -e "backend/.[dev]"` (installs `pyright[nodejs]`).
 - **Config:** hybrid (`docs/DESIGN.md §9`). `config.yaml` (UI-managed, incl. nested secrets) is the source
   of truth; `.env` adds bootstrap paths + scalar `CTRLB_<SECTION>__<KEY>` overrides that win over the YAML.
   Both optional — built-in defaults apply. **Never live-test config writes against the real `config.yaml`;
