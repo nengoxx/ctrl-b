@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Seg } from "./Seg";
+import { Switch } from "./Switch";
 import { disclosureToggle } from "../lib/disclosure";
 import {
   useDeleteServer,
@@ -43,14 +44,6 @@ const textToList = (t: string) =>
     .split(/[\n,]/)
     .map((s) => s.trim())
     .filter(Boolean);
-
-function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return (
-    <div className={"switch" + (on ? " on" : "")} onClick={onToggle}>
-      <div className="knob" />
-    </div>
-  );
-}
 
 function Foot(props: {
   isNew: boolean;
@@ -211,7 +204,11 @@ function McpForm(props: {
           </>
         )}
         <label>Enabled</label>
-        <Toggle on={d.enabled} onToggle={() => set({ enabled: !d.enabled })} />
+        <Switch
+          on={d.enabled}
+          onToggle={() => set({ enabled: !d.enabled })}
+          label="Server enabled"
+        />
       </div>
       <Foot {...props} onSave={() => props.onSave(mcpBody(d))} />
     </>
@@ -351,7 +348,11 @@ function ApiForm(props: {
           onChange={(e) => set({ includeText: e.target.value })}
         />
         <label>Enabled</label>
-        <Toggle on={d.enabled} onToggle={() => set({ enabled: !d.enabled })} />
+        <Switch
+          on={d.enabled}
+          onToggle={() => set({ enabled: !d.enabled })}
+          label="Server enabled"
+        />
       </div>
       <Foot {...props} onSave={() => props.onSave(apiBody(d, props.isNew))} />
     </>

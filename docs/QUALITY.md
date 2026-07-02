@@ -111,8 +111,9 @@ NOT in the default/pre-push gate (it builds the dist + boots a browser, ~20-30s)
 a hard step-0 item in `DEPLOY_EMMA.md` + a `.claude/settings.json` deploy-checklist hook (fires on
 `bootstrap.py`/`install.sh`) — so it can't be skipped when shipping, while commits/pushes stay fast.
 
-`tools/check.py` finds the backend interpreter via `sys.executable` when run under the venv, else resolves
-`backend/.venv/{Scripts,bin}/python` in its single OS-branch. Wired into `AGENTS.md` §3.
+`tools/check.py` resolves the backend interpreter as `backend/.venv/{Scripts,bin}/python` — a single
+`os.name` branch (`Scripts`/`python.exe` on Windows, `bin`/`python` elsewhere), so it runs the same from
+any cwd or interpreter. Wired into `AGENTS.md` §3.
 
 **Enforcement (1d):** the pre-commit hook runs `--fast` — *whole-tree*, not staged. The instant checks (ruff
 ~0.1s, prettier ~2s) are already fast enough on the whole tree that `git diff --cached` scoping buys nothing

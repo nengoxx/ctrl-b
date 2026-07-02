@@ -326,6 +326,34 @@ describe("malformed frame resilience (J2)", () => {
     expect(result.current.status).toBe("idle");
   });
 
+  it("drops a malformed compaction frame instead of a misleading 'nothing to compact' note", async () => {
+    mockStream([
+      { event: "message.start", data: { messageId: "m1" } },
+      { event: "compaction", data: { removed: "lots" } }, // count not a number → drop, don't note
+      { event: "text.delta", data: { messageId: "m1", delta: "ok" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    expect(result.current.messages.some((m) => m.role === "system")).toBe(false); // no breadcrumb
+    expect(result.current.status).toBe("idle"); // valid frames still applied, turn completed
+  });
+
+  it("surfaces a well-formed compaction frame as a system breadcrumb", async () => {
+    mockStream([
+      { event: "message.start", data: { messageId: "m1" } },
+      { event: "compaction", data: { removed: 3, truncated: false } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    expect(result.current.messages.some((m) => m.role === "system")).toBe(true);
+  });
+
   it("accepts a well-formed tool.result carrying unknown extra fields (passthrough-tolerant)", async () => {
     mockStream([
       { event: "message.start", data: { messageId: "m1" } },

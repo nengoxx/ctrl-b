@@ -3,7 +3,7 @@
 **Originally written:** 2026-06-01 (perf pass). **Extended:** 2026-06-02 (follow-up audit — section 6c, F14–F26).
 **Scope:** `dashboard_v2/frontend/` (React 19, Vite 7, TanStack Query, Vapor port).
 
-The original sections (1–6b) cover the performance + best-practices pass that ran as Slices 1–8 — all shipped (HEAD `e944ec7` at the time of audit). Section **6c (Follow-up audit)** is a second pass that focused on **accessibility, resilience, and edge-case correctness** — the layer the perf pass deliberately deferred. **STATUS UPDATE (2026-06-08 a11y backlog session): F14–F26 are now SHIPPED** (Slices A–F2 — F14·F15·F16·F17·F18·F19·F20·F22·F23·F25·F26·F28·F29 all landed; F21 mic-stub folded into Phase 6). **Still open:** only the F24 component/a11y test layer (the D21 vitest *logic* foundation shipped; component/axe/Playwright tests stay Phase 9). F27 shipped 2026-06-24. F9/F13 (perf) remain deferred. The per-finding sections below retain their original analysis; treat the status line on each as authoritative.
+The original sections (1–6b) cover the performance + best-practices pass that ran as Slices 1–8 — all shipped (HEAD `e944ec7` at the time of audit). Section **6c (Follow-up audit)** is a second pass that focused on **accessibility, resilience, and edge-case correctness** — the layer the perf pass deliberately deferred. **STATUS UPDATE (2026-06-08 a11y backlog session): F14–F26 are now SHIPPED** (Slices A–F2 — F14·F15·F16·F17·F18·F19·F20·F22·F23·F25·F26·F28·F29 all landed; F21 mic-stub folded into Phase 6). **F24 (component/axe/Playwright a11y tests) SHIPPED 2026-07-02** (`frontend/e2e/a11y.spec.ts` — axe WCAG A/AA per tab, on top of the D21 vitest *logic* foundation). F27 shipped 2026-06-24. **Still deferred:** only F9/F13 (perf), until measured. The per-finding sections below retain their original analysis; treat the status line on each as authoritative.
 
 > **Owner constraint (driving every decision below):** "I like how it flows. I like how it works." Performance and best-practices wins must not regress perceived responsiveness, freshness of fleet state, or interaction smoothness. Anything that *could* feel slower goes through an explicit "preserve behavior" mitigation before shipping.
 
@@ -279,7 +279,7 @@ This is documented in `Waveform.tsx` with a leading comment so the mistake isn't
 | F21 | Mic button is a visual stub | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-02 |
 | F22 | Decorative glyphs missing `aria-hidden` | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-02 |
 | F23 | No root `ErrorBoundary` outside ConfTab | 🟡 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-02 |
-| F24 | No automated UI / a11y tests | 🟢 | ⚠️ PARTIAL | M | 🆕 2026-06-02 · **logic-test foundation landed 2026-06-22 (D21, Vitest 27 tests)**; component/a11y UI tests still Phase 9 |
+| F24 | No automated UI / a11y tests | 🟢 | 🟢 SHIPPED | M | 🆕 2026-06-02 · logic foundation 2026-06-22 (D21, Vitest); **axe/Playwright e2e shipped 2026-07-02** (`frontend/e2e/a11y.spec.ts` + render/flows) |
 | F25 | `all: unset` wipes focus indicators on ~30 buttons | 🔴 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-02 |
 | F26 | SW `autoUpdate` has no in-app reload prompt | 🟢 | ✅ SAFE | XS | 🆕 follow-up audit 2026-06-02 |
 
@@ -352,7 +352,7 @@ Look at the bundle analyzer output post-Slice 6 to see if `lucide-react` deserve
 
 ## 6c. Follow-up audit — 2026-06-02 (F14–F26)
 
-After the F1–F13 pass landed (Slices 1–8 shipped), a second pass focused on **accessibility, resilience, and edge-case correctness** — areas the original audit deliberately deferred while we got perf and structure right. The findings below were the new backlog. None were critical for single-user-on-tailnet operation; several were real WCAG 2.2 AA failures that matter for any phone/voice-input flow (Phase 6) and for usability in low-vision / motion-sensitive contexts. **STATUS: this backlog was implemented in the 2026-06-08 a11y session (Slices A–F2) — F14–F26 shipped; F27 shipped 2026-06-24. Only the F24 component-test layer remains (→ Phase 9). The original "documented for prioritization" framing below is historical.**
+After the F1–F13 pass landed (Slices 1–8 shipped), a second pass focused on **accessibility, resilience, and edge-case correctness** — areas the original audit deliberately deferred while we got perf and structure right. The findings below were the new backlog. None were critical for single-user-on-tailnet operation; several were real WCAG 2.2 AA failures that matter for any phone/voice-input flow (Phase 6) and for usability in low-vision / motion-sensitive contexts. **STATUS: this backlog was implemented in the 2026-06-08 a11y session (Slices A–F2) — F14–F26 shipped; F27 shipped 2026-06-24. F24's component/axe layer shipped 2026-07-02 (`frontend/e2e/a11y.spec.ts`). The original "documented for prioritization" framing below is historical.**
 
 Same severity legend as section 4: **🔴** user-visible · **🟡** perf/cleanup · **🟢** future-proofing. Safety verdicts use the same scale.
 
@@ -492,13 +492,13 @@ Screen readers announce these literally ("greater-than sign", "north east arrow"
 
 ---
 
-### F24 🟢 — No automated UI / a11y tests
+### F24 ✅ SHIPPED — automated UI / a11y tests
 
 **The issue.** Zero test coverage on the frontend. No Vitest, no Playwright, no Storybook visual tests, no axe-core a11y CI. `TODO.md` Phase 9 mentions "Minimal smoke tests (Playwright desktop + Android viewport; a couple of backend action tests)" but that work is still queued.
 
 **Safety verdict: ✅ SAFE** to add — testing is purely additive.
 
-**Status.** Already on the backlog in `TODO.md` Phase 9. The follow-up audit elevates it to "should land alongside any future a11y fix" because the WCAG-related findings (F14, F15, F17, F18, F22, F25) all benefit from an axe-core CI gate to prevent regressions.
+**Status. ✅ SHIPPED 2026-07-02.** `frontend/e2e/` now runs the real built app through Playwright — `render.spec.ts` (4-tab no-crash), `flows.spec.ts` (critical flows), and `a11y.spec.ts` (**axe-core WCAG A/AA** per tab) at mobile 390px + desktop, wired as the pre-deploy gate (`python tools/check.py --e2e`). It immediately caught + drove a real `aria-toggle-field-name` fix (the unlabelled `Switch`). The original backlog framing above is historical. (The WCAG findings F14/F15/F17/F18/F22/F25 now have the regression gate this section asked for.)
 
 ---
 

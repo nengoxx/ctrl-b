@@ -60,6 +60,9 @@ class ActionService:
         self._registry = registry
         self._deps = deps
         self._pending: dict[str, _PendingConfirm] = {}
+        # Single-flight reservations for `resume(execute)` (J2): call_ids currently executing, so a
+        # concurrent double-execute of the same pending call can't fire a non-idempotent action twice.
+        self._inflight: set[str] = set()
 
     @property
     def registry(self) -> ToolRegistry:
@@ -200,6 +203,23 @@ class ActionService:
         is intact; this only removes the fragile ephemeral dependency."""
         inp = self._registry.get(name).spec.input_model.model_validate(raw_args)
         return self._mint_token(name, inp.model_dump_json())
+
+    def begin_execute(self, call_id: str) -> bool:
+        """Single-flight guard (J2) for `resume(execute)`: reserve a pending call's execution so a
+        concurrent double-execute (double-tap, or two browser tabs) of the SAME call can't fire a
+        non-idempotent action twice. Returns False if it's already in flight, else reserves it and
+        returns True. The membership test + add are synchronous with no `await` between them, so they
+        run atomically under the single-threaded event loop. Pair every True with `end_execute` in a
+        `finally`. (Sequential re-execute is already blocked by the durable resolved state; this only
+        closes the concurrent window the server-side re-mint opened by dropping single-use tokens.)"""
+        if call_id in self._inflight:
+            return False
+        self._inflight.add(call_id)
+        return True
+
+    def end_execute(self, call_id: str) -> None:
+        """Release a `begin_execute` reservation (idempotent)."""
+        self._inflight.discard(call_id)
 
     def _consume_token(self, token: str | None, action: str, args_json: str) -> bool:
         """Single-use: a valid token for this exact (action, args) is removed and accepted."""

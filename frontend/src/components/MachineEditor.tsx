@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { Switch } from "./Switch";
 import { useCreateHost, useDeleteHost, useUpdateHost } from "../hooks/useHostMutations";
 import { disclosureToggle } from "../lib/disclosure";
 import { requestConfirm } from "../store/confirm";
@@ -161,15 +162,14 @@ function ServiceCard(props: {
         ))}
       </div>
       <div className="svc-foot">
-        <label className="svc-auto">
+        <div className="svc-auto">
           <span>autostart</span>
-          <div
-            className={"switch" + (svc.autostart ? " on" : "")}
-            onClick={() => set({ autostart: !svc.autostart })}
-          >
-            <div className="knob" />
-          </div>
-        </label>
+          <Switch
+            on={svc.autostart}
+            onToggle={() => set({ autostart: !svc.autostart })}
+            label="Autostart"
+          />
+        </div>
         <button type="button" className="svc-rm" onClick={props.onRemove}>
           remove
         </button>

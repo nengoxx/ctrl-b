@@ -497,17 +497,39 @@ class AgentSession:
                 yield ev
             return
         if decision == "dismiss":
-            token: str | None = _DISMISS
-        else:
-            # execute (J3): the confirmation is established by the DURABLE persisted AWAITING_CONFIRM
-            # call + the explicit execute decision — so re-mint the confirm token server-side for the
-            # pending call rather than trust the client's ephemeral one (gone after a backend restart /
-            # 120s expiry / a client reload, which otherwise strands the bubble). Falls back to the
-            # client token only if the call part can't be located (shouldn't happen — just found above).
+            async for ev in self._drive(
+                thread, resume_assistant=assistant, resume_tokens={call_id: _DISMISS}
+            ):
+                yield ev
+            return
+        # execute. The confirmation is established by the DURABLE persisted AWAITING_CONFIRM call + the
+        # explicit execute decision, so re-mint the confirm token server-side for the pending call (J3)
+        # rather than trust the client's ephemeral one (gone after a restart / 120s expiry / a reload,
+        # which would strand the bubble). Two guards around the re-mint:
+        #   • J2 — a single-flight reservation rejects a concurrent double-execute (double-tap / two
+        #     tabs) of the same call, so a non-idempotent action can't fire twice.
+        #   • #2 — if the tool went unknown or its persisted args no longer validate (e.g. an MCP server
+        #     dropped between turns), yield a clean error instead of letting the exception escape the SSE
+        #     generator (a 500 / stranded bubble), mirroring `_run_calls`.
+        if not self._actions.begin_execute(call_id):
+            yield AgentEvent("error", {"message": "this action is already running", "retryable": False})
+            yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
+            return
+        try:
             cp = next((c for c in assistant.tool_calls() if c.call_id == call_id), None)
-            token = self._actions.confirm_token_for(cp.tool, cp.args) if cp else confirm_token
-        async for ev in self._drive(thread, resume_assistant=assistant, resume_tokens={call_id: token}):
-            yield ev
+            try:
+                token = self._actions.confirm_token_for(cp.tool, cp.args) if cp else confirm_token
+            except (UnknownTool, ValidationError) as exc:
+                yield AgentEvent(
+                    "error",
+                    {"message": f"cannot execute this action — {str(exc)[:200]}", "retryable": False},
+                )
+                yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
+                return
+            async for ev in self._drive(thread, resume_assistant=assistant, resume_tokens={call_id: token}):
+                yield ev
+        finally:
+            self._actions.end_execute(call_id)
 
     async def _find_pending(self, thread: Thread, call_id: str) -> Message | None:
         for m in await self._messages.list(thread.id):

@@ -154,6 +154,70 @@ def test_no_double_execute() -> None:
         )
 
 
+# ── J2 + audit-follow-up hardening of the same resume(execute) path ────────────────────────────
+# The server-side re-mint (J3) drops the client's single-use token, so two guards were added:
+#   • J2 — a single-flight `begin_execute`/`end_execute` reservation on ActionService blocks a
+#     concurrent double-execute of one call (a non-idempotent action can't fire twice).
+#   • #2 — the re-mint is wrapped so an unknown/changed tool yields a clean error, not a 500.
+def _session_with_awaiting_call(c, tool: str = "reboot_host"):
+    """Session + a persisted assistant message holding ONE call already AWAITING_CONFIRM for `tool`
+    (crafted directly so we can point it at a tool that won't resolve at resume time)."""
+    from app.domain.conversation import Message, Thread, ToolCallPart
+    from app.domain.enums import Actor, RunState
+    from app.services.agent.session import AgentSession
+
+    s = c.app.state
+    agent = s.settings.resolve_agent(None)
+    session = AgentSession(s.threads, s.messages, s.inference, s.settings, s.actions, agent, interactive=True)
+    thread = _run(s.threads.create(Thread()))
+    call_id = uuid.uuid4().hex
+    assistant = Message(
+        thread_id=thread.id,
+        role="assistant",
+        actor=Actor.AGENT,
+        agent="default",
+        parts=[
+            ToolCallPart(
+                call_id=call_id, tool=tool, args={"host_id": "nope"}, state=RunState.AWAITING_CONFIRM
+            )
+        ],
+    )
+    _run(s.messages.add(assistant))
+    return session, thread, assistant, call_id
+
+
+def test_begin_execute_is_single_flight() -> None:
+    with _workspace(), _client() as c:
+        actions = c.app.state.actions
+        assert actions.begin_execute("c1") is True  # reserved
+        assert actions.begin_execute("c1") is False  # concurrent double-execute of the same call → rejected
+        assert actions.begin_execute("c2") is True  # a different call is independent
+        actions.end_execute("c1")
+        assert actions.begin_execute("c1") is True  # released → a later sequential execute proceeds
+
+
+def test_execute_releases_inflight_reservation() -> None:
+    # A completed execute must leave no reservation behind (the `finally`), else a legit retry stalls.
+    with _workspace(), _client() as c:
+        session, thread, assistant, cid = _session_and_confirm_call(c)
+        _suspend_on_confirm(session, thread, assistant)
+        c.app.state.actions._pending.clear()
+        _run(_collect(session.resume(thread, cid, "execute")))
+        assert cid not in c.app.state.actions._inflight
+
+
+def test_resume_execute_unknown_tool_yields_clean_error() -> None:
+    # The tool is gone by resume time (e.g. an MCP server dropped between turns): the server-side
+    # re-mint raises UnknownTool, which must become a clean error+done, NOT escape the SSE generator
+    # (a 500 / permanently-stuck bubble). The in-flight reservation is still released.
+    with _workspace(), _client() as c:
+        session, thread, _, cid = _session_with_awaiting_call(c, tool="ghost_tool")
+        events = _run(_collect(session.resume(thread, cid, "execute")))
+        assert any(e.event == "error" and "cannot execute" in str(e.data.get("message", "")) for e in events)
+        assert any(e.event == "done" and e.data.get("state") == "error" for e in events)
+        assert cid not in c.app.state.actions._inflight  # released via finally
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

@@ -2314,6 +2314,10 @@ body {
   font-size: 11px;
   letter-spacing: 0.3px;
   color: var(--ink);
+  /* a flex item won't shrink below its content width unless min-width:0 — without it a long,
+     unbreakable MCP tool name (mcp__server__tool) forces the row past 390px. Mirrors Kit. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .tcat-risk {
   font-size: 8px;
@@ -2324,6 +2328,7 @@ body {
   background: var(--bg-3);
   border: 1px solid var(--line);
   color: var(--ink-faint);
+  flex: none; /* the badge never shrinks/wraps when the name column steals the width (mirrors Kit) */
 }
 .tcat-risk.r-high {
   color: var(--danger, #ff5c8a);
@@ -2339,6 +2344,7 @@ body {
   text-transform: uppercase;
   color: var(--magenta);
   font-weight: 600;
+  flex: none; /* mirrors Kit — the "modified" pill keeps its size next to the seg */
 }
 .tcat-desc {
   margin-top: 5px;
