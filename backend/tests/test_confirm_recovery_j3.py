@@ -126,6 +126,11 @@ def test_execute_recovers_after_token_loss() -> None:
         assert any(e.event == "tool.result" for e in events)  # it RAN (gate re-opened via re-mint)
         assert not any(e.event == "tool.permission" for e in events)  # did NOT re-suspend
 
+        # The DURABLE state resolved — no dead AWAITING_CONFIRM bubble survives to the next reload.
+        msgs = _run(c.app.state.messages.list(thread.id))
+        cp = next(p for m in msgs for p in m.tool_calls() if p.call_id == cid)
+        assert cp.state.value != "awaiting_confirm"
+
 
 def test_dismiss_still_works_after_token_loss() -> None:
     with _workspace(), _client() as c:
