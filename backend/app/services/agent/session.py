@@ -496,7 +496,16 @@ class AgentSession:
             ):
                 yield ev
             return
-        token = _DISMISS if decision == "dismiss" else confirm_token
+        if decision == "dismiss":
+            token: str | None = _DISMISS
+        else:
+            # execute (J3): the confirmation is established by the DURABLE persisted AWAITING_CONFIRM
+            # call + the explicit execute decision — so re-mint the confirm token server-side for the
+            # pending call rather than trust the client's ephemeral one (gone after a backend restart /
+            # 120s expiry / a client reload, which otherwise strands the bubble). Falls back to the
+            # client token only if the call part can't be located (shouldn't happen — just found above).
+            cp = next((c for c in assistant.tool_calls() if c.call_id == call_id), None)
+            token = self._actions.confirm_token_for(cp.tool, cp.args) if cp else confirm_token
         async for ev in self._drive(thread, resume_assistant=assistant, resume_tokens={call_id: token}):
             yield ev
 

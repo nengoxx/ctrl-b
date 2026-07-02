@@ -195,14 +195,21 @@ Three distinct fixes — each is its own pre-flight/scope/review. Do NOT bundle 
   delta events are per-token, so a schema lib's per-call + bundle cost isn't worth it (researched: matches
   Vercel AI SDK / OpenAI / Anthropic client behaviour). Tests: 5 new cases in `tests/store/chat.test.ts`
   (garbage part/result dropped, unknown event ignored, passthrough, missing-id dropped) — 14 chat tests green.
-- **4b — J3 stale confirm-token recovery (P1):** a reload/restart/expiry currently leaves an unusable
-  `AWAITING_CONFIRM` bubble. Add a re-mint endpoint OR a "confirmation expired — ask again / dismiss"
-  affordance. *Reads:* confirm-token mint/verify path, the `.b.cmd` command bubble + confirm-resume
-  flow, `AgentSession` state machine.
+- **4b — J3 stale confirm-token recovery (P1). ✅ SHIPPED 2026-07-02.** The durable persisted
+  `AWAITING_CONFIRM` call + the explicit `execute` are now the confirmation — so the ephemeral token no
+  longer has to survive. `session.resume(execute)` re-mints the confirm token **server-side** for the
+  pending call via a new `ActionService.confirm_token_for(name, args)` (reuses `_mint_token` + the exact
+  `invoke` args-canonicalization), so execute runs in **one click** after a backend restart / 120s expiry /
+  client reload. Backend-only (frontend already sends no token post-reload); no security change (token was a
+  UX gate, not auth — SECURITY_MODEL §2.3; the two-step is preserved). Chose this over a re-mint endpoint /
+  "expired" affordance after researching human-in-the-loop patterns (LangGraph durable-checkpoint resume;
+  opencode/Claude Code keep approvals ephemeral only because their loop is — we already persist ours).
+  Tests: `tests/test_confirm_recovery_j3.py` (4) — mechanism, execute-recovers-after-token-loss, dismiss
+  still works, no double-execute. 241 backend tests green.
 - **4c — I4 risk-aware retry (P1):** never one-click-retry a side-effectful failed turn. Add
   `side_effect`/`mutates` to `ToolSpec`; for a mutating tool, copy-to-draft instead of auto-resend.
   *Reads:* `ToolSpec`, the retry UI on failed turns, `ActionService.invoke`.
-- [x] **4a — SHIPPED 2026-07-02** (SSE payload guards; `store/chat.ts` validator layer + 5 tests).  ·  [ ] 4b  ·  [ ] 4c
+- [x] **4a — SHIPPED 2026-07-02** (SSE payload guards; `store/chat.ts` validator layer + 5 tests).  ·  [x] **4b — SHIPPED 2026-07-02** (stale confirm-token recovery; server-side re-mint + 4 tests).  ·  [ ] 4c
 
 ### 5. Phase 9 smoke tests  ·  *TODO Phase 9 (unchecked)*
 - **Goal:** prove the whole app runs — desktop + phone viewport + core backend actions — before it ships.

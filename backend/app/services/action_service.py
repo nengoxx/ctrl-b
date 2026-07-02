@@ -187,6 +187,20 @@ class ActionService:
         )
         return token
 
+    def confirm_token_for(self, name: str, raw_args: dict) -> str:
+        """Mint a confirm token for a call whose confirmation is already established by DURABLE state
+        (J3): an agent `resume(execute)` of a persisted `AWAITING_CONFIRM` call. The confirm token is
+        an in-memory UX gate (SECURITY_MODEL §2.3) — it dies on a backend restart / 120s expiry / a
+        client reload, which would strand the persisted bubble. Rather than depend on that ephemeral
+        token surviving, the resume path re-mints one here for the pending call, so the very next
+        `invoke` consumes it and the action runs in one click. Uses the SAME `(name, args_json)`
+        binding `invoke` computes (`input_model.model_validate(...).model_dump_json()`), so the mint
+        always matches. Safe: the caller only mints after finding the call persisted `AWAITING_CONFIRM`
+        (the gate legitimately fired) and the owner explicitly chose `execute` — the two-step approval
+        is intact; this only removes the fragile ephemeral dependency."""
+        inp = self._registry.get(name).spec.input_model.model_validate(raw_args)
+        return self._mint_token(name, inp.model_dump_json())
+
     def _consume_token(self, token: str | None, action: str, args_json: str) -> bool:
         """Single-use: a valid token for this exact (action, args) is removed and accepted."""
         if not token:
