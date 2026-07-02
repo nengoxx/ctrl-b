@@ -49,7 +49,8 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   is also available for POSIX scripts. **Keep all code OS-agnostic** — branch on `host.os_type`
   (managed host), never on the server's OS. The only legitimate server-OS branch is the local ping
   syntax (`fleet._ping_cmd`); see `docs/ARCHITECTURE.md` §6 for the design invariant.
-- Python **3.11+** (deploy targets native 3.14), backend venv at `backend/.venv`. Run:
+- Python **3.14+** (the codebase uses 3.14 syntax — e.g. PEP 758 unparenthesized `except`; ruff
+  `target-version = py314`; emma deploys native 3.14). Backend venv at `backend/.venv`. Run:
   `uvicorn app.main:app --port 5433` from `backend/`. One-command: `deploy/windows/start.cmd` /
   `deploy/linux/run.sh`.
 - **Windows gotcha:** do **not** run the backend with `uvicorn --reload` on Windows — the reload

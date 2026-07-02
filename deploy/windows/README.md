@@ -6,11 +6,11 @@ lands in the repo reorg — see `docs/REORG_PLAN.md`.)
 
 ## One-time setup
 **Double-click `setup.cmd`** (or `start.cmd` will tell you if it's needed). It:
-- creates the backend venv (`backend\.venv`, Python 3.14 preferred — any 3.11+ works),
+- creates the backend venv (`backend\.venv`, Python 3.14+),
 - installs backend deps (`pip install -e backend`),
 - installs frontend deps + builds the production bundle (`frontend\dist`).
 
-Prereqs it checks for: **Node 20+** (`npm`) and **Python 3.11+** (ideally 3.14, with the `py` launcher). It
+Prereqs it checks for: **Node 20+** (`npm`) and **Python 3.14+** (with the `py` launcher). It
 warns if `config.yaml` (fleet/integrations/secrets) is missing from the app root.
 
 ## Start it

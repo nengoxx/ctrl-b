@@ -21,7 +21,7 @@ This skill is **self-contained**. Its only external dependency is the helper
 `rotation.py` next to this file (rotation bookkeeping + quota gate); never
 hand-roll ccusage parsing or cursor math. All paths below are relative to the
 repo root. Run the helper with the repo's `.venv\Scripts\python.exe` or any
-Python 3.11+.
+Python 3.14+.
 
 ## Procedure (one cycle)
 

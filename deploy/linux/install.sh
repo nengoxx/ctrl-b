@@ -39,7 +39,7 @@ echo "== ctrl-b dashboard install [$ROLE]  (repo=$REPO, CTRLB_HOME=$CTRLB_HOME) 
 miss=0
 req() { command -v "$1" >/dev/null || { echo "  ✗ missing: $1 — $2"; miss=1; }; }
 req git     "sudo apt install -y git"
-req python3 "sudo apt install -y python3 python3-venv   (need 3.11+)"
+req python3 "sudo apt install -y python3 python3-venv   (need 3.14+)"
 req node    "install Node 20+ (nodesource.com / nodejs.org)"
 req npm     "comes with Node (nodesource.com / nodejs.org)"
 [ "$miss" = 1 ] && { echo "→ install the missing prerequisite(s) above, then re-run."; exit 1; }
@@ -47,13 +47,13 @@ command -v tmux >/dev/null || echo "⚠ tmux missing (only needed for the Claude
 [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = yes ] || \
   echo "⚠ user-linger is OFF → services won't survive logout/reboot. Enable: sudo loginctl enable-linger $(id -un)"
 
-# 2) Backend venv — NATIVE Python 3.14 where available (the whole pinned stack is 3.14-wheel-ready; verified on
-#    emma 2026-06-29), else any python3 ≥ 3.11. REBUILD if an existing venv is a different version.
+# 2) Backend venv — NATIVE Python 3.14 (the codebase uses 3.14-only syntax; the whole pinned stack is
+#    3.14-wheel-ready; verified on emma 2026-06-29). REBUILD if an existing venv is a different version.
 VENV="$APP/backend/.venv"
 PY="$(command -v python3.14 || command -v python3 || true)"
 [ -n "$PY" ] || { echo "✗ no python3 on PATH — sudo apt install -y python3 python3-venv"; exit 1; }
-"$PY" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,11) else 1)' \
-  || { echo "✗ $PY is too old ($("$PY" -V 2>&1)) — need Python 3.11+"; exit 1; }
+"$PY" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,14) else 1)' \
+  || { echo "✗ $PY is too old ($("$PY" -V 2>&1)) — need Python 3.14+"; exit 1; }
 "$PY" -c 'import venv' 2>/dev/null || { echo "✗ python venv module missing — sudo apt install -y python3-venv"; exit 1; }
 WANT="$("$PY" -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 if [ -d "$VENV" ]; then

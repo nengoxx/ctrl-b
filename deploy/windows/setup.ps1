@@ -16,7 +16,7 @@ Write-Host "app root: $ROOT"
 function Test-Cmd($n) { return [bool](Get-Command $n -ErrorAction SilentlyContinue) }
 if (-not (Test-Cmd npm))  { throw "npm not found - install Node 20+ from nodejs.org, then re-run." }
 
-# Backend venv: reuse an existing one (>=3.11), else create with the best available Python (prefer 3.14).
+# Backend venv: reuse an existing one (>=3.14), else create with the best available Python (prefer 3.14).
 function Resolve-Py {
   foreach ($c in @(@("py","-3.14"), @("py","-3"), @("python"), @("python3"))) {
     $exe = $c[0]; $a = @($c[1..($c.Count-1)])
@@ -24,7 +24,7 @@ function Resolve-Py {
     try { $v = (& $exe @a -c "import sys;print('%d.%d'%sys.version_info[:2])" 2>$null) } catch { continue }
     if ($v -match '^\d+\.\d+$') {
       $parts = $v -split '\.'
-      if (([int]$parts[0] -gt 3) -or ([int]$parts[0] -eq 3 -and [int]$parts[1] -ge 11)) {
+      if (([int]$parts[0] -gt 3) -or ([int]$parts[0] -eq 3 -and [int]$parts[1] -ge 14)) {
         return @{ exe = $exe; args = $a; ver = $v }
       }
     }
@@ -37,7 +37,7 @@ if (Test-Path $VPY) {
   Write-Host "-- existing backend venv: Python $have"
 } else {
   $py = Resolve-Py
-  if (-not $py) { throw "No Python >=3.11 found - install Python 3.14 from python.org (with the 'py' launcher), then re-run." }
+  if (-not $py) { throw "No Python >=3.14 found - install Python 3.14 from python.org (with the 'py' launcher), then re-run." }
   Write-Host "-- creating backend venv with Python $($py.ver)"
   & $py.exe @($py.args) -m venv $VENV
 }

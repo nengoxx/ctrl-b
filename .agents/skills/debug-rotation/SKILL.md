@@ -15,7 +15,7 @@ This skill is **self-contained** — all fixing and committing happens directly 
 this session. Its only external dependency is the helper `rotation.py` (finding
 scan + quota gate); never hand-roll the open/resolved scan or ccusage parsing.
 Paths are relative to repo root; run the helper with the repo's
-`.venv\Scripts\python.exe` or any Python 3.11+.
+`.venv\Scripts\python.exe` or any Python 3.14+.
 
 ## What counts as "open"
 

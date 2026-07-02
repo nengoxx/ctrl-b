@@ -107,7 +107,7 @@ any user/host, not just `emma`.
   checkout and **clones** the prod tree (and the dev tree with `--with-dev`); no migration needed.
 - **Prereqs on a fresh box:** `bootstrap.py` step 0 installs `git`+`tmux`, enables linger, sets the tailscale
   operator (apt/Ubuntu). It does **not** install Python/Node (versions matter) — `install.sh` checks for
-  `git` / `python3` ≥3.11 / `node` / `npm` and **fails loudly with the exact install hint** if any is missing.
+  `git` / `python3` ≥3.14 / `node` / `npm` and **fails loudly with the exact install hint** if any is missing.
   On a non-apt distro, install git+tmux yourself and pass `--no-prereqs`.
 
 ## If something fails (debug / finish manually)

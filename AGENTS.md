@@ -70,7 +70,8 @@ archive/                v0.1-flask/ (the old Flask app + scripts) · v0.1-infere
 
 ## 3. Run / build / test
 
-**Backend:** Python **3.11+** (deploy targets native 3.14), venv at `backend/.venv`. Port **5433**.
+**Backend:** Python **3.14+** (the code uses 3.14-only syntax — PEP 758 `except`, ruff `target-version
+= py314`; emma deploys native 3.14), venv at `backend/.venv`. Port **5433**.
 
 ```powershell
 # Windows (do NOT pass --reload — see §8 gotcha)

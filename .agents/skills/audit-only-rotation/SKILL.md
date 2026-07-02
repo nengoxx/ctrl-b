@@ -14,7 +14,7 @@ This skill is **self-contained** — the auditing is done directly in this sessi
 Its only external dependency is the helper `rotation.py` (rotation bookkeeping +
 quota gate), which lives in the `audit-rotation` skill folder and keeps the scope
 cursor coherent across runs. Run it with the repo's `.venv\Scripts\python.exe` or
-any Python 3.11+. Paths are relative to repo root.
+any Python 3.14+. Paths are relative to repo root.
 
 ## Procedure (one pass)
 

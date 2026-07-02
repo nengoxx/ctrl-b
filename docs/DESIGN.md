@@ -3,7 +3,7 @@
 The concrete engineering design behind the decisions in `DECISIONS.md` and the shape in
 `ARCHITECTURE.md`. This is the **authoritative detail** for models, classes, flows, and edge
 cases; where it sharpens an earlier sketch (e.g. the message model), **this doc wins** and the
-sketch is a summary. Python 3.11+, Pydantic v2, FastAPI. Read alongside `ARCHITECTURE.md`.
+sketch is a summary. Python 3.14+, Pydantic v2, FastAPI. Read alongside `ARCHITECTURE.md`.
 
 > **⚠️ Reconciliation note (2026-06-14).** This doc predates **D14/D15**. For the **agent-workspace
 > and memory** areas, **D14/D15 supersede the sketches here**: agents are **folder-only**
