@@ -3,8 +3,12 @@
 // free of any import that would pull components in (which would risk a runtime cycle via `store/ui`).
 // `types.ts` imports only the `Tab` TYPE from store/ui (erased at runtime), so this chain has no cycle.
 //
-// v1: every theme returns the standard 4 tabs (D28 #4). The registry is genuinely flexible — a future
-// theme can register a different `TabDef[]` here without touching any other theme or the frozen vapor.
+// v1: every theme returns the standard 4 tabs (D28 #4). Scope of the flexibility (right-sized in the
+// 2026-07-06 final review, D34): this registry drives the section NAV + composer-visibility flexibly
+// (useSections/NavMenu/KitNavBar are pure consumers), but the tab BODIES are fixed — DefaultRoot hardwires
+// Fleet/Agent/Utils/Conf with literal `tab === "…"` gates. Reordering the same 4 tabs works today;
+// adding/removing/renaming a section additionally needs an id→body registry in DefaultRoot — a future seam,
+// deliberately NOT built until a theme actually needs a different section (D31: no speculative registry).
 
 import type { TabDef, TabId, ThemeId } from "./types";
 

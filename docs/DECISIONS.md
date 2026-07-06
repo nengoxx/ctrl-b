@@ -1355,6 +1355,13 @@ topology), load **their own fonts**, define **disjoint token namespaces**, and c
 (minimal = light/dark × 4 OKLCH hues). This entry locks the architecture. The full code-level spec + porting
 playbook live in **[`THEME_ENGINE.md`](./THEME_ENGINE.md) §§9–10**; the TODO slices are **Phase 11 (T0–T5)**.
 
+> **✏️ AMENDED 2026-07-06 (→D34): "frozen" is a phase, not an identity.** Owner directive — vapor will
+> eventually assimilate into the engine as a normal, contract-conformant theme. Its freeze reduces to six
+> enumerated legacy hooks retired by the per-component graduation ladder in `THEME_ENGINE.md` **§14.15.3**
+> (standing guarantees: nothing new depends on a legacy hook; exemptions live in shrinkable waiver lists;
+> engine code uses `DEFAULT_THEME`, never `"vapor"` literals). D28/D29's freeze language governs each
+> surface only until it graduates.
+
 > **✅ T0 (the engine; vapor untouched) SHIPPED 2026-06-26.** The `@layer` isolation strategy is build-verified
 > (Vite preserves `@import … layer()` → no `cb-` fallback needed); `theme-engine/` (registry + slots +
 > `ThemeProvider` + cached resolution), the vapor module (existing components as slots, frozen), the `App.tsx`
@@ -1650,3 +1657,38 @@ So the four cases fall out with no special-casing: base = `<DefaultRoot/>`; base
 **Rejected (kept as documented alternatives, not the default).** Biome / Oxlint (single-tool elegance, but weaker React-hooks fidelity + no Compiler diagnostics); plain pyright (flaky Node fetch — solved by the `nodejs` extra); basedpyright (fork governance + stricter-default false positives); Pyrefly/ty (Pyrefly is a rule-surface swap, ty still beta); twin shell-script runner (drift); `nox`/`just`/`make` (env-matrix / global-dep overkill vs the thin stdlib chokepoint); lefthook + husky+lint-staged (hook-framework dep + Windows edges vs native `core.hooksPath` + `check.py`). Full comparison + per-tool caveats in `QUALITY.md`.
 
 **Status.** LOCKED 2026-07-01 (deep-audited + caveat-verified). Net new dev-deps: FE `eslint @eslint/js typescript-eslint eslint-plugin-react-hooks eslint-plugin-react-refresh eslint-config-prettier prettier`; BE `pyright[nodejs]` — all official/conventional, all justified per layer; enforcement adds **zero** deps (native git hooks + `check.py`). De-risked by code facts: FE `tsconfig` already `strict`; BE already modern-typed (`from __future__ import annotations`) → pyright `basic` ≈ near-green.
+
+## D34 — Theme-engine final review: architecture re-confirmed; Hardening slice v2; vapor assimilation ladder ✏️ LOCKED 2026-07-06
+
+**Context.** Before un-parking the theme engine, the owner commissioned a **final adversarial review of every
+theme-engine decision** — 29 agents (6 decision clusters × web best-practices + code audit; every risk/change
+finding independently attack-verified; the main session as final judge). Full outcome, slice spec, invariants,
+ladder, backlog + rejected list: **[`THEME_ENGINE.md`](./THEME_ENGINE.md) §14.15** (the plan of record).
+
+**Decision highlights (all folded into §14.15):**
+- **Every architectural layer re-confirmed** — @scope/@layer/.kit isolation, semantic tokens + two-channel
+  accent + OKLCH, LWW appearance sync, View-Transition switching, headless controllers + Root + Kit, the D31
+  3-band model. **No decision relitigated.**
+- **Hardening slice v2 supersedes the TRIAGE-3 ordering** (9 items + 2 riders, §14.15.1). Notables: the
+  `--accent-ink` on-accent contrast token (the review's one product bug — minimal light mode ships 3.2:1);
+  a theme-fault boundary whose **"Reset theme to default" is a genuine pick (write-through PUT)** — local-only
+  reset can't escape the reconcile loop, quarantine was rejected; the in-flight guard lives **inside
+  `switchTheme`** (drops the planned `useIsMutating` gate); registered-ID coercion at both doors, never
+  auto-PUT; the B2 contract suite with **vapor exemptions as ONE shrinkable waiver constant**; a
+  **kit-render e2e smoke** (the review's coverage hole: no test in any layer mounted DefaultRoot/kit.css).
+- **New invariants (§14.15.2):** *the server appearance doc is only ever written by explicit user action*;
+  the documented browser floor (Chrome 118+ / Firefox-Fennec 146+ — below it @scope-wrapped sheets drop and
+  vapor renders unstyled); the two-CSS-trees rule for shared markup; the grandfathered `isVapor` exception.
+- **Vapor assimilation (owner directive 2026-07-06, amends D28/D29): frozen = a phase, not an identity.**
+  Six enumerated legacy hooks; a per-component graduation ladder V1–V5 ordered by **divergence (low first:
+  Conf editors → overlays → chat LAST and via the D31 3-gate as a ChatSurface candidate, not tokens)**;
+  standing guarantees (no new legacy-hook dependencies · shrinkable waiver lists · `DEFAULT_THEME` never
+  `"vapor"` literals in engine code). Unscheduled — after the catalog stabilizes.
+- **Reviewed and REJECTED** (documented so they aren't re-proposed): storage-event cross-tab listener, woff2
+  SW precaching, @scope boot probe, screenshot diffing, tab body registry, quarantine subsystem, aria-live
+  announcement, third perf tier (§14.15.4).
+
+**Status.** LOCKED 2026-07-06. Sequencing unchanged: Hardening slice v2 → Composer Surface
+(`COMPOSER_SURFACE_PLAN.md`), post-emma-deploy. Doc pass landed same-day (§10 rewrite as-built, §13.6
+superseded banner, §14.11 perf-sync correction, §14.4.1 two-trees box, §14.14 a11y invariant + isVapor
+exception, ROADMAP assimilation entry).

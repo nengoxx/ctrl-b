@@ -548,16 +548,23 @@ homes later:
 - **Server** — host/port, poll interval, debug, Tailscale-Serve/HTTPS status.
 - **Notifications** — master on/off; default PWA-native (foreground + Web Push, auto); optional
   ntfy / Telegram-Discord channels; per-event toggles (F1).
-- **Appearance** — theme, skyline, hero, waveform (from Vapor). **Now the Theme Engine (DECISIONS D28,
-  TODO Phase 11, design in `THEME_ENGINE.md`):** a pluggable presentation layer — a `ThemeRegistry` of
-  `ThemeDef`s resolved via slots over the shared data/logic core, switching between distinct, pixel-faithful
-  design systems (vapor [frozen default] · minimal · phosphor · cosmos · frontier · observatory) each with its
-  own `[data-theme]`-scoped lazy CSS bundle, fonts, palette axes (`{theme,mode,accent}`), and `present(host)`
-  per-host visual encoding. **v1 seams to build now (Phase 11 T0):** the registry + slot system, the
-  `{theme,mode,accent}` `ui` store with an **injectable initial value** (the cross-device sync seam — a
-  `config.yaml appearance` block synced via the settings API, designed + deferred), the semantic-token contract
-  for non-vapor themes, and the per-host `host.appearance:{<themeId>:blob}}` override field (additive,
-  no-migration). Adding a future theme = one registry row + one self-contained module + one verbatim scoped CSS.
+- **Appearance** — theme, skyline, hero, waveform (from Vapor). **Now the Theme Engine (DECISIONS D28–D31 +
+  D34, design in `THEME_ENGINE.md` §14 — BUILT):** a pluggable presentation layer — a `ThemeRegistry` of
+  `ThemeDef`s, each theme owning its whole **`Root`** over the shared headless controllers + the optional
+  token-driven **Kit**, switching between distinct, pixel-faithful design systems (vapor [default] · minimal ·
+  cosmos SHIPPED; phosphor · frontier · observatory to port) each with its own `@scope([data-skin])`-isolated
+  lazy CSS bundle, fonts, palette axes (`{theme,mode,accent}`, cross-device LWW-synced via the `config.yaml`
+  `appearance` block), per-theme `settings`, and `present(host)` per-host visual encoding (+ the per-host
+  `host.appearance:{<themeId>:blob}` override field, additive). Adding a reskin theme = one registry row + one
+  self-contained module + a scoped `tokens.css` (recipe: `THEME_ENGINE` §14.4.1/§10). **Next when un-parked:**
+  the **Hardening slice v2 → Composer Surface** (`THEME_ENGINE` §14.15.1, D34).
+- **Vapor assimilation (owner directive 2026-07-06 — D34, `THEME_ENGINE` §14.15.3).** vapor's "frozen" status
+  is a phase, not an identity: port it from frozen-bespoke to a fully engine-native, contract-conformant theme
+  via the per-component graduation ladder (V1 file/keyframe hygiene → V2 `data-theme`→`data-accent` axis →
+  V3 semantic-token mapping → V4 per-surface Kit/Surface participation, low-divergence first, chat last via
+  the D31 3-gate → V5 chrome dedup). Unscheduled — after the theme catalog stabilizes. Standing guarantees
+  already in force: nothing new depends on vapor's legacy hooks; test/lint exemptions are shrinkable waiver
+  lists; engine code uses `DEFAULT_THEME`, never `"vapor"` literals.
 - **Icon tooling (DX, noted 2026-06-28)** — icons are currently **hand-inlined SVGs** (the shared Kit chrome,
   the NavMenu, action buttons), which is fine at this scale but tedious + easy to mis-trace. Future: adopt
   **`unplugin-icons` + Iconify** (build-time, on-demand, tree-shaken, **offline-friendly** — inlined at build,

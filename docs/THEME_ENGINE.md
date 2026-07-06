@@ -641,35 +641,51 @@ frame. Leave a seam to migrate to React's native `<ViewTransition>` when it leav
 | `domain/host.py` · `api/hosts.py` | carry `appearance` onto runtime `Host` + `Settings.hosts()` builder + `_host_dto` (read) + `HostIn`/`_apply_fields` (authoring) — **additive at T3/T5 when first consumed** (§9.9), not day-1 | additive, not a refactor |
 | `theme/vapor.css`, `theme/extras.css`, `theme/heroScene.ts`, all vapor components | **untouched (D7)** — only caged in `layer(frozen)` via `theme/index.css`, no edit | ✅ frozen |
 
-## 10. Prototype → theme-module porting playbook
+## 10. Prototype → theme-module porting playbook — ✏️ REWRITTEN AS-BUILT 2026-07-06 (final review, D34)
 
-The drift-minimizing convention (web-cited: verbatim plain CSS + 1:1 JSX is what keeps re-sync mechanical).
-**Goal: editing a prototype HTML later and re-porting is a near-mechanical diff, not a rewrite.**
+> The original §10 described the superseded T0 slot model (`theme-engine/<theme>/`, `<Theme>FleetView.tsx`
+> slots, `body[data-skin]` selector wrapping). This rewrite matches the **as-built §14 Root model** —
+> §14.4.1's recipe is the canonical short form; this is the fuller playbook. The drift-minimizing convention
+> is unchanged (verbatim plain CSS + 1:1 JSX keeps re-sync mechanical). **Goal: editing a prototype HTML
+> later and re-porting is a near-mechanical diff, not a rewrite.**
 
-1. **Create the module dir:** `theme-engine/<theme>/` → `index.ts` (the `ThemeDef`), `tokens.css`,
-   `<Theme>FleetView.tsx` (+ any other slot it overrides), `assets/`, `fonts` (Fontsource imports).
-2. **CSS — copy verbatim, scope once, assign a layer.** Lift the prototype's `<style>` block **unchanged**
-   into `tokens.css`, wrapped in `body[data-skin="<theme>"] { … }` (native nesting) and imported into
-   `layer(theme)` (§9.6, §13.1–13.3). Use a `cb-` class namespace for any chrome that overlaps vapor's global
-   names. Do **not** rename the prototype's own classes or re-derive colors. Map the prototype's `:root` vars
-   onto the semantic contract (§9.7) at the top; keep the theme's own extra vars as-is. Declare
-   `@font-face`/Fontsource imports here.
-3. **JSX — 1:1 with the prototype markup.** Port the prototype's fleet DOM into the slot component with the
-   **same tree + same class strings** (run it through transform.tools/html-to-jsx for the mechanical
-   `class→className`/self-close/camelCase pass). Replace the prototype's hardcoded `DEVICES`/`RIGS` array with
-   the real `useFleet()` data; replace its inline visual fields with `present(host, index, host.appearance?.[id])`.
-4. **Animation — port the rAF/canvas logic into a `useEffect`** keyed to the data, gated by `ui.motion`
-   (reuse the existing motion flag, don't add an OS `prefers-reduced-motion` branch — CLAUDE.md). cosmos orbit
-   loop, minimal/cosmos waveform, frontier sweep → effects with cleanup.
+1. **Create the module dir:** `frontend/src/themes/<id>/` → `index.tsx` (the `ThemeDef`: `Root`, `palettes`,
+   `loadStyles`, optional `loadFonts`/`loadRoot`/`settings`/`present`/`assets`), `tokens.css`, optional
+   `<Id>Root.tsx` + bespoke components (spatial themes), `fonts.ts` (Fontsource imports + FontFace await),
+   `assets/`. **Reskin theme** → `Root` = a thin wrapper rendering `<DefaultRoot …/>`; **bespoke theme** →
+   your own Root (opt into Kit pieces by adding the `.kit` marker yourself).
+2. **CSS — copy verbatim, scope + layer it.** Lift the prototype's `<style>` block **unchanged** into
+   `tokens.css` as `@layer theme { @scope ([data-skin="<id>"]) { … } }` (a lazy import must self-declare
+   BOTH). The gotchas, all empirically earned: `:root` → **`:scope`** (scoped selectors match descendants,
+   not the root); page background on `:scope, body`; mode/accent/density axes on `body[data-*]`;
+   **formula-derived tokens on `body`, not `:scope`** (§14.4.1 var()-trap); **prefix every `@keyframes` with
+   `<id>-`** (§14.13 #4 — names are global; bundles coexist mid-switch); reference the pre-declared
+   **`@layer theme` ONLY — never introduce a NEW top-level layer name** in a lazy sheet (first-declaration
+   order would append it AFTER `reset` and outrank the user-select reset); **`@font-face` at top level only**
+   (Fontsource import / FontFace API) — inside `@scope` it is invalid and silently dropped. Map the
+   prototype's `:root` vars onto the semantic contract (§9.7/§14.13 #1) at the top; keep the theme's own
+   extra vars as-is; don't rename prototype classes or re-derive colors.
+3. **JSX — 1:1 with the prototype markup.** Port the prototype's DOM into your Fleet view / bespoke Root with
+   the **same tree + same class strings** (transform.tools/html-to-jsx for the mechanical pass). Replace the
+   hardcoded `DEVICES`/`RIGS` arrays with the real controller hooks (`useFleet()` etc.); replace inline
+   visual fields with `present(host, index, host.appearance?.[id])`. **Preserve the structural measurement
+   hooks** (§14.13 #13): the scroller is `#app-scroll`, the composer root `#composer`/`.kit-composer`, the
+   appbar `.kit-appbar` — the contract test asserts them.
+4. **Animation — rAF/canvas logic into a `useEffect`** keyed to the data, gated by `ui.motion` (never a
+   second OS `prefers-reduced-motion` branch — §14.11); heavy effects behind `data-perf`. Cap ~30fps, pause
+   off-screen/hidden, no per-frame layout reads. Effects must clean up (StrictMode double-invoke).
 5. **Keep dynamic React to a thin wrapper.** Avoid inline `style=` (hardest to re-port); keep styling in
    `tokens.css`. Confine `{…}` injection to data points (host list, status, ping).
-6. **Register:** one row in `ThemeRegistry` + the Conf picker reads `palettes` automatically. Done.
-7. **Re-sync workflow:** owner edits `prototypes/.../<theme>.html` → re-run steps 2–3 as a diff against the
-   committed module (CSS is a near-verbatim paste; JSX changes track the markup diff). Document any structural
-   change in the module's header comment.
+6. **Register:** one row in `theme-engine/registry.ts`. The Conf Appearance picker auto-renders
+   `palettes`/`settings`; `themeContract.test.ts` + the stylelint dir-overrides auto-cover the new module
+   (§14.13.1 — coverage grows with the data, not with discipline).
+7. **Re-sync workflow:** owner edits `prototypes/.../<id>.html` → re-run steps 2–3 as a diff against the
+   committed module (CSS is a near-verbatim paste; JSX changes track the markup diff). Document any
+   structural change in the module's header comment.
 
 **Acceptance per theme (D7-per-theme):** open the module at 390px side-by-side with its prototype — visually
-indistinguishable. vapor's acceptance is stricter: **byte-for-byte unchanged** vs today's build.
+indistinguishable — **and smooth on Firefox/Fennec AND Chrome with all effects ON** (§14.11). vapor's
+acceptance remains stricter: byte-for-byte unchanged vs today's build (until its §14.15 assimilation stages).
 
 ## 11. Validation verdict (final review, 2026-06-26)
 
@@ -745,7 +761,9 @@ read back an invalid `ThemeId`. A ~3-line remap (or a persist-key bump, acceptin
 **13.5 — FOUC defended at two levels (§9.6, §12).** Vite prod guarantee + React 19 `precedence`/`preinit` in
 `startTransition`; verify with `vite build && vite preview`.
 
-**13.6 — `App.tsx` slot-host must preserve shell orchestration (NEEDS-MITIGATION).** The slot list models
+**13.6 — `App.tsx` slot-host must preserve shell orchestration (NEEDS-MITIGATION). ⚠️ SUPERSEDED by §14.1 —
+there is no slot-host; the theme `Root` owns the shell (App is a thin host). Kept as design history; the
+`--appbar-h` stable-ref and `TabDef.hasComposer` points survived into the Roots/`useSections`.** The slot list models
 *surfaces*, not the shell machinery. Keep in App (render the resolved slot **inside** these):
 - **Lazy ConfTab** — `confMounted` latch + idle `preloadConfTab` + `ErrorBoundary`→`Suspense`→lazy wrapper
   (App.tsx:46–49,109–121,132–138) stays; the `ConfShell` slot renders inside the Suspense boundary.
@@ -889,6 +907,15 @@ never leaks into vapor — **follow it for every future theme:**
 2. `themes/<id>/index.tsx` — a `ThemeDef`: `Root` = a thin wrapper that reads its settings and renders `<DefaultRoot hideAppbar=… />` (STRUCTURAL settings → `DefaultRoot` props; COSMETIC settings → a `body[data-*]` attr its `tokens.css` scopes, e.g. minimal's `data-density`); `palettes`; `loadStyles: () => import("./tokens.css")`; optional `loadFonts` (Fontsource, awaited via `document.fonts.load`); optional `settings`; optional `present` (spatial themes only).
 3. Register it in `theme-engine/registry.ts`. The Conf Appearance picker auto-renders its modes/accents/settings; `ThemeProvider` loads its lazy CSS/fonts on activation (and on cold-load if it's the persisted theme). Its Fleet view is the one surface it composes itself (from Kit `device-row`/`NowMonitoring` pieces); everything else is the shared Kit chrome + editors, skinned entirely by its tokens.
 
+> **⚠️ The two-CSS-trees invariant (final review 2026-07-06, D34).** The SHARED components — `tabs/AgentTab`
+> (the whole chat), the Conf editors, and the shared overlays — are styled by **two independent CSS trees**:
+> the Kit tree (`kit/kit.css`, under `.kit`) AND vapor's bespoke tree (`theme/vapor.css` + `extras.css`,
+> under `[data-skin=vapor]`). **Any change to a shared component's markup or class names must update BOTH
+> trees and be eyeballed on vapor AND one Kit theme before landing** (a missed tree renders an unstyled-but-
+> live element — no crash, no test failure; only the eyeball catches it). This obligation shrinks to zero as
+> each surface graduates up the §14.15 assimilation ladder — prune a surface from this note when its vapor
+> rules are gone.
+
 ## 14.5 The core invariant — state ownership (prevents future refactors)
 
 **All state that must (a) survive a theme switch or (b) be reachable by multiple parts of a presentation lives in a
@@ -1013,8 +1040,10 @@ than Chrome; a sticky/fixed blurred bar re-blurs the scrolling page every frame)
 stack many blurred surfaces over the same scroll area, keep the radius modest, and **wire it to the `data-perf`
 lever** — lite mode drops the blur (opaque fallback bg). Likewise gate all ambient animation behind
 `data-motion`. **Both toggles (`body[data-motion]`, `body[data-perf]`) are part of the theme contract** — a
-theme that adds blur/animation must honor them (store/ui `motion`/`perf`; `perf` is **device-local**, not
-synced, since it's a per-device speed lever).
+theme that adds blur/animation must honor them (store/ui `motion`/`perf`; **both sync cross-device** — owner
+directive 2026-06-26, folded into the LWW appearance channel in M3 §14.3; the device-local, unsynced lever is
+`appbarMode`). *(Corrected 2026-07-06 — this line previously said perf was device-local/not-synced, contradicting
+the code; `useAppearance.ts` + `AppearanceCfg` are the source of truth.)*
 
 **Canvas / `requestAnimationFrame` loops** (waveforms, frontier anims): cap the frame rate (~30fps is smooth
 for ambient), **pause when off-screen** (IntersectionObserver — the tab stays mounted but `display:none`), and
@@ -1355,7 +1384,11 @@ because everything already reads the contract.
    `if (theme === "cosmos")`. A Surface resolves a variant by reading the **per-theme setting** + the registry —
    theme identity flows in only as the *key* into the generic settings map, never as a `switch`. (Verified:
    `DefaultRoot` has zero theme branches.) This is what lets a new theme slot in without editing shared code.
-   *"No theme ID conditionals inside `DefaultRoot`. Ever."* (audit D1 / agent-rule #2).
+   *"No theme ID conditionals inside `DefaultRoot`. Ever."* (audit D1 / agent-rule #2). **One grandfathered
+   exception (documented 2026-07-06):** `AgentTab.tsx`'s `isVapor` gate on the in-tab `PinnedPlan` — vapor's
+   frozen plan location vs the Kit's composer plan-pill (D30). It stays until chat graduates (a 2nd structural
+   chat impl runs the 3-gate, §14.15), at which point plan-location becomes the variant's choice and the
+   branch dies. Do NOT cite it as precedent for a second theme-id branch.
 2. **Per-theme settings are VALIDATED at read, not cast.** `useThemeSetting` runs the raw (persisted/synced/possibly
    stale) value through `resolveThemeSetting(themeId, key, raw)`: a `seg` value must be one of the spec's `options`
    (else → `default`); a `switch` value must be boolean (else → `default`); an unknown key → `undefined`. Non-negotiable
@@ -1370,6 +1403,13 @@ because everything already reads the contract.
    (plan sheet, tucking behind the rounded top — rendered *before* the bar so the composer paints over its tucked
    edge). Reserve `controlsEnd` (trailing controls) + `below` (a strip under the bar) as the next additive slots —
    **add only when a real consumer exists** (audit H3), never speculatively.
+5. **Variant a11y obligation (final review 2026-07-06, D34).** A Surface variant must expose **one focusable,
+   accessibly-named element per interactive item** (host/action) and mark decorative layers `aria-hidden` —
+   CosmosFleet's DOM-planet `<button aria-label aria-pressed>` over the canvas is the precedent (that D31
+   rendering research chose DOM-over-canvas *for* this). A canvas-only variant with zero focusable hosts
+   violates the contract. `enforced by:` a light per-variant assertion in `themeContract.test.ts` (render each
+   theme's Fleet with a stub host → expect a focusable element with an accessible name); full keyboard-flow
+   auditing stays `eyeball-only`.
 
 ### Anti-patterns — do NOT
 - ❌ Make a utility/forms/settings/chrome surface a Surface (registry-of-one / wrong abstraction — every mature system
@@ -1380,3 +1420,164 @@ because everything already reads the contract.
 - ❌ Put behavior in a variant — it belongs in the headless controller (one source of truth).
 - ↩️ **Reversal rule:** if a built variant slot won't fit a new theme cleanly, inline it back and re-abstract on the
   real shape — "the fastest way forward is back" (Metz). Don't defend a wrong seam from sunk cost.
+
+---
+
+# §14.15 — FINAL REVIEW OUTCOME (2026-07-06, →DECISIONS D34): Hardening slice v2 + the vapor assimilation ladder
+
+> A 29-agent adversarial review (6 decision clusters × web best-practice + code audit, every risk/change
+> finding independently attack-verified, Claude as final judge) re-validated the entire architecture:
+> **every layer confirmed — no decision relitigated.** It found one product bug, one coverage hole, and
+> reshaped the hardening slice into the v2 below, which **supersedes the TRIAGE-3 slice ordering**
+> (B4→R3→R4+T1→B2→stylelint). Sequencing unchanged: this slice ships first when the theme engine un-parks
+> (post-emma-deploy), then the Composer Surface (`COMPOSER_SURFACE_PLAN.md`).
+
+## 14.15.1 The Hardening slice v2 (9 items + 2 riders — behavior-preserving except ①)
+
+1. **`--accent-ink` token (the one product bug).** kit.css hardcodes `color: var(--bg)` on `--accent-fill`
+   controls (10 sites: kit.css 362/663/802/995/1547/1612/2508/2956/3169/3341 — audit each; skip no-text uses
+   like the switch knob/masks). minimal's **light mode ships 3.2–3.4:1** on every accent control (accent
+   L0.58; fails WCAG AA 4.5:1). Fix: add `--accent-ink` to the contract with base fallback
+   `var(--bg)` (all dark themes byte-identical, zero migration), sweep the text-bearing sites to
+   `color: var(--accent-ink)`, and set minimal's light-mode ink **near-black (~#000)** — NOT `--text`/#1d1c1a
+   (only 3.9:1 vs the L0.58 accent; verify the literal against all 4 hues). Matches Material `on-primary` /
+   Radix `--accent-contrast` / shadcn `primary-foreground`; explicit per-mode literal, no auto-derivation.
+2. **Theme-fault boundary + Reset-as-pick.** ErrorBoundary around `<ActiveRoot/>` in App (keyed by theme id so
+   a new pick retries cleanly). Fallback: **Reload = primary** (fixes the common stale-chunk-after-deploy case,
+   keeps the theme) + **"Reset theme to default" = a genuine `pickTheme(DEFAULT_THEME)`** — local apply **plus
+   the normal optimistic PUT** (write-through). Local-only reset does NOT escape (the server doc re-applies the
+   broken theme on the next reconcile → crash loop); quarantine machinery was reviewed and rejected
+   (over-engineering + invisible-state trap). No safe-mode flag exists. See the invariant in §14.15.2.
+3. **`ensureThemeLoaded` rejection eviction.** The `loaded` Map caches a rejected promise forever → one
+   transient blip poisons that theme for the session. Fix idiom: build `p`, attach a side-channel
+   `p.catch(() => loaded.delete(id))`, then `loaded.set(id, p)` and **return the ORIGINAL `p`** (preserves
+   in-flight dedupe + the rejection switchTheme's try/catch observes). Note in-code: the browser module map may
+   still cache HTTP-status failures (whatwg/html#10327 open) — our eviction is necessary, not always sufficient.
+4. **ThemeProvider cold-load catch → toast only.** Replace `void ensureThemeLoaded(theme)` with a `.catch` that
+   toasts + logs. Do NOT auto-revert (a CSS-only failure degrades to the neutral Kit base-token fallbacks —
+   survivable; the crash path belongs to item ②'s boundary; two revert authorities would race).
+5. **In-flight guard INSIDE `switchTheme`** (replaces the planned `useIsMutating` gate — one chokepoint beats
+   two mechanisms). Module-level `latest` + `inFlight`, tracking the **full SwitchTarget** (not just the id, so
+   the winning call applies the right mode/accent): dedupe same-target calls; after the await, bail if
+   superseded. Covers the reconcile double-VT (live since minimal/cosmos registered), out-of-order cold loads,
+   and StrictMode double-effects uniformly. Fix the stale comment at `useAppearance.ts:132` while there.
+6. **Registered-ID coercion, two doors, never auto-PUT.** Load door: coerce an unregistered persisted `theme`
+   → `DEFAULT_THEME` in the migration chain (AFTER `migrateLegacyTheme`, or aqua→vapor remaps get flattened).
+   Reconcile door: an unknown server skin = "no renderable opinion" → **hold the whole skin-triple
+   {theme,mode,accent} at local** (they're skin-scoped, atomic per skin) but **still apply
+   motion/perf/themeSettings** (global/namespaced — unknown keys inert). Never write a coerced value back
+   (version-skew LWW-clobber protection); documented consequence: touching the picker on an old build
+   overwrites a newer device's pick — acceptable, explicit user action.
+7. **B4 `resolveThemeSetting`** (unchanged from TRIAGE-3 / COMPOSER_SURFACE_PLAN §2.0 — seg∈options else
+   default · switch→bool · unknown→undefined; the Composer Surface depends on it).
+8. **B2 `themeContract.test.ts`** — the conformance suite via `it.each(registeredThemes())`: token-list
+   (semantic vs base-fallback vs runtime-var classes, §14.13.1 Δ3) · behavioral (attr cleanup across a switch
+   chain; loaders resolve) · **structural measurement hooks** (`#app-scroll`; when `hasComposer` a
+   `#composer`/`.kit-composer` node; render with `appbarMode="visible"` and assert `.kit-appbar` — the class
+   CosmosFleet cross-queries) · the **Fleet a11y assertion** (§14.14 invariant #5) · a **contrast group**
+   (`--accent-ink` vs `--accent-fill` ≥4.5:1 · `--text` vs `--surface`/`--bg` ≥4.5:1 · `--text-2` and
+   status colors vs `--surface` ≥3:1, per theme×mode×accent; WCAG 2.1 gates, APCA advisory). ⚠️ Decide the
+   palette-resolution strategy up front: jsdom/culori can't replay the @layer/@scope/body-formula cascade —
+   either parse tokens.css and model the override chain, or use real-browser computed styles (Vitest browser
+   mode/Playwright); a hand-duplicated palette table needs a drift meta-test. **vapor's exemptions = ONE
+   declarative waiver constant** (e.g. `CONTRACT_WAIVERS = {vapor: [semantic-tokens, keyframe-prefix,
+   accent-axis]}`) — never scattered `if (id !== "vapor")` skips; the waiver list IS the §14.15.3 tracker.
+9. **stylelint micro-slice** (warn-first, per TRIAGE-3): `keyframes-name-pattern` (per-dir overrides;
+   vapor/extras allowlisted = waiver) · `stylelint-high-performance-animation` · token-only colors ·
+   `custom-property-pattern` · **NEW: `--accent-fill` may appear only in `background`/`background-image`/mask
+   contexts, and a theme's `--accent` must parse as a `<color>`, never a gradient** (a gradient `--accent`
+   silently kills every focus ring/border/color-mix).
+10. **Kit-render e2e smoke (the coverage hole).** No test in ANY layer mounts DefaultRoot/kit.css today — all
+    three e2e specs boot vapor. Add `e2e/kit-render.spec.ts`: seed `localStorage["ctrlb.ui"]` via
+    `addInitScript` (the flows.spec pattern), parametrized over **minimal AND cosmos** (CosmosFleet = a distinct
+    Surface impl + canvas), poll a kit-only class (lazy CSS loads async), run the render/tab smoke
+    (crash + ErrorBoundary-fallback detection only). A SPEC, not a Playwright project (a project would re-run
+    the axe scans per theme — combinatorial). No screenshot diffing (rejected — flaky, over-engineered here).
+
+**Riders (approved 2026-07-06):** **(a) persisted-schema `v` stamp** on `ctrlb.ui` — missing→0, run ordered
+migrations up to current, stamp, save; makes the three migrations one-shot + prunable and **deletes
+`rawHasAppbarMode()`** (the double-parse hack the version stamp obviates); the zustand-persist
+`version`/`migrate` convention. (Server-doc `hideAppbar` strip stays as-is; a one-shot backend fold is
+deferred.) **(b) key-order-insensitive `themeSettings` compare** in `reconcileAppearance` (sorted-keys
+stringify or small deepEqual, ~10 lines + unit test) — kills the spurious re-apply when two devices authored
+settings in different orders. **Declined:** aria-live theme announcement (no SR user; if the app ever goes
+eyes-free, do a deliberate live-region pass — toasts + streaming + theme — as its own slice).
+
+## 14.15.2 New invariants (locked by the review)
+
+- **The server appearance doc is only ever written by EXPLICIT user action** — the Conf picker and the
+  boundary's Reset button qualify; migrations, coercions, reconciles, and error handlers never do. (This is
+  why item ⑥ never auto-PUTs and why item ②'s write-through is correct: Reset IS a pick.)
+- **Browser floor (documented, not probed):** Chrome/Edge 118+ · Firefox/Fennec **146+** (@scope; Dec 2025) ·
+  Safari 17.4+. Below the Firefox floor the `@scope`-wrapped sheets are dropped wholesale — **vapor renders as
+  an unstyled shell** (kit-based themes degrade to neutral base tokens). Accepted for owner-controlled
+  evergreen browsers; a boot probe/`@supports` duplicate was reviewed and rejected. Note: the View-Transition
+  floor (FF144) sits BELOW the @scope floor → no version window renders themes but breaks the switch.
+- **Two-CSS-trees rule** for shared markup (§14.4.1 box) + the **grandfathered `isVapor` exception**
+  (§14.14 invariant #1) — both temporary, both retired by the ladder below.
+
+## 14.15.3 Vapor assimilation ladder (owner directive 2026-07-06: frozen = a phase, not an identity)
+
+Vapor is already IN the engine (registered ThemeDef, bespoke Root — a legitimate D31 band; behavior extracted
+to shared controllers in M2). "Frozen" = exactly **six legacy hooks**: ① accent rides `body[data-theme]`
+(branches in `applyBodyAttrs` ui.ts:198 + the index.html FOUC script — the tracked exceptions to the
+DEFAULT_THEME rule); ② non-contract token vocabulary (`--magenta`/`--accent-grad`/`--ink*`); ③ unprefixed
+`@keyframes`; ④ parallel chrome (components/AppBar·Composer·TabBar vs Kit's); ⑤ the `isVapor` PinnedPlan gate;
+⑥ CSS living in `theme/` not `themes/vapor/`. Ladder (each stage additive, independently shippable,
+D7-eyeball-gated; unscheduled — after the catalog stabilizes):
+
+- **V1 — file + keyframe hygiene:** move CSS to `themes/vapor/`, prefix keyframes `vapor-*`, delete the
+  stylelint allowlist entries. Intra-scope cosmetic; lowest risk.
+- **V2 — accent axis (`data-theme` → `data-accent`), ONE atomic commit, five touchpoints:** both writers
+  (ui.ts:198-206 + index.html:38-43) · all four `[data-theme="aqua"|"ember"]` selectors in vapor.css
+  (58/107/113/162 — palettes + `.hero`; each block defines the `--accent-rgb` the shared Waveform live-reads,
+  the silent-failure canary: the bar color must still shift on a palette pick) · flows.spec.ts:134's assertion ·
+  the §13.1 frozen-attr table (whose line refs are stale — refresh to 58/107/113/162). Namespace check settled
+  at review: every `[data-accent]` reader lives inside a per-skin `@scope` → vapor's accent ids cannot collide
+  with kit accent ids. Accent VALUES don't change → `migrateLegacyTheme` + its FOUC twin stay.
+- **V3 — semantic-token mapping:** map vapor's vocabulary onto the contract at the top of its sheet
+  (`--accent: var(--magenta)` — semantically correct: aqua remaps `--magenta` to cyan, so it IS "the primary
+  accent"); shrink the B2 waiver list. @layer order must hold (a wrong-layer token re-opens §13.2).
+- **V4 — per-component graduation, ordered by divergence (LOW first), tracked by the shrinking waiver list +
+  the §14.4.1 two-trees note:** Conf editors → shared overlays (precondition for the deferred App-hoist of
+  overlay mounting, §14.15.4) → **chat LAST and via the D31 3-gate, not tokens** — vapor's chat is
+  structurally divergent (pulse animation, `▸/▾` pseudo-element disclosure, terminal-vs-neutral gestalt);
+  if V3 tokens can't carry its look through the shared classes (likely), the correct retirement is a
+  **ChatSurface variant** over `useAgentChat` (split AgentTab into kit chat-element presenters + a view shell
+  at that point — the graduation recipe), NOT deleting extras.css's block. Chat graduation must relocate
+  `PinnedPlan` (composer addon like kit, or a token-driven shared widget) and removes hook ⑤. Composer/Fleet
+  variant registration = the Composer Surface plan (independent track). V4 checklist riders: promote
+  `--accent-rgb`/`-2` into the contract as explicit canvas channels when a shared canvas graduates (derive in
+  JS from `--accent` once per readColors tick, don't hand-maintain triplets), and re-point Waveform's
+  vapor-private reads (`--magenta` :192 AND `--ink-faint` :194) at contract tokens.
+- **V5 — chrome dedup (tail):** fold AppBar/Composer/TabBar only where ≥2 themes genuinely share structure
+  (D31 bites hardest here — forcing vapor's bespoke chrome into a Kit mold is the anti-pattern). The only
+  stage with real fidelity risk.
+
+**Standing guarantees (every slice, until the ladder completes):** nothing new depends on a legacy hook (no
+new `data-theme` readers, unprefixed keyframes, or theme-id gates) · exemptions live in shrinkable waiver
+lists (B2 constant + stylelint allowlist), never scattered skips · engine code uses `DEFAULT_THEME`
+(resolve.ts), never a `"vapor"` literal (ui.ts DEFAULTS/migration + the ①-hook branches are the tracked
+boundary exceptions) · shared-markup changes obey the two-trees rule.
+
+## 14.15.4 Backlog (post-hardening, in no order) + reviewed-and-rejected
+
+**Backlog:** `kit.css` off the eager path (~100KB raw/10KB gz inert under vapor) — **precondition:** wrap
+kit.css's body in `@layer base { … }` internally FIRST (a bare JS `import "./kit.css"` can't carry
+`layer(base)`; unlayered it outranks every layer and inverts the cascade), then drop the index.css @import and
+static-import it from DefaultRoot (rides the lazy Root chunks; verify a cold boot into minimal still paints
+styled). · **Overlay mounting App-hoist** (§14.1's locked end-state) — **precondition:** re-scope the overlay
+CSS first (kit.css styles overlays as `.kit .modal` descendants; hoisted outside DefaultRoot's `.kit` element
+they render unstyled under Kit themes — both review agents missed this; part of the V4 overlay graduation). ·
+vapor-fonts.css comment: drop/qualify "offline-capable PWA" (woff2 aren't SW-precached; theme JS/CSS chunks
+ARE — verified in dist/sw.js). · OKLCH gamut/chroma-ceiling advisory in B2 (a too-vivid future accent clips to
+flat on sRGB phones).
+
+**Reviewed and REJECTED (do not resurrect without a new trigger):** storage-event/BroadcastChannel listener
+(uncovered fields are per-device BY DESIGN; synced fields already reconcile) · woff2 SW precache/runtime-cache
+(app is dead offline — no tailnet → no backend) · @scope boot probe / `@supports` vapor duplicate ·
+per-theme-eager-CSS rework (vapor is default + flagship; revisit only if the owner permanently settles on
+another theme) · screenshot diffing · tab BODY registry (nav/composer-visibility are registry-driven; bodies
+are fixed — documented in tabs.ts; build the body registry when a theme actually needs a different section) ·
+a third perf tier · scroll restoration across switches · quarantine subsystem · aria-live announcement (see
+riders).

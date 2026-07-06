@@ -171,17 +171,21 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >    **MCP `streamable_http_client`** deprecation (warning gone), bumped deps (fastapi 0.138.1 / openai 2.44 / mcp 1.28.1
 >    `<2` cap / sse-starlette 3.4.5 / ruamel 0.18.17), and added **ruff** (clean). 229/229 still green on 3.11 + emma 3.14.
 >    Only remaining warning is test-only (`starlette.testclient`→`httpx2`). Detail: [`external_audit/TRIAGE-2.md`](./external_audit/TRIAGE-2.md) R1.
-> 3. **⏸ PARKED — Theme engine. When it un-parks, order is locked (audit #3 consolidation, 2026-06-30):**
->    **(a) the standalone Theme-Engine Hardening slice FIRST**, then **(b) the Composer Surface.** Full routing +
->    decisions: **[`external_audit/TRIAGE-3.md`](./external_audit/TRIAGE-3.md)** (3rd audit — verified at HEAD, strongly
->    corroborates #1/#2). The **Hardening slice** (behavior-preserving, ships before any visual work):
->    `resolveThemeSetting` (B4) → appearance-ID validation (R3) → transactional switch (R4) **+ the now-stale T1
->    reconcile fix** (minimal/cosmos are registered, so it's reachable) → `themeContract.test.ts` (B2, the
->    interface-contract suite) → a **stylelint** micro-slice (warn-first: keyframe-prefix + high-perf-animation +
->    token-only colors — the CSS half of "make the contracts executable"; governance loop in **§14.13.1**). Then
->    **(b)** [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) (A1→A2→A3; its §2.0 validation is now done by the
->    Hardening slice) · locked architecture **D31 / §14.14** · remaining theme-engine backlog in
->    [`TRIAGE.md`](./external_audit/TRIAGE.md) + [`TRIAGE-2.md`](./external_audit/TRIAGE-2.md) 🟡.
+> 3. **⏸ PARKED — Theme engine. When it un-parks, build the FINAL-REVIEW plan (2026-07-06, D34 — supersedes the
+>    TRIAGE-3 slice ordering):** **(a) the Hardening slice v2 FIRST**, then **(b) the Composer Surface.** The
+>    plan of record is **[`THEME_ENGINE.md`](./THEME_ENGINE.md) §14.15** — a 29-agent adversarial review
+>    re-confirmed every architectural layer (nothing relitigated) and reshaped the slice to **9 items + 2
+>    riders** (§14.15.1): ① `--accent-ink` contrast token (the one product bug — minimal light mode ships
+>    3.2:1) · ② theme-fault boundary w/ Reload + **Reset-as-pick (write-through PUT)** · ③ `ensureThemeLoaded`
+>    rejection eviction · ④ ThemeProvider cold-load catch→toast · ⑤ in-flight guard **inside `switchTheme`**
+>    (replaces the T1 `useIsMutating` gate) · ⑥ registered-ID coercion (two doors, never auto-PUT) ·
+>    ⑦ `resolveThemeSetting` (B4) · ⑧ `themeContract.test.ts` (B2: tokens + behavior + structural hooks +
+>    Fleet-a11y + contrast group; vapor exemptions = ONE waiver constant) · ⑨ stylelint micro-slice ·
+>    ⑩ **kit-render e2e smoke** (no test in ANY layer mounts DefaultRoot/kit.css today) — riders: persisted
+>    `v` stamp + order-insensitive themeSettings compare. Then **(b)**
+>    [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) (A1→A2→A3; its §2.0 validation = slice item ⑦).
+>    Historical routing: [`external_audit/TRIAGE-3.md`](./external_audit/TRIAGE-3.md) + TRIAGE/TRIAGE-2 🟡;
+>    locked architecture **D31 / §14.14**; **vapor assimilation ladder** (owner 2026-07-06) in **§14.15.3**.
 > 4. **📋 The external audits (HIGH visibility).** TWO independent audits, both routed: [`external_audit/TRIAGE.md`](./external_audit/TRIAGE.md)
 >    (audit #1) + [`external_audit/TRIAGE-2.md`](./external_audit/TRIAGE-2.md) (audit #2 — theme engine + maintainability;
 >    strongly corroborates #1). Their **SECURITY subset is pulled FORWARD into the deploy** (priority 1):
@@ -200,6 +204,27 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > a **SECOND agent works in tandem** on emma (its own checkout ~`~/git*/ctrl-b` — treat as read-only; never commit
 > there). Cross-agent coordination via files (e.g. the `external_audit/` folder). config.yaml/secrets are gitignored —
 > they must reach emma out-of-band (not via git).
+>
+> ### 🧭 SESSION UPDATE — Theme-engine FINAL REVIEW (29-agent adversarial audit → D34; docs only) — 2026-07-06
+>
+> Owner-commissioned final validation of **every theme-engine decision** before the engine un-parks: 6
+> parallel deep-dive clusters (CSS isolation · token contract · state/sync · component architecture · vapor
+> drift · perf budget), each mixing web best-practices research with code audit; every risk/change finding
+> independently **attack-verified** by an adversarial second agent; the main session as **final judge**
+> (cross-checked agents against each other, the code, and the locked D-entries — several agent
+> recommendations were overridden on verification, e.g. the overlay App-hoist's missed `.kit`-scoping
+> precondition and the reconcile-loop hole in a local-only theme reset). **Verdict: every layer confirmed;
+> no decision relitigated.** Outcomes (all → [`THEME_ENGINE.md`](./THEME_ENGINE.md) **§14.15** + DECISIONS
+> **D34**): the **Hardening slice v2** (9 items + 2 riders — supersedes the TRIAGE-3 ordering; see item 3
+> above), incl. the review's one **product bug** (`--accent-ink` missing → minimal light mode ships 3.2:1
+> contrast) and one **coverage hole** (nothing ever mounts DefaultRoot/kit.css → new kit-render e2e smoke);
+> new invariants (**server appearance doc = explicit-user-writes only** · browser floor FF146/Chrome118 ·
+> the two-CSS-trees rule for shared markup · the grandfathered `isVapor` exception); the **vapor
+> assimilation ladder** (owner directive: frozen = a phase — §14.15.3 + ROADMAP entry + D28 amendment); a
+> vetted backlog + an explicit reviewed-and-REJECTED list (§14.15.4). Doc pass landed same-session: §10
+> porting playbook rewritten as-built (was the superseded slot model), §13.6 superseded-banner, §14.11
+> perf-sync correction (perf IS synced), §14.4.1 two-trees box, §14.14 a11y invariant. **No app code
+> changed.**
 >
 > ### 🧭 SESSION UPDATE — Audit-#3 consolidation + multi-homed addressing design (docs only) — 2026-06-30
 >
