@@ -669,8 +669,8 @@ frame. Leave a seam to migrate to React's native `<ViewTransition>` when it leav
    the **same tree + same class strings** (transform.tools/html-to-jsx for the mechanical pass). Replace the
    hardcoded `DEVICES`/`RIGS` arrays with the real controller hooks (`useFleet()` etc.); replace inline
    visual fields with `present(host, index, host.appearance?.[id])`. **Preserve the structural measurement
-   hooks** (§14.13 #13): the scroller is `#app-scroll`, the composer root `#composer`/`.kit-composer`, the
-   appbar `.kit-appbar` — the contract test asserts them.
+   hooks** (§14.15.1 item 8): the scroller is `#app-scroll`, the composer root `#composer`/`.kit-composer`,
+   the appbar `.kit-appbar` — the contract test asserts them.
 4. **Animation — rAF/canvas logic into a `useEffect`** keyed to the data, gated by `ui.motion` (never a
    second OS `prefers-reduced-motion` branch — §14.11); heavy effects behind `data-perf`. Cap ~30fps, pause
    off-screen/hidden, no per-frame layout reads. Effects must clean up (StrictMode double-invoke).
