@@ -174,7 +174,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > 3. **⏸ PARKED — Theme engine. When it un-parks, build the FINAL-REVIEW plan (2026-07-06, D34 — supersedes the
 >    TRIAGE-3 slice ordering):** **(a) the Hardening slice v2 FIRST**, then **(b) the Composer Surface.** The
 >    plan of record is **[`THEME_ENGINE.md`](./THEME_ENGINE.md) §14.15** — a 29-agent adversarial review
->    re-confirmed every architectural layer (nothing relitigated) and reshaped the slice to **9 items + 2
+>    re-confirmed every architectural layer (nothing relitigated) and reshaped the slice to **10 items + 2
 >    riders** (§14.15.1): ① `--accent-ink` contrast token (the one product bug — minimal light mode ships
 >    3.2:1) · ② theme-fault boundary w/ Reload + **Reset-as-pick (write-through PUT)** · ③ `ensureThemeLoaded`
 >    rejection eviction · ④ ThemeProvider cold-load catch→toast · ⑤ in-flight guard **inside `switchTheme`**
@@ -215,7 +215,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > recommendations were overridden on verification, e.g. the overlay App-hoist's missed `.kit`-scoping
 > precondition and the reconcile-loop hole in a local-only theme reset). **Verdict: every layer confirmed;
 > no decision relitigated.** Outcomes (all → [`THEME_ENGINE.md`](./THEME_ENGINE.md) **§14.15** + DECISIONS
-> **D34**): the **Hardening slice v2** (9 items + 2 riders — supersedes the TRIAGE-3 ordering; see item 3
+> **D34**): the **Hardening slice v2** (10 items + 2 riders — supersedes the TRIAGE-3 ordering; see item 3
 > above), incl. the review's one **product bug** (`--accent-ink` missing → minimal light mode ships 3.2:1
 > contrast) and one **coverage hole** (nothing ever mounts DefaultRoot/kit.css → new kit-render e2e smoke);
 > new invariants (**server appearance doc = explicit-user-writes only** · browser floor FF146/Chrome118 ·

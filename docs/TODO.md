@@ -681,7 +681,7 @@ tools + confirm bubbles) are DONE.**
 - [ ] Run v2 alongside the old server; migrate `config.yaml`.
 - [ ] Flip the default; retire `wol_server/` (or keep as Linux-WOL fallback). Update README/AGENTS.
 
-## Phase 11 — Theme engine (pluggable presentation layer, D28) — **DESIGNED 2026-06-26; T0 next**
+## Phase 11 — Theme engine (pluggable presentation layer, D28) — **IN PROGRESS: T0 + M0–M3 + Kit/minimal + cosmos SHIPPED; NEXT (post-deploy) = Hardening slice v2 (D34, §14.15.1) → Composer Surface**
 
 Spec: `THEME_ENGINE.md §§9–10` · decision: `DECISIONS.md D28`. Build the engine on the cheapest theme
 first, hardest last; the foundation is paid once in T0. **D7 pixel-fidelity applies per theme.** Each Tn is
@@ -787,7 +787,32 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
         `SwUpdatePrompt`) + primitives (`Seg`/`Switch`) + Conf shell — **fixes the reachable broken confirm**; (2) the
         deep Conf editors; (3) Agent chat bubbles. **⛔ RESEARCH the pattern + confirm the design BEFORE building
         (owner directive 2026-06-27 — last session the research changed the design); see HANDOFF top.**
-- [ ] **Composer Surface (D31 / §14.14) — ACTIVE NEXT.** Build `SheetComposer` (the **docked** composer variant, vapor's
+- [ ] **Hardening slice v2 (D34, 2026-07-06 — THEME_ENGINE §14.15.1) — ACTIVE NEXT when the engine un-parks
+      (post-emma-deploy).** The 29-agent final review's reshaped slice (supersedes the TRIAGE-3 ordering);
+      behavior-preserving except ①. Ships BEFORE the Composer Surface and any themeable-UI feature wave.
+      **Plan of record: §14.15** (each item's full shape + rationale lives there — build against it, not this list).
+  - [ ] ① `--accent-ink` on-accent contrast token + minimal light-mode near-black ink (the review's one
+        product bug: light mode ships 3.2:1 on accent controls; 9 kit.css accent-fill sites)
+  - [ ] ② theme-fault ErrorBoundary around `<ActiveRoot/>` (keyed by theme) — Reload primary + **"Reset theme
+        to default" = a genuine pick (write-through PUT)**; no quarantine, no safe-mode flag
+  - [ ] ③ `ensureThemeLoaded` rejection eviction (side-channel catch → evict; return the ORIGINAL promise)
+  - [ ] ④ ThemeProvider cold-load `.catch` → toast only (no auto-revert; Kit base tokens keep the app usable)
+  - [ ] ⑤ in-flight/latest-target guard INSIDE `switchTheme` (full `SwitchTarget`, not just the id — replaces
+        the planned `useIsMutating` gate) + fix the stale `useAppearance.ts:132` comment
+  - [ ] ⑥ registered-ID coercion at both doors (load door → `DEFAULT_THEME` AFTER the legacy migrations;
+        reconcile door holds the skin-triple but still applies motion/perf/themeSettings; **NEVER auto-PUT**)
+  - [ ] ⑦ `resolveThemeSetting` (B4 — spec in COMPOSER_SURFACE_PLAN §2.0; the Composer Surface assumes it)
+  - [ ] ⑧ `themeContract.test.ts` (B2): token list + behavioral + structural hooks (`#app-scroll` ·
+        `#composer`/`.kit-composer` · `.kit-appbar` under `appbarMode="visible"`) + Fleet-a11y assertion +
+        the contrast group; vapor exemptions = ONE shrinkable waiver constant (decide the palette-resolution
+        strategy up front — jsdom can't replay the @layer/@scope cascade)
+  - [ ] ⑨ stylelint micro-slice (warn-first: keyframe-prefix · high-perf-animation · token-only colors ·
+        `--accent-fill` only in background/mask + `--accent` must parse as a `<color>`)
+  - [ ] ⑩ kit-render e2e smoke (`e2e/kit-render.spec.ts`: seed minimal AND cosmos via `addInitScript`, poll a
+        kit-only class, crash/ErrorBoundary smoke — a SPEC, not a Playwright project)
+  - [ ] riders: persisted `v` schema stamp on `ctrlb.ui` (one-shot prunable migrations; deletes
+        `rawHasAppbarMode`) · order-insensitive `themeSettings` compare in `reconcileAppearance`
+- [ ] **Composer Surface (D31 / §14.14) — after the Hardening slice v2 (D34 sequencing).** Build `SheetComposer` (the **docked** composer variant, vapor's
       look Kit-tokened) + make the composer layout a **user-selectable Surface** (the `composerVariants` registry + a
       per-theme `composer` `seg` setting + the `ThemedComposer` resolver, reusing `useComposer()`). **Fully specified,
       edge-case-complete, in [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) — start there.** Slices: A1

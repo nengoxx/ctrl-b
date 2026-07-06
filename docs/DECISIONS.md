@@ -1669,7 +1669,7 @@ ladder, backlog + rejected list: **[`THEME_ENGINE.md`](./THEME_ENGINE.md) §14.1
 - **Every architectural layer re-confirmed** — @scope/@layer/.kit isolation, semantic tokens + two-channel
   accent + OKLCH, LWW appearance sync, View-Transition switching, headless controllers + Root + Kit, the D31
   3-band model. **No decision relitigated.**
-- **Hardening slice v2 supersedes the TRIAGE-3 ordering** (9 items + 2 riders, §14.15.1). Notables: the
+- **Hardening slice v2 supersedes the TRIAGE-3 ordering** (10 items + 2 riders, §14.15.1). Notables: the
   `--accent-ink` on-accent contrast token (the review's one product bug — minimal light mode ships 3.2:1);
   a theme-fault boundary whose **"Reset theme to default" is a genuine pick (write-through PUT)** — local-only
   reset can't escape the reconcile loop, quarantine was rejected; the in-flight guard lives **inside

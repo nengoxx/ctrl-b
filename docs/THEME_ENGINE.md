@@ -725,22 +725,23 @@ consolidated as the build checklist in §13. The one external addition that mate
 Each item is a confirmed fix from the review; build T0/T1 against these, not the pre-review wording.
 
 **13.1 — `data-skin` ≠ `data-theme` (CRITICAL — would break vapor).** vapor.css gates its **aqua/ember
-palettes entirely on bare `[data-theme="aqua"|"ember"]`** (vapor.css:51/100/106/153/155; "dark" = the bare
-`:root` default, no `[data-theme="dark"]` rule). Overloading `data-theme` with the ThemeId silently kills 2 of
+palettes entirely on bare `[data-theme="aqua"|"ember"]`** (vapor.css:58/107/113/162; "dark" = the bare
+`:root`/`:scope` default, no `[data-theme="dark"]` rule). Overloading `data-theme` with the ThemeId silently kills 2 of
 vapor's 3 palettes. **Fix:** ThemeId lives on a NEW `body[data-skin]`; `body[data-theme]` keeps meaning
 vapor's accent (`dark`|`aqua`|`ember`), set only when skin=vapor; non-vapor bundles scope under `[data-skin]`.
-**vapor's full frozen attribute contract** (all must keep current meaning):
+**vapor's full frozen attribute contract** (all must keep current meaning; CSS line refs refreshed 2026-07-07
+post-`@scope`-wrap — they drift with the frozen files' headers, the selectors are the stable contract):
 
 | Attribute | Element | Used for | Where |
 |---|---|---|---|
-| `data-theme=aqua\|ember` (absent→`:root`) | body | vapor palette swap + `.hero` overrides | vapor.css:51,100,106,155 |
-| `data-loz=ring` | body | lozenge variant | vapor.css:188; extras.css:82 |
-| `data-skyline=city\|mountains` | body | skyline show/hide | vapor.css:398–399 |
-| `data-tab=…` | **`.tabbar`** + body | tab indicator slide | vapor.css:253–255; TabBar.tsx:58 / ui.ts:67 |
-| `data-motion=reduced` | body | motion kill | extras.css:82–93 |
+| `data-theme=aqua\|ember` (absent→`:scope`) | body | vapor palette swap + `.hero` overrides | vapor.css:58,107,113,162 |
+| `data-loz=ring` | body | lozenge variant | vapor.css:195–196; extras.css:103 |
+| `data-skyline=city\|mountains` | body | skyline show/hide | vapor.css:405–406 |
+| `data-tab=…` | **`.tabbar`** + body | tab indicator slide | vapor.css:260–262; TabBar.tsx / ui.ts |
+| `data-motion=reduced` | body | motion kill | extras.css:103+ (the reduced-motion block) |
 
 **13.2 — Token-name collision, solved by `@layer` (NEEDS-MITIGATION).** The contract reuses 3 names vapor
-defines in its always-loaded `:root`: `--line`, `--line-2`, `--accent-glow` (vapor.css:17,18,24). Without
+defines in its always-loaded `:scope` block: `--line`, `--line-2`, `--accent-glow` (vapor.css:24,25,31). Without
 isolation, a theme that *forgets* to redefine one silently inherits vapor's value (pink `--line`, a
 `drop-shadow()` where a `box-shadow` was meant). **`@layer` (§9.6) fixes it by cascade order** — vapor's
 `:root` is in `layer(frozen)`, the active theme in a later layer → theme wins even at equal specificity. (If
@@ -1432,11 +1433,13 @@ because everything already reads the contract.
 > (B4→R3→R4+T1→B2→stylelint). Sequencing unchanged: this slice ships first when the theme engine un-parks
 > (post-emma-deploy), then the Composer Surface (`COMPOSER_SURFACE_PLAN.md`).
 
-## 14.15.1 The Hardening slice v2 (9 items + 2 riders — behavior-preserving except ①)
+## 14.15.1 The Hardening slice v2 (10 items + 2 riders — behavior-preserving except ①)
 
 1. **`--accent-ink` token (the one product bug).** kit.css hardcodes `color: var(--bg)` on `--accent-fill`
-   controls (10 sites: kit.css 362/663/802/995/1547/1612/2508/2956/3169/3341 — audit each; skip no-text uses
-   like the switch knob/masks). minimal's **light mode ships 3.2–3.4:1** on every accent control (accent
+   controls (**9 accent-fill sites**: kit.css 362/663/802/995/1547/1612/2956/3169/3341 — audit each; skip
+   no-text uses like the switch knob/masks; the 10th `color: var(--bg)` hit at kit.css:2508 is the plan-step
+   done-tick on `background: var(--ok)` — NOT accent, leave it to the B2 status-color contrast assertions).
+   minimal's **light mode ships 3.2–3.4:1** on every accent control (accent
    L0.58; fails WCAG AA 4.5:1). Fix: add `--accent-ink` to the contract with base fallback
    `var(--bg)` (all dark themes byte-identical, zero migration), sweep the text-bearing sites to
    `color: var(--accent-ink)`, and set minimal's light-mode ink **near-black (~#000)** — NOT `--text`/#1d1c1a
