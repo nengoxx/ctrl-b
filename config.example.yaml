@@ -1,6 +1,6 @@
 # ctrl-b config — copy to config.yaml (gitignored) and fill in.
 # Phase 0 reads only `server`; later phases add inference/voice/agents/hosts/mcp/... blocks
-# (see docs/ARCHITECTURE.md §3 and docs/DESIGN.md §9). Unknown keys round-trip losslessly.
+# (see docs/DESIGN.md §9 and docs/SPEC.md §6.3). Unknown keys round-trip losslessly.
 #
 # This file is the UI-managed source of truth, INCLUDING nested secrets (per-host SSH creds,
 # per-endpoint API keys). To keep a specific key out of here, override it from .env with
