@@ -32,12 +32,12 @@ mapping), while §9.7–§9.12 + §13.1 remain live contract · **§14** = the *
 | Keyframes prefixed `<id>-` | §14.13 #4 |
 | The `@scope`/`:scope` + formula-tokens-on-`body` gotcha | §14.6 (canonical; §14.4.1/§14.13/§10 restate) |
 | Perf/motion budget — transform/opacity only · `data-motion`/`data-perf` gates · canvas caps · **Fennec + Chrome** | §14.11 |
-| a11y floor — one named focusable per host; decorative `aria-hidden` | §14.14 invariant #5 · §14.13 #10 |
+| a11y floor — one named focusable per host; decorative `aria-hidden` | §14.14 invariant #5 |
 | Per-theme settings (`switch`/`seg`; open synced `ui.themeSettings[id]` map) | §14.3 |
 | `present()` + per-host `appearance.<id>` override (+ `ThemeDef.assets` art) | §9.9 · §14.13 #7 |
 | Fonts/assets lazy (no first-paint hit) | §9.10 · §10 steps 1–2 |
 | Cross-device sync (LWW appearance channel) | §9.11 |
-| 390 px owner eyeball + an e2e render case | §14.13 #8 · §14.13.1 |
+| 390 px owner eyeball + an e2e render case | §14.13.1 (+ the standing per-slice eyeball rule, TODO Phase 11) |
 | The step-by-step porting playbook | **§10** (rewritten as-built 2026-07-06) |
 
 **⚠ SPEC-not-built — do not assume these exist in code:** `resolveThemeSetting` read-validation
