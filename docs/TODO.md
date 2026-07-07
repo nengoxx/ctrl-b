@@ -693,6 +693,14 @@ tools + confirm bubbles) are DONE.**
       Triggers: push to main/dev + PRs. Run #1 immediately caught a real defect — ruff/pytest were
       hand-installed, never declared in pyproject (fixed: pinned in the `dev` extra, `32f03c4`);
       run #2 fully green (all 6 checks incl. pytest 250 on Linux). Spec: `SYSTEM_AUDIT.md` SYS-14.
+- [x] **Quality-harness audit (QH) ✅ 2026-07-07 — VERDICT: GO** ([`QH_AUDIT.md`](./QH_AUDIT.md) §R).
+      Ran the whole gate as-deployed (`--fast` 1.9s · full+`--e2e` 7/7 1m12s · CI green · hooks
+      verified); drift hunt + invariant ladder → **9 findings fixed** (highest: QH-1 install.sh
+      enabled hooks without installing the `[dev]` toolchain — emma dev-tree commits would have
+      died; QH-2 undocumented `npx playwright install` deploy-gate prereq) + 4 new drift-guard
+      tests (SSE-event lockstep · config.example validity · OS-branch allowlist · core-layering);
+      pytest 250 → **254**. Open owner decisions: QH-10 (conftest auto-isolation) · QH-11
+      (`target_port` default). **Nothing blocks `DEPLOY_EMMA.md`.**
 
 ## Phase 10 — Cutover
 

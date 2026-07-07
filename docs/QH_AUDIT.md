@@ -6,7 +6,10 @@
 > report lands in §R below (same doc, UI_AUDIT pattern). Finding ids are **QH-#** (nothing
 > collides with UI_AUDIT F# · SYSTEM_AUDIT SYS-# · AGENT_CHAT_AUDIT ACA-# · ISSUES ISS-#).
 >
-> **Status:** BRIEF READY (2026-07-07, owner-approved) · report pending.
+> **Status:** ✅ **DONE (2026-07-07)** — audit executed same day; report in **§R** below.
+> **Verdict: GO** — harness trustworthy for the emma deploy; 9 findings fixed in 7 commits
+> (QH-1…9), 2 owner decisions open (QH-10 conftest isolation guard · QH-11 `target_port` default),
+> known product-test gaps routed to their owning SYS-15/ACA slices. pytest 250 → **254**.
 > **Provenance:** adapted from an externally-drafted generic prompt; grounded in this repo's canon
 > so the session verifies-by-running instead of re-discovering, and cannot relitigate locked
 > decisions or build items owned by scheduled phases.
@@ -207,6 +210,121 @@ the one-source-of-truth rule (update the owner doc, point from the rest).
 
 ---
 
-## §R — Report (pending)
+## §R — Report (2026-07-07 · audit session · VERDICT: **GO**)
 
-*Filled by the audit session.*
+### R1. Repo status
+
+Branch `main`, started clean at `ade94af` (= origin, all pushed); audit fixes landed as 7 tight
+local commits `a078bb1..34c30ac` + this report. Docs matched the tree everywhere the brief pinned:
+pytest **250** ✓ (collect), vitest **212/33 files** ✓ (`vitest list`), e2e **34/3 specs** ✓
+(`playwright test --list`), eslint **27 warnings / 0 errors** ✓ (count unchanged by the SYS-13
+tests — no doc fix needed), hooks `core.hooksPath=.githooks` ✓, CI green on HEAD ✓. After the audit:
+pytest **254** (4 new drift-guard tests).
+
+### R2. Gate map as-run (all commands from repo root, dev servers stopped, :4173 free)
+
+| Gate | Command | Scope | Defined in | Documented in | Enforced by | Result |
+|---|---|---|---|---|---|---|
+| ruff lint | `check.py` → `python -m ruff check .` | backend | `pyproject [tool.ruff]` | QUALITY.md | pre-commit + pre-push + CI | **PASS** 0.1s |
+| ruff format | `… ruff format --check .` | backend | 〃 | 〃 | 〃 | **PASS** 0.1s |
+| pyright (basic) | `… python -m pyright` | backend | `pyproject [tool.pyright]` | QUALITY.md | pre-push + CI | **PASS** 4.3s |
+| pytest | `… python -m pytest -q` | backend (250→254) | `backend/tests/` | QUALITY/AGENTS | pre-push + CI | **PASS** 49.8s |
+| FE check-all | `npm run check-all` (tsc×3 + eslint + prettier + vitest 212) | frontend | `package.json:19` | QUALITY.md | pre-push + CI | **PASS** 26.8s |
+| FE prettier | `npm run format:check` | frontend | `package.json` | QUALITY.md | pre-commit (`--fast`) | **PASS** 1.8–2.5s |
+| e2e + axe | `check.py --e2e` → `npm run test:e2e` (34 tests, mobile+desktop) | built dist @ :4173, `/api` mocked | `playwright.config.ts` | QUALITY/DEPLOY_EMMA | **deploy gate** (step-0 + settings hook; NOT CI — by design) | **PASS** 21.7s |
+
+Timed runs: `--fast` **1.9s** · full+`--e2e` **1m12s** (one run = full parallel batch + e2e appended,
+confirmed in `main()`). CI on HEAD: 3/3 green, ~1m35s each. No check exists that is enforced nowhere;
+no gate invokes an undefined command (M5 in the drift hunt). Blockers: none.
+
+### R3. Findings ledger (QH-#)
+
+**Fixed this session (commit in parens):**
+
+| # | Sev | Finding (evidence) | Fix |
+|---|---|---|---|
+| **QH-1** | **HIGH** | `deploy/linux/install.sh:65` installed the backend **without `[dev]`** while :92–100 enables the hook gate — on the emma **dev** tree (where agents commit) the first pre-commit dies with "No module named ruff". Same class as what CI run #1 caught. README:52 + `deploy/windows/setup.ps1:46` shared the bare-install shape; `check.py preflight()` didn't probe the toolchain. | dev role installs `-e backend[dev]`; preflight probes venv for ruff/pytest/pyright → actionable exit-2; README + setup.ps1 aligned (`a078bb1`) |
+| **QH-2** | **HIGH** | `npx playwright install` (browser binaries — NOT installed by `npm ci`) was documented **nowhere**, yet `--e2e` is the mandatory deploy gate (DEPLOY_EMMA step-0, settings hook). | documented at the gate's definition (QUALITY.md, + the :4173 `reuseExistingServer` trap) and mandate (DEPLOY_EMMA step-0) (`0933227`) |
+| **QH-3** | MED | `CLAUDE.md:65` "No CI gate beyond `ruff`" — stale since D33+SYS-14; agents read it every session. | states hooks + Linux CI (`51b752a`) |
+| **QH-4** | LOW-MED | `--staged` documented as live in QUALITY.md ×3 (runner bullet, reliability split, D33 table) and in D33's locked letter (`DECISIONS.md:1653-54`), while the shipped gate is whole-tree `--fast` (deviation decided at 1d, recorded only in one section). | all four reconciled; D33 carries a dated amendment (`17aa0ff`) |
+| **QH-5** | LOW | `PRE_DEPLOY.md:69` slice-1a record gave a superseded `check-all` composition (`typecheck && test && build`). | annotated in place with the shipped composition (`e1c3379`) |
+| **QH-6** | MED | The SYS-4 dev-exposure paragraph promised for SECURITY_MODEL.md was never written (dev Vite `0.0.0.0` + `allowedHosts:true` + `/api` proxy bypasses the loopback bind on the LAN — `vite.config.ts:58-67`). | §2.1 paragraph + §3 residual-risk row, incl. the `target_port` rider (`4c30c70`) |
+| **QH-7** | MED | DESIGN §12 ↔ `session.py` docstring lockstep **violated**: `notice` emitted (`session.py:630`) + inventoried (DESIGN:637) but missing from the docstring (:14–26). | docstring fixed + `test_sse_event_lockstep_qh7.py` pins docstring == emitted-literal set (`6d15136`) |
+| **QH-8** | MED | `config.example.yaml` (the bootstrap path) had **no validity gate**; the read also found live template rot — the commented example taught the legacy `tool_descriptions` map (D22 unified `tool_overrides` shipped) and claimed MCP stdio "not yet wired" (both transports live-verified in 4f). | `test_config_example_qh8.py` (loads + validates + placeholder secrets masked) + template de-rot (`33e8266`) |
+| **QH-9** | MED | ARCHITECTURE §6's "the **single** server-OS branch" was false: `memory._fsync_dir` (`memory.py:338`, benign no-op) is a 4th branch outside the documented allowlist; nothing guarded the rule or the core→services layering. | `test_arch_invariants_qh9.py` (closed OS-branch allowlist w/ stale-entry check · core never runtime-imports services, TYPE_CHECKING allowed) + §6/CLAUDE.md name the allowlist (`34c30ac`) |
+
+**Open — owner decisions (flagged, not changed):**
+
+| # | Sev | Item | Recommendation |
+|---|---|---|---|
+| **QH-10** | MED | **No conftest-level test isolation.** Every app-booting test file hand-rolls `_client()` setting `CTRLB_HOME/CONFIG/DB`; there is **no `backend/tests/conftest.py`**, so one forgetful future test boots against the repo root (proven 2026-07-07: root `memories/` git-init artifacts). | Build a ~8-line autouse fixture that **auto-isolates**: set `CTRLB_HOME` to `tmp_path` when unset (`load_settings` returns clean defaults on a missing file — verified `config.py:876-885`, so it can't break legit tests; explicit `_client()` envs still win). Alternative: fail-loudly instead of auto-isolate. Say which and I'll land it. |
+| **QH-11** | LOW-MED | `TailscaleCfg.target_port` **defaults to 5173** (dev frontend, `config.py:459`) — the wrong safe-default direction (SYS-4 rider). Deploy scripts hardcode Serve→5433 so the emma deploy is unaffected; only the in-app `serve_https` action follows the default. | Flip the default to 5433 (prod SPA) post-decision — it's a product default, owner's call. Documented in SECURITY_MODEL §2.1 meanwhile. |
+
+**Confirmed gaps already owned elsewhere (no new QH ids — routed, per brief §2):** Compactor
+untested (SYS-15 → characterization tests **must precede ACA Slice 6**) · `mcp_client.py`/
+`openapi_tools.py` zero adapter tests (SYS-15 → ride ACA Slice 1) · subagent §5.5 bounds
+(depth-cap/priv-clamp/semaphore) implemented but unpinned (SYS-15 → ride ACA Slice 3) · coverage
+measurement absent (SYS-15 item 1 — evaluated here: worth doing as SYS-15 specifies, *measure-only*,
+but it adds deps and belongs to that item, not this audit) · memory-backend swap seam (`MemoryProvider`
+registry) unexercised — named seam, build-on-demand · theme items ⑧⑨⑩ absent = **expected** (D34,
+post-deploy).
+
+**P4 candidates evaluated and NOT built (rationale):** routine-gate `vite build` — tsc (in the gate)
+catches the type layer; vite-specific build breakage is rare and the mandatory `--e2e` deploy gate
+builds the real dist; +10s/push not justified. Extension-cookbook dummy-registration tests — the
+action/tool/builtin/skill/agent rows are already well covered by real-path tests (`test_tools_8`,
+`test_tool_overrides_8b`, `test_core_builtins_7e`, `test_skills_7d`, `test_agents_7d`); the uncovered
+rows are the routed adapter gaps above.
+
+### R4. Invariant enforcement classification (P5)
+
+| Invariant | Class (after this audit) |
+|---|---|
+| Secrets never leak (mask/unmask/redact/drift-guard) | **test-enforced** (`test_secret_hygiene.py`, 8) — verified run |
+| Shell gating (D3: `run_shell` deny-below-FULL, `!` 403 when off, defaults off) | **test-enforced** (`test_shell_5.py`; membership≠privilege in `test_tool_overrides_8b`) |
+| Confirm two-step + recovery (J3) / retry safety (I4) | **test-enforced** (`test_confirm_recovery_j3` 7, `test_retry_safety_i4`) |
+| D22 unified overrides · D26 git-backup · D27 memory registry/state/reflection | **test-enforced** (decision-named drift-guards) |
+| SSE wire contract ↔ docs (DESIGN §12) | **test-enforced NOW** (QH-7); was prose-only + violated |
+| Server-OS branch allowlist (ARCH §6) · core→services layering | **test-enforced NOW** (QH-9); was prose-only (+1 undocumented branch) |
+| config.example.yaml validity | **test-enforced NOW** (QH-8); was nothing |
+| Harness single-source (gates→check.py) | **structure-enforced** (hooks/CI/deploy all delegate — drift hunt found zero parallel command lists) + CI |
+| D33 harness shape | **tool/CI-enforced**; doc letter reconciled (QH-4) |
+| Test isolation (temp config/db) | **convention-only** → QH-10 (owner) |
+| Subagent bounds (DESIGN §5.5) / Compactor / MCP-OpenAPI adapters | **code-structured only** → routed (ACA 3 / pre-ACA 6 / ACA 1) |
+| Theme contracts §14.11/§14.14 | partial FE tests; CSS rules eyeball-only until D34 ⑧⑨ (owned, post-deploy — unchanged) |
+| Safe-defaults checklist (SECURITY_MODEL §6) | **operational** (deploy step-1), components test-enforced; dev-exposure now documented (QH-6) |
+| "Don't duplicate patterns" / pre-flight discipline | prose+hooks by nature — correctly not machine-enforced |
+
+### R5. Changes made (7 commits, each gate-green at commit time)
+
+`a078bb1` QH-1 (install.sh dev `[dev]` + preflight probe + README/setup.ps1) · `0933227` QH-2
+(playwright prereq docs) · `51b752a` QH-3 (CLAUDE.md CI line) · `17aa0ff` QH-4 (staged remnants +
+D33 amendment) · `e1c3379` QH-5 (1a composition note) · `4c30c70` QH-6 (SECURITY_MODEL §2.1+§3) ·
+`6d15136` QH-7 (docstring + lockstep guard) · `33e8266` QH-8 (template guard + de-rot) · `34c30ac`
+QH-9 (arch guards + §6). **Not pushed** — push needs owner confirmation.
+
+### R6. Commands run (verification log)
+
+`git status/log` (clean @ ade94af) · `check.py --fast` **PASS 1.9s** · `check.py --e2e` **PASS 7/7,
+1m12s** (the PRE_DEPLOY step-0 rehearsal, run before any fix) · `gh run list` (3× green, HEAD incl.)
+· `git config core.hooksPath` + hook file reads (pre-commit `--fast` / pre-push full via `_gate.sh`,
+venv-first) · `pytest --collect-only` (250) · `npm run lint` (27 warn/0 err) · `vitest list` (212) ·
+`playwright test --list` (34) · `pytest test_secret_hygiene test_confirm_recovery_j3 -v` (15 PASS) ·
+`git ls-files` secret sweep (NONE tracked) · port sweep :4173/:5433/:5173 (all free before e2e) ·
+each new guard test run individually (4 PASS) · full `check.py` re-run after all fixes (PASS — see
+Phase-9 TODO note). No blockers hit; Windows CRLF warnings + pip notice observed and ignored as
+briefed.
+
+### R7. Deploy-readiness verdict — **GO**
+
+**The harness is trustworthy for the emma deploy.** Green means healthy: every gate runs real tools
+over the real tree, the single-source chain (hooks → CI → deploy all delegating to `check.py`) held
+under an adversarial drift hunt (zero parallel command lists), CI proves the whole gate on the
+deploy OS, and the one place a red would have lied — the **emma dev tree's missing `[dev]`
+toolchain (QH-1)** — is fixed, plus the runner now self-diagnoses that state. The `--e2e` rehearsal
+(the exact step-0 command) passed 7/7 in 1m12s with its two operational traps (browsers,
+:4173 reuse) now documented at the point of use. **Nothing further must land before
+`DEPLOY_EMMA.md` executes.** Conditions already satisfied: step-0 = `check.py --e2e` green (rerun at
+deploy time) + the SECURITY_MODEL §6 checklist against the live `config.yaml` (operational, at
+deploy). Post-deploy watch-list: QH-10/11 owner decisions, and the routed SYS-15/ACA test gaps —
+none deploy-blocking (they are product-code assurance gaps, not harness-trust gaps).

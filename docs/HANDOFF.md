@@ -37,11 +37,13 @@
 > below are historical).
 >
 > **▶ FINAL TOUCHES before the deploy (a fresh session) — highest value first:**
-> 0. **FIRST: the quality-harness audit** — brief ready + owner-approved in
->    [`QH_AUDIT.md`](./QH_AUDIT.md) (2026-07-07): run the harness end-to-end (incl. the `--e2e`
->    rehearsal), hunt drift across docs/hooks/CI/deploy, classify invariant enforcement
->    (prose-only → executable drift-guards), and issue the deploy-readiness verdict that feeds
->    step 1. Launch: fresh session → "Run the quality-harness audit — read `docs/QH_AUDIT.md`".
+> 0. ✅ **The quality-harness audit is DONE (2026-07-07) — VERDICT: GO** ([`QH_AUDIT.md`](./QH_AUDIT.md)
+>    §R). Gate run as-deployed: `--fast` 1.9s · full+`--e2e` **7/7 green, 1m12s** (the step-0
+>    rehearsal) · CI green · hooks verified. 9 findings fixed in 7 commits (top: QH-1 — install.sh
+>    enabled the hook gate without installing the `[dev]` toolchain, so emma dev-tree commits would
+>    have died; QH-2 — the `npx playwright install` deploy-gate prereq was documented nowhere) + 4
+>    new drift-guards (pytest 250→**254**). Open owner decisions: **QH-10** conftest auto-isolation
+>    fixture · **QH-11** `target_port` default 5173→5433. **Nothing blocks the deploy.**
 > 1. **The deploy pre-flight IS the real gate.** Run `python tools/check.py --e2e` (must be GREEN), then verify the
 >    owner-managed **`config.yaml`** against the `SECURITY_MODEL.md` safe-defaults checklist (bind `127.0.0.1`, debug
 >    off, Tailscale-Serve-HTTPS the only ingress, `shell.*_exec` toggles as intended, no secrets tracked) + run
