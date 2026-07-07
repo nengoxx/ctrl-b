@@ -877,11 +877,13 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
       `HostDetail` = a **draggable multi-snap bottom sheet** (the slide-panel idea, upgraded) on the reusable
       `BottomSheet` primitive + sheet-aware camera-lift. Gated by `ui.motion`. See `COSMOS_HANDOFF.md`.
       (C4 per-host `appearance.cosmos` override = PARKED future idea, not planned — owner 2026-06-28.)
-- [ ] **T5 step 0 — the tab-body registry** (engine slice, owner-ratified 2026-07-07 — THEME_ENGINE §14.15.4):
-      complete `tabs.ts` into the id→body registry (TabDef gains `body`; per-theme sets; keep-mounted + lazy-latch
-      semantics preserved), replacing DefaultRoot's hardwired tab branch; fold the `Fleet` prop in (confirm at
-      design review + draft the D-entry there). Unblocks frontier's bespoke Agent body + 3-tab set. AFTER Hardening v2.
-- [ ] **T5 — frontier** (HIGH): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
+- [ ] **T5 step 0 — the SECTION LAYOUT SYSTEM v1** (engine slice; design LOCKED 2026-07-07 — spec =
+      [`FRONTIER_PLAN.md`](./FRONTIER_PLAN.md) §1/§6-F0, which SUPERSEDES the earlier narrower "tab-body
+      registry" wording): body registry + curated 4/3/2-tab presets + the global synced layout lever +
+      the generalized menu-affordance rule + utils-in-Conf hosting. D-entry at its design review.
+      AFTER Hardening v2 + Composer Surface.
+- [ ] **T5 — frontier** (HIGH; **plan = [`FRONTIER_PLAN.md`](./FRONTIER_PLAN.md), design LOCKED 2026-07-07,
+      slices F1–F5 — build against it, not this line**): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
       (animated squares — the one non-Fleet structural deviation) + bottom-sheet `HostDetail` (**reuse cosmos's
       `components/BottomSheet.tsx` primitive** — multi-snap, see THEME_ENGINE §14.13 #9) + asset strategy
       (`import.meta.glob`; built-in Mœbius drawing set by index + per-host `host.appearance.frontier.image` override).

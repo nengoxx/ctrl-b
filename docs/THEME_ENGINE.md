@@ -50,7 +50,8 @@ tab bodies, so a theme cannot drop/add a section yet (**scheduled**: frontier st
 **Sequencing rule:** the Hardening slice v2 (§14.15.1) lands **before** the next themeable-UI wave
 — a frontier plan builds on top of it, not around it.
 
-**frontier (the next theme, T5 — §14.10):** the second bespoke/spatial theme. Pre-classified:
+**frontier (the next theme, T5 — §14.10; full plan: `FRONTIER_PLAN.md`, design LOCKED 2026-07-07):**
+the second bespoke/spatial theme. Pre-classified:
 **Fleet = bespoke** (Mœbius art-map + GPS beacons + rig-card grid; `present()` supplies x/y +
 `assets` art + per-host `appearance.frontier.image` override — §9.9) · **Agent tab = bespoke** (the
 one non-Fleet structural deviation any theme has, D29) · **HostDetail = reuse the Kit
@@ -1675,7 +1676,7 @@ per-theme-eager-CSS rework (vapor is default + flagship; revisit only if the own
 another theme) · screenshot diffing · **tab BODY registry — TRIGGERED (owner-ratified 2026-07-07): frontier
 is "a theme that actually needs a different section" (bespoke Agent body + a 3-tab set), so the id→body
 completion of `tabs.ts` (each `TabDef` gains a `body` component; standard four as defaults, per-theme
-overrides) is scheduled as the frontier plan's step 0 (§14.10 T5), AFTER Hardening v2. It REPLACES
+overrides) is scheduled as the frontier plan's step 0 (§14.10 T5), AFTER Hardening v2 — the design has since been LOCKED and WIDENED into the SECTION LAYOUT SYSTEM v1 (owner review 2026-07-07): spec = `FRONTIER_PLAN.md` §1/§6-F0 (curated 4/3/2-tab presets · global synced lever · generalized menu affordance · utils-in-Conf hosting), superseding this entry's narrower registry wording. It REPLACES
 DefaultRoot's hardwired `tab === "…"` branch (no parallel mechanism) and subsumes the accreting per-region
 props — fold `Fleet={…}` into it when it lands (owner leaned fold; confirm at the design review, where the
 D-entry gets drafted). Constraints: preserve keep-mounted semantics (active flags, never conditional-render)

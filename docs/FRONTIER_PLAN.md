@@ -1,9 +1,10 @@
 # Frontier theme — implementation plan (T5)
 
-> **Status: 🔶 IN DESIGN (2026-07-07) — the owner design review is in progress, point by point.**
-> Locked points below are owner-ratified prose decisions; open points are listed with their
-> current recommendation. When all points close, this doc becomes the executable plan (the
-> `COMPOSER_SURFACE_PLAN.md` tradition) and the step-0 design review drafts the D-entries.
+> **Status: ✅ DESIGN LOCKED (2026-07-07) — all five review points owner-ratified same day.**
+> This is the executable plan (the `COMPOSER_SURFACE_PLAN.md` tradition). **Build slot** (the
+> pinned global order, `TODO.md` header): post-emma-deploy → Hardening slice v2 → Composer
+> Surface → **F0 → F1…F5 below**. Each slice: pre-flight → design-confirm → build → audit →
+> **owner 390px eyeball + pause**. D-entries are drafted at the F0 and F4 design reviews.
 > **Read first:** `THEME_ENGINE.md` **§0** (the Theme Author Contract) · §14.10 (T5) · §14.15.4
 > (the ratified step-0 entry) · `TODO.md` header (the global order: build slot = post-deploy →
 > Hardening v2 → Composer Surface → this).
@@ -107,39 +108,96 @@ component exists; the earlier variant recommendation was withdrawn as over-build
 - The slot-contract consequence stays for the machinery generally (hardening ⑧ pins "every
   registered variant renders every required slot"), but frontier adds no variant of its own.
 
-## §4 OPEN — Point 4: art assets
+## §4 LOCKED — Point 4: art assets are PLACEHOLDERS
 
-Are the existing hand-drawn PNGs (hero + rig1–6 + cube/platform stack) final shippable art, or to
-be redrawn/extended first? Either way: shipped via `ThemeDef.assets = import.meta.glob(...)`,
-assigned by index in `present()` + per-host `appearance.frontier.image` override; a size/format
-pass (likely WebP) belongs to F5. Gotcha already pinned: **gradient accents live in
-`--accent-fill`; `--accent` must parse as a plain `<color>`** (§14.15.1 ⑨).
+Owner ruling 2026-07-07: the existing PNGs (hero + rig1–6 + cube/platform stack) are
+**placeholders** — frontier builds against them now; final art is a separate owner-side task,
+**not** a plan dependency. Design consequence: the art pipeline must make the final-art swap a
+**zero-code operation** — `ThemeDef.assets = import.meta.glob('./art/*.png')` keyed by filename,
+`present()` assigns by index + per-host `appearance.frontier.image` override, and F2 documents the
+**art spec** (expected filenames · aspect ratios: hero ~map-card cover, rigs ~1.18 · the 3
+stack layers) so replacements drop in. Size/format pass (likely WebP + explicit dimensions)
+in F5. Gotcha already pinned: **gradient accents live in `--accent-fill`; `--accent` must parse
+as a plain `<color>`** (§14.15.1 ⑨).
 
-## §5 OPEN — Point 5: day/night
+## §5 LOCKED — Point 5: day/night = the standard mode axis
 
-Recommendation: map the prototype's sun/moon appbar toggle to the **standard mode axis**
-(dark/light, cross-device synced) — night(plum dusk)/day(parchment) are frontier's mode palettes;
-the 4 accent gradient swatches are its accent axis. Not a frontier-only setting.
+Owner ruling 2026-07-07: the prototype's sun/moon toggle maps to the **standard mode axis**
+(dark/light, cross-device synced — the lever every theme has): night = the plum-dusk palette, day
+= parchment; the 4 accent gradient swatches are frontier's accent axis. No frontier-only mode
+setting. (Frontier's appbar is a tokens reskin, so the Kit's existing mode toggle simply wears the
+sun/moon styling.)
 
-## §6 Slice skeleton (F0–F5 — each: pre-flight → design-confirm → build → audit → owner eyeball)
+## §6 The slices (each: pre-flight → design-confirm → build → audit → owner 390px eyeball → pause)
 
-- **F0 = T5 step 0** — the §1 section layout system v1 (engine slice; its own design review +
-  D-entry). AFTER Hardening v2 + Composer Surface.
-- **F1 — shell reskin**: ThemeDef row + two-axis palettes + Chakra Petch/JetBrains Mono +
-  `tokens.css` under `.kit` (appbar/nav/conf/utils) + the dusk-glow app background.
-- **F2 — Fleet signature**: art-map card (hero + 6s radar sweep + GPS beacons via `present()` x/y,
-  ping-ring pulse, offline grey) + 2-col rig grid (art by index, plates, LEDs, offline grayscale).
-- **F3 — HostDetail**: `BottomSheet` reuse + frontier content (art banner · 4-up stats · action
-  bar · services list).
-- **F4 — Agent tab** (§2): chat hooks/token contract pre-flight → bespoke shell + empty-state +
-  recede transition → log reskin → plan-pill slot.
-- **F5 — polish + gates**: per-host art override UI in Conf · asset format pass · §14.11 perf pass
-  (Fennec + Chrome) · a11y floor · e2e render case · final 390px eyeballs.
+**F0 = T5 step 0 — the section layout system v1** (engine slice, §1; frontier-independent).
+*Build:* the `TabDef.body` registry replacing DefaultRoot's hardwired branch · the curated presets
+(4/3/2-tab) · the global synced lever (`auto` = theme default) + `ThemeDef` capability declaration
+· the generalized menu-affordance rule (off-bar ⇒ menu) · the utils-in-Conf group (concrete).
+*Reuse:* `tabsFor`/`useSections` · NavMenu · appearance channel · per-theme settings machinery.
+*Acceptance:* all existing themes render byte-identical in `4-tab`/`auto` (vapor waivered native);
+3-tab relocates utils into Conf with state preserved across the move; 2-tab reaches Conf via menu;
+deep-link `utils` coerces in hosted mode; `hasComposer` correct per preset; keep-mounted + lazy
+latch unchanged; unit tests for preset resolution + coercion; e2e render pass. **Design review
+first → drafts the D-entry.**
 
-## §7 Open nuances (parking list — resolve at their slice's pre-flight)
+**F1 — shell reskin.** *Build:* `ThemeDef` row (`frontier`) · two-axis palettes (§5: night/day
+modes, 4 gradient accents — gradients in `--accent-fill`, plain `--accent`) · Chakra Petch +
+JetBrains Mono via `loadFonts` · `tokens.css` under `.kit` (appbar sun/moon-skinned mode toggle ·
+nav · Conf · Utils · composer per §3) · dusk-glow background · `defaultLayout: 3-tab` +
+`composer: [stacked, docked]` declarations. *Reuse:* Kit wholesale; the §0 contract's porting
+playbook (§10). *Acceptance:* every tab fully functional in frontier at 390px; mode/accent
+switches live + synced; keyframes `frontier-`-prefixed; §14.6 `@scope` pattern; check.py green.
 
-- Chips styling/behavior on small screens; do chips reappear on `/clear`?
-- The map card's `backdrop-filter` uses (frosted tab bar) → `data-perf` gating.
-- Rig-art licensing/attribution note if assets are AI-generated (owner's call, F5).
-- 3-tab default + the utils-in-conf group's first render (lazy interplay).
-- Frontier's `sheetSnap` key naming + camera-lift interplay on the map card (cosmos precedent).
+**F2 — the Fleet signature (bespoke body via the registry).** *Build:* art-map card (hero +
+6s `sweep` + GPS beacons at `present()` x/y · ping-ring pulse · offline grey · name tags · count
+pill) · 2-col rig grid (art by index · plates · LEDs · offline grayscale) · `present()` +
+`ThemeDef.assets` glob · the documented **art spec** (§4: filenames/aspects for the placeholder →
+final swap). *Reuse:* `useFleet` controller · cosmos's selection/liveness patterns. *Acceptance:*
+real fleet data drives beacons+grid; selection syncs beacon↔card; offline states correct;
+animations transform/opacity-only + `data-motion`/IO-gated; per-host `appearance.frontier.{image,
+x,y}` override honored end-to-end (API → render).
+
+**F3 — HostDetail.** *Build:* frontier sheet content (art banner + name/plate/status · role/ip/
+ping/uptime line · 4-up stat grid · action bar Wake/Shutdown+info · services list with Open-links).
+*Reuse:* `components/BottomSheet.tsx` (multi-snap, cosmos-proven) · `sheetSnap` (key
+`"frontier-host-detail"`, isolation already unit-tested) · the existing action/confirm flow
+(gate untouched). *Acceptance:* open/drag/snap/dismiss at 390px; actions run through the normal
+confirm path; a11y (`role="dialog"` non-modal per §14.13 #9).
+
+**F4 — the Agent tab (§2).** *Pre-flight:* inventory the chat markup → write the **chat hooks +
+token contract** (named classes + component tokens for bubble kinds/markdown/code/plan/reasoning/
+notices/search); confirm with owner; note them for hardening ⑧. *Build:* bespoke body (backdrop +
+empty-state rig stack + chips) · the **recede-to-background** transition (first `message.start` ⇄
+`/clear`) · the log reskin against the hooks · plan-pill placement setting (D30 slots).
+*Acceptance:* full chat functionality (markdown/code actions/confirm+question bubbles/plan/
+reasoning/voice) visually frontier at 390px; transition reversible + `data-motion`-clean;
+legibility over the watermark verified; no shared-component forks (per-element escalation only,
+each gate-checked at review).
+
+**F5 — polish + gates.** *Build:* per-host art override UI in Conf (the `appearance.frontier`
+editor) · asset format/size pass (WebP + dimensions; placeholders stay swappable per §4) ·
+§14.11 perf pass on **Fennec + Chrome** (sweep/ping/bob budgets · `backdrop-filter` →
+`data-perf` · canvas n/a) · a11y floor (§14.14 #5: beacons/rigs = named focusables; decorative
+art `aria-hidden`) · e2e render case for frontier · final owner eyeballs (Fleet AND Agent per the
+TODO rule). *Acceptance:* full gate + e2e green; the §0 Author Contract checklist satisfied
+row-by-row; owner sign-off.
+
+## §7 Parked nuances (resolve at the owning slice's pre-flight)
+
+- F1: the composer `model` label (shared micro-addition or skip — §3 nuance).
+- F4: chips behavior on `/clear` (recommend: reappear with the empty state) + small-screen wrap.
+- F0/F1: the utils-in-Conf group's first-render interplay with the lazy-Conf latch.
+- F2: `sheetSnap` camera-lift interplay on the map card (cosmos precedent — likely n/a, verify).
+- F5: placeholder-art licensing/attribution note if the final set is AI-generated (owner call).
+
+## §8 Execution conditions + governance
+
+- **Slot:** post-emma-deploy → Hardening v2 → Composer Surface → F0…F5 (the pinned global order).
+- **D-entries:** F0's design review drafts the section-layout-system D-entry (formally supersedes
+  the §14.15.4 "tab-body registry" wording); F4's review drafts the chat hooks-contract D-entry if
+  the contract proves non-trivial. `COMPOSER_SURFACE_PLAN.md` A3 gets its all-themes scope
+  confirmation (§3) when that slice runs.
+- **Standing rules:** D7 pixel-fidelity vs frontier.html per slice · §14.11 budget on every
+  animation · vapor stays frozen (waivers, ladder-owned) · commit-per-slice, owner pause between
+  slices · every slice ends `python tools/check.py` green.
