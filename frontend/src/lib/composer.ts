@@ -22,6 +22,7 @@ import {
   setSessionPrivilege,
   startNewThread,
 } from "../store/chat";
+import { setDraft } from "../store/composer";
 import { setUI } from "../store/ui";
 import { PRIVILEGE_VALUES, privilegeLabel, type Privilege } from "./privilege";
 
@@ -80,13 +81,12 @@ const HELP = [
 ].join("\n");
 
 /** Drop a string into the shared composer for tweak-then-run (ports vapor's cmdInto/editCmd). The
- *  textarea is uncontrolled, so write the value + dispatch `input` so its auto-size handler fires. */
+ *  textareas are controlled off the draft store (F28) — write through `setDraft` so `send()`, which
+ *  reads the store, transmits the injected text (a direct `.value` write is swallowed by React's
+ *  value-tracker and leaves the store stale). The `#cmd-input` id is kept for focus only. */
 export function fillComposer(text: string): void {
-  const ta = document.getElementById("cmd-input") as HTMLTextAreaElement | null;
-  if (!ta) return;
-  ta.value = text;
-  ta.dispatchEvent(new Event("input", { bubbles: true }));
-  ta.focus();
+  setDraft(text);
+  document.getElementById("cmd-input")?.focus();
 }
 
 /** Route + run one composer submission. Returns nothing; all effects go through the chat/ui stores. */

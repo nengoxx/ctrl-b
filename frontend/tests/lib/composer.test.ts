@@ -1,8 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, render } from "@testing-library/react";
+import { createElement, type ChangeEvent } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // lib/composer — `runComposer` is the input chokepoint: it routes the raw composer text by its leading
 // sigil (`!`→shell · `/`→slash verbs · else→agent) and jumps to the Agent tab. We mock the chat + ui
 // store actions and assert the dispatch; the privilege helper stays real (it validates the level).
+// `fillComposer` is the tweak-then-run injector; its store/composer draft store stays REAL (that's the
+// regression under test: SYS-13 — the write must reach the store `send()` reads, not just the DOM).
 
 vi.mock("../../src/store/chat", () => ({
   sendMessage: vi.fn(),
@@ -16,8 +20,9 @@ vi.mock("../../src/store/chat", () => ({
 }));
 vi.mock("../../src/store/ui", () => ({ setUI: vi.fn() }));
 
-import { runComposer } from "../../src/lib/composer";
+import { fillComposer, runComposer } from "../../src/lib/composer";
 import * as chat from "../../src/store/chat";
+import { clearDraft, getDraft, setDraft, useDraft } from "../../src/store/composer";
 import { setUI } from "../../src/store/ui";
 
 // loadSkills/loadAgents fire a best-effort fetch on import; make it a quiet no-op so nothing hits the
@@ -80,5 +85,48 @@ describe("runComposer routing", () => {
     runComposer("/definitelynotacommand");
     expect(chat.pushSystemNote).toHaveBeenCalledWith(expect.stringContaining("unknown command"));
     expect(chat.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+// A minimal controlled textarea bound to the draft store EXACTLY like both real composers
+// (value={useDraft()} + onChange→setDraft + id="cmd-input"). Rendering the real Composer would drag in
+// react-query/dictation providers; the store binding is the only surface SYS-13 depends on.
+const Harness = () =>
+  createElement("textarea", {
+    id: "cmd-input",
+    value: useDraft(),
+    onChange: (e: ChangeEvent<HTMLTextAreaElement>) => setDraft(e.target.value),
+  });
+
+describe("fillComposer (SYS-13 regression)", () => {
+  beforeEach(() => {
+    clearDraft();
+    localStorage.clear();
+  });
+  afterEach(cleanup); // globals:false → register RTL cleanup explicitly
+
+  it("writes through to the store draft that send() reads (not just the DOM)", () => {
+    const { container } = render(createElement(Harness));
+    act(() => fillComposer("wake --force the-vault"));
+
+    // The store is the source of truth for send() — this is the assertion the old (routing-only) suite
+    // lacked, so the swallowed-synthetic-event bug survived.
+    expect(getDraft()).toBe("wake --force the-vault");
+    // …and the controlled textarea reflects it after the store-driven re-render.
+    const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
+    expect(ta.value).toBe("wake --force the-vault");
+  });
+
+  it("focuses the composer textarea when present", () => {
+    const { container } = render(createElement(Harness));
+    act(() => fillComposer("echo hi"));
+    expect(document.activeElement).toBe(container.querySelector("#cmd-input"));
+  });
+
+  it("updates the store even when no textarea is mounted (no crash)", () => {
+    // Composer is conditionally rendered (Conf/Utils tabs unmount it). Injecting while it's absent must
+    // still populate the draft — the new, better behavior vs the old DOM-only write that silently no-op'd.
+    expect(() => fillComposer("still lands")).not.toThrow();
+    expect(getDraft()).toBe("still lands");
   });
 });
