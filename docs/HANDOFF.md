@@ -37,6 +37,11 @@
 > below are historical).
 >
 > **▶ FINAL TOUCHES before the deploy (a fresh session) — highest value first:**
+> 0. **FIRST: the quality-harness audit** — brief ready + owner-approved in
+>    [`QH_AUDIT.md`](./QH_AUDIT.md) (2026-07-07): run the harness end-to-end (incl. the `--e2e`
+>    rehearsal), hunt drift across docs/hooks/CI/deploy, classify invariant enforcement
+>    (prose-only → executable drift-guards), and issue the deploy-readiness verdict that feeds
+>    step 1. Launch: fresh session → "Run the quality-harness audit — read `docs/QH_AUDIT.md`".
 > 1. **The deploy pre-flight IS the real gate.** Run `python tools/check.py --e2e` (must be GREEN), then verify the
 >    owner-managed **`config.yaml`** against the `SECURITY_MODEL.md` safe-defaults checklist (bind `127.0.0.1`, debug
 >    off, Tailscale-Serve-HTTPS the only ingress, `shell.*_exec` toggles as intended, no secrets tracked) + run

@@ -38,6 +38,7 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | [`docs/SYSTEM_AUDIT.md`](./docs/SYSTEM_AUDIT.md) | Code-verified architecture audit (SYS-# findings; excludes the chat loop). |
   | [`docs/AGENT_CHAT_AUDIT.md`](./docs/AGENT_CHAT_AUDIT.md) | Agent-chat audit + 8-agent comparative analysis + the ACA improvement plan (Slices 0–8). |
   | [`docs/PRE_DEPLOY.md`](./docs/PRE_DEPLOY.md) | The pre-deploy hardening gate record (steps 1–5) + the deploy-readiness checklist. |
+  | [`docs/QH_AUDIT.md`](./docs/QH_AUDIT.md) | The quality-harness audit (QH-#): brief + report — is the harness itself trustworthy for commit/merge/deploy? |
   | [`docs/DEPLOY_EMMA.md`](./docs/DEPLOY_EMMA.md) | The emma (Linux) deploy runbook + topology (D32). |
   | [`docs/QUALITY.md`](./docs/QUALITY.md) | The code-quality harness (lint/format/typecheck/test + `check-all` + conventions). Read before touching tooling. |
   | [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md) | The trust boundary, privilege gate, confirm-tokens, secret handling + safe-defaults checklist. Read before touching anything that executes or handles secrets. |
