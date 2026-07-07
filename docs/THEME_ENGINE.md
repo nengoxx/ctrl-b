@@ -43,8 +43,9 @@ mapping), while §9.7–§9.12 + §13.1 remain live contract · **§14** = the *
 **⚠ SPEC-not-built — do not assume these exist in code:** `resolveThemeSetting` read-validation
 (§14.15.1 ⑦) · the user-selectable Surface machinery (`composerVariants`/`ThemedComposer` — §14.14
 as-built banner; `SheetComposer` is a delegating stub) · stylelint ⑨ / `themeContract.test.ts` ⑧ /
-`kit-render.spec.ts` ⑩ (§14.15.1) · a tab **body** registry — DefaultRoot hardwires the four tab
-bodies, so a theme cannot drop/add a section yet (§14.15.4 named seam).
+`kit-render.spec.ts` ⑩ (§14.15.1) · a tab **body** registry — DefaultRoot still hardwires the four
+tab bodies, so a theme cannot drop/add a section yet (**scheduled**: frontier step 0, ratified 2026-07-07 —
+§14.15.4).
 
 **Sequencing rule:** the Hardening slice v2 (§14.15.1) lands **before** the next themeable-UI wave
 — a frontier plan builds on top of it, not around it.
@@ -1095,7 +1096,8 @@ default.
 M0 → M1 → M2 → M3 (vapor migrated, default) → **Kit + minimal** (token contract + `DefaultRoot` + per-theme settings +
 minimal `tokens.css`/fonts/OKLCH matrix/Fleet, real data) → **T2 phosphor** (tokens+fonts+CRT, reuses Kit) → **T3
 observatory** (low-pri; FleetView + `present()`) → **T4 cosmos** (own Fleet Root/orbital + slide-panel HostDetail +
-`present()`) → **T5 frontier** (own Fleet + **bespoke Agent** anims + bottom-sheet + assets + `present()`). D7 per theme;
+`present()`) → **T5 frontier** (step 0 = the **tab-body registry** engine slice, ratified 2026-07-07 — §14.15.4; then own
+Fleet + **bespoke Agent** anims + bottom-sheet + assets + `present()`). D7 per theme;
 390px eyeball + pause after each.
 
 ## 14.11 Cross-browser performance + robustness budget (RULE — every theme must pass) — owner directive 2026-06-26
@@ -1668,7 +1670,14 @@ flat on sRGB phones).
 (uncovered fields are per-device BY DESIGN; synced fields already reconcile) · woff2 SW precache/runtime-cache
 (app is dead offline — no tailnet → no backend) · @scope boot probe / `@supports` vapor duplicate ·
 per-theme-eager-CSS rework (vapor is default + flagship; revisit only if the owner permanently settles on
-another theme) · screenshot diffing · tab BODY registry (nav/composer-visibility are registry-driven; bodies
-are fixed — documented in tabs.ts; build the body registry when a theme actually needs a different section) ·
+another theme) · screenshot diffing · **tab BODY registry — TRIGGERED (owner-ratified 2026-07-07): frontier
+is "a theme that actually needs a different section" (bespoke Agent body + a 3-tab set), so the id→body
+completion of `tabs.ts` (each `TabDef` gains a `body` component; standard four as defaults, per-theme
+overrides) is scheduled as the frontier plan's step 0 (§14.10 T5), AFTER Hardening v2. It REPLACES
+DefaultRoot's hardwired `tab === "…"` branch (no parallel mechanism) and subsumes the accreting per-region
+props — fold `Fleet={…}` into it when it lands (owner leaned fold; confirm at the design review, where the
+D-entry gets drafted). Constraints: preserve keep-mounted semantics (active flags, never conditional-render)
+and keep the lazy-Conf latch / scroll-reset / `--composer-h` measurement generic (e.g. a `lazy?` TabDef
+flag). The D31 Surface axis stays separate — variants ≠ tab composition.** ·
 a third perf tier · scroll restoration across switches · quarantine subsystem · aria-live announcement (see
 riders).
