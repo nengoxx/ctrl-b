@@ -65,7 +65,9 @@ step's pre-flight reveals a cheaper path.
 - **1a — `tools/check.py` runner + FE `check-all` (zero new deps).** One stdlib chokepoint
   (`subprocess`/`pathlib`): resolves the venv python (single OS-branch), runs a **data-driven check list**,
   delegates FE to `npm run check-all`. Frontend `check-all` **composes existing scripts**
-  (`npm run typecheck && npm test && npm run build`) — no re-inlining. Wire only what is *already green* (FE
+  (at 1a: `npm run typecheck && npm test && npm run build`; the shipped composition after 1b is
+  `typecheck && lint && format:check && test` — `build` moved out of the gate, e2e's webServer +
+  deploy own it) — no re-inlining. Wire only what is *already green* (FE
   tsc/vitest/build; BE ruff + `ruff format --check` + pytest). Document in `AGENTS.md` §3. *Everything after appends to the list.*
 - **1b — Frontend ESLint + Prettier (type-aware).** Add `eslint @eslint/js typescript-eslint
   eslint-plugin-react-hooks eslint-plugin-react-refresh eslint-config-prettier prettier` (pin
