@@ -1,0 +1,11 @@
+# Repo-root ruff config for the Python that lives OUTSIDE backend/ (tools/check.py,
+# deploy/bootstrap.py) — QH-13: the quality runner itself was previously linted by nothing.
+#
+# Single source of truth: this file only EXTENDS backend/pyproject.toml's [tool.ruff] (same
+# select/ignore/target/line-length — rules are defined once, there). Files under backend/ keep
+# resolving backend/pyproject.toml directly (ruff picks the nearest config per file); this one
+# governs the root-level scripts, which tools/check.py passes to ruff explicitly.
+extend = "backend/pyproject.toml"
+
+# Never lint the archived legacy trees or design prototypes.
+extend-exclude = ["archive", "design"]

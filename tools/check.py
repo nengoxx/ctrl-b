@@ -64,10 +64,10 @@ def npm_argv(args: list[str]) -> list[str]:
 
 @dataclass
 class Check:
-    name: str            # display label
-    argv: list[str]      # command in argv form (no shell)
-    cwd: Path            # working directory
-    fast: bool = False   # part of the --fast subset (excludes slow tests)
+    name: str  # display label
+    argv: list[str]  # command in argv form (no shell)
+    cwd: Path  # working directory
+    fast: bool = False  # part of the --fast subset (excludes slow tests)
     # filled in at runtime:
     code: int = field(default=0, init=False)
     output: str = field(default="", init=False)
@@ -107,9 +107,16 @@ def preflight() -> list[str]:
 def build_checks() -> list[Check]:
     py = str(venv_python())
     return [
-        # --- backend: the venv's tools, run from backend/ (ruff config lives there) ---
-        Check("ruff  (lint)", [py, "-m", "ruff", "check", "."], BACKEND, fast=True),
-        Check("ruff  (format)", [py, "-m", "ruff", "format", "--check", "."], BACKEND, fast=True),
+        # --- backend: the venv's tools, run from backend/ (ruff config lives there). ruff also
+        # covers the repo-root Python (this file + deploy/bootstrap.py) via the root ruff.toml,
+        # which extends backend/pyproject.toml — QH-13: the runner itself must not escape the gate.
+        Check("ruff  (lint)", [py, "-m", "ruff", "check", ".", "../tools", "../deploy"], BACKEND, fast=True),
+        Check(
+            "ruff  (format)",
+            [py, "-m", "ruff", "format", "--check", ".", "../tools", "../deploy"],
+            BACKEND,
+            fast=True,
+        ),
         Check("pyright", [py, "-m", "pyright"], BACKEND, fast=False),
         Check("pytest", [py, "-m", "pytest", "-q"], BACKEND, fast=False),
         # --- frontend: delegated to the single npm entry point (package.json) ---
@@ -147,7 +154,7 @@ def main() -> int:
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, ValueError):
+        except AttributeError, ValueError:
             pass
 
     ap = argparse.ArgumentParser(description="ctrl-b quality gate (docs/QUALITY.md)")
