@@ -52,8 +52,9 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
 - Host OS is **Windows 11** today (corsair); the owner is **migrating to emma (Linux)** for deploy.
   Default shell here is **PowerShell** (use `$null`, `$env:VAR`, backtick continuation); a Bash tool
   is also available for POSIX scripts. **Keep all code OS-agnostic** — branch on `host.os_type`
-  (managed host), never on the server's OS. The only legitimate server-OS branch is the local ping
-  syntax (`fleet._ping_cmd`); see `docs/ARCHITECTURE.md` §6 for the design invariant.
+  (managed host), never on the server's OS. Server-OS branches are a **closed allowlist**
+  (`fleet._ping_cmd` ping syntax · `run_shell` shell · `memory._fsync_dir` no-op · `check.py`),
+  pinned by `test_arch_invariants_qh9.py`; see `docs/ARCHITECTURE.md` §6.
 - Python **3.14+** (the codebase uses 3.14 syntax — e.g. PEP 758 unparenthesized `except`; ruff
   `target-version = py314`; emma deploys native 3.14). Backend venv at `backend/.venv`. Run:
   `uvicorn app.main:app --port 5433` from `backend/`. One-command: `deploy/windows/start.cmd` /

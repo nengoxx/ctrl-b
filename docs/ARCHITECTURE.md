@@ -385,10 +385,15 @@ tests) → else derive from `CTRLB_HOME` → else today's project-root default. 
 
 **OS-agnostic by design.** All target-OS branching keys off `host.os_type` (the *managed* host),
 never the server's OS — so an Ubuntu server on emma running a Windows host is the same code path
-as a Windows server on corsair running a Linux host. The single server-OS branch is the ping
-command syntax (`fleet._ping_cmd` — Windows `-n`/`-w`, Linux `-c`/`-W`, BSD/macOS `-c`/`-t`),
-decided at call time so a Termux profile stays alive. Paths use `pathlib`; the YAML writer
-preserves the existing file's CRLF/LF so a Windows host can't churn an LF config to CRLF.
+as a Windows server on corsair running a Linux host. The server-OS branches are a **closed
+allowlist** (pinned by the drift-guard `backend/tests/test_arch_invariants_qh9.py`):
+`fleet._ping_cmd` (local ping syntax — Windows `-n`/`-w`, Linux `-c`/`-W`, BSD/macOS `-c`/`-t`,
+decided at call time so a Termux profile stays alive) · `run_shell`'s per-OS shell
+(`services/actions/shell.py`) · `memory._fsync_dir` (directory-fsync durability no-op on Windows —
+git is the durable record regardless) · `tools/check.py` (venv/npm resolution, the runner's one OS
+chokepoint, outside the app). Any new server-OS branch must be consciously added to both the guard
+and this list. Paths use `pathlib`; the YAML writer preserves the existing file's CRLF/LF so a
+Windows host can't churn an LF config to CRLF.
 
 **Gotcha — Windows + `uvicorn --reload`.** On Windows, uvicorn's reload worker uses an event
 loop that does not properly support `asyncio.create_subprocess_exec`. `fleet.ping_host` shells
