@@ -1,0 +1,89 @@
+# ctrl-b CI — run the one quality chokepoint (tools/check.py) on Linux.
+#
+# Why this exists (docs/SYSTEM_AUDIT.md SYS-14): every check has only ever run on
+# Windows, but the deploy target is emma (Linux). This is the only way today's
+# OS-agnostic code gets exercised on Linux *before* Linux is production. The runner
+# (tools/check.py) is cwd-independent and self-preflighting, so the job is thin: it
+# just has to reproduce the two environments the runner expects — a backend venv at
+# backend/.venv/bin/python and frontend/node_modules — then invoke the gate.
+name: CI
+
+# dev doesn't exist yet — it's created as deploy-prep step 1 (D32 needs main+dev);
+# listing it now means CI covers it from its first push.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+# One run per ref; a new push cancels the in-flight run for the same branch/PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: quality gate (ubuntu)
+    runs-on: ubuntu-latest
+    # Full gate = pyright + pytest + FE tsc/eslint/prettier/vitest, plus the
+    # editable install and npm ci. Comfortably under this ceiling; the cap just stops
+    # a hung step from burning minutes.
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Python 3.14 is the repo floor (backend/pyproject.toml: requires-python>=3.14;
+      # the code uses PEP 758 syntax, so 3.13 will not even parse it). 3.14 is stable
+      # (released 2025-10), so plain "3.14" resolves to the latest 3.14.x from the
+      # setup-python manifest — no allow-prereleases needed.
+      #
+      # pip cache: the backend is pyproject-only (no requirements.txt), so we hash
+      # pyproject.toml. Every dependency there is an exact "==" pin, so the hash — and
+      # thus the cached wheel/download set — is stable and only busts on a real dep bump.
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      # Node 24: emma runs v24.16 (docs/DEPLOY_EMMA.md line 79) and the frontend pins
+      # @types/node ^24.13.2 (frontend/package.json). npm cache keys off the lockfile.
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # tools/check.py resolves the backend interpreter as backend/.venv/bin/python on
+      # Linux (venv_python(), check.py:48-52) and preflight() hard-fails if it is
+      # missing. Create the venv exactly there and install the project editable with the
+      # dev extra (pyright[nodejs]==1.1.409 — bundles its own Node via nodejs-wheel, so
+      # pyright does not depend on the setup-node install). "-e ." needs cwd=backend
+      # where pyproject.toml lives, which also makes ".venv" == backend/.venv.
+      - name: Create backend venv and install (editable + dev)
+        working-directory: backend
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e ".[dev]"
+
+      # check.py preflight() also requires frontend/node_modules to exist; npm ci
+      # creates it deterministically from package-lock.json.
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      # The single chokepoint: FE `npm run check-all` (tsc + eslint + prettier + vitest)
+      # + BE ruff (lint + format --check) + pyright + pytest, run in parallel. It returns
+      # a nonzero exit on any failure (main() -> 1 on a failed check, 2 on a bad env;
+      # check.py:186-197), so a red gate fails the job.
+      #
+      # NOT --e2e: the Playwright e2e/a11y suite is the opt-in PRE-DEPLOY gate
+      # (docs/QUALITY.md "e2e gate"), deliberately excluded from routine CI — it builds
+      # the dist, boots a preview server + headless browser (~20-30s) and belongs to the
+      # emma deploy checklist, not every push/PR.
+      - name: Run quality gate (tools/check.py)
+        run: python tools/check.py

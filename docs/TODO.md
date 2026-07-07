@@ -681,13 +681,17 @@ tools + confirm bubbles) are DONE.**
 - [x] Minimal smoke tests — **shipped 2026-07-02** as the full Playwright e2e suite
       (`frontend/e2e/{render,flows,a11y}.spec.ts` — desktop + Android viewport + axe WCAG A/AA),
       wired as the opt-in deploy gate `python tools/check.py --e2e` (PRE_DEPLOY step 5 / UI_AUDIT F24).
-- [ ] **SYS-13 fix (live bug, owner-approved 2026-07-07):** `fillComposer` → `setDraft(text)` + focus
-      (drop the DOM `.value` write that React's controlled composers swallow since F28) + the missing
-      jsdom regression test asserting the *store* draft + a confirm-bubble edit→send e2e line. Spec:
-      `SYSTEM_AUDIT.md` SYS-13.
-- [ ] **SYS-14 (pre-emma gate, owner-approved 2026-07-07):** GitHub Actions CI running
-      `python tools/check.py` on `ubuntu-latest` — the only way the code runs on Linux before Linux is
-      production. Spec: `SYSTEM_AUDIT.md` SYS-14.
+- [x] **SYS-13 fix ✅ 2026-07-07:** `fillComposer` = `setDraft(text)` + focus (the DOM `.value` write
+      React's controlled composers swallowed since F28 is gone); 3 jsdom regression tests assert the
+      *store* draft (+ focus + unmounted-composer no-crash) via a controlled harness bound exactly like
+      the real composers. The confirm-bubble e2e line was skipped — it needs streamed-tool-call seeding
+      the smoke e2e suite doesn't have (noted in `SYSTEM_AUDIT.md` SYS-13; the jsdom test covers the
+      broken contract). check-all green (212 vitest / 33 files).
+- [~] **SYS-14 (pre-emma gate) — BUILT 2026-07-07, first real CI run verifies on push:**
+      `.github/workflows/ci.yml` — ubuntu-latest, Python 3.14 + Node 24, venv at `backend/.venv` +
+      `pip -e ".[dev]"` + `npm ci`, then the full `python tools/check.py` gate (NOT `--e2e` — that
+      stays the opt-in deploy gate). Triggers: push to main/dev + PRs. Check the box when the first
+      run is green. Spec: `SYSTEM_AUDIT.md` SYS-14.
 
 ## Phase 10 — Cutover
 
