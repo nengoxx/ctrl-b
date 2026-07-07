@@ -58,7 +58,9 @@ Output: the §R report + small high-confidence fixes (committed per-slice) + an 
   (D34 / `THEME_ENGINE.md` §14.15.1, post-deploy). **Do not build them in this audit** — at most,
   note anything that changes their spec. ([[fix-in-the-owning-phase]])
 - **27 ESLint warnings** = the deferred React-Compiler-prep backlog (UI_AUDIT F13). Documented,
-  not dirt. Verify the count is still accurate; don't fix them.
+  not dirt. Verify the count is still accurate (the 2026-07-07 SYS-13 test additions may have
+  moved it — if so, that's a one-line doc fix in QUALITY/PRE_DEPLOY, not a code task); don't fix
+  the warnings themselves.
 - **pytest-asyncio migration** = TRIAGE-2 (external_audit), deferred. The `tests/_async.py`
   shared-Runner pattern is the documented-correct 3.14 approach.
 - **Chat-loop robustness** belongs to ACA (TODO Phase 12). If you find chat-loop gaps, route them
@@ -75,12 +77,35 @@ Record: branch · HEAD SHA · tree status · uncommitted changes. Confirm the §
 
 ### P2 — Run the harness, map it as-run
 Run, from repo root, recording exact command · cwd · result · duration · honest blockers:
-1. `python tools/check.py` (full)
-2. `python tools/check.py --fast` (the pre-commit subset)
-3. `python tools/check.py --e2e` — **this doubles as the PRE_DEPLOY step-0 rehearsal.** It builds
-   dist + boots a preview server + headless browser; needs Playwright browsers installed.
-4. `gh run list --workflow CI --limit 3` — confirm CI mirrors the local gate and is green on HEAD.
-5. Verify hooks fire: `git config core.hooksPath` + read what each hook actually invokes.
+1. `python tools/check.py --fast` (the pre-commit subset).
+2. `python tools/check.py --e2e` — **one run = the full parallel batch PLUS e2e appended
+   sequentially** (read `main()`: `--e2e` doesn't filter the batch), so this single run covers the
+   full gate AND the PRE_DEPLOY step-0 rehearsal. Don't also run the bare full gate separately.
+3. `gh run list --workflow CI --limit 3` — confirm CI mirrors the local gate and is green on HEAD
+   (`gh` is authenticated on this machine).
+4. Verify hooks fire: `git config core.hooksPath` + read what each hook actually invokes.
+
+**Run-mechanics nuances (verified 2026-07-07 — don't rediscover, don't misread as findings):**
+- **e2e is sandboxed by design**: `playwright.config.ts` builds the real dist and serves it via
+  `vite preview` on **:4173**; `/api` is **fully mocked at the browser level** (`e2e/fixtures.ts`
+  + per-test `page.route`) — NO backend boots, no real `config.yaml` is touched, no real fleet
+  actions can fire. Safe to run.
+- **Trap — `reuseExistingServer: !CI`**: a stale preview server already on :4173 gets REUSED, so
+  you'd be testing an old build. Check/kill :4173 before the e2e run. Playwright browsers must be
+  installed (`npx playwright install` on a browser-missing error).
+- The owner's dev servers (backend :5433 · frontend :5173) don't collide with :4173, but a live
+  backend polling the DB during pytest adds noise — prefer them stopped for the timed runs.
+- **Windows noise, NOT findings**: git's "LF will be replaced by CRLF" warnings (the index is LF;
+  `.gitattributes` deliberately forces eol only for deploy scripts/hooks) · pip's "new release
+  available" notice · vitest duration being dominated by jsdom environment startup.
+- **pytest side effects**: app-booting tests without `CTRLB_HOME` create root artifacts
+  (`memories/` git init) only when those paths are absent — on this machine they exist, so no
+  local effect. If you simulate a fresh checkout, stash the gitignored artifacts to the
+  scratchpad and restore carefully (directory `Move-Item` onto an existing dir fails — a restore
+  collision was hit and resolved 2026-07-07; verify `memories/.git log` shows the 2026-06-25 init
+  commit after restoring).
+- Every push during the audit triggers CI remotely AND the full pre-push gate locally (~2 min);
+  budget for it.
 
 Produce the gate table: | Gate | Command | Scope | Defined in | Documented in | Enforced by |
 Result |. **Any check that exists but is enforced nowhere, or enforced but documented nowhere, is
@@ -100,9 +125,10 @@ a parallel instruction.
 For each candidate: why this repo needs it · where it lives (a `Check(...)` row in check.py unless
 there's a strong reason otherwise) · local invocation · hook/CI/deploy wiring · how it avoids
 duplication. Candidates to evaluate (not auto-build):
-- **Build-output verification**: `vite build` is exercised only via `--e2e`. Is a routine-gate
-  build check worth its ~10s, or is e2e-at-deploy enough? Decide with evidence (past build-only
-  breakage?).
+- **Build-output verification**: `vite build` is exercised only via `--e2e` (its webServer builds
+  the real dist — so the deploy gate DOES verify the build; the routine gate doesn't). Is a
+  routine-gate build check worth its ~10s, or is e2e-at-deploy enough? Decide with evidence
+  (past build-only breakage?).
 - **`config.example.yaml` validity guard**: a test that `load_settings(config.example.yaml)`
   parses + masks cleanly, so the template can't rot (it's the owner's bootstrap path).
 - **Extension-cookbook contract tests**: for each DESIGN §16 row, does at least one test prove the
@@ -168,6 +194,11 @@ justification, D34/ACA-owned items, product-behavior changes, **push without own
    anything) must land first? Update `PRE_DEPLOY.md`/`TODO.md` Phase 9 accordingly + memory.
 
 ## 5. Constraints
+
+**Time-boxing:** if the session is time-constrained, the deploy-readiness verdict outranks depth —
+priority order: P1 → P2 (run everything) → P3 (drift) → P6 (security) → verdict draft, THEN P5
+(invariant ladder) → P4 (new-gate evaluation), with P7 fixes woven in as found. A shallow-but-run
+verdict beats a deep-but-unverified essay.
 
 Evidence-based only — no claim without a run or a file:line. Honest blockers. No push/deploy
 without approval. No secrets in output. Locked decisions stand (relitigating = out of scope; a
