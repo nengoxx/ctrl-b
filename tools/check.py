@@ -81,7 +81,7 @@ def preflight() -> list[str]:
         problems.append(
             f"backend venv missing at {venv_python()}\n"
             f"      fix: cd backend && py -3 -m venv .venv && "
-            f".venv/Scripts/python.exe -m pip install -e ."
+            f'.venv/Scripts/python.exe -m pip install -e ".[dev]"'
         )
     if shutil.which("npm") is None:
         problems.append("npm not on PATH\n      fix: install Node.js (https://nodejs.org)")

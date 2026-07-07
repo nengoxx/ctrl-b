@@ -74,14 +74,14 @@ archive/                v0.1-flask/ (the old Flask app + scripts) · v0.1-infere
 = py314`; emma deploys native 3.14), venv at `backend/.venv`. Port **5433**.
 
 ```powershell
-# Windows (do NOT pass --reload — see §8 gotcha)
-cd backend; py -3 -m venv .venv; .venv\Scripts\python.exe -m pip install -e .
+# Windows (do NOT pass --reload — see §8 gotcha). [dev] = the check.py toolchain (ruff/pyright/pytest)
+cd backend; py -3 -m venv .venv; .venv\Scripts\python.exe -m pip install -e ".[dev]"
 .venv\Scripts\python.exe -m uvicorn app.main:app --port 5433        # http://127.0.0.1:5433
 cd ..\frontend; npm install; npm run dev                            # http://localhost:5173 (proxies /api → 5433)
 ```
 ```bash
 # Linux/macOS — --reload is safe here. Or just: deploy/linux/run.sh dev
-cd backend && python3 -m venv .venv && .venv/bin/pip install -e .
+cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/uvicorn app.main:app --reload --port 5433
 ```
 

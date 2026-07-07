@@ -29,12 +29,17 @@ dependencies = [
 
 # Dev-only tooling (not shipped with the app). Install with:
 #   .venv/Scripts/python.exe -m pip install -e ".[dev]"
+# This extra must declare EVERYTHING tools/check.py invokes via the venv (ruff, pyright, pytest) —
+# CI builds a fresh venv from exactly this list, so a tool that "works locally" but isn't pinned
+# here fails the gate (the SYS-14 first-run catch: ruff/pytest were hand-installed, undeclared).
 # pyright[nodejs] uses the nodejs-wheel extra → hermetic bundled Node (reliable, no flaky
 # first-run nodeenv download). Pip version tracks the pyright engine version, so this pin is
 # reproducible. basic mode → ratchet to strict later (QUALITY.md / DECISIONS D33).
 [project.optional-dependencies]
 dev = [
+    "ruff==0.15.20",
     "pyright[nodejs]==1.1.409",
+    "pytest==9.1.1",
 ]
 
 [build-system]
