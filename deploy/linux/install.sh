@@ -61,8 +61,13 @@ if [ -d "$VENV" ]; then
   [ "$HAVE" = "$WANT" ] || { echo "-- existing venv is Python $HAVE, want $WANT → rebuilding"; rm -rf "$VENV"; }
 fi
 [ -d "$VENV" ] || { echo "-- creating backend venv with $PY (Python $WANT)"; "$PY" -m venv "$VENV"; }
-echo "-- ensuring backend deps (pip install -e .)"
-"$VENV/bin/pip" install -e "$APP/backend" --quiet
+# DEV also needs the check.py toolchain ([dev] = ruff/pyright/pytest) — step 4.5 enables the git
+# hooks, which run tools/check.py on every commit/push in the tree where agents commit. PROD stays
+# lean (sparse, tag-pinned, never commits; check.py's preflight reports the missing toolchain
+# actionably if it's ever invoked there).
+EXTRA=""; [ "$ROLE" = dev ] && EXTRA="[dev]"
+echo "-- ensuring backend deps (pip install -e .$EXTRA)"
+"$VENV/bin/pip" install -e "$APP/backend$EXTRA" --quiet
 
 # 3) Frontend deps — both roles need node_modules. PROD also builds the dist (uvicorn serves it); DEV does
 #    NOT build (Vite serves live with hot-reload).

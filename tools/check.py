@@ -83,6 +83,20 @@ def preflight() -> list[str]:
             f"      fix: cd backend && py -3 -m venv .venv && "
             f'.venv/Scripts/python.exe -m pip install -e ".[dev]"'
         )
+    else:
+        # The venv can exist without the [dev] toolchain (e.g. installed with a bare `pip install -e .`,
+        # the deploy-prod path) — probe it so a missing ruff/pyright/pytest is an actionable env error
+        # (exit 2), not a cryptic "No module named ..." check failure.
+        probe = subprocess.run(
+            [str(venv_python()), "-c", "import ruff, pytest, pyright"],
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode != 0:
+            problems.append(
+                "backend dev toolchain missing from the venv (ruff/pyright/pytest — the [dev] extra)\n"
+                f'      fix: {venv_python()} -m pip install -e "{BACKEND}[dev]"'
+            )
     if shutil.which("npm") is None:
         problems.append("npm not on PATH\n      fix: install Node.js (https://nodejs.org)")
     if not (FRONTEND / "node_modules").exists():

@@ -49,7 +49,8 @@ sets up the two-instance topology over SSH. Full runbook: [`deploy/linux/README.
 
 **From source, by hand:**
 ```bash
-cd backend && python3 -m venv .venv && .venv/bin/pip install -e .   # Windows: .venv\Scripts\python.exe
+cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # Windows: .venv\Scripts\python.exe
+# ([dev] = the tools/check.py toolchain: ruff/pyright/pytest — needed to commit (git hooks); drop it to only *run* the app)
 cd ../frontend && npm install
 # backend (Windows: do NOT pass --reload — see note), then frontend:
 .venv/bin/uvicorn app.main:app --port 5433        # http://127.0.0.1:5433

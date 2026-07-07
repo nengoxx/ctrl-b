@@ -41,9 +41,11 @@ if (Test-Path $VPY) {
   Write-Host "-- creating backend venv with Python $($py.ver)"
   & $py.exe @($py.args) -m venv $VENV
 }
-Write-Host "-- installing backend deps (pip install -e backend)"
+# [dev] = the tools/check.py toolchain (ruff/pyright/pytest) — this box is the dev machine, and the
+# git-hook gate (AGENTS.md §3) runs check.py on every commit/push, so the venv must carry it.
+Write-Host "-- installing backend deps (pip install -e backend[dev])"
 & $VPY -m pip install --upgrade pip --quiet
-& $VPY -m pip install -e (Join-Path $ROOT "backend") --quiet
+& $VPY -m pip install -e "$(Join-Path $ROOT 'backend')[dev]" --quiet
 
 # Frontend deps + production build (the start script serves this dist).
 Push-Location (Join-Path $ROOT "frontend")
