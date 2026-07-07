@@ -1,7 +1,9 @@
 # Code-quality harness — the standard for keeping ctrl-b clean
 
 **Status: DEFINED (2026-07-01, deep-audited + caveat-verified). Locked as [DECISIONS D33](./DECISIONS.md#d33).
-Rollout sliced in [`PRE_DEPLOY.md`](./PRE_DEPLOY.md) §1.** This doc is the durable *reference* for how we
+Rollout sliced in [`PRE_DEPLOY.md`](./PRE_DEPLOY.md) §1. Independently audited 2026-07-07 —
+[`QH_AUDIT.md`](./QH_AUDIT.md) §R/§R-2, verdict GO (QH-1…16 fixed; this doc is the owner of the
+gate's command list and test counts).** This doc is the durable *reference* for how we
 guarantee code quality: the layers, the convention picked for each, the single runner, the known caveats +
 their mitigations, and the adoption/governance rules. It does **not** duplicate the step-by-step rollout —
 that lives in `PRE_DEPLOY.md` §1 (each tool = its own slice with a pre-flight + review pause).

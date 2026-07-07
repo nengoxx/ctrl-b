@@ -64,7 +64,8 @@ authentication layer first.
 ### 2.2 Typed-action privilege gate
 Execution does not happen via arbitrary strings; it happens via **named, allowlisted actions** (`wake_host`,
 `shutdown_host`, `restart_service`, …) registered in the tool registry (`core/tool.py`). Every call passes a
-pure decision function, **`core/permissions.py` `decide(spec, privilege)`** → `ALLOW | CONFIRM | DENY`:
+pure decision function, **`core/permissions.py` `decide(spec, privilege)`** → `ALLOW | CONFIRM | DENY`
+(this table is a security-audience view of the gate — the code + `DESIGN.md` §3 are the source of truth):
 
 | Condition | Decision |
 |---|---|

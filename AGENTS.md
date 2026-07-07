@@ -46,7 +46,7 @@ backend/                FastAPI + Uvicorn service (port 5433). Layered:
   app/api/              FastAPI routers (JSON + SSE)
   app/config.py         config.yaml/.env loading; _PROJECT_ROOT = repo root; CTRLB_HOME relocates data
   app/main.py           lifespan (db) + StaticFiles serving frontend/dist + SPA fallback
-  tests/                pytest (254) — conftest auto-isolates CTRLB_HOME; temp configs via CTRLB_CONFIG/CTRLB_DB
+  tests/                pytest (count: QUALITY.md) — conftest auto-isolates CTRLB_HOME; temp configs via CTRLB_CONFIG/CTRLB_DB
   pyproject.toml        editable install (pip install -e .)
 frontend/               React 19 + TS + Vite 7 PWA. store/ hooks/ components/ tabs/ lib/ theme-engine/ themes/
 docs/                   HANDOFF (start here) · DECISIONS · ARCHITECTURE · DESIGN · SPEC · ROADMAP · TODO · THEME_ENGINE · audits (UI_AUDIT · SYSTEM_AUDIT · AGENT_CHAT_AUDIT) · …
@@ -87,7 +87,7 @@ cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
 - **One-command runners:** `deploy/windows/start.cmd` (Windows) · `deploy/linux/run.sh [prod|dev]`
   (manual) · `python deploy/bootstrap.py` (Linux server, systemd + HTTPS). See [`deploy/README.md`](./deploy/README.md).
-- **Tests:** from `backend/`, `.venv/Scripts/python.exe -m pytest -q` (254). Frontend: `npm test`
+- **Tests:** from `backend/`, `.venv/Scripts/python.exe -m pytest -q`. Frontend: `npm test`
   (vitest) · `npm run test:e2e` (playwright) · `npm run build`.
 - **Quality harness:** one command answers "is the repo green?" — **`python tools/check.py`** (runs
   everything in parallel: BE `ruff` lint+format · `pyright` (type check) · `pytest`; FE `npm run
@@ -117,8 +117,9 @@ Streaming is **SSE**. `uvicorn` serves the API and the built `frontend/dist` (SP
 `docs/ARCHITECTURE.md` + `docs/DESIGN.md`.
 
 **OS-agnostic invariant.** Branch on the managed **host's** `os_type` (ping/SSH command shape), never on the
-*server's* OS. The only legitimate server-OS branch is the local ping syntax (`fleet._ping_cmd`). See
-`docs/ARCHITECTURE.md §6`.
+*server's* OS. Server-OS branches are a **closed allowlist** (`fleet._ping_cmd` ping syntax · `run_shell`'s
+per-OS shell · `memory._fsync_dir` no-op · `tools/check.py`), pinned by `test_arch_invariants_qh9.py`. See
+`docs/ARCHITECTURE.md §6` (the owner of this list).
 
 ---
 

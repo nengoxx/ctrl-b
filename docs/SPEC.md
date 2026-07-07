@@ -168,7 +168,8 @@ flowchart LR
     ev --> out["ToolResult → caller\n+ live SSE event feed"]
 ```
 
-**The gate truth table** (`core/permissions.decide` — pure, unit-tested):
+**The gate truth table** (`core/permissions.decide` — pure, unit-tested; source of truth = the code +
+`DESIGN.md` §3, this is the visual view):
 
 | Privilege ↓ / Tool → | LOW risk | MED risk | HIGH risk or `confirm=True` | `run_shell`* |
 |---|---|---|---|---|
@@ -510,7 +511,7 @@ ctrl-b/
 
 | Guardrail | Today ✅ | Target ▹ |
 |---|---|---|
-| One-command gate | `python tools/check.py` — parallel, grouped, run-all-and-summarise (ruff · pyright · pytest ×254 · tsc · eslint · prettier · vitest) | — |
+| One-command gate | `python tools/check.py` — parallel, grouped, run-all-and-summarise (ruff · pyright · pytest · tsc · eslint · prettier · vitest — counts live in QUALITY.md) | — |
 | Hooks | pre-commit `--fast` (instant) · pre-push full (native `core.hooksPath`) | — |
 | E2E | `--e2e`: Playwright flows + axe a11y as the **pre-deploy gate** | per-theme render matrix ◇ |
 | CI | none | ▹ SYS-14: GitHub Actions `check.py` on ubuntu (first Linux runs pre-emma) |

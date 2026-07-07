@@ -1,7 +1,8 @@
 # Research notes — dashboard_v2
 
-Framework/library survey backing the choices in `DECISIONS.md`. Versions are current as of
-**2026-05**; treat them as starting pins, bump at scaffold time. Sources at the bottom.
+Framework/library survey backing the choices in `DECISIONS.md`. Versions were current as of
+**2026-05** (pre-scaffold); the **live pin source of truth is now `backend/pyproject.toml` +
+`frontend/package-lock.json`** — this doc remains the *rationale* record. Sources at the bottom.
 
 ---
 
