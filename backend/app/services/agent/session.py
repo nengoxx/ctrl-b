@@ -20,6 +20,7 @@ Event contract (DESIGN §12 subset emitted here):
     tool.question    {callId, tool, question, args}   # A2: `question` builtin asks the owner (answer bubble)
     tool.result      {callId, result}         # bubble resolves
     compaction       {removed, summaryId, truncated}   # older turns folded into a summary (4e)
+    notice           {text}                    # breadcrumb (e.g. D18 inference failover)
     message.end      {messageId}
     error            {message, retryable}
     done             {threadId, state}        # completed | suspended | capped | error
