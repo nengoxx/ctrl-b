@@ -6,10 +6,10 @@
 > report lands in §R below (same doc, UI_AUDIT pattern). Finding ids are **QH-#** (nothing
 > collides with UI_AUDIT F# · SYSTEM_AUDIT SYS-# · AGENT_CHAT_AUDIT ACA-# · ISSUES ISS-#).
 >
-> **Status:** ✅ **DONE (2026-07-07)** — audit executed same day; report in **§R** below.
-> **Verdict: GO** — harness trustworthy for the emma deploy; 9 findings fixed in 7 commits
-> (QH-1…9), 2 owner decisions open (QH-10 conftest isolation guard · QH-11 `target_port` default),
-> known product-test gaps routed to their owning SYS-15/ACA slices. pytest 250 → **254**.
+> **Status:** ✅ **DONE (2026-07-07)** — audit executed same day; report in **§R**, the
+> owner-requested depth extension in **§R-2**. **Verdict: GO (reconfirmed by the deep pass)** —
+> findings **QH-1…16 all fixed/ruled** (QH-10/11 owner decisions landed same day); known
+> product-test gaps routed to their owning SYS-15/ACA slices. pytest 250 → **254**.
 > **Provenance:** adapted from an externally-drafted generic prompt; grounded in this repo's canon
 > so the session verifies-by-running instead of re-discovering, and cannot relitigate locked
 > decisions or build items owned by scheduled phases.
@@ -328,3 +328,62 @@ toolchain (QH-1)** — is fixed, plus the runner now self-diagnoses that state. 
 deploy time) + the SECURITY_MODEL §6 checklist against the live `config.yaml` (operational, at
 deploy). Post-deploy watch-list: QH-10/11 owner decisions, and the routed SYS-15/ACA test gaps —
 none deploy-blocking (they are product-code assurance gaps, not harness-trust gaps).
+
+---
+
+## §R-2 — Deep pass (2026-07-07, same day; owner-requested depth extension) — **GO reconfirmed**
+
+Beyond §R's run-side audit: red-path acceptance, three exhaustive read-side sweeps (doc↔code claim
+consistency · harness-config nuance · deploy kit), and adversarial checks on the §R guards
+themselves. Everything below is verified at file:line by the sweep records or by running.
+
+### R2-1. Red-path + deploy-kit runs (the checks green runs can't give)
+
+- **Pre-commit provably BLOCKS**: a staged ruff-violating file → commit exited 1 with both ruff
+  checks red (probe removed; tree clean). The gate's "red means stop" is now *demonstrated*, not
+  assumed.
+- **`bootstrap.py --dry-run` → exit 0** with the exact planned sequence (and re-verified after the
+  QH-13 reformat).
+- **Deploy-kit sweep: all 16 PRE-FLIGHT claims verified, zero deploy blockers.** Key nuances now on
+  record: prod's sparse set (`backend frontend deploy`, cone mode) excludes `.githooks/` + `tools/`,
+  so install.sh's hook enablement on prod is **inert** (git silently skips a missing hooksPath;
+  prod never commits — benign by design); dev's :5434 comes from a literal uvicorn `--port` flag in
+  the unit (config's 5433 can't collide); Vite dev has no `strictPort`; `run.sh dev` uses :5433
+  (standalone runner — don't run beside the prod service); `bootstrap.py` is source-side tailored
+  (WIN_CONFIG path, prefers a host literally named `emma`, generic linux fallback) while the target
+  side is genuinely any-user portable.
+
+### R2-2. New findings fixed (QH-12…16, one commit each)
+
+| # | Sev | Finding | Fix |
+|---|---|---|---|
+| **QH-12** | MED | `vitest.config.ts` + `playwright.config.ts` matched **no tsconfig include** — zero type gate (eslint linted them non-type-aware only). | added to `tsconfig.node.json`; typecheck green (`fc74110`) |
+| **QH-13** | **MED-HIGH** | **The quality runner itself escaped every gate**: pyright `include=["app"]` + ruff's backend-cwd never reached `tools/check.py` / `deploy/bootstrap.py` — first gated run found **10 latent lint errors** in bootstrap.py + both files failing format. | root `ruff.toml` (extends backend/pyproject — rules defined once) + check.py ruff rows pass `../tools ../deploy`; violations fixed (style-only; dry-run re-verified); pyright over the stdlib scripts evaluated + skipped (accepted) (`8b0cdbe`) |
+| **QH-14** | MED | Stale current-fact counts (SPEC "pytest ×229", four "250"s, "35 files") + QUALITY.md's table still said ESLint/Prettier "➕ add (1b)" + its deferred-lint section undercounted the 27 warnings (said 2 rules; it's 4: 11/8/2/6) + pyright's tests-not-checked scope was nowhere stated. | all reconciled (`0813a39`) |
+| **QH-15** | LOW | DESIGN said `anyio` task groups (code: `asyncio.TaskGroup`) ×3 · listed a batch wall-clock budget + spawn counter as built (only the per-child 180 s timeout exists) · sketch `max_iterations 12` vs code 16 · ARCHITECTURE §3 reversed field name. | corrected; unbuilt guards marked named-but-unbuilt (`91e0966`) |
+| **QH-16** | **MED-HIGH (reader-misleading)** | THEME_ENGINE §14.14 presented the user-selectable Composer Surface as built "concretely" — `composerVariants`/`composerLayoutSetting`/`ThemedComposer` **don't exist**, `SheetComposer` is a delegating stub on the D30 Root prop, and the only real multi-impl Surface is Fleet (Root-pinned). | dated **as-built status banner** marking §14.14's machinery as SPEC for the post-deploy Composer-Surface slice (owning phase + spec content untouched); D32 status gains a post-reorg layout note (`ae33f41`) |
+
+Also: **QH-9 hardened** — the OS-branch guard now catches aliased imports (`from platform import
+system` etc.), found by adversarially attacking my own §R guard (`956d483`).
+
+### R2-3. Verified-clean (the deep pass's negative results, so they aren't re-audited)
+
+eslint config faithful to QUALITY.md (type-checked on src · `disableTypeChecked` covers the
+non-project files · rules-of-hooks/static-components error · prettier last) · tsconfigs strict
+everywhere (tests/e2e relax only unused-symbol checks, documented) · `.prettierignore` excludes CSS
+(kit rule holds) · ruff = exactly the SYS-16 deferred baseline · CI cache claim literally true (all
+direct deps `==`-pinned; transitive drift possible — no lockfile — but doesn't affect the hash
+claim) · `.gitattributes` covers every CRLF-sensitive script incl. the extension-less hooks ·
+`.claude/settings.json` hooks have zero dangling references · vitest include is `tests/**/*.test.*`
+(a `.spec.` file under tests/ would be silently skipped — no such file; noted) · `_async.py` shared
+Runner confirmed with its known order-coupling trade-off (TRIAGE-2 owns the migration) · DESIGN §9
+config inventory = exactly the 15 real Settings sections · SPEC's 11 routers/SSE vocabulary/pillars
+/themes all match code · ARCHITECTURE §1's design-era paths are covered by its own reconciliation
+disclaimer (left as-is).
+
+### R2-4. Verdict
+
+**GO, reconfirmed.** The deep pass found no harness lie that a green run would hide from *this*
+deploy — the two highest-severity finds (QH-13, QH-16) were a coverage hole in the gate's own
+tooling and a doc misleading future theme work, both fixed. The README was rewritten the same day
+as the human-readable spec and cross-checked against these sweeps.
