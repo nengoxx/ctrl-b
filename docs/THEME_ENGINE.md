@@ -1342,15 +1342,24 @@ the semantic contract, so they're portable across any contract-providing theme.
    **This is Composer** (stacked/docked, user-picked).
 
 **Graduation path:** a surface starts Root-pinned and **graduates** to user-selectable the moment ≥2 variants + a user
-choice are actually wanted (the second-instance trigger). Composer just graduated (the `SheetComposer` build); **Fleet
-stays Root-pinned** — and cosmos's orbital fleet is therefore *untouched* — until a theme genuinely offers a fleet
-*choice*. Don't pre-graduate a surface that only has one variant per theme; the prop is correct and cheaper.
+choice are actually wanted (the second-instance trigger). Composer has graduated **on paper** (the decision is made;
+`SheetComposer` exists as a delegating stub); **Fleet stays Root-pinned** — and cosmos's orbital fleet is therefore
+*untouched* — until a theme genuinely offers a fleet *choice*. Don't pre-graduate a surface that only has one variant
+per theme; the prop is correct and cheaper.
 
-**The factory is concrete-first.** Today there is exactly ONE user-selectable surface (Composer), so its registry +
-resolver are built **concretely** in `kit/composer/` (`composerVariants` map + `composerLayoutSetting` spec +
-`ThemedComposer` resolver). The generic `createSurface(name, fallback)` factory below is the **extraction target for
-the SECOND user-selectable surface** (rule of three) — write it then, by factoring the two identical concretes, not
-speculatively for one:
+> **⚠ As-built status (QH deep pass, 2026-07-07):** the user-selectable machinery below is **SPEC, not yet
+> code**. In the tree today: `SheetComposer.tsx` is a stub that delegates straight to `KitComposer` ("selecting
+> it changes nothing yet" — its own header), variants are still injected via the **D30 Root prop**
+> (`DefaultRoot Composer={…}`), and `composerVariants` / `composerLayoutSetting` / `ThemedComposer` do not
+> exist. The only real multi-implementation surface is **Fleet** (KitFleet + CosmosFleet, Root-pinned). This
+> section is the blueprint the **post-deploy Composer-Surface slice** (HANDOFF final-touches / D34 sequencing:
+> hardening first, then Composer Surface) implements — nothing here is licensed to be assumed built until then.
+
+**The factory is concrete-first.** There will be exactly ONE user-selectable surface at first (Composer), so its
+registry + resolver get built **concretely** in `kit/composer/` (`composerVariants` map + `composerLayoutSetting`
+spec + `ThemedComposer` resolver). The generic `createSurface(name, fallback)` factory below is the **extraction
+target for the SECOND user-selectable surface** (rule of three) — write it then, by factoring the two identical
+concretes, not speculatively for one:
 ```ts
 // FUTURE (extract on the 2nd user-selectable surface, not before):
 const composer = createSurface<ComposerSlots>("composer", KitComposer); // name = the per-theme setting key
