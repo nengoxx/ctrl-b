@@ -272,7 +272,7 @@ Settings  inference{mode, local_url, cloud_url, cloud_key*, model},
 
           searxng{url, enabled},                              # web_search tool (D9)
           mcp_servers[]{name, transport(stdio|http), command, args, env*, url, headers*, enabled},  # D9
-          agent{default_agent, defaults{…AgentDef-shaped…}, global_subagent_limit, clamp_subagent_privilege,
+          agent{default_agent, defaults{…AgentDef-shaped…}, global_subagent_limit, subagent_clamp_privilege,
                 compaction{enabled, threshold_tokens, keep_last_messages, summarizer{mode,model}}},  # D10/D11/D15#1
           # NO agents[] list — agents are folder-only under $CTRLB_HOME/agents/<name>/ (D14/D15 #3)
           memory{enabled, user_profile_enabled, auto_write, memory_char_limit, user_char_limit},  # D14/D15 #4

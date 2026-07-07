@@ -297,7 +297,7 @@ class AgentDef(BaseModel):
     skills: list[str] | Literal["*"] = "*"
     privilege: Privilege = Privilege.CONFIRM
     memory: MemoryConfig
-    max_iterations: int = 12
+    max_iterations: int = 16
     max_subagent_depth: int = 2
     max_concurrent_subagents: int = 3      # per-agent fan-out cap (global cap lives in settings)
 
@@ -422,16 +422,17 @@ class Orchestrator(Protocol):
 - **Bounded parallelism.** A per-agent `max_concurrent_subagents` (e.g. 3) *and* a process-wide
   `global_subagent_limit` semaphore (in `Deps`) cap fan-out so the LLM backend, SSH, and the box
   aren't swamped. The global cap holds **across the whole tree**, not per level.
-- **Structured concurrency.** Children run inside one `anyio.create_task_group()`; the group is the
+- **Structured concurrency.** Children run inside one `asyncio.TaskGroup()` (stdlib structured
+  concurrency; the doc originally said anyio — the shipped code is asyncio); the group is the
   unit of lifetime — if the parent turn is cancelled (client disconnect; `/cancel` ▹ Slice 3) or one child
   raises a fatal error, the group **cancels all siblings** and unwinds cleanly (no orphans).
 - **Isolation + partial results.** Each child gets its **own ephemeral thread id + working set**;
   a child failing yields a `SubResult(state=ERROR)` rather than killing siblings (the group only
   hard-cancels on cancellation/fatal, not on a normal tool/agent error). The aggregate reports
   "3 ok, 1 failed" so the parent model can reason about it.
-- **Per-child timeout** + a **total wall-clock budget** for the batch.
-- **Budget guards** against explosion: the global semaphore + depth limit + an optional total
-  spawned-subagent counter per top-level turn bound the tree's size and token spend.
+- **Per-child timeout** (shipped: 180 s per child). *(A batch-total wall-clock budget and a
+  per-turn spawned-subagent counter are named-but-unbuilt guards — the shipped bounds are the
+  per-child timeout + depth cap + the two semaphores. QH deep pass 2026-07-07.)*
 - **Shared-resource fairness.** Subagents reuse the *same* fleet/SSH/ping semaphores from `Deps`,
   so 8 concurrent subagents can't open 8× the SSH connections — global limits are honored tree-wide.
 - **Deadlock avoidance.** The parent's **per-thread turn marker** (§10, ▹ ACA Slice 2) covers only
@@ -594,7 +595,7 @@ class Settings(BaseSettings):
 - **Per-thread serialization** ▹ *target (nothing built today — ACA-2; Slice 2 ships an interim
   409 turn-marker, Slice 5 the steer queue)*: a second message to a thread mid-turn is **queued**
   behind the active turn — no interleaved tool calls.
-- **Subagent concurrency**: parent fans out children inside one `anyio` task group (structured
+- **Subagent concurrency**: parent fans out children inside one `asyncio.TaskGroup` (structured
   concurrency) under a per-agent cap **and** a process-wide `global_subagent_limit` semaphore;
   children run on distinct ephemeral thread ids (so the parent's per-thread turn marker — ▹ Slice 2
   — can't deadlock the fan-out) and reuse the shared fleet/SSH/inference semaphores so global
@@ -758,7 +759,7 @@ registry/Protocol design rather than hoped for.
 
 - ✅ **Resolved — skill-selection**: shipped as `KeywordSkillSelector` (token overlap, model-agnostic);
   the `SkillSelector` Protocol keeps an LLM selector a drop-in. **Subagent orchestration**: shipped as
-  `ParallelOrchestrator` (anyio task group + semaphores).
+  `ParallelOrchestrator` (asyncio.TaskGroup + semaphores).
 - ✅ **Resolved — tokenizer**: a **heuristic char/4 estimate** is used for compaction budgeting (no
   model-specific tokenizer dep).
 - ✅ **Resolved — plan persistence**: the latest `task_plan` call **rides the message history** (no
