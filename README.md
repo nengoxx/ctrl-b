@@ -5,9 +5,9 @@ managing a personal fleet of PCs over LAN + Tailscale — driven from a phone-fi
 tool-using **LLM agent** (text or voice) that executes **typed, allowlisted actions** instead of
 raw shell.
 
-<div align="center">
-  <video src="https://github.com/user-attachments/assets/56b07460-1b58-47ea-aff3-6f06514aae74" width="400" controls muted></video>
-</div>
+<table align="center"><tr><td>
+<video src="https://github.com/user-attachments/assets/56b07460-1b58-47ea-aff3-6f06514aae74" controls muted></video>
+</td></tr></table>
 
 [![CI](https://github.com/nengoxx/ctrl-b/actions/workflows/ci.yml/badge.svg)](https://github.com/nengoxx/ctrl-b/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPLv3-blue.svg)](./LICENSE)
