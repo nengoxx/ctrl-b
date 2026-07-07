@@ -46,7 +46,7 @@ backend/                FastAPI + Uvicorn service (port 5433). Layered:
   app/api/              FastAPI routers (JSON + SSE)
   app/config.py         config.yaml/.env loading; _PROJECT_ROOT = repo root; CTRLB_HOME relocates data
   app/main.py           lifespan (db) + StaticFiles serving frontend/dist + SPA fallback
-  tests/                pytest (250) — use temp configs via CTRLB_CONFIG/CTRLB_DB
+  tests/                pytest (254) — conftest auto-isolates CTRLB_HOME; temp configs via CTRLB_CONFIG/CTRLB_DB
   pyproject.toml        editable install (pip install -e .)
 frontend/               React 19 + TS + Vite 7 PWA. store/ hooks/ components/ tabs/ lib/ theme-engine/ themes/
 docs/                   HANDOFF (start here) · DECISIONS · ARCHITECTURE · DESIGN · SPEC · ROADMAP · TODO · THEME_ENGINE · audits (UI_AUDIT · SYSTEM_AUDIT · AGENT_CHAT_AUDIT) · …
@@ -87,7 +87,7 @@ cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
 - **One-command runners:** `deploy/windows/start.cmd` (Windows) · `deploy/linux/run.sh [prod|dev]`
   (manual) · `python deploy/bootstrap.py` (Linux server, systemd + HTTPS). See [`deploy/README.md`](./deploy/README.md).
-- **Tests:** from `backend/`, `.venv/Scripts/python.exe -m pytest -q` (250). Frontend: `npm test`
+- **Tests:** from `backend/`, `.venv/Scripts/python.exe -m pytest -q` (254). Frontend: `npm test`
   (vitest) · `npm run test:e2e` (playwright) · `npm run build`.
 - **Quality harness:** one command answers "is the repo green?" — **`python tools/check.py`** (runs
   everything in parallel: BE `ruff` lint+format · `pyright` (type check) · `pytest`; FE `npm run

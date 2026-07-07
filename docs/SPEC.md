@@ -494,7 +494,7 @@ activity, EventBus, 15 s keepalive) with client auto-reconnect + reconcile.
 ctrl-b/
 ├── backend/
 │   ├── app/ {api, services(/actions, /agent), core, adapters, domain, config.py, db.py, main.py, runtime.py}
-│   ├── tests/               # 35 files, decision-pinned (test_*_d26 …) + drift guards
+│   ├── tests/               # 37 files + conftest, decision-pinned (test_*_d26 …) + drift guards
 │   └── pyproject.toml       # exact pins · ruff (py314) · pyright[nodejs]
 ├── frontend/
 │   ├── src/ {api, components, hooks, lib, store, tabs, theme(-engine)/{kit,…}, themes/{vapor,minimal,cosmos}}
@@ -510,7 +510,7 @@ ctrl-b/
 
 | Guardrail | Today ✅ | Target ▹ |
 |---|---|---|
-| One-command gate | `python tools/check.py` — parallel, grouped, run-all-and-summarise (ruff · pyright · pytest ×229 · tsc · eslint · prettier · vitest) | — |
+| One-command gate | `python tools/check.py` — parallel, grouped, run-all-and-summarise (ruff · pyright · pytest ×254 · tsc · eslint · prettier · vitest) | — |
 | Hooks | pre-commit `--fast` (instant) · pre-push full (native `core.hooksPath`) | — |
 | E2E | `--e2e`: Playwright flows + axe a11y as the **pre-deploy gate** | per-theme render matrix ◇ |
 | CI | none | ▹ SYS-14: GitHub Actions `check.py` on ubuntu (first Linux runs pre-emma) |

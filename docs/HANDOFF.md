@@ -33,7 +33,7 @@
 > doc-truth pre-landed `ee23209`; D35–D37 get drafted at each slice's design review; Slices 1–2 are
 > pre-deploy candidates, Slice 3+ post-deploy). A doc-consistency pass landed the same day (all claims
 > verified vs code, `9c2d2a6`): stale counts/statuses fixed, DESIGN §9/§12/§16 + the ARCHITECTURE endpoint
-> note corrected to code truth, status banners added. Note: **pytest is 250 now** (older "229" mentions
+> note corrected to code truth, status banners added. Note: **pytest is 254 now** (older "229"/"250" mentions
 > below are historical).
 >
 > **▶ FINAL TOUCHES before the deploy (a fresh session) — highest value first:**

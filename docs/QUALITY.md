@@ -35,13 +35,13 @@ Quality is not one linter — it is a set of complementary layers, each catching
 | Layer | Tool (the convention) | Catches | Have? |
 |---|---|---|---|
 | **FE type safety** | `tsc` **strict** (already on) | type errors, unused locals/params | ✅ |
-| **FE lint** | **ESLint** flat + **typescript-eslint `recommended-type-checked`** + `eslint-plugin-react-hooks` + `-react-refresh` | floating promises, misused async/await, unsafe `any`, hook-deps, rules-of-hooks, React-Compiler diags | ➕ add (1b) |
-| **FE format** | **Prettier** + `eslint-config-prettier` | style drift (deterministic) | ➕ add (1b) |
+| **FE lint** | **ESLint** flat + **typescript-eslint `recommended-type-checked`** + `eslint-plugin-react-hooks` + `-react-refresh` | floating promises, misused async/await, unsafe `any`, hook-deps, rules-of-hooks, React-Compiler diags | ✅ (1b) |
+| **FE format** | **Prettier** + `eslint-config-prettier` | style drift (deterministic) | ✅ (1b) |
 | **FE unit tests** | **Vitest** (D21) | logic regressions | ✅ |
 | **FE e2e / a11y** | **Playwright** + `@axe-core/playwright` (D24) | broken user paths, a11y | ✅ (Phase 9 wires the suite) |
 | **BE lint + format** | **ruff** (`E`/`F`/`I`, formatter) | style, imports, dead code | ✅ |
 | **BE type check** | **`pyright[nodejs]`** (pinned `==1.1.409`; `basic` → ratchet `strict`) | type errors across the FastAPI service | ✅ (1c) |
-| **BE tests** | **pytest** (250, temp-config safe) | backend logic | ✅ |
+| **BE tests** | **pytest** (254, temp-config safe — conftest isolation, QH-10) | backend logic | ✅ |
 | **CSS contracts** | **stylelint** (keyframe-prefix · anim budget · token-only color) | theme CSS invariants | ⏸ owned by the theme-engine hardening slice (post-deploy) |
 | **Runner** | one **`tools/check.py`** (stdlib chokepoint) + `npm run check-all` (FE) | "is the repo green?" in one command | ✅ (1a) |
 | **Enforcement** | native **`core.hooksPath=.githooks/`** → `check.py` (fast pre-commit · full pre-push) | stops a bad commit/push at the source | ✅ (1d) |
@@ -59,14 +59,18 @@ enforce CSS rules no JS linter has.
   **Caveats + mitigations:** (a) *perf* — type-checked linting runs a `tsc` build first; negligible for our
   128-file FE and it runs pre-push/CI, not per-keystroke; keep `tsconfig` includes narrow (already `src`).
   (b) *false positives* — `no-unnecessary-condition` can fire "always false"; tune to `warn`. (c) *config* —
-  non-project files (`vite.config.ts`, `eslint.config.js`, `tools/*.mjs`) need a `disableTypeChecked` override
-  or `projectService` errors on them. (d) *react-hooks flat-config* — the legacy `recommended` preset is
+  non-project files (`vite.config.ts`, `eslint.config.js`, `frontend/scripts/*.mjs`) need a `disableTypeChecked`
+  override or `projectService` errors on them. (d) *react-hooks flat-config* — the legacy `recommended` preset is
   array-format and **breaks flat config**; use **`reactHooks.configs['recommended-latest']`**. (e) pin
   `typescript-eslint` to a **TS-5.9-compatible** version.
 - **Frontend format = Prettier** + `eslint-config-prettier` (turns off ESLint's formatting rules so they never
   fight). No material caveats. Lint and format stay separate concerns.
-- **Backend type check = `pyright[nodejs]` (official, pinned).** We have **no type checker today** — the biggest
-  quality gap (ruff does *not* type-infer). We use **official pyright installed via the `nodejs` extra**
+- **Backend type check = `pyright[nodejs]` (official, pinned).** We had **no type checker** — the biggest
+  quality gap (ruff does *not* type-infer). **Scope note (QH deep pass 2026-07-07):** pyright's
+  `include = ["app"]` means `backend/tests/` is deliberately NOT type-checked (warn-first baseline; revisit at
+  the `strict` ratchet), and the repo-root Python (`tools/check.py`, `deploy/bootstrap.py`) is covered by
+  **ruff only** (via the root `ruff.toml` that extends this config — QH-13); pyright over those stdlib scripts
+  was evaluated and skipped (low value). We use **official pyright installed via the `nodejs` extra**
   (`pip install "pyright[nodejs]"`), which uses `nodejs-wheel` for a **reliable, hermetic bundled-Node install**
   (no flaky first-run download) and is version-pinnable (`==1.1.x` / `PYRIGHT_PYTHON_FORCE_VERSION`). Chosen over
   **basedpyright** after the caveat audit: the fork's advantages (Pylance-grade extras) we don't need, while its
@@ -146,6 +150,12 @@ Two **react-hooks v7** rules are set to **`warn` (not `error`, not `off`)** in `
 `react-hooks/set-state-in-effect` and `react-hooks/refs`. This is a **deliberate deferral, not a false-positive
 dodge** (an earlier read wrongly called them false positives; the React docs confirm they flag *real*
 Rules-of-React patterns).
+
+**The full 27-warning accounting (QH deep pass 2026-07-07):** the gate's `27 warnings / 0 errors` actually
+spans **four** warn-level rules, not just the two above — `set-state-in-effect` **11** + `refs` **8** (the
+deferred pair) + `react-hooks/exhaustive-deps` **2** (preset default) + `react-refresh/only-export-components`
+**6** (preset default). All four are part of the same F13 checklist; `rules-of-hooks` and `static-components`
+stay `error`.
 
 **Why deferred (assessed thoroughly 2026-07-02, all ~19 sites reviewed):**
 - Every current hit is an **intentional, correct, concurrent-safe** pattern: "sync an editable draft from

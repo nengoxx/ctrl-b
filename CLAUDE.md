@@ -63,7 +63,7 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   worker uses an event loop that breaks `asyncio.create_subprocess_exec`, so `fleet.ping_host` returns
   empty output and every host shows offline. Linux/macOS reload is fine. (Documented in `README.md`
   + `docs/ARCHITECTURE.md` §6.)
-- Tests live in `backend/tests/`; run with the venv's `pytest` (250). The full gate
+- Tests live in `backend/tests/`; run with the venv's `pytest` (254). The full gate
   (`python tools/check.py` — ruff · pyright · pytest · FE check-all) is enforced by the git hooks
   (pre-commit `--fast` / pre-push full) **and** GitHub Actions CI on ubuntu-latest (SYS-14) — if
   you add code, add a minimal way to verify it. Never live-test config writes against the real
