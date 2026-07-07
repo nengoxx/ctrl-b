@@ -30,12 +30,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 >
 > **Next: the emma (Linux) deploy / v1 cutover (Phases 9–10)** — start at the HANDOFF top block →
 > `DEPLOY_EMMA.md`. **Theme Phase 11** (D34 Hardening slice v2 → Composer Surface) is **parked
-> post-deploy**. **Pending intake (2026-07-07, awaiting owner review — not yet phases):** the **ACA
-> chat-hardening plan** (`AGENT_CHAT_AUDIT.md`, Slices 0–8 — becomes a new TODO phase on approval) and
-> the `SYSTEM_AUDIT.md` **SYS-#** fixes (notably **SYS-13**, a live `fillComposer` bug, and **SYS-14**,
-> Linux CI as a pre-emma gate). **Still open (low / deferred):** QR-to-phone (`segno` dep, pending owner
-> OK); vector memory recall; ROADMAP E2 OpenAI facade; D19 voice streaming transports; UI_AUDIT F9/F13
-> (perf, until measured pressure).
+> post-deploy**. **Approved 2026-07-07 (owner):** the **ACA chat-hardening plan** = **Phase 12**
+> (`AGENT_CHAT_AUDIT.md` §5 is the spec; Slice 0 landed; Slices 1–2 pre-deploy candidates, 3+
+> post-deploy) and the `SYSTEM_AUDIT.md` **SYS** riders — **SYS-13** (live `fillComposer` bug) +
+> **SYS-14** (Linux CI) are Phase-9 pre-deploy items below. **Still open (low / deferred):**
+> QR-to-phone (`segno` dep, pending owner OK); vector memory recall; ROADMAP E2 OpenAI facade; D19
+> voice streaming transports; UI_AUDIT F9/F13 (perf, until measured pressure).
 
 ---
 
@@ -681,6 +681,13 @@ tools + confirm bubbles) are DONE.**
 - [x] Minimal smoke tests — **shipped 2026-07-02** as the full Playwright e2e suite
       (`frontend/e2e/{render,flows,a11y}.spec.ts` — desktop + Android viewport + axe WCAG A/AA),
       wired as the opt-in deploy gate `python tools/check.py --e2e` (PRE_DEPLOY step 5 / UI_AUDIT F24).
+- [ ] **SYS-13 fix (live bug, owner-approved 2026-07-07):** `fillComposer` → `setDraft(text)` + focus
+      (drop the DOM `.value` write that React's controlled composers swallow since F28) + the missing
+      jsdom regression test asserting the *store* draft + a confirm-bubble edit→send e2e line. Spec:
+      `SYSTEM_AUDIT.md` SYS-13.
+- [ ] **SYS-14 (pre-emma gate, owner-approved 2026-07-07):** GitHub Actions CI running
+      `python tools/check.py` on `ubuntu-latest` — the only way the code runs on Linux before Linux is
+      production. Spec: `SYSTEM_AUDIT.md` SYS-14.
 
 ## Phase 10 — Cutover
 
@@ -848,6 +855,38 @@ vapor's functionality restyled via the Kit + tokens.
 **Deferred within Phase 11 (don't build unless asked):** theme-switch `<link>` teardown (`@scope` makes coexisting
 bundles harmless); a non-4 tab set (a theme can declare its own nav, none needs it in v1); a multi-device write-conflict
 UI (LWW + reconcile suffices for one user).
+
+## Phase 12 — Chat hardening & adoption (ACA) — **APPROVED 2026-07-07 · spec = [`AGENT_CHAT_AUDIT.md`](./AGENT_CHAT_AUDIT.md) §5 (build against it, NOT this list)**
+
+Sequencing: *truth → hangs → integrity → durable turns → speed → steering → compaction v2 → routing →
+approvals*. **Slices 1–2 are small/safe pre-deploy candidates; Slice 3+ is post-deploy** (4/5 reshape the
+same event flow as 3 — don't reorder). Every slice ends with `python tools/check.py` + targeted pytest +
+an owner-review pause. **New D-entries (D35–D37) are drafted at each slice's design review, not
+retroactively.** The cross-slice contract (ACA §5) governs which slice may touch which seam
+(`_run_calls` internals · the per-thread turn marker · the append-only message log · suspension semantics).
+
+- [x] **Slice 0 — doc truth** (no behavior change) ✅ PRE-LANDED 2026-07-07 (`ee23209`): api/agent.py +
+      session.py docstrings → actual semantics; DESIGN ▹ target-design markers; MemGPT→Letta lineage notes.
+- [ ] **Slice 1 — hang-proofing & hardening batch** · M — MCP handshake/call deadline both transports
+      (ACA-3, incl. the stdio-`__aexit__` cleanup-hang nuance) · timeout-normalizer `None` guard (ACA-6) ·
+      backstop deadlines on SSH-backed actions + MCP/OpenAPI specs (ACA-7) · de-hardcode
+      `subagent_child_timeout_s` + skill-selector tunables (ACA-8) · confirm-token hygiene on re-mint
+      (ACA-9, owner call) · stall-guard call-sig (ACA-12) · malformed-args steering (ACA-13) · A8
+      context-size debug measurement.
+- [ ] **Slice 2 — turn integrity** · M — per-thread **turn marker** + 409s on every thread-mutating
+      endpoint (chat/resume/plan/apply/compact/exec; ACA-2 interim) · rediscovery gated on quiet
+      boundaries (ACA-17) · shielded-`finally` step persistence on cancel (ACA-1 scenario 2) · frontend
+      guards: `/clear` while streaming (ACA-10), plan/apply gating, `mode` on resume (ACA-16).
+- [ ] **Slice 3 — durable turns** (ACA-1 + A11) · L — **flagship; design review first → drafts D35.**
+      TurnRegistry + replayable per-turn event log (`turn_id:seq` cursor + snapshot fallback), SSE as
+      subscriber, explicit cancel + Stop button, `cancelled` marker.
+- [ ] **Slice 4 — interaction speed** · M — parallel read-only tool dispatch + per-call result streaming
+      (the one structural `_run_calls` refactor; ACA-4) · `notice` in buffered mode (ACA-11) · A2 riders.
+- [ ] **Slice 5 — steering queue** (A1) · M — after Slice 3; upgrades the Slice-2 409 for *messages*
+      (queue-then-inject); the 409 stays for plan/apply/compact collisions.
+- [ ] **Slice 6 — compaction v2** (A3, absorbs ACA-5 riders) · M–L — design review first.
+- [ ] **Slice 7 — model routing & retry visibility** (A4, A6, A7) · M — design review first (new D-entry).
+- [ ] **Slice 8 — approvals evolution** (A5) · M — aligns with ROADMAP privilege levels (D16/A1).
 
 ---
 

@@ -24,15 +24,17 @@
 >   boundary** (eliminated the `_RISK` triplication; fail-fast on a bad config value; verified live against the real
 >   `config.yaml`). Full context: memory [[predeploy-hardening-progress]] + `git log`.
 >
-> **📋 2026-07-07 — the system was independently specified + audited (3 new docs, ALL AWAITING OWNER
-> REVIEW):** [`SPEC.md`](./SPEC.md) (the visual one-stop system spec) · [`SYSTEM_AUDIT.md`](./SYSTEM_AUDIT.md)
-> (architecture audit, SYS-# — **one live bug: SYS-13**, `fillComposer` vs the F28 controlled composers, breaks
-> confirm-bubble *edit* + code-block *send-to-composer* on all themes; **SYS-14** flags Linux CI as a pre-emma
-> gate) · [`AGENT_CHAT_AUDIT.md`](./AGENT_CHAT_AUDIT.md) (chat audit + 8-agent comparative analysis + the ACA
-> improvement plan, Slices 0–8; its D35–D37 get drafted into DECISIONS **on approval**, not before). A
-> doc-consistency pass landed the same day (verified vs code): stale counts/statuses fixed, DESIGN §9/§12/§16
-> + the ARCHITECTURE endpoint note corrected to code truth, status banners added. Note: **pytest is 250 now**
-> (older "229" mentions below are historical).
+> **📋 2026-07-07 — the system was independently specified + audited, and the owner REVIEWED + APPROVED
+> the results the same day:** [`SPEC.md`](./SPEC.md) (the visual one-stop system spec; pillars P1–P10) ·
+> [`SYSTEM_AUDIT.md`](./SYSTEM_AUDIT.md) (architecture audit, SYS-# — **one live bug: SYS-13**, `fillComposer`
+> vs the F28 controlled composers, breaks confirm-bubble *edit* + code-block *send-to-composer* on all themes;
+> **SYS-13 fix + SYS-14 Linux CI are now Phase-9 pre-deploy items**) · [`AGENT_CHAT_AUDIT.md`](./AGENT_CHAT_AUDIT.md)
+> (chat audit + 8-agent comparative analysis + the **ACA plan — APPROVED, now TODO Phase 12**; Slice 0
+> doc-truth pre-landed `ee23209`; D35–D37 get drafted at each slice's design review; Slices 1–2 are
+> pre-deploy candidates, Slice 3+ post-deploy). A doc-consistency pass landed the same day (all claims
+> verified vs code, `9c2d2a6`): stale counts/statuses fixed, DESIGN §9/§12/§16 + the ARCHITECTURE endpoint
+> note corrected to code truth, status banners added. Note: **pytest is 250 now** (older "229" mentions
+> below are historical).
 >
 > **▶ FINAL TOUCHES before the deploy (a fresh session) — highest value first:**
 > 1. **The deploy pre-flight IS the real gate.** Run `python tools/check.py --e2e` (must be GREEN), then verify the
@@ -136,8 +138,8 @@ fidelity mandate (D7) still governs every new component.**
 5. `RESEARCH.md` — library/version pins + sources (incl. the secure-context/mic analysis).
 6. `ROADMAP.md` — post-v1 features + the v1 seams to build now so they slot in.
 7. `SPEC.md` — the visual one-stop system spec (C4 diagrams, flows, inventories). The audit
-   ledgers: `UI_AUDIT.md` (F#) · `SYSTEM_AUDIT.md` (SYS-#) · `AGENT_CHAT_AUDIT.md` (ACA-# + plan).
-   SPEC + the two 2026-07-07 audits are awaiting owner review.
+   ledgers: `UI_AUDIT.md` (F#) · `SYSTEM_AUDIT.md` (SYS-#) · `AGENT_CHAT_AUDIT.md` (ACA-# + the
+   plan, owner-approved 2026-07-07 = TODO Phase 12).
 
 The **visual source of truth** is `../design/prototypes/variations/vapor.html` (mobile-first
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +
