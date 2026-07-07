@@ -42,8 +42,10 @@
 >    rehearsal) · CI green · hooks verified. 9 findings fixed in 7 commits (top: QH-1 — install.sh
 >    enabled the hook gate without installing the `[dev]` toolchain, so emma dev-tree commits would
 >    have died; QH-2 — the `npx playwright install` deploy-gate prereq was documented nowhere) + 4
->    new drift-guards (pytest 250→**254**). Open owner decisions: **QH-10** conftest auto-isolation
->    fixture · **QH-11** `target_port` default 5173→5433. **Nothing blocks the deploy.**
+>    new drift-guards (pytest 250→**254**). The two owner decisions were ruled + landed same day:
+>    **QH-10** conftest auto-isolation fixture (pytest-only) · **QH-11** `target_port` default →
+>    **5433** (override via config.yaml or `CTRLB_TAILSCALE__TARGET_PORT` in `.env`). **Nothing
+>    blocks the deploy.**
 > 1. **The deploy pre-flight IS the real gate.** Run `python tools/check.py --e2e` (must be GREEN), then verify the
 >    owner-managed **`config.yaml`** against the `SECURITY_MODEL.md` safe-defaults checklist (bind `127.0.0.1`, debug
 >    off, Tailscale-Serve-HTTPS the only ingress, `shell.*_exec` toggles as intended, no secrets tracked) + run

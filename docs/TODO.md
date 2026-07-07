@@ -699,8 +699,9 @@ tools + confirm bubbles) are DONE.**
       enabled hooks without installing the `[dev]` toolchain — emma dev-tree commits would have
       died; QH-2 undocumented `npx playwright install` deploy-gate prereq) + 4 new drift-guard
       tests (SSE-event lockstep · config.example validity · OS-branch allowlist · core-layering);
-      pytest 250 → **254**. Open owner decisions: QH-10 (conftest auto-isolation) · QH-11
-      (`target_port` default). **Nothing blocks `DEPLOY_EMMA.md`.**
+      pytest 250 → **254**. Owner decisions ruled + landed same day: QH-10 conftest auto-isolation
+      (pytest-only) · QH-11 `target_port` default → 5433 (config/.env override documented).
+      **Nothing blocks `DEPLOY_EMMA.md`.**
 
 ## Phase 10 — Cutover
 
