@@ -36,6 +36,26 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 > **SYS-14** (Linux CI) are Phase-9 pre-deploy items below. **Still open (low / deferred):**
 > QR-to-phone (`segno` dep, pending owner OK); vector memory recall; ROADMAP E2 OpenAI facade; D19
 > voice streaming transports; UI_AUDIT F9/F13 (perf, until measured pressure).
+>
+> **⭐ GLOBAL ORDER OF WORK (cross-track, reviewed + pinned 2026-07-07 — each track's internal
+> order lives in its own doc; this is the interleave):**
+> 1. **Deploy first** — Phase 9's emma execution gates *everything* labeled post-deploy. ACA
+>    Slices 1–2 are *optional* pre-deploy candidates, **not** blockers (deploy-ready now).
+> 2. **Phase 10 cutover** — after deploy; independent of themes/ACA (run-alongside, then flip).
+> 3. **Theme track (Phase 11):** Hardening v2 → Composer Surface → **T5 step 0 (tab-body
+>    registry) → T5 frontier**. The D34 rule stands: nothing themeable ships before Hardening v2.
+>    *T-numbers are build-recipe labels, NOT gates* — T4 (cosmos) shipped before T2/T3; **T2
+>    phosphor + T3 observatory do not gate frontier** (T2 = anytime reskin; T3 waits on its
+>    prototype). The vapor assimilation ladder (§14.15.3) is opportunistic post-hardening, also
+>    not a frontier gate.
+> 4. **ACA track (Phase 12):** slices in their locked order, interleavable with the theme track
+>    (disjoint code territories: backend chat loop vs frontend theme engine). Riders that ride
+>    specific slices: SYS-16 ruff `ASYNC`+`B` ratchet **before the ACA build waves** · SYS-1
+>    `Database.transaction()` standalone-promptly or with Slice 2 · Compactor characterization
+>    tests **before Slice 6** · MCP/OpenAPI adapter tests ride Slice 1 · subagent-bounds tests
+>    ride Slice 3.
+> 5. **Frontier planning** (the writing of the plan) may proceed anytime — planning ≠ building;
+>    building waits for its slot in 3.
 
 ---
 

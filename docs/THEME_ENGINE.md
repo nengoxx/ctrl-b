@@ -1098,7 +1098,9 @@ minimal `tokens.css`/fonts/OKLCH matrix/Fleet, real data) → **T2 phosphor** (t
 observatory** (low-pri; FleetView + `present()`) → **T4 cosmos** (own Fleet Root/orbital + slide-panel HostDetail +
 `present()`) → **T5 frontier** (step 0 = the **tab-body registry** engine slice, ratified 2026-07-07 — §14.15.4; then own
 Fleet + **bespoke Agent** anims + bottom-sheet + assets + `present()`). D7 per theme;
-390px eyeball + pause after each.
+390px eyeball + pause after each. *(T-numbers are recipe labels, NOT gates — T4 shipped before
+T2/T3, and T2 phosphor / T3 observatory do not gate T5; the cross-track interleave is pinned in
+`TODO.md`'s header, 2026-07-07.)*
 
 ## 14.11 Cross-browser performance + robustness budget (RULE — every theme must pass) — owner directive 2026-06-26
 

@@ -5,6 +5,13 @@
 > **Hardening slice v2 ships first**, then this. Note: D34 renumbered the old TRIAGE-3 hardening
 > vocabulary this doc's §2.0 references (R3/R4/B2 → §14.15.1 items); read §14.15 for the current
 > hardening plan of record.
+>
+> **Downstream rider (ratified 2026-07-07 — THEME_ENGINE §14.15.4):** the **tab-body registry**
+> ships AFTER this plan, as frontier's step 0. Two interplay notes for that slice, not this one:
+> (1) this doc's "Fleet stays Root-pinned via the `Fleet=` prop" is true *at this plan's time* —
+> the registry later folds that prop into per-theme tab rows (still theme-pinned; NOT a Surface
+> graduation); (2) both slices touch `DefaultRoot` — the registry must preserve the
+> `ThemedComposer` resolver wiring this plan adds when it replaces the hardwired tab branch.
 
 **Read first:** `THEME_ENGINE.md §14.14` (the Swappable-Surfaces contract) + `DECISIONS.md D31` (the locked
 decision). This doc is the **executable build plan** for the first user-selectable Surface — the composer — with
