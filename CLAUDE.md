@@ -26,7 +26,7 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   |---|---|
   | [`docs/HANDOFF.md`](./docs/HANDOFF.md) | Current status + the locked next slice. **Always read first.** |
   | [`docs/DECISIONS.md`](./docs/DECISIONS.md) | Locked architectural choices (D1–D34) — don't relitigate. |
-  | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | System design: backend/frontend layers, deployment, security. |
+  | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | **Deployment profiles + `$CTRLB_HOME` + the OS-branch allowlist + the Vapor-fidelity mandate** (re-scoped 2026-07-07 — layers/data/API live in DESIGN/SPEC; its §1–§4 are pointer stubs). |
   | [`docs/DESIGN.md`](./docs/DESIGN.md) | Concrete code design: data structures, registry, agent loop, SSE wire protocol, extension cookbook. |
   | [`docs/SPEC.md`](./docs/SPEC.md) | Visual one-stop system spec (C4 diagrams, flows, inventories) — complements ARCHITECTURE/DESIGN; on conflict DECISIONS wins. |
   | [`docs/TODO.md`](./docs/TODO.md) | Phased checkbox plan — find the right phase, follow the slice. |
@@ -42,6 +42,11 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | [`docs/DEPLOY_EMMA.md`](./docs/DEPLOY_EMMA.md) | The emma (Linux) deploy runbook + topology (D32). |
   | [`docs/QUALITY.md`](./docs/QUALITY.md) | The code-quality harness (lint/format/typecheck/test + `check-all` + conventions). Read before touching tooling. |
   | [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md) | The trust boundary, privilege gate, confirm-tokens, secret handling + safe-defaults checklist. Read before touching anything that executes or handles secrets. |
+  | [`docs/COMPOSER_SURFACE_PLAN.md`](./docs/COMPOSER_SURFACE_PLAN.md) | The **parked** (post-deploy) executable plan for the Composer Surface slice — still current, not superseded. |
+
+  *Historical records (provenance, not live guidance): `COSMOS_HANDOFF.md` (cosmos build record —
+  live learnings lifted into THEME_ENGINE §14.11/§14.13; still the frontier precedent),
+  `AUDIT_settings.md`, `REORG_PLAN.md`, `external_audit/` (frozen pre-reorg audits).*
 
   When designing a new feature, the canonical flow is: **HANDOFF (where we are) → ROADMAP (is this listed? what seams already exist?) → DECISIONS (any locked choice that constrains it?) → DESIGN/ARCHITECTURE (how does it slot in?) → TODO (which phase owns it? add the slice).** If a feature isn't in any of these, propose where it goes *before* coding.
 - The earlier prototype folders and the old Flask app are **archived** under `archive/` — reference

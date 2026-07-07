@@ -234,7 +234,7 @@ archive/     v0.1 Flask app, dead inference helpers, early UI prototypes
 | Read | For |
 |---|---|
 | [`docs/HANDOFF.md`](./docs/HANDOFF.md) | Living status + next steps — **start here** |
-| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) · [`docs/DESIGN.md`](./docs/DESIGN.md) · [`docs/SPEC.md`](./docs/SPEC.md) | System design → concrete code design (data structures, agent loop, SSE wire protocol, extension cookbook) → visual one-stop spec |
+| [`docs/DESIGN.md`](./docs/DESIGN.md) · [`docs/SPEC.md`](./docs/SPEC.md) · [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Concrete code design (data structures, agent loop, SSE wire protocol, extension cookbook) · verified as-built spec (C4 diagrams, inventories) · deployment profiles + OS invariants |
 | [`docs/DECISIONS.md`](./docs/DECISIONS.md) | Every locked architectural decision (D1–D34) with rationale |
 | [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md) | The trust boundary, gates, secret handling, safe-defaults checklist |
 | [`docs/THEME_ENGINE.md`](./docs/THEME_ENGINE.md) | The pluggable theme layer (tokens · Kit · Surfaces) |

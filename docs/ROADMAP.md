@@ -11,6 +11,12 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
 > number. They are a *different namespace* from `DECISIONS.md`'s **D#** entries, and the two collide
 > on D1/D2/D3 (e.g. **ROADMAP D3** = multi-homed host addressing; **DECISIONS D3** = the hybrid
 > execution model). When citing from another doc, always prefix: "ROADMAP D3" vs "DECISIONS D3".
+>
+> **Shipped since drafting** (carry inline ✅ markers below; listed here so the doc isn't mistaken
+> for a pure futures list): **A1** privilege levels (as the `decide()` gate + AgentDef privilege) ·
+> **A2** `question` kind · **C1** streaming `auto|on|off` (D17) · **D1** Tailscale Serve HTTPS ·
+> **D2** access panel/QR core · the **theme engine** (D28–D34; vapor/minimal/cosmos). Still future:
+> the rest — notably **ROADMAP D3** multi-homed addressing, A3 automations, B-series memory backends.
 
 ---
 

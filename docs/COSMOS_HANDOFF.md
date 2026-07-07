@@ -1,5 +1,13 @@
 # Cosmos theme — implementation handoff (C2a-fix → C2b → C3)
 
+> **📜 HISTORICAL RECORD (marked 2026-07-07, doc-consistency pass).** Cosmos shipped complete
+> (banner below); this doc is its build record. The reusable learnings were lifted into
+> `THEME_ENGINE.md` §14.11 (perf budget) + §14.13 (pre-flight, incl. the `BottomSheet` spec) — cite
+> those, not this. It stays valuable as the **frontier precedent**: cosmos deliberately built the
+> seams frontier reuses (`BottomSheet`, `present()`, `sheetSnap`, sheet-aware camera-lift). Only
+> the optional C4 backlog at the bottom is still open. Paths predate the repo reorg
+> (`prototypes/project/` → `design/prototypes/`).
+
 **Read this first, then the doc map below.** This is a focused handoff for the **cosmos** theme (the bespoke
 orbital/space theme). It assumes you've read `CLAUDE.md` + `AGENTS.md` + the canonical
 [`HANDOFF.md`](./HANDOFF.md).
