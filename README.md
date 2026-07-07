@@ -194,13 +194,117 @@ the systemd user units. Full runbook: [`deploy/linux/README.md`](./deploy/linux/
 ## Configuration
 
 Everything lives in one `config.yaml` (see [`config.example.yaml`](./config.example.yaml) — copy
-and fill in): `server` · `tailscale` · `inference` (local + cloud endpoints) · `agent`
-(compaction, subagent caps) · `agents[]` (definitions) · `tool_overrides` · `voice` · `embeddings`
-· `searxng` · `open_terminal` · `openapi_servers[]` · `mcp_servers[]` · `computers` (the fleet:
-per-host SSH creds, MAC, `os_type`, nested `services` with per-OS commands). The Conf tab edits it
-live with comments preserved and secrets masked. Any scalar can be overridden from `.env`:
-`CTRLB_<SECTION>__<KEY>=value` (env wins). Data location: set `CTRLB_HOME` (default: the repo
-root; servers use `~/.ctrl-b`).
+and fill in; every section is optional, built-in defaults apply). Two ways to edit it:
+
+- **The Conf tab** (recommended) — forms for every section, applied **live** (no restart), with
+  your hand-written comments preserved and secrets masked on read.
+- **By hand** — edit the YAML directly; the backend reads it at startup, so restart after.
+
+Any scalar can also be overridden from `.env` as `CTRLB_<SECTION>__<KEY>=value` — note the
+**double** underscore; env always wins over the file. Use it to keep a specific secret out of
+`config.yaml` (e.g. `CTRLB_INFERENCE__CLOUD_KEY=sk-...`) — structured values (host lists, server
+lists) can't be set this way. Data location: `CTRLB_HOME` (default: the repo root; servers use
+`~/.ctrl-b`).
+
+**One risk model everywhere.** Tools and integrations declare a `risk` of `low | med | high`:
+`low` runs immediately; `med`/`high` suspend into a confirm bubble (in both the Fleet UI and agent
+chat) before executing. Whether a given agent may even reach confirm-gated tools is set by its
+`privilege` (`readonly | confirm | auto_low | full`). When a `risk` knob appears below, that's
+what it means.
+
+### Adding a computer
+
+Add an entry under `computers:` (or use Conf → the fleet editor). Every field except `ip` is
+optional — what you omit simply disables that capability, it never errors:
+
+```yaml
+computers:
+  vega:
+    ip: 192.168.1.20
+    mac: "04:7c:16:fe:88:2a"    # omit → no Wake-on-LAN button for this host
+    ssh_username: nengo          # omit ssh_* → ping-only host (no shutdown/reboot,
+    ssh_password: changeme       #   no service start/stop — status card only)
+    ssh_port: 2222               # default 22
+    os_type: linux               # linux | windows — the OS of THIS host, not the server's
+```
+
+`os_type` is the managed host's OS; it selects which per-OS service command variant runs and the
+shutdown/reboot syntax. The server's own OS never matters. `ssh_password` is a secret: masked when
+the API reads it back, redacted from logs and tool output.
+
+### Adding a service
+
+Services nest under their host — there is no top-level service list:
+
+```yaml
+    services:
+      jellyfin:
+        kind: jellyfin           # optional free-text type label
+        port: 8096               # TCP-probed each poll → the online/offline dot;
+                                 #   omit → liveness just follows the host being up
+        path: /web               # optional — the row links to http://<ip>:<port><path>
+        cmd:                     # per-OS commands; ONLY the host's os_type variant is used
+          start:   {linux: "sudo systemctl start jellyfin"}
+          stop:    {linux: "sudo systemctl stop jellyfin"}
+          restart: {linux: "sudo systemctl restart jellyfin"}
+```
+
+Liveness is **derived, never stored** — the port probe is the truth. A service with no `cmd` shows
+status + link only (no control buttons); a missing individual command yields a clean "no command
+configured" message instead of an error.
+
+### Chat, voice & embeddings endpoints
+
+All model traffic speaks the **OpenAI-compatible** API, so anything that serves it works:
+
+- **`inference`** — two chat backends, `local` (e.g. llama.cpp — needs no `api_key`) and `cloud`
+  (e.g. OpenRouter); `default_mode` picks which one new messages use, and the composer prefixes
+  `/local` / `//cloud` switch per-message. Keep `request_timeout_s` generous — thinking models
+  cold-load slowly.
+- **`voice`** — `stt` and `tts` blocks, each with a `primary` + `fallback` endpoint
+  (`base_url` / `api_key` / `model`, plus `voice` for TTS). The mic needs a secure context:
+  front the app with HTTPS (`tailscale serve --bg --https=443 5433`).
+- **`embeddings`** — one `/v1/embeddings` endpoint; powers vector memory / semantic search.
+
+### Connecting MCP servers
+
+List them under `mcp_servers:`; each server's tools are discovered and merged into the agent's
+toolset as `mcp__<server>__<tool>`. Both transports are supported:
+
+```yaml
+mcp_servers:
+  - name: web-tools
+    transport: streamable_http   # remote server: url (+ optional headers for auth)
+    url: http://192.168.1.160:3003/mcp
+    risk: med                    # gates ALL of this server's tools
+  - name: filesystem
+    transport: stdio             # local subprocess: command + args (+ optional env)
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
+    risk: high
+```
+
+Two things worth knowing: `risk` is **per-server, not per-tool** — `med`/`high` means the agent
+confirms before *every* call to that server, `low` lets its tools auto-run (only for servers you
+trust). And a down server is simply skipped (its tools are absent that run) — it never blocks
+startup. Saving from the Conf tab re-discovers tools live.
+
+### OpenAPI / REST tool servers
+
+The HTTP sibling of MCP (`openapi_servers:`), for Open WebUI "tool servers" or any service with an
+OpenAPI doc: point `base_url` at the service (the spec is fetched from `/openapi.json`, or set
+`spec_url` explicitly) and each operation becomes a tool `api__<server>__<operationId>`. GET/HEAD
+operations always auto-run; mutating verbs use the server's `risk` (default `med` → confirm).
+`include: [opId, ...]` optionally allowlists operations.
+
+### Other integrations
+
+| Block | What / the gotcha |
+|---|---|
+| `searxng` | Web search for the agent. The instance **must enable the JSON format** in its `settings.yml` (`search: { formats: [html, json] }`) — stock SearXNG serves HTML only and `web_search` will say so. |
+| `open_terminal` | An open-webui/open-terminal server — a Bearer-auth remote shell + file API for the agent. Risk is per-operation: reads auto-run, `exec_risk`/`write_risk` default `high` — it's arbitrary remote shell, keep them gated. |
+| `tailscale` | The Conf → Access HTTPS toggle. `serve` only, never Funnel — nothing public, by construction. |
+| `agents[]` / `agent` / `tool_overrides` | Alternate agent definitions (model + prompt + tools + privilege), the runtime knobs (compaction, subagent caps, skills dir), and per-tool description/access overrides — commented examples in [`config.example.yaml`](./config.example.yaml) cover these. |
 
 ## Quality harness
 
