@@ -759,8 +759,10 @@ class AgentSession:
         (C1): not executed, the prior result echoed back with a steering note — this both kills a
         weak model's spiral and is the safe choice for a mutating duplicate. Returns
         `(events, suspended, made_progress)`; `made_progress` is False when every call was a
-        suppressed repeat (so `_drive` can count a stall). Tool execution is fast (local ping/SSH),
-        so a step's results are batched here while the slow model call streams live."""
+        suppressed repeat (so `_drive` can count a stall). A step's calls run serially and their
+        results are batched until the step ends — fine for quick local tools (ping/SSH), but one
+        slow call (web_search, MCP, terminal, subagents) holds the whole batch (ACA-4; per-call
+        streaming + parallel dispatch is ACA Slice-4 target design)."""
         events: list[AgentEvent] = []
         result_parts: list[ToolResultPart] = []
         suspended = False

@@ -297,6 +297,8 @@ and per-OS service commands are net-new (additive, optional).
 > (FTS5 over `messages`, redacted, global) is the recall tier. The **vector** store (the SQLite
 > `memory` table + embeddings client) is the later "both" mode. See **DECISIONS.md D14 + D15 #4–#7**;
 > the `MemoryProvider` Protocol below is still the seam, with `FileMemoryProvider` as the v1 impl.
+> *(Pattern lineage: MemGPT → Letta memory blocks; "Hermes-style" names the implementation we
+> mirror, not the pattern's originator — ACA §0.)*
 
 Memory is a **`MemoryProvider` interface** (`load_context()`, `remember()`, `forget()`, `list()`)
 so the backend is **selectable in settings**, not hardcoded (ROADMAP B1):

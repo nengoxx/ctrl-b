@@ -2,9 +2,12 @@
 
 `POST /api/agent/chat` streams the turn as SSE (sse-starlette) using the same wire format as the
 events feed. It creates a thread on first message (so the client can start with no thread), emits a
-`thread` event up front carrying the id, then relays `AgentSession.run_turn`'s events. The turn keeps
-running server-side even if the client disconnects mid-stream — the assistant message is persisted
-regardless (DESIGN §5.3), so a reconnect re-reads it via `GET /api/threads/{id}/messages`.
+`thread` event up front carrying the id, then relays `AgentSession.run_turn`'s events. Turn lifetime
+is tied to the stream: on client disconnect sse-starlette cancels the generator, cancelling the
+in-flight step with it — completed steps are already persisted, so a reconnect re-reads them via
+`GET /api/threads/{id}/messages`. Buffered mode (D17 `stream:false`) runs the whole turn in the
+handler and survives disconnects. Server-owned durable turns (disconnect-proof streaming, replay,
+explicit cancel) are target design: AGENT_CHAT_AUDIT ACA-1 → Slice 3 (D35 proposed).
 """
 
 from __future__ import annotations

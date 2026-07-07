@@ -13,9 +13,10 @@ sketch is a summary. Python 3.14+, Pydantic v2, FastAPI. Read alongside `ARCHITE
 > shipped tree is leaner (inference is an *adapter*, the loop lives in `session.py` not a `runner.py`,
 > no `tools/`/`voice.py`/`automations.py`/`notify/`/`memory/` yet). Conceptual designs (capability
 > model, loop state machine) remain accurate — but parts of **§10** (per-thread queueing, `/cancel`)
-> and **§12** (event `id:` / `Last-Event-ID` replay) are **target design, not yet built**; see
-> `AGENT_CHAT_AUDIT.md` ACA-1/ACA-2 (fix plan: ACA Slices 2/3/5). The §12 *event inventory* is the
-> shipped contract (reconciled against `session.py` 2026-07-07).
+> and **§12** (event `id:` / `Last-Event-ID` replay) are **target design, not yet built** — each is
+> marked **▹** inline (ACA Slice 0); see `AGENT_CHAT_AUDIT.md` ACA-1/ACA-2 (fix plan: ACA Slices
+> 2/3/5). The §12 *event inventory* is the shipped contract (reconciled against `session.py`
+> 2026-07-07).
 
 ---
 
@@ -368,8 +369,9 @@ Loop responsibilities, in order, per iteration:
 ### 5.3 Suspension & resumption (the nuance that makes it robust)
 
 A turn can **suspend** (awaiting confirm or an answer). The session state persists in the DB, so:
-- The SSE stream can drop and **reconnect**; the client re-subscribes and replays from the last
-  event id.
+- ▹ *Target (ACA Slice 3/5):* the SSE stream can drop and **reconnect**, replaying from the last
+  event id. *Today:* no event ids are emitted and a dropped stream cancels the in-flight step
+  (ACA-1); persisted state re-reads via `GET /api/threads/{id}/messages`.
 - The user can navigate away / close the PWA; the pending state lives in the thread.
 - Resumption is a normal API call (`POST /threads/{id}/resume` with the confirm-token or the
   answer) that re-enters `run_turn` from the suspended point.
@@ -421,7 +423,7 @@ class Orchestrator(Protocol):
   `global_subagent_limit` semaphore (in `Deps`) cap fan-out so the LLM backend, SSH, and the box
   aren't swamped. The global cap holds **across the whole tree**, not per level.
 - **Structured concurrency.** Children run inside one `anyio.create_task_group()`; the group is the
-  unit of lifetime — if the parent turn is cancelled (client disconnect / `/cancel`) or one child
+  unit of lifetime — if the parent turn is cancelled (client disconnect; `/cancel` ▹ Slice 3) or one child
   raises a fatal error, the group **cancels all siblings** and unwinds cleanly (no orphans).
 - **Isolation + partial results.** Each child gets its **own ephemeral thread id + working set**;
   a child failing yields a `SubResult(state=ERROR)` rather than killing siblings (the group only
@@ -432,9 +434,9 @@ class Orchestrator(Protocol):
   spawned-subagent counter per top-level turn bound the tree's size and token spend.
 - **Shared-resource fairness.** Subagents reuse the *same* fleet/SSH/ping semaphores from `Deps`,
   so 8 concurrent subagents can't open 8× the SSH connections — global limits are honored tree-wide.
-- **Deadlock avoidance.** The parent's **per-thread lock** (§10) is held only for the *parent's*
-  thread; children use distinct thread ids, so spawning + awaiting children never contends with the
-  parent's own lock. The parent `await`s the task group without holding any lock a child needs.
+- **Deadlock avoidance.** The parent's **per-thread turn marker** (§10, ▹ ACA Slice 2) covers only
+  the *parent's* thread; children use distinct thread ids, so spawning + awaiting children never
+  contends with it. The parent `await`s the task group without holding anything a child needs.
 - **Streaming.** By default each child surfaces a single summarized `SubResult`; a verbose mode can
   nest child events under a `subagent` SSE channel (off by default to keep the UI legible).
 
@@ -467,6 +469,9 @@ path → identical downstream handling. Worst case it degrades to draft-into-bub
 ## 6. Memory (D14/D15 — Hermes file model)
 
 > Replaces the earlier none/file/vector sketch. v1 = **file-based, Hermes-shaped** (D14, D15 #4).
+> *Pattern lineage:* the cap-usage headers / `§`-entry / self-curated-file patterns originate in
+> **MemGPT (arXiv 2310.08560) → Letta memory blocks**; **Hermes Agent** is the implementation style
+> we mirror, not the originator (ACA §0 attribution correction).
 
 ```python
 class MemoryProvider(Protocol):
@@ -586,16 +591,20 @@ class Settings(BaseSettings):
   host can't stall the fleet. Results cached briefly (`poll_seconds`) so N clients share one sweep.
 - **Blocking libs** (paramiko, wakeonlan, `subprocess`): `run_in_executor` / `anyio.to_thread`.
   `run_shell` uses `asyncio.create_subprocess_exec` with a kill-on-timeout.
-- **Per-thread serialization**: a second message to a thread mid-turn is **queued** behind the
-  active turn (one lock per thread id) — no interleaved tool calls.
+- **Per-thread serialization** ▹ *target (nothing built today — ACA-2; Slice 2 ships an interim
+  409 turn-marker, Slice 5 the steer queue)*: a second message to a thread mid-turn is **queued**
+  behind the active turn — no interleaved tool calls.
 - **Subagent concurrency**: parent fans out children inside one `anyio` task group (structured
   concurrency) under a per-agent cap **and** a process-wide `global_subagent_limit` semaphore;
-  children run on distinct ephemeral thread ids (so the parent's per-thread lock can't deadlock the
-  fan-out) and reuse the shared fleet/SSH/inference semaphores so global limits hold tree-wide.
+  children run on distinct ephemeral thread ids (so the parent's per-thread turn marker — ▹ Slice 2
+  — can't deadlock the fan-out) and reuse the shared fleet/SSH/inference semaphores so global
+  limits hold tree-wide.
   Cancelling the parent cancels the whole subtree. (Full nuances in §5.5.)
 - **SQLite**: WAL + single write-lock (§8).
-- **Cancellation**: each turn/tool runs in an `anyio.CancelScope`; client disconnect or a
-  `POST /threads/{id}/cancel` cancels cleanly, persisting a `cancelled` marker.
+- **Cancellation** ▹ *target (ACA Slice 3, D35 proposed)*: each turn/tool runs in an
+  `anyio.CancelScope`; client disconnect or a `POST /threads/{id}/cancel` cancels cleanly,
+  persisting a `cancelled` marker. *Today:* disconnect just cancels the SSE generator mid-step;
+  there is no cancel endpoint and no `cancelled` marker (ACA-1).
 
 ---
 
@@ -636,8 +645,10 @@ Plan updates have **no dedicated event** — they ride the `task_plan` tool's `t
 edits go through `POST /api/agent/plan`). This inventory mirrors `session.py`'s emitter docstring —
 keep the two in lockstep when adding events.
 
-Every event carries a monotonic `id:` so reconnect uses `Last-Event-ID` to **replay** missed
-events. The same bus powers `GET /api/events/stream` (fleet activity).
+▹ *Target (ACA Slice 3/5, D35 proposed):* every event carries a monotonic id (app-level
+`turn_id:seq` cursor) so reconnect **replays** missed events. *Today:* no `id:` field is emitted —
+a dropped chat stream is not replayable (ACA-1). `GET /api/events/stream` (fleet activity) is a
+separate feed off the EventBus.
 
 ---
 
@@ -698,7 +709,8 @@ privilege → gated calls hit notify-park/fallback → results to a thread + Eve
   tool error-result both normalized; `max_iterations` cap → graceful stop; **context overflow
   mid-turn** → compact then retry once; streaming-unsupported backend → buffered fallback; backend
   down → bounded retry then friendly error; **duplicate/parallel user messages** to one thread →
-  queued; client disconnect → turn persists, resumes on reconnect via `Last-Event-ID`.
+  ▹ 409-guard then steer-queue (ACA Slices 2/5; unguarded today); client disconnect → completed
+  steps persist; ▹ full turn survival + replay is ACA Slice 3 (today the in-flight step cancels).
 - **Confirm/question:** stale confirm (host/world changed since proposal) → re-validate at execute,
   re-confirm if drifted; confirm token single-use + TTL; headless + needs-input → notify-park or
   fallback, with a max wait then auto-skip.
