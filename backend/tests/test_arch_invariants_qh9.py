@@ -22,7 +22,11 @@ BACKEND = Path(__file__).resolve().parents[1]
 
 # --- 1. server-OS branch allowlist -------------------------------------------------------------
 
-_OS_TOKEN = re.compile(r"\bos\.name\b|\bplatform\.system\b|\bsys\.platform\b")
+_OS_TOKEN = re.compile(
+    r"\bos\.name\b|\bplatform\.system\b|\bsys\.platform\b"
+    # aliased-import forms — `from platform import system` etc. would dodge the dotted tokens
+    r"|from\s+platform\s+import|from\s+sys\s+import\s+platform|from\s+os\s+import\s+[\w\s,]*\bname\b"
+)
 
 _ALLOWED_OS_BRANCH_FILES = {
     "app/services/fleet.py",  # _ping_cmd — the local ping syntax (ARCHITECTURE §6)
