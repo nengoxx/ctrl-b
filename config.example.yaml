@@ -83,14 +83,15 @@ agent:
 #     prompt: "You research topics with web tools and report concisely."
 #     tools: [web_search, "mcp__*"]
 
-# Per-tool description overrides (Phase 7d) — sharpen the model-facing wording of any tool, keyed by
-# tool name. The agent selects tools by description, so clearer wording steers a weak local model
-# without code changes. Applied live (no restart); edit these in Conf → Agent tools. A blank/absent
-# value uses the tool's built-in description. Names are the registry names (`ping_host`,
-# `mcp__web-tools__search_web`, `api__<server>__<opId>`, ...).
-# tool_descriptions:
-#   ping_host: "Check whether a fleet host is reachable right now (ICMP). Use before assuming a host is up."
-#   web_search: "Search the public internet. Use ONLY for information that isn't about the local fleet."
+# Per-tool overrides (Phase 8b, D22) — ONE unified object per tool: `description` sharpens the
+# model-facing wording (the agent selects tools by description, so clearer wording steers a weak
+# local model without code changes); `agent_mode` is the tri-state access mode (core | enabled |
+# disabled; absent = the tool's built-in default). Applied live (no restart); edit in Conf → Tools.
+# Names are the registry names (`ping_host`, `mcp__web-tools__search_web`, `api__<server>__<opId>`, ...).
+# (The legacy flat `tool_descriptions:` map is still folded in on load, but this is the shape to write.)
+# tool_overrides:
+#   ping_host: { description: "Check whether a fleet host is reachable right now (ICMP). Use before assuming a host is up." }
+#   web_search: { description: "Search the public internet. Use ONLY for information that isn't about the local fleet.", agent_mode: enabled }
 
 # Embeddings backend (Phase 4f, D9) — one OpenAI-compatible `/v1/embeddings` endpoint, local
 # (llama.cpp) or cloud (e.g. OpenRouter `qwen/qwen3-embedding-4b`, which does serve embeddings).
@@ -145,7 +146,8 @@ openapi_servers:
 # at startup and merged into the agent's toolset, namespaced `mcp__<server>__<tool>`. A down server
 # is skipped (its tools just won't be present that run) — it never blocks startup. `risk` gates ALL
 # of that server's tools: med/high → the agent confirms before each call (safe for remote tools);
-# set `low` for a server you trust to let its tools auto-run. Streamable HTTP is wired; stdio TODO.
+# set `low` for a server you trust to let its tools auto-run. Both transports are wired
+# (streamable_http + stdio, live-verified — Phase 4f).
 mcp_servers:
   - name: web-tools
     transport: streamable_http   # streamable_http | stdio
@@ -153,7 +155,7 @@ mcp_servers:
     # headers: { Authorization: "Bearer …" }   # optional, for an authenticated server
     risk: med                    # low | med | high
     enabled: true
-  # A stdio (local subprocess) server — transport not yet wired, shown for shape:
+  # A stdio (local subprocess) server:
   # - name: filesystem
   #   transport: stdio
   #   command: npx
