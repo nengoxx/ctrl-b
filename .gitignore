@@ -39,5 +39,5 @@ build/
 # ── local design/reference images (kept on-disk as references only; never versioned) ──
 docs/screenshot/
 
-# ── legacy demo video (142 MB; never committed — demo.gif is the tracked one) ──
-assets/demo.mp4
+# ── local demo videos (never committed — the README embeds a GitHub user-attachment) ──
+assets/*.mp4

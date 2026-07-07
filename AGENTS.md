@@ -59,12 +59,12 @@ config.example.yaml     template: computers{} + inference endpoints/keys + integ
 .env.example            optional bootstrap (.env, gitignored): CTRLB_HOME/CONFIG/DB + CTRLB_<SECTION>__<KEY> overrides
 ctrlb.db                ★ SQLite (gitignored): chat / memory / events. Created on first run
 memories/               ★ agent memory (gitignored, personal data)
-assets/                 demo.gif
+assets/                 local demo videos (gitignored — the README embeds a GitHub user-attachment)
 archive/                v0.1-flask/ (the old Flask app + scripts) · v0.1-inference/ · ui-prototypes/ (ws_*)
 ```
 
 `.gitignore` excludes secrets + runtime: `config.yaml`, `clients`, `*_prompt.*`, `.env*`, `*.db*`,
-`memories/`, `agents/*/memories/`, `node_modules/`, `dist/`, `.venv/`, `assets/demo.mp4`. Keep it that way.
+`memories/`, `agents/*/memories/`, `node_modules/`, `dist/`, `.venv/`, `assets/*.mp4`. Keep it that way.
 
 ---
 
