@@ -25,15 +25,19 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | File | Use it for |
   |---|---|
   | [`docs/HANDOFF.md`](./docs/HANDOFF.md) | Current status + the locked next slice. **Always read first.** |
-  | [`docs/DECISIONS.md`](./docs/DECISIONS.md) | Locked architectural choices (D1–D32) — don't relitigate. |
+  | [`docs/DECISIONS.md`](./docs/DECISIONS.md) | Locked architectural choices (D1–D34) — don't relitigate. |
   | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | System design: backend/frontend layers, deployment, security. |
   | [`docs/DESIGN.md`](./docs/DESIGN.md) | Concrete code design: data structures, registry, agent loop, SSE wire protocol, extension cookbook. |
+  | [`docs/SPEC.md`](./docs/SPEC.md) | Visual one-stop system spec (C4 diagrams, flows, inventories) — complements ARCHITECTURE/DESIGN; on conflict DECISIONS wins. |
   | [`docs/TODO.md`](./docs/TODO.md) | Phased checkbox plan — find the right phase, follow the slice. |
   | [`docs/ROADMAP.md`](./docs/ROADMAP.md) | **Future features** + the v1 seams to keep cheap. Start here for anything not in TODO. |
   | [`docs/THEME_ENGINE.md`](./docs/THEME_ENGINE.md) | The theme engine (Swappable Surfaces, D31) — read before themeable UI. |
   | [`docs/VAPOR_PATTERNS.md`](./docs/VAPOR_PATTERNS.md) | Vapor design tokens/components — read **before** styling any net-new UI. |
   | [`docs/RESEARCH.md`](./docs/RESEARCH.md) | Library/version pins + sourced rationale (incl. the mic secure-context analysis). |
-  | [`docs/UI_AUDIT.md`](./docs/UI_AUDIT.md) | Two-pass frontend audit (perf F1–F13 + a11y/resilience F14–F27). |
+  | [`docs/UI_AUDIT.md`](./docs/UI_AUDIT.md) | Two-pass frontend audit (perf F1–F13 + a11y/resilience F14–F29). |
+  | [`docs/SYSTEM_AUDIT.md`](./docs/SYSTEM_AUDIT.md) | Code-verified architecture audit (SYS-# findings; excludes the chat loop). |
+  | [`docs/AGENT_CHAT_AUDIT.md`](./docs/AGENT_CHAT_AUDIT.md) | Agent-chat audit + 8-agent comparative analysis + the ACA improvement plan (Slices 0–8). |
+  | [`docs/PRE_DEPLOY.md`](./docs/PRE_DEPLOY.md) | The pre-deploy hardening gate record (steps 1–5) + the deploy-readiness checklist. |
   | [`docs/DEPLOY_EMMA.md`](./docs/DEPLOY_EMMA.md) | The emma (Linux) deploy runbook + topology (D32). |
   | [`docs/QUALITY.md`](./docs/QUALITY.md) | The code-quality harness (lint/format/typecheck/test + `check-all` + conventions). Read before touching tooling. |
   | [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md) | The trust boundary, privilege gate, confirm-tokens, secret handling + safe-defaults checklist. Read before touching anything that executes or handles secrets. |
@@ -57,7 +61,7 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   worker uses an event loop that breaks `asyncio.create_subprocess_exec`, so `fleet.ping_host` returns
   empty output and every host shows offline. Linux/macOS reload is fine. (Documented in `README.md`
   + `docs/ARCHITECTURE.md` §6.)
-- Tests live in `backend/tests/`; run with the venv's `pytest` (229). No CI gate beyond `ruff` — if
+- Tests live in `backend/tests/`; run with the venv's `pytest` (250). No CI gate beyond `ruff` — if
   you add code, add a minimal way to verify it. Never live-test config writes against the real
   `config.yaml`; use `CTRLB_CONFIG`/`CTRLB_DB` to point at a temp copy.
 
@@ -101,8 +105,9 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
 Default to this repo and follow the doc map above — `HANDOFF` → `ROADMAP` → `DECISIONS` →
 `DESIGN`/`ARCHITECTURE` → `TODO`. The shape: mobile-first React + TS + Vite **PWA** (TanStack Query,
 lucide-react), porting the **Vapor** design (`VAPOR_PATTERNS.md` governs net-new UI); **FastAPI +
-Uvicorn** backend; **typed-action registry** as the primary execution path with a deferred guarded
-`$` raw-shell escape hatch (Phase 5, deprioritized — open-terminal already provides remote shell);
+Uvicorn** backend; **typed-action registry** as the primary execution path plus a guarded `!`
+local-shell escape hatch (Phase 5, **built**; user `!` on by default, the agent's `run_shell`
+off-by-default — `shell.*_exec` toggles; open-terminal provides *remote* shell);
 **SQLite** for chat/memory/events + **YAML** for config; voice via OpenAI-compatible **STT/TTS** and
 chat via OpenAI-compatible **llama.cpp**/cloud. The owner connects from Android — keep changes
 testable at narrow viewport widths (mic needs HTTPS via Tailscale Serve).

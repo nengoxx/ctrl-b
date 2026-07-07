@@ -12,8 +12,10 @@ real, typed backend.
 > (3) module/file names here are **illustrative** — the real layout is `services/` + `adapters/` +
 > `api/` (see `DESIGN.md` §1); (4) **C1 streaming `auto|on|off` + buffered chat** (D17) and the **A2
 > `question` message kind** are now **shipped** (the `stream` body field + `agent.streaming` setting +
-> `collect_turn`); (5) endpoints `/api/prompts`, `/api/memory`, `/api/exec`, `/api/tools` are **not built** —
-> the real routers are `/api/agents`, `/api/integrations`, `/api/skills`, `/api/agent/default-prompt`.
+> `collect_turn`); (5) `/api/exec` (Phase 5) and `/api/tools` (Phase 8) **are built**; `/api/prompts`
+> and a *flat* `/api/memory` are **not** — the real shapes are `/api/agent/default-prompt` and
+> `/api/agents/{name}/memory` + `/api/memory/user`; other real routers: `/api/agents`,
+> `/api/integrations`, `/api/skills`.
 
 ```
 ┌────────────────────────────── Android / Desktop browser ──────────────────────────────┐
@@ -225,16 +227,16 @@ GET    /api/events/stream               SSE live feed
 GET    /api/threads                     list chat threads
 POST   /api/threads                     new thread
 GET    /api/threads/{id}/messages
-DELETE /api/threads/{id}
+DELETE /api/threads/{id}                (NOT BUILT — threads are kept; /clear starts a new one)
 POST   /api/agent/chat                  SSE token stream OR buffered JSON (D17 `stream` field); may emit action/command bubbles
-GET    /api/memory                      list memory items     (Conf)
-POST   /api/memory / DELETE /api/memory/{id}
+GET    /api/memory                      (NOT BUILT flat — real: /api/agents/{name}/memory + /api/memory/user)
+POST   /api/memory / DELETE /api/memory/{id}   (NOT BUILT — memory is file-backed, edited via the agent routes)
 # Voice
 POST   /api/voice/stt                   multipart audio  -> { text }
 POST   /api/voice/tts                   { text, voice } -> audio stream
 # Settings / prompts
 GET    /api/settings  /  PUT /api/settings        (config.yaml-backed; secrets masked)
-GET    /api/prompts   /  PUT /api/prompts/{name}  (command_prompt, system_prompt, ...)
+GET    /api/prompts   /  PUT /api/prompts/{name}  (NOT BUILT — real: /api/agent/default-prompt + per-agent SOUL routes)
 # Tools (extensible registry — see §1 Tools/Utils)
 GET    /api/tools                       list registered tools (name, title, icon, input schema)
 POST   /api/tools/{name}                run a tool (yt_captions, ip_info, dns_trace, ...)

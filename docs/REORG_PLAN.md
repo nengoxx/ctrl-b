@@ -1,6 +1,7 @@
 # REORG_PLAN — repo "face wash" to ship v1.0 (execute in a clean session)
 
-> **Status: PLANNED · validated against HEAD `96d0e66` (2026-06-30 audit) · not yet executed.** Authoritative,
+> **Status: ✅ EXECUTED 2026-06-30 (landed as `7503fcf`; verified — see the HANDOFF top block). Kept as
+> the spec + verification record.** Originally validated against pre-reorg HEAD `96d0e66`. Authoritative,
 > self-contained spec for restructuring the whole repository so the v2 app **is** the repo (= the official
 > **v1.0**) and everything legacy is archived. Do it in a dedicated clean session as **one atomic, fully-verified
 > commit**, BEFORE the emma deployment (so the deploy is written once against the final paths). Owner approved the
@@ -42,6 +43,8 @@ The original plan locked "B (filter-repo) to purge the 142 MB `demo.mp4`." **Aud
 - filter-repo is the single riskiest step (rewrites every commit hash → all clones must re-clone; force-push; the "this workspace IS the rewrite source, don't re-clone it" tightrope). For a 44 MB repo it buys almost nothing.
 
 **→ Decision: DO NOT run filter-repo as part of v1.0.** The reorg is **one normal atomic commit + push** (no history rewrite, no re-clone caveat, no force-push). Existing clones (emma at deploy, the owner's local copy) keep working with a plain `git pull`. *(Optional, much later, never blocking: if the ~10 MB of historical PNGs ever matter, a standalone filter-repo micro-task can purge them — but it is explicitly out of scope for v1.0.)*
+
+**Also deferred here (owner ruling 2026-07-07):** pruning the archived prototypes (`archive/ui-prototypes/*` lockfiles) to permanently clear the 2 dismissed dev-only Dependabot alerts (vite/esbuild in dead prototype lockfiles — dismissed as not-used 2026-07-01). Same bucket as the filter-repo note above: optional housekeeping, never deploy-blocking; pick it up together if/when the archive is ever pruned.
 
 ## 2. Target structure
 ```

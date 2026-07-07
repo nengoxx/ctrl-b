@@ -25,7 +25,7 @@
 >    work is committed + pushed, (c) THEN migrate. Never lose its unpushed work.
 > 4. **Reachability.** config → emma LAN `192.168.1.160` (Linux sshd; recon connected OK, but LAN can drift). Confirm
 >    reachable at deploy time; if LAN is blocked, set emma's `ip` to MagicDNS `emma` / tailnet `100.109.206.88`
->    (`vpn_host` D3 field is not wired yet). The Bash tool needs **`dangerouslyDisableSandbox: true`** for LAN/SSH.
+>    (the `vpn_host` field, ROADMAP D3, is not wired yet). The Bash tool needs **`dangerouslyDisableSandbox: true`** for LAN/SSH.
 > 5. **Secret out-of-band.** `config.yaml` is gitignored; `bootstrap.py` SFTPs it from THIS Windows checkout →
 >    `~/.ctrl-b/config.yaml` (0600). Keep the checkout's `config.yaml` current before deploying.
 >

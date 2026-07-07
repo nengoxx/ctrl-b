@@ -9,7 +9,8 @@
 > [`REORG_PLAN.md`](./REORG_PLAN.md). Git history was **NOT** rewritten (filter-repo deferred — the 142 MB mp4 was
 > never committed; `.git` is 44 MB), so existing clones just `git pull`.
 >
-> **✅ PRE-DEPLOY HARDENING + POST-AUDIT FIXES ARE COMPLETE (2026-07-02, main @ `43919f1`, clean + synced).**
+> **✅ PRE-DEPLOY HARDENING + POST-AUDIT FIXES ARE COMPLETE (2026-07-02 @ `43919f1`; main has since
+> advanced to `a9a91d5` with the D34 theme-review docs, 2026-07-06).**
 > The app is feature-complete (Phases 0–8) and now independently audited. Shipped since the last handoff:
 > - **`PRE_DEPLOY.md` steps 1–5 ✅** — quality harness (D33: `python tools/check.py`) · `SECURITY_MODEL.md` ·
 >   secret-hygiene tests · robustness P1s (SSE payload guards · stale-confirm-token recovery · risk-aware retry) ·
@@ -22,6 +23,16 @@
 >   `target-version=py314`; the code uses PEP 758 syntax). **Integration `risk` typed as `Risk` at the Pydantic
 >   boundary** (eliminated the `_RISK` triplication; fail-fast on a bad config value; verified live against the real
 >   `config.yaml`). Full context: memory [[predeploy-hardening-progress]] + `git log`.
+>
+> **📋 2026-07-07 — the system was independently specified + audited (3 new docs, ALL AWAITING OWNER
+> REVIEW):** [`SPEC.md`](./SPEC.md) (the visual one-stop system spec) · [`SYSTEM_AUDIT.md`](./SYSTEM_AUDIT.md)
+> (architecture audit, SYS-# — **one live bug: SYS-13**, `fillComposer` vs the F28 controlled composers, breaks
+> confirm-bubble *edit* + code-block *send-to-composer* on all themes; **SYS-14** flags Linux CI as a pre-emma
+> gate) · [`AGENT_CHAT_AUDIT.md`](./AGENT_CHAT_AUDIT.md) (chat audit + 8-agent comparative analysis + the ACA
+> improvement plan, Slices 0–8; its D35–D37 get drafted into DECISIONS **on approval**, not before). A
+> doc-consistency pass landed the same day (verified vs code): stale counts/statuses fixed, DESIGN §9/§12/§16
+> + the ARCHITECTURE endpoint note corrected to code truth, status banners added. Note: **pytest is 250 now**
+> (older "229" mentions below are historical).
 >
 > **▶ FINAL TOUCHES before the deploy (a fresh session) — highest value first:**
 > 1. **The deploy pre-flight IS the real gate.** Run `python tools/check.py --e2e` (must be GREEN), then verify the
@@ -88,7 +99,7 @@ foundation + Inference/Server groups) and 7b (hosts + services CRUD machine edit
 verified — see the two 2026-05-29 blocks below.** **7c (integrations: SearXNG/embeddings/open-terminal
 hot-apply + MCP/OpenAPI managers with between-turn rediscovery) is built + verified. 7d (skills/agents
 management UI + per-tool description overrides) is built + verified + committed (see the 7d block
-below). Next up: 7e (prompts editors + memory panel). **The UI perf pass tracked in [`UI_AUDIT.md`](./UI_AUDIT.md) is now complete — Slices 1–8 shipped (10 of 13 findings landed; F9 `useTransition` and F13 React Compiler deferred until measured pressure warrants).**
+below). **7e (prompts editors + memory panel) is complete too** — 7e-a…7e-g all shipped (see TODO Phase 7e). **The UI perf pass tracked in [`UI_AUDIT.md`](./UI_AUDIT.md) is now complete — Slices 1–8 shipped (10 of 13 findings landed; F9 `useTransition` and F13 React Compiler deferred until measured pressure warrants).**
 This doc is the orientation; canonical detail is in the other `docs/` files. **The pixel-exact Vapor
 fidelity mandate (D7) still governs every new component.**
 
@@ -124,6 +135,9 @@ fidelity mandate (D7) still governs every new component.**
 4. `TODO.md` — the phased build plan. **Begin at Phase 0.**
 5. `RESEARCH.md` — library/version pins + sources (incl. the secure-context/mic analysis).
 6. `ROADMAP.md` — post-v1 features + the v1 seams to build now so they slot in.
+7. `SPEC.md` — the visual one-stop system spec (C4 diagrams, flows, inventories). The audit
+   ledgers: `UI_AUDIT.md` (F#) · `SYSTEM_AUDIT.md` (SYS-#) · `AGENT_CHAT_AUDIT.md` (ACA-# + plan).
+   SPEC + the two 2026-07-07 audits are awaiting owner review.
 
 The **visual source of truth** is `../design/prototypes/variations/vapor.html` (mobile-first
 vaporwave SPA: 4 tabs Fleet/Agent/Utils/Conf, per-host services, themes, composer w/ mic +

@@ -41,7 +41,7 @@ Quality is not one linter — it is a set of complementary layers, each catching
 | **FE e2e / a11y** | **Playwright** + `@axe-core/playwright` (D24) | broken user paths, a11y | ✅ (Phase 9 wires the suite) |
 | **BE lint + format** | **ruff** (`E`/`F`/`I`, formatter) | style, imports, dead code | ✅ |
 | **BE type check** | **`pyright[nodejs]`** (pinned `==1.1.409`; `basic` → ratchet `strict`) | type errors across the FastAPI service | ✅ (1c) |
-| **BE tests** | **pytest** (229, temp-config safe) | backend logic | ✅ |
+| **BE tests** | **pytest** (250, temp-config safe) | backend logic | ✅ |
 | **CSS contracts** | **stylelint** (keyframe-prefix · anim budget · token-only color) | theme CSS invariants | ⏸ owned by the theme-engine hardening slice (post-deploy) |
 | **Runner** | one **`tools/check.py`** (stdlib chokepoint) + `npm run check-all` (FE) | "is the repo green?" in one command | ✅ (1a) |
 | **Enforcement** | native **`core.hooksPath=.githooks/`** → `check.py` (fast pre-commit · full pre-push) | stops a bad commit/push at the source | ✅ (1d) |

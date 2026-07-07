@@ -1,5 +1,9 @@
 # Audit — Settings read/write + the config→runtime design (pre-Phase-7a)
 
+> **Status: HISTORICAL (superseded).** This pre-implementation audit shaped Phase 7a; its must-fix
+> items (A1/A2) and the runtime-reconfigure seam all landed in 7a–7d (see `TODO.md` Phase 7 +
+> `runtime.py`). Kept as the design-rationale record — do not work from it.
+
 **Date:** 2026-05-29 · **Scope:** the `GET/PUT /api/settings` functionality about to be built (7a)
 and the *current* config-loading / runtime-wiring design it plugs into. Goal: catch correctness
 bugs, scalability traps, and cleanliness issues **before** Conf becomes a write path into

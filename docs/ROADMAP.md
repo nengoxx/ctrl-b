@@ -7,6 +7,11 @@ also in `TODO.md`. Each item: **what · why/UX · design implication · open que
 Guiding principle: build the v1 seams (pluggable memory, action risk levels, typed chat-message
 kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in without a rewrite.
 
+> **ID namespace.** Item ids here (A1, C1, **D1–D3**, E0…) are **ROADMAP-local** — section letter +
+> number. They are a *different namespace* from `DECISIONS.md`'s **D#** entries, and the two collide
+> on D1/D2/D3 (e.g. **ROADMAP D3** = multi-homed host addressing; **DECISIONS D3** = the hybrid
+> execution model). When citing from another doc, always prefix: "ROADMAP D3" vs "DECISIONS D3".
+
 ---
 
 ## A. Agent capability & control

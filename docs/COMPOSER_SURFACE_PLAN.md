@@ -1,5 +1,11 @@
 # Composer Surface — implementation spec (clean-session handoff)
 
+> **Status: ⏸ PARKED (resume post-emma-deploy).** Still the current executable plan for the Composer
+> Surface — not superseded. Sequencing is locked by **D34 / `THEME_ENGINE.md` §14.15**: the theme
+> **Hardening slice v2 ships first**, then this. Note: D34 renumbered the old TRIAGE-3 hardening
+> vocabulary this doc's §2.0 references (R3/R4/B2 → §14.15.1 items); read §14.15 for the current
+> hardening plan of record.
+
 **Read first:** `THEME_ENGINE.md §14.14` (the Swappable-Surfaces contract) + `DECISIONS.md D31` (the locked
 decision). This doc is the **executable build plan** for the first user-selectable Surface — the composer — with
 every edge case pinned. It is self-contained: a fresh session needs only this + §14.14 + D31.

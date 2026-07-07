@@ -13,7 +13,7 @@ the whole architecture in `ARCHITECTURE.md` (don't build ahead of the phase you'
 
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
-> **Status @ 2026-06-22 (HEAD `37bd685`, tree clean, all pushed):** Phases **0–7 are all done** —
+> **Status @ 2026-07-07 (HEAD `a9a91d5`):** Phases **0–8 are all done** —
 > Fleet, Actions, Services, Agent chat + full tool-loop, Skills/subagents, **Phase 5** (guarded `!`
 > shell), **Phase 6** (voice STT/TTS + mic + mini-player + HTTPS), and **Phase 7a–7e** (Conf:
 > settings/hosts/services/integrations/skills/agents/prompts/memory). **7e is fully complete** —
@@ -23,13 +23,19 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 > editor shipped. The **UI performance pass** (`docs/UI_AUDIT.md` Slices 1–8) is complete (10/13; F9
 > `useTransition` + F13 React Compiler deferred), and the **F14–F26 a11y/resilience backlog is also
 > shipped** (Slices A–F2, the 2026-06-08 session — F14/F15/F16/F17/F18/F19/F20/F22/F23/F25/F26/F28/F29).
-> Backend 24/24, frontend 57/57. Detail in `HANDOFF.md`.
+> **Phase 8** (Utils tool registry, D8/D22 — 8a+8b below) shipped 2026-06-24; the **pre-deploy
+> hardening** (D33 quality harness + `PRE_DEPLOY.md` steps 1–5) and the **Phase-9 e2e smoke/a11y suite**
+> (F24; F27 shipped 2026-06-24) landed 2026-07-02. Backend pytest **250** · frontend vitest + e2e green.
+> Detail in `HANDOFF.md`.
 >
-> **Next: Phase 8 — Utils tool registry (D8)**, the last unbuilt v1 *feature* (cutover parity with the
-> old server's YT/IP tools). Then the `createStore<T>()` / `Switch` dedup backlog slices, then the
-> **emma (Linux) deploy / v1 cutover** (Phases 9–10). **Still open (low / deferred):** UI_AUDIT F27
-> (offline-row SR indicator) + F24 component/a11y tests (→ Phase 9); QR-to-phone (`segno` dep, pending
-> owner OK); vector memory recall; ROADMAP E2 OpenAI facade; D19 voice streaming transports.
+> **Next: the emma (Linux) deploy / v1 cutover (Phases 9–10)** — start at the HANDOFF top block →
+> `DEPLOY_EMMA.md`. **Theme Phase 11** (D34 Hardening slice v2 → Composer Surface) is **parked
+> post-deploy**. **Pending intake (2026-07-07, awaiting owner review — not yet phases):** the **ACA
+> chat-hardening plan** (`AGENT_CHAT_AUDIT.md`, Slices 0–8 — becomes a new TODO phase on approval) and
+> the `SYSTEM_AUDIT.md` **SYS-#** fixes (notably **SYS-13**, a live `fillComposer` bug, and **SYS-14**,
+> Linux CI as a pre-emma gate). **Still open (low / deferred):** QR-to-phone (`segno` dep, pending owner
+> OK); vector memory recall; ROADMAP E2 OpenAI facade; D19 voice streaming transports; UI_AUDIT F9/F13
+> (perf, until measured pressure).
 
 ---
 
@@ -672,7 +678,9 @@ tools + confirm bubbles) are DONE.**
       5433 no-reload) + `ctrl-b-dashboard-dev.service` (Vite) + `install.sh` + `serve-https.sh` (Tailscale Serve) +
       `start-claude.sh` (tmux agent) + `bootstrap.py` (Windows→emma) + `README.md`. Recon + decisions + verified env
       in [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md). **Remaining: run `deploy/bootstrap.py` (the execution step).**
-- [ ] Minimal smoke tests (Playwright desktop + Android viewport; a couple of backend action tests).
+- [x] Minimal smoke tests — **shipped 2026-07-02** as the full Playwright e2e suite
+      (`frontend/e2e/{render,flows,a11y}.spec.ts` — desktop + Android viewport + axe WCAG A/AA),
+      wired as the opt-in deploy gate `python tools/check.py --e2e` (PRE_DEPLOY step 5 / UI_AUDIT F24).
 
 ## Phase 10 — Cutover
 

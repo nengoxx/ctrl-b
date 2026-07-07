@@ -12,7 +12,10 @@ sketch is a summary. Python 3.14+, Pydantic v2, FastAPI. Read alongside `ARCHITE
 > `messages` gains an **`agent`** column (D15 #5). The §1 package layout is **aspirational** — the
 > shipped tree is leaner (inference is an *adapter*, the loop lives in `session.py` not a `runner.py`,
 > no `tools/`/`voice.py`/`automations.py`/`notify/`/`memory/` yet). Conceptual designs (capability
-> model, loop state machine, concurrency, SSE) remain accurate.
+> model, loop state machine) remain accurate — but parts of **§10** (per-thread queueing, `/cancel`)
+> and **§12** (event `id:` / `Last-Event-ID` replay) are **target design, not yet built**; see
+> `AGENT_CHAT_AUDIT.md` ACA-1/ACA-2 (fix plan: ACA Slices 2/3/5). The §12 *event inventory* is the
+> shipped contract (reconciled against `session.py` 2026-07-07).
 
 ---
 
@@ -524,7 +527,8 @@ A **`messages_fts` FTS5 virtual table** (+ sync triggers) backs `session_search`
 
 ```python
 class UnitOfWork:                      # one place that owns the connection + write serialization
-    # WAL mode; reads concurrent; ALL writes go through a single asyncio.Lock (or a write queue)
+    # WAL mode; ONE shared aiosqlite connection (its worker thread serializes all ops, so WAL's
+    # read concurrency is currently unused — SYS-1 rider); ALL writes also take a single asyncio.Lock
     # to avoid SQLITE_BUSY under async fan-out. Repositories hang off the UoW.
     threads: ThreadRepo; messages: MessageRepo; events: EventRepo
     memory: MemoryRepo; automations: AutomationRepo
@@ -552,9 +556,12 @@ class Settings(BaseSettings):
 > (D15 #3); `AgentCfg` gains **`defaults`** (the AgentDef-shaped inheritance base, D15 #1). Add
 > **`memory`** (`enabled`/`user_profile_enabled`/`auto_write`/`memory_char_limit`/`user_char_limit`)
 > and **`skills`** (`enabled`/`auto_write`). `hosts`/`services` aren't flat lists — they're **nested
-> under `computers{}`** in YAML and projected by `Settings.hosts()`/`services()`. **`stt`/`tts`/
-> `notifications` don't exist yet** (Phase 6 / F1). Path resolution is rooted at **`$CTRLB_HOME`**
-> (D15 #2). The hybrid secrets model below is accurate and shipped (7a).
+> under `computers{}`** in YAML and projected by `Settings.hosts()`/`services()`. **`stt`/`tts`
+> shipped nested inside `voice:`** (`VoiceCfg`, Phase 6); **`notifications` doesn't exist yet** (F1).
+> Shipped sections the sketch above omits (the real `Settings` has 15): `memory`, `voice`,
+> `open_terminal`, `shell`, `tailscale`, `openapi_servers`, `tool_overrides` (D22), `computers`.
+> Path resolution is rooted at **`$CTRLB_HOME`** (D15 #2). The hybrid secrets model below is
+> accurate and shipped (7a).
 - **Secrets model = hybrid (decided Phase 0).** `config.yaml` is the **single UI-managed source
   of truth, including nested secrets** (per-host SSH creds, per-endpoint API keys, per-MCP-server
   env/headers) — because they're structured/repeating and the Conf tab edits + round-trips them,
@@ -612,17 +619,22 @@ the message list:
 
 ```
 event: message.start      data: {messageId, role, agent}       # agent = resolved AgentDef name (7e-c)
+event: reasoning.delta    data: {messageId, delta}             # thinking-model CoT (rendered dimmed)
 event: text.delta         data: {messageId, delta}
-event: part.added         data: {messageId, part}            # tool_call / plan / question
-event: tool.permission    data: {callId, tool, args, risk}   # → client shows confirm bubble
+event: part.added         data: {messageId, part}              # a tool_call part → command bubble
+event: tool.permission    data: {callId, tool, args, risk, token, prompt}  # confirm bubble; single-use token
+event: tool.question      data: {callId, tool, question, args} # A2 `question` builtin → answer bubble
 event: tool.result        data: {callId, result}
-event: question.asked     data: {questionId, question, choices}
-event: plan.updated       data: {plan}
-event: compaction         data: {removed, summaryId}
+event: notice             data: {text}                         # breadcrumbs (e.g. D18 failover)
+event: compaction         data: {removed, summaryId, truncated}
 event: message.end        data: {messageId}
 event: error              data: {message, retryable}
-event: done               data: {threadId, state}            # turn finished/suspended/capped
+event: done               data: {threadId, state}              # completed | suspended | capped | error
 ```
+
+Plan updates have **no dedicated event** — they ride the `task_plan` tool's `tool.result` (manual
+edits go through `POST /api/agent/plan`). This inventory mirrors `session.py`'s emitter docstring —
+keep the two in lockstep when adding events.
 
 Every event carries a monotonic `id:` so reconnect uses `Last-Event-ID` to **replay** missed
 events. The same bus powers `GET /api/events/stream` (fleet activity).
@@ -664,7 +676,7 @@ execute → `ToolResult` + `Event` (→ activity SSE) → row updates.
 **Agent chat turn:** `POST /api/agent/chat {threadId, text}` → `AgentSession.run_turn` streams SSE
 (§12). If the model calls `shutdown_host`: `tool.permission` event → bubble → user confirms via
 `resume` → `tool.result` → model summarizes → `message.end`/`done`. If tokens spike mid-thread →
-`compaction` first. If the model needs info → `question.asked` → user answers → resume.
+`compaction` first. If the model needs info → `tool.question` → user answers → resume.
 
 **Voice:** push-to-talk → `MediaRecorder` blob → `POST /voice/stt` → text fills composer → normal
 chat turn → if auto-TTS, each finalized assistant text → `POST /voice/tts` → audio playback.
@@ -719,7 +731,7 @@ privilege → gated calls hit notify-park/fallback → results to a thread + Eve
 | **Built-in agent tool** | register a `Tool` (e.g. `task_plan`); appears in the toolset, gated by privilege. |
 | **MCP server** | add an entry to `settings.mcp_servers`; `McpClient` connects + wraps its tools. Zero code. |
 | **Skill** | drop `skills/<name>/SKILL.md` (+ resources). Discovered automatically. |
-| **Agent** | add an `AgentDef` to `settings.agents`; selectable per chat/automation; usable as a subagent. |
+| **Agent** | create a folder `$CTRLB_HOME/agents/<name>/` (`agent.yaml` + `SOUL.md`) — discovered automatically, **folder-only, no config list** (D14/D15); selectable per chat/automation; usable as a subagent. |
 | **Memory backend** | implement `MemoryProvider`, register under a key; select in settings. |
 | **Notification channel** | implement `NotificationChannel`, register; toggle in settings. |
 | **Inference/STT/TTS/embeddings backend** | it's just another OpenAI-compatible `base_url` in settings — no code. |
