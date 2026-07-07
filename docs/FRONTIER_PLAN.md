@@ -1,6 +1,10 @@
 # Frontier theme — implementation plan (T5)
 
-> **Status: ✅ DESIGN LOCKED (2026-07-07) — all five review points owner-ratified same day.**
+> **Status: ✅ DESIGN LOCKED (2026-07-07) — all five review points owner-ratified same day, then
+> adversarially reviewed against the code (10 findings, all folded in — the review markers sit
+> inline at each fix: lever = device-local · explicit preset schema · hosting-supersedes-menu ·
+> honest relocation/lazy semantics · `sheet` variant id · existing chat class names · plan-pill =
+> a real setting · beacon scatter + the art filename contract · layout coercion ≠ hardening ⑦).**
 > This is the executable plan (the `COMPOSER_SURFACE_PLAN.md` tradition). **Build slot** (the
 > pinned global order, `TODO.md` header): post-emma-deploy → Hardening slice v2 → Composer
 > Surface → **F0 → F1…F5 below**. Each slice: pre-flight → design-confirm → build → audit →
