@@ -50,6 +50,16 @@ authentication layer first.
   **tailnet-only** — you must be on the tailnet to reach it; nothing is published to the public internet.
 - **`debug` is off by default** (`ServerCfg.debug=False`) — an enabled debugger is a remote-code-execution
   surface. Keep it off for anything reachable.
+- **Dev-mode exposure (deliberate, documented — SYS-4).** The **dev** frontend is wider than prod: Vite binds
+  `0.0.0.0:5173` with `allowedHosts: true` and proxies `/api` → the loopback backend
+  (`frontend/vite.config.ts:58-67`). So while the dev server runs, anyone on the **local LAN** (not just the
+  tailnet) can drive the full API through the proxy — the backend's careful `127.0.0.1` bind is bypassed by
+  design so the owner can reach dev by machine name / phone. This is **accepted on the trusted home LAN** and
+  consistent with the trust model (§1), but it is a *decision*, not an accident: don't run the dev server on an
+  untrusted network, and remember prod never has this path (uvicorn serves the built `dist` itself). Rider:
+  `TailscaleCfg.target_port` still *defaults* to `5173` (the dev frontend, `config.py:459`) — the deploy scripts
+  hardcode Serve → `5433` so prod is unaffected, but the in-app `serve_https` action follows the config default;
+  set `tailscale.target_port: 5433` on any box where Serve should front the backend-served SPA.
 
 ### 2.2 Typed-action privilege gate
 Execution does not happen via arbitrary strings; it happens via **named, allowlisted actions** (`wake_host`,
@@ -111,6 +121,7 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 | `paramiko` uses `AutoAddPolicy` (accepts unknown SSH host keys; no `known_hosts` pinning) | **accepted** | Acceptable only inside the trusted tailnet (`adapters/ssh.py`). Would need pinning if the boundary widened. |
 | Local shell (`!`) + agent `run_shell` = remote code execution by design | **accepted, off by default** | See §5. Gated + off by default; RCE is the point when enabled. |
 | `debug` = RCE surface | **accepted, off by default** | `ServerCfg.debug=False`; never enable on anything reachable. |
+| Dev Vite server exposes the API on the LAN (`0.0.0.0` + `/api` proxy) | **accepted, dev-only** | §2.1 dev-mode exposure; trusted home LAN; prod serves `dist` from the loopback bind. |
 | MCP / OpenAPI tool providers are external surfaces | **accepted, annotated** | Risk-annotated per tool; never grant blanket `ALLOW`. |
 
 ---
