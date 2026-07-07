@@ -687,11 +687,12 @@ tools + confirm bubbles) are DONE.**
       the real composers. The confirm-bubble e2e line was skipped — it needs streamed-tool-call seeding
       the smoke e2e suite doesn't have (noted in `SYSTEM_AUDIT.md` SYS-13; the jsdom test covers the
       broken contract). check-all green (212 vitest / 33 files).
-- [~] **SYS-14 (pre-emma gate) — BUILT 2026-07-07, first real CI run verifies on push:**
-      `.github/workflows/ci.yml` — ubuntu-latest, Python 3.14 + Node 24, venv at `backend/.venv` +
-      `pip -e ".[dev]"` + `npm ci`, then the full `python tools/check.py` gate (NOT `--e2e` — that
-      stays the opt-in deploy gate). Triggers: push to main/dev + PRs. Check the box when the first
-      run is green. Spec: `SYSTEM_AUDIT.md` SYS-14.
+- [x] **SYS-14 ✅ GREEN 2026-07-07 — the codebase's first Linux run:** `.github/workflows/ci.yml` —
+      ubuntu-latest, Python 3.14 + Node 24, venv at `backend/.venv` + `pip -e ".[dev]"` + `npm ci`,
+      then the full `python tools/check.py` gate (NOT `--e2e` — that stays the opt-in deploy gate).
+      Triggers: push to main/dev + PRs. Run #1 immediately caught a real defect — ruff/pytest were
+      hand-installed, never declared in pyproject (fixed: pinned in the `dev` extra, `32f03c4`);
+      run #2 fully green (all 6 checks incl. pytest 250 on Linux). Spec: `SYSTEM_AUDIT.md` SYS-14.
 
 ## Phase 10 — Cutover
 
