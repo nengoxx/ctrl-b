@@ -1,13 +1,63 @@
-# Theme Engine — analysis & design (D28, in design phase)
+# Theme Engine — design record + the live authoring contract (D28–D34)
 
-**Status: ANALYSIS DONE, DESIGN OPEN.** This doc captures a deep analysis of the owner's six theme
-prototypes (`prototypes/project/variations/*.html`) and proposes a multi-theme architecture for the
-React app. It is the design-phase home; lock decisions here (→ DECISIONS **D28**) before coding.
+**Status: BUILT + SHIPPED through cosmos (2026-06-28) — vapor · minimal · cosmos live; the
+engine (§14: controllers + Root + Kit + Surfaces) is the as-built architecture.** Parked next
+steps: **Hardening slice v2 + the Composer Surface (§14.15, D34 — post-emma-deploy)**; next theme:
+**frontier** (T5). *(Header updated 2026-07-07, doc-consistency pass — the old "DESIGN OPEN" status
+predated the build.)*
 
 > **The ask (owner, 2026-06-26):** keep **vapor** with its palettes, and add the prototyped themes
 > **exactly as they are** (nuances + complexity preserved, not approximations). Build a "theme engine"
 > that switches between vapor / cosmos / frontier / minimal (and their palette options) and lets us
 > **natively add new theme variations** that are as dynamic/flexible as the prototypes.
+
+---
+
+## §0 — Theme Author Contract (pointer index — added 2026-07-07; nothing is restated here)
+
+**Epoch guide (how to read this doc).** It grew in three epochs, all kept for rationale:
+**§§1–8** = the analysis epoch (historical) · **§§9–13** = the T0 epoch — *mixed*: the slot model
+(§9.0, §9.2–§9.5, §9.13, §13.2–§13.3 mechanics) is **dead** (each carries a banner; §14.9 is the
+mapping), while §9.7–§9.12 + §13.1 remain live contract · **§14** = the **live architecture**
+(D29–D34). When in doubt: §14 + the code win.
+
+**To add a theme, satisfy** (each row points at its single owner):
+
+| Requirement | Owner |
+|---|---|
+| One `ThemeDef` registry row (`id/label/Root`(or `loadRoot`)`/palettes/loadStyles/loadFonts?/present?/assets?/settings?`) | §14.3 · `theme-engine/types.ts` (code = truth) |
+| Lazy `Root` owns the whole presentation (controllers stay above it) | §14.1 · §14.3 · §14.5 |
+| Pick the cheapest CSS band per region: tokens-only reskin under `.kit` → Surface → bespoke | §14.4.1 (recipe) · §14.14 (3-band + 3-gate) |
+| Semantic token contract (mode/accent axes; two-channel accent) | §9.7 · §14.13 #1 |
+| Keyframes prefixed `<id>-` | §14.13 #4 |
+| The `@scope`/`:scope` + formula-tokens-on-`body` gotcha | §14.6 (canonical; §14.4.1/§14.13/§10 restate) |
+| Perf/motion budget — transform/opacity only · `data-motion`/`data-perf` gates · canvas caps · **Fennec + Chrome** | §14.11 |
+| a11y floor — one named focusable per host; decorative `aria-hidden` | §14.14 invariant #5 · §14.13 #10 |
+| Per-theme settings (`switch`/`seg`; open synced `ui.themeSettings[id]` map) | §14.3 |
+| `present()` + per-host `appearance.<id>` override (+ `ThemeDef.assets` art) | §9.9 · §14.13 #7 |
+| Fonts/assets lazy (no first-paint hit) | §9.10 · §10 steps 1–2 |
+| Cross-device sync (LWW appearance channel) | §9.11 |
+| 390 px owner eyeball + an e2e render case | §14.13 #8 · §14.13.1 |
+| The step-by-step porting playbook | **§10** (rewritten as-built 2026-07-06) |
+
+**⚠ SPEC-not-built — do not assume these exist in code:** `resolveThemeSetting` read-validation
+(§14.15.1 ⑦) · the user-selectable Surface machinery (`composerVariants`/`ThemedComposer` — §14.14
+as-built banner; `SheetComposer` is a delegating stub) · stylelint ⑨ / `themeContract.test.ts` ⑧ /
+`kit-render.spec.ts` ⑩ (§14.15.1) · a tab **body** registry — DefaultRoot hardwires the four tab
+bodies, so a theme cannot drop/add a section yet (§14.15.4 named seam).
+
+**Sequencing rule:** the Hardening slice v2 (§14.15.1) lands **before** the next themeable-UI wave
+— a frontier plan builds on top of it, not around it.
+
+**frontier (the next theme, T5 — §14.10):** the second bespoke/spatial theme. Pre-classified:
+**Fleet = bespoke** (Mœbius art-map + GPS beacons + rig-card grid; `present()` supplies x/y +
+`assets` art + per-host `appearance.frontier.image` override — §9.9) · **Agent tab = bespoke** (the
+one non-Fleet structural deviation any theme has, D29) · **HostDetail = reuse the Kit
+`BottomSheet`** · everything else = a `.kit` tokens reskin. Design source:
+`design/prototypes/variations/frontier.html`; build precedent + reusable seams
+(`BottomSheet`/`present()`/`sheetSnap`/camera-lift): `COSMOS_HANDOFF.md` (historical record).
+Gotcha: frontier's **gradient accents** must live in `--accent-fill` — the `--accent` channel must
+parse as a plain `<color>` (§14.15.1 ⑨).
 
 ## 1. The prototypes (what was actually built)
 
@@ -61,6 +111,8 @@ Recurring motif across minimal/cosmos/frontier: a **"now monitoring" featured ho
    and a **flexible tab registry** are all theme-scoped concerns.
 
 ## 3. Proposed architecture — a pluggable presentation layer over the shared core
+
+> **⛔ SUPERSEDED by §14 (the D29 Root+Kit architecture) — kept for rationale/history; §14.9 maps what survived.**
 
 The app already separates **data/logic** (TanStack Query hooks, the `store/*` external stores, the API
 client, the `ui` store) from **presentation** (the vapor components + `vapor.css`). The data/logic core
@@ -186,6 +238,8 @@ ported theme must be visually indistinguishable from its prototype at phone widt
 
 ## 8. ⭐ RESEARCH & DESIGN PHASE BRIEF — do this next, in a clean session (owner directive 2026-06-26)
 
+> **📜 DONE (2026-06-26)** — this brief was executed; see the banner before §9. Historical.
+
 **This feature is NOT ready to implement.** The owner wants a **deliberate, thorough research + design
 phase first** — "research deeply how to better design this feature with our existing code; I want it
 flexible for future themes AND for the edits I'll keep making to the prototypes." Treat §§1–7 above as the
@@ -240,7 +294,14 @@ slice.**
 
 ## 9. Code-level design spec (LOCKED — build against this)
 
+> **⚠ Mixed epoch (labeled 2026-07-07).** The T0 slot model here was replaced by §14: **§9.0,
+> §9.2–§9.5 and §9.13 are dead** (individually bannered). **§9.1 (decisions) and §9.7–§9.12
+> (tokens · palettes · present() · fonts · sync · View Transitions) remain live contract** and are
+> referenced by the §0 Author Contract. §14.9 is the survived-vs-replaced map.
+
 ### 9.0 The current architecture (AS-IS) — what T0 plugs into
+
+> **⛔ HISTORICAL** — describes the pre-M0 code; the engine has since inverted this. See §14.1.
 
 Mapped from the code (2026-06-26). This is *today's* reality the engine extends; §§9.1+ are the *target*.
 
@@ -301,6 +362,8 @@ the above except `App.tsx` (→ slot host) and `store/ui.ts` (→ richer state).
 
 ### 9.2 The spine (one diagram)
 
+> **⛔ SUPERSEDED by §14 (the D29 Root+Kit architecture) — kept for rationale/history; §14.9 maps what survived.**
+
 ```
 shared core (UNCHANGED)   hooks/* · store/* (minus ui) · api/client   ── host/service/agent data, actions
         │
@@ -324,6 +387,9 @@ the base for chrome it doesn't restructure. Adding/re-syncing a theme = **one re
 self-contained module + one verbatim scoped `.css`** — the north star.
 
 ### 9.3 Types — `ThemeRegistry` / `ThemeDef` / `ThemeSlots`
+
+> **⛔ SUPERSEDED by §14 (the D29 Root+Kit architecture) — kept for rationale/history; §14.9 maps what survived.**
+> **Do NOT build from this `ThemeDef`/`ThemeSlots`** — the live type is §14.3 + `theme-engine/types.ts`.
 
 New `theme-engine/` dir under `frontend/src/` (sibling to `theme/`, which keeps `vapor.css`/`extras.css`).
 Mirrors the backend action-registry pattern (typed descriptor per theme).
@@ -389,6 +455,8 @@ export const FALLBACK: ThemeId = "minimal";     // slot fallback when a theme om
 
 ### 9.4 Slot resolution — context, no prop-drilling
 
+> **⛔ SUPERSEDED by §14 (the D29 Root+Kit architecture) — kept for rationale/history; §14.9 maps what survived.** `useThemeSlot` was deleted.
+
 `ThemeProvider` (new) reads `ui.{theme,mode,accent}`, ensures the active theme's CSS+fonts are loaded
 (suspends on first switch via a small resource cache), and exposes the resolved slot set through context.
 `createContext` default = the BASE slots (the documented fallback mechanism). Components call
@@ -402,6 +470,8 @@ export const FALLBACK: ThemeId = "minimal";     // slot fallback when a theme om
 > them generalizes.
 
 ### 9.5 Slot list — shared chrome vs theme-overridable (the exact split)
+
+> **⛔ SUPERSEDED by §14 (the D29 Root+Kit architecture) — kept for rationale/history; §14.9 maps what survived.** *(The per-theme design intent captured in this table — e.g. frontier's map+beacons Fleet + bottom-sheet HostDetail — survives as design input; the slot mechanism does not.)*
 
 | Slot | Owner | Notes |
 |---|---|---|
@@ -627,6 +697,8 @@ frame. Leave a seam to migrate to React's native `<ViewTransition>` when it leav
 
 ### 9.13 Files that change (the vapor-safe touch list)
 
+> **⛔ SUPERSEDED by §14 (the D29 Root+Kit architecture) — kept for rationale/history; §14.9 maps what survived.** (a T0-era touch list — the as-built file map is §14 + the code.)
+
 | File | Change | Vapor-safe? |
 |---|---|---|
 | `theme-engine/` (new dir) | registry, types, `ThemeProvider`, `useThemeSlot`, BASE chrome, per-theme modules, the `switchTheme` View-Transition path (§9.12) | additive |
@@ -721,6 +793,11 @@ consolidated as the build checklist in §13. The one external addition that mate
   CSS + custom properties is the better fit; `<link>` teardown on switch (inert under scoping).
 
 ## 13. Final-review corrections — the T0 build checklist (LOCKED 2026-06-26)
+
+> **⚠ Mixed epoch (labeled 2026-07-07).** §13.1 (the vapor frozen-attr table) is **live contract**;
+> §13.2–§13.3 describe the `@layer` isolation **mechanism that §14.6 replaced with `@scope`** (the
+> collision *rationale* still holds); §13.6 already carries its own superseded banner; the rest is
+> historical build-notes.
 
 Each item is a confirmed fix from the review; build T0/T1 against these, not the pre-review wording.
 
@@ -845,6 +922,8 @@ interface ThemeDef {
   loadFonts?: () => Promise<void>;      // §9.10 (kept)
   present?: Present;                    // §9.9 (kept) — per-host encoding (cosmos/frontier)
   settings?: ThemeSettingsSpec;         // NEW — theme-namespaced options (see below)
+  loadRoot?: () => Promise<{ default: React.ComponentType }>;  // as-built: lazy bespoke Root (code)
+  assets?: Record<string, string>;      // as-built: import.meta.glob art map (frontier — §9.9)
 }
 ```
 
