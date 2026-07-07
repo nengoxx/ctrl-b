@@ -110,6 +110,11 @@ python tools/check.py --e2e      # full gate + Playwright e2e/a11y (the PRE-DEPL
 NOT in the default/pre-push gate (it builds the dist + boots a browser, ~20-30s). It's the **pre-deploy gate** —
 a hard step-0 item in `DEPLOY_EMMA.md` + a `.claude/settings.json` deploy-checklist hook (fires on
 `bootstrap.py`/`install.sh`) — so it can't be skipped when shipping, while commits/pushes stay fast.
+**One-time prereq:** the browser binaries are NOT installed by `npm install`/`npm ci` — on a fresh machine run
+`npx playwright install` (from `frontend/`) once, or the suite fails with "Executable doesn't exist". Two traps
+(QH audit 2026-07-07): `reuseExistingServer: !CI` means a stale preview server already on **:4173** gets reused
+(you'd test an old build — kill it first), and CI deliberately does not run `--e2e` (it's the deploy gate, not
+the push gate).
 
 `tools/check.py` resolves the backend interpreter as `backend/.venv/{Scripts,bin}/python` — a single
 `os.name` branch (`Scripts`/`python.exe` on Windows, `bin`/`python` elsewhere), so it runs the same from
