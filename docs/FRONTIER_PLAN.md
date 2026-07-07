@@ -87,13 +87,25 @@ structural change is the body registry (= this step 0). D-entry drafted at step-
   This is §14.13 #8's full-bleed-signature rule applied over time instead of space.
 - **Plan-pill placement is user-selectable in frontier** (D30 slots) — modularity per §1.
 
-## §3 OPEN — Point 3: the composer (recommendation on the table)
+## §3 LOCKED — Point 3: the composer — NO frontier variant (tokens band)
 
-Frontier's comic composer = a **frontier-owned variant** (`FrontierComposer`) registered through
-the Composer-Surface machinery (which lands before frontier), theme-pinned as frontier's default;
-`useComposer()` (prefix routing · mic/dictation · send · drafts) stays the shared controller.
-Scope + consequences: being discussed (see the conversation record / §R below when closed).
-Fallback if Composer-Surface slips: the D30 `Composer={…}` prop works today.
+Prototype-verified (2026-07-07, frontier.html:184–299): frontier's composer is **structurally
+identical to the stacked Kit composer** (rounded panel · textarea · button row: attach/model/mic/
+send) — the comic look is entirely fonts/radii/borders/colors. The 3-gate rules: **tokens band** —
+frontier's composer = `KitComposer` (stacked) + frontier `tokens.css`. No `FrontierComposer`
+component exists; the earlier variant recommendation was withdrawn as over-build.
+
+- **All-themes picker (owner directive 2026-07-07):** every non-frozen theme declares the
+  `composer` seg setting so the Appearance picker offers the style choice everywhere —
+  a one-line scope confirmation on `COMPOSER_SURFACE_PLAN.md` A3 (currently minimal + cosmos;
+  vapor stays opt-in via its Phase D while frozen). Frontier declares `[stacked, docked]`
+  (stacked default) at F1.
+- The suggestion **chips are empty-state-owned** (Agent body, §2), not composer functionality.
+- **Nuance parked to F1 pre-flight:** the prototype shows a small `model` label in the composer
+  row — check whether KitComposer has an equivalent; if not it's a *shared* micro-addition (a slot
+  or built-in all themes get), never a frontier fork.
+- The slot-contract consequence stays for the machinery generally (hardening ⑧ pins "every
+  registered variant renders every required slot"), but frontier adds no variant of its own.
 
 ## §4 OPEN — Point 4: art assets
 
