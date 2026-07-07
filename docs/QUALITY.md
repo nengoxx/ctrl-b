@@ -75,17 +75,18 @@ enforce CSS rules no JS linter has.
   we later want its extras; **Pyrefly** — Meta, pure-Rust, zero-Node; **ty** — Astral, still beta.)*
 - **Runner = one stdlib `tools/check.py`.** Not twin `.sh`/`.ps1` scripts (duplicated growing logic → drift, a
   CLAUDE.md-forbidden anti-pattern). One Python file (stdlib `subprocess`/`pathlib` — **already a hard prereq**,
-  zero new dep) resolves the venv python in a single OS-branch, runs a **data-driven check list**, filters staged
-  files (`git diff --cached`), runs in parallel (`concurrent.futures`), delegates the FE to `npm run check-all`,
-  aggregates exit codes. Adding a check = one list entry. *(Rejected: `nox`/`tox` — env-matrix overkill; `just`/
+  zero new dep) resolves the venv python in a single OS-branch, runs a **data-driven check list**, runs in
+  parallel (`concurrent.futures`), delegates the FE to `npm run check-all`, aggregates exit codes. Adding a
+  check = one list entry. *(The originally-planned staged-file filter was dropped at 1d — see "Enforcement (1d)".)* *(Rejected: `nox`/`tox` — env-matrix overkill; `just`/
   `make` — global-dep + still needs the OS-venv indirection.)*
 - **Enforcement = native `core.hooksPath`.** Not lefthook — the caveat audit found documented **lefthook Windows
   failures** ("can't find lefthook in PATH" with npm-global, Git-LFS + PowerShell edge cases), and our env is
   Windows-now → Linux(emma). Instead: git's native **`core.hooksPath = .githooks/`** (tracked hook dir, best
   practice since git 2.9) with tiny hooks that call **`python tools/check.py`** — `python` is always on PATH (the
   backend runtime), more reliable than calling `lefthook`, **zero new dependency**, and reuses the chokepoint.
-  **Reliability split:** `pre-commit` → `check.py --staged` (fast, staged-file subset); `pre-push` → full
-  `check.py` (types + tests) — a slow pre-commit gets `--no-verify`-bypassed. **Caveats:** cloned repos can lose
+  **Reliability split:** `pre-commit` → `check.py --fast` (the instant whole-tree subset — see
+  "Enforcement (1d)" below); `pre-push` → full `check.py` (types + tests) — a slow pre-commit gets
+  `--no-verify`-bypassed. **Caveats:** cloned repos can lose
   the hook's `chmod +x` (Linux) and hook names are exact/case-sensitive — both handled by the one-time setup
   (`git config core.hooksPath .githooks` + ensure the exec bit), run by `install.sh` / a documented one-liner.
   *(Alternative kept documented: **lefthook** — richer managed runner with parallel groups, if we outgrow native
@@ -172,7 +173,7 @@ component, D29) and carries a scoped `eslint-disable` with rationale; the `exhau
 | 1 | Frontend lint depth | **type-aware** (`recommended-type-checked`) + react-hooks (`recommended-latest`) + react-refresh; `@eslint-react` = later ratchet |
 | 2 | Backend type checker | **official `pyright[nodejs]`** (pinned, `basic` → ratchet `strict`); basedpyright/Pyrefly = documented alts; flaky plain-pyright install fixed by the `nodejs` extra |
 | 3 | Runner | one stdlib **`tools/check.py`** chokepoint + npm `check-all` (composed); **no** `.sh`/`.ps1` twins |
-| 4 | Enforcement | native **`core.hooksPath=.githooks/`** → `check.py`; **fast staged pre-commit / full pre-push**; lefthook = documented alt |
+| 4 | Enforcement | native **`core.hooksPath=.githooks/`** → `check.py`; **fast whole-tree pre-commit (`--fast`; staged dropped at 1d) / full pre-push**; lefthook = documented alt |
 | 5 | Adoption mode | **baseline warn-first → burn down to clean before deploy**; Prettier reflow = own commit |
 
 ## References
