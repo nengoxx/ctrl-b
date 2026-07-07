@@ -11,7 +11,9 @@
 > **Status:** audit verified · comparative research complete (8 agents, 2026-07-07) · consistency
 > pass done (v2.1: +ACA-17, cross-slice contract, per-slice edge-case specs) · **plan APPROVED by
 > the owner 2026-07-07** — tracked as `TODO.md` **Phase 12**; Slice 0 pre-landed (`ee23209`);
-> D-entries (D35–D37) are drafted at each slice's design review, per §5.
+> D-entries (D35–D37) are drafted at each slice's design review, per §5 · DB/context/cache pass
+> done (v2.2, 2026-07-08: +ACA-18–21 and the ACA-5/ACA-15 riders, folded into Slices 1/2/6 —
+> no new slices, no re-sequencing).
 > **Method:** every load-bearing ctrl-b file read directly by the main session (≈6,400 lines:
 > `api/agent.py`, `services/agent/*`, `core/{tool,permissions,memory,events}.py`,
 > `action_service.py`, `adapters/{inference,mcp_client,ssh}.py`, `db.py`, `conversation.py`,
@@ -49,7 +51,7 @@ research (§3) additionally shows several are **at or ahead of the field** — m
 | Area | What's right | Where |
 |---|---|---|
 | Execution chokepoint | Every capability (builtin/action/MCP/OpenAPI/terminal) flows registry → `decide()` → `ActionService.invoke` → Event audit. No parallel paths; `!` exec and Approve-to-apply both reuse it. | `core/tool.py`, `action_service.py`, `api/agent.py:277`, `proposals.py` |
-| Prompt-cache discipline ⭐ | Static head (system+appends+memory+roster+skills) built once per turn, byte-stable across iterations; tools list cached; ephemeral reflection nudge appended at the tail, one-shot. Matches Codex/Claude-Code stability-layer doctrine (§3.8). | `session.py:228‑357, 419‑427` |
+| Prompt-cache discipline ⭐ | Static head (system+appends+memory+roster+skills) built once per turn, byte-stable across iterations; tools list cached; ephemeral reflection nudge appended at the tail, one-shot. Matches Codex/Claude-Code stability-layer doctrine (§3.8). Cross-turn determinism also verified in v2.2 (memory-section order, roster projection, registration-order tools, args re-serialization). *One reliance gap: ACA-18.* | `session.py:228‑357, 419‑427` |
 | Loop discipline ⭐ | Exact-repeat suppression (cap 2), per-tool cap (6), result-signature stall guard, forced tool-less `_finalize`. Richer than Codex (none confirmed), Claude Code (turn/budget caps only), and pi (none by philosophy); comparable to opencode (threshold 3) and Gemini's tier-1 (threshold 5) — see §3.9. | `session.py:130‑156, 581‑686, 797‑835` |
 | Confirm flow | Durable `AWAITING_CONFIRM` + server-side token re-mint (J3) + single-flight `begin_execute` (J2) + `(action,args)`-bound single-use TTL tokens + risk-aware retry (I4). Two-axis risk×privilege gating parallels Codex's sandbox∧approval split (§3.6). | `action_service.py:184‑238`, `session.py:505‑532`, `store/chat.ts:736‑767` |
 | Wire robustness | Frame validators both ends; client drops bad frames without failing the turn; unknown events ignored (forward-compatible). `done` already carries a reason state (`completed/suspended/capped/error`) — the "result subtype" pattern Claude Code ships. | `store/chat.ts:279‑354`, `session.py:943‑952` |
@@ -152,7 +154,13 @@ starts. Rider: `estimate_tokens` (`compaction.py:64‑82`) counts history only �
 schemas are invisible to the fixed `threshold_tokens` (default 6000, `domain/agent.py:43`).
 **External corroboration (§3.7):** the field triggers on *reserve headroom against the model's
 window* (pi: `window − 16384`; Gemini: 70%; Goose: 80%; Codex: ~90%), not a fixed count.
-**Resolution:** Slice 4 (notice) + Slice 6 (compaction v2, ACA-A3).
+**v2.2 riders:** (a) the estimator docstring's "slightly conservative (overestimating)" claim is
+backwards for tool-heavy history — JSON runs ~3 chars/token, not 4, so it *under*-triggers exactly
+when tool traffic dominates; (b) `messages.tokens` (`domain/conversation.py:87`, "for compaction
+budgeting (4e)") is written `NULL` everywhere and only round-tripped — a dead column. Slice 6
+should either populate it (persist per-message estimates so `estimate_tokens` stops re-walking the
+full history every iteration) or drop the comment's claim.
+**Resolution:** Slice 4 (notice) + Slice 6 (compaction v2, ACA-A3 — absorbs both riders).
 
 ### ACA-6 · Latent `TypeError` in the timeout normalizer — **LOW (latent)**
 
@@ -226,7 +234,13 @@ owning item is the deferred F13 wave.
 mitigated by the >100 % header + consolidation nudge. (b) Startup `reconcile()` commits dirty
 files serially inside lifespan (`main.py:193`) — slow only after mass external edits.
 (c) `load_context` sync reads ≤3 small files once per turn — negligible. (d) Embeddings client is
-a wired-but-unconsumed seam (by design, ROADMAP B1). **Resolution:** document (a); defer the rest.
+a wired-but-unconsumed seam (by design, ROADMAP B1). (e — v2.2) the `_static_prefix` docstring's
+"a mid-turn `memory`-tool write now lands next turn" (`session.py:341‑344`) doesn't hold across a
+confirm/question suspend: resume constructs a **new** `AgentSession` (`api/agent.py:711`), which
+re-reads the memory files into the resumed half's head — the write surfaces mid-turn after all,
+and the prefix diverges from the pre-suspend one (cache re-prefill from the memory block onward).
+Behaviourally harmless; the docstring is what's wrong. The full answer is A9's per-session freeze
+(§6 Q5). **Resolution:** document (a); fix the (e) docstring in Slice 1's doc sweep; defer the rest.
 
 ### ACA-16 · Resume doesn't carry the per-message `mode` — **INFO (documented)**
 
@@ -250,6 +264,61 @@ invariant documented in `runtime.py:151‑153` and `main.py:148‑150` is not ac
 this path. **Gets worse under Slice 3** (turns run detached, so "some turn is active" becomes more
 common). **Resolution:** Slice 2 (the busy-marker makes the check trivial: skip auto-rediscovery
 when any turn is active — it re-fires at the next quiet turn boundary; the dirty flag persists).
+
+### ACA-18 · The prompt-cache design relies on llama.cpp `cache_prompt` but never sends it; zero cache observability — **LOW-MED (found in the v2.2 DB/context pass)**
+
+The whole §3.8 discipline banks on the local KV cache — `session.py:223` credits "`cache_prompt`"
+by name — but the inference adapter never sends the parameter (grep-verified: no
+`extra_body`/`cache_prompt` anywhere in `adapters/inference.py`). Current llama-server builds
+default it to `true` ([server README](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)),
+but older builds defaulted `false` — on one of those, the carefully engineered stable prefix buys
+*nothing, silently*. And there is no way to notice: no cache-hit telemetry exists on the main loop
+(Slice 7's "cache-hit telemetry" verify line covers routing churn only). **Caveat for the fix:**
+the pin must be **per-endpoint** — OpenAI's API rejects unrecognized request arguments (400), so a
+blanket `extra_body` would break the cloud chain. The voice adapter already owns the exact pattern
+to reuse: a config-driven `extra_body` passthrough merged into the SDK call
+(`adapters/voice.py:104‑109`, `VoiceCfg.extra_body`). **Resolution:** Slice 1 — `extra_body` field
+on `InferenceEndpointCfg` (same convention), `cache_prompt: true` in the local endpoint's config
+template, plus debug-level cache telemetry where the endpoint reports it (llama.cpp `timings`
+fields; cloud `usage.prompt_tokens_details.cached_tokens` via `stream_options: {include_usage}` —
+exact surfaces verified at build). Pairs naturally with the A8 measurement rider: together they
+turn "should be caching" into "provably caching".
+
+### ACA-19 · Multi-statement write sequences aren't transactional — compaction can persist half-applied — **LOW**
+
+`Database.execute` commits per statement (`db.py:168‑173`); the write lock serializes statements,
+not sequences. Compaction does `add(summary)` then N separate `update(m)` flag flips
+(`compaction.py:119‑123`): a crash mid-sequence leaves the summary inserted with part of the head
+still un-flipped — the next assembled context contains **both** the summary and some of the
+verbatim turns it summarizes. Not corrupting (rows are never lost; the model just reads
+duplicates), and the same window in `_run_calls`' `update(assistant)` + `add(tool_msg)` pair
+already degrades gracefully (the synthesized-`skipped` path — though note it synthesizes "not
+executed" for calls whose persisted state says OK). **Resolution:** Slice 2 (turn integrity) — a
+`Database.transaction()` async context manager batching statements under the existing write lock
+(`BEGIN`…`COMMIT`, one commit); the compactor's summary+flip sequence and the plan/apply
+read-modify-write pairs adopt it. Complements, not replaces, Slice 2's shielded-`finally`
+persistence (that solves *cancellation*; this solves *atomicity*).
+
+### ACA-20 · Message ordering has no tiebreaker — a `ts` collision can invalidate the assembled context — **LOW**
+
+`MessageRepo.list` orders by `ts` alone (`conversation.py:132`). Messages within a step are
+created microseconds apart, and the compaction boundary is *manufactured* at `tail[0].ts − 1 µs`
+(`compaction.py:117`) — a collision makes relative order **undefined**, and the worst case (an
+assistant `tool_calls` message sorting after its `tool` results) breaks the assembled OpenAI
+context and jitters the cache prefix. Unlikely, but the fix is free. **Resolution:** Slice 1 —
+`ORDER BY ts, rowid` (insertion order is the natural tiebreaker; applies to `list` and any future
+ts-ordered reads).
+
+### ACA-21 · `_finalize` drops the toolset — the forced wrap-up call re-prefills the entire context — **LOW**
+
+The forced final answer calls `stream_chat(…, tools=None)` (`session.py:721`). Tools sit at the
+**top** of the prompt-cache hierarchy (the chat template renders a different preamble without
+them — the exact churn the `_tools_cache` docstring warns about at `session.py:303‑316`), so the
+one call designed to cheaply wrap up a long turn is the single largest avoidable cache miss in the
+loop: full re-prefill of system+memory+roster+history. **Resolution:** Slice 1 — send the same
+cached `self._tools()` list with `tool_choice: "none"` (equally binding server-side, prefix
+intact). Verify at build that llama.cpp honors `tool_choice: "none"` for the target template;
+if a server chokes, fall back to today's `tools=None` per-endpoint.
 
 ---
 
@@ -361,6 +430,10 @@ the KV cache) all describe what `_static_prefix`/`_tools_cache` already do. Two 
 noting: Hermes's per-*session* memory freeze is stronger than ctrl-b's per-*turn* read (ACA-A9,
 optional knob — UX trade-off: edits surface next thread); and Codex normalizes prompt fingerprints
 (whitespace) so semantically-identical prompts still hit cache — not needed at ctrl-b's scale.
+**v2.2 caveat:** the discipline is correctly *engineered* but currently *unverified in
+production* — the llama.cpp parameter it depends on is never actually sent and nothing measures
+hit rates (ACA-18); `_finalize` also defeats it once per capped turn (ACA-21). Both are Slice-1
+one-liners.
 
 ### 3.9 Loop discipline → **ctrl-b is at or ahead of the field**
 
@@ -487,7 +560,7 @@ review, not retroactively.
 - Memory-pattern lineage note (MemGPT/Letta → Hermes style) where docs say "Hermes-style" (§0).
 - **Verify:** doc-only diff; grep for other repeats of the false claims.
 
-### Slice 1 — Hang-proofing & hardening batch (ACA-3, 6, 7, 8, 9, 12, 13 + A8 measurement) · M
+### Slice 1 — Hang-proofing & hardening batch (ACA-3, 6, 7, 8, 9, 12, 13, 18, 20, 21 + A8 measurement) · M
 1. **MCP deadline:** one `asyncio.timeout` around the whole `_session` entry + operation, both
    transports, `discover` and `call`; add `call_timeout_s` to `McpServerCfg` (None →
    `connect_timeout_s`). **Cleanup nuance to verify during build:** when the timeout cancels
@@ -511,9 +584,23 @@ review, not retroactively.
    JSON: &lt;first 200 chars&gt;" instead of `{}`-then-validate.
 8. **A8 measurement rider:** log the rendered token estimate of tools+static head per turn (debug
    level) so the context-economy budget is data, not vibes.
-- **Verify:** unit tests per item; live probe: kill a stdio MCP server mid-handshake while chatting.
+9. **Cache pin + telemetry (ACA-18):** `extra_body` passthrough field on `InferenceEndpointCfg`
+   (reuse the `VoiceCfg.extra_body` convention — merge into the SDK call, per-endpoint, never
+   blanket: OpenAI 400s on unknown args); set `cache_prompt: true` for the local endpoint in the
+   config template. Debug-log cache-hit telemetry where the endpoint reports it (llama.cpp
+   `timings`; cloud `usage.prompt_tokens_details.cached_tokens` via `stream_options`) — lands next
+   to item 8's estimate log so prefix cost and hit rate read as one line.
+10. **Message-order tiebreaker (ACA-20):** `ORDER BY ts, rowid` in `MessageRepo.list`.
+11. **Wrap-up cache retention (ACA-21):** `_finalize` sends the cached `self._tools()` +
+    `tool_choice: "none"` instead of `tools=None`; verify llama.cpp honors it for the target
+    template, else keep `tools=None` as the per-endpoint fallback.
+12. **Doc sweep rider:** fix the `_static_prefix` "lands next turn" docstring (ACA-15e — a
+    suspend/resume re-reads memory mid-turn).
+- **Verify:** unit tests per item; live probe: kill a stdio MCP server mid-handshake while
+  chatting; cache probe: two consecutive turns on the local model show a near-full prefix hit in
+  the new telemetry (and the wrap-up call after a forced stall no longer re-prefills from zero).
 
-### Slice 2 — Turn integrity (ACA-2 interim, 10, 16, 17 + ACA-1 scenario 2) · M
+### Slice 2 — Turn integrity (ACA-2 interim, 10, 16, 17, 19 + ACA-1 scenario 2) · M
 1. **Per-thread turn marker** (`dict[thread_id, TurnHandle]` on `app.state` — see the cross-slice
    contract: a registry entry, not a held lock, so Slice 3 extends it in place). Semantics:
    - **Reserve synchronously** in the endpoint handler (no `await` between check and set — atomic
@@ -550,9 +637,16 @@ review, not retroactively.
    (`editPlan`) and proposal approve/dismiss (`applyProposal`) on `status !== "streaming"` so the
    UI doesn't offer what the server will 409 (server check remains authoritative); carry `mode` in
    `ResumeRequest` (ACA-16 — `resume()` gains a `mode` param threaded to `_drive`).
+5. **Transactional write batches (ACA-19):** a `Database.transaction()` async context manager
+   (`BEGIN`…`COMMIT` under the existing write lock, one commit per batch); adopters: the
+   compactor's summary-insert+flag-flip sequence, and the `/agent/plan` + `/agent/apply` in-place
+   update pairs. Orthogonal to item 3 (shielding covers cancellation; this covers atomicity) and
+   to the cross-slice contract (no `_run_calls` structural change — its `update`+`add` pair may
+   adopt the CM as a wrapper without reshaping the seam).
 - **Verify:** two-client concurrent-post pytest (chat×chat, chat×plan-edit, chat×compact);
   simulated-cancel test asserting completed calls' tool message survives while the in-flight
-  call's does not; rediscovery-skipped-while-busy test.
+  call's does not; rediscovery-skipped-while-busy test; a compaction-crash test (raise between
+  summary insert and flag flips inside the transaction → neither persists).
 
 ### Slice 3 — Durable turns (ACA-1 + A11) · L — **flagship; design review first (D35 proposed)**
 Pattern: *resumable streams* — server-owned turn task + replayable per-turn event log; the SSE
