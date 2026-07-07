@@ -48,12 +48,23 @@ placement varies.** The plan-pill (D30 slots) is the one-level-down precedent.
    defaults), replacing `DefaultRoot`'s hardwired `tab === "…"` branch. The `Fleet={…}` prop folds
    in (theme-pinning-as-data — NOT a Surface graduation; the D31 variant axis stays separate).
 2. **Curated layout presets** — `4-tab` (today) · `3-tab` (utils hosted in Conf) · `2-tab` (conf
-   via menu, utils inside it). Composes freely with `appbarMode`.
-3. **The lever** — one global, appearance-synced `ui` preference mirroring `appbarMode`, default
-   `auto` = the theme's declared default. `ThemeDef` additively declares `defaultLayout` +
-   supported set; unsupported picks coerce to nearest supported (warn-first). Ideal held: **all
+   via menu, utils inside it). Composes freely with `appbarMode`. **Preset schema (adversarial
+   review 2026-07-07):** a preset = `{ bar: TabId[]; hosted?: Record<TabId, TabId> }`;
+   `useSections` exposes the on-bar/off-bar/hosted partitions, and TabBar/KitNavBar/NavMenu
+   consume the partitions (today all three map the full unfiltered list — that changes in F0).
+   **Precedence rule: hosting supersedes the menu** — the menu affordance lists only sections that
+   are off-bar AND unhosted; `navigate(hostedId)` coerces to the host section + scroll-to-group.
+3. **The lever** — one global `ui` preference, **device-local like `appbarMode`** (verified:
+   `appbarMode` is deliberately per-device/NOT synced — `ui.ts:48-53`, THEME_ENGINE §14.13 #11 —
+   and the same per-screen-layout rationale applies; a synced variant would need a new
+   `AppearanceDoc` field + reconcile, possible later as an additive promotion, out of F0 scope).
+   Default `auto` = the theme's declared default. `ThemeDef` additively declares `defaultLayout` +
+   supported set; unsupported picks coerce to nearest supported via a **dedicated layout-coercion
+   resolver keyed on the ThemeDef declaration** (warn-first) — this is NOT hardening item ⑦'s
+   `resolveThemeSetting`, which only guards per-theme seg/switch settings. Ideal held: **all
    themes can offer all modes**; frontier merely *defaults* to 3-tab, vapor to 4 (vapor waivers to
-   its native set while frozen — ladder-owned).
+   its native set while frozen — ladder-owned; VaporRoot never consumes the registry, so its
+   byte-identity under F0 is structural, not incidental).
 
 **Edges the spec must own:** keep-mounted state per module across relocation (utils keeps state
 when it moves between own-section and Conf-group) · active-id space in hosted mode (deep-link
@@ -72,10 +83,13 @@ structural change is the body registry (= this step 0). D-entry drafted at step-
   (markdown + code actions, confirm/question bubbles, plan panel, reasoning, notices, search
   results, streaming) AND ACA Phase 12 grows it (Stop/steering/approvals) — a fork pays every ACA
   slice twice and splits the security UX. The 3-gate agrees: same DOM shape → cheapest band wins.
-- **The chat hooks + token contract (NEW, specified at F4 pre-flight):** every restylable chat
-  element gets a named, documented, test-pinnable hook class + component tokens (the
-  `.kit-appbar`-style contract extended inward: bubble kinds user/bot/cmd/question · markdown
-  container · code block + actions · plan panel · reasoning · notices · search results).
+- **The chat hooks + token contract (NEW, specified at F4 pre-flight):** **formalize the
+  EXISTING shared class names** (the chat tree already uses the legacy vapor-idiom classes —
+  `.b.bot`/`.b.cmd`/`.md`/`.chat-log`/… — shared by all themes; renaming would touch frozen vapor,
+  so the contract documents + pins them as-is) plus component tokens, covering: bubble kinds
+  user/bot/cmd/question · markdown container · code block + actions · plan panel · reasoning ·
+  notices · search results. Known grandfathered exception to note in the contract: the `isVapor`
+  gate on `PinnedPlan` (AgentTab) — the one sanctioned theme-branch (THEME_ENGINE §14.15.3 hook).
   Hardening item ⑧ (`themeContract.test.ts`) eventually pins them. **Escalation valve:** an
   element that provably can't reach D7 fidelity via CSS goes bespoke *per-element* (gate-checked);
   a second theme needing a structurally different log is what births a ChatSurface (ladder V4
@@ -86,7 +100,10 @@ structural change is the body registry (= this step 0). D-entry drafted at step-
   (class toggle). Background mode: bob slower/subtler, `data-motion`-gated, IO-paused when
   inactive. Legibility owned by heavy dim/desaturate + scrim + the comic style's opaque bubbles.
   This is §14.13 #8's full-bleed-signature rule applied over time instead of space.
-- **Plan-pill placement is user-selectable in frontier** (D30 slots) — modularity per §1.
+- **Plan-pill placement is user-selectable** (owner feature): D30's slot composition is a
+  developer API today, so this is a **small real feature, not a freebie** — a setting
+  (pinned-top vs composer-pill) that switches which D30 composition the Root passes; scoped in F4
+  (decide there: per-theme seg vs global lever). Modularity per §1.
 
 ## §3 LOCKED — Point 3: the composer — NO frontier variant (tokens band)
 
@@ -99,8 +116,9 @@ component exists; the earlier variant recommendation was withdrawn as over-build
 - **All-themes picker (owner directive 2026-07-07):** every non-frozen theme declares the
   `composer` seg setting so the Appearance picker offers the style choice everywhere —
   a one-line scope confirmation on `COMPOSER_SURFACE_PLAN.md` A3 (currently minimal + cosmos;
-  vapor stays opt-in via its Phase D while frozen). Frontier declares `[stacked, docked]`
-  (stacked default) at F1.
+  vapor stays opt-in via its Phase D while frozen). Frontier declares `[stacked, sheet]`
+  (stacked default; **`sheet` is the variant ID — "Docked" is only its display label**, per
+  COMPOSER_SURFACE_PLAN's registry spec; a literal `docked` value would coerce away) at F1.
 - The suggestion **chips are empty-state-owned** (Agent body, §2), not composer functionality.
 - **Nuance parked to F1 pre-flight:** the prototype shows a small `model` label in the composer
   row — check whether KitComposer has an equivalent; if not it's a *shared* micro-addition (a slot
@@ -135,17 +153,23 @@ sun/moon styling.)
 (4/3/2-tab) · the global synced lever (`auto` = theme default) + `ThemeDef` capability declaration
 · the generalized menu-affordance rule (off-bar ⇒ menu) · the utils-in-Conf group (concrete).
 *Reuse:* `tabsFor`/`useSections` · NavMenu · appearance channel · per-theme settings machinery.
-*Acceptance:* all existing themes render byte-identical in `4-tab`/`auto` (vapor waivered native);
-3-tab relocates utils into Conf with state preserved across the move; 2-tab reaches Conf via menu;
-deep-link `utils` coerces in hosted mode; `hasComposer` correct per preset; keep-mounted + lazy
-latch unchanged; unit tests for preset resolution + coercion; e2e render pass. **Design review
-first → drafts the D-entry.**
+*Acceptance:* all existing themes render byte-identical in `4-tab`/`auto` (vapor structurally
+untouched — its Root never consumes the registry); 3-tab relocates utils into Conf — **query-backed
+data survives (external caches); local input state (typed args, in-flight results) legitimately
+resets**, since relocation is a rare, user-initiated layout switch and React remounts on
+tree-position change (no portal machinery for it — honest trade, adversarial review 2026-07-07);
+**hosted utils inherits Conf's lazy latch** (it mounts with Conf's chunk; a `utils` deep-link or
+live layout-switch while utils is active force-mounts Conf first, then scrolls to the group);
+2-tab reaches Conf via menu; the menu lists off-bar-AND-unhosted sections only; `hasComposer`
+correct per preset; keep-mounted semantics for on-bar sections unchanged; unit tests for preset
+resolution + the layout-coercion resolver + hosted-deep-link coercion; e2e render pass. **Design
+review first → drafts the D-entry.**
 
 **F1 — shell reskin.** *Build:* `ThemeDef` row (`frontier`) · two-axis palettes (§5: night/day
 modes, 4 gradient accents — gradients in `--accent-fill`, plain `--accent`) · Chakra Petch +
 JetBrains Mono via `loadFonts` · `tokens.css` under `.kit` (appbar sun/moon-skinned mode toggle ·
 nav · Conf · Utils · composer per §3) · dusk-glow background · `defaultLayout: 3-tab` +
-`composer: [stacked, docked]` declarations. *Reuse:* Kit wholesale; the §0 contract's porting
+`composer: [stacked, sheet]` declarations (`sheet` = the docked variant's ID). *Reuse:* Kit wholesale; the §0 contract's porting
 playbook (§10). *Acceptance:* every tab fully functional in frontier at 390px; mode/accent
 switches live + synced; keyframes `frontier-`-prefixed; §14.6 `@scope` pattern; check.py green.
 
@@ -153,10 +177,19 @@ switches live + synced; keyframes `frontier-`-prefixed; §14.6 `@scope` pattern;
 6s `sweep` + GPS beacons at `present()` x/y · ping-ring pulse · offline grey · name tags · count
 pill) · 2-col rig grid (art by index · plates · LEDs · offline grayscale) · `present()` +
 `ThemeDef.assets` glob · the documented **art spec** (§4: filenames/aspects for the placeholder →
-final swap). *Reuse:* `useFleet` controller · cosmos's selection/liveness patterns. *Acceptance:*
-real fleet data drives beacons+grid; selection syncs beacon↔card; offline states correct;
-animations transform/opacity-only + `data-motion`/IO-gated; per-host `appearance.frontier.{image,
-x,y}` override honored end-to-end (API → render).
+final swap). *Reuse:* `useFleet` controller · cosmos's selection/liveness patterns (cosmos's golden-angle
+`present()` is the precedent but is polar — frontier needs its own 2D formula). *Beacon placement
+(adversarial review 2026-07-07):* default x/y come from a **deterministic index-seeded 2D scatter
+with min-separation** (works for N=1…12+, no hand-authored positions), per-host override wins;
+name tags must handle overlap at 390 px and beacons meet the ~44 px tap-target floor (cosmos
+already flags this class). *Art contract:* the F2 art spec pins **exact filenames + count as the
+placeholder→final swap contract**; `present()` indexes **modulo the set size**; a dangling
+per-host `image` override (file no longer in the set) **falls back to the indexed default, never
+crashes**. *Acceptance:* real fleet data drives beacons+grid at N=1/6/12 (scatter deterministic,
+no collisions); selection syncs beacon↔card; offline states correct; animations
+transform/opacity-only + `data-motion`/IO-gated; per-host `appearance.frontier.{image,x,y}`
+override honored end-to-end (API → render) incl. the dangling-override fallback; tag-overlap +
+tap-target cases pass at 390 px.
 
 **F3 — HostDetail.** *Build:* frontier sheet content (art banner + name/plate/status · role/ip/
 ping/uptime line · 4-up stat grid · action bar Wake/Shutdown+info · services list with Open-links).
