@@ -56,10 +56,10 @@ authentication layer first.
   tailnet) can drive the full API through the proxy — the backend's careful `127.0.0.1` bind is bypassed by
   design so the owner can reach dev by machine name / phone. This is **accepted on the trusted home LAN** and
   consistent with the trust model (§1), but it is a *decision*, not an accident: don't run the dev server on an
-  untrusted network, and remember prod never has this path (uvicorn serves the built `dist` itself). Rider:
-  `TailscaleCfg.target_port` still *defaults* to `5173` (the dev frontend, `config.py:459`) — the deploy scripts
-  hardcode Serve → `5433` so prod is unaffected, but the in-app `serve_https` action follows the config default;
-  set `tailscale.target_port: 5433` on any box where Serve should front the backend-served SPA.
+  untrusted network, and remember prod never has this path (uvicorn serves the built `dist` itself). Rider
+  (resolved 2026-07-07, QH-11): `TailscaleCfg.target_port` now defaults to **`5433`** (the backend-served prod
+  SPA) — the safe-default direction; a dev box that wants Serve fronting Vite sets `tailscale.target_port: 5173`
+  in `config.yaml` or `CTRLB_TAILSCALE__TARGET_PORT=5173` in `.env`.
 
 ### 2.2 Typed-action privilege gate
 Execution does not happen via arbitrary strings; it happens via **named, allowlisted actions** (`wake_host`,

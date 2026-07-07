@@ -449,14 +449,17 @@ class ShellCfg(BaseModel):
 class TailscaleCfg(BaseModel):
     """Tailscale Serve control (Phase 6c-2, DECISIONS D20) — the in-app HTTPS toggle. `serve` **only**,
     never `funnel`: tailnet-only HTTPS so the phone mic gets a secure context (the no-public-bind rule
-    holds by construction). `target_port` is the local port Serve fronts — the frontend, which proxies
-    `/api`. **tailscaled is the source of truth** for on/off: we read `tailscale serve status` live and
+    holds by construction). `target_port` is the local port Serve fronts — default 5433, the backend-
+    served SPA (the prod topology; owner decision 2026-07-07, QH-11 — the old 5173 default encoded the
+    dev-Vite topology, the wrong safe-default direction). Set `tailscale.target_port` in `config.yaml`
+    (or `CTRLB_TAILSCALE__TARGET_PORT` in `.env`) to front dev Vite (5173) or anything else.
+    **tailscaled is the source of truth** for on/off: we read `tailscale serve status` live and
     store no on/off flag here, so a stored flag can't drift from reality. See `HTTPS_TAILSCALE.md`."""
 
     model_config = {"extra": "allow"}
 
     enabled: bool = True  # whether the Conf → Access panel + actions are active
-    target_port: int = 5173  # the local port Tailscale Serve proxies (the frontend)
+    target_port: int = 5433  # local port Serve proxies — prod SPA; override via config/.env (QH-11)
     timeout_s: float = 15.0  # subprocess timeout for the `tailscale` CLI calls
 
 

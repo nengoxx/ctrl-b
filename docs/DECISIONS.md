@@ -749,9 +749,12 @@ execution path:
    `{serving, url, available, reason}`, read by the Conf panel (not Conf-scoped, cheap). **tailscaled is
    the source of truth** — we read `serve status` live; we do **not** store on/off in our config (Serve
    persists in tailscaled independently, so a stored flag would drift).
-3. **Config = desired-state only.** `config.py` `TailscaleCfg` (`tailscale`): `target_port: int = 5173`
+3. **Config = desired-state only.** `config.py` `TailscaleCfg` (`tailscale`): `target_port: int`
    (which local port Serve fronts — covers dev 5173 / preview / prod) + `enabled: bool` (whether the
    panel/actions are active at all). The live on/off comes from tailscaled, not config.
+   *(Amended 2026-07-07, QH-11 — owner decision: the default flipped `5173` → **`5433`** (the
+   backend-served prod SPA); the dev-Vite default was the wrong safe-default direction (SYS-4 rider).
+   Override per box via `tailscale.target_port` in config.yaml or `CTRLB_TAILSCALE__TARGET_PORT` in `.env`.)*
 4. **Frontend = a Conf → Access panel** (mirrors the 7c integration panels): a status dot + the
    `https://…ts.net` URL (copy + **QR**) + an Enable/Disable toggle. The toggle POSTs to an endpoint that
    invokes the action through **`ActionService`** (USER actor, FULL privilege — the owner clicking *is*

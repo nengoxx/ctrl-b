@@ -12,6 +12,14 @@ server:
   poll_seconds: 5        # fleet status poll cadence
   debug: false           # keep false — debug is an RCE surface
 
+# Tailscale Serve (Phase 6c-2, D20) — the in-app HTTPS toggle (Conf → Access). `serve` only, never
+# funnel (tailnet-only by construction). `target_port` = the local port Serve fronts: 5433 (the
+# default) is the backend-served prod SPA; set 5173 to front the dev Vite server instead. Also
+# settable from .env: CTRLB_TAILSCALE__TARGET_PORT=5173 (env wins over this file).
+# tailscale:
+#   enabled: true
+#   target_port: 5433
+
 # Chat inference (Phase 4). Two OpenAI-compatible backends; `default_mode` picks one (the
 # /local //cloud composer prefixes switch per-message, 4c). `local` needs no api_key (llama.cpp).
 # Thinking models cold-load slowly — keep request_timeout_s generous.
