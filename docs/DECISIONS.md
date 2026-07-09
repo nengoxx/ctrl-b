@@ -1612,7 +1612,14 @@ So the four cases fall out with no special-casing: base = `<DefaultRoot/>`; base
 
 **Status.** LOCKED. **Generalizes/supersedes D30's `Composer`-prop injection** with the registry+setting mechanism (D30's composition-over-configuration principle stands; selection generalizes to the resolver). **Full engineering contract + how-to + anti-patterns: THEME_ENGINE.md §14.14.**
 
-## D32 — emma deployment topology: two isolated instances (prod + dev), one repo, tags + sparse-checkout ✏️ LOCKED 2026-06-29
+## D32 — emma deployment topology: two isolated instances (prod + dev), one repo, tags + sparse-checkout ✏️ LOCKED 2026-06-29 · AMENDED 2026-07-09
+
+> ⚠️ **AMENDED 2026-07-09 (before first deploy — read the amendment at the end of this entry):** the
+> **`dev` branch is dropped (trunk-based: `main` + immutable release tags)** and the **prod runtime moves to
+> `~/apps/ctrl-b`** (the workspace stays `~/github/ctrl-b`; `migrate-layout.sh` deleted — nothing moves).
+> The two-instance isolation, sparse tag-pinned prod clone, `CTRLB_HOME` seam, and concurrency rules below
+> all still stand; only the *branch model* and *paths* are superseded. "dev" now names the **instance**
+> (units · `~/.ctrl-b-dev` · :5434/:5173), never a branch or tree.
 
 **Context.** emma (Ubuntu 26.04, tailnet) is the always-on home for v2. The owner wants BOTH a **production** dashboard for daily use (stable, HTTPS via Tailscale Serve) AND an always-available **development** instance to test changes — **without** dev experiments ever touching prod's config/DB/chat. The coding happens via a **tandem Claude Code agent running on emma in tmux** (alongside the instances; its checkout is read-only to me, one canonical GitHub `main`). Best-practice research (CloudBees env-separation; git worktree-vs-clone; solo-dev branch workflow 2026; GitHub sparse-checkout) backs every choice below.
 
@@ -1646,6 +1653,61 @@ So the four cases fall out with no special-casing: base = `<DefaultRoot/>`; base
 
 **Status.** LOCKED 2026-06-29. Supersedes the earlier single-tree, shared-backend deploy sketch (dev was Vite-only proxying to the prod backend → NOT isolated). Artifacts, tidy under `deploy/linux/`: `bootstrap.py` + `README.md` at top, `systemd/` (the three units), `scripts/` (`install.sh [prod|dev]`, `serve-https.sh`, `start-claude.sh [session] [dir]`, `migrate-layout.sh`, `add-dev-worktree.sh`); rationale `docs/DEPLOY_EMMA.md`.
 *(Layout note, QH deep pass 2026-07-07: after the repo reorg the shell helpers live **flat in `deploy/linux/`** — no `scripts/` subdir — with `bootstrap.py` at `deploy/` and the agent launchers in root `tools/`; earlier `dashboard_v2` path mentions in this entry's narrative are the pre-reorg dev name. The runbook `deploy/linux/README.md` + the scripts themselves are the current source of truth.)*
+
+**Amended 2026-07-09 — trunk-based + workspace/runtime split (owner-approved after a 3-agent web-research
+pass; supersedes this entry's `dev`-branch and `~/github/ctrl-b-dev` clauses; landed before the first deploy,
+so nothing ever ran the old branch model).** The realization driving it: **every prod guarantee came from the
+TAG pin, not the branch** — prod never tracked `main`, so a persistent second branch was pure promote ceremony
+with a known decay mode (ff-only promotion breaks at the first hotfix). The 2024–26 consensus
+(trunkbaseddevelopment.com, Atlassian, AWS prescriptive guidance) is trunk-based + release tags at solo scale;
+persistent dev/release branches are for multi-version-in-the-field products.
+
+- **One branch: `main`.** All work (owner + agents) lands there; the dev instance serves its HEAD. The price
+  (main stays releasable) is already paid by the mandatory hooks + CI. "dev" names only the **instance**.
+- **Releases = immutable annotated tags** `vX.Y.Z`, cut on the exact **sha** that soaked on the dev instance
+  (not "HEAD"). Never re-point a tag — a bad release gets `vX.Y.Z+1`. Promote = tag + push (no branch dance,
+  no checkout anywhere); prod = `git fetch --tags && git checkout vX.Y.Z && install.sh prod`.
+- **Workspace/runtime split (paths).** PROD runtime = **`~/apps/ctrl-b`** (sparse, tag-pinned; `~/apps` is the
+  user-level `/opt` analogue — FHS-style separation of deployed runtimes from source workspaces). Workspace =
+  **`~/github/ctrl-b`** (full clone; emma's existing checkout stays put — `migrate-layout.sh` DELETED, nothing
+  to move, no agent coordination needed for layout).
+- **Invariant: the workspace never leaves `main`.** The dev instance live-serves it, so any checkout that isn't
+  main-moving-forward (hotfix at a tag, prod-bug repro, second simultaneous writer) happens in a **throwaway
+  sibling worktree** — `tools/add-dev-worktree.sh <name> [branch] [base]`. Mechanically checkable
+  (`git branch --show-current` = main); `bootstrap.py` warns when violated.
+- **Hotfix procedure (the only release edge case):** worktree at the tag → fix → tag `vX.Y.Z+1` → deploy →
+  **land the fix on main and verify** (`git merge-base --is-ancestor <fix-sha> main`) → remove the worktree.
+  The verify step is non-optional — "fix shipped from the release line, forgotten on trunk" is the classic
+  under-pressure regression.
+- **Expand/contract compatibility policy (DB AND config.yaml).** Rollback window = **1 release** (you only ever
+  roll back to the previous tag), so: old code must tolerate the schema/config written by the NEXT release →
+  every change ships **additive first** (new nullable column / new field with a default); a **destructive
+  contraction** (drop/rename/repurpose) may land at the earliest **one release after** the code stopped using
+  the old shape, and every deprecation carries a `DEPRECATED since vX, DROP in vY` note at the site.
+  Additive-only-*forever* is explicitly rejected (schema/config bloat is the documented anti-pattern — Fowler
+  "Parallel Change": contraction is a required phase). Precedent: `_fold_legacy_tool_descriptions` (expand);
+  its contraction is now owed under this policy.
+- **Deploy-time data safety.** `install.sh prod` snapshots the DB pre-cutover via `sqlite3 ".backup"` (SQLite's
+  Online Backup API — WAL-safe on a **live** DB; a plain `cp` is not: committed data sits in the `-wal`
+  sidecar), verifies `PRAGMA integrity_check`, gzips, keeps last N (`CTRLB_BACKUP_KEEP`, default 10). Restore
+  (runbook): stop → **delete stale `ctrlb.db-wal`/`-shm`** → gunzip the snapshot over `ctrlb.db` → start.
+- **Atomic-ish prod cutover.** The dist builds **aside** (`dist.next`) while the old dist keeps serving; the
+  swap is a sub-second stop → `mv` → start (borrowed from the Capistrano releases/`current` idea without the
+  scheme). Any pre-cutover failure (build, snapshot, integrity) leaves the running service untouched.
+- **`bootstrap.py` config guard.** After the first deploy the **target's** `config.yaml` is canonical (the app
+  rewrites it live; the owner edits via the settings UI) — step 1 now **skips when the file exists**;
+  `--overwrite-config` forces it with a timestamped backup first. (Pre-amendment behavior silently clobbered
+  the live config on every re-run — a real data-loss bug.)
+- **CI (SYS-14 extended).** Every **branch** push (hotfix branches included — the flow that ships under
+  pressure must get Linux verification) + PRs run the full gate; **`v*` tag** pushes additionally run the
+  Playwright e2e/a11y suite — "this tag is releasable" is machine-checked, not discipline-checked.
+- **GitHub-down escape hatch** (promote-time dependency): prod can fetch the release tag straight from the
+  workspace over the filesystem — `git -C ~/apps/ctrl-b fetch ~/github/ctrl-b 'refs/tags/*:refs/tags/*'`.
+
+*Research record (2026-07-09, three parallel Opus agents — deploy layout · branching consensus · SQLite
+backup practice): FHS 3.0 `/opt`·`/srv`; trunkbaseddevelopment.com release-from-trunk / branch-for-release;
+GitHub immutable releases; sqlite.org backup.html + wal.html; Fowler ParallelChange; PlanetScale
+backward-compatible schema changes; git-worktree-for-hotfix guidance.*
 
 ## D33 — Code-quality harness: type-aware ESLint + Prettier, `pyright[nodejs]`, one stdlib runner, native git hooks ✏️ LOCKED 2026-07-01
 

@@ -182,11 +182,13 @@ python deploy/bootstrap.py            # prereqs → SFTP config.yaml → prod tr
 python deploy/bootstrap.py --dry-run  # print the plan, change nothing
 ```
 
-It sets up the **two-instance topology** ([`docs/DECISIONS.md`](./docs/DECISIONS.md) D32): PROD =
-a clean sparse checkout on `main`/tags, its own data dir (`~/.ctrl-b`), uvicorn :5433 behind
-Tailscale Serve :443; DEV = a full checkout on `dev` with isolated data (`~/.ctrl-b-dev`, backend
-:5434 + Vite :5173). `deploy/linux/install.sh [prod|dev]` is idempotent per instance and renders
-the systemd user units. Full runbook: [`deploy/linux/README.md`](./deploy/linux/README.md).
+It sets up the **two-instance topology** ([`docs/DECISIONS.md`](./docs/DECISIONS.md) D32, amended
+2026-07-09 — trunk-based): PROD = a clean sparse runtime clone at `~/apps/ctrl-b` pinned to a
+release **tag**, its own data dir (`~/.ctrl-b`), uvicorn :5433 behind Tailscale Serve :443; DEV =
+the workspace (a full checkout on `main` — the only branch) with isolated data (`~/.ctrl-b-dev`,
+backend :5434 + Vite :5173). `deploy/linux/install.sh [prod|dev]` is idempotent per instance,
+snapshots the prod DB before cutover, and renders the systemd user units. Full runbook:
+[`deploy/linux/README.md`](./deploy/linux/README.md).
 
 **Windows (auto-start):** `deploy\windows\autostart-enable.cmd` registers a logon task
 (`-Tailscale` re-applies HTTPS at logon too).

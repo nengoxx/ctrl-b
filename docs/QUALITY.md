@@ -118,10 +118,11 @@ NOT in the default/pre-push gate (it builds the dist + boots a browser, ~20-30s)
 a hard step-0 item in `DEPLOY_EMMA.md` + a `.claude/settings.json` deploy-checklist hook (fires on
 `bootstrap.py`/`install.sh`) — so it can't be skipped when shipping, while commits/pushes stay fast.
 **One-time prereq:** the browser binaries are NOT installed by `npm install`/`npm ci` — on a fresh machine run
-`npx playwright install` (from `frontend/`) once, or the suite fails with "Executable doesn't exist". Two traps
+`npx playwright install` (from `frontend/`) once, or the suite fails with "Executable doesn't exist". One trap
 (QH audit 2026-07-07): `reuseExistingServer: !CI` means a stale preview server already on **:4173** gets reused
-(you'd test an old build — kill it first), and CI deliberately does not run `--e2e` (it's the deploy gate, not
-the push gate).
+(you'd test an old build — kill it first). **CI (updated 2026-07-09, D32 amendment):** branch pushes + PRs run
+the gate WITHOUT `--e2e` (push gate, kept fast); **release-tag pushes (`v*`) DO run `--e2e` in CI** — the
+machine-checked release gate (ci.yml installs Chromium via `npx playwright install --with-deps chromium`).
 
 `tools/check.py` resolves the backend interpreter as `backend/.venv/{Scripts,bin}/python` — a single
 `os.name` branch (`Scripts`/`python.exe` on Windows, `bin`/`python` elsewhere), so it runs the same from

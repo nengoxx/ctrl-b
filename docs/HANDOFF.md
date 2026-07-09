@@ -58,15 +58,21 @@
 >   extension contract + the data seams are already built/locked, so delaying adds **no structural refactor**. Only
 >   rule: land the warn-first hardening slice BEFORE the *next themeable-UI feature wave*, not before the deploy.
 >
-> **▶ THEN the emma deploy — ✅ PRE-FLIGHTED, ready to execute (not yet run). Start at the PRE-FLIGHT block atop
-> [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md)** — verified-ready checklist, exact command sequence, decision points, cautions,
-> + the 5 PREP gaps: **(1) create + push a `dev` branch from `main` FIRST** (origin has only `main`; D32 needs
-> `main`+`dev` or migrate risks a pre-reorg dev tree); **(2)** `git pull` emma's tree current before migrate;
-> **(3)** stop + drain the tandem agent; **(4)** confirm emma LAN `192.168.1.160` reachable (Bash needs
-> `dangerouslyDisableSandbox`); **(5)** `config.yaml` reaches emma via bootstrap SFTP. Topology = DECISIONS **D32**.
-> Sequence: `--e2e` gate green → prep → `bootstrap.py --dry-run` → on-emma `migrate-layout.sh` → `bootstrap.py
-> [--with-dev] [--start-agent]` → verify `https://emma.lobster-vector.ts.net` → tag **`v1.0.0`** + pin prod. History
-> wasn't rewritten → emma just `git pull`s (no re-clone).
+> **▶ THEN the emma deploy — ✅ PRE-FLIGHTED under the D32 AMENDMENT (2026-07-09), ready to execute (not yet
+> run). Start at the PRE-FLIGHT block atop [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md).** The topology was amended
+> 2026-07-09 (owner-approved, 3-agent research pass) **before first deploy**: **trunk-based — `main` + immutable
+> release tags, NO `dev` branch** ("dev" names only the instance); **prod runtime = `~/apps/ctrl-b`** (fresh
+> sparse tag-pinned clone), **workspace = `~/github/ctrl-b`** (emma's existing checkout, never leaves `main`;
+> other checkouts = throwaway worktrees); **`migrate-layout.sh` deleted — nothing on emma moves**. Also landed
+> with the amendment: `install.sh` pre-cutover **DB snapshot** (WAL-safe `.backup` + keep-N) + aside-built dist
+> swap; `bootstrap.py` **config-clobber guard** (target's config canonical after first deploy) + `--overwrite-config`;
+> **CI on all branches + `v*` tags** (tag run = release gate incl. Playwright e2e); the **expand/contract**
+> DB/config compat policy (deprecate in vX, drop in vX+1); hotfix-via-worktree procedure. Full detail: DECISIONS
+> **D32 (amendment)** + `deploy/linux/README.md`.
+> Sequence: `--e2e` gate green + security checklist → **tag `v1.0.0` first** (CI release gate) → `bootstrap.py
+> --dry-run` → `bootstrap.py [--with-dev] [--start-agent]` → verify `https://emma.lobster-vector.ts.net`.
+> PREP: workspace pulled current + clean · emma reachable (Bash needs `dangerouslyDisableSandbox`) · config.yaml
+> current here (first-deploy SFTP) · DB fresh-start default (owner confirms at deploy).
 >
 > **Working agreements (owner):** explain the issue + get a go-ahead BEFORE building each phase; research the
 > conventional pattern + double-check every assumption; commit autonomously when the change is clearly stated but
@@ -171,6 +177,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 >    (clean tree only / filter-repo purge / squash) — REORG_PLAN §1.** Do this BEFORE deploy so paths are written once.
 >
 > 1. **▶ THEN — Deploy to emma (Ubuntu 26.04 LAN/tailnet server). TOPOLOGY LOCKED (D32) · ARTIFACTS READY (paths get updated by the reorg).**
+>    *(⚠️ 2026-07-09: the branch model + paths in this historical item are SUPERSEDED by the D32 amendment — trunk-based `main`+tags, prod `~/apps/ctrl-b`, workspace `~/github/ctrl-b`, `migrate-layout.sh` deleted. Current sequence: the PRE-FLIGHT block atop DEPLOY_EMMA.md.)*
 >    **Topology = DECISIONS.md [D32](./DECISIONS.md): TWO fully isolated instances, one repo.** PROD `~/github/ctrl-b`
 >    (clean **sparse**, **tag-pinned** clone) → `~/.ctrl-b` → uvicorn **:5433** + **Tailscale Serve HTTPS**; DEV
 >    `~/github/ctrl-b-dev` (`dev` branch — the dev side, ALL dev work, 1+ agents) → `~/.ctrl-b-dev` → uvicorn **:5434 --reload** +
