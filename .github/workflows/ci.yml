@@ -8,11 +8,14 @@
 # backend/.venv/bin/python and frontend/node_modules — then invoke the gate.
 name: CI
 
-# dev doesn't exist yet — it's created as deploy-prep step 1 (D32 needs main+dev);
-# listing it now means CI covers it from its first push.
+# Trunk-based (D32, amended 2026-07-09): all work is on main; releases are immutable `v*` tags; hotfixes
+# are short-lived branches cut from a tag. CI therefore runs on EVERY branch push (a hotfix branch must
+# get Linux verification — it's the flow that ships under pressure) and on every release tag. The tag run
+# is the machine-checked release gate: it also executes the Playwright e2e/a11y suite (below).
 on:
   push:
-    branches: [main, dev]
+    branches: ["**"]
+    tags: ["v*"]
   pull_request:
 
 # One run per ref; a new push cancels the in-flight run for the same branch/PR.
@@ -81,9 +84,22 @@ jobs:
       # a nonzero exit on any failure (main() -> 1 on a failed check, 2 on a bad env;
       # check.py:186-197), so a red gate fails the job.
       #
-      # NOT --e2e: the Playwright e2e/a11y suite is the opt-in PRE-DEPLOY gate
-      # (docs/QUALITY.md "e2e gate"), deliberately excluded from routine CI — it builds
-      # the dist, boots a preview server + headless browser (~20-30s) and belongs to the
-      # emma deploy checklist, not every push/PR.
+      # Branch pushes + PRs run WITHOUT --e2e (the Playwright suite builds the dist, boots
+      # a preview server + headless browser — too heavy for every push; docs/QUALITY.md
+      # "e2e gate"). Release tags (v*) DO run it: "this tag is releasable" is machine-checked,
+      # not discipline-checked — the same gate the deploy checklist requires locally.
       - name: Run quality gate (tools/check.py)
+        if: github.ref_type != 'tag'
         run: python tools/check.py
+
+      # Release gate (v* tags only): the full gate PLUS the e2e/a11y suite. The playwright
+      # config uses Chromium-based devices only (Pixel 5 + Desktop Chrome), so one browser
+      # install suffices; --with-deps pulls its system libraries on the ubuntu runner.
+      - name: Install Playwright browsers (release gate)
+        if: github.ref_type == 'tag'
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run quality gate + e2e (release gate)
+        if: github.ref_type == 'tag'
+        run: python tools/check.py --e2e
