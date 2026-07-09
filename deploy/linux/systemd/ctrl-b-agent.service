@@ -24,11 +24,18 @@ Description=ctrl-b Claude Code agent (tmux 'ctrl-b', workspace)
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# CRITICAL: after a reboot THIS unit is what boots the shared per-user tmux server, so the server lives
+# in this unit's cgroup. The default KillMode=control-group would then kill the WHOLE server on
+# stop/restart — including the owner's unrelated sessions. KillMode=process kills only the main process
+# (already exited for a oneshot) = nothing; the targeted ExecStop below does the precise cleanup, and the
+# tmux server itself exits on its own when its last session ends.
+KillMode=process
 WorkingDirectory=__REPO__
 # The user manager's default PATH lacks ~/.local/bin (where claude lives) — and when THIS unit is what
 # boots the tmux server, the inner shell inherits this environment, so it must find claude + node too.
 Environment=PATH=__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin
 # Optional owner overrides (MODEL=fable|opus|<id>, EFFORT=...); absent file is fine.
+# Do NOT set PATH in this file — it would override the Environment= line above and claude stops resolving.
 EnvironmentFile=-__HOME__/.config/ctrl-b/agent.env
 ExecStart=/usr/bin/bash __REPO__/tools/start-claude.sh ctrl-b __REPO__
 ExecStop=-__TMUX__ kill-session -t ctrl-b

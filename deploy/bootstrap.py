@@ -159,7 +159,9 @@ def step(n, title):
 def project_slug(path: str) -> str:
     """Claude Code's project-directory slug: every path separator and drive colon becomes '-'.
     Verified against real dirs on both OSes: C:\\Users\\rovax\\...\\ctrl-b → C--Users-rovax-...-ctrl-b;
-    /home/emma/github/ctrl-b → -home-emma-github-ctrl-b (leading dash from the leading slash)."""
+    /home/emma/github/ctrl-b → -home-emma-github-ctrl-b (leading dash from the leading slash).
+    (Claude's real rule dashes EVERY non-alphanumeric char — identical for these paths; if a workspace
+    path ever gains a dot/space, extend this to match.)"""
     return path.replace("\\", "-").replace("/", "-").replace(":", "-")
 
 
