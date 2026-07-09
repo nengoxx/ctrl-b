@@ -14,8 +14,11 @@ Steps, each flag-gated so you can hand any of them to the owner:
   2. prod tree       — ensure ~/apps/ctrl-b is the sparse, tag-pinned PROD clone (missing→clone; sparse→update)
   3. install (prod)  — deploy/linux/install.sh prod (prereq check + 3.14 venv + npm build + DB snapshot + units)
   4. https           — serve-https.sh (Tailscale Serve 443->5433; mic-ready)                            [--no-serve]
-  5. dev (optional)  — ensure the ~/github/ctrl-b workspace + install.sh dev (isolated :5434 + Vite :5173) [--with-dev]
-  6. agent           — start-claude.sh (the Claude agent in tmux, IN THE WORKSPACE)                     [--start-agent]
+  5. dev (optional)  — ensure the ~/github/ctrl-b workspace + install.sh dev (isolated :5434 + Vite
+                       :5173 + the ALWAYS-ON ctrl-b-agent service — tmux Claude agent, boots with the box) [--with-dev]
+  6. claude-env      — migrate the Claude Code dev framework: project MEMORY → the target's
+                       ~/.claude/projects/<slug>/memory (skip-if-exists) + merge missing keys into the
+                       target's ~/.claude/settings.json (target's values always win)                    [--claude-env]
 
 Auth + host come from config.yaml (the `emma` host's ssh_* fields). The password is read at
 runtime, piped to `sudo -S`, and NEVER printed/logged. Reuses paramiko (a backend dependency).
@@ -23,8 +26,8 @@ runtime, piped to `sudo -S`, and NEVER printed/logged. Reuses paramiko (a backen
 Usage (Bash tool needs dangerouslyDisableSandbox for LAN):
     py -3 deploy/bootstrap.py --dry-run           # show the plan, do nothing (no connection)
     py -3 deploy/bootstrap.py                     # prod deploy: prereqs->secret->prod-tree->install->https
-    py -3 deploy/bootstrap.py --with-dev          # also stand up the isolated DEV instance
-    py -3 deploy/bootstrap.py --start-agent       # also start the Claude agent in tmux (workspace)
+    py -3 deploy/bootstrap.py --with-dev          # also stand up the DEV instance + the agent service
+    py -3 deploy/bootstrap.py --claude-env        # also migrate the Claude Code memory/settings
     py -3 deploy/bootstrap.py --no-prereqs        # skip sudo (you ran apt/linger/operator yourself; non-apt distro)
     py -3 deploy/bootstrap.py --overwrite-config  # force-replace the target's config.yaml (backup taken first)
 This makes WRITES on the target — only run it to deploy (not for recon). Idempotent: safe to re-run; on any
@@ -33,10 +36,12 @@ failure it stops with an actionable message and where it stopped, so you can fix
 
 from __future__ import annotations
 
+import json
 import os
 import posixpath
 import subprocess
 import sys
+import tempfile
 
 import paramiko
 import yaml
@@ -49,9 +54,11 @@ for _s in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-# The LOCAL checkout's gitignored config.yaml (ssh creds + first-deploy secret) — resolved from this file's
-# location, not hardcoded, so any clone location works.
-SRC_CONFIG = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.yaml")
+# The LOCAL checkout root + its gitignored config.yaml (ssh creds + first-deploy secret) — resolved from
+# this file's location, not hardcoded, so any clone location works. REPO_ROOT also keys the local Claude
+# Code project slug for the --claude-env memory migration.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC_CONFIG = os.path.join(REPO_ROOT, "config.yaml")
 # Path SUFFIXES — resolved against the target user's real $HOME after connect (works for any user/host).
 # PROD is a deployed runtime (~/apps, the user-level /opt analogue); the workspace stays under ~/github.
 PROD_SUB, WORK_SUB = "apps/ctrl-b", "github/ctrl-b"
@@ -61,7 +68,7 @@ DRY = "--dry-run" in sys.argv
 NO_PREREQS = "--no-prereqs" in sys.argv
 NO_SERVE = "--no-serve" in sys.argv
 WITH_DEV = "--with-dev" in sys.argv
-START_AGENT = "--start-agent" in sys.argv
+CLAUDE_ENV = "--claude-env" in sys.argv
 OVERWRITE_CONFIG = "--overwrite-config" in sys.argv
 
 
@@ -147,6 +154,65 @@ def _q(s: str) -> str:
 
 def step(n, title):
     print(f"\n=== [{n}] {title} ===")
+
+
+def project_slug(path: str) -> str:
+    """Claude Code's project-directory slug: every path separator and drive colon becomes '-'.
+    Verified against real dirs on both OSes: C:\\Users\\rovax\\...\\ctrl-b → C--Users-rovax-...-ctrl-b;
+    /home/emma/github/ctrl-b → -home-emma-github-ctrl-b (leading dash from the leading slash)."""
+    return path.replace("\\", "-").replace("/", "-").replace(":", "-")
+
+
+def migrate_claude_env(m: "Emma", home: str, work_repo: str) -> None:
+    """Move the per-machine half of the Claude Code dev framework (the rest travels in the repo:
+    .agents/skills, .claude/settings.json hooks, CLAUDE.md/AGENTS.md/docs). Two pieces:
+    (1) project MEMORY → the target's ~/.claude/projects/<target-slug>/memory — skip-if-present
+        (the target's memory is canonical after the first migration, same rule as config.yaml);
+    (2) user-global settings.json — ADD keys missing on the target (model/effort/permissions...),
+        NEVER overwrite what the target already set (its theme etc. win). Auth is deliberately NOT
+        copied — `claude` login state is per-machine."""
+    src_mem = os.path.join(os.path.expanduser("~"), ".claude", "projects", project_slug(REPO_ROOT), "memory")
+    dst_proj = f"{home}/.claude/projects/{project_slug(work_repo)}"
+    _, has_mem = m.capture(f'[ -n "$(ls -A {dst_proj}/memory 2>/dev/null)" ] && echo yes || echo no')
+    if has_mem == "yes":
+        print(f"  ✓ {dst_proj}/memory already populated — left untouched (target memory is canonical).")
+    elif not os.path.isdir(src_mem):
+        print(f"  ⚠ no local memory at {src_mem} — skipping the memory copy.")
+    else:
+        m.run(f"mkdir -p {dst_proj}/memory")
+        n = 0
+        for root, _dirs, files in os.walk(src_mem):
+            rel = os.path.relpath(root, src_mem).replace("\\", "/")
+            rdir = f"{dst_proj}/memory" + ("" if rel == "." else f"/{rel}")
+            if rel != ".":
+                m.run(f"mkdir -p {rdir}")
+            for fn in files:
+                m.put(os.path.join(root, fn), f"{rdir}/{fn}")
+                n += 1
+        print(f"  -> {n} memory files → {dst_proj}/memory")
+
+    local_settings = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+    if not os.path.isfile(local_settings):
+        print("  ⚠ no local ~/.claude/settings.json — skipping the settings merge.")
+        return
+    want = json.load(open(local_settings, encoding="utf-8"))
+    rc, cur = m.capture("cat ~/.claude/settings.json 2>/dev/null")
+    have = json.loads(cur) if (rc == 0 and cur.strip()) else {}
+    merged = {**want, **have}  # shallow on purpose: any key the target has stays exactly as-is
+    if merged == have:
+        print("  ✓ target ~/.claude/settings.json already has every key — untouched.")
+        return
+    m.run(f"mkdir -p {home}/.claude")
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tf:
+        json.dump(merged, tf, indent=2)
+        tf.write("\n")
+        tmp = tf.name
+    try:
+        m.put(tmp, f"{home}/.claude/settings.json")
+    finally:
+        os.unlink(tmp)
+    added = sorted(set(merged) - set(have))
+    print(f"  -> settings merged (added: {', '.join(added)}; existing target values preserved)")
 
 
 def ensure_prod_tree(m: "Emma", prod_repo: str, work_repo: str, gh: str | None) -> int:
@@ -246,8 +312,8 @@ def main() -> int:
         "install.sh prod (prereqs + 3.14 venv + dist + DB snapshot + service)",
     ]
     plan += [] if NO_SERVE else ["serve-https (Tailscale HTTPS 443→5433)"]
-    plan += ["ensure workspace + install.sh dev (:5434 + Vite :5173)"] if WITH_DEV else []
-    plan += ["start-claude (tmux agent, workspace)"] if START_AGENT else []
+    plan += ["ensure workspace + install.sh dev (:5434 + Vite :5173 + agent service)"] if WITH_DEV else []
+    plan += ["claude-env (memory + settings → target ~/.claude)"] if CLAUDE_ENV else []
     print(f"Deploy target: {user}@{host}:{port}   (paths resolve against the target's $HOME)")
     print("  PROD: ~/apps/ctrl-b → ~/.ctrl-b (:5433, Serve HTTPS)")
     print(
@@ -343,17 +409,14 @@ def main() -> int:
                         "curl -s -m5 localhost:5434/api/health || echo '(dev health check failed — see logs)'"
                     )
 
-        if START_AGENT:
-            step(6, "start the Claude agent (tmux, workspace)")
-            m.run(
-                f"cd {work_repo} && bash tools/start-claude.sh || "
-                f"echo '(start-claude needs the workspace — run with --with-dev first)'"
-            )
+        if CLAUDE_ENV:
+            step(6, "Claude Code framework: memory + settings → target ~/.claude")
+            migrate_claude_env(m, home, work_repo)
 
         print("\nDEPLOY COMPLETE. Dashboard: https://<host>.<tailnet>.ts.net (see `tailscale serve status`).")
-        if not START_AGENT:
+        if WITH_DEV:
             print(
-                f"  Start the agent when ready:  ssh {host} -t 'cd {work_repo} && bash tools/start-claude.sh'"
+                f"  Agent service is up with the dev instance — attach:  ssh {host} -t 'tmux attach -t ctrl-b'"
             )
         return 0
     finally:

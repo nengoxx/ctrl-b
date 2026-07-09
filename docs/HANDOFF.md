@@ -70,9 +70,13 @@
 > DB/config compat policy (deprecate in vX, drop in vX+1); hotfix-via-worktree procedure. Full detail: DECISIONS
 > **D32 (amendment)** + `deploy/linux/README.md`.
 > Sequence: `--e2e` gate green + security checklist → **tag `v1.0.0` first** (CI release gate) → `bootstrap.py
-> --dry-run` → `bootstrap.py [--with-dev] [--start-agent]` → verify `https://emma.lobster-vector.ts.net`.
-> PREP: workspace pulled current + clean · emma reachable (Bash needs `dangerouslyDisableSandbox`) · config.yaml
-> current here (first-deploy SFTP) · DB fresh start on emma (DECIDED, owner 2026-07-09).
+> --dry-run` → `bootstrap.py --with-dev --claude-env` → verify `https://emma.lobster-vector.ts.net` + the agent.
+> **Addendum (same day): the dev FRAMEWORK migrates too** — `ctrl-b-agent.service` (always-on tmux Claude
+> agent, boots with the box; model fable/opus via `~/.config/ctrl-b/agent.env`) ships with `install.sh dev`,
+> and `bootstrap.py --claude-env` migrates memory + settings (`--start-agent` retired). PREP: owner deletes
+> the emma scratchpad checkout + the hand-copied memory dir (ruled disposable 2026-07-09; workspace arrives
+> as a fresh clone) · emma reachable (Bash needs `dangerouslyDisableSandbox`) · config.yaml current here
+> (first-deploy SFTP) · DB fresh start on emma (DECIDED) · the `fable` tmux session = unrelated Hermes work, stays.
 >
 > **Working agreements (owner):** explain the issue + get a go-ahead BEFORE building each phase; research the
 > conventional pattern + double-check every assumption; commit autonomously when the change is clearly stated but

@@ -11,11 +11,12 @@
 # just runs + the owner uses daily (D32, amended 2026-07-09). This script only ever launches an agent in a
 # workspace-side tree.
 #
-# Usage (owner manages sessions MANUALLY):  ./start-claude.sh [session] [project_dir]
+# Usage:  ./start-claude.sh [session] [project_dir] [model]     (also runs as ctrl-b-agent.service on boot)
 #   ./start-claude.sh                            # default: session 'ctrl-b' in the workspace (~/github/ctrl-b, main)
+#   ./start-claude.sh ctrl-b ~/github/ctrl-b opus   # pick the model: fable | opus | any full model id
 #   ssh emma -t 'tmux attach -t ctrl-b'          # attach from anywhere (phone / Windows); Ctrl-b d to detach
 #   tmux kill-session -t ctrl-b                  # stop it
-#   MODEL=… EFFORT=… ./start-claude.sh           # override model/effort (env)
+#   MODEL=… EFFORT=… ./start-claude.sh           # env overrides (the agent service reads ~/.config/ctrl-b/agent.env)
 # SECOND simultaneous agent — give it its OWN branch + worktree so it doesn't disturb the dev instance
 # (which serves the workspace on main). Use tools/add-dev-worktree.sh, or by hand:
 #   git -C ~/github/ctrl-b worktree add ~/github/ctrl-b-feat -b feat/x
@@ -25,9 +26,15 @@ set -euo pipefail
 
 SESSION="${1:-ctrl-b}"                              # tmux session + --remote-control channel name
 PROJECT="${2:-$HOME/github/ctrl-b}"                 # a workspace-side tree (default: the workspace); never prod
-MODEL="${MODEL:-claude-opus-4-8}"
+MODEL="${3:-${MODEL:-fable}}"                       # positional > env > default; alias or full model id
 EFFORT="${EFFORT:-high}"
 PERM="${PERM:-bypassPermissions}"
+
+# Friendly aliases (owner decision 2026-07-09: fable 5 or opus 4.8, both on high). Full ids pass through.
+case "$MODEL" in
+  fable) MODEL="claude-fable-5" ;;
+  opus)  MODEL="claude-opus-4-8" ;;
+esac
 
 command -v tmux  >/dev/null || { echo "tmux not found — sudo apt install -y tmux"; exit 1; }
 command -v claude >/dev/null || { echo "claude not found on PATH"; exit 1; }

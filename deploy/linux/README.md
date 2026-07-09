@@ -38,7 +38,8 @@ deploy/
 │   └── systemd/              # the user units (copied to ~/.config/systemd/user/ by install.sh)
 │       ├── ctrl-b-dashboard.service          # PROD backend (:5433, ~/.ctrl-b)
 │       ├── ctrl-b-dashboard-dev.service      # DEV backend (:5434 --reload, ~/.ctrl-b-dev)
-│       └── ctrl-b-dashboard-dev-web.service  # DEV Vite (:5173 → :5434)
+│       ├── ctrl-b-dashboard-dev-web.service  # DEV Vite (:5173 → :5434)
+│       └── ctrl-b-agent.service              # the ALWAYS-ON Claude Code agent (tmux 'ctrl-b', workspace)
 └── windows/                  # the double-click Windows kit (setup/start/autostart)
 
 ../tools/                     # dev launchers (NOT deploy): start-claude.{sh,ps1,cmd}, add-dev-worktree.sh
@@ -55,8 +56,8 @@ nothing on emma moves: the existing `~/github/ctrl-b` checkout IS the workspace;
 # from the repo root  (Bash tool needs dangerouslyDisableSandbox for LAN)
 backend/.venv/Scripts/python.exe deploy/bootstrap.py --dry-run     # preview the plan
 backend/.venv/Scripts/python.exe deploy/bootstrap.py               # prod: prereqs→config→prod-tree→install→https
-backend/.venv/Scripts/python.exe deploy/bootstrap.py --with-dev    # also stand up the isolated DEV instance
-backend/.venv/Scripts/python.exe deploy/bootstrap.py --start-agent # also start the Claude agent (tmux, workspace)
+backend/.venv/Scripts/python.exe deploy/bootstrap.py --with-dev    # + the DEV instance AND the agent service
+backend/.venv/Scripts/python.exe deploy/bootstrap.py --claude-env  # + migrate the Claude Code memory/settings
 #   --no-prereqs        skip sudo (you ran them)      --no-serve  skip Tailscale Serve
 #   --overwrite-config  force-replace the target's config.yaml (timestamped backup taken first)
 ```
@@ -81,10 +82,35 @@ cd ~/github/ctrl-b && CTRLB_HOME=~/.ctrl-b-dev bash deploy/linux/install.sh dev 
 systemctl --user status ctrl-b-dashboard          # prod: active (running)
 curl -s localhost:5433/api/health                 # {"status":"ok",...}
 # dev (optional):
-systemctl --user status ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web
+systemctl --user status ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web ctrl-b-agent
 curl -s localhost:5434/api/health                 # dev backend
-bash ~/github/ctrl-b/tools/start-claude.sh        # the agent → tmux attach -t ctrl-b
+tmux attach -t ctrl-b                             # the always-on Claude agent (Ctrl-b d to detach)
 ```
+
+## The Claude agent service (development continues ON the box)
+The agent is a first-class always-on service (owner decision 2026-07-09): **`ctrl-b-agent.service`** is
+enabled by `install.sh dev` and starts at boot (linger). It just ensures the tmux session `ctrl-b` exists,
+running `claude --remote-control` in the **workspace** — attach over SSH or drive it from claude.ai/code.
+Skipped gracefully (with a re-run hint) if the `claude` CLI isn't installed yet.
+- **Model/effort switching (no edits to tracked files):** write `~/.config/ctrl-b/agent.env` —
+  `MODEL=fable` (→ `claude-fable-5`) or `MODEL=opus` (→ `claude-opus-4-8`) or any full model id, plus
+  optional `EFFORT=…` (default `high`) — then `systemctl --user restart ctrl-b-agent`. Default: fable, high.
+- Manual/extra sessions still work exactly as before: `tools/start-claude.sh [session] [dir] [fable|opus]`
+  (a second simultaneous agent gets its own worktree via `tools/add-dev-worktree.sh`).
+- Crash-recovery of `claude` is the `while true` loop inside tmux; `systemctl --user restart ctrl-b-agent`
+  recreates the session from scratch.
+
+## Framework migration (`--claude-env`) — the dev environment, not just the app
+Most of the Claude Code dev framework **travels in the repo** (`.agents/skills/`, the `.claude/settings.json`
+hooks, `.githooks/`, `CLAUDE.md`/`AGENTS.md`/`docs/`) — it's on the box the moment the workspace clones. The
+per-machine remainder is what `bootstrap.py --claude-env` moves:
+- **Project memory** → the target's `~/.claude/projects/<slug>/memory` (slug = the workspace path,
+  separators → dashes). **Skip-if-present** — after the first migration the target's memory is canonical.
+- **User-global `settings.json`** — missing keys are added from the local one (model/effort/permission
+  defaults); keys the target already has are never overwritten.
+- **NOT copied, by design:** auth/credentials (log `claude` in on the box once — already done on emma),
+  session transcripts (memory is their distillate; `docs/HANDOFF.md` re-orients a fresh session), and
+  `.claude/settings.local.json` (machine-local permission grants re-accrue naturally).
 
 ## Release (promote) — tag a soaked sha, no branch dance
 ```bash
@@ -170,7 +196,7 @@ off (`sudo loginctl enable-linger $USER`), or `tailscale serve` needing the oper
 
 ## Stop / remove
 ```bash
-systemctl --user disable --now ctrl-b-dashboard ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web
+systemctl --user disable --now ctrl-b-dashboard ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web ctrl-b-agent
 tailscale serve --https=443 off        # remove the HTTPS proxy
-tmux kill-session -t ctrl-b            # stop the agent
+tmux kill-session -t ctrl-b            # stop a manually-started agent session (the unit's ExecStop does this too)
 ```

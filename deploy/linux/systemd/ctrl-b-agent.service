@@ -1,0 +1,37 @@
+# ctrl-b — the Claude Code DEV AGENT as an always-on user service (D32 amendment, owner decision
+# 2026-07-09: development happens ON emma after the migration, so the agent boots with the box, the
+# same way the dashboard does; supersedes the earlier "sessions started manually" choice).
+#
+# It only wraps tools/start-claude.sh: a tmux session named 'ctrl-b' running `claude --remote-control`
+# in the WORKSPACE (__REPO__ — never the prod tree). tmux is required because claude needs a TTY (it
+# cannot run as a bare daemon); oneshot+RemainAfterExit makes the unit "ensure the session exists" —
+# idempotent, and safe when a tmux server is already running for other sessions (Type=forking would
+# mis-track the pre-existing server's PID). Crash-restart of claude itself is the `while true` loop
+# INSIDE the tmux session, not systemd.
+#
+# Switch model/effort WITHOUT editing anything tracked: write to  ~/.config/ctrl-b/agent.env
+#     MODEL=fable        # or: opus, or any full model id       EFFORT=high
+# then:  systemctl --user restart ctrl-b-agent
+# Attach:  ssh emma -t 'tmux attach -t ctrl-b'     (or drive it from claude.ai/code)
+# Manage:  systemctl --user {start,stop,restart,status} ctrl-b-agent
+#
+# TEMPLATE: install.sh renders __REPO__/__HOME__/__TMUX__ to real paths — do NOT copy directly.
+# (No network-online.target ordering — system target, no user equivalent; see the prod unit's note.
+# claude reconnects on its own once the network is up.)
+[Unit]
+Description=ctrl-b Claude Code agent (tmux 'ctrl-b', workspace)
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=__REPO__
+# The user manager's default PATH lacks ~/.local/bin (where claude lives) — and when THIS unit is what
+# boots the tmux server, the inner shell inherits this environment, so it must find claude + node too.
+Environment=PATH=__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Optional owner overrides (MODEL=fable|opus|<id>, EFFORT=...); absent file is fine.
+EnvironmentFile=-__HOME__/.config/ctrl-b/agent.env
+ExecStart=/usr/bin/bash __REPO__/tools/start-claude.sh ctrl-b __REPO__
+ExecStop=-__TMUX__ kill-session -t ctrl-b
+
+[Install]
+WantedBy=default.target

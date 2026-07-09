@@ -21,7 +21,7 @@ set -euo pipefail
 ROLE="${1:-prod}"
 case "$ROLE" in
   prod) REPO="${REPO:-$HOME/apps/ctrl-b}";   CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b}";     UNITS=(ctrl-b-dashboard.service) ;;
-  dev)  REPO="${REPO:-$HOME/github/ctrl-b}"; CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b-dev}"; UNITS=(ctrl-b-dashboard-dev.service ctrl-b-dashboard-dev-web.service) ;;
+  dev)  REPO="${REPO:-$HOME/github/ctrl-b}"; CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b-dev}"; UNITS=(ctrl-b-dashboard-dev.service ctrl-b-dashboard-dev-web.service ctrl-b-agent.service) ;;
   *)    echo "usage: install.sh [prod|dev]"; exit 2 ;;
 esac
 BACKUP_KEEP="${CTRLB_BACKUP_KEEP:-10}"   # pre-cutover DB snapshots retained (prod)
@@ -46,8 +46,17 @@ req git     "sudo apt install -y git"
 req python3 "sudo apt install -y python3 python3-venv   (need 3.14+)"
 req node    "install Node 20+ (nodesource.com / nodejs.org)"
 req npm     "comes with Node (nodesource.com / nodejs.org)"
+# DEV runs the always-on Claude agent service (ctrl-b-agent.service, tmux-wrapped) → tmux is a HARD
+# requirement there; prod never runs an agent, so it stays a soft note.
+if [ "$ROLE" = dev ]; then req tmux "sudo apt install -y tmux"; fi
 [ "$miss" = 1 ] && { echo "→ install the missing prerequisite(s) above, then re-run."; exit 1; }
 command -v tmux >/dev/null || echo "⚠ tmux missing (only needed for the Claude agent later) → sudo apt install -y tmux"
+# The agent service needs the claude CLI — if it's not there yet, install the dashboards WITHOUT the
+# agent unit (re-run after installing claude to add it) rather than failing the whole instance.
+if [ "$ROLE" = dev ] && ! command -v claude >/dev/null; then
+  echo "⚠ claude CLI not found — enabling the dev dashboard units only; install claude, then re-run to add ctrl-b-agent."
+  UNITS=(ctrl-b-dashboard-dev.service ctrl-b-dashboard-dev-web.service)
+fi
 [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = yes ] || \
   echo "⚠ user-linger is OFF → services won't survive logout/reboot. Enable: sudo loginctl enable-linger $(id -un)"
 
@@ -120,9 +129,10 @@ fi
 mkdir -p "$HOME/.config/systemd/user"
 NPM="$(command -v npm)"
 NODEBIN="$(dirname "$NPM")"   # npm's bin dir → rendered into the dev-web unit's PATH so `node` resolves
+TMUX_BIN="$(command -v tmux || echo /usr/bin/tmux)"   # agent unit's ExecStop (absolute path required)
 for u in "${UNITS[@]}"; do
   sed -e "s#__REPO__#$REPO#g" -e "s#__CTRLB_HOME__#$CTRLB_HOME#g" -e "s#__NPM__#$NPM#g" \
-      -e "s#__NODEBIN__#$NODEBIN#g" \
+      -e "s#__NODEBIN__#$NODEBIN#g" -e "s#__HOME__#$HOME#g" -e "s#__TMUX__#$TMUX_BIN#g" \
       "$UNIT_DIR/$u" > "$HOME/.config/systemd/user/$u"
 done
 systemctl --user daemon-reload
@@ -166,5 +176,7 @@ if [ "$ROLE" = prod ]; then
   echo "  • Set up the DEV sandbox: from the workspace (~/github/ctrl-b, main)  bash deploy/linux/install.sh dev"
 else
   echo "✓ DEV install done. Verify:  systemctl --user status ctrl-b-dashboard-dev  |  curl -s localhost:5434/api/health"
-  echo "  Dev UI: http://emma:5173 (Vite → :5434).  The Claude agent runs here:  bash $APP/tools/start-claude.sh"
+  echo "  Dev UI: http://emma:5173 (Vite → :5434)."
+  echo "  Agent:  systemctl --user status ctrl-b-agent   |  attach:  tmux attach -t ctrl-b"
+  echo "          model switch: echo MODEL=opus > ~/.config/ctrl-b/agent.env && systemctl --user restart ctrl-b-agent"
 fi

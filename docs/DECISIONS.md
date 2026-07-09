@@ -1709,6 +1709,23 @@ backup practice): FHS 3.0 `/opt`·`/srv`; trunkbaseddevelopment.com release-from
 GitHub immutable releases; sqlite.org backup.html + wal.html; Fowler ParallelChange; PlanetScale
 backward-compatible schema changes; git-worktree-for-hotfix guidance.*
 
+**Amendment addendum (same day, 2026-07-09 — the DEV FRAMEWORK migrates too, and the agent becomes a
+service; supersedes original decision 3's "sessions started manually"):** development moves to emma
+after the deploy, so the Claude Code agent is now a **first-class always-on user service** —
+`ctrl-b-agent.service` (oneshot+RemainAfterExit "ensure the tmux session exists"; enabled by
+`install.sh dev`; boots with the box via linger; skipped with a hint if the `claude` CLI is absent).
+Model/effort switch without touching tracked files: `~/.config/ctrl-b/agent.env` (`MODEL=fable|opus|<id>`,
+default **fable-5 / high**; aliases resolved in `start-claude.sh`). Crash-restart of `claude` stays with
+the in-tmux `while true` loop, not systemd. `bootstrap.py --start-agent` is retired; **`--claude-env`**
+replaces it: migrates the per-machine half of the dev framework — project **memory** → the target's
+`~/.claude/projects/<workspace-slug>/memory` (skip-if-present; target canonical after first migration)
++ a never-overwrite **settings.json key merge** — while everything project-scoped (`.agents/skills/`,
+hook settings, `.githooks/`, CLAUDE/AGENTS/docs) already travels in the repo, and auth/transcripts/
+`settings.local.json` deliberately do NOT migrate. emma facts (re-recon 2026-07-09): claude 2.1.205
+authenticated · tmux 3.6 · the old `~/github/ctrl-b` checkout is an owner-declared disposable scratchpad
+(owner deletes it; the workspace arrives as a fresh clone) · the `fable` tmux session is unrelated
+Hermes work and stays.
+
 ## D33 — Code-quality harness: type-aware ESLint + Prettier, `pyright[nodejs]`, one stdlib runner, native git hooks ✏️ LOCKED 2026-07-01
 
 **Context.** Shipping v1.0 to emma needs the quality boundary held by *tools*, not discipline (agents commit autonomously here). Owner directive 2026-07-01: **maximize code quality via robust, reliable, conventional methods, as simple as possible without trading away quality.** Audit `T1` (`external_audit/`) flagged the gaps: the frontend has **no** lint/format/typecheck gate and the backend has **no type checker** (ruff does not type-infer). Extends the testing decisions **D21** (Vitest) + **D24** (Playwright/axe); full spec + per-layer rationale in [`QUALITY.md`](./QUALITY.md); sliced rollout in [`PRE_DEPLOY.md`](./PRE_DEPLOY.md) §1 (MUST gate step 1, slices 1a–1d).

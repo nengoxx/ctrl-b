@@ -8,18 +8,26 @@
 > `deploy/linux/README.md`. *(Everything below this block, including the old two-branch narrative, is the
 > historical planning record — path/branch mentions there predate the amendment.)*
 >
-> **⚠ PREP — resolve these BEFORE running:**
-> 1. **Workspace current + clean.** On emma: `cd ~/github/ctrl-b && git checkout main && git pull --ff-only`.
->    If any agent session is live there, let it finish/commit first — nothing moves anymore, but the ff-pull
->    needs a clean tree (`bootstrap.py` skips the pull and warns if it finds WIP or a non-main branch).
-> 2. **Reachability.** config → emma LAN `192.168.1.160` (recon connected OK, but LAN can drift). Confirm at
->    deploy time; if LAN is blocked, set emma's `ip` to MagicDNS `emma` / tailnet `100.109.206.88`
->    (the `vpn_host` field, ROADMAP D3, is not wired yet). The Bash tool needs **`dangerouslyDisableSandbox: true`** for LAN/SSH.
+> **⚠ PREP — resolve these BEFORE running (updated after the 2026-07-09 read-only re-recon):**
+> 1. **OWNER deletes the emma scratchpad (owner-confirmed 2026-07-09):** `~/github/ctrl-b` there is a
+>    disposable pre-reorg scratchpad (incl. the local `feat/design-system-lab-interactive` branch — owner
+>    ruled it deletable) and `~/.claude/projects/C--Users-rovax-Documents-github-ctrl-b` is a hand-copied
+>    memory snapshot (made to show the Hermes agent) — **both get `rm -rf`'d by the owner**. The workspace
+>    then arrives as a FRESH clone via `bootstrap.py --with-dev` (cleaner than fast-forwarding the old tree).
+> 2. **Reachability.** config → emma LAN `192.168.1.160` (re-verified 2026-07-09; LAN can drift). If blocked,
+>    set emma's `ip` to MagicDNS `emma` / tailnet `100.109.206.88` (the `vpn_host` field, ROADMAP D3, is not
+>    wired yet). The Bash tool needs **`dangerouslyDisableSandbox: true`** for LAN/SSH.
 > 3. **Secret out-of-band (first deploy).** `config.yaml` is gitignored; `bootstrap.py` SFTPs it from THIS
 >    checkout → `~/.ctrl-b/config.yaml` (0600). Keep it current before deploying. **After** first deploy the
 >    target's copy is canonical — re-runs skip it (force = `--overwrite-config`, backs up first).
 > 4. **Data: fresh start (DECIDED, owner 2026-07-09):** the Windows `ctrlb.db` (dev-era chat/memory) is
 >    NOT migrated — emma prod begins with an empty DB.
+> 5. **Leave emma's other services alone.** The box runs the owner's open-webui/searxng/speaches/
+>    open-terminal/openclaw user units and a tmux session `fable` (a Hermes-agent task in `~` —
+>    UNRELATED to ctrl-b, keeps running). Our kit only ever touches `ctrl-b*` units + the `ctrl-b` tmux session.
+>    *(Environment re-verified 2026-07-09: claude CLI 2.1.205 logged in · tmux 3.6 · python 3.14.4 +
+>    python3-venv OK · node 24.16 at /usr/bin · linger on · ports 5433/5434/5173/443 free · sqlite3 absent —
+>    installed by bootstrap step 0.)*
 >
 > **▶ EXACT SEQUENCE (fresh session; from the Windows checkout unless noted):**
 > 0. **GATE.** ⛔ **`backend/.venv/Scripts/python.exe tools/check.py --e2e` must be GREEN** — the full gate
@@ -31,15 +39,18 @@
 >    v1.0.0` → the CI **release gate** runs (full gate + e2e on Linux; must be green). Tag-first means the
 >    fresh prod clone pins straight to `v1.0.0` — no transitional "prod on main" state.
 > 2. `backend/.venv/Scripts/python.exe deploy/bootstrap.py --dry-run` — preview (must exit 0).
-> 3. `backend/.venv/Scripts/python.exe deploy/bootstrap.py` *(dangerouslyDisableSandbox)* → prereqs → SFTP
->    secret → clone sparse prod at `~/apps/ctrl-b` (pins to `v1.0.0`) → `install.sh prod` (native-3.14 venv +
->    aside-built dist + DB snapshot + service) → `serve-https`. Add **`--with-dev`** for the isolated DEV
->    instance, **`--start-agent`** for the tmux agent (workspace).
-> 4. **Verify:** `ssh emma -t 'systemctl --user status ctrl-b-dashboard; curl -s localhost:5433/api/health'`;
->    open **`https://emma.lobster-vector.ts.net`** on the phone (mic-ready).
+> 3. `backend/.venv/Scripts/python.exe deploy/bootstrap.py --with-dev --claude-env` *(dangerouslyDisableSandbox)*
+>    → prereqs → SFTP secret → clone sparse prod at `~/apps/ctrl-b` (pins to `v1.0.0`) → `install.sh prod`
+>    (native-3.14 venv + aside-built dist + DB snapshot + service) → `serve-https` → fresh workspace clone +
+>    `install.sh dev` (dev instance **+ the always-on `ctrl-b-agent` service** — tmux Claude agent, boots with
+>    the box) → **claude-env** (memory → `~/.claude/projects/-home-emma-github-ctrl-b/memory` + settings merge).
+> 4. **Verify:** `ssh emma -t 'systemctl --user status ctrl-b-dashboard ctrl-b-agent; curl -s
+>    localhost:5433/api/health'`; open **`https://emma.lobster-vector.ts.net`** on the phone (mic-ready);
+>    attach the agent (`tmux attach -t ctrl-b`) and confirm it recalls the migrated memory.
 >
-> **Decisions to confirm at deploy:** `--with-dev` (stand up DEV now — recommended) · `--start-agent` (tmux
-> agent now vs start manually later) · tag = `v1.0.0`.
+> **Decisions — ALL RULED (owner 2026-07-09):** `--with-dev` YES (development moves to emma) ·
+> the agent = an always-on boot service (`ctrl-b-agent.service`, model default fable-5 high; switch via
+> `~/.config/ctrl-b/agent.env` → `MODEL=opus`) · `--claude-env` YES (migrate the framework) · tag = `v1.0.0`.
 >
 > **Afterward — the standing procedures (runbook `deploy/linux/README.md`):** release = tag a soaked sha +
 > push + re-pin prod · hotfix = worktree at the tag (`tools/add-dev-worktree.sh`), fix land-back on main is
@@ -87,7 +98,7 @@ installs set `CTRLB_HOME=~/.ctrl-b`"* → config at `/home/emma/.ctrl-b/config.y
 `ctrl-b-dashboard.service` (PROD backend :5433) · `ctrl-b-dashboard-dev.service` (DEV backend :5434, `--reload`) ·
 `ctrl-b-dashboard-dev-web.service` (DEV Vite :5173 → :5434) · `serve-https.sh` (Tailscale Serve 443→5433) ·
 `tools/start-claude.sh` (tmux agent, **workspace** — in repo-root `tools/`, not `deploy/`) ·
-`bootstrap.py` (local checkout→emma: SFTP secret → ensure prod tree → install → serve; `--with-dev`/`--start-agent`) ·
+`bootstrap.py` (local checkout→emma: SFTP secret → ensure prod tree → install → serve; `--with-dev`/`--claude-env`) ·
 `README.md` (the runbook). *(`migrate-layout.sh` existed here pre-amendment; deleted 2026-07-09 — nothing moves.)*
 
 ## Execution plan + ownership — I can self-deploy END-TO-END (verified 2026-06-29)
