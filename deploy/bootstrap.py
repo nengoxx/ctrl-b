@@ -280,9 +280,11 @@ def main() -> int:
             step(0, "prereqs (sudo)")
             # apt-based (Ubuntu/Debian). On a non-apt distro use --no-prereqs and install these yourself.
             # sqlite3 = the CLI install.sh uses for the pre-cutover DB snapshot (Online Backup API).
-            if m.run("apt-get update -qq && apt-get install -y tmux git sqlite3", sudo=True):
+            # python3-venv = Debian/Ubuntu ships base python3 WITHOUT ensurepip — `python3 -m venv` fails
+            # without this package even though `import venv` works (the classic trap).
+            if m.run("apt-get update -qq && apt-get install -y tmux git sqlite3 python3-venv", sudo=True):
                 print(
-                    "  ⚠ apt prereqs failed (non-apt distro?). Install git + tmux + sqlite3 manually, or use --no-prereqs."
+                    "  ⚠ apt prereqs failed (non-apt distro?). Install git+tmux+sqlite3+python-venv manually, or use --no-prereqs."
                 )
             m.run(f"loginctl enable-linger {user}", sudo=True)  # user services survive logout/reboot
             m.run(f"tailscale set --operator={user}", sudo=True)  # `tailscale serve` without sudo

@@ -72,7 +72,7 @@
 > Sequence: `--e2e` gate green + security checklist → **tag `v1.0.0` first** (CI release gate) → `bootstrap.py
 > --dry-run` → `bootstrap.py [--with-dev] [--start-agent]` → verify `https://emma.lobster-vector.ts.net`.
 > PREP: workspace pulled current + clean · emma reachable (Bash needs `dangerouslyDisableSandbox`) · config.yaml
-> current here (first-deploy SFTP) · DB fresh-start default (owner confirms at deploy).
+> current here (first-deploy SFTP) · DB fresh start on emma (DECIDED, owner 2026-07-09).
 >
 > **Working agreements (owner):** explain the issue + get a go-ahead BEFORE building each phase; research the
 > conventional pattern + double-check every assumption; commit autonomously when the change is clearly stated but

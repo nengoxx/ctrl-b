@@ -18,9 +18,8 @@
 > 3. **Secret out-of-band (first deploy).** `config.yaml` is gitignored; `bootstrap.py` SFTPs it from THIS
 >    checkout → `~/.ctrl-b/config.yaml` (0600). Keep it current before deploying. **After** first deploy the
 >    target's copy is canonical — re-runs skip it (force = `--overwrite-config`, backs up first).
-> 4. **Data: fresh start (DEFAULT — owner to confirm at deploy):** the Windows `ctrlb.db` (dev-era
->    chat/memory) is NOT migrated — emma prod begins with an empty DB. *(To carry it instead: stop the
->    Windows backend, SFTP `ctrlb.db` into `~/.ctrl-b/` before first service start.)*
+> 4. **Data: fresh start (DECIDED, owner 2026-07-09):** the Windows `ctrlb.db` (dev-era chat/memory) is
+>    NOT migrated — emma prod begins with an empty DB.
 >
 > **▶ EXACT SEQUENCE (fresh session; from the Windows checkout unless noted):**
 > 0. **GATE.** ⛔ **`backend/.venv/Scripts/python.exe tools/check.py --e2e` must be GREEN** — the full gate

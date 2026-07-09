@@ -15,6 +15,9 @@ Type=simple
 WorkingDirectory=__REPO__/frontend
 # Vite proxies /api → the DEV backend (not prod). `npm run dev` = vite --host 0.0.0.0 (port 5173).
 Environment=VITE_API_TARGET=http://127.0.0.1:5434
+# npm's shebang is `#!/usr/bin/env node` and the systemd user manager does NOT inherit the login-shell
+# PATH — prepend npm's own bin dir (rendered by install.sh) so node resolves under nvm/nodesource alike.
+Environment=PATH=__NODEBIN__:/usr/local/bin:/usr/bin:/bin
 ExecStart=__NPM__ run dev
 Restart=on-failure
 RestartSec=5

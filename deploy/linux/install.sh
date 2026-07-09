@@ -58,13 +58,15 @@ PY="$(command -v python3.14 || command -v python3 || true)"
 [ -n "$PY" ] || { echo "✗ no python3 on PATH — sudo apt install -y python3 python3-venv"; exit 1; }
 "$PY" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,14) else 1)' \
   || { echo "✗ $PY is too old ($("$PY" -V 2>&1)) — need Python 3.14+"; exit 1; }
-"$PY" -c 'import venv' 2>/dev/null || { echo "✗ python venv module missing — sudo apt install -y python3-venv"; exit 1; }
 WANT="$("$PY" -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 if [ -d "$VENV" ]; then
   HAVE="$("$VENV/bin/python" -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo none)"
   [ "$HAVE" = "$WANT" ] || { echo "-- existing venv is Python $HAVE, want $WANT → rebuilding"; rm -rf "$VENV"; }
 fi
-[ -d "$VENV" ] || { echo "-- creating backend venv with $PY (Python $WANT)"; "$PY" -m venv "$VENV"; }
+# No `import venv` pre-probe — on Debian/Ubuntu it passes even when python3-venv (ensurepip) is missing;
+# the real operation is the reliable check, so make ITS failure actionable instead.
+[ -d "$VENV" ] || { echo "-- creating backend venv with $PY (Python $WANT)"; "$PY" -m venv "$VENV" \
+  || { echo "✗ venv creation failed — Debian/Ubuntu ships python3 without ensurepip: sudo apt install -y python3-venv"; exit 1; }; }
 # DEV also needs the check.py toolchain ([dev] = ruff/pyright/pytest) — step 4.5 enables the git
 # hooks, which run tools/check.py on every commit/push in the tree where agents commit. PROD stays
 # lean (sparse, tag-pinned, never commits; check.py's preflight reports the missing toolchain
@@ -77,10 +79,14 @@ echo "-- ensuring backend deps (pip install -e .$EXTRA)"
 #    NOT build (Vite serves live with hot-reload). PROD builds ASIDE (dist.next) while the old dist keeps
 #    serving — it's swapped in at cutover (step 5.5) so a mid-build page load never sees a half-built tree.
 echo "-- frontend deps"
-( cd "$APP/frontend" && { [ -d node_modules ] || npm ci; } )
 if [ "$ROLE" = prod ]; then
+  # ALWAYS npm ci on prod: a new tag may change package-lock.json, and `[ -d node_modules ]` would build
+  # against stale deps. npm ci is deterministic-per-deploy (that's its job); dev keeps the fast path.
+  ( cd "$APP/frontend" && npm ci )
   echo "-- frontend build (PROD dist → dist.next, swapped at cutover)"
   ( cd "$APP/frontend" && npm run build -- --outDir dist.next --emptyOutDir )
+else
+  ( cd "$APP/frontend" && { [ -d node_modules ] || npm ci; } )
 fi
 
 # 4) Config presence. PROD requires the real secret already transferred (bootstrap.py / scp). DEV seeds its
@@ -113,8 +119,10 @@ fi
 #    __NPM__ to this machine's real paths so they work for ANY user/host, not just emma.
 mkdir -p "$HOME/.config/systemd/user"
 NPM="$(command -v npm)"
+NODEBIN="$(dirname "$NPM")"   # npm's bin dir → rendered into the dev-web unit's PATH so `node` resolves
 for u in "${UNITS[@]}"; do
   sed -e "s#__REPO__#$REPO#g" -e "s#__CTRLB_HOME__#$CTRLB_HOME#g" -e "s#__NPM__#$NPM#g" \
+      -e "s#__NODEBIN__#$NODEBIN#g" \
       "$UNIT_DIR/$u" > "$HOME/.config/systemd/user/$u"
 done
 systemctl --user daemon-reload
