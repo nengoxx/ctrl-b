@@ -1,30 +1,32 @@
-"""One-command self-deploy orchestrator — run FROM the Windows checkout to deploy onto a Linux box over SSH.
+"""One-command self-deploy orchestrator — run FROM a checkout with `config.yaml` to deploy onto a Linux box over SSH.
 
-Targets the D32 two-tree topology (see docs/DEPLOY_EMMA.md). Works whether the target already has the repo or
-NOT (clean machine): all paths resolve against the TARGET user's $HOME (any user, not just emma), and a missing
-tree is cloned from GitHub.
-  PROD  code ~/github/ctrl-b      (clean, sparse, tag-pinned) · data ~/.ctrl-b      · uvicorn :5433 + Serve HTTPS
-  DEV   code ~/github/ctrl-b-dev  (full, `dev` branch)        · data ~/.ctrl-b-dev  · uvicorn :5434 + Vite :5173
+Targets the D32 topology (amended 2026-07-09 — trunk-based, workspace/runtime split; see docs/DEPLOY_EMMA.md).
+Works whether the target already has the repo or NOT (clean machine): all paths resolve against the TARGET
+user's $HOME (any user, not just emma), and a missing tree is cloned from GitHub.
+  PROD  code ~/apps/ctrl-b    (deployed RUNTIME: clean, sparse, tag-pinned) · data ~/.ctrl-b      · uvicorn :5433 + Serve HTTPS
+  DEV   code ~/github/ctrl-b  (the WORKSPACE: full clone, `main` — the only branch) · data ~/.ctrl-b-dev · uvicorn :5434 + Vite :5173
 
 Steps, each flag-gated so you can hand any of them to the owner:
-  0. prereqs (sudo)  — apt install tmux+git · enable-linger · `tailscale set --operator`               [--no-prereqs]
-  1. secret          — SFTP the gitignored config.yaml -> ~/.ctrl-b/config.yaml (0600)
-  2. prod tree       — ensure ~/github/ctrl-b is the sparse, tag-pinned PROD clone (missing→clone; legacy full→
-                       the coordinated migrate-layout.sh; sparse→update)
-  3. install (prod)  — deploy/linux/install.sh prod (prereq check + 3.14 venv + npm build + render units)
+  0. prereqs (sudo)  — apt install tmux+git+sqlite3 · enable-linger · `tailscale set --operator`       [--no-prereqs]
+  1. secret          — SFTP the gitignored config.yaml -> ~/.ctrl-b/config.yaml (0600). SKIPPED if the
+                       target already has one (the TARGET's copy is canonical after first deploy — the
+                       app rewrites it live); force with --overwrite-config (backs the old one up first).
+  2. prod tree       — ensure ~/apps/ctrl-b is the sparse, tag-pinned PROD clone (missing→clone; sparse→update)
+  3. install (prod)  — deploy/linux/install.sh prod (prereq check + 3.14 venv + npm build + DB snapshot + units)
   4. https           — serve-https.sh (Tailscale Serve 443->5433; mic-ready)                            [--no-serve]
-  5. dev (optional)  — ensure ~/github/ctrl-b-dev + install.sh dev (isolated :5434 + Vite :5173)        [--with-dev]
-  6. agent           — start-claude.sh (the Claude agent in tmux, IN THE DEV TREE)                      [--start-agent]
+  5. dev (optional)  — ensure the ~/github/ctrl-b workspace + install.sh dev (isolated :5434 + Vite :5173) [--with-dev]
+  6. agent           — start-claude.sh (the Claude agent in tmux, IN THE WORKSPACE)                     [--start-agent]
 
 Auth + host come from config.yaml (the `emma` host's ssh_* fields). The password is read at
 runtime, piped to `sudo -S`, and NEVER printed/logged. Reuses paramiko (a backend dependency).
 
 Usage (Bash tool needs dangerouslyDisableSandbox for LAN):
-    py -3 deploy/bootstrap.py --dry-run        # show the plan, do nothing (no connection)
-    py -3 deploy/bootstrap.py                  # prod deploy: prereqs->secret->prod-tree->install->https
-    py -3 deploy/bootstrap.py --with-dev       # also stand up the isolated DEV instance
-    py -3 deploy/bootstrap.py --start-agent    # also start the Claude agent in tmux (dev tree)
-    py -3 deploy/bootstrap.py --no-prereqs     # skip sudo (you ran apt/linger/operator yourself; non-apt distro)
+    py -3 deploy/bootstrap.py --dry-run           # show the plan, do nothing (no connection)
+    py -3 deploy/bootstrap.py                     # prod deploy: prereqs->secret->prod-tree->install->https
+    py -3 deploy/bootstrap.py --with-dev          # also stand up the isolated DEV instance
+    py -3 deploy/bootstrap.py --start-agent       # also start the Claude agent in tmux (workspace)
+    py -3 deploy/bootstrap.py --no-prereqs        # skip sudo (you ran apt/linger/operator yourself; non-apt distro)
+    py -3 deploy/bootstrap.py --overwrite-config  # force-replace the target's config.yaml (backup taken first)
 This makes WRITES on the target — only run it to deploy (not for recon). Idempotent: safe to re-run; on any
 failure it stops with an actionable message and where it stopped, so you can fix + re-run (or finish manually).
 """
@@ -47,9 +49,12 @@ for _s in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-WIN_CONFIG = r"C:\Users\rovax\Documents\github\ctrl-b\config.yaml"  # source of truth + ssh creds
+# The LOCAL checkout's gitignored config.yaml (ssh creds + first-deploy secret) — resolved from this file's
+# location, not hardcoded, so any clone location works.
+SRC_CONFIG = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.yaml")
 # Path SUFFIXES — resolved against the target user's real $HOME after connect (works for any user/host).
-REPO_SUB, DEV_SUB = "github/ctrl-b", "github/ctrl-b-dev"
+# PROD is a deployed runtime (~/apps, the user-level /opt analogue); the workspace stays under ~/github.
+PROD_SUB, WORK_SUB = "apps/ctrl-b", "github/ctrl-b"
 HOME_SUB, DEV_HOME_SUB = ".ctrl-b", ".ctrl-b-dev"
 
 DRY = "--dry-run" in sys.argv
@@ -57,6 +62,7 @@ NO_PREREQS = "--no-prereqs" in sys.argv
 NO_SERVE = "--no-serve" in sys.argv
 WITH_DEV = "--with-dev" in sys.argv
 START_AGENT = "--start-agent" in sys.argv
+OVERWRITE_CONFIG = "--overwrite-config" in sys.argv
 
 
 def _local_origin() -> str | None:
@@ -143,15 +149,14 @@ def step(n, title):
     print(f"\n=== [{n}] {title} ===")
 
 
-def ensure_prod_tree(m: "Emma", prod_repo: str, dev_repo: str, gh: str | None) -> int:
-    """Make sure `prod_repo` is the sparse, tag-pinned PROD clone — whether it's missing, the legacy full
-    checkout, or already sparse. Returns 0 on success, non-zero to abort. The one-time conversion off the
-    legacy FULL checkout is the coordinated `migrate-layout.sh` (it moves the agent's tree) — we DETECT +
-    INSTRUCT here rather than mutate the agent's working tree from a remote script."""
+def ensure_prod_tree(m: "Emma", prod_repo: str, work_repo: str, gh: str | None) -> int:
+    """Make sure `prod_repo` is the sparse, tag-pinned PROD runtime clone — missing → clone; sparse →
+    fetch + re-pin to the latest release tag. Returns 0 on success, non-zero to abort. The prod path is a
+    dedicated runtime dir (~/apps) — anything else found there is unexpected and we refuse to touch it."""
     _, state = m.capture(
-        f"if [ ! -d {prod_repo}/.git ]; then echo missing; "
+        f"if [ ! -e {prod_repo} ]; then echo missing; "
         f'elif [ "$(git -C {prod_repo} config --get core.sparseCheckout 2>/dev/null)" = true ]; then echo sparse; '
-        f"else echo full; fi"
+        f"else echo unexpected; fi"
     )
     if state == "sparse":
         m.run(f"git -C {prod_repo} fetch --tags --quiet origin || true")
@@ -161,30 +166,25 @@ def ensure_prod_tree(m: "Emma", prod_repo: str, dev_repo: str, gh: str | None) -
         else:
             m.run(
                 f"git -C {prod_repo} checkout --quiet main && git -C {prod_repo} pull --ff-only --quiet && "
-                f"echo '  PROD on main (no tags yet — cut one from dev to pin a release)'"
+                f"echo '  PROD on main (no tags yet — tag the first release to pin it)'"
             )
         return 0
-    if state == "full":
-        print("  ⚠ this is still the LEGACY full checkout (the tandem agent's tree).")
-        print(
-            "    The D32 layout needs a ONE-TIME, agent-coordinated migration (stop the agent, then on the box):"
-        )
-        print(f"      bash {dev_repo}/deploy/linux/migrate-layout.sh   # if a dev tree exists")
-        print(f"      bash {prod_repo}/deploy/linux/migrate-layout.sh  # otherwise")
-        print("    It moves the checkout → the dev tree (branch dev) and re-creates the prod tree as a clean")
-        print("    sparse clone. Re-run bootstrap.py afterward. (Not auto-run — it touches the agent.)")
+    if state == "unexpected":
+        print(f"  ✗ {prod_repo} exists but is not the sparse PROD clone — refusing to touch it.")
+        print("    Move it aside (or pick another prod path via the PROD_SUB constant) and re-run.")
         return 2
-    # missing — clean machine: clone sparse from the dev tree's origin, else this checkout's GitHub URL.
-    _, devgh = m.capture(f"git -C {dev_repo} remote get-url origin 2>/dev/null || true")
-    src = devgh or gh
+    # missing — clone sparse from the workspace's origin, else this checkout's GitHub URL.
+    _, workgh = m.capture(f"git -C {work_repo} remote get-url origin 2>/dev/null || true")
+    src = workgh or gh
     if not src:
         print(
-            "  ✗ PROD tree missing and no GitHub URL known (no local origin, no dev tree). Clone it manually "
+            "  ✗ PROD tree missing and no GitHub URL known (no local origin, no workspace). Clone it manually "
             "first, or run from a checkout with an `origin` remote."
         )
         return 1
     print(f"  PROD tree missing → fresh sparse clone from {src}")
     rc = m.run(
+        f"mkdir -p $(dirname {prod_repo}) && "
         f"git clone --filter=blob:none --sparse {src} {prod_repo} && "
         f"git -C {prod_repo} sparse-checkout set backend frontend deploy && "  # cone mode: + top-level files; prototype dirs drop
         f"TAG=$(git -C {prod_repo} describe --tags --abbrev=0 2>/dev/null || true); "
@@ -198,27 +198,38 @@ def ensure_prod_tree(m: "Emma", prod_repo: str, dev_repo: str, gh: str | None) -
     return rc
 
 
-def ensure_dev_tree(m: "Emma", prod_repo: str, dev_repo: str, gh: str | None) -> int:
-    """Make sure the DEV tree exists (full clone on `dev`). On emma it comes from migrate-layout; on a clean
-    machine we clone it here. Returns 0 on success, non-zero on failure (dev is optional → caller skips dev)."""
-    _, has = m.capture(f"[ -d {dev_repo}/.git ] && echo yes || echo no")
+def ensure_workspace(m: "Emma", prod_repo: str, work_repo: str, gh: str | None) -> int:
+    """Make sure the WORKSPACE exists (full clone on `main` — the only branch; the dev instance serves it
+    and all agents work here). Existing tree: fetch, fast-forward if clean, and WARN if it has drifted off
+    main (the D32-amended invariant: the workspace never leaves main; other checkouts use worktrees).
+    Returns 0 on success, non-zero on failure (dev is optional → caller skips dev)."""
+    _, has = m.capture(f"[ -d {work_repo}/.git ] && echo yes || echo no")
     if has == "yes":
-        m.run(f"git -C {dev_repo} fetch origin --quiet || true")
+        m.run(f"git -C {work_repo} fetch origin --quiet || true")
+        _, branch = m.capture(f"git -C {work_repo} branch --show-current 2>/dev/null || true")
+        if branch != "main":
+            print(f"  ⚠ workspace is on '{branch or '(detached)'}' — the invariant is: it never leaves main.")
+            print("    Not touching it (it may be an agent's live state) — check it out to main when safe.")
+            return 0
+        _, dirty = m.capture(f"git -C {work_repo} status --porcelain | head -1")
+        if dirty:
+            print("  ⚠ workspace has uncommitted changes — skipping the fast-forward (agent WIP is sacred).")
+        else:
+            m.run(
+                f"git -C {work_repo} pull --ff-only --quiet || echo '  ⚠ ff-pull failed — update it manually'"
+            )
         return 0
     _, prodgh = m.capture(f"git -C {prod_repo} remote get-url origin 2>/dev/null || true")
     src = prodgh or gh
     if not src:
-        print("  ⚠ DEV tree missing and no GitHub URL known — skipping dev.")
+        print("  ⚠ workspace missing and no GitHub URL known — skipping dev.")
         return 1
-    print(f"  DEV tree missing → fresh clone from {src} (branch dev)")
-    return m.run(
-        f"git clone {src} {dev_repo} && "
-        f"(git -C {dev_repo} checkout dev 2>/dev/null || git -C {dev_repo} checkout -b dev)"
-    )
+    print(f"  workspace missing → fresh clone from {src} (main)")
+    return m.run(f"git clone {src} {work_repo}")
 
 
 def main() -> int:
-    cfg = yaml.safe_load(open(WIN_CONFIG, encoding="utf-8"))
+    cfg = yaml.safe_load(open(SRC_CONFIG, encoding="utf-8"))
     e = cfg.get("computers", {}).get("emma") or find_emma(cfg)
     if not e:
         print(
@@ -228,19 +239,19 @@ def main() -> int:
     host, port = str(e["ip"]), int(e.get("ssh_port", 22))
     user, pw = str(e["ssh_username"]), str(e["ssh_password"])  # never printed
 
-    plan = ["prereqs (sudo: tmux+git, linger, tailscale operator)"] if not NO_PREREQS else []
+    plan = ["prereqs (sudo: tmux+git+sqlite3, linger, tailscale operator)"] if not NO_PREREQS else []
     plan += [
-        "sftp config.yaml → ~/.ctrl-b",
-        "ensure PROD tree (clone/migrate/update)",
-        "install.sh prod (prereqs + 3.14 venv + dist + service)",
+        "sftp config.yaml → ~/.ctrl-b (first deploy only — skipped if the target has one)",
+        "ensure PROD tree (clone/update, tag-pinned)",
+        "install.sh prod (prereqs + 3.14 venv + dist + DB snapshot + service)",
     ]
     plan += [] if NO_SERVE else ["serve-https (Tailscale HTTPS 443→5433)"]
-    plan += ["ensure DEV tree + install.sh dev (:5434 + Vite :5173)"] if WITH_DEV else []
-    plan += ["start-claude (tmux agent, dev tree)"] if START_AGENT else []
+    plan += ["ensure workspace + install.sh dev (:5434 + Vite :5173)"] if WITH_DEV else []
+    plan += ["start-claude (tmux agent, workspace)"] if START_AGENT else []
     print(f"Deploy target: {user}@{host}:{port}   (paths resolve against the target's $HOME)")
-    print("  PROD: ~/github/ctrl-b → ~/.ctrl-b (:5433, Serve HTTPS)")
+    print("  PROD: ~/apps/ctrl-b → ~/.ctrl-b (:5433, Serve HTTPS)")
     print(
-        "  DEV : ~/github/ctrl-b-dev → ~/.ctrl-b-dev (:5434 + Vite :5173)"
+        "  DEV : ~/github/ctrl-b (workspace, main) → ~/.ctrl-b-dev (:5434 + Vite :5173)"
         + ("" if WITH_DEV else "   [skipped — pass --with-dev]")
     )
     print(
@@ -262,28 +273,39 @@ def main() -> int:
         # Resolve the target's real $HOME → absolute paths that work for SFTP (no shell expansion) and any user.
         _, home = m.capture("echo $HOME")
         home = home or f"/home/{user}"
-        prod_repo, dev_repo = f"{home}/{REPO_SUB}", f"{home}/{DEV_SUB}"
+        prod_repo, work_repo = f"{home}/{PROD_SUB}", f"{home}/{WORK_SUB}"
         prod_home, dev_home = f"{home}/{HOME_SUB}", f"{home}/{DEV_HOME_SUB}"
 
         if not NO_PREREQS:
             step(0, "prereqs (sudo)")
-            # apt-based (Ubuntu/Debian). On a non-apt distro use --no-prereqs and install git/tmux yourself.
-            if m.run("apt-get update -qq && apt-get install -y tmux git", sudo=True):
+            # apt-based (Ubuntu/Debian). On a non-apt distro use --no-prereqs and install these yourself.
+            # sqlite3 = the CLI install.sh uses for the pre-cutover DB snapshot (Online Backup API).
+            if m.run("apt-get update -qq && apt-get install -y tmux git sqlite3", sudo=True):
                 print(
-                    "  ⚠ apt prereqs failed (non-apt distro?). Install git + tmux manually, or use --no-prereqs."
+                    "  ⚠ apt prereqs failed (non-apt distro?). Install git + tmux + sqlite3 manually, or use --no-prereqs."
                 )
             m.run(f"loginctl enable-linger {user}", sudo=True)  # user services survive logout/reboot
             m.run(f"tailscale set --operator={user}", sudo=True)  # `tailscale serve` without sudo
-            print("  tmux+git, linger, tailscale operator ensured.")
+            print("  tmux+git+sqlite3, linger, tailscale operator ensured.")
 
-        step(1, f"SFTP config.yaml -> {prod_home}/")
+        step(1, f"config.yaml -> {prod_home}/")
         m.run(f"mkdir -p {prod_home}")
         dest = posixpath.join(prod_home, "config.yaml")
-        m.put(WIN_CONFIG, dest)
-        print(f"  -> {dest} (0600)")
+        # After the first deploy the TARGET's config is the canonical, living copy (the app rewrites it;
+        # the owner edits it via the settings UI) — a re-run must never clobber it with this checkout's
+        # stale snapshot. Skip when present; --overwrite-config forces it (with a timestamped backup).
+        _, existing = m.capture(f"[ -f {dest} ] && echo yes || echo no")
+        if existing == "yes" and not OVERWRITE_CONFIG:
+            print(f"  ✓ {dest} already exists — left untouched (the target's copy is canonical).")
+            print("    Force-replace with --overwrite-config (a timestamped backup is taken first).")
+        else:
+            if existing == "yes":
+                m.run(f"cp -p {dest} {dest}.bak-$(date +%Y%m%d-%H%M%S) && echo '  (backed up the old one)'")
+            m.put(SRC_CONFIG, dest)
+            print(f"  -> {dest} (0600)")
 
         step(2, "ensure PROD tree (clean sparse, tag-pinned)")
-        rc = ensure_prod_tree(m, prod_repo, dev_repo, GH_URL)
+        rc = ensure_prod_tree(m, prod_repo, work_repo, GH_URL)
         if rc:
             print("  → resolve the PROD tree (see above) and re-run (bootstrap is idempotent).")
             return rc
@@ -305,11 +327,11 @@ def main() -> int:
             m.run(f"cd {prod_repo} && bash deploy/linux/serve-https.sh")
 
         if WITH_DEV:
-            step(5, "DEV instance (isolated): ensure tree + install.sh dev")
-            if ensure_dev_tree(m, prod_repo, dev_repo, GH_URL):
-                print("  ⚠ could not ensure the DEV tree — skipping dev (prod is unaffected).")
+            step(5, "DEV instance (isolated): ensure workspace + install.sh dev")
+            if ensure_workspace(m, prod_repo, work_repo, GH_URL):
+                print("  ⚠ could not ensure the workspace — skipping dev (prod is unaffected).")
             else:
-                rc = m.run(f"cd {dev_repo} && CTRLB_HOME={dev_home} bash deploy/linux/install.sh dev")
+                rc = m.run(f"cd {work_repo} && CTRLB_HOME={dev_home} bash deploy/linux/install.sh dev")
                 if rc:
                     print(
                         f"  ⚠ install.sh dev exited {rc} (prod is unaffected). Inspect: systemctl --user status ctrl-b-dashboard-dev"
@@ -320,16 +342,16 @@ def main() -> int:
                     )
 
         if START_AGENT:
-            step(6, "start the Claude agent (tmux, dev tree)")
+            step(6, "start the Claude agent (tmux, workspace)")
             m.run(
-                f"cd {dev_repo} && bash tools/start-claude.sh || "
-                f"echo '(start-claude needs the dev tree — run migrate-layout.sh / --with-dev first)'"
+                f"cd {work_repo} && bash tools/start-claude.sh || "
+                f"echo '(start-claude needs the workspace — run with --with-dev first)'"
             )
 
         print("\nDEPLOY COMPLETE. Dashboard: https://<host>.<tailnet>.ts.net (see `tailscale serve status`).")
         if not START_AGENT:
             print(
-                f"  Start the agent when ready:  ssh {host} -t 'cd {dev_repo} && bash tools/start-claude.sh'"
+                f"  Start the agent when ready:  ssh {host} -t 'cd {work_repo} && bash tools/start-claude.sh'"
             )
         return 0
     finally:

@@ -18,6 +18,10 @@ from pathlib import Path
 import aiosqlite
 
 # Numbered migrations. Append new (version, sql) tuples; never edit a shipped one.
+# Release-compat rule (D32 amendment, expand/contract): migrations are FORWARD-ONLY and prod code
+# rolls back by tag, so every change ships ADDITIVE first (new nullable column / new table); a
+# DESTRUCTIVE contraction (drop/rename) may land at the earliest ONE release after the code stopped
+# using the old shape, marked `DEPRECATED since vX, DROP in vY` at the site.
 MIGRATIONS: list[tuple[int, str]] = [
     (
         1,

@@ -10,10 +10,12 @@ the repo root (`backend/` + `frontend/` + `config.yaml`), so these work from any
 | **Manual (no systemd)** | Quick foreground run on Linux/macOS without installing services. | `linux/run.sh prod` (build + uvicorn[+Serve]) · `linux/run.sh dev` (uvicorn + Vite). |
 
 ## Files
-- **`bootstrap.py`** — the Windows→Linux SSH orchestrator (reads the target host from `config.yaml`,
-  clones/migrates the tree, runs `linux/install.sh`, sets up Tailscale Serve). The recommended Linux path.
-- **`linux/`** — `install.sh` (systemd, `[prod|dev]`), `run.sh` (manual), `serve-https.sh`, `migrate-layout.sh`,
-  and `systemd/` unit templates. Topology + rationale: [`../docs/DEPLOY_EMMA.md`](../docs/DEPLOY_EMMA.md) + DECISIONS **D32**.
+- **`bootstrap.py`** — the local-checkout→Linux SSH orchestrator (reads the target host from `config.yaml`,
+  clones/updates the trees, runs `linux/install.sh`, sets up Tailscale Serve). The recommended Linux path.
+- **`linux/`** — `install.sh` (systemd, `[prod|dev]`; prod adds the pre-cutover DB snapshot + dist swap),
+  `run.sh` (manual), `serve-https.sh`, and `systemd/` unit templates. Topology + rationale:
+  [`../docs/DEPLOY_EMMA.md`](../docs/DEPLOY_EMMA.md) + DECISIONS **D32 (amended 2026-07-09: trunk-based —
+  prod runtime `~/apps/ctrl-b` tag-pinned; workspace `~/github/ctrl-b` on `main`)**.
 - **`windows/`** — `setup.{ps1,cmd}`, `start.{ps1,cmd}` (PROD :5433; `-Dev`/`-Tailscale`/`-Build`), and
   `autostart-{enable,disable}.{ps1,cmd}` (run at logon via a Scheduled Task).
 

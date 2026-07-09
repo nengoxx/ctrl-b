@@ -6,24 +6,25 @@
 # phone / Windows over SSH, while the --remote-control channel also drives it from claude.ai/code. The
 # `while true … sleep 5` loop restarts the agent on crash / auth-timeout / network blip.
 #
-# ALL development is on the DEV SIDE — one OR MORE agents. PROD (~/github/ctrl-b) is NEVER worked on by any
-# agent: it's a clean sparse clone the systemd service just runs + the owner uses daily (D32). This script
-# only ever launches an agent in a DEV-side tree.
+# ALL development happens in the WORKSPACE (~/github/ctrl-b, pinned to `main` — the only branch). PROD
+# (~/apps/ctrl-b) is NEVER worked on by any agent: it's a clean sparse tag-pinned clone the systemd service
+# just runs + the owner uses daily (D32, amended 2026-07-09). This script only ever launches an agent in a
+# workspace-side tree.
 #
 # Usage (owner manages sessions MANUALLY):  ./start-claude.sh [session] [project_dir]
-#   ./start-claude.sh                            # default: session 'ctrl-b' in the main DEV tree (~/github/ctrl-b-dev, `dev`)
+#   ./start-claude.sh                            # default: session 'ctrl-b' in the workspace (~/github/ctrl-b, main)
 #   ssh emma -t 'tmux attach -t ctrl-b'          # attach from anywhere (phone / Windows); Ctrl-b d to detach
 #   tmux kill-session -t ctrl-b                  # stop it
 #   MODEL=… EFFORT=… ./start-claude.sh           # override model/effort (env)
-# SECOND agent (a feature or audit branch) — give it its OWN tree + session so it doesn't disturb the dev
-# instance (which serves ~/github/ctrl-b-dev on `dev`). A git worktree off the dev repo is ideal:
-#   git -C ~/github/ctrl-b-dev worktree add ~/github/ctrl-b-feat -b feat/x
+# SECOND simultaneous agent — give it its OWN branch + worktree so it doesn't disturb the dev instance
+# (which serves the workspace on main). Use tools/add-dev-worktree.sh, or by hand:
+#   git -C ~/github/ctrl-b worktree add ~/github/ctrl-b-feat -b feat/x
 #   ./start-claude.sh feat ~/github/ctrl-b-feat
 # Prereq: tmux installed (sudo apt install -y tmux) and `claude` on PATH (already: ~/.local/bin/claude).
 set -euo pipefail
 
 SESSION="${1:-ctrl-b}"                              # tmux session + --remote-control channel name
-PROJECT="${2:-$HOME/github/ctrl-b-dev}"             # a DEV-side tree (default: the main dev tree); never prod
+PROJECT="${2:-$HOME/github/ctrl-b}"                 # a workspace-side tree (default: the workspace); never prod
 MODEL="${MODEL:-claude-opus-4-8}"
 EFFORT="${EFFORT:-high}"
 PERM="${PERM:-bypassPermissions}"

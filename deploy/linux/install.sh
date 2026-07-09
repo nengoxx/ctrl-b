@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Idempotent on-emma setup for a ctrl-b dashboard INSTANCE. Run ON emma (not from Windows). Safe to re-run.
-# It does NOT create/clone/migrate trees (that's bootstrap.py — see README) — it builds + enables the
+# It does NOT create/clone trees (that's bootstrap.py — see README) — it builds + enables the
 # instance from the tree it's run in. It never touches secrets beyond the one-time dev seed-copy, and only
 # ever manages the user's own systemd.
 #
 # Usage:  bash deploy/linux/install.sh [prod|dev]      (default: prod)
 #
-#   prod →  PROD instance (D32).  Tree: ~/github/ctrl-b (CLEAN, sparse, tag-pinned).  Data: ~/.ctrl-b.
-#           Builds the native-3.14 venv + the PROD dist (served by uvicorn :5433); enables
-#           ctrl-b-dashboard.service.  Requires ~/.ctrl-b/config.yaml to already be present.
-#   dev  →  DEV instance (isolated).  Tree: ~/github/ctrl-b-dev (`dev` branch).  Data: ~/.ctrl-b-dev.
+#   prod →  PROD instance (D32, amended 2026-07-09).  Tree: ~/apps/ctrl-b (CLEAN, sparse, tag-pinned —
+#           the deployed RUNTIME, never a workspace).  Data: ~/.ctrl-b.  Builds the native-3.14 venv +
+#           the PROD dist (built aside, swapped in atomically at cutover; served by uvicorn :5433);
+#           snapshots the DB before restarting; enables ctrl-b-dashboard.service.
+#           Requires ~/.ctrl-b/config.yaml to already be present.
+#   dev  →  DEV instance (isolated sandbox).  Tree: ~/github/ctrl-b (the WORKSPACE, pinned to `main` —
+#           the only branch; all development happens here).  Data: ~/.ctrl-b-dev.
 #           Builds the venv + installs npm deps (Vite serves live — no dist build); enables the two dev
 #           units (backend :5434 + Vite :5173).  Seeds ~/.ctrl-b-dev/config.yaml from ~/.ctrl-b the first
 #           time so dev has the same fleet but its OWN db/chat.
@@ -17,10 +20,11 @@ set -euo pipefail
 
 ROLE="${1:-prod}"
 case "$ROLE" in
-  prod) REPO="${REPO:-$HOME/github/ctrl-b}";     CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b}";     UNITS=(ctrl-b-dashboard.service) ;;
-  dev)  REPO="${REPO:-$HOME/github/ctrl-b-dev}"; CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b-dev}"; UNITS=(ctrl-b-dashboard-dev.service ctrl-b-dashboard-dev-web.service) ;;
+  prod) REPO="${REPO:-$HOME/apps/ctrl-b}";   CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b}";     UNITS=(ctrl-b-dashboard.service) ;;
+  dev)  REPO="${REPO:-$HOME/github/ctrl-b}"; CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b-dev}"; UNITS=(ctrl-b-dashboard-dev.service ctrl-b-dashboard-dev-web.service) ;;
   *)    echo "usage: install.sh [prod|dev]"; exit 2 ;;
 esac
+BACKUP_KEEP="${CTRLB_BACKUP_KEEP:-10}"   # pre-cutover DB snapshots retained (prod)
 APP="$REPO"                       # the app IS the repo root now (backend/ + frontend/ + deploy/)
 DEPLOY="$APP/deploy/linux"        # install/serve/migrate + systemd/ live here; bootstrap.py is at deploy/
 UNIT_DIR="$DEPLOY/systemd"
@@ -70,12 +74,13 @@ echo "-- ensuring backend deps (pip install -e .$EXTRA)"
 "$VENV/bin/pip" install -e "$APP/backend$EXTRA" --quiet
 
 # 3) Frontend deps — both roles need node_modules. PROD also builds the dist (uvicorn serves it); DEV does
-#    NOT build (Vite serves live with hot-reload).
+#    NOT build (Vite serves live with hot-reload). PROD builds ASIDE (dist.next) while the old dist keeps
+#    serving — it's swapped in at cutover (step 5.5) so a mid-build page load never sees a half-built tree.
 echo "-- frontend deps"
 ( cd "$APP/frontend" && { [ -d node_modules ] || npm ci; } )
 if [ "$ROLE" = prod ]; then
-  echo "-- frontend build (PROD dist)"
-  ( cd "$APP/frontend" && npm run build )
+  echo "-- frontend build (PROD dist → dist.next, swapped at cutover)"
+  ( cd "$APP/frontend" && npm run build -- --outDir dist.next --emptyOutDir )
 fi
 
 # 4) Config presence. PROD requires the real secret already transferred (bootstrap.py / scp). DEV seeds its
@@ -113,6 +118,31 @@ for u in "${UNITS[@]}"; do
       "$UNIT_DIR/$u" > "$HOME/.config/systemd/user/$u"
 done
 systemctl --user daemon-reload
+
+# 5.5) PROD cutover — the only moment the running instance is touched, kept sub-second:
+#      (a) snapshot the DB via SQLite's Online Backup API (WAL-safe on a LIVE db — plain `cp` is NOT:
+#          committed data sits in the -wal sidecar; see docs/DECISIONS.md D32 amendment) + verify it,
+#      (b) stop the service, (c) swap the aside-built dist into place, (d) start (below).
+#      Migrations run forward-only at app startup, so this snapshot is THE rollback point for data:
+#      restore = stop → rm stale ctrlb.db-wal/-shm → gunzip snapshot over ctrlb.db → start (README).
+if [ "$ROLE" = prod ]; then
+  DB="$CTRLB_HOME/ctrlb.db"
+  if [ -f "$DB" ]; then
+    command -v sqlite3 >/dev/null || { echo "✗ sqlite3 missing — needed to snapshot the DB before cutover:  sudo apt install -y sqlite3"; exit 1; }
+    BKD="$CTRLB_HOME/backups"; mkdir -p "$BKD"
+    SNAP="$BKD/ctrlb-$(date +%Y%m%d-%H%M%S).db"
+    sqlite3 "$DB" ".backup '$SNAP'"
+    [ "$(sqlite3 "$SNAP" 'PRAGMA integrity_check;')" = "ok" ] \
+      || { echo "✗ DB snapshot failed integrity_check — aborting cutover (service untouched)"; rm -f "$SNAP"; exit 1; }
+    gzip -f "$SNAP"
+    ls -1t "$BKD"/ctrlb-*.db.gz 2>/dev/null | tail -n +"$((BACKUP_KEEP + 1))" | xargs -r rm -f
+    echo "-- DB snapshot: $SNAP.gz (keeping last $BACKUP_KEEP; CTRLB_BACKUP_KEEP overrides)"
+  fi
+  systemctl --user stop ctrl-b-dashboard.service 2>/dev/null || true
+  rm -rf "$APP/frontend/dist"
+  mv "$APP/frontend/dist.next" "$APP/frontend/dist"
+fi
+
 if ! systemctl --user enable --now "${UNITS[@]}"; then
   echo "✗ systemctl --user enable failed. Common causes: user bus not reachable over SSH (need linger:"
   echo "    sudo loginctl enable-linger $(id -un)), or a unit error → inspect:  systemctl --user status ${UNITS[0]}"
@@ -125,7 +155,7 @@ if [ "$ROLE" = prod ]; then
   echo "✓ PROD install done. Verify:  systemctl --user status ctrl-b-dashboard  |  curl -s localhost:5433/api/health"
   echo "Next:"
   echo "  • HTTPS on the tailnet:   bash $SCRIPTS/serve-https.sh"
-  echo "  • Set up the DEV sandbox: clone ~/github/ctrl-b-dev (dev branch), then  bash deploy/linux/install.sh dev"
+  echo "  • Set up the DEV sandbox: from the workspace (~/github/ctrl-b, main)  bash deploy/linux/install.sh dev"
 else
   echo "✓ DEV install done. Verify:  systemctl --user status ctrl-b-dashboard-dev  |  curl -s localhost:5434/api/health"
   echo "  Dev UI: http://emma:5173 (Vite → :5434).  The Claude agent runs here:  bash $APP/tools/start-claude.sh"

@@ -1,35 +1,37 @@
 #!/usr/bin/env bash
-# Create an isolated DEV-side git worktree so a SECOND agent can work a feature/audit branch IN PARALLEL,
-# without disturbing the main dev tree (~/github/ctrl-b-dev on `dev`, which the dev instance serves). Run ON emma.
+# Create an isolated git worktree off the WORKSPACE (~/github/ctrl-b, main) — for a SECOND simultaneous
+# agent, a HOTFIX cut from a release tag, or any checkout that isn't main-moving-forward. Run ON emma.
 #
-# This is the standard parallel-AI-agent layout: one worktree per agent per branch, as SIBLING dirs off the dev
-# clone, sharing its .git (cheap — no re-clone). git refuses the same branch in two worktrees, so each worktree
-# is its OWN branch (that's why "two agents on `dev` at once" isn't a thing — the second gets a new branch here).
-# You only need this when you actually want simultaneous writers; day-to-day, both agents share the one dev tree.
+# WHY: the workspace never leaves `main` (D32, amended 2026-07-09) — the dev instance live-serves it, so a
+# checkout there flips the running app + tangles agent WIP. Every other ref gets a throwaway worktree:
+# SIBLING dirs sharing the workspace's .git (cheap — no re-clone). git refuses the same branch in two
+# worktrees, so each worktree is its OWN branch. Day-to-day (one writer) you never need this.
 #
-# Usage:  add-dev-worktree.sh <name> [branch]
-#   add-dev-worktree.sh authfix           # → ~/github/ctrl-b-authfix on a new branch feat/authfix
-#   add-dev-worktree.sh audit dev-audit   # → ~/github/ctrl-b-audit   on a new branch dev-audit
-# Remove when done (push/merge the branch first):
-#   git -C ~/github/ctrl-b-dev worktree remove ~/github/ctrl-b-<name>
+# Usage:  add-dev-worktree.sh <name> [branch] [base]
+#   add-dev-worktree.sh authfix               # → ~/github/ctrl-b-authfix, new branch feat/authfix off origin/main
+#   add-dev-worktree.sh hotfix fix/v101 v1.0.0 # → hotfix worktree cut from the release tag (then: fix → tag
+#                                              #   vX.Y.Z+1 → deploy → land the fix on main → remove worktree)
+# Remove when done (push/merge the branch first — for a hotfix, VERIFY the fix is on main):
+#   git -C ~/github/ctrl-b worktree remove ~/github/ctrl-b-<name>
 set -euo pipefail
 
-NAME="${1:?usage: add-dev-worktree.sh <name> [branch]}"
+NAME="${1:?usage: add-dev-worktree.sh <name> [branch] [base]}"
 BRANCH="${2:-feat/$NAME}"
-DEV="$HOME/github/ctrl-b-dev"
+WORK="$HOME/github/ctrl-b"
 TREE="$HOME/github/ctrl-b-$NAME"
 
-[ -d "$DEV/.git" ] || { echo "ERROR: dev tree $DEV not found (run migrate-layout.sh first)."; exit 1; }
+[ -d "$WORK/.git" ] || { echo "ERROR: workspace $WORK not found."; exit 1; }
 [ -e "$TREE" ] && { echo "ERROR: $TREE already exists — pick another name or remove it first."; exit 1; }
 
-git -C "$DEV" fetch origin --quiet || true
-# Branch off origin/dev when available (freshest), else the local dev tip.
-BASE="origin/dev"; git -C "$DEV" rev-parse --verify --quiet "$BASE" >/dev/null || BASE="dev"
-git -C "$DEV" worktree add -b "$BRANCH" "$TREE" "$BASE"
+git -C "$WORK" fetch origin --tags --quiet || true
+# Base: an explicit ref (e.g. a release tag for a hotfix), else origin/main when available, else local main.
+BASE="${3:-origin/main}"
+git -C "$WORK" rev-parse --verify --quiet "$BASE" >/dev/null || BASE="main"
+git -C "$WORK" worktree add -b "$BRANCH" "$TREE" "$BASE"
 
 echo ""
 echo "✓ Worktree ready: $TREE   (new branch '$BRANCH', off $BASE)"
 echo "  Launch a second agent there:"
 echo "      bash $TREE/tools/start-claude.sh $NAME $TREE"
-echo "  When done (after pushing/merging '$BRANCH'):"
-echo "      git -C $DEV worktree remove $TREE"
+echo "  When done (after pushing/merging '$BRANCH' — hotfix: verify the fix is on main):"
+echo "      git -C $WORK worktree remove $TREE"
