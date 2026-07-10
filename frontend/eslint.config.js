@@ -64,6 +64,23 @@ export default tseslint.config(
     },
   },
 
+  // Theme code must not hand-roll rAF loops (§14.15.1-A rider c). Every canvas theme drives its
+  // animation through the engine-owned `safeRafLoop` (try/catch per tick → cancel + reportError on
+  // throw, never error-per-frame) instead of a bare `requestAnimationFrame` loop. Keyed to
+  // CallExpression so a `typeof requestAnimationFrame` availability GUARD (camera.ts) never trips it.
+  {
+    files: ["src/themes/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: 'CallExpression[callee.name="requestAnimationFrame"]',
+          message: "theme rAF loops must go through theme-engine/safeRafLoop (§14.15.1-A rider c)",
+        },
+      ],
+    },
+  },
+
   // Tests + e2e — TYPE-AWARE lint (projectService finds tests/tsconfig.json + e2e/tsconfig.json,
   // 1b-2b). Keeps the high-value rules (no-floating-promises catches a genuinely-missing `await`),
   // with targeted test-idiom relaxations below.
