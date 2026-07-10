@@ -1,6 +1,6 @@
 # Handoff — start here for a fresh session
 
-> ## ▶ ACTIVE — develop ON emma. The deploy is DONE: v1.0.0 IS LIVE (2026-07-10)
+> ## ▶ ACTIVE — develop ON emma. PROD = v1.1.0 (2026-07-10 — Hardening v2 + version-from-tag; /api/health now reports the tag). First deploy: v1.0.0 same day.
 > **✅ ctrl-b v1.0.0 (tag `v1.0.0` = `8fa8404`) deployed to emma per the D32-amended plan — first try,
 > release gate green on its maiden tag run (full gate + Playwright e2e on ubuntu).** As-executed record:
 > the PRE-FLIGHT block atop [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md); living runbook: `deploy/linux/README.md`.
