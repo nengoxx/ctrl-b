@@ -499,7 +499,7 @@ ctrl-b/
 │   └── pyproject.toml       # exact pins · ruff (py314) · pyright[nodejs]
 ├── frontend/
 │   ├── src/ {api, components, hooks, lib, store, tabs, theme(-engine)/{kit,…}, themes/{vapor,minimal,cosmos}}
-│   ├── tests/ (vitest+jsdom)  e2e/ (Playwright: flows·a11y·render)
+│   ├── tests/ (vitest+jsdom)  e2e/ (Playwright: flows·a11y·render·contrast·kit-render)
 │   └── vite.config.ts       # PWA · dev proxy · bundle analyzer
 ├── docs/                    # the doc system (HANDOFF → DECISIONS → ARCHITECTURE/DESIGN → TODO → …)
 ├── deploy/ {bootstrap.py, linux/, windows/}   ·   tools/ {check.py, start scripts}
@@ -511,7 +511,7 @@ ctrl-b/
 
 | Guardrail | Today ✅ | Target ▹ |
 |---|---|---|
-| One-command gate | `python tools/check.py` — parallel, grouped, run-all-and-summarise (ruff · pyright · pytest · tsc · eslint · prettier · vitest — counts live in QUALITY.md) | — |
+| One-command gate | `python tools/check.py` — parallel, grouped, run-all-and-summarise (ruff · pyright · pytest · tsc · eslint · stylelint · prettier · vitest — counts live in QUALITY.md) | — |
 | Hooks | pre-commit `--fast` (instant) · pre-push full (native `core.hooksPath`) | — |
 | E2E | `--e2e`: Playwright flows + axe a11y as the **pre-deploy gate** | per-theme render matrix ◇ |
 | CI | none | ▹ SYS-14: GitHub Actions `check.py` on ubuntu (first Linux runs pre-emma) |

@@ -44,13 +44,13 @@ Quality is not one linter — it is a set of complementary layers, each catching
 | **BE lint + format** | **ruff** (`E`/`F`/`I`, formatter) | style, imports, dead code | ✅ |
 | **BE type check** | **`pyright[nodejs]`** (pinned `==1.1.409`; `basic` → ratchet `strict`) | type errors across the FastAPI service | ✅ (1c) |
 | **BE tests** | **pytest** (254, temp-config safe — conftest isolation, QH-10) | backend logic | ✅ |
-| **CSS contracts** | **stylelint** (keyframe-prefix · anim budget · token-only color) | theme CSS invariants | ⏸ owned by the theme-engine hardening slice (post-deploy) |
+| **CSS contracts** | **stylelint** (keyframe-prefix · anim budget · the two accent correctness rules) | theme CSS invariants | ✅ shipped 2026-07-10 (warn-first; `lint:css` in `check-all`) |
 | **Runner** | one **`tools/check.py`** (stdlib chokepoint) + `npm run check-all` (FE) | "is the repo green?" in one command | ✅ (1a) |
 | **Enforcement** | native **`core.hooksPath=.githooks/`** → `check.py` (fast pre-commit · full pre-push) | stops a bad commit/push at the source | ✅ (1d) |
 
 Nothing overlaps: ruff/pyright (Python) · ESLint/Prettier/tsc (JS-TS) · stylelint (CSS) each own a disjoint
-surface. `stylelint` stays a separate later slice (theme-engine, `THEME_ENGINE.md` §14.13) — its plugins
-enforce CSS rules no JS linter has.
+surface. `stylelint` is the adopted CSS-contract layer (Hardening v2 ⑨, 2026-07-10 — warn-first; config
+`frontend/stylelint.config.mjs` + the custom accent plugin) — its rules cover CSS no JS linter can.
 
 ## Why these tools — and their caveats (verified 2026-07-01)
 
@@ -104,7 +104,7 @@ One command answers "is the repo green?" — every later hardening step ends by 
 
 ```
 # Frontend  (frontend/package.json — COMPOSES existing scripts, does not re-inline)
-npm run check-all   →  npm run typecheck  &&  eslint .  &&  prettier --check .  &&  npm test
+npm run check-all   →  npm run typecheck  &&  eslint .  &&  stylelint "src/**/*.css"  &&  prettier --check .  &&  npm test
 # (Playwright e2e is heavier → its own `npm run test:e2e`, run in the smoke slice / pre-push.)
 
 # Whole repo  (one stdlib chokepoint — resolves the venv, runs a data-driven check list)

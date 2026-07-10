@@ -94,7 +94,7 @@ cd ..\frontend; npm install; npm run dev                            # http://loc
   (vitest) · `npm run test:e2e` (playwright) · `npm run build`.
 - **Quality harness:** one command answers "is the repo green?" — **`python tools/check.py`** (runs
   everything in parallel: BE `ruff` lint+format · `pyright` (type check) · `pytest`; FE `npm run
-  check-all` = `tsc` + ESLint + Prettier + `vitest`). Flags: `--backend`/`--frontend`/`--fast`. The
+  check-all` = `tsc` + ESLint + stylelint + Prettier + `vitest`). Flags: `--backend`/`--frontend`/`--fast`. The
   layered standard + conventions live in [`docs/QUALITY.md`](./docs/QUALITY.md); the sliced rollout is
   [`docs/PRE_DEPLOY.md`](./docs/PRE_DEPLOY.md) §1 (1a–1d shipped). Backend pyright deps:
   `pip install -e "backend/.[dev]"` (installs `pyright[nodejs]`).

@@ -327,9 +327,9 @@ operations always auto-run; mutating verbs use the server's `risk` (default `med
 One command answers "is the repo green?" ([`docs/QUALITY.md`](./docs/QUALITY.md), D33):
 
 ```bash
-python tools/check.py            # full gate: ruff + pyright + pytest (254) | FE tsc + eslint + prettier + vitest (212)
+python tools/check.py            # full gate: ruff + pyright + pytest (254) | FE tsc + eslint + stylelint + prettier + vitest (267)
 python tools/check.py --fast     # the pre-commit subset (~2 s)
-python tools/check.py --e2e      # + Playwright e2e/a11y (34 tests) — the pre-deploy gate
+python tools/check.py --e2e      # + Playwright e2e/a11y (64 tests, 5 specs) — the pre-deploy gate
 ```
 
 Enforced three ways: native git hooks (`core.hooksPath=.githooks/` — fast pre-commit, full
@@ -342,7 +342,7 @@ Invariants are held by drift-guard tests, not discipline — see the audits in
 
 ```
 backend/     FastAPI + Uvicorn service — app/{api,services,core,adapters,domain}, tests/ (254)
-frontend/    React + TS + Vite PWA — src/{tabs,store,hooks,theme-engine,themes}, tests/ (212), e2e/ (34)
+frontend/    React + TS + Vite PWA — src/{tabs,store,hooks,theme-engine,themes}, tests/ (267), e2e/ (64)
 docs/        architecture · decisions · design · audits · runbooks — START at docs/HANDOFF.md
 deploy/      bootstrap.py + linux/ (systemd kit) + windows/ (double-click scripts)
 tools/       check.py (the quality gate) + dev launchers

@@ -257,7 +257,7 @@ exercised on Linux before it *is* production.
 
 ### SYS-15 · Test-suite blind spots (inventory-verified) — **MED**
 
-The suite (35 backend files, ~229 tests + 30 frontend files + 3 e2e specs) is strong where it
+The suite (35 backend files, ~229 tests + 30 frontend files + 3 e2e specs; *point-in-time — 2026-07-10: 254 backend, 267 FE unit, 5 e2e specs*) is strong where it
 looks — decision-pinned, API-driven, with real concurrency tests (`test_memory_concurrency_d27`)
 — and the agent loop is well exercised *via* integration tests (7+ files drive `AgentSession`).
 But content greps confirm whole subsystems have **zero behavioral coverage**:

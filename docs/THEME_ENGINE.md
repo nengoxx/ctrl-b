@@ -1,8 +1,8 @@
 # Theme Engine — design record + the live authoring contract (D28–D34)
 
 **Status: BUILT + SHIPPED through cosmos (2026-06-28) — vapor · minimal · cosmos live; the
-engine (§14: controllers + Root + Kit + Surfaces) is the as-built architecture.** Parked next
-steps: **Hardening slice v2 + the Composer Surface (§14.15, D34 — post-emma-deploy)**; next theme:
+engine (§14: controllers + Root + Kit + Surfaces) is the as-built architecture.** **Hardening slice v2 ✅ SHIPPED 2026-07-10 (§14.15.1-A)**; parked next
+step: **the Composer Surface (§14.15, D34)**; next theme:
 **frontier** (T5). *(Header updated 2026-07-07, doc-consistency pass — the old "DESIGN OPEN" status
 predated the build.)*
 
@@ -40,14 +40,14 @@ mapping), while §9.7–§9.12 + §13.1 remain live contract · **§14** = the *
 | 390 px owner eyeball + an e2e render case | §14.13.1 (+ the standing per-slice eyeball rule, TODO Phase 11) |
 | The step-by-step porting playbook | **§10** (rewritten as-built 2026-07-06) |
 
-**⚠ SPEC-not-built — do not assume these exist in code:** `resolveThemeSetting` read-validation
-(§14.15.1 ⑦) · the user-selectable Surface machinery (`composerVariants`/`ThemedComposer` — §14.14
-as-built banner; `SheetComposer` is a delegating stub) · stylelint ⑨ / `themeContract.test.ts` ⑧ /
-`kit-render.spec.ts` ⑩ (§14.15.1) · a tab **body** registry — DefaultRoot still hardwires the four
-tab bodies, so a theme cannot drop/add a section yet (**scheduled**: frontier step 0, ratified 2026-07-07 —
-§14.15.4).
+**⚠ SPEC-not-built — do not assume these exist in code:** the user-selectable Surface machinery
+(`composerVariants`/`ThemedComposer` — §14.14 as-built banner; `SheetComposer` is a delegating stub) ·
+a tab **body** registry — DefaultRoot still hardwires the four tab bodies, so a theme cannot drop/add a
+section yet (**scheduled**: frontier step 0, ratified 2026-07-07 — §14.15.4). *(The Hardening-v2
+artifacts formerly listed here — `resolveThemeSetting` ⑦, `themeContract.test.ts` ⑧, stylelint ⑨,
+`kit-render.spec.ts` ⑩ — all SHIPPED 2026-07-10 and ARE in the tree.)*
 
-**Sequencing rule:** the Hardening slice v2 (§14.15.1) lands **before** the next themeable-UI wave
+**Sequencing rule (satisfied 2026-07-10):** the Hardening slice v2 (§14.15.1) landed **before** the next themeable-UI wave
 — a frontier plan builds on top of it, not around it.
 
 **frontier (the next theme, T5 — §14.10; full plan: `FRONTIER_PLAN.md`, design LOCKED 2026-07-07):**

@@ -28,9 +28,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 > (F24; F27 shipped 2026-06-24) landed 2026-07-02. Backend pytest **250** · frontend vitest + e2e green.
 > Detail in `HANDOFF.md`.
 >
-> **Next: the emma (Linux) deploy / v1 cutover (Phases 9–10)** — start at the HANDOFF top block →
-> `DEPLOY_EMMA.md`. **Theme Phase 11** (D34 Hardening slice v2 → Composer Surface) is **parked
-> post-deploy**. **Approved 2026-07-07 (owner):** the **ACA chat-hardening plan** = **Phase 12**
+> **~~Next: the emma (Linux) deploy / v1 cutover (Phases 9–10)~~ ✅ BOTH DONE** (deploy 2026-07-10;
+> Phase 10 closed same day). **Theme Phase 11**: the D34 **Hardening slice v2 ✅ SHIPPED 2026-07-10**;
+> next = Composer Surface / frontier step 0. **Approved 2026-07-07 (owner):** the **ACA chat-hardening plan** = **Phase 12**
 > (`AGENT_CHAT_AUDIT.md` §5 is the spec; Slice 0 landed; Slices 1–2 pre-deploy candidates, 3+
 > post-deploy) and the `SYSTEM_AUDIT.md` **SYS** riders — **SYS-13** (live `fillComposer` bug) +
 > **SYS-14** (Linux CI) are Phase-9 pre-deploy items below. **Still open (low / deferred):**
@@ -842,30 +842,30 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
         `SwUpdatePrompt`) + primitives (`Seg`/`Switch`) + Conf shell — **fixes the reachable broken confirm**; (2) the
         deep Conf editors; (3) Agent chat bubbles. **⛔ RESEARCH the pattern + confirm the design BEFORE building
         (owner directive 2026-06-27 — last session the research changed the design); see HANDOFF top.**
-- [ ] **Hardening slice v2 (D34, 2026-07-06 — THEME_ENGINE §14.15.1) — ACTIVE NEXT when the engine un-parks
-      (post-emma-deploy).** The 29-agent final review's reshaped slice (supersedes the TRIAGE-3 ordering);
+- [x] **Hardening slice v2 (D34 — THEME_ENGINE §14.15.1) — ✅ SHIPPED 2026-07-10** (all 10 items +
+      riders a/b/c; as-built deltas §14.15.1-A; commits `bdaf511…9e21cdc`). The 29-agent final review's reshaped slice (supersedes the TRIAGE-3 ordering);
       behavior-preserving except ①. Ships BEFORE the Composer Surface and any themeable-UI feature wave.
       **Plan of record: §14.15** (each item's full shape + rationale lives there — build against it, not this list).
-  - [ ] ① `--accent-ink` on-accent contrast token + minimal light-mode near-black ink (the review's one
+  - [x] ① `--accent-ink` on-accent contrast token + minimal light-mode near-black ink (the review's one
         product bug: light mode ships 3.2:1 on accent controls; 9 kit.css accent-fill sites)
-  - [ ] ② theme-fault ErrorBoundary around `<ActiveRoot/>` (keyed by theme) — Reload primary + **"Reset theme
+  - [x] ② theme-fault ErrorBoundary around `<ActiveRoot/>` (keyed by theme) — Reload primary + **"Reset theme
         to default" = a genuine pick (write-through PUT)**; no quarantine, no safe-mode flag
-  - [ ] ③ `ensureThemeLoaded` rejection eviction (side-channel catch → evict; return the ORIGINAL promise)
-  - [ ] ④ ThemeProvider cold-load `.catch` → toast only (no auto-revert; Kit base tokens keep the app usable)
-  - [ ] ⑤ in-flight/latest-target guard INSIDE `switchTheme` (full `SwitchTarget`, not just the id — replaces
+  - [x] ③ `ensureThemeLoaded` rejection eviction (side-channel catch → evict; return the ORIGINAL promise)
+  - [x] ④ ThemeProvider cold-load `.catch` → toast only (no auto-revert; Kit base tokens keep the app usable)
+  - [x] ⑤ in-flight/latest-target guard INSIDE `switchTheme` (full `SwitchTarget`, not just the id — replaces
         the planned `useIsMutating` gate) + fix the stale `useAppearance.ts:132` comment
-  - [ ] ⑥ registered-ID coercion at both doors (load door → `DEFAULT_THEME` AFTER the legacy migrations;
+  - [x] ⑥ registered-ID coercion at both doors (load door → `DEFAULT_THEME` AFTER the legacy migrations;
         reconcile door holds the skin-triple but still applies motion/perf/themeSettings; **NEVER auto-PUT**)
-  - [ ] ⑦ `resolveThemeSetting` (B4 — spec in COMPOSER_SURFACE_PLAN §2.0; the Composer Surface assumes it)
-  - [ ] ⑧ `themeContract.test.ts` (B2): token list + behavioral + structural hooks (`#app-scroll` ·
+  - [x] ⑦ `resolveThemeSetting` (B4 — spec in COMPOSER_SURFACE_PLAN §2.0; the Composer Surface assumes it)
+  - [x] ⑧ `themeContract.test.ts` (B2): token list + behavioral + structural hooks (`#app-scroll` ·
         `#composer`/`.kit-composer` · `.kit-appbar` under `appbarMode="visible"`) + Fleet-a11y assertion +
         the contrast group; vapor exemptions = ONE shrinkable waiver constant (decide the palette-resolution
         strategy up front — jsdom can't replay the @layer/@scope cascade)
-  - [ ] ⑨ stylelint micro-slice (warn-first: keyframe-prefix · high-perf-animation · token-only colors ·
+  - [x] ⑨ stylelint micro-slice (warn-first: keyframe-prefix · high-perf-animation · token-only colors ·
         `--accent-fill` only in background/mask + `--accent` must parse as a `<color>`)
-  - [ ] ⑩ kit-render e2e smoke (`e2e/kit-render.spec.ts`: seed minimal AND cosmos via `addInitScript`, poll a
+  - [x] ⑩ kit-render e2e smoke (`e2e/kit-render.spec.ts`: seed minimal AND cosmos via `addInitScript`, poll a
         kit-only class, crash/ErrorBoundary smoke — a SPEC, not a Playwright project)
-  - [ ] riders: persisted `v` schema stamp on `ctrlb.ui` (one-shot prunable migrations; deletes
+  - [x] riders: persisted `v` schema stamp on `ctrlb.ui` (one-shot prunable migrations; deletes
         `rawHasAppbarMode`) · order-insensitive `themeSettings` compare in `reconcileAppearance`
 - [ ] **Composer Surface (D31 / §14.14) — after the Hardening slice v2 (D34 sequencing).** Build `SheetComposer` (the **docked** composer variant, vapor's
       look Kit-tokened) + make the composer layout a **user-selectable Surface** (the `composerVariants` registry + a

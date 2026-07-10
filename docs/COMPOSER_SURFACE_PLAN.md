@@ -71,7 +71,9 @@ bespoke variants, which is the deferred Fleet case).
 > transactional switch (R4), and the `themeContract.test.ts` suite (B2/§7) — is now owned by the **standalone
 > Theme-Engine Hardening slice that ships BEFORE this composer work** (the owner's locked sequencing; routing in
 > [`external_audit/TRIAGE-3.md`](./external_audit/TRIAGE-3.md)). By the time A1 runs, `resolveThemeSetting` + the
-> contract suite already exist — **A1 assumes them, does not re-implement them.** The spec below is kept as the
+> contract suite already exist (**✅ TRUE since 2026-07-10** — Hardening ⑦/⑧ landed them:
+> `theme-engine/settings.ts` + `tests/theme-engine/themeContract.test.ts`) — **A1 assumes them, does
+> not re-implement them.** The spec below is kept as the
 > reference for what the Hardening slice builds; the §7 test strategy likewise moves into that slice.
 
 The Surface resolver reads a per-theme setting to decide *which component renders*, so the value must be validated, not
