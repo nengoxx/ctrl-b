@@ -117,8 +117,16 @@ python tools/check.py --e2e      # full gate + Playwright e2e/a11y (the PRE-DEPL
 NOT in the default/pre-push gate (it builds the dist + boots a browser, ~20-30s). It's the **pre-deploy gate** —
 a hard step-0 item in `DEPLOY_EMMA.md` + a `.claude/settings.json` deploy-checklist hook (fires on
 `bootstrap.py`/`install.sh`) — so it can't be skipped when shipping, while commits/pushes stay fast.
-**One-time prereq:** the browser binaries are NOT installed by `npm install`/`npm ci` — on a fresh machine run
-`npx playwright install` (from `frontend/`) once, or the suite fails with "Executable doesn't exist". One trap
+**One-time prereq:** the browser binaries are NOT installed by `npm install`/`npm ci` — the `@playwright/test`
+npm package (already in `node_modules`) is just the runner; the browsers live **per-user** in
+`~/.cache/ms-playwright` (Linux) / `%LOCALAPPDATA%\ms-playwright` (Windows) — NOT in the venv or the repo, so
+one install serves the workspace and every worktree. On a fresh machine run, from `frontend/`:
+`npx playwright install --with-deps chromium` (chromium suffices — the config's devices are Pixel 5 + Desktop
+Chrome; `--with-deps` apt-installs the system libraries and needs sudo — without sudo run
+`npx playwright install chromium` and it prints the `install-deps` command to run separately). Re-run it after
+any `@playwright/test` version bump (browsers are version-paired). **emma status: NOT installed as of
+2026-07-10** — only needed for LOCAL `--e2e` runs; the tag-push CI release gate runs the same suite regardless,
+so a release never depends on it. Skipping it just means the suite fails with "Executable doesn't exist". One trap
 (QH audit 2026-07-07): `reuseExistingServer: !CI` means a stale preview server already on **:4173** gets reused
 (you'd test an old build — kill it first). **CI (updated 2026-07-09, D32 amendment):** branch pushes + PRs run
 the gate WITHOUT `--e2e` (push gate, kept fast); **release-tag pushes (`v*`) DO run `--e2e` in CI** — the
