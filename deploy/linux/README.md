@@ -99,6 +99,9 @@ Skipped gracefully (with a re-run hint) if the `claude` CLI isn't installed yet.
   (a second simultaneous agent gets its own worktree via `tools/add-dev-worktree.sh`).
 - Crash-recovery of `claude` is the `while true` loop inside tmux; `systemctl --user restart ctrl-b-agent`
   recreates the session from scratch.
+- **First boot on a fresh workspace clone** (seen on the v1.0.0 deploy): the claude CLI stops at its
+  one-time interactive *"Is this a project you trust?"* prompt inside the tmux session — attach
+  (`tmux attach -t ctrl-b`) and confirm once; trust persists per-project, so the unit/loop never asks again.
 
 ## Framework migration (`--claude-env`) — the dev environment, not just the app
 Most of the Claude Code dev framework **travels in the repo** (`.agents/skills/`, the `.claude/settings.json`
