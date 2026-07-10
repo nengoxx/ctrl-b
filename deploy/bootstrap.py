@@ -16,9 +16,9 @@ Steps, each flag-gated so you can hand any of them to the owner:
   4. https           — serve-https.sh (Tailscale Serve 443->5433; mic-ready)                            [--no-serve]
   5. dev (optional)  — ensure the ~/github/ctrl-b workspace + install.sh dev (isolated :5434 + Vite
                        :5173 + the ALWAYS-ON ctrl-b-agent service — tmux Claude agent, boots with the box) [--with-dev]
-  6. claude-env      — migrate the Claude Code dev framework: project MEMORY → the target's
-                       ~/.claude/projects/<slug>/memory (skip-if-exists) + merge missing keys into the
-                       target's ~/.claude/settings.json (target's values always win)                    [--claude-env]
+  6. claude-env      — migrate the Claude Code dev framework: git identity (copy-if-unset) + project
+                       MEMORY → the target's ~/.claude/projects/<slug>/memory (skip-if-exists) + merge
+                       missing keys into the target's ~/.claude/settings.json (target's values win)     [--claude-env]
 
 Auth + host come from config.yaml (the `emma` host's ssh_* fields). The password is read at
 runtime, piped to `sudo -S`, and NEVER printed/logged. Reuses paramiko (a backend dependency).
@@ -42,6 +42,7 @@ import posixpath
 import subprocess
 import sys
 import tempfile
+import time
 
 import paramiko
 import yaml
@@ -156,6 +157,20 @@ def step(n, title):
     print(f"\n=== [{n}] {title} ===")
 
 
+def wait_health(m: "Emma", port: int, unit: str, tries: int = 20) -> bool:
+    """Poll an instance's health endpoint. `systemctl enable --now` returns at process spawn
+    (Type=simple) but uvicorn needs a few seconds to bind — first boot also runs DB migrations —
+    so a single immediate curl false-alarms on a perfectly healthy deploy."""
+    for _ in range(tries):
+        rc, out = m.capture(f"curl -s -m2 localhost:{port}/api/health")
+        if rc == 0 and out:
+            print(f"  ✓ health :{port} → {out}")
+            return True
+        time.sleep(1)
+    print(f"  ✗ :{port}/api/health not answering after {tries}s — inspect: journalctl --user -u {unit} -n50")
+    return False
+
+
 def project_slug(path: str) -> str:
     """Claude Code's project-directory slug: every path separator and drive colon becomes '-'.
     Verified against real dirs on both OSes: C:\\Users\\rovax\\...\\ctrl-b → C--Users-rovax-...-ctrl-b;
@@ -172,7 +187,31 @@ def migrate_claude_env(m: "Emma", home: str, work_repo: str) -> None:
         (the target's memory is canonical after the first migration, same rule as config.yaml);
     (2) user-global settings.json — ADD keys missing on the target (model/effort/permissions...),
         NEVER overwrite what the target already set (its theme etc. win). Auth is deliberately NOT
-        copied — `claude` login state is per-machine."""
+        copied — `claude` login state is per-machine.
+    Plus (0) git identity: development moves to the box, so commits happen there — recon 2026-07-10
+    found user.name/user.email UNSET on emma (push auth itself was fine: gh keyring + credential
+    store). Copy-if-unset from this checkout's effective config; the target's values always win."""
+    _, email = m.capture("git config --global user.email || true")
+    if email:
+        print(f"  ✓ git identity already set on the target ({email}) — untouched.")
+    else:
+        ident = {
+            k: subprocess.run(
+                ["git", "config", f"user.{k}"], capture_output=True, text=True, cwd=REPO_ROOT
+            ).stdout.strip()
+            for k in ("name", "email")
+        }
+        if ident["name"] and ident["email"]:
+            m.run(
+                f"git config --global user.name {_q(ident['name'])} && "
+                f"git config --global user.email {_q(ident['email'])}"
+            )
+            print(f"  -> git identity set: {ident['name']} <{ident['email']}> (target had none)")
+        else:
+            print(
+                "  ⚠ local git identity unresolvable — set it on the box: git config --global user.name/email"
+            )
+
     src_mem = os.path.join(os.path.expanduser("~"), ".claude", "projects", project_slug(REPO_ROOT), "memory")
     dst_proj = f"{home}/.claude/projects/{project_slug(work_repo)}"
     _, has_mem = m.capture(f'[ -n "$(ls -A {dst_proj}/memory 2>/dev/null)" ] && echo yes || echo no')
@@ -228,7 +267,9 @@ def ensure_prod_tree(m: "Emma", prod_repo: str, work_repo: str, gh: str | None) 
     )
     if state == "sparse":
         m.run(f"git -C {prod_repo} fetch --tags --quiet origin || true")
-        _, tag = m.capture(f"git -C {prod_repo} describe --tags --abbrev=0 2>/dev/null || true")
+        # Latest RELEASE tag by semver order — NOT `git describe`, which describes HEAD (= the tag
+        # prod is already pinned to), so a re-run would never advance past the current release.
+        _, tag = m.capture(f"git -C {prod_repo} tag --list 'v*' --sort=-v:refname | head -1")
         if tag:
             m.run(f"git -C {prod_repo} checkout --quiet {tag} && echo '  PROD pinned to tag {tag}'")
         else:
@@ -255,7 +296,7 @@ def ensure_prod_tree(m: "Emma", prod_repo: str, work_repo: str, gh: str | None) 
         f"mkdir -p $(dirname {prod_repo}) && "
         f"git clone --filter=blob:none --sparse {src} {prod_repo} && "
         f"git -C {prod_repo} sparse-checkout set backend frontend deploy && "  # cone mode: + top-level files; prototype dirs drop
-        f"TAG=$(git -C {prod_repo} describe --tags --abbrev=0 2>/dev/null || true); "
+        f"TAG=$(git -C {prod_repo} tag --list 'v*' --sort=-v:refname | head -1); "
         f'[ -n "$TAG" ] && git -C {prod_repo} checkout --quiet "$TAG" || git -C {prod_repo} checkout --quiet main'
     )
     if rc:
@@ -315,7 +356,7 @@ def main() -> int:
     ]
     plan += [] if NO_SERVE else ["serve-https (Tailscale HTTPS 443→5433)"]
     plan += ["ensure workspace + install.sh dev (:5434 + Vite :5173 + agent service)"] if WITH_DEV else []
-    plan += ["claude-env (memory + settings → target ~/.claude)"] if CLAUDE_ENV else []
+    plan += ["claude-env (git identity + memory + settings → target)"] if CLAUDE_ENV else []
     print(f"Deploy target: {user}@{host}:{port}   (paths resolve against the target's $HOME)")
     print("  PROD: ~/apps/ctrl-b → ~/.ctrl-b (:5433, Serve HTTPS)")
     print(
@@ -390,7 +431,7 @@ def main() -> int:
             )
             return rc
         m.run("systemctl --user status ctrl-b-dashboard --no-pager | head -4 || true")
-        m.run("curl -s -m5 localhost:5433/api/health || echo '(prod health check failed — see service logs)'")
+        wait_health(m, 5433, "ctrl-b-dashboard")
 
         if not NO_SERVE:
             step(4, "Tailscale Serve (HTTPS 443 -> 5433)")
@@ -407,12 +448,10 @@ def main() -> int:
                         f"  ⚠ install.sh dev exited {rc} (prod is unaffected). Inspect: systemctl --user status ctrl-b-dashboard-dev"
                     )
                 else:
-                    m.run(
-                        "curl -s -m5 localhost:5434/api/health || echo '(dev health check failed — see logs)'"
-                    )
+                    wait_health(m, 5434, "ctrl-b-dashboard-dev")
 
         if CLAUDE_ENV:
-            step(6, "Claude Code framework: memory + settings → target ~/.claude")
+            step(6, "Claude Code framework: git identity + memory + settings → target")
             migrate_claude_env(m, home, work_repo)
 
         print("\nDEPLOY COMPLETE. Dashboard: https://<host>.<tailnet>.ts.net (see `tailscale serve status`).")

@@ -151,6 +151,8 @@ systemctl --user start ctrl-b-dashboard
 ```
 Schema compatibility across a rollback is guaranteed by the **expand/contract policy** (D32 amendment):
 destructive migrations land at the earliest one release after the code stopped using the old shape.
+**First release (v1.0.0) has no previous tag** — rollback there is simply
+`systemctl --user disable --now ctrl-b-dashboard` (or fix forward with v1.0.1).
 
 **GitHub down at promote time?** Prod can fetch the tag straight from the workspace over the filesystem:
 `git -C ~/apps/ctrl-b fetch ~/github/ctrl-b 'refs/tags/*:refs/tags/*'` — same commit, LAN-only.
@@ -188,6 +190,9 @@ off (`sudo loginctl enable-linger $USER`), or `tailscale serve` needing the oper
 - Both instances can **shut down / reboot fleet hosts** (DEV seeds prod's fleet config). Do NOT trigger
   shutdown/reboot actions while testing — DEV is isolated for *data*, not for the real machines it controls.
 - Don't modify emma's system/MCP config beyond the prereqs. Bind both backends to **127.0.0.1**.
+- **Known waiver:** the DEV Vite server listens on **0.0.0.0:5173** (plain HTTP) so the phone can reach it
+  over the tailnet — that also makes it LAN-visible. Deliberate for a trusted home LAN; the backends stay
+  loopback-only and prod's sole ingress remains Tailscale Serve.
 - `~/github/ctrl-b` is the **workspace** — where the agent(s) develop; it stays on `main` (the invariant).
   **PROD (`~/apps/ctrl-b`) is never developed on** — no agent, no commits; it only ever checks out released
   tags. One canonical GitHub `main`.
