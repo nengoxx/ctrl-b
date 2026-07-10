@@ -9,8 +9,14 @@
 >   Fresh DB (as decided). Fleet ICMP/WOL verified from the systemd service (all 4 hosts online).
 > - **DEV:** workspace `~/github/ctrl-b` (`main` — the invariant: it never leaves main) → `~/.ctrl-b-dev` →
 >   uvicorn :5434 `--reload` + Vite :5173. Git hooks (`core.hooksPath=.githooks`) + `[dev]` toolchain in.
-> - **Agent:** `ctrl-b-agent.service` → tmux `ctrl-b` **in the workspace**, model fable-5 high (switch via
->   `~/.config/ctrl-b/agent.env` → `MODEL=opus`, restart the unit). The one-time first-clone *trust prompt*
+>   **ON-DEMAND since the D32 AMENDED-2 ruling (owner, 2026-07-10):** the two dev units are installed but
+>   not boot-enabled — `systemctl --user start ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web` when
+>   iterating, stop when done.
+> - **Agents (D32 AMENDED-2):** TWO boot instances of the template `ctrl-b-agent@.service` **in the
+>   workspace** — `@fable` → tmux **`ctrl-b (fable)`** (`claude-fable-5`, high) and `@opus` → tmux
+>   **`ctrl-b (opus)`** (`claude-opus-4-8`, high); attach with exact-match `tmux attach -t '=ctrl-b (fable)'`.
+>   One writer per tree at a time (simultaneous second writer → worktree). Effort/perm overrides via
+>   `~/.config/ctrl-b/agent[-<i>].env`. The one-time first-clone *trust prompt*
 >   was cleared by the owner (runbook §agent notes it). **Claude dev framework migrated — emma's
 >   `~/.claude/projects/-home-emma-github-ctrl-b/memory` (35 files) is the CANONICAL memory now**; git
 >   identity + settings merged. **Dev sessions happen ON emma from here on; the corsair/Windows checkout

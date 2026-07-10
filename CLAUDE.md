@@ -67,7 +67,9 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   `target-version = py314`; emma runs native 3.14). Backend venv at `backend/.venv`. Run:
   `uvicorn app.main:app --port 5433` from `backend/`. One-command: `deploy/linux/run.sh` /
   `deploy/windows/start.cmd`. On emma the instances are **systemd user units** (prod :5433 @
-  `~/apps/ctrl-b`; dev :5434 + Vite :5173 @ the workspace) — restart units, don't spawn duplicates.
+  `~/apps/ctrl-b`, boot; dev :5434 + Vite :5173 @ the workspace, **on-demand** — `systemctl --user
+  start/stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web` around iteration) — drive the units,
+  never spawn duplicate servers beside them.
 - **Windows gotcha:** do **not** run the backend with `uvicorn --reload` on Windows — the reload
   worker uses an event loop that breaks `asyncio.create_subprocess_exec`, so `fleet.ping_host` returns
   empty output and every host shows offline. Linux/macOS reload is fine. (Documented in `README.md`
@@ -138,5 +140,5 @@ End commit messages crediting the model that authored the change, e.g.:
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 ```
 
-(or `Claude Opus 4.8 <noreply@anthropic.com>` when running as Opus — the emma agent service runs
-either, per `~/.config/ctrl-b/agent.env`.)
+(or `Claude Opus 4.8 <noreply@anthropic.com>` when running as Opus — emma boots BOTH agents:
+`ctrl-b-agent@fable` and `ctrl-b-agent@opus`, tmux `ctrl-b (fable)` / `ctrl-b (opus)`.)

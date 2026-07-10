@@ -1612,7 +1612,18 @@ So the four cases fall out with no special-casing: base = `<DefaultRoot/>`; base
 
 **Status.** LOCKED. **Generalizes/supersedes D30's `Composer`-prop injection** with the registry+setting mechanism (D30's composition-over-configuration principle stands; selection generalizes to the resolver). **Full engineering contract + how-to + anti-patterns: THEME_ENGINE.md §14.14.**
 
-## D32 — emma deployment topology: two isolated instances (prod + dev), one repo, tags + sparse-checkout ✏️ LOCKED 2026-06-29 · AMENDED 2026-07-09 · ✅ EXECUTED 2026-07-10 (v1.0.0 = `8fa8404` — first deploy, under the amended trunk-based topology)
+## D32 — emma deployment topology: two isolated instances (prod + dev), one repo, tags + sparse-checkout ✏️ LOCKED 2026-06-29 · AMENDED 2026-07-09 · ✅ EXECUTED 2026-07-10 (v1.0.0 = `8fa8404`) · AMENDED-2 2026-07-10 (dev on-demand · dual boot agents)
+
+> ⚙️ **AMENDED-2 2026-07-10 (owner, same day as the deploy — supersedes two run-state clauses):**
+> (1) **The dev instance is ON-DEMAND, not always-on** (revises decision #1's "BOTH, always-on"): the two
+> dev dashboard units are installed but never boot-enabled — `systemctl --user start ctrl-b-dashboard-dev
+> ctrl-b-dashboard-dev-web` when iterating, stop when done. Always-on = prod + the agents only.
+> (2) **The Claude agent is TWO boot instances, not one env-switched unit**: template
+> `ctrl-b-agent@.service` enabled as `@fable` (`claude-fable-5`) + `@opus` (`claude-opus-4-8`), both
+> effort high, tmux sessions **`ctrl-b (fable)`** / **`ctrl-b (opus)`** (matching the Windows launcher
+> channel names) in the workspace. `agent.env` now carries only EFFORT/PERM overrides (shared or
+> per-instance `agent-<i>.env`); the one-writer-per-tree rule stands — a simultaneous second writer still
+> takes a worktree. Executed on emma the same day (install.sh self-migrates the legacy single unit).
 
 > ⚠️ **AMENDED 2026-07-09 (before first deploy — read the amendment at the end of this entry):** the
 > **`dev` branch is dropped (trunk-based: `main` + immutable release tags)** and the **prod runtime moves to

@@ -13,7 +13,7 @@ Deploy the **ctrl-b dashboard** as **two isolated instances** + the **Claude Cod
 | Backend | `uvicorn :5433` serving built `dist` | `uvicorn :5434 --reload` |
 | Frontend | built into `dist` (built aside, swapped at cutover) | Vite `:5173` HMR → `/api` → `:5434` |
 | Ingress | **Tailscale Serve HTTPS :443** (mic works) | `http://emma:5173` (HTTP, no mic) |
-| Units | `ctrl-b-dashboard.service` | `ctrl-b-dashboard-dev.service` + `ctrl-b-dashboard-dev-web.service` |
+| Units | `ctrl-b-dashboard.service` (boot) | `ctrl-b-dashboard-dev.service` + `ctrl-b-dashboard-dev-web.service` — **ON-DEMAND** (owner amendment 2026-07-10): `systemctl --user start` them when iterating, stop when done |
 
 **Branch model (trunk-based):** ONE branch, **`main`** — always releasable (held by the git hooks + CI, which
 run on every push). **Immutable annotated tags `vX.Y.Z`** mark releases; prod checks out a tag, never a branch.
@@ -35,11 +35,13 @@ deploy/
 │   │                         #   prod also: DB snapshot pre-cutover + aside-built dist swap
 │   ├── serve-https.sh        # Tailscale Serve HTTPS :443 → :5433 (prod)
 │   ├── run.sh                # manual foreground runner (no systemd)
-│   └── systemd/              # the user units (copied to ~/.config/systemd/user/ by install.sh)
-│       ├── ctrl-b-dashboard.service          # PROD backend (:5433, ~/.ctrl-b)
-│       ├── ctrl-b-dashboard-dev.service      # DEV backend (:5434 --reload, ~/.ctrl-b-dev)
-│       ├── ctrl-b-dashboard-dev-web.service  # DEV Vite (:5173 → :5434)
-│       └── ctrl-b-agent.service              # the ALWAYS-ON Claude Code agent (tmux 'ctrl-b', workspace)
+│   └── systemd/              # the user units (rendered to ~/.config/systemd/user/ by install.sh)
+│       ├── ctrl-b-dashboard.service          # PROD backend (:5433, ~/.ctrl-b) — boot
+│       ├── ctrl-b-dashboard-dev.service      # DEV backend (:5434 --reload, ~/.ctrl-b-dev) — on-demand
+│       ├── ctrl-b-dashboard-dev-web.service  # DEV Vite (:5173 → :5434) — on-demand
+│       └── ctrl-b-agent@.service             # TEMPLATE: the ALWAYS-ON Claude agents — instances
+│                                             #   @fable → tmux "ctrl-b (fable)" (claude-fable-5, high)
+│                                             #   @opus  → tmux "ctrl-b (opus)"  (claude-opus-4-8, high)
 └── windows/                  # the double-click Windows kit (setup/start/autostart)
 
 ../tools/                     # dev launchers (NOT deploy): start-claude.sh (Linux), claude-{fable,opus}.{ps1,cmd} (Windows), add-dev-worktree.sh
@@ -81,27 +83,35 @@ cd ~/github/ctrl-b && CTRLB_HOME=~/.ctrl-b-dev bash deploy/linux/install.sh dev 
 ```bash
 systemctl --user status ctrl-b-dashboard          # prod: active (running)
 curl -s localhost:5433/api/health                 # {"status":"ok",...}
-# dev (optional):
-systemctl --user status ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web ctrl-b-agent
-curl -s localhost:5434/api/health                 # dev backend
-tmux attach -t ctrl-b                             # the always-on Claude agent (Ctrl-b d to detach)
+systemctl --user status ctrl-b-agent@fable ctrl-b-agent@opus   # the two boot agents: active (exited)
+tmux attach -t '=ctrl-b (fable)'                  # attach an agent (exact-match '='; Ctrl-b d detaches)
+# dev instance — ON-DEMAND, start only when iterating:
+systemctl --user start ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web
+curl -s localhost:5434/api/health                 # dev backend; UI at http://emma:5173
+systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web    # when done
 ```
 
-## The Claude agent service (development continues ON the box)
-The agent is a first-class always-on service (owner decision 2026-07-09): **`ctrl-b-agent.service`** is
-enabled by `install.sh dev` and starts at boot (linger). It just ensures the tmux session `ctrl-b` exists,
-running `claude --remote-control` in the **workspace** — attach over SSH or drive it from claude.ai/code.
-Skipped gracefully (with a re-run hint) if the `claude` CLI isn't installed yet.
-- **Model/effort switching (no edits to tracked files):** write `~/.config/ctrl-b/agent.env` —
-  `MODEL=fable` (→ `claude-fable-5`) or `MODEL=opus` (→ `claude-opus-4-8`) or any full model id, plus
-  optional `EFFORT=…` (default `high`) — then `systemctl --user restart ctrl-b-agent`. Default: fable, high.
-- Manual/extra sessions still work exactly as before: `tools/start-claude.sh [session] [dir] [fable|opus]`
-  (a second simultaneous agent gets its own worktree via `tools/add-dev-worktree.sh`).
-- Crash-recovery of `claude` is the `while true` loop inside tmux; `systemctl --user restart ctrl-b-agent`
-  recreates the session from scratch.
+## The Claude agent services (development continues ON the box)
+The agents are first-class always-on services (owner decisions 2026-07-09 + 2026-07-10): the TEMPLATE
+unit **`ctrl-b-agent@.service`** is enabled by `install.sh dev` as **two boot instances** —
+`ctrl-b-agent@fable` (tmux **`ctrl-b (fable)`**, `claude-fable-5`, effort high) and `ctrl-b-agent@opus`
+(tmux **`ctrl-b (opus)`**, `claude-opus-4-8`, effort high). Each ensures its tmux session exists, running
+`claude --remote-control` in the **workspace** — attach over SSH or drive from claude.ai/code (the
+channel names match the Windows launchers). Skipped gracefully if the `claude` CLI isn't installed yet.
+- **One writer at a time.** Both sessions share the one workspace tree — use one agent per task; a
+  genuinely SIMULTANEOUS second writer takes its own worktree (`tools/add-dev-worktree.sh`), same as before.
+- **Effort/permission overrides (no edits to tracked files; the model is fixed per instance):**
+  `~/.config/ctrl-b/agent.env` (shared, e.g. `EFFORT=medium`) or `agent-fable.env`/`agent-opus.env`
+  (per-instance, wins) — then `systemctl --user restart ctrl-b-agent@<i>`.
+- Manual/extra sessions: `tools/start-claude.sh [session] [dir] [fable|opus|<model-id>]`.
+- Crash-recovery of `claude` is the `while true` loop inside tmux; `systemctl --user restart
+  ctrl-b-agent@<i>` recreates that instance's session from scratch (the other instance is untouched —
+  KillMode=process + a targeted per-session ExecStop).
+- **tmux `-t` targeting needs exact-match now** — the two names share the `ctrl-b` prefix, so always use
+  `=`: `tmux attach -t '=ctrl-b (fable)'`.
 - **First boot on a fresh workspace clone** (seen on the v1.0.0 deploy): the claude CLI stops at its
-  one-time interactive *"Is this a project you trust?"* prompt inside the tmux session — attach
-  (`tmux attach -t ctrl-b`) and confirm once; trust persists per-project, so the unit/loop never asks again.
+  one-time interactive *"Is this a project you trust?"* prompt inside each tmux session — attach and
+  confirm once per project; trust persists, so the units/loops never ask again.
 
 ## Framework migration (`--claude-env`) — the dev environment, not just the app
 Most of the Claude Code dev framework **travels in the repo** (`.agents/skills/`, the `.claude/settings.json`
@@ -204,7 +214,8 @@ off (`sudo loginctl enable-linger $USER`), or `tailscale serve` needing the oper
 
 ## Stop / remove
 ```bash
-systemctl --user disable --now ctrl-b-dashboard ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web ctrl-b-agent
-tailscale serve --https=443 off        # remove the HTTPS proxy
-tmux kill-session -t ctrl-b            # stop a manually-started agent session (the unit's ExecStop does this too)
+systemctl --user disable --now ctrl-b-dashboard ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web \
+  ctrl-b-agent@fable ctrl-b-agent@opus
+tailscale serve --https=443 off                  # remove the HTTPS proxy
+tmux kill-session -t '=ctrl-b (fable)'           # stop a session by hand (the units' ExecStop does this too)
 ```

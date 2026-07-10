@@ -13,15 +13,28 @@
 #           Requires ~/.ctrl-b/config.yaml to already be present.
 #   dev  →  DEV instance (isolated sandbox).  Tree: ~/github/ctrl-b (the WORKSPACE, pinned to `main` —
 #           the only branch; all development happens here).  Data: ~/.ctrl-b-dev.
-#           Builds the venv + installs npm deps (Vite serves live — no dist build); enables the two dev
-#           units (backend :5434 + Vite :5173).  Seeds ~/.ctrl-b-dev/config.yaml from ~/.ctrl-b the first
-#           time so dev has the same fleet but its OWN db/chat.
+#           Builds the venv + installs npm deps (Vite serves live — no dist build); installs the two dev
+#           dashboard units ON-DEMAND (backend :5434 + Vite :5173 — start when iterating) and enables the
+#           TWO boot agent instances ctrl-b-agent@{fable,opus} (tmux "ctrl-b (fable)"/"ctrl-b (opus)").
+#           Seeds ~/.ctrl-b-dev/config.yaml from ~/.ctrl-b the first time so dev has the same fleet but
+#           its OWN db/chat.
 set -euo pipefail
 
 ROLE="${1:-prod}"
+# RENDER_UNITS = unit FILES rendered to ~/.config/systemd/user (the agent file is a systemd TEMPLATE,
+# ctrl-b-agent@.service). BOOT_UNITS = enabled --now (boot + start). ONDEMAND_UNITS = installed but NOT
+# enabled — the dev dashboards are on-demand (owner amendment 2026-07-10, revises the earlier "BOTH
+# always-on"): start them only when iterating. The agents ARE boot services: two template instances,
+# fable 5 + opus 4.8, both effort high (tmux sessions "ctrl-b (fable)" / "ctrl-b (opus)").
 case "$ROLE" in
-  prod) REPO="${REPO:-$HOME/apps/ctrl-b}";   CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b}";     UNITS=(ctrl-b-dashboard.service) ;;
-  dev)  REPO="${REPO:-$HOME/github/ctrl-b}"; CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b-dev}"; UNITS=(ctrl-b-dashboard-dev.service ctrl-b-dashboard-dev-web.service ctrl-b-agent.service) ;;
+  prod) REPO="${REPO:-$HOME/apps/ctrl-b}";   CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b}"
+        RENDER_UNITS=(ctrl-b-dashboard.service)
+        BOOT_UNITS=(ctrl-b-dashboard.service)
+        ONDEMAND_UNITS=() ;;
+  dev)  REPO="${REPO:-$HOME/github/ctrl-b}"; CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b-dev}"
+        RENDER_UNITS=(ctrl-b-dashboard-dev.service ctrl-b-dashboard-dev-web.service ctrl-b-agent@.service)
+        BOOT_UNITS=(ctrl-b-agent@fable.service ctrl-b-agent@opus.service)
+        ONDEMAND_UNITS=(ctrl-b-dashboard-dev.service ctrl-b-dashboard-dev-web.service) ;;
   *)    echo "usage: install.sh [prod|dev]"; exit 2 ;;
 esac
 BACKUP_KEEP="${CTRLB_BACKUP_KEEP:-10}"   # pre-cutover DB snapshots retained (prod)
@@ -46,16 +59,16 @@ req git     "sudo apt install -y git"
 req python3 "sudo apt install -y python3 python3-venv   (need 3.14+)"
 req node    "install Node 20+ (nodesource.com / nodejs.org)"
 req npm     "comes with Node (nodesource.com / nodejs.org)"
-# DEV runs the always-on Claude agent service (ctrl-b-agent.service, tmux-wrapped) → tmux is a HARD
-# requirement there; prod never runs an agent, so it stays a soft note.
+# DEV runs the always-on Claude agent instances (ctrl-b-agent@{fable,opus}, tmux-wrapped) → tmux is a
+# HARD requirement there; prod never runs an agent, so it stays a soft note.
 if [ "$ROLE" = dev ]; then req tmux "sudo apt install -y tmux"; fi
 [ "$miss" = 1 ] && { echo "→ install the missing prerequisite(s) above, then re-run."; exit 1; }
 command -v tmux >/dev/null || echo "⚠ tmux missing (only needed for the Claude agent later) → sudo apt install -y tmux"
-# The agent service needs the claude CLI — if it's not there yet, install the dashboards WITHOUT the
-# agent unit (re-run after installing claude to add it) rather than failing the whole instance.
+# The agent instances need the claude CLI — if it's not there yet, install the dashboards WITHOUT the
+# agent units (re-run after installing claude to add them) rather than failing the whole instance.
 if [ "$ROLE" = dev ] && ! command -v claude >/dev/null; then
-  echo "⚠ claude CLI not found — enabling the dev dashboard units only; install claude, then re-run to add ctrl-b-agent."
-  UNITS=(ctrl-b-dashboard-dev.service ctrl-b-dashboard-dev-web.service)
+  echo "⚠ claude CLI not found — installing the dev dashboard units only; install claude, then re-run to add ctrl-b-agent@{fable,opus}."
+  BOOT_UNITS=()
 fi
 [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = yes ] || \
   echo "⚠ user-linger is OFF → services won't survive logout/reboot. Enable: sudo loginctl enable-linger $(id -un)"
@@ -128,17 +141,25 @@ fi
 # 5) Render + install + enable the systemd USER units. The units are TEMPLATES — render __REPO__/__CTRLB_HOME__/
 #    __NPM__ to this machine's real paths so they work for ANY user/host, not just emma.
 mkdir -p "$HOME/.config/systemd/user"
-# The agent unit's EnvironmentFile home (model-switch: echo MODEL=… > ~/.config/ctrl-b/agent.env) —
-# ensure the dir so that documented one-liner can't fail with "No such file or directory".
+# The agent units' EnvironmentFile home (effort/perm overrides: agent.env shared, agent-<i>.env
+# per-instance) — ensure the dir so the documented one-liners can't fail with "No such file or directory".
 if [ "$ROLE" = dev ]; then mkdir -p "$HOME/.config/ctrl-b"; fi
 NPM="$(command -v npm)"
 NODEBIN="$(dirname "$NPM")"   # npm's bin dir → rendered into the dev-web unit's PATH so `node` resolves
 TMUX_BIN="$(command -v tmux || echo /usr/bin/tmux)"   # agent unit's ExecStop (absolute path required)
-for u in "${UNITS[@]}"; do
+for u in "${RENDER_UNITS[@]}"; do
   sed -e "s#__REPO__#$REPO#g" -e "s#__CTRLB_HOME__#$CTRLB_HOME#g" -e "s#__NPM__#$NPM#g" \
       -e "s#__NODEBIN__#$NODEBIN#g" -e "s#__HOME__#$HOME#g" -e "s#__TMUX__#$TMUX_BIN#g" \
       "$UNIT_DIR/$u" > "$HOME/.config/systemd/user/$u"
 done
+# LEGACY migration (pre-2026-07-10 layout): the single agent.env-switched ctrl-b-agent.service is
+# superseded by the two template instances — retire it (its ExecStop kills the old 'ctrl-b' session).
+if [ "$ROLE" = dev ] && [ -f "$HOME/.config/systemd/user/ctrl-b-agent.service" ]; then
+  systemctl --user disable --now ctrl-b-agent.service 2>/dev/null || true
+  rm -f "$HOME/.config/systemd/user/ctrl-b-agent.service"
+  tmux kill-session -t '=ctrl-b' 2>/dev/null || true
+  echo "-- retired the legacy ctrl-b-agent.service (+ old 'ctrl-b' tmux session) → replaced by ctrl-b-agent@{fable,opus}"
+fi
 systemctl --user daemon-reload
 
 # 5.5) PROD cutover — the only moment the running instance is touched, kept sub-second:
@@ -165,12 +186,19 @@ if [ "$ROLE" = prod ]; then
   mv "$APP/frontend/dist.next" "$APP/frontend/dist"
 fi
 
-if ! systemctl --user enable --now "${UNITS[@]}"; then
+if [ "${#BOOT_UNITS[@]}" -gt 0 ] && ! systemctl --user enable --now "${BOOT_UNITS[@]}"; then
   echo "✗ systemctl --user enable failed. Common causes: user bus not reachable over SSH (need linger:"
-  echo "    sudo loginctl enable-linger $(id -un)), or a unit error → inspect:  systemctl --user status ${UNITS[0]}"
+  echo "    sudo loginctl enable-linger $(id -un)), or a unit error → inspect:  systemctl --user status ${BOOT_UNITS[0]}"
   exit 1
 fi
-echo "-- [$ROLE] units rendered + enabled: ${UNITS[*]}"
+# On-demand units: installed, NEVER boot-enabled. `disable` (no --now) converges an older always-on
+# install to on-demand without killing a live dev session mid-iteration.
+if [ "${#ONDEMAND_UNITS[@]}" -gt 0 ]; then
+  systemctl --user disable "${ONDEMAND_UNITS[@]}" >/dev/null 2>&1 || true
+  echo "-- on-demand units installed (not boot-enabled): ${ONDEMAND_UNITS[*]}"
+  echo "   start when iterating:  systemctl --user start ${ONDEMAND_UNITS[*]%.service}"
+fi
+echo "-- [$ROLE] units rendered: ${RENDER_UNITS[*]}  |  boot-enabled: ${BOOT_UNITS[*]:-'(none)'}"
 
 echo ""
 if [ "$ROLE" = prod ]; then
@@ -179,8 +207,10 @@ if [ "$ROLE" = prod ]; then
   echo "  • HTTPS on the tailnet:   bash $SCRIPTS/serve-https.sh"
   echo "  • Set up the DEV sandbox: from the workspace (~/github/ctrl-b, main)  bash deploy/linux/install.sh dev"
 else
-  echo "✓ DEV install done. Verify:  systemctl --user status ctrl-b-dashboard-dev  |  curl -s localhost:5434/api/health"
-  echo "  Dev UI: http://emma:5173 (Vite → :5434)."
-  echo "  Agent:  systemctl --user status ctrl-b-agent   |  attach:  tmux attach -t ctrl-b"
-  echo "          model switch: echo MODEL=opus > ~/.config/ctrl-b/agent.env && systemctl --user restart ctrl-b-agent"
+  echo "✓ DEV install done."
+  echo "  Dev instance (ON-DEMAND):  systemctl --user start ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web"
+  echo "                             then http://emma:5173 (Vite → :5434); stop them when done iterating."
+  echo "  Agents (boot):  systemctl --user status ctrl-b-agent@fable ctrl-b-agent@opus"
+  echo "                  attach:  tmux attach -t '=ctrl-b (fable)'   |   tmux attach -t '=ctrl-b (opus)'"
+  echo "                  effort/perm overrides: ~/.config/ctrl-b/agent.env (shared) or agent-<i>.env (per-instance)"
 fi

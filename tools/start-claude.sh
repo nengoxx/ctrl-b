@@ -11,12 +11,12 @@
 # just runs + the owner uses daily (D32, amended 2026-07-09). This script only ever launches an agent in a
 # workspace-side tree.
 #
-# Usage:  ./start-claude.sh [session] [project_dir] [model]     (also runs as ctrl-b-agent.service on boot)
+# Usage:  ./start-claude.sh [session] [project_dir] [model]   (also runs as ctrl-b-agent@{fable,opus} on boot)
 #   ./start-claude.sh                            # default: session 'ctrl-b' in the workspace (~/github/ctrl-b, main)
-#   ./start-claude.sh ctrl-b ~/github/ctrl-b opus   # pick the model: fable | opus | any full model id
-#   ssh emma -t 'tmux attach -t ctrl-b'          # attach from anywhere (phone / Windows); Ctrl-b d to detach
-#   tmux kill-session -t ctrl-b                  # stop it
-#   MODEL=… EFFORT=… ./start-claude.sh           # env overrides (the agent service reads ~/.config/ctrl-b/agent.env)
+#   ./start-claude.sh 'ctrl-b (opus)' ~/github/ctrl-b opus   # model: fable | opus | any full model id
+#   ssh emma -t "tmux attach -t '=ctrl-b (fable)'"   # attach (exact-match '='; names contain spaces); Ctrl-b d detaches
+#   tmux kill-session -t '=ctrl-b (fable)'      # stop one
+#   EFFORT=… ./start-claude.sh                   # env overrides (the agent units read ~/.config/ctrl-b/agent[-<i>].env)
 # SECOND simultaneous agent — give it its OWN branch + worktree so it doesn't disturb the dev instance
 # (which serves the workspace on main). Use tools/add-dev-worktree.sh, or by hand:
 #   git -C ~/github/ctrl-b worktree add ~/github/ctrl-b-feat -b feat/x
@@ -39,16 +39,23 @@ esac
 command -v tmux  >/dev/null || { echo "tmux not found — sudo apt install -y tmux"; exit 1; }
 command -v claude >/dev/null || { echo "claude not found on PATH"; exit 1; }
 
-if tmux has-session -t "$SESSION" 2>/dev/null; then
-  echo "Session '$SESSION' already running — attach with:  tmux attach -t $SESSION"
+# Exact-match ('=') targeting: session names like "ctrl-b (fable)" share the "ctrl-b" prefix, and
+# tmux -t otherwise prefix-matches — a bare name could hit the wrong session.
+if tmux has-session -t "=$SESSION" 2>/dev/null; then
+  echo "Session '$SESSION' already running — attach with:  tmux attach -t '=$SESSION'"
   exit 0
 fi
 
 # Detached session; the inner loop keeps the agent alive across crashes. `exec bash` keeps the window open
-# if the loop is ever broken so you can inspect, rather than the pane vanishing.
-tmux new-session -d -s "$SESSION" -c "$PROJECT" \
-  "while true; do claude --remote-control $SESSION --permission-mode $PERM --model $MODEL --effort $EFFORT; \
-   echo '[claude exited — restarting in 5s; Ctrl-C to stop]'; sleep 5; done; exec bash"
+# if the loop is ever broken so you can inspect, rather than the pane vanishing. The session name is
+# escaped-quoted into the inner command (it contains spaces/parens). Two boot instances can race to start
+# the shared tmux server — retry once so the loser of that race still comes up.
+INNER="while true; do claude --remote-control \"$SESSION\" --permission-mode $PERM --model $MODEL --effort $EFFORT; \
+ echo '[claude exited — restarting in 5s; Ctrl-C to stop]'; sleep 5; done; exec bash"
+if ! tmux new-session -d -s "$SESSION" -c "$PROJECT" "$INNER" 2>/dev/null; then
+  sleep 1
+  tmux has-session -t "=$SESSION" 2>/dev/null || tmux new-session -d -s "$SESSION" -c "$PROJECT" "$INNER"
+fi
 
 echo "✓ Claude Code agent started in tmux session '$SESSION' (model $MODEL, effort $EFFORT)."
-echo "  Attach:  tmux attach -t $SESSION     Drive remotely: https://claude.ai/code"
+echo "  Attach:  tmux attach -t '=$SESSION'     Drive remotely: https://claude.ai/code"

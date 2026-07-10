@@ -1,0 +1,50 @@
+# ctrl-b — the Claude Code DEV AGENTS as always-on user services (D32 amendment 2026-07-09; amended
+# 2026-07-10, owner decision: TWO boot instances — fable 5 AND opus 4.8, both effort high — replacing
+# the single agent.env-switched unit).
+#
+# This is a systemd TEMPLATE unit: %i is the model alias, enabled as
+#     ctrl-b-agent@fable.service   → tmux session "ctrl-b (fable)"  → claude-fable-5, effort high
+#     ctrl-b-agent@opus.service    → tmux session "ctrl-b (opus)"   → claude-opus-4-8, effort high
+# Each instance only wraps tools/start-claude.sh: a tmux session running `claude --remote-control`
+# in the WORKSPACE (__REPO__ — never the prod tree). tmux is required because claude needs a TTY (it
+# cannot run as a bare daemon); oneshot+RemainAfterExit makes the unit "ensure the session exists" —
+# idempotent, and safe when a tmux server is already running for other sessions (Type=forking would
+# mis-track the pre-existing server's PID). Crash-restart of claude itself is the `while true` loop
+# INSIDE the tmux session, not systemd.
+#
+# Effort/permission overrides WITHOUT editing anything tracked (model comes from %i, not env):
+#     ~/.config/ctrl-b/agent.env       shared by both instances (EFFORT=…, PERM=…)
+#     ~/.config/ctrl-b/agent-<i>.env   per-instance override (e.g. agent-opus.env), wins over the shared one
+# then:  systemctl --user restart ctrl-b-agent@<i>
+# Attach:  ssh emma -t "tmux attach -t '=ctrl-b (fable)'"    (exact-match '='; or drive from claude.ai/code)
+# Manage:  systemctl --user {start,stop,restart,status} ctrl-b-agent@fable ctrl-b-agent@opus
+#
+# TEMPLATE: install.sh renders __REPO__/__HOME__/__TMUX__ to real paths — do NOT copy directly.
+# (No network-online.target ordering — system target, no user equivalent; see the prod unit's note.
+# claude reconnects on its own once the network is up.)
+[Unit]
+Description=ctrl-b Claude Code agent (%i) — tmux 'ctrl-b (%i)', workspace
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# CRITICAL: after a reboot the FIRST agent instance to start boots the shared per-user tmux server, so
+# the server lives in that unit's cgroup. The default KillMode=control-group would then kill the WHOLE
+# server on stop/restart — including the other instance's session and the owner's unrelated ones.
+# KillMode=process kills only the main process (already exited for a oneshot) = nothing; the targeted
+# ExecStop below does the precise per-session cleanup, and the tmux server itself exits on its own when
+# its last session ends. (start-claude.sh retries once if both instances race to create the server.)
+KillMode=process
+WorkingDirectory=__REPO__
+# The user manager's default PATH lacks ~/.local/bin (where claude lives) — and when THIS unit is what
+# boots the tmux server, the inner shell inherits this environment, so it must find claude + node too.
+Environment=PATH=__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Optional owner overrides (EFFORT=…, PERM=…); absent files are fine. Model is fixed by %i.
+# Do NOT set PATH in these files — it would override the Environment= line above and claude stops resolving.
+EnvironmentFile=-__HOME__/.config/ctrl-b/agent.env
+EnvironmentFile=-__HOME__/.config/ctrl-b/agent-%i.env
+ExecStart=/usr/bin/bash __REPO__/tools/start-claude.sh "ctrl-b (%i)" __REPO__ %i
+ExecStop=-__TMUX__ kill-session -t "=ctrl-b (%i)"
+
+[Install]
+WantedBy=default.target
