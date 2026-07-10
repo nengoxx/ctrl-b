@@ -55,16 +55,19 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
 
 ## Environment
 
-- Host OS is **Windows 11** today (corsair); the owner is **migrating to emma (Linux)** for deploy.
-  Default shell here is **PowerShell** (use `$null`, `$env:VAR`, backtick continuation); a Bash tool
-  is also available for POSIX scripts. **Keep all code OS-agnostic** — branch on `host.os_type`
+- **The dev + deploy host is emma (Ubuntu Linux) as of the 2026-07-10 v1.0.0 deploy** — sessions run
+  there (workspace `~/github/ctrl-b` on `main`; default shell **bash**). The old Windows checkout
+  (corsair) is a **frozen plain clone** — reference only; corsair remains a *managed fleet host*. If a
+  session ever does run on Windows: default shell is PowerShell (`$null`, `$env:VAR`, backtick
+  continuation) with a Bash tool available. **Keep all code OS-agnostic** — branch on `host.os_type`
   (managed host), never on the server's OS. Server-OS branches are a **closed allowlist**
   (`fleet._ping_cmd` ping syntax · `run_shell` shell · `memory._fsync_dir` no-op · `check.py`),
   pinned by `test_arch_invariants_qh9.py`; see `docs/ARCHITECTURE.md` §6.
 - Python **3.14+** (the codebase uses 3.14 syntax — e.g. PEP 758 unparenthesized `except`; ruff
-  `target-version = py314`; emma deploys native 3.14). Backend venv at `backend/.venv`. Run:
-  `uvicorn app.main:app --port 5433` from `backend/`. One-command: `deploy/windows/start.cmd` /
-  `deploy/linux/run.sh`.
+  `target-version = py314`; emma runs native 3.14). Backend venv at `backend/.venv`. Run:
+  `uvicorn app.main:app --port 5433` from `backend/`. One-command: `deploy/linux/run.sh` /
+  `deploy/windows/start.cmd`. On emma the instances are **systemd user units** (prod :5433 @
+  `~/apps/ctrl-b`; dev :5434 + Vite :5173 @ the workspace) — restart units, don't spawn duplicates.
 - **Windows gotcha:** do **not** run the backend with `uvicorn --reload` on Windows — the reload
   worker uses an event loop that breaks `asyncio.create_subprocess_exec`, so `fleet.ping_host` returns
   empty output and every host shows offline. Linux/macOS reload is fine. (Documented in `README.md`
@@ -129,8 +132,11 @@ seam; if the seam is missing, propose one in `DECISIONS.md` (new D-entry) before
 
 ## Commit message footer
 
-End commit messages with:
+End commit messages crediting the model that authored the change, e.g.:
 
 ```
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 ```
+
+(or `Claude Opus 4.8 <noreply@anthropic.com>` when running as Opus — the emma agent service runs
+either, per `~/.config/ctrl-b/agent.env`.)

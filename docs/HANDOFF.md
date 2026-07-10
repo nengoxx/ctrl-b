@@ -1,6 +1,49 @@
 # Handoff — start here for a fresh session
 
-> ## ▶ ACTIVE TASK — the emma (Linux) deploy
+> ## ▶ ACTIVE — develop ON emma. The deploy is DONE: v1.0.0 IS LIVE (2026-07-10)
+> **✅ ctrl-b v1.0.0 (tag `v1.0.0` = `8fa8404`) deployed to emma per the D32-amended plan — first try,
+> release gate green on its maiden tag run (full gate + Playwright e2e on ubuntu).** As-executed record:
+> the PRE-FLIGHT block atop [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md); living runbook: `deploy/linux/README.md`.
+> - **PROD:** `~/apps/ctrl-b` (sparse, pinned `v1.0.0`) → `~/.ctrl-b` → :5433 →
+>   **https://emma.lobster-vector.ts.net** (Tailscale Serve HTTPS; phone + mic verified by the owner).
+>   Fresh DB (as decided). Fleet ICMP/WOL verified from the systemd service (all 4 hosts online).
+> - **DEV:** workspace `~/github/ctrl-b` (`main` — the invariant: it never leaves main) → `~/.ctrl-b-dev` →
+>   uvicorn :5434 `--reload` + Vite :5173. Git hooks (`core.hooksPath=.githooks`) + `[dev]` toolchain in.
+> - **Agent:** `ctrl-b-agent.service` → tmux `ctrl-b` **in the workspace**, model fable-5 high (switch via
+>   `~/.config/ctrl-b/agent.env` → `MODEL=opus`, restart the unit). The one-time first-clone *trust prompt*
+>   was cleared by the owner (runbook §agent notes it). **Claude dev framework migrated — emma's
+>   `~/.claude/projects/-home-emma-github-ctrl-b/memory` (35 files) is the CANONICAL memory now**; git
+>   identity + settings merged. **Dev sessions happen ON emma from here on; the corsair/Windows checkout
+>   is FROZEN (plain clone, reference only; corsair = just a managed fleet host).**
+> - **Voice (owner, same day):** both instances re-pointed via `PUT /api/settings` (hot-reload) to emma's
+>   local **speaches :9000** — STT `istupakov/parakeet-tdt-0.6b-v3-onnx` (parakeet v3) · TTS
+>   `speaches-ai/Kokoro-82M-v1.0-ONNX` voice **`bf_isabella`**; fallbacks = vault (`.137:9000` whisper /
+>   `.137:7851` tts-1); per-endpoint `api_key` (schema field already existed). Verified end-to-end
+>   (dashboard TTS→STT round-trip, exact transcript, `X-Voice-Served-By: primary`). **Inference stays on
+>   vault's llamacpp `.137:5001` (owner-confirmed; corsair's instance unused).** The target's `config.yaml`
+>   is canonical — the Windows snapshot is stale by design (bootstrap re-runs won't clobber).
+>
+> **▶ NEXT (the standing post-deploy order — pick with the owner):**
+> 1. **Theme-engine Hardening slice v2** (D34; plan of record `THEME_ENGINE.md §14.15`) — locked to land
+>    BEFORE the next themeable-UI wave (frontier/Composer Surface).
+> 2. Then the owner's menu: **frontier theme T5** (`FRONTIER_PLAN.md`, design LOCKED 2026-07-07) ·
+>    **Composer Surface** (`COMPOSER_SURFACE_PLAN.md`, parked-not-superseded) · **ACA Slices 1–2**
+>    (`AGENT_CHAT_AUDIT.md` / TODO Phase 12).
+> 3. Housekeeping candidates: TODO Phase 10 cutover (old-server parity/retire) · dependabot/archive-prune
+>    (deferred until the tree settles) · dev-over-HTTPS if mic-in-dev is wanted (`tailscale serve --bg
+>    --https=8443 5173`).
+>
+> **The dev→prod flow is now the standing procedure** (`deploy/linux/README.md` §Release/§Hotfix/§Rollback):
+> develop in the workspace on `main` (hooks gate commit/push; CI on every push) → soak on the dev instance →
+> tag `vX.Y.Z` on the soaked sha → push the tag (CI **release gate**: full + e2e) → re-pin prod:
+> `cd ~/apps/ctrl-b && git fetch --tags && git checkout vX.Y.Z && bash deploy/linux/install.sh prod`
+> (DB snapshot + aside-built dist + sub-second swap). Hotfix = throwaway worktree at the tag
+> (`tools/add-dev-worktree.sh`), land-back on main NON-OPTIONAL. Rollback = previous tag; v1.0.0 itself
+> has none → disable the service or fix forward.
+>
+> *(The block below is the pre-deploy handoff this banner supersedes — kept as the as-planned record.)*
+
+> ## 🗄️ SUPERSEDED 2026-07-10 (executed) — the emma (Linux) deploy handoff
 > **✅ The repo "face-wash" reorg is DONE (2026-06-30)** — the v2 app IS the repo root now (= **ctrl-b v1.0**):
 > `backend/ frontend/ docs/ deploy/ agents/ skills/ config.yaml` at root; legacy in `archive/{v0.1-flask,
 > v0.1-inference,ui-prototypes}/`; prototypes consolidated in `design/prototypes/` (the 112 KB `vapor.html` is the

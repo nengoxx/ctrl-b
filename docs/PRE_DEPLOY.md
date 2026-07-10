@@ -1,5 +1,9 @@
 # Pre-deploy hardening — the gate before the emma v1.0 deploy
 
+> **✅ CLOSED 2026-07-10 — the gate passed and v1.0.0 deployed to emma** (gate `--e2e` 7/7 + maiden CI
+> release gate green + `bootstrap.py --with-dev --claude-env`; see `HANDOFF.md` + `DEPLOY_EMMA.md`).
+> This doc is now the historical hardening record.
+
 **Status: HARDENING COMPLETE (2026-07-02, main @ `43919f1`). All MUST steps done — 1 (quality harness) ·
 2 (SECURITY_MODEL.md) · 3 (secret-hygiene) · 4 (robustness P1s) · 5 (Phase-9 smoke + a11y, e2e pre-deploy gate).
 Cheap-nice: 6 (QR-to-phone) DROPPED by owner; 7 (tri-state access) done via the inline tri-switch + 390px eyeball.

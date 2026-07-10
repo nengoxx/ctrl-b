@@ -51,7 +51,7 @@ backend/                FastAPI + Uvicorn service (port 5433). Layered:
 frontend/               React 19 + TS + Vite 7 PWA. store/ hooks/ components/ tabs/ lib/ theme-engine/ themes/
 docs/                   HANDOFF (start here) · DECISIONS · ARCHITECTURE · DESIGN · SPEC · ROADMAP · TODO · THEME_ENGINE · audits (UI_AUDIT · SYSTEM_AUDIT · AGENT_CHAT_AUDIT) · …
 deploy/                 bootstrap.py (Win→Linux SSH orchestrator) + linux/ (systemd) + windows/ (double-click)
-tools/                  dev launchers (NOT deploy): start-claude.{sh,ps1,cmd}, add-dev-worktree.sh
+tools/                  dev launchers (NOT deploy): start-claude.sh (Linux), claude-{fable,opus}.{ps1,cmd} (Windows), add-dev-worktree.sh
 design/                 source design prototypes + the Vapor visual spec (design/prototypes/variations/vapor.html)
 agents/   skills/        bundled agent definitions + file-discovered skills (read from CTRLB_HOME at runtime)
 config.yaml             ★ live config (gitignored). Copy from config.example.yaml. nested secrets, UI-managed
@@ -73,20 +73,23 @@ archive/                v0.1-flask/ (the old Flask app + scripts) · v0.1-infere
 **Backend:** Python **3.14+** (the code uses 3.14-only syntax — PEP 758 `except`, ruff `target-version
 = py314`; emma deploys native 3.14), venv at `backend/.venv`. Port **5433**.
 
+```bash
+# Linux (the primary environment — emma) — --reload is safe here. Or just: deploy/linux/run.sh dev
+# On emma the dev instance already runs as systemd units (:5434 + Vite :5173) — restart those instead
+# of spawning duplicates:  systemctl --user restart ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web
+cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/uvicorn app.main:app --reload --port 5433
+```
 ```powershell
-# Windows (do NOT pass --reload — see §8 gotcha). [dev] = the check.py toolchain (ruff/pyright/pytest)
+# Windows (the frozen corsair clone; do NOT pass --reload — see §8 gotcha). [dev] = ruff/pyright/pytest
 cd backend; py -3 -m venv .venv; .venv\Scripts\python.exe -m pip install -e ".[dev]"
 .venv\Scripts\python.exe -m uvicorn app.main:app --port 5433        # http://127.0.0.1:5433
 cd ..\frontend; npm install; npm run dev                            # http://localhost:5173 (proxies /api → 5433)
 ```
-```bash
-# Linux/macOS — --reload is safe here. Or just: deploy/linux/run.sh dev
-cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/uvicorn app.main:app --reload --port 5433
-```
 
-- **One-command runners:** `deploy/windows/start.cmd` (Windows) · `deploy/linux/run.sh [prod|dev]`
-  (manual) · `python deploy/bootstrap.py` (Linux server, systemd + HTTPS). See [`deploy/README.md`](./deploy/README.md).
+- **One-command runners:** `deploy/linux/run.sh [prod|dev]` (manual) · `python deploy/bootstrap.py`
+  (Linux server, systemd + HTTPS — **executed 2026-07-10: v1.0.0 live on emma**) ·
+  `deploy/windows/start.cmd` (Windows). See [`deploy/README.md`](./deploy/README.md).
 - **Tests:** from `backend/`, `.venv/Scripts/python.exe -m pytest -q`. Frontend: `npm test`
   (vitest) · `npm run test:e2e` (playwright) · `npm run build`.
 - **Quality harness:** one command answers "is the repo green?" — **`python tools/check.py`** (runs
@@ -163,8 +166,10 @@ When adding an execution path, prefer a new **typed action** over widening a raw
 
 - **The live server is `backend/app/main.py` (FastAPI, :5433).** The old Flask app is in
   `archive/v0.1-flask/` — don't edit it unless the task is explicitly about that legacy code.
-- Default shell here is **PowerShell** (`$null`, `$env:VAR`, backtick continuation); a Bash tool is also
-  available. Keep all code **OS-agnostic** (branch on `host.os_type`, never the server OS — §4).
+- **The working environment is emma (Linux, bash) since the 2026-07-10 deploy** — the Windows checkout
+  (corsair) is a frozen plain clone; there the default shell is PowerShell (`$null`, `$env:VAR`, backtick
+  continuation) with a Bash tool available. Keep all code **OS-agnostic** (branch on `host.os_type`,
+  never the server OS — §4).
 - **Windows `--reload` gotcha:** don't run uvicorn with `--reload` on Windows — the reload worker's event
   loop breaks `asyncio.create_subprocess_exec`, so `fleet.ping_host` returns empty and every host shows
   offline. Linux/macOS are fine. (Documented in `README.md` + `docs/ARCHITECTURE.md §6`.)

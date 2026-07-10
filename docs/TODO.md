@@ -39,8 +39,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 >
 > **⭐ GLOBAL ORDER OF WORK (cross-track, reviewed + pinned 2026-07-07 — each track's internal
 > order lives in its own doc; this is the interleave):**
-> 1. **Deploy first** — Phase 9's emma execution gates *everything* labeled post-deploy. ACA
->    Slices 1–2 are *optional* pre-deploy candidates, **not** blockers (deploy-ready now).
+> 1. **~~Deploy first~~ ✅ DONE 2026-07-10 — v1.0.0 live on emma** (Phase 9 executed; everything
+>    labeled post-deploy is now unblocked). Dev continues ON emma (HANDOFF banner).
 > 2. **Phase 10 cutover** — after deploy; independent of themes/ACA (run-alongside, then flip).
 > 3. **Theme track (Phase 11):** Hardening v2 → Composer Surface → **T5 step 0 (tab-body
 >    registry) → T5 frontier**. The D34 rule stands: nothing themeable ships before Hardening v2.
@@ -686,18 +686,20 @@ tools + confirm bubbles) are DONE.**
 - _Deferred (don't build unless asked): bool/enum form widgets (when first tool needs them); per-tool
   `settings` (ROADMAP E0a — additive field on `ToolOverride`, discriminated union, same schema→form path)._
 
-## Phase 9 — PWA, packaging, deploy  (**mostly built; remaining = the emma deploy profile + smoke tests**)
+## Phase 9 — PWA, packaging, deploy  (**✅ COMPLETE — executed 2026-07-10: v1.0.0 live on emma**)
 
 - [x] vite-plugin-pwa manifest + service worker (build emits `dist/sw.js` + workbox precache). _Minimal
       manifest/precache — fine to ship; tune (icons/screenshots/offline polish) only if wanted._
 - [x] Prod: FastAPI serves `frontend/dist` (StaticFiles `/assets` mount + SPA `FileResponse` fallback,
       gated on the dist dir existing so dev is unaffected) — `main.py`. Single origin.
 - [x] `debug=False` default (config.py); backend deps pinned (`pyproject.toml`, exact versions).
-- [~] **Deploy profile for emma (Linux): systemd units + install/runbook — BUILT, awaiting execution.** All
-      artifacts under [`../deploy/linux/`](../deploy/linux/): `ctrl-b-dashboard.service` (prod, user service, uvicorn
-      5433 no-reload) + `ctrl-b-dashboard-dev.service` (Vite) + `install.sh` + `serve-https.sh` (Tailscale Serve) +
-      `start-claude.sh` (tmux agent) + `bootstrap.py` (Windows→emma) + `README.md`. Recon + decisions + verified env
-      in [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md). **Remaining: run `deploy/bootstrap.py` (the execution step).**
+- [x] **Deploy profile for emma (Linux): systemd units + install/runbook — ✅ EXECUTED 2026-07-10
+      (v1.0.0 = `8fa8404`; maiden CI release gate green).** `bootstrap.py --with-dev --claude-env` ran
+      end-to-end: prod `~/apps/ctrl-b` @tag → https://emma.lobster-vector.ts.net (Serve HTTPS) · dev
+      :5434 + Vite :5173 · always-on `ctrl-b-agent.service` (tmux, workspace) · Claude framework
+      migrated (memory/settings/git-identity). Verified 11/12 (the one finding — the first-clone claude
+      trust prompt — cleared + recorded in the runbook). As-executed record: [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md);
+      living procedures: `deploy/linux/README.md`.
 - [x] Minimal smoke tests — **shipped 2026-07-02** as the full Playwright e2e suite
       (`frontend/e2e/{render,flows,a11y}.spec.ts` — desktop + Android viewport + axe WCAG A/AA),
       wired as the opt-in deploy gate `python tools/check.py --e2e` (PRE_DEPLOY step 5 / UI_AUDIT F24).

@@ -1,6 +1,12 @@
 # Deploy to emma (Linux) — planning + conversation record
 
-> ## 🧭 PRE-FLIGHT (updated 2026-07-09 for the D32 AMENDMENT) — READY · execute in a FRESH clean session · NOT yet run
+> ## 🧭 PRE-FLIGHT — ✅ EXECUTED 2026-07-10: v1.0.0 IS LIVE ON EMMA (this block is now the as-executed record)
+> **Outcome:** ran exactly as written — gate `--e2e` 7/7 → tag `v1.0.0` (= `8fa8404`) → maiden CI release
+> gate GREEN → `bootstrap.py --with-dev --claude-env` exit 0 → verified 11/12 (the one finding: the agent's
+> one-time claude *trust prompt* on the fresh workspace clone — cleared by the owner; now in the runbook).
+> Dashboard: **https://emma.lobster-vector.ts.net**. Post-deploy same day: voice → local speaches :9000
+> (parakeet v3 / kokoro `bf_isabella`, vault fallbacks). **The living procedures are `deploy/linux/README.md`;
+> current status lives in `HANDOFF.md`.**
 > **Topology changed before first deploy (DECISIONS D32, amended 2026-07-09 — authoritative):** trunk-based
 > (**`main` + immutable tags, NO `dev` branch**) and a workspace/runtime split — PROD runtime at
 > **`~/apps/ctrl-b`** (fresh sparse clone), workspace stays **`~/github/ctrl-b`** (emma's existing checkout,

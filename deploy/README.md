@@ -20,4 +20,5 @@ the repo root (`backend/` + `frontend/` + `config.yaml`), so these work from any
   `autostart-{enable,disable}.{ps1,cmd}` (run at logon via a Scheduled Task).
 
 > Development launchers (Claude Code agent, dev worktrees) are **not** deployment — they live in repo-root
-> [`../tools/`](../tools/) (`start-claude.{sh,ps1,cmd}`, `add-dev-worktree.sh`).
+> [`../tools/`](../tools/) (`start-claude.sh` on Linux, `claude-{fable,opus}.{ps1,cmd}` on Windows,
+> `add-dev-worktree.sh`).
