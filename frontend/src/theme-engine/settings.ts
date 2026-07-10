@@ -17,13 +17,32 @@ export function themeSettingsSpec(themeId: ThemeId): ThemeSettingsSpec | undefin
   return registry[themeId]?.settings;
 }
 
-/** Resolve one per-theme setting: the stored override, else the theme's declared default. Generic over
- *  the value type so call sites stay typed (`useThemeSetting<boolean>("vapor", "heroOn")`). */
+/** Validate a raw (possibly stale/corrupt-synced) per-theme setting value against the theme's declared
+ *  spec — pure, no store read (§14.15.1 ⑦ / COMPOSER_SURFACE_PLAN §2.0, audit B4). A `seg` value resolves
+ *  only if it is one of the declared `options` (this enforces D31's per-theme capability list for free — a
+ *  value can only resolve to a variant the theme declared); a `switch` coerces to boolean; an undeclared
+ *  key → `undefined`. On any invalid value we fall back to the spec's default. The Surface resolver reads a
+ *  setting to decide *which component renders*, so the value must be validated, not cast. */
+export function resolveThemeSetting(
+  themeId: ThemeId,
+  key: string,
+  raw: ThemeSettingValue | undefined,
+): ThemeSettingValue | undefined {
+  const spec = registry[themeId]?.settings?.[key];
+  if (!spec) return undefined; // unknown/undeclared key
+  if (spec.type === "switch") return typeof raw === "boolean" ? raw : spec.default;
+  // seg: keep the raw value only if it names a declared option, else the default
+  return typeof raw === "string" && spec.options.some((o) => o.val === raw) ? raw : spec.default;
+}
+
+/** Resolve one per-theme setting: the stored override validated against the theme's spec, else the theme's
+ *  declared default. Routes through `resolveThemeSetting` (§14.15.1 ⑦ / COMPOSER_SURFACE_PLAN §2.0) so a
+ *  stale/corrupt synced value degrades to the default instead of casting through. Generic over the value
+ *  type so call sites stay typed (`useThemeSetting<boolean>("vapor", "heroOn")`). */
 export function useThemeSetting<T extends ThemeSettingValue = ThemeSettingValue>(
   themeId: ThemeId,
   key: string,
 ): T {
-  const override = useUISlice((s) => s.themeSettings[themeId]?.[key]);
-  if (override !== undefined) return override as T;
-  return registry[themeId]?.settings?.[key]?.default as unknown as T; // declared default, or undefined
+  const raw = useUISlice((s) => s.themeSettings[themeId]?.[key]);
+  return resolveThemeSetting(themeId, key, raw) as T; // validated override, declared default, or undefined
 }
