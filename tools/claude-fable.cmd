@@ -2,7 +2,7 @@
 setlocal
 
 set "SCRIPT_DIR=%~dp0"
-set "SCRIPT_PATH=%SCRIPT_DIR%start-claude.ps1"
+set "SCRIPT_PATH=%SCRIPT_DIR%claude-fable.ps1"
 
 if not exist "%SCRIPT_PATH%" (
   echo Could not find "%SCRIPT_PATH%".

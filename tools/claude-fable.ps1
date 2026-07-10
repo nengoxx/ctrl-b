@@ -1,8 +1,8 @@
 $ErrorActionPreference = "Stop"
 
 $ProjectPath = "C:\Users\rovax\Documents\github\ctrl-b"
-$SessionName = "ctrl-b"
-$Model = "claude-opus-4-8"
+$SessionName = "ctrl-b (fable)"
+$Model = "claude-fable-5"
 $Effort = "high"
 $PermissionMode = "bypassPermissions"
 

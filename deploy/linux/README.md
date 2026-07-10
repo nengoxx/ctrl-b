@@ -42,7 +42,7 @@ deploy/
 │       └── ctrl-b-agent.service              # the ALWAYS-ON Claude Code agent (tmux 'ctrl-b', workspace)
 └── windows/                  # the double-click Windows kit (setup/start/autostart)
 
-../tools/                     # dev launchers (NOT deploy): start-claude.{sh,ps1,cmd}, add-dev-worktree.sh
+../tools/                     # dev launchers (NOT deploy): start-claude.sh (Linux), claude-{fable,opus}.{ps1,cmd} (Windows), add-dev-worktree.sh
 ```
 `bootstrap.py` (orchestrator) is at `deploy/`; the Linux install/serve helpers + `systemd/` units are flat in
 `deploy/linux/`. The Claude-agent launchers live in repo-root `tools/`. *(There is no layout migration script —
