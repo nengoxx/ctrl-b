@@ -1,11 +1,19 @@
-import { Suspense, useEffect } from "react";
+import { type ReactNode, Suspense, useCallback, useEffect, useState } from "react";
 
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useChatInit } from "./hooks/useAgentChat";
-import { useAppearanceSync } from "./hooks/useAppearance";
+import {
+  currentAppearancePatch,
+  useAppearanceSync,
+  useSaveAppearance,
+} from "./hooks/useAppearance";
 import { useAutoTts } from "./hooks/useAutoTts";
 import { useEventStream } from "./hooks/useEvents";
 import { useFleetCycle } from "./hooks/useFleet";
 import { isAnyDirty } from "./store/dirty";
+import { useUISlice } from "./store/ui";
+import { DEFAULT_THEME, defaultSwitchTarget } from "./theme-engine/resolve";
+import { switchTheme } from "./theme-engine/switchTheme";
 import { useActiveRoot } from "./theme-engine/ThemeProvider";
 
 // App is a THIN HOST (Phase 11 v2 / D29 §14.1, M0). The active theme owns the whole presentation —
@@ -22,22 +30,135 @@ export default function App() {
   useAppViewport(); // --app-h tracks the visual viewport (keyboard-aware dvh) — effect only
   useUnsavedGuard(); // warn before unload if any editor has unsaved changes — effect only
 
-  // App re-renders ONLY on a theme change (the one reactive read it keeps). The data-subscribing engines
-  // live in a null-rendering child so their per-poll/appearance re-renders stay there and never cascade
-  // through `<ActiveRoot/>` into the whole theme tree.
+  // App re-renders ONLY on a theme change (the reactive reads it keeps: `useActiveRoot` resolves the Root
+  // for the skin, and `theme` below keys item ②'s fault boundary — both fire on the same skin change, so no
+  // extra re-render trigger). The data-subscribing engines live in a null-rendering child so their
+  // per-poll/appearance re-renders stay there and never cascade through `<ActiveRoot/>` into the theme tree.
   const ActiveRoot = useActiveRoot();
+  const theme = useUISlice((s) => s.theme); // for the fault-boundary key only (not a new render trigger)
+
+  // Item ② (§14.15.1) — the THEME-FAULT boundary + Reset-as-pick. This inner ErrorBoundary wraps the theme
+  // Root so a render/commit crash (or the ThemeProvider cold-load path re-throwing an evicted Root chunk,
+  // §14.15.1-A ③) shows a recoverable panel instead of a blank screen, WITHOUT tearing down the whole app
+  // (the global main.tsx boundary stays the outer net; ThemeProvider stays above it so a Reset never remounts
+  // the provider). Boundaries catch render/commit only — rAF/canvas faults are rider (c)'s `safeRafLoop`, not
+  // this boundary's job (§14.15.1-A ②/rider c).
+  //
+  // Key = `${theme}:${resetEpoch}` (the key-remount idiom, §14.15.1-A ②+): the `theme` part retries cleanly
+  // when a NEW skin is picked (a different id → the boundary remounts and re-renders the new Root), and the
+  // `resetEpoch` counter guarantees Reset ALWAYS remounts — including when the faulty skin IS DEFAULT_THEME
+  // (same id → the key would otherwise be unchanged and Reset would be a silent no-op, the M4 trap). The
+  // epoch is bumped ONLY by explicit user action (the Reset button) — never automatically on catch, which
+  // would loop (the react-error-boundary #168 footgun).
+  const [resetEpoch, setResetEpoch] = useState(0);
+
+  // Reset = a GENUINE pick of DEFAULT_THEME, reconstructing ConfTab.pickTheme's two-step (switchTheme +
+  // optimistic appearance PUT) so it satisfies the §14.15.2 invariant (the server appearance doc is written
+  // ONLY by explicit user action; the Reset button qualifies). Write-through is REQUIRED: a local-only reset
+  // doesn't escape — the server doc would re-apply the broken skin on the next reconcile → crash loop. The
+  // `mutate` hook is hoisted here and the callback is passed into the fallback (§14.15.1-A ②+). The switch
+  // flows through ⑤'s in-flight guard automatically. Mirrors pickTheme: switchTheme is async (loads the
+  // bundle first), so `currentAppearancePatch()` snapshots the store NOW and the target overrides skin/axes.
+  const saveAppearance = useSaveAppearance();
+  const resetToDefault = useCallback(() => {
+    const target = defaultSwitchTarget(DEFAULT_THEME);
+    void switchTheme(DEFAULT_THEME, target);
+    saveAppearance.mutate({ ...currentAppearancePatch(), theme: DEFAULT_THEME, ...target });
+    setResetEpoch((e) => e + 1); // always remount, even when the faulty skin already IS DEFAULT_THEME
+  }, [saveAppearance]);
+
   return (
     <>
       <AppEngines />
       {/* The active theme's Root may be a lazy chunk (non-default themes — keeps a bespoke theme's
           canvas/Fleet out of the default bundle). switchTheme preloads it before the flip, so this
           Suspense only ever shows on a cold load with a non-default theme persisted (brief, §14.6);
-          the eager default (vapor) never suspends. fallback=null → the page bg shows during the blip. */}
-      <Suspense fallback={null}>
-        {/* eslint-disable-next-line react-hooks/static-components -- ActiveRoot is a STABLE registry component (rootFor(theme), D29 §14), not an inline definition; the lint can't see through the registry lookup. */}
-        <ActiveRoot />
-      </Suspense>
+          the eager default (vapor) never suspends. fallback=null → the page bg shows during the blip.
+          The ErrorBoundary sits ABOVE the Suspense (item ②): a Root chunk that fails to import throws
+          the rejected promise to the nearest boundary above `<Suspense>` — this one. */}
+      <ErrorBoundary
+        key={`${theme}:${resetEpoch}`}
+        fallback={(error, reload) => themeFaultFallback(error, reload, resetToDefault)}
+      >
+        <Suspense fallback={null}>
+          {/* eslint-disable-next-line react-hooks/static-components -- ActiveRoot is a STABLE registry component (rootFor(theme), D29 §14), not an inline definition; the lint can't see through the registry lookup. */}
+          <ActiveRoot />
+        </Suspense>
+      </ErrorBoundary>
     </>
+  );
+}
+
+// Item ②'s fallback (§14.15.1) — a compact, SELF-CONTAINED recovery panel shown when the theme Root faults.
+// Styling is INLINE on purpose (the crash-screen convention: never depend on the styling of the thing that
+// crashed): the F23 classes all live under `@scope ([data-skin="vapor"])`, and this boundary's COMMON case is
+// a crashed NON-vapor lazy skin — `html[data-skin]` still names that skin, so vapor's rules can't match and a
+// class-styled fallback would render unstyled exactly when it matters (ruling 2026-07-10, supersedes the
+// reuse-F23-classes assumption; F23 itself is unchanged — it fires under vapor, where its classes resolve).
+// The F23 class names + markup shape are KEPT for identity continuity; `var(--token, literal)` fallbacks let
+// the unscoped base tokens enrich the palette when they resolve. Deliberately theme-neutral — this is the
+// "the theme is broken" screen. Two actions, ordered by likely fix:
+//   • Reload = PRIMARY — `reload()` (window.location.reload) picks up a new build (the common stale-chunk-
+//     after-deploy case) AND is the backstop for the browser module-map cached-FETCH case eviction can't
+//     reach (whatwg/html#10327). It keeps the current pick.
+//   • Reset theme to default = SECONDARY — a genuine pick of DEFAULT_THEME with write-through (see
+//     `resetToDefault`). If DEFAULT_THEME is already the faulty skin, Reset still works (the epoch bump
+//     remounts and re-renders), but Reload is the likelier fix there — so Reset is never hidden (M4: never a
+//     silent no-op), just ordered second.
+// `data-fault="theme"` is a stable, non-styling hook so the ⑩ kit-render e2e can distinguish this fallback
+// from the F23 global one (both use `.root-error`).
+const faultBtn = {
+  padding: "10px 16px",
+  border: "1px solid var(--accent, #7a7a8c)",
+  borderRadius: 8,
+  background: "var(--accent-fill, #26262e)",
+  color: "var(--text, #e8e8ea)",
+  font: "inherit",
+  cursor: "pointer",
+} as const;
+
+function themeFaultFallback(error: Error, reload: () => void, onReset: () => void): ReactNode {
+  return (
+    <div
+      className="root-error"
+      data-fault="theme"
+      style={{
+        minHeight: "100dvh",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        gap: 16,
+        padding: 24,
+        maxWidth: 480,
+        margin: "0 auto",
+        background: "var(--bg, #101014)",
+        color: "var(--text, #e8e8ea)",
+        fontFamily: "ui-monospace, monospace",
+      }}
+    >
+      <div className="sec">
+        <span className="num" aria-hidden>
+          !!
+        </span>
+        <b>ctrl·b</b> <span className="right">// the theme crashed</span>
+      </div>
+      <div className="root-error-body">
+        <p style={{ opacity: 0.8, overflowWrap: "anywhere" }}>
+          // {error.message || "unknown error"}
+        </p>
+        <div
+          className="root-error-actions"
+          style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}
+        >
+          <button style={faultBtn} onClick={reload}>
+            Reload page
+          </button>
+          <button style={{ ...faultBtn, background: "transparent" }} onClick={onReset}>
+            Reset theme to default
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

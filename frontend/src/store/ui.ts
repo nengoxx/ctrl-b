@@ -197,7 +197,8 @@ let state: UIState = loadUIState();
 //   are now THEME-OWNED — VaporRoot writes them from its `themeSettings` (M3 §14.3), like `.no-composer`.
 //
 // Slice 4: runs SYNCHRONOUSLY inside setUI() so the DOM reflects the new state in the same tick a
-// control toggles — App.tsx doesn't subscribe to theme (only `tab`, for conditional render).
+// control toggles. App.tsx subscribes to `theme` (via `useActiveRoot` + item ②'s ErrorBoundary key,
+// §14.15.1) so it re-renders on a skin change; it does not subscribe to `tab`.
 function applyBodyAttrs(s: UIState): void {
   const b = document.body;
   // `data-skin` (the @scope identity, §14.6) lives on <html> so a theme's `:root`/`html,body`/
