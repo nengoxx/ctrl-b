@@ -1599,6 +1599,71 @@ stringify or small deepEqual, ~10 lines + unit test) — kills the spurious re-a
 settings in different orders. **Declined:** aria-live theme announcement (no SR user; if the app ever goes
 eyes-free, do a deliberate live-region pass — toasts + streaming + theme — as its own slice).
 
+### 14.15.1-A Pre-build review amendments (owner-ratified 2026-07-10 — supplements, does not restructure, the items above)
+
+A 5-agent pre-build pass (code-truth · adversarial · 3 web-research memos, every claim re-verified in source
+by the main session) found the plan fully current (zero line-ref drift) and produced these deltas. Each is
+the industry-standard pattern, named and sourced in the session record.
+
+- **③ +:** the eviction must ALSO reset `preloadableRoot`'s memoized `pending` on rejection
+  (`lazyRoot.ts` — `pending ??=` caches rejections "parity with React.lazy", so evicting only the
+  `loaded` Map leaves Root chunks unretryable; the nearer cache is OURS, not the whatwg module map).
+  Preserve the stable promise identity while pending (the `??=` stays). The browser module map may still
+  cache the failed *fetch* (whatwg/html#10327 — open, unshipped) → item ②'s **Reload button is the
+  backstop**; NO cache-busting retry (Chrome-only URL extraction, fragile with Vite static specifiers).
+  When #10327 ships, plain re-import self-heals with zero code change here. Same commit: update
+  `ErrorBoundary.tsx`'s "no API to clear it" doc comment (true for React.lazy, false for ours post-③).
+- **⑤ +:** clear the in-flight marker **in `finally`** — else a failed target is deduped forever and
+  strands ③'s retry (③ and ⑤ are mutually dependent; build together). The monotonic-token/settle-reset
+  norm (React ignore-flag pattern generalized). Precision fix: the reconcile double-VT is prevented by the
+  **supersede** check, not the dedupe (pick and reconcile targets differ in the motion trio) — and the
+  `next.theme !== local.theme` branch in `useAppearanceSync` must survive any refactor.
+- **⑥ +:** the registered-id coercion is a **validity check, not a migration** (parse-don't-validate /
+  zod-`.catch` semantics): it runs **every boot**, after the (now-versioned) chain, ungated by `v` —
+  registry membership is orthogonal to schema version (a theme can be deregistered with no shape change).
+  Reconcile door: inject an `isRegistered` predicate into `reconcileAppearance` (stays pure; keeps cosmos's
+  canvas imports out of jsdom); hold the skin-triple at local **before** the equality gate. **Third door
+  accepted as-is:** the index.html FOUC script applies the raw persisted id with no allowlist — the
+  next-themes-standard self-heal; a one-frame flash on a removed-theme device is accepted, do NOT add an
+  allowlist to the pre-paint path.
+- **④ + (single-signal, NN/g):** `ensureThemeLoaded` tags rejections with a typed
+  `ThemeLoadError { source: "styles" | "fonts" | "root" }` (engine-internal — the ThemeDef contract is
+  untouched). Provider cold-load catch: styles/fonts → toast (survivable base-token degrade); **root →
+  silent** (item ②'s boundary owns the fatal signal; never both for one failure). The switch path keeps
+  its toast (failure there means we stayed on the working theme — non-fatal, single signal, correct).
+- **② +:** key the boundary on **theme id + a resetEpoch counter** (key-remount idiom) so Reset always
+  remounts — without it, Reset is a silent no-op when DEFAULT_THEME itself is the faulty theme. Export
+  `DEFAULT_THEME` from `resolve.ts` (it is module-private today; the standing no-"vapor"-literals guarantee
+  already mandates the constant). Reset reconstructs pickTheme's two-step in App (`switchTheme` +
+  `useSaveAppearance().mutate` hoisted) → flows through ⑤'s guard and satisfies the §14.15.2 explicit-
+  user-action invariant. REUSE the existing render-prop `ErrorBoundary` + the F23 root-fallback primitives
+  (vapor CSS is eager/frozen → the fallback renders styled under every theme). Boundaries catch
+  render/commit only — rAF/canvas faults are rider (c)'s job, not ②'s.
+- **Rider (a) +:** the v-stamp adoption must NOT re-run the appbar seed on current-shape unversioned blobs
+  (every real device today has `appbarMode` but no `v` — "missing→0, run all" would override the user's
+  choice, the exact bug the code comment records). The v0→appbarMode step infers its stage by **key
+  presence** ("blob has `appbarMode` ⇒ already past it") — the accepted idempotency escape hatch for a
+  non-idempotent migration over mixed-stage unversioned data (zustand treats unversioned as current;
+  redux-persist as run-all; presence-inference is confined to this ONE step). Delete the
+  `rawHasAppbarMode()` *helper* (no other caller), keep its raw-presence logic inside the step.
+- **NEW rider (c) — owner-approved 2026-07-10:** an engine-owned **`safeRafLoop`** helper (~20 lines):
+  try/catch around the tick body; on throw cancel the loop, `reportError()`, degrade gracefully (stop
+  animating, never error-per-frame). Adopt in cosmos's camera + starfield loops now. This is the pattern
+  every future canvas theme (frontier is next) copies instead of an unguarded loop — shape the seam before
+  the second consumer arrives.
+- **⑧ settled:** the contrast group runs as a **Playwright spec** (`e2e/contrast.spec.ts`, reuses the
+  existing e2e harness) — NOT jsdom (can't replay `@layer`/`@scope`), NOT token parsing (breaks on
+  `color-mix()`/relative color), NOT a palette table (second source of truth). **Probe-element technique**
+  (the verified CSSOM gotcha: `getPropertyValue("--x")` returns the AUTHORED var chain — apply tokens to
+  real properties on a probe element and read the computed color). Math: `culori` (WCAG 2.1 gate) +
+  `apca-w3` (advisory). The rest of `themeContract.test.ts` stays in jsdom Vitest.
+- **⑨ settled:** `stylelint-high-performance-animation@^2` (maintained, 2026-01) + **one custom plugin**
+  (`stylelint.createPlugin` + `walkDecls`, reusing culori for the `<color>` parse) for the two bespoke
+  accent rules — no off-the-shelf plugin expresses "value-token restricted to a property set". Optional:
+  `stylelint-declaration-strict-value` for the inverse must-use-token direction.
+- **Build order (dependency-driven):** rider (a) → ⑥ + rider (b) → ③+⑤ (together) → ④ → ② → rider (c)
+  → ① → ⑦ (independent, parallel-ok) → ⑧ → ⑩ → ⑨.
+
 ## 14.15.2 New invariants (locked by the review)
 
 - **The server appearance doc is only ever written by EXPLICIT user action** — the Conf picker and the
