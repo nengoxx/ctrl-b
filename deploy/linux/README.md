@@ -125,25 +125,44 @@ per-machine remainder is what `bootstrap.py --claude-env` moves:
   session transcripts (memory is their distillate; `docs/HANDOFF.md` re-orients a fresh session), and
   `.claude/settings.local.json` (machine-local permission grants re-accrue naturally).
 
-## Release (promote) — tag a soaked sha, no branch dance
+## Release (promote to production) — the standing END-TO-END procedure
+Trunk-based release-by-tag: prod only ever moves by checking out a **new immutable tag** — never by
+editing `~/apps/ctrl-b` in place, never from a branch. Every step below is explicit so an agent can
+run it cold:
+
 ```bash
-# 1) Pick the commit that soaked well on the dev instance (a SHA, not "whatever HEAD is now"),
-#    make sure the gate is green on it (hooks ran on push; CI shows green on that sha).
-cd ~/github/ctrl-b
-git tag -a vX.Y.Z <sha> -m "release notes"
-git push origin vX.Y.Z            # ← triggers the CI release gate (full gate + Playwright e2e/a11y)
-# 2) Update prod (after the tag's CI run is green):
-cd ~/apps/ctrl-b && git fetch --tags && git checkout vX.Y.Z && bash deploy/linux/install.sh prod
-#    (install.sh prod = venv/deps → dist built aside → DB snapshot → sub-second stop/swap/start)
+cd ~/github/ctrl-b                          # 0) always from the workspace (main) — never the prod tree
+# 1) PICK the sha — the latest main commit that is VERIFIED: gate green (the pre-push hook ran the
+#    full gate; CI is green on that sha) AND eyeballed on the dev instance (start the on-demand pair
+#    while testing, stop after). A sha you checked — not "whatever HEAD is now".
+git log --oneline -5
+gh run list --branch main --limit 1         # CI conclusion for HEAD must be success
+# 2) VERSION by semver: incompatible/breaking → vX+1.0.0 · new feature → vX.Y+1.0 · fix-only → vX.Y.Z+1
+# 3) TAG + PUSH — the tag push triggers the CI RELEASE GATE (full gate + Playwright e2e on Linux):
+git tag -a vX.Y.Z <sha> -m "one-line release notes"
+git push origin vX.Y.Z
+# 4) WAIT for the release gate — NEVER re-pin on red or pending:
+gh run watch $(gh run list --limit 5 --json databaseId,headBranch \
+  --jq '[.[]|select(.headBranch=="vX.Y.Z")][0].databaseId') --exit-status
+# 5) RE-PIN prod (install.sh = deps → dist built aside → DB snapshot → sub-second stop/swap/start;
+#    any pre-cutover failure leaves the running service untouched):
+cd ~/apps/ctrl-b && git fetch --tags --quiet && git checkout vX.Y.Z && bash deploy/linux/install.sh prod
+# 6) VERIFY — prod is on the tag and healthy:
+git -C ~/apps/ctrl-b describe --tags --exact-match    # must print vX.Y.Z
+curl -s -m5 localhost:5433/api/health                 # {"status":"ok",...} — NOTE: its "version" is the
+                                                      # backend PACKAGE version, NOT the release tag; the
+                                                      # describe line above is the real "which release" check
+# then spot-check https://emma.<tailnet>.ts.net on a device. Anything wrong → Rollback (below).
 ```
-**Tags are immutable** — never re-point one; a bad release gets `vX.Y.Z+1`. The workspace is untouched
-throughout (no checkout, no merge — promotion is a push of a tag).
+**Tags are immutable** — never re-point one; a bad release gets `vX.Y.Z+1` (or roll back). The
+workspace is untouched throughout (no checkout, no merge — promotion is a push of a tag).
 
 ## Hotfix — worktree at the tag, never a checkout in the workspace
 ```bash
 bash ~/github/ctrl-b/tools/add-dev-worktree.sh hotfix fix/vX.Y.Z+1 vX.Y.Z   # throwaway tree AT the release tag
 cd ~/github/ctrl-b-hotfix        # fix → commit → verify (hooks run the gate)
 git tag -a vX.Y.Z+1 -m "hotfix: ..." && git push origin fix/vX.Y.Z+1 vX.Y.Z+1   # branch push = CI; tag = release gate
+#   → WAIT for the tag's release-gate run to go green (Release step 4) before re-pinning
 cd ~/apps/ctrl-b && git fetch --tags && git checkout vX.Y.Z+1 && bash deploy/linux/install.sh prod
 # NON-OPTIONAL last step — land the fix on main and PROVE it, then clean up:
 cd ~/github/ctrl-b && git cherry-pick <fix-sha> && git push   # (or merge the branch)

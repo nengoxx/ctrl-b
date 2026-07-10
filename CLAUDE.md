@@ -70,6 +70,10 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   `~/apps/ctrl-b`, boot; dev :5434 + Vite :5173 @ the workspace, **on-demand** — `systemctl --user
   start/stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web` around iteration) — drive the units,
   never spawn duplicate servers beside them.
+- **Asked to update/release production?** Follow `deploy/linux/README.md` **§Release** end-to-end
+  (verified sha → semver tag + push → **wait for the CI release gate green** → re-pin `~/apps/ctrl-b`
+  at the tag → `install.sh prod` → verify `git describe --exact-match` + health). Never edit the prod
+  tree in place; never re-point a tag; rollback = previous tag (§Rollback).
 - **Windows gotcha:** do **not** run the backend with `uvicorn --reload` on Windows — the reload
   worker uses an event loop that breaks `asyncio.create_subprocess_exec`, so `fleet.ping_host` returns
   empty output and every host shows offline. Linux/macOS reload is fine. (Documented in `README.md`
