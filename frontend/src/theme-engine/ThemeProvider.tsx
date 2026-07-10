@@ -9,8 +9,9 @@
 import { type ReactNode, useEffect } from "react";
 
 import { useUISlice } from "../store/ui";
+import { pushToast } from "../store/toast";
 import { rootFor } from "./resolve";
-import { ensureThemeLoaded } from "./switchTheme";
+import { ensureThemeLoaded, ThemeLoadError } from "./switchTheme";
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   // Ensure the ACTIVE theme's lazy CSS + fonts are loaded. `switchTheme` only loads on a user pick, so
@@ -21,7 +22,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // §14.6). (M2 will also wrap `children` in the feature-controller providers here.)
   const theme = useUISlice((s) => s.theme);
   useEffect(() => {
-    void ensureThemeLoaded(theme);
+    // Severity-keyed SINGLE signal on a cold-load failure (NN/g, §14.15.1-A ④+): raise exactly one
+    // user-facing signal per failure, never two.
+    //   • root → SILENT to the user (log only). The Root-chunk failure is FATAL: <ActiveRoot/>'s cold
+    //     path re-attempts the (③-evicted) import and, on failure, throws to item ②'s ErrorBoundary,
+    //     which owns the one blocking signal. A toast here would be the NN/g double-signal.
+    //   • styles/fonts (or any non-ThemeLoadError rejection — defensive) → one non-blocking toast: the
+    //     CSS/font failure degrades survivably to the Kit base-token fallbacks, so a toast is the single
+    //     signal and no revert is attempted (item ④; the crash path belongs to ②'s boundary).
+    // The switchTheme path keeps its OWN toast because a failure there means we STAYED on the working
+    // theme (non-fatal) — a distinct, correct single signal.
+    ensureThemeLoaded(theme).catch((err: unknown) => {
+      if (err instanceof ThemeLoadError && err.source === "root") {
+        console.error(err);
+        return;
+      }
+      pushToast("theme failed to load", "err");
+      console.error(err);
+    });
   }, [theme]);
   return <>{children}</>;
 }

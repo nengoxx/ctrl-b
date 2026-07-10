@@ -35,6 +35,26 @@ type VTDocument = Document & {
 // Cache the per-theme load promise so a CSS/font bundle is fetched+activated at most once.
 const loaded = new Map<ThemeId, Promise<void>>();
 
+/** Which of the three lazy legs of a theme load failed. Engine-internal — the ThemeDef contract is
+ *  untouched (§14.15.1-A ④). */
+export type ThemeLoadSource = "styles" | "fonts" | "root";
+
+/** Tags an `ensureThemeLoaded` rejection with WHICH leg failed. `Promise.all` discards all but the first
+ *  rejection reason and gives no hint of its origin, so each leg is wrapped to throw this before the
+ *  aggregate settles. The severity of the failing leg drives the single user signal (§14.15.1-A ④+):
+ *  ThemeProvider stays SILENT on `root` (fatal → item ②'s boundary owns the blocking signal) and toasts on
+ *  `styles`/`fonts` (survivable → Kit base-token degrade). `cause` carries the original loader error
+ *  (ES2022 `Error` cause; target ES2022, §tsconfig). */
+export class ThemeLoadError extends Error {
+  constructor(
+    readonly source: ThemeLoadSource,
+    cause: unknown,
+  ) {
+    super(`theme load failed: ${source}`, { cause });
+    this.name = "ThemeLoadError";
+  }
+}
+
 /** Ensure the theme's CSS bundle + fonts are loaded & applied. vapor is always-loaded (layer frozen)
  *  + index.html fonts → resolves immediately. Must complete BEFORE the flushSync so the snapshot
  *  captures the styled frame (§9.12). */
@@ -42,12 +62,20 @@ export function ensureThemeLoaded(id: ThemeId): Promise<void> {
   let p = loaded.get(id);
   if (!p) {
     const def = registry[id];
+    // Tag EACH leg's rejection with its source BEFORE the aggregate — `Promise.all` rejects with the raw,
+    // origin-less reason of the first-failing leg, so wrapping here is what preserves WHICH leg died.
     p = Promise.all([
-      def?.loadStyles() ?? Promise.resolve(),
-      def?.loadFonts?.() ?? Promise.resolve(),
+      (def?.loadStyles() ?? Promise.resolve()).catch((err: unknown) => {
+        throw new ThemeLoadError("styles", err);
+      }),
+      (def?.loadFonts?.() ?? Promise.resolve()).catch((err: unknown) => {
+        throw new ThemeLoadError("fonts", err);
+      }),
       // Preload the Root component chunk too (lazy themes), so the `lazy(Root)` resolves inside the flushSync
       // with no Suspense flash during the View-Transition snapshot. Eager themes (vapor) omit loadRoot.
-      def?.loadRoot?.() ?? Promise.resolve(),
+      (def?.loadRoot?.() ?? Promise.resolve()).catch((err: unknown) => {
+        throw new ThemeLoadError("root", err);
+      }),
     ]).then(() => undefined);
     // Eviction on rejection (§14.15.1 ③): a rejected promise cached forever poisons that theme for the whole
     // session — one transient network blip and the theme never loads again. Attach the eviction as a SIDE

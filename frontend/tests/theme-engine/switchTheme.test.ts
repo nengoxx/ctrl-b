@@ -10,7 +10,11 @@ import type { SwitchTarget } from "../../src/theme-engine/switchTheme";
 // count imports; that also keeps cosmos's canvas imports out of jsdom. jsdom has no `startViewTransition`,
 // so switchTheme takes the instant path — the apply is synchronous after the await, asserted via getUI().
 
-type FakeDef = { loadStyles: () => Promise<void> };
+type FakeDef = {
+  loadStyles: () => Promise<void>;
+  loadFonts?: () => Promise<void>;
+  loadRoot?: () => Promise<void>;
+};
 
 const { mockRegistry } = vi.hoisted(() => {
   const mockRegistry: Record<string, FakeDef | undefined> = {};
@@ -74,6 +78,35 @@ describe("ensureThemeLoaded — ③ rejection eviction", () => {
     l.calls[1].resolve();
     await expect(p2).resolves.toBeUndefined();
   });
+});
+
+describe("ensureThemeLoaded — ④ ThemeLoadError source tagging", () => {
+  // Promise.all discards the origin of the first-failing leg, so each leg is wrapped to throw a tagged
+  // ThemeLoadError. Drive one leg to reject and the others to resolve, then assert the aggregate rejection
+  // carries that leg's source (+ the original loader error as `cause`).
+  it.each(["styles", "fonts", "root"] as const)(
+    "tags a %s-leg rejection as ThemeLoadError with that source",
+    async (source) => {
+      const legs = { styles: loader(), fonts: loader(), root: loader() };
+      mockRegistry.minimal = {
+        loadStyles: legs.styles.fn,
+        loadFonts: legs.fonts.fn,
+        loadRoot: legs.root.fn,
+      };
+      const { ensureThemeLoaded, ThemeLoadError } = await loadModules();
+
+      const p = ensureThemeLoaded("minimal");
+      for (const [name, l] of Object.entries(legs)) {
+        if (name === source) l.calls[0].reject();
+        else l.calls[0].resolve();
+      }
+
+      const err = await p.catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ThemeLoadError);
+      expect((err as InstanceType<typeof ThemeLoadError>).source).toBe(source);
+      expect((err as InstanceType<typeof ThemeLoadError>).cause).toBeInstanceOf(Error);
+    },
+  );
 });
 
 describe("switchTheme — ⑤ in-flight guard", () => {
