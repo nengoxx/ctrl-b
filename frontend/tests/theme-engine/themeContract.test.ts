@@ -322,3 +322,42 @@ describe("e2e contrast matrix ↔ registry palettes (drift guard)", () => {
     expect(row!.accents).toEqual((def.palettes.accents ?? []).map((a) => a.id));
   });
 });
+
+// ── P2 meta-guard (§14.13.1 — "the guard that guards the guards"; built 2026-07-10 after the frontier
+//    pre-flight authoring audit found §14.13 #4 was HONOR-SYSTEM for new themes). stylelint's per-theme-dir
+//    keyframe-prefix overrides are HAND-LISTED (stylelint has no <dir>-derived pattern), so a new
+//    `src/themes/<id>/` silently fell through to the generic kebab-case rule — and an unprefixed keyframe
+//    collides document-wide with vapor's (§14.13 #4, the flagship-breaking case). These tests make every
+//    hand-maintained authoring table fail LOUDLY, with instructions, the moment a registry row lacks its
+//    entry. Exemptions route through CONTRACT_WAIVERS — the same single tracker, never a scattered skip. ──
+describe("authoring guards ↔ registry (P2 meta-guard)", () => {
+  const stylelintConfig = readFileSync(resolve(process.cwd(), "stylelint.config.mjs"), "utf8");
+
+  it.each(
+    registeredThemes()
+      .filter((d) => !isWaived(d.id, "keyframe-prefix"))
+      .map((d) => [d.id] as const),
+  )("stylelint.config.mjs has the ^%s- keyframe override for src/themes/%s/", (id) => {
+    // Text-level check on purpose: importing the untyped .mjs into the typed suite buys no robustness
+    // over asserting both halves of the override are present, and the failure message is the fix.
+    expect(
+      stylelintConfig.includes(`src/themes/${id}/`),
+      `stylelint.config.mjs needs an overrides entry for "src/themes/${id}/**/*.css" — copy the minimal/cosmos block`,
+    ).toBe(true);
+    expect(
+      stylelintConfig.includes(`"^${id}-"`),
+      `the src/themes/${id}/ override must enforce keyframes-name-pattern "^${id}-" (§14.13 #4 — unprefixed keyframes collide with vapor's document-wide)`,
+    ).toBe(true);
+  });
+
+  it("TOKENS_RAW maps every non-waived registered theme (the token-list group's input)", () => {
+    const need = registeredThemes()
+      .filter((d) => !isWaived(d.id, "semantic-tokens"))
+      .map((d) => d.id)
+      .sort();
+    expect(
+      Object.keys(TOKENS_RAW).sort(),
+      'add `<id>: readThemeTokens("<id>")` to TOKENS_RAW for the new theme',
+    ).toEqual(need);
+  });
+});

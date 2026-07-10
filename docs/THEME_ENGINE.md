@@ -38,6 +38,7 @@ mapping), while §9.7–§9.12 + §13.1 remain live contract · **§14** = the *
 | Fonts/assets lazy (no first-paint hit) | §9.10 · §10 steps 1–2 |
 | Cross-device sync (LWW appearance channel) | §9.11 |
 | 390 px owner eyeball + an e2e render case | §14.13.1 (+ the standing per-slice eyeball rule, TODO Phase 11) |
+| **Wire the three guard tables** — `stylelint.config.mjs` `^<id>-` keyframe override · `e2e/contrast-matrix.ts` row · `TOKENS_RAW` entry in `themeContract.test.ts` (all hand-maintained BY DESIGN; the P2 meta-guard + drift guards fail loudly with instructions until each is added) | §14.13.1 P2 · the files' own headers |
 | The step-by-step porting playbook | **§10** (rewritten as-built 2026-07-06) |
 
 **⚠ SPEC-not-built — do not assume these exist in code:** the user-selectable Surface machinery
@@ -1197,7 +1198,10 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
    `--accent-ink`/`--accent-soft`/`--accent-glow`/`--ok`/`--ok-soft`/`--warn`/`--warn-soft`/`--danger`/`--danger-soft`/
    `--radius`/`--radius-sm`/`--density-pad`) has a base fallback in `theme-engine/kit/tokens.css`
    (`@layer base`). So a theme that ships a **partial** `tokens.css` degrades gracefully (base value shows
-   through); a complete one fully reskins. **Verified 2026-06-27: zero tokens are read without a fallback,
+   through); a complete one fully reskins. *(As-enforced nuance, 2026-07-10: the B2 suite requires the 21
+   unconditional tokens; `--accent-ink` is required **iff the theme declares a light mode** — dark-only
+   themes inherit the base `var(--bg)` fallback byte-identically. A single-mode theme is covered under its
+   one implicit mode, `"dark"`.)* **Verified 2026-06-27: zero tokens are read without a fallback,
    and kit.css has no hardcoded theme colors** (only neutral `rgba(0,0,0,…)` shadows). *If you add a NEW Kit
    component that reads a NEW token, add its base fallback to `kit/tokens.css` in the same change* (the rule
    that caught `--bg`).
@@ -1221,9 +1225,11 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
    for phosphor's CRT (scanline/flicker/glow loops). *(`inside` is NOT a vapor keyframe — an earlier prose list
    here included it, but it's a regex false-positive: `vapor.css:3` has the words "keeps @keyframes inside @scope"
    in a comment. Caught by external_audit #3 — exactly why the keyframe inventory should be **executable**, not
-   hand-maintained.)* **`enforced by:` stylelint `keyframes-name-pattern` (per-dir `overrides`: `kit/**`→`kit-`,
-   `themes/<t>/**`→`<t>-`; legacy `theme/vapor.css`+`theme/extras.css` allowlisted) — see §14.13's Enforcement &
-   coverage below.**
+   hand-maintained.)* **`enforced by:` stylelint `keyframes-name-pattern` per-dir `overrides` — which are HAND-LISTED per
+   existing theme dir (`kit/**`→`kit-`, `themes/minimal/**`→`minimal-`, `themes/cosmos/**`→`cosmos-`; the
+   legacy vapor dir allowlisted), NOT a growing glob. A NEW theme's override is forced by the **P2
+   meta-guard** in `themeContract.test.ts` (red, with instructions, until the entry exists — added
+   2026-07-10). See §14.13.1.**
 5. **New effects must pass the §14.11 cross-browser budget.** CRT scanlines, glow, flicker, any ambient
    animation → **transform/opacity only** (no animated `background-position`/`box-shadow`/`filter`/size),
    **`will-change`/`contain`** the animated element, gate continuous anims behind `body[data-motion]` and any
@@ -1353,7 +1359,7 @@ the loop below):
    slice** (a stylelint rule or a B2 assertion) — or marks it `eyeball-only` with a reason. Covered by the standing
    pre-flight/audit discipline; not a separate chore.
 - *Optional (P2) meta-guard:* a test asserting every registered theme has a `tokens.css`, every theme folder is matched
-  by a stylelint override, and every checklist item has an `enforced by:` marker — the guard that guards the guards.
+  by a stylelint override, and every checklist item has an `enforced by:` marker — the guard that guards the guards. **✅ BUILT 2026-07-10** (the "authoring guards ↔ registry" describe in `themeContract.test.ts`: keyframe-override + TOKENS_RAW presence per non-waived registered theme; the contrast-matrix half was already live as the drift guard).
 
 > **`themeContract.test.ts` token-list assertion (audit #3 Δ3).** The token check must distinguish three classes:
 > **semantic tokens** every non-vapor Kit-consuming theme must provide; **base fallbacks** Kit declares in
@@ -1653,8 +1659,10 @@ the industry-standard pattern, named and sourced in the session record.
 - **NEW rider (c) — owner-approved 2026-07-10:** an engine-owned **`safeRafLoop`** helper (~20 lines):
   try/catch around the tick body; on throw cancel the loop, `reportError()`, degrade gracefully (stop
   animating, never error-per-frame). Adopt in cosmos's camera + starfield loops now. This is the pattern
-  every future canvas theme (frontier is next) copies instead of an unguarded loop — shape the seam before
-  the second consumer arrives.
+  every future canvas theme copies instead of an unguarded loop — shape the seam before the second consumer
+  arrives. *(As-built correction 2026-07-10: frontier is canvas-FREE per FRONTIER_PLAN §6-F5 — PNG art +
+  transform/opacity CSS keyframes; the next canvas consumer is observatory T6. The eslint src/themes/**
+  rAF rule enforces adoption regardless.)*
 - **⑧ settled:** the contrast group runs as a **Playwright spec** (`e2e/contrast.spec.ts`, reuses the
   existing e2e harness) — NOT jsdom (can't replay `@layer`/`@scope`), NOT token parsing (breaks on
   `color-mix()`/relative color), NOT a palette table (second source of truth). **Probe-element technique**
