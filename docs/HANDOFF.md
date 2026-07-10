@@ -32,9 +32,11 @@
 >   is canonical — the Windows snapshot is stale by design (bootstrap re-runs won't clobber).
 >
 > **▶ NEXT (the standing post-deploy order — pick with the owner):**
-> 1. **Theme-engine Hardening slice v2** (D34; plan of record `THEME_ENGINE.md §14.15`) — locked to land
->    BEFORE the next themeable-UI wave (frontier/Composer Surface).
-> 2. Then the owner's menu: **frontier theme T5** (`FRONTIER_PLAN.md`, design LOCKED 2026-07-07) ·
+> 1. **~~Theme-engine Hardening slice v2~~ ✅ SHIPPED 2026-07-10** (all 10 items + riders a/b/c; as-built
+>    record `THEME_ENGINE.md §14.15.1-A`; commits `bdaf511…9e21cdc`; release gate incl. e2e 7/7 green;
+>    orchestrated multi-agent build, every item owner-ratified + diff-reviewed). The themeable-UI wave is
+>    now UNBLOCKED.
+> 2. Now the owner's menu: **frontier theme T5** (`FRONTIER_PLAN.md`, design LOCKED 2026-07-07) ·
 >    **Composer Surface** (`COMPOSER_SURFACE_PLAN.md`, parked-not-superseded) · **ACA Slices 1–2**
 >    (`AGENT_CHAT_AUDIT.md` / TODO Phase 12).
 > 3. Housekeeping candidates *(Phase 10 cutover CLOSED 2026-07-10 — owner ruling, old Flask server retired)*: dependabot/archive-prune

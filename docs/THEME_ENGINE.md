@@ -1527,7 +1527,7 @@ because everything already reads the contract.
 > (B4→R3→R4+T1→B2→stylelint). Sequencing unchanged: this slice ships first when the theme engine un-parks
 > (post-emma-deploy), then the Composer Surface (`COMPOSER_SURFACE_PLAN.md`).
 
-## 14.15.1 The Hardening slice v2 (10 items + 2 riders — behavior-preserving except ①)
+## 14.15.1 The Hardening slice v2 (10 items + 2 riders — behavior-preserving except ①) — ✅ SHIPPED 2026-07-10 (all 10 items + riders a/b/c; as-built deltas in §14.15.1-A; commits bdaf511…9e21cdc; release gate incl. e2e 7/7 green)
 
 1. **`--accent-ink` token (the one product bug).** kit.css hardcodes `color: var(--bg)` on `--accent-fill`
    controls (**9 accent-fill sites**: kit.css 362/663/802/995/1547/1612/2956/3169/3341 — audit each; skip

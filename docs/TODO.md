@@ -736,7 +736,7 @@ tools + confirm bubbles) are DONE.**
       2026-07-10), README/AGENTS were rewritten at the reorg. No Linux-WOL fallback kept
       (v2 owns WOL natively).
 
-## Phase 11 — Theme engine (pluggable presentation layer, D28) — **IN PROGRESS: T0 + M0–M3 + Kit/minimal + cosmos SHIPPED; NEXT (post-deploy) = Hardening slice v2 (D34, §14.15.1) → Composer Surface**
+## Phase 11 — Theme engine (pluggable presentation layer, D28) — **IN PROGRESS: T0 + M0–M3 + Kit/minimal + cosmos + Hardening slice v2 (D34 ✅ SHIPPED 2026-07-10, all 10 items + riders a/b/c) SHIPPED; NEXT = Composer Surface / frontier T5 step 0 (owner's pick)**
 
 Spec: `THEME_ENGINE.md §§9–10` · decision: `DECISIONS.md D28`. Build the engine on the cheapest theme
 first, hardest last; the foundation is paid once in T0. **D7 pixel-fidelity applies per theme.** Each Tn is
