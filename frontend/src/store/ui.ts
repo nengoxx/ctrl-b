@@ -12,7 +12,7 @@
 
 import type { Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
 import { createStore } from "./createStore";
-import { loadPersisted, savePersisted } from "./persist";
+import { loadPersistedVersioned, savePersisted } from "./persist";
 
 export type { Mode, ThemeId } from "../theme-engine/types";
 export type Tab = "fleet" | "agent" | "utils" | "conf";
@@ -78,12 +78,19 @@ const DEFAULTS: UIState = {
 
 const KEY = "ctrlb.ui";
 
+// Persisted-schema version for `ctrlb.ui` (§13.4 / §14.15.1 rider a). The three legacy remaps below
+// (migrateLegacyTheme → migrateVaporSettings → migrateAppbarMode) collectively ARE the v0→1 upgrade step.
+// A missing `v` on a persisted blob means v0 (legacy). Every save stamps `v: UI_PERSIST_V` (see setUI), so
+// once a device has written under this build the chain never re-runs (the loader gates on `from >= version`).
+// Adding a future migration = bump this to 2, append a `from < 2` step to the migrate callback, keep order.
+const UI_PERSIST_V = 1;
+
 // vapor's former top-level decorative toggles, now its `ThemeDef.settings` (M3 / §14.3). Listed here
 // only so the one-time migration can fold a pre-M3 persisted shape into `themeSettings.vapor`.
 const LEGACY_VAPOR_SETTINGS = ["skyline", "loz", "heroOn", "waveformOn"] as const;
 
 // One-time persisted-shape remap (§13.4). The pre-Phase-11 shape stored the conflated
-// `theme ∈ {dark,aqua,ember}` (the vapor accent). `loadPersisted`'s field-fill merge can't VALUE-remap,
+// `theme ∈ {dark,aqua,ember}` (the vapor accent). The loader's field-fill merge can't VALUE-remap,
 // so a stored `theme:"aqua"` would read back as an invalid ThemeId. Remap it to {theme:"vapor",accent}.
 // (Single-user, low-stakes — just so the owner's own localStorage doesn't reset on this update.)
 // Exported for unit testing (the store loads/migrates once at module import, so the remap is tested
@@ -97,7 +104,7 @@ export function migrateLegacyTheme(s: UIState): UIState {
 }
 
 // One-time M3 remap (§14.3): a pre-M3 persisted state carried `skyline/loz/heroOn/waveformOn` as
-// top-level fields. `loadPersisted` keeps them as extras (its merge is `{...defaults, ...parsed}`), so
+// top-level fields. The loader keeps them as extras (its merge is `{...defaults, ...parsed}`), so
 // fold any present ones into `themeSettings.vapor` (never overwriting an already-migrated value) and
 // drop the stale top-level keys. Idempotent; exported for unit testing.
 export function migrateVaporSettings(s: UIState): UIState {
@@ -163,21 +170,22 @@ export function migrateAppbarMode(s: UIState, hasAppbarMode: boolean): UIState {
 }
 
 const { emit, useStore } = createStore();
-// Whether the PERSISTED blob already carried the new `appbarMode` (vs being filled by DEFAULTS) — read the raw
-// value, since `loadPersisted` merges over defaults. Distinguishes a pre-migration state (seed appbarMode from
-// the legacy hideAppbar) from a user who has set it (keep their choice; the synced legacy key must not override).
-function rawHasAppbarMode(): boolean {
-  try {
-    const raw = localStorage.getItem(KEY);
-    return raw != null && typeof JSON.parse(raw) === "object" && "appbarMode" in JSON.parse(raw);
-  } catch {
-    return false;
-  }
+
+// Load + migrate the persisted UI blob (§14.15.1 rider a). The versioned loader does one read + one parse,
+// merges over DEFAULTS, and — because the blob's `v` is < UI_PERSIST_V (or absent) — hands us the v0→1 chain.
+// `raw` is the pre-merge blob, needed for the appbar seed's KEY-PRESENCE inference: every real device today
+// carries `appbarMode` but no `v`, so a naive "unversioned ⇒ run all" would re-seed and CLOBBER the user's
+// explicit choice from a stale synced `hideAppbar`. Instead migrateAppbarMode only seeds when the blob lacked
+// an `appbarMode` key (`hasAppbarMode = false`) — the accepted idempotency escape hatch for this one
+// non-idempotent step over mixed-stage unversioned data. Exported so the load path is unit-testable without a
+// module re-import dance (mirrors the "exported for tests" idiom on the migrate helpers above).
+export function loadUIState(): UIState {
+  return loadPersistedVersioned(KEY, DEFAULTS, UI_PERSIST_V, (merged, raw) => {
+    const hasAppbarMode = typeof raw === "object" && raw != null && "appbarMode" in raw;
+    return migrateAppbarMode(migrateVaporSettings(migrateLegacyTheme(merged)), hasAppbarMode);
+  });
 }
-let state: UIState = migrateAppbarMode(
-  migrateVaporSettings(migrateLegacyTheme(loadPersisted(KEY, DEFAULTS))),
-  rawHasAppbarMode(),
-);
+let state: UIState = loadUIState();
 
 // Mirror the UI store onto <html>/<body> data-attrs. Theme-engine model:
 // - `html[data-skin]` = the SKIN id (the `@scope ([data-skin=…])` identity for theme CSS isolation, §14.6).
@@ -217,7 +225,9 @@ applyBodyAttrs(state);
 export function setUI(patch: Partial<UIState>): void {
   state = { ...state, ...patch };
   applyBodyAttrs(state); // synchronous, in the same tick the control toggled (before the React re-render)
-  savePersisted(KEY, state);
+  // Stamp the schema version on the wire (never in `state` — `v` is envelope metadata, UIState stays clean).
+  // The loader reads it back as `from` and skips the v0→1 chain once it's current (§14.15.1 rider a).
+  savePersisted(KEY, { ...state, v: UI_PERSIST_V });
   emit();
 }
 

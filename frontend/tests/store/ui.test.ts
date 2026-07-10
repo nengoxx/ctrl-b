@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  loadUIState,
   migrateAppbarMode,
   migrateLegacyTheme,
   migrateVaporSettings,
@@ -10,6 +11,9 @@ import {
   useUISlice,
   type UIState,
 } from "../../src/store/ui";
+
+const KEY = "ctrlb.ui";
+const seed = (blob: unknown) => localStorage.setItem(KEY, JSON.stringify(blob));
 
 // store/ui — UI-only state, persisted to localStorage and mirrored onto <body> data-attrs. Theme-engine
 // model (Phase 11 / D28 §9.8): {theme(skin), mode, accent}. `body[data-skin]` is the skin identity;
@@ -192,6 +196,63 @@ describe("ui store", () => {
       const out = migrateAppbarMode(both, false);
       expect(out.appbarMode).toBe("off"); // global true wins
       expect(out.themeSettings.minimal).toBeUndefined(); // sole per-theme key dropped → entry pruned
+    });
+  });
+
+  // §14.15.1 rider (a) — the versioned load. `v` is the persisted-schema stamp; a missing `v` = v0 (legacy)
+  // and runs the migrateLegacyTheme→migrateVaporSettings→migrateAppbarMode chain; `v >= UI_PERSIST_V` gates
+  // it OFF (already-current shape). Exercised through the real loadUIState() so the merge + gating + v-strip
+  // are covered together, not just the migrate helpers in isolation.
+  describe("versioned persistence (loadUIState)", () => {
+    it("(a) keeps an explicit appbarMode on an UNVERSIONED blob + strips a stale synced hideAppbar", () => {
+      // THE regression: no `v`, but the blob already has `appbarMode` (every real device today). Key-presence
+      // inference must treat it as post-appbar and NOT re-seed from the stale synced themeSettings.hideAppbar.
+      seed({
+        theme: "vapor",
+        accent: "dark",
+        appbarMode: "off",
+        themeSettings: { vapor: { hideAppbar: false } },
+      });
+      const s = loadUIState();
+      expect(s.appbarMode).toBe("off"); // not clobbered back to "visible" by a re-seed
+      expect(s.themeSettings.vapor).toBeUndefined(); // stale synced key stripped, emptied entry pruned
+    });
+
+    it("(b) seeds appbarMode from a top-level legacy hideAppbar on a pre-appbar unversioned blob", () => {
+      seed({ theme: "vapor", accent: "dark", hideAppbar: true }); // no `appbarMode`, no `v` → genuine v0
+      const s = loadUIState();
+      expect(s.appbarMode).toBe("off"); // seeded from hideAppbar:true
+      expect("hideAppbar" in s).toBe(false); // legacy key dropped
+    });
+
+    it("(c) runs the legacy theme remap on an unversioned blob (chain preserved)", () => {
+      seed({ theme: "aqua" }); // pre-Phase-11 conflated accent-as-theme
+      const s = loadUIState();
+      expect(s.theme).toBe("vapor");
+      expect(s.accent).toBe("aqua");
+    });
+
+    it("(d) SKIPS the v0 chain when the blob is already at the current version", () => {
+      // Crafted-impossible shape (a real v1 blob never carries theme:"aqua") to prove the gate: with v:1 the
+      // migrate chain must not run, so the legacy remap does NOT fire and the value loads verbatim.
+      seed({ v: 1, theme: "aqua", accent: "dark" });
+      const s = loadUIState();
+      expect(s.theme).toBe("aqua"); // migrateLegacyTheme skipped → NOT remapped to vapor
+    });
+
+    it("(e) treats a NEWER version (post-rollback) as current — loaded verbatim, no down-migrate", () => {
+      seed({ v: 99, theme: "aqua", accent: "dark" });
+      expect(loadUIState().theme).toBe("aqua");
+    });
+
+    it("(f) the save path stamps v on the wire", () => {
+      act(() => setUI({ accent: "aqua" }));
+      expect(JSON.parse(localStorage.getItem(KEY)!).v).toBe(1);
+    });
+
+    it("(g) the reserved `v` never leaks into the loaded in-memory state", () => {
+      seed({ v: 1, theme: "vapor", accent: "dark" });
+      expect("v" in loadUIState()).toBe(false);
     });
   });
 
