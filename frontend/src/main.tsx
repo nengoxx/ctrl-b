@@ -9,7 +9,13 @@ import "./theme/vapor-fonts.css"; // self-hosted JetBrains Mono + Major Mono Dis
 import "./theme/index.css";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { coerceBootTheme } from "./theme-engine/resolve";
 import { ThemeProvider } from "./theme-engine/ThemeProvider";
+
+// Boundary validation at the composition root (item ⑥ / §14.15.1): heal a persisted active skin that this
+// build can't render (a deregistered theme) to DEFAULT_THEME before the first React paint. Runs every boot
+// (registry membership is orthogonal to the persisted-schema version); never touches the server.
+coerceBootTheme();
 
 const queryClient = new QueryClient();
 

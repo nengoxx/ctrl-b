@@ -27,6 +27,7 @@ import { useRegisterDirty } from "../store/dirty";
 import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
 import { registry, registeredThemes } from "../theme-engine/registry";
+import { defaultSwitchTarget } from "../theme-engine/resolve";
 import { switchTheme } from "../theme-engine/switchTheme";
 import type { Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
 import { setThemeSetting, setUI, useUISlice, type AppbarMode } from "../store/ui";
@@ -242,11 +243,10 @@ export function ConfTab({ active }: Props) {
   // unsupported); within-theme accent/mode/settings changes stay instant `setUI`.
   const pickTheme = (id: ThemeId) => {
     if (id === theme) return;
-    const def = registry[id];
-    const target = {
-      mode: def?.palettes.defaultMode ?? "dark",
-      accent: def?.palettes.defaultAccent ?? "dark",
-    };
+    // The target theme's default mode/accent — the single source of truth is `defaultSwitchTarget`
+    // (resolve.ts), shared with `coerceBootTheme`'s fallback (item ⑥) so the `?? "dark"` derivation lives
+    // in one place.
+    const target = defaultSwitchTarget(id);
     void switchTheme(id, target); // async (loads the bundle first) → DON'T read the store for theme below
     // The skin/mode/accent are the explicit target; motion/perf/themeSettings ride along unchanged.
     saveAppearance.mutate({ ...currentAppearancePatch(), theme: id, ...target });

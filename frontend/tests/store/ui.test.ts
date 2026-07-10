@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  getUI,
   loadUIState,
   migrateAppbarMode,
   migrateLegacyTheme,
@@ -11,6 +12,7 @@ import {
   useUISlice,
   type UIState,
 } from "../../src/store/ui";
+import { coerceBootTheme, DEFAULT_THEME } from "../../src/theme-engine/resolve";
 
 const KEY = "ctrlb.ui";
 const seed = (blob: unknown) => localStorage.setItem(KEY, JSON.stringify(blob));
@@ -253,6 +255,32 @@ describe("ui store", () => {
     it("(g) the reserved `v` never leaks into the loaded in-memory state", () => {
       seed({ v: 1, theme: "vapor", accent: "dark" });
       expect("v" in loadUIState()).toBe(false);
+    });
+  });
+
+  // Item ⑥ (§14.15.1) — the every-boot registered-skin validity check (parse-don't-validate). It heals an
+  // unregistered persisted `theme` (a deregistered/newer-build skin) to DEFAULT_THEME + that theme's default
+  // mode/accent, self-healing localStorage via setUI's persist; it NEVER touches the server. Lives at the
+  // engine boundary (resolve.ts) because the store can't import the registry (import cycle) — exercised here
+  // against the real ui store it reads/writes.
+  describe("coerceBootTheme (item ⑥)", () => {
+    it("heals an unregistered persisted skin to DEFAULT_THEME + its default mode/accent", () => {
+      act(() => setUI({ theme: "nope" as never, mode: "light", accent: "indigo" }));
+      act(() => coerceBootTheme());
+      const s = getUI();
+      expect(s.theme).toBe(DEFAULT_THEME); // "vapor"
+      expect(s.mode).toBe("dark"); // vapor declares no mode axis → the "dark" fallback
+      expect(s.accent).toBe("dark"); // vapor's defaultAccent
+      // self-heals the persisted blob for the next boot
+      expect(JSON.parse(localStorage.getItem(KEY)!).theme).toBe(DEFAULT_THEME);
+    });
+
+    it("is a no-op for a registered skin (state ref preserved → setUI not called)", () => {
+      act(() => setUI({ theme: "minimal", mode: "light", accent: "indigo" }));
+      const before = getUI(); // setUI builds a fresh state object; an unchanged ref proves it wasn't called
+      act(() => coerceBootTheme());
+      expect(getUI()).toBe(before); // same reference → no write
+      expect(getUI().theme).toBe("minimal");
     });
   });
 

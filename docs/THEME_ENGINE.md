@@ -1622,8 +1622,11 @@ the industry-standard pattern, named and sourced in the session record.
   zod-`.catch` semantics): it runs **every boot**, after the (now-versioned) chain, ungated by `v` —
   registry membership is orthogonal to schema version (a theme can be deregistered with no shape change).
   Reconcile door: inject an `isRegistered` predicate into `reconcileAppearance` (stays pure; keeps cosmos's
-  canvas imports out of jsdom); hold the skin-triple at local **before** the equality gate. **Third door
-  accepted as-is:** the index.html FOUC script applies the raw persisted id with no allowlist — the
+  canvas imports out of jsdom); hold the skin-triple at local **before** the equality gate. *(As-built
+  placement, 2026-07-10: the load-door coercion lives at the ENGINE boundary — `resolve.ts
+  coerceBootTheme()`, called from main.tsx before first paint — NOT in store/ui.ts: registry.ts statically
+  pulls VaporRoot → components/stores, so a store→registry edge would be a module-eval import cycle.)*
+  **Third door accepted as-is:** the index.html FOUC script applies the raw persisted id with no allowlist — the
   next-themes-standard self-heal; a one-frame flash on a removed-theme device is accepted, do NOT add an
   allowlist to the pre-paint path.
 - **④ + (single-signal, NN/g):** `ensureThemeLoaded` tags rejections with a typed

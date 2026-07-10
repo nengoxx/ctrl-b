@@ -24,6 +24,7 @@ import {
   type ThemeSettingsMap,
 } from "../store/ui";
 import { pushToast } from "../store/toast";
+import { registry } from "../theme-engine/registry";
 import { switchTheme } from "../theme-engine/switchTheme";
 import type { Mode, ThemeId } from "../theme-engine/types";
 
@@ -62,6 +63,23 @@ export interface AppearanceApply {
 
 const KEY = ["appearance"] as const;
 
+// Key-order-insensitive structural stringify (rider (b) / §14.15.1). `themeSettings` is
+// `Record<string, Record<string, primitive>>`, so two devices can author the SAME settings with the keys
+// in a different order — a plain `JSON.stringify` compare would then read as a difference and trigger a
+// spurious re-apply each load. This sorts object keys at every level so equal content compares equal.
+// Written generically for plain objects / arrays / primitives (arrays keep their order — position is
+// meaningful there); recursion depth is trivial for the themeSettings shape. No new deps.
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const obj = value as Record<string, unknown>;
+  const body = Object.keys(obj)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`)
+    .join(",");
+  return `{${body}}`;
+}
+
 /** The active appearance selection — a plain always-on query (fetches on mount on any tab). */
 export function useAppearance() {
   return useQuery<AppearanceDoc>({
@@ -77,10 +95,20 @@ export function useAppearance() {
  *  to the backend defaults (otherwise the owner's existing local pref would be wiped on the first load
  *  after this feature ships; the server gets seeded the next time the picker is touched). A matching
  *  value also returns null (no re-apply → no flash). Pure → unit-tested directly. A server field absent
- *  (a pre-M3 doc) falls back to the local value for that field — that field just has no recorded opinion. */
+ *  (a pre-M3 doc) falls back to the local value for that field — that field just has no recorded opinion.
+ *
+ *  `isRegistered` is an INJECTED predicate (item ⑥ / §14.15.1-A ⑥+): "does this build know how to render
+ *  that skin id?". It's a parameter rather than a direct `registry` read so the function stays pure and
+ *  unit tests can stub it without pulling the theme registry (incl. cosmos's canvas imports) into jsdom.
+ *  When the server names an UNREGISTERED skin it has "no renderable opinion" on the skin, so we HOLD the
+ *  whole skin-triple {theme,mode,accent} at local (they're skin-scoped and atomic per skin) while STILL
+ *  applying the global/namespaced motion/perf/themeSettings (unknown theme_settings keys stay inert). This
+ *  function only ever RETURNS an apply — it never writes a held/coerced value back to the server (the
+ *  caller performs NO PUT for a reconcile; §14.15.2 explicit-user-action-only invariant). */
 export function reconcileAppearance(
   server: AppearanceDoc,
   local: AppearanceLocal,
+  isRegistered: (id: string) => boolean,
 ): AppearanceApply | null {
   if (server.updated_at == null) return null; // server has no opinion → keep local
   const motion = server.motion ?? local.motion;
@@ -89,20 +117,27 @@ export function reconcileAppearance(
   // local each load (it's already stripped from local by the migration → compares clean, no spurious apply;
   // a later appearance save then propagates the clean value to the server).
   const themeSettings = stripLegacyAppbar(server.theme_settings ?? local.themeSettings);
+  // Compute the EFFECTIVE next skin-triple BEFORE the equality gate: server's if the skin is registered,
+  // else hold local's (item ⑥). Doing it here means a held triple + a matching motion-trio correctly falls
+  // through to the null no-op below (no spurious apply loop when the ONLY difference is an unrenderable skin).
+  const skinOk = isRegistered(server.theme);
+  const theme = skinOk ? server.theme : local.theme;
+  const mode = skinOk ? server.mode : local.mode;
+  const accent = skinOk ? server.accent : local.accent;
   if (
-    server.theme === local.theme &&
-    server.mode === local.mode &&
-    server.accent === local.accent &&
+    theme === local.theme &&
+    mode === local.mode &&
+    accent === local.accent &&
     motion === local.motion &&
     perf === local.perf &&
-    JSON.stringify(themeSettings) === JSON.stringify(local.themeSettings)
+    stableStringify(themeSettings) === stableStringify(local.themeSettings)
   ) {
     return null; // already matches → no-op
   }
   return {
-    theme: server.theme as ThemeId,
-    mode: server.mode as Mode,
-    accent: server.accent,
+    theme: theme as ThemeId,
+    mode: mode as Mode,
+    accent,
     motion: motion as Motion,
     perf: perf as Perf,
     themeSettings,
@@ -126,7 +161,9 @@ export function useAppearanceSync(): void {
       perf: ui.perf,
       themeSettings: ui.themeSettings,
     };
-    const next = reconcileAppearance(data, local);
+    // Real registry predicate for the reconcile skin door (item ⑥). Importing `registry` here is fine —
+    // this module already pulls it transitively via `switchTheme`.
+    const next = reconcileAppearance(data, local, (id) => registry[id as ThemeId] != null);
     if (!next) return;
     if (next.theme !== local.theme) {
       // ⚠️ T1 follow-up (latent, unreachable today — vapor is the only registered theme, so a SKIN

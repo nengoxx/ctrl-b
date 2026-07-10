@@ -29,17 +29,23 @@ const server = (o: Partial<AppearanceDoc>): AppearanceDoc => ({
   ...o,
 });
 
+// The injected registry predicate (item ⑥). Default = "everything is registered" so the existing
+// server-wins cases behave as before; the unknown-skin cases below stub it to exclude a specific id.
+const always = () => true;
+
 describe("reconcileAppearance", () => {
   it("keeps local when the server has never been written (updated_at null) — no revert", () => {
-    expect(reconcileAppearance(server({ accent: "dark", updated_at: null }), local)).toBeNull();
+    expect(
+      reconcileAppearance(server({ accent: "dark", updated_at: null }), local, always),
+    ).toBeNull();
   });
 
   it("no-op when the server matches local across all synced fields (no re-apply → no flash)", () => {
-    expect(reconcileAppearance(server({}), local)).toBeNull();
+    expect(reconcileAppearance(server({}), local, always)).toBeNull();
   });
 
   it("server wins on a differing accent (recorded preference)", () => {
-    expect(reconcileAppearance(server({ accent: "ember" }), local)).toEqual({
+    expect(reconcileAppearance(server({ accent: "ember" }), local, always)).toEqual({
       theme: "vapor",
       mode: "dark",
       accent: "ember",
@@ -50,14 +56,17 @@ describe("reconcileAppearance", () => {
   });
 
   it("server wins on a differing motion / perf lever", () => {
-    expect(reconcileAppearance(server({ motion: "reduced" }), local)?.motion).toBe("reduced");
-    expect(reconcileAppearance(server({ perf: "lite" }), local)?.perf).toBe("lite");
+    expect(reconcileAppearance(server({ motion: "reduced" }), local, always)?.motion).toBe(
+      "reduced",
+    );
+    expect(reconcileAppearance(server({ perf: "lite" }), local, always)?.perf).toBe("lite");
   });
 
   it("server wins on a differing per-theme setting", () => {
     const out = reconcileAppearance(
       server({ theme_settings: { vapor: { heroOn: false } } }),
       local,
+      always,
     );
     expect(out?.themeSettings).toEqual({ vapor: { heroOn: false } });
   });
@@ -68,6 +77,7 @@ describe("reconcileAppearance", () => {
     const out = reconcileAppearance(
       server({ theme_settings: { vapor: { heroOn: true, hideAppbar: true } } }),
       local,
+      always,
     );
     expect(out).toBeNull();
   });
@@ -76,6 +86,7 @@ describe("reconcileAppearance", () => {
     const out = reconcileAppearance(
       server({ theme_settings: { vapor: { heroOn: false, hideAppbar: true } } }),
       local,
+      always,
     );
     expect(out?.themeSettings).toEqual({ vapor: { heroOn: false } }); // heroOn change applies, hideAppbar dropped
   });
@@ -88,6 +99,7 @@ describe("reconcileAppearance", () => {
     const out = reconcileAppearance(
       server({ accent: "aqua", motion: null, perf: null, theme_settings: null }),
       localReduced,
+      always,
     );
     expect(out).toBeNull(); // accent already matches + null M3 fields coalesce to local → no-op (no wipe)
   });
@@ -97,6 +109,7 @@ describe("reconcileAppearance", () => {
     const out = reconcileAppearance(
       server({ accent: "ember", motion: null, perf: null, theme_settings: null }),
       localReduced,
+      always,
     );
     expect(out).toMatchObject({
       accent: "ember", // the real change applies
@@ -110,6 +123,7 @@ describe("reconcileAppearance", () => {
     const out = reconcileAppearance(
       server({ theme: "minimal", mode: "light", accent: "indigo" }),
       local,
+      always,
     );
     expect(out).toEqual({
       theme: "minimal",
@@ -118,6 +132,77 @@ describe("reconcileAppearance", () => {
       motion: "full",
       perf: "full",
       themeSettings: { vapor: { heroOn: true } },
+    });
+  });
+
+  // Item ⑥ (§14.15.1 + §14.15.1-A ⑥+): an UNREGISTERED server skin = "no renderable opinion" on the skin
+  // → HOLD the whole skin-triple {theme,mode,accent} at local, but STILL apply global/namespaced fields.
+  describe("unknown (unregistered) server skin — item ⑥", () => {
+    // Predicate that rejects a specific id (the "phantom" skin a newer build served / this build removed).
+    const notPhantom = (id: string) => id !== "phantom";
+
+    it("holds the skin-triple at local while applying motion/perf/themeSettings from the server", () => {
+      const out = reconcileAppearance(
+        server({
+          theme: "phantom",
+          mode: "light",
+          accent: "indigo",
+          motion: "reduced",
+          perf: "lite",
+          theme_settings: { vapor: { heroOn: false } },
+        }),
+        local,
+        notPhantom,
+      );
+      expect(out).toEqual({
+        theme: "vapor", // held at local — the phantom skin is not applied
+        mode: "dark", // held at local (the triple is atomic per skin)
+        accent: "aqua", // held at local
+        motion: "reduced", // global lever still applied
+        perf: "lite", // global lever still applied
+        themeSettings: { vapor: { heroOn: false } }, // namespaced settings still applied
+      });
+    });
+
+    it("returns null when only the skin is unknown and the motion-trio matches (no spurious apply)", () => {
+      // The whole point of computing the effective triple BEFORE the equality gate: a held triple plus a
+      // matching motion/perf/themeSettings must be a no-op, not a re-apply loop each reconcile.
+      const out = reconcileAppearance(
+        server({ theme: "phantom", mode: "light", accent: "indigo" }),
+        local,
+        notPhantom,
+      );
+      expect(out).toBeNull();
+    });
+  });
+
+  // Rider (b) (§14.15.1): the themeSettings compare is key-order-insensitive, so two devices that authored
+  // the same settings with keys in a different order don't trigger a spurious re-apply.
+  describe("rider (b) — key-order-insensitive themeSettings compare", () => {
+    it("returns null when server & local settings differ only in key order", () => {
+      const localReordered: AppearanceLocal = {
+        ...local,
+        themeSettings: { vapor: { skyline: "city", heroOn: true } },
+      };
+      const out = reconcileAppearance(
+        server({ theme_settings: { vapor: { heroOn: true, skyline: "city" } } }),
+        localReordered,
+        always,
+      );
+      expect(out).toBeNull();
+    });
+
+    it("still applies when a value genuinely differs (not just key order)", () => {
+      const localReordered: AppearanceLocal = {
+        ...local,
+        themeSettings: { vapor: { skyline: "city", heroOn: true } },
+      };
+      const out = reconcileAppearance(
+        server({ theme_settings: { vapor: { heroOn: false, skyline: "city" } } }),
+        localReordered,
+        always,
+      );
+      expect(out?.themeSettings).toEqual({ vapor: { heroOn: false, skyline: "city" } });
     });
   });
 });
