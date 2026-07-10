@@ -133,7 +133,9 @@ component exists; the earlier variant recommendation was withdrawn as over-build
 ## §4 LOCKED — Point 4: art assets are PLACEHOLDERS
 
 Owner ruling 2026-07-07: the existing PNGs (hero + rig1–6 + cube/platform stack) are
-**placeholders** — frontier builds against them now; final art is a separate owner-side task,
+**placeholders** *(count fix, fidelity audit 2026-07-11: the prototype references **10** files —
+hero · rig1–6 · cube-only · platform-mid · platform-base; `cube.png` in assets/ is a stray the
+prototype never uses — the F2 filename contract pins the real 10)* — frontier builds against them now; final art is a separate owner-side task,
 **not** a plan dependency. Design consequence: the art pipeline must make the final-art swap a
 **zero-code operation** — `ThemeDef.assets = import.meta.glob('./art/*.png')` keyed by filename,
 `present()` assigns by index + per-host `appearance.frontier.image` override, and F2 documents the
@@ -174,12 +176,18 @@ modes, 4 gradient accents — gradients in `--accent-fill`, plain `--accent`) ·
 JetBrains Mono via `loadFonts` · `tokens.css` under `.kit` (appbar sun/moon-skinned mode toggle ·
 nav · Conf · Utils · composer per §3) · dusk-glow background · `defaultLayout: 3-tab` +
 `composer: [stacked, sheet]` declarations (`sheet` = the docked variant's ID). *Reuse:* Kit wholesale; the §0 contract's porting
-playbook (§10). *Acceptance:* every tab fully functional in frontier at 390px; mode/accent
+playbook (§10). *Themed copy (fidelity audit 2026-07-11):* tab labels are ALREADY per-theme data
+(`TabDef.lbl`/`glyph` — frontier's F1 tab set declares "Frontier/Comms/Settings"); section
+headings/map title/empty-state copy live in the bespoke bodies (F2/F4) by construction. The ONE
+open item: the appbar brand subtitle ("4/6 rigs · online" — dynamic content in shared Kit chrome) —
+resolve at F1 pre-flight (small Kit appbar slot vs accept the standard appbar). *Acceptance:* every tab fully functional in frontier at 390px; mode/accent
 switches live + synced; keyframes `frontier-`-prefixed; §14.6 `@scope` pattern; check.py green.
 
 **F2 — the Fleet signature (bespoke body via the registry).** *Build:* art-map card (hero +
 6s `sweep` + GPS beacons at `present()` x/y · ping-ring pulse · offline grey · name tags · count
-pill) · 2-col rig grid (art by index · plates · LEDs · offline grayscale) · `present()` +
+pill; **porting hazard, fidelity audit 2026-07-11: the prototype's `sweep` keyframe animates `left`
+(frontier.html:79) — re-author as `transform: translateX()` or it trips the §14.11 budget + the
+stylelint perf rule; `ping`/`bob` are already transform/opacity-clean**) · 2-col rig grid (art by index · plates · LEDs · offline grayscale) · `present()` +
 `ThemeDef.assets` glob · the documented **art spec** (§4: filenames/aspects for the placeholder →
 final swap). *Reuse:* `useFleet` controller · cosmos's selection/liveness patterns (cosmos's golden-angle
 `present()` is the precedent but is polar — frontier needs its own 2D formula). *Beacon placement
@@ -208,7 +216,10 @@ notices/search); confirm with owner; note them for hardening ⑧. *Build:* bespo
 empty-state rig stack + chips) · the **recede-to-background** transition (first `message.start` ⇄
 `/clear`) · the log reskin against the hooks · plan-pill placement setting (D30 slots).
 *Acceptance:* full chat functionality (markdown/code actions/confirm+question bubbles/plan/
-reasoning/voice) visually frontier at 390px; transition reversible + `data-motion`-clean;
+reasoning/voice) visually frontier at 390px; **fidelity standard (audit 2026-07-11): the prototype
+never renders composer + populated log together (its JS deletes the whole empty state on first
+submit, frontier.html:554) — frontier's ACTIVE-CHAT layout is un-prototyped, so F4's D7 eyeball
+judges coherence with the comic style, not pixel-fidelity, for that state;** transition reversible + `data-motion`-clean;
 legibility over the watermark verified; no shared-component forks (per-element escalation only,
 each gate-checked at review).
 
