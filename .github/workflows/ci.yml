@@ -33,8 +33,14 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      # fetch-depth: 0 — the package version is derived from `git describe` (hatch-vcs;
+      # backend/pyproject.toml [tool.hatch.version]), so the editable install below needs the
+      # tags and enough history to reach one. The default shallow, tagless checkout would make
+      # `pip install -e .` fail loudly by design (no fallback version). The repo is small (~44 MB).
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Python 3.14 is the repo floor (backend/pyproject.toml: requires-python>=3.14;
       # the code uses PEP 758 syntax, so 3.13 will not even parse it). 3.14 is stable

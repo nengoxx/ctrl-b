@@ -1,6 +1,7 @@
 [project]
 name = "ctrl-b-dashboard"
-version = "0.1.0"
+# Version is derived from the git tag by hatch-vcs (see [tool.hatch.version]) — never hardcode it.
+dynamic = ["version"]
 description = "ctrl-b — FastAPI backend for the homelab control panel"
 requires-python = ">=3.14"
 
@@ -43,8 +44,18 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+# Version = `git describe` at install time (hatch-vcs → setuptools-scm). At an exact release tag
+# (prod: install.sh re-runs `pip install -e .` on every re-pin) this yields the tag, e.g. "1.0.1";
+# between tags (dev instance) it yields "1.0.2.dev1+g<sha>". Runtime reads it via importlib.metadata
+# (app/__init__.py). `root = ".."` — the git repo root is one level up from backend/. No fallback
+# version on purpose: every supported install is a git clone with tags (CI fetches them —
+# fetch-depth: 0 in ci.yml), so a tagless build should fail loudly, not ship as 0.0.0.
+[tool.hatch.version]
+source = "vcs"
+raw-options = { root = ".." }
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

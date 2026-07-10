@@ -151,9 +151,9 @@ gh run watch $(gh run list --limit 5 --json databaseId,headBranch \
 cd ~/apps/ctrl-b && git fetch --tags --quiet && git checkout vX.Y.Z && bash deploy/linux/install.sh prod
 # 6) VERIFY — prod is on the tag and healthy:
 git -C ~/apps/ctrl-b describe --tags --exact-match    # must print vX.Y.Z
-curl -s -m5 localhost:5433/api/health                 # {"status":"ok",...} — NOTE: its "version" is the
-                                                      # backend PACKAGE version, NOT the release tag; the
-                                                      # describe line above is the real "which release" check
+curl -s -m5 localhost:5433/api/health                 # {"status":"ok",...} — its "version" is derived from
+                                                      # the git tag at install time (hatch-vcs), so on prod it
+                                                      # must equal X.Y.Z; the describe line cross-checks the tree
 # then spot-check https://emma.<tailnet>.ts.net on a device. Anything wrong → Rollback (below).
 ```
 **Tags are immutable** — never re-point one; a bad release gets `vX.Y.Z+1` (or roll back). The
