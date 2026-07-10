@@ -193,6 +193,20 @@ snapshots the prod DB before cutover, and renders the systemd user units. Full r
 **Windows (auto-start):** `deploy\windows\autostart-enable.cmd` registers a logon task
 (`-Tailscale` re-applies HTTPS at logon too).
 
+**On-box Claude Code agents (tmux):** `install.sh dev` also boots two always-on agent services in the
+workspace — `ctrl-b-agent@fable` (Fable 5) and `ctrl-b-agent@opus` (Opus 4.8), each in its own tmux
+session. Connect to them:
+
+```bash
+ssh emma -t 'tmux attach -t ctrl-b-fable'   # the Fable 5 agent   (Ctrl-b d to detach)
+ssh emma -t 'tmux attach -t ctrl-b-opus'    # the Opus 4.8 agent
+tmux ls                                     # on the box: list sessions
+systemctl --user restart ctrl-b-agent@fable # recreate a session from scratch
+```
+
+Both also appear as remote-control sessions at [claude.ai/code](https://claude.ai/code) (same names).
+Details (model/effort overrides, one-writer-per-tree, worktrees): [`deploy/linux/README.md`](./deploy/linux/README.md).
+
 ## Configuration
 
 Everything lives in one `config.yaml` (see [`config.example.yaml`](./config.example.yaml) — copy
