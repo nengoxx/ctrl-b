@@ -10,6 +10,7 @@
 
 import { useLayoutEffect, useRef, type RefObject } from "react";
 
+import { safeRafLoop } from "../../theme-engine/safeRafLoop";
 import { angleAt, type OrbitSpec } from "./orbit";
 
 const FOLLOW_RATE = 7; // damping rate (1/s) — higher = snappier catch-up; 7 ≈ a smooth ~0.4s settle
@@ -80,7 +81,6 @@ export interface CameraOpts {
  */
 export function useCameraFollow(cameraRef: RefObject<HTMLElement | null>, opts: CameraOpts): void {
   const cur = useRef<CameraState>({ s: opts.fitScale, tx: 0, ty: opts.centerOffsetY });
-  const raf = useRef(0);
   const last = useRef(0);
   const live = useRef(opts);
   live.current = opts;
@@ -112,7 +112,10 @@ export function useCameraFollow(cameraRef: RefObject<HTMLElement | null>, opts: 
       const { x, y } = planetXY(spec, t);
       return { target: followTarget(x, y, fitScale * zoomMult, centerOffsetY), following: true };
     };
-    const tick = (now: number) => {
+    // Crash-safe loop (§14.15.1-A rider c): a throwing frame stops + reports once rather than erroring per
+    // frame — a React boundary can't catch a rAF fault (App.tsx item ②). A `false` return ends the loop; the
+    // last transform stays applied (graceful degrade). The stop conditions are unchanged from the raw loop.
+    const loop = safeRafLoop((now: number): boolean => {
       const dt = last.current ? now - last.current : 16;
       last.current = now;
       const { target, following } = computeTarget();
@@ -126,26 +129,23 @@ export function useCameraFollow(cameraRef: RefObject<HTMLElement | null>, opts: 
       // still easing toward the target; otherwise snap + stop (no idle spin when frozen/deselected/stale).
       const tracking = following && live.current.orbitAnimating;
       if (live.current.active && (tracking || !settled(cur.current, target))) {
-        raf.current = requestAnimationFrame(tick);
-      } else {
-        cur.current = target;
-        apply();
-        raf.current = 0;
-        last.current = 0;
+        return true;
       }
-    };
+      cur.current = target;
+      apply();
+      last.current = 0;
+      return false;
+    });
 
-    cancelAnimationFrame(raf.current);
     last.current = 0;
     if (!opts.active || typeof requestAnimationFrame === "undefined") {
       cur.current = computeTarget().target; // off-tab (or no rAF env): snap, no animation
       apply();
       return;
     }
-    raf.current = requestAnimationFrame(tick);
+    loop.start();
     return () => {
-      cancelAnimationFrame(raf.current);
-      raf.current = 0;
+      loop.stop();
     };
     // Restart the loop when the tab visibility, selection, idle scale, center offset, or orbit-motion state
     // changes (the last so it re-arms to track once the orbit starts, or settles+stops when it freezes).

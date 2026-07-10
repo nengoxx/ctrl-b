@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { useUISlice } from "../../store/ui";
+import { safeRafLoop } from "../../theme-engine/safeRafLoop";
 import { useThemeSetting } from "../../theme-engine/settings";
 import { speedMultiplier } from "./motion";
 
@@ -51,8 +52,6 @@ export function CosmosStarfield() {
     let w = 0; // backing-store px (CSS px × dpr); drawn in device px (no setTransform)
     let h = 0;
     let genW = -1; // viewport CSS width the field was last generated at — regenerate only when WIDTH changes
-    let raf = 0;
-    let running = false;
     let last = 0;
     let color = "#ffffff";
 
@@ -91,10 +90,19 @@ export function CosmosStarfield() {
       }));
       genW = cssW;
     }
+    // Crash-safe loop (§14.15.1-A rider c): a throwing frame stops + reports once instead of erroring per
+    // frame (a boundary can't catch a rAF fault). Throttle-skips return void (keep scheduling); the loop's
+    // `running` flag also drives the twinkle-vs-static paint decision below.
+    const loop = safeRafLoop((now: number) => {
+      if (now - last < FRAME_MS) return; // throttle to ~30fps — skip the paint, keep the loop alive
+      last = now;
+      paint(now);
+    });
+
     function paint(now: number) {
       ctx!.clearRect(0, 0, w, h);
       ctx!.fillStyle = color;
-      const twinkle = running; // animated frames oscillate alpha; a static frame sits at base alpha
+      const twinkle = loop.running; // animated frames oscillate alpha; a static frame sits at base alpha
       const mult = multRef.current;
       for (const s of stars) {
         const a = s.a + (twinkle ? Math.sin(now * s.tw * mult + s.ph) * 0.18 : 0);
@@ -105,22 +113,13 @@ export function CosmosStarfield() {
       }
       ctx!.globalAlpha = 1;
     }
-    function draw(now: number) {
-      if (!running) return; // a stop() canceled us
-      raf = requestAnimationFrame(draw);
-      if (now - last < FRAME_MS) return; // throttle to ~30fps
-      last = now;
-      paint(now);
-    }
     function start() {
-      if (running) return;
-      running = true;
-      last = 0;
-      raf = requestAnimationFrame(draw);
+      if (loop.running) return;
+      last = 0; // un-throttle the first frame so the loop starts painting immediately
+      loop.start();
     }
     function stop() {
-      running = false;
-      cancelAnimationFrame(raf);
+      loop.stop();
     }
 
     resizeCanvas();
