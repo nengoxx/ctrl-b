@@ -538,6 +538,7 @@ from the prototypes):
 --ok, --warn, --danger          status (+ -soft alpha variants)
 --accent                        a TRUE <color> (for color/border/fill-as-solid)
 --accent-fill                   flat-or-gradient, consumed ONLY via background/background-image
+--accent-ink                    ink (text/icon) on accent-fill surfaces; base fallback var(--bg); light-mode themes MUST set it explicitly (WCAG 4.5:1 vs --accent-fill)
 --accent-soft                   low-alpha accent (color-mix or alpha channel)
 --accent-glow                   optional box/drop-shadow layer (phosphor text-shadow, cosmos blur)
 --radius, --radius-sm           shape
@@ -1193,7 +1194,7 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
 
 1. **Tokens — the contract is COMPLETE and is the safety net.** Every semantic token the Kit reads
    (`--bg`/`--surface`/`--surface-2`/`--text`/`-2`/`-3`/`--line`/`--line-2`/`--accent`/`--accent-fill`/
-   `--accent-soft`/`--accent-glow`/`--ok`/`--ok-soft`/`--warn`/`--warn-soft`/`--danger`/`--danger-soft`/
+   `--accent-ink`/`--accent-soft`/`--accent-glow`/`--ok`/`--ok-soft`/`--warn`/`--warn-soft`/`--danger`/`--danger-soft`/
    `--radius`/`--radius-sm`/`--density-pad`) has a base fallback in `theme-engine/kit/tokens.css`
    (`@layer base`). So a theme that ships a **partial** `tokens.css` degrades gracefully (base value shows
    through); a complete one fully reskins. **Verified 2026-06-27: zero tokens are read without a fallback,

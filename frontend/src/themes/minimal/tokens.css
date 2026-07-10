@@ -87,6 +87,11 @@
       --text-3: #817e77;
       --line: rgba(0, 0, 0, 0.1);
       --line-2: rgba(0, 0, 0, 0.16);
+      /* ink on accent-fill controls — a near-black LITERAL, not var(--bg) (light --bg #e5e3df is near-white
+       * → only ~3.3:1 on the L0.58 accent) and not --text #1d1c1a (only ~3.9:1). #000 clears WCAG AA 4.5:1
+       * on all four light hues (cyan/moss 5.09, iris 4.82, amber 4.80). Dark mode keeps the base var(--bg)
+       * fallback (#1b1b1a → 7.4–7.7:1). See THEME_ENGINE §14.15.1 ①. */
+      --accent-ink: #000000;
       --accent-soft: oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.12);
       --ok: oklch(0.52 0.12 155);
       --ok-soft: oklch(0.52 0.12 155 / 0.14);

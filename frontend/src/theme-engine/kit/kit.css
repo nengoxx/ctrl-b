@@ -359,7 +359,7 @@ body[data-perf="lite"] .kit-composer {
   height: 34px;
   border-radius: 999px;
   background: var(--accent-fill);
-  color: var(--bg);
+  color: var(--accent-ink);
   transition: opacity 0.15s;
 }
 .kit-send:active {
@@ -660,7 +660,7 @@ body[data-perf="lite"] .kit-composer {
 }
 .kit .seg button.active {
   background: var(--accent-fill);
-  color: var(--bg);
+  color: var(--accent-ink);
 }
 .kit .switch {
   display: inline-flex;
@@ -799,7 +799,7 @@ body[data-mode="light"] .kit .modal {
 }
 .kit .modal button.go {
   background: var(--accent-fill);
-  color: var(--bg);
+  color: var(--accent-ink);
 }
 .kit .modal button.go:active {
   opacity: 0.85;
@@ -992,7 +992,7 @@ body[data-mode="light"] .kit .pm {
   border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 600;
-  color: var(--bg);
+  color: var(--accent-ink);
   background: var(--accent-fill);
   display: inline-flex;
   align-items: center;
@@ -1544,7 +1544,7 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   background: var(--surface-2);
 }
 .kit .mconf .mfoot button.save {
-  color: var(--bg);
+  color: var(--accent-ink);
   background: var(--accent-fill);
   border-color: transparent;
 }
@@ -1609,7 +1609,7 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   text-transform: uppercase;
   font-weight: 600;
   border-radius: var(--radius-sm);
-  color: var(--bg);
+  color: var(--accent-ink);
   background: var(--accent-fill);
   border: 1px solid transparent;
   transition: opacity 0.15s;
@@ -2953,7 +2953,7 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   border: 1px solid var(--line);
 }
 .kit .tick-grid .tick.on {
-  color: var(--bg);
+  color: var(--accent-ink);
   background: var(--accent-fill);
   border-color: transparent;
 }
@@ -3166,7 +3166,7 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   padding: 0 16px;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   background: var(--accent-fill);
-  color: var(--bg);
+  color: var(--accent-ink);
   font-size: 12px;
   font-weight: 600;
   display: inline-flex;
@@ -3338,7 +3338,7 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   color: var(--text-3);
 }
 .kit .tcat-seg button.active.def::after {
-  color: var(--bg);
+  color: var(--accent-ink);
 }
 .kit .tcat-seg.ro {
   opacity: 0.55;

@@ -52,6 +52,13 @@ body {
   --accent-fill: #5bbccb;
   --accent-soft: rgba(91, 188, 203, 0.14);
   --accent-glow: none; /* valid for both filter: and box/text-shadow: — a theme sets a real glow */
+  /* --accent-ink — the ink (text/icon) painted ON --accent-fill surfaces (send/save/active-seg controls).
+   * Base fallback = var(--bg): every dark theme's page backdrop already contrasts its accent (7.4–7.7:1 for
+   * minimal/cosmos), so dark skins inherit it byte-identically with ZERO migration. A LIGHT-mode theme MUST
+   * set it explicitly (a near-#000 literal, WCAG 4.5:1 vs --accent-fill) — the light --bg is near-white and
+   * would fail on the accent. Material `on-primary` / Radix `--accent-contrast` / shadcn `primary-foreground`:
+   * an explicit per-mode literal, never auto-derived. */
+  --accent-ink: var(--bg);
   /* body font — themeable so a theme can ship its own typeface (cosmos → Space Grotesk) without forking
    * the Kit; the system-ui fallback covers a theme that doesn't load a webfont. */
   --font-body: "Hanken Grotesk", system-ui, sans-serif;
