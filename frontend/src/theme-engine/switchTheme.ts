@@ -123,7 +123,11 @@ async function runSwitch(next: ThemeId, target: SwitchTarget, token: object): Pr
   try {
     await ensureThemeLoaded(next); // SLOW WORK FIRST — never inside the transition callback
   } catch {
-    pushToast("theme failed to load", "err");
+    // Toast ONLY as the winner (verification F1, 2026-07-10): the live pick→reconcile double-switch
+    // shares ONE load promise via the `loaded` cache, so on failure BOTH calls land here — without the
+    // gate the user gets two identical error toasts (the exact double-signal ④+ forbids). The single
+    // signal belongs to the latest intent; superseded losers stay silent.
+    if (latest === token) pushToast("theme failed to load", "err");
     return; // stay on the current theme
   }
   // Superseded while the bundle loaded? A newer `switchTheme` (a DIFFERENT target) has taken over → bail so

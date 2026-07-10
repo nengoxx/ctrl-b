@@ -155,3 +155,23 @@ describe("safeRafLoop — (d) start() is single-flight; stop() cancels", () => {
     expect(tick).not.toHaveBeenCalled();
   });
 });
+
+describe("re-entrant stop()+start() inside a tick (verification F2, 2026-07-10)", () => {
+  it("keeps exactly ONE loop — no orphaned frame handle", () => {
+    let restarted = false;
+    // The tick closes over `loop` (initialized before any frame runs — ticks only fire on pump()).
+    const loop: ReturnType<typeof safeRafLoop> = safeRafLoop(() => {
+      if (!restarted) {
+        restarted = true;
+        loop.stop();
+        loop.start(); // schedules its own frame — the frame body must NOT schedule a second one
+      }
+    });
+    loop.start();
+    expect(fake.pending).toBe(1);
+    fake.pump(16); // the tick does stop()+start()
+    expect(fake.pending).toBe(1); // one pending frame, not two
+    loop.stop();
+    expect(fake.pending).toBe(0); // and stop() cancels it — nothing orphaned
+  });
+});

@@ -256,6 +256,24 @@ describe("ui store", () => {
       seed({ v: 1, theme: "vapor", accent: "dark" });
       expect("v" in loadUIState()).toBe(false);
     });
+
+    it("treats a corrupt non-integer v (1e999 → Infinity) as v0 and still runs the chain", () => {
+      // JSON.parse("1e999") === Infinity, and a bare typeof-number check would read it as "newer than
+      // current" and SKIP the migrations (verification F3, 2026-07-10). Number.isSafeInteger rejects it.
+      localStorage.setItem(KEY, '{"v":1e999,"theme":"aqua"}');
+      const s = loadUIState();
+      expect(s.theme).toBe("vapor"); // the legacy remap RAN (not skipped as post-current)
+      expect(s.accent).toBe("aqua");
+    });
+
+    it("falls back to defaults on an array blob — no numeric-index junk keys", () => {
+      // {...defaults, ...["junk"]} would spread to a junk {0:"junk"} key that setUI then re-persists
+      // (verification F5, 2026-07-10); the merge helper now rejects non-plain-object blobs outright.
+      seed(["junk"]);
+      const s = loadUIState();
+      expect(s.theme).toBe("vapor");
+      expect("0" in s).toBe(false);
+    });
   });
 
   // Item ⑥ (§14.15.1) — the every-boot registered-skin validity check (parse-don't-validate). It heals an

@@ -51,7 +51,11 @@ export function safeRafLoop(tick: (now: DOMHighResTimeStamp) => boolean | void):
       running = false;
       return;
     }
-    id = requestAnimationFrame(frame);
+    // `id === 0` guard (verification F2, 2026-07-10): a tick that calls stop() THEN start() re-entrantly
+    // has already scheduled its own frame (start() set `id`); rescheduling here too would overwrite that
+    // handle and orphan it — two competing loops, the later stop() only able to cancel one. Only this
+    // frame reschedules when nothing else is pending.
+    if (id === 0) id = requestAnimationFrame(frame);
   };
 
   return {

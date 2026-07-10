@@ -16,10 +16,13 @@ type FakeDef = {
   loadRoot?: () => Promise<void>;
 };
 
-const { mockRegistry } = vi.hoisted(() => {
+const { mockRegistry, toastSpy } = vi.hoisted(() => {
   const mockRegistry: Record<string, FakeDef | undefined> = {};
-  return { mockRegistry };
+  return { mockRegistry, toastSpy: vi.fn() };
 });
+
+// Spy on the toast sink so the F1 single-signal case below can COUNT toasts (the real store is untouched).
+vi.mock("../../src/store/toast", () => ({ pushToast: toastSpy }));
 
 vi.mock("../../src/theme-engine/registry", () => ({
   registry: mockRegistry,
@@ -59,6 +62,7 @@ async function loadModules() {
 
 beforeEach(() => {
   for (const k of Object.keys(mockRegistry)) delete mockRegistry[k];
+  toastSpy.mockClear();
   vi.resetModules(); // reset switchTheme's `loaded`/`latest`/`inFlight` + a fresh ui store
 });
 
@@ -107,6 +111,31 @@ describe("ensureThemeLoaded — ④ ThemeLoadError source tagging", () => {
       expect((err as InstanceType<typeof ThemeLoadError>).cause).toBeInstanceOf(Error);
     },
   );
+});
+
+describe("switchTheme — F1 single failure toast (verification 2026-07-10)", () => {
+  it("toasts ONCE when a pick and its reconcile echo share one failing load", () => {
+    // The LIVE double-switch (useAppearance §⑤ comment): the pick carries no motion trio, the reconcile
+    // echo does → different dedupe keys, but both share ONE load promise via the `loaded` cache. On a
+    // load failure both catches fire — only the winner (the latest intent) may toast.
+    const l = loader();
+    mockRegistry.minimal = { loadStyles: l.fn };
+    return loadModules().then(({ switchTheme }) => {
+      const a = switchTheme("minimal", { mode: "dark", accent: "aqua" }); // the pick
+      const b = switchTheme("minimal", {
+        mode: "dark",
+        accent: "aqua",
+        motion: "full",
+        perf: "full",
+        themeSettings: {},
+      }); // the reconcile echo — different key, same underlying load
+      expect(l.fn).toHaveBeenCalledTimes(1); // one shared load
+      l.calls[0].reject();
+      return Promise.all([a, b]).then(() => {
+        expect(toastSpy).toHaveBeenCalledTimes(1); // the loser stays silent
+      });
+    });
+  });
 });
 
 describe("switchTheme — ⑤ in-flight guard", () => {

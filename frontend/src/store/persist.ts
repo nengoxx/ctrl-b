@@ -9,9 +9,14 @@
 
 /** Defaults-over-merge for an OBJECT state: the parsed blob is merged **over** the defaults, so a field
  *  added since the value was saved keeps its default, and a stored `null`/`undefined` spreads to a no-op.
- *  Shared by both loaders so the merge rule lives in exactly one place. */
+ *  Shared by both loaders so the merge rule lives in exactly one place. A corrupt non-object blob (an
+ *  array/string spreads to junk numeric-index keys that would then be re-persisted) falls back to the
+ *  defaults outright (verification F5, 2026-07-10). */
 function mergeOverDefaults<T>(defaults: T, parsed: unknown): T {
-  return { ...(defaults as object), ...(parsed as object) } as T;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ...(defaults as object) } as T;
+  }
+  return { ...(defaults as object), ...parsed } as T;
 }
 
 /** Load `key` from localStorage, falling back to `defaults`. For object states the parsed blob is
@@ -56,7 +61,10 @@ export function loadPersistedVersioned<T>(
     if (raw == null) return defaults;
     const parsed = JSON.parse(raw) as unknown;
     const envelope = parsed as { v?: unknown } | null;
-    const from = typeof envelope?.v === "number" ? envelope.v : 0;
+    // isSafeInteger, not typeof (verification F3, 2026-07-10): JSON can smuggle `1e999` → Infinity, which
+    // would skip the migration chain as "newer than current"; NaN would re-run it forever. A non-integer
+    // `v` is corrupt → treat as legacy v0 (the migrations are idempotent-guarded, so re-running is safe).
+    const from = Number.isSafeInteger(envelope?.v) ? (envelope!.v as number) : 0;
     const merged = mergeOverDefaults(defaults, parsed);
     delete (merged as { v?: unknown }).v; // envelope metadata — never leaks into runtime state
     if (from >= version) return merged;
