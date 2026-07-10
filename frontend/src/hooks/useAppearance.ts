@@ -15,6 +15,7 @@ import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getJSON, putJSON } from "../api/client";
+import { stableStringify } from "../lib/stableStringify";
 import {
   getUI,
   setUI,
@@ -62,23 +63,6 @@ export interface AppearanceApply {
 }
 
 const KEY = ["appearance"] as const;
-
-// Key-order-insensitive structural stringify (rider (b) / §14.15.1). `themeSettings` is
-// `Record<string, Record<string, primitive>>`, so two devices can author the SAME settings with the keys
-// in a different order — a plain `JSON.stringify` compare would then read as a difference and trigger a
-// spurious re-apply each load. This sorts object keys at every level so equal content compares equal.
-// Written generically for plain objects / arrays / primitives (arrays keep their order — position is
-// meaningful there); recursion depth is trivial for the themeSettings shape. No new deps.
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  const obj = value as Record<string, unknown>;
-  const body = Object.keys(obj)
-    .sort()
-    .map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`)
-    .join(",");
-  return `{${body}}`;
-}
 
 /** The active appearance selection — a plain always-on query (fetches on mount on any tab). */
 export function useAppearance() {
@@ -166,12 +150,15 @@ export function useAppearanceSync(): void {
     const next = reconcileAppearance(data, local, (id) => registry[id as ThemeId] != null);
     if (!next) return;
     if (next.theme !== local.theme) {
-      // ⚠️ T1 follow-up (latent, unreachable today — vapor is the only registered theme, so a SKIN
-      // mismatch can't occur): a self-initiated `pickTheme` optimistically writes the cache, which
-      // re-fires this effect while `switchTheme`'s async bundle-load is still pending → `local.theme`
-      // is stale → this branch re-runs `switchTheme`. Harmless (same end state) but a double View
-      // Transition. When the first non-vapor theme lands, gate this on in-flight appearance mutations
-      // (`useIsMutating`) so the optimistic write isn't re-reconciled. (Owner: fix in the owning phase.)
+      // The double-switch this branch can trigger is LIVE (minimal + cosmos are registered, so a SKIN
+      // mismatch really occurs): a self-initiated `pickTheme` optimistically writes the appearance cache,
+      // which re-fires this effect while `switchTheme`'s async bundle-load is still pending → `local.theme`
+      // is stale → this branch calls `switchTheme` again. Item ⑤'s SUPERSEDE guard (§14.15.1) — NOT the
+      // same-target dedupe — is what collapses it to a single applied View Transition: the two calls carry
+      // DIFFERENT targets (the reconcile fills motion/perf/themeSettings; the pick omits them, SwitchTarget
+      // §14.3), so the dedupe key differs; the monotonic token inside `switchTheme` then lets only the LAST
+      // call apply its VT. This branch stays as-is — it routes a differing SKIN through `switchTheme` so the
+      // theme bundle loads before it applies (the rest are instant `setUI`).
       void switchTheme(next.theme, {
         mode: next.mode,
         accent: next.accent,

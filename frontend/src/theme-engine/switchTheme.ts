@@ -17,6 +17,7 @@
 
 import { flushSync } from "react-dom";
 
+import { stableStringify } from "../lib/stableStringify";
 import { getUI, setUI, type Motion, type Perf, type ThemeSettingsMap } from "../store/ui";
 import { pushToast } from "../store/toast";
 import { registry } from "./registry";
@@ -48,7 +49,20 @@ export function ensureThemeLoaded(id: ThemeId): Promise<void> {
       // with no Suspense flash during the View-Transition snapshot. Eager themes (vapor) omit loadRoot.
       def?.loadRoot?.() ?? Promise.resolve(),
     ]).then(() => undefined);
-    loaded.set(id, p);
+    // Eviction on rejection (§14.15.1 ③): a rejected promise cached forever poisons that theme for the whole
+    // session — one transient network blip and the theme never loads again. Attach the eviction as a SIDE
+    // CHANNEL (not folded into the returned chain) so the ORIGINAL `p` is what we cache + return: in-flight
+    // dedupe still shares one promise and `switchTheme`'s try/catch still observes the rejection. Guard
+    // `loaded.get(id) === p` so a newer attempt already stored isn't clobbered. This is a DELIBERATE
+    // divergence from React.lazy's permanent rejection cache (react#14254, filed-never-fixed) — we evict so
+    // the next explicit switch re-imports. NOTE: the browser module map may still cache the failed FETCH
+    // (whatwg/html#10327 — open, unshipped), so eviction is necessary-not-always-sufficient; item ②'s Reload
+    // is the backstop; when #10327 ships this becomes fully self-healing with no code change here.
+    const created = p;
+    created.catch(() => {
+      if (loaded.get(id) === created) loaded.delete(id);
+    });
+    loaded.set(id, created);
   }
   return p;
 }
@@ -64,16 +78,31 @@ export interface SwitchTarget {
   themeSettings?: ThemeSettingsMap;
 }
 
-/** Switch the active SKIN with a cross-fade. Loads the theme bundle first, then commits the `ui`
- *  change inside a View Transition (gated on `ui.motion` + feature detection). On load failure it
- *  aborts and stays on the current theme. */
-export async function switchTheme(next: ThemeId, target: SwitchTarget): Promise<void> {
+// In-flight guard state (§14.15.1 ⑤ — one chokepoint, replaces the planned `useIsMutating` gate).
+//  • `latest` — a per-call identity token. The last call to arrive wins (last-write-wins): after its
+//    await, an older call whose token has been superseded BAILS, so at most one transition applies. Left
+//    un-cleared after a call completes — it's identity-based, so a stale value is harmless (the next call
+//    mints a fresh token and becomes `latest`).
+//  • `inFlight` — the currently-running switch, keyed by the FULL target (§14.15.1 ⑤: not just the id, so
+//    the winning call applies the right mode/accent). A call with the SAME key joins it (one load, one VT).
+let latest: object | null = null;
+let inFlight: { key: string; done: Promise<void> } | null = null;
+
+/** The actual switch: load the bundle, bail if superseded, else commit inside a View Transition. Never
+ *  rejects — a load failure toasts + returns (so the `finally` in `switchTheme` always clears `inFlight`,
+ *  keeping a failed target retryable; pairs with ③'s cache eviction — the two are one mechanism). */
+async function runSwitch(next: ThemeId, target: SwitchTarget, token: object): Promise<void> {
   try {
     await ensureThemeLoaded(next); // SLOW WORK FIRST — never inside the transition callback
   } catch {
     pushToast("theme failed to load", "err");
     return; // stay on the current theme
   }
+  // Superseded while the bundle loaded? A newer `switchTheme` (a DIFFERENT target) has taken over → bail so
+  // only the WINNING call applies its full target. This supersede — not the same-key dedupe below — is what
+  // collapses the reconcile double-VT (pick + reconcile targets differ in the motion trio), out-of-order
+  // cold loads, and StrictMode double-effects into ONE applied transition.
+  if (latest !== token) return;
 
   const apply = () =>
     flushSync(() =>
@@ -95,4 +124,39 @@ export async function switchTheme(next: ThemeId, target: SwitchTarget): Promise<
   }
   const t = start(apply);
   t.ready.catch(() => {}); // swallow the skip/TimeoutError (the DOM is already applied)
+}
+
+/** Switch the active SKIN with a cross-fade. Loads the theme bundle first, then commits the `ui` change
+ *  inside a View Transition (gated on `ui.motion` + feature detection). On load failure it toasts and
+ *  stays on the current theme. Module-level guard (§14.15.1 ⑤): identical in-flight targets are DEDUPED
+ *  (one load, one VT); a superseding call (different target) wins via the monotonic `latest` token, and
+ *  the loser bails after its await so at most ONE transition applies. `inFlight` clears in a `finally`
+ *  (success AND failure) so a failed target is immediately retryable — the retry re-invokes ③'s evicted
+ *  loader. */
+export function switchTheme(next: ThemeId, target: SwitchTarget): Promise<void> {
+  // Dedupe key: theme id + the full normalized target. `stableStringify` makes the `themeSettings` part
+  // key-order-insensitive (top-level field order is irrelevant — it sorts keys), so two calls carrying the
+  // same target produce the same key and share one load + one View Transition.
+  const key = stableStringify({
+    next,
+    mode: target.mode,
+    accent: target.accent,
+    motion: target.motion,
+    perf: target.perf,
+    themeSettings: target.themeSettings,
+  });
+  if (inFlight && inFlight.key === key) return inFlight.done; // same target already running → join it
+
+  const token = {};
+  latest = token; // a different-key call arriving later supersedes this one via the token
+  const done = runSwitch(next, target, token);
+  const entry = { key, done };
+  inFlight = entry;
+  // Clear the marker on settle — success AND failure. Without this a failed target would stay deduped
+  // forever and strand ③'s eviction (③ + ⑤ are one mechanism). Only clear if it's still OUR entry: a newer
+  // different-key call may have already replaced `inFlight`.
+  void done.finally(() => {
+    if (inFlight === entry) inFlight = null;
+  });
+  return done;
 }
