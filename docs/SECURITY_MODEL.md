@@ -42,9 +42,14 @@ authentication layer first.
 
 ## 2. The layers
 
-### 2.1 Network — tailnet-only ingress
-- The backend binds **`127.0.0.1:5433`** (`config.py` `ServerCfg.host`/`port`). Nothing listens on a
-  public interface. Egress to the fleet (SSH/ping/WOL) is separate and unaffected.
+### 2.1 Network — tailnet + trusted-LAN ingress
+- The backend's **code default** binds `127.0.0.1:5433` (`config.py` `ServerCfg.host`/`port`). **The
+  deployed PROD service binds `0.0.0.0:5433` — an OWNER WAIVER (2026-07-10, revising the original
+  loopback-only decision):** direct `http://emma:5433` from the LAN + tailnet, same trusted-home-LAN
+  reasoning as the dev-mode exposure below (and prod is *narrower* than that long-accepted dev path —
+  same API, minus Vite). HTTP has no secure context, so the mic still requires the Serve HTTPS URL.
+  Nothing listens on a public interface either way. Egress to the fleet (SSH/ping/WOL) is separate and
+  unaffected.
 - The only remote ingress is **Tailscale Serve**, which fronts the local app as
   `https://<host>.<tailnet>.ts.net` with an auto-renewed Let's Encrypt cert (DECISIONS D1). It is
   **tailnet-only** — you must be on the tailnet to reach it; nothing is published to the public internet.
@@ -122,7 +127,8 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 | `paramiko` uses `AutoAddPolicy` (accepts unknown SSH host keys; no `known_hosts` pinning) | **accepted** | Acceptable only inside the trusted tailnet (`adapters/ssh.py`). Would need pinning if the boundary widened. |
 | Local shell (`!`) + agent `run_shell` = remote code execution by design | **accepted, off by default** | See §5. Gated + off by default; RCE is the point when enabled. |
 | `debug` = RCE surface | **accepted, off by default** | `ServerCfg.debug=False`; never enable on anything reachable. |
-| Dev Vite server exposes the API on the LAN (`0.0.0.0` + `/api` proxy) | **accepted, dev-only** | §2.1 dev-mode exposure; trusted home LAN; prod serves `dist` from the loopback bind. |
+| Dev Vite server exposes the API on the LAN (`0.0.0.0` + `/api` proxy) | **accepted, dev-only** | §2.1 dev-mode exposure; trusted home LAN. |
+| Prod backend on `0.0.0.0:5433` (LAN + tailnet, plain HTTP) | **accepted, owner waiver 2026-07-10** | §2.1; trusted home LAN; strictly narrower than the dev path above; Serve HTTPS remains for mic/secure-context. |
 | MCP / OpenAPI tool providers are external surfaces | **accepted, annotated** | Risk-annotated per tool; never grant blanket `ALLOW`. |
 
 ---
@@ -160,7 +166,8 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
 
 ## 6. Safe-defaults checklist (verify before exposing on the tailnet)
 
-- [ ] Backend bound to `127.0.0.1` (not `0.0.0.0`) — `ServerCfg.host`.
+- [ ] Backend bind matches the §2.1 policy — code default `127.0.0.1`; the deployed PROD unit binds
+      `0.0.0.0` **per the 2026-07-10 owner waiver** (trusted home LAN + tailnet; never a public interface).
 - [ ] `debug` = **off** (`ServerCfg.debug=False`).
 - [ ] Tailscale Serve HTTPS up; the app reachable **only** via `https://<host>.<tailnet>.ts.net`, nothing
       port-forwarded publicly.

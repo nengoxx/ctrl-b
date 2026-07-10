@@ -4,8 +4,9 @@
 > **✅ ctrl-b v1.0.0 (tag `v1.0.0` = `8fa8404`) deployed to emma per the D32-amended plan — first try,
 > release gate green on its maiden tag run (full gate + Playwright e2e on ubuntu).** As-executed record:
 > the PRE-FLIGHT block atop [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md); living runbook: `deploy/linux/README.md`.
-> - **PROD:** `~/apps/ctrl-b` (sparse, pinned `v1.0.0`) → `~/.ctrl-b` → :5433 →
->   **https://emma.lobster-vector.ts.net** (Tailscale Serve HTTPS; phone + mic verified by the owner).
+> - **PROD:** `~/apps/ctrl-b` (sparse, tag-pinned) → `~/.ctrl-b` → :5433 →
+>   **https://emma.lobster-vector.ts.net** (Tailscale Serve HTTPS; phone + mic verified by the owner)
+>   **+ direct `http://emma:5433`** since v1.0.1 (bind 0.0.0.0 — owner waiver 2026-07-10, SECURITY_MODEL §2.1).
 >   Fresh DB (as decided). Fleet ICMP/WOL verified from the systemd service (all 4 hosts online).
 > - **DEV:** workspace `~/github/ctrl-b` (`main` — the invariant: it never leaves main) → `~/.ctrl-b-dev` →
 >   uvicorn :5434 `--reload` + Vite :5173. Git hooks (`core.hooksPath=.githooks`) + `[dev]` toolchain in.
@@ -13,10 +14,11 @@
 >   not boot-enabled — `systemctl --user start ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web` when
 >   iterating, stop when done.
 > - **Agents (D32 AMENDED-2):** TWO boot instances of the template `ctrl-b-agent@.service` **in the
->   workspace** — `@fable` → tmux **`ctrl-b (fable)`** (`claude-fable-5`, high) and `@opus` → tmux
->   **`ctrl-b (opus)`** (`claude-opus-4-8`, high); attach with exact-match `tmux attach -t '=ctrl-b (fable)'`.
->   One writer per tree at a time (simultaneous second writer → worktree). Effort/perm overrides via
->   `~/.config/ctrl-b/agent[-<i>].env`. The one-time first-clone *trust prompt*
+>   workspace** — `@fable` → tmux **`ctrl-b-fable`** (`claude-fable-5`, high) and `@opus` → tmux
+>   **`ctrl-b-opus`** (`claude-opus-4-8`, high); attach: `tmux attach -t ctrl-b-fable`. The launcher
+>   waits (≤60s) for network before starting claude — RC registers at startup and doesn't retry
+>   (post-reboot finding). One writer per tree at a time (simultaneous second writer → worktree).
+>   Effort/perm overrides via `~/.config/ctrl-b/agent[-<i>].env`. The one-time first-clone *trust prompt*
 >   was cleared by the owner (runbook §agent notes it). **Claude dev framework migrated — emma's
 >   `~/.claude/projects/-home-emma-github-ctrl-b/memory` (35 files) is the CANONICAL memory now**; git
 >   identity + settings merged. **Dev sessions happen ON emma from here on; the corsair/Windows checkout

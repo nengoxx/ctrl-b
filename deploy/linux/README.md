@@ -12,7 +12,7 @@ Deploy the **ctrl-b dashboard** as **two isolated instances** + the **Claude Cod
 | Data root | `~/.ctrl-b` (real config + db + memories/skills/agents) | `~/.ctrl-b-dev` (own copy; seeded from prod once) |
 | Backend | `uvicorn :5433` serving built `dist` | `uvicorn :5434 --reload` |
 | Frontend | built into `dist` (built aside, swapped at cutover) | Vite `:5173` HMR → `/api` → `:5434` |
-| Ingress | **Tailscale Serve HTTPS :443** (mic works) | `http://emma:5173` (HTTP, no mic) |
+| Ingress | **Tailscale Serve HTTPS :443** (mic works) **+ direct `http://emma:5433`** (LAN+tailnet — owner waiver 2026-07-10, SECURITY_MODEL §2.1; no mic over HTTP) | `http://emma:5173` (HTTP, no mic) |
 | Units | `ctrl-b-dashboard.service` (boot) | `ctrl-b-dashboard-dev.service` + `ctrl-b-dashboard-dev-web.service` — **ON-DEMAND** (owner amendment 2026-07-10): `systemctl --user start` them when iterating, stop when done |
 
 **Branch model (trunk-based):** ONE branch, **`main`** — always releasable (held by the git hooks + CI, which
@@ -40,8 +40,8 @@ deploy/
 │       ├── ctrl-b-dashboard-dev.service      # DEV backend (:5434 --reload, ~/.ctrl-b-dev) — on-demand
 │       ├── ctrl-b-dashboard-dev-web.service  # DEV Vite (:5173 → :5434) — on-demand
 │       └── ctrl-b-agent@.service             # TEMPLATE: the ALWAYS-ON Claude agents — instances
-│                                             #   @fable → tmux "ctrl-b (fable)" (claude-fable-5, high)
-│                                             #   @opus  → tmux "ctrl-b (opus)"  (claude-opus-4-8, high)
+│                                             #   @fable → tmux ctrl-b-fable (claude-fable-5, high)
+│                                             #   @opus  → tmux ctrl-b-opus  (claude-opus-4-8, high)
 └── windows/                  # the double-click Windows kit (setup/start/autostart)
 
 ../tools/                     # dev launchers (NOT deploy): start-claude.sh (Linux), claude-{fable,opus}.{ps1,cmd} (Windows), add-dev-worktree.sh
@@ -84,7 +84,7 @@ cd ~/github/ctrl-b && CTRLB_HOME=~/.ctrl-b-dev bash deploy/linux/install.sh dev 
 systemctl --user status ctrl-b-dashboard          # prod: active (running)
 curl -s localhost:5433/api/health                 # {"status":"ok",...}
 systemctl --user status ctrl-b-agent@fable ctrl-b-agent@opus   # the two boot agents: active (exited)
-tmux attach -t '=ctrl-b (fable)'                  # attach an agent (exact-match '='; Ctrl-b d detaches)
+tmux attach -t ctrl-b-fable                       # attach an agent (or ctrl-b-opus; Ctrl-b d detaches)
 # dev instance — ON-DEMAND, start only when iterating:
 systemctl --user start ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web
 curl -s localhost:5434/api/health                 # dev backend; UI at http://emma:5173
@@ -94,10 +94,12 @@ systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web    # when do
 ## The Claude agent services (development continues ON the box)
 The agents are first-class always-on services (owner decisions 2026-07-09 + 2026-07-10): the TEMPLATE
 unit **`ctrl-b-agent@.service`** is enabled by `install.sh dev` as **two boot instances** —
-`ctrl-b-agent@fable` (tmux **`ctrl-b (fable)`**, `claude-fable-5`, effort high) and `ctrl-b-agent@opus`
-(tmux **`ctrl-b (opus)`**, `claude-opus-4-8`, effort high). Each ensures its tmux session exists, running
-`claude --remote-control` in the **workspace** — attach over SSH or drive from claude.ai/code (the
-channel names match the Windows launchers). Skipped gracefully if the `claude` CLI isn't installed yet.
+`ctrl-b-agent@fable` (tmux **`ctrl-b-fable`**, `claude-fable-5`, effort high) and `ctrl-b-agent@opus`
+(tmux **`ctrl-b-opus`**, `claude-opus-4-8`, effort high). Each ensures its tmux session exists, running
+`claude --remote-control` in the **workspace** — attach over SSH or drive from claude.ai/code. On boot
+the launcher **waits (≤60s) for network connectivity before starting claude** — the remote-control
+channel registers at claude startup and does NOT retry, so an early start would come up invisible to
+the claude app (post-reboot finding 2026-07-10). Skipped gracefully if the `claude` CLI isn't installed yet.
 - **One writer at a time.** Both sessions share the one workspace tree — use one agent per task; a
   genuinely SIMULTANEOUS second writer takes its own worktree (`tools/add-dev-worktree.sh`), same as before.
 - **Effort/permission overrides (no edits to tracked files; the model is fixed per instance):**
@@ -107,8 +109,8 @@ channel names match the Windows launchers). Skipped gracefully if the `claude` C
 - Crash-recovery of `claude` is the `while true` loop inside tmux; `systemctl --user restart
   ctrl-b-agent@<i>` recreates that instance's session from scratch (the other instance is untouched —
   KillMode=process + a targeted per-session ExecStop).
-- **tmux `-t` targeting needs exact-match now** — the two names share the `ctrl-b` prefix, so always use
-  `=`: `tmux attach -t '=ctrl-b (fable)'`.
+- Full names attach directly (`tmux attach -t ctrl-b-fable`); only a *shortened* `-t ctrl-b` is ambiguous
+  (prefix of both) — scripts use exact-match `=` for safety.
 - **First boot on a fresh workspace clone** (seen on the v1.0.0 deploy): the claude CLI stops at its
   one-time interactive *"Is this a project you trust?"* prompt inside each tmux session — attach and
   confirm once per project; trust persists, so the units/loops never ask again.
@@ -221,7 +223,8 @@ off (`sudo loginctl enable-linger $USER`), or `tailscale serve` needing the oper
 ## ⚠️ Cautions
 - Both instances can **shut down / reboot fleet hosts** (DEV seeds prod's fleet config). Do NOT trigger
   shutdown/reboot actions while testing — DEV is isolated for *data*, not for the real machines it controls.
-- Don't modify emma's system/MCP config beyond the prereqs. Bind both backends to **127.0.0.1**.
+- Don't modify emma's system/MCP config beyond the prereqs. The DEV backend binds **127.0.0.1**; PROD
+  binds **0.0.0.0** (owner waiver 2026-07-10 — direct `http://emma:5433`; SECURITY_MODEL §2.1).
 - **Known waiver:** the DEV Vite server listens on **0.0.0.0:5173** (plain HTTP) so the phone can reach it
   over the tailnet — that also makes it LAN-visible. Deliberate for a trusted home LAN; the backends stay
   loopback-only and prod's sole ingress remains Tailscale Serve.
@@ -236,5 +239,5 @@ off (`sudo loginctl enable-linger $USER`), or `tailscale serve` needing the oper
 systemctl --user disable --now ctrl-b-dashboard ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web \
   ctrl-b-agent@fable ctrl-b-agent@opus
 tailscale serve --https=443 off                  # remove the HTTPS proxy
-tmux kill-session -t '=ctrl-b (fable)'           # stop a session by hand (the units' ExecStop does this too)
+tmux kill-session -t '=ctrl-b-fable'             # stop a session by hand (the units' ExecStop does this too)
 ```

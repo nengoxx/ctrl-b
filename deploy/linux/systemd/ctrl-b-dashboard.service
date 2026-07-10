@@ -4,9 +4,11 @@
 # 2026-07-09: trunk-based — main + immutable tags; the workspace is ~/github/ctrl-b).
 # Data root: ~/.ctrl-b. The isolated DEV instance serves the workspace → :5434 → ~/.ctrl-b-dev.
 # Install: ~/.config/systemd/user/ctrl-b-dashboard.service  (emma has linger=yes → starts at boot, persists
-# without login). uvicorn serves the API + the built frontend/dist on 127.0.0.1:5433; Tailscale Serve fronts
-# it with HTTPS (serve-https.sh). Bound to localhost ONLY — never the LAN — so the tailnet (via Serve) is the
-# sole ingress. Egress (SSH/ping/WOL to the fleet) is unaffected by the bind.
+# without login). uvicorn serves the API + the built frontend/dist on 0.0.0.0:5433 — an OWNER WAIVER
+# (2026-07-10, revises the original loopback-only decision; recorded in SECURITY_MODEL.md §2.1): direct
+# http://emma:5433 access from the LAN + tailnet, trusted-home-LAN threat model. Tailscale Serve still
+# fronts it with HTTPS (serve-https.sh) — required for the mic (secure context). Egress (SSH/ping/WOL to
+# the fleet) is unaffected by the bind.
 # Manage:  systemctl --user {start,stop,restart,status} ctrl-b-dashboard
 #
 # TEMPLATE: install.sh renders __REPO__/__CTRLB_HOME__ to this machine's actual paths (any user/host) — do
@@ -20,8 +22,8 @@ Description=ctrl-b dashboard (v2, production)
 Type=simple
 WorkingDirectory=__REPO__/backend
 Environment=CTRLB_HOME=__CTRLB_HOME__
-# PROD: serve the built dist, no --reload. Bind localhost; Tailscale Serve is the HTTPS ingress.
-ExecStart=__REPO__/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 5433
+# PROD: serve the built dist, no --reload. Bind all interfaces (owner waiver above); Serve adds HTTPS.
+ExecStart=__REPO__/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 5433
 Restart=on-failure
 RestartSec=5
 

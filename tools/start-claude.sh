@@ -13,9 +13,9 @@
 #
 # Usage:  ./start-claude.sh [session] [project_dir] [model]   (also runs as ctrl-b-agent@{fable,opus} on boot)
 #   ./start-claude.sh                            # default: session 'ctrl-b' in the workspace (~/github/ctrl-b, main)
-#   ./start-claude.sh 'ctrl-b (opus)' ~/github/ctrl-b opus   # model: fable | opus | any full model id
-#   ssh emma -t "tmux attach -t '=ctrl-b (fable)'"   # attach (exact-match '='; names contain spaces); Ctrl-b d detaches
-#   tmux kill-session -t '=ctrl-b (fable)'      # stop one
+#   ./start-claude.sh ctrl-b-opus ~/github/ctrl-b opus   # model: fable | opus | any full model id
+#   ssh emma -t 'tmux attach -t ctrl-b-fable'    # attach; Ctrl-b d detaches
+#   tmux kill-session -t '=ctrl-b-fable'         # stop one ('=' = exact match, since names share a prefix)
 #   EFFORT=… ./start-claude.sh                   # env overrides (the agent units read ~/.config/ctrl-b/agent[-<i>].env)
 # SECOND simultaneous agent — give it its OWN branch + worktree so it doesn't disturb the dev instance
 # (which serves the workspace on main). Use tools/add-dev-worktree.sh, or by hand:
@@ -48,9 +48,14 @@ fi
 
 # Detached session; the inner loop keeps the agent alive across crashes. `exec bash` keeps the window open
 # if the loop is ever broken so you can inspect, rather than the pane vanishing. The session name is
-# escaped-quoted into the inner command (it contains spaces/parens). Two boot instances can race to start
-# the shared tmux server — retry once so the loser of that race still comes up.
-INNER="while true; do claude --remote-control \"$SESSION\" --permission-mode $PERM --model $MODEL --effort $EFFORT; \
+# escaped-quoted into the inner command (defensive — custom names may contain spaces). Two boot instances
+# can race to start the shared tmux server — retry once so the loser of that race still comes up.
+# NETWORK WAIT (post-reboot finding 2026-07-10): the --remote-control channel registers at claude STARTUP
+# and claude does NOT exit when that fails — at boot the unit fires seconds before the network is up, so
+# the session came up WITHOUT remote control (invisible in the claude app) and the crash-loop never
+# retried. Wait for connectivity first (bounded ~60s; instant when the network is already up).
+INNER="n=0; until curl -sI -m2 https://claude.ai >/dev/null 2>&1 || [ \$n -ge 30 ]; do n=\$((n+1)); sleep 2; done; \
+ while true; do claude --remote-control \"$SESSION\" --permission-mode $PERM --model $MODEL --effort $EFFORT; \
  echo '[claude exited — restarting in 5s; Ctrl-C to stop]'; sleep 5; done; exec bash"
 if ! tmux new-session -d -s "$SESSION" -c "$PROJECT" "$INNER" 2>/dev/null; then
   sleep 1

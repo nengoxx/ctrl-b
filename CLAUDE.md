@@ -145,4 +145,4 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 ```
 
 (or `Claude Opus 4.8 <noreply@anthropic.com>` when running as Opus — emma boots BOTH agents:
-`ctrl-b-agent@fable` and `ctrl-b-agent@opus`, tmux `ctrl-b (fable)` / `ctrl-b (opus)`.)
+`ctrl-b-agent@fable` and `ctrl-b-agent@opus`, tmux `ctrl-b-fable` / `ctrl-b-opus`.)

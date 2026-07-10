@@ -1620,10 +1620,15 @@ So the four cases fall out with no special-casing: base = `<DefaultRoot/>`; base
 > ctrl-b-dashboard-dev-web` when iterating, stop when done. Always-on = prod + the agents only.
 > (2) **The Claude agent is TWO boot instances, not one env-switched unit**: template
 > `ctrl-b-agent@.service` enabled as `@fable` (`claude-fable-5`) + `@opus` (`claude-opus-4-8`), both
-> effort high, tmux sessions **`ctrl-b (fable)`** / **`ctrl-b (opus)`** (matching the Windows launcher
-> channel names) in the workspace. `agent.env` now carries only EFFORT/PERM overrides (shared or
+> effort high, in the workspace. `agent.env` now carries only EFFORT/PERM overrides (shared or
 > per-instance `agent-<i>.env`); the one-writer-per-tree rule stands — a simultaneous second writer still
 > takes a worktree. Executed on emma the same day (install.sh self-migrates the legacy single unit).
+> *Same-day addenda (owner, post-reboot):* session names simplified to **`ctrl-b-fable`/`ctrl-b-opus`**
+> (easy to type, no quoting); the launcher gained a **bounded network wait** before starting claude (the
+> remote-control channel registers at startup and doesn't retry — an early boot start came up invisible
+> to the claude app); **PROD binds `0.0.0.0`** (owner waiver — direct `http://emma:5433` on LAN+tailnet;
+> Serve HTTPS stays for mic; SECURITY_MODEL §2.1) — shipped as **v1.0.1** (unit changes reach the
+> tag-pinned prod only via a release).
 
 > ⚠️ **AMENDED 2026-07-09 (before first deploy — read the amendment at the end of this entry):** the
 > **`dev` branch is dropped (trunk-based: `main` + immutable release tags)** and the **prod runtime moves to

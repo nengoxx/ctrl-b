@@ -3,8 +3,9 @@
 # the single agent.env-switched unit).
 #
 # This is a systemd TEMPLATE unit: %i is the model alias, enabled as
-#     ctrl-b-agent@fable.service   → tmux session "ctrl-b (fable)"  → claude-fable-5, effort high
-#     ctrl-b-agent@opus.service    → tmux session "ctrl-b (opus)"   → claude-opus-4-8, effort high
+#     ctrl-b-agent@fable.service   → tmux session "ctrl-b-fable"  → claude-fable-5, effort high
+#     ctrl-b-agent@opus.service    → tmux session "ctrl-b-opus"   → claude-opus-4-8, effort high
+# (names simplified from "ctrl-b (fable)" — owner, 2026-07-10: easy to type, no quoting needed)
 # Each instance only wraps tools/start-claude.sh: a tmux session running `claude --remote-control`
 # in the WORKSPACE (__REPO__ — never the prod tree). tmux is required because claude needs a TTY (it
 # cannot run as a bare daemon); oneshot+RemainAfterExit makes the unit "ensure the session exists" —
@@ -16,14 +17,14 @@
 #     ~/.config/ctrl-b/agent.env       shared by both instances (EFFORT=…, PERM=…)
 #     ~/.config/ctrl-b/agent-<i>.env   per-instance override (e.g. agent-opus.env), wins over the shared one
 # then:  systemctl --user restart ctrl-b-agent@<i>
-# Attach:  ssh emma -t "tmux attach -t '=ctrl-b (fable)'"    (exact-match '='; or drive from claude.ai/code)
+# Attach:  ssh emma -t 'tmux attach -t ctrl-b-fable'    (or drive from claude.ai/code)
 # Manage:  systemctl --user {start,stop,restart,status} ctrl-b-agent@fable ctrl-b-agent@opus
 #
 # TEMPLATE: install.sh renders __REPO__/__HOME__/__TMUX__ to real paths — do NOT copy directly.
 # (No network-online.target ordering — system target, no user equivalent; see the prod unit's note.
 # claude reconnects on its own once the network is up.)
 [Unit]
-Description=ctrl-b Claude Code agent (%i) — tmux 'ctrl-b (%i)', workspace
+Description=ctrl-b Claude Code agent (%i) — tmux 'ctrl-b-%i', workspace
 
 [Service]
 Type=oneshot
@@ -43,8 +44,8 @@ Environment=PATH=__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin
 # Do NOT set PATH in these files — it would override the Environment= line above and claude stops resolving.
 EnvironmentFile=-__HOME__/.config/ctrl-b/agent.env
 EnvironmentFile=-__HOME__/.config/ctrl-b/agent-%i.env
-ExecStart=/usr/bin/bash __REPO__/tools/start-claude.sh "ctrl-b (%i)" __REPO__ %i
-ExecStop=-__TMUX__ kill-session -t "=ctrl-b (%i)"
+ExecStart=/usr/bin/bash __REPO__/tools/start-claude.sh ctrl-b-%i __REPO__ %i
+ExecStop=-__TMUX__ kill-session -t "=ctrl-b-%i"
 
 [Install]
 WantedBy=default.target

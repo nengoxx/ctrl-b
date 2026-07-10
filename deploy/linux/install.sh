@@ -15,7 +15,7 @@
 #           the only branch; all development happens here).  Data: ~/.ctrl-b-dev.
 #           Builds the venv + installs npm deps (Vite serves live — no dist build); installs the two dev
 #           dashboard units ON-DEMAND (backend :5434 + Vite :5173 — start when iterating) and enables the
-#           TWO boot agent instances ctrl-b-agent@{fable,opus} (tmux "ctrl-b (fable)"/"ctrl-b (opus)").
+#           TWO boot agent instances ctrl-b-agent@{fable,opus} (tmux ctrl-b-fable / ctrl-b-opus).
 #           Seeds ~/.ctrl-b-dev/config.yaml from ~/.ctrl-b the first time so dev has the same fleet but
 #           its OWN db/chat.
 set -euo pipefail
@@ -25,7 +25,7 @@ ROLE="${1:-prod}"
 # ctrl-b-agent@.service). BOOT_UNITS = enabled --now (boot + start). ONDEMAND_UNITS = installed but NOT
 # enabled — the dev dashboards are on-demand (owner amendment 2026-07-10, revises the earlier "BOTH
 # always-on"): start them only when iterating. The agents ARE boot services: two template instances,
-# fable 5 + opus 4.8, both effort high (tmux sessions "ctrl-b (fable)" / "ctrl-b (opus)").
+# fable 5 + opus 4.8, both effort high (tmux sessions ctrl-b-fable / ctrl-b-opus).
 case "$ROLE" in
   prod) REPO="${REPO:-$HOME/apps/ctrl-b}";   CTRLB_HOME="${CTRLB_HOME:-$HOME/.ctrl-b}"
         RENDER_UNITS=(ctrl-b-dashboard.service)
@@ -152,13 +152,20 @@ for u in "${RENDER_UNITS[@]}"; do
       -e "s#__NODEBIN__#$NODEBIN#g" -e "s#__HOME__#$HOME#g" -e "s#__TMUX__#$TMUX_BIN#g" \
       "$UNIT_DIR/$u" > "$HOME/.config/systemd/user/$u"
 done
-# LEGACY migration (pre-2026-07-10 layout): the single agent.env-switched ctrl-b-agent.service is
-# superseded by the two template instances — retire it (its ExecStop kills the old 'ctrl-b' session).
-if [ "$ROLE" = dev ] && [ -f "$HOME/.config/systemd/user/ctrl-b-agent.service" ]; then
-  systemctl --user disable --now ctrl-b-agent.service 2>/dev/null || true
-  rm -f "$HOME/.config/systemd/user/ctrl-b-agent.service"
-  tmux kill-session -t '=ctrl-b' 2>/dev/null || true
-  echo "-- retired the legacy ctrl-b-agent.service (+ old 'ctrl-b' tmux session) → replaced by ctrl-b-agent@{fable,opus}"
+# LEGACY migration (pre-2026-07-10 layouts): (a) the single agent.env-switched ctrl-b-agent.service is
+# superseded by the two template instances — retire it (its ExecStop kills the old 'ctrl-b' session);
+# (b) the short-lived parenthesized session names ("ctrl-b (fable)") were simplified to ctrl-b-<i> —
+# kill any lingering old-format sessions so the renamed instances recreate them cleanly.
+if [ "$ROLE" = dev ]; then
+  if [ -f "$HOME/.config/systemd/user/ctrl-b-agent.service" ]; then
+    systemctl --user disable --now ctrl-b-agent.service 2>/dev/null || true
+    rm -f "$HOME/.config/systemd/user/ctrl-b-agent.service"
+    tmux kill-session -t '=ctrl-b' 2>/dev/null || true
+    echo "-- retired the legacy ctrl-b-agent.service (+ old 'ctrl-b' tmux session) → replaced by ctrl-b-agent@{fable,opus}"
+  fi
+  for old in 'ctrl-b (fable)' 'ctrl-b (opus)'; do
+    tmux kill-session -t "=$old" 2>/dev/null && echo "-- killed old-format session '$old' (renamed to ctrl-b-<model>)" || true
+  done
 fi
 systemctl --user daemon-reload
 
@@ -211,6 +218,6 @@ else
   echo "  Dev instance (ON-DEMAND):  systemctl --user start ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web"
   echo "                             then http://emma:5173 (Vite → :5434); stop them when done iterating."
   echo "  Agents (boot):  systemctl --user status ctrl-b-agent@fable ctrl-b-agent@opus"
-  echo "                  attach:  tmux attach -t '=ctrl-b (fable)'   |   tmux attach -t '=ctrl-b (opus)'"
+  echo "                  attach:  tmux attach -t ctrl-b-fable   |   tmux attach -t ctrl-b-opus"
   echo "                  effort/perm overrides: ~/.config/ctrl-b/agent.env (shared) or agent-<i>.env (per-instance)"
 fi
