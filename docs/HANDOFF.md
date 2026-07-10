@@ -37,7 +37,7 @@
 > 2. Then the owner's menu: **frontier theme T5** (`FRONTIER_PLAN.md`, design LOCKED 2026-07-07) ·
 >    **Composer Surface** (`COMPOSER_SURFACE_PLAN.md`, parked-not-superseded) · **ACA Slices 1–2**
 >    (`AGENT_CHAT_AUDIT.md` / TODO Phase 12).
-> 3. Housekeeping candidates: TODO Phase 10 cutover (old-server parity/retire) · dependabot/archive-prune
+> 3. Housekeeping candidates *(Phase 10 cutover CLOSED 2026-07-10 — owner ruling, old Flask server retired)*: dependabot/archive-prune
 >    (deferred until the tree settles) · dev-over-HTTPS if mic-in-dev is wanted (`tailscale serve --bg
 >    --https=8443 5173`).
 >

@@ -41,7 +41,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 > order lives in its own doc; this is the interleave):**
 > 1. **~~Deploy first~~ ✅ DONE 2026-07-10 — v1.0.0 live on emma** (Phase 9 executed; everything
 >    labeled post-deploy is now unblocked). Dev continues ON emma (HANDOFF banner).
-> 2. **Phase 10 cutover** — after deploy; independent of themes/ACA (run-alongside, then flip).
+> 2. **~~Phase 10 cutover~~ ✅ CLOSED 2026-07-10** — the old Flask server is retired (owner ruling; see Phase 10).
 > 3. **Theme track (Phase 11):** Hardening v2 → Composer Surface → **T5 step 0 (tab-body
 >    registry) → T5 frontier**. The D34 rule stands: nothing themeable ships before Hardening v2.
 >    *T-numbers are build-recipe labels, NOT gates* — T4 (cosmos) shipped before T2/T3; **T2
@@ -725,12 +725,16 @@ tools + confirm bubbles) are DONE.**
       (pytest-only) · QH-11 `target_port` default → 5433 (config/.env override documented).
       **Nothing blocks `DEPLOY_EMMA.md`.**
 
-## Phase 10 — Cutover
+## Phase 10 — Cutover — ✅ CLOSED (owner ruling 2026-07-10: the Flask-app rewrite is long complete)
 
-- [ ] Feature-parity check vs `wol_server_win.py` (WOL, monitor, shutdown, command box, chat, YT,
-      IP lookup) + the new extensions.
-- [ ] Run v2 alongside the old server; migrate `config.yaml`.
-- [ ] Flip the default; retire `wol_server/` (or keep as Linux-WOL fallback). Update README/AGENTS.
+- [x] Feature-parity check vs `wol_server_win.py` — superseded in practice: v1.0.1 is the live
+      daily driver on emma; the owner confirms nothing is missed from the old app.
+- [x] Run v2 alongside the old server; migrate `config.yaml` — overtaken by the emma deploy
+      (fresh DB + owner-managed `config.yaml`, 2026-07-10).
+- [x] Flip the default; retire `wol_server/` — retired: code archived in `archive/v0.1-flask/`
+      (2026-06-30 reorg), the corsair Flask instance is down (probe of corsair:5432 dead
+      2026-07-10), README/AGENTS were rewritten at the reorg. No Linux-WOL fallback kept
+      (v2 owns WOL natively).
 
 ## Phase 11 — Theme engine (pluggable presentation layer, D28) — **IN PROGRESS: T0 + M0–M3 + Kit/minimal + cosmos SHIPPED; NEXT (post-deploy) = Hardening slice v2 (D34, §14.15.1) → Composer Surface**
 
