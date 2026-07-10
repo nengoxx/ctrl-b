@@ -1,5 +1,6 @@
 # ── secrets / runtime config (never commit — see CLAUDE.md hard rules) ──
 config.yaml
+config.yaml.*
 .env
 .env.*
 clients
