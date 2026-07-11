@@ -5,6 +5,7 @@
 //
 // CSS + fonts are LAZY (loaded by switchTheme before the skin flips); vapor stays the eager default.
 
+import { planPlacementSetting } from "../../theme-engine/kit/composer/plan/placement";
 import { composerLayoutSetting } from "../../theme-engine/kit/composer/setting";
 import { preloadableRoot } from "../../theme-engine/lazyRoot";
 import type { ThemeDef } from "../../theme-engine/types";
@@ -47,6 +48,7 @@ export const minimal: ThemeDef = {
   //  - density (cosmetic) → body[data-density] → minimal's tokens.css scales --density-pad.
   settings: {
     composer: composerLayoutSetting("stacked"),
+    planPlacement: planPlacementSetting("inline"),
     density: {
       type: "seg",
       label: "Density",

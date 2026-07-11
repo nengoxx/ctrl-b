@@ -13,6 +13,8 @@ import { AgentTab } from "../../tabs/AgentTab";
 import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
 import { UtilsTab } from "../../tabs/UtilsTab";
 import { KitAppBar } from "./AppBar";
+import { kitPlanComposerSlots } from "./composer/plan";
+import { usePlanPlacement } from "./composer/plan/placement";
 import { ThemedComposer, useComposerLayout } from "./composer/ThemedComposer";
 import type { ComposerSlots } from "./composer/types";
 import { KitFleet } from "./Fleet";
@@ -41,8 +43,9 @@ interface Props {
   /** The Fleet section view (the one per-theme "signature" surface, §14.4). Defaults to the Kit's
    *  device-list `KitFleet`; a theme with a bespoke Fleet (cosmos/frontier) passes its own. */
   Fleet?: ComponentType<{ active: boolean }>;
-  /** Composer ADDONS composed into the variant — the FEATURE axis (D30), e.g. `kitPlanComposerSlots` for
-   *  the plan pill. Omitted → the bare composer. */
+  /** Composer ADDONS composed into the variant — the FEATURE axis (D30). Since A4, DefaultRoot OWNS the
+   *  inline plan composition (see below), so a theme no longer passes the plan here; this prop is the
+   *  future theme-addon seam and is unused today. Omitted → the bare composer (when the plan is `pinned`). */
   composerSlots?: ComposerSlots;
 }
 
@@ -52,6 +55,15 @@ export function DefaultRoot({ appbarMode = "visible", Fleet = KitFleet, composer
   // theme's `composer` setting (registry lookup, fallback-safe). Read the layout once here so the
   // `--composer-h` effect can key on it (re-measure on a live swap) and pass it down (one subscription).
   const layout = useComposerLayout();
+  // The plan PLACEMENT axis (A4). DefaultRoot now OWNS the inline plan composition: when the active theme's
+  // placement is `inline` it composes the Kit plan pill+sheet into the composer here (themes no longer pass
+  // it). When `pinned`, the plan renders as AgentTab's PinnedPlanPanel and the composer gets NO plan slots.
+  // The `composerSlots` prop stays the future theme-addon axis (D30); a real slot-MERGE (inline plan + a
+  // theme's own addon) arrives with the first SECOND contributor (ROADMAP A7 / rule of three), not before —
+  // so a LIMITATION holds until then: when inline, a theme-passed `composerSlots` is NOT merged with the plan
+  // slots (no theme passes any today). DefaultRoot renders NO pinned panel — that's AgentTab's.
+  const planPlacement = usePlanPlacement();
+  const composerAddons = planPlacement === "inline" ? kitPlanComposerSlots : composerSlots;
   const scrollRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
 
@@ -136,7 +148,7 @@ export function DefaultRoot({ appbarMode = "visible", Fleet = KitFleet, composer
           )}
         </div>
         <MiniPlayer />
-        {showComposer && <ThemedComposer layout={layout} {...(composerSlots ?? {})} />}
+        {showComposer && <ThemedComposer layout={layout} {...(composerAddons ?? {})} />}
       </div>
       {/* minimal → the floating NavMenu replaces the bottom tab bar (and there's no appbar); visible/off keep
           the in-flow tab bar. The lunar/fleet view fills the freed height (CosmosFleet measures `--appbar-h`,

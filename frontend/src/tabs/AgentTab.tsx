@@ -17,7 +17,10 @@ import {
   setSessionPrivilege,
   useChatSlice,
 } from "../store/chat";
+import { usePlanOpenAutoClose } from "../store/planSheet";
 import { useUISlice } from "../store/ui";
+import { PinnedPlanPanel } from "../theme-engine/kit/composer/plan/PinnedPlanPanel";
+import { usePlanPlacement } from "../theme-engine/kit/composer/plan/placement";
 import type { ChatMessage, Part, Plan, ToolCallPart, ToolResult, WebSearchHit } from "../types";
 
 // Agent chat tab (Phase 4a + 4b). Renders the live thread from the chat store as Vapor bubbles
@@ -535,9 +538,15 @@ export function AgentTab({ active }: Props) {
   // not here. The scroll-stick-to-bottom below stays vapor-specific (it targets `#app-scroll`).
   const { messages, status, streamingId, resultByCall, currentPlan, resolvedDefault, ttsOn } =
     useAgentChat();
-  // The in-tab pinned plan is vapor-only — kit themes render it in the composer (D30). Non-vapor (kit)
-  // themes are the ones that use the kit composer + the `kit-fade` Agent entrance.
+  // Plan placement (D30/A4). Vapor keeps its FROZEN in-tab `PinnedPlan`. Kit themes choose per the
+  // `planPlacement` setting: `inline` → the pill+sheet in the composer (DefaultRoot owns that composition);
+  // `pinned` → the kit-tokened `PinnedPlanPanel` here at the top of the tab (mutually exclusive — inline
+  // never mounts a panel, pinned passes the composer NO plan slots).
   const isVapor = useUISlice((s) => s.theme === "vapor");
+  const planPlacement = usePlanPlacement();
+  // Fold the audited open-flag bug ONCE here (A4): AgentTab is always mounted + already plan-aware, so it's
+  // the single host that resets the SHARED plan-open flag when the plan clears (both placements share it).
+  usePlanOpenAutoClose(currentPlan);
   // A STABLE result lookup so it doesn't break `Bubbles`' memo each token (`resultByCall` is re-derived
   // per delta → new identity). A ref holds the latest map; the callback identity never changes, and a
   // bubble re-renders (reading the fresh map) exactly when its own message identity changes — which
@@ -614,6 +623,9 @@ export function AgentTab({ active }: Props) {
         </span>
       </div>
       {isVapor && currentPlan && currentPlan.steps.length > 0 && <PinnedPlan plan={currentPlan} />}
+      {!isVapor && planPlacement === "pinned" && currentPlan && currentPlan.steps.length > 0 && (
+        <PinnedPlanPanel />
+      )}
       <div className="chat-log" id="chatlog">
         {!messages.length && (
           <div className="b sys">

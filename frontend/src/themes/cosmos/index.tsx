@@ -6,6 +6,7 @@
 //
 // CSS + fonts are LAZY (loaded by switchTheme before the skin flips); dark-only for now (deep space).
 
+import { planPlacementSetting } from "../../theme-engine/kit/composer/plan/placement";
 import { composerLayoutSetting } from "../../theme-engine/kit/composer/setting";
 import { preloadableRoot } from "../../theme-engine/lazyRoot";
 import type { ThemeDef } from "../../theme-engine/types";
@@ -63,6 +64,8 @@ export const cosmos: ThemeDef = {
   settings: {
     // The composer Surface (D31/A3) — the shared layout catalog; FIRST so it reads above theme rows.
     composer: composerLayoutSetting("stacked"),
+    // Plan placement (D31/A4) — the shared inline/pinned catalog (default inline = the composer pill+sheet).
+    planPlacement: planPlacementSetting("inline"),
     // Central-body style (C2a-fix) — two variants the owner compares live: the prototype's see-through "D"
     // coin (cutout) vs the matte ball with the D engraved into it (carved). Auto-rendered as a Seg.
     moonStyle: {

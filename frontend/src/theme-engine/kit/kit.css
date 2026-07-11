@@ -2778,6 +2778,82 @@ body[data-motion="reduced"] .kit .plan-sheet {
   opacity: 0.6;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════════
+ * Pinned plan panel (A4 · placement "pinned") — the Kit counterpart to vapor's frozen in-tab plan. A sticky
+ * disclosure at the TOP of the AGENT TAB's scroll flow (mounted by AgentTab so it exists ONLY there — a
+ * DefaultRoot mount would leak the sticky node onto every tab). Collapsed = an accent-tinted header (the
+ * `.plan-pill` tokens); tapping drops the checklist as an ABSOLUTE overlay OVER the chat content below, so it
+ * never reflows the transcript (vapor's `.plan-drop` does the same). Sits below the sticky appbar (z 5) and
+ * above chat content. Header/drop reuse the shared `.plan-title`/`.plan-count`/`.chev`/`.plan-steps` classes.
+ * The drop's blur is perf-gated; its open/close is transform/opacity-only + motion-gated (§14.11). */
+.kit .plan-pin-panel {
+  position: sticky;
+  top: calc(var(--appbar-h, 0px) + 8px);
+  z-index: 4; /* below the kit appbar (z 5), above chat content */
+  margin: 0 14px 10px;
+}
+.kit .plan-pin-head {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+}
+.kit .plan-pin-head:active {
+  background: color-mix(in oklch, var(--accent) 22%, transparent);
+}
+.kit .plan-pin-head .chev {
+  color: var(--accent);
+  font-size: 9px;
+  transition: transform 0.16s ease; /* ▾ points down; rotates when open */
+}
+.kit .plan-pin-head.open .chev {
+  transform: rotate(180deg);
+}
+/* the drop — an absolute overlay hanging under the header (the panel is its positioning context), so the
+ * collapsed panel is only header-tall and the open checklist floats OVER the chat below without reflow.
+ * Frosted like `.plan-sheet` but LIGHTER (a subtler accent wash + more opaque) since it sits over live
+ * content, not tucked behind the composer; blur perf-gated → opaque fallback under data-perf=lite. */
+.kit .plan-pin-drop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 1; /* above chat content within the panel's stacking context */
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-bottom: 6px;
+  border-radius: 12px;
+  background: color-mix(in oklch, color-mix(in oklch, var(--surface) 93%, var(--accent)) 90%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent) 26%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  /* closed: collapsed above + faded + non-interactive; .open drops it into view (transform/opacity only) */
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.kit .plan-pin-drop.open {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+/* §14.11 — drop the blur under data-perf=lite (Firefox-Android speed lever) → opaque, accent-wash preserved. */
+body[data-perf="lite"] .kit .plan-pin-drop {
+  background: color-mix(in oklch, var(--surface) 93%, var(--accent));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+body[data-motion="reduced"] .kit .plan-pin-drop {
+  transition: none; /* §14.11: reduced motion → snap open/closed, no slide */
+}
+
 /* ── session-privilege chip + menu (.priv-*) — the tap-friendly twin of /privilege ── */
 .kit .priv-chip-wrap {
   position: relative;

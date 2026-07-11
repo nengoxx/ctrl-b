@@ -54,6 +54,16 @@ every edge case pinned. It is self-contained: a fresh session needs only this + 
   in-row pill IS this); `pinned` = a kit-tokened pinned-top plan panel above the log (inventory the
   existing D30 compositions at A4 pre-flight; vapor's `PinnedPlan` stays frozen/untouched — the §14.15.3
   hook ⑤ exception is unchanged). Orthogonal to the variant axis by construction (slot contract #15).
+  - **As-built (2026-07-11):** setting key is **`planPlacement`** (not `planPill` — the pinned option is a
+    full panel, not a pill, so "placement" names the axis without implying a pill). The pinned panel mounts
+    in **`AgentTab`** (`PinnedPlanPanel`), generalizing vapor's pin site — mounting it in `DefaultRoot`'s
+    shared scroller would leak the sticky node onto non-agent tabs. `DefaultRoot` OWNS the **inline**
+    composition (themes no longer pass `composerSlots` for the plan — cosmos's prop was dropped, render-
+    identical). A **registry + slot-MERGE** were deliberately deferred (concrete-first / rule of three): a
+    placement is heterogeneous (two mount sites), so it stays two explicit branches; the merge (inline plan +
+    a theme's own addon) arrives with A7's second contributor. The `planSheet` open-flag **auto-close** was
+    folded in (`usePlanOpenAutoClose`, hosted once in AgentTab): the shared flag now resets on plan→null, so
+    a cleared-then-new plan no longer reopens the panel unbidden.
 - C — characterization tests + final verify + 390px eyeball.
 
 **Explicitly OUT of scope (deferred, do NOT do here):**

@@ -4,6 +4,9 @@
 // re-renders the app shell (the pill/sheet self-subscribe; see kit/composer/plan). Dep-free `createStore`
 // (D23), exactly like `cosmosDive`. `false` = collapsed.
 
+import { useEffect } from "react";
+
+import type { Plan } from "../types";
 import { createStore } from "./createStore";
 
 const { emit, useStore } = createStore();
@@ -21,4 +24,15 @@ export function setPlanSheetOpen(next?: boolean): void {
 /** Whether the composer plan sheet is open. */
 export function usePlanSheetOpen(): boolean {
   return useStore(() => open);
+}
+
+/** Reset the open flag when the plan goes away (A4). The flag is SHARED across plan changes so it survives
+ *  a plan edit — but a cleared-then-new plan must NOT reopen the panel unbidden (audited bug: the flag never
+ *  reset on plan→null, so the next plan appeared already-open). Whichever component is always mounted and
+ *  plan-aware calls this once; AgentTab hosts it (it's always mounted while the app runs and already derives
+ *  `currentPlan`). Works for BOTH placements (inline sheet + pinned panel) since they share this one flag. */
+export function usePlanOpenAutoClose(currentPlan: Plan | null): void {
+  useEffect(() => {
+    if (!currentPlan) setPlanSheetOpen(false);
+  }, [currentPlan]);
 }

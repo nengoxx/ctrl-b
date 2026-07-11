@@ -1,5 +1,4 @@
 import { DefaultRoot } from "../../theme-engine/kit/DefaultRoot";
-import { kitPlanComposerSlots } from "../../theme-engine/kit/composer/plan";
 import { useUISlice } from "../../store/ui";
 import { CosmosFleet } from "./CosmosFleet";
 import { CosmosStarfield } from "./CosmosStarfield";
@@ -14,12 +13,10 @@ export function CosmosRoot() {
   return (
     <>
       <CosmosStarfield />
-      {/* cosmos opts into the plan-pill composer addon (D30); the orbital Fleet stays its signature view. */}
-      <DefaultRoot
-        appbarMode={appbarMode}
-        Fleet={CosmosFleet}
-        composerSlots={kitPlanComposerSlots}
-      />
+      {/* The orbital Fleet stays cosmos's signature view. Since A4, DefaultRoot OWNS the plan composition
+          (the `planPlacement` setting picks inline pill+sheet vs. the pinned panel) — cosmos defaults to
+          `inline`, so this is render-identical to the old explicit `composerSlots={kitPlanComposerSlots}`. */}
+      <DefaultRoot appbarMode={appbarMode} Fleet={CosmosFleet} />
     </>
   );
 }
