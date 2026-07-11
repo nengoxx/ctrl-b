@@ -49,7 +49,10 @@ placement varies.** The plan-pill (D30 slots) is the one-level-down precedent.
 **The pieces:**
 
 1. **Section/body registry** — `tabs.ts`'s `TabDef` gains `body` (per-theme sets; standard four as
-   defaults), replacing `DefaultRoot`'s hardwired `tab === "…"` branch. The `Fleet={…}` prop folds
+   defaults), replacing `DefaultRoot`'s hardwired tab-body mounting *(precision, 2026-07-11: not a
+   select-one `tab === …` switch — DefaultRoot mounts ALL four bodies simultaneously as
+   keep-mounted `active`-gated children, `DefaultRoot.tsx` render; the registry must preserve that
+   keep-mounted shape while making the SET per-theme)*. The `Fleet={…}` prop folds
    in (theme-pinning-as-data — NOT a Surface graduation; the D31 variant axis stays separate).
 2. **Curated layout presets** — `4-tab` (today) · `3-tab` (utils hosted in Conf) · `2-tab` (conf
    via menu, utils inside it). Composes freely with `appbarMode`. **Preset schema (adversarial
@@ -93,7 +96,9 @@ structural change is the body registry (= this step 0). D-entry drafted at step-
   so the contract documents + pins them as-is) plus component tokens, covering: bubble kinds
   user/bot/cmd/question · markdown container · code block + actions · plan panel · reasoning ·
   notices · search results. Known grandfathered exception to note in the contract: the `isVapor`
-  gate on `PinnedPlan` (AgentTab) — the one sanctioned theme-branch (THEME_ENGINE §14.15.3 hook).
+  gate on `PinnedPlan` (AgentTab) — the one sanctioned theme-ID branch (THEME_ENGINE §14.15.3 hook);
+  since A4 (2026-07-11) the SAME spot also carries the SETTING-keyed (not theme-keyed) non-vapor
+  `PinnedPlanPanel` branch + the `usePlanOpenAutoClose` host — see F4's ⚠ interplay note.
   Hardening item ⑧ (`themeContract.test.ts`) eventually pins them. **Escalation valve:** an
   element that provably can't reach D7 fidelity via CSS goes bespoke *per-element* (gate-checked);
   a second theme needing a structurally different log is what births a ChatSurface (ladder V4
@@ -124,10 +129,13 @@ component exists; the earlier variant recommendation was withdrawn as over-build
 
 - **All-themes picker (owner directive 2026-07-07):** every non-frozen theme declares the
   `composer` seg setting so the Appearance picker offers the style choice everywhere —
-  a one-line scope confirmation on `COMPOSER_SURFACE_PLAN.md` A3 (currently minimal + cosmos;
-  vapor stays opt-in via its Phase D while frozen). Frontier declares `[stacked, sheet]`
-  (stacked default; **`sheet` is the variant ID — "Docked" is only its display label**, per
-  COMPOSER_SURFACE_PLAN's registry spec; a literal `docked` value would coerce away) at F1.
+  A3 shipped it on minimal + cosmos (vapor stays opt-in via its Phase D while frozen).
+  **As-built update (2026-07-11):** the shared `composerLayoutSetting()` factory carries ONE
+  option list — now the full 5-variant catalog `[stacked, borderless, ghost, sheet, line]` — and
+  per-theme SUBSETTING does not exist as-built (and isn't wanted, per this directive's "choice
+  everywhere"). So frontier declares `composer: composerLayoutSetting("stacked")` at F1 — the full
+  catalog, stacked default — superseding this doc's earlier `[stacked, sheet]` subset sketch.
+  (Values are variant IDs — "Docked"/"Sleek"/"Line" are display labels only.)
 - The suggestion **chips are empty-state-owned** (Agent body, §2), not composer functionality.
 - **Nuance parked to F1 pre-flight:** the prototype shows a small `model` label in the composer
   row — check whether KitComposer has an equivalent; if not it's a *shared* micro-addition (a slot
@@ -161,8 +169,9 @@ sun/moon styling.)
 
 **F0 = T5 step 0 — the section layout system v1** (engine slice, §1; frontier-independent).
 *Build:* the `TabDef.body` registry replacing DefaultRoot's hardwired branch · the curated presets
-(4/3/2-tab) · the global synced lever (`auto` = theme default) + `ThemeDef` capability declaration
-· the generalized menu-affordance rule (off-bar ⇒ menu) · the utils-in-Conf group (concrete).
+(4/3/2-tab) · the global **device-local** lever (`auto` = theme default; per §1 point 3 — NOT synced,
+the `appbarMode` precedent; sync is a possible later additive promotion) + `ThemeDef` capability
+declaration · the generalized menu-affordance rule (off-bar ⇒ menu) · the utils-in-Conf group (concrete).
 *Reuse:* `tabsFor`/`useSections` · NavMenu · appearance channel · per-theme settings machinery.
 *⚠ Preserve (added 2026-07-11, the shipped composer Surface lives in the SAME DefaultRoot this
 slice rewrites):* the `useComposerLayout()` read (also a `--composer-h` effect dep), the
@@ -184,13 +193,19 @@ review first → drafts the D-entry.**
 modes, 4 gradient accents — gradients in `--accent-fill`, plain `--accent`) · Chakra Petch +
 JetBrains Mono via `loadFonts` · `tokens.css` under `.kit` (appbar sun/moon-skinned mode toggle ·
 nav · Conf · Utils · composer per §3) · dusk-glow background · `defaultLayout: 3-tab` +
-`composer: [stacked, sheet]` declarations (`sheet` = the docked variant's ID). *Reuse:* Kit wholesale; the §0 contract's porting
-playbook (§10). *Themed copy (fidelity audit 2026-07-11):* tab labels are ALREADY per-theme data
+`composer: composerLayoutSetting("stacked")` + `planPlacement: planPlacementSetting(<default — confirm
+at the F1/F4 design review>)` declarations (full shared option lists, per §3's as-built update).
+*Reuse:* Kit wholesale; the §0 contract's porting playbook (§10). *Themed copy (fidelity audit 2026-07-11):* tab labels are ALREADY per-theme data
 (`TabDef.lbl`/`glyph` — frontier's F1 tab set declares "Frontier/Comms/Settings"); section
 headings/map title/empty-state copy live in the bespoke bodies (F2/F4) by construction. The ONE
 open item: the appbar brand subtitle ("4/6 rigs · online" — dynamic content in shared Kit chrome) —
 resolve at F1 pre-flight (small Kit appbar slot vs accept the standard appbar). *Acceptance:* every tab fully functional in frontier at 390px; mode/accent
 switches live + synced; keyframes `frontier-`-prefixed; §14.6 `@scope` pattern; check.py green.
+*(Mechanism note, verified 2026-07-11: nothing in `stylelint.config.mjs` auto-derives the prefix —
+the enforcement is the P2 META-GUARD TEST in `themeContract.test.ts` ("authoring guards ↔
+registry"), which goes RED the moment `frontier` registers until the `src/themes/frontier/**`
+`^frontier-` stylelint override AND the `TOKENS_RAW` entry are hand-added. Expect that red; it's
+the guard working, with instructions in its failure message.)*
 
 **F2 — the Fleet signature (bespoke body via the registry).** *Build:* art-map card (hero +
 6s `sweep` + GPS beacons at `present()` x/y · ping-ring pulse · offline grey · name tags · count
@@ -223,7 +238,14 @@ confirm path; a11y (`role="dialog"` non-modal per §14.13 #9).
 token contract** (named classes + component tokens for bubble kinds/markdown/code/plan/reasoning/
 notices/search); confirm with owner; note them for hardening ⑧. *Build:* bespoke body (backdrop +
 empty-state rig stack + chips) · the **recede-to-background** transition (first `message.start` ⇄
-`/clear`) · the log reskin against the hooks · plan-pill placement setting (D30 slots).
+`/clear`) · the log reskin against the hooks · ~~plan-pill placement setting~~ **SHIPPED as
+COMPOSER_SURFACE_PLAN A4 (`planPlacement`) — F4 only declares frontier's default + verifies both
+placements against the bespoke body.** ⚠ A4 interplay for the pre-flight inventory: today's
+`AgentTab` hosts BOTH the setting-keyed `PinnedPlanPanel` mount (the `pinned` placement) AND the
+single `usePlanOpenAutoClose(currentPlan)` call (the shared plan-open flag's reset) — if F4's
+bespoke frontier body replaces AgentTab via the registry, it must carry both (or F4 re-homes them
+somewhere always-mounted); losing the hook silently regresses the cleared-plan-reopens bug fixed
+2026-07-11 (`12f83a5`/A4). Check at the F4 design review.
 *Acceptance:* full chat functionality (markdown/code actions/confirm+question bubbles/plan/
 reasoning/voice) visually frontier at 390px; **fidelity standard (audit 2026-07-11): the prototype
 never renders composer + populated log together (its JS deletes the whole empty state on first

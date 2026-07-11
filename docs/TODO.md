@@ -869,13 +869,13 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
         kit-only class, crash/ErrorBoundary smoke — a SPEC, not a Playwright project)
   - [x] riders: persisted `v` schema stamp on `ctrlb.ui` (one-shot prunable migrations; deletes
         `rawHasAppbarMode`) · order-insensitive `themeSettings` compare in `reconcileAppearance`
-- [ ] **Composer Surface (D31 / §14.14) — after the Hardening slice v2 (D34 sequencing).** Build `SheetComposer` (the **docked** composer variant, vapor's
-      look Kit-tokened) + make the composer layout a **user-selectable Surface** (the `composerVariants` registry + a
-      per-theme `composer` `seg` setting + the `ThemedComposer` resolver, reusing `useComposer()`). **Fully specified,
-      edge-case-complete, in [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) — start there.** Slices: A1
-      mechanism (no visual change) → A2 SheetComposer markup + `.kit-composer.sheet` CSS → A3 wire minimal+cosmos
-      (default `stacked`). **Non-breaking: vapor untouched, cosmos orbit untouched, Fleet stays Root-pinned.** Out of
-      scope (deferred, see plan §6): Fleet→registry migration, the `createSurface` factory, vapor wiring.
+- [x] **Composer Surface (D31 / §14.14) ✅ SHIPPED 2026-07-11 — the FULL feature, beyond this line's original
+      scope:** the 5-variant catalog `[stacked, borderless, ghost, sheet, line]` (registry + `ThemedComposer`
+      resolver + shared `composerLayoutSetting`, picker on minimal+cosmos default `stacked`) + the A4
+      `planPlacement` inline/pinned axis + the plan-clear fix. As-built record + commit map:
+      [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) banner. **Non-breaking held: vapor untouched,
+      cosmos orbit untouched, Fleet stays Root-pinned.** Still deferred (plan §6/Phase D): Fleet→registry
+      migration, the `createSurface` factory, vapor wiring.
 - [ ] **T2 — phosphor** (LOW–MED): `tokens.css` + fonts + CRT overlay + monochrome amber/green named axis. Reuses the
       whole Kit incl. the default Fleet. + a Fleet-data eyeball pass.
 - [ ] **T3 — observatory** (MED, low-pri — port once its prototype is finished): own Fleet view (SVG radial topology)
@@ -892,7 +892,7 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
       AFTER Hardening v2 + Composer Surface.
 - [ ] **T5 — frontier** (HIGH; **plan = [`FRONTIER_PLAN.md`](./FRONTIER_PLAN.md), design LOCKED 2026-07-07,
       slices F1–F5 — build against it, not this line**): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
-      (animated squares — the one non-Fleet structural deviation) + bottom-sheet `HostDetail` (**reuse cosmos's
+      (the 3-layer bobbing rig-stack empty state — the one non-Fleet structural deviation) + bottom-sheet `HostDetail` (**reuse cosmos's
       `components/BottomSheet.tsx` primitive** — multi-snap, see THEME_ENGINE §14.13 #9) + asset strategy
       (`import.meta.glob`; built-in Mœbius drawing set by index + per-host `host.appearance.frontier.image` override).
 
