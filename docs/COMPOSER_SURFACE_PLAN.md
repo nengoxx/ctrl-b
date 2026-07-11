@@ -381,17 +381,40 @@ is **unchanged** (no composer row). Switch themes and back — no FOUC, no stale
 - **Fleet graduation**: when a theme offers ≥2 fleet views, build the fleet registry/resolver by **factoring** the
   composer concretes into the generic `createSurface` (the rule-of-three extraction).
 
-## Phase E (deferred until after C — owner-spec'd 2026-07-11) — the `line` variant
+## Phase E — the `line` variant — **BUILT 2026-07-11** (owner design-confirm same day)
 **Design reference: `design/ideas/telegram-composer.png`** (Telegram mobile). A SINGLE-ROW composer:
-`[plan pill (leading)] [flex text field] [attach] [mic/send]`. Owner mapping: Telegram's accent "Menu"
+`[plan pill (leading)] [flex text field] [morph mic/send]`. Owner mapping: Telegram's accent "Menu"
 pill position = **the plan pill** (so `planPill: inline` renders it in-row leading — the `controlsStart`
 slot at this variant's controls leading edge); the emoji icon is DROPPED. Genuinely different structure →
 a real component variant (`LineComposer`, registry row `line`), reusing `useComposer()` +
-`useComposerChrome()` + the same slot/a11y contract. **Build-time decisions (decide at the Phase E
-design-confirm, with the owner's screenshots):** (a) mic↔send swap on non-empty draft (the Telegram idiom)
-vs both visible (our Kit idiom — note we have BOTH mic and send today, Telegram has one morphing button);
-(b) single-line auto-grow ceiling (Telegram grows to ~4 lines then scrolls); (c) attach button presence
-(KitComposer parity). Fidelity target: the screenshot, adapted to our tokens.
+`useComposerChrome()` + the same slot/a11y contract.
+
+**The four owner-confirmed rulings (2026-07-11 — FINAL), superseding this section's earlier "adapted to
+our tokens" fidelity note where they conflict:**
+1. **MIC + SEND** *(revised at the line eyeball, same day — supersedes the original full-morph)*: the MIC
+   stays visible whenever dictation is configured (it must never vanish because text exists); SEND joins to
+   its RIGHT once the draft is non-empty (`showMic = sttReady` · `showSend = !sttReady || draft !== ""`).
+   Empty draft + STT → mic alone (the compact resting look); **no STT → always send alone.** Both share
+   `.line-btn` (identical 36px accent circles — and the in-row plan pill matches that 36px height so the
+   three read as one control family). The mic copies KitComposer/SheetComposer's full mic attribute set;
+   the send copies the send set (`id=cmd-send`, "send message", `disabled={isStreaming}`, shared
+   `SendArrowheadIcon`).
+2. **AUTO-GROW** — the shared 96px ceiling from `useComposerChrome`; no new knob.
+3. **ATTACH** — **DEFERRED to ROADMAP A8.** Nothing reserved in the DOM; only a placement comment marks where
+   it lands (trailing-of-field), capability-gated like the mic.
+4. **GEOMETRY** — a **FLOATING STADIUM** (NOT edge-to-edge): inherits the base `.kit-composer` float (inset
+   ~90% width at 390px, frost/border/shadow — "not baked into the window"), reshaped to `border-radius:999px`,
+   a compact single row (~44–48px collapsed — the plan-pill scale), the round morph button at the trailing
+   end; multi-line growth keeps the stadium ends with all children riding the vertical CENTER
+   (`align-items:center` — the post-build audit showed a bottom-anchored button gets chord-clipped by the
+   ~53px end-cap curve at max growth, so the earlier flex-end idea was corrected as-built).
+
+**As-built notes:** the vapor stroke `MicIcon` GRADUATED to `composer/icons.tsx` at its second consumer
+(SheetComposer's embedded mic + LineComposer's morph). The line variant keeps the base STACKED plan-sheet
+geometry (bottom 12px) → no `:has()` sheet override needed; the plan pill KEEPS the base 999px lozenge (the
+8px-rect ruling stays sheet/borderless-only); §14.11 blur/perf-lite + light-mode shadow inherit from the base
+`.kit-composer` class for free (same-class trick). Placeholder is the reference's short "Message" (a
+deliberate delta from the Kit's long placeholder). Seg now has 5 options (+`{ line, Line }`).
 
 ---
 

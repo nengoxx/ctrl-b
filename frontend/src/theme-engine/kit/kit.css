@@ -458,8 +458,9 @@ body[data-mode="light"] .kit-composer.sheet {
   animation: kit-tag-pulse 1.8s ease-in-out infinite;
 }
 body[data-motion="reduced"] .kit-composer.sheet .field .kit-cbtn.mic.rec,
-body[data-motion="reduced"] .kit-composer.borderless .kit-cbtn.mic.rec {
-  animation: none; /* §14.11: reduced motion → static red (one gate for both breathing variants) */
+body[data-motion="reduced"] .kit-composer.borderless .kit-cbtn.mic.rec,
+body[data-motion="reduced"] .kit-composer.line .kit-cbtn.mic.line-btn.rec {
+  animation: none; /* §14.11: reduced motion → static red (one gate for all breathing variants) */
 }
 /* full-height send block beside the field (align-items:stretch gives the height); the composer's
  * overflow:hidden clips its top-right corner into the bar's radius. Accent fill/ink inherit from the
@@ -588,10 +589,98 @@ body[data-mode="light"] .kit-composer.ghost {
 .kit-composer.ghost .kit-cbtn.mic.rec {
   border-color: color-mix(in oklch, var(--danger) 40%, transparent);
 }
-/* the plan pill goes borderless too; it keeps its --accent-soft fill (only the outline is dropped). */
+/* the plan pill goes borderless too; it keeps its --accent-soft fill (only the outline is dropped).
+ * (`line` joined at its eyeball, 2026-07-11 — the stadium bar wants the quiet pill.) */
 .kit-composer.ghost .plan-pill,
-.kit-composer.borderless .plan-pill {
+.kit-composer.borderless .plan-pill,
+.kit-composer.line .plan-pill {
   border-color: transparent;
+}
+/* in the line row the pill matches the 36px mic/send circles (owner eyeball: the shorter chip read as a
+ * misfit next to them) — fixed height instead of padding-derived, horizontal padding preserved. */
+.kit-composer.line .plan-pill {
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 13px;
+}
+
+/* ── composer · TELEGRAM "line" variant (LineComposer, COMPOSER_SURFACE_PLAN §Phase E — owner-confirmed
+ * 2026-07-11) ───────────────────────────────────────────────────────────────────────────────────────────
+ * A FLOATING STADIUM: one compact single row — `[plan pill] [flex field] [morph mic/send]` — shaped from the
+ * base `.kit-composer` float. Shares the `.kit-composer` class (edge #5: DefaultRoot's --composer-h
+ * querySelector), so the base rule above supplies float/inset (~90% width at 390px, "not baked into the
+ * window") / frost / border / shadow — `.line` only re-shapes it into a pill and lays out the row. §14.11 is
+ * FREE by the same-class trick: `body[data-perf="lite"] .kit-composer` (blur→opaque) and
+ * `body[data-mode="light"] .kit-composer` (shadow) already match this element — no per-variant re-assert
+ * needed (the stadium keeps the base radius-agnostic paints, unlike sheet/ghost which had to fight them).
+ * The plan pill KEEPS the base lozenge here (999px matches the stadium; the 8px rect ruling stays
+ * sheet/borderless-only — no `.line .plan-pill` rule, it inherits `.kit .plan-pill`). And `.line` keeps the
+ * base STACKED geometry (bottom 12px), so the DEFAULT `.kit .plan-sheet` bottom calc is already correct — NO
+ * `:has()` override (unlike sheet/borderless). Semantic tokens ONLY. */
+.kit-composer.line {
+  /* a pill row: everything rides the VERTICAL CENTER — at max textarea growth (~106px bar) the 999px radius
+   * clamps to ~53px semicircle end caps, and a bottom-anchored button's lower arc would fall OUTSIDE the cap
+   * and get chord-clipped by overflow:hidden (Phase E audit #1); centered, the 36px button always fits
+   * inside the cap circle. overflow:hidden keeps children inside the stadium ends. Asymmetric padding — the
+   * bar's own 16px leads the field, the trailing 6px hugs the round button. Target ≈44–48px collapsed. */
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* SYMMETRIC 6px sides (owner eyeball): the plan pill hugs the leading edge exactly like the mic/send hug
+   * the trailing one; the TEXTAREA carries its own lead-in below so text never starts under the cap curve. */
+  padding: calc(5px * var(--density-pad)) 6px;
+  overflow: hidden;
+}
+/* override the base `.kit-composer textarea` display:block/width:100% → single-line flex child; grows to
+ * the shared 96px ceiling (useComposerChrome). The 10px lead replaces the bar's old 16px left padding
+ * (total ≈16px from the edge with no pill; after a pill, the row gap + 10px reads right). */
+.kit-composer.line textarea {
+  width: auto;
+  flex: 1;
+  padding: 6px 4px 6px 10px;
+}
+/* the `controlsStart` container (the in-row plan pill, leading edge). No left padding — the bar leads with
+ * its own 16px. Collapses when the theme passes the slot but the pill renders null (pinned placement). */
+.kit-composer.line .line-controls {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.kit-composer.line .line-controls:empty {
+  display: none;
+}
+/* the morphing trailing button — ONE accent circle whose glyph swaps (mic ⇄ send). Both concrete buttons
+ * share `.line-btn` for the identical size/shape so the morph reads as a single control. This rule (0,2,0)
+ * outspecifies the base `.kit-cbtn` (32px) and `.kit-send` (34px) sizing (both 0,1,0). */
+.kit-composer.line .line-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* SEND face — base `.kit-send` accent fill/ink + :disabled already apply (kept the `kit-send` class); only
+ * the arrowhead optical nudge is variant-specific (its mass leans up-right, vapor's fix). */
+.kit-composer.line .kit-send.line-btn svg {
+  transform: translate(-1px, 1px);
+}
+/* MIC face — the accent CIRCLE (the reference's filled look, NOT the outline chip), so the swap with send
+ * reads as the same button. (0,5,0) beats the base `.kit-cbtn`/`.kit-cbtn:active`. */
+.kit-composer.line .kit-cbtn.mic.line-btn {
+  border: 0;
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+}
+/* recording — the red BREATHES (opacity-only kit-tag-pulse, §14.11-safe); (0,6,0) beats the fill rule above
+ * and the base `.kit-cbtn.mic.rec`. Reduced-motion gate is GROUPED into the existing sheet/borderless rule
+ * (~line 460) — not a third gate. */
+.kit-composer.line .kit-cbtn.mic.line-btn.rec {
+  background: var(--danger);
+  color: var(--accent-ink);
+  animation: kit-tag-pulse 1.8s ease-in-out infinite;
 }
 
 /* ── Fleet view (KitFleet) — device list + 3-stat summary; ported from the minimal prototype. Inner class
@@ -864,6 +953,10 @@ body[data-mode="light"] .kit-composer.ghost {
 /* ── primitives: segmented control (.seg) + on/off toggle (.switch) ── */
 .kit .seg {
   display: inline-flex;
+  /* many-option segs (composer's 5) flow their chips to a second line rather than overflowing (§14.11:
+   * no x-overflow, ever); the 999px container relaxes into a rounded rect when wrapped. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
   border-radius: 999px;
   padding: 3px;
   background: var(--surface-2);
@@ -1538,6 +1631,10 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
 }
 .kit .confrow {
   display: flex;
+  /* a control wider than the space beside the label WRAPS below it instead of cramming (owner 2026-07-11,
+   * hit by the 5-option composer seg at 390px; future-proofs any wide control). The label's min-width below
+   * is what makes the wrap actually trigger — without it the flex:1 label just crushes to a sliver first. */
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: calc(13px * var(--density-pad)) 14px;
@@ -1549,7 +1646,11 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
 }
 .kit .confrow .k {
   flex: 1;
-  min-width: 0;
+  min-width: min(140px, 45%); /* keep the label readable; a too-wide control wraps below instead */
+}
+/* segs stay right-anchored whether beside the label or wrapped onto their own line. */
+.kit .confrow .seg {
+  margin-left: auto;
 }
 .kit .confrow .k .label {
   font-size: 14px;
@@ -2689,16 +2790,18 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
 .kit-main:has(.kit-composer.sheet) .plan-sheet {
   bottom: calc(var(--composer-h, 64px) - 18px);
 }
-/* borderless-composer interplay (owner 2026-07-11): the plan sheet follows the variant's aesthetic — no
- * accent outline, no accent wash, a quiet NEUTRAL frost + deeper elevation ("clean, lean, subtle").
- * perf-lite keeps its opaque fallback (its rule below is (0,4,1), this is (0,4,0)) but gets a neutral
- * counter for the background so the accent wash doesn't return in lite mode. */
-.kit-main:has(.kit-composer.borderless) .plan-sheet {
+/* borderless/line-composer interplay (owner 2026-07-11; `line` joined at its eyeball): the plan sheet
+ * follows the variant's aesthetic — no accent outline, no accent wash, a quiet NEUTRAL frost + deeper
+ * elevation ("clean, lean, subtle"). perf-lite keeps its opaque fallback (its rule below is (0,4,1), this
+ * is (0,4,0)) but gets a neutral counter for the background so the accent wash doesn't return in lite. */
+.kit-main:has(.kit-composer.borderless) .plan-sheet,
+.kit-main:has(.kit-composer.line) .plan-sheet {
   border-color: transparent;
   background: color-mix(in oklch, var(--surface) 86%, transparent);
   box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35);
 }
-body[data-perf="lite"] .kit-main:has(.kit-composer.borderless) .plan-sheet {
+body[data-perf="lite"] .kit-main:has(.kit-composer.borderless) .plan-sheet,
+body[data-perf="lite"] .kit-main:has(.kit-composer.line) .plan-sheet {
   background: var(--surface); /* opaque + neutral (no accent wash) under the lite gate */
 }
 body[data-motion="reduced"] .kit .plan-sheet {

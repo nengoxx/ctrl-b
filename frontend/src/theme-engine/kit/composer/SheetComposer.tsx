@@ -1,7 +1,7 @@
 import { useRef } from "react";
 
 import { useComposer } from "../../../hooks/useComposer";
-import { SendArrowheadIcon } from "./icons";
+import { MicIcon, SendArrowheadIcon } from "./icons";
 import type { ComposerSlots } from "./types";
 import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 
@@ -64,22 +64,9 @@ export function SheetComposer({ controlsStart, overlay }: ComposerSlots = {}) {
                 onClick={mic.toggle}
               >
                 {/* vapor's stroke mic glyph at vapor's proportion (~26px in the 40px hit target) — owner
-                    eyeball 2026-07-11: the docked variant keeps vapor's icon language, theme-colored. */}
-                <svg
-                  width="26"
-                  height="26"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <rect x="9" y="3" width="6" height="11" rx="3" />
-                  <path d="M5 11a7 7 0 0 0 14 0" />
-                  <path d="M12 18v3" />
-                </svg>
+                    eyeball 2026-07-11: the docked variant keeps vapor's icon language, theme-colored.
+                    Graduated to the shared `MicIcon` at its second consumer (Phase E's LineComposer). */}
+                <MicIcon size={26} />
               </button>
             )}
           </div>

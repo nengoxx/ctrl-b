@@ -7,6 +7,7 @@ import { setThemeSetting, setUI } from "../../src/store/ui";
 import { BorderlessComposer } from "../../src/theme-engine/kit/composer/BorderlessComposer";
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
 import { GhostComposer } from "../../src/theme-engine/kit/composer/GhostComposer";
+import { LineComposer } from "../../src/theme-engine/kit/composer/LineComposer";
 import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer";
 import { composerLayoutSetting } from "../../src/theme-engine/kit/composer/setting";
 import { useComposerLayout } from "../../src/theme-engine/kit/composer/ThemedComposer";
@@ -35,11 +36,12 @@ afterEach(() => {
 });
 
 describe("composerVariants registry", () => {
-  it("maps stacked→Kit, borderless→Borderless, ghost→Ghost and sheet→Sheet (stable module refs)", () => {
+  it("maps stacked→Kit, borderless→Borderless, ghost→Ghost, sheet→Sheet and line→Line (stable module refs)", () => {
     expect(composerVariants.stacked).toBe(KitComposer);
     expect(composerVariants.borderless).toBe(BorderlessComposer);
     expect(composerVariants.ghost).toBe(GhostComposer);
     expect(composerVariants.sheet).toBe(SheetComposer);
+    expect(composerVariants.line).toBe(LineComposer);
   });
 
   it("DEFAULT_COMPOSER_LAYOUT is stacked", () => {
@@ -90,7 +92,7 @@ describe("useComposerLayout", () => {
 });
 
 describe("composerLayoutSetting", () => {
-  it("builds the shared seg spec (options Stacked/Borderless/Sleek/Docked, default from the arg)", () => {
+  it("builds the shared seg spec (options Stacked/Borderless/Sleek/Docked/Line, default from the arg)", () => {
     const spec = composerLayoutSetting();
     expect(spec).toMatchObject({
       type: "seg",
@@ -102,11 +104,14 @@ describe("composerLayoutSetting", () => {
         { val: "borderless", label: "Borderless" },
         { val: "ghost", label: "Sleek" },
         { val: "sheet", label: "Docked" },
+        { val: "line", label: "Line" },
       ],
     });
+    expect(spec.type === "seg" && spec.options).toHaveLength(5);
     expect(composerLayoutSetting("borderless").default).toBe("borderless");
     expect(composerLayoutSetting("ghost").default).toBe("ghost");
     expect(composerLayoutSetting("sheet").default).toBe("sheet");
+    expect(composerLayoutSetting("line").default).toBe("line");
   });
 });
 
@@ -263,5 +268,62 @@ describe("GhostComposer render (structural)", () => {
     const stacked = renderComposer(KitComposer);
     expect(stacked.container.querySelector(".kit-send polygon")).toBeNull();
     expect(stacked.container.querySelector(".kit-send path")).not.toBeNull();
+  });
+});
+
+describe("LineComposer render (structural)", () => {
+  // LineComposer (Phase E) is a REAL variant: the Telegram single row reusing useComposer + useComposerChrome.
+  // The shared `renderComposer` harness seeds NO voice data → `sttReady` is false → the morph is ALWAYS on its
+  // send branch here (exactly the `!sttReady` always-send case), so the mic button never mounts.
+  const renderLine = (slots: ComposerSlots = {}) => renderComposer(LineComposer, slots);
+
+  it("root is `.kit-composer.line#composer` (edge #5 — --composer-h querySelector still matches)", () => {
+    const { container } = renderLine({});
+    const root = container.querySelector("#composer");
+    expect(root).not.toBeNull();
+    expect(root?.classList.contains("kit-composer")).toBe(true);
+    expect(root?.classList.contains("line")).toBe(true);
+  });
+
+  it("renders `overlay` as a SIBLING BEFORE the composer bar (edge #7 tuck order)", () => {
+    const { container } = renderLine({
+      overlay: createElement("div", { "data-testid": "ov" }),
+    });
+    const kids = Array.from(container.childNodes);
+    const ovIdx = kids.findIndex((n) => (n as Element).getAttribute?.("data-testid") === "ov");
+    const barIdx = kids.findIndex((n) => (n as Element).id === "composer");
+    expect(ovIdx).toBeGreaterThanOrEqual(0);
+    expect(barIdx).toBeGreaterThan(ovIdx);
+  });
+
+  it("renders `controlsStart` inside `.line-controls`; omits the wrapper when the slot is absent", () => {
+    const { container } = renderLine({
+      controlsStart: createElement("span", { "data-testid": "pill" }, "plan"),
+    });
+    const controls = container.querySelector(".line-controls");
+    expect(controls).not.toBeNull();
+    expect(controls?.querySelector("[data-testid=pill]")).not.toBeNull();
+
+    cleanup();
+    const bare = renderLine({});
+    expect(bare.container.querySelector(".line-controls")).toBeNull();
+  });
+
+  it("the textarea is `#cmd-input` with the short 'Message' placeholder (the reference's copy)", () => {
+    const { container } = renderLine({});
+    const ta = container.querySelector("textarea#cmd-input");
+    expect(ta).not.toBeNull();
+    expect(ta?.getAttribute("placeholder")).toBe("Message");
+  });
+
+  it("the morph's !sttReady branch: the SEND button (arrowhead polygon) renders and NO mic mounts", () => {
+    // The harness has no voice data → sttReady false → `showMic` is false → always-send. The send button
+    // carries the shared arrowhead (`polygon`), and the mic button is absent entirely (clean aria, no
+    // label-flipping single button).
+    const { container } = renderLine({});
+    const send = container.querySelector("button#cmd-send.kit-send.line-btn");
+    expect(send).not.toBeNull();
+    expect(send?.querySelector("polygon")).not.toBeNull();
+    expect(container.querySelector(".kit-cbtn.mic")).toBeNull();
   });
 });
