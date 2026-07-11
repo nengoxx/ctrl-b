@@ -31,14 +31,17 @@
 >   vault's llamacpp `.137:5001` (owner-confirmed; corsair's instance unused).** The target's `config.yaml`
 >   is canonical — the Windows snapshot is stale by design (bootstrap re-runs won't clobber).
 >
-> **▶ CURRENT WORK (updated 2026-07-11 EOD): the COMPOSER SURFACE feature is ✅ COMPLETE (A1–A4 + C —
-> `COMPOSER_SURFACE_PLAN.md` status banner has the commit map).** Shipped: the variant catalog
-> `[stacked, borderless, ghost, sheet]` (picker on minimal+cosmos, default stacked) + the
-> `planPlacement` inline/pinned axis (pinned = the Kit `PinnedPlanPanel` in AgentTab) + the
-> plan-clear fix (`12f83a5`) + ROADMAP A7-menu/A8-attachments entries. Every slice owner-eyeballed
-> at 390px + independently audited (2 real defects caught+fixed pre-merge: ghost scrim geometry,
-> sheet mic recording color). **NEXT (owner's pick): Phase E `line` variant (design-confirm first,
-> `design/ideas/telegram-composer.png`) · frontier F0 (`FRONTIER_PLAN.md`) · ACA Slices 1–2.**
+> **▶ CURRENT WORK (updated 2026-07-11 EOD): the COMPOSER SURFACE feature is ✅ COMPLETE **including
+> Phase E** (A1–A4 + C + E — `COMPOSER_SURFACE_PLAN.md` status banner has the commit map; Phase E =
+> `7e6fccb`, CI green).** Shipped: the FULL five-variant catalog `[stacked, borderless, ghost, sheet,
+> line]` (picker on minimal+cosmos, default stacked; `line` = the Telegram-style floating stadium w/
+> mic+send trailing pair) + the `planPlacement` inline/pinned axis (pinned = the Kit `PinnedPlanPanel`
+> in AgentTab) + the plan-clear fix (`12f83a5`) + the Conf-row wrap fix (wide segs drop below their
+> label) + ROADMAP A7-menu/A8-attachments entries. Every slice owner-eyeballed at 390px +
+> independently audited (3 real defects caught+fixed pre-merge: ghost scrim geometry, sheet mic
+> recording color, line stadium end-cap clip). **NEXT (owner's pick): frontier F0
+> (`FRONTIER_PLAN.md`, starts at the tab-body registry — the theme engine's last spec-not-built
+> item) · ACA Slices 1–2 (`AGENT_CHAT_AUDIT.md` / TODO Phase 12).**
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
 > orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).
 >
