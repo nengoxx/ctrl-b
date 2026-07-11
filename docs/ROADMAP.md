@@ -195,6 +195,36 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
   an agent that lacks it — the clean inverse pattern is a broad agent + skills that narrow per intent.
 - **Open:** shipped presets vs all-custom; whether to surface the active agent in the composer/header;
   interaction with privilege (A1) and skills (A5).
+- **Composer tools/skills MENU (the UI face of this feature) — noted 2026-07-11 (owner, at the A2
+  composer-surface eyeball):** surface the selection control as a **menu in the composer**, at the
+  controls **leading edge beside the plan pill**. The layout seam already exists and is additive:
+  the D30 slot contract (`ComposerSlots.controlsStart` — `kit/composer/types.ts`) takes any node, so
+  a menu trigger composes in next to `PlanPill` with zero contract change (a new named slot is also
+  reserved-additive if independent placement is ever wanted); the popover reuses the plan-sheet
+  `overlay` idiom or the existing bottom-sheet. A4's `planPill` placement setting moves the whole
+  `controlsStart` composition, so the menu follows that lever for free. **Data side:** per-message
+  scope rides the shipped per-turn `ChatRequest.agent` override (pick a preset from the menu); true
+  per-message tool/skill *ticking* would add an optional narrowing-override field to `ChatRequest`
+  (mirror `narrow_tools` semantics — narrow-only, never widen; design at build time). Selection
+  state = a small store beside `store/composer.ts` (draft precedent).
+
+### A8. Composer attachments (files/images to the agent) — **noted 2026-07-11 (owner)**
+
+- **What:** attach files/images to a chat message from the composer — an **attach button next to the
+  mic** — so the agent can read configs/logs/screenshots (multimodal when the model supports it).
+- **Design implication (the seam is the mic precedent):** attach is core composer **chrome, NOT a
+  theme slot-addon** — same class as mic/send. Behavior lives in the headless `useComposer()`
+  controller (file picking, upload state), and **each variant renders the button in its own
+  arrangement** in parity (Kit's controls row · the docked sheet's field trailing edge beside the
+  mic · the future `line` variant, whose Phase-E spec already reserves `[attach] [mic/send]`).
+  Render on capability, like the mic's `sttReady` gate. Slots stay for theme-optional decoration;
+  attach is functionality every variant must offer once it exists.
+- **Backend (its own design pass at build time):** upload endpoint + storage/retention, an
+  attachment message-part in the chat schema, size/type limits (single-user tailnet keeps the threat
+  model small — but SECURITY_MODEL still gates what the agent may *do* with a file), and feeding
+  attachments to the model (multimodal vs text-extraction fallback).
+- **Open:** storage location + retention; image-only vs any-file first slice; whether attachments
+  persist in thread history (DB) or are turn-scoped.
 
 ---
 
