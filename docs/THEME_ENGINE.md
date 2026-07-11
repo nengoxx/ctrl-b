@@ -41,12 +41,13 @@ mapping), while §9.7–§9.12 + §13.1 remain live contract · **§14** = the *
 | **Wire the three guard tables** — `stylelint.config.mjs` `^<id>-` keyframe override · `e2e/contrast-matrix.ts` row · `TOKENS_RAW` entry in `themeContract.test.ts` (all hand-maintained BY DESIGN; the P2 meta-guard + drift guards fail loudly with instructions until each is added) | §14.13.1 P2 · the files' own headers |
 | The step-by-step porting playbook | **§10** (rewritten as-built 2026-07-06) |
 
-**⚠ SPEC-not-built — do not assume these exist in code:** the user-selectable Surface machinery
-(`composerVariants`/`ThemedComposer` — §14.14 as-built banner; `SheetComposer` is a delegating stub) ·
-a tab **body** registry — DefaultRoot still hardwires the four tab bodies, so a theme cannot drop/add a
-section yet (**scheduled**: frontier step 0, ratified 2026-07-07 — §14.15.4). *(The Hardening-v2
-artifacts formerly listed here — `resolveThemeSetting` ⑦, `themeContract.test.ts` ⑧, stylelint ⑨,
-`kit-render.spec.ts` ⑩ — all SHIPPED 2026-07-10 and ARE in the tree.)*
+**⚠ SPEC-not-built — do not assume these exist in code:** a tab **body** registry — DefaultRoot still
+hardwires the four tab bodies, so a theme cannot drop/add a section yet (**scheduled**: frontier step 0,
+ratified 2026-07-07 — §14.15.4). *(The user-selectable Surface machinery formerly listed here SHIPPED
+2026-07-11 — the composer Surface is COMPLETE per `COMPOSER_SURFACE_PLAN.md`: `composerVariants`
+catalog `[stacked, borderless, ghost, sheet]` + `ThemedComposer` resolver + the `planPlacement`
+inline/pinned axis. The Hardening-v2 artifacts — `resolveThemeSetting` ⑦, `themeContract.test.ts` ⑧,
+stylelint ⑨, `kit-render.spec.ts` ⑩ — all SHIPPED 2026-07-10 and ARE in the tree.)*
 
 **Sequencing rule (satisfied 2026-07-10):** the Hardening slice v2 (§14.15.1) landed **before** the next themeable-UI wave
 — a frontier plan builds on top of it, not around it.
@@ -1403,7 +1404,7 @@ structure, it has left token-space — that, and only that, is when a Surface is
 | Region | Verdict | Why |
 |---|---|---|
 | **Fleet** (list / orbital / map) | **Surface** | radically different DOM + interaction; ≥2 impls (`KitFleet`, `CosmosFleet`); backed by `useFleet` |
-| **Composer** (stacked / docked) | **Surface** | structural layout differs; ≥2 impls (`KitComposer`, `SheetComposer`); backed by `useComposer` |
+| **Composer** (stacked / borderless / ghost / docked) | **Surface** | structural layout differs; ≥2 impls (`KitComposer` + wrappers, `SheetComposer`); backed by `useComposer` — **user-selectable since 2026-07-11** |
 | **Tools tab** | **Tokens** | one schema-driven `UtilCard` structure, reskinned; no per-theme component |
 | **Conf / settings** | **Tokens** | one `ConfGroup`/`SettingRow` structure, reskinned; matches VS Code/Primer/MUI/Backstage — none component-swap settings |
 | **AppBar / nav / chrome** | **Tokens** | same nav contract restyled (promote ONLY if a theme truly restructures navigation) |
@@ -1433,18 +1434,18 @@ the semantic contract, so they're portable across any contract-providing theme.
    **This is Composer** (stacked/docked, user-picked).
 
 **Graduation path:** a surface starts Root-pinned and **graduates** to user-selectable the moment ≥2 variants + a user
-choice are actually wanted (the second-instance trigger). Composer has graduated **on paper** (the decision is made;
-`SheetComposer` exists as a delegating stub); **Fleet stays Root-pinned** — and cosmos's orbital fleet is therefore
+choice are actually wanted (the second-instance trigger). Composer has **graduated in code (2026-07-11)** —
+the full catalog is live and user-picked; **Fleet stays Root-pinned** — and cosmos's orbital fleet is therefore
 *untouched* — until a theme genuinely offers a fleet *choice*. Don't pre-graduate a surface that only has one variant
 per theme; the prop is correct and cheaper.
 
-> **⚠ As-built status (QH deep pass, 2026-07-07):** the user-selectable machinery below is **SPEC, not yet
-> code**. In the tree today: `SheetComposer.tsx` is a stub that delegates straight to `KitComposer` ("selecting
-> it changes nothing yet" — its own header), variants are still injected via the **D30 Root prop**
-> (`DefaultRoot Composer={…}`), and `composerVariants` / `composerLayoutSetting` / `ThemedComposer` do not
-> exist. The only real multi-implementation surface is **Fleet** (KitFleet + CosmosFleet, Root-pinned). This
-> section is the blueprint the **post-deploy Composer-Surface slice** (HANDOFF final-touches / D34 sequencing:
-> hardening first, then Composer Surface) implements — nothing here is licensed to be assumed built until then.
+> **✅ As-built status (2026-07-11 — supersedes the QH 2026-07-07 spec-only banner):** the machinery below
+> IS in the tree per `COMPOSER_SURFACE_PLAN.md` (A1–A4 + C, all owner-eyeballed + audited):
+> `composerVariants` `[stacked, borderless, ghost, sheet]` + `composerLayoutSetting` + `ThemedComposer`
+> (kit/composer/), the `rootClass`/`sendIcon` pure-CSS wrapper seam (borderless/ghost), the shared
+> `useComposerChrome` presentational hook, and the A4 `planPlacement` axis (inline pill+sheet, owned by
+> DefaultRoot · pinned `PinnedPlanPanel`, mounted by AgentTab). The `DefaultRoot Composer={…}` prop is
+> REMOVED (D30's banner covers the history). Fleet remains the one Root-pinned multi-impl surface.
 
 **The factory is concrete-first.** There will be exactly ONE user-selectable surface at first (Composer), so its
 registry + resolver get built **concretely** in `kit/composer/` (`composerVariants` map + `composerLayoutSetting`

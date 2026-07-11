@@ -1578,6 +1578,15 @@ frontier (bespoke Agent). D7 pixel-fidelity per theme; pause for the owner's 390
 > registry + a per-theme `composer` `seg` setting + the `ThemedComposer` resolver; D31/§14.14). `composerSlots`
 > (the addon axis) **stays** a `DefaultRoot` prop. Build per `COMPOSER_SURFACE_PLAN.md`. Read references to
 > `Composer={…}` below as historical.
+>
+> ✅ **BUILT 2026-07-11 (`COMPOSER_SURFACE_PLAN.md` A1–A4 + C).** The deferred list below is done: SheetComposer
+> is the real docked variant; the live user-setting exists (catalog `[stacked, borderless, ghost, sheet]`).
+> **Two as-built updates:** (1) "Where the plan renders, per theme" is now itself a per-theme USER SETTING —
+> `planPlacement` (`inline` = the pill+sheet in the composer, composition now OWNED by `DefaultRoot`, themes no
+> longer pass `composerSlots` for it · `pinned` = the Kit `PinnedPlanPanel` at the top of the Agent tab,
+> mounted by `AgentTab`, generalizing vapor's pin site). Vapor's frozen `.plan-pin` is unchanged. (2) The
+> `composerSlots` prop is currently UNUSED (the future theme-addon seam; a slot-merge with the inline plan
+> arrives with the first second contributor — ROADMAP A7, rule of three).
 
 **Why.** The owner wants themes to pick a **composer style** (the kit stacked composer · eventually a vapor-style "peek" composer · future styles) AND optionally layer **features** on top (the plan pill · future addons) — "either the base composer or the one with the plan pill, and use one or the other in future themes." A boolean-config composer (`<Composer plan sheet …>` with internal `if` branches) doesn't scale; the established React answer (Radix/Headless UI/React Aria, web-researched) is **composition over configuration** via **slots + variants**. It also reuses a seam this repo already has: `DefaultRoot` injects per-theme pieces by prop (`Fleet`).
 

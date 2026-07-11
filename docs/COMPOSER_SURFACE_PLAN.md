@@ -1,12 +1,15 @@
 # Composer Surface — implementation spec (clean-session handoff)
 
-> **Status: ▶ ACTIVE (un-parked 2026-07-11 — the deploy AND Hardening slice v2 both shipped 2026-07-10;
-> this is the NEXT build slice per the locked order, before frontier F0).** Scope EXPANDED at the owner's
-> 2026-07-11 design review (composer-catalog vision): **+A2b** (the `ghost` sleek variant) · **+A4**
-> (plan-pill placement setting, pulled forward from FRONTIER_PLAN §2/F4) · **+Phase E** (the `line`
-> single-row variant, spec'd from `design/ideas/telegram-composer.png`, deferred until after C). Note: D34 renumbered the old TRIAGE-3 hardening
-> vocabulary this doc's §2.0 references (R3/R4/B2 → §14.15.1 items); read §14.15 for the current
-> hardening plan of record.
+> **Status: ✅ COMPLETE through slice C (2026-07-11) — A1 `f3aa435` · A2 `c8ffd43` · A2b `073d182` ·
+> A2c `4247d5e` · A3 `4d0e5c4` · A4 `02a4148`; every slice owner-eyeballed at 390px + independently
+> audited. The shipped catalog is `[stacked, borderless, ghost, sheet]` + the `planPlacement`
+> (inline/pinned) axis. Remaining in this doc: Phase D (vapor/frontier participation, opt-in) and
+> Phase E (the Telegram-style `line` variant — NEXT candidate, starts with an owner design-confirm).**
+> Scope was EXPANDED at the owner's 2026-07-11 design review (composer-catalog vision): **+A2b** (the
+> `ghost` sleek variant) · **+A2c** (the `borderless` variant, owner addition at the A2b eyeball) ·
+> **+A4** (plan placement, pulled forward from FRONTIER_PLAN §2/F4) · **+Phase E** (deferred until
+> after C). Note: D34 renumbered the old TRIAGE-3 hardening vocabulary this doc's §2.0 references
+> (R3/R4/B2 → §14.15.1 items); read §14.15 for the current hardening plan of record.
 >
 > **Downstream rider (ratified 2026-07-07 — THEME_ENGINE §14.15.4):** the **tab-body registry**
 > ships AFTER this plan, as frontier's step 0. Two interplay notes for that slice, not this one:
@@ -21,8 +24,9 @@ every edge case pinned. It is self-contained: a fresh session needs only this + 
 
 > **One-line summary.** Make the composer layout a **user-selectable Surface** (registry + per-theme
 > `composer` setting + resolver, reusing `useComposer()`) with a small variant CATALOG — `stacked` (today's
-> Kit) · `ghost` (sleek borderless, A2b) · `sheet` (docked, vapor-look, A2) · `line` (Telegram-style single
-> row, Phase E) — plus the user-selectable **plan-pill placement** (inline/pinned, A4).
+> Kit) · `borderless` (stacked minus the outline, A2c) · `ghost` (sleek transparent, A2b) · `sheet` (docked,
+> vapor-look, A2) · `line` (Telegram-style single row, Phase E) — plus the user-selectable **plan
+> placement** (inline/pinned, A4 — as-built key `planPlacement`).
 > **vapor is untouched; cosmos's orbit is untouched; Fleet stays Root-pinned.**
 
 ---

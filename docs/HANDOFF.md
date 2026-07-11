@@ -31,11 +31,14 @@
 >   vault's llamacpp `.137:5001` (owner-confirmed; corsair's instance unused).** The target's `config.yaml`
 >   is canonical — the Windows snapshot is stale by design (bootstrap re-runs won't clobber).
 >
-> **▶ CURRENT WORK (session handoff 2026-07-11): the COMPOSER SURFACE is the ACTIVE slice**
-> (`COMPOSER_SURFACE_PLAN.md` — status ACTIVE, owner-expanded catalog scope: A2b ghost · A4 plan-pill ·
-> Phase E `line` from `design/ideas/telegram-composer.png`). **A1 (registry+resolver) SHIPPED `f3aa435`
-> 2026-07-11, zero visual change. RESUME AT A2 (SheetComposer)** → A2b → A3 → A4 → C (owner 390px
-> eyeballs between A-slices) → then frontier F0 (`FRONTIER_PLAN.md`, fidelity-audited + amended).
+> **▶ CURRENT WORK (updated 2026-07-11 EOD): the COMPOSER SURFACE feature is ✅ COMPLETE (A1–A4 + C —
+> `COMPOSER_SURFACE_PLAN.md` status banner has the commit map).** Shipped: the variant catalog
+> `[stacked, borderless, ghost, sheet]` (picker on minimal+cosmos, default stacked) + the
+> `planPlacement` inline/pinned axis (pinned = the Kit `PinnedPlanPanel` in AgentTab) + the
+> plan-clear fix (`12f83a5`) + ROADMAP A7-menu/A8-attachments entries. Every slice owner-eyeballed
+> at 390px + independently audited (2 real defects caught+fixed pre-merge: ghost scrim geometry,
+> sheet mic recording color). **NEXT (owner's pick): Phase E `line` variant (design-confirm first,
+> `design/ideas/telegram-composer.png`) · frontier F0 (`FRONTIER_PLAN.md`) · ACA Slices 1–2.**
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
 > orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).
 >
