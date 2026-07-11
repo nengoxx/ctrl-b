@@ -475,6 +475,70 @@ body[data-motion="reduced"] .kit-composer.sheet .field .kit-cbtn.mic.rec {
   transform: translate(-1px, 1px);
 }
 
+/* ── composer · SLEEK "ghost" variant (GhostComposer, COMPOSER_SURFACE_PLAN §0 / A2b) ───────────────────
+ * KitComposer's EXACT DOM (a thin wrapper adds the `.kit-composer.ghost` root class) — the cheapest band:
+ * pure CSS, no fork. It floats like the stacked bar (base position/inset/radius kept) but goes transparent
+ * and borderless: no surface fill, no frost, no shadow, transparent (NOT removed) border + borderless
+ * controls/pill so there is ZERO layout shift vs stacked. Readability over scrolled content comes from the
+ * ghost-extended bottom scrim below (the DEFAULT scrim ends beneath the text band — audit A2b #1), NOT
+ * from a surface fill. Semantic tokens ONLY. §14.11: no new animations/transitions/filters — this block
+ * only zeroes visuals and re-spaces; the scrim stays a static gradient. */
+.kit-composer.ghost {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  /* keep the 1px border (transparent) so the box size matches stacked — no reflow on a live swap. */
+  border-color: transparent;
+  box-shadow: none;
+  /* sleeker spacing (density-scaled vertical, matching the stacked bar's `--density-pad`). */
+  padding: calc(8px * var(--density-pad)) 11px calc(7px * var(--density-pad));
+}
+/* the readability backstop (audit A2b #1): the default scrim (height `--composer-h − 24`, densest at the
+ * screen edge) never reaches the TEXTAREA band of the transparent bar — extend it past the composer's top
+ * and keep it dense through the whole composer zone, fading only above it. Still a static gradient (§14.11);
+ * same rule carries perf-lite (where stacked would fall back to an opaque fill, ghost has none). */
+.kit-main:has(.kit-composer.ghost)::after {
+  height: calc(var(--composer-h, 64px) + 30px);
+  background: linear-gradient(
+    to top,
+    color-mix(in oklch, var(--bg) 96%, transparent) 0,
+    color-mix(in oklch, var(--bg) 88%, transparent) calc(100% - 34px),
+    transparent
+  );
+}
+/* focus + locate affordance (audit A2b #2): the base textarea is `all:unset` (no native outline) and ghost
+ * has no surface to mark the input, so give the field a resting hairline UNDERLINE that turns accent on
+ * focus (the borderless-input idiom; box-shadow → zero layout shift, no transition added). */
+.kit-composer.ghost .field {
+  box-shadow: 0 1px 0 0 var(--line-2);
+}
+.kit-composer.ghost .field:focus-within {
+  box-shadow: 0 1px 0 0 var(--accent);
+}
+/* the perf-lite rule (`body[data-perf="lite"] .kit-composer`, specificity 0,2,1) re-adds an OPAQUE
+ * `background: var(--surface)` that outspecifies `.kit-composer.ghost` (0,2,0) — re-assert transparency. */
+body[data-perf="lite"] .kit-composer.ghost {
+  background: transparent;
+}
+/* the light-mode rule (`body[data-mode="light"] .kit-composer`, specificity 0,2,1) re-adds a DOWNWARD
+ * shadow that outspecifies `.kit-composer.ghost` (0,2,0) — re-assert the shadowless ghost. */
+body[data-mode="light"] .kit-composer.ghost {
+  box-shadow: none;
+}
+/* borderless controls — the mic/cbtn keep their WIDTH (no shift), only the border goes transparent. */
+.kit-composer.ghost .kit-cbtn {
+  border-color: transparent;
+}
+/* …EXCEPT while recording (audit A2b #3): `.kit-cbtn.mic.rec` ties this rule at (0,3,0) and loses on source
+ * order, which would silently drop the red recording ring — state affordance beats sleekness, re-assert it. */
+.kit-composer.ghost .kit-cbtn.mic.rec {
+  border-color: color-mix(in oklch, var(--danger) 40%, transparent);
+}
+/* the plan pill goes borderless too; it keeps its --accent-soft fill (only the outline is dropped). */
+.kit-composer.ghost .plan-pill {
+  border-color: transparent;
+}
+
 /* ── Fleet view (KitFleet) — device list + 3-stat summary; ported from the minimal prototype. Inner class
  * names are generic (.led/.name/.role/.act/…), so every rule is scoped under a `.kit-*` container to avoid
  * colliding with vapor (skin-scoped) or the shared Bucket-A classes. ── */

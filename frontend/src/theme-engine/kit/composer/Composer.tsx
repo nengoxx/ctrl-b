@@ -13,8 +13,16 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 // variant decides WHERE each slot renders — `controlsStart` opens the controls row (left of mic/send),
 // `overlay` is a positioned SIBLING above the composer (so a sheet can tuck behind the composer's rounded
 // top; a child would paint in front). A base theme passes no slots and gets the bare composer.
+//
+// `rootClass` is the VARIANT-WRAPPER seam (A2b): a pure-CSS variant (e.g. `ghost`) wraps KitComposer and
+// passes an extra root class it restyles in kit.css — same DOM + behaviour, no fork. It is INTERNAL: NOT
+// part of the `ComposerSlots` theme contract — themes never pass it (only a sibling wrapper component does).
 
-export function KitComposer({ controlsStart, overlay }: ComposerSlots = {}) {
+export function KitComposer({
+  controlsStart,
+  overlay,
+  rootClass,
+}: ComposerSlots & { rootClass?: string } = {}) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
   // Shared presentational chrome (mic-press toggle, auto-grow, Enter-to-send) — §3.1.
@@ -25,7 +33,7 @@ export function KitComposer({ controlsStart, overlay }: ComposerSlots = {}) {
       {/* `overlay` slot — a positioned sibling ABOVE `.kit-composer` (e.g. the plan sheet). Rendered before
           the bar so, at equal stacking, the composer paints over the overlay's tucked bottom edge. */}
       {overlay}
-      <div className="kit-composer" id="composer">
+      <div className={"kit-composer" + (rootClass ? " " + rootClass : "")} id="composer">
         <div className="field">
           <textarea
             ref={taRef}

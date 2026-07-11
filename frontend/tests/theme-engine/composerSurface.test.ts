@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
+import { GhostComposer } from "../../src/theme-engine/kit/composer/GhostComposer";
 import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer";
 import { composerLayoutSetting } from "../../src/theme-engine/kit/composer/setting";
 import { useComposerLayout } from "../../src/theme-engine/kit/composer/ThemedComposer";
@@ -18,10 +19,11 @@ import { registeredThemes } from "../../src/theme-engine/registry";
 
 // COMPOSER_SURFACE_PLAN §7 — composer Surface characterization tests. §A1 locked the mechanism (registry
 // identity, the layout resolver's per-theme default + fallbacks, the shared setting spec). §A2 makes `sheet`
-// a REAL docked variant (SheetComposer) reusing the shared `useComposerChrome` hook — the registry identity
-// (`composerVariants.sheet === SheetComposer`) still holds, and NO theme declares the `composer` setting yet
-// (A3 does) so every theme still resolves to `stacked`. This file also covers the extracted `useComposerChrome`
-// (the pure presentational chrome) and SheetComposer's structural render.
+// a REAL docked variant (SheetComposer) reusing the shared `useComposerChrome` hook; §A2b adds the `ghost`
+// sleek variant (GhostComposer — a thin `.kit-composer.ghost` wrapper over KitComposer, pure CSS, no fork).
+// The registry identities (`composerVariants.{sheet,ghost}`) hold, and NO theme declares the `composer`
+// setting yet (A3 does) so every theme still resolves to `stacked`. This file also covers the extracted
+// `useComposerChrome` (the pure presentational chrome) and SheetComposer/GhostComposer's structural render.
 
 beforeEach(() => {
   setUI({ themeSettings: {} }); // clear overrides (module state persists between tests)
@@ -32,8 +34,9 @@ afterEach(() => {
 });
 
 describe("composerVariants registry", () => {
-  it("maps stacked→KitComposer and sheet→SheetComposer (stable module refs)", () => {
+  it("maps stacked→KitComposer, ghost→GhostComposer and sheet→SheetComposer (stable module refs)", () => {
     expect(composerVariants.stacked).toBe(KitComposer);
+    expect(composerVariants.ghost).toBe(GhostComposer);
     expect(composerVariants.sheet).toBe(SheetComposer);
   });
 
@@ -69,7 +72,7 @@ describe("useComposerLayout", () => {
 });
 
 describe("composerLayoutSetting", () => {
-  it("builds the shared seg spec (options Stacked/Docked, default from the arg)", () => {
+  it("builds the shared seg spec (options Stacked/Sleek/Docked, default from the arg)", () => {
     const spec = composerLayoutSetting();
     expect(spec).toMatchObject({
       type: "seg",
@@ -78,9 +81,11 @@ describe("composerLayoutSetting", () => {
       default: "stacked",
       options: [
         { val: "stacked", label: "Stacked" },
+        { val: "ghost", label: "Sleek" },
         { val: "sheet", label: "Docked" },
       ],
     });
+    expect(composerLayoutSetting("ghost").default).toBe("ghost");
     expect(composerLayoutSetting("sheet").default).toBe("sheet");
   });
 });
@@ -199,5 +204,47 @@ describe("SheetComposer render (structural)", () => {
     cleanup();
     const bare = renderSheet({});
     expect(bare.container.querySelector(".sheet-controls")).toBeNull();
+  });
+});
+
+describe("GhostComposer render (structural)", () => {
+  // GhostComposer (A2b) is a thin wrapper that renders KitComposer's EXACT DOM + the `.kit-composer.ghost`
+  // root class (`.kit-composer.ghost` in kit.css restyles it — pure CSS, no fork). Same QueryClientProvider
+  // harness as SheetComposer: the voice query has no seeded data → `sttReady` is false, which the structural
+  // assertions below don't rely on. No new mocks invented.
+  function renderGhost(slots: ComposerSlots) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      createElement(
+        QueryClientProvider,
+        { client: qc },
+        createElement<ComposerSlots>(GhostComposer, slots),
+      ),
+    );
+  }
+
+  it("root is `.kit-composer.ghost#composer` (edge #5 — --composer-h querySelector still matches)", () => {
+    const { container } = renderGhost({});
+    const root = container.querySelector("#composer");
+    expect(root).not.toBeNull();
+    expect(root?.classList.contains("kit-composer")).toBe(true);
+    expect(root?.classList.contains("ghost")).toBe(true);
+  });
+
+  it("renders KitComposer's DOM — the #cmd-input textarea inside `.field` (parity, no fork)", () => {
+    const { container } = renderGhost({});
+    const field = container.querySelector(".field");
+    expect(field).not.toBeNull();
+    expect(field?.querySelector("textarea#cmd-input")).not.toBeNull();
+  });
+
+  it("the default (no rootClass) KitComposer root className is EXACTLY `kit-composer` (no trailing garbage)", () => {
+    // Pins the rootClass append's falsy branch — a regression like `"kit-composer " + rootClass` would
+    // render `class="kit-composer undefined"` on every stacked theme yet still pass a `contains` check.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      createElement(QueryClientProvider, { client: qc }, createElement(KitComposer)),
+    );
+    expect(container.querySelector("#composer")?.className).toBe("kit-composer");
   });
 });
