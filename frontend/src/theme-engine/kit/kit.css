@@ -457,17 +457,17 @@ body[data-mode="light"] .kit-composer.sheet {
   color: var(--danger);
   animation: kit-tag-pulse 1.8s ease-in-out infinite;
 }
-body[data-motion="reduced"] .kit-composer.sheet .field .kit-cbtn.mic.rec {
-  animation: none; /* §14.11: reduced motion → static red */
+body[data-motion="reduced"] .kit-composer.sheet .field .kit-cbtn.mic.rec,
+body[data-motion="reduced"] .kit-composer.borderless .kit-cbtn.mic.rec {
+  animation: none; /* §14.11: reduced motion → static red (one gate for both breathing variants) */
 }
 /* full-height send block beside the field (align-items:stretch gives the height); the composer's
- * overflow:hidden clips its top-right corner into the bar's radius. */
+ * overflow:hidden clips its top-right corner into the bar's radius. Accent fill/ink inherit from the
+ * base `.kit-send` — only the shape differs here. */
 .kit-composer.sheet .kit-send.tall {
   width: 52px;
   height: auto;
   border-radius: 0;
-  background: var(--accent-fill);
-  color: var(--accent-ink);
   flex-shrink: 0;
 }
 /* optical centering for the arrowhead glyph — its visual mass leans up-right (vapor's own nudge). */
@@ -503,10 +503,7 @@ body[data-mode="light"] .kit-composer.borderless {
   background: transparent;
 }
 .kit-composer.borderless .kit-cbtn.mic.rec {
-  animation: kit-tag-pulse 1.8s ease-in-out infinite;
-}
-body[data-motion="reduced"] .kit-composer.borderless .kit-cbtn.mic.rec {
-  animation: none; /* §14.11: reduced motion → static red */
+  animation: kit-tag-pulse 1.8s ease-in-out infinite; /* reduced-motion gate is grouped in the sheet block */
 }
 /* SEND — a SOFT BLURRED ROUNDED-SQUARE (owner-tuned: the sphere fought the theme's squarer geometry —
  * echo the composer/pill instead). Three static paints, NO filter:blur (§14.11: it would blur the icon
@@ -2602,7 +2599,10 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
  * `.plan-pin`/`.plan-drop` in extras.css — frozen.) Accent-themed; step ticks use the semantic ladder
  * (active = `--accent` pulse, done = `--ok` ✓). The sheet's blur is perf-gated, the pulse + slide are
  * motion-gated (§14.11). `.plan-title`/`.plan-count`/`.plan-steps`/`.plan-step` are shared by pill + sheet. */
-.kit .plan-pill {
+/* `.plan-pin-head` (the A4 pinned-panel header) shares the pill's whole accent-chip look — grouped here so
+ * a future accent/chevron tweak can't drift the two apart; its own block keeps only padding/radius deltas. */
+.kit .plan-pill,
+.kit .plan-pin-head {
   all: unset;
   cursor: pointer;
   display: inline-flex;
@@ -2613,7 +2613,8 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
   background: var(--accent-soft);
   border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
 }
-.kit .plan-pill:active {
+.kit .plan-pill:active,
+.kit .plan-pin-head:active {
   background: color-mix(in oklch, var(--accent) 22%, transparent);
 }
 /* docked + borderless variants: a rounded RECT, not the lozenge — it echoes the squarer field/composer
@@ -2623,12 +2624,14 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
 .kit-composer.borderless .plan-pill {
   border-radius: 8px;
 }
-.kit .plan-pill .chev {
+.kit .plan-pill .chev,
+.kit .plan-pin-head .chev {
   color: var(--accent);
   font-size: 9px;
   transition: transform 0.16s ease; /* ▴ points up (sheet rises); rotates when open */
 }
-.kit .plan-pill.open .chev {
+.kit .plan-pill.open .chev,
+.kit .plan-pin-head.open .chev {
   transform: rotate(180deg);
 }
 .kit .plan-title {
@@ -2792,27 +2795,11 @@ body[data-motion="reduced"] .kit .plan-sheet {
   z-index: 4; /* below the kit appbar (z 5), above chat content */
   margin: 0 14px 10px;
 }
+/* the header's accent-chip look (fill/border/chevron/:active) is GROUPED with `.plan-pill` up in the plan-
+ * widget section (one source — no drift); only the pin-head's size/shape deltas live here. */
 .kit .plan-pin-head {
-  all: unset;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   padding: 6px 12px;
   border-radius: 10px;
-  background: var(--accent-soft);
-  border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
-}
-.kit .plan-pin-head:active {
-  background: color-mix(in oklch, var(--accent) 22%, transparent);
-}
-.kit .plan-pin-head .chev {
-  color: var(--accent);
-  font-size: 9px;
-  transition: transform 0.16s ease; /* ▾ points down; rotates when open */
-}
-.kit .plan-pin-head.open .chev {
-  transform: rotate(180deg);
 }
 /* the drop — an absolute overlay hanging under the header (the panel is its positioning context), so the
  * collapsed panel is only header-tall and the open checklist floats OVER the chat below without reflow.

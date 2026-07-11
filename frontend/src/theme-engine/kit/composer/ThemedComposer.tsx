@@ -1,7 +1,7 @@
 import { useUISlice } from "../../../store/ui";
 import { useThemeSetting } from "../../settings";
 import { KitComposer } from "./Composer";
-import { composerVariants, type ComposerLayout } from "./variants";
+import { composerVariants, DEFAULT_COMPOSER_LAYOUT, type ComposerLayout } from "./variants";
 import type { ComposerSlots } from "./types";
 
 // Resolve the active theme's chosen composer layout → its variant component. Reads the per-theme `composer`
@@ -11,13 +11,15 @@ export function useComposerLayout(): ComposerLayout {
   const theme = useUISlice((s) => s.theme);
   // `useThemeSetting` is generic over `ThemeSettingValue` (string | boolean); the composer setting is a seg
   // (string). It returns `undefined` at runtime when the theme declares no `composer` key — the `id &&` guard
-  // catches that (and any unknown id) → the `stacked` fallback.
+  // catches that (and any unknown id) → the registry's declared default.
   const id = useThemeSetting<string>(theme, "composer");
-  return id && id in composerVariants ? id : "stacked";
+  return id && id in composerVariants ? id : DEFAULT_COMPOSER_LAYOUT;
 }
 
-// `layout` may be passed (DefaultRoot reads it once for its effect dep + passes it down to avoid a double
-// subscription); bespoke Roots can omit it and let the hook read.
+// `layout` may be passed so a Root that ALREADY reads the layout (DefaultRoot needs it for its effect dep)
+// hands the same value down; bespoke Roots can omit it and let the hook resolve. (Hooks can't be
+// conditional, so this component always subscribes via `useComposerLayout` — the prop picks which value
+// WINS, it doesn't save the subscription; the store read is O(1) and identical, so that's fine.)
 //
 // Import-cycle note (benign): ThemedComposer → settings → registry → themes/* → DefaultRoot → ThemedComposer.
 // ESM-safe because nothing is *called* at module top-level during the cycle (`useThemeSetting` is only

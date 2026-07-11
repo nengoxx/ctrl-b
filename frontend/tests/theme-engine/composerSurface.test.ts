@@ -15,7 +15,7 @@ import {
   composerVariants,
   DEFAULT_COMPOSER_LAYOUT,
 } from "../../src/theme-engine/kit/composer/variants";
-import type { ComposerSlots } from "../../src/theme-engine/kit/composer/types";
+import type { ComposerSlots, ComposerVariant } from "../../src/theme-engine/kit/composer/types";
 import { registeredThemes } from "../../src/theme-engine/registry";
 
 // COMPOSER_SURFACE_PLAN §7 — composer Surface characterization tests. §A1 locked the mechanism (registry
@@ -179,20 +179,17 @@ describe("useComposerChrome", () => {
   });
 });
 
+// The ONE structural-render harness for every composer variant: variants call useComposer() (draft store +
+// the voice-status query + dictation), and a bare QueryClientProvider suffices — the voice query has no
+// seeded data → `sttReady` is false → the mic button simply doesn't render, which no structural assertion
+// below relies on. No new mocks invented.
+function renderComposer(Comp: ComposerVariant, slots: ComposerSlots = {}) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(createElement(QueryClientProvider, { client: qc }, createElement(Comp, slots)));
+}
+
 describe("SheetComposer render (structural)", () => {
-  // SheetComposer calls useComposer() (draft store + the voice-status query + dictation). A bare
-  // QueryClientProvider is enough: the voice query has no seeded data → `sttReady` is false → the mic button
-  // simply doesn't render, which the structural assertions below don't rely on. No new mocks invented.
-  function renderSheet(slots: ComposerSlots) {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    return render(
-      createElement(
-        QueryClientProvider,
-        { client: qc },
-        createElement<ComposerSlots>(SheetComposer, slots),
-      ),
-    );
-  }
+  const renderSheet = (slots: ComposerSlots = {}) => renderComposer(SheetComposer, slots);
 
   it("root is `.kit-composer.sheet#composer` (edge #5 — --composer-h querySelector still matches)", () => {
     const { container } = renderSheet({});
@@ -229,19 +226,8 @@ describe("SheetComposer render (structural)", () => {
 
 describe("GhostComposer render (structural)", () => {
   // GhostComposer (A2b) is a thin wrapper that renders KitComposer's EXACT DOM + the `.kit-composer.ghost`
-  // root class (`.kit-composer.ghost` in kit.css restyles it — pure CSS, no fork). Same QueryClientProvider
-  // harness as SheetComposer: the voice query has no seeded data → `sttReady` is false, which the structural
-  // assertions below don't rely on. No new mocks invented.
-  function renderGhost(slots: ComposerSlots) {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    return render(
-      createElement(
-        QueryClientProvider,
-        { client: qc },
-        createElement<ComposerSlots>(GhostComposer, slots),
-      ),
-    );
-  }
+  // root class (`.kit-composer.ghost` in kit.css restyles it — pure CSS, no fork).
+  const renderGhost = (slots: ComposerSlots = {}) => renderComposer(GhostComposer, slots);
 
   it("root is `.kit-composer.ghost#composer` (edge #5 — --composer-h querySelector still matches)", () => {
     const { container } = renderGhost({});
@@ -261,31 +247,20 @@ describe("GhostComposer render (structural)", () => {
   it("the default (no rootClass) KitComposer root className is EXACTLY `kit-composer` (no trailing garbage)", () => {
     // Pins the rootClass append's falsy branch — a regression like `"kit-composer " + rootClass` would
     // render `class="kit-composer undefined"` on every stacked theme yet still pass a `contains` check.
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const { container } = render(
-      createElement(QueryClientProvider, { client: qc }, createElement(KitComposer)),
-    );
+    const { container } = renderComposer(KitComposer);
     expect(container.querySelector("#composer")?.className).toBe("kit-composer");
   });
 
   it("BorderlessComposer (A2c) root is `.kit-composer.borderless#composer` (same wrapper seam)", () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const { container } = render(
-      createElement(QueryClientProvider, { client: qc }, createElement(BorderlessComposer)),
-    );
+    const { container } = renderComposer(BorderlessComposer);
     expect(container.querySelector("#composer")?.className).toBe("kit-composer borderless");
   });
 
   it("the `sendIcon` seam: borderless renders the shared arrowhead; stacked keeps its default arrow", () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const borderless = render(
-      createElement(QueryClientProvider, { client: qc }, createElement(BorderlessComposer)),
-    );
+    const borderless = renderComposer(BorderlessComposer);
     expect(borderless.container.querySelector(".kit-send polygon")).not.toBeNull();
     cleanup();
-    const stacked = render(
-      createElement(QueryClientProvider, { client: qc }, createElement(KitComposer)),
-    );
+    const stacked = renderComposer(KitComposer);
     expect(stacked.container.querySelector(".kit-send polygon")).toBeNull();
     expect(stacked.container.querySelector(".kit-send path")).not.toBeNull();
   });
