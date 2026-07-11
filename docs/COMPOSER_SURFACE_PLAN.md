@@ -165,6 +165,10 @@ export function composerLayoutSetting(def: "stacked" | "sheet" = "stacked"): The
 ```
 
 ### 2.3 `kit/composer/ThemedComposer.tsx` (NEW) — the resolver
+> *As-built (A1, 2026-07-11): two type-level deltas vs the snippet below — `useThemeSetting<string>`
+> (the ⑦-landed hook constrains `T` to `ThemeSettingValue`; it still returns `undefined` for an
+> undeclared key, the `id &&` guard covers it) and no `as ComposerLayout` return cast (the open
+> registry widens the type; the cast trips `no-unnecessary-type-assertion`). Semantics identical.*
 ```ts
 import { useUISlice } from "../../../store/ui";
 import { useThemeSetting } from "../../settings";
