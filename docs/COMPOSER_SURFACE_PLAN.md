@@ -36,6 +36,12 @@ every edge case pinned. It is self-contained: a fresh session needs only this + 
 - A2b — the **`ghost`** variant (owner 2026-07-11): KitComposer's exact DOM via a thin wrapper adding
   `.kit-composer.ghost` — transparent background + shadow, borderless buttons/pill, sleeker spacing. Pure
   CSS (cheapest band; no fork), one new registry row + picker option "Sleek". Semantic tokens only.
+  *(As-built: + a ghost-extended bottom scrim — the default scrim ends below the text band — and a
+  hairline/accent-on-focus field underline; both from the A2b audit.)*
+- A2c — the **`borderless`** variant (owner addition at the A2b eyeball, 2026-07-11 — the original "ghost"
+  intent): the stacked KitComposer verbatim with ONLY the outline removed (`border-color: transparent`).
+  Same `rootClass` wrapper seam as ghost, one registry row + picker option "Borderless". The catalog is
+  now `[stacked, borderless, ghost, sheet]`.
 - A3 — declare the `composer` setting on `minimal` + `cosmos` (default `stacked`); the picker + live swap.
   Option list now `[stacked, ghost, sheet]` (frontier adds its own at F1 per FRONTIER_PLAN §3).
 - A4 — **plan-pill placement** (owner 2026-07-11; resolves FRONTIER_PLAN §2's parked "per-theme seg vs

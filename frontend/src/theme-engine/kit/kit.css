@@ -475,6 +475,59 @@ body[data-motion="reduced"] .kit-composer.sheet .field .kit-cbtn.mic.rec {
   transform: translate(-1px, 1px);
 }
 
+/* ── composer · BORDERLESS variant (BorderlessComposer, A2c — owner addition 2026-07-11) ─────────────────
+ * The stacked KitComposer verbatim — frosted surface and spacing kept — with the outline removed and
+ * ELEVATION doing the separation instead (owner eyeball: without the border, the base 0 6px 18px shadow
+ * reads too faint on near-black themes and the bar "clips" into the content). `border-color: transparent`
+ * (not `border: 0`) keeps the box size identical to stacked, so a live swap doesn't reflow. Controls/pill
+ * go borderless too — those rules are SHARED with ghost (below). */
+.kit-composer.borderless {
+  border-color: transparent;
+  /* deeper ambient + contact shadow — "floats on top" without an outline. */
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+/* the light-mode base rule (`body[data-mode=light] .kit-composer`, 0,2,1) outspecifies
+ * `.kit-composer.borderless` (0,2,0) — re-assert a soft light elevation (the sheet/ghost lesson). */
+body[data-mode="light"] .kit-composer.borderless {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12), 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+/* ICON-FORWARD controls (owner eyeball 2026-07-11): bigger glyphs, less "icon in a circle".
+ * MIC — icon-only: no outline (shared rule below), no circular :active flash (the .press scale is the
+ * touch feedback); recording = red icon (base .rec color) + the slow §14.11 opacity breathe (the same cue
+ * the owner approved on the docked mic) instead of a ring, which would contradict icon-only. */
+.kit-composer.borderless .kit-cbtn svg {
+  width: 22px;
+  height: 22px;
+}
+.kit-composer.borderless .kit-cbtn:active {
+  background: transparent;
+}
+.kit-composer.borderless .kit-cbtn.mic.rec {
+  animation: kit-tag-pulse 1.8s ease-in-out infinite;
+}
+body[data-motion="reduced"] .kit-composer.borderless .kit-cbtn.mic.rec {
+  animation: none; /* §14.11: reduced motion → static red */
+}
+/* SEND — a SOFT BLURRED ROUNDED-SQUARE (owner-tuned: the sphere fought the theme's squarer geometry —
+ * echo the composer/pill instead). Three static paints, NO filter:blur (§14.11: it would blur the icon
+ * and cost compositing): the translucent wash gives the square silhouette (corners hold ~30% accent), the
+ * center-diffuse radial keeps the integrated glow under the icon, and the box-shadow blur — which follows
+ * border-radius — softens the square's edge outward. 8px matches the sheet-variant pill ruling. */
+.kit-composer.borderless .kit-send {
+  border-radius: 8px;
+  background: radial-gradient(
+    circle,
+    var(--accent) 0,
+    color-mix(in oklch, var(--accent) 30%, transparent) 78%
+  );
+  box-shadow: 0 0 12px color-mix(in oklch, var(--accent) 35%, transparent);
+}
+.kit-composer.borderless .kit-send svg {
+  width: 20px;
+  height: 20px;
+  transform: translate(-1px, 1px); /* the arrowhead's optical nudge (its mass leans up-right, vapor's fix) */
+}
+
 /* ── composer · SLEEK "ghost" variant (GhostComposer, COMPOSER_SURFACE_PLAN §0 / A2b) ───────────────────
  * KitComposer's EXACT DOM (a thin wrapper adds the `.kit-composer.ghost` root class) — the cheapest band:
  * pure CSS, no fork. It floats like the stacked bar (base position/inset/radius kept) but goes transparent
@@ -525,17 +578,22 @@ body[data-perf="lite"] .kit-composer.ghost {
 body[data-mode="light"] .kit-composer.ghost {
   box-shadow: none;
 }
-/* borderless controls — the mic/cbtn keep their WIDTH (no shift), only the border goes transparent. */
-.kit-composer.ghost .kit-cbtn {
+/* borderless controls — SHARED by the ghost + borderless variants (owner 2026-07-11: the inner mic/pill
+ * outlines follow the variant's aesthetic). The buttons keep their WIDTH (no shift), only the border goes
+ * transparent; fills stay. */
+.kit-composer.ghost .kit-cbtn,
+.kit-composer.borderless .kit-cbtn {
   border-color: transparent;
 }
-/* …EXCEPT while recording (audit A2b #3): `.kit-cbtn.mic.rec` ties this rule at (0,3,0) and loses on source
- * order, which would silently drop the red recording ring — state affordance beats sleekness, re-assert it. */
+/* …EXCEPT while recording (audit A2b #3): `.kit-cbtn.mic.rec` ties these at (0,3,0) and loses on source
+ * order, which would silently drop the red recording ring — state affordance beats sleekness, re-assert it.
+ * (ghost only — borderless went ICON-ONLY, its rec cue is the red icon + breathe in its own block.) */
 .kit-composer.ghost .kit-cbtn.mic.rec {
   border-color: color-mix(in oklch, var(--danger) 40%, transparent);
 }
 /* the plan pill goes borderless too; it keeps its --accent-soft fill (only the outline is dropped). */
-.kit-composer.ghost .plan-pill {
+.kit-composer.ghost .plan-pill,
+.kit-composer.borderless .plan-pill {
   border-color: transparent;
 }
 
@@ -2558,10 +2616,11 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
 .kit .plan-pill:active {
   background: color-mix(in oklch, var(--accent) 22%, transparent);
 }
-/* docked variant: a rounded RECT, not the lozenge — embedded in the field, it echoes the squarer
- * field/composer geometry (owner eyeball 2026-07-11). 8px on the ~26px chip reads "square-ish, softened";
- * the stacked variant keeps the lozenge. */
-.kit-composer.sheet .plan-pill {
+/* docked + borderless variants: a rounded RECT, not the lozenge — it echoes the squarer field/composer
+ * geometry (owner eyeball 2026-07-11; borderless joined at the A2c eyeball). 8px on the ~26px chip reads
+ * "square-ish, softened"; the stacked variant keeps the lozenge. */
+.kit-composer.sheet .plan-pill,
+.kit-composer.borderless .plan-pill {
   border-radius: 8px;
 }
 .kit .plan-pill .chev {
@@ -2626,6 +2685,18 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
  * its rounded top. `:has()` is already used in this file (see `.kit:has(.navmenu)`). */
 .kit-main:has(.kit-composer.sheet) .plan-sheet {
   bottom: calc(var(--composer-h, 64px) - 18px);
+}
+/* borderless-composer interplay (owner 2026-07-11): the plan sheet follows the variant's aesthetic — no
+ * accent outline, no accent wash, a quiet NEUTRAL frost + deeper elevation ("clean, lean, subtle").
+ * perf-lite keeps its opaque fallback (its rule below is (0,4,1), this is (0,4,0)) but gets a neutral
+ * counter for the background so the accent wash doesn't return in lite mode. */
+.kit-main:has(.kit-composer.borderless) .plan-sheet {
+  border-color: transparent;
+  background: color-mix(in oklch, var(--surface) 86%, transparent);
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35);
+}
+body[data-perf="lite"] .kit-main:has(.kit-composer.borderless) .plan-sheet {
+  background: var(--surface); /* opaque + neutral (no accent wash) under the lite gate */
 }
 body[data-motion="reduced"] .kit .plan-sheet {
   transition: none; /* §14.11: reduced motion → snap open/closed, no slide */

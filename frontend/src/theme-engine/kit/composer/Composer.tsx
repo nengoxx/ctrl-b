@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 
 import { useComposer } from "../../../hooks/useComposer";
 import type { ComposerSlots } from "./types";
@@ -14,15 +14,18 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 // `overlay` is a positioned SIBLING above the composer (so a sheet can tuck behind the composer's rounded
 // top; a child would paint in front). A base theme passes no slots and gets the bare composer.
 //
-// `rootClass` is the VARIANT-WRAPPER seam (A2b): a pure-CSS variant (e.g. `ghost`) wraps KitComposer and
-// passes an extra root class it restyles in kit.css — same DOM + behaviour, no fork. It is INTERNAL: NOT
-// part of the `ComposerSlots` theme contract — themes never pass it (only a sibling wrapper component does).
+// `rootClass` + `sendIcon` are the VARIANT-WRAPPER seam (A2b/A2c): a pure-CSS variant (e.g. `ghost`,
+// `borderless`) wraps KitComposer and passes an extra root class it restyles in kit.css — and optionally a
+// different send GLYPH (borderless swaps in the shared arrowhead) — same DOM + behaviour, no fork. Both are
+// INTERNAL: NOT part of the `ComposerSlots` theme contract — themes never pass them (only a sibling wrapper
+// component does).
 
 export function KitComposer({
   controlsStart,
   overlay,
   rootClass,
-}: ComposerSlots & { rootClass?: string } = {}) {
+  sendIcon,
+}: ComposerSlots & { rootClass?: string; sendIcon?: ReactNode } = {}) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
   // Shared presentational chrome (mic-press toggle, auto-grow, Enter-to-send) — §3.1.
@@ -82,19 +85,21 @@ export function KitComposer({
             disabled={isStreaming}
             onClick={send}
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M5 12h14M13 6l6 6-6 6" />
-            </svg>
+            {sendIcon ?? (
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            )}
           </button>
         </div>
       </div>

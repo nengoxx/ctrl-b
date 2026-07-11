@@ -4,6 +4,7 @@ import { createElement, type KeyboardEvent } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setThemeSetting, setUI } from "../../src/store/ui";
+import { BorderlessComposer } from "../../src/theme-engine/kit/composer/BorderlessComposer";
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
 import { GhostComposer } from "../../src/theme-engine/kit/composer/GhostComposer";
 import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer";
@@ -34,8 +35,9 @@ afterEach(() => {
 });
 
 describe("composerVariants registry", () => {
-  it("maps stacked→KitComposer, ghost→GhostComposer and sheet→SheetComposer (stable module refs)", () => {
+  it("maps stacked→Kit, borderless→Borderless, ghost→Ghost and sheet→Sheet (stable module refs)", () => {
     expect(composerVariants.stacked).toBe(KitComposer);
+    expect(composerVariants.borderless).toBe(BorderlessComposer);
     expect(composerVariants.ghost).toBe(GhostComposer);
     expect(composerVariants.sheet).toBe(SheetComposer);
   });
@@ -72,7 +74,7 @@ describe("useComposerLayout", () => {
 });
 
 describe("composerLayoutSetting", () => {
-  it("builds the shared seg spec (options Stacked/Sleek/Docked, default from the arg)", () => {
+  it("builds the shared seg spec (options Stacked/Borderless/Sleek/Docked, default from the arg)", () => {
     const spec = composerLayoutSetting();
     expect(spec).toMatchObject({
       type: "seg",
@@ -81,10 +83,12 @@ describe("composerLayoutSetting", () => {
       default: "stacked",
       options: [
         { val: "stacked", label: "Stacked" },
+        { val: "borderless", label: "Borderless" },
         { val: "ghost", label: "Sleek" },
         { val: "sheet", label: "Docked" },
       ],
     });
+    expect(composerLayoutSetting("borderless").default).toBe("borderless");
     expect(composerLayoutSetting("ghost").default).toBe("ghost");
     expect(composerLayoutSetting("sheet").default).toBe("sheet");
   });
@@ -246,5 +250,27 @@ describe("GhostComposer render (structural)", () => {
       createElement(QueryClientProvider, { client: qc }, createElement(KitComposer)),
     );
     expect(container.querySelector("#composer")?.className).toBe("kit-composer");
+  });
+
+  it("BorderlessComposer (A2c) root is `.kit-composer.borderless#composer` (same wrapper seam)", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      createElement(QueryClientProvider, { client: qc }, createElement(BorderlessComposer)),
+    );
+    expect(container.querySelector("#composer")?.className).toBe("kit-composer borderless");
+  });
+
+  it("the `sendIcon` seam: borderless renders the shared arrowhead; stacked keeps its default arrow", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const borderless = render(
+      createElement(QueryClientProvider, { client: qc }, createElement(BorderlessComposer)),
+    );
+    expect(borderless.container.querySelector(".kit-send polygon")).not.toBeNull();
+    cleanup();
+    const stacked = render(
+      createElement(QueryClientProvider, { client: qc }, createElement(KitComposer)),
+    );
+    expect(stacked.container.querySelector(".kit-send polygon")).toBeNull();
+    expect(stacked.container.querySelector(".kit-send path")).not.toBeNull();
   });
 });

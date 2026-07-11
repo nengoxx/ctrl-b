@@ -1,6 +1,7 @@
 import { useRef } from "react";
 
 import { useComposer } from "../../../hooks/useComposer";
+import { SendArrowheadIcon } from "./icons";
 import type { ComposerSlots } from "./types";
 import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 
@@ -92,22 +93,10 @@ export function SheetComposer({ controlsStart, overlay }: ComposerSlots = {}) {
             disabled={isStreaming}
             onClick={send}
           >
-            {/* lucide `navigation` outline arrowhead (owner pick, icon showcase 2026-07-11) — stroke
-                language matches the mic; 24px matches vapor's send proportion. Optically re-centered via
-                the `.kit-send.tall svg` nudge in kit.css (the glyph's mass leans up-right, vapor's fix). */}
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <polygon points="3 11 22 2 13 21 11 13 3 11" />
-            </svg>
+            {/* the SHARED arrowhead glyph (owner pick, icon showcase 2026-07-11) — stroke language matches
+                the mic; 24px matches vapor's send proportion. Optically re-centered via the
+                `.kit-send.tall svg` nudge in kit.css (the glyph's mass leans up-right, vapor's fix). */}
+            <SendArrowheadIcon size={24} />
           </button>
         </div>
       </div>
