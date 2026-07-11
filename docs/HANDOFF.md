@@ -31,6 +31,14 @@
 >   vault's llamacpp `.137:5001` (owner-confirmed; corsair's instance unused).** The target's `config.yaml`
 >   is canonical — the Windows snapshot is stale by design (bootstrap re-runs won't clobber).
 >
+> **▶ CURRENT WORK (session handoff 2026-07-11): the COMPOSER SURFACE is the ACTIVE slice**
+> (`COMPOSER_SURFACE_PLAN.md` — status ACTIVE, owner-expanded catalog scope: A2b ghost · A4 plan-pill ·
+> Phase E `line` from `design/ideas/telegram-composer.png`). **A1 (registry+resolver) SHIPPED `f3aa435`
+> 2026-07-11, zero visual change. RESUME AT A2 (SheetComposer)** → A2b → A3 → A4 → C (owner 390px
+> eyeballs between A-slices) → then frontier F0 (`FRONTIER_PLAN.md`, fidelity-audited + amended).
+> **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
+> orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).
+>
 > **▶ NEXT (the standing post-deploy order — pick with the owner):**
 > 1. **~~Theme-engine Hardening slice v2~~ ✅ SHIPPED 2026-07-10** (all 10 items + riders a/b/c; as-built
 >    record `THEME_ENGINE.md §14.15.1-A`; commits `bdaf511…9e21cdc`; release gate incl. e2e 7/7 green;
