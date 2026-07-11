@@ -1,8 +1,10 @@
 # Composer Surface — implementation spec (clean-session handoff)
 
-> **Status: ⏸ PARKED (resume post-emma-deploy).** Still the current executable plan for the Composer
-> Surface — not superseded. Sequencing is locked by **D34 / `THEME_ENGINE.md` §14.15**: the theme
-> **Hardening slice v2 ships first**, then this. Note: D34 renumbered the old TRIAGE-3 hardening
+> **Status: ▶ ACTIVE (un-parked 2026-07-11 — the deploy AND Hardening slice v2 both shipped 2026-07-10;
+> this is the NEXT build slice per the locked order, before frontier F0).** Scope EXPANDED at the owner's
+> 2026-07-11 design review (composer-catalog vision): **+A2b** (the `ghost` sleek variant) · **+A4**
+> (plan-pill placement setting, pulled forward from FRONTIER_PLAN §2/F4) · **+Phase E** (the `line`
+> single-row variant, spec'd from `design/ideas/telegram-composer.png`, deferred until after C). Note: D34 renumbered the old TRIAGE-3 hardening
 > vocabulary this doc's §2.0 references (R3/R4/B2 → §14.15.1 items); read §14.15 for the current
 > hardening plan of record.
 >
@@ -17,9 +19,11 @@
 decision). This doc is the **executable build plan** for the first user-selectable Surface — the composer — with
 every edge case pinned. It is self-contained: a fresh session needs only this + §14.14 + D31.
 
-> **One-line summary.** Build a **docked** composer variant (`SheetComposer`, vapor's composer look, Kit-tokened)
-> and make the composer layout a **user-selectable Surface** (registry + per-theme `composer` setting + resolver),
-> reusing `useComposer()`. **vapor is untouched; cosmos's orbit is untouched; Fleet stays Root-pinned.**
+> **One-line summary.** Make the composer layout a **user-selectable Surface** (registry + per-theme
+> `composer` setting + resolver, reusing `useComposer()`) with a small variant CATALOG — `stacked` (today's
+> Kit) · `ghost` (sleek borderless, A2b) · `sheet` (docked, vapor-look, A2) · `line` (Telegram-style single
+> row, Phase E) — plus the user-selectable **plan-pill placement** (inline/pinned, A4).
+> **vapor is untouched; cosmos's orbit is untouched; Fleet stays Root-pinned.**
 
 ---
 
@@ -29,7 +33,21 @@ every edge case pinned. It is self-contained: a fresh session needs only this + 
 - A1 — the composer Surface mechanism (registry + setting spec + resolver), wired into `DefaultRoot`. No visual change.
 - A2 — `SheetComposer` (the docked variant) markup + `.kit-composer.sheet` CSS, reusing `useComposer()` + a shared
   presentational hook.
+- A2b — the **`ghost`** variant (owner 2026-07-11): KitComposer's exact DOM via a thin wrapper adding
+  `.kit-composer.ghost` — transparent background + shadow, borderless buttons/pill, sleeker spacing. Pure
+  CSS (cheapest band; no fork), one new registry row + picker option "Sleek". Semantic tokens only.
 - A3 — declare the `composer` setting on `minimal` + `cosmos` (default `stacked`); the picker + live swap.
+  Option list now `[stacked, ghost, sheet]` (frontier adds its own at F1 per FRONTIER_PLAN §3).
+- A4 — **plan-pill placement** (owner 2026-07-11; resolves FRONTIER_PLAN §2's parked "per-theme seg vs
+  global lever" question): a SHARED `planPill` seg setting (`inline` | `pinned`, default `inline`) spread
+  into each non-frozen theme's `settings` next to `composer` — per-theme seg via one shared spec, NOT a new
+  global `ui` field (rationale: rides the existing synced `themeSettings` map with ZERO backend change, is
+  validated by `resolveThemeSetting` for free, and lets themes default differently; the same pattern as
+  `composerLayoutSetting`). `DefaultRoot` switches the D30 slot COMPOSITION it passes: `inline` = the pill
+  in `controlsStart` (each variant renders it at its own controls leading edge — the `line` variant's
+  in-row pill IS this); `pinned` = a kit-tokened pinned-top plan panel above the log (inventory the
+  existing D30 compositions at A4 pre-flight; vapor's `PinnedPlan` stays frozen/untouched — the §14.15.3
+  hook ⑤ exception is unchanged). Orthogonal to the variant axis by construction (slot contract #15).
 - C — characterization tests + final verify + 390px eyeball.
 
 **Explicitly OUT of scope (deferred, do NOT do here):**
@@ -122,6 +140,8 @@ export const composerVariants: Record<string, ComposerVariant> = {
 export type ComposerLayout = keyof typeof composerVariants; // "stacked" | "sheet"
 export const DEFAULT_COMPOSER_LAYOUT: ComposerLayout = "stacked";
 ```
+*(A2b adds the `ghost` row — `GhostComposer`, a thin `.kit-composer.ghost` wrapper around KitComposer;
+Phase E later adds `line`. Additive rows only — this module never restructures.)*
 
 ### 2.2 `kit/composer/setting.ts` (NEW)
 ```ts
@@ -337,6 +357,18 @@ is **unchanged** (no composer row). Switch themes and back — no FOUC, no stale
 - **Fleet graduation**: when a theme offers ≥2 fleet views, build the fleet registry/resolver by **factoring** the
   composer concretes into the generic `createSurface` (the rule-of-three extraction).
 
+## Phase E (deferred until after C — owner-spec'd 2026-07-11) — the `line` variant
+**Design reference: `design/ideas/telegram-composer.png`** (Telegram mobile). A SINGLE-ROW composer:
+`[plan pill (leading)] [flex text field] [attach] [mic/send]`. Owner mapping: Telegram's accent "Menu"
+pill position = **the plan pill** (so `planPill: inline` renders it in-row leading — the `controlsStart`
+slot at this variant's controls leading edge); the emoji icon is DROPPED. Genuinely different structure →
+a real component variant (`LineComposer`, registry row `line`), reusing `useComposer()` +
+`useComposerChrome()` + the same slot/a11y contract. **Build-time decisions (decide at the Phase E
+design-confirm, with the owner's screenshots):** (a) mic↔send swap on non-empty draft (the Telegram idiom)
+vs both visible (our Kit idiom — note we have BOTH mic and send today, Telegram has one morphing button);
+(b) single-line auto-grow ceiling (Telegram grows to ~4 lines then scrolls); (c) attach button presence
+(KitComposer parity). Fidelity target: the screenshot, adapted to our tokens.
+
 ---
 
 ## 7. Verification strategy (every slice)
@@ -344,16 +376,18 @@ is **unchanged** (no composer row). Switch themes and back — no FOUC, no stale
   returns the expected component per theme default; falls back when the setting is unset; falls back on unknown id;
   `composerLayoutSetting` shape; `resolveThemeSetting` validates (seg∈options else default · switch→bool · unknown
   key→undefined). Lock current behavior so the refactor is provably non-breaking.
-- **Theme contract suite** (`tests/theme-engine/themeContract.test.ts` — audit B2, "best ROI in the theme engine";
-  write alongside A1). `it.each(registeredThemes())` asserting, for EVERY registered theme: (a) `defaultAccent` ∈
+- **Theme contract suite** — **currency update 2026-07-11: the file EXISTS** (built by Hardening ⑧,
+  2026-07-10: token-list · loaders · structural hooks · Fleet-a11y · GLOBAL-attr switch-chain · contrast
+  drift guards · the P2 meta-guard). A1's work here is a **DELTA on the existing suite**, adding what ⑧
+  did not cover: `it.each(registeredThemes())` asserting, for EVERY registered theme: (a) `defaultAccent` ∈
   `palettes.accents` ids and `defaultMode` ∈ `palettes.modes`; (b) every `settings` entry's `default` is valid
-  (switch→boolean, seg→∈options); (c) `loadStyles()/loadFonts?()/loadRoot?()` resolve; (d) `tabsFor(theme)` returns a
-  non-empty set with unique ids. Plus a **switch-cleanup** test (vapor→minimal→cosmos→vapor): assert the **root-owned**
-  attrs are cleared when their theme isn't active — `data-density` (MinimalRoot), `data-skyline`/`data-loz`/
+  (switch→boolean, seg→∈options); (c) ~~loaders resolve~~ (⑧ covers); (d) `tabsFor(theme)` returns a
+  non-empty set with unique ids. Plus extending ⑧'s switch-chain test (global attrs covered) to the **root-owned**
+  attrs — assert they are cleared when their theme isn't active — `data-density` (MinimalRoot), `data-skyline`/`data-loz`/
   `.no-composer` (VaporRoot), `data-sheet` (CosmosFleet) — while the **global** attrs (`data-skin/theme/mode/accent/
   motion/perf/tab`, rebuilt by `applyBodyAttrs`) reflect the active theme. This turns "remember the architecture" into
   "the test fails when you violate it" — it guards every future theme, not just the composer.
-- **Per slice:** `npm run typecheck` clean · `npx vitest run` (≥198 + new) green · `npm run build` green.
+- **Per slice:** `npm run typecheck` clean · `npx vitest run` (≥271 + new, as of 2026-07-11) green · `npm run build` green.
 - **Per-theme live 390px eyeball** after A2 and A3: vapor (unchanged), cosmos (orbit + composer + plan), minimal —
   pixel + behavior parity, draft-preserving swap, no stale `--composer-h`, no FOUC.
 - **Pause for the owner's eyeball between A1 → A2 → A3** (standing review cadence).

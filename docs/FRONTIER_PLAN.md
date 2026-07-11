@@ -106,8 +106,10 @@ structural change is the body registry (= this step 0). D-entry drafted at step-
   This is §14.13 #8's full-bleed-signature rule applied over time instead of space.
 - **Plan-pill placement is user-selectable** (owner feature): D30's slot composition is a
   developer API today, so this is a **small real feature, not a freebie** — a setting
-  (pinned-top vs composer-pill) that switches which D30 composition the Root passes; scoped in F4
-  (decide there: per-theme seg vs global lever). Modularity per §1.
+  (pinned-top vs composer-pill) that switches which D30 composition the Root passes. **RESOLVED
+  2026-07-11: built as COMPOSER_SURFACE_PLAN A4** (per-theme `planPill` seg via one shared spec —
+  rides the synced themeSettings map, zero backend change); **F4 only consumes it** (frontier
+  declares the setting + its default at F1/F4). Modularity per §1.
 
 ## §3 LOCKED — Point 3: the composer — NO frontier variant (tokens band)
 
