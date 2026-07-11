@@ -106,6 +106,17 @@ describe("pairResults", () => {
     expect(currentPlan).toBeNull();
     expect(resultByCall).toEqual({});
   });
+
+  it("currentPlan is null when the LATEST task_plan cleared the plan (empty steps — the tool's clear contract)", () => {
+    const messages = [
+      msg("a1", "assistant", [
+        call("p1", "task_plan", { steps: [{ text: "old", status: "done" }] }),
+      ]),
+      msg("a2", "assistant", [call("p2", "task_plan", { steps: [] })]),
+    ];
+    const { currentPlan } = pairResults(messages);
+    expect(currentPlan).toBeNull(); // the pill/sheet must hide, not render a live "0/0"
+  });
 });
 
 describe("advanceStep", () => {

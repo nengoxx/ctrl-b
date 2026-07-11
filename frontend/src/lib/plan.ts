@@ -47,6 +47,10 @@ export function planFrom(call: ToolCallPart, result: ToolResult | undefined): Pl
  * pill) both go through here, so plan derivation lives in ONE place. Scans from the END so it stops at the
  * first task_plan (cheap when only the plan is needed — `useCurrentPlan` runs per streamed token), then
  * pairs just that call's result (results can land in a separate reloaded `tool` message). Reuses `planFrom`.
+ *
+ * An EMPTY latest plan is a CLEARED plan (the tool's documented "pass an empty list to clear" contract) →
+ * null, so the pill/sheet/pinned-plan all hide instead of rendering a live "0/0". Per-call bubbles keep
+ * using `planFrom` directly (the historical record renders the call as made).
  */
 export function currentPlanOf(messages: ChatMessage[]): Plan | null {
   let call: ToolCallPart | null = null;
@@ -67,7 +71,8 @@ export function currentPlanOf(messages: ChatMessage[]): Plan | null {
       if (p.type === "tool_result" && p.call_id === call.call_id) result = p.result;
     }
   }
-  return planFrom(call, result);
+  const plan = planFrom(call, result);
+  return plan && plan.steps.length > 0 ? plan : null;
 }
 
 /**
