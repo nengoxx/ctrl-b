@@ -12,6 +12,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { CONTRAST_MATRIX } from "../../e2e/contrast-matrix";
 import { setUI } from "../../src/store/ui";
 import { registeredThemes } from "../../src/theme-engine/registry";
+import { tabsFor } from "../../src/theme-engine/tabs";
 import type { ThemeId } from "../../src/theme-engine/types";
 import type { Host } from "../../src/types";
 
@@ -359,5 +360,91 @@ describe("authoring guards ↔ registry (P2 meta-guard)", () => {
       Object.keys(TOKENS_RAW).sort(),
       'add `<id>: readThemeTokens("<id>")` to TOKENS_RAW for the new theme',
     ).toEqual(need);
+  });
+});
+
+// ── A1 DELTA (COMPOSER_SURFACE_PLAN §7 — "adds what ⑧ did not cover"). Per-theme descriptor invariants the
+//    Surface resolver depends on: a declared default must name a real palette option (so the picker + the
+//    contrast matrix can't drift), every setting's default must be self-consistent with its own spec (so
+//    `resolveThemeSetting` never coerces a theme's OWN default away), and the tab set the composer-visibility
+//    reads must be usable. Auto-iterates the registry (§14.13.1) → a new theme is verified with no new code. ──
+describe.each(registeredThemes().map((d) => [d.id, d] as const))(
+  "theme contract — A1 delta (palettes · settings defaults · tabs) — %s",
+  (id, def) => {
+    it("defaultAccent ∈ palettes.accents ids · defaultMode ∈ palettes.modes (when declared)", () => {
+      const { defaultAccent, defaultMode, accents, modes } = def.palettes;
+      if (defaultAccent !== undefined) {
+        expect(
+          (accents ?? []).map((a) => a.id),
+          `${id}: defaultAccent "${defaultAccent}" is not a declared accent`,
+        ).toContain(defaultAccent);
+      }
+      if (defaultMode !== undefined) {
+        expect(modes ?? [], `${id}: defaultMode "${defaultMode}" is not a declared mode`).toContain(
+          defaultMode,
+        );
+      }
+    });
+
+    it("every settings entry's default is valid (switch→boolean · seg→∈options)", () => {
+      for (const [key, field] of Object.entries(def.settings ?? {})) {
+        if (field.type === "switch") {
+          expect(typeof field.default, `${id}.${key}: switch default must be boolean`).toBe(
+            "boolean",
+          );
+        } else {
+          expect(
+            field.options.map((o) => o.val),
+            `${id}.${key}: seg default "${field.default}" must be a declared option`,
+          ).toContain(field.default);
+        }
+      }
+    });
+
+    it("tabsFor returns a non-empty set with unique ids", () => {
+      const tabs = tabsFor(id);
+      expect(tabs.length, `${id}: empty tab set`).toBeGreaterThan(0);
+      const ids = tabs.map((t) => t.id);
+      expect(new Set(ids).size, `${id}: duplicate tab ids`).toBe(ids.length);
+    });
+  },
+);
+
+// ── A1 DELTA — root-owned attr lifecycle (§7: "extend the switch-chain test to the root-owned attrs"). The
+//    file's `applyBodyAttrs` switch-chain test above covers the GLOBAL attrs (data-skin/theme/mode/accent).
+//    The ROOT-owned attrs are written by a Root's own mount effect, not by applyBodyAttrs, so they can only
+//    be asserted with a mounted Root. Cleanly testable here: MinimalRoot writes body[data-density] on mount
+//    and clears it on unmount (useLayoutEffect) — the "a Root owns + cleans up its own attr, no leak to the
+//    next skin" contract. (VaporRoot's data-skyline/data-loz/.no-composer are behind the `kit-structure`
+//    render waiver; CosmosFleet's data-sheet is written only on a host-sheet OPEN interaction — both out of
+//    A1's cleanly-testable scope; see the report.) ──
+describe("root-owned attr lifecycle (mounted Root) — MinimalRoot data-density", () => {
+  it("sets body[data-density] while mounted, clears it on unmount (no leak)", async () => {
+    const minimal = registeredThemes().find((d) => d.id === "minimal");
+    expect(minimal, "minimal not registered").toBeTruthy();
+    await minimal!.loadRoot?.();
+    await minimal!.loadStyles();
+    setUI({
+      theme: "minimal",
+      mode: "dark",
+      accent: "cyan",
+      tab: "fleet",
+      appbarMode: "visible",
+      themeSettings: {},
+    });
+
+    const { unmount } = render(
+      createElement(
+        QueryClientProvider,
+        { client: makeSeededClient() },
+        createElement(minimal!.Root),
+      ),
+    );
+    try {
+      expect(document.body.dataset.density).toBe("comfortable"); // minimal's declared default
+    } finally {
+      unmount();
+    }
+    expect(document.body.dataset.density).toBeUndefined(); // cleared → no stale attr on the next skin
   });
 });

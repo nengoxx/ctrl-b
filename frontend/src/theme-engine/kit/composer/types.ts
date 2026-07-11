@@ -6,7 +6,8 @@ import type { ComponentType, ReactNode } from "react";
 //   • STYLE  — the composer VARIANT component (`ComposerVariant`): KitComposer (stacked, default) ·
 //              the future SheetComposer (vapor-style peek) · … . All variants share the headless
 //              `useComposer()` controller — only markup/style differ — so a new style is a new component,
-//              never new logic. Selected via `DefaultRoot Composer={…}`.
+//              never new logic. Registered in `variants.ts` + selected via the per-theme `composer` setting
+//              the `ThemedComposer` resolver reads (D31/§14.14) — NOT a DefaultRoot prop.
 //   • ADDONS — optional `ComposerSlots` content composed INTO the chosen variant (slot-based composition,
 //              the Radix/Headless-UI pattern — not boolean config flags). The plan pill is the first addon.
 //              Selected via `DefaultRoot composerSlots={…}`.

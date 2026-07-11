@@ -13,8 +13,8 @@ import { AgentTab } from "../../tabs/AgentTab";
 import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
 import { UtilsTab } from "../../tabs/UtilsTab";
 import { KitAppBar } from "./AppBar";
-import { KitComposer } from "./composer/Composer";
-import type { ComposerSlots, ComposerVariant } from "./composer/types";
+import { ThemedComposer, useComposerLayout } from "./composer/ThemedComposer";
+import type { ComposerSlots } from "./composer/types";
 import { KitFleet } from "./Fleet";
 import { KitNavBar } from "./NavBar";
 import type { AppbarMode } from "../../store/ui";
@@ -41,21 +41,17 @@ interface Props {
   /** The Fleet section view (the one per-theme "signature" surface, §14.4). Defaults to the Kit's
    *  device-list `KitFleet`; a theme with a bespoke Fleet (cosmos/frontier) passes its own. */
   Fleet?: ComponentType<{ active: boolean }>;
-  /** The composer VARIANT — the STYLE axis (D30). Defaults to the stacked `KitComposer`; a theme selects
-   *  another (e.g. the future `SheetComposer`). Mirrors the `Fleet` injection. */
-  Composer?: ComposerVariant;
   /** Composer ADDONS composed into the variant — the FEATURE axis (D30), e.g. `kitPlanComposerSlots` for
    *  the plan pill. Omitted → the bare composer. */
   composerSlots?: ComposerSlots;
 }
 
-export function DefaultRoot({
-  appbarMode = "visible",
-  Fleet = KitFleet,
-  Composer = KitComposer,
-  composerSlots,
-}: Props) {
+export function DefaultRoot({ appbarMode = "visible", Fleet = KitFleet, composerSlots }: Props) {
   const { active: tab, hasComposer: showComposer } = useSections();
+  // The composer VARIANT is the STYLE axis (D30) — now a user-selectable Surface resolved from the active
+  // theme's `composer` setting (registry lookup, fallback-safe). Read the layout once here so the
+  // `--composer-h` effect can key on it (re-measure on a live swap) and pass it down (one subscription).
+  const layout = useComposerLayout();
   const scrollRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
 
@@ -102,8 +98,9 @@ export function DefaultRoot({
     ro.observe(comp);
     return () => ro.disconnect();
     // `showComposer` fully captures composer mount/unmount; the node is identical across composer-bearing
-    // sections (fleet↔agent), so it needn't re-run on `tab`.
-  }, [showComposer]);
+    // sections (fleet↔agent), so it needn't re-run on `tab`. `layout` IS a dep (EDGE #10): a live variant
+    // swap remounts the composer node, so the observer must re-attach to the new node.
+  }, [showComposer, layout]);
 
   // Warm the Conf chunk after first paint so the first Conf click is typically zero-wait.
   useEffect(() => {
@@ -139,7 +136,7 @@ export function DefaultRoot({
           )}
         </div>
         <MiniPlayer />
-        {showComposer && <Composer {...(composerSlots ?? {})} />}
+        {showComposer && <ThemedComposer layout={layout} {...(composerSlots ?? {})} />}
       </div>
       {/* minimal → the floating NavMenu replaces the bottom tab bar (and there's no appbar); visible/off keep
           the in-flow tab bar. The lunar/fleet view fills the freed height (CosmosFleet measures `--appbar-h`,
