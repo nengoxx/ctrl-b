@@ -107,9 +107,12 @@ structural change is the body registry (= this step 0). D-entry drafted at step-
 - **Plan-pill placement is user-selectable** (owner feature): D30's slot composition is a
   developer API today, so this is a **small real feature, not a freebie** — a setting
   (pinned-top vs composer-pill) that switches which D30 composition the Root passes. **RESOLVED
-  2026-07-11: built as COMPOSER_SURFACE_PLAN A4** (per-theme `planPill` seg via one shared spec —
-  rides the synced themeSettings map, zero backend change); **F4 only consumes it** (frontier
-  declares the setting + its default at F1/F4). Modularity per §1.
+  2026-07-11: built as COMPOSER_SURFACE_PLAN A4** — the as-built key is **`planPlacement`**
+  (NOT the `planPill` this doc originally sketched; `inline` | `pinned`, shared spec factory
+  `planPlacementSetting()` in `kit/composer/plan/placement.ts`; rides the synced themeSettings map,
+  zero backend change; `inline` composition is OWNED by DefaultRoot, `pinned` = the Kit
+  `PinnedPlanPanel` mounted by AgentTab); **F4 only consumes it** (frontier declares
+  `planPlacement: planPlacementSetting(<default>)` at F1/F4). Modularity per §1.
 
 ## §3 LOCKED — Point 3: the composer — NO frontier variant (tokens band)
 
@@ -161,6 +164,10 @@ sun/moon styling.)
 (4/3/2-tab) · the global synced lever (`auto` = theme default) + `ThemeDef` capability declaration
 · the generalized menu-affordance rule (off-bar ⇒ menu) · the utils-in-Conf group (concrete).
 *Reuse:* `tabsFor`/`useSections` · NavMenu · appearance channel · per-theme settings machinery.
+*⚠ Preserve (added 2026-07-11, the shipped composer Surface lives in the SAME DefaultRoot this
+slice rewrites):* the `useComposerLayout()` read (also a `--composer-h` effect dep), the
+`usePlanPlacement()`→`composerAddons` inline-plan composition, and the `ThemedComposer layout={…}`
+render — see COMPOSER_SURFACE_PLAN §0 (as-built) + THEME_ENGINE §14.15.4's constraint list.
 *Acceptance:* all existing themes render byte-identical in `4-tab`/`auto` (vapor structurally
 untouched — its Root never consumes the registry); 3-tab relocates utils into Conf — **query-backed
 data survives (external caches); local input state (typed args, in-flight results) legitimately

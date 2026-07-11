@@ -45,7 +45,7 @@ mapping), while §9.7–§9.12 + §13.1 remain live contract · **§14** = the *
 hardwires the four tab bodies, so a theme cannot drop/add a section yet (**scheduled**: frontier step 0,
 ratified 2026-07-07 — §14.15.4). *(The user-selectable Surface machinery formerly listed here SHIPPED
 2026-07-11 — the composer Surface is COMPLETE per `COMPOSER_SURFACE_PLAN.md`: `composerVariants`
-catalog `[stacked, borderless, ghost, sheet]` + `ThemedComposer` resolver + the `planPlacement`
+catalog `[stacked, borderless, ghost, sheet, line]` + `ThemedComposer` resolver + the `planPlacement`
 inline/pinned axis. The Hardening-v2 artifacts — `resolveThemeSetting` ⑦, `themeContract.test.ts` ⑧,
 stylelint ⑨, `kit-render.spec.ts` ⑩ — all SHIPPED 2026-07-10 and ARE in the tree.)*
 
@@ -1404,7 +1404,7 @@ structure, it has left token-space — that, and only that, is when a Surface is
 | Region | Verdict | Why |
 |---|---|---|
 | **Fleet** (list / orbital / map) | **Surface** | radically different DOM + interaction; ≥2 impls (`KitFleet`, `CosmosFleet`); backed by `useFleet` |
-| **Composer** (stacked / borderless / ghost / docked) | **Surface** | structural layout differs; ≥2 impls (`KitComposer` + wrappers, `SheetComposer`); backed by `useComposer` — **user-selectable since 2026-07-11** |
+| **Composer** (stacked / borderless / ghost / docked / line) | **Surface** | structural layout differs; ≥2 impls (`KitComposer` + wrappers, `SheetComposer`); backed by `useComposer` — **user-selectable since 2026-07-11** |
 | **Tools tab** | **Tokens** | one schema-driven `UtilCard` structure, reskinned; no per-theme component |
 | **Conf / settings** | **Tokens** | one `ConfGroup`/`SettingRow` structure, reskinned; matches VS Code/Primer/MUI/Backstage — none component-swap settings |
 | **AppBar / nav / chrome** | **Tokens** | same nav contract restyled (promote ONLY if a theme truly restructures navigation) |
@@ -1441,7 +1441,7 @@ per theme; the prop is correct and cheaper.
 
 > **✅ As-built status (2026-07-11 — supersedes the QH 2026-07-07 spec-only banner):** the machinery below
 > IS in the tree per `COMPOSER_SURFACE_PLAN.md` (A1–A4 + C, all owner-eyeballed + audited):
-> `composerVariants` `[stacked, borderless, ghost, sheet]` + `composerLayoutSetting` + `ThemedComposer`
+> `composerVariants` `[stacked, borderless, ghost, sheet, line]` + `composerLayoutSetting` + `ThemedComposer`
 > (kit/composer/), the `rootClass`/`sendIcon` pure-CSS wrapper seam (borderless/ghost), the shared
 > `useComposerChrome` presentational hook, and the A4 `planPlacement` axis (inline pill+sheet, owned by
 > DefaultRoot · pinned `PinnedPlanPanel`, mounted by AgentTab). The `DefaultRoot Composer={…}` prop is
@@ -1759,6 +1759,10 @@ DefaultRoot's hardwired `tab === "…"` branch (no parallel mechanism) and subsu
 props — fold `Fleet={…}` into it when it lands (owner leaned fold; confirm at the design review, where the
 D-entry gets drafted). Constraints: preserve keep-mounted semantics (active flags, never conditional-render)
 and keep the lazy-Conf latch / scroll-reset / `--composer-h` measurement generic (e.g. a `lazy?` TabDef
-flag). The D31 Surface axis stays separate — variants ≠ tab composition.** ·
+flag); **and preserve the COMPOSER-SURFACE wiring the shipped feature added to DefaultRoot
+(2026-07-11) — the `useComposerLayout()` read (also a `--composer-h` effect dep), the
+`usePlanPlacement()`→`composerAddons` inline-plan composition, and the `ThemedComposer
+layout={…}` render — all interleaved in the same component the registry rewrites.** The D31
+Surface axis stays separate — variants ≠ tab composition.** ·
 a third perf tier · scroll restoration across switches · quarantine subsystem · aria-live announcement (see
 riders).

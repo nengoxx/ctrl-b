@@ -6,12 +6,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { clearDraft, setDraft } from "../../src/store/composer";
 import { LineComposer } from "../../src/theme-engine/kit/composer/LineComposer";
 
-// Phase E — the mic↔send MORPH (the one genuinely new pattern in the line variant; audit #3 coverage-gap
-// fix). Lives in its OWN file because the mock below flips `sttReady` to TRUE, and composerSurface.test.ts's
-// shared harness deliberately relies on sttReady=false (no voice data) for its always-send assertions.
+// Phase E — the line variant's trailing mic/send pair (the one genuinely new pattern; audit #3 coverage-gap
+// fix, then revised at the owner eyeball: the mic STAYS while dictation is configured and send JOINS it on a
+// non-empty draft — `showMic = sttReady` · `showSend = !sttReady || draft !== ""`). Lives in its OWN file
+// because the mock below flips `sttReady` to TRUE, and composerSurface.test.ts's shared harness deliberately
+// relies on sttReady=false (no voice data) for its always-send assertions.
 //
-// Only the voice-status probe is mocked — `useComposer`'s draft/send/mic wiring stays real, so the morph
-// predicate `sttReady && (draft === "" || recording)` is exercised against the real draft store.
+// Only the voice-status probe is mocked — `useComposer`'s draft/send/mic wiring stays real, so the
+// predicates are exercised against the real draft store.
 vi.mock("../../src/hooks/useVoiceStatus", () => ({
   useVoiceStatus: () => ({ data: { stt: true, tts: false } }),
 }));

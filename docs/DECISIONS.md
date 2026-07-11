@@ -1580,7 +1580,7 @@ frontier (bespoke Agent). D7 pixel-fidelity per theme; pause for the owner's 390
 > `Composer={…}` below as historical.
 >
 > ✅ **BUILT 2026-07-11 (`COMPOSER_SURFACE_PLAN.md` A1–A4 + C).** The deferred list below is done: SheetComposer
-> is the real docked variant; the live user-setting exists (catalog `[stacked, borderless, ghost, sheet]`).
+> is the real docked variant; the live user-setting exists (catalog `[stacked, borderless, ghost, sheet, line]` since Phase E).
 > **Two as-built updates:** (1) "Where the plan renders, per theme" is now itself a per-theme USER SETTING —
 > `planPlacement` (`inline` = the pill+sheet in the composer, composition now OWNED by `DefaultRoot`, themes no
 > longer pass `composerSlots` for it · `pinned` = the Kit `PinnedPlanPanel` at the top of the Agent tab,

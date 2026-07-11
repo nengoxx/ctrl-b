@@ -19,13 +19,14 @@ import {
 import type { ComposerSlots, ComposerVariant } from "../../src/theme-engine/kit/composer/types";
 import { registeredThemes } from "../../src/theme-engine/registry";
 
-// COMPOSER_SURFACE_PLAN §7 — composer Surface characterization tests. §A1 locked the mechanism (registry
-// identity, the layout resolver's per-theme default + fallbacks, the shared setting spec). §A2 makes `sheet`
-// a REAL docked variant (SheetComposer) reusing the shared `useComposerChrome` hook; §A2b adds the `ghost`
-// sleek variant (GhostComposer — a thin `.kit-composer.ghost` wrapper over KitComposer, pure CSS, no fork).
-// The registry identities (`composerVariants.{sheet,ghost}`) hold, and NO theme declares the `composer`
-// setting yet (A3 does) so every theme still resolves to `stacked`. This file also covers the extracted
-// `useComposerChrome` (the pure presentational chrome) and SheetComposer/GhostComposer's structural render.
+// COMPOSER_SURFACE_PLAN §7 — composer Surface characterization tests, grown slice by slice: A1 locked the
+// mechanism (registry identity, the layout resolver's per-theme default + fallbacks, the shared setting
+// spec); A2 made `sheet` a REAL docked variant (SheetComposer, shared `useComposerChrome`); A2b added
+// `ghost` and A2c `borderless` (thin `rootClass` wrappers over KitComposer — plus the `sendIcon` seam);
+// A3 declared the setting on minimal+cosmos (default stacked; vapor stays permanently undeclared); Phase E
+// added `line` (its mic/send morph is covered in lineMorph.test.ts — it needs an sttReady mock this file's
+// shared harness deliberately avoids). Registry identities, resolver fallbacks, the 5-option spec shape,
+// the extracted `useComposerChrome`, and each variant's structural render are all pinned here.
 
 beforeEach(() => {
   setUI({ themeSettings: {} }); // clear overrides (module state persists between tests)

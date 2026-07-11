@@ -30,7 +30,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 >
 > **~~Next: the emma (Linux) deploy / v1 cutover (Phases 9–10)~~ ✅ BOTH DONE** (deploy 2026-07-10;
 > Phase 10 closed same day). **Theme Phase 11**: the D34 **Hardening slice v2 ✅ SHIPPED 2026-07-10**;
-> next = Composer Surface / frontier step 0. **Approved 2026-07-07 (owner):** the **ACA chat-hardening plan** = **Phase 12**
+> the **Composer Surface ✅ SHIPPED 2026-07-11** (full 5-variant catalog + planPlacement,
+> `COMPOSER_SURFACE_PLAN.md` banner has the commit map); next = frontier T5 step 0 (F0,
+> `FRONTIER_PLAN.md`). **Approved 2026-07-07 (owner):** the **ACA chat-hardening plan** = **Phase 12**
 > (`AGENT_CHAT_AUDIT.md` §5 is the spec; Slice 0 landed; Slices 1–2 pre-deploy candidates, 3+
 > post-deploy) and the `SYSTEM_AUDIT.md` **SYS** riders — **SYS-13** (live `fillComposer` bug) +
 > **SYS-14** (Linux CI) are Phase-9 pre-deploy items below. **Still open (low / deferred):**
@@ -736,7 +738,7 @@ tools + confirm bubbles) are DONE.**
       2026-07-10), README/AGENTS were rewritten at the reorg. No Linux-WOL fallback kept
       (v2 owns WOL natively).
 
-## Phase 11 — Theme engine (pluggable presentation layer, D28) — **IN PROGRESS: T0 + M0–M3 + Kit/minimal + cosmos + Hardening slice v2 (D34 ✅ SHIPPED 2026-07-10, all 10 items + riders a/b/c) SHIPPED; NEXT = Composer Surface / frontier T5 step 0 (owner's pick)**
+## Phase 11 — Theme engine (pluggable presentation layer, D28) — **IN PROGRESS: T0 + M0–M3 + Kit/minimal + cosmos + Hardening slice v2 (D34 ✅ 2026-07-10) + Composer Surface (✅ 2026-07-11 — 5-variant catalog + planPlacement, `COMPOSER_SURFACE_PLAN.md`) SHIPPED; NEXT = frontier T5 step 0 (F0)**
 
 Spec: `THEME_ENGINE.md §§9–10` · decision: `DECISIONS.md D28`. Build the engine on the cheapest theme
 first, hardest last; the foundation is paid once in T0. **D7 pixel-fidelity applies per theme.** Each Tn is

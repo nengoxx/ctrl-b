@@ -1,10 +1,10 @@
 # Composer Surface — implementation spec (clean-session handoff)
 
-> **Status: ✅ COMPLETE through slice C (2026-07-11) — A1 `f3aa435` · A2 `c8ffd43` · A2b `073d182` ·
-> A2c `4247d5e` · A3 `4d0e5c4` · A4 `02a4148`; every slice owner-eyeballed at 390px + independently
-> audited. The shipped catalog is `[stacked, borderless, ghost, sheet]` + the `planPlacement`
-> (inline/pinned) axis. Remaining in this doc: Phase D (vapor/frontier participation, opt-in) and
-> Phase E (the Telegram-style `line` variant — NEXT candidate, starts with an owner design-confirm).**
+> **Status: ✅ COMPLETE incl. Phase E (2026-07-11) — A1 `f3aa435` · A2 `c8ffd43` · A2b `073d182` ·
+> A2c `4247d5e` · A3 `4d0e5c4` · A4 `1c7de20` · C `379e455` · quality pass `f9d1ac2` · Phase E
+> `7e6fccb`; every slice owner-eyeballed at 390px + independently audited. The shipped catalog is
+> `[stacked, borderless, ghost, sheet, line]` + the `planPlacement` (inline/pinned) axis.
+> Remaining in this doc: ONLY Phase D (vapor/frontier participation, opt-in, unscheduled).**
 > Scope was EXPANDED at the owner's 2026-07-11 design review (composer-catalog vision): **+A2b** (the
 > `ghost` sleek variant) · **+A2c** (the `borderless` variant, owner addition at the A2b eyeball) ·
 > **+A4** (plan placement, pulled forward from FRONTIER_PLAN §2/F4) · **+Phase E** (deferred until
@@ -47,7 +47,9 @@ every edge case pinned. It is self-contained: a fresh session needs only this + 
   Same `rootClass` wrapper seam as ghost, one registry row + picker option "Borderless". The catalog is
   now `[stacked, borderless, ghost, sheet]`.
 - A3 — declare the `composer` setting on `minimal` + `cosmos` (default `stacked`); the picker + live swap.
-  Option list now `[stacked, ghost, sheet]` (frontier adds its own at F1 per FRONTIER_PLAN §3).
+  Option list as-shipped: `[stacked, borderless, ghost, sheet, line]` (A2c + Phase E joined after this
+  bullet was written; frontier would add its own at F1 per FRONTIER_PLAN §3 — but §3 ruled frontier's
+  composer is the tokens band, no new variant).
 - A4 — **plan-pill placement** (owner 2026-07-11; resolves FRONTIER_PLAN §2's parked "per-theme seg vs
   global lever" question): a SHARED `planPill` seg setting (`inline` | `pinned`, default `inline`) spread
   into each non-frozen theme's `settings` next to `composer` — per-theme seg via one shared spec, NOT a new
@@ -241,6 +243,13 @@ to `KitComposer` (the stub) and all themes default to `stacked`. Live: vapor/cos
 
 ## 3. A2 — `SheetComposer` (the docked variant) + shared presentational hook
 
+> **As-built delta (owner eyeball rounds, 2026-07-11):** the §3.2 sketch below shows the ORIGINAL
+> slim-strip-above layout; as-shipped the `controlsStart` pill is **embedded INSIDE `.field`** (before the
+> textarea, sharing the input surface — mirroring the embedded mic), the bar is **inset 18px per side**
+> (not full-width), the send is the shared arrowhead glyph, and the mic breathes while recording. Slot
+> CONTRACT (#15) unchanged — the variant decides WHERE; only the WHERE moved. Code is truth:
+> `SheetComposer.tsx` + the `.kit-composer.sheet` block in kit.css.
+
 ### 3.1 Extract the shared presentational hook `kit/composer/useComposerChrome.ts` (NEW)
 `KitComposer` and `SheetComposer` share three pure-presentational concerns (NOT behavior — behavior is `useComposer`):
 the **mic-press JS-toggle** (Fennec `:active`-wedge fix), the **textarea auto-grow** (max 96px), and
@@ -321,7 +330,8 @@ settings: {
 ```
 
 ### 4.2 Verify A3
-typecheck · suite · build · **390px eyeball**: the "Composer: Stacked · Docked" row appears in minimal + cosmos
+typecheck · suite · build · **390px eyeball**: the "Composer" row (as-shipped: Stacked · Borderless ·
+Sleek · Docked · Line) appears in minimal + cosmos
 Appearance; default `stacked` = current; toggling to `docked` live-swaps with the **draft preserved**; vapor's picker
 is **unchanged** (no composer row). Switch themes and back — no FOUC, no stale `--composer-h`.
 
