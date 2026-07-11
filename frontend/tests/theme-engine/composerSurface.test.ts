@@ -54,7 +54,7 @@ describe("composerVariants registry", () => {
 
 describe("useComposerLayout", () => {
   it.each(registeredThemes().map((d) => [d.id] as const))(
-    "resolves to stacked (the fallback) when %s declares no composer setting → KitComposer",
+    "%s resolves to stacked out of the box (declared default — minimal/cosmos since A3 — or fallback)",
     (id) => {
       setUI({ theme: id, themeSettings: {} });
       const { result } = renderHook(() => useComposerLayout());
@@ -63,11 +63,27 @@ describe("useComposerLayout", () => {
     },
   );
 
-  it("keeps falling back to stacked when a value is stored for an undeclared setting", () => {
-    // No theme declares `composer` yet (A3 wires it), so even a synced/stale override does not resolve —
-    // `resolveThemeSetting` returns undefined for the unknown key → the hook's `?? stacked` fallback holds.
+  it("keeps falling back to stacked when a value is stored for an UNDECLARED setting (vapor never declares it)", () => {
+    // vapor is the permanently-undeclared theme (frozen, D7/Phase D) — a synced/stale override must not
+    // resolve: `resolveThemeSetting` returns undefined for the unknown key → the hook's fallback holds.
+    setUI({ theme: "vapor", themeSettings: {} });
+    setThemeSetting("vapor", "composer", "sheet");
+    const { result } = renderHook(() => useComposerLayout());
+    expect(result.current).toBe("stacked");
+  });
+
+  it("A3: a stored variant id resolves on a DECLARING theme (cosmos → sheet)", () => {
     setUI({ theme: "cosmos", themeSettings: {} });
     setThemeSetting("cosmos", "composer", "sheet");
+    const { result } = renderHook(() => useComposerLayout());
+    expect(result.current).toBe("sheet");
+  });
+
+  it("A3: an unknown stored value coerces to the declared default (validation via the option list)", () => {
+    // D31 capability enforcement for free (plan §5 #14): `resolveThemeSetting` only accepts values in the
+    // theme's declared `options`, so a corrupt/stale id lands on the default, never an off-catalog variant.
+    setUI({ theme: "cosmos", themeSettings: {} });
+    setThemeSetting("cosmos", "composer", "not-a-variant");
     const { result } = renderHook(() => useComposerLayout());
     expect(result.current).toBe("stacked");
   });

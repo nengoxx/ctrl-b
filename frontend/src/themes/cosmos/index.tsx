@@ -6,6 +6,7 @@
 //
 // CSS + fonts are LAZY (loaded by switchTheme before the skin flips); dark-only for now (deep space).
 
+import { composerLayoutSetting } from "../../theme-engine/kit/composer/setting";
 import { preloadableRoot } from "../../theme-engine/lazyRoot";
 import type { ThemeDef } from "../../theme-engine/types";
 import { loadFonts } from "./fonts";
@@ -60,6 +61,8 @@ export const cosmos: ThemeDef = {
   // motion PARAMETERS: tempo + the orbit pattern (which includes "Off" to freeze just the orbit, keeping the
   // starfield + the global setting untouched).
   settings: {
+    // The composer Surface (D31/A3) — the shared layout catalog; FIRST so it reads above theme rows.
+    composer: composerLayoutSetting("stacked"),
     // Central-body style (C2a-fix) — two variants the owner compares live: the prototype's see-through "D"
     // coin (cutout) vs the matte ball with the D engraved into it (carved). Auto-rendered as a Seg.
     moonStyle: {

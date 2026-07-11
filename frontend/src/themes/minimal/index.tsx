@@ -5,6 +5,7 @@
 //
 // CSS + fonts are LAZY (loaded by switchTheme before the skin flips); vapor stays the eager default.
 
+import { composerLayoutSetting } from "../../theme-engine/kit/composer/setting";
 import { preloadableRoot } from "../../theme-engine/lazyRoot";
 import type { ThemeDef } from "../../theme-engine/types";
 import { loadFonts } from "./fonts";
@@ -42,8 +43,10 @@ export const minimal: ThemeDef = {
   loadFonts,
   // Per-theme settings (§14.3), auto-rendered in the Appearance picker. ("Hide app bar" used to live here
   // but is now the GLOBAL `ui.hideAppbar` lever — all themes get it; see store/ui + ConfTab Appearance.)
+  //  - composer (Surface, D31/A3) → the shared layout catalog; FIRST so it reads above theme-specific rows.
   //  - density (cosmetic) → body[data-density] → minimal's tokens.css scales --density-pad.
   settings: {
+    composer: composerLayoutSetting("stacked"),
     density: {
       type: "seg",
       label: "Density",
