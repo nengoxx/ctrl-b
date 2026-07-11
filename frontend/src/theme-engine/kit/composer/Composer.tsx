@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useRef } from "react";
 
 import { useComposer } from "../../../hooks/useComposer";
 import type { ComposerSlots } from "./types";
+import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 
 // Kit composer (D29 §14.4) — the DEFAULT composer variant: token-driven, `.kit-*` classes, STACKED layout
 // (full-width textarea over a controls row, so multi-line input gets the room). Same behaviour as vapor's
@@ -13,49 +14,11 @@ import type { ComposerSlots } from "./types";
 // `overlay` is a positioned SIBLING above the composer (so a sheet can tuck behind the composer's rounded
 // top; a child would paint in front). A base theme passes no slots and gets the bare composer.
 
-const MIC_LABEL: Record<string, string> = {
-  idle: "start dictation",
-  recording: "stop dictation",
-  sending: "transcribing…",
-  unavailable: "voice servers unreachable",
-  insecure: "microphone needs a secure (HTTPS) connection",
-};
-
 export function KitComposer({ controlsStart, overlay }: ComposerSlots = {}) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
-
-  // Mic press feedback as a JS-toggled class (not CSS :active — Fennec leaves :active wedged after a tap).
-  const [micPressed, setMicPressed] = useState(false);
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const pressMic = () => {
-    setMicPressed(true);
-    clearTimeout(pressTimer.current);
-    pressTimer.current = setTimeout(() => setMicPressed(false), 200);
-  };
-  const releaseMic = () => {
-    clearTimeout(pressTimer.current);
-    setMicPressed(false);
-  };
-  useEffect(() => () => clearTimeout(pressTimer.current), []);
-
-  // Auto-grow the textarea to fit content (max 96px), including the initial render so a restored draft
-  // gets the right height as soon as the composer becomes visible.
-  useEffect(() => {
-    const ta = taRef.current;
-    if (!ta) return;
-    ta.style.height = "";
-    if (ta.value === "") return;
-    ta.style.height = "auto";
-    ta.style.height = Math.min(96, ta.scrollHeight) + "px";
-  }, [draft]);
-
-  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  }
+  // Shared presentational chrome (mic-press toggle, auto-grow, Enter-to-send) — §3.1.
+  const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
 
   return (
     <>

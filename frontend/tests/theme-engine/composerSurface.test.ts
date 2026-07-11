@@ -1,27 +1,33 @@
-import { renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, render, renderHook } from "@testing-library/react";
+import { createElement, type KeyboardEvent } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
 import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer";
 import { composerLayoutSetting } from "../../src/theme-engine/kit/composer/setting";
 import { useComposerLayout } from "../../src/theme-engine/kit/composer/ThemedComposer";
+import { useComposerChrome } from "../../src/theme-engine/kit/composer/useComposerChrome";
 import {
   composerVariants,
   DEFAULT_COMPOSER_LAYOUT,
 } from "../../src/theme-engine/kit/composer/variants";
+import type { ComposerSlots } from "../../src/theme-engine/kit/composer/types";
 import { registeredThemes } from "../../src/theme-engine/registry";
 
-// COMPOSER_SURFACE_PLAN §7 — A1 characterization tests. Lock the current (no-visual-change) behavior of the
-// composer Surface mechanism BEFORE A2/A3 refactor it: the variant registry identity, the layout resolver's
-// per-theme default + fallbacks, and the shared setting spec's shape. `sheet` still delegates to KitComposer
-// (the stub) and NO theme declares the `composer` setting yet (A3 does) — so every theme resolves to
-// `stacked`; these tests fail the moment that invariant is broken.
+// COMPOSER_SURFACE_PLAN §7 — composer Surface characterization tests. §A1 locked the mechanism (registry
+// identity, the layout resolver's per-theme default + fallbacks, the shared setting spec). §A2 makes `sheet`
+// a REAL docked variant (SheetComposer) reusing the shared `useComposerChrome` hook — the registry identity
+// (`composerVariants.sheet === SheetComposer`) still holds, and NO theme declares the `composer` setting yet
+// (A3 does) so every theme still resolves to `stacked`. This file also covers the extracted `useComposerChrome`
+// (the pure presentational chrome) and SheetComposer's structural render.
 
 beforeEach(() => {
   setUI({ themeSettings: {} }); // clear overrides (module state persists between tests)
 });
 afterEach(() => {
+  cleanup();
   setUI({ themeSettings: {} });
 });
 
@@ -76,5 +82,122 @@ describe("composerLayoutSetting", () => {
       ],
     });
     expect(composerLayoutSetting("sheet").default).toBe("sheet");
+  });
+});
+
+describe("useComposerChrome", () => {
+  // The hook takes a plain `{ current }` ref + a send fn as args (no store), so it unit-tests in isolation.
+  // `preventDefault` is passed in as a spy variable (not asserted off the event object) to keep the
+  // unbound-method lint happy.
+  const key = (over: Partial<KeyboardEvent<HTMLTextAreaElement>>, preventDefault = vi.fn()) =>
+    ({ preventDefault, ...over }) as unknown as KeyboardEvent<HTMLTextAreaElement>;
+
+  it("Enter without shift sends + preventDefault", () => {
+    const send = vi.fn();
+    const preventDefault = vi.fn();
+    const ref = { current: null };
+    const { result } = renderHook(() => useComposerChrome(ref, "", send));
+    result.current.onKeyDown(key({ key: "Enter", shiftKey: false }, preventDefault));
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledOnce();
+  });
+
+  it("Shift+Enter does NOT send (newline passes through)", () => {
+    const send = vi.fn();
+    const preventDefault = vi.fn();
+    const ref = { current: null };
+    const { result } = renderHook(() => useComposerChrome(ref, "", send));
+    result.current.onKeyDown(key({ key: "Enter", shiftKey: true }, preventDefault));
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("pressMic sets micPressed, releaseMic clears it", () => {
+    const ref = { current: null };
+    const { result } = renderHook(() => useComposerChrome(ref, "", vi.fn()));
+    expect(result.current.micPressed).toBe(false);
+    act(() => result.current.pressMic());
+    expect(result.current.micPressed).toBe(true);
+    act(() => result.current.releaseMic());
+    expect(result.current.micPressed).toBe(false);
+  });
+
+  it("the 200ms safety timeout clears micPressed", () => {
+    vi.useFakeTimers();
+    try {
+      const ref = { current: null };
+      const { result } = renderHook(() => useComposerChrome(ref, "", vi.fn()));
+      act(() => result.current.pressMic());
+      expect(result.current.micPressed).toBe(true);
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(result.current.micPressed).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("auto-grows the textarea (capped at 96px) and clears height for an empty draft", () => {
+    const ta = document.createElement("textarea");
+    Object.defineProperty(ta, "scrollHeight", { value: 200, configurable: true });
+    const ref = { current: ta };
+    ta.value = "multi\nline\ndraft";
+    const { rerender } = renderHook(({ draft }) => useComposerChrome(ref, draft, vi.fn()), {
+      initialProps: { draft: "multi\nline\ndraft" },
+    });
+    expect(ta.style.height).toBe("96px"); // min(96, 200)
+
+    ta.value = "";
+    rerender({ draft: "" });
+    expect(ta.style.height).toBe(""); // empty draft → height reset, no measurement
+  });
+});
+
+describe("SheetComposer render (structural)", () => {
+  // SheetComposer calls useComposer() (draft store + the voice-status query + dictation). A bare
+  // QueryClientProvider is enough: the voice query has no seeded data → `sttReady` is false → the mic button
+  // simply doesn't render, which the structural assertions below don't rely on. No new mocks invented.
+  function renderSheet(slots: ComposerSlots) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      createElement(
+        QueryClientProvider,
+        { client: qc },
+        createElement<ComposerSlots>(SheetComposer, slots),
+      ),
+    );
+  }
+
+  it("root is `.kit-composer.sheet#composer` (edge #5 — --composer-h querySelector still matches)", () => {
+    const { container } = renderSheet({});
+    const root = container.querySelector("#composer");
+    expect(root).not.toBeNull();
+    expect(root?.classList.contains("kit-composer")).toBe(true);
+    expect(root?.classList.contains("sheet")).toBe(true);
+  });
+
+  it("renders `overlay` as a SIBLING BEFORE the composer bar (edge #7 tuck order)", () => {
+    const { container } = renderSheet({
+      overlay: createElement("div", { "data-testid": "ov" }),
+    });
+    const kids = Array.from(container.childNodes);
+    const ovIdx = kids.findIndex((n) => (n as Element).getAttribute?.("data-testid") === "ov");
+    const barIdx = kids.findIndex((n) => (n as Element).id === "composer");
+    expect(ovIdx).toBeGreaterThanOrEqual(0);
+    expect(barIdx).toBeGreaterThan(ovIdx);
+  });
+
+  it("renders `controlsStart` inside `.sheet-controls`; omits the strip when the slot is absent", () => {
+    const { container } = renderSheet({
+      controlsStart: createElement("span", { "data-testid": "pill" }, "plan"),
+    });
+    const strip = container.querySelector(".sheet-controls");
+    expect(strip).not.toBeNull();
+    expect(strip?.querySelector("[data-testid=pill]")).not.toBeNull();
+
+    cleanup();
+    const bare = renderSheet({});
+    expect(bare.container.querySelector(".sheet-controls")).toBeNull();
   });
 });

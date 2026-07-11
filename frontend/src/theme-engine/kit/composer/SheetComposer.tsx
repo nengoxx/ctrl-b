@@ -1,15 +1,116 @@
-import { KitComposer } from "./Composer";
-import type { ComposerSlots } from "./types";
+import { useRef } from "react";
 
-// ⚠️ STUB — NOT YET IMPLEMENTED (D30). Placeholder for the future "vapor-peek" composer VARIANT: a composer
-// styled like a bottom sheet PEEKING up from the screen bottom with rounded top edges — the vapor `.composer`
-// look, but WITHOUT any drag (purely the appearance). It exists now only to PROVE the variant seam: a theme
-// can already select it via `DefaultRoot Composer={SheetComposer}`, and it composes the same `ComposerSlots`
-// (controlsStart/overlay) as every variant.
-//
-// Until it's styled it simply DELEGATES to the default `KitComposer`, so selecting it changes nothing yet
-// (no breakage). TODO(SheetComposer): give it its own markup + `.kit-composer.sheet` peek/rounded styles,
-// reusing the headless `useComposer()` controller (never re-implement composer logic) — see THEME_ENGINE.
-export function SheetComposer(slots: ComposerSlots = {}) {
-  return <KitComposer {...slots} />;
+import { useComposer } from "../../../hooks/useComposer";
+import type { ComposerSlots } from "./types";
+import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
+
+// The DOCKED "sheet" composer variant (D30/D31, COMPOSER_SURFACE_PLAN §3.2) — vapor's inline rounded-dock
+// look, rebuilt in the Kit's SEMANTIC tokens (never vapor's `--magenta`/`--ink`/`--bg-2`): full-width bar
+// anchored to the screen bottom with a rounded top, an embedded borderless accent mic inside the field, and
+// a tall full-height send block beside it. Same BEHAVIOUR as every variant — it reuses the headless
+// `useComposer()` controller (never re-implements composer logic) plus the shared `useComposerChrome()`
+// presentational hook, and honours the SAME `ComposerSlots` placement contract as KitComposer (§15):
+//   • `overlay`        — a positioned SIBLING rendered BEFORE the bar, so the composer's rounded top tucks
+//                        the overlay's bottom edge (the plan sheet; edges #7/#15).
+//   • `controlsStart`  — EMBEDDED at the field's leading edge, inside the input surface (the plan pill),
+//                        mirroring the embedded mic at the trailing edge; rendered only when populated.
+// The root KEEPS the `.kit-composer` class (edge #5) so DefaultRoot's `querySelector(".kit-composer")`
+// --composer-h measurement still finds it; `.sheet` adds the docked styling in kit.css.
+export function SheetComposer({ controlsStart, overlay }: ComposerSlots = {}) {
+  const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
+
+  return (
+    <>
+      {/* `overlay` slot — a positioned sibling ABOVE `.kit-composer` (e.g. the plan sheet). Rendered before
+          the bar so, at equal stacking, the docked composer paints over the overlay's tucked bottom edge. */}
+      {overlay}
+      <div className="kit-composer sheet" id="composer">
+        <div className="sheet-row">
+          <div className="field">
+            {/* `controlsStart` slot — EMBEDDED at the field's leading edge, INSIDE the input surface
+                (owner eyeball 2026-07-11: same background as the text input, mirroring the embedded mic on
+                the trailing edge; matches A4's `planPill: inline` semantics). Wrapped ONLY when populated;
+                the pill may itself render null, which `.sheet-controls:empty { display:none }` collapses. */}
+            {controlsStart && <div className="sheet-controls">{controlsStart}</div>}
+            <textarea
+              ref={taRef}
+              id="cmd-input"
+              rows={1}
+              placeholder="How can I help you today?"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={onKeyDown}
+            />
+            {sttReady && (
+              <button
+                type="button"
+                className={
+                  "kit-cbtn mic" +
+                  (mic.status === "recording" ? " rec" : "") +
+                  (micPressed ? " press" : "") +
+                  (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
+                }
+                aria-label={MIC_LABEL[mic.status]}
+                title={MIC_LABEL[mic.status]}
+                aria-pressed={mic.status === "recording"}
+                disabled={mic.status === "unavailable" || mic.status === "sending"}
+                onPointerDown={pressMic}
+                onPointerUp={releaseMic}
+                onPointerCancel={releaseMic}
+                onPointerLeave={releaseMic}
+                onClick={mic.toggle}
+              >
+                {/* vapor's stroke mic glyph at vapor's proportion (~26px in the 40px hit target) — owner
+                    eyeball 2026-07-11: the docked variant keeps vapor's icon language, theme-colored. */}
+                <svg
+                  width="26"
+                  height="26"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <rect x="9" y="3" width="6" height="11" rx="3" />
+                  <path d="M5 11a7 7 0 0 0 14 0" />
+                  <path d="M12 18v3" />
+                </svg>
+              </button>
+            )}
+          </div>
+          {/* Send — vapor-look paper-plane (§3.3), not KitComposer's arrow. Tall block beside the field. */}
+          <button
+            type="button"
+            className="kit-send tall"
+            id="cmd-send"
+            aria-label="send message"
+            title="send message"
+            disabled={isStreaming}
+            onClick={send}
+          >
+            {/* lucide `navigation` outline arrowhead (owner pick, icon showcase 2026-07-11) — stroke
+                language matches the mic; 24px matches vapor's send proportion. Optically re-centered via
+                the `.kit-send.tall svg` nudge in kit.css (the glyph's mass leans up-right, vapor's fix). */}
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <polygon points="3 11 22 2 13 21 11 13 3 11" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </>
+  );
 }

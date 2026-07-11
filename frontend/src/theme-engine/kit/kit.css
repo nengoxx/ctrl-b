@@ -373,6 +373,108 @@ body[data-perf="lite"] .kit-composer {
   display: block;
 }
 
+/* ── composer · DOCKED "sheet" variant (SheetComposer, COMPOSER_SURFACE_PLAN §3.3) ──────────────────────
+ * vapor's rounded-dock LOOK ported to the Kit's SEMANTIC tokens: full-width bar pinned to the screen bottom
+ * with a rounded top, an embedded borderless accent mic inside the field, and a tall full-height send block
+ * beside it. Shares the `.kit-composer` class (edge #5: DefaultRoot's --composer-h querySelector), so the
+ * base rule above supplies background / frost / border-color / z-index — `.sheet` only re-shapes the layout.
+ * Semantic tokens ONLY (never vapor's --magenta/--ink/--bg-2). §14.11: no new layout/filter transitions. */
+.kit-composer.sheet {
+  /* docked at the bottom, inset from the sides like the stacked bar (owner eyeball 2026-07-11 — not
+   * edge-to-edge/"baked in"); the rounded top clips the tall send + field, so children need no corner
+   * radii of their own (overflow:hidden does the corner). TOP shadow — the docked look lifts upward. */
+  left: 18px;
+  right: 18px;
+  bottom: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  border-bottom: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.3);
+  /* NOTE: the perf-lite blur gate is FREE — `body[data-perf="lite"] .kit-composer` (above) already matches
+   * this element (same class), so the frost drops to opaque here with no duplicate rule. */
+}
+/* the base light-mode shadow rule (`body[data-mode=light] .kit-composer`, specificity 0,2,1) outspecifies
+ * `.kit-composer.sheet` (0,2,0) and would restore a DOWNWARD shadow — re-assert the top-lift for light. */
+body[data-mode="light"] .kit-composer.sheet {
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.07);
+}
+/* the `controlsStart` container (the plan pill) — EMBEDDED at the field's leading edge, inside the input
+ * surface (shares the field's --surface-2 bg), mirroring the embedded mic at the trailing edge. */
+.kit-composer.sheet .sheet-controls {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding-left: 10px;
+}
+/* the theme passes the plan-pill slot even when the pill renders null; collapse the empty padded box. */
+.kit-composer.sheet .sheet-controls:empty {
+  display: none;
+}
+.kit-composer.sheet .sheet-row {
+  display: flex;
+  align-items: stretch;
+}
+.kit-composer.sheet .field {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: var(--surface-2);
+  position: relative;
+  /* the field always forms the composer's top-left corner (the pill is embedded INSIDE it) — the matching
+   * inner radius (outer 16px − 1px border) makes the focus ring follow the visible curve instead of
+   * running straight into the clipped corner (owner eyeball 2026-07-11). */
+  border-top-left-radius: calc(var(--radius) - 1px);
+}
+.kit-composer.sheet .field:focus-within {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* the base `.kit-composer textarea` (all:unset, font-size 15px, max-height 96px, overflow-wrap, placeholder)
+ * already applies via the shared class — override ONLY the base's `display:block; width:100%` to flex sizing,
+ * plus the docked padding (vertical padding density-scaled, matching the stacked bar's `--density-pad`). */
+.kit-composer.sheet textarea {
+  width: auto;
+  flex: 1;
+  padding: calc(13px * var(--density-pad)) 6px calc(11px * var(--density-pad)) 14px;
+}
+/* embedded borderless accent mic (right of the textarea, inside the field). --accent (the TRUE-color channel)
+ * NOT --accent-fill (which may be a gradient <image>, background-only per the tokens.css contract). The base
+ * `.press` (transform) / `.unavail` (opacity) states still apply — this rule doesn't touch those properties. */
+.kit-composer.sheet .field .kit-cbtn.mic {
+  border: 0;
+  color: var(--accent);
+  width: 40px;
+  height: 40px;
+  margin-right: 2px;
+  flex-shrink: 0;
+}
+/* the sheet mic rule above (0,5,0) outspecifies the base `.kit-cbtn.mic.rec` (0,3,0) on `color` — re-assert
+ * the recording red. While recording the red slowly BREATHES (owner eyeball 2026-07-11): the shared
+ * opacity-only `kit-tag-pulse` at a calmer tempo (§14.11-safe; reads as the red fading in/out). */
+.kit-composer.sheet .field .kit-cbtn.mic.rec {
+  color: var(--danger);
+  animation: kit-tag-pulse 1.8s ease-in-out infinite;
+}
+body[data-motion="reduced"] .kit-composer.sheet .field .kit-cbtn.mic.rec {
+  animation: none; /* §14.11: reduced motion → static red */
+}
+/* full-height send block beside the field (align-items:stretch gives the height); the composer's
+ * overflow:hidden clips its top-right corner into the bar's radius. */
+.kit-composer.sheet .kit-send.tall {
+  width: 52px;
+  height: auto;
+  border-radius: 0;
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+  flex-shrink: 0;
+}
+/* optical centering for the arrowhead glyph — its visual mass leans up-right (vapor's own nudge). */
+.kit-composer.sheet .kit-send.tall svg {
+  transform: translate(-1px, 1px);
+}
+
 /* ── Fleet view (KitFleet) — device list + 3-stat summary; ported from the minimal prototype. Inner class
  * names are generic (.led/.name/.role/.act/…), so every rule is scoped under a `.kit-*` container to avoid
  * colliding with vapor (skin-scoped) or the shared Bucket-A classes. ── */
@@ -2392,6 +2494,12 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
 .kit .plan-pill:active {
   background: color-mix(in oklch, var(--accent) 22%, transparent);
 }
+/* docked variant: a rounded RECT, not the lozenge — embedded in the field, it echoes the squarer
+ * field/composer geometry (owner eyeball 2026-07-11). 8px on the ~26px chip reads "square-ish, softened";
+ * the stacked variant keeps the lozenge. */
+.kit-composer.sheet .plan-pill {
+  border-radius: 8px;
+}
 .kit .plan-pill .chev {
   color: var(--accent);
   font-size: 9px;
@@ -2448,6 +2556,12 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
   opacity: 1;
   transform: none;
   pointer-events: auto;
+}
+/* docked-composer interplay (edge #7): the stacked rule bakes in the composer's 12px bottom inset
+ * (`+ 12px`). The docked composer sits at bottom:0, so drop that inset while keeping the 18px tuck behind
+ * its rounded top. `:has()` is already used in this file (see `.kit:has(.navmenu)`). */
+.kit-main:has(.kit-composer.sheet) .plan-sheet {
+  bottom: calc(var(--composer-h, 64px) - 18px);
 }
 body[data-motion="reduced"] .kit .plan-sheet {
   transition: none; /* §14.11: reduced motion → snap open/closed, no slide */
