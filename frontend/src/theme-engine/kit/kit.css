@@ -1432,6 +1432,15 @@ body[data-mode="light"] .kit .toast {
   width: auto;
   transform: none;
 }
+/* TOP-BAND STACKING (owner eyeball 2026-07-12): the PINNED plan header (sticky at --appbar-h + 8, z 4) and
+ * the player both claim the just-below-the-appbar slot — the plan is PERSISTENT chrome, the player a
+ * TRANSIENT overlay, so the player yields: drop it below the plan header (~30px header + the 8px sticky
+ * offset + breathing; the same fixed-clearance idiom as the 64px launcher gaps above). Keyed on the panel
+ * inside the ACTIVE tab only — the keep-mounted agent tab keeps the panel in the DOM while hidden, and the
+ * player must not shift on OTHER tabs. Composes with the corner clearances (this rule only moves `top`). */
+.kit:has(.tab.active .plan-pin-panel) .mini-player {
+  top: calc(var(--appbar-h, 56px) + 46px);
+}
 body[data-mode="light"] .kit .mini-player {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
 }
@@ -2902,6 +2911,18 @@ body[data-motion="reduced"] .kit .plan-sheet {
   z-index: 4; /* below the kit appbar (z 5), above chat content */
   margin: 0 14px 10px;
 }
+/* Corner clearances (owner eyeball 2026-07-12): with NO appbar the floating nav buttons share the panel's
+ * band (--appbar-h is 0 → the sticky header sits at y≈8, the corner buttons at y 10–54, z 30 — they'd cover
+ * the header's title/chevron). Inset the panel between them, the mini-player clearance idiom exactly:
+ * launcher (top-right) → right inset; NavHome (top-left, minimal-only) → left inset. Independent properties,
+ * so the two rules compose; the drop (left/right 0 of the panel) inherits the narrower width — fine at 390px
+ * (262px in the worst case, minimal). Docked menu lives IN the appbar → no inset needed there. */
+.kit:has(.navmenu:not(.docked)) .plan-pin-panel {
+  margin-right: 60px;
+}
+.kit:has(.navhome) .plan-pin-panel {
+  margin-left: 60px;
+}
 /* the header's accent-chip look (fill/border/chevron/:active) is GROUPED with `.plan-pill` up in the plan-
  * widget section (one source — no drift); only the pin-head's size/shape deltas live here. */
 .kit .plan-pin-head {
@@ -3927,6 +3948,14 @@ body[data-motion="reduced"] .kit .bs-sheet {
 .kit .navmenu.docked .navmenu-direct svg {
   width: 18px;
   height: 18px;
+}
+/* Solo corner/appbar icons read thinner than the 2.4-stroke orbit glyph at the same size (the ICONS map
+ * draws at 1.8 — the POPOVER-item weight, where the lighter stroke suits a stacked list). Bolden the
+ * standalone forms to match the launcher (owner directive 2026-07-12); stroke-width is a presentation
+ * attribute, so CSS wins over the inline svg attr. Popover items keep 1.8 (their accepted look). */
+.kit .navhome svg,
+.kit .navmenu-direct svg {
+  stroke-width: 2.4;
 }
 .kit .navmenu .navmenu-launch.navmenu-direct.active {
   color: var(--accent);
