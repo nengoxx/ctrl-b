@@ -21,7 +21,9 @@ interface Props {
 }
 
 export function KitNavBar({ onPrefetch }: Props) {
-  const { sections, active, navigate } = useSections();
+  // The ON-BAR sections under the resolved layout (D35 §F0) — 4-tab renders all four (render-identical to
+  // before), 3-/2-tab render fewer; off-bar sections reach the user via the floating `<NavMenu/>`.
+  const { bar: sections, active, navigate } = useSections();
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     const n = sections.length;

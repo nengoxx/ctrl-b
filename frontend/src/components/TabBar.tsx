@@ -30,9 +30,10 @@ interface Props {
 }
 
 export function TabBar({ onPrefetch }: Props) {
-  // The section list + active section + navigation come from the headless controller (D29 §14.2); the
-  // bottom-bar markup, the sliding indicator, and the WAI-ARIA tabs wiring stay vapor presentation.
-  const { sections, active, navigate } = useSections();
+  // The ON-BAR sections + active section + navigation come from the headless controller (D29 §14.2 / D35);
+  // `bar` is the layout-partitioned on-bar list (vapor is 4-tab by waiver, so it's render-identical to the
+  // full list). The bottom-bar markup, the sliding indicator, and the WAI-ARIA tabs wiring stay vapor.
+  const { bar: sections, active, navigate } = useSections();
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     const n = sections.length;

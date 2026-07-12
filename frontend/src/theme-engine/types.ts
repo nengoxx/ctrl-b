@@ -22,11 +22,19 @@ export type TabId = Tab;
 // One tab in a theme's tab set. Extends today's hardcoded TabBar `{id,glyph,lbl}` with `hasComposer`
 // (§13.6 — moves the `showComposer = tab==="fleet"||"agent"` hardcode out of App.tsx + ui.ts so a
 // theme's tab set drives composer visibility, the flexible-tab-registry requirement, D28 #4).
+//
+// Stays PURE DATA (D35 body-registry ruling: "eager DATA, lazy COMPONENTS") — NO component field. The
+// id→body map lives in kit space (DefaultRoot), so this module keeps `tabs.ts`'s component-free invariant.
 export interface TabDef {
   id: TabId;
   glyph: string;
   lbl: string;
   hasComposer: boolean;
+  // Generic lazy-mount flag (D35 §F0) — generalizes the one-off Conf latch. A `lazy` body is mounted only
+  // after its section first becomes active, then kept mounted (draft state survives), and DefaultRoot wraps
+  // it in an ErrorBoundary+Suspense. Omitted → eager (always mounted, `.active`-gated). Conf is the only
+  // `lazy` section today.
+  lazy?: boolean;
 }
 
 // A theme declares WHICH palette axes it supports; the Conf picker renders only the declared axes.
@@ -85,6 +93,21 @@ export type ThemeSettingsSpec = Record<string, ThemeSettingField>;
 // A resolved setting value — a switch (boolean) or a seg (string).
 export type ThemeSettingValue = string | boolean;
 
+// The curated section-layout presets (D35 / FRONTIER_PLAN §1). Each preset recomposes WHERE the standard
+// sections live — never removes functionality. `4-tab` = today; `3-tab` hosts utils inside Conf; `2-tab`
+// additionally moves Conf off-bar (reached via the menu). The lever (`ui.layout`) picks one; a theme
+// declares its default + supported set below.
+export type LayoutId = "4-tab" | "3-tab" | "2-tab";
+
+// A layout preset (adversarial-review schema, 2026-07-07): `bar` = the on-bar sections (in bar order);
+// `hosted` maps a section → the host section it renders INSIDE (Axis B, one curated pair today: utils→conf).
+// Sections in neither `bar` nor `hosted` are off-bar-and-unhosted → the menu affordance (Axis A). See
+// `theme-engine/layout.ts` for the preset table + the partition/coercion logic.
+export interface LayoutPreset {
+  bar: TabId[];
+  hosted?: Partial<Record<TabId, TabId>>;
+}
+
 export interface ThemeDef {
   id: ThemeId;
   label: string;
@@ -104,6 +127,13 @@ export interface ThemeDef {
   present?: Present; // §9.9 — per-host visual encoding (cosmos/frontier); omit → no spatial layout
   settings?: ThemeSettingsSpec; // §14.3 — theme-namespaced options auto-rendered by the Appearance picker
   assets?: Record<string, () => Promise<string>>; // import.meta.glob map keyed by name (frontier art)
+  // Section-layout capability declaration (D35 §F0) — additive, purely a per-theme capability list the
+  // global `ui.layout` lever is resolved against (NOT synced state). `defaultLayout` = the preset `auto`
+  // adopts (omit → `4-tab`). `layouts` = the supported set the picker's pick is coerced into (omit → ALL
+  // presets — the ratified ideal "all themes can offer all modes"). vapor waivers to `["4-tab"]` while
+  // frozen (ladder-owned — VaporRoot never consumes the registry). Resolved by `layout.ts#resolveLayout`.
+  defaultLayout?: LayoutId;
+  layouts?: LayoutId[];
 }
 
 // Only BUILT themes appear here (a Partial record) — `rootFor` falls back to the default (vapor) for an

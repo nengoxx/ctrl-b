@@ -21,7 +21,11 @@ export function ConfGroup(props: {
 }) {
   const [collapsed, toggle] = useCollapsed(props.id, props.defaultCollapsed);
   return (
-    <div className={"confgroup" + (collapsed ? " collapsed" : "")}>
+    // `id` doubles as the collapse key AND a DOM anchor (D35 §F0: the hosted-utils group is a scroll-to
+    // target). Group ids are already unique collapse keys; the one reused id ("agent-tools") lives in
+    // UtilsTab's content, which is UNMOUNTED whenever that content is hosted in Conf, so no duplicate DOM
+    // id can co-exist.
+    <div id={props.id} className={"confgroup" + (collapsed ? " collapsed" : "")}>
       {/* D25 — keyboard-operable disclosure (header is button-free, so role=button is safe here). */}
       <div className="conftitle conf-toggle" {...disclosureToggle(!collapsed, toggle)}>
         <span className="conf-chev" aria-hidden>

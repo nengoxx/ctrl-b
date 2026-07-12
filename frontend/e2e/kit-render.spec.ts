@@ -16,17 +16,20 @@ interface Combo {
   theme: string;
   mode: string;
   accent: string;
+  bar: string[]; // the theme's DEFAULT-layout on-bar sections (D35 §F0) — the tab buttons to sweep
 }
 const COMBOS: Combo[] = CONTRAST_MATRIX.flatMap((t) =>
   // One representative accent per theme×mode (accents[0] = defaultAccent: minimal→cyan, cosmos→violet).
-  t.modes.map((mode) => ({ theme: t.theme, mode, accent: t.accents[0] })),
+  t.modes.map((mode) => ({ theme: t.theme, mode, accent: t.accents[0], bar: t.bar })),
 );
 
-// The kit's standard 4-tab set (theme-engine/tabs.ts STANDARD_TABS) — every kit theme exposes exactly these
-// (the bodies are hardwired in DefaultRoot; only the Fleet SURFACE differs per theme). Kept as a plain list
-// so this spec doesn't import the app graph (the contrast-matrix rationale). Each drives a `#tabbtn-<id>`
-// button and reveals a `#tab-<id>` role=tabpanel.
-const TABS = ["fleet", "agent", "utils", "conf"] as const;
+// LAYOUT-AWARE (D35 §F0): the sweep drives the theme's DEFAULT-layout BAR (`CONTRAST_MATRIX.bar`), not a
+// hardcoded 4-tab list — so a theme with a 3-/2-tab default sweeps only its on-bar sections (utils/conf move
+// off-bar into Conf/the menu, which have no `#tabbtn`). Sourced from the matrix (kept a plain list so this
+// spec doesn't import the app graph — the contrast-matrix rationale); the matrix `bar` is drift-guarded
+// against the registry-resolved bar in tests/theme-engine/themeContract.test.ts, so a `defaultLayout` change
+// breaks the guard, not this sweep. Each bar id drives a `#tabbtn-<id>` button and reveals a `#tab-<id>`
+// role=tabpanel. Today every theme → all four.
 
 for (const c of COMBOS) {
   test(`kit renders + survives a tab sweep — ${c.theme} ${c.mode}/${c.accent}`, async ({
@@ -60,8 +63,8 @@ for (const c of COMBOS) {
     //     chrome sub-tree rendered, so it's the stronger LIVE signal.)
     await page.waitForSelector(".kit-appbar");
 
-    // ── Render/tab smoke: drive the full tab set, and after each navigation assert the kit is intact ──
-    for (const tab of TABS) {
+    // ── Render/tab smoke: drive the theme's on-bar sections, asserting the kit is intact after each nav ──
+    for (const tab of c.bar) {
       await page.locator(`#tabbtn-${tab}`).click();
 
       // (c) The tab's own panel actually rendered AND is the visible one (`.kit .tab.active { display }`;

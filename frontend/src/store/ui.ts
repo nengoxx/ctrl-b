@@ -10,7 +10,7 @@
 // (dark/aqua/ember) — set only when skin=vapor, cleared otherwise. Non-vapor themes additionally get
 // `body[data-mode]`/`body[data-accent]` (the prototypes scope palettes by attribute).
 
-import type { Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
+import type { LayoutId, Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
 import { createStore } from "./createStore";
 import { loadPersistedVersioned, savePersisted } from "./persist";
 
@@ -51,6 +51,11 @@ export interface UIState {
   // Migrated from the old boolean `hideAppbar` (and an earlier per-theme `minimal` setting) by
   // `migrateAppbarMode`.
   appbarMode: AppbarMode;
+  // The section-layout lever (D35 §F0) — a GLOBAL, cross-theme display lever, per-DEVICE (persisted locally,
+  // NOT synced — the appearance doc is untouched; a synced promotion is a possible later additive step),
+  // exactly like `appbarMode`. `auto` = the active theme's declared default (`ThemeDef.defaultLayout`); an
+  // explicit `LayoutId` is coerced to the theme's nearest supported preset by `layout.ts#resolveLayout`.
+  layout: "auto" | LayoutId;
 }
 
 // First-load default for `motion`: honor the OS `prefers-reduced-motion` preference once.
@@ -74,6 +79,7 @@ const DEFAULTS: UIState = {
   perf: "full", // default to the full glass look; the owner opts into "lite" on a slow device
   themeSettings: {}, // per-theme overrides resolve against each ThemeDef.settings default
   appbarMode: "visible", // global per-device chrome lever; every theme's Root honors it
+  layout: "auto", // global per-device section-layout lever (NOT synced); auto = the active theme's default
 };
 
 const KEY = "ctrlb.ui";

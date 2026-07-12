@@ -3884,6 +3884,14 @@ body[data-motion="reduced"] .kit .bs-sheet {
   align-items: flex-end;
   gap: 8px;
 }
+/* D35 §F0: the menu no longer implies "no appbar" — under 2-tab with the appbar VISIBLE it coexists with
+ * the bar (bar = fleet+agent, the floating menu carries conf). Drop the launcher BELOW the appbar (measured
+ * `--appbar-h`) so the orbit glyph doesn't collide with the appbar's top-right region at 390px. The
+ * `.kit-appbar` node exists only when the appbar is visible, so `:has()` scopes this to exactly that case
+ * (in `minimal`/`off` there's no appbar and the base top:10px stands). Token-driven, transform-free. */
+.kit:has(.kit-appbar) .navmenu {
+  top: calc(var(--appbar-h, 0px) + 10px + env(safe-area-inset-top));
+}
 .kit .navmenu-launch {
   /* just the orbit icon — no circle/background (owner directive), a transparent tap target. Sized to the
    * menu items (44px) and inset by the popover's 6px padding, so the launcher icon centers exactly over the

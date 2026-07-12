@@ -25,6 +25,12 @@ export const vapor: ThemeDef = {
     ],
     defaultAccent: "dark",
   },
+  // Section-layout capability (D35 §F0): vapor waivers to its native 4-tab set ONLY — a visible,
+  // ladder-owned waiver (assimilation ladder, THEME_ENGINE §14.15.3). VaporRoot is bespoke and never
+  // consumes the section registry / presets, so its byte-identity under F0 is structural, not incidental;
+  // this declaration merely makes the picker coerce any 3-/2-tab pick back to 4-tab while frozen.
+  defaultLayout: "4-tab",
+  layouts: ["4-tab"],
   loadStyles: () => Promise.resolve(), // vapor.css is eager (the default theme), already loaded
   // Per-theme settings (§14.3) — vapor's hero decoration, auto-rendered in the Appearance picker. The
   // Appearance group renders these between the global Palette and the global Motion/Blur levers. seg →

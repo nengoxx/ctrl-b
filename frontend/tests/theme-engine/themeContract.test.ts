@@ -11,6 +11,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { CONTRAST_MATRIX } from "../../e2e/contrast-matrix";
 import { setUI } from "../../src/store/ui";
+import { LAYOUT_PRESETS, partitionSections, resolveLayout } from "../../src/theme-engine/layout";
 import { registeredThemes } from "../../src/theme-engine/registry";
 import { tabsFor } from "../../src/theme-engine/tabs";
 import type { ThemeId } from "../../src/theme-engine/types";
@@ -322,6 +323,23 @@ describe("e2e contrast matrix ↔ registry palettes (drift guard)", () => {
     expect(row!.modes).toEqual(def.palettes.modes ?? ["dark"]);
     expect(row!.accents).toEqual((def.palettes.accents ?? []).map((a) => a.id));
   });
+
+  // The kit-render sweep (e2e/kit-render.spec.ts) is now LAYOUT-AWARE: it drives the theme's DEFAULT-layout
+  // bar, sourced from `CONTRAST_MATRIX.bar`. Guard that hand-maintained list against the registry-resolved
+  // bar so a theme changing its `defaultLayout` (frontier's future 3-tab) breaks HERE — not the sweep, which
+  // would otherwise silently keep clicking a stale tab set (D35 §F0 punch-list).
+  it.each(measurable.map((d) => [d.id] as const))(
+    "%s's matrix `bar` = the registry-resolved default-layout bar",
+    (id) => {
+      const row = CONTRAST_MATRIX.find((t) => t.theme === id);
+      const layout = resolveLayout(id, "auto"); // the theme's declared default preset
+      const { bar } = partitionSections(tabsFor(id), LAYOUT_PRESETS[layout], false);
+      expect(
+        row!.bar,
+        `${id}: CONTRAST_MATRIX.bar drifted from the ${layout} on-bar sections — update the matrix`,
+      ).toEqual(bar.map((d) => d.id));
+    },
+  );
 });
 
 // ── P2 meta-guard (§14.13.1 — "the guard that guards the guards"; built 2026-07-10 after the frontier

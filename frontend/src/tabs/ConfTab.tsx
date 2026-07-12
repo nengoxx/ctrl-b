@@ -12,6 +12,7 @@ import { Swatches } from "../components/Swatches";
 import { Switch } from "../components/Switch";
 import { useAccessStatus, useSetServe } from "../hooks/useAccess";
 import { useAppChrome } from "../hooks/useAppChrome";
+import { useSections } from "../hooks/useSections";
 import { currentAppearancePatch, useSaveAppearance } from "../hooks/useAppearance";
 import { agentModeOf, useActionSpecs } from "../hooks/useActions";
 import { disclosureToggle } from "../lib/disclosure";
@@ -23,14 +24,18 @@ import { type MemoryCfg } from "../hooks/useMemory";
 import { useSaveSettings, useSettings, type SettingsDoc } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
 import { promptPreview } from "../lib/promptPreview";
+import { setCollapsed } from "../store/collapse";
 import { useRegisterDirty } from "../store/dirty";
+import { clearGroupScrollTarget, useGroupScrollTarget } from "../store/groupScroll";
 import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
+import { HOSTED_UTILS_GROUP_ID } from "../theme-engine/layout";
 import { registry, registeredThemes } from "../theme-engine/registry";
 import { defaultSwitchTarget } from "../theme-engine/resolve";
 import { switchTheme } from "../theme-engine/switchTheme";
-import type { Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
+import type { LayoutId, Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
 import { setThemeSetting, setUI, useUISlice, type AppbarMode } from "../store/ui";
+import { UtilsContent } from "./UtilsTab";
 
 // Conf tab. Appearance is wired to the live UI store (client display state). Phase 7a wires the
 // **Inference** + **Server** groups to the YAML-backed settings API (GET masked / PUT partial
@@ -212,6 +217,13 @@ export function ConfTab({ active }: Props) {
   const motion = useUISlice((s) => s.motion);
   const perf = useUISlice((s) => s.perf);
   const appbarMode = useUISlice((s) => s.appbarMode); // global, per-device (local) — every theme honors it
+  const layout = useUISlice((s) => s.layout); // the RAW section-layout lever (auto/4/3/2) — device-local like App bar
+  // The resolved partition (D35 §F0): `hostsUtils` = the active layout renders utils INSIDE Conf, so this
+  // tab hosts the Tools group. The scroll-to-group handoff (armed by `useSections.navigate` when it coerces
+  // a `utils` nav here) is consumed by the effect below.
+  const { hosted } = useSections();
+  const hostsUtils = "utils" in hosted;
+  const scrollTarget = useGroupScrollTarget();
   const themeVals = useUISlice((s) => s.themeSettings[theme]); // overrides for the active theme (or undefined)
   const saveAppearance = useSaveAppearance(); // optimistic cross-device write (§9.11)
   // Auto-TTS — the SAME controller the appbar's toggle uses (no new state). Surfaced here so it's reachable
@@ -268,6 +280,19 @@ export function ConfTab({ active }: Props) {
     setThemeSetting(theme, key, value);
     saveAppearance.mutate(currentAppearancePatch());
   };
+  // Hosted-utils scroll handoff (D35 §F0): when `useSections.navigate` coerces a `utils` navigation to Conf
+  // it arms `groupScroll` with the hosted group's DOM id. Consume it here — force-EXPAND the group (a plain
+  // toggle can't guarantee the open state), scroll it to the top, then clear. The clear is deferred to a
+  // MICROTASK so DefaultRoot's parent scroll-reset effect (which runs AFTER this child effect in the same
+  // passive-effect flush) still peeks a pending target and SKIPS its `scrollTo(0,0)` — otherwise it would
+  // cancel this scroll. Guarded on `hostsUtils` so it only fires when the group is actually rendered here.
+  useEffect(() => {
+    if (scrollTarget !== HOSTED_UTILS_GROUP_ID || !hostsUtils) return;
+    setCollapsed(HOSTED_UTILS_GROUP_ID, false);
+    document.getElementById(HOSTED_UTILS_GROUP_ID)?.scrollIntoView({ block: "start" });
+    queueMicrotask(clearGroupScrollTarget);
+  }, [scrollTarget, hostsUtils]);
+
   const { data: server } = useServerInfo();
   const { data: hosts = [] } = useHosts(server?.poll_seconds ?? 5);
 
@@ -1195,7 +1220,18 @@ export function ConfTab({ active }: Props) {
         <MachineEditor hosts={hosts} />
       </ConfGroup>
 
-      <ConfGroup id="appearance" num="15" title="Appearance">
+      {/* Hosted Tools group (D35 §F0): when the active layout hosts utils in Conf (3-/2-tab), the Tools
+          content renders here as the LAST functional group before Appearance — the group header replaces
+          utils's standalone `.sec`. Numbered 15 (slotting in before the terminal Appearance group, which
+          shifts to 16 while hosted); the standalone UtilsTab is unmounted in this layout, so its
+          "agent-tools" child group has no duplicate DOM id. */}
+      {hostsUtils && (
+        <ConfGroup id={HOSTED_UTILS_GROUP_ID} num="15" title="Tools" right="utility tools">
+          <UtilsContent />
+        </ConfGroup>
+      )}
+
+      <ConfGroup id="appearance" num={hostsUtils ? "16" : "15"} title="Appearance">
         {/* Every row uses the shared `SettingRow` (label + desc + trailing control) so the group has one
             consistent shape; the Palette axis uses the `Swatches` color-chip radiogroup. */}
         <div className="conf-card">
@@ -1274,6 +1310,25 @@ export function ConfTab({ active }: Props) {
                 { val: "minimal", label: "Min" },
               ]}
               onPick={(v) => setUI({ appbarMode: v })}
+            />
+          </SettingRow>
+          {/* Section layout (D35 §F0) — global, per-device (local, NOT synced — like App bar). `current` is
+              the RAW lever (auto/4/3/2), not the resolved id. ALL options always show; an unsupported pick
+              for the active theme is coerced to its nearest supported preset (+ a one-time warn) by
+              `resolveLayout` — capability-aware greying is a later polish. */}
+          <SettingRow
+            label="Layout"
+            desc="sections on the tab bar · 3-tab hosts tools in conf · 2-tab moves conf to the menu"
+          >
+            <Seg<"auto" | LayoutId>
+              current={layout}
+              options={[
+                { val: "auto", label: "Auto" },
+                { val: "4-tab", label: "4" },
+                { val: "3-tab", label: "3" },
+                { val: "2-tab", label: "2" },
+              ]}
+              onPick={(v) => setUI({ layout: v })}
             />
           </SettingRow>
         </div>

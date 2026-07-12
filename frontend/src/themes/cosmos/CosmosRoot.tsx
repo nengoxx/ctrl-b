@@ -6,8 +6,10 @@ import { CosmosStarfield } from "./CosmosStarfield";
 // cosmos's Root (D29 §14.4 / §14.13). A BESPOKE Root that layers the deep-space starfield (C1) behind the
 // REUSED Kit shell — Agent/Conf/Utils render via DefaultRoot (colored by cosmos's tokens.css), while
 // cosmos.css makes that shell see-through so the fixed starfield shows in the gaps. The Fleet is cosmos's
-// signature surface: the bespoke ORBITAL FleetView (C2) is passed into DefaultRoot's `Fleet` slot — the
-// rest of the Kit is reused unchanged. Honors the global `ui.hideAppbar` lever (all themes).
+// signature surface: the bespoke ORBITAL FleetView (C2) is injected via DefaultRoot's `bodies` body-override
+// map (D35 §F0 — the generalized replacement for the old single-purpose `Fleet` prop; theme-pinning-as-data,
+// NOT a Surface graduation) — the rest of the Kit is reused unchanged. Honors the global `ui.appbarMode`
+// lever (all themes). cosmos omits `defaultLayout`/`layouts`, so it defaults to 4-tab and supports all.
 export function CosmosRoot() {
   const appbarMode = useUISlice((s) => s.appbarMode);
   return (
@@ -16,7 +18,7 @@ export function CosmosRoot() {
       {/* The orbital Fleet stays cosmos's signature view. Since A4, DefaultRoot OWNS the plan composition
           (the `planPlacement` setting picks inline pill+sheet vs. the pinned panel) — cosmos defaults to
           `inline`, so this is render-identical to the old explicit `composerSlots={kitPlanComposerSlots}`. */}
-      <DefaultRoot appbarMode={appbarMode} Fleet={CosmosFleet} />
+      <DefaultRoot appbarMode={appbarMode} bodies={{ fleet: CosmosFleet }} />
     </>
   );
 }

@@ -14,9 +14,26 @@ export interface ThemeMatrix {
   theme: string;
   modes: string[]; // a single-mode theme lists its one implicit mode
   accents: string[]; // accent ids, in palette order
+  // The on-bar section ids under the theme's DEFAULT layout (D35 §F0) — the tab buttons the kit-render sweep
+  // drives. Today every theme defaults to `4-tab` → all four; a future theme with a 3-/2-tab default lists
+  // fewer here (utils/conf move off-bar into Conf/the menu). Drift-guarded against the registry-resolved bar
+  // in tests/theme-engine/themeContract.test.ts, so a `defaultLayout` change breaks the GUARD, not the sweep.
+  bar: string[];
 }
 
+const FULL_BAR = ["fleet", "agent", "utils", "conf"]; // the 4-tab default every theme carries today
+
 export const CONTRAST_MATRIX: ThemeMatrix[] = [
-  { theme: "minimal", modes: ["dark", "light"], accents: ["cyan", "moss", "iris", "amber"] },
-  { theme: "cosmos", modes: ["dark"], accents: ["violet", "cyan", "green", "amber"] },
+  {
+    theme: "minimal",
+    modes: ["dark", "light"],
+    accents: ["cyan", "moss", "iris", "amber"],
+    bar: FULL_BAR,
+  },
+  {
+    theme: "cosmos",
+    modes: ["dark"],
+    accents: ["violet", "cyan", "green", "amber"],
+    bar: FULL_BAR,
+  },
 ];

@@ -104,7 +104,12 @@ const ICONS: Record<string, ReactNode> = {
 };
 
 export function NavMenu() {
-  const { sections, active, navigate } = useSections();
+  // The menu lists the OFF-BAR-AND-UNHOSTED sections only (Axis A, D35 §F0) — everything in `appbarMode:
+  // "minimal"` (all off-bar), or the odd one out under a partial layout (e.g. conf in 2-tab). Hosting
+  // supersedes the menu, so a hosted section (utils in 3-/2-tab) never appears here. The active section may
+  // legitimately be ABSENT from this list (e.g. the user is ON an on-bar section) — the focus logic below
+  // falls back to the first item when so.
+  const { menu: sections, active, navigate } = useSections();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);

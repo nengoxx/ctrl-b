@@ -1801,3 +1801,55 @@ ladder, backlog + rejected list: **[`THEME_ENGINE.md`](./THEME_ENGINE.md) §14.1
 (`COMPOSER_SURFACE_PLAN.md`), post-emma-deploy. Doc pass landed same-day (§10 rewrite as-built, §13.6
 superseded banner, §14.11 perf-sync correction, §14.4.1 two-trees box, §14.14 a11y invariant + isVapor
 exception, ROADMAP assimilation entry).
+
+## D35 — Section Layout System v1: body registry + curated layout presets + a device-local lever ✏️ LOCKED 2026-07-12 (frontier F0 design review)
+
+**Context.** Frontier (T5) is the first theme that needs "a different section set" (a bespoke Agent body +
+a 3-tab default), triggering the tab-body registry that D34 had parked ("no speculative registry") and that
+the owner widened into the **SECTION LAYOUT SYSTEM v1** (`FRONTIER_PLAN.md` §1, ratified 2026-07-07). This
+entry formally supersedes THEME_ENGINE §14.15.4's narrower "tab-body registry" wording. Principle:
+**functionality = modules; layout = modes that recompose where modules live** — no theme or mode ever
+removes functionality, only placement varies.
+
+**Decision.**
+- **Curated layout presets** (`theme-engine/layout.ts`), schema `{ bar: TabId[]; hosted?: Record<TabId, TabId> }`:
+  `4-tab` (today) · `3-tab` (utils hosted in Conf) · `2-tab` (conf via menu, utils inside it). Hosting is
+  Axis B — deliberately ONE curated pair (utils→conf), implemented concretely in ConfTab, generalized only
+  if a second hosting pair ever exists (concrete-first, rule of three).
+- **The lever**: `ui.layout: "auto" | LayoutId` — **device-local like `appbarMode`** (persisted locally,
+  NOT in the appearance sync doc; sync = a possible later additive promotion). `auto` = the active theme's
+  declared default. Picker = a Seg row beside App bar in Conf → Appearance's global levers.
+- **`ThemeDef` capability declaration (additive)**: `defaultLayout?` (omit → `4-tab`) + `layouts?` (omit →
+  all presets — the ratified ideal "all themes can offer all modes"). **vapor declares `layouts: ["4-tab"]`**
+  — a visible, ladder-owned waiver (VaporRoot never consumes the registry; byte-identity is structural).
+  Unsupported picks coerce to the nearest supported via a **dedicated warn-first layout-coercion resolver**
+  keyed on the ThemeDef declaration — NOT `resolveThemeSetting` (that guards per-theme seg/switch settings;
+  this guards a global lever against a per-theme capability list).
+- **Reachability is Axis A**: every section is always reachable — a tab-bar button if on-bar, the NavMenu
+  affordance otherwise. The menu rule generalizes from `appbarMode === "minimal"` to **"whenever any section
+  is off-bar AND unhosted"**; `appbarMode: minimal` is modeled as effective `bar = []` (the "1-tab mode IS
+  minimal" unification). **Hosting supersedes the menu**: the menu lists off-bar-AND-unhosted sections only;
+  `navigate(hostedId)` coerces to the host section + scroll-to-group (the coercion lives in
+  `useSections.navigate` — the one nav chokepoint all consumers already share).
+- **The body registry — eager DATA, lazy COMPONENTS (the "option A" ruling, owner-ratified 2026-07-12
+  after a detailed A/B comparison).** `TabDef` stays pure data (it gains only a generic `lazy?` flag
+  generalizing the Conf latch — `tabs.ts`'s component-free invariant holds); the kit owns the id→body
+  DEFAULT map in component space; `DefaultRoot` mounts bodies data-driven (keep-mounted, active-gated —
+  never conditional-render), replacing the hardwired branch. Per-theme body OVERRIDES are
+  injected by the theme's lazy Root chunk via ONE generalized `bodies?: Partial<Record<TabId, Component>>`
+  DefaultRoot prop that **replaces and generalizes the one-off `Fleet` prop** (cosmos: `bodies={{fleet:
+  CosmosFleet}}`). Rationale: keep-mounted semantics mean a theme's bodies always co-load with its Root —
+  splitting them into registry-declared lazy thunks ("option B") adds chunks, re-opens the
+  §14.15.1-hardened load-failure surface, and re-enters the `preloadableRoot` View-Transition flash problem
+  per body, for zero user-visible gain. This codifies the existing pattern (cosmos already does exactly
+  this for Fleet). **Option B stays the documented later promotion** if a real trigger appears (it's a
+  mechanical per-theme migration: static imports → thunks + an `ensureThemeLoaded` leg).
+
+**Consequences.** Deep-links/boot with a hosted-or-relocated active section coerce at the same chokepoint;
+hosted utils mounts with Conf's lazy chunk (inherits the latch; force-mount + scroll on live switch);
+relocation legitimately resets local input state (React remounts on tree-position change — the ratified
+honest trade; query-backed data survives in external caches). `hasComposer` stays per-active-section and
+is automatically correct per preset. The D31 Surface axis stays separate — variants ≠ tab composition.
+
+**Status.** LOCKED 2026-07-12 · built as frontier **F0** (`FRONTIER_PLAN.md` §6-F0). The kit-render e2e
+sweep goes layout-aware in the same slice (the pre-F0 readiness punch list).

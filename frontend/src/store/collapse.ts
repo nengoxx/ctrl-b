@@ -11,7 +11,15 @@ const { emit, useStore } = createStore();
 let state: Record<string, boolean> = loadPersisted(KEY, {});
 
 export function toggleCollapsed(id: string, current: boolean): void {
-  state = { ...state, [id]: !current };
+  setCollapsed(id, !current);
+}
+
+/** Set a section's collapsed state directly (idempotent; no-op emit when unchanged). Used by the hosted
+ *  utils group's scroll-to-group handoff (D35 §F0) to FORCE-EXPAND before scrolling — a plain `toggle` can't
+ *  guarantee the open state when the current value is unknown. */
+export function setCollapsed(id: string, collapsed: boolean): void {
+  if (state[id] === collapsed) return;
+  state = { ...state, [id]: collapsed };
   savePersisted(KEY, state);
   emit();
 }

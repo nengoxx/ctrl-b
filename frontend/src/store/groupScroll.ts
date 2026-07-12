@@ -1,0 +1,35 @@
+// Transient scroll-handoff store (D35 §F0) — the one-hop channel that carries "after you land on the host
+// section, scroll to (and expand) this group" from `useSections.navigate` (the nav chokepoint, which sets
+// it when it coerces a hosted-section navigation to its host) to the host body (ConfTab, which consumes +
+// clears it). A dep-free external store on the shared `createStore` binding (D23), same shape as
+// `store/collapse`. It is TRANSIENT by design: never persisted, never synced — it lives only for the tick
+// between a coerced navigate and the host's scroll effect. `target` is a DOM element id (a ConfGroup id).
+
+import { createStore } from "./createStore";
+
+const { emit, useStore } = createStore();
+let target: string | null = null;
+
+/** Arm the handoff: after the host section mounts, scroll to (and expand) the group with this DOM id. */
+export function setGroupScrollTarget(id: string): void {
+  target = id;
+  emit();
+}
+
+/** Clear the handoff once consumed (or if abandoned). No-op emit when already clear. */
+export function clearGroupScrollTarget(): void {
+  if (target === null) return;
+  target = null;
+  emit();
+}
+
+/** Non-reactive read — for effects that must PEEK the pending target without subscribing (DefaultRoot's
+ *  scroll-reset skips its `scrollTo(0,0)` when a target is pending, read via this getter, not a hook). */
+export function getGroupScrollTarget(): string | null {
+  return target;
+}
+
+/** Reactive subscription — the host body (ConfTab) watches this to run its expand+scroll effect. */
+export function useGroupScrollTarget(): string | null {
+  return useStore(() => target);
+}

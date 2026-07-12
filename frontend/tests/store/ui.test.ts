@@ -85,6 +85,7 @@ describe("ui store", () => {
     perf: "full",
     themeSettings: {},
     appbarMode: "visible",
+    layout: "auto",
   };
 
   describe("migrateLegacyTheme", () => {
