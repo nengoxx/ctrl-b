@@ -203,7 +203,16 @@ export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots, bra
           the content scrolls behind the composer and shows in the gaps around it). The nav bar stays an
           in-flow bar below. Per-tab CSS hooks: `body[data-tab]` (ui.ts) — cosmos/frontier tune the Fleet
           edge-scrims through it. */}
-      <div className={"kit-main" + (showComposer ? " has-composer" : "")} ref={mainRef}>
+      <div
+        className={
+          "kit-main" +
+          (showComposer ? " has-composer" : "") +
+          // Clear (transparent) appbar: mark `.kit-main` so kit.css can null its `::before` top scrim — that
+          // flat `--bg` haze right below the null-painted bar otherwise reads as a shadow band (item 6).
+          (appbarMode === "transparent" ? " appbar-clear" : "")
+        }
+        ref={mainRef}
+      >
         <div className="kit-scroll" id="app-scroll" ref={scrollRef}>
           {appbarShown(appbarMode) && <KitAppBar brandMeta={brandMeta} appbarMode={appbarMode} />}
           {/* Data-driven body mount (D35): every non-hosted section stays keep-mounted + `active`-gated;

@@ -27,16 +27,20 @@ const CHIPS = [
   "Wake a rig and start its services",
 ] as const;
 
-// The signature rig-stack watermark. OUTER positioner carries the empty↔watermark transition (transform +
-// opacity ONLY, transform-origin top center); the three INNER layers each run the infinite `frontier-bob`
-// keyframe — so the recede transform and the bob never share one `transform` (the research-confirmed nested-
-// wrapper rule). Decorative → aria-hidden. Art from the `stack` partition of art.ts.
+// The signature rig-stack watermark. A zero-height sticky PIN (`.fr-rigstack-pin`) anchors it in the viewport
+// so it stays put as a living background for the whole scroll of the thread (owner ask — it must not scroll
+// away). Inside the pin, the OUTER positioner (`.fr-rigstack`) carries the empty↔watermark transition
+// (transform + opacity ONLY, transform-origin top center); the three INNER layers each run the infinite
+// `frontier-bob` keyframe — so the recede transform and the bob never share one `transform` (the research-
+// confirmed nested-wrapper rule). Decorative → aria-hidden. Art from the `stack` partition of art.ts.
 function RigStack() {
   return (
-    <div className="fr-rigstack" aria-hidden>
-      <div className="layer base" style={{ backgroundImage: `url(${ART.stack.base})` }} />
-      <div className="layer mid" style={{ backgroundImage: `url(${ART.stack.mid})` }} />
-      <div className="layer cube" style={{ backgroundImage: `url(${ART.stack.cube})` }} />
+    <div className="fr-rigstack-pin" aria-hidden>
+      <div className="fr-rigstack">
+        <div className="layer base" style={{ backgroundImage: `url(${ART.stack.base})` }} />
+        <div className="layer mid" style={{ backgroundImage: `url(${ART.stack.mid})` }} />
+        <div className="layer cube" style={{ backgroundImage: `url(${ART.stack.cube})` }} />
+      </div>
     </div>
   );
 }

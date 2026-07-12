@@ -81,7 +81,9 @@
       height: 248px;
       margin: 12px 14px 0;
       border-radius: var(--radius);
-      border: 1px solid var(--line);
+      /* borderless (owner F4 round 2 no-outlines sweep) — the art + scrim + radius define the card edge; a
+       * transparent 1px keeps the beacon-percent geometry unchanged. */
+      border: 1px solid transparent;
       overflow: hidden;
       contain: layout paint;
       container-type: inline-size;
@@ -164,7 +166,9 @@
       gap: 6px;
       padding: 5px 11px;
       border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      /* borderless (owner F4 round 2 no-outlines sweep) — the translucent ink fill carries the pill; NOT a
+       * plate tag (those keep their border, below). */
+      border: 1px solid transparent;
       background: rgba(26, 16, 24, 0.6); /* mode-invariant chip on the art */
       font-size: 10.5px;
       color: #fff;
@@ -279,7 +283,11 @@
       box-sizing: border-box;
       position: relative;
       border-radius: var(--radius-sm);
-      border: 1px solid var(--line);
+      /* borderless at rest (owner F4 round 2 no-outlines sweep) — the `--surface` fill + art carry the card; a
+       * transparent 1px keeps the box size AND lets the `.sel` SELECTION state repaint the edge in the accent
+       * (a state affordance, not a resting outline). The `0x…` plate chip below is the owner-named EXCEPTION —
+       * it keeps its amber border. */
+      border: 1px solid transparent;
       background: var(--surface);
       overflow: hidden;
       cursor: pointer;
@@ -357,8 +365,10 @@
     /* The Fleet top scrim, shortened (owner eyeball 2026-07-12): the Kit's 30px opaque→transparent seam
      * fade under the appbar reads as a heavy shadow draped over the map card, which starts right below the
      * bar. Fleet-only via the existing `body[data-tab]` hook (ui.ts stamps it; the cosmos scrim-hide
-     * precedent) — chat keeps the full fade (content really does scroll under the bar there). */
-    body[data-tab="fleet"] .kit-main::before {
+     * precedent) — chat keeps the full fade (content really does scroll under the bar there). Scoped
+     * `:not(.appbar-clear)` so it applies ONLY when the bar actually paints — in Clear mode the kit nulls the
+     * scrim entirely (`.kit-main.appbar-clear::before`), so there's nothing to shorten (item 6). */
+    body[data-tab="fleet"] .kit-main:not(.appbar-clear)::before {
       height: 12px;
     }
 
@@ -684,64 +694,54 @@
      * `data-motion`-gated (§14.11). Structure + semantic tokens so night/day + accent recolor for free; the one
      * theme-private value is `--fr-bubble-ink` (the comic user-bubble fill, tokens.css). ═══════════════════ */
 
-    /* The agent tab is the positioning context for the absolute rig-stack watermark. */
+    /* The agent tab is a stacking/positioning context for the chat log (z 1) over the pinned rig-stack (z 0);
+     * the rig-stack itself is now absolute within its own sticky pin (`.fr-rigstack-pin`), not this tab. */
     #tab-agent {
       position: relative;
     }
 
-    /* Agent-tab edge fades (owner background nuance): the Kit's `.kit-main` scrims fade to a FLAT `--bg`, which
-     * over the now-visible dusk gradient would paint a mismatched haze. On the agent tab ONLY (the existing
-     * `body[data-tab]` hook — ui.ts stamps it; frontier already does this for the fleet scrim above), hide the
-     * kit color scrims and put a backdrop-agnostic `mask-image` content fade on the scroller instead — a true
-     * transparency fade over the gradient (research-confirmed, well-supported on Android Chrome/Firefox). The
-     * fleet tab's owner-tuned 12px scrim is untouched.
-     *
-     * AUDIT FIX (F4 owner-feedback round): the mask is on `#app-scroll`, but `KitAppBar` renders INSIDE the
-     * scroller as `position: sticky` — and a mask clips sticky children in VIEWPORT space, so a plain
-     * "transparent 0 → #000 24px" top fade dissolved the top ~24px of the bar. Re-anchor the fully-opaque band
-     * to the appbar height (`--appbar-h`, set by DefaultRoot's measurement effect — 0px when the bar is hidden)
-     * so the bar stays crisp and the content fade sits just BELOW it (restoring the old scrim geometry, which
-     * sat at `top: var(--appbar-h)`). The `, 0px)` fallback degrades the formula to a plain top fade when the
-     * bar is hidden (off/minimal) and the property is unset. */
+    /* Agent-tab edge fades: NONE (owner eyeball 2026-07-12 round 2). The Kit's `.kit-main` scrims fade to a
+     * FLAT `--bg`, which over the now-visible dusk gradient would paint a mismatched haze — so hide them on the
+     * agent tab ONLY (the existing `body[data-tab]` hook — ui.ts stamps it; frontier does the same for the
+     * fleet scrim above). We deliberately do NOT replace them with a scroller `mask-image` content fade: the
+     * owner confirmed the cube's bob read as CHOPPY under it, and the audit flags the cause — a `mask-image` on
+     * `#app-scroll` forces the WHOLE masked scroller to re-rasterize every frame while the rig-stack bobs
+     * inside it (worst on Firefox). The frosted appbar carries the top seam naturally (content blurs behind it
+     * as it scrolls under), so no top fade is needed. The fleet tab's owner-tuned 12px scrim is untouched. */
     body[data-tab="agent"] .kit-main::before,
     body[data-tab="agent"] .kit-main.has-composer::after {
       background: none;
     }
-    body[data-tab="agent"] #app-scroll {
-      -webkit-mask-image: linear-gradient(
-        to bottom,
-        #000 0,
-        #000 var(--appbar-h, 0px),
-        transparent calc(var(--appbar-h, 0px) + 1px),
-        #000 calc(var(--appbar-h, 0px) + 25px),
-        #000 calc(100% - 16px),
-        transparent 100%
-      );
-      mask-image: linear-gradient(
-        to bottom,
-        #000 0,
-        #000 var(--appbar-h, 0px),
-        transparent calc(var(--appbar-h, 0px) + 1px),
-        #000 calc(var(--appbar-h, 0px) + 25px),
-        #000 calc(100% - 16px),
-        transparent 100%
-      );
-    }
 
     /* ── the rig-stack watermark ── */
-    /* OUTER positioner: owns ONLY the empty↔watermark recede (transform + opacity), transform-origin top
-     * center; the inner layers own the bob, so the two never share a `transform` (nested-wrapper rule). Sits
-     * behind the chat content (z 0 vs the log's z 1 below). Absolute in the tab → it scrolls with the thread
-     * and never leaks onto other tabs. */
+    /* PIN: a zero-height `position: sticky` anchor, rendered FIRST in the agent tab, that keeps the rig-stack
+     * in the viewport for the WHOLE scroll of the thread (owner ask 2026-07-12 round 2 — it must NOT scroll
+     * away like the old absolute stack did; it's a true living background now). A 0-height sticky element pins
+     * its overflowing children in view without taking flow space and without a position:fixed ancestor-
+     * transform trap (no portal). `top` parks it just below the (sticky) appbar (`--appbar-h`, 0px when the bar
+     * is hidden). */
+    .fr-rigstack-pin {
+      position: sticky;
+      top: calc(var(--appbar-h, 0px) + 4px);
+      height: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+    /* OUTER positioner (absolute WITHIN the pin): owns ONLY the empty↔watermark recede — TRANSFORM + opacity,
+     * transform-origin top center; the inner layers own the bob, so the two never share a `transform` (the
+     * nested-wrapper rule). Sits behind the chat content (z 0 vs the log's z 1 below). EMPTY parks the hero at
+     * translateY(52px) → viewport ≈ appbar + 4 + 52, i.e. the old `top: 56px` hero spot (the `.fr-empty` top
+     * padding still clears it, so the empty state renders IDENTICALLY). Owner-tunable eyeball knobs: the
+     * empty/active translateY + scale, and the active opacity below. */
     .fr-rigstack {
       position: absolute;
-      top: 56px; /* clears the `.sec` header; owner-tunable at the 390px eyeball */
+      top: 0;
       left: 50%;
       width: 200px;
       height: 238px;
       z-index: 0;
       pointer-events: none;
-      transform: translateX(-50%);
+      transform: translateX(-50%) translateY(52px) scale(1);
       transform-origin: top center;
       opacity: 1;
     }
@@ -811,11 +811,13 @@
       animation-play-state: paused;
     }
 
-    /* recede: heavy dim + shrink toward the top (the Telegram-model legibility floor — the comic bubbles are
-     * opaque, so a ~0.13 watermark stays out of the way; opacity-only, no animated filter). */
+    /* recede: shrink + dim toward the top into a living-background watermark (owner-tuned 2026-07-12 round 2 —
+     * LESS shrink than the old 0.5 and MORE visible than the old 0.13: the comic bubbles are opaque, so 0.18
+     * stays out of the way while reading more present). transform + opacity only (no animated filter); the
+     * transition is motion-gated above. translateY(8px) keeps it pinned just under the appbar. Tunable knobs. */
     #tab-agent[data-thread="active"] .fr-rigstack {
-      transform: translateX(-50%) translateY(-24px) scale(0.5);
-      opacity: 0.13;
+      transform: translateX(-50%) translateY(8px) scale(0.72);
+      opacity: 0.18;
     }
 
     /* ── empty-state hero (rendered INSIDE `.chat-log` via ChatThread's emptyState slot) ── */
@@ -860,7 +862,9 @@
       gap: 6px;
       padding: 8px 13px;
       border-radius: 999px;
-      border: 1px solid var(--line);
+      /* borderless (owner F4 round 2 widened the no-outlines directive) — the `--surface` fill carries them;
+       * a transparent 1px keeps the padded box size identical. */
+      border: 1px solid transparent;
       background: var(--surface);
       color: var(--text-2);
       font-size: 11.5px;
@@ -886,6 +890,14 @@
      * chat rules live in @layer base; these frontier rules are @layer theme, so they win regardless of the
      * kit selectors' higher specificity. */
 
+    /* the "you" who-line hugs the bubble's LEFT edge (owner F4 round 2). Box model: `.b.user` is a shrink-
+     * wrapped flex item (`align-self: flex-end`, kit) that hugs the RIGHT of the log; the kit renders `.b .who`
+     * as a `display:flex` row that FILLS that block's width, and `.b.user .body` fills it too — so the who-line
+     * spans the bubble's full width. Pin its content to main-start so "you · hh:mm" reads at the block's (= the
+     * bubble's) LEFT edge — overriding the prototype's `.msg.user .who { text-align:right }` intent. */
+    .b.user .who {
+      justify-content: flex-start;
+    }
     /* user — the near-black comic bubble. Borderless (the old hairline `--line-2` edge is gone per the owner);
      * the honest contrast claim is the white text on the near-black fill (~18:1). Fill + radius stay. */
     .b.user .body {
@@ -913,10 +925,12 @@
     .b .think > summary {
       border: none;
       background: var(--surface-2);
+      border-radius: 8px; /* flatten the kit's 999px lozenge to a soft rect (owner F4 round 2) */
     }
     .b .think pre {
       border-left: none;
       background: var(--surface);
+      border-radius: 8px; /* keep the scratchpad consistent with the flattened chip (kit gave it 0 6px 6px 0) */
     }
     /* command bubble (`.b.cmd`) — the kit panel border goes; keep the opaque `--surface` fill (the prototype's
      * `.msg.cmd .bb` fill look, minus its border per the owner). D7's rounded-corner delta stays. */
@@ -976,6 +990,144 @@
     .plan-sheet,
     .plan-pin-drop {
       border: none;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════════════════════════════
+     * F4 round 2 — the no-outlines sweep goes THEME-WIDE (owner: "let's try it"). Every RESTING border/
+     * outline across the reused Kit surfaces is stripped and the element DIFFERENTIATES BY FILL instead. Kit
+     * chrome lives in @layer base; these frontier rules are @layer theme, so they win regardless of the kit
+     * selectors' specificity. Two things are PRESERVED: (1) `:focus-visible` outlines + input focus rings —
+     * a11y affordances, not resting outlines (any `border-color`-on-focus becomes an inset box-shadow ring,
+     * the `.q-input` precedent); (2) the owner-named EXCEPTIONS — the fleet plate TAGS (`.frontier-beacon
+     * .tag`, `.frontier-rig .plate`, above) and the KIT appbar chrome (this sweep does NOT touch the squared
+     * bordered Clear-mode icon buttons — those are kit-level, owner-requested). The F3 host-detail sheet
+     * (`.bs-sheet` / `.frontier-hd`) is left as its own owner-tuned elevation (already border-audited). ══ */
+
+    /* ── composer (stacked default + its inner controls) — border off, fill + elevation shadow stay ── */
+    .kit-composer {
+      border-color: transparent;
+    }
+    .kit-cbtn {
+      border-color: transparent; /* the recording mic keeps its red ICON color as the state cue (no ring) */
+    }
+
+    /* ── mini player — border off; the frosted `--surface` fill + shadow carry it ── */
+    .mini-player {
+      border-color: transparent;
+    }
+
+    /* ── PrivilegeChip lozenge + its popover — border off; the chip takes a `--surface-2` fill, the "set"
+     *    state reads via its accent dot/text, the menu keeps its opaque fill + shadow ── */
+    .priv-chip,
+    .priv-chip.set {
+      border-color: transparent;
+    }
+    .priv-chip {
+      background: var(--surface-2);
+    }
+    .priv-menu {
+      border-color: transparent;
+    }
+
+    /* ── Conf tab: cards, row dividers, inputs, seg tracks, switch, badges, secondary buttons ── */
+    .conf-card {
+      border-color: transparent;
+    }
+    /* the row / machine-row / dropdown dividers all go (fill-only rows) */
+    .confrow,
+    .mwrap,
+    .mwrap .mconf {
+      border-top-color: transparent;
+    }
+    /* text inputs → `--surface-2` fill, border off; the focus ring becomes an inset box-shadow (the `.q-input`
+     * precedent) so the a11y focus affordance the border carried survives. */
+    .confrow input[type="text"],
+    .confrow input[type="password"],
+    .conf-textarea,
+    .mconf .mform input,
+    .mconf .mform select {
+      border-color: transparent;
+      background: var(--surface-2);
+    }
+    .confrow input:focus,
+    .conf-textarea:focus,
+    .mconf .mform input:focus,
+    .mconf .mform select:focus {
+      border-color: transparent;
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    /* seg track + switch knob/track → border off; the `--surface-2` fills carry them (the active accent fill
+     * differentiates the selected seg chip / on-switch). */
+    .seg,
+    .switch .knob {
+      border-color: transparent;
+    }
+    /* badges → border off; the soft status fills (`--ok-soft`/`--danger-soft`/`--surface-2`) carry them. */
+    .confrow .badge,
+    .confrow .badge.stale,
+    .confrow .badge.dim {
+      border-color: transparent;
+    }
+    /* secondary/outline buttons → border off; give the fill-less ones a `--surface-2` chip so they still read
+     * as buttons (the already-filled `.conf-save.alt` just drops its outline). */
+    .mconf .mform .split button,
+    .mconf .mform .pw button.reveal,
+    .mconf .mfoot button,
+    .conf-card .conf-copy {
+      border-color: transparent;
+      background: var(--surface-2);
+    }
+    .conf-save.alt,
+    .conf-save:disabled {
+      border-color: transparent;
+    }
+
+    /* ── Utils tab: run-card + its header/input/result, the catalog rows + risk chips ── */
+    .util,
+    .util .uhead,
+    .tcat-row {
+      border-color: transparent; /* card outline + header seam + catalog-row divider all go (fill carries) */
+    }
+    .util .field input {
+      border-color: transparent;
+      background: var(--surface-2);
+    }
+    .util .field input:focus {
+      border-color: transparent;
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    .util .result {
+      border-color: transparent; /* keeps its `--bg` panel fill; the `.empty` dashed variant reads by its italic caption */
+    }
+    .tcat-risk,
+    .tcat-risk.r-high,
+    .tcat-risk.confirm {
+      border-color: transparent; /* the risk color (`--danger`/`--warn`/`--text-3`) on the `--surface-2` chip carries it */
+    }
+
+    /* ── shared overlays (NavMenu popover · toasts · ConfirmDialog · PromptModal) — resting borders off,
+     *    fills + shadows kept; the modal/prompt text inputs get the inset focus ring like the conf inputs ── */
+    .navmenu-pop,
+    .toast,
+    .modal,
+    .modal button.cancel,
+    .pm,
+    .pm-x,
+    .pm-alt {
+      border-color: transparent;
+    }
+    .pm-head,
+    .pm-foot {
+      border-top-color: transparent;
+      border-bottom-color: transparent;
+    }
+    .pm-text {
+      border-color: transparent;
+      background: var(--surface-2);
+    }
+    .pm-text:focus {
+      border-color: transparent;
+      box-shadow: inset 0 0 0 1px var(--accent);
     }
   }
 }

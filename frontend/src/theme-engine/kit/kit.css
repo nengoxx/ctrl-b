@@ -79,6 +79,13 @@
    * transparent over a short 30px keeps it subtle while sealing the seam (matches the bottom scrim). */
   background: linear-gradient(to bottom, var(--bg), transparent);
 }
+/* Clear (transparent) appbar: the bar paints NOTHING, so this top seam fade — a flat `--bg` haze sitting right
+ * below where the bar is — reads as a stray SHADOW band under the floating bar (owner F4 round 2). DefaultRoot
+ * stamps `.appbar-clear` on `.kit-main` in transparent mode; null the scrim there so the content shows clean
+ * under the floating bar. (0,2,1) outspecifies the base `.kit-main::before` (0,1,1). */
+.kit-main.appbar-clear::before {
+  background: none;
+}
 .kit-scroll {
   position: absolute;
   inset: 0; /* fills .kit-main; the composer floats over it so content scrolls behind it */
@@ -219,10 +226,23 @@ body[data-perf="lite"] .kit-appbar.transparent {
 }
 /* SQUARED icon buttons in this mode ONLY (prototype `.iconbtn`: 34px, 9px radius, 1px `--line-2` border) — the
  * round base pill fights the borderless-bar look. Applies to the TTS toggle + the docked NavMenu launcher
- * (both carry `.kit-iconbtn`); round everywhere else. */
+ * (both carry `.kit-iconbtn`); round everywhere else. The 1px `--line-2` squared border is kept on purpose
+ * (owner requested the prototype's squared bordered look) — a theme's no-outlines sweep must NOT touch this
+ * kit appbar chrome. The FROSTED fill below keeps these buttons legible where they float over scrolling text
+ * in Clear mode (there's no bar fill behind them). */
 .kit-appbar.transparent .kit-iconbtn {
   border-radius: 9px;
   border: 1px solid var(--line-2);
+  background: color-mix(in oklch, var(--bg) 45%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+/* §14.11 — drop the button blur under data-perf=lite (Firefox-Android speed lever, matching the appbar's own
+ * frost gate) and raise the fill opacity so they stay legible opaque. */
+body[data-perf="lite"] .kit-appbar.transparent .kit-iconbtn {
+  background: color-mix(in oklch, var(--bg) 75%, transparent);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* ── bottom nav — vapor's bar assimilated Kit-wide (owner directive 2026-07-12): SHORT (no bar padding —
