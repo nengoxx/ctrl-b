@@ -1851,5 +1851,21 @@ relocation legitimately resets local input state (React remounts on tree-positio
 honest trade; query-backed data survives in external caches). `hasComposer` stays per-active-section and
 is automatically correct per preset. The D31 Surface axis stays separate — variants ≠ tab composition.
 
-**Status.** LOCKED 2026-07-12 · built as frontier **F0** (`FRONTIER_PLAN.md` §6-F0). The kit-render e2e
+**Addendum (owner eyeball + design conversation, same day — all ratified 2026-07-12):**
+- **The DOCKING RULE**: the menu affordance docks to the chrome that exists — `appbarMode: visible` → an
+  appbar trailing action (`.kit-iconbtn`, the M3 top-app-bar convention; KitAppBar mounts it); `off`/
+  `minimal` → the floating top-right orbit launcher. Never a floating launcher next to a live appbar.
+- **The COLLAPSE LADDER**: the affordance scales to the menu partition — 0 sections → nothing · 1 → a
+  DIRECT section button (icon + `aria-current` when current; one tap, no popover) · >1 → the orbit
+  launcher + popover. Applies to both mounts.
+- **NAV-HOME**: in `appbarMode: minimal` only (the one barless chrome), a floating top-LEFT companion
+  button jumps to the theme's primary section (`sections[0]`, data-driven), self-hidden while on it.
+- **PARKED — swipe-to-switch-sections** (not rejected; revisit per-theme if a future theme wants it):
+  Material explicitly excludes content-area swipes from bottom-nav destination switching, and this app's
+  content owns the horizontal gesture space (cosmos orbital drag · frontier's F2 map pan · chat code-block
+  h-scroll · BottomSheet drags · Android edge-back in both browsers). The NavHome button covers the
+  underlying "get around fast without a bar" need.
+
+**Status.** LOCKED 2026-07-12 · built as frontier **F0** (`FRONTIER_PLAN.md` §6-F0; the docking rule,
+collapse ladder + NavHome landed as same-day follow-ups `ee9bea0`/`9c41ced`/`508a494`). The kit-render e2e
 sweep goes layout-aware in the same slice (the pre-F0 readiness punch list).
