@@ -30,6 +30,12 @@ export type SheetDetent = "peek" | "full";
 const FLICK_VELOCITY = 0.5; // px/ms — a faster release steps one snap in the drag direction (vaul behavior)
 const PEEK_PAD = 14; // breathing room (px) revealed below the [data-bs-peek] element at the peek fold
 const SNAP_MS = 420; // keep in sync with the .bs-sheet transition duration (CSS) — exit-unmount fallback
+// The exit slide OVERSHOOTS fully-closed by this much: at exactly translateY(fullH) the sheet's top sits
+// flush with the viewport bottom, so the skin's UPWARD box-shadow (frontier ≈68px of bleed, cosmos ≈50px)
+// keeps hovering over the tab bar through the snap curve's flat tail, then POPS at unmount (owner-reported).
+// Overshooting rides the shadow out of view WITH the slide — gradual, transform-only (§14.11), and the
+// deliberate opaque slide-out stays untouched. Covers the largest skin shadow with headroom.
+const EXIT_SHADOW_CLEARANCE = 80;
 
 /** Pick the resting translateY after a drag: a SLOW release snaps to the NEAREST point; a FAST flick steps
  *  ONE point in the drag direction (down can dismiss, up can expand). `snaps` ascending: `[0 = full, …peek…,
@@ -136,8 +142,9 @@ export function BottomSheet({
       const el = sheetRef.current;
       if (el) {
         delete el.dataset.dragging;
-        setTransform(full.current || el.offsetHeight); // clean slide-DOWN out the bottom (stays opaque — no
-        // fade-out, so the slide-out is fully visible like a proper bottom sheet)
+        // clean slide-DOWN out the bottom (stays opaque — no fade-out, so the slide-out is fully visible
+        // like a proper bottom sheet), overshooting so the shadow exits with it (EXIT_SHADOW_CLEARANCE).
+        setTransform((full.current || el.offsetHeight) + EXIT_SHADOW_CLEARANCE);
       }
       onHeightChange?.(0);
       exitTimer.current = setTimeout(() => {

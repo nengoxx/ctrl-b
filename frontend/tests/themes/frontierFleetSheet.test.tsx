@@ -96,6 +96,17 @@ describe("FrontierFleet F3 sheet wiring", () => {
     expect(document.body.dataset.sheet).toBeUndefined();
   });
 
+  it("the exit slide overshoots fully-closed so the skin shadow rides out with it", () => {
+    setFrontierSelection("pegasus");
+    const { container } = render(<FrontierFleet active />);
+    const sheet = container.querySelector<HTMLElement>(".bs-sheet")!;
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    // jsdom heights are 0, so the exit target is exactly the clearance: without the overshoot the sheet
+    // would rest flush with the viewport bottom and its upward box-shadow would hover over the tab bar
+    // until unmount POPS it (the owner-reported artifact).
+    expect(sheet.style.transform).toBe("translateY(80px)");
+  });
+
   it("a CONSUMED (defaultPrevented) Escape leaves the sheet open — the modal-layer guard", () => {
     setFrontierSelection("pegasus");
     render(<FrontierFleet active />);
