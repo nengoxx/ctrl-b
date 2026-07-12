@@ -615,6 +615,14 @@ export function AgentTab({ active }: Props) {
       role="tabpanel"
       aria-labelledby="tabbtn-agent"
     >
+      {/* The kit PINNED panel renders FIRST in the tab flow — ABOVE the `.sec` header — so its natural
+          position ≈ its sticky position (top: --appbar-h + 8). With content (the sec) above it, the panel
+          would TRAVEL ~44px between scroll-top (natural) and scrolled (stuck), and no fixed mini-player slot
+          can dodge a traveling band (owner eyeball 2026-07-12: the header slid under the player at
+          scroll-top). First-in-flow kills the travel: a "pinned" element sits at one spot, always. */}
+      {!isVapor && planPlacement === "pinned" && currentPlan && currentPlan.steps.length > 0 && (
+        <PinnedPlanPanel />
+      )}
       <div className="sec">
         <span className="num">02</span>
         <b>Chat</b>
@@ -623,9 +631,6 @@ export function AgentTab({ active }: Props) {
         </span>
       </div>
       {isVapor && currentPlan && currentPlan.steps.length > 0 && <PinnedPlan plan={currentPlan} />}
-      {!isVapor && planPlacement === "pinned" && currentPlan && currentPlan.steps.length > 0 && (
-        <PinnedPlanPanel />
-      )}
       <div className="chat-log" id="chatlog">
         {!messages.length && (
           <div className="b sys">
