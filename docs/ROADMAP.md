@@ -226,6 +226,19 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
 - **Open:** storage location + retention; image-only vs any-file first slice; whether attachments
   persist in thread history (DB) or are turn-scoped.
 
+### A9. Composer model indicator — **parked 2026-07-12 (frontier F1 pre-flight, FRONTIER_PLAN §3/§7)**
+
+- **What:** a small live "which model is serving" label in the composer controls row (the frontier
+  prototype decorates its composer with `qwen2.5:7b · local`).
+- **Why parked (the pre-flight dig):** an honest label needs a **backend resolved-model signal** the
+  client doesn't have — `AgentDef.model.model` is blank-inherits-endpoint, `settings.inference` is
+  Conf-scoped (not always-on), and **D18 failover means the endpoint that actually serves a turn can
+  differ from the configured one** (the client can't know until the backend answers). A static label
+  would lie during failover, so F1 ships no label rather than a wrong one.
+- **Seam when built:** surface the resolved serving model per turn from the backend (e.g. metadata on
+  `message.start` — pairs naturally with the ACA Phase-12 wire work), then render it as shared
+  composer chrome in ALL variants (the A8 rule: functionality, not a theme slot-addon).
+
 ---
 
 ## B. Memory (configurable, pluggable)

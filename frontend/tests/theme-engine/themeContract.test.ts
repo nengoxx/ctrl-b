@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render } from "@testing-library/react";
+import { clampChroma, formatHex, inGamut, parse } from "culori";
 import { createElement } from "react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
@@ -338,6 +339,41 @@ describe("e2e contrast matrix ↔ registry palettes (drift guard)", () => {
         row!.bar,
         `${id}: CONTRAST_MATRIX.bar drifted from the ${layout} on-bar sections — update the matrix`,
       ).toEqual(bar.map((d) => d.id));
+    },
+  );
+});
+
+// ── OKLCH sRGB-gamut ADVISORY (§14.15.4 backlog → built 2026-07-12 at the frontier F1 pre-flight). A
+//    too-vivid oklch() accent authored beyond the sRGB gamut gets gamut-mapped by the browser on sRGB
+//    displays (the owner's Android) — it renders flatter/hue-shifted than authored, and the e2e contrast
+//    gate then measures the CLIPPED color, not the intent. This scan warns at author time instead.
+//    WARN-ONLY, never gates (the stylelint warn-first tradition: the inventory is a burn-down list) — the
+//    binding floor stays the e2e WCAG gate on computed colors. Scope: oklch() LITERALS in tokens.css only.
+//    Formula tokens (`oklch(var(--l) …)`) contain nested parens so the regex skips them, and `color-mix()`
+//    results are runtime-dependent — both are exactly what the browser-side e2e probe already measures. ──
+describe("OKLCH sRGB-gamut advisory (tokens.css oklch() literals — warn-only)", () => {
+  const inSrgb = inGamut("rgb");
+
+  it.each(Object.entries(TOKENS_RAW).map(([id, raw]) => [id, raw] as const))(
+    "%s's oklch() literals resolve inside sRGB",
+    (id, raw) => {
+      const offenders: string[] = [];
+      for (const [lit] of raw.matchAll(/oklch\([^()]*\)/gi)) {
+        // Unparseable → malformed CSS, a different problem (stylelint/browser territory), not gamut.
+        if (!parse(lit)) continue;
+        if (!inSrgb(lit)) {
+          offenders.push(`${lit} → nearest in-gamut ≈ ${formatHex(clampChroma(lit, "oklch"))}`);
+        }
+      }
+      if (offenders.length > 0) {
+        // Direct stderr, NOT console.warn — vitest's default reporter intercepts + hides console
+        // output from passing tests, which would make this advisory invisible in the gate run.
+        process.stderr.write(
+          `[oklch-gamut advisory] ${id}/tokens.css authors ${offenders.length} oklch() literal(s) ` +
+            `outside sRGB — they gamut-clip flat/hue-shifted on sRGB displays (lower the chroma or ` +
+            `use the suggested clamp):\n  ${offenders.join("\n  ")}\n`,
+        );
+      }
     },
   );
 });

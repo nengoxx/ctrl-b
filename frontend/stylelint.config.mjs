@@ -64,6 +64,15 @@ export default {
       },
     },
     {
+      files: ["src/themes/frontier/**/*.css"],
+      rules: {
+        "keyframes-name-pattern": [
+          "^frontier-",
+          { severity: "warning", message: "frontier's @keyframes must be prefixed `frontier-`" },
+        ],
+      },
+    },
+    {
       files: ["src/theme-engine/kit/**/*.css"],
       rules: {
         "keyframes-name-pattern": [

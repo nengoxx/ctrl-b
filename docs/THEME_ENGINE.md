@@ -29,6 +29,7 @@ mapping), while §9.7–§9.12 + §13.1 remain live contract · **§14** = the *
 | Lazy `Root` owns the whole presentation (controllers stay above it) | §14.1 · §14.3 · §14.5 |
 | Pick the cheapest CSS band per region: tokens-only reskin under `.kit` → Surface → bespoke | §14.4.1 (recipe) · §14.14 (3-band + 3-gate) |
 | Semantic token contract (mode/accent axes; two-channel accent) | §9.7 · §14.13 #1 |
+| Author OKLCH colors **in-gamut for sRGB** (a too-vivid chroma gamut-clips flat/hue-shifted on sRGB phones — the owner's device is sRGB; the B2 advisory scan warns per out-of-gamut `oklch()` literal with a clamp suggestion) | §14.15.4 (built 2026-07-12) · `themeContract.test.ts` advisory group |
 | Keyframes prefixed `<id>-` | §14.13 #4 |
 | The `@scope`/`:scope` + formula-tokens-on-`body` gotcha | §14.6 (canonical; §14.4.1/§14.13/§10 restate) |
 | Perf/motion budget — transform/opacity only · `data-motion`/`data-perf` gates · canvas caps · **Fennec + Chrome** | §14.11 |
@@ -41,9 +42,10 @@ mapping), while §9.7–§9.12 + §13.1 remain live contract · **§14** = the *
 | **Wire the three guard tables** — `stylelint.config.mjs` `^<id>-` keyframe override · `e2e/contrast-matrix.ts` row · `TOKENS_RAW` entry in `themeContract.test.ts` (all hand-maintained BY DESIGN; the P2 meta-guard + drift guards fail loudly with instructions until each is added) | §14.13.1 P2 · the files' own headers |
 | The step-by-step porting playbook | **§10** (rewritten as-built 2026-07-06) |
 
-**⚠ SPEC-not-built — do not assume these exist in code:** a tab **body** registry — DefaultRoot still
-hardwires the four tab bodies, so a theme cannot drop/add a section yet (**scheduled**: frontier step 0,
-ratified 2026-07-07 — §14.15.4). *(The user-selectable Surface machinery formerly listed here SHIPPED
+**⚠ SPEC-not-built — do not assume these exist in code:** *(none currently. The tab **body** registry
+formerly listed here SHIPPED 2026-07-12 as frontier F0 / D35 — the SECTION LAYOUT SYSTEM v1: kit
+`DEFAULT_BODIES` + the `bodies` DefaultRoot prop + curated 4/3/2-tab presets + the device-local `ui.layout`
+lever; see §14.15.4's as-built entry + `FRONTIER_PLAN.md`'s banner.)* *(The user-selectable Surface machinery formerly listed here SHIPPED
 2026-07-11 — the composer Surface is COMPLETE per `COMPOSER_SURFACE_PLAN.md`: `composerVariants`
 catalog `[stacked, borderless, ghost, sheet, line]` + `ThemedComposer` resolver + the `planPlacement`
 inline/pinned axis. The Hardening-v2 artifacts — `resolveThemeSetting` ⑦, `themeContract.test.ts` ⑧,
@@ -1744,8 +1746,11 @@ styled). · **Overlay mounting App-hoist** (§14.1's locked end-state) — **pre
 CSS first (kit.css styles overlays as `.kit .modal` descendants; hoisted outside DefaultRoot's `.kit` element
 they render unstyled under Kit themes — both review agents missed this; part of the V4 overlay graduation). ·
 vapor-fonts.css comment: drop/qualify "offline-capable PWA" (woff2 aren't SW-precached; theme JS/CSS chunks
-ARE — verified in dist/sw.js). · OKLCH gamut/chroma-ceiling advisory in B2 (a too-vivid future accent clips to
-flat on sRGB phones).
+ARE — verified in dist/sw.js). · ~~OKLCH gamut/chroma-ceiling advisory in B2~~ **✅ BUILT 2026-07-12 (frontier
+F1 pre-flight):** the B2 warn-only gamut scan over each mapped theme's `tokens.css` `oklch()` LITERALS (culori
+`inGamut("rgb")` + a `clampChroma` suggestion; emits via `process.stderr.write` — vitest's reporter hides
+console output from passing tests) + the §0 authoring row. Formula/`color-mix()` tokens stay e2e-probe
+territory (runtime-resolved).
 
 **Reviewed and REJECTED (do not resurrect without a new trigger):** storage-event/BroadcastChannel listener
 (uncovered fields are per-device BY DESIGN; synced fields already reconcile) · woff2 SW precache/runtime-cache
