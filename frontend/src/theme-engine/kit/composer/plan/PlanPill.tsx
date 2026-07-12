@@ -17,8 +17,11 @@ export function PlanPill() {
       onClick={() => setPlanSheetOpen()}
       aria-expanded={open}
       aria-controls="plan-sheet"
+      aria-label={`plan: ${done}/${total} steps done`}
     >
-      <span className="plan-title">plan</span>
+      {/* The word "plan" is dropped (owner eyeball r4): the count + chevron carry the meaning; the
+          `aria-label` above keeps the pill self-describing for AT. (The sheet/PinnedPlan headers keep
+          their own `.plan-title` label — untouched.) */}
       <span className="plan-count">
         {done}/{total}
       </span>

@@ -403,6 +403,10 @@ body[data-perf="lite"] .kit-composer {
 }
 .kit-composer .crow .grow {
   flex: 1;
+  /* flexbox min-content gotcha: a flex item defaults to min-width:auto (won't shrink below its content),
+   * so with a wide plan pill in the row the slack-absorber must be free to collapse to 0 — else the row
+   * overflows and pushes the trailing mic/send past the composer's rounded edge (owner eyeball r4). */
+  min-width: 0;
 }
 .kit-cbtn {
   all: unset;
@@ -416,6 +420,9 @@ body[data-perf="lite"] .kit-composer {
   border: 1px solid var(--line-2);
   color: var(--text-2);
   transition: background 0.15s, color 0.15s, opacity 0.2s;
+  /* stay snapped to the trailing edge at any plan-pill width — never squished/pushed out when the row
+   * runs short (the flexbox min-content fix's partner; covers stacked/borderless/ghost, which share this). */
+  flex-shrink: 0;
 }
 .kit-cbtn:active {
   background: var(--surface-2);
@@ -445,6 +452,8 @@ body[data-perf="lite"] .kit-composer {
   background: var(--accent-fill);
   color: var(--accent-ink);
   transition: opacity 0.15s;
+  /* like `.kit-cbtn`: the send button holds the trailing edge and never shrinks under a wide pill. */
+  flex-shrink: 0;
 }
 .kit-send:active {
   opacity: 0.8;
@@ -503,6 +512,10 @@ body[data-mode="light"] .kit-composer.sheet {
 }
 .kit-composer.sheet .field {
   flex: 1;
+  /* flexbox min-content gotcha (owner eyeball r4 — the CONFIRMED clip on the "Docked" variant): the field
+   * embeds the plan pill + textarea + mic in one row; without this it can't shrink below that content, so a
+   * wide pill overflows the field and the embedded mic gets clipped by the composer's overflow:hidden. */
+  min-width: 0;
   display: flex;
   align-items: center;
   background: var(--surface-2);
@@ -521,6 +534,8 @@ body[data-mode="light"] .kit-composer.sheet {
 .kit-composer.sheet textarea {
   width: auto;
   flex: 1;
+  /* flex min-content: let the textarea collapse instead of pushing the embedded mic out (pill fix partner). */
+  min-width: 0;
   padding: calc(13px * var(--density-pad)) 6px calc(11px * var(--density-pad)) 14px;
 }
 /* embedded borderless accent mic (right of the textarea, inside the field). --accent (the TRUE-color channel)
@@ -722,6 +737,11 @@ body[data-mode="light"] .kit-composer.ghost {
 .kit-composer.line textarea {
   width: auto;
   flex: 1;
+  /* flexbox min-content gotcha (owner eyeball r4 — ROOT CAUSE of the line-composer clip): a flex item defaults
+   * to min-width:auto and won't shrink below its content width, so with the plan pill present the single row
+   * overflows and the stadium's overflow:hidden CLIPS the trailing mic/send. min-width:0 lets the field shrink;
+   * `.line-controls` + `.line-btn` are already flex-shrink:0, so the buttons stay snapped to the trailing cap. */
+  min-width: 0;
   padding: 6px 4px 6px 10px;
 }
 /* the `controlsStart` container (the in-row plan pill, leading edge). No left padding — the bar leads with

@@ -531,10 +531,10 @@
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 8px;
-      margin-top: 13px;
+      margin-top: 11px; /* owner eyeball r4: 13→11 — tighten the sheet's vertical rhythm */
     }
     .frontier-hd .stat4 {
-      padding: 10px 6px;
+      padding: 7px 4px; /* owner eyeball r4: was 10px 6px — ~30% tighter (the sheet ran too tall) */
       border-radius: 11px;
       /* borderless (owner round-3 inner-outlines strip) — the `--surface` tile fill differentiates. */
       border: 1px solid transparent;
@@ -544,7 +544,7 @@
     .frontier-hd .stat4 .v {
       font-family: var(--font-display);
       font-weight: 700;
-      font-size: 18px;
+      font-size: 16px; /* owner eyeball r4: 18→16 — compact the value */
       line-height: 1;
     }
     .frontier-hd .stat4 .v small {
@@ -553,34 +553,37 @@
       color: var(--text-3);
     }
     .frontier-hd .stat4 .l {
-      margin-top: 5px;
-      font-size: 8.5px;
+      margin-top: 4px; /* owner eyeball r4: 5→4 */
+      font-size: 8px; /* owner eyeball r4: 8.5→8 — compact the label */
       letter-spacing: 0.09em;
       text-transform: uppercase;
       color: var(--text-3);
     }
 
-    /* Action bar — the summary + the action pills. flex-wrap keeps the online two-pill case (Reboot + Shut
+    /* Action bar — ONLY the action pills now (owner eyeball r4: the `.info` summary moved to the services
+     * heading so the pills align as one tidy row). flex-wrap keeps the online two-pill case (Reboot + Shut
      * down) overflow-safe on the narrowest phone (§14.11 / owner overflow-safety rule). */
     .frontier-hd .actbar {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       gap: 10px;
-      margin-top: 14px;
+      margin-top: 12px; /* owner eyeball r4: 14→12 — tighten the sheet's vertical rhythm */
     }
-    .frontier-hd .actbar .info {
-      flex: 1;
-      min-width: 90px;
-      font-size: 11px;
-      color: var(--text-3);
-    }
+    /* Pills split the row evenly (owner eyeball r4): with the info span gone they'd otherwise sit left-packed;
+     * flex:1 + centered labels reads as one balanced action bar (single Wake pill spans full width as the CTA).
+     * min-width:120px + flex-wrap keeps the two-pill case from crushing on the narrowest phone. */
     .frontier-hd .pill {
       all: unset;
+      flex: 1;
+      min-width: 120px;
+      box-sizing: border-box;
+      min-height: 40px; /* a11y tap target ≥40px (owner rule) — the compaction floor; pills were ~37px before */
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 8px;
-      padding: 11px 18px;
+      padding: 0 16px; /* owner eyeball r4: was 11px 18px — vertical now driven by min-height, horizontal 18→16 */
       border-radius: 999px;
       font-family: var(--font-display);
       font-weight: 600;
@@ -613,7 +616,7 @@
 
     /* Services list. */
     .frontier-hd .svc-h {
-      margin: 22px 0 9px;
+      margin: 16px 0 8px; /* owner eyeball r4: 22/9→16/8 — tighten the gap above the services list */
       font-family: var(--font-display);
       font-weight: 600;
       font-size: 11px;
@@ -630,7 +633,7 @@
       display: flex;
       align-items: center;
       gap: 11px;
-      padding: 12px 13px;
+      padding: 10px 12px; /* owner eyeball r4: was 12px 13px — the row stays ≥40px tall (a11y tap target) */
       border-radius: 12px;
       /* borderless (owner round-3 inner-outlines strip) — the `--surface` fill carries the row; the up/down
        * status reads by its LED (below), so the up-state border override is dropped too. */

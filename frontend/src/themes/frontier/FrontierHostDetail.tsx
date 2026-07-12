@@ -72,7 +72,8 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
     meta.push(host.mac ? "wake-on-LAN ready" : "powered down");
   }
 
-  // The action-bar summary: honest service tally when online, the WOL/power state when asleep.
+  // The services-section heading text (owner eyeball r4: re-homed off the action bar so the pills align as one
+  // tidy row): honest service tally when online, the WOL/power state when asleep.
   const info = online
     ? services.length
       ? `${upCount}/${services.length} services up`
@@ -128,7 +129,6 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
           confirm dialog (shutdown/reboot) + optimistic flips + toasts; `busy` disables the bar (the prototype's
           `.busy` dim is keyed off :disabled in CSS — the class is carried for prototype parity). */}
       <div className="actbar">
-        <span className="info">{info}</span>
         {online ? (
           <>
             <button
@@ -159,7 +159,9 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
         )}
       </div>
 
-      <div className="svc-h">Services on {host.name}</div>
+      {/* The section heading carries the honest summary (owner eyeball r4): the old "Services on {host.name}"
+          caption + the action-bar `.info` line were duplicate captions — one heading now, the `info` string. */}
+      <div className="svc-h">{info}</div>
       <div className="svcs">
         {services.length === 0 ? (
           <div className="svc-empty">No services parked on this rig</div>
