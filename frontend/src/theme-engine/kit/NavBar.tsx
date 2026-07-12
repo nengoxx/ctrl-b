@@ -25,6 +25,13 @@ export function KitNavBar({ onPrefetch }: Props) {
   // before), 3-/2-tab render fewer; off-bar sections reach the user via the floating `<NavMenu/>`.
   const { bar: sections, active, navigate } = useSections();
 
+  // Roving tabindex needs exactly ONE tab stop (WAI-ARIA tabs). Pre-F0 the active section was always on the
+  // bar; under a partial layout it may not be (2-tab + conf active, reached via the menu — audit F0#2), and
+  // `selected ? 0 : -1` alone would leave ZERO tabbable buttons → the bar becomes keyboard-unreachable (a
+  // navigation dead-end: fleet/agent are on-bar so the menu doesn't list them either). Fall back to making
+  // the FIRST button the tab stop when the active section is off-bar.
+  const activeInBar = sections.some((t) => t.id === active);
+
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     const n = sections.length;
     const i = sections.findIndex((t) => t.id === active);
@@ -42,7 +49,7 @@ export function KitNavBar({ onPrefetch }: Props) {
 
   return (
     <nav className="kit-tabbar" data-tab={active} role="tablist" aria-label="primary navigation">
-      {sections.map((t) => {
+      {sections.map((t, idx) => {
         const selected = active === t.id;
         return (
           <button
@@ -51,7 +58,7 @@ export function KitNavBar({ onPrefetch }: Props) {
             role="tab"
             aria-selected={selected}
             aria-controls={`tab-${t.id}`}
-            tabIndex={selected ? 0 : -1}
+            tabIndex={selected || (!activeInBar && idx === 0) ? 0 : -1}
             className={"kit-tabbtn" + (selected ? " active" : "")}
             onClick={() => navigate(t.id)}
             onKeyDown={onKeyDown}

@@ -82,6 +82,12 @@ export function resolveLayout(themeId: ThemeId, lever: "auto" | LayoutId): Layou
     : nearestSupported(rawDefault, supported, themeId, `default:${rawDefault}`);
 
   if (lever === "auto") return themeDefault;
+  // Parse-don't-validate at the lever boundary (audit F0#1): the persist loader's defaults-merge passes any
+  // stored `layout` string through UNTYPED, so a value this build doesn't know (a rolled-back newer preset,
+  // hand-edited/corrupt localStorage) reaches here at render time — heal it to the theme default instead of
+  // letting `tabCount` deref `LAYOUT_PRESETS[garbage].bar` and crash the whole render tree. This is the same
+  // every-boot registry-membership stance as `coerceBootTheme` (validity ≠ schema version).
+  if (!(lever in LAYOUT_PRESETS)) return themeDefault;
   if (supported.includes(lever)) return lever;
   return nearestSupported(lever, supported, themeId, lever);
 }

@@ -81,6 +81,15 @@ describe("resolveLayout (real registry)", () => {
 
     warn.mockRestore();
   });
+
+  it("heals a garbage/unknown persisted lever to the theme default instead of crashing (audit F0#1)", () => {
+    // The persist loader's defaults-merge passes any stored `layout` string through UNTYPED — a rolled-back
+    // newer preset id or hand-edited localStorage reaches resolveLayout at render time. It must heal, not
+    // deref LAYOUT_PRESETS[garbage].bar (the pre-fix TypeError took down the whole render tree at boot).
+    expect(resolveLayout("minimal", "1-tab" as never)).toBe("4-tab"); // unknown id → theme default
+    expect(resolveLayout("vapor", "" as never)).toBe("4-tab");
+    expect(resolveLayout("minimal", "garbage" as never)).toBe("4-tab");
+  });
 });
 
 describe("resolveLayout — nearest-supported math (isolated module, mocked registry)", () => {
