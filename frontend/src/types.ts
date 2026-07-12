@@ -29,6 +29,10 @@ export interface Host {
   // never type the inner shape (a theme's present() validates it). First consumer = frontier's present()
   // (`appearance.frontier = { image?, x?, y? }`).
   appearance?: Record<string, Record<string, unknown>>;
+  // FACT from the backend: this fleet entry IS the machine ctrl-b runs on (name == server hostname,
+  // casefolded). The presentation layer (useHosts' select) sorts self FIRST, so every theme gives the
+  // agent's own rig the distinguished slot (frontier: beside the hero figure; cosmos: innermost orbit).
+  self?: boolean;
 }
 
 // One service as declared in config.yaml (Phase 7b machine-form editor). Distinct from the derived

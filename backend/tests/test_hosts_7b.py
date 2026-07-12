@@ -207,6 +207,29 @@ def s_appearance(settings: object) -> dict:
     return settings.computers["alpha"].appearance  # type: ignore[attr-defined]
 
 
+def test_self_flag_matches_server_hostname(monkeypatch) -> None:
+    """`self` marks the fleet entry whose name equals the server's hostname (casefolded) — and nothing
+    else. No matching entry (the default here: this test box isn't named alpha/bravo) → all false, the
+    silent no-op the design specifies."""
+    import app.api.hosts as hosts_api
+
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        client, _cfg = _client(tmp)
+        with client as c:
+            # default: the test machine's hostname matches no seeded entry → nobody is self
+            assert all(h["self"] is False for h in c.get("/api/hosts").json())
+
+            # the server IS one of its own fleet entries (emma's deployment shape) — case-insensitive
+            monkeypatch.setattr(hosts_api, "_SELF_HOSTNAME", "Alpha".casefold())
+            hosts = c.get("/api/hosts").json()
+            assert _host(c, "alpha")["self"] is True
+            assert sum(h["self"] for h in hosts) == 1
+    finally:
+        os.environ.pop("CTRLB_CONFIG", None)
+        os.environ.pop("CTRLB_DB", None)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

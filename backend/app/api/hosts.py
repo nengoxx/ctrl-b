@@ -12,6 +12,7 @@ inner field comments.
 from __future__ import annotations
 
 import asyncio
+import socket
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -25,6 +26,14 @@ router = APIRouter(tags=["fleet"])
 
 #: Serialize config writes — read-modify-write of the YAML isn't atomic across concurrent requests.
 _hosts_lock = asyncio.Lock()
+
+#: The server's own hostname (casefolded, computed once) — the fleet entry whose NAME matches it is the
+#: machine ctrl-b itself runs on, surfaced as `self` on the DTO (owner directive 2026-07-12: the agent's
+#: rig gets the distinguished presentation slot, derived from the environment — no config). The standard
+#: node-identity signal (Ansible/Prometheus precedent). No match → nobody is self (a silent no-op — e.g.
+#: a dev checkout on a machine outside the fleet). Seam noted: an explicit `self: true` config override
+#: is a purely additive later valve if hostname-matching ever proves wrong for a deployment.
+_SELF_HOSTNAME = socket.gethostname().casefold()
 
 
 class ServiceIn(BaseModel):
@@ -81,6 +90,10 @@ def _host_dto(host: Host, status: HostStatus | None, cfg: ComputerCfg | None) ->
         # The §9.9 open per-host presentation blob, themeId-keyed — passed through verbatim (the theme owns
         # the inner schema; first consumed by frontier F2's present()). `{}` when there's no config entry.
         "appearance": cfg.appearance if cfg else {},
+        # FACT: this fleet entry IS the machine ctrl-b runs on (see _SELF_HOSTNAME). The frontend's
+        # presentation layer (useHosts) sorts self first; ordering is deliberately NOT done here — the
+        # backend ships the fact, the client owns the presentation (the theme-engine layering).
+        "self": host.name.casefold() == _SELF_HOSTNAME,
         "status": status.model_dump(mode="json") if status else None,
     }
 

@@ -15,6 +15,17 @@ const pos = (e: ReturnType<typeof present>) => e.position as { x: number; y: num
 const SAFE = { x0: 12, x1: 88, y0: 30, y1: 85 };
 
 describe("present() — R2 scatter", () => {
+  it("puts presentation slot 0 beside the hero figure (the R2_OFFSET window's first point)", () => {
+    // The self host sorts first (useHosts), so slot 0 IS the agent's rig — pinned to the anchor spot
+    // by the sequence window, ≈(70, 42) beside the figure. Loose tolerance: the anchor is a design
+    // POSITION, not a magic decimal — a deliberate window/region retune should update this knowingly.
+    const { x, y } = pos(present(host("emma"), 0));
+    expect(x).toBeGreaterThan(66);
+    expect(x).toBeLessThan(74);
+    expect(y).toBeGreaterThan(38);
+    expect(y).toBeLessThan(46);
+  });
+
   it("is deterministic: same index → the same position", () => {
     const a = pos(present(host("pegasus"), 3));
     const b = pos(present(host("different-name"), 3)); // position is index-driven, not name-driven

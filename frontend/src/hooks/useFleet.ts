@@ -33,12 +33,26 @@ export function useServerInfo() {
   });
 }
 
-/** Fleet + derived status, polled at the configured cadence (DESIGN.md §13). */
+/** The ONE presentation-order chokepoint (owner directive 2026-07-12): a stable self-first sort, so the
+ *  machine ctrl-b runs on (the `self` DTO fact) takes slot 0 in EVERY consumer coherently — all four
+ *  FleetViews (incl. frozen vapor's, which reads useFleet — a data change, not a code change), the
+ *  featured-host cycle (same query → same indexes), the Conf editor, the brand meta. Config order is the
+ *  stable-sort tiebreak for everyone else; no self flag → a no-op. MODULE-LEVEL on purpose: TanStack
+ *  memoizes `select` on the function's identity — an inline closure would re-run per render and hand
+ *  downstream effects a fresh array identity every time. Copy-before-sort: select must never mutate the
+ *  cached data. */
+function selfFirst(hosts: Host[]): Host[] {
+  return [...hosts].sort((a, b) => Number(b.self ?? false) - Number(a.self ?? false));
+}
+
+/** Fleet + derived status, polled at the configured cadence (DESIGN.md §13). Presentation-ordered —
+ *  see `selfFirst`. */
 export function useHosts(pollSeconds: number) {
   return useQuery({
     queryKey: ["hosts"],
     queryFn: () => getJSON<Host[]>("/api/hosts"),
     refetchInterval: Math.max(1, pollSeconds) * 1000,
+    select: selfFirst,
   });
 }
 

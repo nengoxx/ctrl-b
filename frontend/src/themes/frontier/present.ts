@@ -27,6 +27,13 @@ const SAFE_XW = 76; // usable width (%) → x ∈ [12, 88]
 const SAFE_Y0 = 30; // top inset (%) — clears the label/count band
 const SAFE_YH = 55; // usable height (%) → y ∈ [30, 85]
 
+// The sequence WINDOW (owner directive 2026-07-12): start the R2 sequence 2 points in, so presentation
+// slot 0 lands at ≈(70, 42) — beside the hero art's figure on the cliff ledge. The self host (useHosts
+// sorts it first) therefore "stands with the agent" BY DEFAULT, no config, no special case: slot 0 is
+// just the window's first point. Offsetting a low-discrepancy sequence ("burn-in") preserves all its
+// properties — determinism + the ≥15%-of-width min separation re-verified through N=12 at this window.
+const R2_OFFSET = 2;
+
 const fract = (v: number): number => v - Math.floor(v);
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 
@@ -47,8 +54,8 @@ function plateFor(name: string, index: number): string {
 // indexed default stands), so a hand-edited config can never crash or corrupt the layout.
 export const present: Present = (host, index, override) => {
   const name = (host as { name?: string }).name ?? "";
-  let x = SAFE_X0 + fract(0.5 + A1 * (index + 1)) * SAFE_XW;
-  let y = SAFE_Y0 + fract(0.5 + A2 * (index + 1)) * SAFE_YH;
+  let x = SAFE_X0 + fract(0.5 + A1 * (index + 1 + R2_OFFSET)) * SAFE_XW;
+  let y = SAFE_Y0 + fract(0.5 + A2 * (index + 1 + R2_OFFSET)) * SAFE_YH;
   let asset: string = RIG_KEYS[index % RIG_KEYS.length];
 
   if (override) {
