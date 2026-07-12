@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { useSections } from "../hooks/useSections";
+import type { AppbarMode } from "../store/ui";
 import type { TabId } from "../theme-engine/types";
 
 // Section navigation as a single ORBIT-glyph launcher that opens a compact icon dropdown of the theme's
@@ -16,6 +17,12 @@ import type { TabId } from "../theme-engine/types";
 //   • `docked` (appbarMode="visible"): the trigger is an APPBAR TRAILING ACTION (styled `.kit-iconbtn`,
 //     matching the TTS toggle) that KitAppBar renders; the popover is fixed just under the appbar.
 //   • floating (appbarMode="off"/"minimal"): the standalone top-right orbit launcher, mounted by DefaultRoot.
+//
+// COLLAPSE LADDER (F0 follow-up, owner-ratified 2026-07-12): the affordance scales to the menu size —
+// 0 sections → the parent never mounts it · 1 → a DIRECT section button (no launcher/popover: a lone item
+// needs no menu) · >1 → the orbit launcher + popover above. The direct form is an early-return branch that
+// reuses the SAME docked/floating class scheme, so all the launcher geometry (44px transparent floating /
+// `.kit-iconbtn` docked pill) applies unchanged — only the popover machinery is skipped.
 
 // Launcher mark — the Lucide "Orbit" icon (ISC-licensed; docs/screenshot/icons/Orbit--Streamline-Lucide):
 // a central body + two orbiting bodies on two orbital arcs. currentColor → cosmos tints it silver. `size`
@@ -169,6 +176,39 @@ export function NavMenu({ docked = false }: { docked?: boolean }) {
     items[e.key === "ArrowDown" ? (i + 1) % n : (i - 1 + n) % n]?.focus();
   };
 
+  // Collapse ladder, rung 1 (single off-bar section): skip the launcher+popover entirely and render a DIRECT
+  // navigation button. Same wrapper + trigger class scheme as the menu form (so the docked/floating geometry
+  // is identical), minus every popover affordance — no `aria-haspopup`/`aria-expanded`, no roving-focus wiring.
+  // `navmenu-direct` scopes the icon-size fix (the 22px ICONS svg → 18px docked, matching the TTS glyph). When
+  // the user is already ON this section, mark it as the current location (accent, like the launcher's open
+  // state) + `aria-current` — clicking is a harmless re-navigate, exactly like tapping the active tab button.
+  if (sections.length === 1) {
+    // Defensive (audit NIT): if the menu was OPEN when a live layout/theme change collapsed it to one item,
+    // drop the stale flag — the direct form renders no popover and omits `rootRef`, so a lingering
+    // `open=true` would leave the outside-pointerdown effect holding a null ref. Guarded render-phase reset
+    // (the sanctioned adjust-state-during-render form; practically unreachable — see the audit note).
+    if (open) setOpen(false);
+    const item = sections[0];
+    const here = item.id === active;
+    return (
+      <div className={"navmenu" + (docked ? " docked" : "")}>
+        <button
+          type="button"
+          className={
+            (docked ? "kit-iconbtn navmenu-launch" : "navmenu-launch") +
+            " navmenu-direct" +
+            (here ? " active" : "")
+          }
+          aria-label={item.lbl}
+          aria-current={here ? "page" : undefined}
+          onClick={() => navigate(item.id)}
+        >
+          {ICONS[item.id] ?? <span className="navmenu-glyph">{item.glyph}</span>}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div
       className={"navmenu" + (docked ? " docked" : "")}
@@ -208,5 +248,30 @@ export function NavMenu({ docked = false }: { docked?: boolean }) {
         </div>
       )}
     </div>
+  );
+}
+
+// NAV-HOME quick-jump (F0 follow-up, owner-ratified 2026-07-12) — a floating TOP-LEFT companion to the orbit
+// launcher: a one-tap jump back to the theme's PRIMARY section. It OWNS its full visibility (single source),
+// so DefaultRoot mounts it unconditionally and hands it the chrome mode:
+//   • `appbarMode: "minimal"` ONLY — the sole mode with no tab bar to carry a "home" affordance (`off`/
+//     `visible` both keep the bar, whose first button already IS home).
+//   • hidden while you're already on the primary (no clutter: a button that only re-lands where you stand).
+// The primary is `sections[0]` (the def-order first section), NEVER a hardcoded id → any theme's set works.
+// Reuses the same ICONS map + the `navmenu` floating visual family; navigation goes through the shared
+// `useSections` chokepoint like every other consumer.
+export function NavHome({ appbarMode }: { appbarMode: AppbarMode }) {
+  const { sections, active, navigate } = useSections();
+  const primary = sections[0];
+  if (appbarMode !== "minimal" || !primary || active === primary.id) return null;
+  return (
+    <button
+      type="button"
+      className="navhome"
+      aria-label={primary.lbl}
+      onClick={() => navigate(primary.id)}
+    >
+      {ICONS[primary.id] ?? <span className="navmenu-glyph">{primary.glyph}</span>}
+    </button>
   );
 }

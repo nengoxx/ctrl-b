@@ -3,7 +3,7 @@ import { type ComponentType, Suspense, useCallback, useEffect, useRef, useState 
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { MiniPlayer } from "../../components/MiniPlayer";
-import { NavMenu } from "../../components/NavMenu";
+import { NavHome, NavMenu } from "../../components/NavMenu";
 import { PromptModal } from "../../components/PromptModal";
 import { SwUpdatePrompt } from "../../components/SwUpdatePrompt";
 import { Toasts } from "../../components/Toasts";
@@ -230,6 +230,10 @@ export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots }: P
           nav. */}
       {appbarMode !== "minimal" && <KitNavBar onPrefetch={prefetch} />}
       {appbarMode !== "visible" && menu.length > 0 && <NavMenu />}
+      {/* Nav-home quick-jump (F0 follow-up): a top-LEFT companion to the floating orbit menu. It OWNS its
+          visibility (minimal-only + self-hides on the primary section) given the chrome mode, so it mounts
+          unconditionally here — the single source for "when is the home button shown". */}
+      <NavHome appbarMode={appbarMode} />
       <Toasts />
       <ConfirmDialog />
       <PromptModal />

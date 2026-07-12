@@ -3919,6 +3919,18 @@ body[data-motion="reduced"] .kit .bs-sheet {
 .kit .navmenu[data-open] .navmenu-launch {
   color: var(--accent);
 }
+/* COLLAPSE LADDER rung 1 — the DIRECT section button (menu of one). It reuses the launch geometry, so it only
+ * needs two tweaks: (1) the ICONS svgs are fixed 22px (the popover-item scale) but the docked pill wants ~18px
+ * to match the TTS glyph — scope it down here (floating keeps 22px, sized right for the 44px transparent
+ * target). (2) When it marks the CURRENT section (`.active` + aria-current), tint it accent like the launcher's
+ * open state; the extra classes lift it over both the floating `--text-2` base and the docked `.kit-iconbtn`. */
+.kit .navmenu.docked .navmenu-direct svg {
+  width: 18px;
+  height: 18px;
+}
+.kit .navmenu .navmenu-launch.navmenu-direct.active {
+  color: var(--accent);
+}
 /* DOCKED variant (appbarMode="visible"): the root is just an inline slot in the appbar's flex row — the
  * button IS the `.kit-iconbtn` trailing action; only the popover needs positioning. Reset the base
  * fixed/top/right/z so the wrapper takes no layout of its own. */
@@ -4013,4 +4025,47 @@ body[data-perf="lite"] .kit .navmenu-pop {
   background: var(--surface);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+/* ── nav-home quick-jump (.navhome) — the minimal-mode TOP-LEFT companion to the floating orbit launcher
+ *    (one-tap back to the theme's primary section). Mirror of the launcher's floating geometry, flipped to the
+ *    left edge: same fixed top band, same z 30, same transparent 44px tap target + drop-shadow for legibility
+ *    over a bright theme backdrop. Just an icon (owner directive: no circle/background), token-driven. */
+.kit .navhome {
+  all: unset;
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+  color: var(--text-2);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+  transition: color 0.15s, transform 0.12s;
+}
+/* hover/press feedback only on real pointer devices — on touch `:hover`/`:active` STICK until the next tap
+ * (the same Android quirk the floating launcher guards against). */
+@media (hover: hover) {
+  .kit .navhome:hover {
+    color: var(--text);
+  }
+  .kit .navhome:active {
+    transform: scale(0.9);
+  }
+}
+.kit .navhome:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* mini-player interplay: the player is TOP-anchored (top: --appbar-h + 10px → ~10px in minimal, no appbar),
+ * the same band as the top-left NavHome. The floating-launcher clearance above already pulls the player's
+ * RIGHT edge in to 64px; mirror it on the LEFT so NavHome never buries the player's play/✕ controls. NavHome
+ * only mounts in minimal, where the floating menu is always present too — that co-`:has` also lifts this above
+ * the launcher rule's specificity so it wins the `left` cascade. Absent NavHome (on the primary section) →
+ * no `.navhome` node → this doesn't match → the player keeps its left:14px launcher-only clearance. */
+.kit:has(.navhome):has(.navmenu:not(.docked)) .mini-player {
+  left: calc(64px + env(safe-area-inset-left));
 }
