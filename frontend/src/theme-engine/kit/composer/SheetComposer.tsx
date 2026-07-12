@@ -39,7 +39,10 @@ export function SheetComposer({ controlsStart, overlay }: ComposerSlots = {}) {
               ref={taRef}
               id="cmd-input"
               rows={1}
-              placeholder="How can I help you today?"
+              // "Message" — the LineComposer's copy, same rationale (owner eyeball r5): this field is a
+              // SINGLE-LINE row, and the long stacked-composer greeting wraps below the fold (it had to be
+              // scrolled to read). A one-line bar wants a short placeholder.
+              placeholder="Message"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKeyDown}

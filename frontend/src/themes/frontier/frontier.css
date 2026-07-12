@@ -584,7 +584,7 @@
       justify-content: center;
       gap: 8px;
       padding: 0 16px; /* owner eyeball r4: was 11px 18px — vertical now driven by min-height, horizontal 18→16 */
-      border-radius: 999px;
+      border-radius: 11px; /* owner eyeball r5: 999→11 — a soft rect, matching the stat tiles, not a lozenge */
       font-family: var(--font-display);
       font-weight: 600;
       font-size: 12.5px;
@@ -910,13 +910,13 @@
      * chat rules live in @layer base; these frontier rules are @layer theme, so they win regardless of the
      * kit selectors' higher specificity. */
 
-    /* the "you" who-line hugs the bubble's LEFT edge (owner F4 round 2). Box model: `.b.user` is a shrink-
-     * wrapped flex item (`align-self: flex-end`, kit) that hugs the RIGHT of the log; the kit renders `.b .who`
-     * as a `display:flex` row that FILLS that block's width, and `.b.user .body` fills it too — so the who-line
-     * spans the bubble's full width. Pin its content to main-start so "you · hh:mm" reads at the block's (= the
-     * bubble's) LEFT edge — overriding the prototype's `.msg.user .who { text-align:right }` intent. */
+    /* the "you" who-line hugs the bubble's RIGHT edge (owner eyeball r5 — the prototype's `.msg.user .who
+     * { text-align: right }` look after all; round 2's left-pin was hardening the very state the owner was
+     * flagging, not the fix). Box model: `.b.user` is a shrink-wrapped flex item (`align-self: flex-end`,
+     * kit) hugging the RIGHT of the log; `.b .who` is a `display:flex` row FILLING that block's width, so
+     * pinning its content to main-end reads "you · hh:mm" at the bubble's RIGHT edge. */
     .b.user .who {
-      justify-content: flex-start;
+      justify-content: flex-end;
     }
     /* user — the near-black comic bubble. Borderless (the old hairline `--line-2` edge is gone per the owner);
      * the honest contrast claim is the white text on the near-black fill (~18:1). Fill + radius stay. */
@@ -1044,6 +1044,15 @@
     /* ── composer (stacked default + its inner controls) — border off, fill + elevation shadow stay ── */
     .kit-composer {
       border-color: transparent;
+    }
+    /* the LINE variant lost its stadium edge to the sweep and floats hard-to-see over the dusk glow (owner
+     * eyeball r5): a RESTRAINED bezel makes the bar read without a border — one soft ambient drop (the
+     * theme's mode-invariant ink family) + a 1px inset top highlight (the classic bezel light edge).
+     * Deliberately quiet ("don't overdo it"); tune the two alphas first if it needs more/less. */
+    .kit-composer.line {
+      box-shadow:
+        0 4px 14px rgba(20, 8, 28, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.07);
     }
     .kit-cbtn {
       border-color: transparent; /* the recording mic keeps its red ICON color as the state cue (no ring) */
