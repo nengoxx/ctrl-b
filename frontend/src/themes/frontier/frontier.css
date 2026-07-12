@@ -592,14 +592,13 @@
       text-transform: uppercase;
       cursor: pointer;
     }
-    /* The primary pill: an ink-on-paper inversion (var(--text) fill, var(--bg) ink) so it flips WITH the mode
-     * — the prototype's `--black` fill would read wrong in day mode. The glyph wears the accent. */
+    /* The primary pill (Reboot/Wake): ACCENT fill (owner eyeball r5b — the old var(--text) ink-on-paper
+     * inversion read "way too white" at night). The accent + `--accent-ink` pair is mode-proof and follows
+     * the active swatch, matching the done-ticks and the theme's action language. The glyph rides
+     * currentColor (= accent-ink) now — no separate accent tint on an accent fill. */
     .frontier-hd .pill.wake {
-      background: var(--text);
-      color: var(--bg);
-    }
-    .frontier-hd .pill.wake svg {
-      color: var(--accent);
+      background: var(--accent);
+      color: var(--accent-ink);
     }
     .frontier-hd .pill.stop {
       background: var(--danger-soft);

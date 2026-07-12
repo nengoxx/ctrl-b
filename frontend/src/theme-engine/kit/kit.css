@@ -2863,6 +2863,12 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
   font-weight: 600;
   color: var(--text-2);
 }
+/* In the composer PILL the count carries the accent (owner eyeball r5b): the accent-colored "plan" word was
+ * dropped from the pill (r4), so its themed color moves onto the counter — the pill keeps its accent voice.
+ * The sheet/pinned headers still show their accent `.plan-title` word, so their counts stay muted. */
+.kit .plan-pill .plan-count {
+  color: var(--accent);
+}
 /* the sheet — a frosted panel that PEEKS up from the composer's top edge (D30). A sibling of `.kit-composer`
  * (rendered by the composer variant's `overlay` slot), anchored to the composer's top via `--composer-h`.
  * Its bottom TUCKS ~18px behind the composer (z 3 < composer z 4) so the composer's rounded top overlaps it
