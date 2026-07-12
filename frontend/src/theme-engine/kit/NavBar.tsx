@@ -1,20 +1,14 @@
-import type { KeyboardEvent, ReactNode } from "react";
+import type { KeyboardEvent } from "react";
 
 import { useSections } from "../../hooks/useSections";
 import type { TabId } from "../types";
 
 // Kit bottom nav (D29 §14.4) — token-driven, `.kit-*` classes. Same capability + WAI-ARIA tabs pattern as
 // vapor's TabBar (roving tabindex, arrow/Home/End activation, role=tab/tablist, aria-controls, prefetch on
-// pointer/touch), via the SAME headless controller (useSections). Differences from vapor: an icon pill per
-// tab (not a sliding neon indicator), and inline SVG icons keyed by section id (the TabDef.glyph unicode is
-// vapor's choice; the Kit renders its own glyphs). Adding a section = one icon here.
-
-const ICONS: Record<TabId, ReactNode> = {
-  fleet: <path d="M3 12l9-8 9 8M5 10v10h14V10" />,
-  agent: <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-3.7A8.4 8.4 0 1 1 21 11.5z" />,
-  utils: <path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" />,
-  conf: <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />,
-};
+// pointer/touch), via the SAME headless controller (useSections). The LOOK is vapor's bar assimilated
+// Kit-wide (owner directive 2026-07-12): short bar, `TabDef.glyph` unicode marks (per-theme DATA — a theme
+// can restyle its glyphs without code) + small uppercase labels — the old per-tab inline-SVG icon set is
+// gone. Adding a section = a TabDef entry; nothing here changes.
 
 interface Props {
   onPrefetch?: (tab: TabId) => void;
@@ -49,10 +43,12 @@ export function KitNavBar({ onPrefetch }: Props) {
   };
 
   return (
-    // The sliding top indicator (the vapor-original mechanic, owner directive 2026-07-12) is a
-    // `.kit-tabbar::before` driven by the two custom props below — data-driven for the N-column bar (D35
-    // partial layouts), where vapor's fixed `[data-tab]` selector table assumes 4 columns. When the active
-    // section is off-bar (`no-active`, e.g. 2-tab + conf via the menu) the line hides.
+    // The sliding top indicator (the vapor-original mechanic, owner directive 2026-07-12) — data-driven for
+    // the N-column bar (D35 partial layouts), where vapor's fixed `[data-tab]` selector table assumes 4
+    // columns: the `.kit-tab-ind` TRACK is one column wide and slides on `--tab-i` (transform-only); its
+    // inner `.bar` is the visible line, px-CAPPED + centered (Material's inset-indicator shape — a full
+    // column read far too wide at 2-/3-tab, owner 2026-07-12). When the active section is off-bar
+    // (`no-active`, e.g. 2-tab + conf via the menu) the line hides.
     <nav
       className={"kit-tabbar" + (activeInBar ? "" : " no-active")}
       data-tab={active}
@@ -63,6 +59,9 @@ export function KitNavBar({ onPrefetch }: Props) {
         ["--tab-i" as string]: Math.max(activeIdx, 0),
       }}
     >
+      <span className="kit-tab-ind" aria-hidden>
+        <span className="bar" />
+      </span>
       {sections.map((t, idx) => {
         const selected = active === t.id;
         return (
@@ -79,20 +78,8 @@ export function KitNavBar({ onPrefetch }: Props) {
             onPointerEnter={onPrefetch ? () => onPrefetch(t.id) : undefined}
             onTouchStart={onPrefetch ? () => onPrefetch(t.id) : undefined}
           >
-            <span className="ic">
-              <svg
-                width="19"
-                height="19"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                {ICONS[t.id]}
-              </svg>
+            <span className="glyph" aria-hidden>
+              {t.glyph}
             </span>
             <span className="lbl">{t.lbl}</span>
           </button>

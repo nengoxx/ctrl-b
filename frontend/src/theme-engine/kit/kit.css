@@ -204,10 +204,11 @@ body[data-motion="reduced"] .kit .tab.active {
   background: var(--danger);
 }
 
-/* ── bottom nav (in-flow flex child; icon + label; active = accent icon + the sliding TOP LINE below). Its
- *    vertical metrics scale with `--density-pad` (the theme's density lever — minimal's "compact" drives it
- *    to 0.72), so the nav noticeably shrinks in compact; `max()` floors keep it tappable + the 19px icon
- *    uncropped. ── */
+/* ── bottom nav — vapor's bar assimilated Kit-wide (owner directive 2026-07-12): SHORT (no bar padding —
+ *    the buttons carry the tap height, vapor's exact metrics), `TabDef.glyph` unicode marks + small
+ *    uppercase letterspaced labels, active = ink (the accent lives in the sliding line, not the glyph).
+ *    Vertical metrics scale with `--density-pad` (the theme's density lever — minimal's "compact" drives
+ *    it to 0.72); the floors keep the bar tappable (≥44px total). ── */
 .kit-tabbar {
   position: relative; /* the sliding indicator's containing block */
   flex-shrink: 0;
@@ -217,40 +218,45 @@ body[data-motion="reduced"] .kit .tab.active {
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
   gap: 0;
-  padding: calc(6px * var(--density-pad)) 10px
-    calc(8px * var(--density-pad) + env(safe-area-inset-bottom));
+  padding: 0 0 env(safe-area-inset-bottom);
   background: color-mix(in oklch, var(--bg) 80%, transparent);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   border-top: 1px solid var(--line);
 }
-/* The active-tab indicator — the vapor-original sliding top line, generalized (owner directive 2026-07-12:
- * a colored line over the tab, not a pill behind the icon — Kit-wide, all Kit themes). One accent line, one
- * column wide, riding the bar's top edge; it SLIDES between tabs (vapor's exact easing). Data-driven for
- * the N-column bar: KitNavBar sets `--tab-count`/`--tab-i` inline (vapor's fixed `[data-tab]` selector
- * table assumes 4 columns). `--accent-fill` so a gradient-accent theme's line shines; `--accent-glow` is
- * the optional shadow layer (inert `none` by default). The 10px/20px offsets mirror the bar's own
- * horizontal padding above — the line must track the grid columns, not the padding box. */
-.kit-tabbar::before {
-  content: "";
+/* The active-tab indicator — the vapor-original sliding top line, generalized (owner directive 2026-07-12).
+ * Two-part (Material's inset-indicator shape): the `.kit-tab-ind` TRACK is one grid column wide and SLIDES
+ * between tabs on `--tab-i` (transform-only; vapor's exact easing) — KitNavBar sets `--tab-count`/`--tab-i`
+ * inline, data-driven for the N-column bar (D35 partial layouts) where vapor's fixed `[data-tab]` selector
+ * table assumes 4 columns. The inner `.bar` is the VISIBLE line: px-capped + centered, because a full
+ * column read far too wide at 2-/3-tab (owner 2026-07-12). `--accent-fill` so a gradient-accent theme's
+ * line shines; `--accent-glow` is the optional shadow layer (inert `none` by default). */
+.kit-tab-ind {
   position: absolute;
   top: 0;
-  left: 10px;
-  width: calc((100% - 20px) / var(--tab-count, 4));
+  left: 0;
+  width: calc(100% / var(--tab-count, 4));
   height: 3px;
-  background: var(--accent-fill);
-  box-shadow: var(--accent-glow);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
   transform: translateX(calc(var(--tab-i, 0) * 100%));
   transition:
     transform 0.4s cubic-bezier(0.25, 1, 0.4, 1),
     opacity 0.2s;
 }
+.kit-tab-ind .bar {
+  width: min(56px, 60%); /* the cap — a short mark over the tab, not the column's full width */
+  height: 100%;
+  background: var(--accent-fill);
+  box-shadow: var(--accent-glow);
+}
 /* active section off-bar (2-tab + conf via the menu) → no tab is current; the line hides in place. */
-.kit-tabbar.no-active::before {
+.kit-tabbar.no-active .kit-tab-ind {
   opacity: 0;
 }
 /* the global Motion lever: reduced → the line jumps instead of sliding (position is still information). */
-body[data-motion="reduced"] .kit-tabbar::before {
+body[data-motion="reduced"] .kit-tab-ind {
   transition: opacity 0.2s;
 }
 .kit-tabbtn {
@@ -260,37 +266,28 @@ body[data-motion="reduced"] .kit-tabbar::before {
   flex-direction: column;
   align-items: center;
   gap: calc(4px * var(--density-pad));
-  padding: calc(7px * var(--density-pad)) 8px;
-  border-radius: 12px;
+  /* vapor's 12px 6px 14px, density-scaled with a floor that keeps the total ≥44px tap height */
+  padding: max(8px, calc(12px * var(--density-pad))) 6px
+    max(10px, calc(14px * var(--density-pad)));
   color: var(--text-3);
-  transition: color 0.15s;
+  transition: color 0.25s;
 }
+/* active = ink, like vapor — the selection accent is the sliding line above, not the glyph color. */
 .kit-tabbtn.active {
   color: var(--text);
 }
-.kit-tabbtn .ic {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  /* shrink the icon box in compact, but never below 22px (the 19px icon needs ~1.5px breathing room) */
-  height: max(22px, calc(26px * var(--density-pad)));
-  border-radius: 999px;
-  transition: color 0.15s;
-}
-/* active = the accent-colored icon ONLY — the old `--accent-soft` pill behind it was dropped (owner
- * directive 2026-07-12); the selection weight now comes from the sliding top line above. The `.ic` box
- * stays for layout/tap metrics. */
-.kit-tabbtn.active .ic {
-  color: var(--accent);
-}
-.kit-tabbtn .ic svg {
-  display: block;
+/* The tab mark — the theme's `TabDef.glyph` unicode character (vapor's ◆▲⌬●), in the theme's display
+ * face when it declares one (cosmos/frontier; minimal inherits the body face — flat by design). */
+.kit-tabbtn .glyph {
+  font-size: 16px;
+  line-height: 1;
+  font-family: var(--font-display, inherit);
 }
 .kit-tabbtn .lbl {
-  font-size: max(9.5px, calc(10.5px * var(--density-pad)));
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
 }
 
 /* ── composer (in-flow flex child; rounded surface; textarea + mic + send) ── */

@@ -14,12 +14,14 @@
 
 import type { TabDef, TabId, ThemeId } from "./types";
 
-// The standard 4-tab set, matching the frozen vapor TabBar (TabBar.tsx) exactly, plus the `hasComposer`
+// The standard 4-tab set, matching the frozen vapor TabBar (TabBar.tsx), plus the `hasComposer`
 // flag distilled from today's `showComposer = tab==="fleet"||"agent"` hardcode (App.tsx / ui.ts).
+// The fleet↔utils glyphs are SWAPPED vs the vapor prototype (owner directive 2026-07-12, "for all
+// themes" — explicitly including vapor): the hex ⌬ marks the fleet, the diamond ◆ the tools.
 export const STANDARD_TABS: TabDef[] = [
-  { id: "fleet", glyph: "◆", lbl: "fleet", hasComposer: true },
+  { id: "fleet", glyph: "⌬", lbl: "fleet", hasComposer: true },
   { id: "agent", glyph: "▲", lbl: "chat", hasComposer: true },
-  { id: "utils", glyph: "⌬", lbl: "tools", hasComposer: false },
+  { id: "utils", glyph: "◆", lbl: "tools", hasComposer: false },
   // `lazy`: Conf is the one code-split section (its editor chunk). DefaultRoot mounts it after first
   // activation, then keeps it mounted (drafts survive) — the generalized latch (was a bespoke Conf-only flag).
   { id: "conf", glyph: "●", lbl: "conf", hasComposer: false, lazy: true },
@@ -28,12 +30,12 @@ export const STANDARD_TABS: TabDef[] = [
 // Per-theme tab sets. T0 = vapor only; unregistered themes fall back to the standard set.
 const TAB_SETS: Partial<Record<ThemeId, TabDef[]>> = {
   vapor: STANDARD_TABS,
-  // frontier (F1) — themed copy only: `TabDef.lbl` is per-theme DATA; glyphs/`hasComposer`/`lazy` are
-  // identical to the standard set (frontier reuses the Kit bodies; the map/comms surfaces reskin later).
+  // frontier (F1) — themed copy only: `TabDef.lbl` is per-theme DATA; glyphs (the swapped standard set,
+  // see above)/`hasComposer`/`lazy` are identical to the standard set.
   frontier: [
-    { id: "fleet", glyph: "◆", lbl: "frontier", hasComposer: true },
+    { id: "fleet", glyph: "⌬", lbl: "frontier", hasComposer: true },
     { id: "agent", glyph: "▲", lbl: "comms", hasComposer: true },
-    { id: "utils", glyph: "⌬", lbl: "tools", hasComposer: false },
+    { id: "utils", glyph: "◆", lbl: "tools", hasComposer: false },
     { id: "conf", glyph: "●", lbl: "settings", hasComposer: false, lazy: true },
   ],
 };
