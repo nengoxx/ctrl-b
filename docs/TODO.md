@@ -32,8 +32,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 > Phase 10 closed same day). **Theme Phase 11**: the D34 **Hardening slice v2 ✅ SHIPPED 2026-07-10**;
 > the **Composer Surface ✅ SHIPPED 2026-07-11** (full 5-variant catalog + planPlacement,
 > `COMPOSER_SURFACE_PLAN.md` banner has the commit map); **frontier F0 (the SECTION LAYOUT SYSTEM v1,
-> D35) + F1 (shell reskin — frontier REGISTERED) ✅ SHIPPED 2026-07-12**; next = frontier F2
-> (`FRONTIER_PLAN.md`). **Approved 2026-07-07 (owner):** the **ACA chat-hardening plan** = **Phase 12**
+> D35) + F1 (shell reskin — frontier REGISTERED) + F2 (the badlands Fleet + 4 eyeball riders: sliding
+> tab indicator · self-host presentation · FleetOrder · cosmos cue size) ✅ ALL SHIPPED 2026-07-12**;
+> next = frontier F3 (HostDetail, `FRONTIER_PLAN.md`). **Approved 2026-07-07 (owner):** the **ACA chat-hardening plan** = **Phase 12**
 > (`AGENT_CHAT_AUDIT.md` §5 is the spec; Slice 0 landed; Slices 1–2 pre-deploy candidates, 3+
 > post-deploy) and the `SYSTEM_AUDIT.md` **SYS** riders — **SYS-13** (live `fillComposer` bug) +
 > **SYS-14** (Linux CI) are Phase-9 pre-deploy items below. **Still open (low / deferred):**
@@ -739,7 +740,7 @@ tools + confirm bubbles) are DONE.**
       2026-07-10), README/AGENTS were rewritten at the reorg. No Linux-WOL fallback kept
       (v2 owns WOL natively).
 
-## Phase 11 — Theme engine (pluggable presentation layer, D28) — **IN PROGRESS: T0 + M0–M3 + Kit/minimal + cosmos + Hardening slice v2 (D34 ✅ 2026-07-10) + Composer Surface (✅ 2026-07-11 — 5-variant catalog + planPlacement, `COMPOSER_SURFACE_PLAN.md`) + frontier F0/D35 + F1 (✅ 2026-07-12 — frontier REGISTERED) SHIPPED; NEXT = frontier F2 (the badlands Fleet)**
+## Phase 11 — Theme engine (pluggable presentation layer, D28) — **IN PROGRESS: T0 + M0–M3 + Kit/minimal + cosmos + Hardening slice v2 (D34 ✅ 2026-07-10) + Composer Surface (✅ 2026-07-11 — 5-variant catalog + planPlacement, `COMPOSER_SURFACE_PLAN.md`) + frontier F0/D35 + F1 + F2 (✅ 2026-07-12 — frontier REGISTERED, the badlands Fleet live, 4 eyeball riders) SHIPPED; NEXT = frontier F3 (HostDetail)**
 
 Spec: `THEME_ENGINE.md §§9–10` · decision: `DECISIONS.md D28`. Build the engine on the cheapest theme
 first, hardest last; the foundation is paid once in T0. **D7 pixel-fidelity applies per theme.** Each Tn is
@@ -895,8 +896,9 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
       (one off-bar section → a direct button) + NavHome (minimal quick-jump) + utils-in-Conf hosting.
       Swipe-nav PARKED (D35 addendum). Three audit-caught defects fixed pre-ratification.
 - [ ] **T5 — frontier** (HIGH; **plan = [`FRONTIER_PLAN.md`](./FRONTIER_PLAN.md), design LOCKED 2026-07-07,
-      slices F1–F5 — build against it, not this line**; **F1 shell reskin ✅ 2026-07-12** — frontier
-      registered, night/day palette + brandMeta subtitle + 3-tab default; **F2–F5 remain**): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
+      slices F1–F5 — build against it, not this line**; **F1 shell reskin + F2 badlands Fleet ✅
+      2026-07-12** — frontier registered, night/day palette + brandMeta subtitle + 3-tab default, the
+      art-map/beacons/rig-grid live w/ appearance overrides end-to-end; **F3–F5 remain**): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
       (the 3-layer bobbing rig-stack empty state — the one non-Fleet structural deviation) + bottom-sheet `HostDetail` (**reuse cosmos's
       `components/BottomSheet.tsx` primitive** — multi-snap, see THEME_ENGINE §14.13 #9) + asset strategy
       (`import.meta.glob`; built-in Mœbius drawing set by index + per-host `host.appearance.frontier.image` override).

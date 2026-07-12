@@ -31,25 +31,29 @@
 >   vault's llamacpp `.137:5001` (owner-confirmed; corsair's instance unused).** The target's `config.yaml`
 >   is canonical — the Windows snapshot is stale by design (bootstrap re-runs won't clobber).
 >
-> **▶ CURRENT WORK (updated 2026-07-12, later the same day): frontier **F1 — the shell reskin — is ✅
-> COMPLETE and owner-ratified** (pre-flight `7322457` + build `ed672da`; full gate + **96 e2e** green incl.
-> the 8 frontier contrast combos; 6-lens adversarial audit clean; 390px-eyeballed).** Shipped: **frontier is
-> a REGISTERED theme** — night (dusky-violet, default) / day (parchment) on the standard mode axis · 4
-> gradient-swatch accents (coral default; `--accent-fill` stays a PLAIN color — the prototype's gradients
-> are decorative only, deliberate deviation from the plan's shorthand) · Chakra Petch + JetBrains Mono ·
-> dusk-glow background + gradient brand mark (frontier.css) · `defaultLayout: "3-tab"` (no `layouts`
-> restriction) · tab set frontier/comms/tools/settings · the new **Kit `brandMeta` slot** (DefaultRoot→
-> KitAppBar, D30; FrontierBrandMeta = live "N/M rigs · online"; other themes byte-identical) · the **B2
-> OKLCH sRGB-gamut advisory** (warn-only, stderr — built at pre-flight BEFORE the palette) · composer
-> `model` label SKIPPED → **ROADMAP A9** (D18 failover: configured ≠ serving). All three guard tables
-> wired (stylelint `^frontier-` · TOKENS_RAW · contrast-matrix row w/ 3-tab bar). **NEXT: frontier F2 —
-> the badlands Fleet** (`FRONTIER_PLAN.md` §6-F2: art-map card + `present()` 2D min-separation scatter +
-> rig grid; **porting hazard: the prototype's `sweep` keyframe animates `left` — re-author as
-> `transform: translateX()`**; F2 pins the art-filename contract) · or ACA Slices 1–2 (TODO Phase 12) ·
-> or the V1 vapor-hygiene filler (THEME_ENGINE §14.15.3).
-> *(F0 — the SECTION LAYOUT SYSTEM v1, D35 + addendum — shipped earlier the same day, `b7f63d4…76c0d74`:
-> body registry (eager DATA / lazy COMPONENTS via `bodies`) · 4/3/2-tab presets + the device-local
-> `ui.layout` lever · utils-hosted-in-Conf · docking rule · collapse ladder · NavHome · swipe PARKED.)*
+> **▶ CURRENT WORK (updated 2026-07-12 EOD): frontier **F2 — the badlands Fleet — is ✅ COMPLETE and
+> owner-ratified** (build `ed672da`…`e677a78`; full gate + **96 e2e** green; 6-lens adversarial audit —
+> 0 real bugs, 3 NITs fixed pre-commit; 390px-eyeballed through one fix round).** Shipped: the bespoke
+> FrontierFleet via `bodies={{fleet}}` (hero map card · card-relative `frontier-sweep` [the `left`-anim
+> hazard re-authored as translateX over 100cqw] · R2-scattered beacons w/ solid-rgba tags [NO stacked
+> backdrop-filter — Fennec] · 2-col rig grid · 3 explicit states) · `present()` **windowed R2
+> (`R2_OFFSET=2`) so slot 0 = the hero figure's spot** · `art.ts` = the partitioned placeholder→final-art
+> swap contract (rig modulo pool ≠ hero/stack) · **per-host `appearance.frontier {image,x,y}` END-TO-END
+> for the first time** (backend DTO passthrough + pytest; explicit validated/CLAMPED override mapping —
+> cosmos's never-run blind-spread idiom was a caught latent bug) · `frontierSelection` store (F3's sheet
+> reads it). **Four owner-directed riders shipped in the same eyeball round:** Kit-wide **sliding
+> top-line tab indicator** (`cd00caa`, vapor's mechanic generalized N-column; icon-pill bg dropped) ·
+> **self-host presentation** (`cbc2d34`: backend `self` FACT [hostname match] + `useHosts` stable
+> self-first select → the agent's rig stands with the hero figure BY DEFAULT, zero config) · **per-view
+> `FleetOrder`** (`3ecad64`: cosmos opts back into YAML order — size-aware layout; safe, cosmos never
+> reads `featured`) · **cosmos cue SIZE channel** (`e677a78`: `visual`/`off` = the decorative golden
+> ladder; owner notes sizes may get tuning later — the knob is `decorativePlanetSize`).
+> **NEXT: frontier F3 — HostDetail** (`FRONTIER_PLAN.md` §6-F3: frontier sheet content over the Kit
+> `BottomSheet` [cosmos-proven, multi-snap] · `sheetSnap` key `"frontier-host-detail"` [isolation already
+> unit-tested] · open-trigger = the existing `frontierSelection` store · actions through the normal
+> confirm gate) · or ACA Slices 1–2 (TODO Phase 12) · or the V1 vapor-hygiene filler (§14.15.3).
+> *(F1 — shell reskin — and F0 — the SECTION LAYOUT SYSTEM v1, D35 — shipped earlier the same day; the
+> `FRONTIER_PLAN.md` banner holds their as-built records.)*
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
 > orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).
 >

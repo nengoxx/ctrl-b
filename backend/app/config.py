@@ -560,8 +560,9 @@ class ComputerCfg(BaseModel):
     services: dict[str, ServiceCfg] = Field(default_factory=dict)
     #: Per-host, per-theme presentation override (Phase 11 / D28 §9.9) — an OPEN pass-through blob the
     #: theme owns the schema for (planet/beacon/angle/art), keyed by themeId. Defined day-1 so the YAML
-    #: shape is settled once (never a migration); first CONSUMED at T3/T5 (the runtime Host + DTO wiring
-    #: lands additively then). No per-theme Pydantic union — that would force a server change per theme.
+    #: shape is settled once (never a migration); CONSUMED since frontier F2 (2026-07-12): `_host_dto`
+    #: passes it through verbatim and frontier's present() validates/clamps `appearance.frontier
+    #: {image,x,y}`. No per-theme Pydantic union — that would force a server change per theme.
     appearance: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 

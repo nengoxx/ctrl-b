@@ -1,19 +1,29 @@
 # Frontier theme — implementation plan (T5)
 
-> **▶ F1 ✅ SHIPPED 2026-07-12 (pre-flight `7322457` + build `ed672da`; owner-eyeballed at 390px; full
-> gate + 96 e2e green — incl. the 8 frontier contrast combos + the 3-tab kit-render sweep; 6-lens
-> adversarial audit: no defects). NEXT SLICE: F2 (the badlands Fleet).** F1 as-built deltas, all
-> owner-ratified at the pre-flight review: **the appbar brand subtitle = a new Kit `brandMeta` slot**
-> (optional ReactNode on DefaultRoot→KitAppBar, D30 slot composition; FrontierBrandMeta renders the live
-> "N/M rigs · online" off the shared hosts query; other themes byte-identical) · **the composer `model`
-> label = SKIPPED, parked as ROADMAP A9** (an honest label needs a backend resolved-model signal — D18
-> failover means configured ≠ serving) · **`--accent-fill` stays a PLAIN color** (deliberate deviation from
-> this doc's "gradients in --accent-fill" shorthand: the prototype's gradients are decorative only — brand
-> mark + picker swatches, which are ThemeDef swatch DATA; no prototype control is gradient-filled) ·
-> `defaultLayout: "3-tab"` with NO `layouts` restriction · tab set frontier/comms/tools/settings · day
-> mode gets darker in-gamut oklch status literals (night's fail the 3:1 floor on parchment) + explicit
-> `--accent-ink #241522`. The F1 pre-flight also built the **B2 OKLCH sRGB-gamut advisory**
-> (`themeContract.test.ts`, warn-only via stderr) before the palette was authored.
+> **▶ F2 ✅ SHIPPED 2026-07-12 (build `ed672da`→riders→`e677a78`; owner-eyeballed at 390px through one
+> fix round; full gate + 96 e2e green; 6-lens adversarial audit: 0 real bugs, 3 NITs fixed pre-commit).
+> NEXT SLICE: F3 (HostDetail via the Kit BottomSheet — `sheetSnap` key `"frontier-host-detail"`; the
+> `frontierSelection` store is already its open-trigger).** F2 as-built: the badlands Fleet (hero map
+> card + card-relative `frontier-sweep` + R2-scattered beacons + 2-col rig grid + 3 explicit states) via
+> `bodies={{fleet}}` · `present()` R2 scatter **windowed `R2_OFFSET=2`** so slot 0 = the hero figure's
+> spot · the partitioned eager-glob art manifest (`art.ts` IS the placeholder→final-art swap contract;
+> rig modulo pool ≠ hero/stack) · **appearance `{image,x,y}` end-to-end for the first time** (backend
+> DTO passthrough + explicit validated/CLAMPED override mapping — never a blind spread) ·
+> `frontierSelection` store (beacon↔card sync; F3's sheet reads it). **Eyeball-round riders (owner-
+> directed, all shipped same day):** the Kit-wide **sliding top-line tab indicator** (`cd00caa` — vapor's
+> mechanic generalized to N columns via `--tab-count`/`--tab-i`; the icon pill bg dropped) · **self-host
+> presentation** (`cbc2d34` — backend `self` FACT by hostname; `useHosts` stable self-first select; the
+> agent's rig stands with the hero figure by default, zero config) · **per-view `FleetOrder`**
+> (`3ecad64` — cosmos opts back into YAML order: size-aware layout, small planet innermost; safe = cosmos
+> never reads `featured`) · **cosmos cue size channel** (`e677a78` — `visual`/`off` sizes = the
+> decorative golden ladder, no service info; owner may retune `decorativePlanetSize` anytime).
+>
+> *(F1 ✅ SHIPPED 2026-07-12 — pre-flight `7322457` + build `ed672da`⁻¹: frontier REGISTERED, night/day
+> palette, Chakra Petch + JetBrains Mono, the Kit `brandMeta` slot ["N/M rigs · online"], composer model
+> label → ROADMAP A9, `--accent-fill` PLAIN [deliberate deviation — prototype gradients are decorative
+> only; swatches are ThemeDef DATA], defaultLayout 3-tab no restriction, tabs frontier/comms/tools/
+> settings, day-mode in-gamut oklch statuses + `--accent-ink #241522`, the B2 OKLCH gamut advisory built
+> at pre-flight. F0 ✅ same date — D35 SECTION LAYOUT SYSTEM v1, `b7f63d4…76c0d74`.)*
 >
 > *(F0 ✅ SHIPPED 2026-07-12, commits `b7f63d4…76c0d74` — D35 LOCKED + same-day addendum; as-built:
 > the menu DOCKING RULE · the COLLAPSE LADDER · NavHome · swipe-nav PARKED; body registry = eager DATA,
@@ -229,7 +239,9 @@ registry"), which goes RED the moment `frontier` registers until the `src/themes
 `^frontier-` stylelint override AND the `TOKENS_RAW` entry are hand-added. Expect that red; it's
 the guard working, with instructions in its failure message.)*
 
-**F2 — the Fleet signature (bespoke body via the registry).** *Build:* art-map card (hero +
+**F2 — the Fleet signature (bespoke body via the registry). ✅ SHIPPED 2026-07-12 — see the banner for
+the as-built record + the four owner-directed eyeball riders (tab indicator · self-host · FleetOrder ·
+cosmos cue size).** *Build:* art-map card (hero +
 6s `sweep` + GPS beacons at `present()` x/y · ping-ring pulse · offline grey · name tags · count
 pill; **porting hazard, fidelity audit 2026-07-11: the prototype's `sweep` keyframe animates `left`
 (frontier.html:79) — re-author as `transform: translateX()` or it trips the §14.11 budget + the
