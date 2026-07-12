@@ -31,20 +31,25 @@
 >   vault's llamacpp `.137:5001` (owner-confirmed; corsair's instance unused).** The target's `config.yaml`
 >   is canonical — the Windows snapshot is stale by design (bootstrap re-runs won't clobber).
 >
-> **▶ CURRENT WORK (updated 2026-07-12 EOD): frontier **F0 — the SECTION LAYOUT SYSTEM v1 — is ✅ COMPLETE
-> and owner-ratified** (commits `b7f63d4…76c0d74`, NOT yet pushed; **D35 LOCKED + same-day addendum**; full
-> gate + 76 e2e green; 390px-eyeballed through three fix rounds).** Shipped: the body registry (eager DATA /
-> lazy COMPONENTS — kit `DEFAULT_BODIES` + the generalized `bodies` DefaultRoot prop replacing `Fleet={…}`) ·
-> curated 4/3/2-tab presets + the **device-local** `ui.layout` lever (picker beside App bar) · utils-hosted-
-> in-Conf w/ scroll-to-group · the **menu DOCKING RULE** (appbar trailing action under `visible`; floating
-> under `off`/`minimal`) · the **COLLAPSE LADDER** (one off-bar section → a direct button) · **NavHome**
-> (minimal top-left quick-jump) · N-column tab bar · top-band collision fixes (pinned plan first-in-flow;
-> player yields) · swipe-nav **PARKED** (D35 addendum). Independent audits caught **3 real defects**
-> (garbage-lever boot crash · 2-tab keyboard dead-end · docked-popover stacking trap) — keep the per-commit
-> audit cadence. **NEXT: frontier F1 (`FRONTIER_PLAN.md` — read its banner: F1 pre-flight = `^frontier-`
-> stylelint override + OKLCH gamut advisory BEFORE the palette + the appbar-subtitle & model-label nuances)
-> · or ACA Slices 1–2 (`AGENT_CHAT_AUDIT.md` / TODO Phase 12) · or the V1 vapor-hygiene filler
-> (THEME_ENGINE §14.15.3 — V1–V3 are frontier-independent lull-fillers; V4/V5 wait for frontier).**
+> **▶ CURRENT WORK (updated 2026-07-12, later the same day): frontier **F1 — the shell reskin — is ✅
+> COMPLETE and owner-ratified** (pre-flight `7322457` + build `ed672da`; full gate + **96 e2e** green incl.
+> the 8 frontier contrast combos; 6-lens adversarial audit clean; 390px-eyeballed).** Shipped: **frontier is
+> a REGISTERED theme** — night (dusky-violet, default) / day (parchment) on the standard mode axis · 4
+> gradient-swatch accents (coral default; `--accent-fill` stays a PLAIN color — the prototype's gradients
+> are decorative only, deliberate deviation from the plan's shorthand) · Chakra Petch + JetBrains Mono ·
+> dusk-glow background + gradient brand mark (frontier.css) · `defaultLayout: "3-tab"` (no `layouts`
+> restriction) · tab set frontier/comms/tools/settings · the new **Kit `brandMeta` slot** (DefaultRoot→
+> KitAppBar, D30; FrontierBrandMeta = live "N/M rigs · online"; other themes byte-identical) · the **B2
+> OKLCH sRGB-gamut advisory** (warn-only, stderr — built at pre-flight BEFORE the palette) · composer
+> `model` label SKIPPED → **ROADMAP A9** (D18 failover: configured ≠ serving). All three guard tables
+> wired (stylelint `^frontier-` · TOKENS_RAW · contrast-matrix row w/ 3-tab bar). **NEXT: frontier F2 —
+> the badlands Fleet** (`FRONTIER_PLAN.md` §6-F2: art-map card + `present()` 2D min-separation scatter +
+> rig grid; **porting hazard: the prototype's `sweep` keyframe animates `left` — re-author as
+> `transform: translateX()`**; F2 pins the art-filename contract) · or ACA Slices 1–2 (TODO Phase 12) ·
+> or the V1 vapor-hygiene filler (THEME_ENGINE §14.15.3).
+> *(F0 — the SECTION LAYOUT SYSTEM v1, D35 + addendum — shipped earlier the same day, `b7f63d4…76c0d74`:
+> body registry (eager DATA / lazy COMPONENTS via `bodies`) · 4/3/2-tab presets + the device-local
+> `ui.layout` lever · utils-hosted-in-Conf · docking rule · collapse ladder · NavHome · swipe PARKED.)*
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
 > orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).
 >

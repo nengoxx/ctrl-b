@@ -1,17 +1,23 @@
 # Frontier theme — implementation plan (T5)
 
-> **▶ F0 ✅ SHIPPED 2026-07-12 (commits `b7f63d4…76c0d74` — D35 LOCKED + same-day addendum; owner-eyeballed
-> at 390px; full gate + 76 e2e green). NEXT SLICE: F1.** As-built deltas vs §1/§6-F0, all owner-ratified in
-> the same-day eyeball round (details in the D35 addendum): the **menu DOCKING RULE** (the affordance docks
-> to the chrome that exists — appbar trailing action under `visible`, floating only under `off`/`minimal`),
-> the **COLLAPSE LADDER** (menu of one → a DIRECT section button, no popover), **NavHome** (minimal-only
-> top-left quick-jump to `sections[0]`), and **swipe-nav PARKED**. Body registry ruling: eager DATA on the
-> registry, lazy COMPONENTS via the generalized `bodies` DefaultRoot prop (replaces `Fleet={…}` — the
-> "fold" confirmed as data-fold + prop-injection; option B thunks = documented later promotion). The
-> §6-F0 ⚠ preserve-list was honored (composer wiring intact). **F1 pre-flight reminders (pre-F0 punch
-> list): add the `^frontier-` stylelint override (the meta-guard goes RED on registration until added) +
-> the OKLCH sRGB-gamut/chroma-ceiling advisory BEFORE picking the palette; resolve the appbar brand
-> subtitle nuance (§F1) + the composer `model` label (§7).**
+> **▶ F1 ✅ SHIPPED 2026-07-12 (pre-flight `7322457` + build `ed672da`; owner-eyeballed at 390px; full
+> gate + 96 e2e green — incl. the 8 frontier contrast combos + the 3-tab kit-render sweep; 6-lens
+> adversarial audit: no defects). NEXT SLICE: F2 (the badlands Fleet).** F1 as-built deltas, all
+> owner-ratified at the pre-flight review: **the appbar brand subtitle = a new Kit `brandMeta` slot**
+> (optional ReactNode on DefaultRoot→KitAppBar, D30 slot composition; FrontierBrandMeta renders the live
+> "N/M rigs · online" off the shared hosts query; other themes byte-identical) · **the composer `model`
+> label = SKIPPED, parked as ROADMAP A9** (an honest label needs a backend resolved-model signal — D18
+> failover means configured ≠ serving) · **`--accent-fill` stays a PLAIN color** (deliberate deviation from
+> this doc's "gradients in --accent-fill" shorthand: the prototype's gradients are decorative only — brand
+> mark + picker swatches, which are ThemeDef swatch DATA; no prototype control is gradient-filled) ·
+> `defaultLayout: "3-tab"` with NO `layouts` restriction · tab set frontier/comms/tools/settings · day
+> mode gets darker in-gamut oklch status literals (night's fail the 3:1 floor on parchment) + explicit
+> `--accent-ink #241522`. The F1 pre-flight also built the **B2 OKLCH sRGB-gamut advisory**
+> (`themeContract.test.ts`, warn-only via stderr) before the palette was authored.
+>
+> *(F0 ✅ SHIPPED 2026-07-12, commits `b7f63d4…76c0d74` — D35 LOCKED + same-day addendum; as-built:
+> the menu DOCKING RULE · the COLLAPSE LADDER · NavHome · swipe-nav PARKED; body registry = eager DATA,
+> lazy COMPONENTS via the generalized `bodies` DefaultRoot prop. The §6-F0 ⚠ preserve-list was honored.)*
 >
 > **Status: ✅ DESIGN LOCKED (2026-07-07) — all five review points owner-ratified same day, then
 > adversarially reviewed against the code (10 findings, all folded in — the review markers sit
@@ -204,7 +210,8 @@ correct per preset; keep-mounted semantics for on-bar sections unchanged; unit t
 resolution + the layout-coercion resolver + hosted-deep-link coercion; e2e render pass. **Design
 review first → drafts the D-entry.**
 
-**F1 — shell reskin.** *Build:* `ThemeDef` row (`frontier`) · two-axis palettes (§5: night/day
+**F1 — shell reskin. ✅ SHIPPED 2026-07-12 — see the banner atop this file for the as-built deltas
+(brandMeta slot · model label → ROADMAP A9 · flat `--accent-fill` · the B2 gamut advisory).** *Build:* `ThemeDef` row (`frontier`) · two-axis palettes (§5: night/day
 modes, 4 gradient accents — gradients in `--accent-fill`, plain `--accent`) · Chakra Petch +
 JetBrains Mono via `loadFonts` · `tokens.css` under `.kit` (appbar sun/moon-skinned mode toggle ·
 nav · Conf · Utils · composer per §3) · dusk-glow background · `defaultLayout: 3-tab` +
