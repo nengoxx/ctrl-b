@@ -10,7 +10,7 @@ import { SwUpdatePrompt } from "../../components/SwUpdatePrompt";
 import { TabBar } from "../../components/TabBar";
 import { Toasts } from "../../components/Toasts";
 import { useSections } from "../../hooks/useSections";
-import { useUISlice } from "../../store/ui";
+import { appbarShown, useUISlice } from "../../store/ui";
 import { prefetchOnIdle } from "../../lib/prefetch";
 import { AgentTab } from "../../tabs/AgentTab";
 import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
@@ -40,11 +40,13 @@ export function VaporRoot() {
   // aliased to `tab` (vapor's local vocabulary) since the whole body keys off it; `showComposer` is the
   // active section's composer flag (was the `tab==='fleet'||'agent'` hardcode).
   const { active: tab, hasComposer: showComposer } = useSections();
-  // The global chrome lever (visible/off/minimal). vapor renders its OWN AppBar, so it maps the mode here:
-  // appbar shows only in `visible`. vapor's `minimal` is DEFERRED — it behaves like `off` (no appbar) and
-  // keeps vapor's bottom TabBar (no floating NavMenu yet — THEME_ENGINE §14.13, the bespoke-Root TODO).
+  // The global chrome lever (visible/transparent/off/minimal). vapor renders its OWN AppBar, so it maps the
+  // mode here: the appbar shows when a bar is present (`appbarShown` = visible OR transparent — transparent
+  // renders the SAME bar, null-painted via the additive `.appbar.transparent` rule in vapor.css). vapor's
+  // `minimal` is DEFERRED — it behaves like `off` (no appbar) and keeps vapor's bottom TabBar (no floating
+  // NavMenu yet — THEME_ENGINE §14.13, the bespoke-Root TODO).
   const appbarMode = useUISlice((s) => s.appbarMode);
-  const showAppbar = appbarMode === "visible";
+  const showAppbar = appbarShown(appbarMode);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Lazy Conf tab: conditional mount, strictly false→true, stays mounted to preserve form drafts.
@@ -114,7 +116,7 @@ export function VaporRoot() {
   return (
     <div className="app-shell">
       <div className="app-scroll" id="app-scroll" ref={scrollRef}>
-        {showAppbar && <AppBar />}
+        {showAppbar && <AppBar transparent={appbarMode === "transparent"} />}
         <FleetTab active={tab === "fleet"} />
         <AgentTab active={tab === "agent"} />
         <UtilsTab active={tab === "utils"} />

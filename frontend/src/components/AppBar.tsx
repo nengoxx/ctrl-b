@@ -12,7 +12,9 @@ import { useConnection } from "../store/connection";
 // and the TTS button so the owner can see the live feed is currently broken. The brand has
 // `flex: 1` so it shrinks to make room; CSS in extras.css (vapor.css untouched, D7).
 
-export function AppBar() {
+// `transparent` (global appbarMode="transparent") stamps a `.transparent` modifier so vapor.css null-paints
+// the bar (additive rule — byte-identical DOM when the mode isn't transparent, per the ladder rule).
+export function AppBar({ transparent = false }: { transparent?: boolean } = {}) {
   // Voice control from the headless app-chrome controller (D29 §14.2); the muting-stops-audio behavior
   // lives in `toggleAutoTts` now. The toast flash below stays vapor presentation.
   const { ttsAuto, ttsConfigured, toggleAutoTts } = useAppChrome();
@@ -37,7 +39,7 @@ export function AppBar() {
 
   return (
     <>
-      <div className="appbar">
+      <div className={"appbar" + (transparent ? " transparent" : "")}>
         <div className="brand">
           <div className="lozenge" />
           <span className="mark">ctrl·b</span>

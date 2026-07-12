@@ -4,6 +4,7 @@ import { NavMenu } from "../../components/NavMenu";
 import { useAppChrome } from "../../hooks/useAppChrome";
 import { useSections } from "../../hooks/useSections";
 import { useConnection } from "../../store/connection";
+import type { AppbarMode } from "../../store/ui";
 
 // Kit app bar (D29 §14.4) — token-driven, `.kit-*` classes. Same capability as vapor's AppBar (brand +
 // live-feed badge + auto-TTS toggle) via the SAME headless controller (useAppChrome) + connection store;
@@ -12,7 +13,15 @@ import { useConnection } from "../../store/connection";
 
 // `brandMeta` = the theme-fillable brand subtitle slot (D30 slot composition; frontier's live rig count —
 // F1 pre-flight ruling 2026-07-12). Omitted → the static "dashboard" (the default every other theme shows).
-export function KitAppBar({ brandMeta }: { brandMeta?: ReactNode }) {
+// `appbarMode` is threaded so the `transparent` mode can stamp a `.transparent` modifier — kit.css null-paints
+// the bar (no fill/border/shadow/backdrop-filter) + squares its icon buttons in that mode only.
+export function KitAppBar({
+  brandMeta,
+  appbarMode,
+}: {
+  brandMeta?: ReactNode;
+  appbarMode?: AppbarMode;
+}) {
   const { ttsAuto, ttsConfigured, toggleAutoTts } = useAppChrome();
   const conn = useConnection();
   // Pure `useSections` consumer (the NavBar precedent): read the off-bar-and-unhosted partition so the nav
@@ -20,7 +29,7 @@ export function KitAppBar({ brandMeta }: { brandMeta?: ReactNode }) {
   const { menu } = useSections();
 
   return (
-    <div className="kit-appbar">
+    <div className={"kit-appbar" + (appbarMode === "transparent" ? " transparent" : "")}>
       <div className="kit-brand">
         <span className="dot" aria-hidden />
         ctrl·b

@@ -694,7 +694,15 @@
      * `body[data-tab]` hook — ui.ts stamps it; frontier already does this for the fleet scrim above), hide the
      * kit color scrims and put a backdrop-agnostic `mask-image` content fade on the scroller instead — a true
      * transparency fade over the gradient (research-confirmed, well-supported on Android Chrome/Firefox). The
-     * fleet tab's owner-tuned 12px scrim is untouched. */
+     * fleet tab's owner-tuned 12px scrim is untouched.
+     *
+     * AUDIT FIX (F4 owner-feedback round): the mask is on `#app-scroll`, but `KitAppBar` renders INSIDE the
+     * scroller as `position: sticky` — and a mask clips sticky children in VIEWPORT space, so a plain
+     * "transparent 0 → #000 24px" top fade dissolved the top ~24px of the bar. Re-anchor the fully-opaque band
+     * to the appbar height (`--appbar-h`, set by DefaultRoot's measurement effect — 0px when the bar is hidden)
+     * so the bar stays crisp and the content fade sits just BELOW it (restoring the old scrim geometry, which
+     * sat at `top: var(--appbar-h)`). The `, 0px)` fallback degrades the formula to a plain top fade when the
+     * bar is hidden (off/minimal) and the property is unset. */
     body[data-tab="agent"] .kit-main::before,
     body[data-tab="agent"] .kit-main.has-composer::after {
       background: none;
@@ -702,15 +710,19 @@
     body[data-tab="agent"] #app-scroll {
       -webkit-mask-image: linear-gradient(
         to bottom,
-        transparent 0,
-        #000 24px,
+        #000 0,
+        #000 var(--appbar-h, 0px),
+        transparent calc(var(--appbar-h, 0px) + 1px),
+        #000 calc(var(--appbar-h, 0px) + 25px),
         #000 calc(100% - 16px),
         transparent 100%
       );
       mask-image: linear-gradient(
         to bottom,
-        transparent 0,
-        #000 24px,
+        #000 0,
+        #000 var(--appbar-h, 0px),
+        transparent calc(var(--appbar-h, 0px) + 1px),
+        #000 calc(var(--appbar-h, 0px) + 25px),
         #000 calc(100% - 16px),
         transparent 100%
       );
@@ -864,12 +876,21 @@
       font-size: 9px;
       letter-spacing: 0.12em;
     }
-    /* user — the near-black comic bubble. A hairline `--line-2` edge separates the near-black fill from the
-     * dark gradient (WCAG 1.4.11 ≥3:1 non-text edge — shadows vanish on dark; research). */
+    /* who-line dot removed under frontier (owner F4 feedback): the kit `.b .who::before` 6px dot before
+     * "assistant"/"you" reads as clutter on the comic thread — all bubble kinds go dotless. */
+    .b .who::before {
+      display: none;
+    }
+    /* NO OUTLINES anywhere in the chat log (owner F4 directive — overrides the prototype's own cmd border):
+     * every bordered/outlined chat element below drops its border and DIFFERENTIATES BY FILL instead. Kit's
+     * chat rules live in @layer base; these frontier rules are @layer theme, so they win regardless of the
+     * kit selectors' higher specificity. */
+
+    /* user — the near-black comic bubble. Borderless (the old hairline `--line-2` edge is gone per the owner);
+     * the honest contrast claim is the white text on the near-black fill (~18:1). Fill + radius stay. */
     .b.user .body {
       background: var(--fr-bubble-ink);
       color: #fff;
-      border: 1px solid var(--line-2);
       border-radius: 14px 14px 4px 14px;
       font-size: 13.5px;
     }
@@ -882,12 +903,79 @@
       font-size: 13.5px;
       color: var(--text);
     }
-    /* command — the kit already panels it via `--surface`/`--line`; add only D7's `.msg.cmd` deltas. */
+    /* sys — kill the kit dashed border; keep the muted uppercase caption as bare centered text (no box —
+     * a system caption reads clearly without a frame; nothing to fill-differentiate). */
+    .b.sys .body {
+      border: none;
+    }
+    /* reasoning disclosure (`details.think`) — borderless; the summary chip + scratchpad pre differentiate
+     * by fill (`--surface-2` chip, `--surface` pre) instead of the kit border + accent-tint. */
+    .b .think > summary {
+      border: none;
+      background: var(--surface-2);
+    }
+    .b .think pre {
+      border-left: none;
+      background: var(--surface);
+    }
+    /* command bubble (`.b.cmd`) — the kit panel border goes; keep the opaque `--surface` fill (the prototype's
+     * `.msg.cmd .bb` fill look, minus its border per the owner). D7's rounded-corner delta stays. */
     .b.cmd .body {
+      border: none;
+      background: var(--surface);
       border-radius: 11px;
     }
     .b.cmd .who {
       color: var(--accent);
+    }
+    /* the `$`-code well + captured-output pre — borderless, a darker `--surface-2` fill differentiates them
+     * from the `--surface` body (covers both `.b.cmd pre` and `.cmd-output > pre` via the layer win). */
+    .b.cmd pre {
+      border: none;
+      background: var(--surface-2);
+    }
+    /* the action row (exec/edit/dismiss) — drop the kit top border + inter-button divider borders; the
+     * buttons stay text actions differentiated by their accent/muted color (kit A.3c). */
+    .b.cmd .actions {
+      border-top: none;
+    }
+    .b.cmd .actions button {
+      border-right: none;
+    }
+    /* command sub-disclosures (`cmd-detail`/`cmd-output`/`cmd-links`) carry no summary borders in the kit —
+     * their pres are handled by `.b.cmd pre` above; nothing else to strip. */
+
+    /* the question-bubble reply input — borderless, `--surface-2` fill; a focus ring (inset box-shadow, not a
+     * resting outline) keeps the a11y focus affordance the removed border used to carry. */
+    .q-input {
+      border: none;
+      background: var(--surface-2);
+    }
+    .q-input:focus {
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    /* the inline retry pill (F20) — kit borders it with `--accent-soft` ON the same `--accent-soft` fill;
+     * the fill alone carries it here. */
+    .b.bot .chat-err-retry {
+      border: none;
+      background: var(--accent-soft);
+    }
+    /* markdown code (A.3b) — the inline chip + the fenced block drop their `--line` borders; their existing
+     * fills (`--surface-2` chip, `--bg` panel — opaque even over the see-through shell) differentiate.
+     * Blockquote's left rule + `hr` STAY (typography, not outlines). */
+    .b.bot .md code {
+      border: none;
+    }
+    .b.bot .md .md-code {
+      border: none;
+    }
+    /* the plan family (D30 pill/sheet + the pinned panel) — chat-area chrome, same no-outlines directive:
+     * the accent-mix borders go; the `--accent-soft` / frosted fills they already carry differentiate. */
+    .plan-pill,
+    .plan-pin-head,
+    .plan-sheet,
+    .plan-pin-drop {
+      border: none;
     }
   }
 }

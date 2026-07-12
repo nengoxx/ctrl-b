@@ -18,11 +18,21 @@ export type { Mode, ThemeId } from "../theme-engine/types";
 export type Tab = "fleet" | "agent" | "utils" | "conf";
 export type Motion = "full" | "reduced";
 export type Perf = "full" | "lite";
-/** Top-bar / navigation chrome mode (global, per-device). `visible` = appbar + bottom tab bar; `off` = no
- *  appbar, tab bar only; `minimal` = no appbar in layout + no tab bar, navigation via the floating NavMenu.
- *  DefaultRoot themes honor all three; bespoke Roots (vapor) honor visible/off and treat minimal as off for
- *  now (THEME_ENGINE §14.13 — the bespoke-Root minimal contract + the vapor TODO). */
-export type AppbarMode = "visible" | "off" | "minimal";
+/** Top-bar / navigation chrome mode (global, per-device). `visible` = appbar + bottom tab bar; `transparent`
+ *  = the SAME appbar + tab bar but the bar paints NOTHING (no fill/border/shadow/backdrop-filter — it floats
+ *  over the page like the prototype, with squared icon buttons); `off` = no appbar, tab bar only; `minimal` =
+ *  no appbar in layout + no tab bar, navigation via the floating NavMenu. DefaultRoot themes honor all four;
+ *  bespoke Roots (vapor) honor visible/transparent/off and treat minimal as off for now (THEME_ENGINE §14.13 —
+ *  the bespoke-Root minimal contract + the vapor TODO). */
+export type AppbarMode = "visible" | "transparent" | "off" | "minimal";
+
+/** Whether a top app bar is PRESENT (rendered + measured into `--appbar-h`) for a given mode. True for
+ *  `visible` and `transparent` (both render the bar — transparent just null-paints it); false for `off` and
+ *  `minimal` (no bar). The single source for the "is a bar present" test — consumers (Roots, the floating
+ *  NavMenu gate) call this instead of scattering `=== "visible"` triples that would miss `transparent`. */
+export function appbarShown(m: AppbarMode): boolean {
+  return m === "visible" || m === "transparent";
+}
 
 // Open per-theme settings (D29 §14.3): `{ themeId: { key: value } }`. Open so a theme adds an option
 // additively (no new top-level field). Values resolve via `useThemeSetting(id, key)`, which falls back

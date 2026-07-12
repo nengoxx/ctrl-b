@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Item ② (§14.15.1) — the theme-fault boundary + Reset-as-pick, wired in App.tsx. App is otherwise a thin
@@ -15,6 +15,9 @@ const hoisted = vi.hoisted(() => ({
   mutate: vi.fn(),
   switchTheme: vi.fn<() => Promise<void>>(() => Promise.resolve()),
   root: null as null | (() => ReactNode),
+  // A4 wiring probe: the mocked useAgentChat reads this so a test can drive currentPlan open→null and assert
+  // AppEngines' usePlanOpenAutoClose reset the shared plan-open flag.
+  chat: { currentPlan: null as Record<string, unknown> | null },
 }));
 
 vi.mock("../src/theme-engine/ThemeProvider", () => ({ useActiveRoot: () => hoisted.root }));
@@ -37,7 +40,7 @@ vi.mock("../src/hooks/useAppearance", () => ({
 }));
 vi.mock("../src/hooks/useAgentChat", () => ({
   useChatInit: () => undefined,
-  useAgentChat: () => ({ currentPlan: null }), // AppEngines reads currentPlan for the A4 auto-close (§14.5)
+  useAgentChat: () => hoisted.chat, // AppEngines reads currentPlan for the A4 auto-close (§14.5)
 }));
 vi.mock("../src/hooks/useAutoTts", () => ({ useAutoTts: () => undefined }));
 vi.mock("../src/hooks/useEvents", () => ({ useEventStream: () => undefined }));
@@ -45,6 +48,12 @@ vi.mock("../src/hooks/useFleet", () => ({ useFleetCycle: () => undefined }));
 
 import App from "../src/App";
 import { setUI } from "../src/store/ui";
+import { setPlanSheetOpen, usePlanSheetOpen } from "../src/store/planSheet";
+
+// A tiny probe reading the SHARED plan-open flag (module singleton store) — re-renders when it changes.
+function PlanProbe(): ReactNode {
+  return <span data-testid="plan-open">{String(usePlanSheetOpen())}</span>;
+}
 
 // A Root whose throwing is toggleable at runtime, so a remount (Reset's epoch bump) can render cleanly.
 const flaky = { throw: true };
@@ -59,6 +68,8 @@ function ThrowingRoot(): ReactNode {
 beforeEach(() => {
   setUI({ theme: "vapor" }); // default skin; individual cases override
   hoisted.root = null;
+  hoisted.chat.currentPlan = null; // reset the A4 probe
+  setPlanSheetOpen(false); // reset the shared flag (module singleton persists across tests)
   flaky.throw = true;
   vi.spyOn(console, "error").mockImplementation(() => undefined); // silence React's caught-error noise
 });
@@ -125,5 +136,33 @@ describe("App theme-fault boundary (item ②)", () => {
 
     expect(screen.getByTestId("root-ok")).toBeTruthy();
     expect(document.querySelector('[data-fault="theme"]')).toBeNull();
+  });
+});
+
+describe("App A4 wiring — AppEngines resets the shared plan-open flag on plan→null (§14.5)", () => {
+  it("clears usePlanSheetOpen() when currentPlan clears — fails if usePlanOpenAutoClose is dropped from App", () => {
+    hoisted.root = () => null; // a valid (renderable) Root — this test is about AppEngines, not the theme tree
+    hoisted.chat.currentPlan = { steps: [] }; // a live plan
+    const tree = (
+      <>
+        <App />
+        <PlanProbe />
+      </>
+    );
+    const { rerender } = render(tree);
+
+    // the user opened the composer plan sheet while the plan was live
+    act(() => setPlanSheetOpen(true));
+    expect(screen.getByTestId("plan-open").textContent).toBe("true");
+
+    // the plan clears → the real usePlanOpenAutoClose(currentPlan) mounted in AppEngines must reset the flag
+    hoisted.chat.currentPlan = null;
+    rerender(
+      <>
+        <App />
+        <PlanProbe />
+      </>,
+    );
+    expect(screen.getByTestId("plan-open").textContent).toBe("false");
   });
 });

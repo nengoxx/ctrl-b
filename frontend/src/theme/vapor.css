@@ -180,6 +180,18 @@
     padding: 12px 18px;
     border-bottom: 1px solid var(--line);
   }
+  /* TRANSPARENT variant (global appbarMode="transparent", owner F4 addition) — the ADDITIVE ladder rule: the
+     bar still renders + measures into --appbar-h, but paints NOTHING (no fill / frost / bottom hairline), so
+     it floats over the page like the prototype. Byte-identical when the mode isn't transparent (no
+     `.appbar.transparent` element). vapor's only appbar button is the mask-icon `.tts-btn` (borderless, no
+     box) — there is no bordered icon pill to "square" here, so the squaring is a no-op for this skin. */
+  .appbar.transparent {
+    background: transparent;
+    border-bottom: 0;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
   .brand { display: flex; align-items: center; gap: 10px; flex: 1; }
   .brand .lozenge {
     width: 36px; height: 36px; border-radius: 50%;

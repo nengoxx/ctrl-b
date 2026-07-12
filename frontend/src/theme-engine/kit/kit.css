@@ -204,6 +204,27 @@ body[data-motion="reduced"] .kit .tab.active {
   background: var(--danger);
 }
 
+/* ── app bar · TRANSPARENT variant (global appbarMode="transparent", owner F4 addition) ──────────────────
+ * The bar RENDERS + measures into `--appbar-h` (so the scroll/layout math is unchanged) but paints NOTHING —
+ * it floats over the page like the prototype's `.appbar` (design/prototypes/variations/frontier.html): the
+ * base fill / frost / any shadow are all nulled. The second selector re-asserts transparency over the
+ * perf-lite fallback (`body[data-perf="lite"] .kit-appbar` re-adds an opaque `--bg`; the data-perf-qualified
+ * selector here (0,3,0) outspecifies that (0,2,0)). */
+.kit-appbar.transparent,
+body[data-perf="lite"] .kit-appbar.transparent {
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+/* SQUARED icon buttons in this mode ONLY (prototype `.iconbtn`: 34px, 9px radius, 1px `--line-2` border) — the
+ * round base pill fights the borderless-bar look. Applies to the TTS toggle + the docked NavMenu launcher
+ * (both carry `.kit-iconbtn`); round everywhere else. */
+.kit-appbar.transparent .kit-iconbtn {
+  border-radius: 9px;
+  border: 1px solid var(--line-2);
+}
+
 /* ── bottom nav — vapor's bar assimilated Kit-wide (owner directive 2026-07-12): SHORT (no bar padding —
  *    the buttons carry the tap height, vapor's exact metrics), `TabDef.glyph` unicode marks + small
  *    uppercase letterspaced labels, active = ink (the accent lives in the sliding line, not the glyph).
@@ -246,7 +267,7 @@ body[data-motion="reduced"] .kit .tab.active {
     opacity 0.2s;
 }
 .kit-tab-ind .bar {
-  width: min(72px, 70%); /* the cap — a short mark over the tab, not the column's full width (owner-tuned) */
+  width: min(88px, 76%); /* the cap — a short mark over the tab, not the column's full width (owner-tuned, 3rd nudge: 72px→88px) */
   height: 100%;
   background: var(--accent-fill);
   box-shadow: var(--accent-glow);

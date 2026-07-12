@@ -29,7 +29,7 @@ import { ThemedComposer, useComposerLayout } from "./composer/ThemedComposer";
 import type { ComposerSlots } from "./composer/types";
 import { KitFleet } from "./Fleet";
 import { KitNavBar } from "./NavBar";
-import type { AppbarMode } from "../../store/ui";
+import { appbarShown, type AppbarMode } from "../../store/ui";
 
 // The Kit's DEFAULT root scaffold (D29 §14.4 / D35 §F0) — the standard appbar + scrolling sections +
 // floating composer + bottom-nav layout, used by reskin themes (minimal/phosphor) so a theme's `Root` is
@@ -205,7 +205,7 @@ export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots, bra
           edge-scrims through it. */}
       <div className={"kit-main" + (showComposer ? " has-composer" : "")} ref={mainRef}>
         <div className="kit-scroll" id="app-scroll" ref={scrollRef}>
-          {appbarMode === "visible" && <KitAppBar brandMeta={brandMeta} />}
+          {appbarShown(appbarMode) && <KitAppBar brandMeta={brandMeta} appbarMode={appbarMode} />}
           {/* Data-driven body mount (D35): every non-hosted section stays keep-mounted + `active`-gated;
               hosted sections (utils→conf) render inside their host body, not here. A `lazy` body mounts only
               after first activation (the latch) and wraps in ErrorBoundary+Suspense. Index in the FULL list
@@ -235,13 +235,13 @@ export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots, bra
         {showComposer && <ThemedComposer layout={composerLayout} {...(composerAddons ?? {})} />}
       </div>
       {/* Nav (D35 §F0 + the 2026-07-12 docking rule): the in-flow tab bar shows whenever there's an
-          appbar-bearing layout (visible/off). The nav menu DOCKS to the chrome that exists — under `visible`
-          it's an appbar trailing action (KitAppBar renders it), so the FLOATING launcher mounts only when
-          there's no appbar to dock into (`off`/`minimal`) and a section is off-bar-and-unhosted. In 2-tab
-          `visible` the docked button + tab bar coexist; in `minimal` the bar is gone and the menu carries all
-          nav. */}
+          appbar-bearing layout (visible/transparent/off) — everything but `minimal`. The nav menu DOCKS to the
+          chrome that exists — under `visible`/`transparent` a bar is present (`appbarShown`), so KitAppBar
+          renders the docked trailing action and the FLOATING launcher mounts only when there's NO bar to dock
+          into (`off`/`minimal`) and a section is off-bar-and-unhosted. In 2-tab visible/transparent the docked
+          button + tab bar coexist; in `minimal` the bar is gone and the menu carries all nav. */}
       {appbarMode !== "minimal" && <KitNavBar onPrefetch={prefetch} />}
-      {appbarMode !== "visible" && menu.length > 0 && <NavMenu />}
+      {!appbarShown(appbarMode) && menu.length > 0 && <NavMenu />}
       {/* Nav-home quick-jump (F0 follow-up): a top-LEFT companion to the floating orbit menu. It OWNS its
           visibility (minimal-only + self-hides on the primary section) given the chrome mode, so it mounts
           unconditionally here — the single source for "when is the home button shown". */}
