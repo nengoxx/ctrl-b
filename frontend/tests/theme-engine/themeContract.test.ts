@@ -90,6 +90,7 @@ const CONTRACT_TOKENS = [
 const TOKENS_RAW: Partial<Record<ThemeId, string>> = {
   minimal: readThemeTokens("minimal"),
   cosmos: readThemeTokens("cosmos"),
+  frontier: readThemeTokens("frontier"),
 };
 
 /** The set of custom-property NAMES a stylesheet DECLARES (`--x:` … — a `:` follows the name). A `var(--x)`

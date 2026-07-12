@@ -1,0 +1,107 @@
+/* frontier theme tokens (D29 §14.4 / §14.13) — the Mœbius badlands-comic western palette mapped onto the
+ * Kit's semantic contract. Ported from prototypes/variations/frontier.html. Frontier is a BESPOKE theme (its
+ * own Root + bespoke Fleet/Agent surfaces land in F2/F4); F1 maps the palette so the REUSED Kit surfaces
+ * (chrome / Agent / Conf / Utils, under `.kit`) render in frontier colors. Lazy-loaded → self-declares
+ * `@layer theme` + `@scope` (§14.6). Night/day = the standard mode axis (FRONTIER_PLAN §5) — night is the
+ * dark default, day is a parchment light mode.
+ *
+ * §14.13 / §14.6: static tokens on `:scope`; the DERIVED tokens (any color-mix()/var() formula over a
+ * mode/accent-overridable input) on `body` so the per-accent AND per-mode overrides recompute — a var()
+ * formula is substituted at computed-value time on the DECLARING element, so on :scope it would compute
+ * once from <html>'s night statics and only inherit (the body[data-*] overrides never re-derive it). Accents
+ * are flat LITERALS per `body[data-accent]` (no OKLCH formula → immune to the trap), the prototype's --acc
+ * indirection. Any keyframes (F2+) must be prefixed `frontier-*` (§14.13 #4; stylelint override exists). */
+@layer theme {
+  @scope ([data-skin="frontier"]) {
+    /* ── NIGHT (the dark default) — dusky violet badlands. Prototype literals, all gate-verified:
+     *    text/surface 13.87, ok 8.42, warn 8.84, danger 5.22; accent-ink fallback var(--bg) 4.66–9.42 vs the
+     *    four accents. Night needs NO explicit --accent-ink — dark-mode themes inherit the var(--bg) fallback
+     *    (the minimal precedent). ── */
+    :scope {
+      color-scheme: dark;
+
+      /* semantic tier — dusky violet */
+      --bg: #2a1336;
+      --surface: #2f1840;
+      --surface-2: #3a1f4c;
+      --text: #fbeede;
+      --text-2: #d9b8c4;
+      --text-3: #a07f96;
+      --line: rgba(255, 255, 255, 0.1);
+      --line-2: rgba(255, 255, 255, 0.18);
+
+      --ok: #54d39a;
+      --warn: #ffb24c;
+      --danger: #ff5a6a;
+
+      --accent-glow: none;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --density-pad: 1;
+      --font-body: "JetBrains Mono", ui-monospace, monospace;
+      /* display face for the wordmark + bespoke titles (the prototype's .disp / .nm) — the western sans */
+      --font-display: "Chakra Petch", var(--font-body);
+    }
+
+    /* page text color. The page BACKGROUND (the dusk-glow radial) lives in the bespoke frontier.css — kept
+     * out of the token map so there's no same-layer override race with this file (both load together via
+     * loadStyles; the cosmos precedent). */
+    :scope,
+    body {
+      color: var(--text);
+    }
+
+    /* derived tokens — on `body`, NOT `:scope` (§14.6). Frontier has TWO modes: on :scope the color-mix()
+     * softs would compute once against the night statics and never re-derive in day mode (the same trap as
+     * the accent). Declared here (at/below where body[data-mode]/body[data-accent] set the inputs) they
+     * recompute against the resolved --accent/--ok/--warn/--danger. */
+    body {
+      --accent: #ff6f7d; /* coral (default) */
+      /* --accent-fill stays a PLAIN color (= var(--accent)), a deliberate deviation from the plan's shorthand:
+       * the prototype's gradients are decorative only (the brand mark + picker swatches — swatch is ThemeDef
+       * DATA), no prototype CONTROL is gradient-filled, and the base --accent must parse as a plain <color>
+       * (§14.15.1 ⑨). */
+      --accent-fill: var(--accent);
+      --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+      --ok-soft: color-mix(in srgb, var(--ok) 16%, transparent);
+      --warn-soft: color-mix(in srgb, var(--warn) 16%, transparent);
+      --danger-soft: color-mix(in srgb, var(--danger) 16%, transparent);
+    }
+    body[data-accent="coral"] {
+      --accent: #ff6f7d;
+    }
+    body[data-accent="amber"] {
+      --accent: #ffb24c;
+    }
+    body[data-accent="magenta"] {
+      --accent: #d65a9c;
+    }
+    body[data-accent="violet"] {
+      --accent: #9a7bf0;
+    }
+
+    /* ── DAY (body[data-mode=light]) — sun-bleached parchment. ── */
+    body[data-mode="light"] {
+      color-scheme: light;
+      --bg: #f0e3ce;
+      --surface: #fff7ec;
+      --surface-2: #f3e6d4;
+      --text: #2a1430;
+      --text-2: #6b4358;
+      --text-3: #9a7286;
+      --line: rgba(80, 30, 50, 0.12);
+      --line-2: rgba(80, 30, 50, 0.2);
+      /* ink on accent-fill controls — a near-black LITERAL, not var(--bg): the light --bg #f0e3ce is
+       * near-white → the base var(--bg) fallback would fail WCAG on the accent fills. #241522 is the
+       * prototype's own day ink-black, verified ≥4.81:1 vs all four accents. Night keeps the base var(--bg)
+       * fallback (§14.15.1 ①; the minimal precedent). */
+      --accent-ink: #241522;
+      /* day status colors — the prototype's night statuses fail the 3:1 e2e floor on parchment, so day gets
+       * darker same-hue literals (all in-gamut sRGB + ≥3:1 on both --surface and --bg). The softs are NOT
+       * redeclared here — the body-block color-mix formulas re-derive from these. */
+      --ok: oklch(0.55 0.11 163);
+      --warn: oklch(0.58 0.13 65);
+      --danger: oklch(0.55 0.19 20);
+    }
+  }
+}

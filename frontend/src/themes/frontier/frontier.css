@@ -1,0 +1,44 @@
+/* frontier bespoke structural CSS (D29 §14.4 / §14.13) — the parts that aren't token values: the dusk-glow
+ * page background + the gradient brand mark. Frontier is a BESPOKE theme, so (like cosmos.css / vapor.css) it
+ * may ship structural CSS beyond the token map. Same envelope as tokens.css — @layer theme +
+ * @scope([data-skin=frontier]) — so it can never leak into another skin and reliably wins over the Kit's
+ * @layer base rules (layer order base < theme), independent of stylesheet load order.
+ *
+ * F1 is deliberately small (the shell reskin only); the bespoke Fleet map + Agent rig-stack grow this file
+ * in F2/F4. NO @keyframes yet — any future ones must be `frontier-`prefixed (§14.13 #4; stylelint override
+ * exists). */
+@layer theme {
+  @scope ([data-skin="frontier"]) {
+    /* Overscroll fallback: <html> gets the flat --bg so the rubber-band area matches (kept out of tokens.css
+     * per the cosmos precedent — no same-layer override race). The dusk-glow gradient itself rides <body>. */
+    :scope {
+      background: var(--bg);
+    }
+
+    /* Dusk-glow page background (ported from the prototype) — a top-biased radial fading to the deep
+     * horizon. On <body> so the day override below re-derives (the gradient stops are literals, not tokens). */
+    body {
+      background: radial-gradient(120% 70% at 50% 0%, #4a2350 0%, #2a1336 46%, #1e0f28 100%);
+    }
+    /* day — a warm parchment dawn */
+    body[data-mode="light"] {
+      background: radial-gradient(120% 70% at 50% 0%, #fff3df 0%, #f0e3ce 60%, #e4d2bb 100%);
+    }
+
+    /* The wordmark wears the display face (Chakra Petch) — the prototype's `.brand .nm` garnish. */
+    .kit-brand {
+      font-family: var(--font-display);
+    }
+
+    /* Brand mark — the Kit's accent dot restyled into the prototype's gradient badge (`.brand .mk`): a small
+     * rounded square. The coral→magenta gradient is FIXED regardless of the active accent (prototype truth —
+     * the mark is a brand constant, not an accent surface). */
+    .kit-brand .dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 4px;
+      background: linear-gradient(150deg, #ff6f7d, #d65a9c);
+      box-shadow: 0 2px 8px rgba(214, 90, 156, 0.5);
+    }
+  }
+}

@@ -28,6 +28,14 @@ export const STANDARD_TABS: TabDef[] = [
 // Per-theme tab sets. T0 = vapor only; unregistered themes fall back to the standard set.
 const TAB_SETS: Partial<Record<ThemeId, TabDef[]>> = {
   vapor: STANDARD_TABS,
+  // frontier (F1) — themed copy only: `TabDef.lbl` is per-theme DATA; glyphs/`hasComposer`/`lazy` are
+  // identical to the standard set (frontier reuses the Kit bodies; the map/comms surfaces reskin later).
+  frontier: [
+    { id: "fleet", glyph: "◆", lbl: "frontier", hasComposer: true },
+    { id: "agent", glyph: "▲", lbl: "comms", hasComposer: true },
+    { id: "utils", glyph: "⌬", lbl: "tools", hasComposer: false },
+    { id: "conf", glyph: "●", lbl: "settings", hasComposer: false, lazy: true },
+  ],
 };
 
 export function tabsFor(theme: ThemeId): TabDef[] {

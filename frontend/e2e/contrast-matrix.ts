@@ -36,4 +36,12 @@ export const CONTRAST_MATRIX: ThemeMatrix[] = [
     accents: ["violet", "cyan", "green", "amber"],
     bar: FULL_BAR,
   },
+  {
+    // frontier defaults to 3-tab (D35), so utils is HOSTED in Conf → off-bar (FULL_BAR doesn't apply): the
+    // on-bar set is fleet/agent/conf. Drift-guarded against the registry-resolved default-layout bar.
+    theme: "frontier",
+    modes: ["dark", "light"],
+    accents: ["coral", "amber", "magenta", "violet"],
+    bar: ["fleet", "agent", "conf"],
+  },
 ];

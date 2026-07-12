@@ -1,4 +1,12 @@
-import { type ComponentType, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ComponentType,
+  type ReactNode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
@@ -58,6 +66,9 @@ interface Props {
    *  inline plan composition (see below), so a theme no longer passes the plan here; this prop is the
    *  future theme-addon seam and is unused today. Omitted → the bare composer (when the plan is `pinned`). */
   composerSlots?: ComposerSlots;
+  /** The appbar brand-subtitle slot (D30 slot composition), threaded to KitAppBar — a theme's live/bespoke
+   *  subtitle (frontier's rig count). Omitted → the Kit default ("dashboard"). */
+  brandMeta?: ReactNode;
 }
 
 // The Kit's DEFAULT id→body map (component space — this is the "lazy COMPONENTS" home the pure `tabs.ts`
@@ -71,7 +82,7 @@ const DEFAULT_BODIES: Record<TabId, ComponentType<{ active: boolean }>> = {
   conf: ConfTabLazy,
 };
 
-export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots }: Props) {
+export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots, brandMeta }: Props) {
   // The headless sections controller (D35): the full section list (mount loop), the resolved layout, the
   // on-/off-bar/hosted partitions, the active section, and the shared `navigate` chokepoint. `active` is
   // aliased to `tab` (the body-mount vocabulary); `layout` (the SECTION layout) is aliased to
@@ -193,7 +204,7 @@ export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots }: P
           in-flow bar below. */}
       <div className={"kit-main" + (showComposer ? " has-composer" : "")} ref={mainRef}>
         <div className="kit-scroll" id="app-scroll" ref={scrollRef}>
-          {appbarMode === "visible" && <KitAppBar />}
+          {appbarMode === "visible" && <KitAppBar brandMeta={brandMeta} />}
           {/* Data-driven body mount (D35): every non-hosted section stays keep-mounted + `active`-gated;
               hosted sections (utils→conf) render inside their host body, not here. A `lazy` body mounts only
               after first activation (the latch) and wraps in ErrorBoundary+Suspense. Index in the FULL list

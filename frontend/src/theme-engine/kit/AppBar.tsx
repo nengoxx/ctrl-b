@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { NavMenu } from "../../components/NavMenu";
 import { useAppChrome } from "../../hooks/useAppChrome";
 import { useSections } from "../../hooks/useSections";
@@ -8,7 +10,9 @@ import { useConnection } from "../../store/connection";
 // only the markup/icons differ. Reskin themes get this through DefaultRoot. Inline SVG icons (portable
 // across themes) rather than vapor's CSS-mask icons.
 
-export function KitAppBar() {
+// `brandMeta` = the theme-fillable brand subtitle slot (D30 slot composition; frontier's live rig count —
+// F1 pre-flight ruling 2026-07-12). Omitted → the static "dashboard" (the default every other theme shows).
+export function KitAppBar({ brandMeta }: { brandMeta?: ReactNode }) {
   const { ttsAuto, ttsConfigured, toggleAutoTts } = useAppChrome();
   const conn = useConnection();
   // Pure `useSections` consumer (the NavBar precedent): read the off-bar-and-unhosted partition so the nav
@@ -20,7 +24,7 @@ export function KitAppBar() {
       <div className="kit-brand">
         <span className="dot" aria-hidden />
         ctrl·b
-        <span className="meta">dashboard</span>
+        <span className="meta">{brandMeta ?? "dashboard"}</span>
       </div>
       {conn !== "connected" && (
         <div

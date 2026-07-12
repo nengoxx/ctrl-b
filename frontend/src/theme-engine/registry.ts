@@ -3,6 +3,7 @@
 // is declared in types.ts and lands in its own Tn slice.
 
 import { cosmos } from "../themes/cosmos";
+import { frontier } from "../themes/frontier";
 import { minimal } from "../themes/minimal";
 import { vapor } from "../themes/vapor";
 import type { ThemeDef, ThemeRegistry } from "./types";
@@ -11,6 +12,7 @@ export const registry: ThemeRegistry = {
   vapor,
   minimal,
   cosmos,
+  frontier,
 };
 
 /** The registered (built) themes, for the Conf Appearance picker. T0 = [vapor]; grows per Tn slice. */

@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@fontsource/audiowide": "^5.2.7",
+    "@fontsource/chakra-petch": "^5.2.7",
     "@fontsource/hanken-grotesk": "^5.2.8",
     "@fontsource/instrument-serif": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
