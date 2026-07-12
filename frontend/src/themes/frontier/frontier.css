@@ -40,5 +40,302 @@
       background: linear-gradient(150deg, #ff6f7d, #d65a9c);
       box-shadow: 0 2px 8px rgba(214, 90, 156, 0.5);
     }
+
+    /* ═══════════════════════════════════════════════════════════════════════════════════════════════
+     * F2 — the badlands Fleet MAP (bespoke surface; ports the prototype's `.map`/`.beacon`/`.rigs`).
+     * Consumed by FrontierFleet via present() (art.ts + present.ts): a hero-cover map card with
+     * R2-scattered beacons, then a 2-col rig grid. Structure + semantic tokens (--surface/--line/--text/
+     * --accent/--ok/--radius…) so night/day + accent recolor for free. The ONLY hardcoded values are the
+     * scrim / tag / plate / muted-pin rgba() literals — MODE-INVARIANT art treatments (dark ink over the
+     * photographic art reads the same in night AND day), exactly the prototype's constants. ══════════ */
+
+    /* The map card — FIXED height so the loading (zero-host) render never jumps; `contain: layout paint`
+     * isolates its absolutely-positioned beacons from the rest of the page. An inline-size CONTAINER so the
+     * sweep's travel can be card-relative (cqw) — see the sweep note below. */
+    .frontier-map {
+      position: relative;
+      height: 248px;
+      margin: 12px 14px 0;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      overflow: hidden;
+      contain: layout paint;
+      container-type: inline-size;
+    }
+    .frontier-map .pic {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: 58% 42%;
+    }
+    /* dark bottom scrim so the label/beacons read over the art (mode-invariant ink, prototype literal). */
+    .frontier-map .scrim {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(180deg, rgba(20, 8, 28, 0) 40%, rgba(20, 8, 28, 0.55) 100%);
+    }
+
+    /* Radar sweep — a 60px gradient strip crossing the card. TRANSFORM-ONLY: the prototype animated `left`
+     * (a §14.11 layout-thrash hazard); re-authored as translateX so it stays compositor-only. The strip
+     * parks off the left edge (left:-60px) and travels CARD-RELATIVE: 100cqw (the card is an inline-size
+     * container) + its own 60px, so it fully exits the right edge at ANY viewport width — a fixed px travel
+     * died mid-card on desktop/tablet (audit F2 NIT-1). Gated by data-motion below. */
+    .frontier-map .frontier-sweep {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -60px;
+      width: 60px;
+      pointer-events: none;
+      background: linear-gradient(90deg, transparent, rgba(255, 210, 140, 0.18), transparent);
+    }
+    body[data-motion="full"] .frontier-map .frontier-sweep {
+      animation: frontier-sweep 6s linear infinite;
+    }
+    @keyframes frontier-sweep {
+      from {
+        transform: translateX(0);
+      }
+      to {
+        /* card width + the strip's own 60px → fully off the right edge, viewport-independent */
+        transform: translateX(calc(100cqw + 60px));
+      }
+    }
+
+    /* Map label (top-left) — the wordmark wears the display face; #fff/ink text over the scrim is
+     * mode-invariant art treatment. */
+    .frontier-map-label {
+      position: absolute;
+      left: 13px;
+      top: 11px;
+      z-index: 5;
+    }
+    .frontier-map-label .t {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 21px;
+      letter-spacing: 0.02em;
+      line-height: 1;
+      color: #fff; /* mode-invariant — sits on the dark scrim over the art */
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+    }
+    .frontier-map-label .s {
+      margin-top: 4px;
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      color: rgba(255, 255, 255, 0.82);
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+    }
+
+    /* Count pill (top-right) — a translucent chip. backdrop-filter blur is the heaviest Fennec effect, so
+     * it's gated on the Kit's data-perf idiom (blur by default → opaque under data-perf=lite). */
+    .frontier-count {
+      position: absolute;
+      right: 11px;
+      top: 11px;
+      z-index: 5;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 11px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(26, 16, 24, 0.6); /* mode-invariant chip on the art */
+      font-size: 10.5px;
+      color: #fff;
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
+    }
+    /* §14.11 — drop the pill blur under data-perf=lite (Firefox-Android speed lever) → opaque fallback. */
+    body[data-perf="lite"] .frontier-count {
+      background: rgba(26, 16, 24, 0.85);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .frontier-count .led {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--ok);
+      box-shadow: 0 0 7px var(--ok);
+    }
+
+    /* Beacons — one button per host, placed by present() percents (translate centers the pin on the point).
+     * NO backdrop-filter anywhere on a beacon (stacked blur = the #1 Fennec jank source — the review ruling);
+     * the tag uses a SOLID rgba instead. */
+    .frontier-beacon {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      z-index: 4;
+      padding: 0;
+      border: 0;
+      background: none;
+      cursor: pointer;
+    }
+    .frontier-beacon .pin {
+      position: relative;
+      display: block;
+      width: 15px;
+      height: 15px;
+    }
+    .frontier-beacon .dot {
+      position: absolute;
+      inset: 0;
+      margin: auto;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 38% 32%, #fff, var(--accent) 70%);
+      box-shadow:
+        0 0 0 2px rgba(26, 16, 24, 0.5),
+        0 0 10px var(--accent);
+    }
+    .frontier-beacon .ring {
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+      border: 1.5px solid var(--accent);
+      opacity: 0; /* static fallback — invisible under reduced motion (only the animation reveals it) */
+    }
+    body[data-motion="full"] .frontier-beacon .ring {
+      animation: frontier-ping 2.6s ease-out infinite;
+    }
+    @keyframes frontier-ping {
+      0% {
+        transform: scale(0.6);
+        opacity: 0.7;
+      }
+      100% {
+        transform: scale(2.3);
+        opacity: 0;
+      }
+    }
+    /* offline — a muted pin, no ping ring (fewer live layers when asleep). */
+    .frontier-beacon.off .dot {
+      background: #6a5560; /* mode-invariant muted pin on the art */
+      box-shadow: 0 0 0 2px rgba(26, 16, 24, 0.5);
+    }
+    .frontier-beacon .tag {
+      position: absolute;
+      left: 50%;
+      top: 18px;
+      transform: translateX(-50%);
+      max-width: 12ch; /* clip an over-long name to an ellipsis; the card's overflow:hidden clips spill */
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(26, 16, 24, 0.82); /* SOLID (no backdrop-filter) — mode-invariant chip on the art */
+      font-size: 9px;
+      letter-spacing: 0.05em;
+      color: #fff;
+    }
+    /* selected — the pin grows + the tag lights up in the accent. */
+    .frontier-beacon.sel .pin {
+      transform: scale(1.25);
+    }
+    .frontier-beacon.sel .tag {
+      background: var(--accent);
+      border-color: transparent;
+      color: var(--accent-ink, var(--bg));
+    }
+
+    /* The rig grid — 2 columns of art cards below the map. */
+    .frontier-rigs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 11px;
+      padding: 12px 14px 18px;
+    }
+    .frontier-rig {
+      all: unset;
+      box-sizing: border-box;
+      position: relative;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--line);
+      background: var(--surface);
+      overflow: hidden;
+      cursor: pointer;
+      transition:
+        transform 0.14s,
+        border-color 0.2s;
+    }
+    .frontier-rig:active {
+      transform: scale(0.975);
+    }
+    .frontier-rig.sel {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+    .frontier-rig .art {
+      position: relative;
+      aspect-ratio: 1.18;
+      background-size: cover;
+      background-position: center;
+    }
+    .frontier-rig .art::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(20, 8, 28, 0) 55%, rgba(20, 8, 28, 0.7)); /* mode-invariant */
+    }
+    /* offline — the art goes gray + dim (the LED + plate still read). */
+    .frontier-rig.dim .art {
+      filter: grayscale(0.72) brightness(0.62);
+    }
+    .frontier-rig .led {
+      position: absolute;
+      top: 9px;
+      right: 9px;
+      z-index: 2;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #6a5560; /* offline default (mode-invariant, on the art) */
+    }
+    .frontier-rig.on .led {
+      background: var(--ok);
+      box-shadow: 0 0 8px var(--ok);
+    }
+    .frontier-rig .plate {
+      position: absolute;
+      left: 11px;
+      bottom: 46px;
+      z-index: 2;
+      padding: 2px 6px;
+      border-radius: 5px;
+      border: 1px solid rgba(255, 210, 140, 0.4);
+      background: rgba(26, 16, 24, 0.55); /* amber-tinted plate chip on the art (mode-invariant) */
+      font-size: 9px;
+      letter-spacing: 0.08em;
+      color: #ffdca6;
+    }
+    .frontier-rig .meta {
+      position: relative;
+      padding: 9px 11px 11px;
+    }
+    .frontier-rig .meta .nm {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.01em;
+      color: var(--text);
+    }
+    .frontier-rig .meta .ro {
+      margin-top: 1px;
+      font-size: 10px;
+      color: var(--text-3);
+    }
+
+    /* The explicit error/empty states (cosmos's `// …` comment idiom). */
+    .frontier-msg {
+      padding: 24px 18px;
+      font-family: var(--font-body);
+      font-size: 12px;
+      color: var(--text-3);
+    }
   }
 }

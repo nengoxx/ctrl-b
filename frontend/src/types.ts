@@ -24,6 +24,11 @@ export interface Host {
   status: HostStatus | null;
   has_password?: boolean; // Phase 7b: whether an ssh_password is stored (the value is never sent)
   services?: HostServiceCfg[]; // Phase 7b: the host's declared services, for the Conf editor
+  // Per-host, per-theme presentation override (D28 §9.9) — the OPEN pass-through blob a spatial theme owns
+  // the schema for, keyed by themeId (mirrors backend `ComputerCfg.appearance`). Open by design: the app/DTO
+  // never type the inner shape (a theme's present() validates it). First consumer = frontier's present()
+  // (`appearance.frontier = { image?, x?, y? }`).
+  appearance?: Record<string, Record<string, unknown>>;
 }
 
 // One service as declared in config.yaml (Phase 7b machine-form editor). Distinct from the derived

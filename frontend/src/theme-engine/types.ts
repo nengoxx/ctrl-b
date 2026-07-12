@@ -126,7 +126,12 @@ export interface ThemeDef {
   loadRoot?: () => Promise<unknown>;
   present?: Present; // §9.9 — per-host visual encoding (cosmos/frontier); omit → no spatial layout
   settings?: ThemeSettingsSpec; // §14.3 — theme-namespaced options auto-rendered by the Appearance picker
-  assets?: Record<string, () => Promise<string>>; // import.meta.glob map keyed by name (frontier art)
+  // Eager `import.meta.glob` URL map keyed by bare asset name (frontier's art.ts). EAGER strings, not lazy
+  // thunks: the images are URLs REFERENCED BY CSS (the bytes stay lazy — the browser only fetches an asset
+  // when its background-image is painted), so a thunk bought nothing; and Vite 8's non-eager globs don't
+  // reach the build manifest. The prior lazy-thunk shape was speculative (zero consumers) — settled here on
+  // frontier's first real use (§9.3).
+  assets?: Record<string, string>;
   // Section-layout capability declaration (D35 §F0) — additive, purely a per-theme capability list the
   // global `ui.layout` lever is resolved against (NOT synced state). `defaultLayout` = the preset `auto`
   // adopts (omit → `4-tab`). `layouts` = the supported set the picker's pick is coerced into (omit → ALL

@@ -25,6 +25,11 @@ computers:
     ssh_port: 22
     os_type: linux
     role: nas
+    appearance:
+      frontier:
+        image: rig4
+        x: 42
+        y: 61
     services:
       web:
         kind: nginx
@@ -155,6 +160,51 @@ def test_multi_os_cmd_preserved() -> None:
     finally:
         os.environ.pop("CTRLB_CONFIG", None)
         os.environ.pop("CTRLB_DB", None)
+
+
+def test_appearance_passthrough_and_preserved() -> None:
+    """The §9.9 per-host appearance blob (frontier F2) surfaces verbatim in GET /api/hosts, a host without
+    one reports `{}`, and editing a host through the form PRESERVES an existing blob (the form doesn't manage
+    `appearance`, so `_apply_fields` leaves the node's key untouched — no code, just verified here)."""
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        client, cfg = _client(tmp)
+        with client as c:
+            # --- pass-through: alpha's configured appearance surfaces unchanged ---
+            alpha = _host(c, "alpha")
+            assert alpha["appearance"] == {"frontier": {"image": "rig4", "x": 42, "y": 61}}
+
+            # --- a host WITHOUT an appearance entry reports {} (not null/missing) ---
+            r = c.post("/api/hosts", json={"name": "beta", "ip": "192.168.1.20"})
+            assert r.status_code == 201, r.text
+            assert _host(c, "beta")["appearance"] == {}
+
+            # --- preserved across a form edit that doesn't touch appearance (change ip only) ---
+            r = c.put(
+                "/api/hosts/alpha",
+                json={
+                    "name": "alpha",
+                    "ip": "192.168.1.99",
+                    "ssh_username": "root",
+                    "ssh_password": "",
+                    "ssh_port": 22,
+                    "os_type": "linux",
+                    "role": "nas",
+                    "services": [],
+                },
+            )
+            assert r.status_code == 200, r.text
+            assert s_appearance(load_settings(cfg)) == {"frontier": {"image": "rig4", "x": 42, "y": 61}}
+            # and it still round-trips out through the DTO after the edit
+            assert _host(c, "alpha")["appearance"] == {"frontier": {"image": "rig4", "x": 42, "y": 61}}
+    finally:
+        os.environ.pop("CTRLB_CONFIG", None)
+        os.environ.pop("CTRLB_DB", None)
+
+
+def s_appearance(settings: object) -> dict:
+    """The stored appearance blob for `alpha` (config layer), for the preservation assertion."""
+    return settings.computers["alpha"].appearance  # type: ignore[attr-defined]
 
 
 if __name__ == "__main__":

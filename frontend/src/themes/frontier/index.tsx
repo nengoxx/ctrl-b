@@ -10,7 +10,9 @@ import { planPlacementSetting } from "../../theme-engine/kit/composer/plan/place
 import { composerLayoutSetting } from "../../theme-engine/kit/composer/setting";
 import { preloadableRoot } from "../../theme-engine/lazyRoot";
 import type { ThemeDef } from "../../theme-engine/types";
+import { assets } from "./art";
 import { loadFonts } from "./fonts";
+import { present } from "./present";
 
 // Code-split the Root so a non-frontier user never bundles frontier's presentation (esp. the bespoke
 // Fleet/Agent surfaces landing F2/F4); `loadRoot` (= preload) warms the chunk in switchTheme before the skin
@@ -53,6 +55,11 @@ export const frontier: ThemeDef = {
   },
   // Section-layout capability (D35 §F0): frontier DEFAULTS to `3-tab` (utils hosted in Conf) and declares NO
   // `layouts` field, so ALL presets stay on offer — the D35 ideal ("themes default, never restrict"; vapor's
-  // `["4-tab"]` waiver is the only restriction). The bespoke art map + present() arrive with F2.
+  // `["4-tab"]` waiver is the only restriction).
   defaultLayout: "3-tab",
+  // Per-host badlands-MAP encoding (§9.9) — R2-scattered beacon position + indexed rig art + plate. The
+  // bespoke FrontierFleet (F2, injected via FrontierRoot → DefaultRoot's `fleet` slot) consumes it.
+  present,
+  // The art manifest (eager `import.meta.glob` URL map, §9.3) — frontier's map/rig/rig-stack PNGs by name.
+  assets,
 };

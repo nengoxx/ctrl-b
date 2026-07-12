@@ -78,6 +78,9 @@ def _host_dto(host: Host, status: HostStatus | None, cfg: ComputerCfg | None) ->
         "tags": host.tags,
         "has_password": bool(cfg and cfg.ssh_password),  # never the value — just whether one is set
         "services": _services_dto(cfg),
+        # The §9.9 open per-host presentation blob, themeId-keyed — passed through verbatim (the theme owns
+        # the inner schema; first consumed by frontier F2's present()). `{}` when there's no config entry.
+        "appearance": cfg.appearance if cfg else {},
         "status": status.model_dump(mode="json") if status else None,
     }
 
