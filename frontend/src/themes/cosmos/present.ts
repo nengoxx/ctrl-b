@@ -69,6 +69,22 @@ export function planetSize(serviceCount: number, health: number): number {
   return Math.round(base * (MIN_HEALTH_SCALE + (1 - MIN_HEALTH_SCALE) * clampedHealth));
 }
 
+// φ⁻¹, the golden-ratio conjugate — the 1D low-discrepancy step (a Kronecker/Weyl sequence), the same
+// family as GOLDEN_ANGLE above and frontier's R2 scatter: one spread-things-evenly idiom across the
+// spatial themes.
+const GOLDEN_STEP = 0.618033988749895;
+
+/** Decorative planet diameter (px) — the `visual`/`off` service-cue modes (owner ruling 2026-07-12: in
+ *  those modes SIZE carries no service information either; the cue setting now owns all three channels —
+ *  moons, ring, size). The SAME design range as the data sizes (SIZE_MIN..SIZE_MAX), walked by a
+ *  golden-ratio ladder: a varied, natural spread that mirrors the data-driven look ("small innermost,
+ *  then medium/big…" — phase 0 puts the smallest on slot 0), INDEX-driven so it's deterministic,
+ *  append-stable (a new host never resizes existing planets), and immune to service edits/outages. */
+export function decorativePlanetSize(index: number): number {
+  const f = (index * GOLDEN_STEP) % 1;
+  return Math.round(SIZE_MIN + (SIZE_MAX - SIZE_MIN) * f);
+}
+
 // All three channels are INDEX-driven (host position in the fleet), so appending a host yields the next
 // color/symbol/position and existing planets are untouched (owner's "add a computer → new planet pops up,
 // others as-is"). `host` is unused today but kept for the Present contract (C4 per-host override is merged

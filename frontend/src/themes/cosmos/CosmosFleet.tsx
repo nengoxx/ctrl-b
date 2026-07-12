@@ -29,7 +29,7 @@ import {
   type OrbitStyle,
   type OrbitTarget,
 } from "./orbit";
-import { planetSize, present, serviceHealth } from "./present";
+import { decorativePlanetSize, planetSize, present, serviceHealth } from "./present";
 import { Rune } from "./runes";
 
 // The cosmos orbital FleetView (C2) — the theme's signature surface, slotted into DefaultRoot's `Fleet`
@@ -194,7 +194,12 @@ export function CosmosFleet({ active }: { active: boolean }) {
       ping: host.status?.ping_ms ?? null,
       services,
       upCount,
-      size: planetSize(services.length, serviceHealth(upCount, services.length)),
+      // Size = the cue's third channel (owner 2026-07-12): truthful in `data` (services × health),
+      // the decorative golden ladder in `visual`/`off` — no service info leaks through size there.
+      size:
+        cueMode === "data"
+          ? planetSize(services.length, serviceHealth(upCount, services.length))
+          : decorativePlanetSize(i),
     };
   });
 

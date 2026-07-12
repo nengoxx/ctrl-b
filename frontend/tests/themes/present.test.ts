@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  decorativePlanetSize,
   PLANET_PALETTE,
   planetSize,
   present,
@@ -109,5 +110,27 @@ describe("planetSize()", () => {
   it("clamps an out-of-range health into [0,1]", () => {
     expect(planetSize(5, 2)).toBe(planetSize(5, 1));
     expect(planetSize(5, -1)).toBe(planetSize(5, 0));
+  });
+});
+
+describe("decorativePlanetSize() — the visual/off cue modes' size ladder", () => {
+  it("is deterministic + stays inside the data-size design range (SIZE_MIN..SIZE_MAX via public API)", () => {
+    const min = planetSize(0, 1); // = SIZE_MIN
+    const max = planetSize(99, 1); // = SIZE_MAX (count saturates at the cap)
+    for (let i = 0; i < 16; i++) {
+      const d = decorativePlanetSize(i);
+      expect(d).toBe(decorativePlanetSize(i)); // deterministic
+      expect(d).toBeGreaterThanOrEqual(min);
+      expect(d).toBeLessThanOrEqual(max);
+    }
+  });
+
+  it("puts the SMALLEST size on slot 0 (the owner's small-planet-innermost aesthetic)", () => {
+    expect(decorativePlanetSize(0)).toBe(planetSize(0, 1));
+  });
+
+  it("spreads a varied ladder — no two of the first six sizes are equal", () => {
+    const six = Array.from({ length: 6 }, (_, i) => decorativePlanetSize(i));
+    expect(new Set(six).size).toBe(6);
   });
 });

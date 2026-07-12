@@ -118,10 +118,13 @@ export const cosmos: ThemeDef = {
     },
     // C2b-4: the per-host moon/ring cue. Data = real per-service status (moons ≤2, lit=up / fill-ring ≥3).
     // Visual = decorative moons only (1–2 per planet, no rings, ignores data). Off = hidden.
+    // MERGED 2026-07-12 (owner): planet SIZE is the cue's third channel — truthful (services × health)
+    // in `data`; the decorative golden ladder (decorativePlanetSize) in `visual`/`off`, so those modes
+    // show NO service information anywhere on the planet.
     serviceCue: {
       type: "seg",
       label: "Service cue",
-      desc: "moons / ring",
+      desc: "moons / ring / size",
       options: [
         { val: "data", label: "Data" },
         { val: "visual", label: "Visual" },
