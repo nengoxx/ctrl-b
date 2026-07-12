@@ -705,26 +705,33 @@ body[data-mode="light"] .kit-composer.ghost {
 
 /* ── composer · TELEGRAM "line" variant (LineComposer, COMPOSER_SURFACE_PLAN §Phase E — owner-confirmed
  * 2026-07-11) ───────────────────────────────────────────────────────────────────────────────────────────
- * A FLOATING STADIUM: one compact single row — `[plan pill] [flex field] [morph mic/send]` — shaped from the
- * base `.kit-composer` float. Shares the `.kit-composer` class (edge #5: DefaultRoot's --composer-h
- * querySelector), so the base rule above supplies float/inset (~90% width at 390px, "not baked into the
- * window") / frost / border / shadow — `.line` only re-shapes it into a pill and lays out the row. §14.11 is
- * FREE by the same-class trick: `body[data-perf="lite"] .kit-composer` (blur→opaque) and
- * `body[data-mode="light"] .kit-composer` (shadow) already match this element — no per-variant re-assert
- * needed (the stadium keeps the base radius-agnostic paints, unlike sheet/ghost which had to fight them).
+ * A FLOATING ROUNDED-SQUARE PILL: one compact single row — `[plan pill] [flex field] [morph mic/send]` —
+ * shaped from the base `.kit-composer` float. Shares the `.kit-composer` class (edge #5: DefaultRoot's
+ * --composer-h querySelector), so the base rule above supplies float/inset (~90% width at 390px, "not baked
+ * into the window") / frost / border / shadow — `.line` only re-shapes it (24px radius) and lays out the row.
+ * Collapsed it reads as a stadium (24px ≈ half the ~46px bar height); grown it's a rounded square whose
+ * corners nest the round buttons (owner eyeball round 6, geometry below). §14.11 is FREE by the same-class
+ * trick: `body[data-perf="lite"] .kit-composer` (blur→opaque) and `body[data-mode="light"] .kit-composer`
+ * (shadow) already match this element — no per-variant re-assert needed (unlike sheet/ghost which had to
+ * fight them).
  * The plan pill KEEPS the base lozenge here (999px matches the stadium; the 8px rect ruling stays
  * sheet/borderless-only — no `.line .plan-pill` rule, it inherits `.kit .plan-pill`). And `.line` keeps the
  * base STACKED geometry (bottom 12px), so the DEFAULT `.kit .plan-sheet` bottom calc is already correct — NO
  * `:has()` override (unlike sheet/borderless). Semantic tokens ONLY. */
 .kit-composer.line {
-  /* a pill row: everything rides the VERTICAL CENTER — at max textarea growth (~106px bar) the 999px radius
-   * clamps to ~53px semicircle end caps, and a bottom-anchored button's lower arc would fall OUTSIDE the cap
-   * and get chord-clipped by overflow:hidden (Phase E audit #1); centered, the 36px button always fits
-   * inside the cap circle. overflow:hidden keeps children inside the stadium ends. Asymmetric padding — the
-   * bar's own 16px leads the field, the trailing 6px hugs the round button. Target ≈44–48px collapsed. */
-  border-radius: 999px;
+  /* GROWS AS A ROUNDED SQUARE with bottom-locked controls (owner eyeball round 6, supersedes the old
+   * vertical-center vs cap-clip note): text overflows UPWARD while the pill + mic/send stay pinned to the
+   * bottom corners. The geometry — the 36px round button (r18) inset 6px from the trailing edge is exactly
+   * CONCENTRIC with a 24px corner radius (r18 + 6px inset = 24), so the button nests perfectly inside the
+   * corner arc and overflow:hidden clips NOTHING (obsoletes the old "bottom-anchored button gets chord-clipped
+   * by the semicircle cap" reasoning — that was true only for the 999px stadium). Collapsed (~46px bar: 36px
+   * button + 2×5px padding), 24px ≈ half the height so it still reads as a stadium; grown, it's the rounded
+   * square. `flex-end` rides the pill + buttons on the bottom while the textarea's extra lines stack upward
+   * (the float's bottom edge is pinned to the shell, so growth reads as "up"). Symmetric 6px sides; the
+   * textarea carries its own lead-in below so text never starts under the corner. */
+  border-radius: 24px;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 6px;
   /* SYMMETRIC 6px sides (owner eyeball): the plan pill hugs the leading edge exactly like the mic/send hug
    * the trailing one; the TEXTAREA carries its own lead-in below so text never starts under the cap curve. */
@@ -745,7 +752,10 @@ body[data-mode="light"] .kit-composer.ghost {
   padding: 6px 4px 6px 10px;
 }
 /* the `controlsStart` container (the in-row plan pill, leading edge). No left padding — the bar leads with
- * its own 16px. Collapses when the theme passes the slot but the pill renders null (pinned placement). */
+ * its own 16px. Collapses when the theme passes the slot but the pill renders null (pinned placement). NO
+ * bottom-re-center margin needed under the row's `flex-end` (owner round 6): the line plan pill is fixed to
+ * `height: 36px` (rule above), exactly the `.line-btn` lane, so (36 − 36)/2 = 0 — pill + buttons already
+ * share the bottom edge. (Any future shorter-than-36px control in this lane would need margin-bottom.) */
 .kit-composer.line .line-controls {
   display: flex;
   align-items: center;
@@ -785,6 +795,25 @@ body[data-mode="light"] .kit-composer.ghost {
   background: var(--danger);
   color: var(--accent-ink);
   animation: kit-tag-pulse 1.8s ease-in-out infinite;
+}
+/* APPEAR pop (owner eyeball round 6) — a cheap scale/opacity pop that runs on MOUNT, i.e. exactly when the
+ * trailing button appears or the mic⇄send morph swaps (React remounts the other element, so the fresh node
+ * animates in) and when the plan pill lane first shows. Transform/opacity only (§14.11), motion-gated to
+ * `full`; NOTHING under data-motion="reduced". The recording mic keeps its own `kit-tag-pulse` — that rule's
+ * higher specificity wins the `animation` shorthand, so a mid-recording button never re-pops. */
+@keyframes kit-btn-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+body[data-motion="full"] .kit-composer.line .line-btn,
+body[data-motion="full"] .kit-composer.line .line-controls {
+  animation: kit-btn-pop 0.15s ease-out;
 }
 
 /* ── Fleet view (KitFleet) — device list + 3-stat summary; ported from the minimal prototype. Inner class

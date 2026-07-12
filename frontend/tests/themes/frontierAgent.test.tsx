@@ -72,10 +72,10 @@ afterEach(() => {
 });
 
 describe("FrontierAgent empty state", () => {
-  it("renders the hero (title + 3 chips) at zero messages; data-thread='empty'", () => {
+  it("renders the hero (title + 2 chips) at zero messages; data-thread='empty'", () => {
     const { container } = render(<FrontierAgent active />);
     expect(screen.getByRole("heading", { name: "Frontier Comms" })).toBeTruthy();
-    expect(container.querySelectorAll(".fr-empty .chip2")).toHaveLength(3);
+    expect(container.querySelectorAll(".fr-empty .chip2")).toHaveLength(2);
     expect(container.querySelector("#tab-agent")?.getAttribute("data-thread")).toBe("empty");
   });
 

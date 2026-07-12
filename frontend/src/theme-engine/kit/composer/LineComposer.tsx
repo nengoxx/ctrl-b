@@ -20,11 +20,12 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 //   • AUTO-GROW — the shared 96px ceiling from `useComposerChrome`; no new knob.
 //   • ATTACH — ABSENT (nothing reserved in the DOM); a placement comment marks where ROADMAP A8 lands it,
 //     capability-gated like the mic.
-//   • GEOMETRY — a FLOATING STADIUM: inherits the base `.kit-composer` float (inset ~90% width, frost/border/
-//     shadow — "not baked into the window"), reshaped to `border-radius:999px`, a compact single row; all
-//     children ride the vertical CENTER as the field grows (the end caps clamp to semicircles at height —
-//     a bottom-anchored button would get chord-clipped by the cap curve; Phase E audit #1). The emoji icon
-//     is DROPPED (Telegram has it; we don't model emoji).
+//   • GEOMETRY — a FLOATING ROUNDED-SQUARE PILL: inherits the base `.kit-composer` float (inset ~90% width,
+//     frost/border/shadow — "not baked into the window"), reshaped to `border-radius:24px`, a compact single
+//     row; the pill + mic/send ride the BOTTOM (`align-items:flex-end`) while the field's extra lines stack
+//     UPWARD as it grows. Collapsed it reads as a stadium (24px ≈ half the ~46px bar); grown, the 36px round
+//     button (r18, inset 6px) nests concentrically in the 24px corner (r18+6=24), no chord-clip (owner round
+//     6, supersedes the old vertical-center stadium). The emoji icon is DROPPED (we don't model emoji).
 // The root KEEPS the `.kit-composer` class (edge #5) so DefaultRoot's `querySelector(".kit-composer")`
 // --composer-h measurement still finds it; `.line` adds the stadium styling in kit.css.
 export function LineComposer({ controlsStart, overlay }: ComposerSlots = {}) {

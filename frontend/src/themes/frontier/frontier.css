@@ -94,12 +94,16 @@
       background-size: cover;
       background-position: 58% 42%;
     }
-    /* dark bottom scrim so the label/beacons read over the art (mode-invariant ink, prototype literal). */
+    /* dark scrim so the label/beacons read over the art (mode-invariant ink, prototype literal). Two gradients
+     * on the one layer: a TOP band (OUR legibility addition — the prototype has none; owner round 6: the white
+     * "THE FRONTIER" label sat on a bright art region) plus the prototype's bottom fade. Same ink family. */
     .frontier-map .scrim {
       position: absolute;
       inset: 0;
       pointer-events: none;
-      background: linear-gradient(180deg, rgba(20, 8, 28, 0) 40%, rgba(20, 8, 28, 0.55) 100%);
+      background:
+        linear-gradient(180deg, rgba(20, 8, 28, 0.5), rgba(20, 8, 28, 0) 34%),
+        linear-gradient(180deg, rgba(20, 8, 28, 0) 40%, rgba(20, 8, 28, 0.55) 100%);
     }
 
     /* Radar sweep — a 60px gradient strip crossing the card. TRANSFORM-ONLY: the prototype animated `left`
@@ -144,14 +148,19 @@
       letter-spacing: 0.02em;
       line-height: 1;
       color: #fff; /* mode-invariant — sits on the dark scrim over the art */
-      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+      /* tight contact shadow (owner round 6) layered over the soft halo, for legibility on bright art. */
+      text-shadow:
+        0 1px 3px rgba(0, 0, 0, 0.7),
+        0 2px 10px rgba(0, 0, 0, 0.5);
     }
     .frontier-map-label .s {
       margin-top: 4px;
       font-size: 10px;
       letter-spacing: 0.04em;
       color: rgba(255, 255, 255, 0.82);
-      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+      text-shadow:
+        0 1px 3px rgba(0, 0, 0, 0.7),
+        0 1px 6px rgba(0, 0, 0, 0.6);
     }
 
     /* Count pill (top-right) — a translucent chip. backdrop-filter blur is the heaviest Fennec effect, so
@@ -749,9 +758,10 @@
     /* OUTER positioner (absolute WITHIN the pin): owns ONLY the empty↔watermark recede — TRANSFORM + opacity,
      * transform-origin top center; the inner layers own the bob, so the two never share a `transform` (the
      * nested-wrapper rule). Sits behind the chat content (z 0 vs the log's z 1 below). EMPTY parks the hero at
-     * translateY(52px) → viewport ≈ appbar + 4 + 52, i.e. the old `top: 56px` hero spot (the `.fr-empty` top
-     * padding still clears it, so the empty state renders IDENTICALLY). Owner-tunable eyeball knobs: the
-     * empty/active translateY + scale, and the active opacity below. */
+     * translateY(96px) → viewport ≈ appbar + 4 + 96 (owner eyeball round 6: bumped from 52px so the cube floats
+     * BELOW the title, which now sits at the TOP — title height ~32px + breathing room). The `.fr-below`
+     * wrapper's padding-top clears the stack for the hint+chips. Owner-tunable eyeball knobs: the empty/active
+     * translateY + scale, and the active opacity below. */
     .fr-rigstack {
       position: absolute;
       top: 0;
@@ -760,7 +770,7 @@
       height: 238px;
       z-index: 0;
       pointer-events: none;
-      transform: translateX(-50%) translateY(52px) scale(1);
+      transform: translateX(-50%) translateY(96px) scale(1);
       transform-origin: top center;
       opacity: 1;
     }
@@ -845,9 +855,12 @@
       position: relative;
       z-index: 1;
     }
-    /* top padding clears the absolutely-positioned stack so title/hint/chips read as one hero below it. */
+    /* Title-at-top layout (owner eyeball round 6): NO big top padding — the `<h2>` sits right under the section
+     * header (in the gap the owner flagged); the `.fr-below` wrapper then clears the floating stack for the
+     * hint+chips. Height budget @ 390px (appbar hidden): sec ~45 + title ~37 + stack 238 + gaps ~30 + hint ~16
+     * + one chip row ~28 + pad-bottom 8 ≈ 402px content; + the docked composer (~70) ≈ 472px, well under a
+     * ~700px pane → no scroll on an empty chat. */
     .fr-empty {
-      padding-top: 248px; /* ≈ stack top (56) + height (238) − the log's own top offset; eyeball-tunable */
       padding-bottom: 8px;
       text-align: center;
     }
@@ -859,18 +872,24 @@
       letter-spacing: 0.01em;
       color: var(--text);
     }
+    /* the spacer that drops hint+chips BELOW the floating stack. padding-top ≈ stack bottom (pin 4 + translateY
+     * 96 + height 238 = 338) + a 12px gap, minus this wrapper's own flow top (title block ~82) ≈ 268px.
+     * Eyeball-tunable alongside the empty translateY above. */
+    .fr-below {
+      padding-top: 268px;
+    }
     .fr-empty .fr-hint {
-      margin: 7px 0 0;
+      margin: 0;
       font-size: 12px;
       color: var(--text-3);
     }
-    /* suggestion chips — the prototype's `.chips`/`.chip2` pill row, wrapping on the narrowest phone. */
+    /* suggestion chips — the prototype's `.chips`/`.chip2` pill row; TWO short chips fit ONE row at 390px. */
     .fr-empty .chips {
       display: flex;
       flex-wrap: wrap;
       justify-content: center;
       gap: 8px;
-      margin-top: 15px;
+      margin-top: 12px;
     }
     .fr-empty .chip2 {
       all: unset;
@@ -879,14 +898,15 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 8px 13px;
+      /* smaller (owner eyeball round 6: 8×13→6×11, 11.5→10.5px) so both chips sit on one row at 390px. */
+      padding: 6px 11px;
       border-radius: 999px;
       /* borderless (owner F4 round 2 widened the no-outlines directive) — the `--surface` fill carries them;
        * a transparent 1px keeps the padded box size identical. */
       border: 1px solid transparent;
       background: var(--surface);
       color: var(--text-2);
-      font-size: 11.5px;
+      font-size: 10.5px;
     }
     .fr-empty .chip2:active {
       background: var(--surface-2);

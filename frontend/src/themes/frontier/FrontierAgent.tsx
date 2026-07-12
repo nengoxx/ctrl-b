@@ -18,14 +18,12 @@ import { ART } from "./art";
 // FIRST in flow (the AgentTab rule + rationale). The A4 `usePlanOpenAutoClose` reset lives in <AppEngines/>
 // (§14.5 / §15 rule 5), so a body swap can never lose it — nothing to carry here.
 
-// Empty-state suggestion chips (theme DATA, not shared code — the M3 suggestion-chip pattern: 3–5 generic
-// prompts that FILL the composer, never auto-send). Fleet-agnostic on purpose (no invented host names). They
-// live inside the empty state, so a `/clear` re-shows them for free. Owner-tunable.
-const CHIPS = [
-  "Which rigs are online?",
-  "Any incidents today?",
-  "Wake a rig and start its services",
-] as const;
+// Empty-state suggestion chips (theme DATA, not shared code — the M3 suggestion-chip pattern: generic prompts
+// that FILL the composer, never auto-send). Fleet-agnostic on purpose (no invented host names). They live
+// inside the empty state, so a `/clear` re-shows them for free. Owner-tunable. TWO short chips (owner eyeball
+// round 6): the longest ("Wake a rig and start its services") was dropped so both fit ONE row at 390px and the
+// whole empty state clears the docked composer without scrolling.
+const CHIPS = ["Which rigs are online?", "Any incidents today?"] as const;
 
 // The signature rig-stack watermark. A zero-height sticky PIN (`.fr-rigstack-pin`) anchors it in the viewport
 // so it stays put as a living background for the whole scroll of the thread (owner ask — it must not scroll
@@ -46,19 +44,23 @@ function RigStack() {
 }
 
 // The empty-state hero content — rendered INSIDE `.chat-log` (via ChatThread's `emptyState` slot), so it
-// re-appears on `/clear` automatically. The rig-stack sits OUTSIDE the log (behind it); `.fr-empty`'s top
-// padding clears the absolutely-positioned stack so the two read as one centered hero (stack above title).
+// re-appears on `/clear` automatically. The rig-stack sits OUTSIDE the log (behind it). Order (owner eyeball
+// round 6): the `<h2>` title sits at the TOP (in the gap under the section header — no big top padding now);
+// the `.fr-below` wrapper's padding-top then pushes the hint + chips DOWN below the floating stack, so the
+// three read top→bottom as title · stack · hint+chips, and the whole state fits a 390px pane without scroll.
 function FrontierEmptyState() {
   return (
     <div className="fr-empty">
       <h2>Frontier Comms</h2>
-      <p className="fr-hint">Hail the agent to scan, wake, or command any rig.</p>
-      <div className="chips">
-        {CHIPS.map((q) => (
-          <button type="button" className="chip2" key={q} onClick={() => fillComposer(q)}>
-            {q}
-          </button>
-        ))}
+      <div className="fr-below">
+        <p className="fr-hint">Hail the agent to scan, wake, or command any rig.</p>
+        <div className="chips">
+          {CHIPS.map((q) => (
+            <button type="button" className="chip2" key={q} onClick={() => fillComposer(q)}>
+              {q}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
