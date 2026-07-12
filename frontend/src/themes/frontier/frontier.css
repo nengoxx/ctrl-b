@@ -366,7 +366,16 @@
       border: 1px solid var(--line-2);
       border-bottom: 0;
       background: var(--surface-2);
-      box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.5);
+      /* the borderless composer's elevation recipe (owner 2026-07-12 — the prototype's 50px halo read too
+       * prominent), inverted upward: ambient + contact layers, softened again in day mode below. */
+      box-shadow:
+        0 -8px 28px rgba(0, 0, 0, 0.45),
+        0 -2px 10px rgba(0, 0, 0, 0.35);
+    }
+    body[data-mode="light"] .bs-sheet {
+      box-shadow:
+        0 -8px 28px rgba(0, 0, 0, 0.12),
+        0 -2px 10px rgba(0, 0, 0, 0.08);
     }
 
     /* Hide the Kit composer while a host sheet is open — mirrors the cosmos recipe verbatim (a rule-of-three
