@@ -330,6 +330,14 @@
       color: var(--text-3);
     }
 
+    /* The Fleet top scrim, shortened (owner eyeball 2026-07-12): the Kit's 30px opaque→transparent seam
+     * fade under the appbar reads as a heavy shadow draped over the map card, which starts right below the
+     * bar. Fleet-only via the `.kit-main[data-tab]` hook — chat keeps the full fade (content really does
+     * scroll under the bar there). */
+    .kit-main[data-tab="fleet"]::before {
+      height: 12px;
+    }
+
     /* The explicit error/empty states (cosmos's `// …` comment idiom). */
     .frontier-msg {
       padding: 24px 18px;

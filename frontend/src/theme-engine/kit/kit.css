@@ -246,7 +246,7 @@ body[data-motion="reduced"] .kit .tab.active {
     opacity 0.2s;
 }
 .kit-tab-ind .bar {
-  width: min(56px, 60%); /* the cap — a short mark over the tab, not the column's full width */
+  width: min(72px, 70%); /* the cap — a short mark over the tab, not the column's full width (owner-tuned) */
   height: 100%;
   background: var(--accent-fill);
   box-shadow: var(--accent-glow);

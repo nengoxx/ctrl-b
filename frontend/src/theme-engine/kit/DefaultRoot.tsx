@@ -201,8 +201,13 @@ export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots, bra
     <div className="kit">
       {/* `.kit-main` is the positioning context: the scroller fills it, the composer floats over it (so
           the content scrolls behind the composer and shows in the gaps around it). The nav bar stays an
-          in-flow bar below. */}
-      <div className={"kit-main" + (showComposer ? " has-composer" : "")} ref={mainRef}>
+          in-flow bar below. `data-tab` is a neutral per-section CSS hook (like `has-composer`) — a theme
+          can tune main-level chrome per tab (frontier shortens the fleet top scrim over its map card). */}
+      <div
+        className={"kit-main" + (showComposer ? " has-composer" : "")}
+        data-tab={tab}
+        ref={mainRef}
+      >
         <div className="kit-scroll" id="app-scroll" ref={scrollRef}>
           {appbarMode === "visible" && <KitAppBar brandMeta={brandMeta} />}
           {/* Data-driven body mount (D35): every non-hosted section stays keep-mounted + `active`-gated;
