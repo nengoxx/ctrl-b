@@ -1751,7 +1751,12 @@ flat on sRGB phones).
 (uncovered fields are per-device BY DESIGN; synced fields already reconcile) · woff2 SW precache/runtime-cache
 (app is dead offline — no tailnet → no backend) · @scope boot probe / `@supports` vapor duplicate ·
 per-theme-eager-CSS rework (vapor is default + flagship; revisit only if the owner permanently settles on
-another theme) · screenshot diffing · **tab BODY registry — TRIGGERED (owner-ratified 2026-07-07): frontier
+another theme) · screenshot diffing · **tab BODY registry — ✅ BUILT 2026-07-12 as frontier F0 / D35 (the
+SECTION LAYOUT SYSTEM v1; commits `b7f63d4…76c0d74`). As-built: `TabDef` stayed PURE DATA (gains only
+`lazy?`) — the id→body defaults live in kit space (DefaultRoot's `DEFAULT_BODIES`) and per-theme overrides
+ride the generalized `bodies` prop (the `Fleet={…}` fold resolved as data-fold + prop-injection, D35's
+"eager DATA, lazy COMPONENTS" ruling); every constraint below was honored (keep-mounted · generic `lazy`
+latch · the composer-surface preserve-list). Historical trigger record:** TRIGGERED (owner-ratified 2026-07-07): frontier
 is "a theme that actually needs a different section" (bespoke Agent body + a 3-tab set), so the id→body
 completion of `tabs.ts` (each `TabDef` gains a `body` component; standard four as defaults, per-theme
 overrides) is scheduled as the frontier plan's step 0 (§14.10 T5), AFTER Hardening v2 — the design has since been LOCKED and WIDENED into the SECTION LAYOUT SYSTEM v1 (owner review 2026-07-07): spec = `FRONTIER_PLAN.md` §1/§6-F0 (curated 4/3/2-tab presets · global synced lever · generalized menu affordance · utils-in-Conf hosting), superseding this entry's narrower registry wording. It REPLACES

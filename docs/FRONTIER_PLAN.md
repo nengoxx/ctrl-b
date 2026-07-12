@@ -1,5 +1,18 @@
 # Frontier theme — implementation plan (T5)
 
+> **▶ F0 ✅ SHIPPED 2026-07-12 (commits `b7f63d4…76c0d74` — D35 LOCKED + same-day addendum; owner-eyeballed
+> at 390px; full gate + 76 e2e green). NEXT SLICE: F1.** As-built deltas vs §1/§6-F0, all owner-ratified in
+> the same-day eyeball round (details in the D35 addendum): the **menu DOCKING RULE** (the affordance docks
+> to the chrome that exists — appbar trailing action under `visible`, floating only under `off`/`minimal`),
+> the **COLLAPSE LADDER** (menu of one → a DIRECT section button, no popover), **NavHome** (minimal-only
+> top-left quick-jump to `sections[0]`), and **swipe-nav PARKED**. Body registry ruling: eager DATA on the
+> registry, lazy COMPONENTS via the generalized `bodies` DefaultRoot prop (replaces `Fleet={…}` — the
+> "fold" confirmed as data-fold + prop-injection; option B thunks = documented later promotion). The
+> §6-F0 ⚠ preserve-list was honored (composer wiring intact). **F1 pre-flight reminders (pre-F0 punch
+> list): add the `^frontier-` stylelint override (the meta-guard goes RED on registration until added) +
+> the OKLCH sRGB-gamut/chroma-ceiling advisory BEFORE picking the palette; resolve the appbar brand
+> subtitle nuance (§F1) + the composer `model` label (§7).**
+>
 > **Status: ✅ DESIGN LOCKED (2026-07-07) — all five review points owner-ratified same day, then
 > adversarially reviewed against the code (10 findings, all folded in — the review markers sit
 > inline at each fix: lever = device-local · explicit preset schema · hosting-supersedes-menu ·
@@ -167,7 +180,9 @@ sun/moon styling.)
 
 ## §6 The slices (each: pre-flight → design-confirm → build → audit → owner 390px eyeball → pause)
 
-**F0 = T5 step 0 — the section layout system v1** (engine slice, §1; frontier-independent).
+**F0 = T5 step 0 — the section layout system v1** (engine slice, §1; frontier-independent). **✅ SHIPPED
+2026-07-12 — see the banner atop this file for the as-built deltas (docking rule · collapse ladder ·
+NavHome · swipe parked) + the F1 pre-flight reminders.**
 *Build:* the `TabDef.body` registry replacing DefaultRoot's hardwired branch · the curated presets
 (4/3/2-tab) · the global **device-local** lever (`auto` = theme default; per §1 point 3 — NOT synced,
 the `appbarMode` precedent; sync is a possible later additive promotion) + `ThemeDef` capability

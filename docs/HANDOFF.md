@@ -31,17 +31,20 @@
 >   vault's llamacpp `.137:5001` (owner-confirmed; corsair's instance unused).** The target's `config.yaml`
 >   is canonical — the Windows snapshot is stale by design (bootstrap re-runs won't clobber).
 >
-> **▶ CURRENT WORK (updated 2026-07-11 EOD): the COMPOSER SURFACE feature is ✅ COMPLETE **including
-> Phase E** (A1–A4 + C + E — `COMPOSER_SURFACE_PLAN.md` status banner has the commit map; Phase E =
-> `7e6fccb`, CI green).** Shipped: the FULL five-variant catalog `[stacked, borderless, ghost, sheet,
-> line]` (picker on minimal+cosmos, default stacked; `line` = the Telegram-style floating stadium w/
-> mic+send trailing pair) + the `planPlacement` inline/pinned axis (pinned = the Kit `PinnedPlanPanel`
-> in AgentTab) + the plan-clear fix (`12f83a5`) + the Conf-row wrap fix (wide segs drop below their
-> label) + ROADMAP A7-menu/A8-attachments entries. Every slice owner-eyeballed at 390px +
-> independently audited (3 real defects caught+fixed pre-merge: ghost scrim geometry, sheet mic
-> recording color, line stadium end-cap clip). **NEXT (owner's pick): frontier F0
-> (`FRONTIER_PLAN.md`, starts at the tab-body registry — the theme engine's last spec-not-built
-> item) · ACA Slices 1–2 (`AGENT_CHAT_AUDIT.md` / TODO Phase 12).**
+> **▶ CURRENT WORK (updated 2026-07-12 EOD): frontier **F0 — the SECTION LAYOUT SYSTEM v1 — is ✅ COMPLETE
+> and owner-ratified** (commits `b7f63d4…76c0d74`, NOT yet pushed; **D35 LOCKED + same-day addendum**; full
+> gate + 76 e2e green; 390px-eyeballed through three fix rounds).** Shipped: the body registry (eager DATA /
+> lazy COMPONENTS — kit `DEFAULT_BODIES` + the generalized `bodies` DefaultRoot prop replacing `Fleet={…}`) ·
+> curated 4/3/2-tab presets + the **device-local** `ui.layout` lever (picker beside App bar) · utils-hosted-
+> in-Conf w/ scroll-to-group · the **menu DOCKING RULE** (appbar trailing action under `visible`; floating
+> under `off`/`minimal`) · the **COLLAPSE LADDER** (one off-bar section → a direct button) · **NavHome**
+> (minimal top-left quick-jump) · N-column tab bar · top-band collision fixes (pinned plan first-in-flow;
+> player yields) · swipe-nav **PARKED** (D35 addendum). Independent audits caught **3 real defects**
+> (garbage-lever boot crash · 2-tab keyboard dead-end · docked-popover stacking trap) — keep the per-commit
+> audit cadence. **NEXT: frontier F1 (`FRONTIER_PLAN.md` — read its banner: F1 pre-flight = `^frontier-`
+> stylelint override + OKLCH gamut advisory BEFORE the palette + the appbar-subtitle & model-label nuances)
+> · or ACA Slices 1–2 (`AGENT_CHAT_AUDIT.md` / TODO Phase 12) · or the V1 vapor-hygiene filler
+> (THEME_ENGINE §14.15.3 — V1–V3 are frontier-independent lull-fillers; V4/V5 wait for frontier).**
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
 > orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).
 >

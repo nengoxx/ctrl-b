@@ -885,11 +885,14 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
       `HostDetail` = a **draggable multi-snap bottom sheet** (the slide-panel idea, upgraded) on the reusable
       `BottomSheet` primitive + sheet-aware camera-lift. Gated by `ui.motion`. See `COSMOS_HANDOFF.md`.
       (C4 per-host `appearance.cosmos` override = PARKED future idea, not planned — owner 2026-06-28.)
-- [ ] **T5 step 0 — the SECTION LAYOUT SYSTEM v1** (engine slice; design LOCKED 2026-07-07 — spec =
-      [`FRONTIER_PLAN.md`](./FRONTIER_PLAN.md) §1/§6-F0, which SUPERSEDES the earlier narrower "tab-body
-      registry" wording): body registry + curated 4/3/2-tab presets + the global synced layout lever +
-      the generalized menu-affordance rule + utils-in-Conf hosting. D-entry at its design review.
-      AFTER Hardening v2 + Composer Surface.
+- [x] **T5 step 0 — the SECTION LAYOUT SYSTEM v1 ✅ SHIPPED 2026-07-12** (engine slice; **D35 + its
+      same-day addendum**; commits `b7f63d4…76c0d74`, owner-eyeballed at 390px): body registry (eager DATA /
+      lazy COMPONENTS — the generalized `bodies` DefaultRoot prop replaces the `Fleet` prop) + curated
+      4/3/2-tab presets + the global **device-local** layout lever (`auto` = theme default; this line's
+      earlier "synced" wording was pre-build — the `appbarMode` precedent won at the design review) + the
+      menu DOCKING RULE (appbar trailing action under `visible`, floating otherwise) + the COLLAPSE LADDER
+      (one off-bar section → a direct button) + NavHome (minimal quick-jump) + utils-in-Conf hosting.
+      Swipe-nav PARKED (D35 addendum). Three audit-caught defects fixed pre-ratification.
 - [ ] **T5 — frontier** (HIGH; **plan = [`FRONTIER_PLAN.md`](./FRONTIER_PLAN.md), design LOCKED 2026-07-07,
       slices F1–F5 — build against it, not this line**): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
       (the 3-layer bobbing rig-stack empty state — the one non-Fleet structural deviation) + bottom-sheet `HostDetail` (**reuse cosmos's
