@@ -332,9 +332,9 @@
 
     /* The Fleet top scrim, shortened (owner eyeball 2026-07-12): the Kit's 30px opaque→transparent seam
      * fade under the appbar reads as a heavy shadow draped over the map card, which starts right below the
-     * bar. Fleet-only via the `.kit-main[data-tab]` hook — chat keeps the full fade (content really does
-     * scroll under the bar there). */
-    .kit-main[data-tab="fleet"]::before {
+     * bar. Fleet-only via the existing `body[data-tab]` hook (ui.ts stamps it; the cosmos scrim-hide
+     * precedent) — chat keeps the full fade (content really does scroll under the bar there). */
+    body[data-tab="fleet"] .kit-main::before {
       height: 12px;
     }
 

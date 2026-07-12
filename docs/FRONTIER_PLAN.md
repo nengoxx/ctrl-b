@@ -1,9 +1,36 @@
 # Frontier theme — implementation plan (T5)
 
-> **▶ F2 ✅ SHIPPED 2026-07-12 (build `ed672da`→riders→`e677a78`; owner-eyeballed at 390px through one
-> fix round; full gate + 96 e2e green; 6-lens adversarial audit: 0 real bugs, 3 NITs fixed pre-commit).
-> NEXT SLICE: F3 (HostDetail via the Kit BottomSheet — `sheetSnap` key `"frontier-host-detail"`; the
-> `frontierSelection` store is already its open-trigger).** F2 as-built: the badlands Fleet (hero map
+> **▶ F3 ✅ SHIPPED 2026-07-12 (build `e620a3b`→riders→`f0b403d`; owner-eyeballed + ratified same day;
+> FE gate green [406 tests, 9 new]; independent adversarial audit: 0 bugs — 2 inherited primitive RISKs,
+> one fixed [Escape], one deferred to F5). NEXT SLICE: F4 (the Agent tab — §6-F4; pre-flight the chat
+> hooks/token contract + the A4 `PinnedPlanPanel`/`usePlanOpenAutoClose` carry-over ⚠ before building).**
+> F3 as-built: `FrontierHostDetail` (pure C3b-shape presentation) over the shared `BottomSheet`, opened
+> by `frontierSelection` — art banner (the card's own `present()` art/plate, retained-through-slide-out
+> via a MEMOIZED placements identity [the hand-review caught an infinite render loop in the subagent
+> build: per-render placement rebuild × identity-keyed retention effect — regression-guarded]) ·
+> role/ip/ping meta · the HONEST 4-up stat grid (Ping · Uptime "—" deferred [cosmos precedent] ·
+> Services n/m · Seen — the prototype's seamless Load/Temp tiles DROPPED, owner ruling) · Reboot+Shut
+> down/Wake through the typed-action confirm gate (Reboot = owner-ratified functionality-parity add over
+> the prototype) · per-service list with Open links · peek = banner+meta (`sheetSnap` key
+> `"frontier-host-detail"`) · `catchOutside={false}` (tap another rig SWAPS, map ground clears, the
+> cosmos interaction ruling) · OPAQUE skin, borderless-composer elevation recipe (owner-tuned from the
+> prototype's 50px halo, day-mode variant added) · composer hides via `body[data-sheet=open]` (cosmos
+> recipe — rule-of-three promotion candidate). **Shared-primitive riders (owner-directed, same day):**
+> BottomSheet **Escape closes from anywhere** (document-level, `defaultPrevented` modal-guard — the
+> audit found the non-modal sheet's local handler never heard trigger-focused Escape; bit cosmos too;
+> `c6a1c0a`) · **exit-slide shadow overshoot** (`EXIT_SHADOW_CLEARANCE` 80px — the shadow used to hover
+> over the tab bar then POP at unmount; `3629996`) · **the Kit tab bar assimilated vapor's bar**
+> (`af2f867`+`1e1ea1c`: short bar, `TabDef.glyph` marks [SVG icon set deleted], px-capped centered
+> sliding line `min(72px,70%)`, active=ink, fleet↔utils glyphs SWAPPED in STANDARD_TABS for ALL themes
+> incl. vapor [owner directive], the neutral `.kit-main[data-tab]` hook [frontier shortens its fleet
+> top scrim to 12px]) · frontier sheet shadow → the composer elevation (`f0b403d`). **Deferred to
+> F5/a11y floor:** peek-detent focus-below-the-fold (transform-vs-scroll primitive design) ·
+> roleless-div `aria-label` on offline service rows (cosmos parity) · no `:focus-visible` ring on
+> `.kit-tabbtn` (pre-existing, all:unset).**
+>
+> *(F2 ✅ SHIPPED 2026-07-12 — build `ed672da`→riders→`e677a78`; owner-eyeballed at 390px through one
+> fix round; full gate + 96 e2e green; 6-lens adversarial audit: 0 real bugs, 3 NITs fixed
+> pre-commit.)* F2 as-built: the badlands Fleet (hero map
 > card + card-relative `frontier-sweep` + R2-scattered beacons + 2-col rig grid + 3 explicit states) via
 > `bodies={{fleet}}` · `present()` R2 scatter **windowed `R2_OFFSET=2`** so slot 0 = the hero figure's
 > spot · the partitioned eager-glob art manifest (`art.ts` IS the placeholder→final-art swap contract;
