@@ -337,5 +337,299 @@
       font-size: 12px;
       color: var(--text-3);
     }
+
+    /* ═══════════════════════════════════════════════════════════════════════════════════════════════
+     * F3 — the host-detail SHEET (bespoke content over the shared `.bs-*` primitive; ports the prototype's
+     * `.sheet` renderSheet look). FrontierHostDetail supplies the markup; this skins the shared BottomSheet +
+     * styles `.frontier-hd`. Structure + semantic tokens so night/day + accent recolor for free. The ONLY
+     * hardcoded values are the MODE-INVARIANT art treatments that sit on the photographic banner (the .ov
+     * gradient, the .plate amber chip, the .stat chip, the muted offline led, the #fff banner name) — exactly
+     * the F2 convention. NO backdrop-filter anywhere (the sheet is OPAQUE — prototype truth + a free Fennec
+     * win), no new @keyframes. ══════════════════════════════════════════════════════════════════════ */
+
+    /* Sheet skin over the kit `.bs-*` base (which sets structure only, no background). OPAQUE on purpose:
+     * the prototype sheet is a solid panel, and skipping backdrop-filter here is a free Firefox-Android win
+     * (no blur surface to composite). */
+    .bs-sheet {
+      max-height: 86vh;
+      border-radius: 22px 22px 0 0;
+      border-top: 1px solid var(--line-2);
+      background: var(--surface-2);
+      box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Hide the Kit composer while a host sheet is open — mirrors the cosmos recipe verbatim (a rule-of-three
+     * promotion candidate once a third theme wants it). Frontier sets body[data-sheet=open] on open. */
+    .kit-composer {
+      transition:
+        opacity 0.2s ease,
+        transform 0.2s ease,
+        visibility 0.2s;
+    }
+    body[data-sheet="open"] .kit-composer {
+      opacity: 0;
+      transform: translateY(10px);
+      visibility: hidden;
+    }
+
+    /* ── .frontier-hd content — ported from the prototype's sheet CSS, palette literals → frontier tokens. ── */
+    .frontier-hd {
+      padding: 2px 18px calc(20px + env(safe-area-inset-bottom));
+    }
+
+    /* Banner hero — the rig art with an ink scrim; name + plate + status chip float on it. */
+    .frontier-hd .banner {
+      position: relative;
+      margin-top: 10px;
+      height: 138px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      overflow: hidden;
+    }
+    .frontier-hd .banner .img {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+    }
+    /* offline — the art goes gray + dim (the status chip + plate still read). */
+    .frontier-hd .banner.dim .img {
+      filter: grayscale(0.7) brightness(0.6);
+    }
+    /* dark overlay so the name/chips read over the art — MODE-INVARIANT ink, prototype literal. */
+    .frontier-hd .banner .ov {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(20, 8, 28, 0.1), rgba(20, 8, 28, 0.82));
+    }
+    .frontier-hd .banner .nm {
+      position: absolute;
+      left: 14px;
+      bottom: 11px;
+      margin: 0; /* h2 UA margin would offset the absolutely-positioned box (the prototype's .nm was a div) */
+      max-width: 70%; /* clear the plate on the right; a long name wraps upward rather than overrunning it */
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 28px;
+      letter-spacing: 0.01em;
+      line-height: 1;
+      color: #fff; /* mode-invariant — sits on the dark scrim over the art */
+      overflow-wrap: anywhere;
+    }
+    .frontier-hd .banner .plate {
+      position: absolute;
+      right: 12px;
+      bottom: 13px;
+      padding: 4px 9px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 210, 140, 0.45);
+      background: rgba(26, 16, 24, 0.6); /* amber-tinted plate chip on the art (mode-invariant) */
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      color: #ffdca6;
+    }
+    .frontier-hd .banner .stat {
+      position: absolute;
+      left: 14px;
+      top: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(26, 16, 24, 0.5); /* mode-invariant chip on the art */
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #fff;
+    }
+    .frontier-hd .banner .stat .led {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--ok);
+      box-shadow: 0 0 7px var(--ok);
+    }
+    .frontier-hd .banner .stat.off .led {
+      background: #6a5560; /* mode-invariant muted led on the art */
+      box-shadow: none;
+    }
+
+    /* Meta line under the banner. */
+    .frontier-hd .ro2 {
+      margin-top: 11px;
+      font-size: 11.5px;
+      color: var(--text-2);
+    }
+
+    /* Honest 4-up stat grid. */
+    .frontier-hd .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 13px;
+    }
+    .frontier-hd .stat4 {
+      padding: 10px 6px;
+      border-radius: 11px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      text-align: center;
+    }
+    .frontier-hd .stat4 .v {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .frontier-hd .stat4 .v small {
+      font-size: 9px;
+      font-weight: 500;
+      color: var(--text-3);
+    }
+    .frontier-hd .stat4 .l {
+      margin-top: 5px;
+      font-size: 8.5px;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+
+    /* Action bar — the summary + the action pills. flex-wrap keeps the online two-pill case (Reboot + Shut
+     * down) overflow-safe on the narrowest phone (§14.11 / owner overflow-safety rule). */
+    .frontier-hd .actbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .frontier-hd .actbar .info {
+      flex: 1;
+      min-width: 90px;
+      font-size: 11px;
+      color: var(--text-3);
+    }
+    .frontier-hd .pill {
+      all: unset;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 18px;
+      border-radius: 999px;
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 12.5px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    /* The primary pill: an ink-on-paper inversion (var(--text) fill, var(--bg) ink) so it flips WITH the mode
+     * — the prototype's `--black` fill would read wrong in day mode. The glyph wears the accent. */
+    .frontier-hd .pill.wake {
+      background: var(--text);
+      color: var(--bg);
+    }
+    .frontier-hd .pill.wake svg {
+      color: var(--accent);
+    }
+    .frontier-hd .pill.stop {
+      background: var(--danger-soft);
+      color: var(--danger);
+      border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+    }
+    /* Disabled (busy) — the prototype's `.busy` dim, keyed off :disabled so no class rule is needed. */
+    .frontier-hd .pill:disabled {
+      opacity: 0.55;
+      pointer-events: none;
+    }
+
+    /* Services list. */
+    .frontier-hd .svc-h {
+      margin: 22px 0 9px;
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+    .frontier-hd .svcs {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .frontier-hd .svc {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 12px 13px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: inherit;
+      text-decoration: none;
+      transition:
+        border-color 0.18s,
+        transform 0.12s;
+    }
+    .frontier-hd .svc:active {
+      transform: scale(0.99);
+    }
+    .frontier-hd .svc.up {
+      border-color: color-mix(in srgb, var(--ok) 32%, transparent);
+    }
+    .frontier-hd .svc .led {
+      flex: none;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-3); /* offline default (on the panel → a mode token, not the on-art literal) */
+    }
+    .frontier-hd .svc.up .led {
+      background: var(--ok);
+      box-shadow: 0 0 8px var(--ok);
+    }
+    /* Name STACKED over the muted address (flex column — the cosmos service-row precedent; the prototype's
+     * inline spans would concatenate name+address on one line). */
+    .frontier-hd .svc .info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .frontier-hd .svc .info .nm {
+      font-size: 13px;
+      font-weight: 500;
+      overflow-wrap: anywhere;
+    }
+    .frontier-hd .svc .info .ad {
+      font-size: 10px;
+      color: var(--text-3);
+    }
+    .frontier-hd .svc .go {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .frontier-hd .svc.down .go {
+      color: var(--text-3);
+    }
+    .frontier-hd .svc-empty {
+      padding: 18px;
+      border: 1px dashed var(--line-2);
+      border-radius: 12px;
+      text-align: center;
+      font-size: 11.5px;
+      color: var(--text-3);
+    }
   }
 }
