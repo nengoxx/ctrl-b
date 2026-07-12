@@ -30,7 +30,8 @@ export function KitNavBar({ onPrefetch }: Props) {
   // `selected ? 0 : -1` alone would leave ZERO tabbable buttons → the bar becomes keyboard-unreachable (a
   // navigation dead-end: fleet/agent are on-bar so the menu doesn't list them either). Fall back to making
   // the FIRST button the tab stop when the active section is off-bar.
-  const activeInBar = sections.some((t) => t.id === active);
+  const activeIdx = sections.findIndex((t) => t.id === active);
+  const activeInBar = activeIdx >= 0;
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     const n = sections.length;
@@ -48,7 +49,20 @@ export function KitNavBar({ onPrefetch }: Props) {
   };
 
   return (
-    <nav className="kit-tabbar" data-tab={active} role="tablist" aria-label="primary navigation">
+    // The sliding top indicator (the vapor-original mechanic, owner directive 2026-07-12) is a
+    // `.kit-tabbar::before` driven by the two custom props below — data-driven for the N-column bar (D35
+    // partial layouts), where vapor's fixed `[data-tab]` selector table assumes 4 columns. When the active
+    // section is off-bar (`no-active`, e.g. 2-tab + conf via the menu) the line hides.
+    <nav
+      className={"kit-tabbar" + (activeInBar ? "" : " no-active")}
+      data-tab={active}
+      role="tablist"
+      aria-label="primary navigation"
+      style={{
+        ["--tab-count" as string]: sections.length,
+        ["--tab-i" as string]: Math.max(activeIdx, 0),
+      }}
+    >
       {sections.map((t, idx) => {
         const selected = active === t.id;
         return (

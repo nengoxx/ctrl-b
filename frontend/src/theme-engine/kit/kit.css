@@ -204,10 +204,12 @@ body[data-motion="reduced"] .kit .tab.active {
   background: var(--danger);
 }
 
-/* ── bottom nav (in-flow flex child; icon pill + label; active = accent-soft pill). Its vertical metrics
- *    scale with `--density-pad` (the theme's density lever — minimal's "compact" drives it to 0.72), so the
- *    nav noticeably shrinks in compact; `max()` floors keep it tappable + the 19px icon uncropped. ── */
+/* ── bottom nav (in-flow flex child; icon + label; active = accent icon + the sliding TOP LINE below). Its
+ *    vertical metrics scale with `--density-pad` (the theme's density lever — minimal's "compact" drives it
+ *    to 0.72), so the nav noticeably shrinks in compact; `max()` floors keep it tappable + the 19px icon
+ *    uncropped. ── */
 .kit-tabbar {
+  position: relative; /* the sliding indicator's containing block */
   flex-shrink: 0;
   display: grid;
   /* Distribute the N on-bar sections equally (D35 partial layouts — 4/3/2 tabs; Material nav-bar
@@ -221,6 +223,35 @@ body[data-motion="reduced"] .kit .tab.active {
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   border-top: 1px solid var(--line);
+}
+/* The active-tab indicator — the vapor-original sliding top line, generalized (owner directive 2026-07-12:
+ * a colored line over the tab, not a pill behind the icon — Kit-wide, all Kit themes). One accent line, one
+ * column wide, riding the bar's top edge; it SLIDES between tabs (vapor's exact easing). Data-driven for
+ * the N-column bar: KitNavBar sets `--tab-count`/`--tab-i` inline (vapor's fixed `[data-tab]` selector
+ * table assumes 4 columns). `--accent-fill` so a gradient-accent theme's line shines; `--accent-glow` is
+ * the optional shadow layer (inert `none` by default). The 10px/20px offsets mirror the bar's own
+ * horizontal padding above — the line must track the grid columns, not the padding box. */
+.kit-tabbar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10px;
+  width: calc((100% - 20px) / var(--tab-count, 4));
+  height: 3px;
+  background: var(--accent-fill);
+  box-shadow: var(--accent-glow);
+  transform: translateX(calc(var(--tab-i, 0) * 100%));
+  transition:
+    transform 0.4s cubic-bezier(0.25, 1, 0.4, 1),
+    opacity 0.2s;
+}
+/* active section off-bar (2-tab + conf via the menu) → no tab is current; the line hides in place. */
+.kit-tabbar.no-active::before {
+  opacity: 0;
+}
+/* the global Motion lever: reduced → the line jumps instead of sliding (position is still information). */
+body[data-motion="reduced"] .kit-tabbar::before {
+  transition: opacity 0.2s;
 }
 .kit-tabbtn {
   all: unset;
@@ -242,13 +273,15 @@ body[data-motion="reduced"] .kit .tab.active {
   align-items: center;
   justify-content: center;
   width: 38px;
-  /* shrink the pill in compact, but never below 22px (the 19px icon needs ~1.5px breathing room) */
+  /* shrink the icon box in compact, but never below 22px (the 19px icon needs ~1.5px breathing room) */
   height: max(22px, calc(26px * var(--density-pad)));
   border-radius: 999px;
-  transition: background 0.15s, color 0.15s;
+  transition: color 0.15s;
 }
+/* active = the accent-colored icon ONLY — the old `--accent-soft` pill behind it was dropped (owner
+ * directive 2026-07-12); the selection weight now comes from the sliding top line above. The `.ic` box
+ * stays for layout/tap metrics. */
 .kit-tabbtn.active .ic {
-  background: var(--accent-soft);
   color: var(--accent);
 }
 .kit-tabbtn .ic svg {
