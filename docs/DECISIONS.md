@@ -1869,3 +1869,37 @@ is automatically correct per preset. The D31 Surface axis stays separate — var
 **Status.** LOCKED 2026-07-12 · built as frontier **F0** (`FRONTIER_PLAN.md` §6-F0; the docking rule,
 collapse ladder + NavHome landed as same-day follow-ups `ee9bea0`/`9c41ced`/`508a494`). The kit-render e2e
 sweep goes layout-aware in the same slice (the pre-F0 readiness punch list).
+
+## D36 — Chat hooks + token contract: one shared chat tree, themes reskin on pinned hooks ✏️ LOCKED 2026-07-12 (frontier F4 design review)
+
+**Context.** Frontier's F4 Agent tab is the first bespoke body that must carry the FULL chat (markdown,
+code actions, confirm/question gates, plan, reasoning, streaming, TTS, retry) in a non-Kit skin. The
+`FRONTIER_PLAN.md` §2 design ruled "bespoke shell, shared internals": the message log carries deep
+functionality AND ACA Phase 12 grows it — a forked log pays every ACA slice twice and splits the security
+UX. That requires the shared tree's styling surface to be a named, pinned contract instead of folklore.
+
+**Decision.**
+- **The contract** (full table + rules: `THEME_ENGINE.md` §15): the existing chat class names — the legacy
+  vapor idiom (`.chat-log` · `.b.user/.bot/.sys/.cmd` · `.who`/`.body` · `.think` · `.cmd-detail`/
+  `.cmd-result`/`.cmd-output`/`.cmd-links` · `.actions .exec/.edit/.dismiss` · `.q-*` · `.md`/`.md-code` ·
+  the plan + privilege families · `.notice`) — are **formalized AS-IS** (a rename would touch frozen
+  vapor). Themes reskin via `tokens.css` + theme-scoped CSS on these hooks; DOM forks are forbidden below
+  the per-element 3-gate escalation valve; a second theme needing a structurally different log is what
+  births a ChatSurface (D34 V4 rider), not before. Chat-only theme values = theme-private tokens, never
+  new contract tokens. ACA-grown chat UI adds its hooks to the §15 table in the same change.
+- **`ChatThread` extraction (build move, F4 Slice A):** AgentTab's log core (bubble components · the
+  memoized per-token render isolation · the stable `resultFor` ref · retry wiring · `#app-scroll`
+  stick-to-bottom) moves to shared `components/ChatThread.tsx` with `{active, chat, emptyState?}` props —
+  the caller owns `useAgentChat()`. AgentTab (the default body) and any bespoke agent body compose the
+  SAME ChatThread; the bespoke body only owns backdrop/empty-state/layout (frontier: rig-stack watermark +
+  chips). No parallel log implementations, ever.
+- **A4 re-home:** `usePlanOpenAutoClose(currentPlan)` moves from AgentTab into `<AppEngines/>` (the §14.5
+  theme-independent engine host, next to `useChatInit`/`useAutoTts`) — the cleared-plan-reopens fix
+  (`12f83a5`) can no longer be silently lost by a theme replacing the agent body (the F4 ⚠ in
+  `FRONTIER_PLAN.md` §6-F4, resolved structurally).
+- **Grandfathered exception:** AgentTab's `isVapor` gate around vapor's frozen in-tab `.plan-pin` — the
+  one sanctioned theme-ID branch (§14.15.3), unchanged.
+
+**Status.** LOCKED 2026-07-12 (owner-ratified at the F4 design review, with the F4 nuances: prototype
+dusk-glow shows through a see-through frontier shell [cosmos precedent] + prototype bubble skins
+[black user fill / transparent assistant]). Built as frontier F4.

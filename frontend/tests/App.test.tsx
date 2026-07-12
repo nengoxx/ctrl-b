@@ -35,7 +35,10 @@ vi.mock("../src/hooks/useAppearance", () => ({
     themeSettings: {},
   }),
 }));
-vi.mock("../src/hooks/useAgentChat", () => ({ useChatInit: () => undefined }));
+vi.mock("../src/hooks/useAgentChat", () => ({
+  useChatInit: () => undefined,
+  useAgentChat: () => ({ currentPlan: null }), // AppEngines reads currentPlan for the A4 auto-close (§14.5)
+}));
 vi.mock("../src/hooks/useAutoTts", () => ({ useAutoTts: () => undefined }));
 vi.mock("../src/hooks/useEvents", () => ({ useEventStream: () => undefined }));
 vi.mock("../src/hooks/useFleet", () => ({ useFleetCycle: () => undefined }));

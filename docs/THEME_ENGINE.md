@@ -28,6 +28,7 @@ mapping), while §9.7–§9.12 + §13.1 remain live contract · **§14** = the *
 | One `ThemeDef` registry row (`id/label/Root`(or `loadRoot`)`/palettes/loadStyles/loadFonts?/present?/assets?/settings?`) | §14.3 · `theme-engine/types.ts` (code = truth) |
 | Lazy `Root` owns the whole presentation (controllers stay above it) | §14.1 · §14.3 · §14.5 |
 | Pick the cheapest CSS band per region: tokens-only reskin under `.kit` → Surface → bespoke | §14.4.1 (recipe) · §14.14 (3-band + 3-gate) |
+| Reskinning the agent CHAT: style the pinned hook classes + tokens only — never fork the shared tree | **§15** (chat hooks + token contract, D36) |
 | Semantic token contract (mode/accent axes; two-channel accent) | §9.7 · §14.13 #1 |
 | Author OKLCH colors **in-gamut for sRGB** (a too-vivid chroma gamut-clips flat/hue-shifted on sRGB phones — the owner's device is sRGB; the B2 advisory scan warns per out-of-gamut `oklch()` literal with a clamp suggestion) | §14.15.4 (built 2026-07-12) · `themeContract.test.ts` advisory group |
 | Keyframes prefixed `<id>-` | §14.13 #4 |
@@ -1777,3 +1778,53 @@ layout={…}` render — all interleaved in the same component the registry rewr
 Surface axis stays separate — variants ≠ tab composition.** ·
 a third perf tier · scroll restoration across switches · quarantine subsystem · aria-live announcement (see
 riders).
+
+# §15 — The CHAT HOOKS + TOKEN CONTRACT (→DECISIONS D36; specified at the frontier F4 pre-flight, 2026-07-12)
+
+**What this is.** The agent chat renders ONE shared component tree for every theme (§14.10's "shared +
+reskinned" band): `tabs/AgentTab.tsx` (bubbles · confirm/question flows · retry · TTS · privilege chip;
+F4 extracts the log core into `components/ChatThread.tsx` with an `emptyState` slot) + `lib/markdown.tsx`
+(markdown + the code block's copy/edit actions) + `components/PlanSteps.tsx` + the composer plan family
+(`theme-engine/kit/composer/plan/*`). This section PINS that tree's class hooks + the tokens they consume
+as the styling contract: a theme reskins the chat by (a) its `tokens.css` values and (b) theme-scoped CSS
+targeting THESE hooks — never by forking the DOM. The names are the legacy vapor idiom **formalized
+AS-IS** (renaming would touch frozen vapor; any future rename is D34-ladder-owned, V1). Styling home:
+`kit.css` BUCKET-A.3a (base conversation) · A.3b (markdown) · A.3c (command/question/TTS). Enforcement:
+hardening ⑧'s `themeContract.test.ts` grows contract assertions on these hooks when warranted; until then
+this table is the pin.
+
+| Region | Hooks |
+|---|---|
+| Log container | `.chat-log` (`#chatlog`) |
+| Bubble kinds | `.b` × `.user` / `.bot` / `.sys` / `.cmd` — modifiers `.cmd-resolved` · `.question` · `.plan-note` |
+| Bubble anatomy | `.who` (+ `.status-tag` · `.tts-play`[`.playing`/`.loading`]) · `.body` |
+| Streaming | `.dots` (+ `i` children) · `.caret` |
+| Chat error | `.chat-err` · `.chat-err-msg` · `.chat-err-retry` |
+| Reasoning | `details.think` → `summary` (`.label`/`.hint`) + `pre` |
+| Command detail | `details.cmd-detail` → `summary` (`.preamble`/`.cmd-gate`/`.chev`) + `pre` |
+| Command outcome | `.cmd-result` + state class (`running`/`ok`/`error`/`skipped`) · `details.cmd-output` · `details.cmd-links` (`.label`/`.hint` · `ol li a` · `.src`/`.snip`) |
+| Gate/approve actions | `.actions` → `.exec`/`.edit`/`.dismiss` (shared by confirm-gate · proposed-write · question) |
+| Question bubble | `.q-prompt` · `.q-input-wrap` · `.q-input` |
+| Markdown | `.md` (the A.3b block/inline element set) · `.md-code` → `.md-code-bar` (`.lang`/`.acts`) + `pre>code` |
+| Plan | `.plan-note` · kit `.plan-pin-panel`/`.plan-pin-head`/`.plan-pin-drop` · shared `.plan-steps`/`.plan-step`[`.pending`/`.active`/`.done`]/`.tick`(`.tick-btn`)/`.txt` · composer `.plan-pill`/`.plan-sheet` (vapor's frozen in-tab `.plan-pin`/`.plan-pin-wrap`/`.plan-drop` live in extras.css, outside this contract) |
+| Chat section header | `.sec` (`.num`/`.right`) · the privilege family `.priv-chip-wrap`/`.priv-chip`(`.set`)/`.priv-dot`/`.priv-lbl`/`.priv-backdrop`/`.priv-menu` |
+| Notices | `.notice` (+ `.heart`) |
+
+**Component tokens.** The buckets consume ONLY the semantic contract (§9.7): `--text/-2/-3` ·
+`--accent`/`--accent-soft` (never `--accent-fill` — it may be a gradient `<image>`, §14.15.1 ⑨) ·
+`--line/-2` · `--surface/-2` · `--bg` · `--radius-*` · `--font-body/-display/-mono`. A theme needing a
+chat-only value adds a THEME-PRIVATE token in its own tokens.css (frontier: a mode-flipped near-black
+bubble fill), never a new contract token; promotion needs a second consumer.
+
+**Rules.**
+1. **Same DOM, themed skin** — the reskin band is tokens + theme-scoped CSS on the hooks above.
+2. **Per-element escalation only**: an element that provably can't reach D7 fidelity via CSS escalates
+   through the 3-gate (§14.14) at the slice review; a second theme needing a structurally different log
+   is what births a ChatSurface (D34 ladder V4 rider) — not before.
+3. **Grandfathered**: `AgentTab`'s `isVapor` branch (vapor's frozen in-tab `.plan-pin`) — the one
+   sanctioned theme-ID gate (§14.15.3 hooks ①/⑤).
+4. **Growth rule**: ACA Phase 12 chat features (Stop/steering/approvals) land INSIDE the shared tree and
+   ADD their hooks to this table in the same change.
+5. **Always-mounted chat engines live in `<AppEngines/>`** (§14.5): `useChatInit` · `useAutoTts` ·
+   `usePlanOpenAutoClose` (re-homed from AgentTab at F4) — a theme body replacing the agent section can
+   never lose them.

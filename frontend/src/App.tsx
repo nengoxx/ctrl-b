@@ -1,7 +1,7 @@
 import { type ReactNode, Suspense, useCallback, useEffect, useState } from "react";
 
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { useChatInit } from "./hooks/useAgentChat";
+import { useAgentChat, useChatInit } from "./hooks/useAgentChat";
 import {
   currentAppearancePatch,
   useAppearanceSync,
@@ -11,6 +11,7 @@ import { useAutoTts } from "./hooks/useAutoTts";
 import { useEventStream } from "./hooks/useEvents";
 import { useFleetCycle } from "./hooks/useFleet";
 import { isAnyDirty } from "./store/dirty";
+import { usePlanOpenAutoClose } from "./store/planSheet";
 import { useUISlice } from "./store/ui";
 import { DEFAULT_THEME, defaultSwitchTarget } from "./theme-engine/resolve";
 import { switchTheme } from "./theme-engine/switchTheme";
@@ -170,6 +171,10 @@ function AppEngines() {
   useAppearanceSync(); // reconcile theme/mode/accent against the server (cross-device LWW, §9.11)
   useChatInit(); // load the most-recent thread once (was AgentTab) — theme-independent (§14.5)
   useAutoTts(); // auto read-aloud of a just-completed reply (6b-2) — global, runs regardless of tab
+  // A4 — reset the SHARED plan-open flag when the plan clears. Hosted HERE (not AgentTab) so a bespoke
+  // theme body that replaces the agent section can never lose the reset (§14.5, theme-independent engines).
+  // `useAgentChat` is a cheap memoized derivation (threads are bounded); we only read `currentPlan`.
+  usePlanOpenAutoClose(useAgentChat().currentPlan);
   return null;
 }
 

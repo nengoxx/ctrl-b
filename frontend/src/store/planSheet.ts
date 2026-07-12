@@ -29,8 +29,10 @@ export function usePlanSheetOpen(): boolean {
 /** Reset the open flag when the plan goes away (A4). The flag is SHARED across plan changes so it survives
  *  a plan edit — but a cleared-then-new plan must NOT reopen the panel unbidden (audited bug: the flag never
  *  reset on plan→null, so the next plan appeared already-open). Whichever component is always mounted and
- *  plan-aware calls this once; AgentTab hosts it (it's always mounted while the app runs and already derives
- *  `currentPlan`). Works for BOTH placements (inline sheet + pinned panel) since they share this one flag. */
+ *  plan-aware calls this once; AppEngines hosts it (D29 §14.5 — the theme-independent engine spot, always
+ *  mounted above the theme Root). Homed there rather than AgentTab so a bespoke theme body that REPLACES the
+ *  agent section can never lose the reset. Works for BOTH placements (inline sheet + pinned panel) since they
+ *  share this one flag. */
 export function usePlanOpenAutoClose(currentPlan: Plan | null): void {
   useEffect(() => {
     if (!currentPlan) setPlanSheetOpen(false);
