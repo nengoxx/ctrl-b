@@ -3,7 +3,6 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -215,6 +214,25 @@ export function BottomSheet({
     [],
   );
 
+  // Escape closes from ANYWHERE (document-level, while open). The sheet is NON-MODAL by design (no focus
+  // trap, no focus steal — §14.13 #9), so after a pointer/keyboard open, focus usually still sits on the
+  // TRIGGER button outside `.bs-root` — a local onKeyDown on the root never hears that Escape (the F3 audit
+  // finding; it bit cosmos identically). The listener lives only while open, so there's no global cost at
+  // rest; re-subscribing on an inline `onClose` identity is a no-op-cheap effect. `defaultPrevented` is the
+  // cooperative-dismissal guard (the Radix dismissable-layer convention): a MODAL layer above the sheet
+  // (ConfirmDialog/PromptModal/NavMenu) preventDefaults the Escape it consumes — and React's root handlers
+  // run before this document listener — so its Escape closes only that layer, not the sheet beneath.
+  useEffect(() => {
+    if (!open) return;
+    const onEsc = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      onClose();
+    };
+    document.addEventListener("keydown", onEsc);
+    return () => document.removeEventListener("keydown", onEsc);
+  }, [open, onClose]);
+
   if (!mounted) return null;
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -258,15 +276,8 @@ export function BottomSheet({
     onSnapChange?.(snap.current); // the user settled here → the host persists it for the next open
   };
 
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      onClose();
-    }
-  };
-
   return (
-    <div className={"bs-root" + (className ? " " + className : "")} onKeyDown={onKeyDown}>
+    <div className={"bs-root" + (className ? " " + className : "")}>
       {/* invisible tap-outside catcher — no dim (the no-scrim decision); closes on tap. Optional: cosmos
           disables it so taps fall through to the orbital stage (tap a planet to swap; tap sky to close). */}
       {catchOutside && <button className="bs-catch" aria-label={closeLabel} onClick={onClose} />}

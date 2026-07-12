@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // FrontierFleet ↔ F3 sheet wiring (the part frontierHostDetail.test.tsx can't see: selection → open sheet).
@@ -73,6 +73,36 @@ describe("FrontierFleet F3 sheet wiring", () => {
     // the same plate present() gives the rig card (pegasus, index 0 → 0xPEG01)
     expect(hd?.querySelector(".plate")?.textContent).toBe("0xPEG01");
     // the composer-hide hook is set while open
+    expect(document.body.dataset.sheet).toBe("open");
+  });
+
+  it("map ground tap clears the selection (a beacon tap does not)", () => {
+    setFrontierSelection("pegasus");
+    const { container } = render(<FrontierFleet active />);
+    // a tap on the map art (not a beacon) → empty ground → selection cleared, sheet closing
+    fireEvent.click(container.querySelector(".frontier-map .pic")!);
+    expect(document.body.dataset.sheet).toBeUndefined();
+    // fresh selection via the beacon itself — the ground-clear must NOT swallow it (closest check)
+    fireEvent.click(container.querySelector(".frontier-beacon")!);
+    expect(document.body.dataset.sheet).toBe("open");
+  });
+
+  it("Escape closes from ANYWHERE — focus never enters the non-modal sheet (the F3 audit fix)", () => {
+    setFrontierSelection("pegasus");
+    render(<FrontierFleet active />);
+    expect(document.body.dataset.sheet).toBe("open");
+    // keydown on document.body — focus still sits on the trigger outside .bs-root (non-modal, no focus steal)
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(document.body.dataset.sheet).toBeUndefined();
+  });
+
+  it("a CONSUMED (defaultPrevented) Escape leaves the sheet open — the modal-layer guard", () => {
+    setFrontierSelection("pegasus");
+    render(<FrontierFleet active />);
+    // a modal layer above the sheet (ConfirmDialog et al) preventDefaults the Escape it consumes; the
+    // sheet's document listener must honor that and NOT also close (cooperative dismissal).
+    document.body.addEventListener("keydown", (e) => e.preventDefault(), { once: true });
+    fireEvent.keyDown(document.body, { key: "Escape" });
     expect(document.body.dataset.sheet).toBe("open");
   });
 });
