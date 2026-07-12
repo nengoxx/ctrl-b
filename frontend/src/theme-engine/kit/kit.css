@@ -210,7 +210,10 @@ body[data-motion="reduced"] .kit .tab.active {
 .kit-tabbar {
   flex-shrink: 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* Distribute the N on-bar sections equally (D35 partial layouts — 4/3/2 tabs; Material nav-bar
+   * distribution). Auto-flow columns render PIXEL-IDENTICAL to the old hardcoded `repeat(4, 1fr)` at 4. */
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: 0;
   padding: calc(6px * var(--density-pad)) 10px
     calc(8px * var(--density-pad) + env(safe-area-inset-bottom));
@@ -1416,13 +1419,14 @@ body[data-mode="light"] .kit .toast {
   border: 1px solid var(--line-2);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
-/* minimal chrome: the floating NavMenu owns the top-right corner (z 30, over the player's z 16), so a
- * full-width centered player buries its own ✕ under the launcher (ISSUES #1). When the NavMenu is present
- * (minimal mode — the only thing that renders `.navmenu`), anchor the player left→right with a gap that
- * clears the launcher (44px + 12px inset + breathing room) so every control stays tappable; the waveform
- * (flex:1) absorbs the width change. `:has` keys off the rendered NavMenu, so no body-attr/state mirror —
- * the DefaultRoot conditional render stays the single source of truth. */
-.kit:has(.navmenu) .mini-player {
+/* minimal/off chrome: the FLOATING NavMenu owns the top-right corner (z 30, over the player's z 16), so a
+ * full-width centered player buries its own ✕ under the launcher (ISSUES #1). When the floating launcher is
+ * present, anchor the player left→right with a gap that clears the launcher (44px + 12px inset + breathing
+ * room) so every control stays tappable; the waveform (flex:1) absorbs the width change. Scoped to the
+ * floating variant (`:not(.docked)`): the DOCKED launcher lives inside the appbar (above, not over the
+ * player), so the player keeps its centered default there. `:has` keys off the rendered NavMenu, so no
+ * body-attr/state mirror — the DefaultRoot/KitAppBar conditional render stays the single source of truth. */
+.kit:has(.navmenu:not(.docked)) .mini-player {
   left: calc(14px + env(safe-area-inset-left));
   right: calc(64px + env(safe-area-inset-right));
   width: auto;
@@ -3870,10 +3874,12 @@ body[data-motion="reduced"] .kit .bs-sheet {
   border: 0;
 }
 
-/* ── minimal-mode navigation (.navmenu-*) — a floating orbit launcher (top-right) + an icon dropdown,
- *    rendered by DefaultRoot when appbarMode="minimal" (it replaces the appbar + the bottom tab bar). Pure
- *    `useSections` consumer; token-driven so any theme's palette applies. z 30: above the chrome (composer
- *    z 4), below the ConfirmDialog (z 50). §14.11: transform/opacity only, motion- + perf-gated. */
+/* ── section navigation (.navmenu-*) — an orbit launcher + an icon dropdown of the off-bar sections. Two
+ *    mounts (D35 §F0 docking rule, 2026-07-12): FLOATING (top-right, this base block) when there's no appbar
+ *    to dock into (appbarMode `off`/`minimal`, rendered by DefaultRoot), and DOCKED (`.navmenu.docked`, below)
+ *    as an appbar trailing action under `visible`. Pure `useSections` consumer; token-driven so any theme's
+ *    palette applies. z 30: above the chrome (composer z 4, mini-player z 16), below the ConfirmDialog (z 50).
+ *    §14.11: transform/opacity only, motion- + perf-gated. */
 .kit .navmenu {
   position: fixed;
   top: calc(10px + env(safe-area-inset-top));
@@ -3884,15 +3890,7 @@ body[data-motion="reduced"] .kit .bs-sheet {
   align-items: flex-end;
   gap: 8px;
 }
-/* D35 §F0: the menu no longer implies "no appbar" — under 2-tab with the appbar VISIBLE it coexists with
- * the bar (bar = fleet+agent, the floating menu carries conf). Drop the launcher BELOW the appbar (measured
- * `--appbar-h`) so the orbit glyph doesn't collide with the appbar's top-right region at 390px. The
- * `.kit-appbar` node exists only when the appbar is visible, so `:has()` scopes this to exactly that case
- * (in `minimal`/`off` there's no appbar and the base top:10px stands). Token-driven, transform-free. */
-.kit:has(.kit-appbar) .navmenu {
-  top: calc(var(--appbar-h, 0px) + 10px + env(safe-area-inset-top));
-}
-.kit .navmenu-launch {
+.kit .navmenu:not(.docked) .navmenu-launch {
   /* just the orbit icon — no circle/background (owner directive), a transparent tap target. Sized to the
    * menu items (44px) and inset by the popover's 6px padding, so the launcher icon centers exactly over the
    * dropdown's icon column when it opens. */
@@ -3909,17 +3907,36 @@ body[data-motion="reduced"] .kit .bs-sheet {
 }
 /* hover/press feedback ONLY on real pointer devices — on touch, `:active`/`:hover` STICK until the next tap
  * (Android quirk), which read as the button being "stuck clicked". The open state (`[data-open]`) is the
- * touch feedback instead. */
+ * touch feedback instead. Floating-only; the docked button gets `.kit-iconbtn`'s own press feedback. */
 @media (hover: hover) {
-  .kit .navmenu-launch:hover {
+  .kit .navmenu:not(.docked) .navmenu-launch:hover {
     color: var(--text);
   }
-  .kit .navmenu-launch:active {
+  .kit .navmenu:not(.docked) .navmenu-launch:active {
     transform: scale(0.9);
   }
 }
 .kit .navmenu[data-open] .navmenu-launch {
   color: var(--accent);
+}
+/* DOCKED variant (appbarMode="visible"): the root is just an inline slot in the appbar's flex row — the
+ * button IS the `.kit-iconbtn` trailing action; only the popover needs positioning. Reset the base
+ * fixed/top/right/z so the wrapper takes no layout of its own. */
+.kit .navmenu.docked {
+  position: static;
+  z-index: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+/* The docked popover can't flow below an inline appbar button (it would stretch the bar / be clipped by the
+ * sticky appbar's stacking) — anchor it FIXED just under the measured appbar, mirroring the floating popover's
+ * top-right geometry, so it overlays content at z 30 (above composer/mini-player). */
+.kit .navmenu.docked .navmenu-pop {
+  position: fixed;
+  top: calc(var(--appbar-h, 0px) + 6px + env(safe-area-inset-top));
+  right: calc(10px + env(safe-area-inset-right));
+  z-index: 30;
 }
 .kit .navmenu-launch:focus-visible {
   outline: 2px solid var(--accent);

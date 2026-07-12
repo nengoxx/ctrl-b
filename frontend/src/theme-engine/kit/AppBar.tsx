@@ -1,4 +1,6 @@
+import { NavMenu } from "../../components/NavMenu";
 import { useAppChrome } from "../../hooks/useAppChrome";
+import { useSections } from "../../hooks/useSections";
 import { useConnection } from "../../store/connection";
 
 // Kit app bar (D29 §14.4) — token-driven, `.kit-*` classes. Same capability as vapor's AppBar (brand +
@@ -9,6 +11,9 @@ import { useConnection } from "../../store/connection";
 export function KitAppBar() {
   const { ttsAuto, ttsConfigured, toggleAutoTts } = useAppChrome();
   const conn = useConnection();
+  // Pure `useSections` consumer (the NavBar precedent): read the off-bar-and-unhosted partition so the nav
+  // menu can DOCK here when the layout produces one (D35 §F0 fixup).
+  const { menu } = useSections();
 
   return (
     <div className="kit-appbar">
@@ -67,6 +72,10 @@ export function KitAppBar() {
           )}
         </button>
       )}
+      {/* The docking rule (D35 §F0 fixup, 2026-07-12) + the M3 top-app-bar trailing-action convention: when
+          the resolved layout partitions sections into the menu, the nav affordance docks HERE as the
+          trailing action rather than floating — "the menu affordance docks to the chrome that exists". */}
+      {menu.length > 0 && <NavMenu docked />}
     </div>
   );
 }

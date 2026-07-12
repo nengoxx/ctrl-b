@@ -222,11 +222,14 @@ export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots }: P
         <MiniPlayer />
         {showComposer && <ThemedComposer layout={composerLayout} {...(composerAddons ?? {})} />}
       </div>
-      {/* Nav (D35): the in-flow tab bar shows whenever there's an appbar-bearing layout (visible/off); the
-          floating NavMenu shows whenever any section is off-bar-and-unhosted. They legitimately COEXIST in
-          2-tab (bar = fleet+agent, menu = conf). In `minimal` the bar is gone and the menu carries all nav. */}
+      {/* Nav (D35 §F0 + the 2026-07-12 docking rule): the in-flow tab bar shows whenever there's an
+          appbar-bearing layout (visible/off). The nav menu DOCKS to the chrome that exists — under `visible`
+          it's an appbar trailing action (KitAppBar renders it), so the FLOATING launcher mounts only when
+          there's no appbar to dock into (`off`/`minimal`) and a section is off-bar-and-unhosted. In 2-tab
+          `visible` the docked button + tab bar coexist; in `minimal` the bar is gone and the menu carries all
+          nav. */}
       {appbarMode !== "minimal" && <KitNavBar onPrefetch={prefetch} />}
-      {menu.length > 0 && <NavMenu />}
+      {appbarMode !== "visible" && menu.length > 0 && <NavMenu />}
       <Toasts />
       <ConfirmDialog />
       <PromptModal />

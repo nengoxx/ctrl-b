@@ -3,22 +3,29 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { useSections } from "../hooks/useSections";
 import type { TabId } from "../theme-engine/types";
 
-// Minimal-mode navigation (appbarMode="minimal"): a single floating ORBIT-glyph launcher (top-right) that
-// opens a compact icon dropdown of the theme's sections. A PURE consumer of the headless `useSections`
-// controller (the nav abstraction is explicitly "render the sections as a tab bar, a drawer, a rail, or
-// nothing" — this is the "nothing-but-a-menu" presentation), so it never forks nav state. Theme-agnostic +
-// token-driven → any DefaultRoot theme gets it; a bespoke Root opts in by mounting it (THEME_ENGINE §14.13).
+// Section navigation as a single ORBIT-glyph launcher that opens a compact icon dropdown of the theme's
+// sections. A PURE consumer of the headless `useSections` controller (the nav abstraction is explicitly
+// "render the sections as a tab bar, a drawer, a rail, or nothing" — this is the "nothing-but-a-menu"
+// presentation), so it never forks nav state. Theme-agnostic + token-driven → any DefaultRoot theme gets it.
 // Icon-only (owner directive) with clear, explicit glyphs + per-item `aria-label`; non-modal popover a11y
 // (Escape + click-outside close, focus returns to the launcher, arrow-key roving between items).
+//
+// DOCKING RULE (D35 §F0 fixup, owner-ratified 2026-07-12) — "the menu affordance docks to the chrome that
+// exists". ONE component, two mounts (no forked popover/item/a11y logic — the `docked` prop only reshapes
+// the trigger + popover geometry):
+//   • `docked` (appbarMode="visible"): the trigger is an APPBAR TRAILING ACTION (styled `.kit-iconbtn`,
+//     matching the TTS toggle) that KitAppBar renders; the popover is fixed just under the appbar.
+//   • floating (appbarMode="off"/"minimal"): the standalone top-right orbit launcher, mounted by DefaultRoot.
 
 // Launcher mark — the Lucide "Orbit" icon (ISC-licensed; docs/screenshot/icons/Orbit--Streamline-Lucide):
-// a central body + two orbiting bodies on two orbital arcs. currentColor → cosmos tints it silver.
-function OrbitGlyph() {
+// a central body + two orbiting bodies on two orbital arcs. currentColor → cosmos tints it silver. `size`
+// shrinks the glyph to ~18px in the docked appbar-button (to match the TTS icon scale); floating uses 25.
+function OrbitGlyph({ size = 25 }: { size?: number }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      width="25"
-      height="25"
+      width={size}
+      height={size}
       fill="none"
       stroke="currentColor"
       strokeWidth="2.4"
@@ -103,7 +110,10 @@ const ICONS: Record<string, ReactNode> = {
   ),
 };
 
-export function NavMenu() {
+// `docked` = mount as an appbar trailing-action button (visible chrome) vs the standalone floating launcher.
+// Only the trigger styling + popover positioning differ; the popover, item list, and all a11y wiring below
+// are identical across both modes (one source of truth).
+export function NavMenu({ docked = false }: { docked?: boolean }) {
   // The menu lists the OFF-BAR-AND-UNHOSTED sections only (Axis A, D35 §F0) — everything in `appbarMode:
   // "minimal"` (all off-bar), or the odd one out under a partial layout (e.g. conf in 2-tab). Hosting
   // supersedes the menu, so a hosted section (utils in 3-/2-tab) never appears here. The active section may
@@ -160,17 +170,25 @@ export function NavMenu() {
   };
 
   return (
-    <div className="navmenu" ref={rootRef} data-open={open || undefined} onKeyDown={onKeyDown}>
+    <div
+      className={"navmenu" + (docked ? " docked" : "")}
+      ref={rootRef}
+      data-open={open || undefined}
+      onKeyDown={onKeyDown}
+    >
       <button
         ref={launcherRef}
         type="button"
-        className="navmenu-launch"
+        // Docked: reuse `.kit-iconbtn` so the trigger is byte-identical to the TTS toggle (bordered 34px
+        // pill); it keeps `navmenu-launch` for the shared open-state/focus styling. Floating: the standalone
+        // transparent orbit launcher (`.navmenu-launch` carries its own geometry).
+        className={docked ? "kit-iconbtn navmenu-launch" : "navmenu-launch"}
         aria-label="Navigation menu"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <OrbitGlyph />
+        <OrbitGlyph size={docked ? 18 : 25} />
       </button>
       {open && (
         <div className="navmenu-pop" role="menu" aria-label="Sections">

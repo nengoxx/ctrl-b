@@ -40,9 +40,11 @@ test("minimal · 3-tab: utils leaves the bar and is hosted in Conf; no NavMenu (
   await expect(page.locator("#utils-hosted")).toBeVisible();
 });
 
-test("minimal · 2-tab: conf reached via the NavMenu (which coexists with the tab bar); utils hosted", async ({
+test("minimal · 2-tab (visible chrome): conf reached via the DOCKED appbar menu; utils hosted", async ({
   page,
 }) => {
+  // Default appbarMode is "visible" → the docking rule (D35 §F0 fixup): the nav affordance is an appbar
+  // trailing action, NOT a floating launcher. It coexists with the tab bar (bar = fleet+agent, menu = conf).
   await seedUI(page, { theme: "minimal", mode: "dark", accent: "cyan", layout: "2-tab", v: 1 });
   await page.goto("/");
 
@@ -52,9 +54,9 @@ test("minimal · 2-tab: conf reached via the NavMenu (which coexists with the ta
   await expect(page.locator("#tabbtn-utils")).toHaveCount(0);
   await expect(page.locator("#tabbtn-conf")).toHaveCount(0); // conf is off-bar → the menu, not the bar
 
-  // The NavMenu launcher EXISTS alongside the tab bar (they legitimately coexist in 2-tab).
+  // The menu trigger is DOCKED inside the appbar (not floating), alongside the tab bar.
   await expect(page.locator(".kit-tabbar")).toBeVisible();
-  const launch = page.locator(".navmenu-launch");
+  const launch = page.locator(".kit-appbar .navmenu-launch");
   await expect(launch).toBeVisible();
 
   // Open it → exactly one menuitem (conf, the sole off-bar-and-unhosted section).
@@ -63,6 +65,39 @@ test("minimal · 2-tab: conf reached via the NavMenu (which coexists with the ta
   await expect(items).toHaveCount(1);
 
   // Activating it lands on Conf, where the Tools group is hosted.
+  await items.first().click();
+  await expect(page.locator("#tab-conf")).toBeVisible();
+  await expect(page.locator("#utils-hosted")).toBeVisible();
+});
+
+test("minimal · 2-tab (appbar off): conf reached via the FLOATING NavMenu (no appbar to dock into)", async ({
+  page,
+}) => {
+  // appbarMode "off" → there's no appbar, so the menu can't dock: DefaultRoot mounts the standalone floating
+  // launcher (the "docks to the chrome that exists" fallback). Same partition (bar = fleet+agent, menu = conf).
+  await seedUI(page, {
+    theme: "minimal",
+    mode: "dark",
+    accent: "cyan",
+    layout: "2-tab",
+    appbarMode: "off",
+    v: 1,
+  });
+  await page.goto("/");
+
+  // No appbar in this mode; the tab bar remains.
+  await expect(page.locator(".kit-appbar")).toHaveCount(0);
+  await expect(page.locator(".kit-tabbar")).toBeVisible();
+
+  // The FLOATING launcher (not inside an appbar — there is none) is present and opens the conf menu.
+  const launch = page.locator(".navmenu-launch");
+  await expect(launch).toBeVisible();
+  await expect(page.locator(".navmenu.docked")).toHaveCount(0);
+
+  await launch.click();
+  const items = page.locator(".navmenu-pop [role='menuitem']");
+  await expect(items).toHaveCount(1);
+
   await items.first().click();
   await expect(page.locator("#tab-conf")).toBeVisible();
   await expect(page.locator("#utils-hosted")).toBeVisible();
