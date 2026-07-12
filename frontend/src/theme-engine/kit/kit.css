@@ -3931,12 +3931,22 @@ body[data-motion="reduced"] .kit .bs-sheet {
 }
 /* The docked popover can't flow below an inline appbar button (it would stretch the bar / be clipped by the
  * sticky appbar's stacking) — anchor it FIXED just under the measured appbar, mirroring the floating popover's
- * top-right geometry, so it overlays content at z 30 (above composer/mini-player). */
+ * top-right geometry. NOTE its `z-index: 30` resolves INSIDE the appbar's stacking context (sticky + z-5 +
+ * backdrop-filter — `position: fixed` does not escape an ancestor stacking context), so the appbar itself is
+ * lifted while the menu is open (below). */
 .kit .navmenu.docked .navmenu-pop {
   position: fixed;
   top: calc(var(--appbar-h, 0px) + 6px + env(safe-area-inset-top));
   right: calc(10px + env(safe-area-inset-right));
   z-index: 30;
+}
+/* Stacking escape for the OPEN docked menu (audit F0#3): the appbar's own z-5 would leave the popover under
+ * the fixed mini-player (z 16) and toasts (z 40) — with TTS playing, the player intercepted the popover's
+ * only menu item (conf unreachable in 2-tab). While open, lift the whole appbar subtree above both (41)
+ * but below ConfirmDialog (50); the appbar never spatially overlaps player/toasts, so the transient lift
+ * has no side effect of its own. */
+.kit-appbar:has(.navmenu.docked[data-open]) {
+  z-index: 41;
 }
 .kit .navmenu-launch:focus-visible {
   outline: 2px solid var(--accent);

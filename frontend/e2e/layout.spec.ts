@@ -103,6 +103,35 @@ test("minimal · 2-tab (appbar off): conf reached via the FLOATING NavMenu (no a
   await expect(page.locator("#utils-hosted")).toBeVisible();
 });
 
+test("minimal · appbarMode minimal (4-tab): the floating menu carries ALL nav (bar gone)", async ({
+  page,
+}) => {
+  // The all-off-bar endpoint ("1-tab mode IS minimal"): no appbar, no tab bar — the floating orbit menu
+  // lists every unhosted section (all four under the default 4-tab). Pins the pre-existing minimal behavior
+  // the docking rule must never disturb (audit F0 coverage nit).
+  await seedUI(page, {
+    theme: "minimal",
+    mode: "dark",
+    accent: "cyan",
+    appbarMode: "minimal",
+    v: 1,
+  });
+  await page.goto("/");
+
+  await expect(page.locator(".kit-appbar")).toHaveCount(0);
+  await expect(page.locator(".kit-tabbar")).toHaveCount(0);
+  const launch = page.locator(".navmenu-launch");
+  await expect(launch).toBeVisible();
+  await expect(page.locator(".navmenu.docked")).toHaveCount(0);
+
+  await launch.click();
+  const items = page.locator(".navmenu-pop [role='menuitem']");
+  await expect(items).toHaveCount(4); // fleet · agent · utils · conf — nothing hosted in 4-tab
+
+  await items.last().click(); // conf (def order)
+  await expect(page.locator("#tab-conf")).toBeVisible();
+});
+
 test("minimal · 2-tab: a stale `utils` deep-link boots coerced onto Conf with the Tools group", async ({
   page,
 }) => {
