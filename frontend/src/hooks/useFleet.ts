@@ -33,26 +33,30 @@ export function useServerInfo() {
   });
 }
 
-/** The ONE presentation-order chokepoint (owner directive 2026-07-12): a stable self-first sort, so the
- *  machine ctrl-b runs on (the `self` DTO fact) takes slot 0 in EVERY consumer coherently — all four
- *  FleetViews (incl. frozen vapor's, which reads useFleet — a data change, not a code change), the
- *  featured-host cycle (same query → same indexes), the Conf editor, the brand meta. Config order is the
- *  stable-sort tiebreak for everyone else; no self flag → a no-op. MODULE-LEVEL on purpose: TanStack
- *  memoizes `select` on the function's identity — an inline closure would re-run per render and hand
- *  downstream effects a fresh array identity every time. Copy-before-sort: select must never mutate the
- *  cached data. */
+/** The presentation-order chokepoint (owner directives 2026-07-12): the DEFAULT is a stable self-first
+ *  sort, so the machine ctrl-b runs on (the `self` DTO fact) takes slot 0 coherently across the default-
+ *  order consumers — vapor's + the Kit's + frontier's FleetViews (vapor reads useFleet, so this is data,
+ *  not a code change), the featured-host cycle (same query → same indexes), the Conf editor, the brand
+ *  meta. Config order is the stable-sort tiebreak; no self flag → a no-op. `"config"` = the wire (YAML)
+ *  order untransformed — a VIEW that composes by its own visual logic opts out (cosmos: planet size makes
+ *  a big self planet innermost read wrong, so its layout lever stays the owner-curated YAML order; SAFE
+ *  there because cosmos is manual-selection and never reads the shared `featured` index). MODULE-LEVEL fn
+ *  on purpose: TanStack memoizes `select` on the function's identity — an inline closure would re-run per
+ *  render and hand downstream effects a fresh array identity every time. Copy-before-sort: select must
+ *  never mutate the cached data (the cache itself always holds wire order — "config" just reads it raw). */
+export type FleetOrder = "self-first" | "config";
 function selfFirst(hosts: Host[]): Host[] {
   return [...hosts].sort((a, b) => Number(b.self ?? false) - Number(a.self ?? false));
 }
 
-/** Fleet + derived status, polled at the configured cadence (DESIGN.md §13). Presentation-ordered —
- *  see `selfFirst`. */
-export function useHosts(pollSeconds: number) {
+/** Fleet + derived status, polled at the configured cadence (DESIGN.md §13). Presentation-ordered per
+ *  `order` — see `FleetOrder` above (default self-first). */
+export function useHosts(pollSeconds: number, order: FleetOrder = "self-first") {
   return useQuery({
     queryKey: ["hosts"],
     queryFn: () => getJSON<Host[]>("/api/hosts"),
     refetchInterval: Math.max(1, pollSeconds) * 1000,
-    select: selfFirst,
+    select: order === "config" ? undefined : selfFirst,
   });
 }
 
@@ -120,11 +124,14 @@ export interface FleetView {
 }
 
 /** Consumer hook for any FleetView — the fleet data + the carousel/expand state & actions. The
- *  auto-advance timer is NOT here (it's the singleton `useFleetCycle`); this is pure read + user actions. */
-export function useFleet(): FleetView {
+ *  auto-advance timer is NOT here (it's the singleton `useFleetCycle`); this is pure read + user actions.
+ *  `order` (default self-first) is the view's presentation-order choice — see `FleetOrder`. ⚠ A view that
+ *  passes `"config"` must NOT consume `featured` (the cycle indexes the self-first order); cosmos qualifies
+ *  because its selection is manual. Promote this param to ThemeDef data if a third policy ever appears. */
+export function useFleet(order: FleetOrder = "self-first"): FleetView {
   const { data: server } = useServerInfo();
   const poll = server?.poll_seconds ?? 5;
-  const { data: hosts = [], isLoading, error } = useHosts(poll);
+  const { data: hosts = [], isLoading, error } = useHosts(poll, order);
   const { data: services = [] } = useServices(poll);
   const { run, busy } = useFleetActions();
   const featured = useFeatured();

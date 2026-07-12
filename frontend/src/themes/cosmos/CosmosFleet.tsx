@@ -74,7 +74,11 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 const FOLLOW_ZOOM = 2.2; // selected planet's camera scale = fitScale × this (C2b-2 zoom-follow)
 
 export function CosmosFleet({ active }: { active: boolean }) {
-  const { hosts, svcByHost, isLoading, error, run, busy } = useFleet();
+  // CONFIG (YAML) order, opting out of the self-first default (owner 2026-07-12): cosmos composes by
+  // planet SIZE (services × health), and a service-heavy self planet on the innermost orbit reads wrong —
+  // the owner curates the visual rhythm via the `computers:` YAML order instead (small first, etc.).
+  // Safe here alone: cosmos is manual-selection and never reads the shared `featured` index (see useFleet).
+  const { hosts, svcByHost, isLoading, error, run, busy } = useFleet("config");
   const selected = useCosmosSelection();
 
   // Clear a selection whose host has left the fleet (config change / removal) — so the camera eases back to
