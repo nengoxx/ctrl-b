@@ -1,9 +1,50 @@
 # Frontier theme — implementation plan (T5)
 
-> **▶ F3 ✅ SHIPPED 2026-07-12 (build `e620a3b`→riders→`f0b403d`; owner-eyeballed + ratified same day;
+> **▶ F4 ✅ SHIPPED 2026-07-13 (built 2026-07-12→13, commits `61f2267`→`696842f` [9]; owner-eyeballed
+> through SIX rounds + ratified; independent adversarial audit mid-build: 1 real bug [the agent-tab
+> scroller mask clipped the sticky appbar — masks clip sticky children in viewport space] fixed same
+> round; FE gate 415 tests [+9 since F3]; every round committed gate-green). NEXT SLICE: F5 (§6-F5 —
+> note the as-builts below NARROW it: the scroller mask is GONE so the flagged Fennec mask hazard is
+> MOOT; remaining = per-host art override UI · asset format/size [hero.png 1.9MB] · Fennec+Chrome perf
+> pass · a11y floor [peek-detent focus · svc-row aria-label · `.kit-tabbtn` focus ring] · frontier e2e
+> render case · PLUS the parked owner idea: promote the frontier no-outlines block into a kit
+> `body[data-outlines]` axis + a shared `outlinesSetting()` per-theme switch — owner leaned yes,
+> promote AFTER the look settles).**
+> F4 as-built: **D36 + THEME_ENGINE §15** (the chat hooks + token contract — pinned class hooks +
+> component tokens; ACA growth adds its hooks to the table) · AgentTab's log EXTRACTED to the shared
+> `components/ChatThread.tsx` (`{active, chat, emptyState?}`; `PrivilegeChip` → components/) ·
+> `usePlanOpenAutoClose` re-homed to `<AppEngines/>` (§14.5 — structurally unloseable; App-level test
+> pins it) · **`FrontierAgent`** (`bodies={{agent}}`): sticky-pinned 3-layer rig stack (zero-height
+> `.fr-rigstack-pin` viewport anchor; nested wrappers split the recede transition from `frontier-bob`),
+> `data-thread` empty⇄active recede (watermark scale 0.72 / opacity 0.18; `/clear` reverses free),
+> title-TOP empty state + TWO `fillComposer` chips — scroll-free at 390px (live-measured) · see-through
+> `.kit` shell over the `in oklab` dusk-glow (cosmos precedent) · prototype bubbles on §15 hooks ONLY
+> (user = `--fr-bubble-ink` mode-flipped black, 14/14/4/14, white ~18:1; bot transparent, 66ch cap;
+> who-line RIGHT + dotless 9px). **Owner rulings that OVERRIDE the prototype:** NO OUTLINES theme-wide
+> (chat · composer · mini player · chips · priv chip+menu · Conf/Utils · overlays · fleet cards · the
+> F3 sheet's INNER elements — all fill-differentiated, focus rings kept as inset box-shadows;
+> EXCEPTIONS: the fleet `0x…` plate tags [moved bottom-RIGHT on the art, owner override of the
+> prototype's bottom-left] + the kit Clear-appbar chrome) · plan family = wordless accent-count pill ·
+> accent done-ticks/strike (`--ok` green clashed) · accent Reboot/Wake pill (`--text` fill read too
+> white) · 8px think chip · sheet compacted + the services heading = the honest "n/m up" line (the
+> actbar `.info` removed → pills align). **Kit/global riders (all themes):** `AppbarMode` gained
+> **`transparent`** (Conf label "Clear") — the bar renders + measures (`--appbar-h`) but paints
+> NOTHING; squared glass icon buttons (frost, perf-gated) + a `--bg`-colored brand text halo
+> (mode-proof); ONE `appbarShown()` predicate (ui.ts) for every bar-presence test; `.kit-main
+> .appbar-clear` nulls the top scrim ("the Clear shadow"); vapor additively · the LINE composer grows
+> as a ROUNDED SQUARE (radius 999→24px + flex-end: the 36px round button inset 6px is CONCENTRIC with
+> the 24px corner [r18+6=24] — no chord-clip; bottom-locked pill/buttons, `kit-btn-pop` 0.15s appear
+> anim) · the flexbox min-content overflow fix on EVERY composer variant (`min-width: 0` on the
+> flexible child + `flex-shrink: 0` trailing buttons — the pill used to clip mic/send on line AND
+> docked) · docked placeholder → "Message" (the long greeting wrapped below its one-line fold) · kit
+> tab indicator cap 72→88px (4th nudge territory) · frontier line-composer bezel (soft ink drop +
+> inset top highlight). **REMOVED after live jank (owner-confirmed the audit's risk):** the agent-tab
+> scroller `mask-image` — a masked scroller re-rasterizes per frame while the rig stack bobs inside;
+> the agent tab has NO edge fades by design (the frosted appbar carries the seam).
+>
+> *(F3 ✅ SHIPPED 2026-07-12 — build `e620a3b`→riders→`f0b403d`; owner-eyeballed + ratified same day;
 > FE gate green [406 tests, 9 new]; independent adversarial audit: 0 bugs — 2 inherited primitive RISKs,
-> one fixed [Escape], one deferred to F5). NEXT SLICE: F4 (the Agent tab — §6-F4; pre-flight the chat
-> hooks/token contract + the A4 `PinnedPlanPanel`/`usePlanOpenAutoClose` carry-over ⚠ before building).**
+> one fixed [Escape], one deferred to F5.)*
 > F3 as-built: `FrontierHostDetail` (pure C3b-shape presentation) over the shared `BottomSheet`, opened
 > by `frontierSelection` — art banner (the card's own `present()` art/plate, retained-through-slide-out
 > via a MEMOIZED placements identity [the hand-review caught an infinite render loop in the subagent
@@ -295,7 +336,9 @@ ping/uptime line · 4-up stat grid · action bar Wake/Shutdown+info · services 
 (gate untouched). *Acceptance:* open/drag/snap/dismiss at 390px; actions run through the normal
 confirm path; a11y (`role="dialog"` non-modal per §14.13 #9).
 
-**F4 — the Agent tab (§2).** *Pre-flight:* inventory the chat markup → write the **chat hooks +
+**F4 — the Agent tab (§2). ✅ SHIPPED 2026-07-13 — see the banner atop this file for the as-built record
+(D36/§15 contract · ChatThread extraction · A4 re-home · the six owner rounds: no-outlines theme-wide, the
+Clear appbar mode, the rounded-square line composer, the sticky watermark).** *Pre-flight:* inventory the chat markup → write the **chat hooks +
 token contract** (named classes + component tokens for bubble kinds/markdown/code/plan/reasoning/
 notices/search); confirm with owner; note them for hardening ⑧. *Build:* bespoke body (backdrop +
 empty-state rig stack + chips) · the **recede-to-background** transition (first `message.start` ⇄
@@ -326,7 +369,8 @@ row-by-row; owner sign-off.
 ## §7 Parked nuances (resolve at the owning slice's pre-flight)
 
 - F1: the composer `model` label (shared micro-addition or skip — §3 nuance).
-- F4: chips behavior on `/clear` (recommend: reappear with the empty state) + small-screen wrap.
+- ~~F4: chips behavior on `/clear` + small-screen wrap~~ — RESOLVED as-built: chips live in the empty
+  state (reappear on `/clear` free); TWO short chips fit one 390px row (owner round 6).
 - F0/F1: the utils-in-Conf group's first-render interplay with the lazy-Conf latch.
 - F2: `sheetSnap` camera-lift interplay on the map card (cosmos precedent — likely n/a, verify).
 - F5: placeholder-art licensing/attribution note if the final set is AI-generated (owner call).

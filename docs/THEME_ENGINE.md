@@ -55,8 +55,9 @@ stylelint ⑨, `kit-render.spec.ts` ⑩ — all SHIPPED 2026-07-10 and ARE in th
 **Sequencing rule (satisfied 2026-07-10):** the Hardening slice v2 (§14.15.1) landed **before** the next themeable-UI wave
 — a frontier plan builds on top of it, not around it.
 
-**frontier (T5 — §14.10; full plan: `FRONTIER_PLAN.md`, design LOCKED 2026-07-07; F0+F1 ✅ SHIPPED
-2026-07-12 — frontier is REGISTERED, night/day palette + 3-tab default live; F2–F5 remain):**
+**frontier (T5 — §14.10; full plan: `FRONTIER_PLAN.md`, design LOCKED 2026-07-07; F0–F3 ✅ SHIPPED
+2026-07-12 + F4 ✅ 2026-07-13 — frontier is REGISTERED and fully live [Fleet map · HostDetail sheet ·
+the bespoke Agent tab on the §15 chat contract]; F5 polish/gates remains):**
 the second bespoke/spatial theme. Pre-classified:
 **Fleet = bespoke** (Mœbius art-map + GPS beacons + rig-card grid; `present()` supplies x/y +
 `assets` art + per-host `appearance.frontier.image` override — §9.9) · **Agent tab = bespoke** (the

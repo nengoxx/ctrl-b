@@ -31,28 +31,34 @@
 >   vault's llamacpp `.137:5001` (owner-confirmed; corsair's instance unused).** The target's `config.yaml`
 >   is canonical — the Windows snapshot is stale by design (bootstrap re-runs won't clobber).
 >
-> **▶ CURRENT WORK (updated 2026-07-12, second EOD): frontier **F3 — HostDetail — is ✅ COMPLETE and
-> owner-ratified** (build `e620a3b`…`f0b403d`; FE gate green [406 tests, 9 new]; independent adversarial
-> audit — 0 bugs; eyeballed through three tune rounds).** Shipped: `FrontierHostDetail` over the shared
-> `BottomSheet` (opened by `frontierSelection`; peek = banner+meta; `sheetSnap` `"frontier-host-detail"`;
-> `catchOutside={false}` — tap another rig SWAPS, map ground clears) · the card's own `present()`
-> art/plate in the banner (placements MEMOIZED — the hand-review caught the subagent build's infinite
-> render loop: per-render rebuild × identity-keyed retention; regression-guarded) · the HONEST stat grid
-> (Ping · Uptime "—" [deferred, cosmos precedent] · Services · Seen — prototype Load/Temp DROPPED, owner
-> ruling) · Reboot+Shut down/Wake via the typed-action gate · per-service Open links · opaque skin w/ the
-> borderless-composer elevation. **Shared riders (owner-directed, same rounds):** BottomSheet Escape
-> from anywhere (document-level + `defaultPrevented` modal-guard; fixed cosmos too) · exit-slide shadow
-> OVERSHOOT (no more shadow-pop over the tab bar at unmount) · **the Kit tab bar assimilated vapor's
-> bar for ALL themes** (`af2f867`/`1e1ea1c`: short bar, `TabDef.glyph` marks — SVG icons deleted,
-> capped centered sliding line, active=ink, **fleet↔utils glyphs swapped in STANDARD_TABS incl. vapor**,
-> the neutral `.kit-main[data-tab]` hook; frontier's fleet top scrim → 12px).
-> **NEXT: frontier F4 — the Agent tab** (`FRONTIER_PLAN.md` §6-F4 — pre-flight FIRST: inventory the
-> chat markup → the chat hooks/token contract [owner-confirm]; ⚠ the bespoke body must carry
-> `PinnedPlanPanel` + `usePlanOpenAutoClose` or re-home them [A4 regression]; recede-to-background
-> transition; F4's D7 eyeball judges the ACTIVE-CHAT layout on comic-style coherence — un-prototyped) ·
-> or ACA Slices 1–2 (TODO Phase 12) · or the V1 vapor-hygiene filler (§14.15.3). **Deferred to F5:**
-> peek-detent focus-below-fold · roleless-div aria-label · `.kit-tabbtn` focus-visible ring.
-> *(F0/F1/F2 shipped earlier the same day; the `FRONTIER_PLAN.md` banner holds all as-built records.)*
+> **▶ CURRENT WORK (updated 2026-07-13): frontier **F4 — the Agent tab — is ✅ COMPLETE and
+> owner-ratified** (commits `61f2267`→`696842f` [9]; six owner eyeball rounds; mid-build adversarial
+> audit: 1 bug [scroller mask clipped the sticky appbar] fixed same round; FE gate 415 tests).**
+> Shipped: **D36 + THEME_ENGINE §15 — the chat hooks + token contract** (themes reskin the ONE shared
+> chat tree on pinned class hooks; never fork) · AgentTab's log extracted to the shared
+> `components/ChatThread.tsx` + `usePlanOpenAutoClose` re-homed to `<AppEngines/>` (the A4 ⚠ resolved
+> structurally) · `FrontierAgent` bespoke body: sticky-pinned bobbing rig stack that RECEDES to a
+> 0.72/0.18 living watermark (`data-thread`, `/clear` reverses), title-top scroll-free empty state +
+> 2 composer-filling chips, see-through shell over the `in oklab` dusk-glow, prototype bubbles (black
+> user / transparent bot, who-line right). **Owner rulings now standing (override the prototype): NO
+> OUTLINES theme-wide in frontier** (fill-differentiation everywhere; exceptions = fleet `0x…` plate
+> tags [now bottom-right on the art] + kit Clear-appbar chrome; focus rings kept) · accent-repainted
+> plan family (wordless accent-count pill · accent done-ticks · accent Reboot/Wake). **Kit/global
+> riders:** `AppbarMode` **"transparent"** (Conf "Clear") — null-paint bar, squared glass iconbtns,
+> `--bg` brand halo, ONE `appbarShown()` predicate · the LINE composer grows as a rounded square
+> (999→24px, flex-end; r18+6=24 concentric corners) + `kit-btn-pop` · the flexbox min-content
+> `min-width:0` overflow fix on EVERY composer variant (the pill used to clip mic/send) · docked
+> placeholder → "Message" · tab indicator cap 88px. **Removed after live jank:** the agent-tab
+> scroller mask (masked scroller + bobbing child re-rasterizes per frame — no agent edge fades by
+> design).
+> **NEXT: frontier F5 — polish + gates** (`FRONTIER_PLAN.md` §6-F5, NARROWED by the F4 as-builts —
+> the Fennec mask hazard is MOOT [mask removed]; remaining: per-host art override UI · asset
+> format/size [hero.png 1.9MB] · Fennec+Chrome perf pass · the a11y floor [peek-detent focus ·
+> svc-row aria-label · `.kit-tabbtn` focus ring] · frontier e2e render case · the PARKED owner idea:
+> promote frontier's no-outlines block into a kit `body[data-outlines]` axis + shared
+> `outlinesSetting()` switch — promote only after the look settles) · or ACA Slices 1–2 (TODO Phase
+> 12) · or the V1 vapor-hygiene filler (§14.15.3).
+> *(F0–F3 shipped 2026-07-12; the `FRONTIER_PLAN.md` banner holds all as-built records.)*
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
 > orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).
 >

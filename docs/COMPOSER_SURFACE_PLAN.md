@@ -418,6 +418,16 @@ our tokens" fidelity note where they conflict:**
    end; multi-line growth keeps the stadium ends with all children riding the vertical CENTER
    (`align-items:center` — the post-build audit showed a bottom-anchored button gets chord-clipped by the
    ~53px end-cap curve at max growth, so the earlier flex-end idea was corrected as-built).
+   **SUPERSEDED AS-BUILT (owner, frontier F4 round 6 — 2026-07-13):** the variant now grows as a
+   **ROUNDED SQUARE with bottom-locked controls** — `border-radius: 24px` + `align-items: flex-end`; the
+   original flex-end chord-clip objection only held for the 999px stadium: with a FIXED 24px radius the
+   36px round button inset 6px is exactly CONCENTRIC with the corner arc (r18 + 6 = 24), so nothing clips.
+   Collapsed it still reads as a stadium (24 ≈ half the ~46px bar). Companion fixes the same round:
+   `min-width: 0` on every variant's flexible row child (the flexbox min-content gotcha — the plan pill
+   used to overflow the row and clip the mic/send on line AND sheet) + `flex-shrink: 0` trailing buttons;
+   a `kit-btn-pop` appear animation (0.15s, motion-gated) on the line morph + pill lane; the plan pill is
+   WORDLESS (accent count + chevron; aria-label carries the name); SheetComposer's placeholder → the same
+   short "Message" (its one-line field wrapped the long greeting below the fold).
 
 **As-built notes:** the vapor stroke `MicIcon` GRADUATED to `composer/icons.tsx` at its second consumer
 (SheetComposer's embedded mic + LineComposer's morph). The line variant keeps the base STACKED plan-sheet

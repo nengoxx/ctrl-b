@@ -1870,6 +1870,15 @@ is automatically correct per preset. The D31 Surface axis stays separate — var
 collapse ladder + NavHome landed as same-day follow-ups `ee9bea0`/`9c41ced`/`508a494`). The kit-render e2e
 sweep goes layout-aware in the same slice (the pre-F0 readiness punch list).
 
+**AMENDED 2026-07-13 (frontier F4 rider, owner-directed).** The global chrome lever `AppbarMode` gained a
+4th value **`transparent`** (Conf label "Clear"): the bar still RENDERS + measures into `--appbar-h` but
+paints nothing (no fill/frost/shadow), with squared frosted-glass icon buttons (perf-gated) and a
+`--bg`-colored brand text halo (mode-proof); `.kit-main.appbar-clear` nulls the top seam scrim. Every
+"is a bar present" test now goes through the single **`appbarShown()`** predicate (`store/ui.ts`) —
+`visible | transparent` — so the docking rule reads unchanged ("a bar is present ⇒ the menu docks to it");
+never scatter `=== "visible"` bar-presence checks again. Vapor participates additively (byte-identical
+unless the mode is picked).
+
 ## D36 — Chat hooks + token contract: one shared chat tree, themes reskin on pinned hooks ✏️ LOCKED 2026-07-12 (frontier F4 design review)
 
 **Context.** Frontier's F4 Agent tab is the first bespoke body that must carry the FULL chat (markdown,
@@ -1902,4 +1911,6 @@ UX. That requires the shared tree's styling surface to be a named, pinned contra
 
 **Status.** LOCKED 2026-07-12 (owner-ratified at the F4 design review, with the F4 nuances: prototype
 dusk-glow shows through a see-through frontier shell [cosmos precedent] + prototype bubble skins
-[black user fill / transparent assistant]). Built as frontier F4.
+[black user fill / transparent assistant]). **✅ BUILT as frontier F4, SHIPPED 2026-07-13** (commits
+`61f2267`→`696842f`; the contract table is `THEME_ENGINE.md` §15; frontier consumes it as the first
+non-token chat reskin — six owner eyeball rounds folded in, full record in `FRONTIER_PLAN.md`'s banner).

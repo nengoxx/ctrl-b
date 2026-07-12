@@ -35,9 +35,10 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 > D35) + F1 (shell reskin — frontier REGISTERED) + F2 (the badlands Fleet + 4 eyeball riders: sliding
 > tab indicator · self-host presentation · FleetOrder · cosmos cue size) + F3 (HostDetail sheet +
 > shared riders: Escape-from-anywhere · exit shadow overshoot · **the Kit tab bar = vapor's bar for ALL
-> themes, fleet↔utils glyphs swapped** · kit-main[data-tab] hook) ✅ ALL SHIPPED 2026-07-12**;
-> next = frontier F4 (the Agent tab, `FRONTIER_PLAN.md` §6-F4 — pre-flight the chat hooks contract
-> first). **Approved 2026-07-07 (owner):** the **ACA chat-hardening plan** = **Phase 12**
+> themes, fleet↔utils glyphs swapped** · kit-main[data-tab] hook) ✅ ALL SHIPPED 2026-07-12** ·
+> **F4 (the Agent tab — D36/§15 chat hooks contract · shared ChatThread · the no-outlines +
+> Clear-appbar + rounded-square-line-composer owner rounds) ✅ SHIPPED 2026-07-13**;
+> next = frontier F5 (polish + gates, `FRONTIER_PLAN.md` §6-F5 — narrowed by the F4 as-builts). **Approved 2026-07-07 (owner):** the **ACA chat-hardening plan** = **Phase 12**
 > (`AGENT_CHAT_AUDIT.md` §5 is the spec; Slice 0 landed; Slices 1–2 pre-deploy candidates, 3+
 > post-deploy) and the `SYSTEM_AUDIT.md` **SYS** riders — **SYS-13** (live `fillComposer` bug) +
 > **SYS-14** (Linux CI) are Phase-9 pre-deploy items below. **Still open (low / deferred):**
@@ -900,9 +901,11 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
       Swipe-nav PARKED (D35 addendum). Three audit-caught defects fixed pre-ratification.
 - [ ] **T5 — frontier** (HIGH; **plan = [`FRONTIER_PLAN.md`](./FRONTIER_PLAN.md), design LOCKED 2026-07-07,
       slices F1–F5 — build against it, not this line**; **F1 shell reskin + F2 badlands Fleet + F3
-      HostDetail sheet ✅ 2026-07-12** — frontier registered, night/day palette + brandMeta subtitle +
-      3-tab default, the art-map/beacons/rig-grid live w/ appearance overrides end-to-end, the honest-stat
-      host sheet over the shared BottomSheet; **F4–F5 remain**): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
+      HostDetail sheet ✅ 2026-07-12 · F4 Agent tab ✅ 2026-07-13** — frontier registered, night/day palette +
+      brandMeta subtitle + 3-tab default, the art-map/beacons/rig-grid live w/ appearance overrides
+      end-to-end, the honest-stat host sheet over the shared BottomSheet, the bespoke Agent body over the
+      shared ChatThread (D36/§15 contract; the no-outlines + Clear-appbar owner rulings);
+      **F5 remains**): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
       (the 3-layer bobbing rig-stack empty state — the one non-Fleet structural deviation) + bottom-sheet `HostDetail` (**reuse cosmos's
       `components/BottomSheet.tsx` primitive** — multi-snap, see THEME_ENGINE §14.13 #9) + asset strategy
       (`import.meta.glob`; built-in Mœbius drawing set by index + per-host `host.appearance.frontier.image` override).
