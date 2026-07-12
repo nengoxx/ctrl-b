@@ -244,6 +244,16 @@ body[data-perf="lite"] .kit-appbar.transparent .kit-iconbtn {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
+/* Clear-mode legibility: the bar paints no fill, so the brand wordmark ("ctrl·b") + its `.meta` subtitle float
+ * directly over scrolling content. A soft halo lifts them off. It's a `--bg`-COLORED shadow (NOT a literal), so
+ * it's MODE-PROOF: dark page → dark halo, parchment day → light halo — legible in both. text-shadow inherits,
+ * so the one rule on `.kit-brand` covers the bare wordmark text AND the `.meta` child; the gradient `.dot`
+ * badge isn't text, so it's unaffected. */
+.kit-appbar.transparent .kit-brand {
+  text-shadow:
+    0 1px 2px var(--bg),
+    0 0 8px var(--bg);
+}
 
 /* ── bottom nav — vapor's bar assimilated Kit-wide (owner directive 2026-07-12): SHORT (no bar padding —
  *    the buttons carry the tap height, vapor's exact metrics), `TabDef.glyph` unicode marks + small

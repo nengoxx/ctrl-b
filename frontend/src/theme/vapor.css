@@ -192,6 +192,15 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
+  /* Clear-mode legibility (additive, transparent-only — matches the rule above): with no bar fill the `.mark`
+     wordmark + `.meta` subtitle float over scrolling content, so lift them with a soft halo. A `--bg`-COLORED
+     shadow (not a literal) is MODE-PROOF: dark page → dark halo, light day → light halo. text-shadow inherits,
+     so this one rule on `.brand` covers both text children; the `.lozenge` badge isn't text, so it's untouched. */
+  .appbar.transparent .brand {
+    text-shadow:
+      0 1px 2px var(--bg),
+      0 0 8px var(--bg);
+  }
   .brand { display: flex; align-items: center; gap: 10px; flex: 1; }
   .brand .lozenge {
     width: 36px; height: 36px; border-radius: 50%;

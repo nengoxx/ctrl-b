@@ -334,7 +334,12 @@
     }
     .frontier-rig .plate {
       position: absolute;
-      left: 11px;
+      /* bottom-RIGHT, ON the art inside the frame (owner round-3 — overrides the prototype's bottom-LEFT spot).
+       * `right: 9px` aligns the plate to the LED's right edge (the LED is `top: 9px; right: 9px`, at the art's
+       * TOP); no collision — LED at the top of the art, plate at the bottom. `bottom: 46px` is the prototype's
+       * tuned baseline (it hovers ~8px above the meta seam, ON the art's lower edge); only the side flips. */
+      right: 9px;
+      left: auto;
       bottom: 46px;
       z-index: 2;
       padding: 2px 6px;
@@ -437,7 +442,10 @@
       margin-top: 10px;
       height: 138px;
       border-radius: 16px;
-      border: 1px solid var(--line);
+      /* borderless (owner round-3 inner-outlines strip) — the art + `.ov` scrim + radius define the banner
+       * edge; a transparent 1px keeps the box size unchanged. The sheet's OUTER edge (`.bs-sheet`) keeps its
+       * owner-tuned border + elevation; this strips only the INNER content. */
+      border: 1px solid transparent;
       overflow: hidden;
     }
     .frontier-hd .banner .img {
@@ -491,7 +499,8 @@
       gap: 6px;
       padding: 4px 10px;
       border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      /* borderless (owner round-3 inner-outlines strip) — the translucent ink fill carries the status pill. */
+      border: 1px solid transparent;
       background: rgba(26, 16, 24, 0.5); /* mode-invariant chip on the art */
       font-size: 10px;
       letter-spacing: 0.1em;
@@ -527,7 +536,8 @@
     .frontier-hd .stat4 {
       padding: 10px 6px;
       border-radius: 11px;
-      border: 1px solid var(--line);
+      /* borderless (owner round-3 inner-outlines strip) — the `--surface` tile fill differentiates. */
+      border: 1px solid transparent;
       background: var(--surface);
       text-align: center;
     }
@@ -591,7 +601,9 @@
     .frontier-hd .pill.stop {
       background: var(--danger-soft);
       color: var(--danger);
-      border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+      /* borderless (owner round-3 inner-outlines strip) — the `--danger-soft` fill + `--danger` label carry
+       * the destructive affordance; a transparent 1px keeps the pill geometry identical to `.pill.wake`. */
+      border: 1px solid transparent;
     }
     /* Disabled (busy) — the prototype's `.busy` dim, keyed off :disabled so no class rule is needed. */
     .frontier-hd .pill:disabled {
@@ -620,7 +632,9 @@
       gap: 11px;
       padding: 12px 13px;
       border-radius: 12px;
-      border: 1px solid var(--line);
+      /* borderless (owner round-3 inner-outlines strip) — the `--surface` fill carries the row; the up/down
+       * status reads by its LED (below), so the up-state border override is dropped too. */
+      border: 1px solid transparent;
       background: var(--surface);
       color: inherit;
       text-decoration: none;
@@ -632,7 +646,8 @@
       transform: scale(0.99);
     }
     .frontier-hd .svc.up {
-      border-color: color-mix(in srgb, var(--ok) 32%, transparent);
+      /* up-state cue is the green LED + glow (below), not an outline (owner round-3 inner-outlines strip). */
+      border-color: transparent;
     }
     .frontier-hd .svc .led {
       flex: none;
@@ -679,7 +694,9 @@
     }
     .frontier-hd .svc-empty {
       padding: 18px;
-      border: 1px dashed var(--line-2);
+      /* borderless (owner round-3 inner-outlines strip) — reads as its muted centered caption, no dashed frame
+       * (the round-2 `.util .result .empty` precedent). */
+      border: 1px dashed transparent;
       border-radius: 12px;
       text-align: center;
       font-size: 11.5px;
@@ -990,6 +1007,24 @@
     .plan-sheet,
     .plan-pin-drop {
       border: none;
+    }
+
+    /* plan checklist done/crossed steps — the kit paints the done tick + strike in `--ok` green (kit.css
+     * §plan-step), which clashes with frontier's coral/magenta accent (owner round-3 eyeball). Repaint the
+     * DONE family into the accent: the tick fills `--accent` (no ring — the no-outlines idiom), its ✓ glyph
+     * flips to `--accent-ink` (the ink-on-accent token — kit hardcodes `--bg`, which is wrong on the accent
+     * fill), and the strike-through recolors to a 50% accent tint. Text colors stay as the kit sets them.
+     * The `.active` tick is ALREADY accent-tinted in the kit, so it's left untouched. @layer theme beats the
+     * kit's `.kit .plan-step…` @layer base rules regardless of specificity. */
+    .plan-step.done .tick {
+      background: var(--accent);
+      border-color: transparent;
+    }
+    .plan-step.done .tick::after {
+      color: var(--accent-ink);
+    }
+    .plan-step.done .txt {
+      text-decoration-color: color-mix(in oklch, var(--accent) 50%, transparent);
     }
 
     /* ═══════════════════════════════════════════════════════════════════════════════════════════════
