@@ -2,10 +2,10 @@ import { useState } from "react";
 
 import { ChatThread } from "../components/ChatThread";
 import { PlanSteps } from "../components/PlanSteps";
+import { PrivilegeChip } from "../components/PrivilegeChip";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { advanceStep } from "../lib/plan";
-import { PRIVILEGE_LEVELS, privilegeLabel, type Privilege } from "../lib/privilege";
-import { editPlan, setSessionPrivilege, useChatSlice } from "../store/chat";
+import { editPlan } from "../store/chat";
 import { useUISlice } from "../store/ui";
 import { PinnedPlanPanel } from "../theme-engine/kit/composer/plan/PinnedPlanPanel";
 import { usePlanPlacement } from "../theme-engine/kit/composer/plan/placement";
@@ -55,73 +55,6 @@ function PinnedPlan({ plan }: { plan: Plan }) {
         )}
       </div>
     </div>
-  );
-}
-
-/** The session privilege chip (A1/D16) in the chat section header: shows the active session override
- *  (or "default" = follow the agent's own privilege) and opens a small menu to change it. The
- *  `/privilege` composer verb sets the same sticky state; this is the tap-friendly setter for mobile. */
-function PrivilegeChip() {
-  const sessionPrivilege = useChatSlice((s) => s.sessionPrivilege); // slice — don't re-render per token
-  const [open, setOpen] = useState(false);
-  const label = sessionPrivilege ? privilegeLabel(sessionPrivilege) : "Default";
-  const pick = (p: Privilege | null) => {
-    setSessionPrivilege(p);
-    setOpen(false);
-  };
-  return (
-    <span className="priv-chip-wrap">
-      <button
-        type="button"
-        className={"priv-chip" + (sessionPrivilege ? " set" : "")}
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-label={`session privilege: ${label} — tap to change`}
-        title="session privilege"
-      >
-        <span className="priv-dot" aria-hidden />
-        <span className="priv-lbl">{label}</span>
-        <span className="chev" aria-hidden>
-          ▾
-        </span>
-      </button>
-      {open && (
-        <>
-          <button
-            className="priv-backdrop"
-            aria-hidden
-            tabIndex={-1}
-            onClick={() => setOpen(false)}
-          />
-          <ul className="priv-menu" role="menu">
-            {PRIVILEGE_LEVELS.map((l) => (
-              <li key={l.val}>
-                <button
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={sessionPrivilege === l.val}
-                  className={sessionPrivilege === l.val ? "active" : ""}
-                  onClick={() => pick(l.val)}
-                >
-                  {l.label}
-                </button>
-              </li>
-            ))}
-            <li>
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={!sessionPrivilege}
-                className={!sessionPrivilege ? "active" : ""}
-                onClick={() => pick(null)}
-              >
-                Default
-              </button>
-            </li>
-          </ul>
-        </>
-      )}
-    </span>
   );
 }
 

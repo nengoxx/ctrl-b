@@ -16,13 +16,37 @@
     }
 
     /* Dusk-glow page background (ported from the prototype) — a top-biased radial fading to the deep
-     * horizon. On <body> so the day override below re-derives (the gradient stops are literals, not tokens). */
+     * horizon. On <body> so the day override below re-derives (the gradient stops are literals, not tokens).
+     * `in oklab` interpolation + two intermediate stops (SAME endpoints) kill the mobile banding a 3-stop sRGB
+     * radial shows on wide gamuts (research; oklab-interp in radial-gradient = Chrome 111+/FF 113+). */
     body {
-      background: radial-gradient(120% 70% at 50% 0%, #4a2350 0%, #2a1336 46%, #1e0f28 100%);
+      background: radial-gradient(
+        120% 70% at 50% 0% in oklab,
+        #4a2350 0%,
+        #3a1b43 23%,
+        #2a1336 46%,
+        #24102f 73%,
+        #1e0f28 100%
+      );
     }
-    /* day — a warm parchment dawn */
+    /* day — a warm parchment dawn (same oklab + intermediate-stop treatment) */
     body[data-mode="light"] {
-      background: radial-gradient(120% 70% at 50% 0%, #fff3df 0%, #f0e3ce 60%, #e4d2bb 100%);
+      background: radial-gradient(
+        120% 70% at 50% 0% in oklab,
+        #fff3df 0%,
+        #f7ead6 30%,
+        #f0e3ce 60%,
+        #eadbc5 80%,
+        #e4d2bb 100%
+      );
+    }
+
+    /* See-through shell (owner ask): drop the Kit's opaque `--bg` page fill so the body's dusk-glow radial
+     * shows through EVERYWHERE (behind the cards, appbar, composer — they keep their own opaque `--surface`
+     * fills, so only the negative space reveals the glow). The cosmos precedent; frontier has no canvas layer,
+     * so no z-index lift is needed. `:scope` (<html>) keeps the flat `--bg` for the overscroll rubber-band. */
+    .kit {
+      background: transparent;
     }
 
     /* The wordmark wears the display face (Chakra Petch) — the prototype's `.brand .nm` garnish. */
@@ -650,6 +674,220 @@
       text-align: center;
       font-size: 11.5px;
       color: var(--text-3);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════════════════════════════
+     * F4 — the bespoke Agent tab (§2). FrontierAgent composes the SHARED <ChatThread/>; this styles ONLY the
+     * §15 chat-hook classes (bubbles/who) + frontier-owned layout (`.fr-*`, the ported `.chips`/`.chip2`
+     * empty-state row). The signature is the 3-layer rig-stack watermark that reads as a centered hero in the
+     * empty state and RECEDES to a dim living background once the thread has messages — transform/opacity only,
+     * `data-motion`-gated (§14.11). Structure + semantic tokens so night/day + accent recolor for free; the one
+     * theme-private value is `--fr-bubble-ink` (the comic user-bubble fill, tokens.css). ═══════════════════ */
+
+    /* The agent tab is the positioning context for the absolute rig-stack watermark. */
+    #tab-agent {
+      position: relative;
+    }
+
+    /* Agent-tab edge fades (owner background nuance): the Kit's `.kit-main` scrims fade to a FLAT `--bg`, which
+     * over the now-visible dusk gradient would paint a mismatched haze. On the agent tab ONLY (the existing
+     * `body[data-tab]` hook — ui.ts stamps it; frontier already does this for the fleet scrim above), hide the
+     * kit color scrims and put a backdrop-agnostic `mask-image` content fade on the scroller instead — a true
+     * transparency fade over the gradient (research-confirmed, well-supported on Android Chrome/Firefox). The
+     * fleet tab's owner-tuned 12px scrim is untouched. */
+    body[data-tab="agent"] .kit-main::before,
+    body[data-tab="agent"] .kit-main.has-composer::after {
+      background: none;
+    }
+    body[data-tab="agent"] #app-scroll {
+      -webkit-mask-image: linear-gradient(
+        to bottom,
+        transparent 0,
+        #000 24px,
+        #000 calc(100% - 16px),
+        transparent 100%
+      );
+      mask-image: linear-gradient(
+        to bottom,
+        transparent 0,
+        #000 24px,
+        #000 calc(100% - 16px),
+        transparent 100%
+      );
+    }
+
+    /* ── the rig-stack watermark ── */
+    /* OUTER positioner: owns ONLY the empty↔watermark recede (transform + opacity), transform-origin top
+     * center; the inner layers own the bob, so the two never share a `transform` (nested-wrapper rule). Sits
+     * behind the chat content (z 0 vs the log's z 1 below). Absolute in the tab → it scrolls with the thread
+     * and never leaks onto other tabs. */
+    .fr-rigstack {
+      position: absolute;
+      top: 56px; /* clears the `.sec` header; owner-tunable at the 390px eyeball */
+      left: 50%;
+      width: 200px;
+      height: 238px;
+      z-index: 0;
+      pointer-events: none;
+      transform: translateX(-50%);
+      transform-origin: top center;
+      opacity: 1;
+    }
+    body[data-motion="full"] .fr-rigstack {
+      transition:
+        transform 0.5s ease,
+        opacity 0.5s ease;
+    }
+    .fr-rigstack .layer {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: contain;
+    }
+    /* geometry + the coral/magenta drop-shadow glow ported from the prototype (a STATIC filter — never
+     * animated, §14.11). */
+    .fr-rigstack .cube {
+      width: 150px;
+      height: 155px;
+      top: 26px;
+      z-index: 3;
+      filter: drop-shadow(0 10px 22px rgba(214, 90, 156, 0.45));
+    }
+    .fr-rigstack .mid {
+      width: 132px;
+      height: 27px;
+      bottom: 30px;
+      z-index: 2;
+      filter: drop-shadow(0 6px 12px rgba(214, 90, 156, 0.35));
+    }
+    .fr-rigstack .base {
+      width: 196px;
+      height: 33px;
+      bottom: 0;
+      z-index: 1;
+    }
+    /* bob — re-authored from the prototype so EVERY keyframe carries the full `translateX(-50%)` centering
+     * (the prototype centered via left:50%+translateX AND bobbed on the same transform; splitting them would
+     * drop the centering off the animated property). Motion-gated; paused when the tab is inactive. */
+    @keyframes frontier-bob {
+      0%,
+      100% {
+        transform: translateX(-50%) translateY(0);
+      }
+      50% {
+        transform: translateX(-50%) translateY(-7px);
+      }
+    }
+    body[data-motion="full"] .fr-rigstack .cube {
+      animation: frontier-bob 5s ease-in-out infinite;
+    }
+    body[data-motion="full"] .fr-rigstack .mid {
+      animation: frontier-bob 6.5s ease-in-out infinite;
+      animation-delay: -2.2s;
+    }
+    /* watermark state: slower/subtler bob (the receded background reads calmer) */
+    body[data-motion="full"] #tab-agent[data-thread="active"] .fr-rigstack .cube {
+      animation-duration: 8s;
+    }
+    body[data-motion="full"] #tab-agent[data-thread="active"] .fr-rigstack .mid {
+      animation-duration: 10s;
+    }
+    /* pause the bob when the tab isn't showing (the stack lives inside the tab wrapper) */
+    .tab:not(.active) .fr-rigstack .layer {
+      animation-play-state: paused;
+    }
+
+    /* recede: heavy dim + shrink toward the top (the Telegram-model legibility floor — the comic bubbles are
+     * opaque, so a ~0.13 watermark stays out of the way; opacity-only, no animated filter). */
+    #tab-agent[data-thread="active"] .fr-rigstack {
+      transform: translateX(-50%) translateY(-24px) scale(0.5);
+      opacity: 0.13;
+    }
+
+    /* ── empty-state hero (rendered INSIDE `.chat-log` via ChatThread's emptyState slot) ── */
+    /* the log sits ABOVE the watermark; relative so its z-index takes. */
+    .chat-log {
+      position: relative;
+      z-index: 1;
+    }
+    /* top padding clears the absolutely-positioned stack so title/hint/chips read as one hero below it. */
+    .fr-empty {
+      padding-top: 248px; /* ≈ stack top (56) + height (238) − the log's own top offset; eyeball-tunable */
+      padding-bottom: 8px;
+      text-align: center;
+    }
+    .fr-empty h2 {
+      margin: 6px 0 0;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 26px;
+      letter-spacing: 0.01em;
+      color: var(--text);
+    }
+    .fr-empty .fr-hint {
+      margin: 7px 0 0;
+      font-size: 12px;
+      color: var(--text-3);
+    }
+    /* suggestion chips — the prototype's `.chips`/`.chip2` pill row, wrapping on the narrowest phone. */
+    .fr-empty .chips {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 15px;
+    }
+    .fr-empty .chip2 {
+      all: unset;
+      box-sizing: border-box;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 13px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--text-2);
+      font-size: 11.5px;
+    }
+    .fr-empty .chip2:active {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+
+    /* ── bubble skins (§15 contract hooks only — no DOM fork; prototype `.msg` fidelity) ── */
+    /* who-line register: the prototype's 9px / 0.12em (deviates from kit's 10px / 0.06em). */
+    .b .who {
+      font-size: 9px;
+      letter-spacing: 0.12em;
+    }
+    /* user — the near-black comic bubble. A hairline `--line-2` edge separates the near-black fill from the
+     * dark gradient (WCAG 1.4.11 ≥3:1 non-text edge — shadows vanish on dark; research). */
+    .b.user .body {
+      background: var(--fr-bubble-ink);
+      color: #fff;
+      border: 1px solid var(--line-2);
+      border-radius: 14px 14px 4px 14px;
+      font-size: 13.5px;
+    }
+    /* assistant — stays transparent/borderless (kit default); match the prototype ink/size + cap the prose
+     * measure for readability (research). */
+    .b.bot {
+      max-width: min(92%, 66ch);
+    }
+    .b.bot .body {
+      font-size: 13.5px;
+      color: var(--text);
+    }
+    /* command — the kit already panels it via `--surface`/`--line`; add only D7's `.msg.cmd` deltas. */
+    .b.cmd .body {
+      border-radius: 11px;
+    }
+    .b.cmd .who {
+      color: var(--accent);
     }
   }
 }

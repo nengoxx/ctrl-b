@@ -34,6 +34,11 @@
       --warn: #ffb24c;
       --danger: #ff5a6a;
 
+      /* THEME-PRIVATE (§15): the prototype's `--black` comic-bubble fill — a mode-flipped near-black behind
+       * the user bubble + a chat-only value, so it lives here (not the semantic contract; promotion needs a
+       * second consumer). Night = #1a1018 (the prototype's night --black); day override below. */
+      --fr-bubble-ink: #1a1018;
+
       --accent-glow: none;
       --radius: 16px;
       --radius-sm: 10px;
@@ -96,6 +101,9 @@
        * prototype's own day ink-black, verified ≥4.81:1 vs all four accents. Night keeps the base var(--bg)
        * fallback (§14.15.1 ①; the minimal precedent). */
       --accent-ink: #241522;
+      /* day comic-bubble fill (§15 theme-private) — the prototype's day --black, still near-black so the
+       * white bubble text keeps contrast on the parchment gradient. */
+      --fr-bubble-ink: #241522;
       /* day status colors — the prototype's night statuses fail the 3:1 e2e floor on parchment, so day gets
        * darker same-hue literals (all in-gamut sRGB + ≥3:1 on both --surface and --bg). The softs are NOT
        * redeclared here — the body-block color-mix formulas re-derive from these. */
