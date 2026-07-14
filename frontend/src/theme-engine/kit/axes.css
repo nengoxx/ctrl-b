@@ -1,0 +1,100 @@
+/* Kit AXES stylesheet (Slice A) — cross-theme presentation axes projected onto `body[data-*]` by
+ * <AppEngines/> (App.tsx). Imported at `layer(axes)` from theme/index.css, which orders the cascade
+ * `@layer base, theme, axes, reset` — so these rules beat BOTH the Kit's chrome (@layer base) AND a theme's
+ * own overrides (@layer theme), while staying under `reset`. That order is the whole point of the axis: the
+ * stamp already encodes the theme-default + the user's override RESOLVED (kit/axes.ts#useOutlines), so a
+ * theme's chat borders must not be able to veto an outlines-OFF the user (or the theme's own default) asked
+ * for. axes only STRIPS resting borders / swaps a focus ring — never fills — precisely because it outranks
+ * @layer theme: any `background`/fill here would clobber a theme's chat inks (frontier's bubble fills), and
+ * fill-differentiation stays each theme's job. Only Kit semantic-contract tokens are used (§15).
+ *
+ * ── axis: `outlines` (default ON — reskins keep the Kit's bordered chrome; frontier defaults OFF) ──
+ * When `body[data-outlines="off"]`, the CHAT-surface resting borders are stripped and the element
+ * differentiates by its FILL instead (each theme owns the fill). Two hard constraints:
+ *   • Every selector is scoped under the `.kit` marker (Radix pattern) — so vapor, whose Root has no `.kit`,
+ *     can never match even by accident (belt-and-braces with useOutlines defaulting undeclared themes → ON).
+ *   • Per-element the strip REPLICATES what frontier's F4 sweep did (`border: none` vs `border-color:
+ *     transparent`) so frontier — default outlines=off — renders pixel-identical to before this promotion.
+ *     `border-color: transparent` (used where frontier stripped a color only) preserves the padded box size
+ *     when a reskin toggles the axis; `border: none` is kept where frontier collapsed the border outright.
+ * Scope is CHAT ONLY (bubbles · reasoning · command · question input · retry · markdown code · the plan
+ * family · the PrivilegeChip). Deliberately NOT here: the Clear-appbar squared icon buttons (owner-requested
+ * kit chrome), `:focus-visible` outlines (a11y), the composer (`.kit-composer*`/`.kit-cbtn` — its own axis
+ * slice), mini-player, Conf/Utils/overlay chrome — those stay frontier-local until promoted. */
+
+/* ── chat bubbles ── */
+/* sys — the kit's dashed caption frame goes; the muted centered caption reads without a box. */
+body[data-outlines="off"] .kit .b.sys .body {
+  border: none;
+}
+
+/* ── reasoning disclosure (`details.think`) — summary chip + scratchpad pre; fills stay theme-owned ── */
+body[data-outlines="off"] .kit .b .think > summary {
+  border: none;
+}
+body[data-outlines="off"] .kit .b .think pre {
+  border-left: none;
+}
+
+/* ── command bubble (`.b.cmd`) — the kit panel border, the `$`-well + captured-output pre borders, the
+ *    action-row top border + the inter-button dividers ── */
+body[data-outlines="off"] .kit .b.cmd .body {
+  border: none;
+}
+body[data-outlines="off"] .kit .b.cmd pre {
+  border: none;
+}
+body[data-outlines="off"] .kit .b.cmd .actions {
+  border-top: none;
+}
+body[data-outlines="off"] .kit .b.cmd .actions button {
+  border-right: none;
+}
+
+/* ── the question-bubble reply input — border off; the a11y focus affordance the border carried becomes an
+ *    INSET box-shadow ring (a resting-outline-free focus cue), NOT a resting outline ── */
+body[data-outlines="off"] .kit .q-input {
+  border: none;
+}
+body[data-outlines="off"] .kit .q-input:focus {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* ── the inline retry pill (F20) — its fill carries it (kit uses `all: unset`, so this is a no-op border
+ *    that documents the intent + matches frontier verbatim) ── */
+body[data-outlines="off"] .kit .b.bot .chat-err-retry {
+  border: none;
+}
+
+/* ── markdown code (A.3b) — the inline chip + the fenced block drop their `--line` borders; their fills
+ *    (`--surface-2` chip, `--bg` panel) differentiate. Blockquote's left rule + `hr` are typography, kept. ── */
+body[data-outlines="off"] .kit .b.bot .md code {
+  border: none;
+}
+body[data-outlines="off"] .kit .b.bot .md .md-code {
+  border: none;
+}
+
+/* ── the plan family (D30 pill/sheet + the pinned panel) — chat-area chrome; the accent-mix borders go, the
+ *    `--accent-soft` / frosted fills they already carry differentiate ── */
+body[data-outlines="off"] .kit .plan-pill,
+body[data-outlines="off"] .kit .plan-pin-head,
+body[data-outlines="off"] .kit .plan-sheet,
+body[data-outlines="off"] .kit .plan-pin-drop {
+  border: none;
+}
+/* the DONE tick's ring goes (the no-outlines idiom) — `border-color: transparent` keeps its box so a theme's
+ * accent fill of the tick (frontier repaints it) stays crisp; the tick FILL/glyph recolor stay theme-owned. */
+body[data-outlines="off"] .kit .plan-step.done .tick {
+  border-color: transparent;
+}
+
+/* ── PrivilegeChip lozenge + its popover — border off; the chip's fill + the "set" state's accent dot/text,
+ *    and the menu's opaque fill + shadow, carry them ── */
+body[data-outlines="off"] .kit .priv-chip,
+body[data-outlines="off"] .kit .priv-chip.set {
+  border-color: transparent;
+}
+body[data-outlines="off"] .kit .priv-menu {
+  border-color: transparent;
+}

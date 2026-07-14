@@ -1,4 +1,4 @@
-import { type ReactNode, Suspense, useCallback, useEffect, useState } from "react";
+import { type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useState } from "react";
 
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useAgentChat, useChatInit } from "./hooks/useAgentChat";
@@ -13,6 +13,7 @@ import { useFleetCycle } from "./hooks/useFleet";
 import { isAnyDirty } from "./store/dirty";
 import { usePlanOpenAutoClose } from "./store/planSheet";
 import { useUISlice } from "./store/ui";
+import { useOutlines } from "./theme-engine/kit/axes";
 import { DEFAULT_THEME, defaultSwitchTarget } from "./theme-engine/resolve";
 import { switchTheme } from "./theme-engine/switchTheme";
 import { useActiveRoot } from "./theme-engine/ThemeProvider";
@@ -175,6 +176,21 @@ function AppEngines() {
   // theme body that replaces the agent section can never lose the reset (§14.5, theme-independent engines).
   // `useAgentChat` is a cheap memoized derivation (threads are bounded); we only read `currentPlan`.
   usePlanOpenAutoClose(useAgentChat().currentPlan);
+
+  // Slice A — project the resolved `outlines` axis onto `body[data-outlines]` (kit/axes.css keys off it).
+  // Stamped HERE (not store/ui#applyBodyAttrs) because axis resolution reads the theme registry (the theme's
+  // declared default) and the store must NEVER import the registry (the store↛registry circular-import
+  // hazard). `useLayoutEffect` (not useEffect) so the FIRST commit paints with the attribute already set — no
+  // one-frame flash of the wrong border state. Cleared on unmount so a torn-down app leaves no stale attr.
+  const theme = useUISlice((s) => s.theme);
+  const outlines = useOutlines(theme);
+  useLayoutEffect(() => {
+    document.body.dataset.outlines = outlines ? "on" : "off";
+    return () => {
+      delete document.body.dataset.outlines;
+    };
+  }, [outlines]);
+
   return null;
 }
 

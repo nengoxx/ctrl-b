@@ -23,7 +23,20 @@ const hoisted = vi.hoisted(() => ({
 vi.mock("../src/theme-engine/ThemeProvider", () => ({ useActiveRoot: () => hoisted.root }));
 vi.mock("../src/theme-engine/switchTheme", () => ({ switchTheme: hoisted.switchTheme }));
 vi.mock("../src/theme-engine/registry", () => ({
-  registry: { vapor: { palettes: {} } },
+  // vapor stays minimal (its palettes drive the real `defaultSwitchTarget` in the Reset tests). frontier +
+  // cosmos carry the `outlines` axis setting so AppEngines' Slice-A stamp resolves against their real
+  // defaults (frontier OFF, cosmos ON) without dragging the theme modules' canvas imports into jsdom.
+  registry: {
+    vapor: { palettes: {} },
+    frontier: {
+      palettes: {},
+      settings: { outlines: { type: "switch", label: "Outlines", default: false } },
+    },
+    cosmos: {
+      palettes: {},
+      settings: { outlines: { type: "switch", label: "Outlines", default: true } },
+    },
+  },
   registeredThemes: () => [],
 }));
 vi.mock("../src/hooks/useAppearance", () => ({
@@ -47,7 +60,7 @@ vi.mock("../src/hooks/useEvents", () => ({ useEventStream: () => undefined }));
 vi.mock("../src/hooks/useFleet", () => ({ useFleetCycle: () => undefined }));
 
 import App from "../src/App";
-import { setUI } from "../src/store/ui";
+import { setThemeSetting, setUI } from "../src/store/ui";
 import { setPlanSheetOpen, usePlanSheetOpen } from "../src/store/planSheet";
 
 // A tiny probe reading the SHARED plan-open flag (module singleton store) — re-renders when it changes.
@@ -164,5 +177,31 @@ describe("App A4 wiring — AppEngines resets the shared plan-open flag on plan�
       </>,
     );
     expect(screen.getByTestId("plan-open").textContent).toBe("false");
+  });
+});
+
+describe("App outlines axis — AppEngines stamps body[data-outlines] from the resolved setting (Slice A)", () => {
+  beforeEach(() => setUI({ themeSettings: {} })); // clear per-theme overrides (module singleton persists)
+
+  it("frontier defaults outlines OFF → body[data-outlines]='off'", () => {
+    setUI({ theme: "frontier" });
+    hoisted.root = () => null; // a valid Root; this asserts AppEngines' stamp, not the theme tree
+    render(<App />);
+    expect(document.body.dataset.outlines).toBe("off");
+  });
+
+  it("a user override flips frontier to ON → 'on'", () => {
+    setUI({ theme: "frontier" });
+    setThemeSetting("frontier", "outlines", true);
+    hoisted.root = () => null;
+    render(<App />);
+    expect(document.body.dataset.outlines).toBe("on");
+  });
+
+  it("cosmos defaults outlines ON → 'on'", () => {
+    setUI({ theme: "cosmos" });
+    hoisted.root = () => null;
+    render(<App />);
+    expect(document.body.dataset.outlines).toBe("on");
   });
 });

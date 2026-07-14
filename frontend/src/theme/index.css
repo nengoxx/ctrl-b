@@ -11,8 +11,14 @@
  *
  * `@layer base, theme` orders Kit-vs-theme overrides (the Kit's shared component CSS lands in
  * `layer(base)` when it's built; the active theme wins via `layer(theme)`). vapor is a theme → layer(theme).
+ *
+ * `axes` sits BETWEEN `theme` and `reset` (Slice A). The Kit axes stylesheet (kit/axes.css) holds
+ * cross-theme presentation-axis overrides — e.g. `outlines` — keyed on a `body[data-*]` stamp that already
+ * encodes the theme-default + the user's override RESOLVED (kit/axes.ts). So an axis override must BEAT
+ * `@layer theme` (a theme's own chat borders can't veto the user's outlines-off) while staying UNDER `reset`
+ * (the app-wide selection/tap-highlight model still wins last).
  */
-@layer base, theme, reset;
+@layer base, theme, axes, reset;
 
 /* Kit semantic-token contract — neutral fallbacks in @layer base; each theme's tokens.css overrides them
  * in @layer theme (wins by cascade-layer order). vapor's private tokens don't intersect this set; the
@@ -23,6 +29,11 @@
  * `.radix-themes` pattern); inert under vapor (its Root has no `.kit`). @layer base so a theme can still
  * override in @layer theme, but reskins stay token-only (§14.4.1). */
 @import "../theme-engine/kit/kit.css" layer(base);
+
+/* Kit AXES — cross-theme presentation axes (kit/axes.css), keyed on the `body[data-*]` stamp <AppEngines/>
+ * writes from the resolved per-theme setting. `layer(axes)` puts these above @layer theme (an axis override
+ * beats a theme's own chrome) but below @layer reset. Scoped under `.kit` → inert on vapor. */
+@import "../theme-engine/kit/axes.css" layer(axes);
 
 @import "./vapor.css" layer(theme);
 @import "./extras.css" layer(theme);

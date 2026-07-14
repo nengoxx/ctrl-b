@@ -5,6 +5,7 @@
 //
 // CSS + fonts are LAZY (loaded by switchTheme before the skin flips); vapor stays the eager default.
 
+import { outlinesSetting } from "../../theme-engine/kit/axes";
 import { planPlacementSetting } from "../../theme-engine/kit/composer/plan/placement";
 import { composerLayoutSetting } from "../../theme-engine/kit/composer/setting";
 import { preloadableRoot } from "../../theme-engine/lazyRoot";
@@ -49,6 +50,9 @@ export const minimal: ThemeDef = {
   settings: {
     composer: composerLayoutSetting("stacked"),
     planPlacement: planPlacementSetting("inline"),
+    // Outlines axis (Slice A) — minimal leans on the Kit's bordered chat chrome, so it defaults ON; the
+    // toggle offers the borderless look (kit/axes.css strips the chat borders under body[data-outlines=off]).
+    outlines: outlinesSetting(true),
     density: {
       type: "seg",
       label: "Density",

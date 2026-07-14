@@ -6,6 +6,7 @@
 //
 // CSS + fonts are LAZY (loaded by switchTheme before the skin flips); night (dark) + day (light) modes.
 
+import { outlinesSetting } from "../../theme-engine/kit/axes";
 import { planPlacementSetting } from "../../theme-engine/kit/composer/plan/placement";
 import { composerLayoutSetting } from "../../theme-engine/kit/composer/setting";
 import { preloadableRoot } from "../../theme-engine/lazyRoot";
@@ -52,6 +53,10 @@ export const frontier: ThemeDef = {
   settings: {
     composer: composerLayoutSetting("stacked"),
     planPlacement: planPlacementSetting("inline"),
+    // Outlines axis (Slice A) — frontier defaults OFF: its F4 look IS the no-outlines chat (the borderless
+    // bubbles/plan/priv chrome now lives in kit/axes.css, keyed on body[data-outlines]). The toggle lets the
+    // owner restore the Kit's resting borders live.
+    outlines: outlinesSetting(false),
   },
   // Section-layout capability (D35 §F0): frontier DEFAULTS to `3-tab` (utils hosted in Conf) and declares NO
   // `layouts` field, so ALL presets stay on offer — the D35 ideal ("themes default, never restrict"; vapor's

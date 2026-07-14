@@ -6,6 +6,7 @@
 //
 // CSS + fonts are LAZY (loaded by switchTheme before the skin flips); dark-only for now (deep space).
 
+import { outlinesSetting } from "../../theme-engine/kit/axes";
 import { planPlacementSetting } from "../../theme-engine/kit/composer/plan/placement";
 import { composerLayoutSetting } from "../../theme-engine/kit/composer/setting";
 import { preloadableRoot } from "../../theme-engine/lazyRoot";
@@ -66,6 +67,9 @@ export const cosmos: ThemeDef = {
     composer: composerLayoutSetting("stacked"),
     // Plan placement (D31/A4) — the shared inline/pinned catalog (default inline = the composer pill+sheet).
     planPlacement: planPlacementSetting("inline"),
+    // Outlines axis (Slice A) — cosmos reuses the Kit's bordered chat chrome, so it defaults ON; the toggle
+    // offers the borderless look (kit/axes.css strips the chat borders under body[data-outlines=off]).
+    outlines: outlinesSetting(true),
     // Central-body style (C2a-fix) — two variants the owner compares live: the prototype's see-through "D"
     // coin (cutout) vs the matte ball with the D engraved into it (carved). Auto-rendered as a Seg.
     moonStyle: {

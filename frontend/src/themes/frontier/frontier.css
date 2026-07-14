@@ -924,10 +924,12 @@
     .b .who::before {
       display: none;
     }
-    /* NO OUTLINES anywhere in the chat log (owner F4 directive — overrides the prototype's own cmd border):
-     * every bordered/outlined chat element below drops its border and DIFFERENTIATES BY FILL instead. Kit's
-     * chat rules live in @layer base; these frontier rules are @layer theme, so they win regardless of the
-     * kit selectors' higher specificity. */
+    /* NO OUTLINES in the chat log (owner F4 directive). The BORDER-STRIPS themselves were PROMOTED into the
+     * Kit-wide `outlines` axis (Slice A) — they now live in theme-engine/kit/axes.css, gated on
+     * `body[data-outlines="off"]` (frontier's default). What stays HERE is only the fill/typography
+     * DIFFERENTIATION each stripped element needs (bubble inks, the flattened think chip/pre fills, the cmd
+     * `--surface` fills, the plan DONE-tick accent repaint) — @layer theme, so a theme fill never fights the
+     * axis strip (different properties; axes only touches border/box-shadow). See kit/axes.css for the strips. */
 
     /* the "you" who-line hugs the bubble's RIGHT edge (owner eyeball r5 — the prototype's `.msg.user .who
      * { text-align: right }` look after all; round 2's left-pin was hardening the very state the owner was
@@ -954,93 +956,55 @@
       font-size: 13.5px;
       color: var(--text);
     }
-    /* sys — kill the kit dashed border; keep the muted uppercase caption as bare centered text (no box —
-     * a system caption reads clearly without a frame; nothing to fill-differentiate). */
-    .b.sys .body {
-      border: none;
-    }
-    /* reasoning disclosure (`details.think`) — borderless; the summary chip + scratchpad pre differentiate
-     * by fill (`--surface-2` chip, `--surface` pre) instead of the kit border + accent-tint. */
+    /* sys — the kit dashed border is stripped by the axis (kit/axes.css); nothing to fill-differentiate (a
+     * system caption reads as bare centered text), so frontier keeps no rule here.
+     * reasoning disclosure (`details.think`) — the axis strips the border; frontier keeps the fill/shape
+     * DIFFERENTIATION: the summary chip + scratchpad pre read as soft rects (`--surface-2` / `--surface`). */
     .b .think > summary {
-      border: none;
       background: var(--surface-2);
       border-radius: 8px; /* flatten the kit's 999px lozenge to a soft rect (owner F4 round 2) */
     }
     .b .think pre {
-      border-left: none;
       background: var(--surface);
       border-radius: 8px; /* keep the scratchpad consistent with the flattened chip (kit gave it 0 6px 6px 0) */
     }
-    /* command bubble (`.b.cmd`) — the kit panel border goes; keep the opaque `--surface` fill (the prototype's
-     * `.msg.cmd .bb` fill look, minus its border per the owner). D7's rounded-corner delta stays. */
+    /* command bubble (`.b.cmd`) — the axis strips the kit panel border; keep the opaque `--surface` fill (the
+     * prototype's `.msg.cmd .bb` fill look, minus its border per the owner). D7's rounded-corner delta stays. */
     .b.cmd .body {
-      border: none;
       background: var(--surface);
       border-radius: 11px;
     }
     .b.cmd .who {
       color: var(--accent);
     }
-    /* the `$`-code well + captured-output pre — borderless, a darker `--surface-2` fill differentiates them
-     * from the `--surface` body (covers both `.b.cmd pre` and `.cmd-output > pre` via the layer win). */
+    /* the `$`-code well + captured-output pre — the axis strips the border; a darker `--surface-2` fill
+     * differentiates them from the `--surface` body (covers both `.b.cmd pre` and `.cmd-output > pre`). */
     .b.cmd pre {
-      border: none;
       background: var(--surface-2);
     }
-    /* the action row (exec/edit/dismiss) — drop the kit top border + inter-button divider borders; the
-     * buttons stay text actions differentiated by their accent/muted color (kit A.3c). */
-    .b.cmd .actions {
-      border-top: none;
-    }
-    .b.cmd .actions button {
-      border-right: none;
-    }
-    /* command sub-disclosures (`cmd-detail`/`cmd-output`/`cmd-links`) carry no summary borders in the kit —
-     * their pres are handled by `.b.cmd pre` above; nothing else to strip. */
 
-    /* the question-bubble reply input — borderless, `--surface-2` fill; a focus ring (inset box-shadow, not a
-     * resting outline) keeps the a11y focus affordance the removed border used to carry. */
+    /* the question-bubble reply input — the axis strips the border AND supplies the inset focus ring; frontier
+     * keeps only the `--surface-2` fill that differentiates it. */
     .q-input {
-      border: none;
       background: var(--surface-2);
     }
-    .q-input:focus {
-      box-shadow: inset 0 0 0 1px var(--accent);
-    }
-    /* the inline retry pill (F20) — kit borders it with `--accent-soft` ON the same `--accent-soft` fill;
-     * the fill alone carries it here. */
+    /* the inline retry pill (F20) — the fill carries it (the axis strip is a no-op on the kit's `all: unset`
+     * button). */
     .b.bot .chat-err-retry {
-      border: none;
       background: var(--accent-soft);
     }
-    /* markdown code (A.3b) — the inline chip + the fenced block drop their `--line` borders; their existing
-     * fills (`--surface-2` chip, `--bg` panel — opaque even over the see-through shell) differentiate.
-     * Blockquote's left rule + `hr` STAY (typography, not outlines). */
-    .b.bot .md code {
-      border: none;
-    }
-    .b.bot .md .md-code {
-      border: none;
-    }
-    /* the plan family (D30 pill/sheet + the pinned panel) — chat-area chrome, same no-outlines directive:
-     * the accent-mix borders go; the `--accent-soft` / frosted fills they already carry differentiate. */
-    .plan-pill,
-    .plan-pin-head,
-    .plan-sheet,
-    .plan-pin-drop {
-      border: none;
-    }
+    /* markdown code (A.3b) — the axis strips the inline chip's + fenced block's `--line` borders; their
+     * existing fills (`--surface-2` chip, `--bg` panel) differentiate. No frontier rule needed (fills = kit). */
 
     /* plan checklist done/crossed steps — the kit paints the done tick + strike in `--ok` green (kit.css
      * §plan-step), which clashes with frontier's coral/magenta accent (owner round-3 eyeball). Repaint the
-     * DONE family into the accent: the tick fills `--accent` (no ring — the no-outlines idiom), its ✓ glyph
-     * flips to `--accent-ink` (the ink-on-accent token — kit hardcodes `--bg`, which is wrong on the accent
-     * fill), and the strike-through recolors to a 50% accent tint. Text colors stay as the kit sets them.
-     * The `.active` tick is ALREADY accent-tinted in the kit, so it's left untouched. @layer theme beats the
-     * kit's `.kit .plan-step…` @layer base rules regardless of specificity. */
+     * DONE family into the accent: the tick fills `--accent` (its ring is stripped by the outlines axis —
+     * kit/axes.css), its ✓ glyph flips to `--accent-ink` (the ink-on-accent token — kit hardcodes `--bg`,
+     * which is wrong on the accent fill), and the strike-through recolors to a 50% accent tint. Text colors
+     * stay as the kit sets them. The `.active` tick is ALREADY accent-tinted in the kit, so it's left
+     * untouched. @layer theme beats the kit's `.kit .plan-step…` @layer base rules regardless of specificity. */
     .plan-step.done .tick {
       background: var(--accent);
-      border-color: transparent;
     }
     .plan-step.done .tick::after {
       color: var(--accent-ink);
@@ -1053,7 +1017,11 @@
      * F4 round 2 — the no-outlines sweep goes THEME-WIDE (owner: "let's try it"). Every RESTING border/
      * outline across the reused Kit surfaces is stripped and the element DIFFERENTIATES BY FILL instead. Kit
      * chrome lives in @layer base; these frontier rules are @layer theme, so they win regardless of the kit
-     * selectors' specificity. Two things are PRESERVED: (1) `:focus-visible` outlines + input focus rings —
+     * selectors' specificity. (Slice A: the CHAT portion of this sweep — bubbles/reasoning/command/question/
+     * retry/markdown-code + the plan family + the PrivilegeChip — was PROMOTED into the Kit-wide `outlines`
+     * axis, kit/axes.css; only the fill-differentiation for those stays above. What remains BELOW is the
+     * non-chat sweep: the composer + its bezel, the mini-player, Conf, Utils, and the shared overlays.)
+     * Two things are PRESERVED: (1) `:focus-visible` outlines + input focus rings —
      * a11y affordances, not resting outlines (any `border-color`-on-focus becomes an inset box-shadow ring,
      * the `.q-input` precedent); (2) the owner-named EXCEPTIONS — the fleet plate TAGS (`.frontier-beacon
      * .tag`, `.frontier-rig .plate`, above) and the KIT appbar chrome (this sweep does NOT touch the squared
@@ -1082,17 +1050,12 @@
       border-color: transparent;
     }
 
-    /* ── PrivilegeChip lozenge + its popover — border off; the chip takes a `--surface-2` fill, the "set"
-     *    state reads via its accent dot/text, the menu keeps its opaque fill + shadow ── */
-    .priv-chip,
-    .priv-chip.set {
-      border-color: transparent;
-    }
+    /* ── PrivilegeChip lozenge — its borders (chip + "set" state + the popover) are stripped by the outlines
+     *    axis (kit/axes.css, a CHAT-surface element); frontier keeps only the `--surface-2` chip fill that
+     *    replaces the removed border (the "set" state reads via its accent dot/text; the menu keeps its
+     *    opaque fill + shadow). ── */
     .priv-chip {
       background: var(--surface-2);
-    }
-    .priv-menu {
-      border-color: transparent;
     }
 
     /* ── Conf tab: cards, row dividers, inputs, seg tracks, switch, badges, secondary buttons ── */
