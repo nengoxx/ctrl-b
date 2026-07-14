@@ -1914,3 +1914,51 @@ dusk-glow shows through a see-through frontier shell [cosmos precedent] + protot
 [black user fill / transparent assistant]). **✅ BUILT as frontier F4, SHIPPED 2026-07-13** (commits
 `61f2267`→`696842f`; the contract table is `THEME_ENGINE.md` §15; frontier consumes it as the first
 non-token chat reskin — six owner eyeball rounds folded in, full record in `FRONTIER_PLAN.md`'s banner).
+
+## D37 — Presentation axes: the `axes` cascade layer + `body[data-*]` stamps (outlines ✅ BUILT · composerSkin APPROVED-unbuilt) ✏️ LOCKED 2026-07-13 (frontier F5 re-scope)
+
+**Context.** Frontier F4 shipped an owner-ratified theme-wide no-outlines look as a frontier-private
+`@layer theme` sweep. The owner activated the parked promotion (F5 re-scope, 2026-07-13): make the chat's
+borderless look a cross-theme user choice, and — the new half — make the COMPOSER's chrome (cosmos's kit
+outline vs frontier's bezel) user-selectable independent of the active theme, as a second axis next to the
+existing composer-style (variant) seg. Both are pure-look levers → Tokens band (§14.14); no Surface/3-gate.
+
+**Decision — the axis pattern (kit machinery, both axes).**
+- An **axis** = a per-theme setting (D29 §14.3, auto-rendered in Appearance, synced `ui.themeSettings`)
+  + a shared spec **factory** + a **resolver** built on `resolveThemeSetting` (theme default unless a
+  validated user override; **no theme-id branching**) + a **`body[data-*]` stamp** projected in ONE place —
+  a `useLayoutEffect` in `<AppEngines/>` (App.tsx). NEVER stamped from `store/ui.ts#applyBodyAttrs`: axis
+  resolution reads the theme registry and the store must not import it (the store↛registry hazard).
+- **New cascade layer `axes`** (`theme/index.css`: `@layer base, theme, axes, reset`): axis override CSS
+  (`theme-engine/kit/axes.css`) outranks `@layer theme` — the stamp already encodes theme-default + user
+  override RESOLVED, so a theme's own rules can't veto the user. **Invariant: the axes layer STRIPS/swaps
+  only (borders, focus-ring replacement) — never fills.** It outranks theme CSS, so any fill there would
+  clobber theme inks; fill-differentiation stays each theme's job. All selectors `.kit`-scoped (inert on
+  vapor) AND gated on the stamp — belt and braces with resolvers defaulting undeclared themes to the
+  kit-native look.
+
+**Axis 1 — `outlines` (✅ BUILT 2026-07-13, frontier F5 slice A, commit `5193f4c`).** Chat-scoped (the D36
+§15 hook families: bubbles · think · cmd · q-input · retry · md-code · plan family · priv chip/menu).
+`outlinesSetting(defaultOn)` + `useOutlines(themeId)` (undeclared → ON) in `kit/axes.ts`; minimal/cosmos
+declare ON, frontier OFF (its F4 look). `body[data-outlines="on"|"off"]`. frontier.css thinned to
+fills/repaints only — owner-ratified pixel-identical. Exclusions unchanged: `:focus-visible` outlines, the
+Clear-appbar squared iconbtns (kit.css ~§appbar), composer/mini-player/Conf/Utils/overlays (the non-chat
+sweep stays frontier-private until a second consumer wants it — §14.14 graduation rule).
+
+**Axis 2 — `composerSkin` (APPROVED 2026-07-13, unbuilt = F5 slice B).** A second per-theme `seg` next to
+the existing `composer` variant seg (the `planPlacement` precedent): options **`outline` | `bezel`**,
+resolver default `outline` for undeclared themes; frontier declares default `bezel`, minimal/cosmos
+`outline`. Stamp `body[data-composer-skin]` from the same AppEngines effect. **The skin looks become
+first-class kit chrome, NOT axes-layer strips:** kit.css (base layer) styles both skins on semantic
+contract tokens (`outline` = today's `--line-2` border base; `bezel` = frontier's transparent border +
+inset top-highlight + soft ambient drop, re-expressed on contract tokens), keyed
+`body[data-composer-skin="…"]`. Slice B DELETES frontier.css's composer strips + bezel (they become the
+`bezel` skin) — after it, **no theme styles composer chrome directly** (authority rule: the outlines axis
+owns the chat thread, the skin axis owns the composer; themes contribute tokens + declared defaults only;
+a future bespoke composer look = a NEW skin id added to the catalog, not theme CSS). Two Appearance rows
+result: "Composer" (shape) · "Composer skin" (chrome). Conf UI is automatic (settings auto-render).
+
+**Status.** LOCKED 2026-07-13 (owner-ratified in prose; slice A additionally eyeballed live on the dev
+instance same day). Slice B = the next build slice; F5's remaining gates (perf pass · a11y floor · e2e
+render case) follow it. The F5 items "per-host art override UI" + "asset format/size pass" were PARKED by
+the owner the same day (not dropped — revisit post-F5).

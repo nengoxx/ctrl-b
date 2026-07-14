@@ -29,6 +29,7 @@ mapping), while §9.7–§9.12 + §13.1 remain live contract · **§14** = the *
 | Lazy `Root` owns the whole presentation (controllers stay above it) | §14.1 · §14.3 · §14.5 |
 | Pick the cheapest CSS band per region: tokens-only reskin under `.kit` → Surface → bespoke | §14.4.1 (recipe) · §14.14 (3-band + 3-gate) |
 | Reskinning the agent CHAT: style the pinned hook classes + tokens only — never fork the shared tree | **§15** (chat hooks + token contract, D36) |
+| Cross-theme look levers (`outlines` · `composerSkin`): declare the per-theme default; strips live in the `axes` layer (never fills), composer chrome belongs to skins — not theme CSS | **§14.16** (presentation axes, D37) |
 | Semantic token contract (mode/accent axes; two-channel accent) | §9.7 · §14.13 #1 |
 | Author OKLCH colors **in-gamut for sRGB** (a too-vivid chroma gamut-clips flat/hue-shifted on sRGB phones — the owner's device is sRGB; the B2 advisory scan warns per out-of-gamut `oklch()` literal with a clamp suggestion) | §14.15.4 (built 2026-07-12) · `themeContract.test.ts` advisory group |
 | Keyframes prefixed `<id>-` | §14.13 #4 |
@@ -1779,6 +1780,29 @@ layout={…}` render — all interleaved in the same component the registry rewr
 Surface axis stays separate — variants ≠ tab composition.** ·
 a third perf tier · scroll restoration across switches · quarantine subsystem · aria-live announcement (see
 riders).
+
+## 14.16 Presentation axes — the `axes` cascade layer + `body[data-*]` stamps (D37; added 2026-07-13, frontier F5 slice A)
+
+**What an axis is.** A cross-theme LOOK lever (Tokens band — §14.14; never a Surface): a per-theme
+setting (§14.3, auto-rendered + synced) + a shared factory/resolver on `resolveThemeSetting`
+(`theme-engine/kit/axes.ts`; undeclared themes → the kit-native look; no theme-id branching) + a
+`body[data-*]` stamp projected by `<AppEngines/>` in a `useLayoutEffect` (NOT `applyBodyAttrs` — the
+store↛registry hazard). Axis override CSS lives in `theme-engine/kit/axes.css`, imported at the NEW
+cascade position **`@layer base, theme, axes, reset`** (`theme/index.css`): it outranks `@layer theme`
+because the stamp already encodes theme-default + user override resolved — a theme's own rules can't veto
+the user's choice.
+
+**Invariants.** (1) The axes layer **strips/swaps only** (borders, a focus-ring replacement) — **never
+fills**; it beats theme CSS, so a fill there would clobber theme inks. Fill-differentiation stays each
+theme's job. (2) Every selector is `.kit`-scoped (inert on vapor) AND gated on the stamp. (3) Only kit
+semantic-contract tokens (§15). (4) Promote a theme-private strip into an axis only when a second
+consumer wants it (§14.14 graduation philosophy).
+
+**Built axes:** `outlines` (chat-scoped — the D36 §15 hook families; minimal/cosmos default ON, frontier
+OFF = its F4 look). **Approved-unbuilt:** `composerSkin` (`outline`|`bezel`) — its skins are first-class
+kit chrome in kit.css keyed on `body[data-composer-skin]`, NOT axes-layer strips; after it lands, no
+theme styles composer chrome directly (D37 authority rule: outlines axis owns the chat thread, skin axis
+owns the composer). Full rationale + the slice-B pinned design: **DECISIONS D37**.
 
 # §15 — The CHAT HOOKS + TOKEN CONTRACT (→DECISIONS D36; specified at the frontier F4 pre-flight, 2026-07-12)
 

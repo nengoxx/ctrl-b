@@ -1,5 +1,24 @@
 # Frontier theme — implementation plan (T5)
 
+> **▶ F5 IN PROGRESS — RE-SCOPED BY OWNER 2026-07-13 (supersedes the F4 banner's F5 list below):**
+> per-host art override UI + asset format/size pass [hero.png 1.9MB] are **PARKED** (owner call — not
+> dropped, revisit post-F5). F5 now = **the two presentation axes (D37)** + the original gates.
+> **Slice A ✅ SHIPPED 2026-07-13 (commit `5193f4c`, owner-eyeballed live + ratified; FE gate 422
+> tests [+7]):** frontier's CHAT no-outlines strips promoted to the kit-wide `outlines` axis —
+> `kit/axes.ts` (`outlinesSetting(defaultOn)` factory + `useOutlines` resolver; undeclared→ON) ·
+> `kit/axes.css` in the NEW `@layer base, theme, axes, reset` position (strips-only, `.kit`-scoped,
+> gated `body[data-outlines="off"]`) · stamp = AppEngines `useLayoutEffect` (never `applyBodyAttrs` —
+> store↛registry) · minimal/cosmos ON · frontier OFF (pixel-identical, ratified) · frontier.css
+> thinned to fills/repaints; composer/mini-player/Conf/Utils/overlay strips stay frontier-private.
+> **NEXT = Slice B (design APPROVED + pinned in D37):** the `composerSkin` axis (`outline`|`bezel` seg
+> next to the composer-variant seg; frontier defaults `bezel`, minimal/cosmos `outline`;
+> `body[data-composer-skin]` from the same AppEngines effect; skins = first-class kit.css chrome on
+> contract tokens — frontier's composer strips + `.line` bezel DELETE from frontier.css and become the
+> `bezel` skin; after slice B no theme styles composer chrome directly — D37 authority rule). THEN the
+> remaining F5 gates: Fennec+Chrome perf pass · a11y floor [peek-detent focus · svc-row aria-label ·
+> `.kit-tabbtn` focus ring] · frontier e2e render case · §0 Author-Contract row-by-row + owner
+> sign-off. *(§6-F5 + §7's licensing note still apply where not superseded here.)*
+>
 > **▶ F4 ✅ SHIPPED 2026-07-13 (built 2026-07-12→13, commits `61f2267`→`696842f` [9]; owner-eyeballed
 > through SIX rounds + ratified; independent adversarial audit mid-build: 1 real bug [the agent-tab
 > scroller mask clipped the sticky appbar — masks clip sticky children in viewport space] fixed same

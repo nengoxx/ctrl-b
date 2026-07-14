@@ -31,7 +31,7 @@
 >   vault's llamacpp `.137:5001` (owner-confirmed; corsair's instance unused).** The target's `config.yaml`
 >   is canonical — the Windows snapshot is stale by design (bootstrap re-runs won't clobber).
 >
-> **▶ CURRENT WORK (updated 2026-07-13): frontier **F4 — the Agent tab — is ✅ COMPLETE and
+> **▶ CURRENT WORK (updated 2026-07-14): frontier **F4 — the Agent tab — is ✅ COMPLETE and
 > owner-ratified** (commits `61f2267`→`696842f` [9]; six owner eyeball rounds; mid-build adversarial
 > audit: 1 bug [scroller mask clipped the sticky appbar] fixed same round; FE gate 415 tests).**
 > Shipped: **D36 + THEME_ENGINE §15 — the chat hooks + token contract** (themes reskin the ONE shared
@@ -51,14 +51,24 @@
 > placeholder → "Message" · tab indicator cap 88px. **Removed after live jank:** the agent-tab
 > scroller mask (masked scroller + bobbing child re-rasterizes per frame — no agent edge fades by
 > design).
-> **NEXT: frontier F5 — polish + gates** (`FRONTIER_PLAN.md` §6-F5, NARROWED by the F4 as-builts —
-> the Fennec mask hazard is MOOT [mask removed]; remaining: per-host art override UI · asset
-> format/size [hero.png 1.9MB] · Fennec+Chrome perf pass · the a11y floor [peek-detent focus ·
-> svc-row aria-label · `.kit-tabbtn` focus ring] · frontier e2e render case · the PARKED owner idea:
-> promote frontier's no-outlines block into a kit `body[data-outlines]` axis + shared
-> `outlinesSetting()` switch — promote only after the look settles) · or ACA Slices 1–2 (TODO Phase
-> 12) · or the V1 vapor-hygiene filler (§14.15.3).
-> *(F0–F3 shipped 2026-07-12; the `FRONTIER_PLAN.md` banner holds all as-built records.)*
+> **NOW: frontier F5 — IN PROGRESS, RE-SCOPED by owner 2026-07-13** (authoritative slice record =
+> the `FRONTIER_PLAN.md` banner; the axis architecture = **D37 + THEME_ENGINE §14.16**):
+> per-host art override UI + asset format/size pass [hero.png 1.9MB] **PARKED** (owner call, revisit
+> post-F5). **Slice A ✅ SHIPPED 2026-07-13 (`5193f4c`, owner-eyeballed live + ratified, FE gate 422):**
+> chat no-outlines promoted to the kit-wide `outlines` axis — `kit/axes.ts` factory+resolver
+> (undeclared themes→ON) · `kit/axes.css` in the NEW `@layer base, theme, axes, reset` position
+> (strips-only, NEVER fills, `.kit`-scoped) · `body[data-outlines]` stamped by an AppEngines
+> `useLayoutEffect` (never `applyBodyAttrs` — store↛registry) · minimal/cosmos default ON, frontier
+> OFF (pixel-identical) · "Outlines" switch auto-renders in Appearance. **NEXT = Slice B, design
+> APPROVED + PINNED in D37 — build it, don't re-derive:** the `composerSkin` axis (`outline`|`bezel`
+> per-theme seg; frontier=`bezel`, minimal/cosmos=`outline`; `body[data-composer-skin]` same stamp
+> site; skins = first-class kit.css chrome on contract tokens; frontier's composer strips + `.line`
+> bezel DELETE from frontier.css into the `bezel` skin; authority rule: outlines axis owns chat,
+> skin axis owns composer — after B no theme styles composer chrome directly). THEN the F5 gates:
+> Fennec+Chrome perf pass · a11y floor · frontier e2e render case · §0 contract row-by-row + owner
+> sign-off. After F5: ACA Slices 1–2 (TODO Phase 12) · vapor-hygiene filler (§14.15.3) · the parked
+> Composer Surface follow-ons.
+> *(F0–F3 shipped 2026-07-12, F4 2026-07-13; the `FRONTIER_PLAN.md` banner holds all as-built records.)*
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
 > orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).
 >

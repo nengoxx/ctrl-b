@@ -38,7 +38,10 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 > themes, fleet↔utils glyphs swapped** · kit-main[data-tab] hook) ✅ ALL SHIPPED 2026-07-12** ·
 > **F4 (the Agent tab — D36/§15 chat hooks contract · shared ChatThread · the no-outlines +
 > Clear-appbar + rounded-square-line-composer owner rounds) ✅ SHIPPED 2026-07-13**;
-> next = frontier F5 (polish + gates, `FRONTIER_PLAN.md` §6-F5 — narrowed by the F4 as-builts). **Approved 2026-07-07 (owner):** the **ACA chat-hardening plan** = **Phase 12**
+> now = frontier F5 **IN PROGRESS, re-scoped 2026-07-13** (`FRONTIER_PLAN.md` banner is authoritative;
+> axes = D37/§14.16): art-override UI + asset pass PARKED · **slice A [chat `outlines` axis] ✅ SHIPPED
+> 2026-07-13 `5193f4c`** · next = slice B (`composerSkin` axis, design pinned in D37) · then perf/a11y/e2e
+> gates. **Approved 2026-07-07 (owner):** the **ACA chat-hardening plan** = **Phase 12**
 > (`AGENT_CHAT_AUDIT.md` §5 is the spec; Slice 0 landed; Slices 1–2 pre-deploy candidates, 3+
 > post-deploy) and the `SYSTEM_AUDIT.md` **SYS** riders — **SYS-13** (live `fillComposer` bug) +
 > **SYS-14** (Linux CI) are Phase-9 pre-deploy items below. **Still open (low / deferred):**
