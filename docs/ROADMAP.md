@@ -619,6 +619,13 @@ homes later:
   the D31 3-gate → V5 chrome dedup). Unscheduled — after the theme catalog stabilizes. Standing guarantees
   already in force: nothing new depends on vapor's legacy hooks; test/lint exemptions are shrinkable waiver
   lists; engine code uses `DEFAULT_THEME`, never `"vapor"` literals.
+  **AMENDED at the F5 close (owner, 2026-07-15): the theme population is CLOSED** — no new themes; the
+  existing four (vapor · minimal · cosmos · frontier) all formalize onto the kit, and future theme work =
+  variations within them. Two consequences already acted on: rule-of-three waits are moot for cross-theme
+  duplication (the K1 composer hide/slide promotion, owner directive), and **gradient accents** are a wanted
+  capability — the two-channel seam (`--accent` flat / `--accent-fill` may be a gradient `<image>`, §14.15.1 ⑨)
+  is already wired at every kit fill site; K2 exercises it for frontier, and vapor's gradients take the same
+  route at its V3 token-mapping rung.
 - **Composer icon setting (owner, parked 2026-07-15 at the F5 slice-B review)** — a user-facing setting for
   the composer's control glyphs (e.g. the send icon), on top of the D37 `composerSkin` axis. The seam already
   exists: KitComposer picks its default send glyph by resolved skin (glass → the shared arrowhead) and the

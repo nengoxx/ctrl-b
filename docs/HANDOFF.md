@@ -51,8 +51,10 @@
 > placeholder → "Message" · tab indicator cap 88px. **Removed after live jank:** the agent-tab
 > scroller mask (masked scroller + bobbing child re-rasterizes per frame — no agent edge fades by
 > design).
-> **NOW: frontier F5 — IN PROGRESS, RE-SCOPED by owner 2026-07-13** (authoritative slice record =
-> the `FRONTIER_PLAN.md` banner; the axis architecture = **D37 + THEME_ENGINE §14.16**):
+> **frontier F5 ✅ CLOSED — THE FRONTIER THEME (T5) IS COMPLETE (owner sign-off 2026-07-15 on the
+> Gate D §0 walk, 18/18 PASS; a 3-lens adversarial review [TS/CSS/docs] + full e2e 109/109 preceded
+> the close).** *(Slice record below kept as the as-built history; authoritative record =
+> the `FRONTIER_PLAN.md` banner; the axis architecture = **D37 + THEME_ENGINE §14.16**.)*
 > per-host art override UI + asset format/size pass [hero.png 1.9MB] **PARKED** (owner call, revisit
 > post-F5). **Slice A ✅ SHIPPED 2026-07-13 (`5193f4c`, owner-eyeballed live + ratified, FE gate 422):**
 > chat no-outlines promoted to the kit-wide `outlines` axis — `kit/axes.ts` factory+resolver
@@ -74,9 +76,9 @@
 > Gate C `10e355b` = frontier-render.spec deep-drive + frontier axe arm + the firefox Playwright
 > project [ci installs chromium+firefox], e2e 109/109; as-built record + the A2 pointer-capture
 > review fix = the `FRONTIER_PLAN.md` banner + §9 STATUS block). The 4 §9 owner rulings RESOLVED —
-> incl. ④: the cosmos "minors" were investigated (research agent + code cross-check) and CLOSED AS
-> NON-ISSUES, no code change; cosmos offline-row dim-LED visual accepted. ROADMAP gained the cosmos
-> host-sheet planet-switcher chevrons (owner idea, 2026-07-15).**
+> incl. ④: the cosmos "minors" were first closed as non-issues — **then SUPERSEDED same day by Gate B
+> round 1's on-device evidence (code DID change: B3+B4)**; cosmos offline-row dim-LED visual accepted.
+> ROADMAP gained the cosmos host-sheet planet-switcher chevrons (owner idea, 2026-07-15).**
 > **Gate B ✅ CLOSED (owner, 2026-07-15 — two on-device rounds).** Round 1 found real issues —
 > theme-switch scroll loss + cosmos chop on Firefox desktop/Fennec (REOPENED+superseded ruling ④'s
 > "non-issues") + frontier cube chop on Fennec — and shipped 5 revertible-one-commit fixes
@@ -86,9 +88,13 @@
 > acceptance — the cosmos sheet-slide keeps its mild Gecko chop; the blur-drop cure read worse and was
 > REVERTED (`10203e6`; the engine branch + `data-settling` stamp stay). Full record + revert paths =
 > the §9 GATE B ROUND 1 block.
-> **NEXT = Gate D — the §0 18-row contract walk for frontier (record evidence per row; rows 10/11/16/17
-> are what the A/B/C gates completed) + owner sign-off CLOSES F5.** After F5: ACA Slices 1–2 (TODO Phase 12) ·
-> vapor-hygiene filler (§14.15.3) · the parked Composer Surface follow-ons + art/asset pass.
+> **Gate D ✅ WALKED (18/18 PASS, §9 GATE D WALK block) + OWNER-SIGNED 2026-07-15 → F5 CLOSED.**
+> **NEXT = the two sign-off clarifications (owner directives, small kit slices): K1 — promote the
+> sheet-open composer hide/slide to the KIT DEFAULT (the theme population is CLOSED: no new themes,
+> existing themes formalize onto the kit — rule-of-three superseded) · K2 — wire frontier's gradient
+> swatches into `--accent-fill` (the two-channel gradient seam; owner wants gradient accents).**
+> Then: ACA Slices 1–2 (TODO Phase 12) · vapor-hygiene filler (§14.15.3) · the parked Composer
+> Surface follow-ons + art/asset pass · the themes-onto-kit formalization wave (ROADMAP).
 > *(F0–F3 shipped 2026-07-12, F4 2026-07-13; the `FRONTIER_PLAN.md` banner holds all as-built records.)*
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
 > orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).

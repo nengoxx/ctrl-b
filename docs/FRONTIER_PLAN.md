@@ -41,14 +41,26 @@
 > (deep drives stay Chromium; ci.yml release gate installs chromium+firefox) · stale kit-render
 > comments fixed. e2e 109/109 (mobile 52/desktop 52/firefox 5), frontier-render 6/6 @ repeat-each=3.
 > **Owner rulings resolved 2026-07-15:** ① A4 now ✓ · ② firefox project ✓ · ③ sub-44px accepted ✓ ·
-> ④ cosmos minors → investigated (research agent + code cross-check) and **CLOSED AS NON-ISSUES**
-> (the planet `filter` transition = rare one-shot on a tiny promoted layer; the sheet mask is STATIC
-> and rides the sheet's transform — NOT the F4 moving-content-under-fixed-mask case); no code change.
-> Cosmos offline svc-rows stay dim-LED-only visually (owner accepted; AT covered by the A3 group).
-> **NEXT = Gate B (MANUAL, owner on-device — protocol/scenarios/budgets pinned in §9; start the dev
-> units first) → Gate D (the §0 18-row walk + owner sign-off CLOSES F5).** After F5: ACA Slices 1–2 ·
-> vapor-hygiene filler · the parked art-override UI + asset pass · ROADMAP: cosmos planet-switcher
-> chevrons (owner 2026-07-15).
+> ④ cosmos minors → investigated (research agent + code cross-check) and closed as non-issues —
+> **⚠ ④ SUPERSEDED the same day by Gate B round 1 (see the block below + §9):** the owner's
+> on-device pass reproduced chop exactly there; the paper closure had analyzed each effect in
+> isolation and missed the compound frame cost. Code DID change (B3 `3bf318f` + B4 `13cac86`).
+> The mask-rides-transform distinction itself still holds; the offline svc-rows dim-LED ruling stands.
+>
+> **Gate B ✅ CLOSED + Gate D ✅ WALKED + OWNER-SIGNED — F5 IS COMPLETE (2026-07-15). THE FRONTIER
+> THEME (T5) IS DONE.** Gate B: two on-device rounds → the 5 fixes `16e8c21`..`69cde60` + the B2
+> revert `10203e6` (one deliberate acceptance: the cosmos sheet-slide keeps its mild Gecko chop —
+> the blur-drop cure read worse). Gate D: the §0 18-row walk, 18/18 PASS (§9 GATE D WALK block);
+> owner sign-off 2026-07-15 with two clarifications that became the IMMEDIATE follow-up slices:
+> **K1** promote the sheet-open composer hide/slide from the two identical theme copies to the KIT
+> DEFAULT (owner directive supersedes rule-of-three — the theme population is closed; no new themes,
+> the existing ones formalize onto the kit) · **K2** wire frontier's gradient swatches into
+> `--accent-fill` (the two-channel contract's gradient channel — owner wants gradient accents
+> available; vapor's gradients follow the same route at kit-formalization). A 3-lens adversarial
+> review (TS/CSS/docs) + the full e2e (109/109) preceded the close; one LOW accepted edge: a theme
+> CRASH → Reset restores the crashed Root's scroll position instead of resetting to top (cosmetic,
+> recovery-path-only). After K1+K2: ACA Slices 1–2 · vapor-hygiene filler · the parked art-override
+> UI + asset pass · ROADMAP: cosmos planet-switcher chevrons + the themes-onto-kit formalization wave.
 > *(§6-F5 + §7's licensing note still apply where not superseded here.)*
 >
 > **▶ F4 ✅ SHIPPED 2026-07-13 (built 2026-07-12→13, commits `61f2267`→`696842f` [9]; owner-eyeballed
@@ -444,8 +456,7 @@ row-by-row; owner sign-off.
 > below; round 2 re-eyeball "the rest looks good" with ONE deliberate acceptance: the cosmos
 > sheet-slide keeps its mild Gecko chop, because the blur-drop cure read worse [B2 revert `10203e6`]).
 > The 4 earlier owner rulings RESOLVED (①②③ confirmed; ④ superseded by the round-1 evidence).
-> REMAINING: Gate D (§0 walk + owner sign-off closes F5).** The A/C item lists below are
-> the as-planned briefs — the banner records the deltas (notably the A2 pointer-capture fix).
+> Gate D ✅ WALKED + OWNER-SIGNED 2026-07-15 (the walk block below) — **F5 CLOSED, T5 COMPLETE.**
 >
 > **GATE B ROUND 1 — owner on-device findings + fixes SHIPPED 2026-07-15. ROUND 2 (same day): owner
 > re-eyeballed — "the rest looks good"; the ONE regression was B2's blur pop-in, reverted below.** The owner's pass found: theme switch lost the Conf scroll
@@ -548,7 +559,9 @@ A/B/C gates complete). Owner sign-off on the walk CLOSES F5; then: ACA Slices 1�
 art-override UI + asset pass · vapor-hygiene filler.
 
 > **GATE D WALK — EXECUTED 2026-07-15 (Opus evidence pass + Fable cross-check of the load-bearing
-> claims; 18/18 PASS; awaiting owner sign-off, which CLOSES F5).** Evidence per §0 row:
+> claims; 18/18 PASS; **OWNER SIGNED OFF 2026-07-15 → F5 CLOSED** — sign-off came with the K1/K2
+> follow-up directives, see the top banner; a 3-lens adversarial review + full e2e 109/109 preceded
+> the close).** Evidence per §0 row:
 > **1 ThemeDef** ✓ `registry.ts:15` + `themes/frontier/index.tsx:26-76` (all fields incl. `defaultLayout`).
 > **2 Lazy Root** ✓ `preloadableRoot(() => import("./FrontierRoot"))`; FrontierRoot = `DefaultRoot` +
 > `bodies={{fleet, agent}}` + `brandMeta`; controllers stay above.
