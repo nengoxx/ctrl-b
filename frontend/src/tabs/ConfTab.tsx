@@ -522,6 +522,7 @@ export function ConfTab({ active }: Props) {
               <div className="desc">local · cloud — /local //cloud override per message</div>
             </div>
             <Seg<string>
+              label="Default mode"
               current={inf?.default_mode ?? "local"}
               options={[
                 { val: "local", label: "Local" },
@@ -829,6 +830,7 @@ export function ConfTab({ active }: Props) {
               <div className="desc">terminal_exec gate — high = confirm</div>
             </div>
             <Seg<string>
+              label="Exec risk"
               current={term?.exec_risk ?? "high"}
               options={RISKS}
               onPick={(v) => setTerm("exec_risk", v)}
@@ -840,6 +842,7 @@ export function ConfTab({ active }: Props) {
               <div className="desc">file write/replace gate</div>
             </div>
             <Seg<string>
+              label="Write risk"
               current={term?.write_risk ?? "high"}
               options={RISKS}
               onPick={(v) => setTerm("write_risk", v)}
@@ -851,6 +854,7 @@ export function ConfTab({ active }: Props) {
               <div className="desc">read/list/grep/glob gate</div>
             </div>
             <Seg<string>
+              label="Read risk"
               current={term?.read_risk ?? "low"}
               options={RISKS}
               onPick={(v) => setTerm("read_risk", v)}
@@ -1059,6 +1063,7 @@ export function ConfTab({ active }: Props) {
               </div>
             </div>
             <Seg<string>
+              label="Format"
               current={vtts?.format ?? "mp3"}
               options={[
                 { val: "mp3", label: "mp3" },
@@ -1239,11 +1244,11 @@ export function ConfTab({ active }: Props) {
             label="Theme"
             desc={themeOptions.map((t) => t.label.toLowerCase()).join(" · ")}
           >
-            <Seg<ThemeId> current={theme} options={themeOptions} onPick={pickTheme} />
+            <Seg<ThemeId> label="Theme" current={theme} options={themeOptions} onPick={pickTheme} />
           </SettingRow>
           {modeOptions.length > 1 && (
             <SettingRow label="Mode" desc="light · dark">
-              <Seg<Mode> current={mode} options={modeOptions} onPick={pickMode} />
+              <Seg<Mode> label="Mode" current={mode} options={modeOptions} onPick={pickMode} />
             </SettingRow>
           )}
           {accentOptions.length > 0 && (
@@ -1275,6 +1280,7 @@ export function ConfTab({ active }: Props) {
                   />
                 ) : (
                   <Seg<string>
+                    label={field.label}
                     current={value as string}
                     options={field.options.map((o) => ({ val: o.val, label: o.label }))}
                     onPick={(v) => pickSetting(key, v)}
@@ -1306,6 +1312,7 @@ export function ConfTab({ active }: Props) {
             desc="on · clear (transparent bar) · off (more screen) · minimal (orbit-menu nav)"
           >
             <Seg<AppbarMode>
+              label="App bar"
               current={appbarMode}
               options={[
                 { val: "visible", label: "On" },
@@ -1325,6 +1332,7 @@ export function ConfTab({ active }: Props) {
             desc="sections on the tab bar · 3-tab hosts tools in conf · 2-tab moves conf to the menu"
           >
             <Seg<"auto" | LayoutId>
+              label="Layout"
               current={layout}
               options={[
                 { val: "auto", label: "Auto" },

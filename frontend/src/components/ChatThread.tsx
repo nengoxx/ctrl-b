@@ -482,7 +482,17 @@ export function ChatThread({ active, chat, emptyState }: Props) {
   }, [active]);
 
   return (
-    <div className="chat-log" id="chatlog">
+    // A11y (F5 Gate A4) — the transcript is a live log region. `role="log"` marks it as a sequential
+    // record (implicit aria-live=polite; set explicitly for Firefox/older AT), and `aria-busy` is TRUE
+    // while a reply streams so AT holds off announcing until the turn settles — the completed reply is
+    // announced ONCE when busy flips false, never per token (the MITRE/APG chatbot live-region pattern).
+    <div
+      className="chat-log"
+      id="chatlog"
+      role="log"
+      aria-live="polite"
+      aria-busy={status === "streaming"}
+    >
       {!messages.length &&
         (emptyState ?? (
           <div className="b sys">

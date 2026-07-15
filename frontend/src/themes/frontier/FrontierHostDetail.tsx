@@ -185,6 +185,7 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
               <div
                 key={s.id}
                 className={"svc" + (svcOn ? " up" : " down")}
+                role="group"
                 aria-label={`${s.name} ${addr} — ${svcOn ? "online" : "offline"}`}
               >
                 <span className="led" aria-hidden />

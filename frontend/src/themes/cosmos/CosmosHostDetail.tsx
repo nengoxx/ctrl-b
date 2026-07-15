@@ -174,6 +174,7 @@ export function CosmosHostDetail({ host, services, busy, run, titleId }: Props) 
               <div
                 key={s.id}
                 className={"hd-svc" + (svcOn ? " on" : " off")}
+                role="group"
                 aria-label={`${s.name} ${addr} — ${svcOn ? "online" : "offline"}`}
                 style={bannerStyle}
               >

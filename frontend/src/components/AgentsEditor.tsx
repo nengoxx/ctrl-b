@@ -179,6 +179,7 @@ function AgentFieldsForm(props: {
 
       <label>Backend</label>
       <Seg<"" | "local" | "cloud">
+        label="Backend"
         current={modeVal}
         onPick={(v) => setModel({ mode: v })}
         options={[
@@ -197,6 +198,7 @@ function AgentFieldsForm(props: {
 
       <label>Privilege</label>
       <Seg<Privilege>
+        label="Privilege"
         current={a.privilege}
         onPick={(v) => set({ privilege: v })}
         options={PRIVILEGE_LEVELS}
@@ -224,6 +226,7 @@ function AgentFieldsForm(props: {
 
       <label>Inherit global append</label>
       <Seg<"yes" | "no">
+        label="Inherit global append"
         current={a.inherit_append ? "yes" : "no"}
         onPick={(v) => set({ inherit_append: v === "yes" })}
         options={[
@@ -625,6 +628,7 @@ export function AgentsEditor(props: {
           <div className="desc">which agent new threads use · /agent switches per session</div>
         </div>
         <Seg<string>
+          label="Default agent"
           current={cfg.default_agent}
           onPick={(v) => setCfg({ ...cfg, default_agent: v })}
           options={defaultOpts}
@@ -664,6 +668,7 @@ export function AgentsEditor(props: {
           </div>
         </div>
         <Seg<"auto" | "on" | "off">
+          label="Chat delivery"
           current={cfg.streaming}
           onPick={(v) => setCfg({ ...cfg, streaming: v })}
           options={[

@@ -21,6 +21,26 @@
   box-sizing: border-box;
 }
 
+/* ── Keyboard focus indicator (WCAG 2.4.7 Focus Visible) · F5 Gate A1 ──────────────────────────
+ * The vapor global ring (`theme/extras.css` `:focus-visible`) is wrapped in `@scope([data-skin="vapor"])`,
+ * so it NEVER reaches a kit theme — leaving every `all: unset` kit control (`.kit-tabbtn`/`.kit-cbtn`/
+ * `.kit-send`/`.kit-iconbtn`/seg buttons/plan pill/frontier beacons+rigs/the bottom-sheet grip…) with NO
+ * keyboard focus indicator (a real 2.4.7 failure the F5 pre-flight caught). Restore a kit-wide ring in the
+ * accent color, keyboard-only by spec (`:focus-visible` never fires on a mouse click). OUTLINE-based, not
+ * box-shadow, so it survives `forced-colors`/Windows-HC (research ruling; the ring is exempt from frontier's
+ * no-outlines rule). Form fields keep their own `:focus` treatments (frontier's inset input rings, the kit
+ * `input:focus` borders, …) that fire on `:focus` regardless of input method — suppress the global ring on
+ * them to avoid a doubled indicator, mirroring extras.css's form-field carve-out. */
+.kit :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit input:focus-visible,
+.kit select:focus-visible,
+.kit textarea:focus-visible {
+  outline: none;
+}
+
 /* ── shell (the `.kit` marker element IS the shell) ── */
 .kit {
   height: 100dvh; /* fallback before JS / no visualViewport */
@@ -95,6 +115,11 @@
   overscroll-behavior: contain;
   /* pad the bottom so the last content can scroll clear of the composer floating over it (measured) */
   padding-bottom: calc(var(--composer-h, 0px) + 24px);
+  /* F5 Gate A6 · SC 2.4.11 Focus Not Obscured — scroll-padding (distinct from the layout padding above)
+   * offsets scrollIntoView / focus-driven scrolling so a keyboard-focused row lands clear of the docked
+   * composer instead of behind it. Uses a 64px fallback (not 0) so it still clears a composer even before
+   * the measured `--composer-h` lands. */
+  scroll-padding-bottom: calc(var(--composer-h, 64px) + 24px);
 }
 
 /* section show/hide — the tab components emit the shared `.tab`/`.tab.active` classes; vapor.css styles

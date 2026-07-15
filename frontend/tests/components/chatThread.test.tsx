@@ -65,6 +65,22 @@ describe("ChatThread empty state", () => {
   });
 });
 
+describe("A4 chat live region (F5 Gate A)", () => {
+  it("marks the chat-log as a polite log region, idle → aria-busy false", () => {
+    const { container } = render(<ChatThread active chat={emptyChat()} />);
+    const log = container.querySelector("#chatlog");
+    expect(log?.getAttribute("role")).toBe("log");
+    expect(log?.getAttribute("aria-live")).toBe("polite");
+    expect(log?.getAttribute("aria-busy")).toBe("false"); // idle status → not busy
+  });
+
+  it("sets aria-busy while streaming so the reply is announced once on settle, not per token", () => {
+    const streaming: AgentChat = { ...emptyChat(), status: "streaming" };
+    const { container } = render(<ChatThread active chat={streaming} />);
+    expect(container.querySelector("#chatlog")?.getAttribute("aria-busy")).toBe("true");
+  });
+});
+
 describe("A4 plan-open auto-close is decoupled from AgentTab", () => {
   const plan: Plan = { steps: [{ text: "step one", status: "pending" }] };
 

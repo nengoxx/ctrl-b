@@ -149,6 +149,7 @@ function McpForm(props: {
         />
         <label>Transport</label>
         <Seg
+          label="Transport"
           current={d.transport}
           onPick={(v) => set({ transport: v })}
           options={[
@@ -157,7 +158,7 @@ function McpForm(props: {
           ]}
         />
         <label>Risk</label>
-        <Seg current={d.risk} onPick={(v) => set({ risk: v })} options={RISKS} />
+        <Seg label="Risk" current={d.risk} onPick={(v) => set({ risk: v })} options={RISKS} />
         {http ? (
           <>
             <label>URL</label>
@@ -306,7 +307,7 @@ function ApiForm(props: {
           onChange={(e) => set({ spec_url: e.target.value })}
         />
         <label>Risk</label>
-        <Seg current={d.risk} onPick={(v) => set({ risk: v })} options={RISKS} />
+        <Seg label="Risk" current={d.risk} onPick={(v) => set({ risk: v })} options={RISKS} />
         <label>API key</label>
         <div className="pw">
           <input

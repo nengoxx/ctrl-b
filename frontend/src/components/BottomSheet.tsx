@@ -3,6 +3,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -36,6 +37,17 @@ const SNAP_MS = 420; // keep in sync with the .bs-sheet transition duration (CSS
 // Overshooting rides the shadow out of view WITH the slide — gradual, transform-only (§14.11), and the
 // deliberate opaque slide-out stays untouched. Covers the largest skin shadow with headroom.
 const EXIT_SHADOW_CLEARANCE = 80;
+// A2 (F5 Gate A) grip tap-vs-drag threshold: a pointer sequence that travels less than this (px) on the
+// handle is a TAP (cycles the detent, SC 2.5.7), not a drag. `startY`/`lastY` already track the travel.
+const TAP_SLOP = 4;
+// Any pointer sequence on the handle (tap OR drag) can emit a trailing synthetic `click` — swallow a click
+// landing within this window (ms) of the pointer release. The tap-cycle itself happens in `endDrag` (see
+// there: under `setPointerCapture` the browser retargets the click inconsistently — Chromium mouse targets
+// the CAPTURING handle, touch targets the grip — so a grip onClick can't be the pointer path); the grip's
+// onClick exists ONLY for AT-synthesized activation (a bare `click` with no pointer sequence), which always
+// lands outside this window. touch-action:none on the handle removes the legacy 300 ms tap delay, so a
+// genuine trailing click is effectively immediate.
+const CLICK_SUPPRESS_MS = 350;
 
 /** Pick the resting translateY after a drag: a SLOW release snaps to the NEAREST point; a FAST flick steps
  *  ONE point in the drag direction (down can dismiss, up can expand). `snaps` ascending: `[0 = full, …peek…,
@@ -103,6 +115,15 @@ export function BottomSheet({
   const lastT = useRef(0);
   const velocity = useRef(0);
   const startTy = useRef(0);
+  // A2 (F5 Gate A) — below-fold inerting + the grip's dragging-alternative.
+  const inerted = useRef<HTMLElement[]>([]); // the below-the-fold nodes we've marked `inert` (to release exactly)
+  const dragEndAt = useRef(0); // timestamp of the last real drag release (suppresses its trailing click)
+  // The grip's reactive bits (only these two drive a render — never a per-drag-pixel one): whether a peek
+  // detent exists at all (else the grip stays decorative) and the current detent (labels expand vs collapse).
+  const [grip, setGrip] = useState<{ detent: SheetDetent; hasPeek: boolean }>({
+    detent: "full",
+    hasPeek: false,
+  });
 
   const restTy = (name: SheetDetent) =>
     name === "full" ? 0 : Math.max(0, full.current - peek.current);
@@ -121,6 +142,66 @@ export function BottomSheet({
     const pe = el.querySelector<HTMLElement>("[data-bs-peek]");
     peek.current = pe ? Math.min(full.current, pe.offsetTop + pe.offsetHeight + PEEK_PAD) : 0;
   };
+  // A2 (F5 Gate A) — SC 2.4.11 focus-not-obscured + reachability: while resting at the PEEK detent, the
+  // content below the fold is hidden under the tab bar / off-screen, so make it `inert` (unfocusable,
+  // AT-invisible, un-clickable) and release it at FULL. The below-fold region is exactly the peek marker's
+  // following siblings (both host bodies put `[data-bs-peek]` as a direct child whose later siblings are the
+  // stats/actions/services). Recomputed each call — a content reflow (the ResizeObserver re-measure) or a
+  // sheet with no detent (no marker → no-op) is handled by re-releasing the tracked nodes first. Imperative,
+  // mirroring the sheet's transform model (the children are host-provided, so React doesn't own their `inert`).
+  const applyInert = (on: boolean) => {
+    for (const node of inerted.current) node.inert = false; // release the previous set (content may have moved)
+    inerted.current = [];
+    if (!on) return;
+    const pe = sheetRef.current?.querySelector<HTMLElement>("[data-bs-peek]");
+    if (!pe) return; // no detent → nothing is below the fold
+    for (let s = pe.nextElementSibling; s; s = s.nextElementSibling) {
+      (s as HTMLElement).inert = true;
+      inerted.current.push(s as HTMLElement);
+    }
+  };
+  // Push the current detent state to the grip (bails the render when unchanged, so drags/polls stay render-free).
+  const syncGrip = () => {
+    const detent = snap.current;
+    const hasPeek = peek.current > 0;
+    setGrip((g) => (g.detent === detent && g.hasPeek === hasPeek ? g : { detent, hasPeek }));
+  };
+  // Settle onto a resting detent (shared by the layout effect, drag release, re-open + resize): apply the
+  // inerting + refresh the grip together so they never drift from `snap.current`.
+  const settle = () => {
+    applyInert(snap.current === "peek");
+    syncGrip();
+  };
+  // SC 2.5.7 dragging alternative: a TAP anywhere on the handle (via endDrag's sub-slop branch) or
+  // Enter/Space on the focused grip toggles peek⇄full (Material's BottomSheetDragHandleView precedent —
+  // the whole handle is the tap target; the 44×5px grip alone would be a hopeless one). Only meaningful
+  // when a peek detent exists (else the grip is decorative). The move is the normal CSS snap transition
+  // (transition is "" = enabled at rest).
+  const cycleDetent = () => {
+    const el = sheetRef.current;
+    if (!el || peek.current <= 0) return;
+    snap.current = snap.current === "peek" ? "full" : "peek";
+    setTransform(restTy(snap.current));
+    report();
+    settle();
+    onSnapChange?.(snap.current);
+  };
+  const onGripClick = () => {
+    // AT-only activation path: desktop screen readers (NVDA/VoiceOver) activate a role="button" with a bare
+    // synthesized `click` and no pointer sequence. Pointer taps are handled in `endDrag` (click retargeting
+    // under pointer capture is engine-inconsistent — see CLICK_SUPPRESS_MS) and their trailing click, when
+    // one does reach the grip, is swallowed here so a touch tap doesn't double-cycle.
+    if (performance.now() - dragEndAt.current < CLICK_SUPPRESS_MS) return;
+    cycleDetent();
+  };
+  const onGripKey = (e: ReactKeyboardEvent<HTMLSpanElement>) => {
+    // The grip is a `role="button"` span, so it must drive its own Enter/Space (a span gets neither natively);
+    // preventDefault stops Space from scrolling the page. Mouse/touch/AT activation goes through onGripClick.
+    if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+      e.preventDefault();
+      cycleDetent();
+    }
+  };
 
   // Open → mount (the enter slide is in the layout effect). Re-open during the exit → ease back to default.
   // Close → ease down to the closed position, then unmount.
@@ -133,6 +214,7 @@ export function BottomSheet({
         setTransform(restTy(snap.current));
         sheetRef.current.style.opacity = "1"; // re-fade in if it was mid-exit
         report();
+        settle();
       } else {
         setMounted(true);
       }
@@ -146,6 +228,7 @@ export function BottomSheet({
         // like a proper bottom sheet), overshooting so the shadow exits with it (EXIT_SHADOW_CLEARANCE).
         setTransform((full.current || el.offsetHeight) + EXIT_SHADOW_CLEARANCE);
       }
+      applyInert(false); // closing → release the below-fold content (it's leaving with the sheet)
       onHeightChange?.(0);
       exitTimer.current = setTimeout(() => {
         setMounted(false);
@@ -179,6 +262,7 @@ export function BottomSheet({
       setTransform(restTy(snap.current));
       el.style.opacity = "1"; // quick fade in as it slides up
       report();
+      settle(); // inert the below-fold at peek + prime the grip's label/focusability
     });
     return () => cancelAnimationFrame(r);
   }, [mounted]);
@@ -207,6 +291,7 @@ export function BottomSheet({
         el.style.transition = "";
       }
       report();
+      settle(); // content reflow may add/remove below-fold nodes or the peek marker → re-inert + re-sync
     };
     const ro = new ResizeObserver(onResize);
     ro.observe(el);
@@ -217,6 +302,7 @@ export function BottomSheet({
     () => () => {
       clearTimeout(exitTimer.current);
       clearTimeout(enterTimer.current);
+      applyInert(false); // release any still-inerted below-fold nodes on unmount (no leaked inert state)
     },
     [],
   );
@@ -270,6 +356,20 @@ export function BottomSheet({
     const el = sheetRef.current;
     if (!el) return;
     delete el.dataset.dragging; // restore the snap transition
+    // TAP vs DRAG (SC 2.5.7): a negligible-travel release is a TAP on the handle, not a drag — cycle the
+    // detent HERE (not in a grip onClick: under `setPointerCapture` the browser retargets the derived click
+    // inconsistently — Chromium delivers a mouse tap's click to the CAPTURING handle but a touch tap's to
+    // the grip [verified empirically 2026-07-15] — so the pointer path can't rely on it; the whole handle
+    // is the tap target, per Material's BottomSheetDragHandleView). A CANCELLED gesture (pointercancel:
+    // scroll takeover, palm rejection) must never activate — re-seat only.
+    const moved = Math.abs(e.clientY - startY.current);
+    if (moved < TAP_SLOP) {
+      dragEndAt.current = performance.now(); // swallow any trailing click (touch WOULD double-cycle via the grip)
+      setTransform(restTy(snap.current)); // re-seat any sub-slop jitter back onto the exact detent
+      if (e.type !== "pointercancel") cycleDetent();
+      return;
+    }
+    dragEndAt.current = performance.now(); // a real drag → suppress its trailing synthetic click on the grip
     const ty = Math.max(0, Math.min(full.current, startTy.current + (e.clientY - startY.current)));
     const snaps = peek.current ? [0, restTy("peek"), full.current] : [0, full.current];
     const target = pickSnap(ty, velocity.current, snaps);
@@ -280,6 +380,7 @@ export function BottomSheet({
     snap.current = target === 0 ? "full" : "peek";
     setTransform(target);
     report();
+    settle(); // re-inert for the new detent + refresh the grip's label/focusability
     onSnapChange?.(snap.current); // the user settled here → the host persists it for the next open
   };
 
@@ -296,7 +397,23 @@ export function BottomSheet({
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
         >
-          <span className="bs-grip" aria-hidden />
+          {/* SC 2.5.7 dragging alternative (A2): with a peek detent the grip is a labelled `role="button"`
+              span (a span, NOT a <button> — no browser chrome to override; the skins keep styling `.bs-grip`)
+              that cycles peek⇄full on tap/Enter/Space; the label states the action (Expand/Collapse), the
+              Material/APG cue for a two-state toggle. With no detent it stays purely decorative (aria-hidden,
+              not focusable). */}
+          {grip.hasPeek ? (
+            <span
+              className="bs-grip"
+              role="button"
+              tabIndex={0}
+              aria-label={grip.detent === "peek" ? "Expand sheet" : "Collapse sheet"}
+              onClick={onGripClick}
+              onKeyDown={onGripKey}
+            />
+          ) : (
+            <span className="bs-grip" aria-hidden />
+          )}
         </div>
         {/* sr-only close for keyboard/AT (no visible ✕) */}
         <button className="bs-close-sr" onClick={onClose}>
