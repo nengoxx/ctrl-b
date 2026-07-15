@@ -519,7 +519,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 4px;
+      gap: 14px; /* owner-tuned 4→14 (2026-07-15): air between the chevrons and the name */
       margin: 14px 0 10px; /* breathing room above (from the grip/dots) + below (to the status) */
     }
     .cosmos-hd .hd-name {

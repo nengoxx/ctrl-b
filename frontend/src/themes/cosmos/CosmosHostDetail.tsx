@@ -61,7 +61,7 @@ const IconPing = () => (
 );
 // Planet-switcher chevrons flanking the name — thin clean glyphs (NOT filled arrows), tuned for the sheet's
 // dot-grid card. Larger than the action icons so they read as a control at the header scale.
-const CHEV = { ...ICON, width: 20, height: 20 } as const;
+const CHEV = { ...ICON, width: 24, height: 24 } as const; // owner-tuned 20→24 (2026-07-15)
 const IconChevLeft = () => (
   <svg {...CHEV} aria-hidden>
     <path d="M15 18l-6-6 6-6" />
