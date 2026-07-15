@@ -22,7 +22,10 @@ import {
 // `pickSnap` below. The snap itself is a CSS transition (iOS curve), cleared while `[data-dragging]` for a
 // 1:1 drag. Non-modal a11y: role=dialog WITHOUT aria-modal; no focus trap; Escape closes; focus returns to
 // the trigger; an sr-only Close button keeps keyboard/AT parity (no visible ✕ — owner dropped it).
-// Perf (§14.11): transform/opacity only; the skin drops its blur while `[data-dragging]` + under data-perf.
+// Perf (§14.11): transform/opacity only. The primitive stamps STATE for skins to react to — `[data-dragging]`
+// during a finger drag and `[data-settling]` while a programmatic slide plays (open/close/detent-cycle/snap).
+// It knows nothing about engines: a skin drops its blur while `[data-dragging]` + under data-perf, and cosmos
+// ALSO drops it while `[data-settling]` on Gecko only (per-frame backdrop re-blur — Gate B 2026-07-15).
 
 /** The detent a sheet can rest at: the `[data-bs-peek]` reveal, or fully open. The canonical vocabulary for
  *  this primitive — the persistence layer (`store/sheetSnap`) imports it rather than re-declaring the union. */
@@ -110,6 +113,7 @@ export function BottomSheet({
   const dragging = useRef(false);
   const entering = useRef(false); // true during the enter slide — a mid-slide resize re-targets, never snaps
   const enterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined); // clears the `data-settling` stamp
   const startY = useRef(0);
   const lastY = useRef(0);
   const lastT = useRef(0);
@@ -133,6 +137,22 @@ export function BottomSheet({
   const setTransform = (ty: number) => {
     const el = sheetRef.current;
     if (el) el.style.transform = `translateY(${ty}px)`;
+  };
+  // Stamp `data-settling` for the duration of a PROGRAMMATIC slide (open / close / detent-cycle / drag-release
+  // snap). Like `data-dragging` it's a bare STATE flag — the primitive says the sheet is in motion; a skin
+  // decides what to do (cosmos drops its Gecko backdrop blur here, §14.11). Timeout-based (SNAP_MS + slack),
+  // NOT `transitionend`: the same duration+slack idiom `entering`/exit already use — one house pattern, and
+  // immune to a skipped transition under reduced motion (kit.css `0.001s`) where `transitionend` is unreliable.
+  // Re-arms on each call so back-to-back slides extend the window rather than clearing it early.
+  const markSettling = () => {
+    const el = sheetRef.current;
+    if (!el) return;
+    el.dataset.settling = "true";
+    clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => {
+      const cur = sheetRef.current;
+      if (cur) delete cur.dataset.settling;
+    }, SNAP_MS + 60);
   };
   const report = () => onHeightChange?.(snap.current === "full" ? full.current : peek.current);
   const measure = () => {
@@ -182,6 +202,7 @@ export function BottomSheet({
     if (!el || peek.current <= 0) return;
     snap.current = snap.current === "peek" ? "full" : "peek";
     setTransform(restTy(snap.current));
+    markSettling(); // the peek⇄full move is the CSS snap transition → in motion
     report();
     settle();
     onSnapChange?.(snap.current);
@@ -213,6 +234,7 @@ export function BottomSheet({
         snap.current = openSnap();
         setTransform(restTy(snap.current));
         sheetRef.current.style.opacity = "1"; // re-fade in if it was mid-exit
+        markSettling(); // re-opening mid-exit slides back UP → in motion
         report();
         settle();
       } else {
@@ -227,6 +249,7 @@ export function BottomSheet({
         // clean slide-DOWN out the bottom (stays opaque — no fade-out, so the slide-out is fully visible
         // like a proper bottom sheet), overshooting so the shadow exits with it (EXIT_SHADOW_CLEARANCE).
         setTransform((full.current || el.offsetHeight) + EXIT_SHADOW_CLEARANCE);
+        markSettling(); // the exit slide-down is in motion
       }
       applyInert(false); // closing → release the below-fold content (it's leaving with the sheet)
       onHeightChange?.(0);
@@ -261,6 +284,7 @@ export function BottomSheet({
     const r = requestAnimationFrame(() => {
       setTransform(restTy(snap.current));
       el.style.opacity = "1"; // quick fade in as it slides up
+      markSettling(); // the enter slide-up is in motion (its window also covers the mid-enter resize retarget)
       report();
       settle(); // inert the below-fold at peek + prime the grip's label/focusability
     });
@@ -281,10 +305,12 @@ export function BottomSheet({
       if (full.current === prevFull && peek.current === prevPeek) return;
       if (dragging.current) return;
       if (entering.current) {
-        // mid-enter: keep the transition so the slide-up continues smoothly to the corrected target
+        // mid-enter: keep the transition so the slide-up continues smoothly to the corrected target. No
+        // markSettling() here — the enter mark (layout-effect rAF) is still open and covers this retarget.
         setTransform(restTy(snap.current));
       } else {
-        // at rest: re-apply instantly (a poll-driven content change must not animate the resting sheet)
+        // at rest: re-apply instantly (a poll-driven content change must not animate the resting sheet). This
+        // is transition:none — nothing animates → NO settling mark (marking would drop the glass with no slide).
         el.style.transition = "none";
         setTransform(restTy(snap.current));
         void el.offsetHeight;
@@ -302,6 +328,7 @@ export function BottomSheet({
     () => () => {
       clearTimeout(exitTimer.current);
       clearTimeout(enterTimer.current);
+      clearTimeout(settleTimer.current);
       applyInert(false); // release any still-inerted below-fold nodes on unmount (no leaked inert state)
     },
     [],
@@ -331,6 +358,11 @@ export function BottomSheet({
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     const el = sheetRef.current;
     if (!el) return;
+    // A drag has its OWN rules (`data-dragging`; cosmos KEEPS the glass through the drag per the standing
+    // owner ruling, cosmos.css) — so cancel any in-flight settling mark from a just-finished programmatic
+    // slide, else its blur-drop would bleed into the start of the drag.
+    clearTimeout(settleTimer.current);
+    delete el.dataset.settling;
     dragging.current = true;
     startY.current = lastY.current = e.clientY;
     lastT.current = e.timeStamp;
@@ -373,6 +405,10 @@ export function BottomSheet({
     const ty = Math.max(0, Math.min(full.current, startTy.current + (e.clientY - startY.current)));
     const snaps = peek.current ? [0, restTy("peek"), full.current] : [0, full.current];
     const target = pickSnap(ty, velocity.current, snaps);
+    // The release now slides PROGRAMMATICALLY to its detent (or dismisses) — mark the motion for both branches
+    // (the sub-slop TAP path above returns earlier; its real cycle is already marked by cycleDetent, and a
+    // cancelled/no-move re-seat deliberately stays UNMARKED so the glass doesn't flicker off with no slide).
+    markSettling();
     if (target >= full.current) {
       onClose(); // last snap = closed → dismiss (the parent's open=false eases it out)
       return;

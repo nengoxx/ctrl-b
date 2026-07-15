@@ -434,6 +434,23 @@
       backdrop-filter: none;
       background: var(--surface);
     }
+    /* Gecko-only, IN-MOTION-only blur drop (Gate B 2026-07-15). While the sheet transform-animates over the
+     * LIVE orbital stage (canvas starfield + WAAPI orbits), Gecko re-samples/re-blurs the backdrop every frame
+     * — a documented weakness (bugzilla 1731965 / 1809738) the owner reproduced as chop on BOTH desktop Firefox
+     * AND Fennec. So on Gecko ONLY, drop the glass ONLY for the programmatic slide window (`[data-settling]`,
+     * stamped by BottomSheet): the 82%-opaque `--surface` fill above keeps the sheet legible mid-slide, and the
+     * frost settles back in the instant the transition ends. Chrome is smooth → untouched, keeps full glass at
+     * all times (owner split ruling). NOTE the amendment to the ruling just above: "the glass STAYS during the
+     * DRAG" is UNCHANGED — a finger drag keeps glass on every engine; this rule covers only the programmatic
+     * slide (open/close/detent-cycle/release-snap), never `[data-dragging]`. The `[data-motion="full"]` guard:
+     * under reduced motion the slide is a 1ms snap (kit.css) but the stamp still lasts its ~480ms window — the
+     * glass would flick off with NO motion to justify it, so the drop applies only when a slide actually plays.
+     * REVERT path: delete this rule (and the `markSettling()`/`data-settling` stamps in BottomSheet.tsx) to
+     * restore always-on glass on Gecko. */
+    body[data-engine="gecko"][data-motion="full"] .bs-sheet[data-settling] {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
     /* OPAQUE grab bar (both inputs opaque → no alpha) so it fully hides the dot row behind it — the dots feel
      * tucked under the handle, not showing through it (the kit default `--line-2` is translucent → dots leak). */
     .bs-grip {

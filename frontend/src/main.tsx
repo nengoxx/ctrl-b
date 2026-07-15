@@ -9,6 +9,7 @@ import "./theme/vapor-fonts.css"; // self-hosted JetBrains Mono + Major Mono Dis
 import "./theme/index.css";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { isGecko } from "./lib/engine";
 import { coerceBootTheme } from "./theme-engine/resolve";
 import { ThemeProvider } from "./theme-engine/ThemeProvider";
 
@@ -16,6 +17,12 @@ import { ThemeProvider } from "./theme-engine/ThemeProvider";
 // build can't render (a deregistered theme) to DEFAULT_THEME before the first React paint. Runs every boot
 // (registry membership is orthogonal to the persisted-schema version); never touches the server.
 coerceBootTheme();
+
+// Engine stamp (THEME_ENGINE §14.11). The browser engine is STATIC for the session, so it's a one-time
+// boot stamp BEFORE first paint — deliberately NOT a React effect, and deliberately NOT in <AppEngines/>'s
+// axis stamping (that's for user-pref-REACTIVE attrs like data-perf/data-motion that flip at runtime).
+// Consumers are pure CSS rules keying off `body[data-engine="gecko"]`; see src/lib/engine.ts.
+if (isGecko) document.body.dataset.engine = "gecko";
 
 const queryClient = new QueryClient();
 
