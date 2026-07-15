@@ -16,7 +16,9 @@
     /* ── NIGHT (the dark default) — dusky violet badlands. Prototype literals, all gate-verified:
      *    text/surface 13.87, ok 8.42, warn 8.84, danger 5.22; accent-ink fallback var(--bg) 4.66–9.42 vs the
      *    four accents. Night needs NO explicit --accent-ink — dark-mode themes inherit the var(--bg) fallback
-     *    (the minimal precedent). ── */
+     *    (the minimal precedent). K2 gradient fills don't disturb this: each fill only adds a LIGHTER stop
+     *    ABOVE the flat --accent, and the dark var(--bg) ink's worst case is the DARKEST stop (= --accent), so
+     *    the 4.66 floor holds and the lighter end only reads better. ── */
     :scope {
       color-scheme: dark;
 
@@ -62,11 +64,17 @@
      * recompute against the resolved --accent/--ok/--warn/--danger. */
     body {
       --accent: #ff6f7d; /* coral (default) */
-      /* --accent-fill stays a PLAIN color (= var(--accent)), a deliberate deviation from the plan's shorthand:
-       * the prototype's gradients are decorative only (the brand mark + picker swatches — swatch is ThemeDef
-       * DATA), no prototype CONTROL is gradient-filled, and the base --accent must parse as a plain <color>
-       * (§14.15.1 ⑨). */
-      --accent-fill: var(--accent);
+      /* --accent-fill = the accent's GRADIENT (K2, owner 2026-07-15). Frontier's accent-filled controls (send /
+       * save / active seg / tab-ind bar / plan pill … — every `background: var(--accent-fill)` in kit.css) now
+       * fill with the accent's picker-swatch gradient, so the swatch IS the live preview: the per-accent fills
+       * below mirror the ThemeDef `accents[].swatch` stops/angle (index.tsx) 1:1 — SINGLE SOURCE, keep them in
+       * sync (edit both, or the chip lies). Only --accent-fill goes gradient; --accent itself STAYS a flat
+       * <color> per §14.15.1 ⑨ (it feeds the color-mix softs, text/borders, focus ring — must parse as a plain
+       * <color>). The fills are LITERAL gradients per body[data-accent] (no var() formula → immune to the §14.6
+       * re-derive trap; declared on body only for locality with --accent). This base value mirrors coral (the
+       * default when data-accent is unset). REVERT (undo K2): delete the four body[data-accent] --accent-fill
+       * lines and restore `--accent-fill: var(--accent)` here. */
+      --accent-fill: linear-gradient(150deg, #ff9d7a, #ff6f7d);
       --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
       --ok-soft: color-mix(in srgb, var(--ok) 16%, transparent);
       --warn-soft: color-mix(in srgb, var(--warn) 16%, transparent);
@@ -74,15 +82,19 @@
     }
     body[data-accent="coral"] {
       --accent: #ff6f7d;
+      --accent-fill: linear-gradient(150deg, #ff9d7a, #ff6f7d);
     }
     body[data-accent="amber"] {
       --accent: #ffb24c;
+      --accent-fill: linear-gradient(150deg, #ffd27a, #ffb24c);
     }
     body[data-accent="magenta"] {
       --accent: #d65a9c;
+      --accent-fill: linear-gradient(150deg, #ff8fc0, #d65a9c);
     }
     body[data-accent="violet"] {
       --accent: #9a7bf0;
+      --accent-fill: linear-gradient(150deg, #c0a8ff, #9a7bf0);
     }
 
     /* ── DAY (body[data-mode=light]) — sun-bleached parchment. ── */
@@ -99,7 +111,9 @@
       /* ink on accent-fill controls — a near-black LITERAL, not var(--bg): the light --bg #f0e3ce is
        * near-white → the base var(--bg) fallback would fail WCAG on the accent fills. #241522 is the
        * prototype's own day ink-black, verified ≥4.81:1 vs all four accents. Night keeps the base var(--bg)
-       * fallback (§14.15.1 ①; the minimal precedent). */
+       * fallback (§14.15.1 ①; the minimal precedent). Same K2 note as night: the gradient fills only add a
+       * lighter stop above the flat --accent, so this dark ink's worst case stays the darkest stop (= --accent,
+       * the ≥4.81:1 already verified) and both ends of every gradient read fine — no per-end ink override. */
       --accent-ink: #241522;
       /* day comic-bubble fill (§15 theme-private) — the prototype's day --black, still near-black so the
        * white bubble text keeps contrast on the parchment gradient. */
