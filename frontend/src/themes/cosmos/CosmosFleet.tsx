@@ -4,7 +4,7 @@ import { BottomSheet } from "../../components/BottomSheet";
 import type { Host } from "../../types";
 import { useFleet } from "../../hooks/useFleet";
 import { CosmosHostDetail } from "./CosmosHostDetail";
-import { setCosmosSelection, useCosmosSelection } from "../../store/cosmosSelection";
+import { setCosmosSelection, stepId, useCosmosSelection } from "../../store/cosmosSelection";
 import { getSheetSnap, setSheetSnap } from "../../store/sheetSnap";
 import type { SheetDetent } from "../../components/BottomSheet";
 import { useCosmosDive } from "../../store/cosmosDive";
@@ -412,6 +412,22 @@ export function CosmosFleet({ active }: { active: boolean }) {
             busy={busy.has((selectedHost ?? displayHost)!.id)}
             run={run}
             titleId={titleId}
+            // Header chevrons step prev/next through the planets WITHOUT closing the sheet — the SAME select
+            // path a tap-another-planet swap uses. Order = the same `hosts` the planets are placed from; the
+            // step is over the LIVE `selected` (stepping while the sheet eases closed is a non-case — the
+            // chevrons unmount with the content). Only wired for a multi-planet fleet (else no chevrons).
+            onStep={
+              hosts.length > 1
+                ? (dir) =>
+                    setCosmosSelection(
+                      stepId(
+                        hosts.map((h) => h.id),
+                        selected,
+                        dir,
+                      ),
+                    )
+                : undefined
+            }
           />
         )}
       </BottomSheet>

@@ -24,3 +24,16 @@ export function setCosmosSelection(id: string | null): void {
 export function useCosmosSelection(): string | null {
   return useStore(() => selectedId);
 }
+
+/**
+ * Neighbor of `current` in `ids`, stepping `dir` (+1 next / -1 prev) with WRAP-AROUND (the orbit is a
+ * circle, so last→first and first→last). `current` missing/null → the first id (a safe fallback so the
+ * chevrons always do something); empty `ids` → null. PURE — used by the host-sheet chevrons; ordering is
+ * the CALLER's render order (CosmosFleet passes the same `hosts` array the planets are placed from).
+ */
+export function stepId(ids: string[], current: string | null, dir: 1 | -1): string | null {
+  if (ids.length === 0) return null;
+  const i = current == null ? -1 : ids.indexOf(current);
+  if (i === -1) return ids[0]; // null / not-in-list → first (safe fallback)
+  return ids[(i + dir + ids.length) % ids.length];
+}

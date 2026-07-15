@@ -17,6 +17,10 @@ interface Props {
   busy: boolean; // host action in flight (disables the bar)
   run: (action: FleetAction, host: Host) => Promise<void>;
   titleId: string; // aria-labelledby target the sheet points at (the host name)
+  // Step to the prev (-1) / next (+1) planet WITHOUT closing the sheet (the same select path a tap-another-
+  // planet swap uses). OPTIONAL — omit it (or a single-planet fleet) and the chevrons don't render, keeping
+  // the component pure + backward-compatible. CosmosFleet wires it to stepId(hosts) over the LIVE selection.
+  onStep?: (dir: 1 | -1) => void;
 }
 
 // "Alive / time-alive" (uptime) is DEFERRED — the backend doesn't collect boot time yet; the slot shows "—"
@@ -55,8 +59,21 @@ const IconPing = () => (
     <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
   </svg>
 );
+// Planet-switcher chevrons flanking the name — thin clean glyphs (NOT filled arrows), tuned for the sheet's
+// dot-grid card. Larger than the action icons so they read as a control at the header scale.
+const CHEV = { ...ICON, width: 20, height: 20 } as const;
+const IconChevLeft = () => (
+  <svg {...CHEV} aria-hidden>
+    <path d="M15 18l-6-6 6-6" />
+  </svg>
+);
+const IconChevRight = () => (
+  <svg {...CHEV} aria-hidden>
+    <path d="M9 18l6-6-6-6" />
+  </svg>
+);
 
-export function CosmosHostDetail({ host, services, busy, run, titleId }: Props) {
+export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }: Props) {
   const online = !!host.status?.online;
   const ping = host.status?.ping_ms ?? null;
   const upCount = services.filter((s) => s.status?.online).length;
@@ -72,9 +89,25 @@ export function CosmosHostDetail({ host, services, busy, run, titleId }: Props) 
       {/* data-bs-peek: the PEEK detent ends here — the sheet opens showing the name + this compact info
           (status · alive/seen · services, then the id line); drag-up reveals the actions + services. */}
       <div className="hd-head" data-bs-peek>
-        <h2 className="hd-name" id={titleId}>
-          {host.name}
-        </h2>
+        {/* Name row: prev-chevron · name · next-chevron. The chevrons live INSIDE the [data-bs-peek] marker,
+            so BottomSheet's applyInert — which inerts only the peek marker's FOLLOWING siblings — never
+            inerts them: they're usable immediately at the peek detent. Rendered only when onStep is wired
+            (a multi-planet fleet). */}
+        <div className="hd-namerow">
+          {onStep && (
+            <button className="hd-chev" aria-label="Previous planet" onClick={() => onStep(-1)}>
+              <IconChevLeft />
+            </button>
+          )}
+          <h2 className="hd-name" id={titleId}>
+            {host.name}
+          </h2>
+          {onStep && (
+            <button className="hd-chev" aria-label="Next planet" onClick={() => onStep(1)}>
+              <IconChevRight />
+            </button>
+          )}
+        </div>
         <div className="hd-row">
           <span className={"hd-status" + (online ? " on" : "")}>
             <span className="led" aria-hidden />

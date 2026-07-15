@@ -511,8 +511,20 @@
     .cosmos-hd {
       padding: 2px 18px calc(18px + env(safe-area-inset-bottom));
     }
-    .cosmos-hd .hd-name {
+    /* name row — the h2 flanked by the planet-switcher chevrons (CosmosHostDetail); the name keeps its
+     * centred look and the chevrons align on its optical centre. The h2's vertical breathing room lives on
+     * this row (so the three items centre as one). `min-width: 0` on the h2 (§14.11 flex rule) lets a long
+     * name WRAP between the chevrons rather than push them off the card. */
+    .cosmos-hd .hd-namerow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
       margin: 14px 0 10px; /* breathing room above (from the grip/dots) + below (to the status) */
+    }
+    .cosmos-hd .hd-name {
+      min-width: 0; /* allow the name to wrap between the chevrons instead of overflowing the row */
+      margin: 0;
       font-family: var(--font-display); /* Audiowide — retro-futuristic display face */
       font-size: 25px; /* Audiowide runs wide + tall → smaller than the Space Grotesk size */
       font-weight: 400; /* single-weight face — avoid faux-bold distortion */
@@ -520,6 +532,56 @@
       line-height: 1.15;
       text-align: center;
       overflow-wrap: anywhere;
+    }
+    /* planet-switcher chevrons — quiet button reset (the `.cosmos-core` idiom), muted like the sheet's other
+     * secondary text, brightening on hover/active. A transparent ::after expands the hit area to ≥44px
+     * without growing the visible glyph (the `.cosmos-planet::after` precedent). z-index 2: the BottomSheet
+     * handle's invisible 16px drag hit-strip (`.bs-handle::after`, z 1 — kit.css) overlaps the top of the
+     * name row and would SWALLOW chevron taps (live-caught 2026-07-15); a precise control beats a fuzzy
+     * drag-zone expansion, so the chevron (and its 44px expander) wins where they overlap — the strip keeps
+     * the rest of its width for drags. */
+    .cosmos-hd .hd-chev {
+      appearance: none;
+      border: 0;
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      font: inherit;
+      position: relative;
+      z-index: 2; /* above the handle's z-1 hit-strip */
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-3);
+      cursor: pointer;
+      transition: color 0.18s ease;
+    }
+    .cosmos-hd .hd-chev svg {
+      display: block;
+    }
+    .cosmos-hd .hd-chev:active {
+      color: var(--text);
+    }
+    @media (hover: hover) {
+      .cosmos-hd .hd-chev:hover {
+        color: var(--text);
+      }
+    }
+    .cosmos-hd .hd-chev:focus-visible {
+      outline: 2px solid #fff; /* the theme's focus idiom (planets/moon) */
+      outline-offset: 2px;
+      border-radius: 6px;
+    }
+    /* ≥44px tap target centred on the glyph, without enlarging it (the planet expander pattern) */
+    .cosmos-hd .hd-chev::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 44px;
+      height: 44px;
+      transform: translate(-50%, -50%);
     }
     /* status row — `● online · role` + alive/last-seen + services count, centred under the name */
     .cosmos-hd .hd-row {
