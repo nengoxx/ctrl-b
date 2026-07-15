@@ -82,6 +82,25 @@
       opacity: 0;
       will-change: opacity;
     }
+    /* Dive-window filter drops (Gate B 2026-07-15). During the 300ms dive the camera rAF rescales the whole
+     * orbital system EVERY frame, and static `drop-shadow` filters on scaled-per-frame children re-render their
+     * filter surfaces each frame — the planet rune emboss (`.sym`) and the moon's carve/coin shadows (Gecko-
+     * confirmed, bugzilla 1611601 / 1532300; mildly true in other engines too). This one is UNIVERSAL (not
+     * Gecko-scoped): the stage is simultaneously fading to opacity 0 (`.diving` above), so hiding these subtle
+     * 1px-emboss/shadow filters mid-dive is visually undetectable — there is NO trade to preserve and Chrome
+     * gets a free minor win too, so a fork would only buy two code paths. The offline `.cosmos-planet.off`
+     * grayscale (below) is DELIBERATELY KEPT — it's a visible STATE, and dropping it here would flash the
+     * offline planets bright for the dive's duration mid-fade. NOTE the carve/coin selectors are qualified
+     * with `.cosmos-core` on purpose: the base `.cosmos-core.carved .cosmos-carve` / `.cosmos-core.cutout
+     * .cosmos-coin` filter rules are specificity (0,3,0) — the same as a bare `.cosmos-stage.diving
+     * .cosmos-carve`, which would lose on source order (it's declared here, ABOVE them). The `.cosmos-core`
+     * qualifier lifts these to (0,4,0) so the drop wins order-independently; `.sym` already outranks its base
+     * ((0,4,0) vs (0,2,0)). REVERT path: delete this rule. */
+    .cosmos-stage.diving .cosmos-planet .sym,
+    .cosmos-stage.diving .cosmos-core .cosmos-carve,
+    .cosmos-stage.diving .cosmos-core .cosmos-coin {
+      filter: none;
+    }
     /* The camera: a zero-size box at the stage center carrying the fit-to-stage SCALE (set inline by
      * CosmosFleet from a ResizeObserver) so the whole system — moon + orbits — scales together. Origin is
      * its center point (= stage center). C2b folds the zoom-follow translate into this same transform. */
@@ -222,6 +241,19 @@
       background-position: 0 0, 2px 1px;
       opacity: 0.1;
       mix-blend-mode: overlay;
+    }
+    /* Gecko-scoped grain swap (Gate B 2026-07-15). `mix-blend-mode: overlay` forces a blended element that
+     * moves/scales EVERY frame (the orbits always animate; the camera zooms/dives) to render onto an
+     * intermediate surface, which also defeats WebRender's tile cache (bugzilla 1684781 / 1008128) — an
+     * AMBIENT per-frame cost on Gecko that Chrome absorbs. So on Gecko ONLY, drop the blend to plain `normal`
+     * compositing. Gecko-only because there IS a visual trade: overlay grain reads slightly different from a
+     * straight alpha blend, and the owner keeps the richer overlay look on Chrome (owner split ruling
+     * 2026-07-15). 0.07 is the owner-eyeball knob approximating overlay-at-0.1 with a plain alpha blend — the
+     * dual white/black dot field (::before above) already carries BOTH light and dark grain, so normal blending
+     * at a lower alpha reads close to the blended original. REVERT path: delete this rule (Chrome is untouched). */
+    body[data-engine="gecko"] .cosmos-planet::before {
+      mix-blend-mode: normal;
+      opacity: 0.07;
     }
     /* the rune glyph — an inline SVG (runes.tsx). The svg sets fill:none/stroke:currentColor, so `color`
      * here is the engrave tone driving its strokes; filled "points" override to currentColor inline. */
