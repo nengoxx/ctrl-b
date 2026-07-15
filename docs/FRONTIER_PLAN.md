@@ -22,15 +22,33 @@
 > declaration order); stale synced `borderless`/`ghost` degrade to defaults (no migration code);
 > kit.css gained the "composer skins" base-layer section (specificity-audited per rule); frontier.css no
 > longer styles composer chrome. A "composer icon setting" was PARKED (owner 2026-07-15 → ROADMAP).
-> **NEXT = the remaining F5 gates — the pre-flight is DONE and PINNED in §9 (2026-07-15,
-> research-backed: 2 web-research agents + a file:line codebase inventory; execute A → C → B → D,
-> don't re-derive):** Gate A a11y-floor fixes [A1 the kit-wide `:focus-visible` ring — a REAL WCAG
-> 2.4.7 failure on all kit themes, top priority · A2 sheet peek-detent `inert` + tap-to-cycle grip ·
-> A3 status-row `role="group"` · A4 chat `role="log"` live region · A5 Seg `group`+`aria-pressed` ·
-> A6 `scroll-padding-bottom`] · Gate C e2e locks [frontier render case · frontier axe arm · firefox
-> Playwright project] · Gate B the Fennec+Chrome on-device perf pass (verification — the codebase
-> pre-verified §14.11-clean; INP ≤200ms budgets; VT now native on Fennec ≥144) · Gate D the §0
-> row-by-row + owner sign-off. 4 open owner rulings with pinned defaults — §9 bottom.
+> **Gates A + C ✅ SHIPPED 2026-07-15 (per the §9 pinned order A → C → B → D; Opus-4.8-high
+> subagents built from the pinned briefs, Fable hand-reviewed + independently verified every diff):**
+> **Gate A (`5c0a504`)** — all six a11y-floor fixes [A1 `.kit :focus-visible` accent ring + form-field
+> carve-out, kit.css @layer base · A2 sheet peek-detent below-fold `inert` + the grip
+> dragging-alternative · A3 status-row `role="group"` ×3 · A4 chat `role="log"`+`aria-busy` · A5 Seg
+> `group`+label prop (18 call sites)+`aria-pressed` · A6 `.kit-scroll` `scroll-padding-bottom`]. The
+> hand-review caught + fixed a REAL A2 bug: under `setPointerCapture` the derived click retargets
+> engine-inconsistently (Chromium mouse → the capturing handle; touch → the grip; verified
+> empirically), so tap-cycle lives in `endDrag`'s sub-`TAP_SLOP` branch (whole handle = tap target,
+> Material precedent; grip onClick = AT-only; `pointercancel` never activates). Live-verified on the
+> dev server: tap/mouse/Enter/real-drag + inert per detent all correct. FE gate 431.
+> **Gate C (`10e355b`)** — `frontier-render.spec.ts` (NEW: map/beacon→sheet-dialog drive · A1 ring
+> asserted via real Tab presses · A2 grip role/label + handle-tap peek⇄full cycle asserted on
+> translateY AND the inert flags, polled, no fixed sleeps · rig-stack + `data-thread` empty⇄active
+> via one mocked chat turn) · a11y.spec.ts frontier arm (axe WCAG A/AA × its 3-tab bar, `scanTab()`
+> extracted, titles theme-prefixed) · firefox Playwright project scoped `testMatch:/kit-render/`
+> (deep drives stay Chromium; ci.yml release gate installs chromium+firefox) · stale kit-render
+> comments fixed. e2e 109/109 (mobile 52/desktop 52/firefox 5), frontier-render 6/6 @ repeat-each=3.
+> **Owner rulings resolved 2026-07-15:** ① A4 now ✓ · ② firefox project ✓ · ③ sub-44px accepted ✓ ·
+> ④ cosmos minors → investigated (research agent + code cross-check) and **CLOSED AS NON-ISSUES**
+> (the planet `filter` transition = rare one-shot on a tiny promoted layer; the sheet mask is STATIC
+> and rides the sheet's transform — NOT the F4 moving-content-under-fixed-mask case); no code change.
+> Cosmos offline svc-rows stay dim-LED-only visually (owner accepted; AT covered by the A3 group).
+> **NEXT = Gate B (MANUAL, owner on-device — protocol/scenarios/budgets pinned in §9; start the dev
+> units first) → Gate D (the §0 18-row walk + owner sign-off CLOSES F5).** After F5: ACA Slices 1–2 ·
+> vapor-hygiene filler · the parked art-override UI + asset pass · ROADMAP: cosmos planet-switcher
+> chevrons (owner 2026-07-15).
 > *(§6-F5 + §7's licensing note still apply where not superseded here.)*
 >
 > **▶ F4 ✅ SHIPPED 2026-07-13 (built 2026-07-12→13, commits `61f2267`→`696842f` [9]; owner-eyeballed
@@ -421,6 +439,12 @@ row-by-row; owner sign-off.
 
 ## §9 F5-GATES — pinned pre-flight brief (2026-07-15; research-backed, execute in a clean session)
 
+> **STATUS 2026-07-15 (as-built record = the top banner): Gate A ✅ `5c0a504` · Gate C ✅ `10e355b` ·
+> the 4 owner rulings RESOLVED (defaults ①②③ confirmed; ④ superseded — the cosmos minors were
+> investigated and CLOSED AS NON-ISSUES, see the banner). REMAINING: Gate B (manual on-device,
+> protocol below) → Gate D (§0 walk + owner sign-off closes F5).** The A/C item lists below are
+> the as-planned briefs — the banner records the deltas (notably the A2 pointer-capture fix).
+
 > Synthesized from a 3-agent pre-flight (2026-07-15): web research on 2026 mobile-perf practice
 > (web.dev/MDN/Mozilla primary sources) + WCAG 2.2 / APG a11y practice (W3C Understanding docs
 > revised 2026) + a file:line codebase inventory. The inventory's headline: **the codebase is
@@ -491,6 +515,7 @@ evidence per row (the 2026-07-15 inventory pre-verified most; rows 10/11/16/17 a
 A/B/C gates complete). Owner sign-off on the walk CLOSES F5; then: ACA Slices 1–2 · the parked
 art-override UI + asset pass · vapor-hygiene filler.
 
-**Open owner rulings (defaults pinned above):** ① A4 now vs ACA-defer (default: now) ·
-② the firefox e2e project (default: add) · ③ sub-44px targets (default: accept) ·
-④ cosmos minors deferred (default: defer).
+**Owner rulings — RESOLVED 2026-07-15:** ① A4 now ✓ (shipped in Gate A) · ② firefox e2e project ✓
+(shipped in Gate C) · ③ sub-44px targets accepted ✓ · ④ cosmos minors: the owner asked for evidence
+instead of a blind defer → a research agent + code cross-check CLOSED BOTH AS NON-ISSUES (banner has
+the reasoning); the cosmos offline svc-rows' dim-LED-only visual was also accepted as-is.

@@ -70,13 +70,17 @@
 > (ConfTab renders declaration order); kit.css "composer skins" base-layer section; frontier.css no
 > longer styles composer chrome (D37 authority rule); KitComposer picks the glass arrowhead glyph by
 > resolved skin (the one sanctioned TS seam). "Composer icon setting" PARKED (owner → ROADMAP).
-> **NEXT = the F5 gates — pre-flight DONE + PINNED in `FRONTIER_PLAN.md` §9 (2026-07-15,
-> research-backed; execute A→C→B→D, don't re-derive):** Gate A a11y fixes (A1 kit-wide
-> `:focus-visible` ring = a real WCAG 2.4.7 failure, top priority · sheet-detent `inert`+tap-cycle ·
-> status-row roles · chat live region · Seg semantics · scroll-padding) → Gate C e2e locks
-> (frontier render case + axe arm + firefox project) → Gate B Fennec+Chrome on-device perf pass
-> (verification; codebase pre-verified §14.11-clean) → Gate D §0 row-by-row + owner sign-off;
-> 4 open owner rulings w/ pinned defaults at §9 bottom. After F5: ACA Slices 1–2 (TODO Phase 12) ·
+> **F5 gates: A ✅ + C ✅ SHIPPED 2026-07-15 (Gate A `5c0a504` = all six a11y fixes, FE gate 431;
+> Gate C `10e355b` = frontier-render.spec deep-drive + frontier axe arm + the firefox Playwright
+> project [ci installs chromium+firefox], e2e 109/109; as-built record + the A2 pointer-capture
+> review fix = the `FRONTIER_PLAN.md` banner + §9 STATUS block). The 4 §9 owner rulings RESOLVED —
+> incl. ④: the cosmos "minors" were investigated (research agent + code cross-check) and CLOSED AS
+> NON-ISSUES, no code change; cosmos offline-row dim-LED visual accepted. ROADMAP gained the cosmos
+> host-sheet planet-switcher chevrons (owner idea, 2026-07-15).**
+> **NEXT = Gate B — MANUAL on-device perf pass (owner + phone; protocol/scenarios/budgets pinned in
+> `FRONTIER_PLAN.md` §9 Gate B; it's a VERIFICATION pass — codebase pre-verified §14.11-clean; START
+> THE DEV UNITS first: `systemctl --user start ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`) →
+> Gate D §0 row-by-row walk + owner sign-off CLOSES F5.** After F5: ACA Slices 1–2 (TODO Phase 12) ·
 > vapor-hygiene filler (§14.15.3) · the parked Composer Surface follow-ons + art/asset pass.
 > *(F0–F3 shipped 2026-07-12, F4 2026-07-13; the `FRONTIER_PLAN.md` banner holds all as-built records.)*
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
