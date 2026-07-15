@@ -4081,6 +4081,35 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
 body[data-motion="reduced"] .kit .bs-sheet {
   transition-duration: 0.001s; /* reduced motion → snap, don't slide */
 }
+
+/* Sheet-open composer yield — the BottomSheet is the behavior's owner (sheet open → the Kit composer
+ * yields), so it lives here. Promoted from identical cosmos+frontier copies (K1, owner directive
+ * 2026-07-15): the theme population is CLOSED (no new themes; existing themes formalize onto the kit),
+ * so this is now DEFAULT kit behavior — it supersedes the "rule-of-three promotion candidate" note the
+ * two copies carried. The STAMP stays HOST-owned: CosmosFleet/FrontierFleet set body[data-sheet=open]
+ * while their host-detail sheet is up — the composer's OWN plan sheet (D30) must NEVER stamp it, or it
+ * would hide the composer it is attached to. Uses `visibility` (NOT display:none) on purpose: a fleet
+ * surface's fit/camera measure reads the composer's getBoundingClientRect, and display:none reports a
+ * 0-rect that would corrupt the live-zone calc; visibility:hidden keeps the layout box stable while
+ * stopping paint (its backdrop blur isn't painted either, so we never stack two blur surfaces). Themes
+ * may still override in @layer theme. */
+.kit .kit-composer {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    visibility 0.2s;
+}
+body[data-sheet="open"] .kit .kit-composer {
+  opacity: 0;
+  transform: translateY(10px);
+  visibility: hidden;
+}
+/* reduced-motion snap the theme copies MISSED (a §14.11 correctness upgrade at promotion) — mirrors the
+ * `.bs-sheet` reduced-motion rule above. */
+body[data-motion="reduced"] .kit .kit-composer {
+  transition-duration: 0.001s;
+}
+
 .kit .bs-handle {
   flex: none;
   position: relative; /* anchors the extended hit-strip below */

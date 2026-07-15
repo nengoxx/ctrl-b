@@ -60,6 +60,17 @@ test("frontier bespoke surfaces + Gate A locks — dark/coral", async ({ page, p
   await expect(sheet).toBeVisible();
   await expect(page.locator(".frontier-hd")).toBeVisible();
 
+  // ── K1 lock: while the sheet is open the Kit composer YIELDS (kit-default, promoted 2026-07-15 from the
+  // frontier/cosmos copies — kit.css BottomSheet section, keyed on the host-stamped body[data-sheet=open]).
+  // It uses `visibility:hidden` (NOT display:none — the layout box stays for fit/camera measures), so poll
+  // the composer's computed `visibility` (the 0.2s fade), matching the translateY/inert polling idiom below.
+  const composerVis = () =>
+    page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>(".kit-composer");
+      return el ? getComputedStyle(el).visibility : null;
+    });
+  await expect.poll(composerVis).toBe("hidden");
+
   // ── Gate A2 lock — the peek detent + the grip dragging-alternative ──
   // The grip is a labelled role="button" (SC 2.5.7); the below-fold region (the `[data-bs-peek]` marker's
   // following siblings — stats/actions/services) is `inert` at peek (SC 2.4.11) and released at full.
@@ -103,6 +114,8 @@ test("frontier bespoke surfaces + Gate A locks — dark/coral", async ({ page, p
   // Escape closes the (non-modal) sheet — verifying the pre-existing Gate A2 escape-close path.
   await page.keyboard.press("Escape");
   await expect(page.locator(".bs-sheet")).toHaveCount(0); // unmounts after the exit slide
+  // sheet gone → FrontierFleet clears body[data-sheet=open] → the composer is visible again (K1 round-trip).
+  await expect.poll(composerVis).toBe("visible");
 
   // ── Agent: the bespoke rig-stack mounts; `data-thread` flips empty ⇄ active ──
   await page.locator("#tabbtn-agent").click();

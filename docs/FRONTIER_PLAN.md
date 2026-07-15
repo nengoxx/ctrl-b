@@ -574,7 +574,8 @@ art-override UI + asset pass · vapor-hygiene filler.
 > **5 Axes/D37** ✓ defaults `composerSkin:"bezel"`, `outlines:false` (index.tsx:60,65); axes.css
 > strips-only; NO composer chrome in frontier.css — NOTE (honest nuance): frontier.css DOES style
 > `.kit-composer` for the sheet-open hide/slide (the cosmos recipe verbatim, a documented
-> rule-of-three promotion candidate) — that is LAYOUT behavior, not chrome; D37 authority holds.
+> rule-of-three promotion candidate) — that is LAYOUT behavior, not chrome; D37 authority holds
+> (promoted to the kit as K1 same day — the nuance is moot).
 > **6 Two-channel accent** ✓ `--accent` = flat literal per `body[data-accent]`; `--accent-fill:
 > var(--accent)`; gradient swatches are ThemeDef DATA only (deliberate deviation from the plan's
 > gradient shorthand — no gradient-filled control exists; owner may confirm as final).

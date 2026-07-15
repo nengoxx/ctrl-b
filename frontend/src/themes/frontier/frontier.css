@@ -426,19 +426,8 @@
         0 -2px 10px rgba(0, 0, 0, 0.08);
     }
 
-    /* Hide the Kit composer while a host sheet is open — mirrors the cosmos recipe verbatim (a rule-of-three
-     * promotion candidate once a third theme wants it). Frontier sets body[data-sheet=open] on open. */
-    .kit-composer {
-      transition:
-        opacity 0.2s ease,
-        transform 0.2s ease,
-        visibility 0.2s;
-    }
-    body[data-sheet="open"] .kit-composer {
-      opacity: 0;
-      transform: translateY(10px);
-      visibility: hidden;
-    }
+    /* Sheet-open composer yield promoted to the kit (K1 2026-07-15) — see kit.css BottomSheet section.
+     * FrontierFleet still owns the body[data-sheet=open] stamp. */
 
     /* ── .frontier-hd content — ported from the prototype's sheet CSS, palette literals → frontier tokens. ── */
     .frontier-hd {

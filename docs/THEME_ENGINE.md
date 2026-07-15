@@ -1297,7 +1297,10 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
    `aria-modal`, no focus trap, Escape + an sr-only Close + return-focus; an optional invisible tap-outside
    catcher (`catchOutside`, default on — cosmos turns it OFF so taps fall through to the orbital stage).
    The theme only adds a **skin** (cosmos.css: glass/dots/rounded under `@layer theme`); the `.bs-*`
-   STRUCTURE lives once in `kit.css`. *Gotcha baked in:* a content reflow mid-enter (a display-font swap, an
+   STRUCTURE lives once in `kit.css`. **Sheet-open composer yield is kit-default** (K1, 2026-07-15):
+   `kit.css` hides/slides the Kit composer (`visibility:hidden`, layout-box preserved) keyed on the
+   host-stamped `body[data-sheet=open]` — a fleet surface owns the stamp, themes may still override in
+   `@layer theme`. *Gotcha baked in:* a content reflow mid-enter (a display-font swap, an
    async height change) fires the sheet's ResizeObserver, whose `transition:none` re-apply would SNAP the
    sheet and kill the enter animation — the `entering` ref makes a mid-slide resize RE-TARGET the slide
    (keep the transition) instead; only an at-rest resize re-applies instantly.

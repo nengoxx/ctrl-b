@@ -488,22 +488,8 @@
       background: color-mix(in oklch, var(--text-3) 70%, var(--surface));
     }
 
-    /* Hide the Kit composer while a host sheet is open — cosmos does NOT fork the composer; it gives it a
-     * transition (so BOTH hide + show animate) and slides it out. Uses `visibility` (NOT `display:none`) on
-     * purpose: CosmosFleet's fit/camera measure reads the composer's getBoundingClientRect, and display:none
-     * reports a 0-rect that would corrupt the live-zone calc; visibility:hidden keeps the layout box stable
-     * (so the measure is unaffected) while stopping paint — its backdrop blur isn't painted either, so we
-     * still avoid stacking two blur surfaces. The `visibility` transition holds it visible through the fade
-     * out and flips it on immediately when showing (the allow-discrete pattern, but layout-safe here).
-     * CosmosFleet sets body[data-sheet=open]. */
-    .kit-composer {
-      transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
-    }
-    body[data-sheet="open"] .kit-composer {
-      opacity: 0;
-      transform: translateY(10px);
-      visibility: hidden;
-    }
+    /* Sheet-open composer yield promoted to the kit (K1 2026-07-15) — see kit.css BottomSheet section.
+     * CosmosFleet still owns the body[data-sheet=open] stamp. */
 
     /* minimal-mode nav launcher (the ORBIT glyph) — a clean muted SILVER tone in cosmos (the planet-coin
      * family, but grey); other themes keep the Kit's --text-2. @layer theme beats the Kit's @layer base. */
