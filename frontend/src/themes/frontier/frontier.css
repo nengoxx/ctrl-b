@@ -787,27 +787,70 @@
       background-repeat: no-repeat;
       background-size: contain;
     }
-    /* geometry + the coral/magenta drop-shadow glow ported from the prototype (a STATIC filter — never
-     * animated, §14.11). */
+    /* geometry only. The coral/magenta glow that used to ride these two layers as a `drop-shadow` filter now
+     * lives on the two static `.fr-rigstack::before/::after` pseudos below — see that comment for WHY the glow
+     * moved OFF the bobbing PNGs (Gecko per-frame filter-surface re-render under the bob). The cube/mid are now
+     * filter-free, so the bob is pure compositor work on both engines. */
     .fr-rigstack .cube {
       width: 150px;
       height: 155px;
       top: 26px;
       z-index: 3;
-      filter: drop-shadow(0 10px 22px rgba(214, 90, 156, 0.45));
     }
     .fr-rigstack .mid {
       width: 132px;
       height: 27px;
       bottom: 30px;
       z-index: 2;
-      filter: drop-shadow(0 6px 12px rgba(214, 90, 156, 0.35));
     }
     .fr-rigstack .base {
       width: 196px;
       height: 33px;
       bottom: 0;
       z-index: 1;
+    }
+    /* the coral glow — moved OFF the bobbing PNGs onto these two STATIC pseudos (Gate B perf, 2026-07-15).
+     * WHY: `.cube`/`.mid` bob forever via `frontier-bob` (transform-only, so OMTA keeps the MOTION on the
+     * compositor — that was never the problem, and §14.11's "static filter, never animated" read was right about
+     * OMTA). But a `filter`ed element is a WebRender render SURFACE, and its drop-shadow render task re-executes
+     * every frame while the bob nudges the surface by subpixel offsets — a documented Gecko stutter (bugzilla
+     * 1611601 / 1532300; measured as low as ~5fps vs Chrome 60 in one report), which the owner felt as the choppy
+     * floating cube on Fennec. Fix: the GLOW is static, so host it on the outer `.fr-rigstack` positioner (which
+     * only transitions transform/opacity 0.5s on the empty↔watermark recede, never continuously) as radial
+     * gradients. The bobbing layers are now filter-free → pure compositor work. The pseudos also inherit the
+     * parent's 0.18 recede opacity for free, exactly as the drop-shadows dimmed with their host today.
+     * DELIBERATELY UNIVERSAL (not Gecko-forked): done right this is visually near-identical, so there's nothing
+     * to preserve by branching (owner split ruling 2026-07-15).
+     * The geometry/stops below are OWNER-EYEBALL KNOBS approximating the old drop-shadows: the real shadow
+     * followed the cube silhouette; an ellipse is only an approximation. The cube bobs ±7px OVER its now-static
+     * glow, which reads naturally — an object floating above its ground glow — rather than dragging the halo
+     * with it. Cube center ≈ (50%, 103px) offset +10px down → ellipse at 50% 113px; mid center ≈ (50%, 195px)
+     * offset +6px → 50% 201px.
+     * REVERT: delete both pseudos and restore the two filter lines removed above, verbatim:
+     *   `.fr-rigstack .cube { … filter: drop-shadow(0 10px 22px rgba(214, 90, 156, 0.45)); }`
+     *   `.fr-rigstack .mid  { … filter: drop-shadow(0 6px 12px rgba(214, 90, 156, 0.35)); }` */
+    .fr-rigstack::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 0; /* below base (z1) / mid (z2) / cube (z3) */
+      background: radial-gradient(
+        ellipse 85px 70px at 50% 113px,
+        rgba(214, 90, 156, 0.4),
+        rgba(214, 90, 156, 0.12) 60%,
+        transparent 100%
+      );
+    }
+    .fr-rigstack::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      background: radial-gradient(
+        ellipse 70px 24px at 50% 201px,
+        rgba(214, 90, 156, 0.32),
+        transparent 100%
+      );
     }
     /* bob — re-authored from the prototype so EVERY keyframe carries the full `translateX(-50%)` centering
      * (the prototype centered via left:50%+translateX AND bobbed on the same transform; splitting them would
