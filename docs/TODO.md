@@ -747,7 +747,7 @@ tools + confirm bubbles) are DONE.**
       2026-07-10), README/AGENTS were rewritten at the reorg. No Linux-WOL fallback kept
       (v2 owns WOL natively).
 
-## Phase 11 — Theme engine (pluggable presentation layer, D28) — **IN PROGRESS: T0 + M0–M3 + Kit/minimal + cosmos + Hardening slice v2 (D34 ✅ 2026-07-10) + Composer Surface (✅ 2026-07-11 — 5-variant catalog + planPlacement, `COMPOSER_SURFACE_PLAN.md`) + frontier F0/D35 + F1 + F2 + F3 (✅ 2026-07-12 — frontier REGISTERED, the badlands Fleet + HostDetail sheet live; riders: Kit tab bar = vapor's for all themes) SHIPPED; NEXT = frontier F4 (Agent tab)**
+## Phase 11 — Theme engine (pluggable presentation layer, D28) — **THEME CATALOG COMPLETE 2026-07-15: T0 + M0–M3 + Kit/minimal + cosmos (feature-CLOSED 2026-07-15) + Hardening v2 (D34) + Composer Surface + axes (D37) + frontier T5 (owner-signed 2026-07-15) ALL SHIPPED; the population is CLOSED (owner) — remaining Phase-11 work = the Bucket-A kit token-drive + the vapor-assimilation ladder (§14.15.3) + parked frontier art/asset pass**
 
 Spec: `THEME_ENGINE.md §§9–10` · decision: `DECISIONS.md D28`. Build the engine on the cheapest theme
 first, hardest last; the foundation is paid once in T0. **D7 pixel-fidelity applies per theme.** Each Tn is
@@ -885,10 +885,10 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
       [`COMPOSER_SURFACE_PLAN.md`](./COMPOSER_SURFACE_PLAN.md) banner. **Non-breaking held: vapor untouched,
       cosmos orbit untouched, Fleet stays Root-pinned.** Still deferred (plan §6/Phase D): Fleet→registry
       migration, the `createSurface` factory, vapor wiring.
-- [ ] **T2 — phosphor** (LOW–MED): `tokens.css` + fonts + CRT overlay + monochrome amber/green named axis. Reuses the
-      whole Kit incl. the default Fleet. + a Fleet-data eyeball pass.
-- [ ] **T3 — observatory** (MED, low-pri — port once its prototype is finished): own Fleet view (SVG radial topology)
-      + first `present()` (per-host `angle`). Proves the per-theme Fleet + presentation layer.
+- ~~**T2 — phosphor** · **T3 — observatory**~~ **SUPERSEDED (owner ruling 2026-07-15, at the F5 close): the
+  theme population is CLOSED** — no new themes; the existing four (vapor · minimal · cosmos · frontier)
+  formalize onto the kit and future theme work = variations within them (ROADMAP §Appearance, the amended
+  vapor-assimilation entry). The T2/T3 prototype notes stay in `design/prototypes/` as reference only.
 - [x] **T4 — cosmos** ✅ DONE (2026-06-28, pushed `2639ea2`→`88bfa84`): own Fleet `Root`/orbital — WAAPI orbit +
       rAF camera zoom-follow, per-host `present()` (golden-angle), canvas starfield, liveness pulse/halo, service-cue;
       `HostDetail` = a **draggable multi-snap bottom sheet** (the slide-panel idea, upgraded) on the reusable
@@ -902,13 +902,14 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
       menu DOCKING RULE (appbar trailing action under `visible`, floating otherwise) + the COLLAPSE LADDER
       (one off-bar section → a direct button) + NavHome (minimal quick-jump) + utils-in-Conf hosting.
       Swipe-nav PARKED (D35 addendum). Three audit-caught defects fixed pre-ratification.
-- [ ] **T5 — frontier** (HIGH; **plan = [`FRONTIER_PLAN.md`](./FRONTIER_PLAN.md), design LOCKED 2026-07-07,
+- [x] **T5 — frontier ✅ COMPLETE (owner sign-off 2026-07-15 — F5 gates A/B/C/D all closed; as-built record
+      = the `FRONTIER_PLAN.md` banner + §9)** (HIGH; **plan = [`FRONTIER_PLAN.md`](./FRONTIER_PLAN.md), design LOCKED 2026-07-07,
       slices F1–F5 — build against it, not this line**; **F1 shell reskin + F2 badlands Fleet + F3
-      HostDetail sheet ✅ 2026-07-12 · F4 Agent tab ✅ 2026-07-13** — frontier registered, night/day palette +
+      HostDetail sheet ✅ 2026-07-12 · F4 Agent tab ✅ 2026-07-13 · F5 axes+gates ✅ 2026-07-15** — frontier registered, night/day palette +
       brandMeta subtitle + 3-tab default, the art-map/beacons/rig-grid live w/ appearance overrides
       end-to-end, the honest-stat host sheet over the shared BottomSheet, the bespoke Agent body over the
       shared ChatThread (D36/§15 contract; the no-outlines + Clear-appbar owner rulings);
-      **F5 remains**): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
+      *(parked post-F5: per-host art-override UI + the asset format/size pass)*): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
       (the 3-layer bobbing rig-stack empty state — the one non-Fleet structural deviation) + bottom-sheet `HostDetail` (**reuse cosmos's
       `components/BottomSheet.tsx` primitive** — multi-snap, see THEME_ENGINE §14.13 #9) + asset strategy
       (`import.meta.glob`; built-in Mœbius drawing set by index + per-host `host.appearance.frontier.image` override).

@@ -55,8 +55,8 @@
 > Gate D §0 walk, 18/18 PASS; a 3-lens adversarial review [TS/CSS/docs] + full e2e 109/109 preceded
 > the close).** *(Slice record below kept as the as-built history; authoritative record =
 > the `FRONTIER_PLAN.md` banner; the axis architecture = **D37 + THEME_ENGINE §14.16**.)*
-> per-host art override UI + asset format/size pass [hero.png 1.9MB] **PARKED** (owner call, revisit
-> post-F5). **Slice A ✅ SHIPPED 2026-07-13 (`5193f4c`, owner-eyeballed live + ratified, FE gate 422):**
+> Still parked from the F5 re-scope: per-host art override UI + asset format/size pass [hero.png 1.9MB]
+> (owner call, now eligible). **Slice A ✅ SHIPPED 2026-07-13 (`5193f4c`, owner-eyeballed live + ratified, FE gate 422):**
 > chat no-outlines promoted to the kit-wide `outlines` axis — `kit/axes.ts` factory+resolver
 > (undeclared themes→ON) · `kit/axes.css` in the NEW `@layer base, theme, axes, reset` position
 > (strips-only, NEVER fills, `.kit`-scoped) · `body[data-outlines]` stamped by an AppEngines
@@ -89,13 +89,39 @@
 > REVERTED (`10203e6`; the engine branch + `data-settling` stamp stay). Full record + revert paths =
 > the §9 GATE B ROUND 1 block.
 > **Gate D ✅ WALKED (18/18 PASS, §9 GATE D WALK block) + OWNER-SIGNED 2026-07-15 → F5 CLOSED.**
-> **NEXT = the two sign-off clarifications (owner directives, small kit slices): K1 — promote the
-> sheet-open composer hide/slide to the KIT DEFAULT (the theme population is CLOSED: no new themes,
-> existing themes formalize onto the kit — rule-of-three superseded) · K2 — wire frontier's gradient
-> swatches into `--accent-fill` (the two-channel gradient seam; owner wants gradient accents).**
-> Then: ACA Slices 1–2 (TODO Phase 12) · vapor-hygiene filler (§14.15.3) · the parked Composer
-> Surface follow-ons + art/asset pass · the themes-onto-kit formalization wave (ROADMAP).
+> **The two sign-off clarifications SHIPPED same day: K1 `1281d10`** — sheet-open composer hide/slide
+> promoted to the KIT DEFAULT (the theme population is CLOSED: no new themes, existing themes formalize
+> onto the kit — rule-of-three superseded; ROADMAP vapor-assimilation entry AMENDED) · **K2 `a578141`** —
+> frontier gradient accents via `--accent-fill` (swatch-mirrored 150deg gradients; `--accent` stays flat;
+> owner-eyeballed + ratified). **COSMOS also feature-CLOSED 2026-07-15: the host-sheet planet-switcher
+> chevrons `d26a498`+`87eadf1`** (stepId wrap-around over the orbit order; build-caught gotcha: content
+> near the sheet handle needs z-index above its invisible 16px drag hit-strip; ROADMAP entry closed; the
+> uptime "—" stays deferred on a backend boot-time seam). ALL PUSHED, CI green through `87eadf1`.
 > *(F0–F3 shipped 2026-07-12, F4 2026-07-13; the `FRONTIER_PLAN.md` banner holds all as-built records.)*
+>
+> **▶ NEXT — pick with the owner (full open-work inventory swept 2026-07-15, two-agent doc+code sweep;
+> stale T2/T3/T5 rows in TODO Phase 11 fixed same day):**
+> 1. **ACA Slices 1–2** (`AGENT_CHAT_AUDIT.md` §5 / TODO Phase 12) — the headline next work: Slice 1 =
+>    hang-proofing batch (MCP deadlines · timeout guards · de-hardcoded tunables · confirm-token hygiene;
+>    ACA-3/6/7/8/9/12/13/18/20/21), Slice 2 = turn integrity (turn marker + 409s · quiet-boundary
+>    rediscovery · shielded-finally persistence · frontend /clear+plan guards; ACA-1/2/10/16/17/19).
+>    Riders first: **SYS-16 ruff ASYNC+B ratchet** precedes the ACA build waves; **SYS-1
+>    `Database.transaction()`** rides Slice 2; MCP/OpenAPI adapter tests ride Slice 1.
+> 2. **Phase-11 tail** (population closed; catalog complete): the **Bucket-A kit token-drive**
+>    (overlays/primitives/Conf shell — ⛔ research + owner design-confirm FIRST, TODO Phase 11) · the
+>    **vapor-assimilation ladder V1–V5** (§14.15.3, unscheduled) · the parked **frontier art-override UI +
+>    asset pass** (hero.png 1.9MB) · Composer-Surface Phase D = vapor bullet only (→ ladder V4).
+> 3. **Near-term flagged in ROADMAP:** **D3 Slice 1** (multi-homed addressing backend — blocks shutting
+>    down Windows hosts from emma) · 6c-1 whisper-model warm (STT cold-start) · 6c-2 QR-to-phone (needs
+>    owner OK on `segno`).
+> 4. **Standing backlog (details in each doc):** ROADMAP A3 automations · A4 slash-registry+typeahead ·
+>    A5 plan salience · A7 tools menu · A8 attachments · A9 model indicator (pairs w/ ACA wire work) ·
+>    B1 vector memory (+D14/D27-B/C state+reflection) · C1/D19 voice streaming · C2 wake word · C3
+>    chunked TTS · D2 wake-on-connection · E0 utils tools · E1 bots · E2 OpenAI facade · F1
+>    notifications · F2 connection dot · G security hardening · THEME_ENGINE §14.15.4 backlog (kit.css
+>    off eager path · overlay App-hoist) · UI_AUDIT F9/F13 (React Compiler prep; eslint warns now 29,
+>    docs say 27 — reconcile when F13 runs) · SYS-2..17 opportunistic seams · housekeeping
+>    (dependabot/archive-prune · dev-over-HTTPS for mic).
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
 > orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).
 >

@@ -4,7 +4,10 @@
 > A2c `4247d5e` · A3 `4d0e5c4` · A4 `1c7de20` · C `379e455` · quality pass `f9d1ac2` · Phase E
 > `7e6fccb`; every slice owner-eyeballed at 390px + independently audited. The shipped catalog is
 > `[stacked, borderless, ghost, sheet, line]` + the `planPlacement` (inline/pinned) axis.
-> Remaining in this doc: ONLY Phase D (vapor/frontier participation, opt-in, unscheduled).**
+> Remaining in this doc: ONLY Phase D — and only its VAPOR bullet (opt-in, unscheduled; natural home now =
+> the vapor-assimilation ladder V4, THEME_ENGINE §14.15.3). Phase D's *frontier* bullet is OBSOLETE
+> (2026-07-15): frontier's composer chrome rides the shared `composerSkin` axis (`bezel`, D37) and never
+> needed a bespoke variant.**
 > **As-built delta (2026-07-15, frontier F5 slice B — D37 amended):** the catalog was DEDUPED to the three
 > real layouts `[stacked, sheet, line]` — the CSS-only `borderless`/`ghost` wrapper variants this plan added
 > (A2b/A2c) were split out as the `glass`/`sleek` skins of the orthogonal `composerSkin` axis
