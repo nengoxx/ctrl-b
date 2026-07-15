@@ -1140,6 +1140,22 @@ directive 2026-06-26, folded into the LWW appearance channel in M3 §14.3; the d
 `appbarMode`). *(Corrected 2026-07-06 — this line previously said perf was device-local/not-synced, contradicting
 the code; `useAppearance.ts` + `AppearanceCfg` are the source of truth.)*
 
+**Engine-scoped degrades — `body[data-engine="gecko"]` (Gate B, 2026-07-15).** Some costs are Gecko-only
+(WebRender re-blurs a transform-animated `backdrop-filter` per frame; `mix-blend-mode` on per-frame-moving
+elements defeats its tile cache) while Chrome absorbs the same effect. When a fix would **trade visual
+richness for smoothness**, scope the degrade to Gecko instead of degrading everyone: `src/lib/engine.ts`
+detects Gecko via `CSS.supports("-moz-appearance", "none")` (a feature-check, NOT userAgent parsing) and
+`main.tsx` stamps `body[data-engine="gecko"]` once at boot (static, pre-paint — not a React effect). This is
+the frontend's first and only engine branch — run it like the backend's closed OS-branch allowlist
+(ARCHITECTURE §6): a **closed, documented consumer list**, currently (both cosmos.css, Gate B 2026-07-15):
+① `.bs-sheet[data-settling]` drops the sheet's backdrop blur only while it programmatically slides (+
+`[data-motion="full"]` guard — under reduced motion nothing slides, so nothing drops); ② the planet grain
+swaps `mix-blend-mode: overlay` → plain `normal` at lower alpha. Fixes with **no visual trade** (moving a
+static glow off an animated element, deleting a paint-per-frame transition) stay UNIVERSAL — never fork two
+code paths to preserve nothing. Every engine-scoped rule carries its revert path in an in-file comment; the
+Playwright `firefox` project can assert these rules. Before adding a consumer, ask whether a universal
+design change (frontier's opaque sheet — "a free Firefox win") does the job instead.
+
 **Canvas / `requestAnimationFrame` loops** (waveforms, frontier anims): cap the frame rate (~30fps is smooth
 for ambient), **pause when off-screen** (IntersectionObserver — the tab stays mounted but `display:none`), and
 **never call `getComputedStyle`/`getBoundingClientRect` per frame** — cache them (refresh on a low cadence /

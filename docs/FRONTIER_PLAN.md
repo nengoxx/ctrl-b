@@ -444,6 +444,33 @@ row-by-row; owner sign-off.
 > investigated and CLOSED AS NON-ISSUES, see the banner). REMAINING: Gate B (manual on-device,
 > protocol below) → Gate D (§0 walk + owner sign-off closes F5).** The A/C item lists below are
 > the as-planned briefs — the banner records the deltas (notably the A2 pointer-capture fix).
+>
+> **GATE B ROUND 1 — owner on-device findings + fixes SHIPPED 2026-07-15 (owner RE-TEST pending;
+> a green re-test completes Gate B).** The owner's pass found: theme switch lost the Conf scroll
+> position; cosmos chops on Firefox (desktop AND Fennec — moon-dive, planet→sheet); the frontier
+> agent tab / floating cube chops on Fennec. Chrome smooth everywhere. NOTE: this REOPENS and
+> supersedes ruling ④ — the "cosmos minors" (planet `filter` transition · the blurred sheet slide)
+> were exactly the on-device culprits; the desktop-Firefox repro was the evidence the earlier
+> closure lacked. Five fixes, one commit each (each `git revert`-able; verified-cause research by
+> two Opus passes — bugzilla/mozilla-central sources in the commit bodies):
+> **B1 `16e8c21`** scroll-keep across the theme-Root remount (`theme-engine/scrollKeep.ts`, the
+> groupScroll handoff pattern; restore inside the VT snapshot; tab-switch reset unchanged).
+> **B2 `680e44c`** cosmos sheet drops its backdrop blur while PROGRAMMATICALLY sliding, **Gecko-only
+> + motion-full-only** (`BottomSheet` stamps `data-settling` [sibling of `data-dragging`]; introduces
+> the engine branch `body[data-engine="gecko"]` — feature-detect, THEME_ENGINE §14.11; the standing
+> "glass stays during the DRAG" ruling is UNCHANGED).
+> **B3 `3bf318f`** the planet `transition: filter/box-shadow` DELETED, universal (paint-per-frame in
+> every engine + was un-gated under reduced motion; select-rim/offline-gray snap — the zoom masks it).
+> **B4 `13cac86`** cosmos grain `mix-blend-mode: overlay` → `normal` @ 0.07 **Gecko-only** (tile-cache
+> defeat; Chrome keeps the overlay look; 0.07 = eyeball knob) + UNIVERSAL dive-window `filter: none`
+> on rune emboss + moon carve/coin (the stage is fading to 0 — undetectable; `.off` grayscale kept).
+> **B5 `69cde60`** frontier rig-stack glow moved OFF the bobbing `.cube`/`.mid` onto two STATIC
+> `.fr-rigstack::before/::after` radial-gradient pseudos, universal (Gecko re-runs a filtered
+> element's drop-shadow render task per frame under the bob; OMTA itself was never blocked — the old
+> §14.11 comment's belief. Gradient geometry = eyeball knobs; before/after screenshots in-session).
+> Scoping rule ratified (owner split ruling): **Gecko-scope only fixes that trade visual richness;
+> no-trade fixes stay universal** — recorded with the engine-branch allowlist in THEME_ENGINE §14.11.
+> Post-fix e2e: frontier-render + kit-render green on chromium AND firefox (17/17); FE suite 435.
 
 > Synthesized from a 3-agent pre-flight (2026-07-15): web research on 2026 mobile-perf practice
 > (web.dev/MDN/Mozilla primary sources) + WCAG 2.2 / APG a11y practice (W3C Understanding docs
