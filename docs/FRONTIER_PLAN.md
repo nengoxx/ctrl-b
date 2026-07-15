@@ -547,6 +547,48 @@ evidence per row (the 2026-07-15 inventory pre-verified most; rows 10/11/16/17 a
 A/B/C gates complete). Owner sign-off on the walk CLOSES F5; then: ACA Slices 1–2 · the parked
 art-override UI + asset pass · vapor-hygiene filler.
 
+> **GATE D WALK — EXECUTED 2026-07-15 (Opus evidence pass + Fable cross-check of the load-bearing
+> claims; 18/18 PASS; awaiting owner sign-off, which CLOSES F5).** Evidence per §0 row:
+> **1 ThemeDef** ✓ `registry.ts:15` + `themes/frontier/index.tsx:26-76` (all fields incl. `defaultLayout`).
+> **2 Lazy Root** ✓ `preloadableRoot(() => import("./FrontierRoot"))`; FrontierRoot = `DefaultRoot` +
+> `bodies={{fleet, agent}}` + `brandMeta`; controllers stay above.
+> **3 CSS bands** ✓ tokens.css = pure token map; frontier.css bespoke ONLY for map/sheet-skin/rig-stack;
+> the rest reskins under `.kit`.
+> **4 Chat via §15 hooks** ✓ FrontierAgent composes shared `ChatThread` (no fork); the chat rules
+> (frontier.css 961-1055) target only pinned hooks (`.b*`/`.think`/`.q-input`/`.chat-err-retry`/
+> `.plan-step`/`.priv-chip`) + frontier-owned `.fr-*` empty-state; theme-private `--fr-bubble-ink` per
+> §15 token rule (cross-checked by hand against the §15 table).
+> **5 Axes/D37** ✓ defaults `composerSkin:"bezel"`, `outlines:false` (index.tsx:60,65); axes.css
+> strips-only; NO composer chrome in frontier.css — NOTE (honest nuance): frontier.css DOES style
+> `.kit-composer` for the sheet-open hide/slide (the cosmos recipe verbatim, a documented
+> rule-of-three promotion candidate) — that is LAYOUT behavior, not chrome; D37 authority holds.
+> **6 Two-channel accent** ✓ `--accent` = flat literal per `body[data-accent]`; `--accent-fill:
+> var(--accent)`; gradient swatches are ThemeDef DATA only (deliberate deviation from the plan's
+> gradient shorthand — no gradient-filled control exists; owner may confirm as final).
+> **7 OKLCH in-gamut** ✓ themeContract run: 38 pass / 0 advisories; frontier's 3 oklch literals are
+> low-chroma day-mode statuses.
+> **8 Keyframes** ✓ exactly `frontier-sweep`/`-ping`/`-bob`, all prefixed.
+> **9 §14.6 gotcha** ✓ static tokens on `:scope`, formula tokens on `body` (tokens.css:59-74,
+> documented against §14.6).
+> **10 §14.11 budget** ✓ (completed by Gate B): all 3 continuous anims transform/opacity +
+> motion-gated; count-pill blur perf-gated; the bobbing layers are filter-free since `69cde60`;
+> no canvas.
+> **11 a11y floor** ✓ (Gate A): named focusables per host (beacon + row `aria-label`), decorative
+> `aria-hidden`, role=log chat, role=group status rows, Seg `aria-pressed`, kit focus ring —
+> machine-locked by frontier-render.spec + the a11y frontier arm.
+> **12 Settings** ✓ 4 declared (composer/composerSkin/planPlacement/outlines) → synced
+> `ui.themeSettings` map via the shared resolver.
+> **13 present()/assets/override** ✓ present.ts R2 scatter + clamped `{image?,x?,y?}` per-field
+> override mapping; art.ts manifest partitioned (the override UI itself stays PARKED).
+> **14 Lazy fonts/assets** ✓ dynamic imports only; art rides the lazy Root chunk; vapor bundle
+> untouched.
+> **15 LWW sync** ✓ nothing frontier-specific bypasses the shared appearance channel.
+> **16 Eyeball + e2e** ✓ six F4 owner rounds + per-slice 390px eyeballs (banner) · kit-render sweep
+> rows (chromium+firefox) · frontier-render.spec deep-drive · a11y frontier arm.
+> **17 Guard tables** ✓ stylelint `^frontier-` (config:67-71) · contrast-matrix frontier row ·
+> TOKENS_RAW frontier entry (themeContract.test.ts:93) — all three hand-verified.
+> **18 §10 playbook** ✓ the F0→F5 phased record in this file's banner is the process evidence.
+
 **Owner rulings — RESOLVED 2026-07-15:** ① A4 now ✓ (shipped in Gate A) · ② firefox e2e project ✓
 (shipped in Gate C) · ③ sub-44px targets accepted ✓ · ④ cosmos minors: the owner asked for evidence
 instead of a blind defer → a research agent + code cross-check CLOSED BOTH AS NON-ISSUES (banner has
