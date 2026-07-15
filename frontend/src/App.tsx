@@ -13,7 +13,7 @@ import { useFleetCycle } from "./hooks/useFleet";
 import { isAnyDirty } from "./store/dirty";
 import { usePlanOpenAutoClose } from "./store/planSheet";
 import { useUISlice } from "./store/ui";
-import { useOutlines } from "./theme-engine/kit/axes";
+import { useComposerSkin, useOutlines } from "./theme-engine/kit/axes";
 import { DEFAULT_THEME, defaultSwitchTarget } from "./theme-engine/resolve";
 import { switchTheme } from "./theme-engine/switchTheme";
 import { useActiveRoot } from "./theme-engine/ThemeProvider";
@@ -177,19 +177,24 @@ function AppEngines() {
   // `useAgentChat` is a cheap memoized derivation (threads are bounded); we only read `currentPlan`.
   usePlanOpenAutoClose(useAgentChat().currentPlan);
 
-  // Slice A — project the resolved `outlines` axis onto `body[data-outlines]` (kit/axes.css keys off it).
-  // Stamped HERE (not store/ui#applyBodyAttrs) because axis resolution reads the theme registry (the theme's
-  // declared default) and the store must NEVER import the registry (the store↛registry circular-import
-  // hazard). `useLayoutEffect` (not useEffect) so the FIRST commit paints with the attribute already set — no
-  // one-frame flash of the wrong border state. Cleared on unmount so a torn-down app leaves no stale attr.
+  // Presentation axes (D37) — project the resolved axis values onto `body[data-*]`, the ONE stamp site the
+  // kit chrome keys off (Slice A `outlines` → kit/axes.css strips; Slice B `composerSkin` → kit.css skin
+  // chrome). Stamped HERE (not store/ui#applyBodyAttrs) because axis resolution reads the theme registry (the
+  // theme's declared default) and the store must NEVER import the registry (the store↛registry circular-import
+  // hazard). `useLayoutEffect` (not useEffect) so the FIRST commit paints with the attributes already set — no
+  // one-frame flash of the wrong border/chrome state. Both are cleared on unmount so a torn-down app leaves no
+  // stale attrs.
   const theme = useUISlice((s) => s.theme);
   const outlines = useOutlines(theme);
+  const skin = useComposerSkin(theme);
   useLayoutEffect(() => {
     document.body.dataset.outlines = outlines ? "on" : "off";
+    document.body.dataset.composerSkin = skin;
     return () => {
       delete document.body.dataset.outlines;
+      delete document.body.dataset.composerSkin;
     };
-  }, [outlines]);
+  }, [outlines, skin]);
 
   return null;
 }

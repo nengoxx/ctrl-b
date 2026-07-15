@@ -4,9 +4,7 @@ import { createElement, type KeyboardEvent } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setThemeSetting, setUI } from "../../src/store/ui";
-import { BorderlessComposer } from "../../src/theme-engine/kit/composer/BorderlessComposer";
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
-import { GhostComposer } from "../../src/theme-engine/kit/composer/GhostComposer";
 import { LineComposer } from "../../src/theme-engine/kit/composer/LineComposer";
 import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer";
 import { composerLayoutSetting } from "../../src/theme-engine/kit/composer/setting";
@@ -21,12 +19,14 @@ import { registeredThemes } from "../../src/theme-engine/registry";
 
 // COMPOSER_SURFACE_PLAN §7 — composer Surface characterization tests, grown slice by slice: A1 locked the
 // mechanism (registry identity, the layout resolver's per-theme default + fallbacks, the shared setting
-// spec); A2 made `sheet` a REAL docked variant (SheetComposer, shared `useComposerChrome`); A2b added
-// `ghost` and A2c `borderless` (thin `rootClass` wrappers over KitComposer — plus the `sendIcon` seam);
-// A3 declared the setting on minimal+cosmos (default stacked; vapor stays permanently undeclared); Phase E
-// added `line` (its mic/send morph is covered in lineMorph.test.ts — it needs an sttReady mock this file's
-// shared harness deliberately avoids). Registry identities, resolver fallbacks, the 5-option spec shape,
-// the extracted `useComposerChrome`, and each variant's structural render are all pinned here.
+// spec); A2 made `sheet` a REAL docked variant (SheetComposer, shared `useComposerChrome`); A3 declared the
+// setting on minimal+cosmos (default stacked; vapor stays permanently undeclared); Phase E added `line` (its
+// mic/send morph is covered in lineMorph.test.ts — it needs an sttReady mock this file's shared harness
+// deliberately avoids). F5 slice B SPLIT the old CSS-only `borderless`/`ghost` LAYOUT variants out into the
+// `composerSkin` axis (glass/sleek skins; the axis + its resolver are pinned in axes.test.ts), so the LAYOUT
+// registry is now three REAL components (stacked/sheet/line) and KitComposer stamps `.stacked` + picks its
+// send glyph by skin. Registry identities, resolver fallbacks (incl. stale legacy values), the 3-option spec
+// shape, the extracted `useComposerChrome`, and each variant's structural render are all pinned here.
 
 beforeEach(() => {
   setUI({ themeSettings: {} }); // clear overrides (module state persists between tests)
@@ -37,12 +37,13 @@ afterEach(() => {
 });
 
 describe("composerVariants registry", () => {
-  it("maps stacked→Kit, borderless→Borderless, ghost→Ghost, sheet→Sheet and line→Line (stable module refs)", () => {
+  it("maps stacked→Kit, sheet→Sheet, line→Line (stable module refs); borderless/ghost gone after the F5 split", () => {
     expect(composerVariants.stacked).toBe(KitComposer);
-    expect(composerVariants.borderless).toBe(BorderlessComposer);
-    expect(composerVariants.ghost).toBe(GhostComposer);
     expect(composerVariants.sheet).toBe(SheetComposer);
     expect(composerVariants.line).toBe(LineComposer);
+    // the CSS-only wrappers became `composerSkin` skins (glass/sleek) — no longer LAYOUT registry entries
+    expect("borderless" in composerVariants).toBe(false);
+    expect("ghost" in composerVariants).toBe(false);
   });
 
   it("DEFAULT_COMPOSER_LAYOUT is stacked", () => {
@@ -90,10 +91,21 @@ describe("useComposerLayout", () => {
     const { result } = renderHook(() => useComposerLayout());
     expect(result.current).toBe("stacked");
   });
+
+  it("F5: a stale composer LAYOUT value from before the skin split (borderless/ghost) degrades to stacked", () => {
+    // `borderless`/`ghost` were composer variants until F5 slice B split them into the `composerSkin` axis;
+    // they're no longer declared `composer` options, so a synced legacy value validates away to the default
+    // (never renders an off-catalog variant). No migration code needed — `resolveThemeSetting` handles it.
+    setUI({ theme: "cosmos", themeSettings: {} });
+    setThemeSetting("cosmos", "composer", "borderless");
+    expect(renderHook(() => useComposerLayout()).result.current).toBe("stacked");
+    setThemeSetting("cosmos", "composer", "ghost");
+    expect(renderHook(() => useComposerLayout()).result.current).toBe("stacked");
+  });
 });
 
 describe("composerLayoutSetting", () => {
-  it("builds the shared seg spec (options Stacked/Borderless/Sleek/Docked/Line, default from the arg)", () => {
+  it("builds the shared seg spec (options Stacked/Docked/Line, default from the arg)", () => {
     const spec = composerLayoutSetting();
     expect(spec).toMatchObject({
       type: "seg",
@@ -102,15 +114,11 @@ describe("composerLayoutSetting", () => {
       default: "stacked",
       options: [
         { val: "stacked", label: "Stacked" },
-        { val: "borderless", label: "Borderless" },
-        { val: "ghost", label: "Sleek" },
         { val: "sheet", label: "Docked" },
         { val: "line", label: "Line" },
       ],
     });
-    expect(spec.type === "seg" && spec.options).toHaveLength(5);
-    expect(composerLayoutSetting("borderless").default).toBe("borderless");
-    expect(composerLayoutSetting("ghost").default).toBe("ghost");
+    expect(spec.type === "seg" && spec.options).toHaveLength(3);
     expect(composerLayoutSetting("sheet").default).toBe("sheet");
     expect(composerLayoutSetting("line").default).toBe("line");
   });
@@ -230,45 +238,35 @@ describe("SheetComposer render (structural)", () => {
   });
 });
 
-describe("GhostComposer render (structural)", () => {
-  // GhostComposer (A2b) is a thin wrapper that renders KitComposer's EXACT DOM + the `.kit-composer.ghost`
-  // root class (`.kit-composer.ghost` in kit.css restyles it — pure CSS, no fork).
-  const renderGhost = (slots: ComposerSlots = {}) => renderComposer(GhostComposer, slots);
-
-  it("root is `.kit-composer.ghost#composer` (edge #5 — --composer-h querySelector still matches)", () => {
-    const { container } = renderGhost({});
-    const root = container.querySelector("#composer");
-    expect(root).not.toBeNull();
-    expect(root?.classList.contains("kit-composer")).toBe(true);
-    expect(root?.classList.contains("ghost")).toBe(true);
+describe("KitComposer render (structural + skin glyph)", () => {
+  it("the default (stacked) KitComposer root className is EXACTLY `kit-composer stacked`", () => {
+    // Pins the `.stacked` stamp (the skin axis keys stacked-only chrome off it) + the rootClass append's falsy
+    // branch — a regression appending `undefined` would render `class="kit-composer stacked undefined"` yet
+    // still pass a `contains` check.
+    const { container } = renderComposer(KitComposer);
+    expect(container.querySelector("#composer")?.className).toBe("kit-composer stacked");
   });
 
-  it("renders KitComposer's DOM — the #cmd-input textarea inside `.field` (parity, no fork)", () => {
-    const { container } = renderGhost({});
+  it("renders the #cmd-input textarea inside `.field` (the shared DOM every layout/skin reuses)", () => {
+    const { container } = renderComposer(KitComposer);
     const field = container.querySelector(".field");
     expect(field).not.toBeNull();
     expect(field?.querySelector("textarea#cmd-input")).not.toBeNull();
   });
 
-  it("the default (no rootClass) KitComposer root className is EXACTLY `kit-composer` (no trailing garbage)", () => {
-    // Pins the rootClass append's falsy branch — a regression like `"kit-composer " + rootClass` would
-    // render `class="kit-composer undefined"` on every stacked theme yet still pass a `contains` check.
-    const { container } = renderComposer(KitComposer);
-    expect(container.querySelector("#composer")?.className).toBe("kit-composer");
-  });
-
-  it("BorderlessComposer (A2c) root is `.kit-composer.borderless#composer` (same wrapper seam)", () => {
-    const { container } = renderComposer(BorderlessComposer);
-    expect(container.querySelector("#composer")?.className).toBe("kit-composer borderless");
-  });
-
-  it("the `sendIcon` seam: borderless renders the shared arrowhead; stacked keeps its default arrow", () => {
-    const borderless = renderComposer(BorderlessComposer);
-    expect(borderless.container.querySelector(".kit-send polygon")).not.toBeNull();
+  it("skin-aware send glyph: the `glass` skin defaults to the shared arrowhead; other skins keep the arrow", () => {
+    // KitComposer reads the resolved composerSkin (store theme + registry default/override). minimal declares
+    // the axis: default `outline` → the stroke arrow (`path`); a `glass` override swaps in the arrowhead
+    // (`polygon`), reproducing the old BorderlessComposer's `sendIcon` behaviour without a wrapper component.
+    setUI({ theme: "minimal", themeSettings: {} });
+    const outline = renderComposer(KitComposer);
+    expect(outline.container.querySelector(".kit-send path")).not.toBeNull();
+    expect(outline.container.querySelector(".kit-send polygon")).toBeNull();
     cleanup();
-    const stacked = renderComposer(KitComposer);
-    expect(stacked.container.querySelector(".kit-send polygon")).toBeNull();
-    expect(stacked.container.querySelector(".kit-send path")).not.toBeNull();
+    setThemeSetting("minimal", "composerSkin", "glass");
+    const glass = renderComposer(KitComposer);
+    expect(glass.container.querySelector(".kit-send polygon")).not.toBeNull();
+    expect(glass.container.querySelector(".kit-send path")).toBeNull();
   });
 });
 

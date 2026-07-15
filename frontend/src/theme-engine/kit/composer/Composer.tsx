@@ -1,6 +1,9 @@
 import { useRef, type ReactNode } from "react";
 
 import { useComposer } from "../../../hooks/useComposer";
+import { useUISlice } from "../../../store/ui";
+import { useComposerSkin } from "../axes";
+import { SendArrowheadIcon } from "./icons";
 import type { ComposerSlots } from "./types";
 import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 
@@ -14,11 +17,14 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 // `overlay` is a positioned SIBLING above the composer (so a sheet can tuck behind the composer's rounded
 // top; a child would paint in front). A base theme passes no slots and gets the bare composer.
 //
-// `rootClass` + `sendIcon` are the VARIANT-WRAPPER seam (A2b/A2c): a pure-CSS variant (e.g. `ghost`,
-// `borderless`) wraps KitComposer and passes an extra root class it restyles in kit.css — and optionally a
-// different send GLYPH (borderless swaps in the shared arrowhead) — same DOM + behaviour, no fork. Both are
-// INTERNAL: NOT part of the `ComposerSlots` theme contract — themes never pass them (only a sibling wrapper
-// component does).
+// KitComposer is the STACKED layout — it stamps a `.stacked` root class so the `composerSkin` axis can key
+// stacked-only chrome (kit.css: glass/sleek's icon-forward + underline treatments) WITHOUT touching the sheet/
+// line layouts (which render their own `.kit-composer.sheet`/`.line`). `rootClass` + `sendIcon` stay the
+// VARIANT-WRAPPER seam for a FUTURE bespoke wrapper (a theme's own composer): the extra class is APPENDED after
+// `.stacked` and restyled in kit.css, and `sendIcon` overrides the glyph — same DOM + behaviour, no fork. Both
+// are INTERNAL: NOT part of the `ComposerSlots` theme contract (themes never pass them). The default send glyph
+// is skin-aware: the `glass` skin uses the shared arrowhead (the old Borderless behaviour) unless an explicit
+// `sendIcon` was passed.
 
 export function KitComposer({
   controlsStart,
@@ -30,13 +36,18 @@ export function KitComposer({
   const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
   // Shared presentational chrome (mic-press toggle, auto-grow, Enter-to-send) — §3.1.
   const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
+  // The resolved composer skin picks the DEFAULT send glyph (glass → the arrowhead, the old Borderless glyph);
+  // an explicit `sendIcon` prop still wins. Kit components may import BOTH the store and the registry-backed
+  // resolver — only store→registry is the forbidden cycle. (§14.16)
+  const theme = useUISlice((s) => s.theme);
+  const skin = useComposerSkin(theme);
 
   return (
     <>
       {/* `overlay` slot — a positioned sibling ABOVE `.kit-composer` (e.g. the plan sheet). Rendered before
           the bar so, at equal stacking, the composer paints over the overlay's tucked bottom edge. */}
       {overlay}
-      <div className={"kit-composer" + (rootClass ? " " + rootClass : "")} id="composer">
+      <div className={"kit-composer stacked" + (rootClass ? " " + rootClass : "")} id="composer">
         <div className="field">
           <textarea
             ref={taRef}
@@ -85,21 +96,24 @@ export function KitComposer({
             disabled={isStreaming}
             onClick={send}
           >
-            {sendIcon ?? (
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                <path d="M5 12h14M13 6l6 6-6 6" />
-              </svg>
-            )}
+            {sendIcon ??
+              (skin === "glass" ? (
+                <SendArrowheadIcon size={20} />
+              ) : (
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
+              ))}
           </button>
         </div>
       </div>

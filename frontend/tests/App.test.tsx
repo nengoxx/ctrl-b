@@ -24,17 +24,34 @@ vi.mock("../src/theme-engine/ThemeProvider", () => ({ useActiveRoot: () => hoist
 vi.mock("../src/theme-engine/switchTheme", () => ({ switchTheme: hoisted.switchTheme }));
 vi.mock("../src/theme-engine/registry", () => ({
   // vapor stays minimal (its palettes drive the real `defaultSwitchTarget` in the Reset tests). frontier +
-  // cosmos carry the `outlines` axis setting so AppEngines' Slice-A stamp resolves against their real
-  // defaults (frontier OFF, cosmos ON) without dragging the theme modules' canvas imports into jsdom.
+  // cosmos carry the `outlines` + `composerSkin` axis settings so AppEngines' D37 stamps resolve against their
+  // real defaults (frontier outlines OFF / skin `bezel`, cosmos outlines ON / skin `outline`) without dragging
+  // the theme modules' canvas imports into jsdom.
   registry: {
     vapor: { palettes: {} },
     frontier: {
       palettes: {},
-      settings: { outlines: { type: "switch", label: "Outlines", default: false } },
+      settings: {
+        outlines: { type: "switch", label: "Outlines", default: false },
+        composerSkin: {
+          type: "seg",
+          label: "Composer skin",
+          options: [{ val: "outline" }, { val: "glass" }, { val: "bezel" }, { val: "sleek" }],
+          default: "bezel",
+        },
+      },
     },
     cosmos: {
       palettes: {},
-      settings: { outlines: { type: "switch", label: "Outlines", default: true } },
+      settings: {
+        outlines: { type: "switch", label: "Outlines", default: true },
+        composerSkin: {
+          type: "seg",
+          label: "Composer skin",
+          options: [{ val: "outline" }, { val: "glass" }, { val: "bezel" }, { val: "sleek" }],
+          default: "outline",
+        },
+      },
     },
   },
   registeredThemes: () => [],
@@ -180,28 +197,43 @@ describe("App A4 wiring — AppEngines resets the shared plan-open flag on plan�
   });
 });
 
-describe("App outlines axis — AppEngines stamps body[data-outlines] from the resolved setting (Slice A)", () => {
+describe("App presentation axes — AppEngines stamps body[data-outlines] + body[data-composer-skin] (D37)", () => {
   beforeEach(() => setUI({ themeSettings: {} })); // clear per-theme overrides (module singleton persists)
 
-  it("frontier defaults outlines OFF → body[data-outlines]='off'", () => {
+  it("frontier defaults: outlines OFF + skin `bezel` → both attrs stamped", () => {
     setUI({ theme: "frontier" });
     hoisted.root = () => null; // a valid Root; this asserts AppEngines' stamp, not the theme tree
     render(<App />);
     expect(document.body.dataset.outlines).toBe("off");
+    expect(document.body.dataset.composerSkin).toBe("bezel");
   });
 
-  it("a user override flips frontier to ON → 'on'", () => {
+  it("a user override flips frontier outlines to ON + skin to sleek", () => {
     setUI({ theme: "frontier" });
     setThemeSetting("frontier", "outlines", true);
+    setThemeSetting("frontier", "composerSkin", "sleek");
     hoisted.root = () => null;
     render(<App />);
     expect(document.body.dataset.outlines).toBe("on");
+    expect(document.body.dataset.composerSkin).toBe("sleek");
   });
 
-  it("cosmos defaults outlines ON → 'on'", () => {
+  it("cosmos defaults: outlines ON + skin `outline`", () => {
     setUI({ theme: "cosmos" });
     hoisted.root = () => null;
     render(<App />);
     expect(document.body.dataset.outlines).toBe("on");
+    expect(document.body.dataset.composerSkin).toBe("outline");
+  });
+
+  it("cleanup removes BOTH axis attrs on unmount", () => {
+    setUI({ theme: "cosmos" });
+    hoisted.root = () => null;
+    const { unmount } = render(<App />);
+    expect(document.body.dataset.outlines).toBe("on");
+    expect(document.body.dataset.composerSkin).toBe("outline");
+    unmount();
+    expect(document.body.dataset.outlines).toBeUndefined();
+    expect(document.body.dataset.composerSkin).toBeUndefined();
   });
 });

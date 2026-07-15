@@ -6,7 +6,7 @@
 //
 // CSS + fonts are LAZY (loaded by switchTheme before the skin flips); dark-only for now (deep space).
 
-import { outlinesSetting } from "../../theme-engine/kit/axes";
+import { composerSkinSetting, outlinesSetting } from "../../theme-engine/kit/axes";
 import { planPlacementSetting } from "../../theme-engine/kit/composer/plan/placement";
 import { composerLayoutSetting } from "../../theme-engine/kit/composer/setting";
 import { preloadableRoot } from "../../theme-engine/lazyRoot";
@@ -70,6 +70,9 @@ export const cosmos: ThemeDef = {
     // Outlines axis (Slice A) — cosmos reuses the Kit's bordered chat chrome, so it defaults ON; the toggle
     // offers the borderless look (kit/axes.css strips the chat borders under body[data-outlines=off]).
     outlines: outlinesSetting(true),
+    // Composer-skin axis (Slice B) — cosmos keeps the Kit's native bordered input bar → defaults `outline`;
+    // the seg offers glass/bezel/sleek (kit.css chrome keyed on body[data-composer-skin]).
+    composerSkin: composerSkinSetting("outline"),
     // Central-body style (C2a-fix) — two variants the owner compares live: the prototype's see-through "D"
     // coin (cutout) vs the matte ball with the D engraved into it (carved). Auto-rendered as a Seg.
     moonStyle: {

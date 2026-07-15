@@ -37,3 +37,47 @@ export function outlinesSetting(defaultOn: boolean): ThemeSettingField {
 export function useOutlines(themeId: ThemeId): boolean {
   return useThemeSetting<boolean>(themeId, "outlines") ?? true;
 }
+
+// ── axis: `composerSkin` (Slice B, D37) ────────────────────────────────────────────────────────────────
+// The COMPOSER's chrome as a cross-theme choice, ORTHOGONAL to the composer LAYOUT (the `composer` variant
+// seg): where `outlines` owns the chat thread, this axis owns the input bar. UNLIKE `outlines`, the four skins
+// are NOT axes.css strips — they are FIRST-CLASS kit.css chrome (`@layer base`) keyed on `body[data-composer-
+// skin]`, because a skin carries fills/shadows and the axes layer forbids fills (it outranks theme CSS). Same
+// resolver machinery: a validated override, else the theme's declared default; an undeclared theme → the
+// kit-native `outline` look. No theme-id branching — the per-theme DEFAULT carries the distinction
+// (frontier's `bezel`; minimal/cosmos `outline`).
+
+/** The composer chrome skins (D37 catalog): `outline` = the Kit's native bordered bar (the base kit.css
+ *  chrome — no stamp keying, so pre-mount/no-stamp renders it); `glass` = the old Borderless look (frost +
+ *  deep elevation + icon-forward stacked controls); `bezel` = frontier's F4 composer sweep; `sleek` = the old
+ *  Ghost (fully transparent bar + extended readability scrim). */
+export type ComposerSkin = "outline" | "glass" | "bezel" | "sleek";
+
+// The SHARED `composerSkin` setting spec (D29 §14.3). Themes spread it into `ThemeDef.settings` with their own
+// default — one source of the option list. A `seg` → the Appearance picker auto-renders a Seg (ConfTab), synced
+// via `ui.themeSettings`. Mirrors `composerLayoutSetting`: value = the skin id, label display-only.
+export function composerSkinSetting(def: ComposerSkin = "outline"): ThemeSettingField {
+  return {
+    type: "seg",
+    label: "Composer skin",
+    desc: "input bar chrome",
+    options: [
+      { val: "outline", label: "Outline" },
+      { val: "glass", label: "Glass" },
+      { val: "bezel", label: "Bezel" },
+      { val: "sleek", label: "Sleek" },
+    ],
+    default: def,
+  };
+}
+
+// Resolve the EFFECTIVE composer skin for a theme. Routes through `useThemeSetting` → `resolveThemeSetting`
+// (validated override, else the declared default), so a stale/corrupt synced value — e.g. a LEGACY `borderless`
+// or `ghost` left over from when those were composer LAYOUTS — degrades to the default instead of casting
+// through. A theme that declares NO `composerSkin` (vapor / any frozen theme) resolves to `undefined` → coerced
+// to `"outline"` here: an undeclared theme keeps the kit-native bordered bar (and — belt to the `.kit`-scoped
+// chrome — vapor can never match the skin selectors anyway). No theme-id branching: the per-theme DEFAULT
+// carries the distinction (frontier's `bezel`).
+export function useComposerSkin(themeId: ThemeId): ComposerSkin {
+  return useThemeSetting<ComposerSkin>(themeId, "composerSkin") ?? "outline";
+}

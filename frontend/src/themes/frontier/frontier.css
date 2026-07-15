@@ -1019,8 +1019,11 @@
      * chrome lives in @layer base; these frontier rules are @layer theme, so they win regardless of the kit
      * selectors' specificity. (Slice A: the CHAT portion of this sweep — bubbles/reasoning/command/question/
      * retry/markdown-code + the plan family + the PrivilegeChip — was PROMOTED into the Kit-wide `outlines`
-     * axis, kit/axes.css; only the fill-differentiation for those stays above. What remains BELOW is the
-     * non-chat sweep: the composer + its bezel, the mini-player, Conf, Utils, and the shared overlays.)
+     * axis, kit/axes.css; only the fill-differentiation for those stays above. The COMPOSER portion — the
+     * transparent-border sweep + the line bezel + the rec-ring strip — was PROMOTED into the Kit-wide
+     * `composerSkin` axis as the `bezel` skin (kit.css, keyed on body[data-composer-skin]; F5 slice B), so no
+     * composer chrome is styled here anymore. What remains BELOW is the rest of the non-chat sweep: the
+     * mini-player, Conf, Utils, and the shared overlays.)
      * Two things are PRESERVED: (1) `:focus-visible` outlines + input focus rings —
      * a11y affordances, not resting outlines (any `border-color`-on-focus becomes an inset box-shadow ring,
      * the `.q-input` precedent); (2) the owner-named EXCEPTIONS — the fleet plate TAGS (`.frontier-beacon
@@ -1028,22 +1031,9 @@
      * bordered Clear-mode icon buttons — those are kit-level, owner-requested). The F3 host-detail sheet
      * (`.bs-sheet` / `.frontier-hd`) is left as its own owner-tuned elevation (already border-audited). ══ */
 
-    /* ── composer (stacked default + its inner controls) — border off, fill + elevation shadow stay ── */
-    .kit-composer {
-      border-color: transparent;
-    }
-    /* the LINE variant lost its stadium edge to the sweep and floats hard-to-see over the dusk glow (owner
-     * eyeball r5): a RESTRAINED bezel makes the bar read without a border — one soft ambient drop (the
-     * theme's mode-invariant ink family) + a 1px inset top highlight (the classic bezel light edge).
-     * Deliberately quiet ("don't overdo it"); tune the two alphas first if it needs more/less. */
-    .kit-composer.line {
-      box-shadow:
-        0 4px 14px rgba(20, 8, 28, 0.28),
-        inset 0 1px 0 rgba(255, 255, 255, 0.07);
-    }
-    .kit-cbtn {
-      border-color: transparent; /* the recording mic keeps its red ICON color as the state cue (no ring) */
-    }
+    /* (composer sweep REMOVED — F5 slice B: the transparent-border bar + inner controls, the line bezel drop,
+     * and the rec-ring strip graduated into the kit-wide `composerSkin` axis as the `bezel` skin, which
+     * frontier declares as its default. See kit.css "composer skins" + kit/axes.ts.) */
 
     /* ── mini player — border off; the frosted `--surface` fill + shadow carry it ── */
     .mini-player {

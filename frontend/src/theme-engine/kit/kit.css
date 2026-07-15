@@ -421,7 +421,7 @@ body[data-perf="lite"] .kit-composer {
   color: var(--text-2);
   transition: background 0.15s, color 0.15s, opacity 0.2s;
   /* stay snapped to the trailing edge at any plan-pill width — never squished/pushed out when the row
-   * runs short (the flexbox min-content fix's partner; covers stacked/borderless/ghost, which share this). */
+   * runs short (the flexbox min-content fix's partner; covers the stacked layout under any composer skin). */
   flex-shrink: 0;
 }
 .kit-cbtn:active {
@@ -557,9 +557,8 @@ body[data-mode="light"] .kit-composer.sheet {
   animation: kit-tag-pulse 1.8s ease-in-out infinite;
 }
 body[data-motion="reduced"] .kit-composer.sheet .field .kit-cbtn.mic.rec,
-body[data-motion="reduced"] .kit-composer.borderless .kit-cbtn.mic.rec,
 body[data-motion="reduced"] .kit-composer.line .kit-cbtn.mic.line-btn.rec {
-  animation: none; /* §14.11: reduced motion → static red (one gate for all breathing variants) */
+  animation: none; /* §14.11: reduced motion → static red (the glass-skin breathe has its own gate below) */
 }
 /* full-height send block beside the field (align-items:stretch gives the height); the composer's
  * overflow:hidden clips its top-right corner into the bar's radius. Accent fill/ink inherit from the
@@ -575,129 +574,15 @@ body[data-motion="reduced"] .kit-composer.line .kit-cbtn.mic.line-btn.rec {
   transform: translate(-1px, 1px);
 }
 
-/* ── composer · BORDERLESS variant (BorderlessComposer, A2c — owner addition 2026-07-11) ─────────────────
- * The stacked KitComposer verbatim — frosted surface and spacing kept — with the outline removed and
- * ELEVATION doing the separation instead (owner eyeball: without the border, the base 0 6px 18px shadow
- * reads too faint on near-black themes and the bar "clips" into the content). `border-color: transparent`
- * (not `border: 0`) keeps the box size identical to stacked, so a live swap doesn't reflow. Controls/pill
- * go borderless too — those rules are SHARED with ghost (below). */
-.kit-composer.borderless {
-  border-color: transparent;
-  /* deeper ambient + contact shadow — "floats on top" without an outline. */
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 2px 10px rgba(0, 0, 0, 0.35);
-}
-/* the light-mode base rule (`body[data-mode=light] .kit-composer`, 0,2,1) outspecifies
- * `.kit-composer.borderless` (0,2,0) — re-assert a soft light elevation (the sheet/ghost lesson). */
-body[data-mode="light"] .kit-composer.borderless {
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12), 0 2px 10px rgba(0, 0, 0, 0.08);
-}
-/* ICON-FORWARD controls (owner eyeball 2026-07-11): bigger glyphs, less "icon in a circle".
- * MIC — icon-only: no outline (shared rule below), no circular :active flash (the .press scale is the
- * touch feedback); recording = red icon (base .rec color) + the slow §14.11 opacity breathe (the same cue
- * the owner approved on the docked mic) instead of a ring, which would contradict icon-only. */
-.kit-composer.borderless .kit-cbtn svg {
-  width: 22px;
-  height: 22px;
-}
-.kit-composer.borderless .kit-cbtn:active {
-  background: transparent;
-}
-.kit-composer.borderless .kit-cbtn.mic.rec {
-  animation: kit-tag-pulse 1.8s ease-in-out infinite; /* reduced-motion gate is grouped in the sheet block */
-}
-/* SEND — a SOFT BLURRED ROUNDED-SQUARE (owner-tuned: the sphere fought the theme's squarer geometry —
- * echo the composer/pill instead). Three static paints, NO filter:blur (§14.11: it would blur the icon
- * and cost compositing): the translucent wash gives the square silhouette (corners hold ~30% accent), the
- * center-diffuse radial keeps the integrated glow under the icon, and the box-shadow blur — which follows
- * border-radius — softens the square's edge outward. 8px matches the sheet-variant pill ruling. */
-.kit-composer.borderless .kit-send {
-  border-radius: 8px;
-  background: radial-gradient(
-    circle,
-    var(--accent) 0,
-    color-mix(in oklch, var(--accent) 30%, transparent) 78%
-  );
-  box-shadow: 0 0 12px color-mix(in oklch, var(--accent) 35%, transparent);
-}
-.kit-composer.borderless .kit-send svg {
-  width: 20px;
-  height: 20px;
-  transform: translate(-1px, 1px); /* the arrowhead's optical nudge (its mass leans up-right, vapor's fix) */
-}
-
-/* ── composer · SLEEK "ghost" variant (GhostComposer, COMPOSER_SURFACE_PLAN §0 / A2b) ───────────────────
- * KitComposer's EXACT DOM (a thin wrapper adds the `.kit-composer.ghost` root class) — the cheapest band:
- * pure CSS, no fork. It floats like the stacked bar (base position/inset/radius kept) but goes transparent
- * and borderless: no surface fill, no frost, no shadow, transparent (NOT removed) border + borderless
- * controls/pill so there is ZERO layout shift vs stacked. Readability over scrolled content comes from the
- * ghost-extended bottom scrim below (the DEFAULT scrim ends beneath the text band — audit A2b #1), NOT
- * from a surface fill. Semantic tokens ONLY. §14.11: no new animations/transitions/filters — this block
- * only zeroes visuals and re-spaces; the scrim stays a static gradient. */
-.kit-composer.ghost {
-  background: transparent;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  /* keep the 1px border (transparent) so the box size matches stacked — no reflow on a live swap. */
-  border-color: transparent;
-  box-shadow: none;
-  /* sleeker spacing (density-scaled vertical, matching the stacked bar's `--density-pad`). */
-  padding: calc(8px * var(--density-pad)) 11px calc(7px * var(--density-pad));
-}
-/* the readability backstop (audit A2b #1): the default scrim (height `--composer-h − 24`, densest at the
- * screen edge) never reaches the TEXTAREA band of the transparent bar — extend it past the composer's top
- * and keep it dense through the whole composer zone, fading only above it. Still a static gradient (§14.11);
- * same rule carries perf-lite (where stacked would fall back to an opaque fill, ghost has none). */
-.kit-main:has(.kit-composer.ghost)::after {
-  height: calc(var(--composer-h, 64px) + 30px);
-  background: linear-gradient(
-    to top,
-    color-mix(in oklch, var(--bg) 96%, transparent) 0,
-    color-mix(in oklch, var(--bg) 88%, transparent) calc(100% - 34px),
-    transparent
-  );
-}
-/* focus + locate affordance (audit A2b #2): the base textarea is `all:unset` (no native outline) and ghost
- * has no surface to mark the input, so give the field a resting hairline UNDERLINE that turns accent on
- * focus (the borderless-input idiom; box-shadow → zero layout shift, no transition added). */
-.kit-composer.ghost .field {
-  box-shadow: 0 1px 0 0 var(--line-2);
-}
-.kit-composer.ghost .field:focus-within {
-  box-shadow: 0 1px 0 0 var(--accent);
-}
-/* the perf-lite rule (`body[data-perf="lite"] .kit-composer`, specificity 0,2,1) re-adds an OPAQUE
- * `background: var(--surface)` that outspecifies `.kit-composer.ghost` (0,2,0) — re-assert transparency. */
-body[data-perf="lite"] .kit-composer.ghost {
-  background: transparent;
-}
-/* the light-mode rule (`body[data-mode="light"] .kit-composer`, specificity 0,2,1) re-adds a DOWNWARD
- * shadow that outspecifies `.kit-composer.ghost` (0,2,0) — re-assert the shadowless ghost. */
-body[data-mode="light"] .kit-composer.ghost {
-  box-shadow: none;
-}
-/* borderless controls — SHARED by the ghost + borderless variants (owner 2026-07-11: the inner mic/pill
- * outlines follow the variant's aesthetic). The buttons keep their WIDTH (no shift), only the border goes
- * transparent; fills stay. */
-.kit-composer.ghost .kit-cbtn,
-.kit-composer.borderless .kit-cbtn {
-  border-color: transparent;
-}
-/* …EXCEPT while recording (audit A2b #3): `.kit-cbtn.mic.rec` ties these at (0,3,0) and loses on source
- * order, which would silently drop the red recording ring — state affordance beats sleekness, re-assert it.
- * (ghost only — borderless went ICON-ONLY, its rec cue is the red icon + breathe in its own block.) */
-.kit-composer.ghost .kit-cbtn.mic.rec {
-  border-color: color-mix(in oklch, var(--danger) 40%, transparent);
-}
-/* the plan pill goes borderless too; it keeps its --accent-soft fill (only the outline is dropped).
- * (`line` joined at its eyeball, 2026-07-11 — the stadium bar wants the quiet pill.) */
-.kit-composer.ghost .plan-pill,
-.kit-composer.borderless .plan-pill,
+/* ── composer · LINE-layout plan pill (owner 2026-07-11) — LAYOUT-owned + skin-independent ───────────────
+ * The BORDERLESS + GHOST composer chrome that used to live here graduated into the `composerSkin` axis (F5
+ * slice B); see the "composer skins" section AFTER the line variant below. The line stadium bar wants a
+ * quiet borderless pill sized to its 36px mic/send circles — a LAYOUT ruling that stands regardless of skin
+ * (owner eyeball: the shorter chip read as a misfit next to the circles). Fixed height (not padding-derived),
+ * horizontal padding preserved; the pill keeps its --accent-soft fill (only the outline is dropped).
+ * Semantic tokens ONLY. */
 .kit-composer.line .plan-pill {
   border-color: transparent;
-}
-/* in the line row the pill matches the 36px mic/send circles (owner eyeball: the shorter chip read as a
- * misfit next to them) — fixed height instead of padding-derived, horizontal padding preserved. */
-.kit-composer.line .plan-pill {
   box-sizing: border-box;
   height: 36px;
   padding: 0 13px;
@@ -712,12 +597,12 @@ body[data-mode="light"] .kit-composer.ghost {
  * Collapsed it reads as a stadium (24px ≈ half the ~46px bar height); grown it's a rounded square whose
  * corners nest the round buttons (owner eyeball round 6, geometry below). §14.11 is FREE by the same-class
  * trick: `body[data-perf="lite"] .kit-composer` (blur→opaque) and `body[data-mode="light"] .kit-composer`
- * (shadow) already match this element — no per-variant re-assert needed (unlike sheet/ghost which had to
- * fight them).
- * The plan pill KEEPS the base lozenge here (999px matches the stadium; the 8px rect ruling stays
- * sheet/borderless-only — no `.line .plan-pill` rule, it inherits `.kit .plan-pill`). And `.line` keeps the
- * base STACKED geometry (bottom 12px), so the DEFAULT `.kit .plan-sheet` bottom calc is already correct — NO
- * `:has()` override (unlike sheet/borderless). Semantic tokens ONLY. */
+ * (shadow) already match this element — no per-variant re-assert needed (unlike the docked layout + the
+ * glass/sleek SKINS, which had to fight them; see the "composer skins" section below).
+ * The line plan pill KEEPS the base lozenge radius here (999px matches the stadium; the 8px rect ruling stays
+ * the docked layout + the glass skin's stacked pill). And `.line` keeps the base STACKED geometry (bottom
+ * 12px), so the DEFAULT `.kit .plan-sheet` bottom calc is already correct — NO `:has()` bottom override
+ * (unlike the docked layout). Semantic tokens ONLY. */
 .kit-composer.line {
   /* GROWS AS A ROUNDED SQUARE with bottom-locked controls (owner eyeball round 6, supersedes the old
    * vertical-center vs cap-clip note): text overflows UPWARD while the pill + mic/send stay pinned to the
@@ -789,8 +674,8 @@ body[data-mode="light"] .kit-composer.ghost {
   color: var(--accent-ink);
 }
 /* recording — the red BREATHES (opacity-only kit-tag-pulse, §14.11-safe); (0,6,0) beats the fill rule above
- * and the base `.kit-cbtn.mic.rec`. Reduced-motion gate is GROUPED into the existing sheet/borderless rule
- * (~line 460) — not a third gate. */
+ * and the base `.kit-cbtn.mic.rec`. Reduced-motion gate is GROUPED into the existing sheet/line rule
+ * (the `body[data-motion="reduced"] … .mic.rec` block above) — not a separate gate. */
 .kit-composer.line .kit-cbtn.mic.line-btn.rec {
   background: var(--danger);
   color: var(--accent-ink);
@@ -814,6 +699,186 @@ body[data-mode="light"] .kit-composer.ghost {
 body[data-motion="full"] .kit-composer.line .line-btn,
 body[data-motion="full"] .kit-composer.line .line-controls {
   animation: kit-btn-pop 0.15s ease-out;
+}
+
+/* ═══ composer SKINS — the `composerSkin` presentation axis (D37 / §14.16, F5 slice B) ════════════════════
+ * ORTHOGONAL to the composer LAYOUT above (stacked/sheet/line): the layout picks the input bar's SHAPE, the
+ * skin picks its CHROME. Stamped once as `body[data-composer-skin]` by <AppEngines/> (App.tsx), resolved from
+ * the per-theme `composerSkin` setting (kit/axes.ts#useComposerSkin; undeclared theme → `outline`). Four
+ * skins: `outline` (the Kit's native bordered bar = the BASE composer rules above, un-keyed — pre-mount /
+ * no-stamp renders it, and this section adds NOTHING for it), `glass` (the old Borderless), `bezel`
+ * (frontier's F4 sweep), `sleek` (the old Ghost). Skins are FIRST-CLASS kit chrome (@layer base) — NOT
+ * axes.css strips, because a skin carries fills/shadows and the axes layer forbids fills.
+ *
+ * SPECIFICITY MIGRATION (the F5 hazard): the glass/sleek rules used to be `.kit-composer.borderless/.ghost …`
+ * LAYOUT selectors, and bezel used to live in frontier's @layer THEME (winning by LAYER regardless of
+ * specificity). Re-homed onto the body stamp in @layer base, every rule must now out-specify the BASE composer
+ * rule it overrides ON SPECIFICITY — each re-assert is annotated with the fight it wins. This section is
+ * placed AFTER the layout-variant blocks so source-order ties (notably vs `body[data-mode=light]
+ * .kit-composer`, (0,2,1)) resolve in the skin's favour. Two attrs on <body> compound: `[data-composer-skin]
+ * [data-mode]` / `[data-perf]` selects the SAME <body> at +1 class each. Semantic tokens ONLY; §14.11-safe. */
+
+/* ── skin · GLASS (body[data-composer-skin="glass"]) — the old Borderless look ─────────────────────────── */
+/* the BAR: transparent border + a deeper ambient+contact shadow so it "floats on top" without an outline;
+ * frosted fill KEPT (the base `.kit-composer` still supplies it). Applies to the floating layouts (stacked +
+ * line); the docked sheet is re-asserted upward below. (0,2,1) beats the base border (0,1,0) + base shadow. */
+body[data-composer-skin="glass"] .kit-composer {
+  border-color: transparent;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+/* the DOCKED sheet lifts UPWARD — the glass bar rule (0,2,1) would flip it downward; re-assert deepened
+ * upward at (0,3,1) (matches the sheet's own base direction, just deeper). */
+body[data-composer-skin="glass"] .kit-composer.sheet {
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.45), 0 -2px 10px rgba(0, 0, 0, 0.35);
+}
+/* light mode softens the elevation — the base `body[data-mode=light] .kit-composer` (0,2,1) would otherwise
+ * restore the shallow default shadow (and ties the glass bar rule); `[data-composer-skin][data-mode]` wins at
+ * (0,3,1) / (0,4,1) for the sheet. */
+body[data-composer-skin="glass"][data-mode="light"] .kit-composer {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12), 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+body[data-composer-skin="glass"][data-mode="light"] .kit-composer.sheet {
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.12), 0 -2px 10px rgba(0, 0, 0, 0.08);
+}
+/* inner controls go borderless on ALL layouts. `.kit-composer .kit-cbtn` (0,3,1) beats the base
+ * `.kit-cbtn.mic.rec` danger RING (0,3,0) — so the recording ring is dropped here; the glass rec cue is the
+ * red ICON (base `.rec` color, untouched) + the breathe below (stacked). */
+body[data-composer-skin="glass"] .kit-composer .kit-cbtn {
+  border-color: transparent;
+}
+/* the plan pill goes borderless too on every layout (keeps its --accent-soft fill; only the outline drops).
+ * (0,3,1) beats the base `.kit .plan-pill` border (0,2,0). (The neutral plan-SHEET treatment lives with the
+ * plan-sheet rules — search `[data-composer-skin="glass"] .kit .plan-sheet`.) */
+body[data-composer-skin="glass"] .kit-composer .plan-pill {
+  border-color: transparent;
+}
+/* glass · STACKED-only icon-forward controls (owner eyeball 2026-07-11) — bigger glyphs, less "icon in a
+ * circle". The sheet/line layouts render their OWN control geometry (separate components), so these are gated
+ * to `.kit-composer.stacked` (KitComposer's default stamp). MIC: bigger glyph; icon-only (no circular :active
+ * flash — the .press scale is the feedback); recording = red icon + slow §14.11 opacity breathe, no ring. */
+body[data-composer-skin="glass"] .kit-composer.stacked .kit-cbtn svg {
+  width: 22px;
+  height: 22px;
+}
+body[data-composer-skin="glass"] .kit-composer.stacked .kit-cbtn:active {
+  background: transparent;
+}
+body[data-composer-skin="glass"] .kit-composer.stacked .kit-cbtn.mic.rec {
+  animation: kit-tag-pulse 1.8s ease-in-out infinite;
+}
+/* reduced-motion gate for the glass breathe ((0,7,1) beats the breathe (0,6,1)) — §14.11 static red. */
+body[data-composer-skin="glass"][data-motion="reduced"] .kit-composer.stacked .kit-cbtn.mic.rec {
+  animation: none;
+}
+/* SEND — a SOFT BLURRED ROUNDED-SQUARE (the sphere fought the squarer geometry — echo the composer/pill).
+ * Three static paints, NO filter:blur (§14.11): the translucent wash gives the square silhouette, the
+ * center-diffuse radial keeps the glow under the icon, the box-shadow blur softens the square's edge. The
+ * default glyph is the arrowhead (KitComposer picks it for the glass skin), sized 20px + optically nudged. */
+body[data-composer-skin="glass"] .kit-composer.stacked .kit-send {
+  border-radius: 8px;
+  background: radial-gradient(
+    circle,
+    var(--accent) 0,
+    color-mix(in oklch, var(--accent) 30%, transparent) 78%
+  );
+  box-shadow: 0 0 12px color-mix(in oklch, var(--accent) 35%, transparent);
+}
+body[data-composer-skin="glass"] .kit-composer.stacked .kit-send svg {
+  width: 20px;
+  height: 20px;
+  transform: translate(-1px, 1px); /* the arrowhead's optical nudge (its mass leans up-right, vapor's fix) */
+}
+/* the stacked plan pill echoes the squarer field geometry — a rounded RECT, not the lozenge (the old
+ * borderless 8px ruling; the docked layout keeps its own 8px rule, the line its stadium). */
+body[data-composer-skin="glass"] .kit-composer.stacked .plan-pill {
+  border-radius: 8px;
+}
+
+/* ── skin · BEZEL (body[data-composer-skin="bezel"]) — frontier's F4 composer sweep ────────────────────────
+ * Graduated verbatim from frontier.css's @layer theme sweep (F5 slice B): transparent border on the bar +
+ * inner controls (ALL layouts) — the fill + elevation carry it; the recording mic keeps its red ICON as the
+ * cue (NO ring). MODE-INVARIANT (frontier's deliberate choice — no light variant). The EXACT rgba inks are
+ * preserved (kit chrome already hardcodes shadow inks; pixel-identical gate vs today's frontier default). */
+body[data-composer-skin="bezel"] .kit-composer {
+  border-color: transparent;
+}
+/* controls borderless (all layouts). `.kit-composer .kit-cbtn` (0,3,1) beats the base rec RING (0,3,0), so
+ * the ring is stripped — the red icon is the recording cue. */
+body[data-composer-skin="bezel"] .kit-composer .kit-cbtn {
+  border-color: transparent;
+}
+/* the LINE layout lost its stadium edge to the sweep and floats hard-to-see over the dusk glow (owner eyeball
+ * r5): a RESTRAINED bezel — one soft ambient drop (the theme's mode-invariant ink family) + a 1px inset top
+ * highlight (the classic bezel light edge). Frontier's EXACT values; (0,3,1) beats the base
+ * `body[data-mode=light] .kit-composer` (0,2,1) so it stays mode-invariant. */
+body[data-composer-skin="bezel"] .kit-composer.line {
+  box-shadow:
+    0 4px 14px rgba(20, 8, 28, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* ── skin · SLEEK (body[data-composer-skin="sleek"]) — the old Ghost look ──────────────────────────────────
+ * The bar goes FULLY transparent on every layout (no fill, no frost, no shadow, transparent — NOT removed —
+ * border, so the box size is unchanged → no reflow on a live skin swap); readability over scrolled content
+ * comes from the extended bottom scrim (below), not a surface. Borderless controls, but the recording RING is
+ * re-asserted (state affordance beats sleekness). Generic transparency = all layouts; the respaced padding +
+ * field underline are STACKED-only (line/docked keep their own geometry — the concentric-corner line math /
+ * the docked field must not break). §14.11: only zeroes visuals + re-spaces; the scrim is a static gradient. */
+body[data-composer-skin="sleek"] .kit-composer {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+/* the perf-lite base rule (`body[data-perf="lite"] .kit-composer`, (0,2,1)) re-adds an OPAQUE
+ * `background: var(--surface)` — re-assert transparency ((0,3,1) wins; both attrs on <body>). */
+body[data-perf="lite"][data-composer-skin="sleek"] .kit-composer {
+  background: transparent;
+}
+/* the light-mode base rule (`body[data-mode="light"] .kit-composer`, (0,2,1)) re-adds a DOWNWARD shadow —
+ * re-assert the shadowless sleek ((0,3,1) wins). */
+body[data-mode="light"][data-composer-skin="sleek"] .kit-composer {
+  box-shadow: none;
+}
+/* the readability backstop: the default scrim (`.kit-main.has-composer::after`, height `--composer-h − 24`)
+ * never reaches the transparent bar's textarea band — extend it past the composer top, dense through the whole
+ * zone, fading only above. Any layout. Keyed on the skin stamp + the existing `.has-composer` class (0,3,2 >
+ * the base (0,2,1)). Static gradient (§14.11); the same rule carries perf-lite (no opaque fill under sleek). */
+body[data-composer-skin="sleek"] .kit-main.has-composer::after {
+  height: calc(var(--composer-h, 64px) + 30px);
+  background: linear-gradient(
+    to top,
+    color-mix(in oklch, var(--bg) 96%, transparent) 0,
+    color-mix(in oklch, var(--bg) 88%, transparent) calc(100% - 34px),
+    transparent
+  );
+}
+/* borderless inner controls (all layouts) — buttons keep their WIDTH, only the border goes transparent. */
+body[data-composer-skin="sleek"] .kit-composer .kit-cbtn {
+  border-color: transparent;
+}
+/* …EXCEPT while recording: sleek KEEPS the red recording ring (the old ghost re-assert; state affordance beats
+ * sleekness). The general control rule above (0,3,1) would strip it, so re-assert at (0,5,1). */
+body[data-composer-skin="sleek"] .kit-composer .kit-cbtn.mic.rec {
+  border-color: color-mix(in oklch, var(--danger) 40%, transparent);
+}
+/* the plan pill goes borderless too (keeps its --accent-soft fill; only the outline drops). (0,3,1) beats the
+ * base `.kit .plan-pill` (0,2,0). */
+body[data-composer-skin="sleek"] .kit-composer .plan-pill {
+  border-color: transparent;
+}
+/* sleek · STACKED-only: sleeker spacing (density-scaled vertical, matching `--density-pad`). */
+body[data-composer-skin="sleek"] .kit-composer.stacked {
+  padding: calc(8px * var(--density-pad)) 11px calc(7px * var(--density-pad));
+}
+/* the base textarea is `all:unset` (no outline) and sleek has no surface to mark the input — give the field a
+ * resting hairline UNDERLINE that turns accent on focus (box-shadow → zero layout shift, no transition). */
+body[data-composer-skin="sleek"] .kit-composer.stacked .field {
+  box-shadow: 0 1px 0 0 var(--line-2);
+}
+body[data-composer-skin="sleek"] .kit-composer.stacked .field:focus-within {
+  box-shadow: 0 1px 0 0 var(--accent);
 }
 
 /* ── Fleet view (KitFleet) — device list + 3-stat summary; ported from the minimal prototype. Inner class
@@ -2861,11 +2926,10 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
 .kit .plan-pin-head:active {
   background: color-mix(in oklch, var(--accent) 22%, transparent);
 }
-/* docked + borderless variants: a rounded RECT, not the lozenge — it echoes the squarer field/composer
- * geometry (owner eyeball 2026-07-11; borderless joined at the A2c eyeball). 8px on the ~26px chip reads
- * "square-ish, softened"; the stacked variant keeps the lozenge. */
-.kit-composer.sheet .plan-pill,
-.kit-composer.borderless .plan-pill {
+/* the DOCKED layout: a rounded RECT, not the lozenge — it echoes the squarer field/composer geometry (owner
+ * eyeball 2026-07-11). 8px on the ~26px chip reads "square-ish, softened". (The glass SKIN gives the STACKED
+ * pill the same rect — see the "composer skins" section; the base stacked lozenge is otherwise kept.) */
+.kit-composer.sheet .plan-pill {
   border-radius: 8px;
 }
 .kit .plan-pill .chev,
@@ -2939,17 +3003,19 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
 .kit-main:has(.kit-composer.sheet) .plan-sheet {
   bottom: calc(var(--composer-h, 64px) - 18px);
 }
-/* borderless/line-composer interplay (owner 2026-07-11; `line` joined at its eyeball): the plan sheet
- * follows the variant's aesthetic — no accent outline, no accent wash, a quiet NEUTRAL frost + deeper
- * elevation ("clean, lean, subtle"). perf-lite keeps its opaque fallback (its rule below is (0,4,1), this
- * is (0,4,0)) but gets a neutral counter for the background so the accent wash doesn't return in lite. */
-.kit-main:has(.kit-composer.borderless) .plan-sheet,
+/* glass-skin / line-layout plan-sheet interplay (owner 2026-07-11; `borderless` graduated to the glass SKIN
+ * in F5 slice B): the plan sheet follows the quiet aesthetic — no accent outline, no accent wash, a NEUTRAL
+ * frost + deeper elevation ("clean, lean, subtle"). The glass SKIN wants it (keyed on the body stamp, (0,3,1)
+ * — beats base `.kit .plan-sheet` (0,2,0)); the line LAYOUT wants it regardless of skin (the `:has()` probe).
+ * perf-lite keeps its opaque neutral fallback (the lite rule below out-specifies each selector here by the
+ * extra [data-perf] attr) so the accent wash doesn't return in lite. */
+body[data-composer-skin="glass"] .kit .plan-sheet,
 .kit-main:has(.kit-composer.line) .plan-sheet {
   border-color: transparent;
   background: color-mix(in oklch, var(--surface) 86%, transparent);
   box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35);
 }
-body[data-perf="lite"] .kit-main:has(.kit-composer.borderless) .plan-sheet,
+body[data-perf="lite"][data-composer-skin="glass"] .kit .plan-sheet,
 body[data-perf="lite"] .kit-main:has(.kit-composer.line) .plan-sheet {
   background: var(--surface); /* opaque + neutral (no accent wash) under the lite gate */
 }

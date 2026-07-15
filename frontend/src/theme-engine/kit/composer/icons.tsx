@@ -1,9 +1,9 @@
 // Shared composer glyphs — ONE source for icons that more than one variant renders (a variant-only concern;
 // tabs/tools use lucide-react directly). Occupants:
 //   • the send ARROWHEAD (lucide `navigation` outline, stroke 2.2 — the owner's pick from the 2026-07-11 icon
-//     showcase), used by SheetComposer (docked), BorderlessComposer (via KitComposer's internal `sendIcon`
-//     seam) and LineComposer (the morph's send glyph). Its visual mass leans up-right, so the variants apply
-//     an optical translate(-1px,1px) nudge in kit.css — the glyph itself stays centered.
+//     showcase), used by SheetComposer (docked), the GLASS composer skin (KitComposer picks it as the default
+//     send glyph when the resolved skin is `glass`) and LineComposer (the morph's send glyph). Its visual mass
+//     leans up-right, so the callers apply an optical translate(-1px,1px) nudge in kit.css — the glyph centered.
 //   • the vapor stroke MIC glyph — graduated here at its SECOND consumer (SheetComposer's embedded mic +
 //     LineComposer's morphing button; Phase E, 2026-07-11). Was inlined in SheetComposer.
 
