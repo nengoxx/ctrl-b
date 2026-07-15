@@ -77,15 +77,17 @@
 > incl. ④: the cosmos "minors" were investigated (research agent + code cross-check) and CLOSED AS
 > NON-ISSUES, no code change; cosmos offline-row dim-LED visual accepted. ROADMAP gained the cosmos
 > host-sheet planet-switcher chevrons (owner idea, 2026-07-15).**
-> **NEXT = Gate B round 2 — owner on-device RE-TEST of the round-1 fixes (protocol = `FRONTIER_PLAN.md`
-> §9 Gate B; START THE DEV UNITS first: `systemctl --user start ctrl-b-dashboard-dev
-> ctrl-b-dashboard-dev-web`) → Gate D §0 row-by-row walk + owner sign-off CLOSES F5.** Round 1
-> (2026-07-15) found real issues — theme-switch scroll loss + cosmos chop on Firefox desktop/Fennec
-> (REOPENED+superseded ruling ④'s "non-issues") + frontier cube chop on Fennec — and shipped 5
-> revertible-one-commit fixes `16e8c21`..`69cde60` (scroll-keep · Gecko-only sheet-slide blur drop
-> [NEW `body[data-engine="gecko"]` branch, THEME_ENGINE §14.11] · planet-transition delete · Gecko-only
-> grain swap + dive filter drops · frontier glow off the bobbing layers); full record + revert paths =
-> the §9 GATE B ROUND 1 block. After F5: ACA Slices 1–2 (TODO Phase 12) ·
+> **Gate B ✅ CLOSED (owner, 2026-07-15 — two on-device rounds).** Round 1 found real issues —
+> theme-switch scroll loss + cosmos chop on Firefox desktop/Fennec (REOPENED+superseded ruling ④'s
+> "non-issues") + frontier cube chop on Fennec — and shipped 5 revertible-one-commit fixes
+> `16e8c21`..`69cde60` (scroll-keep · Gecko-only sheet-slide blur drop [NEW `body[data-engine="gecko"]`
+> branch, THEME_ENGINE §14.11] · planet-transition delete · Gecko-only grain swap + dive filter drops ·
+> frontier glow off the bobbing layers). Round 2 re-eyeball: "the rest looks good" with ONE deliberate
+> acceptance — the cosmos sheet-slide keeps its mild Gecko chop; the blur-drop cure read worse and was
+> REVERTED (`10203e6`; the engine branch + `data-settling` stamp stay). Full record + revert paths =
+> the §9 GATE B ROUND 1 block.
+> **NEXT = Gate D — the §0 18-row contract walk for frontier (record evidence per row; rows 10/11/16/17
+> are what the A/B/C gates completed) + owner sign-off CLOSES F5.** After F5: ACA Slices 1–2 (TODO Phase 12) ·
 > vapor-hygiene filler (§14.15.3) · the parked Composer Surface follow-ons + art/asset pass.
 > *(F0–F3 shipped 2026-07-12, F4 2026-07-13; the `FRONTIER_PLAN.md` banner holds all as-built records.)*
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH

@@ -440,9 +440,11 @@ row-by-row; owner sign-off.
 ## §9 F5-GATES — pinned pre-flight brief (2026-07-15; research-backed, execute in a clean session)
 
 > **STATUS 2026-07-15 (as-built record = the top banner): Gate A ✅ `5c0a504` · Gate C ✅ `10e355b` ·
-> the 4 owner rulings RESOLVED (defaults ①②③ confirmed; ④ superseded — the cosmos minors were
-> investigated and CLOSED AS NON-ISSUES, see the banner). REMAINING: Gate B (manual on-device,
-> protocol below) → Gate D (§0 walk + owner sign-off closes F5).** The A/C item lists below are
+> Gate B ✅ CLOSED (owner, 2026-07-15 — two on-device rounds: round 1 found real issues → the 5 fixes
+> below; round 2 re-eyeball "the rest looks good" with ONE deliberate acceptance: the cosmos
+> sheet-slide keeps its mild Gecko chop, because the blur-drop cure read worse [B2 revert `10203e6`]).
+> The 4 earlier owner rulings RESOLVED (①②③ confirmed; ④ superseded by the round-1 evidence).
+> REMAINING: Gate D (§0 walk + owner sign-off closes F5).** The A/C item lists below are
 > the as-planned briefs — the banner records the deltas (notably the A2 pointer-capture fix).
 >
 > **GATE B ROUND 1 — owner on-device findings + fixes SHIPPED 2026-07-15. ROUND 2 (same day): owner
