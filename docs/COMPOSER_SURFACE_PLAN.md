@@ -5,6 +5,11 @@
 > `7e6fccb`; every slice owner-eyeballed at 390px + independently audited. The shipped catalog is
 > `[stacked, borderless, ghost, sheet, line]` + the `planPlacement` (inline/pinned) axis.
 > Remaining in this doc: ONLY Phase D (vapor/frontier participation, opt-in, unscheduled).**
+> **As-built delta (2026-07-15, frontier F5 slice B — D37 amended):** the catalog was DEDUPED to the three
+> real layouts `[stacked, sheet, line]` — the CSS-only `borderless`/`ghost` wrapper variants this plan added
+> (A2b/A2c) were split out as the `glass`/`sleek` skins of the orthogonal `composerSkin` axis
+> (THEME_ENGINE §14.16); their wrapper components are deleted, the `rootClass`/`sendIcon` seam remains.
+> Body text below describes the pre-dedup catalog — historical.
 > Scope was EXPANDED at the owner's 2026-07-11 design review (composer-catalog vision): **+A2b** (the
 > `ghost` sleek variant) · **+A2c** (the `borderless` variant, owner addition at the A2b eyeball) ·
 > **+A4** (plan placement, pulled forward from FRONTIER_PLAN §2/F4) · **+Phase E** (deferred until

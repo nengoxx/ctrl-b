@@ -1580,7 +1580,9 @@ frontier (bespoke Agent). D7 pixel-fidelity per theme; pause for the owner's 390
 > `Composer={…}` below as historical.
 >
 > ✅ **BUILT 2026-07-11 (`COMPOSER_SURFACE_PLAN.md` A1–A4 + C).** The deferred list below is done: SheetComposer
-> is the real docked variant; the live user-setting exists (catalog `[stacked, borderless, ghost, sheet, line]` since Phase E).
+> is the real docked variant; the live user-setting exists (catalog `[stacked, borderless, ghost, sheet, line]` since Phase E;
+> **F5 slice B [2026-07-15, D37] DEDUPED it to `[stacked, sheet, line]` — borderless/ghost were chrome, now the
+> `glass`/`sleek` skins of the orthogonal `composerSkin` axis**).
 > **Two as-built updates:** (1) "Where the plan renders, per theme" is now itself a per-theme USER SETTING —
 > `planPlacement` (`inline` = the pill+sheet in the composer, composition now OWNED by `DefaultRoot`, themes no
 > longer pass `composerSlots` for it · `pinned` = the Kit `PinnedPlanPanel` at the top of the Agent tab,
@@ -1915,7 +1917,7 @@ dusk-glow shows through a see-through frontier shell [cosmos precedent] + protot
 `61f2267`→`696842f`; the contract table is `THEME_ENGINE.md` §15; frontier consumes it as the first
 non-token chat reskin — six owner eyeball rounds folded in, full record in `FRONTIER_PLAN.md`'s banner).
 
-## D37 — Presentation axes: the `axes` cascade layer + `body[data-*]` stamps (outlines ✅ BUILT · composerSkin APPROVED-unbuilt) ✏️ LOCKED 2026-07-13 (frontier F5 re-scope)
+## D37 — Presentation axes: the `axes` cascade layer + `body[data-*]` stamps (outlines ✅ BUILT · composerSkin ✅ BUILT, AMENDED to 4 skins + layout dedup) ✏️ LOCKED 2026-07-13 · AMENDED 2026-07-15 (frontier F5 slice B as-built)
 
 **Context.** Frontier F4 shipped an owner-ratified theme-wide no-outlines look as a frontier-private
 `@layer theme` sweep. The owner activated the parked promotion (F5 re-scope, 2026-07-13): make the chat's
@@ -1945,20 +1947,41 @@ fills/repaints only — owner-ratified pixel-identical. Exclusions unchanged: `:
 Clear-appbar squared iconbtns (kit.css ~§appbar), composer/mini-player/Conf/Utils/overlays (the non-chat
 sweep stays frontier-private until a second consumer wants it — §14.14 graduation rule).
 
-**Axis 2 — `composerSkin` (APPROVED 2026-07-13, unbuilt = F5 slice B).** A second per-theme `seg` next to
-the existing `composer` variant seg (the `planPlacement` precedent): options **`outline` | `bezel`**,
-resolver default `outline` for undeclared themes; frontier declares default `bezel`, minimal/cosmos
-`outline`. Stamp `body[data-composer-skin]` from the same AppEngines effect. **The skin looks become
-first-class kit chrome, NOT axes-layer strips:** kit.css (base layer) styles both skins on semantic
-contract tokens (`outline` = today's `--line-2` border base; `bezel` = frontier's transparent border +
-inset top-highlight + soft ambient drop, re-expressed on contract tokens), keyed
-`body[data-composer-skin="…"]`. Slice B DELETES frontier.css's composer strips + bezel (they become the
-`bezel` skin) — after it, **no theme styles composer chrome directly** (authority rule: the outlines axis
-owns the chat thread, the skin axis owns the composer; themes contribute tokens + declared defaults only;
-a future bespoke composer look = a NEW skin id added to the catalog, not theme CSS). Two Appearance rows
-result: "Composer" (shape) · "Composer skin" (chrome). Conf UI is automatic (settings auto-render).
+**Axis 2 — `composerSkin` (✅ BUILT 2026-07-15, F5 slice B, commits `6c78d17` + `a433c8f` [round 2];
+AMENDED at the owner's 2026-07-15 pre-build review from the 2-option catalog below to FOUR skins + the
+layout dedup).** A second per-theme `seg` DECLARED DIRECTLY AFTER the `composer` seg (ConfTab auto-renders
+in declaration order — the two composer rows sit adjacent, owner round-2 ruling): the variant×appearance
+split (the Radix/shadcn orthogonal-props pattern).
+- **The layout dedup (owner 2026-07-15):** the old 5-option `composer` seg mixed layout with chrome —
+  `borderless`/`ghost` were thin CSS `rootClass` wrappers around KitComposer, i.e. skins in variant
+  costume. The LAYOUT catalog is now the three REAL components **`stacked` | `sheet` ("Docked") |
+  `line`**; the wrapper components are DELETED. NO migration code: a stale synced `borderless`/`ghost`
+  degrades to the default via `resolveThemeSetting` (owner re-picks once; single-user ruling).
+- **The skin catalog: `outline` | `glass` | `bezel` | `sleek`** (resolver default `outline` for undeclared
+  themes; frontier declares `bezel`, minimal/cosmos `outline`). `outline` = the un-keyed kit.css base
+  chrome (zero skin rules — pre-mount renders it). `glass` = the old Borderless chrome (transparent
+  border + deep ambient/contact elevation on every layout, upward on the docked sheet, light-mode
+  softenings; frost kept; STACKED-only icon-forward extras incl. the blurred-square send + the arrowhead
+  glyph). `bezel` = frontier's F4 sweep (transparent borders, rec-ring stripped — red icon is the cue;
+  exact rgba inks, mode-invariant); **round 2 (owner eyeball "docked with bezel doesn't have a bezel")
+  generalized the restrained bezel — soft dusk-ink drop + 1px inset top highlight — from line-only to
+  EVERY layout** (docked inverts the drop upward; frontier's stacked bar gained the subtle highlight,
+  owner-ratified). `sleek` = the old Ghost chrome (fully transparent bar + extended readability scrim on
+  every layout; STACKED-only respacing + field underline; recording ring KEPT).
+- **Mechanics as pinned:** stamp `body[data-composer-skin]` from the same AppEngines effect; skins are
+  first-class kit chrome in kit.css `@layer base` (a dedicated "composer skins" section AFTER the layout
+  variants — every rule re-homed from `@layer theme`/layout selectors was specificity-audited, annotated
+  in place), NOT axes-layer strips. After slice B **no theme styles composer chrome directly** (authority
+  rule: the outlines axis owns the chat thread, the skin axis owns the composer; themes contribute tokens
+  + declared defaults only; a future bespoke composer look = a NEW skin id added to the catalog, not theme
+  CSS). **One sanctioned TS seam:** KitComposer picks its default send glyph by the resolved skin
+  (`skin === "glass"` → the shared arrowhead) — skin-id (an axis value), not theme-id, branching; an SVG
+  swap can't be pure CSS. A future skin wanting a custom glyph hooks the same spot (the `sendIcon` seam
+  stays for bespoke wrappers). A future "composer icon setting" was PARKED by the owner 2026-07-15
+  (ROADMAP).
 
-**Status.** LOCKED 2026-07-13 (owner-ratified in prose; slice A additionally eyeballed live on the dev
-instance same day). Slice B = the next build slice; F5's remaining gates (perf pass · a11y floor · e2e
-render case) follow it. The F5 items "per-host art override UI" + "asset format/size pass" were PARKED by
-the owner the same day (not dropped — revisit post-F5).
+**Status.** LOCKED 2026-07-13; slice A eyeballed live same day. **Slice B BUILT + owner-ratified live
+2026-07-15** (independent adversarial audit clean across 6 lenses; all 12 layout×skin combos verified via
+a live Playwright computed-chrome matrix incl. the Appearance row adjacency; FE gate 427). F5's remaining
+gates (perf pass · a11y floor · e2e render case · §0 contract row-by-row) follow. The F5 items "per-host
+art override UI" + "asset format/size pass" stay PARKED (owner 2026-07-13 — revisit post-F5).

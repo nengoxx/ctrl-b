@@ -10,14 +10,21 @@
 > gated `body[data-outlines="off"]`) · stamp = AppEngines `useLayoutEffect` (never `applyBodyAttrs` —
 > store↛registry) · minimal/cosmos ON · frontier OFF (pixel-identical, ratified) · frontier.css
 > thinned to fills/repaints; composer/mini-player/Conf/Utils/overlay strips stay frontier-private.
-> **NEXT = Slice B (design APPROVED + pinned in D37):** the `composerSkin` axis (`outline`|`bezel` seg
-> next to the composer-variant seg; frontier defaults `bezel`, minimal/cosmos `outline`;
-> `body[data-composer-skin]` from the same AppEngines effect; skins = first-class kit.css chrome on
-> contract tokens — frontier's composer strips + `.line` bezel DELETE from frontier.css and become the
-> `bezel` skin; after slice B no theme styles composer chrome directly — D37 authority rule). THEN the
-> remaining F5 gates: Fennec+Chrome perf pass · a11y floor [peek-detent focus · svc-row aria-label ·
-> `.kit-tabbtn` focus ring] · frontier e2e render case · §0 Author-Contract row-by-row + owner
-> sign-off. *(§6-F5 + §7's licensing note still apply where not superseded here.)*
+> **Slice B ✅ SHIPPED 2026-07-15 (commits `6c78d17` + `a433c8f` [round 2]; owner-eyeballed live +
+> ratified; independent adversarial audit clean; ALL 12 layout×skin combos verified via a live Playwright
+> computed-chrome matrix; FE gate 427):** the `composerSkin` axis — EXPANDED at the owner's pre-build
+> review from the pinned `outline`|`bezel` pair to FOUR skins + the LAYOUT DEDUP (D37 AMENDED 2026-07-15,
+> the authoritative as-built record): the `composer` seg deduped to the three real layouts
+> `[stacked, sheet(Docked), line]` (the CSS-only borderless/ghost wrappers DELETED); the skin seg =
+> `outline`|`glass`(old Borderless, incl. stacked-only icon-forward + arrowhead glyph)|`bezel`(frontier's
+> sweep; round 2 generalized the inset-highlight bezel to EVERY layout, docked drop inverted
+> upward)|`sleek`(old Ghost, scrim + kept rec ring); declared adjacent to the layout seg (ConfTab renders
+> declaration order); stale synced `borderless`/`ghost` degrade to defaults (no migration code);
+> kit.css gained the "composer skins" base-layer section (specificity-audited per rule); frontier.css no
+> longer styles composer chrome. A "composer icon setting" was PARKED (owner 2026-07-15 → ROADMAP).
+> **NEXT = the remaining F5 gates:** Fennec+Chrome perf pass · a11y floor [peek-detent focus · svc-row
+> aria-label · `.kit-tabbtn` focus ring] · frontier e2e render case · §0 Author-Contract row-by-row +
+> owner sign-off. *(§6-F5 + §7's licensing note still apply where not superseded here.)*
 >
 > **▶ F4 ✅ SHIPPED 2026-07-13 (built 2026-07-12→13, commits `61f2267`→`696842f` [9]; owner-eyeballed
 > through SIX rounds + ratified; independent adversarial audit mid-build: 1 real bug [the agent-tab

@@ -619,6 +619,11 @@ homes later:
   the D31 3-gate → V5 chrome dedup). Unscheduled — after the theme catalog stabilizes. Standing guarantees
   already in force: nothing new depends on vapor's legacy hooks; test/lint exemptions are shrinkable waiver
   lists; engine code uses `DEFAULT_THEME`, never `"vapor"` literals.
+- **Composer icon setting (owner, parked 2026-07-15 at the F5 slice-B review)** — a user-facing setting for
+  the composer's control glyphs (e.g. the send icon), on top of the D37 `composerSkin` axis. The seam already
+  exists: KitComposer picks its default send glyph by resolved skin (glass → the shared arrowhead) and the
+  `sendIcon` prop seam remains — an icon setting would generalize that pick into a per-theme/user choice.
+  Unscheduled; revisit after the frontier F5 gates.
 - **Icon tooling (DX, noted 2026-06-28)** — icons are currently **hand-inlined SVGs** (the shared Kit chrome,
   the NavMenu, action buttons), which is fine at this scale but tedious + easy to mis-trace. Future: adopt
   **`unplugin-icons` + Iconify** (build-time, on-demand, tree-shaken, **offline-friendly** — inlined at build,

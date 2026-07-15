@@ -59,15 +59,20 @@
 > (undeclared themes→ON) · `kit/axes.css` in the NEW `@layer base, theme, axes, reset` position
 > (strips-only, NEVER fills, `.kit`-scoped) · `body[data-outlines]` stamped by an AppEngines
 > `useLayoutEffect` (never `applyBodyAttrs` — store↛registry) · minimal/cosmos default ON, frontier
-> OFF (pixel-identical) · "Outlines" switch auto-renders in Appearance. **NEXT = Slice B, design
-> APPROVED + PINNED in D37 — build it, don't re-derive:** the `composerSkin` axis (`outline`|`bezel`
-> per-theme seg; frontier=`bezel`, minimal/cosmos=`outline`; `body[data-composer-skin]` same stamp
-> site; skins = first-class kit.css chrome on contract tokens; frontier's composer strips + `.line`
-> bezel DELETE from frontier.css into the `bezel` skin; authority rule: outlines axis owns chat,
-> skin axis owns composer — after B no theme styles composer chrome directly). THEN the F5 gates:
-> Fennec+Chrome perf pass · a11y floor · frontier e2e render case · §0 contract row-by-row + owner
-> sign-off. After F5: ACA Slices 1–2 (TODO Phase 12) · vapor-hygiene filler (§14.15.3) · the parked
-> Composer Surface follow-ons.
+> OFF (pixel-identical) · "Outlines" switch auto-renders in Appearance. **Slice B ✅ SHIPPED 2026-07-15
+> (`6c78d17`+`a433c8f` [round 2], owner-eyeballed live + ratified; adversarial audit clean; all 12
+> layout×skin combos live-verified [Playwright computed-chrome matrix]; FE gate 427; as-built record =
+> D37 AMENDED 2026-07-15):** the `composerSkin` axis, EXPANDED at the owner's pre-build review to FOUR
+> skins + the LAYOUT DEDUP — the `composer` seg = the three real layouts `[stacked, sheet, line]`
+> (borderless/ghost wrappers DELETED; stale synced values degrade, no migration code); the skin seg =
+> `outline`|`glass`(old Borderless)|`bezel`(frontier's sweep — round 2 generalized the bezel to EVERY
+> layout after the owner's "docked has no bezel" eyeball)|`sleek`(old Ghost); segs declared ADJACENT
+> (ConfTab renders declaration order); kit.css "composer skins" base-layer section; frontier.css no
+> longer styles composer chrome (D37 authority rule); KitComposer picks the glass arrowhead glyph by
+> resolved skin (the one sanctioned TS seam). "Composer icon setting" PARKED (owner → ROADMAP).
+> **NEXT = the F5 gates:** Fennec+Chrome perf pass · a11y floor · frontier e2e render case · §0
+> contract row-by-row + owner sign-off. After F5: ACA Slices 1–2 (TODO Phase 12) · vapor-hygiene
+> filler (§14.15.3) · the parked Composer Surface follow-ons.
 > *(F0–F3 shipped 2026-07-12, F4 2026-07-13; the `FRONTIER_PLAN.md` banner holds all as-built records.)*
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
 > orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).

@@ -50,7 +50,8 @@ formerly listed here SHIPPED 2026-07-12 as frontier F0 / D35 — the SECTION LAY
 lever; see §14.15.4's as-built entry + `FRONTIER_PLAN.md`'s banner.)* *(The user-selectable Surface machinery formerly listed here SHIPPED
 2026-07-11 — the composer Surface is COMPLETE per `COMPOSER_SURFACE_PLAN.md`: `composerVariants`
 catalog `[stacked, borderless, ghost, sheet, line]` + `ThemedComposer` resolver + the `planPlacement`
-inline/pinned axis. The Hardening-v2 artifacts — `resolveThemeSetting` ⑦, `themeContract.test.ts` ⑧,
+inline/pinned axis; F5 slice B [2026-07-15, D37] deduped the catalog to `[stacked, sheet, line]` —
+borderless/ghost became the `glass`/`sleek` skins of the `composerSkin` axis, §14.16. The Hardening-v2 artifacts — `resolveThemeSetting` ⑦, `themeContract.test.ts` ⑧,
 stylelint ⑨, `kit-render.spec.ts` ⑩ — all SHIPPED 2026-07-10 and ARE in the tree.)*
 
 **Sequencing rule (satisfied 2026-07-10):** the Hardening slice v2 (§14.15.1) landed **before** the next themeable-UI wave
@@ -1410,7 +1411,7 @@ structure, it has left token-space — that, and only that, is when a Surface is
 | Region | Verdict | Why |
 |---|---|---|
 | **Fleet** (list / orbital / map) | **Surface** | radically different DOM + interaction; ≥2 impls (`KitFleet`, `CosmosFleet`); backed by `useFleet` |
-| **Composer** (stacked / borderless / ghost / docked / line) | **Surface** | structural layout differs; ≥2 impls (`KitComposer` + wrappers, `SheetComposer`); backed by `useComposer` — **user-selectable since 2026-07-11** |
+| **Composer** (stacked / docked / line — LAYOUTS; chrome = the `composerSkin` axis, §14.16) | **Surface** | structural layout differs; ≥2 REAL impls (`KitComposer`, `SheetComposer`, `LineComposer`); backed by `useComposer` — **user-selectable since 2026-07-11; F5 slice B deduped the old borderless/ghost wrapper "variants" into the glass/sleek skins** |
 | **Tools tab** | **Tokens** | one schema-driven `UtilCard` structure, reskinned; no per-theme component |
 | **Conf / settings** | **Tokens** | one `ConfGroup`/`SettingRow` structure, reskinned; matches VS Code/Primer/MUI/Backstage — none component-swap settings |
 | **AppBar / nav / chrome** | **Tokens** | same nav contract restyled (promote ONLY if a theme truly restructures navigation) |
@@ -1448,7 +1449,9 @@ per theme; the prop is correct and cheaper.
 > **✅ As-built status (2026-07-11 — supersedes the QH 2026-07-07 spec-only banner):** the machinery below
 > IS in the tree per `COMPOSER_SURFACE_PLAN.md` (A1–A4 + C, all owner-eyeballed + audited):
 > `composerVariants` `[stacked, borderless, ghost, sheet, line]` + `composerLayoutSetting` + `ThemedComposer`
-> (kit/composer/), the `rootClass`/`sendIcon` pure-CSS wrapper seam (borderless/ghost), the shared
+> (kit/composer/), the `rootClass`/`sendIcon` pure-CSS wrapper seam (borderless/ghost) *(F5 slice B
+> [2026-07-15, D37] later DEDUPED the catalog to `[stacked, sheet, line]` — the two wrappers deleted into the
+> `composerSkin` axis's glass/sleek skins, §14.16; the `rootClass`/`sendIcon` seam itself remains)*, the shared
 > `useComposerChrome` presentational hook, and the A4 `planPlacement` axis (inline pill+sheet, owned by
 > DefaultRoot · pinned `PinnedPlanPanel`, mounted by AgentTab). The `DefaultRoot Composer={…}` prop is
 > REMOVED (D30's banner covers the history). Fleet remains the one Root-pinned multi-impl surface.
@@ -1799,10 +1802,15 @@ semantic-contract tokens (§15). (4) Promote a theme-private strip into an axis 
 consumer wants it (§14.14 graduation philosophy).
 
 **Built axes:** `outlines` (chat-scoped — the D36 §15 hook families; minimal/cosmos default ON, frontier
-OFF = its F4 look). **Approved-unbuilt:** `composerSkin` (`outline`|`bezel`) — its skins are first-class
-kit chrome in kit.css keyed on `body[data-composer-skin]`, NOT axes-layer strips; after it lands, no
-theme styles composer chrome directly (D37 authority rule: outlines axis owns the chat thread, skin axis
-owns the composer). Full rationale + the slice-B pinned design: **DECISIONS D37**.
+OFF = its F4 look) · `composerSkin` (✅ BUILT 2026-07-15, F5 slice B — `outline`|`glass`|`bezel`|`sleek`;
+frontier defaults `bezel`, minimal/cosmos `outline`; declared right after the `composer` layout seg so the
+two rows render adjacent). Its skins are first-class kit chrome in kit.css keyed on
+`body[data-composer-skin]` (a dedicated "composer skins" section), NOT axes-layer strips; the composer
+LAYOUT catalog deduped to the three real components `[stacked, sheet, line]` (borderless/ghost → the
+glass/sleek skins). No theme styles composer chrome directly (D37 authority rule: outlines axis owns the
+chat thread, skin axis owns the composer). One sanctioned TS seam: KitComposer picks its default send
+glyph by resolved skin (glass → arrowhead). Full as-built rationale: **DECISIONS D37 (amended
+2026-07-15)**.
 
 # §15 — The CHAT HOOKS + TOKEN CONTRACT (→DECISIONS D36; specified at the frontier F4 pre-flight, 2026-07-12)
 
