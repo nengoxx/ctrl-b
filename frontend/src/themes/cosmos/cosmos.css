@@ -199,7 +199,14 @@
         0 3px 6px rgba(0, 0, 0, 0.45),
         inset 0 2px 3px rgba(255, 255, 255, 0.22),
         inset 0 -3px 6px rgba(0, 0, 0, 0.28);
-      transition: filter 0.3s, box-shadow 0.3s;
+      /* NO transition on filter/box-shadow (Gate B 2026-07-15): both are main-thread paint per frame in EVERY
+       * engine (never compositor-offloaded), and the 0.3s fade fired exactly when everything else moves (tap →
+       * select rim + camera zoom + sheet slide). It was also un-gated under reduced motion. The select rim and
+       * offline-gray now SNAP — the camera zoom masks it. This one is deliberately UNIVERSAL (not Gecko-scoped):
+       * a fork buys a barely-visible nicety at the cost of two code paths. REVERT: restore
+       * `transition: filter 0.3s, box-shadow 0.3s;` here (or an opacity-crossfade on a pre-painted layer if the
+       * fade is ever wanted back cheaply — Ahlin pattern; both pseudos are taken today: ::before grain,
+       * ::after hit-area). */
     }
     /* fine matte grain (ported from the prototype) — gives the coins their printed/matte surface */
     .cosmos-planet::before {
