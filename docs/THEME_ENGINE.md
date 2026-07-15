@@ -1147,10 +1147,12 @@ richness for smoothness**, scope the degrade to Gecko instead of degrading every
 detects Gecko via `CSS.supports("-moz-appearance", "none")` (a feature-check, NOT userAgent parsing) and
 `main.tsx` stamps `body[data-engine="gecko"]` once at boot (static, pre-paint — not a React effect). This is
 the frontend's first and only engine branch — run it like the backend's closed OS-branch allowlist
-(ARCHITECTURE §6): a **closed, documented consumer list**, currently (both cosmos.css, Gate B 2026-07-15):
-① `.bs-sheet[data-settling]` drops the sheet's backdrop blur only while it programmatically slides (+
-`[data-motion="full"]` guard — under reduced motion nothing slides, so nothing drops); ② the planet grain
-swaps `mix-blend-mode: overlay` → plain `normal` at lower alpha. Fixes with **no visual trade** (moving a
+(ARCHITECTURE §6): a **closed, documented consumer list**, currently ONE (cosmos.css, Gate B 2026-07-15):
+① the planet grain swaps `mix-blend-mode: overlay` → plain `normal` at lower alpha. *(A second consumer —
+dropping the sheet's backdrop blur while it slides, via BottomSheet's `[data-settling]` stamp — was tried
+and REVERTED the same day on owner eyeball: the frost pop-in at settle read worse than the slide chop it
+cured. The stamp itself remains available; the attempt + alternatives are recorded in cosmos.css's
+bs-sheet section — read that before re-attempting any sheet-slide degrade.)* Fixes with **no visual trade** (moving a
 static glow off an animated element, deleting a paint-per-frame transition) stay UNIVERSAL — never fork two
 code paths to preserve nothing. Every engine-scoped rule carries its revert path in an in-file comment; the
 Playwright `firefox` project can assert these rules. Before adding a consumer, ask whether a universal

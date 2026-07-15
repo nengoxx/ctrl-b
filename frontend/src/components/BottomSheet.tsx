@@ -24,8 +24,10 @@ import {
 // the trigger; an sr-only Close button keeps keyboard/AT parity (no visible ✕ — owner dropped it).
 // Perf (§14.11): transform/opacity only. The primitive stamps STATE for skins to react to — `[data-dragging]`
 // during a finger drag and `[data-settling]` while a programmatic slide plays (open/close/detent-cycle/snap).
-// It knows nothing about engines: a skin drops its blur while `[data-dragging]` + under data-perf, and cosmos
-// ALSO drops it while `[data-settling]` on Gecko only (per-frame backdrop re-blur — Gate B 2026-07-15).
+// It knows nothing about engines: a skin drops its blur while `[data-dragging]` + under data-perf.
+// `[data-settling]` currently has NO consumer — cosmos's Gecko blur-drop against it was tried + reverted the
+// same day (the frost pop-in read worse than the slide chop; Gate B 2026-07-15, see cosmos.css) — but the
+// stamp stays: inert, unit-tested, and the hook any future in-motion skin degrade keys off.
 
 /** The detent a sheet can rest at: the `[data-bs-peek]` reveal, or fully open. The canonical vocabulary for
  *  this primitive — the persistence layer (`store/sheetSnap`) imports it rather than re-declaring the union. */

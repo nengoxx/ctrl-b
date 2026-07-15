@@ -445,8 +445,8 @@ row-by-row; owner sign-off.
 > protocol below) → Gate D (§0 walk + owner sign-off closes F5).** The A/C item lists below are
 > the as-planned briefs — the banner records the deltas (notably the A2 pointer-capture fix).
 >
-> **GATE B ROUND 1 — owner on-device findings + fixes SHIPPED 2026-07-15 (owner RE-TEST pending;
-> a green re-test completes Gate B).** The owner's pass found: theme switch lost the Conf scroll
+> **GATE B ROUND 1 — owner on-device findings + fixes SHIPPED 2026-07-15. ROUND 2 (same day): owner
+> re-eyeballed — "the rest looks good"; the ONE regression was B2's blur pop-in, reverted below.** The owner's pass found: theme switch lost the Conf scroll
 > position; cosmos chops on Firefox (desktop AND Fennec — moon-dive, planet→sheet); the frontier
 > agent tab / floating cube chops on Fennec. Chrome smooth everywhere. NOTE: this REOPENS and
 > supersedes ruling ④ — the "cosmos minors" (planet `filter` transition · the blurred sheet slide)
@@ -458,7 +458,10 @@ row-by-row; owner sign-off.
 > **B2 `680e44c`** cosmos sheet drops its backdrop blur while PROGRAMMATICALLY sliding, **Gecko-only
 > + motion-full-only** (`BottomSheet` stamps `data-settling` [sibling of `data-dragging`]; introduces
 > the engine branch `body[data-engine="gecko"]` — feature-detect, THEME_ENGINE §14.11; the standing
-> "glass stays during the DRAG" ruling is UNCHANGED).
+> "glass stays during the DRAG" ruling is UNCHANGED). **⚠ B2's CSS consumer REVERTED in round 2 (owner
+> eyeball, same day): the frost pop-in at settle read WORSE than the slide chop — the cosmos.css rule
+> was deleted; the `data-settling` stamp + the engine branch STAY (B4 depends on the branch; the stamp
+> is inert + unit-tested). Alternatives-if-ever-needed recorded in cosmos.css's bs-sheet section.**
 > **B3 `3bf318f`** the planet `transition: filter/box-shadow` DELETED, universal (paint-per-frame in
 > every engine + was un-gated under reduced motion; select-rim/offline-gray snap — the zoom masks it).
 > **B4 `13cac86`** cosmos grain `mix-blend-mode: overlay` → `normal` @ 0.07 **Gecko-only** (tile-cache
