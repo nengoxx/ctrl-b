@@ -70,9 +70,14 @@
 > (ConfTab renders declaration order); kit.css "composer skins" base-layer section; frontier.css no
 > longer styles composer chrome (D37 authority rule); KitComposer picks the glass arrowhead glyph by
 > resolved skin (the one sanctioned TS seam). "Composer icon setting" PARKED (owner → ROADMAP).
-> **NEXT = the F5 gates:** Fennec+Chrome perf pass · a11y floor · frontier e2e render case · §0
-> contract row-by-row + owner sign-off. After F5: ACA Slices 1–2 (TODO Phase 12) · vapor-hygiene
-> filler (§14.15.3) · the parked Composer Surface follow-ons.
+> **NEXT = the F5 gates — pre-flight DONE + PINNED in `FRONTIER_PLAN.md` §9 (2026-07-15,
+> research-backed; execute A→C→B→D, don't re-derive):** Gate A a11y fixes (A1 kit-wide
+> `:focus-visible` ring = a real WCAG 2.4.7 failure, top priority · sheet-detent `inert`+tap-cycle ·
+> status-row roles · chat live region · Seg semantics · scroll-padding) → Gate C e2e locks
+> (frontier render case + axe arm + firefox project) → Gate B Fennec+Chrome on-device perf pass
+> (verification; codebase pre-verified §14.11-clean) → Gate D §0 row-by-row + owner sign-off;
+> 4 open owner rulings w/ pinned defaults at §9 bottom. After F5: ACA Slices 1–2 (TODO Phase 12) ·
+> vapor-hygiene filler (§14.15.3) · the parked Composer Surface follow-ons + art/asset pass.
 > *(F0–F3 shipped 2026-07-12, F4 2026-07-13; the `FRONTIER_PLAN.md` banner holds all as-built records.)*
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
 > orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).

@@ -22,9 +22,16 @@
 > declaration order); stale synced `borderless`/`ghost` degrade to defaults (no migration code);
 > kit.css gained the "composer skins" base-layer section (specificity-audited per rule); frontier.css no
 > longer styles composer chrome. A "composer icon setting" was PARKED (owner 2026-07-15 → ROADMAP).
-> **NEXT = the remaining F5 gates:** Fennec+Chrome perf pass · a11y floor [peek-detent focus · svc-row
-> aria-label · `.kit-tabbtn` focus ring] · frontier e2e render case · §0 Author-Contract row-by-row +
-> owner sign-off. *(§6-F5 + §7's licensing note still apply where not superseded here.)*
+> **NEXT = the remaining F5 gates — the pre-flight is DONE and PINNED in §9 (2026-07-15,
+> research-backed: 2 web-research agents + a file:line codebase inventory; execute A → C → B → D,
+> don't re-derive):** Gate A a11y-floor fixes [A1 the kit-wide `:focus-visible` ring — a REAL WCAG
+> 2.4.7 failure on all kit themes, top priority · A2 sheet peek-detent `inert` + tap-to-cycle grip ·
+> A3 status-row `role="group"` · A4 chat `role="log"` live region · A5 Seg `group`+`aria-pressed` ·
+> A6 `scroll-padding-bottom`] · Gate C e2e locks [frontier render case · frontier axe arm · firefox
+> Playwright project] · Gate B the Fennec+Chrome on-device perf pass (verification — the codebase
+> pre-verified §14.11-clean; INP ≤200ms budgets; VT now native on Fennec ≥144) · Gate D the §0
+> row-by-row + owner sign-off. 4 open owner rulings with pinned defaults — §9 bottom.
+> *(§6-F5 + §7's licensing note still apply where not superseded here.)*
 >
 > **▶ F4 ✅ SHIPPED 2026-07-13 (built 2026-07-12→13, commits `61f2267`→`696842f` [9]; owner-eyeballed
 > through SIX rounds + ratified; independent adversarial audit mid-build: 1 real bug [the agent-tab
@@ -411,3 +418,79 @@ row-by-row; owner sign-off.
 - **Standing rules:** D7 pixel-fidelity vs frontier.html per slice · §14.11 budget on every
   animation · vapor stays frozen (waivers, ladder-owned) · commit-per-slice, owner pause between
   slices · every slice ends `python tools/check.py` green.
+
+## §9 F5-GATES — pinned pre-flight brief (2026-07-15; research-backed, execute in a clean session)
+
+> Synthesized from a 3-agent pre-flight (2026-07-15): web research on 2026 mobile-perf practice
+> (web.dev/MDN/Mozilla primary sources) + WCAG 2.2 / APG a11y practice (W3C Understanding docs
+> revised 2026) + a file:line codebase inventory. The inventory's headline: **the codebase is
+> already §14.11-clean** (every blur has a perf-lite fallback; all animations transform/opacity +
+> motion-gated; the sticky/mask hazards are clear; first-paint stamps are layout-effect) — the
+> perf gate is therefore a VERIFICATION pass, while the a11y floor has REAL fixes. Execute in
+> order **A → C → B → D** (fixes → e2e locks them in → on-device pass → sign-off).
+
+**Gate A — the a11y floor (fixes; kit-wide unless noted).**
+1. **A1 [WCAG 2.4.7 FAILURE, top priority] kit-wide `:focus-visible` ring.** The global ring
+   (`theme/extras.css` `:focus-visible`) uses vapor-private `--magenta` → invalid on kit themes →
+   NO keyboard focus indicator on any `all: unset` kit control (`.kit-tabbtn`/`.kit-cbtn`/
+   `.kit-send`/`.kit-iconbtn`/seg buttons/plan pill/frontier beacons+rigs…). Fix in kit.css
+   `@layer base`: a generic `.kit :focus-visible { outline: 2px solid var(--accent);
+   outline-offset: 2px; }` + the extras.css form-field suppression pattern (fields keep their
+   `:focus` treatments; frontier's inset input rings unaffected). OUTLINE-based, not box-shadow —
+   survives `forced-colors` (research ruling); focus rings are already exempt from frontier's
+   no-outlines ruling. This subsumes the named `.kit-tabbtn` deficit.
+2. **A2 BottomSheet peek detent (primitive-level → frontier + cosmos).** (i) `inert` the
+   below-fold content region while at the peek snap (remove when expanded) — SC 2.4.11 focus-not-
+   obscured + reachability; (ii) SC 2.5.7 dragging-alternative: the grip becomes a labelled
+   `role="button"` — tap/Enter cycles peek↔full (Material `BottomSheetDragHandleView` precedent).
+   Escape-close + focus-return already exist — verify, don't rebuild.
+3. **A3 status-row semantics.** The offline svc/host rows are roleless `<div>`s with `aria-label`
+   (unreliably announced). Give the shared pattern (`FrontierHostDetail` + `CosmosHostDetail` +
+   kit `Fleet`/`DeviceRow`) `role="group"` on the row; never color/LED-only state (text already
+   present — verify per row).
+4. **A4 chat-stream live region (markup-only; owner may defer to ACA Phase 12 — default: DO in
+   F5).** `ChatThread` container gets `role="log"` + `aria-live="polite"` + `aria-busy` toggled
+   while streaming — announce the COMPLETED reply once, never per token (MITRE chatbot playbook
+   pattern); composer keeps focus. ACA features later ADD to this region (D36 growth rule).
+5. **A5 Seg semantics.** `components/Seg.tsx`: container `role="group"` + `aria-label`; each
+   option button `aria-pressed` (Primer/Workday segmented-control pattern — deliberately NOT
+   radiogroup/tablist; no roving-tabindex machinery).
+6. **A6 focus-not-obscured hardening.** `scroll-padding-bottom: calc(var(--composer-h, 64px) +
+   24px)` on `.kit-scroll` so keyboard-focused rows scroll clear of the docked composer/tab bar.
+7. **Explicitly ACCEPTED (owner may override):** sub-44px composer circles (32–34px — pass the
+   24px AA floor; single-user, pointer-first) · `will-change` static uses (2 targeted sites,
+   audited OK).
+
+**Gate C — e2e locks (do right after A so the fixes are enforced).**
+1. Frontier render case: boot `frontier` (it's already in `CONTRAST_MATRIX`) and drive the
+   bespoke surfaces — `.frontier-map` + beacons render → beacon tap opens `.frontier-hd`
+   (`role="dialog"`) → agent tab `.fr-rigstack` mounts → `data-thread` empty⇄active flip.
+2. Add a **frontier arm to `a11y.spec.ts`** (axe A/AA per tab — today it scans vapor ONLY; this
+   also machine-enforces A1/A5). Fix the stale "minimal AND cosmos" comment in
+   `kit-render.spec.ts`.
+3. Add a Playwright **`firefox` project** scoped to `kit-render.spec.ts` (desktop Gecko ≈ partial
+   §14.11 automation; Fennec proper stays manual in Gate B). Keeps e2e runtime bounded.
+**Gate B — the Fennec + Chrome perf pass (verification, owner on his phone + profilers).**
+- Protocol: Fennec USB profiling via desktop `about:debugging` → Firefox Profiler; Chrome via
+  `chrome://inspect` DevTools perf panel. Scenarios: agent-tab rig-bob + a streamed reply · theme
+  switch (View Transitions are NATIVE on Firefox/Fennec ≥144 — verify the switchTheme VT path
+  fires there now) · host-sheet drag/detents · the 12 composer layout×skin combos · keyboard
+  open on each composer layout · `data-perf=lite` + reduced-motion toggles.
+- Budgets: INP p75 ≤ 200 ms · no handler > 50 ms (long-task) · no dropped-frame runs in the
+  profiled scenarios.
+- **RULED (research conflict):** KEEP the `visualViewport` `--app-h` observer — `dvh` does NOT
+  track the Android on-screen keyboard (our `App.tsx` comment already documents this; the
+  research bullet claiming dvh suffices is wrong for Chrome-Android default `interactive-widget`).
+- **DEFERRED:** `content-visibility: auto` on the chat log (Baseline 2025, real lever — but per
+  the UI_AUDIT F9/F13 stance, only under measured pressure; ACA-adjacent) · cosmos minors
+  (planet `filter` transition + the sheet-slide `mask-image`) → the cosmos-owning phase
+  (fix-in-owning-phase).
+
+**Gate D — §0 contract row-by-row.** Walk THEME_ENGINE §0's 18 rows for frontier and record the
+evidence per row (the 2026-07-15 inventory pre-verified most; rows 10/11/16/17 are the ones the
+A/B/C gates complete). Owner sign-off on the walk CLOSES F5; then: ACA Slices 1–2 · the parked
+art-override UI + asset pass · vapor-hygiene filler.
+
+**Open owner rulings (defaults pinned above):** ① A4 now vs ACA-defer (default: now) ·
+② the firefox e2e project (default: add) · ③ sub-44px targets (default: accept) ·
+④ cosmos minors deferred (default: defer).
