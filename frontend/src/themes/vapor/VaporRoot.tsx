@@ -16,6 +16,7 @@ import { AgentTab } from "../../tabs/AgentTab";
 import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
 import { FleetTab } from "../../tabs/FleetTab";
 import { UtilsTab } from "../../tabs/UtilsTab";
+import { useScrollKeep } from "../../theme-engine/scrollKeep";
 import { useThemeSetting } from "../../theme-engine/settings";
 import type { Loz, Skyline } from "./index";
 
@@ -55,10 +56,20 @@ export function VaporRoot() {
     if (tab === "conf" && !confMounted) setConfMounted(true);
   }, [tab, confMounted]);
 
+  // Keep the scroller's position across a theme-Root remount (a skin pick rebuilds this whole tree —
+  // scrollKeep restores the old Root's position in the mount layout-effect, before the VT snapshot).
+  const restoredScrollRef = useScrollKeep(scrollRef);
+
   // Reset the content pane to the top on tab switch (Agent is the exception — it scrolls itself).
+  // Skip the ONE mount-run that follows a scrollKeep restore (a theme switch, not a tab switch).
   useEffect(() => {
+    if (restoredScrollRef.current) {
+      restoredScrollRef.current = false;
+      return;
+    }
     if (tab !== "agent") scrollRef.current?.scrollTo(0, 0);
-  }, [tab]);
+    // `restoredScrollRef` is a stable ref (lint can't see through the custom hook) — a dep for hygiene only.
+  }, [tab, restoredScrollRef]);
 
   // Expose vapor's sticky appbar height as `--appbar-h` so the Agent plan tab pins just below it.
   // vapor's Root definitively renders `.appbar`, so a direct query is correct (no cross-theme concern —

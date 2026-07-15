@@ -21,6 +21,7 @@ import { prefetchOnIdle } from "../../lib/prefetch";
 import { AgentTab } from "../../tabs/AgentTab";
 import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
 import { UtilsTab } from "../../tabs/UtilsTab";
+import { useScrollKeep } from "../scrollKeep";
 import type { TabDef, TabId } from "../types";
 import { KitAppBar } from "./AppBar";
 import { kitPlanComposerSlots } from "./composer/plan";
@@ -138,12 +139,22 @@ export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots, bra
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, sectionLayout]);
 
+  // Keep the scroller's position across a theme-Root remount (a skin pick rebuilds this whole tree —
+  // scrollKeep restores the old Root's position in the mount layout-effect, before the VT snapshot).
+  const restoredScrollRef = useScrollKeep(scrollRef);
+
   // Reset the content pane to the top on section switch (Agent scrolls itself). SKIP when a scroll-to-group
   // handoff is pending (a coerced hosted navigate) — otherwise this parent effect, which runs AFTER the host
   // body's child effect, would cancel the group scroll. Read via getState (a peek), not a subscription.
+  // Also skip the ONE mount-run that follows a scrollKeep restore (a theme switch, not a section switch).
   useEffect(() => {
+    if (restoredScrollRef.current) {
+      restoredScrollRef.current = false;
+      return;
+    }
     if (tab !== "agent" && !getGroupScrollTarget()) scrollRef.current?.scrollTo(0, 0);
-  }, [tab]);
+    // `restoredScrollRef` is a stable ref (lint can't see through the custom hook) — a dep for hygiene only.
+  }, [tab, restoredScrollRef]);
 
   // Expose the sticky appbar height as `--appbar-h` so the Agent plan tab pins just below it. When the
   // appbar is hidden there's no `.kit-appbar` node → pin content at the top (0), not a stale height.
