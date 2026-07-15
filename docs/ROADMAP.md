@@ -631,13 +631,13 @@ homes later:
   exists: KitComposer picks its default send glyph by resolved skin (glass → the shared arrowhead) and the
   `sendIcon` prop seam remains — an icon setting would generalize that pick into a per-theme/user choice.
   Unscheduled; revisit after the frontier F5 gates.
-- **Cosmos host-sheet planet switcher (owner, noted 2026-07-15 at the F5 Gate-A review)** — "‹ / ›"-style
-  chevrons (clean glyphs designed for the sheet's dot-grid card, NOT literal arrow icons) flanking the host
-  name in the cosmos bottom sheet (`CosmosHostDetail` header, the `[data-bs-peek]` region) to step
-  prev/next through the planets without closing the sheet. The seam already exists: cosmos passes
-  `catchOutside=false` so tap-another-planet-to-SWAP works — the chevrons drive the same selection store
-  path (`store/selection`), just from inside the sheet; ordering = the same host order the orbit renders.
-  Cosmos-owning phase; visual design to be curated with the owner (no other visual changes to the sheet).
+- **~~Cosmos host-sheet planet switcher~~ ✅ SHIPPED 2026-07-15 (`d26a498`)** — chevrons flanking the sheet's
+  host name step prev/next through the orbit's host order (wrap-around) via the same `cosmosSelection` swap
+  path; pure `stepId()` helper (+tests); hidden on a single-planet fleet. Build-caught fix worth keeping: the
+  BottomSheet handle's invisible 16px drag hit-strip (z 1) swallowed the chevron taps — interactive content
+  near a sheet handle needs `z-index` above the strip (a precise control beats a fuzzy drag zone). **With
+  this, cosmos is feature-CLOSED (owner, 2026-07-15)** — the one standing deferral stays: the uptime/"alive"
+  stat shows "—" until a backend boot-time seam exists (memory `cosmos-uptime-deferred`; additive).
 - **Icon tooling (DX, noted 2026-06-28)** — icons are currently **hand-inlined SVGs** (the shared Kit chrome,
   the NavMenu, action buttons), which is fine at this scale but tedious + easy to mis-trace. Future: adopt
   **`unplugin-icons` + Iconify** (build-time, on-demand, tree-shaken, **offline-friendly** — inlined at build,
