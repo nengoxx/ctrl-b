@@ -8,10 +8,12 @@ import { expect, test } from "./fixtures";
 // checks ONE thing: the kit shell renders and stays up across a full tab sweep. Deliberately NOT here:
 // screenshot diffing (rejected in the plan — flaky, over-engineered) and axe (the a11y suite owns a11y).
 //
-// It parametrizes over minimal AND cosmos (CosmosFleet = a distinct Surface impl + a starfield canvas — both
-// must boot). Sourced from CONTRAST_MATRIX so the theme/mode set can never silently drift from the registry
-// (that list has a drift guard against the real palettes); one representative accent per theme (the first =
-// each theme's defaultAccent) keeps this a SMOKE, not the contrast matrix.
+// It parametrizes over every non-waived theme in CONTRAST_MATRIX — minimal, cosmos AND frontier (each a
+// distinct Surface impl: CosmosFleet's starfield canvas + orbital, FrontierFleet's badlands map — all must
+// boot). Sourced from CONTRAST_MATRIX so the theme/mode set can never silently drift from the registry (that
+// list has a drift guard against the real palettes); one representative accent per theme (the first = each
+// theme's defaultAccent) keeps this a SMOKE, not the contrast matrix. (frontier's bespoke SURFACES — the
+// map/beacon→sheet flow, the rig-stack, the Gate A a11y locks — get their deep drive in frontier-render.spec.ts.)
 interface Combo {
   theme: string;
   mode: string;
@@ -29,7 +31,7 @@ const COMBOS: Combo[] = CONTRAST_MATRIX.flatMap((t) =>
 // spec doesn't import the app graph — the contrast-matrix rationale); the matrix `bar` is drift-guarded
 // against the registry-resolved bar in tests/theme-engine/themeContract.test.ts, so a `defaultLayout` change
 // breaks the guard, not this sweep. Each bar id drives a `#tabbtn-<id>` button and reveals a `#tab-<id>`
-// role=tabpanel. Today every theme → all four.
+// role=tabpanel. minimal/cosmos default to 4-tab (all four); frontier to 3-tab (fleet/agent/conf — utils in Conf).
 
 for (const c of COMBOS) {
   test(`kit renders + survives a tab sweep — ${c.theme} ${c.mode}/${c.accent}`, async ({

@@ -98,13 +98,14 @@ jobs:
         if: github.ref_type != 'tag'
         run: python tools/check.py
 
-      # Release gate (v* tags only): the full gate PLUS the e2e/a11y suite. The playwright
-      # config uses Chromium-based devices only (Pixel 5 + Desktop Chrome), so one browser
-      # install suffices; --with-deps pulls its system libraries on the ubuntu runner.
+      # Release gate (v* tags only): the full gate PLUS the e2e/a11y suite. The playwright config
+      # uses Chromium-based devices (Pixel 5 + Desktop Chrome) PLUS a Desktop Firefox project scoped
+      # to the kit-render smoke (F5 Gate C — a second engine for the theme boot/sweep), so both
+      # browsers must be installed; --with-deps pulls their system libraries on the ubuntu runner.
       - name: Install Playwright browsers (release gate)
         if: github.ref_type == 'tag'
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox
 
       - name: Run quality gate + e2e (release gate)
         if: github.ref_type == 'tag'

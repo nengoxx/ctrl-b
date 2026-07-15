@@ -33,6 +33,11 @@ export default defineConfig({
   projects: [
     { name: "mobile", use: { ...devices["Pixel 5"] } }, // ~393px — the real target
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },
+    // Desktop Gecko — SCOPED to the kit-render smoke (testMatch) so total e2e runtime stays bounded: it
+    // gives the per-theme boot + tab sweep a second engine (≈ partial §14.11 cross-engine automation).
+    // The axe scans + the deep frontier interaction locks (frontier-render) stay Chromium-only; the real
+    // Fennec/Chrome perf pass is the manual on-device Gate B (docs/FRONTIER_PLAN.md §9).
+    { name: "firefox", use: { ...devices["Desktop Firefox"] }, testMatch: /kit-render/ },
   ],
   // Build the real artifact and serve it exactly as prod does (static dist). `/api` is mocked in-test.
   webServer: {
