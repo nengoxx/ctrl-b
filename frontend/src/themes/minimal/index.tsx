@@ -49,13 +49,14 @@ export const minimal: ThemeDef = {
   //  - density (cosmetic) → body[data-density] → minimal's tokens.css scales --density-pad.
   settings: {
     composer: composerLayoutSetting("stacked"),
+    // Composer-skin axis (Slice B) — minimal keeps the Kit's native bordered input bar → defaults `outline`;
+    // the seg offers glass/bezel/sleek (kit.css chrome keyed on body[data-composer-skin]). Declared right
+    // after `composer` so the two composer rows sit adjacent in Appearance (owner, round 2).
+    composerSkin: composerSkinSetting("outline"),
     planPlacement: planPlacementSetting("inline"),
     // Outlines axis (Slice A) — minimal leans on the Kit's bordered chat chrome, so it defaults ON; the
     // toggle offers the borderless look (kit/axes.css strips the chat borders under body[data-outlines=off]).
     outlines: outlinesSetting(true),
-    // Composer-skin axis (Slice B) — minimal keeps the Kit's native bordered input bar → defaults `outline`;
-    // the seg offers glass/bezel/sleek (kit.css chrome keyed on body[data-composer-skin]).
-    composerSkin: composerSkinSetting("outline"),
     density: {
       type: "seg",
       label: "Density",

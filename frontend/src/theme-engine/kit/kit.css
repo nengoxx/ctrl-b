@@ -794,27 +794,32 @@ body[data-composer-skin="glass"] .kit-composer.stacked .plan-pill {
   border-radius: 8px;
 }
 
-/* ── skin · BEZEL (body[data-composer-skin="bezel"]) — frontier's F4 composer sweep ────────────────────────
- * Graduated verbatim from frontier.css's @layer theme sweep (F5 slice B): transparent border on the bar +
- * inner controls (ALL layouts) — the fill + elevation carry it; the recording mic keeps its red ICON as the
- * cue (NO ring). MODE-INVARIANT (frontier's deliberate choice — no light variant). The EXACT rgba inks are
- * preserved (kit chrome already hardcodes shadow inks; pixel-identical gate vs today's frontier default). */
+/* ── skin · BEZEL (body[data-composer-skin="bezel"]) — frontier's F4 composer sweep, generalized ──────────
+ * Graduated from frontier.css's @layer theme sweep (F5 slice B): transparent border on the bar + inner
+ * controls — the fill + elevation carry it; the recording mic keeps its red ICON as the cue (NO ring). The
+ * RESTRAINED bezel itself (owner eyeball F4-r5, born on the line stadium): one soft ambient drop (the
+ * mode-invariant dusk-ink family) + a 1px inset top highlight (the classic bezel light edge). Slice-B round 2
+ * (owner eyeball: "docked with bezel doesn't have a bezel") generalized it from line-only to EVERY layout —
+ * the docked sheet inverts the drop upward (its exposed edge is the top, so the inset highlight already reads
+ * right). MODE-INVARIANT (no light variant — frontier's deliberate choice); frontier's EXACT rgba inks. The
+ * bar rule (0,2,1) ties the base `body[data-mode=light] .kit-composer` — this section's LATER source order
+ * wins; the sheet rule (0,3,1) beats the light sheet re-assert (0,3,1) the same way. */
 body[data-composer-skin="bezel"] .kit-composer {
   border-color: transparent;
+  box-shadow:
+    0 4px 14px rgba(20, 8, 28, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+/* the DOCKED sheet lifts UPWARD — invert the ambient drop; the top highlight stays (top = the exposed edge). */
+body[data-composer-skin="bezel"] .kit-composer.sheet {
+  box-shadow:
+    0 -4px 14px rgba(20, 8, 28, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 /* controls borderless (all layouts). `.kit-composer .kit-cbtn` (0,3,1) beats the base rec RING (0,3,0), so
  * the ring is stripped — the red icon is the recording cue. */
 body[data-composer-skin="bezel"] .kit-composer .kit-cbtn {
   border-color: transparent;
-}
-/* the LINE layout lost its stadium edge to the sweep and floats hard-to-see over the dusk glow (owner eyeball
- * r5): a RESTRAINED bezel — one soft ambient drop (the theme's mode-invariant ink family) + a 1px inset top
- * highlight (the classic bezel light edge). Frontier's EXACT values; (0,3,1) beats the base
- * `body[data-mode=light] .kit-composer` (0,2,1) so it stays mode-invariant. */
-body[data-composer-skin="bezel"] .kit-composer.line {
-  box-shadow:
-    0 4px 14px rgba(20, 8, 28, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 /* ── skin · SLEEK (body[data-composer-skin="sleek"]) — the old Ghost look ──────────────────────────────────

@@ -65,14 +65,15 @@ export const cosmos: ThemeDef = {
   settings: {
     // The composer Surface (D31/A3) — the shared layout catalog; FIRST so it reads above theme rows.
     composer: composerLayoutSetting("stacked"),
+    // Composer-skin axis (Slice B) — cosmos keeps the Kit's native bordered input bar → defaults `outline`;
+    // the seg offers glass/bezel/sleek (kit.css chrome keyed on body[data-composer-skin]). Declared right
+    // after `composer` so the two composer rows sit adjacent in Appearance (owner, round 2).
+    composerSkin: composerSkinSetting("outline"),
     // Plan placement (D31/A4) — the shared inline/pinned catalog (default inline = the composer pill+sheet).
     planPlacement: planPlacementSetting("inline"),
     // Outlines axis (Slice A) — cosmos reuses the Kit's bordered chat chrome, so it defaults ON; the toggle
     // offers the borderless look (kit/axes.css strips the chat borders under body[data-outlines=off]).
     outlines: outlinesSetting(true),
-    // Composer-skin axis (Slice B) — cosmos keeps the Kit's native bordered input bar → defaults `outline`;
-    // the seg offers glass/bezel/sleek (kit.css chrome keyed on body[data-composer-skin]).
-    composerSkin: composerSkinSetting("outline"),
     // Central-body style (C2a-fix) — two variants the owner compares live: the prototype's see-through "D"
     // coin (cutout) vs the matte ball with the D engraved into it (carved). Auto-rendered as a Seg.
     moonStyle: {

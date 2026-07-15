@@ -52,15 +52,17 @@ export const frontier: ThemeDef = {
   //  - planPlacement (D31/A4) → the shared inline/pinned catalog (default inline = the composer pill+sheet).
   settings: {
     composer: composerLayoutSetting("stacked"),
+    // Composer-skin axis (Slice B) — frontier defaults to `bezel`: its F4 composer sweep look (transparent
+    // border + the bezel drop, rec-ring stripped) graduated from frontier.css into the kit-wide skin
+    // catalog (kit.css, keyed on body[data-composer-skin]). The owner can swap the input bar chrome live.
+    // DECLARED right after `composer` so the two composer rows sit adjacent in Appearance (owner, round 2;
+    // ConfTab auto-renders in declaration order).
+    composerSkin: composerSkinSetting("bezel"),
     planPlacement: planPlacementSetting("inline"),
     // Outlines axis (Slice A) — frontier defaults OFF: its F4 look IS the no-outlines chat (the borderless
     // bubbles/plan/priv chrome now lives in kit/axes.css, keyed on body[data-outlines]). The toggle lets the
     // owner restore the Kit's resting borders live.
     outlines: outlinesSetting(false),
-    // Composer-skin axis (Slice B) — frontier defaults to `bezel`: its F4 composer sweep look (transparent
-    // border + the line bezel drop, rec-ring stripped) graduated from frontier.css into the kit-wide skin
-    // catalog (kit.css, keyed on body[data-composer-skin]). The owner can swap the input bar chrome live.
-    composerSkin: composerSkinSetting("bezel"),
   },
   // Section-layout capability (D35 §F0): frontier DEFAULTS to `3-tab` (utils hosted in Conf) and declares NO
   // `layouts` field, so ALL presets stay on offer — the D35 ideal ("themes default, never restrict"; vapor's
