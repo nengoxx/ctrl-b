@@ -54,6 +54,12 @@ class ToolCallPart(BaseModel):
     tool: str
     args: dict[str, Any] = Field(default_factory=dict)
     state: RunState = RunState.PENDING
+    #: The model's raw argument blob when it wasn't a valid JSON object (truncated ≤200 chars).
+    #: Presence (`is not None`) means "do NOT invoke — synthesize the ACA-13 JSON-repair steering
+    #: error" instead; `args` stays `{}` so the assembled OpenAI context never carries the invalid
+    #: blob. Additive + default None, so old DB rows / persisted JSON load fine (ACA-13 resume-safe:
+    #: the marker rides the persisted part, not a memory-only side-channel).
+    invalid_raw: str | None = None
 
 
 class ToolResultPart(BaseModel):

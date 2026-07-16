@@ -707,17 +707,24 @@ class AgentSession:
                 yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})
                 return
 
-            # Parse each call's raw args. A malformed blob (ACA-13) persists with `args={}` but is
-            # recorded in `bad_args` so `_run_calls` feeds the model a JSON-repair steering error
-            # instead of silently invoking the tool with `{}`.
+            # Parse each call's raw args. A malformed blob (ACA-13) persists with `args={}` and the
+            # raw blob stamped on the part's `invalid_raw` (truncated ≤200 chars — its only use is the
+            # steering snippet), so `_run_calls` feeds the model a JSON-repair steering error instead
+            # of silently invoking the tool with `{}`. Persisting the marker on the part (vs. a
+            # memory-only side-channel) makes it survive a suspend/resume: a resumed malformed call
+            # still steers rather than silently invoking with `{}`.
             call_parts: list[ToolCallPart] = []
-            bad_args: dict[str, str] = {}
             for r in reqs:
                 call_id = r.id or uuid.uuid4().hex
                 args, invalid = _parse_args(r.arguments)
-                if invalid is not None:
-                    bad_args[call_id] = invalid
-                call_parts.append(ToolCallPart(call_id=call_id, tool=r.name, args=args))
+                call_parts.append(
+                    ToolCallPart(
+                        call_id=call_id,
+                        tool=r.name,
+                        args=args,
+                        invalid_raw=invalid[:200] if invalid is not None else None,
+                    )
+                )
             parts.extend(call_parts)
             assistant.parts = parts
             await self._messages.add(assistant)
@@ -728,9 +735,7 @@ class AgentSession:
                 )
             yield AgentEvent("message.end", {"messageId": assistant.id})
 
-            events, suspended, made_progress = await self._run_calls(
-                thread, assistant, {}, guard, bad_args=bad_args
-            )
+            events, suspended, made_progress = await self._run_calls(thread, assistant, {}, guard)
             for ev in events:
                 yield ev
             if suspended:
@@ -837,15 +842,16 @@ class AgentSession:
         resume_tokens: dict[str, str | None],
         guard: _LoopGuard,
         resume_answers: dict[str, str] | None = None,
-        bad_args: dict[str, str] | None = None,
     ) -> tuple[list[AgentEvent], bool, bool]:
         """Process the assistant's not-yet-resolved tool calls in order. ALLOW runs immediately via
         `ActionService` (which validates, decides, executes, records the Event); DENY/bad-args
         synthesize a clean result fed back to the model; CONFIRM suspends (persist AWAITING_CONFIRM,
-        emit `tool.permission`, stop). A call whose `call_id` is in `bad_args` (its raw arguments
+        emit `tool.permission`, stop). A call whose `invalid_raw is not None` (its raw arguments
         weren't valid JSON — ACA-13) skips invocation entirely and yields an ERROR result echoing the
         raw blob so the model can repair it (it still counts toward the loop-guard caps, like any
-        errored call). An exact-repeat call past `guard.max_repeat` is **suppressed**
+        errored call). The marker rides the persisted `ToolCallPart`, so a malformed call that shares
+        an assistant message with a suspending call still steers on resume rather than silently
+        invoking with `{}`. An exact-repeat call past `guard.max_repeat` is **suppressed**
         (C1): not executed, the prior result echoed back with a steering note — this both kills a
         weak model's spiral and is the safe choice for a mutating duplicate. Returns
         `(events, suspended, made_progress)`; `made_progress` is False when every call was a
@@ -859,7 +865,6 @@ class AgentSession:
         made_progress = False
 
         answers = resume_answers or {}
-        bad = bad_args or {}  # call_ids whose raw args were malformed JSON (ACA-13)
         for cp in assistant.tool_calls():
             if cp.state in _RESOLVED:
                 continue  # already ran (resume: an earlier call in this step)
@@ -929,16 +934,17 @@ class AgentSession:
                 if token is None:
                     guard.counts[sig] = guard.counts.get(sig, 0) + 1
                     guard.tool_counts[cp.tool] = guard.tool_counts.get(cp.tool, 0) + 1
-                if cp.call_id in bad:
+                if cp.invalid_raw is not None:
                     # ACA-13: the model's raw arguments weren't valid JSON. Don't invoke the tool with
                     # an erased `{}` (which steers it with a misleading "field required"). Hand it the
                     # raw blob back so it can repair the JSON. This counts toward the loop-guard caps
                     # exactly like a ValidationError above — the increments already ran, and the
                     # last-result / progress bookkeeping below runs on this synthesized result too.
+                    # `invalid_raw` is already truncated (≤200 chars) at stamp time in `_drive`.
                     result = ToolResult(
                         state=RunState.ERROR,
                         summary=f"invalid arguments for {cp.tool}",
-                        output=f"your tool arguments were not valid JSON: {bad[cp.call_id][:200]}",
+                        output=f"your tool arguments were not valid JSON: {cp.invalid_raw}",
                     )
                 else:
                     try:

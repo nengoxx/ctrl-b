@@ -97,6 +97,14 @@ When `decide()` returns `CONFIRM`, `services/action_service.py` mints a **single
 - It is **not** a CSRF defense — there is no cross-origin session to protect in a no-auth single-user app.
 - Tokens are **in-memory** and bound to `(action, args)` with a 2-minute expiry. **Anyone who can reach the
   endpoint can mint and immediately consume one** — that's fine, because the tailnet is the auth (§1).
+- **Single-liveness on re-mint (ACA-9, owner 2026-07-16):** when the resume path re-mints a token for a
+  pending action, every outstanding token for that same `(action, args)` is consumed first — exactly one
+  live token per pending action, so a stale Allow from a second device fails cleanly instead of firing a
+  second redemption window.
+- **Known accepted:** per-endpoint `extra_body` passthroughs (`InferenceEndpointCfg`, `VoiceServiceCfg`)
+  are NOT secret-masked by the settings read (only the two secret-leaf rules are) — their canonical values
+  (`cache_prompt`, `return_progress`, `stream_options`) carry no secrets; auth belongs in the masked
+  `api_key` field, never inside `extra_body`.
 
 ### 2.4 Secret redaction
 Secrets live in config, never in code (§4). The chokepoint that keeps them out of outputs is

@@ -219,13 +219,13 @@ class InferenceClient:
             # We carry messages as our own `list[dict]` (OpenAI wire shape, built across the loop);
             # cast to the SDK's param type at this boundary rather than retyping the whole loop.
             # Same per-endpoint `extra_body` merge as `stream_chat` (ACA-18): the summarizer's calls
-            # deserve the cache pin too, and the pin must never leak across the failover chain.
-            extra = {"extra_body": ep.extra_body} if ep.extra_body else {}
+            # deserve the cache pin too, and the pin must never leak across the failover chain. The
+            # SDK's `create()` takes `extra_body` as a first-class param (None → omitted).
             resp = await self._client(ep).chat.completions.create(
                 model=use_model,
                 messages=cast("list[ChatCompletionMessageParam]", messages),
                 stream=False,
-                **extra,
+                extra_body=ep.extra_body or None,
             )
             if not resp.choices:
                 raise InferenceError("inference returned no choices")
