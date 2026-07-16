@@ -123,6 +123,24 @@
 > gate GREEN (run 29501070297) → re-pinned `~/apps/ctrl-b` + `install.sh prod` (DB snapshot
 > `ctrlb-20260716-151348.db.gz`) → verified: `git describe` = v1.1.1, health version 1.1.1,
 > HTTPS 200. Dev units stopped.**
+>
+> **▶ SAME DAY (2026-07-16 PM): ACA SLICE 1 ✅ EXECUTED — ALL LOCAL, NOT PUSHED; owner eyeball
+> pending (dev units RUNNING).** Pre-build: a 3-agent re-verification pass (code-truth vs HEAD +
+> research refresh + pluggability/vault research) → ACA **v2.3 amendments** pinned in the doc; §6
+> Q3 ANSWERED (owner: CONSUME); the owner's **vault idea PARKED** (no formal spec — standing
+> requirement = whole-functionality enable/disable toggles like tools/skills; memory
+> `vault-parked-enable-disable-pluggability`). Then the 5-wave orchestrated build (Opus 4.8 high
+> subagents, per-wave hand-review + own-gate-run): MCP whole-lifecycle deadline +
+> `call_timeout_s` · timeout-normalizer guard + SSH 30s backstops + the machine-enforced
+> `ADAPTER_BOUNDED` deadline policy · `agent.subagent_child_timeout_s`/`skill_min_overlap`/
+> `skill_max_active` de-hardcoded + confirm-token CONSUME-on-remint · call-scoped stall guard +
+> malformed-args JSON-repair steering (empty-string keeps the legacy zero-arg path — orchestrator
+> ruling) + `ORDER BY ts, rowid` + `_static_prefix` docstring truth · per-endpoint `extra_body`
+> cache pin + cache telemetry + the A8 context-cost debug line + `_finalize` wrap-up
+> `tool_choice:"none"` (live-probed on the deployed llama-server). **Full gate `check.py --e2e`
+> 7/7 GREEN; 297 backend tests (+43). As-built record = AGENT_CHAT_AUDIT §5 Slice 1 heading.
+> NEXT: owner eyeballs (agent chat on dev :5173) → push OK → ACA Slice 2 (turn integrity;
+> D36 drafted at its design review).**
 > *(The block below is the as-built record of those four fixes — the pre-flight pins they were
 > built from, kept for provenance.)*
 > - **①–③ the SYS-16 ruff ratchet (ASYNC+B)** — pyproject `[tool.ruff.lint]` select `["E","F","I"]`
