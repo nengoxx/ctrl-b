@@ -144,8 +144,42 @@
 > regression test); LOW/INFO findings ruled + recorded on the §5 Slice 1 heading. Riders: the
 > summarizer `complete()` cache pin + the SECURITY_MODEL ACA-9/extra_body rows. Full gate
 > `check.py --e2e` 7/7 GREEN on the tip; 298 backend tests (+44). As-built record =
-> AGENT_CHAT_AUDIT §5 Slice 1 heading. NEXT: owner eyeballs (agent chat on dev :5173) →
-> push OK → ACA Slice 2 (turn integrity; D36 drafted at its design review).**
+> AGENT_CHAT_AUDIT §5 Slice 1 heading.**
+>
+> **▶ SESSION CLOSED 2026-07-17 early AM (owner to sleep) — NEXT SESSION, in order:**
+> 1. **/model check** (fable-5 + HIGH — the app selector may default low).
+> 2. **Start the dev units** (`systemctl --user start ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`;
+>    stopped at close per the on-demand ruling) → **owner eyeball on http://emma:5173, the pinned
+>    test script:** ① "Ping all my hosts and give me a status summary" (the ACA-12 no-false-stall
+>    proof — pre-fix, identical ping results could cut the turn short) · ② "Which services are
+>    running on vault, and are they healthy?" (bounded reads) · ③ "Reboot corsair" → confirm bubble;
+>    **DISMISS unless a real reboot is acceptable — dev controls the REAL fleet**; the full
+>    re-mint+consume path = leave the bubble >2 min then Allow (WILL reboot) · ④ composer
+>    `!echo hello` then `!sleep 90` (clean ~60s timeout result, no hang) · ⑤ a few normal turns.
+>    (Cache-telemetry line is DEBUG-level — not visible at the dev units' default log level;
+>    verified via tests + a live llama-server probe instead.)
+> 3. **Owner push OK → `git push`** (12 local commits `6a9ac4c`..`6c32368`; pre-push hook runs the
+>    full gate).
+> 4. **ACA Slice 2 (turn integrity) — DESIGN REVIEW FIRST** (D36 drafted there, per §5): the
+>    per-thread turn marker is a REGISTRY ENTRY on app.state (never a held lock — Slice 3 extends
+>    it in place; note the existing `active_turns` int gauge stays alongside), scope = EVERY
+>    thread-mutating endpoint (chat/resume/plan/apply/compact/exec → 409), reserve synchronously
+>    in the handler (TOCTOU), shielded-`finally` step persistence (anyio CancelScope(shield=True),
+>    YIELD-FREE, re-raise; anyio 4.14.1 installed = post-#642, safe), `Database.transaction()`
+>    with **BEGIN IMMEDIATE + non-zero busy_timeout** (v2.3 amendment), frontend guards + the
+>    ResumeRequest `mode` (ACA-16). **SYS-1 (`Database.transaction()` WAL rider) rides this slice.**
+> **Session nuances worth carrying:** the pyright gate lesson (a "trivial" 4-line rider broke it
+> unseen — run the FULL gate even on leaf fixes; also pyright nags to update 1.1.409→1.1.411,
+> cosmetic) · skill-selector knobs (`skill_min_overlap`/`skill_max_active`) apply on RESTART only
+> (documented; hot-reload = possible follow-up via per-call threading like the agent selector) ·
+> `subagent_child_timeout_s` applies live per fan-out · INFO-5 accepted: stale `ADAPTER_BOUNDED`
+> entries aren't test-caught (forward direction IS fail-closed) — opportunistic cleanup ·
+> installed pins verified: MCP SDK 1.28.1 (in-SDK 2s stdio cleanup), anyio 4.14.1 · the owner's
+> **vault idea is PARKED** (memory `vault-parked-enable-disable-pluggability`: no formal spec;
+> the binding bit = whole-functionality enable/disable toggles like tools/skills) · the
+> **subagent-usage split is standing** (Fable = analysis/audits/rulings ONLY; Opus 4.8 high =
+> ALL mechanical/operational/well-specified work incl. runbook releases — v1.1.1 should have
+> been one).
 > *(The block below is the as-built record of those four fixes — the pre-flight pins they were
 > built from, kept for provenance.)*
 > - **①–③ the SYS-16 ruff ratchet (ASYNC+B)** — pyproject `[tool.ruff.lint]` select `["E","F","I"]`
