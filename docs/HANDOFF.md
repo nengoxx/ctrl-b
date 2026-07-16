@@ -114,9 +114,15 @@
 > placeholder hero art has a baked-in "LEARN MORE" pill top-left under the map scrim — a paint-out
 > with sampled sky is a 15-min follow-up if ever wanted.
 >
-> **▶ LOCKED NEXT SLICE (owner-picked 2026-07-16): the FOUR PRE-RELEASE FIXES → owner eyeball → push
-> → §Release tag (version v1.1.1-vs-v1.2.0 undecided) → re-pin prod, same day PM.** Both halves were
-> pre-flighted by Opus subagents + Fable hand-verified against the code; build from THESE pins:
+> **✅ EXECUTED same day (2026-07-16): the four fixes SHIPPED — `f5c8e05` (SYS-16 ruff ASYNC+B
+> ratchet pulled + its 3 findings fixed) + `69c02a1` (hero pill paint-out, 560,472 B). Full gate
+> `check.py --e2e` 7/7 GREEN on the tip. ▶ THE ONLY REMAINING STEP = the PM RELEASE: owner eyeballs
+> the dev instance (frontier Fleet card + Conf rows; dev units RUNNING) → owner OKs the push → push
+> `main` → runbook §Release tag (version call: v1.1.1 vs v1.2.0 — 8 commits `6e7a29a`..`69c02a1`:
+> contrast-gate fix + ratchet + SettingRow sweep + hero art ×2 + doc truth) → CI release gate green
+> → re-pin `~/apps/ctrl-b` + `install.sh prod` → verify health tag. Then stop the dev units.**
+> *(The block below is the as-built record of those four fixes — the pre-flight pins they were
+> built from, kept for provenance.)*
 > - **①–③ the SYS-16 ruff ratchet (ASYNC+B)** — pyproject `[tool.ruff.lint]` select `["E","F","I"]`
 >   → `+ "ASYNC","B"` (also refresh the stale "add B/UP/SIM later" comment ~line 65; NO
 >   per-file-ignores needed, no noqa at any site; `--preview` would add 2 events.py findings —
