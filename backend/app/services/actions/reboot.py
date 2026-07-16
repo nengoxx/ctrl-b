@@ -14,7 +14,7 @@ from app.core.redact import redact
 from app.core.tool import InvocationContext, action
 from app.domain.enums import OSType, Risk, RunState
 from app.domain.result import ToolResult
-from app.services.actions._common import HostTargetInput
+from app.services.actions._common import SSH_ACTION_TIMEOUT_S, HostTargetInput
 
 #: Per-OS reboot command. Windows mirrors the shutdown action with `/r` (restart). POSIX uses
 #: `sudo -S -p ''` (password from stdin, prompt silenced) because an SSH exec channel has no TTY.
@@ -35,7 +35,14 @@ _SUDO_FAILED = (
 )
 
 
-@action("reboot_host", title="Reboot", icon="rotate-ccw", risk=Risk.HIGH, confirm=True)
+@action(
+    "reboot_host",
+    title="Reboot",
+    icon="rotate-ccw",
+    risk=Risk.HIGH,
+    confirm=True,
+    timeout_s=SSH_ACTION_TIMEOUT_S,  # backstop: paramiko's timeout doesn't cover getaddrinfo (DNS)
+)
 async def reboot_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolResult:
     """Reboot a host over SSH (per-OS command; requires configured SSH credentials)."""
     host = ctx.require_deps().fleet.host(inp.host_id)

@@ -68,6 +68,13 @@ class ToolSpec(BaseModel):
     #: session_search). It removes the footgun where a specialist with an explicit `tools` list
     #: silently loses a builtin, and means a new core builtin needs no per-agent allowlist update.
     core: bool = False
+    #: The per-tool wall-clock deadline `ActionService._execute` enforces via `asyncio.wait_for`
+    #: (E0a). **Deadline policy (ACA-7): every registered tool either declares its bound here OR is
+    #: documented in `ADAPTER_BOUNDED` below (or is category `"mcp"`) as already covered by an
+    #: adapter / subprocess / local-DB bound** — enforced by `test_deadline_policy_aca67`. `None`
+    #: means "no `ActionService`-level bound"; it is only correct when the tool's own I/O is already
+    #: bounded elsewhere. Note the bound gives up *waiting* — it does not kill a thread blocked in
+    #: `asyncio.to_thread` (see `ActionService._execute`).
     timeout_s: float | None = None
 
     model_config = {"arbitrary_types_allowed": True}
@@ -76,6 +83,41 @@ class ToolSpec(BaseModel):
     def retry_safe(self) -> bool:
         """Safe to blindly re-run (read-only or idempotent) — the retry-of-a-failed-turn UX signal."""
         return self.read_only or self.idempotent
+
+
+#: The documented allowlist for the `ToolSpec.timeout_s` policy (ACA-7): registered tools that carry
+#: NO `ActionService`-level deadline (`timeout_s is None`) because their own I/O is already bounded.
+#: Maps tool name → the covering bound, so the "why is this unbounded?" answer lives in ONE place.
+#: `test_deadline_policy_aca67` walks the live registry and fails if a spec has `timeout_s is None`,
+#: is not covered here, and is not a dynamically-registered integration tool — so a NEW tool must
+#: either declare a bound or be triaged into this map (fail-closed).
+#:
+#: Two dynamic tool *classes* are covered by construction and need no per-name entry (their bound is
+#: fixed at the adapter, not per tool): MCP + OpenAPI tools (`category == "mcp"`) self-bound via the
+#: McpClient / OpenAPI-adapter deadlines (McpServerCfg.call/connect_timeout_s · OpenApiServerCfg.
+#: connect_timeout_s on the httpx client); open-terminal tools (`terminal_*`) are bounded by
+#: `OpenTerminalCfg.timeout_s` on their httpx client.
+ADAPTER_BOUNDED: dict[str, str] = {
+    # host/service reads + non-SSH controls
+    "ping_host": "fleet.ping_host bounds the ping subprocess (asyncio.wait_for, timeout_s + 1s)",
+    "check_service": "svc.probe_port TCP connect bounded by asyncio.wait_for (1.5s)",
+    "wake_host": "fire-and-forget UDP magic packet (wol.send_magic); no reply is awaited",
+    "open_service_url": "pure — builds a URL string from config, performs no I/O",
+    # subprocess-backed
+    "tailscale_serve_enable": "run_capture(timeout_s=TailscaleCfg.timeout_s) bounds the tailscale CLI",
+    "tailscale_serve_disable": "run_capture(timeout_s=TailscaleCfg.timeout_s) bounds the tailscale CLI",
+    "run_shell": "run_capture(timeout_s=ShellCfg.timeout_s) — the process is killed on timeout",
+    # httpx-backed
+    "web_search": "SearxngCfg.timeout_s on the cached httpx client",
+    "ip_info": "httpx client timeout (_HTTP_TIMEOUT) on the ip-api request",
+    # in-process / local DB / control-flow — no external I/O to bound
+    "memory": "local SQLite/file memory write; the git commit is bounded by MemoryGitCfg.commit_timeout_s",
+    "skill_manage": "local file + SQLite write, no external I/O",
+    "task_plan": "in-process turn state persisted to local SQLite, no external I/O",
+    "session_search": "local SQLite FTS query, no external I/O",
+    "question": "control-flow signal to the loop; returns immediately, no I/O",
+    "spawn_subagents": "each child runs under its own asyncio.timeout(agent.subagent_child_timeout_s)",
+}
 
 
 @dataclass

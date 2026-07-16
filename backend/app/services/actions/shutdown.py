@@ -14,7 +14,7 @@ from app.core.redact import redact
 from app.core.tool import InvocationContext, action
 from app.domain.enums import OSType, Risk, RunState
 from app.domain.result import ToolResult
-from app.services.actions._common import HostTargetInput
+from app.services.actions._common import SSH_ACTION_TIMEOUT_S, HostTargetInput
 
 #: Per-OS shutdown command. Windows mirrors the live `wol_server_win.py`. POSIX uses `sudo -S`
 #: (read the password from stdin, `-p ''` silences the prompt) because an SSH exec channel has no
@@ -37,7 +37,15 @@ _SUDO_FAILED = (
 )
 
 
-@action("shutdown_host", title="Shut down", icon="power", risk=Risk.HIGH, confirm=True, idempotent=True)
+@action(
+    "shutdown_host",
+    title="Shut down",
+    icon="power",
+    risk=Risk.HIGH,
+    confirm=True,
+    idempotent=True,
+    timeout_s=SSH_ACTION_TIMEOUT_S,  # backstop: paramiko's timeout doesn't cover getaddrinfo (DNS)
+)
 async def shutdown_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolResult:
     """Shut down a host over SSH (per-OS command; requires configured SSH credentials)."""
     host = ctx.require_deps().fleet.host(inp.host_id)

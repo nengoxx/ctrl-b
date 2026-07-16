@@ -10,10 +10,21 @@ from __future__ import annotations
 from app.core.tool import InvocationContext, action
 from app.domain.enums import Risk
 from app.domain.result import ToolResult
-from app.services.actions._common import ServiceTargetInput, run_service_command
+from app.services.actions._common import (
+    SSH_ACTION_TIMEOUT_S,
+    ServiceTargetInput,
+    run_service_command,
+)
 
 
-@action("stop_service", title="Stop service", icon="square", risk=Risk.MED, idempotent=True)
+@action(
+    "stop_service",
+    title="Stop service",
+    icon="square",
+    risk=Risk.MED,
+    idempotent=True,
+    timeout_s=SSH_ACTION_TIMEOUT_S,  # backstop: paramiko's timeout doesn't cover getaddrinfo (DNS)
+)
 async def stop_service(inp: ServiceTargetInput, ctx: InvocationContext) -> ToolResult:
     """Stop a service on its host (per-OS command; requires configured SSH credentials)."""
     return await run_service_command("stop", "stopped", inp, ctx)

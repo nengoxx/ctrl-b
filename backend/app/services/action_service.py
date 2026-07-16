@@ -160,9 +160,14 @@ class ActionService:
             else:
                 result = await tool.run(inp, ctx)
         except asyncio.TimeoutError, TimeoutError:
+            # This arm fires for BOTH our own `wait_for` (a spec bound is set) and a `TimeoutError`
+            # raised *inside* the tool with no spec bound (`socket.timeout` IS `TimeoutError` since
+            # 3.10). Guard the format: `timeout` is None in the in-tool case, so `{timeout:.0f}` would
+            # raise a `TypeError` *inside* the handler and escape `_execute` un-normalized (ACA-6).
+            detail = f"after {timeout:.0f}s" if timeout else "(no spec deadline; in-tool timeout)"
             result = ToolResult(
                 state=RunState.TIMEOUT,
-                summary=f"{tool.spec.title} timed out after {timeout:.0f}s",
+                summary=f"{tool.spec.title} timed out {detail}",
             )
         except Exception as exc:  # noqa: BLE001 — normalize any escape into a clean result
             result = ToolResult(state=RunState.ERROR, summary=f"{tool.spec.title} failed", error=str(exc))

@@ -19,6 +19,16 @@ from app.core.tool import InvocationContext
 from app.domain.enums import OSType, RunState
 from app.domain.result import ToolResult
 
+#: The `ActionService`-level backstop deadline for every SSH-backed fleet action (reboot/shutdown +
+#: the service start/stop/restart controls). paramiko's own `timeout=10` (ssh.py) covers TCP connect
+#: + channel reads but NOT `getaddrinfo` — a host row with an unresolvable name can wedge the
+#: `asyncio.to_thread` resolve for the platform's DNS timeout (tens of seconds), which no adapter
+#: bound catches. This wraps the whole `to_thread(ssh.run_command, …)` call: paramiko's 10 s
+#: (connect + read) + a DNS worst case + margin → 30 s. One shared constant so the five actions stay
+#: consistent; config-overridability arrives later as an additive ToolOverride field (ROADMAP E0a) —
+#: do NOT add a parallel config map now.
+SSH_ACTION_TIMEOUT_S = 30.0
+
 #: A bare `sudo` not already in stdin mode (`-S`), and not part of a longer word. Rewritten so an
 #: SSH exec (no TTY) can authenticate sudo by piping the password to stdin (same trick as
 #: shutdown_host). On a multi-sudo command only the first consumes the piped password; the rest
