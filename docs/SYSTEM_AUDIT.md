@@ -294,7 +294,19 @@ fix wave. Pyright `strict` is a bigger lift; schedule it as its own slice post-e
 already names it). Pull the ruff rules **before** the ACA build waves so new code is born under the
 stricter bar.
 
-### SYS-17 · Voice riders — **LOW**
+**ADDENDUM (pre-flight, 2026-07-16 — the ratchet's measured reality + blind spots).** The dry run
+found exactly **3** findings (2× ASYNC240 in `memory_backup.py` `commit`/`_ensure_repo`, 1× B007 in
+`dns_trace.py`) — far smaller than the predicted wave; fix shapes are pinned in the HANDOFF banner
+slice. ⚠ **ASYNC240 is lexical**: it fires only on a statically-known `Path` receiver (a `Path(...)`
+call or a `Path`-annotated name) and **misses BinOp receivers** (`(root / ".git").is_dir()`) **and
+sync helpers called from async** — so ratchet-green ≠ "async-audited". Known unflagged
+async-blocking sites (→ the ACA Phase-12 deep pass, recorded so the gap is visible): `db.py:159`
+`connect` mkdir · `services/agent/memory.py:271-272` `overwrite` is_file/unlink (under guard) ·
+`memory_backup.py` `reconcile` :121 `.exists()` + `_mtime_iso` stat · `api/agent.py` agent/skill
+CRUD cluster (~:377-520, `.read_text()`/`.mkdir()`/`.unlink()` — the largest) ·
+`services/actions/terminal.py:184` remote glob. Also recorded: ruff `--preview` would add 2 ASYNC
+yield-in-async-generator findings in `events.py` (preview stays OFF); B008/`Depends()`-in-default
+count today = 0 — a future hit resolves via `Annotated[...]`, never a project-wide ignore.
 
 (a) `POST /voice/tts` accepts unbounded `text` (`api/voice.py:61‑67`) — an accidental huge input
 synthesizes a huge clip fully in memory (the buffered-clip design is deliberate; the missing piece

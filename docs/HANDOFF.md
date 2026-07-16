@@ -114,6 +114,45 @@
 > placeholder hero art has a baked-in "LEARN MORE" pill top-left under the map scrim — a paint-out
 > with sampled sky is a 15-min follow-up if ever wanted.
 >
+> **▶ LOCKED NEXT SLICE (owner-picked 2026-07-16): the FOUR PRE-RELEASE FIXES → owner eyeball → push
+> → §Release tag (version v1.1.1-vs-v1.2.0 undecided) → re-pin prod, same day PM.** Both halves were
+> pre-flighted by Opus subagents + Fable hand-verified against the code; build from THESE pins:
+> - **①–③ the SYS-16 ruff ratchet (ASYNC+B)** — pyproject `[tool.ruff.lint]` select `["E","F","I"]`
+>   → `+ "ASYNC","B"` (also refresh the stale "add B/UP/SIM later" comment ~line 65; NO
+>   per-file-ignores needed, no noqa at any site; `--preview` would add 2 events.py findings —
+>   preview stays OFF, recorded only; B008/`Depends()` count today = 0 — future endpoints use
+>   `Annotated`, never a project ignore). Exactly 3 findings to fix:
+>   **①** `memory_backup.py:101` (`commit`) — extract the per-path resolve loop into a static sync
+>   `_rel_paths(paths, root) -> list[str]` (keeps `except ValueError: continue` per path; computes
+>   `root.resolve()` ONCE) → `rels = await asyncio.to_thread(self._rel_paths, paths, root)`. Safe
+>   under `guard()` — commit already awaits subprocesses with the lock held (guard is the
+>   single-writer non-reentrant lock; callers memory.py:213/273 hold it).
+>   **②** `memory_backup.py:173` (`_ensure_repo`) — fold the WHOLE blocking prelude (safe_root →
+>   `.git` is_dir "ready" check → mkdir + its `except OSError` → `_write_gitignore`) into ONE sync
+>   `_prep_repo_dir(root) -> "ready"|"init"|"abort"` + one `to_thread` hop; the async body keeps the
+>   `_git_bin` check + the `_run` init/add/commit calls; final return =
+>   `await asyncio.to_thread((root / ".git").is_dir)`. Behavior-preserving; deliberately covers the
+>   ASYNC240-UNFLAGGED neighbors :168/:170/:176/:182 in the same hop (the rule misses BinOp
+>   receivers + sync helpers). OUT of scope: `reconcile()` :121 `.exists()` + `_mtime_iso` stat
+>   (cold-path, unflagged → the ACA deep pass; full blind-spot record = SYSTEM_AUDIT SYS-16
+>   addendum). Tests: `test_memory_git_backup_d26.py` already pins every touched branch (init /
+>   ready / secrets-abort / per-write commits) — no new test needed.
+>   **③** `dns_trace.py:29` — `fam` → `_fam` (B007; the fn is sync + already to_thread'd).
+> - **④ the hero "LEARN MORE" pill paint-out** — recipe (pinned; a verified candidate
+>   `hero_candidate_final.png` 560,472 B exists in the 2026-07-16 session scratchpad, seam
+>   Fable-eyeballed clean; scratchpads are ephemeral — reproduce from this recipe if gone): start
+>   from the ORIGINAL blob `git show 3576315:frontend/src/themes/frontier/art/hero.png` (NOT the
+>   already-quantized repo file); erase box **x∈[56,460] y∈[0,82]** (measured pill [64,452]×[5,72]
+>   + AA margin; no drop shadow; the cloud streak is OUTSIDE the box, below-right); fill = per-row
+>   linear interpolation between flank means x∈[46,54] / x∈[462,470], then GaussianBlur r=2.0
+>   confined to box+4px; recompress = system-python3 Pillow `quantize(256, LIBIMAGEQUANT,
+>   FLOYDSTEINBERG)` → pyoxipng level 6 (⚠ imports as `oxipng`; Pillow and pyoxipng live in
+>   SEPARATE interpreters — system python3 vs the scratch venv). Same filename, zero code changes.
+> - **Verify:** backend ruff clean → targeted pytest (`test_memory_git_backup_d26.py`,
+>   `test_tools_8.py`, `test_retry_safety_i4.py`) → full `tools/check.py --e2e` GREEN → owner
+>   eyeballs the frontier Fleet card (dev units) → push (needs the owner's explicit OK) → runbook
+>   §Release.
+>
 > **▶ NEXT — pick with the owner (full open-work inventory swept 2026-07-15, two-agent doc+code sweep;
 > stale T2/T3/T5 rows in TODO Phase 11 fixed same day; Phase-11/asset rows re-swept 2026-07-16):**
 > 1. **ACA Slices 1–2** (`AGENT_CHAT_AUDIT.md` §5 / TODO Phase 12) — the headline next work: Slice 1 =
