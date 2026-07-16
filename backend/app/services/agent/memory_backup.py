@@ -95,12 +95,7 @@ class GitMemoryBackup:
         root = self._root()
         if not await self._ensure_repo(root):
             return
-        rels: list[str] = []
-        for p in paths:
-            try:
-                rels.append(str(Path(p).resolve().relative_to(root.resolve())))
-            except ValueError:
-                continue  # outside the repo (shouldn't happen) — skip rather than stage broadly
+        rels = await asyncio.to_thread(self._rel_paths, paths, root)
         if not rels:
             return
         await self._run(root, ["add", "--", *rels])  # `add` stages modifies, adds, AND deletions
@@ -162,24 +157,51 @@ class GitMemoryBackup:
             return None
         return cap
 
-    async def _ensure_repo(self, root: Path) -> bool:
-        """Lazy `git init -b main` + `.gitignore` + a root commit, guarded by the secrets check. Returns
-        False (→ caller no-ops) when git is unavailable, the root is unsafe, or init failed."""
-        if self._git_bin is None or not self._safe_root(root):
-            return False
+    @staticmethod
+    def _rel_paths(paths: Sequence[Path], root: Path) -> list[str]:
+        """Repo-relative strings for `paths`; drops any path outside `root` (shouldn't happen — skip
+        rather than stage broadly). Blocking (resolve touches the fs) → call via asyncio.to_thread."""
+        root_r = root.resolve()
+        rels: list[str] = []
+        for p in paths:
+            try:
+                rels.append(str(Path(p).resolve().relative_to(root_r)))
+            except ValueError:
+                continue
+        return rels
+
+    def _prep_repo_dir(self, root: Path) -> str:
+        """Blocking fs prelude to git-init, hoisted for one to_thread hop (ASYNC240; also covers the
+        is_dir/mkdir/gitignore neighbors the rule misses). Returns:
+        'ready' — .git exists (caller returns True); 'init' — dir created + .gitignore written (caller
+        runs git init); 'abort' — unsafe root or mkdir failed (caller returns False)."""
+        if not self._safe_root(root):
+            return "abort"
         if (root / ".git").is_dir():
-            return True
+            return "ready"
         try:
             root.mkdir(parents=True, exist_ok=True)
         except OSError:
-            return False
+            return "abort"
         self._write_gitignore(root)
+        return "init"
+
+    async def _ensure_repo(self, root: Path) -> bool:
+        """Lazy `git init -b main` + `.gitignore` + a root commit, guarded by the secrets check. Returns
+        False (→ caller no-ops) when git is unavailable, the root is unsafe, or init failed."""
+        if self._git_bin is None:
+            return False
+        state = await asyncio.to_thread(self._prep_repo_dir, root)
+        if state == "ready":
+            return True
+        if state != "init":
+            return False
         init = await self._run(root, ["init", "-b", "main"])
         if init is None or init.code != 0:
             return False
         await self._run(root, ["add", "--", ".gitignore"])
         await self._run(root, ["commit", "-m", "chore: initialize memory repo", "--", ".gitignore"])
-        return (root / ".git").is_dir()
+        return await asyncio.to_thread((root / ".git").is_dir)
 
     def _safe_root(self, root: Path) -> bool:
         """Refuse to version a directory that would capture secrets — `config.yaml` or the db lying
