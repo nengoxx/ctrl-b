@@ -30,10 +30,18 @@ inference:
   local:
     base_url: http://192.168.1.137:5001/v1
     model: minig+
+    # extra_body: per-endpoint OpenAI-SDK passthrough (ACA-18) — merged only into THIS endpoint's
+    # call, never blanket (OpenAI 400s on unknown args). llama.cpp prompt-cache pin + telemetry:
+    #   cache_prompt: true       # protective on older llama-server builds (recent builds default true)
+    #   return_progress: true    # emit streaming `prompt_progress` so cache-hit telemetry shows up
+    # extra_body: { cache_prompt: true, return_progress: true }
   cloud:
     base_url: https://openrouter.ai/api/v1
     api_key: sk-or-v1-...
     model: google/gemini-2.0-flash-exp:free
+    # For a cloud backend, request usage on the final stream chunk to surface cached_tokens telemetry
+    # (cached_tokens reads 0 below 1024 prompt tokens — the documented floor, not a cache miss):
+    # extra_body: { stream_options: { include_usage: true } }
 
 # Agent runtime (Phase 4e+). `compaction` folds the oldest complete turns of a thread into a single
 # summary once the working context passes `threshold_tokens` (or on a manual `/compact`); the full

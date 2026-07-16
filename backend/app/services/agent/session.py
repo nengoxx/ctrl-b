@@ -29,6 +29,7 @@ Event contract (DESIGN §12 subset emitted here):
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import dataclass, field
 from typing import AsyncIterator
@@ -54,9 +55,11 @@ from app.domain.conversation import (
 from app.domain.enums import Actor, RunState
 from app.domain.result import ToolResult
 from app.services.action_service import ActionService
-from app.services.agent.compaction import Compactor
+from app.services.agent.compaction import Compactor, estimate_payload_tokens
 from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
 from app.services.conversation import MessageRepo, ThreadRepo
+
+log = logging.getLogger(__name__)
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are ctrl-b, a concise assistant embedded in a single-user homelab control panel. "
@@ -178,6 +181,19 @@ def _tool_content(result: ToolResult) -> str:
     return body
 
 
+def _fmt_cache(report: StreamReport) -> str:
+    """Render `StreamReport` cache telemetry for the context-cost log (ACA-18). A `None` field means
+    the endpoint didn't report that number (local llama.cpp without `return_progress`, or a cloud
+    endpoint without `stream_options: {include_usage: true}`) — rendered as a dash, deliberately NOT
+    "0 cached": OpenAI floors `cached_tokens` to 0 below 1024 prompt tokens, so a real 0 is also not a
+    failure. Purely observational — the number just tells the owner whether the prefix cache is working."""
+    pt, ct = report.prompt_tokens, report.cached_tokens
+    if pt is None and ct is None:
+        return "not reported"
+    hit = f"{ct / pt:.0%} hit" if (isinstance(pt, int) and pt > 0 and isinstance(ct, int)) else "— hit"
+    return f"prefill {pt if pt is not None else '—'} · cached {ct if ct is not None else '—'} ({hit})"
+
+
 class AgentSession:
     """Constructed per turn/resume from the shared deps. Stateless across turns — thread state
     lives in the DB so a dropped SSE stream can reconnect and re-read (DESIGN §5.3)."""
@@ -238,6 +254,11 @@ class AgentSession:
         #: has set `_skills_note`/`_tool_allow` (the only turn-start inputs they depend on).
         self._static_head: list[dict] | None = None
         self._tools_cache: list[dict] | None = None
+        #: Per-turn cached A8 token estimates of the INVARIANT prefix (static head + tools), so the
+        #: context-cost debug line (below) doesn't re-serialize the byte-stable prefix every iteration.
+        #: Reset each turn for free (the session is per-turn). Computed lazily, DEBUG-guarded.
+        self._head_tokens: int | None = None
+        self._tools_tokens: int | None = None
 
     def _system_prompt(self) -> str:
         """The agent's own prompt wins; then the global `inference.system_prompt` override; then the
@@ -440,6 +461,31 @@ class AgentSession:
             out.append({"role": "system", "content": self._reflection_nudge()})
             self._reflect_now = False
         return out
+
+    def _log_context_cost(self, messages: list[dict], report: StreamReport) -> None:
+        """A8 context-cost measurement (§4) + ACA-18 cache telemetry as ONE debug line per model call,
+        so the prefix the model prefills and the cache hit rate read together — turning "should be
+        caching" (§3.8) into "provably caching". DEBUG-guarded: the estimate re-serializes the prompt
+        payload, and the head+tools half is only cached once per turn (the byte-stable prefix), so the
+        per-call cost is just the history half. Reuses the shared `estimate_payload_tokens` heuristic
+        (compaction.py) — one estimator, not a second."""
+        if not log.isEnabledFor(logging.DEBUG):
+            return
+        if self._head_tokens is None:
+            self._head_tokens = estimate_payload_tokens(self._static_prefix())
+        if self._tools_tokens is None:
+            self._tools_tokens = estimate_payload_tokens(self._tools())
+        prompt_tok = estimate_payload_tokens(messages) + self._tools_tokens  # messages already incl. head
+        history_tok = prompt_tok - self._head_tokens - self._tools_tokens
+        log.debug(
+            "agent context-cost [%s]: prompt≈%d tok (head %d + tools %d cached + history≈%d) · cache: %s",
+            self._agent.name,
+            prompt_tok,
+            self._head_tokens,
+            self._tools_tokens,
+            history_tok,
+            _fmt_cache(report),
+        )
 
     async def run_turn(
         self,
@@ -644,6 +690,7 @@ class AgentSession:
                 yield AgentEvent(
                     "notice", {"text": f"// inference failover → {report.served} (primary unavailable)"}
                 )
+            self._log_context_cost(messages, report)  # A8 estimate + ACA-18 cache telemetry (debug)
 
             parts: list[Part] = []
             if reasoning_buf:
@@ -739,9 +786,23 @@ class AgentSession:
         )
         reasoning_buf: list[str] = []
         text_buf: list[str] = []
+        report = StreamReport()
         try:
+            # ACA-21: send the SAME cached toolset with `tool_choice="none"` (NOT `tools=None`) so the
+            # prompt-cache prefix — tools sit at its very top — stays intact for this one wrap-up call
+            # instead of re-prefilling system+memory+roster+history from zero. Live-probed against the
+            # deployed llama-server (2026-07-16): `tool_choice:"none"` is accepted, emits no parsed
+            # tool_calls, and retains the prefix cache. Caveat: with the grammar off the model can leak
+            # a *textual* tool-call into `content` (cosmetic — it's just saved as answer text). Escape
+            # hatch if wrap-up quality degrades on the local template: revert this one call to
+            # `tools=None` (drops the toolset, re-prefills — today's pre-ACA-21 behaviour).
             async for delta in self._inference.stream_chat(
-                messages, mode=eff_mode, model=eff_model, tools=None
+                messages,
+                mode=eff_mode,
+                model=eff_model,
+                tools=self._tools(),
+                tool_choice="none",
+                report=report,
             ):
                 if delta.reasoning:
                     reasoning_buf.append(delta.reasoning)
@@ -756,6 +817,7 @@ class AgentSession:
             yield AgentEvent("error", {"message": str(exc), "retryable": True})
             yield AgentEvent("done", {"threadId": thread.id, "state": "capped"})
             return
+        self._log_context_cost(messages, report)  # A8 estimate + ACA-18 cache telemetry (debug)
 
         parts: list[Part] = []
         if reasoning_buf:

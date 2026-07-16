@@ -44,11 +44,21 @@ class StreamReport:
     """Optional out-param for `stream_chat`/`complete` so the session can surface failover degradation
     (D18): `served` is the endpoint name that answered (e.g. "cloud"); `degraded` is True when a
     fallback had to save us; `failures` carries each failed hop's error. Pass one to learn whether the
-    request fell over — the failover primitive also logs it server-side regardless."""
+    request fell over — the failover primitive also logs it server-side regardless.
+
+    Also the channel for prompt-cache telemetry (ACA-18): `prompt_tokens` is how many tokens the server
+    prefilled this call and `cached_tokens` how many it reused from the prompt-prefix cache — read off
+    the response wherever the endpoint reports it (llama.cpp `timings.prompt_n`/`cache_n`, streaming
+    `prompt_progress`; OpenAI `usage.prompt_tokens`/`usage.prompt_tokens_details.cached_tokens`). `None`
+    means the endpoint didn't report that number (e.g. a local server without `return_progress`, or a
+    cloud one without `stream_options: {include_usage: true}`) — NOT a cache miss. The session logs it
+    next to its A8 estimate so prefix cost + hit rate read together."""
 
     served: str = ""
     degraded: bool = False
     failures: list[str] = field(default_factory=list)
+    prompt_tokens: int | None = None
+    cached_tokens: int | None = None
 
 
 @dataclass
@@ -138,6 +148,48 @@ class InferenceClient:
                 slot["arguments"] += tc.function.arguments
         return out
 
+    @staticmethod
+    def _capture_cache_telemetry(chunk: Any, report: StreamReport | None) -> None:
+        """Read prompt-cache telemetry off one stream chunk into `report` (ACA-18), wherever the
+        endpoint reports it — cheap attribute reads, only the final chunk carries anything. Never
+        raises + never issues an extra request; a field the backend didn't send just stays `None`.
+
+        - OpenAI-style (cloud): the final chunk carries `usage` when `stream_options.include_usage`
+          was sent — `usage.prompt_tokens` + `usage.prompt_tokens_details.cached_tokens`. (Note:
+          OpenAI reports `cached_tokens == 0` below 1024 prompt tokens — that is the documented floor,
+          not a cache failure.)
+        - llama.cpp: non-standard `timings` (`prompt_n`/`cache_n`) or streaming `prompt_progress`
+          (`total`/`cache`, gated on the endpoint's `return_progress`) ride the SDK passthrough
+          `model_extra`."""
+        if report is None:
+            return
+        usage = getattr(chunk, "usage", None)
+        if usage is not None:
+            pt = getattr(usage, "prompt_tokens", None)
+            if isinstance(pt, int):
+                report.prompt_tokens = pt
+            details = getattr(usage, "prompt_tokens_details", None)
+            ct = getattr(details, "cached_tokens", None)
+            if isinstance(ct, int):
+                report.cached_tokens = ct
+        extra = getattr(chunk, "model_extra", None)
+        if not isinstance(extra, dict):
+            return
+        timings = extra.get("timings")
+        if isinstance(timings, dict):
+            pn, cn = timings.get("prompt_n"), timings.get("cache_n")
+            if isinstance(pn, int):
+                report.prompt_tokens = pn
+            if isinstance(cn, int):
+                report.cached_tokens = cn
+        progress = extra.get("prompt_progress")
+        if isinstance(progress, dict):
+            total, cache = progress.get("total"), progress.get("cache")
+            if isinstance(total, int):
+                report.prompt_tokens = total
+            if isinstance(cache, int):
+                report.cached_tokens = cache
+
     def _record(self, report: StreamReport | None, chain: list[_ChainEntry], result: Any) -> None:
         if report is not None:
             report.served = chain[result.served_index][0]
@@ -189,12 +241,16 @@ class InferenceClient:
         mode: str | None = None,
         model: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | None = None,
         report: StreamReport | None = None,
     ) -> AsyncIterator[ChatDelta]:
         """Stream a chat completion as per-token `ChatDelta`s, failing over at **stream initiation**.
 
-        `messages` is OpenAI shape; `tools` is the optional function toolset. `mode`/`model` select +
-        override the endpoint (an `AgentDef` picks its own backend+model, D11). Each chain endpoint is
+        `messages` is OpenAI shape; `tools` is the optional function toolset. `tool_choice` overrides
+        the default policy when `tools` are present (`None` → today's `"auto"`; e.g. `"none"` keeps the
+        toolset in the prompt for cache stability while forbidding calls — ACA-21). `mode`/`model`
+        select + override the endpoint (an `AgentDef` picks its own backend+model, D11). Each chain
+        endpoint is
         probed by opening the stream + pulling its first chunk; the first that produces a chunk wins
         (failover at init — no token has reached the user yet). After that we iterate the rest with no
         further failover: a mid-stream drop raises `InferenceError` (can't restart a partial reply). Tool
@@ -207,13 +263,17 @@ class InferenceClient:
         kwargs: dict[str, Any] = {"messages": messages, "stream": True}
         if tools:
             kwargs["tools"] = tools
-            kwargs["tool_choice"] = "auto"
+            kwargs["tool_choice"] = tool_choice or "auto"
 
         async def attempt(entry: _ChainEntry) -> tuple[Any, Any]:
             name, ep, use_model = entry
             if not use_model:
                 raise InferenceError(f"no model configured for '{name}'")
-            stream = await self._client(ep).chat.completions.create(model=use_model, **kwargs)
+            # Merge this endpoint's `extra_body` PER-ENDPOINT, never into the shared `kwargs` — an
+            # OpenAI backend 400s on unknown args, so the local endpoint's `cache_prompt`/`return_progress`
+            # must not leak onto the cloud hop (ACA-18; same discipline as voice.py's extra_body).
+            call_kwargs = {**kwargs, "extra_body": ep.extra_body} if ep.extra_body else kwargs
+            stream = await self._client(ep).chat.completions.create(model=use_model, **call_kwargs)
             try:
                 first = await stream.__anext__()  # confirm the provider is alive + producing tokens
             except StopAsyncIteration as exc:
@@ -232,9 +292,11 @@ class InferenceClient:
         first, stream = result.value
         pending: dict[int, dict[str, str]] = {}
         try:
+            self._capture_cache_telemetry(first, report)
             for delta in self._chunk_deltas(first, pending):
                 yield delta
             async for chunk in stream:
+                self._capture_cache_telemetry(chunk, report)
                 for delta in self._chunk_deltas(chunk, pending):
                     yield delta
             if pending:

@@ -123,6 +123,14 @@ class InferenceEndpointCfg(BaseModel):
     base_url: str = ""  # e.g. http://192.168.1.137:5001/v1
     api_key: str | None = None
     model: str = ""  # model id the backend loads, e.g. "minig+"
+    #: OpenAI-SDK passthrough merged into this endpoint's chat call — PER-ENDPOINT, never blanket
+    #: (OpenAI 400s on unknown args, so a global default would break the cloud chain — ACA-18). Mirrors
+    #: `VoiceServiceCfg.extra_body`. Canonical use: llama.cpp prompt-cache pin `{cache_prompt: true}`
+    #: (protective on older llama-server builds that defaulted it false) + streaming cache telemetry
+    #: (`return_progress: true` for llama.cpp `prompt_progress`; `stream_options: {include_usage: true}`
+    #: for a cloud backend's `usage.prompt_tokens_details.cached_tokens`). Declared explicitly because
+    #: `InferenceEndpointCfg` has no `extra="allow"`.
+    extra_body: dict[str, Any] = Field(default_factory=dict)
 
 
 class InferenceCfg(BaseModel):

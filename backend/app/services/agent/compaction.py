@@ -61,6 +61,11 @@ class CompactionResult:
     truncated: bool  # True if the summarizer failed and we fell back to a placeholder
 
 
+#: The one ~4-chars/token heuristic shared by both estimators below (message-shaped + payload-shaped).
+#: One constant, one heuristic — not two competing estimators.
+CHARS_PER_TOKEN = 4
+
+
 def estimate_tokens(messages: list[Message]) -> int:
     """Rough token estimate for the working context — ~4 chars/token plus per-message overhead.
 
@@ -79,7 +84,16 @@ def estimate_tokens(messages: list[Message]) -> int:
                 r = p.result
                 chars += len(r.summary) + len(r.output or "") + len(r.error or "")
             # ReasoningPart intentionally skipped (dropped from context)
-    return chars // 4
+    return chars // CHARS_PER_TOKEN
+
+
+def estimate_payload_tokens(payload: list[dict]) -> int:
+    """The payload-shaped counterpart of `estimate_tokens`, sharing the SAME `CHARS_PER_TOKEN`
+    heuristic (not a second estimator — the same ratio applied to a different shape). Estimates a raw
+    OpenAI wire payload — the assembled `messages` dicts and the tool-schema dicts — which are NOT
+    `Message` objects, so `estimate_tokens` can't consume them. Used only by the A8 context-cost debug
+    line (session.py), which measures the tools + system head the model prefills each call."""
+    return sum(len(json.dumps(d, default=str)) for d in payload) // CHARS_PER_TOKEN
 
 
 class Compactor:
