@@ -16,6 +16,7 @@ import {
   type Privilege,
 } from "../hooks/useAgents";
 import { Seg } from "./Seg";
+import { SettingRow } from "./SettingRow";
 import { Switch } from "./Switch";
 import { disclosureToggle } from "../lib/disclosure";
 import { PRIVILEGE_LEVELS } from "../lib/privilege";
@@ -498,19 +499,16 @@ export function AgentsEditor(props: {
 
   return (
     <div className="conf-card">
-      <div className="confrow">
-        <div className="k">
-          <div className="label">Auto-route to specialists</div>
-          <div className="desc">
-            when no /agent is pinned, pick the best-matching specialist per turn
-          </div>
-        </div>
+      <SettingRow
+        label="Auto-route to specialists"
+        desc="when no /agent is pinned, pick the best-matching specialist per turn"
+      >
         <Switch
           on={props.cfg.auto_rotate}
           label="Auto-route to specialists"
           onToggle={() => saveSettings.mutate({ agent: { auto_rotate: !props.cfg.auto_rotate } })}
         />
-      </div>
+      </SettingRow>
       {/* The threshold is only meaningful while auto-route is on — show it as its own labelled sub-row
           (like Memory's State-cap), not crammed next to the toggle, so the numeric field aligns with the
           other right-edge inputs. */}
@@ -647,11 +645,10 @@ export function AgentsEditor(props: {
           onChange={(e) => setCfg({ ...cfg, global_subagent_limit: Number(e.target.value) || 0 })}
         />
       </div>
-      <div className="confrow">
-        <div className="k">
-          <div className="label">Clamp subagent privilege</div>
-          <div className="desc">a subagent can never exceed its parent's privilege</div>
-        </div>
+      <SettingRow
+        label="Clamp subagent privilege"
+        desc="a subagent can never exceed its parent's privilege"
+      >
         <Switch
           on={cfg.subagent_clamp_privilege}
           label="Clamp subagent privilege"
@@ -659,14 +656,11 @@ export function AgentsEditor(props: {
             setCfg({ ...cfg, subagent_clamp_privilege: !cfg.subagent_clamp_privilege })
           }
         />
-      </div>
-      <div className="confrow">
-        <div className="k">
-          <div className="label">Chat delivery</div>
-          <div className="desc">
-            auto = client decides · on = always stream · off = buffer whole reply (flaky link)
-          </div>
-        </div>
+      </SettingRow>
+      <SettingRow
+        label="Chat delivery"
+        desc="auto = client decides · on = always stream · off = buffer whole reply (flaky link)"
+      >
         <Seg<"auto" | "on" | "off">
           label="Chat delivery"
           current={cfg.streaming}
@@ -677,7 +671,7 @@ export function AgentsEditor(props: {
             { val: "off", label: "Buffer" },
           ]}
         />
-      </div>
+      </SettingRow>
 
       <div className="conf-savebar">
         <button

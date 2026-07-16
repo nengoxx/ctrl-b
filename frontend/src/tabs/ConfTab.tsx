@@ -78,16 +78,17 @@ function TailscaleAccessCard() {
 
   return (
     <div className="conf-card access-card">
-      <div className="confrow">
-        <div className="k">
-          <div className="label">HTTPS access (Tailscale Serve)</div>
-          <div className="desc">
+      <SettingRow
+        label="HTTPS access (Tailscale Serve)"
+        desc={
+          <>
             {data.serving
               ? "on — the phone mic works over HTTPS"
               : "off — enable for the phone mic (secure context)"}{" "}
             · port {data.target_port}
-          </div>
-        </div>
+          </>
+        }
+      >
         <Switch
           on={data.serving}
           label="HTTPS (Tailscale Serve)"
@@ -95,7 +96,7 @@ function TailscaleAccessCard() {
             if (!setServe.isPending) setServe.mutate(!data.serving);
           }}
         />
-      </div>
+      </SettingRow>
       {data.url && (
         <div className="confrow">
           <div className="k">
@@ -516,11 +517,10 @@ export function ConfTab({ active }: Props) {
     >
       <ConfGroup id="inference" num="01" title="Inference" right="openai-compatible">
         <div className="conf-card">
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Default mode</div>
-              <div className="desc">local · cloud — /local //cloud override per message</div>
-            </div>
+          <SettingRow
+            label="Default mode"
+            desc="local · cloud — /local //cloud override per message"
+          >
             <Seg<string>
               label="Default mode"
               current={inf?.default_mode ?? "local"}
@@ -530,20 +530,17 @@ export function ConfTab({ active }: Props) {
               ]}
               onPick={(v) => setInf("default_mode", v)}
             />
-          </div>
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Failover</div>
-              <div className="desc">
-                on failure, fall through local↔cloud (+ any configured fallbacks)
-              </div>
-            </div>
+          </SettingRow>
+          <SettingRow
+            label="Failover"
+            desc="on failure, fall through local↔cloud (+ any configured fallbacks)"
+          >
             <Switch
               on={inf?.failover ?? true}
               label="Inference failover"
               onToggle={() => setInf("failover", !(inf?.failover ?? true))}
             />
-          </div>
+          </SettingRow>
           <Field
             label="Local endpoint"
             desc="llama.cpp · /v1 base url"
@@ -718,13 +715,9 @@ export function ConfTab({ active }: Props) {
             value={String(srv?.feature_cycle_seconds ?? "")}
             onChange={(v) => setSrv("feature_cycle_seconds", v as unknown as number)}
           />
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Debug</div>
-              <div className="desc">verbose errors — off in prod · restart to apply</div>
-            </div>
+          <SettingRow label="Debug" desc="verbose errors — off in prod · restart to apply">
             <Switch on={!!srv?.debug} onToggle={() => setSrv("debug", !srv?.debug)} label="Debug" />
-          </div>
+          </SettingRow>
         </div>
         {/* HTTPS access (Tailscale Serve) — a live toggle (acts immediately, not part of the saved
             fields). Sits above the save bar so it reads as a control, not an afterthought (6c-2). */}
@@ -748,17 +741,13 @@ export function ConfTab({ active }: Props) {
             onChange={(v) => setSearx("language", v || null)}
             placeholder="en"
           />
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Enabled</div>
-              <div className="desc">powers the agent web_search tool</div>
-            </div>
+          <SettingRow label="Enabled" desc="powers the agent web_search tool">
             <Switch
               on={!!sx?.enabled}
               onToggle={() => setSearx("enabled", !sx?.enabled)}
               label="SearXNG enabled"
             />
-          </div>
+          </SettingRow>
         </div>
         {saveBar}
       </ConfGroup>
@@ -793,17 +782,13 @@ export function ConfTab({ active }: Props) {
             onChange={(v) => setEmb("dim", (v === "" ? null : v) as unknown as number)}
             placeholder="2560"
           />
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Enabled</div>
-              <div className="desc">semantic recall (Phase 7e)</div>
-            </div>
+          <SettingRow label="Enabled" desc="semantic recall (Phase 7e)">
             <Switch
               on={!!emb?.enabled}
               onToggle={() => setEmb("enabled", !emb?.enabled)}
               label="Embeddings enabled"
             />
-          </div>
+          </SettingRow>
         </div>
         {saveBar}
       </ConfGroup>
@@ -824,81 +809,60 @@ export function ConfTab({ active }: Props) {
             value={term?.api_key ?? ""}
             onChange={(v) => setTerm("api_key", v)}
           />
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Exec risk</div>
-              <div className="desc">terminal_exec gate — high = confirm</div>
-            </div>
+          <SettingRow label="Exec risk" desc="terminal_exec gate — high = confirm">
             <Seg<string>
               label="Exec risk"
               current={term?.exec_risk ?? "high"}
               options={RISKS}
               onPick={(v) => setTerm("exec_risk", v)}
             />
-          </div>
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Write risk</div>
-              <div className="desc">file write/replace gate</div>
-            </div>
+          </SettingRow>
+          <SettingRow label="Write risk" desc="file write/replace gate">
             <Seg<string>
               label="Write risk"
               current={term?.write_risk ?? "high"}
               options={RISKS}
               onPick={(v) => setTerm("write_risk", v)}
             />
-          </div>
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Read risk</div>
-              <div className="desc">read/list/grep/glob gate</div>
-            </div>
+          </SettingRow>
+          <SettingRow label="Read risk" desc="read/list/grep/glob gate">
             <Seg<string>
               label="Read risk"
               current={term?.read_risk ?? "low"}
               options={RISKS}
               onPick={(v) => setTerm("read_risk", v)}
             />
-          </div>
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Enabled</div>
-              <div className="desc">curated remote shell + file tools</div>
-            </div>
+          </SettingRow>
+          <SettingRow label="Enabled" desc="curated remote shell + file tools">
             <Switch
               on={!!term?.enabled}
               onToggle={() => setTerm("enabled", !term?.enabled)}
               label="Open-terminal enabled"
             />
-          </div>
+          </SettingRow>
         </div>
         {saveBar}
       </ConfGroup>
 
       <ConfGroup id="shell" num="06" title="Shell" right="! escape hatch">
         <div className="conf-card">
-          <div className="confrow">
-            <div className="k">
-              <div className="label">User exec</div>
-              <div className="desc">the !&lt;cmd&gt; composer escape hatch</div>
-            </div>
+          <SettingRow label="User exec" desc="the !<cmd> composer escape hatch">
             <Switch
               on={!!sh?.user_exec_enabled}
               label="Shell user exec"
               onToggle={() => setShell("user_exec_enabled", !sh?.user_exec_enabled)}
             />
-          </div>
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Agent run_shell</div>
-              <div className="desc">let the agent call run_shell (else confirm at full only)</div>
-            </div>
+          </SettingRow>
+          <SettingRow
+            label="Agent run_shell"
+            desc="let the agent call run_shell (else confirm at full only)"
+          >
             <Switch
               on={!!sh?.agent_exec_enabled}
               label="Agent run_shell"
               onToggle={() => setShell("agent_exec_enabled", !sh?.agent_exec_enabled)}
             />
-          </div>
+          </SettingRow>
           <Field
             label="Workdir"
             desc="cwd for commands — blank → workspace home"
@@ -918,34 +882,26 @@ export function ConfTab({ active }: Props) {
             value={String(sh?.max_output_chars ?? "")}
             onChange={(v) => setShell("max_output_chars", v as unknown as number)}
           />
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Enabled</div>
-              <div className="desc">master switch for local shell exec</div>
-            </div>
+          <SettingRow label="Enabled" desc="master switch for local shell exec">
             <Switch
               on={!!sh?.enabled}
               onToggle={() => setShell("enabled", !sh?.enabled)}
               label="Local shell enabled"
             />
-          </div>
+          </SettingRow>
         </div>
         {saveBar}
       </ConfGroup>
 
       <ConfGroup id="voice-stt" num="07" title="Voice · STT" right="speech-to-text">
         <div className="conf-card">
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Enabled</div>
-              <div className="desc">master switch — disables STT and TTS</div>
-            </div>
+          <SettingRow label="Enabled" desc="master switch — disables STT and TTS">
             <Switch
               on={!!draft?.voice.enabled}
               label="Voice enabled"
               onToggle={() => setVoiceEnabled(!draft?.voice.enabled)}
             />
-          </div>
+          </SettingRow>
           <Field
             label="Language"
             desc="ISO code (en, sv); blank → auto-detect"
@@ -953,17 +909,16 @@ export function ConfTab({ active }: Props) {
             onChange={(v) => setStt("language", v)}
             placeholder="en"
           />
-          <div className="confrow">
-            <div className="k">
-              <div className="label">VAD filter</div>
-              <div className="desc">skip silence (avoids whisper silence-hallucinations)</div>
-            </div>
+          <SettingRow
+            label="VAD filter"
+            desc="skip silence (avoids whisper silence-hallucinations)"
+          >
             <Switch
               on={!!vstt?.vad_filter}
               label="STT VAD filter"
               onToggle={() => setStt("vad_filter", !vstt?.vad_filter)}
             />
-          </div>
+          </SettingRow>
           <Field
             label="Hotwords"
             desc="space-separated recognition bias (fleet / jargon names)"
@@ -971,19 +926,16 @@ export function ConfTab({ active }: Props) {
             onChange={(v) => setStt("hotwords", v)}
             placeholder="corsair vault emma minig"
           />
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Auto-send</div>
-              <div className="desc">
-                send the transcript immediately; off → fill the composer to review first
-              </div>
-            </div>
+          <SettingRow
+            label="Auto-send"
+            desc="send the transcript immediately; off → fill the composer to review first"
+          >
             <Switch
               on={!!vstt?.auto_send}
               onToggle={() => setStt("auto_send", !vstt?.auto_send)}
               label="STT auto-send"
             />
-          </div>
+          </SettingRow>
           <Field
             label="Primary endpoint"
             desc="vault · /v1 base url"
@@ -1047,21 +999,14 @@ export function ConfTab({ active }: Props) {
               a TTS backend is live (`ttsConfigured`) so it's never a dead control; also the only way to
               reach it when a theme hides the app bar (minimal's `hideAppbar`). */}
           {ttsConfigured && (
-            <div className="confrow">
-              <div className="k">
-                <div className="label">Auto read-aloud</div>
-                <div className="desc">speak each reply aloud as it finishes</div>
-              </div>
+            <SettingRow label="Auto read-aloud" desc="speak each reply aloud as it finishes">
               <Switch on={ttsAuto} onToggle={toggleAutoTts} label="Auto read-aloud" />
-            </div>
+            </SettingRow>
           )}
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Format</div>
-              <div className="desc">
-                audio container — mp3 is universally seekable (mini-player)
-              </div>
-            </div>
+          <SettingRow
+            label="Format"
+            desc="audio container — mp3 is universally seekable (mini-player)"
+          >
             <Seg<string>
               label="Format"
               current={vtts?.format ?? "mp3"}
@@ -1072,7 +1017,7 @@ export function ConfTab({ active }: Props) {
               ]}
               onPick={(v) => setTts("format", v)}
             />
-          </div>
+          </SettingRow>
           <Field
             label="Primary endpoint"
             desc="vault · /v1 base url"

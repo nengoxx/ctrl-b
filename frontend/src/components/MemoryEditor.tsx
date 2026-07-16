@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { SettingRow } from "./SettingRow";
 import { Switch } from "./Switch";
 import { useAgentList } from "../hooks/useAgents";
 import { disclosureToggle } from "../lib/disclosure";
@@ -152,76 +153,57 @@ export function MemoryEditor({ cfg }: { cfg: MemoryCfg }) {
 
   return (
     <div className="conf-card">
-      <div className="confrow">
-        <div className="k">
-          <div className="label">Enabled</div>
-          <div className="desc">master switch · inject saved notes each turn</div>
-        </div>
+      <SettingRow label="Enabled" desc="master switch · inject saved notes each turn">
         <Switch
           on={cfg.enabled}
           onToggle={() => setCfg({ enabled: !cfg.enabled })}
           label="Memory enabled"
         />
-      </div>
-      <div className="confrow">
-        <div className="k">
-          <div className="label">User profile</div>
-          <div className="desc">inject + allow writes to the global USER.md</div>
-        </div>
+      </SettingRow>
+      <SettingRow label="User profile" desc="inject + allow writes to the global USER.md">
         <Switch
           on={cfg.user_profile_enabled}
           label="User profile"
           onToggle={() => setCfg({ user_profile_enabled: !cfg.user_profile_enabled })}
         />
-      </div>
-      <div className="confrow">
-        <div className="k">
-          <div className="label">Auto-write</div>
-          <div className="desc">agent may save memory itself · off → propose only</div>
-        </div>
+      </SettingRow>
+      <SettingRow label="Auto-write" desc="agent may save memory itself · off → propose only">
         <Switch
           on={cfg.auto_write}
           onToggle={() => setCfg({ auto_write: !cfg.auto_write })}
           label="Auto-write"
         />
-      </div>
-      <div className="confrow">
-        <div className="k">
-          <div className="label">Consolidation nudge</div>
-          <div className="desc">near cap → tell the agent to consolidate before adding</div>
-        </div>
+      </SettingRow>
+      <SettingRow
+        label="Consolidation nudge"
+        desc="near cap → tell the agent to consolidate before adding"
+      >
         <Switch
           on={cfg.consolidation_nudge}
           label="Consolidation nudge"
           onToggle={() => setCfg({ consolidation_nudge: !cfg.consolidation_nudge })}
         />
-      </div>
-      <div className="confrow">
-        <div className="k">
-          <div className="label">Emotional state</div>
-          <div className="desc">
-            inject + let the agent rewrite a per-agent STATE.md (mood/energy)
-          </div>
-        </div>
+      </SettingRow>
+      <SettingRow
+        label="Emotional state"
+        desc="inject + let the agent rewrite a per-agent STATE.md (mood/energy)"
+      >
         <Switch
           on={cfg.state_enabled}
           label="Emotional state"
           onToggle={() => setCfg({ state_enabled: !cfg.state_enabled })}
         />
-      </div>
-      <div className="confrow">
-        <div className="k">
-          <div className="label">Periodic reflection</div>
-          <div className="desc">
-            every N turns → nudge the agent to save anything worth remembering
-          </div>
-        </div>
+      </SettingRow>
+      <SettingRow
+        label="Periodic reflection"
+        desc="every N turns → nudge the agent to save anything worth remembering"
+      >
         <Switch
           on={cfg.reflection_enabled}
           label="Periodic reflection"
           onToggle={() => setCfg({ reflection_enabled: !cfg.reflection_enabled })}
         />
-      </div>
+      </SettingRow>
 
       <div className="confrow">
         <div className="k">

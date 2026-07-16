@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { SettingRow } from "./SettingRow";
 import { Switch } from "./Switch";
 import { disclosureToggle } from "../lib/disclosure";
 import { useSaveSettings } from "../hooks/useSettings";
@@ -117,17 +118,16 @@ export function SkillsEditor({ enabled }: { enabled: boolean }) {
 
   return (
     <div className="conf-card">
-      <div className="confrow">
-        <div className="k">
-          <div className="label">Skills enabled</div>
-          <div className="desc">master switch · skills auto-narrow the toolset by intent</div>
-        </div>
+      <SettingRow
+        label="Skills enabled"
+        desc="master switch · skills auto-narrow the toolset by intent"
+      >
         <Switch
           on={enabled}
           label="Skills enabled"
           onToggle={() => saveSettings.mutate({ agent: { skills_enabled: !enabled } })}
         />
-      </div>
+      </SettingRow>
 
       {skills.map((s: SkillInfo) => (
         <div className={"mwrap" + (openName === s.name ? " open" : "")} key={s.name}>
