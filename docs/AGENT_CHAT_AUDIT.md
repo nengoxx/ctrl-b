@@ -13,7 +13,9 @@
 > the owner 2026-07-07** — tracked as `TODO.md` **Phase 12**; Slice 0 pre-landed (`ee23209`);
 > D-entries (D35–D37) are drafted at each slice's design review, per §5 · DB/context/cache pass
 > done (v2.2, 2026-07-08: +ACA-18–21 and the ACA-5/ACA-15 riders, folded into Slices 1/2/6 —
-> no new slices, no re-sequencing).
+> no new slices, no re-sequencing) · **pre-build re-verification pass done (v2.3, 2026-07-16,
+> three-agent code-truth + research refresh): every Slice 1–2 item HOLDS against HEAD; ACA-7
+> premise updated; build-time amendments pinned in §5 "v2.3 amendments" — no scope change.**
 > **Method:** every load-bearing ctrl-b file read directly by the main session (≈6,400 lines:
 > `api/agent.py`, `services/agent/*`, `core/{tool,permissions,memory,events}.py`,
 > `action_service.py`, `adapters/{inference,mcp_client,ssh}.py`, `db.py`, `conversation.py`,
@@ -171,12 +173,15 @@ handler escapes `_execute` un-normalized. Currently unreachable (`ssh.py:67` cat
 MCP self-normalizes; `run_capture` returns `timed_out`), but the handler exists precisely to catch
 escapes. **Resolution:** Slice 1.
 
-### ACA-7 · The per-tool deadline seam is unused everywhere; SSH DNS is unbounded — **LOW-MED**
+### ACA-7 · The per-tool deadline seam is barely used; SSH DNS is unbounded — **LOW-MED**
 
-Grep-verified: **no `@action`/`@tool` in the codebase passes `timeout_s`** — `ActionService`'s
-`wait_for` seam protects nothing today. Every bound is adapter-internal (paramiko `timeout=10`
-covers TCP connect + channel reads but **not `getaddrinfo`**; httpx timeouts; `run_capture`
-timeouts). One adapter gap (ACA-3) already slipped through this implicit policy.
+*(Premise re-verified 2026-07-16: the original "no `@action`/`@tool` passes `timeout_s`" is now
+stale — `dns_trace.py:53` (20 s) and `yt_captions.py:84` (60 s) declare `ToolSpec.timeout_s`, so
+the `ActionService` `wait_for` seam is live for those two. The gap below still holds for every
+fleet action.)* No **fleet/SSH-backed** action declares a bound — their only protection is
+adapter-internal (paramiko `timeout=10` covers TCP connect + channel reads but **not
+`getaddrinfo`**; httpx timeouts; `run_capture` timeouts). One adapter gap (ACA-3) already slipped
+through this implicit policy.
 **Resolution:** Slice 1 (backstop `timeout_s` on SSH-backed fleet actions + MCP/OpenAPI specs;
 policy: every registered tool declares its bound or documents which adapter bound covers it).
 
@@ -559,6 +564,37 @@ review, not retroactively.
 - `session.py:762‑763`: fix the stale "tool execution is fast" comment.
 - Memory-pattern lineage note (MemGPT/Letta → Hermes style) where docs say "Hermes-style" (§0).
 - **Verify:** doc-only diff; grep for other repeats of the false claims.
+
+**v2.3 amendments (2026-07-16, pre-build re-verification — code-truth vs HEAD `ece1080` + research
+refresh; these BIND the Slice 1–2 builds):**
+- **S1-1 (MCP deadline):** the stdio-cleanup hang is largely solved **in-SDK** — python-sdk
+  ≥ v1.11.0 bounds child termination (graceful → 2 s → kill; installed: **1.28.1** ✓). The live
+  remaining risk is the **cancel-during-handshake `RuntimeError`** ("attempted to exit cancel scope
+  in a different task", open SDK issue class #521/#922/#1213): the test matrix MUST cover
+  cancel-mid-`initialize`, and the outer deadline budgets the +2 s cleanup. Field note: per-call
+  timeout conventions are split on progress-extension (Claude Code = flat wall-clock; opencode =
+  progress resets it) — our flat `call_timeout_s` (None → `connect_timeout_s`) is the Claude-Code
+  shape, correct default.
+- **S1-9 (cache pin):** the reuse target is **`VoiceServiceCfg.extra_body`** (`config.py:342`),
+  not `VoiceCfg`; `InferenceEndpointCfg` has **no `extra="allow"`**, so declare the field
+  explicitly; inject **inside the per-endpoint failover closure** (`attempt(entry)` has `ep`),
+  never the shared `kwargs` (OpenAI 400s on unknown args). Telemetry caveat: OpenAI
+  `cached_tokens` is **0 below 1024 prompt tokens** — log line must not read as a cache failure.
+  llama.cpp `cache_prompt` confirmed current (default true); fields `timings.prompt_n`/`cache_n`,
+  streaming `prompt_progress{total,cache,processed,time_ms}` (needs `return_progress`).
+- **S1-11 (wrap-up):** `tool_choice:"none"` is **UNDOCUMENTED for llama.cpp** (documented: auto /
+  any / named) and doubly template-sensitive (`--jinja`) — the build-time A/B probe + per-endpoint
+  `tools=None` fallback is mandatory, not optional.
+- **S2-3 (shielded persistence):** installed anyio **4.14.1** clears the #642
+  shield-shields-siblings bug (fixed post-4.1) — pin `anyio>=4.2` in deps; the shielded `finally`
+  must be **yield-free** and re-raise `CancelledError`.
+- **S2-5 (transactions):** use **`BEGIN IMMEDIATE`** (write lock at txn start → no mid-txn
+  upgrade deadlock) + a non-zero **`busy_timeout`** (opencode's `busy_timeout=0` + WAL died
+  silently under concurrency — cautionary precedent).
+- **Field-trend confirmations (no action):** queue+steering is now **6-of-6** (opencode joined;
+  also stopped decorating steered messages *specifically to preserve prompt cache* — validates
+  Slice 5's posture); Claude Code shipped a 3-attempt compaction circuit breaker (validates
+  Slice 6's anti-thrash guard).
 
 ### Slice 1 — Hang-proofing & hardening batch (ACA-3, 6, 7, 8, 9, 12, 13, 18, 20, 21 + A8 measurement) · M
 1. **MCP deadline:** one `asyncio.timeout` around the whole `_session` entry + operation, both
