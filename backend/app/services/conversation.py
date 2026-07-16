@@ -129,7 +129,12 @@ class MessageRepo:
         sql = "SELECT * FROM messages WHERE thread_id = ?"
         if not include_compacted:
             sql += " AND compacted = 0"
-        sql += " ORDER BY ts ASC"
+        # `rowid` (insertion order) breaks a `ts` tie so relative order is never undefined (ACA-20):
+        # step-mates are stamped microseconds apart and the compaction boundary is manufactured at
+        # `tail[0].ts − 1µs`, so a collision could otherwise sort an assistant `tool_calls` message
+        # after its `tool` results and invalidate the assembled OpenAI context. `messages` is a
+        # normal rowid table (`id` is a TEXT PK, not INTEGER), so `rowid` tracks insertion order.
+        sql += " ORDER BY ts ASC, rowid ASC"
         return [self._row(r) for r in await self._db.query(sql, (thread_id,))]
 
     async def count_user_messages(self, thread_id: str) -> int:

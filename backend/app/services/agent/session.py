@@ -141,11 +141,16 @@ class _LoopGuard:
     counts: dict[str, int] = field(default_factory=dict)
     tool_counts: dict[str, int] = field(default_factory=dict)
     last_results: dict[str, ToolResult] = field(default_factory=dict)
-    #: Outcome signatures already seen this turn. A call whose result repeats a prior one made no
-    #: real *progress* — the model is spinning (the live probe saw search_and_crawl fired ~16x with
-    #: trivially-varied queries, every call returning the *identical* result). Exact-arg suppression
-    #: misses that (the args differ); counting a repeated outcome as no-progress trips the stall
-    #: guard fast so the turn wraps up in a few calls instead of running to the iteration cap.
+    #: Call-scoped outcome signatures already seen this turn (ACA-12: `result_sig` keys on the exact
+    #: call sig + the outcome). A call whose (call, result) pair repeats a prior one made no real
+    #: *progress* — the model re-ran the SAME call and got the SAME answer, so it's spinning; that
+    #: repeated outcome counts as no-progress and trips the stall guard before the iteration cap.
+    #: Scoping by the call (vs. the old outcome-only key) stops two DIFFERENT calls that happen to
+    #: return identical text from colliding into one stall bucket — the ACA-12 false-positive that
+    #: could `_finalize` a legitimately-progressing turn early. The varied-arg / identical-result
+    #: spiral (the live probe saw search_and_crawl fired ~16x with trivially-varied queries, every
+    #: call returning the *identical* result) is now caught by the per-tool cap (C1c) instead, which
+    #: refuses the (N+1)th call to any one tool regardless of args.
     seen_results: set[str] = field(default_factory=set)
 
     @staticmethod
@@ -153,8 +158,13 @@ class _LoopGuard:
         return f"{tool}:{json.dumps(args, sort_keys=True, default=str)}"
 
     @staticmethod
-    def result_sig(result: ToolResult) -> str:
-        return f"{result.state.value}|{result.summary}|{(result.output or '')[:300]}"
+    def result_sig(sig: str, result: ToolResult) -> str:
+        """Call-scoped progress key (ACA-12): the exact-call signature (`sig(tool, args)`, the same
+        canonical string C1a uses for repeat suppression) + the outcome. Scoping by the call means two
+        *different* calls returning identical text (two `ping`s both "ok") no longer collide into one
+        "no-progress" bucket, while the SAME call returning the SAME result still repeats its key and
+        trips the stall guard. `output` is truncated to bound the key size."""
+        return f"{sig}|{result.state.value}|{result.summary}|{(result.output or '')[:300]}"
 
 
 def _tool_content(result: ToolResult) -> str:
@@ -338,10 +348,14 @@ class AgentSession:
         `_static_head` field note). The reflection nudge is deliberately NOT here — it's an ephemeral
         tail layer appended in `_assemble`, so it never perturbs this cached head.
 
-        Turn-invariant by construction: the system prompt / appends / roster project from per-turn-stable
-        config + AgentDef, `_skills_note` is fixed at turn start by `_activate_skills`, and the memory
-        block is read ONCE here (its docstring's "fresh per turn" intent — a mid-turn `memory`-tool write
-        now lands next turn, not next iteration, which is also what keeps the prefix stable)."""
+        Turn-invariant WITHIN ONE UNINTERRUPTED TURN: the system prompt / appends / roster project
+        from per-turn-stable config + AgentDef, `_skills_note` is fixed at turn start by
+        `_activate_skills`, and the memory block is read ONCE here — so a mid-turn `memory`-tool write
+        does NOT land on the next loop iteration, which is what keeps the prefix byte-stable across
+        iterations. It is NOT frozen across a suspend/resume, though (ACA-15e): a confirm/question
+        resume builds a **new** `AgentSession`, whose `_static_prefix` re-reads the memory files — so a
+        write made before the suspend surfaces in the resumed half's head, and the prefix re-prefills
+        from the memory block onward. Behaviourally harmless; a full per-session freeze is A9."""
         if self._static_head is None:
             head: list[dict] = [{"role": "system", "content": self._system_prompt()}]
             for extra in self._appends():  # additive guidance, base-first (7e-a)
@@ -646,10 +660,17 @@ class AgentSession:
                 yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})
                 return
 
-            call_parts = [
-                ToolCallPart(call_id=r.id or uuid.uuid4().hex, tool=r.name, args=_parse_args(r.arguments))
-                for r in reqs
-            ]
+            # Parse each call's raw args. A malformed blob (ACA-13) persists with `args={}` but is
+            # recorded in `bad_args` so `_run_calls` feeds the model a JSON-repair steering error
+            # instead of silently invoking the tool with `{}`.
+            call_parts: list[ToolCallPart] = []
+            bad_args: dict[str, str] = {}
+            for r in reqs:
+                call_id = r.id or uuid.uuid4().hex
+                args, invalid = _parse_args(r.arguments)
+                if invalid is not None:
+                    bad_args[call_id] = invalid
+                call_parts.append(ToolCallPart(call_id=call_id, tool=r.name, args=args))
             parts.extend(call_parts)
             assistant.parts = parts
             await self._messages.add(assistant)
@@ -660,7 +681,9 @@ class AgentSession:
                 )
             yield AgentEvent("message.end", {"messageId": assistant.id})
 
-            events, suspended, made_progress = await self._run_calls(thread, assistant, {}, guard)
+            events, suspended, made_progress = await self._run_calls(
+                thread, assistant, {}, guard, bad_args=bad_args
+            )
             for ev in events:
                 yield ev
             if suspended:
@@ -752,11 +775,15 @@ class AgentSession:
         resume_tokens: dict[str, str | None],
         guard: _LoopGuard,
         resume_answers: dict[str, str] | None = None,
+        bad_args: dict[str, str] | None = None,
     ) -> tuple[list[AgentEvent], bool, bool]:
         """Process the assistant's not-yet-resolved tool calls in order. ALLOW runs immediately via
         `ActionService` (which validates, decides, executes, records the Event); DENY/bad-args
         synthesize a clean result fed back to the model; CONFIRM suspends (persist AWAITING_CONFIRM,
-        emit `tool.permission`, stop). An exact-repeat call past `guard.max_repeat` is **suppressed**
+        emit `tool.permission`, stop). A call whose `call_id` is in `bad_args` (its raw arguments
+        weren't valid JSON — ACA-13) skips invocation entirely and yields an ERROR result echoing the
+        raw blob so the model can repair it (it still counts toward the loop-guard caps, like any
+        errored call). An exact-repeat call past `guard.max_repeat` is **suppressed**
         (C1): not executed, the prior result echoed back with a steering note — this both kills a
         weak model's spiral and is the safe choice for a mutating duplicate. Returns
         `(events, suspended, made_progress)`; `made_progress` is False when every call was a
@@ -770,6 +797,7 @@ class AgentSession:
         made_progress = False
 
         answers = resume_answers or {}
+        bad = bad_args or {}  # call_ids whose raw args were malformed JSON (ACA-13)
         for cp in assistant.tool_calls():
             if cp.state in _RESOLVED:
                 continue  # already ran (resume: an earlier call in this step)
@@ -839,56 +867,68 @@ class AgentSession:
                 if token is None:
                     guard.counts[sig] = guard.counts.get(sig, 0) + 1
                     guard.tool_counts[cp.tool] = guard.tool_counts.get(cp.tool, 0) + 1
-                try:
-                    outcome = await self._actions.invoke(
-                        cp.tool,
-                        cp.args,
-                        actor=AGENT_ACTOR,
-                        privilege=self._agent.privilege,
-                        interactive=self._interactive,
-                        confirm_token=token,
-                        depth=self._depth,
-                        agent=self._agent,
-                    )
-                except UnknownTool:
-                    result = ToolResult(state=RunState.DENIED, summary=f"unknown tool '{cp.tool}'")
-                except ValidationError as exc:
+                if cp.call_id in bad:
+                    # ACA-13: the model's raw arguments weren't valid JSON. Don't invoke the tool with
+                    # an erased `{}` (which steers it with a misleading "field required"). Hand it the
+                    # raw blob back so it can repair the JSON. This counts toward the loop-guard caps
+                    # exactly like a ValidationError above — the increments already ran, and the
+                    # last-result / progress bookkeeping below runs on this synthesized result too.
                     result = ToolResult(
                         state=RunState.ERROR,
                         summary=f"invalid arguments for {cp.tool}",
-                        error=str(exc)[:300],
+                        output=f"your tool arguments were not valid JSON: {bad[cp.call_id][:200]}",
                     )
                 else:
-                    if outcome.needs_confirm and not self._interactive:
-                        # Headless child (subagent): no UI to confirm against → deny in place so the
-                        # turn never stalls (DESIGN §5.3). The child reports it skipped the risky step.
+                    try:
+                        outcome = await self._actions.invoke(
+                            cp.tool,
+                            cp.args,
+                            actor=AGENT_ACTOR,
+                            privilege=self._agent.privilege,
+                            interactive=self._interactive,
+                            confirm_token=token,
+                            depth=self._depth,
+                            agent=self._agent,
+                        )
+                    except UnknownTool:
+                        result = ToolResult(state=RunState.DENIED, summary=f"unknown tool '{cp.tool}'")
+                    except ValidationError as exc:
                         result = ToolResult(
-                            state=RunState.DENIED,
-                            summary=f"{cp.tool} needs confirmation — skipped (headless subagent)",
+                            state=RunState.ERROR,
+                            summary=f"invalid arguments for {cp.tool}",
+                            error=str(exc)[:300],
                         )
-                    elif outcome.needs_confirm:
-                        cp.state = RunState.AWAITING_CONFIRM
-                        spec = self._actions.registry.get(cp.tool).spec
-                        events.append(
-                            AgentEvent(
-                                "tool.permission",
-                                {
-                                    "callId": cp.call_id,
-                                    "tool": cp.tool,
-                                    "title": spec.title,
-                                    "args": cp.args,
-                                    "risk": spec.risk.value,
-                                    "token": outcome.confirm_token,
-                                    "prompt": outcome.confirm_prompt,
-                                },
-                            )
-                        )
-                        suspended = True
-                        break
                     else:
-                        result = outcome.result or ToolResult(
-                            state=RunState.ERROR, summary=f"{cp.tool} returned no result"
-                        )
+                        if outcome.needs_confirm and not self._interactive:
+                            # Headless child (subagent): no UI to confirm against → deny in place so
+                            # the turn never stalls (DESIGN §5.3). The child reports it skipped the step.
+                            result = ToolResult(
+                                state=RunState.DENIED,
+                                summary=f"{cp.tool} needs confirmation — skipped (headless subagent)",
+                            )
+                        elif outcome.needs_confirm:
+                            cp.state = RunState.AWAITING_CONFIRM
+                            spec = self._actions.registry.get(cp.tool).spec
+                            events.append(
+                                AgentEvent(
+                                    "tool.permission",
+                                    {
+                                        "callId": cp.call_id,
+                                        "tool": cp.tool,
+                                        "title": spec.title,
+                                        "args": cp.args,
+                                        "risk": spec.risk.value,
+                                        "token": outcome.confirm_token,
+                                        "prompt": outcome.confirm_prompt,
+                                    },
+                                )
+                            )
+                            suspended = True
+                            break
+                        else:
+                            result = outcome.result or ToolResult(
+                                state=RunState.ERROR, summary=f"{cp.tool} returned no result"
+                            )
 
                 # A2 — the `question` builtin signals AWAITING_ANSWER to suspend the turn and ask the
                 # owner. Mirrors the confirm suspend above: persist the call, emit `tool.question`,
@@ -919,9 +959,10 @@ class AgentSession:
             cp.state = result.state
             if token != _DISMISS:  # a real execution
                 guard.last_results[sig] = result  # remember for exact-arg suppression (C1a)
-                # Progress only if this outcome is *new* this turn — a repeated result means the
-                # model is spinning on varied-but-equivalent calls, so it should NOT reset stall.
-                rsig = _LoopGuard.result_sig(result)
+                # Progress only if this (call, outcome) pair is *new* this turn — the SAME call
+                # re-returning the SAME result is spinning and should NOT reset stall (ACA-12;
+                # the varied-arg spiral is the per-tool cap C1c's job now).
+                rsig = _LoopGuard.result_sig(sig, result)
                 if rsig not in guard.seen_results:
                     guard.seen_results.add(rsig)
                     made_progress = True
@@ -943,13 +984,26 @@ class AgentSession:
         return events, suspended, made_progress
 
 
-def _parse_args(raw: str) -> dict:
-    """Parse the model's raw tool-call arguments JSON. A malformed/empty blob becomes `{}` so the
-    downstream `input_model` validation produces a clean error result the model can self-correct."""
+def _parse_args(raw: str) -> tuple[dict, str | None]:
+    """Parse the model's raw tool-call arguments JSON. Returns `(args, invalid)`:
+
+    - a valid JSON **object** → `(parsed, None)` — behaves exactly as before.
+    - an empty/whitespace-only string → `({}, None)`: models legitimately emit `""` for a
+      zero-arg tool call, so it takes the old silent-`{}` path — a no-arg tool just runs, and a
+      tool with required fields gets the *schema* validation error, which steers better than a
+      JSON-repair message with an empty snippet ever could.
+    - a malformed blob → `({}, raw)`. Malformed is a `json.JSONDecodeError` (`{not json`) or a
+      non-object top level (`[1,2]`, `"x"`, `42`). `args` is `{}` so the ToolCallPart persists
+      cleanly (no raw invalid blob written into `parts`), while `invalid` carries the raw blob so
+      `_run_calls` can synthesize an ERROR result steering the model to repair its JSON (ACA-13) —
+      better than erasing to `{}` and letting schema validation emit a misleading "field required"
+      (weak local models repair malformed JSON better than they guess a schema)."""
     if not raw or not raw.strip():
-        return {}
+        return {}, None
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+        return {}, raw
+    if isinstance(parsed, dict):
+        return parsed, None
+    return {}, raw
