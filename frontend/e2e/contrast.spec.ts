@@ -12,9 +12,12 @@ import { expect, test } from "./fixtures";
 //
 // THE PROBE-ELEMENT TECHNIQUE (the verified CSSOM gotcha): `getComputedStyle(el).getPropertyValue("--x")`
 // returns the AUTHORED var chain (e.g. `oklch(var(--accent-l) …)`), not a concrete color. So instead we set a
-// token onto a REAL property of a probe div (`probe.style.color = "var(--accent-ink)"`) and read
-// `getComputedStyle(probe).color` — the engine resolves oklch()/color-mix()/relative-color to a concrete rgb
-// string, which we parse with culori on the Node side.
+// token onto a REAL property of a probe div and read the computed value back — the engine resolves oklch()/
+// color-mix()/relative-color to concrete rgb strings, which we parse with culori on the Node side. The probe
+// property is the `background` SHORTHAND (not `color` — fixed 2026-07-16): a token may be an <image> under
+// the §14.15.1-⑨ two-channel contract (K2's gradient `--accent-fill`), which is invalid for `color:` and
+// silently devolves to the inherited text color; through `background` a flat token lands in backgroundColor
+// and a gradient in backgroundImage, whose stops are gated individually (worst stop wins).
 //
 // GATES (WCAG 2.1, FAIL the spec) + APCA (advisory, report-only, never gates — ⑧).
 
@@ -87,32 +90,60 @@ for (const c of COMBOS) {
       .not.toBe("normal");
     await page.waitForSelector("#app-scroll");
 
-    // Probe: resolve each token to a concrete color by reading it back off a real CSS property.
+    // Probe: resolve each token to concrete color(s) by reading it back off a real CSS property.
+    // TWO channels (the §14.15.1-⑨ two-channel contract, exercised by K2): a token may be a flat <color>
+    // OR an <image> (frontier's gradient `--accent-fill`). `color: var(--x)` is INVALID for an <image> —
+    // it silently devolves to the inherited text color (the pre-K2 probe measured ink-vs-ink and the gate
+    // went blind on frontier, both modes). So resolve through the `background` shorthand instead: a flat
+    // color lands in backgroundColor, a gradient in backgroundImage — whose computed value serializes its
+    // stops as concrete rgb() strings we can extract.
     const resolved = await page.evaluate((names) => {
       const probe = document.createElement("div");
       document.body.appendChild(probe);
-      const out: Record<string, string> = {};
+      const out: Record<string, { bgImage: string; bgColor: string }> = {};
       for (const n of names) {
-        probe.style.color = `var(${n})`;
-        out[n] = getComputedStyle(probe).color;
+        probe.style.background = `var(${n})`;
+        const cs = getComputedStyle(probe);
+        out[n] = { bgImage: cs.backgroundImage, bgColor: cs.backgroundColor };
+        probe.style.background = "";
       }
       probe.remove();
       return out;
     }, PROBE_TOKENS);
 
+    // A token's concrete color list: a gradient contributes EVERY stop (each gated individually — for a
+    // two-stop linear gradient the interpolated band sits between the endpoints, so the worst stop is the
+    // worst point); a flat token contributes its one color.
+    const colorsOf = (name: string): string[] => {
+      const r = resolved[name];
+      if (r.bgImage !== "none") {
+        const stops = r.bgImage.match(/(?:rgba?|oklch|color)\([^)]*\)/g);
+        expect(
+          stops,
+          `${name} resolved to an image with no parseable stops: ${r.bgImage}`,
+        ).toBeTruthy();
+        return stops as string[];
+      }
+      return [r.bgColor];
+    };
+
     for (const p of PAIRS) {
-      const fg = resolved[p.fg];
-      const bg = resolved[p.bg];
-      const ratio = wcag(fg, bg);
-      const lc = apcaLc(fg, bg);
+      // Gate the WORST fg-stop × bg-stop pairing (fg tokens are flat today; bg may be a gradient).
+      let worst = { ratio: Infinity, fg: "", bg: "" };
+      for (const fg of colorsOf(p.fg))
+        for (const bg of colorsOf(p.bg)) {
+          const ratio = wcag(fg, bg);
+          if (ratio < worst.ratio) worst = { ratio, fg, bg };
+        }
+      const lc = apcaLc(worst.fg, worst.bg);
       // APCA is ADVISORY — attach to the report, never gate on it (⑧).
       test.info().annotations.push({
         type: "apca",
-        description: `${c.theme} ${c.mode}/${c.accent}  ${p.fg}(${fg}) vs ${p.bg}(${bg}) → WCAG ${ratio.toFixed(2)}:1 · APCA Lc ${lc.toFixed(1)}`,
+        description: `${c.theme} ${c.mode}/${c.accent}  ${p.fg}(${worst.fg}) vs ${p.bg}(${worst.bg}) → WCAG ${worst.ratio.toFixed(2)}:1 · APCA Lc ${lc.toFixed(1)}`,
       });
       expect(
-        ratio,
-        `${c.theme} ${c.mode}/${c.accent}: ${p.fg} (${fg}) vs ${p.bg} (${bg}) — WCAG ${ratio.toFixed(2)}:1 < ${p.min}:1`,
+        worst.ratio,
+        `${c.theme} ${c.mode}/${c.accent}: ${p.fg} (${worst.fg}) vs ${p.bg} (worst stop ${worst.bg}) — WCAG ${worst.ratio.toFixed(2)}:1 < ${p.min}:1`,
       ).toBeGreaterThanOrEqual(p.min);
     }
   });
