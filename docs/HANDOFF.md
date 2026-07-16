@@ -99,8 +99,23 @@
 > uptime "—" stays deferred on a backend boot-time seam). ALL PUSHED, CI green through `87eadf1`.
 > *(F0–F3 shipped 2026-07-12, F4 2026-07-13; the `FRONTIER_PLAN.md` banner holds all as-built records.)*
 >
+> **▶ SESSION 2026-07-16 — UI-polish close-out: 4 local commits `6e7a29a`→`4e85dbf`, NOT PUSHED;
+> owner plan: eyeball → push → PRODUCTION RELEASE same day PM (runbook §Release; version
+> v1.1.1-vs-v1.2.0 undecided).** Shipped: hero.png 1.9MB→551KB (`6e7a29a` — palette-256+oxipng,
+> quality-eyeballed; the parked F5 asset pass CLOSED; the art-override UI DROPPED by owner — the
+> backend `host.appearance.frontier.image` field suffices) · the **SettingRow sweep** (`0d32e35`,
+> 28 rows DOM-identical — Bucket-A's one real carry-forward; Bucket-A itself was found ALREADY
+> SHIPPED 2026-06-27, stale row fixed) · **a release-blocker found+fixed: the e2e contrast gate had
+> been BLIND on frontier since K2** (`9dfe07e` — `color: var()` devolves on an `<image>` token; the
+> probe now resolves via the `background` shorthand and gates EVERY gradient stop per §14.15.1-⑨;
+> the tokens were always WCAG-compliant, worst 4.66:1; unseen because push CI skips e2e — only the
+> tag release gate runs it) · docs reconciled (`4e85dbf`). Full gate `check.py --e2e` **7/7 GREEN**
+> on the tip; dev units RUNNING for the eyeball. Loose thread (owner-aware, not requested): the
+> placeholder hero art has a baked-in "LEARN MORE" pill top-left under the map scrim — a paint-out
+> with sampled sky is a 15-min follow-up if ever wanted.
+>
 > **▶ NEXT — pick with the owner (full open-work inventory swept 2026-07-15, two-agent doc+code sweep;
-> stale T2/T3/T5 rows in TODO Phase 11 fixed same day):**
+> stale T2/T3/T5 rows in TODO Phase 11 fixed same day; Phase-11/asset rows re-swept 2026-07-16):**
 > 1. **ACA Slices 1–2** (`AGENT_CHAT_AUDIT.md` §5 / TODO Phase 12) — the headline next work: Slice 1 =
 >    hang-proofing batch (MCP deadlines · timeout guards · de-hardcoded tunables · confirm-token hygiene;
 >    ACA-3/6/7/8/9/12/13/18/20/21), Slice 2 = turn integrity (turn marker + 409s · quiet-boundary
