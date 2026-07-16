@@ -285,7 +285,7 @@ ride with ACA Slice 3 (cancellation semantics need them regardless).
 
 All three baselines say "start small, ratchet later" and none has ratcheted: **ruff** selects only
 `E,F,I` with `E501` ignored (`pyproject.toml` — no `B` bugbear, no `ASYNC`, no `SIM`/`UP`);
-**pyright** is `typeCheckingMode: basic`; **eslint** carries 27 deferred warnings (the F13
+**pyright** is `typeCheckingMode: basic`; **eslint** carries 29 deferred warnings (re-counted 2026-07-16; the F13
 Compiler-prep backlog). For an async-heavy production backend the cheapest high-value pull is
 **`ASYNC` (flake8-async) + `B` (bugbear)**: ASYNC statically flags blocking-calls-in-async-context
 — the exact defect class this audit and ACA keep finding by hand (sync file reads on the loop,

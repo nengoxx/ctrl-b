@@ -162,11 +162,14 @@ Two **react-hooks v7** rules are set to **`warn` (not `error`, not `off`)** in `
 dodge** (an earlier read wrongly called them false positives; the React docs confirm they flag *real*
 Rules-of-React patterns).
 
-**The full 27-warning accounting (QH deep pass 2026-07-07):** the gate's `27 warnings / 0 errors` actually
-spans **four** warn-level rules, not just the two above — `set-state-in-effect` **11** + `refs` **8** (the
-deferred pair) + `react-hooks/exhaustive-deps` **2** (preset default) + `react-refresh/only-export-components`
-**6** (preset default). All four are part of the same F13 checklist; `rules-of-hooks` and `static-components`
-stay `error`.
+**The full 29-warning accounting (QH deep pass 2026-07-07; re-counted 2026-07-16):** the gate's
+`29 warnings / 0 errors` actually spans **four** warn-level rules, not just the two above —
+`set-state-in-effect` **12** + `refs` **8** (the deferred pair) + `react-hooks/exhaustive-deps` **2** (preset
+default) + `react-refresh/only-export-components` **7** (preset default). All four are part of the same F13
+checklist; `rules-of-hooks` and `static-components` stay `error`. (The count was **27** at the 2026-07-07 QH
+deep pass — `11`/`8`/`2`/`6`; the **+2** delta — one `set-state-in-effect`, one `only-export-components` —
+arrived with the frontier T5 / Gate-B work 2026-07-12..15 and was reconciled 2026-07-16. Deferral status
+unchanged: all 29 stay in the F13 backlog.)
 
 **Why deferred (assessed thoroughly 2026-07-02, all ~19 sites reviewed):**
 - Every current hit is an **intentional, correct, concurrent-safe** pattern: "sync an editable draft from

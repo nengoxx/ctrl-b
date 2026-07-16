@@ -107,10 +107,18 @@
 >    rediscovery · shielded-finally persistence · frontend /clear+plan guards; ACA-1/2/10/16/17/19).
 >    Riders first: **SYS-16 ruff ASYNC+B ratchet** precedes the ACA build waves; **SYS-1
 >    `Database.transaction()`** rides Slice 2; MCP/OpenAPI adapter tests ride Slice 1.
-> 2. **Phase-11 tail** (population closed; catalog complete): the **Bucket-A kit token-drive**
->    (overlays/primitives/Conf shell — ⛔ research + owner design-confirm FIRST, TODO Phase 11) · the
->    **vapor-assimilation ladder V1–V5** (§14.15.3, unscheduled) · the parked **frontier art-override UI +
->    asset pass** (hero.png 1.9MB) · Composer-Surface Phase D = vapor bullet only (→ ladder V4).
+> 2. **Phase-11 tail** (population closed; catalog complete): the **vapor-assimilation ladder V1–V5**
+>    (§14.15.3, unscheduled) · Composer-Surface Phase D = vapor bullet only (→ ladder V4). *(CLOSED
+>    2026-07-16: Bucket-A was found ALREADY SHIPPED 2026-06-27 — A.1–A.3, overlays/primitives/Conf
+>    shell/deep editors/Agent chat; the 2026-07-15 sweep propagated a stale TODO row into this banner.
+>    Its surviving carry-forward, the **SettingRow consistency sweep**, SHIPPED 2026-07-16 `0d32e35`
+>    (28 rows — ConfTab groups 01–08 + the Agents/Memory/Skills editors; DOM-identical). The parked
+>    **asset pass** SHIPPED `6e7a29a` (hero.png 1.9MB→551KB, palette-256+oxipng, quality-eyeballed);
+>    the **art-override UI** was DROPPED (owner 2026-07-16 — the backend `host.appearance.frontier.image`
+>    field suffices). Rider find: the e2e CONTRAST GATE had gone blind on frontier since K2 — probing
+>    `color: var(--accent-fill)` devolves for an <image>; fixed `9dfe07e` to gate every gradient stop
+>    per §14.15.1-⑨ (tokens were always compliant; caught because push CI skips e2e — only the tag
+>    release gate runs it).)*
 > 3. **Near-term flagged in ROADMAP:** **D3 Slice 1** (multi-homed addressing backend — blocks shutting
 >    down Windows hosts from emma) · 6c-1 whisper-model warm (STT cold-start) · 6c-2 QR-to-phone (needs
 >    owner OK on `segno`).
@@ -119,8 +127,9 @@
 >    B1 vector memory (+D14/D27-B/C state+reflection) · C1/D19 voice streaming · C2 wake word · C3
 >    chunked TTS · D2 wake-on-connection · E0 utils tools · E1 bots · E2 OpenAI facade · F1
 >    notifications · F2 connection dot · G security hardening · THEME_ENGINE §14.15.4 backlog (kit.css
->    off eager path · overlay App-hoist) · UI_AUDIT F9/F13 (React Compiler prep; eslint warns now 29,
->    docs say 27 — reconcile when F13 runs) · SYS-2..17 opportunistic seams · housekeeping
+>    off eager path · overlay App-hoist) · UI_AUDIT F9/F13 (React Compiler prep; eslint warns
+>    reconciled 2026-07-16 = 29 warns / 0 errors = 12 set-state-in-effect / 8 refs / 7 only-export-components
+>    / 2 exhaustive-deps per QUALITY.md; F9/F13 stay deferred-until-measured) · SYS-2..17 opportunistic seams · housekeeping
 >    (dependabot/archive-prune · dev-over-HTTPS for mic).
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
 > orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).

@@ -747,7 +747,7 @@ tools + confirm bubbles) are DONE.**
       2026-07-10), README/AGENTS were rewritten at the reorg. No Linux-WOL fallback kept
       (v2 owns WOL natively).
 
-## Phase 11 — Theme engine (pluggable presentation layer, D28) — **THEME CATALOG COMPLETE 2026-07-15: T0 + M0–M3 + Kit/minimal + cosmos (feature-CLOSED 2026-07-15) + Hardening v2 (D34) + Composer Surface + axes (D37) + frontier T5 (owner-signed 2026-07-15) ALL SHIPPED; the population is CLOSED (owner) — remaining Phase-11 work = the Bucket-A kit token-drive + the vapor-assimilation ladder (§14.15.3) + parked frontier art/asset pass**
+## Phase 11 — Theme engine (pluggable presentation layer, D28) — **THEME CATALOG COMPLETE 2026-07-15: T0 + M0–M3 + Kit/minimal + cosmos (feature-CLOSED 2026-07-15) + Hardening v2 (D34) + Composer Surface + axes (D37) + frontier T5 (owner-signed 2026-07-15) ALL SHIPPED; the population is CLOSED (owner) — remaining Phase-11 work = the vapor-assimilation ladder (§14.15.3) only (Bucket-A shipped 2026-06-27 — stale row caught 2026-07-16; the frontier asset pass shipped 2026-07-16 `6e7a29a` [hero.png 1.9MB→551KB] and the art-override UI was dropped — owner 2026-07-16, the backend override field suffices)**
 
 Spec: `THEME_ENGINE.md §§9–10` · decision: `DECISIONS.md D28`. Build the engine on the cheapest theme
 first, hardest last; the foundation is paid once in T0. **D7 pixel-fidelity applies per theme.** Each Tn is
@@ -836,7 +836,7 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
       `theme_settings` map (backend fields default **`None`/unseeded** so a pre-M3 stamped doc can't wipe local prefs;
       reconcile-tested). Latent T1 double-`switchTheme` documented in `useAppearanceSync` (unreachable while vapor is the
       only theme). vapor = default selection.
-- [ ] **Kit + minimal** — chrome + Fleet DONE; the shared BODIES + OVERLAYS (Bucket-A) remain. Kit CSS model LOCKED:
+- [x] **Kit + minimal** — chrome + Fleet AND the shared BODIES + OVERLAYS (Bucket-A) DONE (2026-06-27). Kit CSS model LOCKED:
       token-only reskins + ONE stylesheet under the `.kit` marker (= Radix `.radix-themes`), `@layer base`; vapor =
       bespoke escape hatch (§14.4.1, web-researched). NowMonitoring + waveform DEFERRED (minimal dropped monitoring;
       build when a theme needs a featured card).
@@ -848,11 +848,21 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
   - [x] **K4** minimal Fleet (`kit/Fleet.tsx` — device list + 3-stat summary, **REAL host data**: ping/last-seen/mac/
         services, no Hero/monitoring) as DefaultRoot's `Fleet` seam; + `lib/relativeTime.ts`; + the eyeball polish:
         floating composer (content scrolls behind it), perf-gated frosted glass (§14.11), body-margin reset. (`07063d2`)
-  - [ ] **Bucket-A** — token-drive the shared BODIES + global OVERLAYS under `.kit` (extend the one Kit stylesheet).
-        Sub-slices, each + a 390px eyeball: (1) overlays (`ConfirmDialog`/`PromptModal`/`Toasts`/`MiniPlayer`/
-        `SwUpdatePrompt`) + primitives (`Seg`/`Switch`) + Conf shell — **fixes the reachable broken confirm**; (2) the
-        deep Conf editors; (3) Agent chat bubbles. **⛔ RESEARCH the pattern + confirm the design BEFORE building
-        (owner directive 2026-06-27 — last session the research changed the design); see HANDOFF top.**
+  - [x] **Bucket-A** ✅ **SHIPPED 2026-06-27** — token-drove the shared BODIES + global OVERLAYS under `.kit` (extended
+        the one Kit stylesheet; section banners live in `kit/kit.css`). All three sub-slices, each + a 390px eyeball:
+        **A.1** (`7067bc3`) — overlays (`ConfirmDialog` `.modal`, `PromptModal` `.pm-*`, `Toasts`, `MiniPlayer`) +
+        primitives (`Seg`/`Switch`) + the Conf shell — **closed the reachable unstyled-ConfirmDialog UX**; **A.2**
+        (`a419c47`, `b44415d`, `8c33dc9`, `f29feeb`, `da6ac44`, `f938eb1`) — the deep Conf editors (Machine/Service,
+        inference fallbacks, Integrations kv, prompt-rows, Agents tri-state allowlist + limits, tool descriptions,
+        Memory/Skills raw editors) + the Utils/Tools tab; **A.3** (`ccc611f`, `57f8902`, `a5ba22f`, `848dd85`,
+        `19b87b8`) — the entire Agent chat (bubbles, markdown, tool/command bubbles, question bubble, per-bubble TTS,
+        plan panel, privilege chip/menu). The **⛔ RESEARCH-the-pattern-first** owner directive (2026-06-27) was
+        honored — A.1/A.3 were web-researched + owner-confirmed before building. Stale `[ ]` checkbox only caught
+        2026-07-16 (the 2026-07-15 open-work sweep propagated it into HANDOFF's ▶NEXT). Surviving carry-forward = the
+        **SettingRow consistency sweep** across the remaining Conf groups (only Appearance adopted the `SettingRow`
+        primitive; owner ruled "incremental") — ✅ SHIPPED 2026-07-16 `0d32e35` (28 rows: ConfTab groups
+        01–08 + TailscaleAccessCard + the Agents/Memory/Skills editors; DOM-identical by construction —
+        skips = disclosure spreads, Field-domain inputs, one styled row).
 - [x] **Hardening slice v2 (D34 — THEME_ENGINE §14.15.1) — ✅ SHIPPED 2026-07-10** (all 10 items +
       riders a/b/c; as-built deltas §14.15.1-A; commits `bdaf511…9e21cdc`). The 29-agent final review's reshaped slice (supersedes the TRIAGE-3 ordering);
       behavior-preserving except ①. Ships BEFORE the Composer Surface and any themeable-UI feature wave.

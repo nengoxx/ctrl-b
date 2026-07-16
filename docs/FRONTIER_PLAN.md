@@ -3,6 +3,11 @@
 > **▶ F5 IN PROGRESS — RE-SCOPED BY OWNER 2026-07-13 (supersedes the F4 banner's F5 list below):**
 > per-host art override UI + asset format/size pass [hero.png 1.9MB] are **PARKED** (owner call — not
 > dropped, revisit post-F5). F5 now = **the two presentation axes (D37)** + the original gates.
+> *(Parked pair RESOLVED 2026-07-16: the asset pass SHIPPED `6e7a29a` — hero.png 1.9MB→551KB,
+> palette-256 + oxipng, quality-eyeballed, same filename per the art.ts swap contract; the art-override
+> UI was DROPPED — owner, the backend `host.appearance.frontier.image` field suffices. Rider: the e2e
+> contrast gate had gone blind on frontier since K2 [`color: var()` can't resolve an <image> fill] —
+> fixed `9dfe07e`, gates every gradient stop; tokens were always compliant.)*
 > **Slice A ✅ SHIPPED 2026-07-13 (commit `5193f4c`, owner-eyeballed live + ratified; FE gate 422
 > tests [+7]):** frontier's CHAT no-outlines strips promoted to the kit-wide `outlines` axis —
 > `kit/axes.ts` (`outlinesSetting(defaultOn)` factory + `useOutlines` resolver; undeclared→ON) ·
