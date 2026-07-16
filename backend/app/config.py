@@ -501,7 +501,12 @@ class McpServerCfg(BaseModel):
     transport: str = "streamable_http"  # "streamable_http" | "stdio"
     enabled: bool = True
     risk: Risk = Risk.MED  # low | med | high — gate for this server's tools
-    connect_timeout_s: float = 10.0  # bound startup discovery + per-call connect
+    connect_timeout_s: float = 10.0  # bound startup discovery + per-call handshake
+    #: Per-*call* deadline (connect + handshake + the tool op). `None` → falls back to
+    #: `connect_timeout_s`. Split out so a legitimately slow tool (a web crawl) gets a longer budget
+    #: than discovery without loosening the startup/handshake bound (ACA-3b — the call no longer
+    #: borrows `connect_timeout_s` when this is set). Flat wall-clock (no progress-extension).
+    call_timeout_s: float | None = None
     # streamable_http
     url: str = ""  # e.g. http://192.168.1.160:3003/mcp
     headers: dict[str, str] = Field(default_factory=dict)

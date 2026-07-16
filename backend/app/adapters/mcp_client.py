@@ -51,6 +51,21 @@ class McpError(RuntimeError):
     """Any MCP failure (server down, transport unsupported, bad response) — normalized to a result."""
 
 
+def _is_cancel_scope_error(exc: BaseException) -> bool:
+    """The cancel-during-handshake hazard: when a per-operation `asyncio.timeout` fires *inside*
+    `session.initialize()`, the SDK's internal anyio task-group unwind can surface a
+    `RuntimeError("Attempted to exit cancel scope in a different task than it was entered in")`
+    instead of (or wrapping) the `TimeoutError` (open python-sdk issue class #521/#922/#1213). We
+    treat that shape as a timeout, not a generic failure, so the effective-bound message still
+    reads true. Recurse through a (Base)ExceptionGroup in case anyio wraps the unwind."""
+    if isinstance(exc, RuntimeError) and "cancel scope" in str(exc).lower():
+        return True
+    inner = getattr(exc, "exceptions", None)  # (Base)ExceptionGroup
+    if inner:
+        return any(_is_cancel_scope_error(e) for e in inner)
+    return False
+
+
 class _PassthroughArgs(BaseModel):
     """Permissive input model for MCP tools: accepts any args (the remote server validates them).
     The native JSON Schema goes to the model via `ToolSpec.raw_schema`; `model_dump()` recovers the
@@ -145,7 +160,14 @@ class McpClient:
     async def _session(self, server: McpServerCfg) -> AsyncIterator:
         """Open one short-lived MCP session over the server's transport — Streamable HTTP (`url`) or
         stdio (a local subprocess: `command`/`args`/`env`). Both converge on a `ClientSession`,
-        entered + exited within a single coroutine (the SDK's anyio task groups require that)."""
+        entered + exited within a single coroutine (the SDK's anyio task groups require that).
+
+        No deadline here: the *caller* wraps this whole `async with` — connect + `initialize()`
+        handshake + the operation — in a single `asyncio.timeout` (discover/call), so the handshake
+        can't hang unbounded (ACA-3). When that deadline fires mid-session, the stdio client's
+        `__aexit__` still terminates the child on its own bounded ladder (graceful → 2 s → SIGKILL,
+        SDK ≥ 1.11.0; installed 1.28.1), so total unwind can run ~2 s past the bound — expected, no
+        redundant process-kill backstop is added on top of it."""
         # Imported lazily so the module loads even if a transport's extra isn't present.
         from mcp import ClientSession
 
@@ -188,13 +210,21 @@ class McpClient:
         per-server summary for the startup log / a future health endpoint."""
         summary: list[dict] = []
         for server in self._servers:
+            bound = server.connect_timeout_s
             try:
-                async with self._session(server) as session:
-                    resp = await asyncio.wait_for(session.list_tools(), timeout=server.connect_timeout_s)
+                # One deadline over the whole lifecycle — connect + `initialize()` + `list_tools` —
+                # so a never-handshaking stdio server can't hang startup (ACA-3). See `_session`.
+                async with asyncio.timeout(bound):
+                    async with self._session(server) as session:
+                        resp = await session.list_tools()
                 tools = list(resp.tools)
             except Exception as exc:  # noqa: BLE001 — a bad server must not break startup
-                log.warning("MCP server %r discovery failed: %s", server.name, exc)
-                summary.append({"server": server.name, "tools": 0, "error": str(exc)})
+                if isinstance(exc, TimeoutError) or _is_cancel_scope_error(exc):
+                    msg = f"discovery timed out after {bound:.1f}s"
+                else:
+                    msg = str(exc)
+                log.warning("MCP server %r discovery failed: %s", server.name, msg)
+                summary.append({"server": server.name, "tools": 0, "error": msg})
                 continue
 
             registered = 0
@@ -228,21 +258,29 @@ class McpClient:
 
     async def call(self, server: McpServerCfg, remote_name: str, args: dict) -> ToolResult:
         """Open a fresh session, call the remote tool, normalize the result. Any failure (server
-        down mid-session, transport error) becomes a clean ERROR `ToolResult` — never an exception
-        bubbling into the agent loop."""
+        down mid-session, transport error, deadline) becomes a clean ERROR/TIMEOUT `ToolResult` —
+        never an exception bubbling into the agent loop.
+
+        The deadline is `call_timeout_s` if set, else `connect_timeout_s` (ACA-3b: the call no longer
+        borrows the connect budget once a call budget is configured). It bounds the *whole*
+        lifecycle — connect + `initialize()` handshake + `call_tool` — in one `asyncio.timeout`."""
+        bound = server.call_timeout_s if server.call_timeout_s is not None else server.connect_timeout_s
         try:
-            async with self._session(server) as session:
-                result = await asyncio.wait_for(
-                    session.call_tool(remote_name, args), timeout=server.connect_timeout_s
-                )
-        except McpError as exc:
+            async with asyncio.timeout(bound):
+                async with self._session(server) as session:
+                    result = await session.call_tool(remote_name, args)
+        except McpError as exc:  # config/transport-unsupported — surfaced before the op
             return ToolResult(
                 state=RunState.ERROR, summary=f"{remote_name} unavailable", error=str(exc)[:300]
             )
-        except asyncio.TimeoutError:
-            return ToolResult(
-                state=RunState.TIMEOUT, summary=f"{remote_name} timed out", error="MCP call timed out"
-            )
-        except Exception as exc:  # noqa: BLE001 — normalize any SDK/transport error
+        except Exception as exc:  # noqa: BLE001 — normalize any SDK/transport error, never raise
+            # TimeoutError, or the anyio cancel-scope RuntimeError from a timeout mid-`initialize()`,
+            # both mean "we hit the deadline" — label them TIMEOUT with the effective bound.
+            if isinstance(exc, TimeoutError) or _is_cancel_scope_error(exc):
+                return ToolResult(
+                    state=RunState.TIMEOUT,
+                    summary=f"{remote_name} timed out",
+                    error=f"MCP call exceeded {bound:.1f}s deadline",
+                )
             return ToolResult(state=RunState.ERROR, summary=f"{remote_name} failed", error=str(exc)[:300])
         return _to_result(result, remote_name)
