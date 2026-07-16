@@ -1,6 +1,6 @@
 # Handoff — start here for a fresh session
 
-> ## ▶ ACTIVE — develop ON emma. PROD = v1.1.0 (2026-07-10 — Hardening v2 + version-from-tag; /api/health now reports the tag). First deploy: v1.0.0 same day.
+> ## ▶ ACTIVE — develop ON emma. PROD = v1.1.1 (2026-07-16 — UI-polish close-out: hero art ×2, SettingRow sweep, contrast-gate fix, SYS-16 ratchet). Prior: v1.1.0 2026-07-10; first deploy v1.0.0 same day.
 > **✅ ctrl-b v1.0.0 (tag `v1.0.0` = `8fa8404`) deployed to emma per the D32-amended plan — first try,
 > release gate green on its maiden tag run (full gate + Playwright e2e on ubuntu).** As-executed record:
 > the PRE-FLIGHT block atop [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md); living runbook: `deploy/linux/README.md`.
@@ -116,11 +116,13 @@
 >
 > **✅ EXECUTED same day (2026-07-16): the four fixes SHIPPED — `f5c8e05` (SYS-16 ruff ASYNC+B
 > ratchet pulled + its 3 findings fixed) + `69c02a1` (hero pill paint-out, 560,472 B). Full gate
-> `check.py --e2e` 7/7 GREEN on the tip. ▶ THE ONLY REMAINING STEP = the PM RELEASE: owner eyeballs
-> the dev instance (frontier Fleet card + Conf rows; dev units RUNNING) → owner OKs the push → push
-> `main` → runbook §Release tag (version call: v1.1.1 vs v1.2.0 — 8 commits `6e7a29a`..`69c02a1`:
-> contrast-gate fix + ratchet + SettingRow sweep + hero art ×2 + doc truth) → CI release gate green
-> → re-pin `~/apps/ctrl-b` + `install.sh prod` → verify health tag. Then stop the dev units.**
+> `check.py --e2e` 7/7 GREEN on the tip. ▶ ✅ THE PM RELEASE SHIPPED same day: **v1.1.1 LIVE ON
+> PROD (2026-07-16)** — owner OK'd (version call = v1.1.1: patch, fixes/polish only; **v1.2.0 is
+> reserved for the FINAL frontier hero art** — owner ruling at release time) → pushed `main`
+> (`3576315..b3d13d6`, pre-push gate 6/6 + main CI green) → tag `v1.1.1` @ `b3d13d6` → release
+> gate GREEN (run 29501070297) → re-pinned `~/apps/ctrl-b` + `install.sh prod` (DB snapshot
+> `ctrlb-20260716-151348.db.gz`) → verified: `git describe` = v1.1.1, health version 1.1.1,
+> HTTPS 200. Dev units stopped.**
 > *(The block below is the as-built record of those four fixes — the pre-flight pins they were
 > built from, kept for provenance.)*
 > - **①–③ the SYS-16 ruff ratchet (ASYNC+B)** — pyproject `[tool.ruff.lint]` select `["E","F","I"]`
