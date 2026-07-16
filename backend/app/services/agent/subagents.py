@@ -47,9 +47,6 @@ _PRIV_ORDER = {
     Privilege.FULL: 3,
 }
 
-#: Per-child wall-clock cap so a stuck child can't hold the batch open forever (§5.5).
-_CHILD_TIMEOUT_S = 180.0
-
 
 def _clamp(child: Privilege, parent: Privilege) -> Privilege:
     return child if _PRIV_ORDER[child] <= _PRIV_ORDER[parent] else parent
@@ -120,7 +117,7 @@ class ParallelOrchestrator(Orchestrator):
         self,
         per_agent: int,
         global_sem: asyncio.Semaphore | None,
-        child_timeout_s: float = _CHILD_TIMEOUT_S,
+        child_timeout_s: float,
     ) -> None:
         self._per = asyncio.Semaphore(max(1, per_agent))
         self._global = global_sem
@@ -272,7 +269,9 @@ async def spawn_subagents(inp: SpawnInput, ctx: InvocationContext) -> ToolResult
     ]
 
     orchestrator = ParallelOrchestrator(
-        per_agent=parent.max_concurrent_subagents, global_sem=deps.subagent_sem
+        per_agent=parent.max_concurrent_subagents,
+        global_sem=deps.subagent_sem,
+        child_timeout_s=deps.settings.agent.subagent_child_timeout_s,
     )
     results = await orchestrator.run_many(deps, children, depth=ctx.depth + 1)
     return _aggregate(results)

@@ -113,6 +113,41 @@ def test_confirm_token_for_mints_a_consumable_token() -> None:
         assert out2.result is not None and out2.result.state.value == "error"  # unknown host
 
 
+# ── ACA-9: the re-mint CONSUMES the original pending token (two-device double-tap fails clean) ──
+def test_confirm_token_for_consumes_the_orphan_token() -> None:
+    from app.domain.enums import Actor, Privilege
+
+    with _workspace(), _client() as c:
+        actions = c.app.state.actions
+        args = {"host_id": "nope"}
+        # The first gate mints a token (this is "device A"'s outstanding Allow).
+        out = _run(actions.invoke("reboot_host", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM))
+        assert out.needs_confirm and out.confirm_token
+        orphan = out.confirm_token
+
+        fresh = actions.confirm_token_for("reboot_host", args)  # resume re-mint (the one-click path)
+        assert fresh != orphan
+        # Exactly one live token for this (action, args) remains after the re-mint (the orphan is gone).
+        assert orphan not in actions._pending
+        assert fresh in actions._pending
+
+        # Redeeming the orphan now fails cleanly — it re-asks instead of executing (device B's stale tap).
+        stale = _run(
+            actions.invoke(
+                "reboot_host", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM, confirm_token=orphan
+            )
+        )
+        assert stale.needs_confirm  # rejected → gate re-asks; the action did NOT run
+
+        # …but the fresh (resume) token still executes in one shot.
+        ok = _run(
+            actions.invoke(
+                "reboot_host", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM, confirm_token=fresh
+            )
+        )
+        assert not ok.needs_confirm and ok.result is not None and ok.result.state.value == "error"
+
+
 # ── end-to-end: resume(execute) runs in one click after the token is gone ──────────────────────
 def test_execute_recovers_after_token_loss() -> None:
     with _workspace(), _client() as c:

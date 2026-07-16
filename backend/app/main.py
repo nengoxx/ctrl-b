@@ -165,7 +165,10 @@ async def lifespan(app: FastAPI):
     # Skills (Phase 4.5): file-discovered SKILL.md bundles + the default selection strategy. Built
     # once; the provider re-scans the dir per call so a dropped-in skill is live without a restart.
     app.state.skills = FileSkillProvider(app.state.settings.skills_dir_path())
-    app.state.skill_selector = KeywordSkillSelector()
+    app.state.skill_selector = KeywordSkillSelector(
+        min_overlap=app.state.settings.agent.skill_min_overlap,
+        max_skills=app.state.settings.agent.skill_max_active,
+    )
     # Agent auto-router (Phase 7e-g, D15 #8): picks a specialist per turn when no /agent is pinned
     # and agent.auto_rotate is on. Same swappable-protocol shape as the skill selector.
     app.state.agent_selector = KeywordAgentSelector()

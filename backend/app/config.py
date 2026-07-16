@@ -219,6 +219,15 @@ class AgentCfg(BaseModel):
     # Min matching tokens for an auto-route pick (conservative; a tie or below-threshold → the
     # default agent). Floored at 1 so a blanked Conf field can't make every message route.
     auto_rotate_min_overlap: int = Field(default=2, ge=1)
+    # Per-child wall-clock cap for `spawn_subagents` (§5.5): a stuck child can't hold the batch open
+    # forever. Read live per fan-out, so a Conf edit applies to the next spawn without a restart.
+    subagent_child_timeout_s: float = Field(default=180.0, gt=0)
+    # Default `KeywordSkillSelector` tuning (built from these at startup): min token overlap for a
+    # skill to match the user message, and the cap on how many skills activate per turn. Baked at
+    # construction like the selector always has been — a Conf edit needs a restart (unlike the
+    # per-call `auto_rotate_min_overlap` above); see services/agent/skills.py + core/agents.py.
+    skill_min_overlap: int = Field(default=1, ge=1)
+    skill_max_active: int = Field(default=2, ge=1)
     # Dual-mode chat delivery (D17). Authoritative server-side: `on` always streams (SSE), `off`
     # always buffers (one JSON response — e.g. for a flaky link), `auto` honors the request's
     # `stream` field (the PWA always sends true). Enforced in api/agent.py `_effective_stream`.

@@ -205,9 +205,18 @@ class ActionService:
         binding `invoke` computes (`input_model.model_validate(...).model_dump_json()`), so the mint
         always matches. Safe: the caller only mints after finding the call persisted `AWAITING_CONFIRM`
         (the gate legitimately fired) and the owner explicitly chose `execute` — the two-step approval
-        is intact; this only removes the fragile ephemeral dependency."""
+        is intact; this only removes the fragile ephemeral dependency.
+
+        ACA-9 (owner 2026-07-16, CONSUME): any confirm token already outstanding for this SAME pending
+        `(action, args)` is consumed here before the re-mint, so exactly one live token remains
+        afterward. The orphaned original has no legitimate redeemer — its bubble is being resolved
+        right now — so a two-device double-tap of the stale Allow fails cleanly instead of firing the
+        action a second time via `/api/actions`. Restart-safe: `_pending` is empty after a restart
+        (the token-loss case this method exists for), so there is simply nothing to consume."""
         inp = self._registry.get(name).spec.input_model.model_validate(raw_args)
-        return self._mint_token(name, inp.model_dump_json())
+        args_json = inp.model_dump_json()
+        self._invalidate_pending(name, args_json)
+        return self._mint_token(name, args_json)
 
     def begin_execute(self, call_id: str) -> bool:
         """Single-flight guard (J2) for `resume(execute)`: reserve a pending call's execution so a
@@ -236,6 +245,12 @@ class ActionService:
             return False
         del self._pending[token]
         return True
+
+    def _invalidate_pending(self, action: str, args_json: str) -> None:
+        """Drop every outstanding confirm token bound to this exact `(action, args)` — the orphan
+        consume for the resume re-mint (ACA-9). A no-op when nothing matches (e.g. after a restart)."""
+        for tok in [t for t, p in self._pending.items() if p.action == action and p.args_json == args_json]:
+            del self._pending[tok]
 
     def _sweep(self) -> None:
         now = time.monotonic()

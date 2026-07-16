@@ -44,8 +44,11 @@ agent:
   global_subagent_limit: 6   # process-wide cap on concurrent subagents across the whole tree (4.5)
   subagent_clamp_privilege: true  # clamp a subagent's privilege to never exceed its parent's (4.5);
                                   # false lets a configured subagent run at a higher privilege
+  subagent_child_timeout_s: 180   # per-child wall-clock cap for spawn_subagents (read live per fan-out)
   skills_enabled: true       # master switch for the skills subsystem (4.5)
   skills_dir: skills         # dir scanned for <name>/SKILL.md (relative → alongside this config)
+  skill_min_overlap: 1       # min token overlap for a skill to match a turn (baked at startup)
+  skill_max_active: 2        # max skills that activate per turn (baked at startup)
   compaction:                # global context-window default; an agent/subagent can override it below
     enabled: true
     threshold_tokens: 6000   # working-context size (~chars/4 estimate) that triggers auto-compaction
