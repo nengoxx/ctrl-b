@@ -137,10 +137,15 @@
 > malformed-args JSON-repair steering (empty-string keeps the legacy zero-arg path — orchestrator
 > ruling) + `ORDER BY ts, rowid` + `_static_prefix` docstring truth · per-endpoint `extra_body`
 > cache pin + cache telemetry + the A8 context-cost debug line + `_finalize` wrap-up
-> `tool_choice:"none"` (live-probed on the deployed llama-server). **Full gate `check.py --e2e`
-> 7/7 GREEN; 297 backend tests (+43). As-built record = AGENT_CHAT_AUDIT §5 Slice 1 heading.
-> NEXT: owner eyeballs (agent chat on dev :5173) → push OK → ACA Slice 2 (turn integrity;
-> D36 drafted at its design review).**
+> `tool_choice:"none"` (live-probed on the deployed llama-server). **Then the post-build
+> ADVERSARIAL AUDIT (fresh-eyes Opus pass): 12/12 spec-complete, contract compliant, ONE real
+> find — MED-1, a malformed-args call behind a confirm bubble silently invoked with `{}` on
+> resume — reproduced + FIXED (`ToolCallPart.invalid_raw` replaces the memory-only side-channel;
+> regression test); LOW/INFO findings ruled + recorded on the §5 Slice 1 heading. Riders: the
+> summarizer `complete()` cache pin + the SECURITY_MODEL ACA-9/extra_body rows. Full gate
+> `check.py --e2e` 7/7 GREEN on the tip; 298 backend tests (+44). As-built record =
+> AGENT_CHAT_AUDIT §5 Slice 1 heading. NEXT: owner eyeballs (agent chat on dev :5173) →
+> push OK → ACA Slice 2 (turn integrity; D36 drafted at its design review).**
 > *(The block below is the as-built record of those four fixes — the pre-flight pins they were
 > built from, kept for provenance.)*
 > - **①–③ the SYS-16 ruff ratchet (ASYNC+B)** — pyproject `[tool.ruff.lint]` select `["E","F","I"]`
