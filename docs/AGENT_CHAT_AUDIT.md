@@ -613,8 +613,8 @@ refresh; these BIND the Slice 1–2 builds):**
    documents which adapter bound covers it.
 4. **De-hardcode:** `agent.subagent_child_timeout_s` + `agent.skill_min_overlap`/
    `skill_max_active`, mirroring `auto_rotate_min_overlap`'s existing pattern.
-5. **Confirm-token hygiene:** consume the original pending token on resume re-mint, or land the
-   accepted-risk comment (owner decision, §6).
+5. **Confirm-token hygiene:** consume the original pending token on resume re-mint (owner
+   decision 2026-07-16, §6 Q3 — CONSUME; keep `test_confirm_recovery_j3.py` green).
 6. **Stall-guard key:** include the call sig in `result_sig` or document the summary invariant.
 7. **Arg-parse steering:** on `JSONDecodeError`, synthesize "your tool arguments were not valid
    JSON: &lt;first 200 chars&gt;" instead of `{}`-then-validate.
@@ -890,7 +890,10 @@ ROADMAP B1).
    remains listed for completeness only.
 2. **Steering (Slice 5):** adopt queue-then-inject as the end state for ACA-2 (recommended, 5-of-6
    field precedent), or stay with the plain 409 permanently?
-3. **ACA-9 / Slice 1.5:** consume the orphan token, or accept-and-comment?
+3. **ACA-9 / Slice 1.5:** consume the orphan token, or accept-and-comment? — **ANSWERED (owner,
+   2026-07-16): CONSUME the original pending token on resume re-mint.** Rationale: no legitimate
+   redeemer exists for the orphan; the two-device double-tap case *wants* the second stale Allow
+   to fail cleanly.
 4. **A4 lead/worker routing:** worth a slice, or defer until the cloud bill / local-model failure
    rate demands it? (It's the most speculative adoption; everything else is defect-adjacent.)
 5. **A9 memory freeze:** keep per-turn memory reads (edits apply immediately) or adopt Hermes's
