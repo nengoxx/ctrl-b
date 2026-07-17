@@ -11,6 +11,17 @@ import {
 } from "../../src/store/chat";
 import type { Part } from "../../src/types";
 
+/** A fake 409 "turn busy" response (D38): the thread-mutating endpoints return `{detail}` on collision. */
+function status409(detail?: string): Response {
+  return {
+    ok: false,
+    status: 409,
+    body: null,
+    headers: { get: () => null },
+    json: async () => (detail !== undefined ? { detail } : {}),
+  } as unknown as Response;
+}
+
 // store/chat — the streaming reducer (the most intricate frontend logic). We drive the REAL public API
 // (sendMessage / resumeCall) through a mocked SSE `fetch`, so the real byte-parser + reducer run
 // end-to-end and we assert the resulting message list / status. This locks in the SSE wire protocol
@@ -508,5 +519,160 @@ describe("risk-aware retry (I4)", () => {
     expect(result.current.messages.some((m) => m.parts.some((p) => p.type === "error"))).toBe(
       false,
     );
+  });
+});
+
+// ── Slice 2 (D38 turn integrity) — the client half: 409 as a sys-note (not a retryable error bubble),
+// streaming guards, and the turn's inference `mode` carried across a resume (ACA-16). ──
+describe("turn integrity — client (Slice 2)", () => {
+  it("a 409 (thread busy) surfaces the server detail as a sys-note and returns idle — no error bubble", async () => {
+    const detail = "a turn is already running on this thread — wait for it to finish";
+    globalThis.fetch = vi.fn(() => Promise.resolve(status409(detail)));
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("hi");
+    });
+
+    expect(result.current.status).toBe("idle"); // NOT "error"
+    // No retryable error bubble anywhere (failStream must not fire on a 409).
+    expect(result.current.messages.some((m) => m.parts.some((p) => p.type === "error"))).toBe(
+      false,
+    );
+    // The server's actionable detail landed as a system breadcrumb.
+    const sys = result.current.messages.find((m) => m.role === "system");
+    expect(sys && textOf(sys.parts)).toContain("a turn is already running");
+    // The unclaimed empty assistant placeholder was dropped (only the user bubble + sys note remain).
+    expect(result.current.messages.some((m) => m.role === "assistant")).toBe(false);
+  });
+
+  it("a 409 with a non-JSON body falls back to the canonical busy text", async () => {
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status: 409,
+        body: null,
+        headers: { get: () => null },
+        json: async () => {
+          throw new Error("not json");
+        },
+      } as unknown as Response),
+    );
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("hi");
+    });
+    const sys = result.current.messages.find((m) => m.role === "system");
+    expect(sys && textOf(sys.parts)).toContain("a turn is already running on this thread");
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("startNewThread is blocked while a turn is streaming (does not clear)", async () => {
+    // Hold the SSE body open so the turn stays in "streaming" while we try to clear.
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+      },
+    });
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        body,
+        headers: {
+          get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
+        },
+      } as unknown as Response),
+    );
+
+    const { result } = renderHook(() => useChat());
+    let sendP!: Promise<void>;
+    await act(async () => {
+      sendP = sendMessage("hi"); // sets status "streaming" synchronously, then holds on the open body
+    });
+    expect(result.current.status).toBe("streaming");
+
+    act(() => {
+      startNewThread(); // must be refused: a turn is live
+    });
+    expect(result.current.status).toBe("streaming"); // NOT reset to idle
+    expect(
+      result.current.messages.some(
+        (m) => m.role === "system" && textOf(m.parts).includes("a turn is running"),
+      ),
+    ).toBe(true);
+    expect(result.current.messages.some((m) => m.role === "user")).toBe(true); // log not wiped
+
+    // Let the held turn finish so nothing leaks into the next case.
+    const enc = new TextEncoder();
+    controller.enqueue(
+      enc.encode(`event: done\r\ndata: ${JSON.stringify({ state: "completed" })}\r\n\r\n`),
+    );
+    controller.close();
+    await act(async () => {
+      await sendP;
+    });
+  });
+
+  it("a resume carries the turn's stashed inference mode (ACA-16)", async () => {
+    // Turn 1: a `/cloud` send that suspends on a confirm bubble — stashes turnMode = "cloud".
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "m1" } },
+      {
+        event: "part.added",
+        data: {
+          messageId: "m1",
+          part: { type: "tool_call", call_id: "c1", tool: "wake_host", args: {}, state: "pending" },
+        },
+      },
+      { event: "tool.permission", data: { callId: "c1", token: "tok-1" } },
+      { event: "done", data: { state: "suspended" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("wake", { mode: "cloud" });
+    });
+    expect(result.current.status).toBe("idle"); // suspended → interactive
+
+    // Resume: capture the POST body and assert the stashed mode rode along.
+    let resumeBody: Record<string, unknown> = {};
+    globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      resumeBody = JSON.parse(init!.body as string) as Record<string, unknown>;
+      return Promise.resolve(sseResponse([{ event: "done", data: { state: "completed" } }]));
+    });
+    await act(async () => {
+      await resumeCall("c1", "execute");
+    });
+    expect(resumeBody.mode).toBe("cloud");
+  });
+
+  it("a resume of a default (no /mode) turn carries mode: null", async () => {
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "m1" } },
+      {
+        event: "part.added",
+        data: {
+          messageId: "m1",
+          part: { type: "tool_call", call_id: "c1", tool: "wake_host", args: {}, state: "pending" },
+        },
+      },
+      { event: "tool.permission", data: { callId: "c1", token: "tok-1" } },
+      { event: "done", data: { state: "suspended" } },
+    ]);
+    renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("wake"); // no mode → turnMode = null
+    });
+    let resumeBody: Record<string, unknown> = {};
+    globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      resumeBody = JSON.parse(init!.body as string) as Record<string, unknown>;
+      return Promise.resolve(sseResponse([{ event: "done", data: { state: "completed" } }]));
+    });
+    await act(async () => {
+      await resumeCall("c1", "dismiss");
+    });
+    expect(resumeBody.mode).toBeNull();
   });
 });

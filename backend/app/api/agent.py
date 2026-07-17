@@ -47,12 +47,20 @@ router = APIRouter(tags=["agent"])
 
 
 def _coerce_privilege(v: object) -> object:
-    """Coerce a raw `/privilege` input to a known level or None — lenient like `_known_mode`, so an
+    """Coerce a raw `/privilege` input to a known level or None — lenient like `_coerce_mode`, so an
     unknown/blank value (a stray composer token) becomes "no override" instead of 422-ing the turn.
     Shared by `ChatRequest` + `ResumeRequest` so the session level survives a confirm round-trip."""
     if v is None or v == "":
         return None
     return v if v in {p.value for p in Privilege} else None
+
+
+def _coerce_mode(v: object) -> object:
+    """Coerce a raw `/local`//`/cloud` mode to "local"/"cloud" or None — lenient like
+    `_coerce_privilege`. `InferenceCfg.endpoint()` treats any non-"local" string as "cloud", so reject
+    junk here → a typo'd mode falls back to the configured default instead of silently routing to
+    cloud. Shared by `ChatRequest` + `ResumeRequest` so a `/local` turn resumes local (ACA-16)."""
+    return v if v in ("local", "cloud") else None
 
 
 class ChatRequest(BaseModel):
@@ -73,12 +81,10 @@ class ChatRequest(BaseModel):
     #: `_effective_stream`); `on`/`off` ignore this field.
     stream: bool = False
 
-    @field_validator("mode")
+    @field_validator("mode", mode="before")
     @classmethod
-    def _known_mode(cls, v: str | None) -> str | None:
-        # InferenceCfg.endpoint() treats any non-"local" string as "cloud"; reject junk so a typo'd
-        # mode falls back to the configured default instead of silently routing to cloud.
-        return v if v in ("local", "cloud") else None
+    def _known_mode(cls, v: object) -> object:
+        return _coerce_mode(v)
 
     @field_validator("privilege", mode="before")
     @classmethod
@@ -113,7 +119,17 @@ class ResumeRequest(BaseModel):
     confirm_token: str | None = None
     answer: str | None = None  # the owner's reply when decision == "answer" (A2)
     privilege: Privilege | None = None
+    #: `/local`//`/cloud` inference mode carried across the confirm round-trip (ACA-16/S2-D). None →
+    #: the configured default. Unlike `privilege` (a security stance, always re-sent), the PWA stashes
+    #: the turn's mode and re-sends it here so a `/local` turn *resumes* local — same per-message
+    #: semantics as `ChatRequest.mode`, threaded endpoint → `session.resume` → `_drive`.
+    mode: str | None = None
     stream: bool = False  # dual-mode delivery (D17); the PWA re-sends true so the continuation matches
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _known_mode(cls, v: object) -> object:
+        return _coerce_mode(v)
 
     @field_validator("privilege", mode="before")
     @classmethod
@@ -772,7 +788,9 @@ async def resume(body: ResumeRequest, request: Request) -> Response:
     try:
         session = _session(request, thread, agent_name=last_agent, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
-        events = session.resume(thread, body.call_id, body.decision, body.confirm_token, body.answer)
+        events = session.resume(
+            thread, body.call_id, body.decision, body.confirm_token, body.answer, mode=body.mode
+        )
         return await _turn_response(request, thread, events, stream=stream, count=False, handle=handle)
     except Exception:
         release(request.app.state.turns, handle)

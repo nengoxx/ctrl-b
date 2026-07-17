@@ -548,11 +548,15 @@ class AgentSession:
         decision: str,
         confirm_token: str | None = None,
         answer: str | None = None,
+        *,
+        mode: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Resume a suspended turn, then continue the loop so the model can react. Three decisions:
         `execute` (a confirm-gated call — re-run with the token), `dismiss` (skip it — works for a
         confirm *or* a question), and `answer` (a `question` — inject the owner's `answer` as the
-        call's result, A2). Anything else is treated as execute."""
+        call's result, A2). Anything else is treated as execute. `mode` (`/local`//`/cloud`, ACA-16)
+        is carried across the round-trip and threaded to `_drive` so a `/local` turn resumes local;
+        `None` → the configured default."""
         assistant = await self._find_pending(thread, call_id)
         if assistant is None:
             yield AgentEvent("error", {"message": "no pending action for this call", "retryable": False})
@@ -560,13 +564,13 @@ class AgentSession:
             return
         if decision == "answer":
             async for ev in self._drive(
-                thread, resume_assistant=assistant, resume_answers={call_id: answer or ""}
+                thread, mode=mode, resume_assistant=assistant, resume_answers={call_id: answer or ""}
             ):
                 yield ev
             return
         if decision == "dismiss":
             async for ev in self._drive(
-                thread, resume_assistant=assistant, resume_tokens={call_id: _DISMISS}
+                thread, mode=mode, resume_assistant=assistant, resume_tokens={call_id: _DISMISS}
             ):
                 yield ev
             return
@@ -594,7 +598,9 @@ class AgentSession:
                 )
                 yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
                 return
-            async for ev in self._drive(thread, resume_assistant=assistant, resume_tokens={call_id: token}):
+            async for ev in self._drive(
+                thread, mode=mode, resume_assistant=assistant, resume_tokens={call_id: token}
+            ):
                 yield ev
         finally:
             self._actions.end_execute(call_id)
@@ -622,9 +628,9 @@ class AgentSession:
     ) -> AsyncIterator[AgentEvent]:
         """The loop state machine (DESIGN §5.2). On resume, first finish the suspended step; then
         run model iterations until text-only / suspended / capped. `mode` forces the inference
-        backend for this turn (4c); resume uses the configured default (no per-message mode is
-        carried across the confirm round-trip — a minor inconsistency only if the summary model
-        differs from the turn's)."""
+        backend for this turn (4c); resume now carries the turn's `mode` across the confirm
+        round-trip (ACA-16 — the PWA re-sends it), so a `/local` turn resumes local. `None` (no
+        override) → the agent's own `model.mode`, else the configured default."""
         # One loop-discipline guard per turn (C1): tracks repeated calls + stall across iterations.
         guard = _LoopGuard(
             max_repeat=self._agent.max_repeat_calls,
