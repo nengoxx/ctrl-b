@@ -41,6 +41,7 @@ from app.services.agent.proposals import apply_proposal
 from app.services.agent.selector import select_agent
 from app.services.agent.session import AgentSession, collect_turn
 from app.services.agent.skills import remove_skill_md, valid_skill_slug, write_skill_md
+from app.services.agent.turns import TurnBusy, TurnHandle, TurnKind, release, reserve
 
 router = APIRouter(tags=["agent"])
 
@@ -171,6 +172,20 @@ def _effective_stream(setting: str, requested: bool) -> bool:
     return requested  # "auto"
 
 
+# The single 409 detail for a thread that already has a live turn (D38 busy-truth; the manual
+# rediscover endpoint uses its own message). Actionable per Goose's busy-error precedent.
+_TURN_BUSY_DETAIL = "a turn is already running on this thread — wait for it to finish"
+
+
+def _reserve_turn(request: Request, thread_id: str, kind: TurnKind) -> TurnHandle:
+    """Reserve the thread's turn marker (D38) or 409 — the single place `TurnBusy` maps to HTTP, so
+    the six thread-mutating endpoints share one busy response."""
+    try:
+        return reserve(request.app.state.turns, thread_id, kind)
+    except TurnBusy as e:
+        raise HTTPException(status_code=409, detail=_TURN_BUSY_DETAIL) from e
+
+
 async def _turn_response(
     request: Request,
     thread: Thread,
@@ -178,12 +193,16 @@ async def _turn_response(
     *,
     stream: bool,
     count: bool,
+    handle: TurnHandle,
 ) -> Response:
     """Return a turn as SSE or as one buffered JSON response (D17), draining the **same** event
     generator either way — `collect_turn` is a second consumer, the loop is never forked. `events` is
     `session.run_turn(...)` or `session.resume(...)`. `count` toggles the `active_turns` gauge (chat
-    counts; resume historically doesn't). The buffered payload reuses the persisted message — the
-    client re-reads it via the normal restore path, so the body stays small + authoritative."""
+    counts; resume historically doesn't). `handle` is the reserved turn marker (D38): ownership
+    transfers here from the handler and it's released in `_counted`'s `finally` — the one point
+    covering BOTH SSE (generator drained by `EventSourceResponse`) and buffered
+    (`collect_turn(_counted(...))`) transports. The buffered payload reuses the persisted message —
+    the client re-reads it via the normal restore path, so the body stays small + authoritative."""
     head = {"threadId": thread.id, "title": thread.title}
 
     async def _counted(src: AsyncIterator[Any]) -> AsyncIterator[Any]:
@@ -195,6 +214,7 @@ async def _turn_response(
         finally:
             if count:
                 request.app.state.active_turns -= 1
+            release(request.app.state.turns, handle)
 
     if not stream:
         payload = await collect_turn(_counted(events))
@@ -238,8 +258,10 @@ async def chat(body: ChatRequest, request: Request) -> Response:
         thread = await threads.create(Thread(title=body.text[:60]))
 
     # Apply any pending MCP/OpenAPI integration edits at the turn boundary (Phase 7c-b) — before the
-    # session reads the toolset, so the registry is rebuilt between turns, never mid-loop.
-    if getattr(request.app.state, "integrations_dirty", False):
+    # session reads the toolset, so the registry is rebuilt between turns, never mid-loop. ACA-17
+    # rider (D38/S2-B): only when NO turn marker is held on ANY thread — a live turn elsewhere may be
+    # iterating the registry, so skip and let `integrations_dirty` re-fire at the next quiet boundary.
+    if getattr(request.app.state, "integrations_dirty", False) and not request.app.state.turns:
         await rediscover_integrations(request.app)
 
     # Auto-route to a specialist (7e-g, D15 #8) only when nothing pins the agent — an explicit
@@ -255,10 +277,19 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     ):
         agent_name = select_agent(request.app.state.settings, selector, body.text)
 
-    session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
-    stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
-    events = session.run_turn(thread, body.text, mode=body.mode, skills=body.skills)
-    return await _turn_response(request, thread, events, stream=stream, count=True)
+    # Reserve the thread's turn marker (D38) — synchronous check-and-set, after the thread is resolved
+    # and the auto-rediscover boundary, before the response is built. Ownership transfers to the stream
+    # (`_turn_response` releases it in `_counted`'s finally); if anything raises before we hand off,
+    # release + re-raise so no marker leaks.
+    handle = _reserve_turn(request, thread.id, "chat")
+    try:
+        session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
+        stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
+        events = session.run_turn(thread, body.text, mode=body.mode, skills=body.skills)
+        return await _turn_response(request, thread, events, stream=stream, count=True, handle=handle)
+    except Exception:
+        release(request.app.state.turns, handle)
+        raise
 
 
 @router.post("/exec")
@@ -277,36 +308,45 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any]:
     if thread is None:
         thread = await threads.create(Thread(title=f"! {body.command[:58]}"))
 
-    outcome = await request.app.state.actions.invoke(
-        "run_shell", {"command": body.command}, actor=Actor.USER, privilege=Privilege.FULL
-    )
-    result = outcome.result or ToolResult(state=RunState.ERROR, summary="run_shell produced no result")
+    # Reserve the thread's turn marker (D38) — a `!cmd` also mutates the thread (revisit at Slice 5:
+    # a mid-turn `!cmd` is arguably steering). Released in the finally.
+    handle = _reserve_turn(request, thread.id, "exec")
+    try:
+        outcome = await request.app.state.actions.invoke(
+            "run_shell", {"command": body.command}, actor=Actor.USER, privilege=Privilege.FULL
+        )
+        result = outcome.result or ToolResult(state=RunState.ERROR, summary="run_shell produced no result")
 
-    call_id = uuid.uuid4().hex
-    messages = request.app.state.messages
-    # SYS-1: persist the call + result pair atomically (the same shape the agent loop produces).
-    async with request.app.state.db.transaction():
-        await messages.add(
-            Message(
-                thread_id=thread.id,
-                role="assistant",
-                actor=Actor.USER,
-                parts=[
-                    ToolCallPart(
-                        call_id=call_id, tool="run_shell", args={"command": body.command}, state=result.state
-                    )
-                ],
+        call_id = uuid.uuid4().hex
+        messages = request.app.state.messages
+        # SYS-1: persist the call + result pair atomically (the same shape the agent loop produces).
+        async with request.app.state.db.transaction():
+            await messages.add(
+                Message(
+                    thread_id=thread.id,
+                    role="assistant",
+                    actor=Actor.USER,
+                    parts=[
+                        ToolCallPart(
+                            call_id=call_id,
+                            tool="run_shell",
+                            args={"command": body.command},
+                            state=result.state,
+                        )
+                    ],
+                )
             )
-        )
-        await messages.add(
-            Message(
-                thread_id=thread.id,
-                role="tool",
-                actor=Actor.USER,
-                parts=[ToolResultPart(call_id=call_id, result=result)],
+            await messages.add(
+                Message(
+                    thread_id=thread.id,
+                    role="tool",
+                    actor=Actor.USER,
+                    parts=[ToolResultPart(call_id=call_id, result=result)],
+                )
             )
-        )
-    return {"threadId": thread.id, "callId": call_id, "state": result.state.value}
+        return {"threadId": thread.id, "callId": call_id, "state": result.state.value}
+    finally:
+        release(request.app.state.turns, handle)
 
 
 @router.get("/skills")
@@ -622,7 +662,13 @@ async def compact(body: CompactRequest, request: Request) -> dict[str, Any]:
     thread = await threads.get(body.thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
-    return await _session(request, thread).compact(thread)
+    # Reserve the thread's turn marker (D38) — compaction read-modify-writes can race the loop's own
+    # `_compactor.compact` (double summary insertion); 409 while a turn is live. Released in finally.
+    handle = _reserve_turn(request, thread.id, "compact")
+    try:
+        return await _session(request, thread).compact(thread)
+    finally:
+        release(request.app.state.turns, handle)
 
 
 class PlanEditRequest(BaseModel):
@@ -645,60 +691,66 @@ async def edit_plan(body: PlanEditRequest, request: Request) -> dict[str, Any]:
     if await threads.get(body.thread_id) is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
 
-    plan = Plan(steps=TaskPlanInput(steps=body.steps).steps)  # lenient coercion (status/field names)
-    steps_dump = [s.model_dump() for s in plan.steps]
-    total = len(plan.steps)
-    summary = f"plan · {plan.done}/{total} done" if total else "plan cleared"
-    result = ToolResult(state=RunState.OK, summary=summary, data={"plan": plan.model_dump()})
+    # Reserve the thread's turn marker (D38) — a plan-dot tap read-modify-writes the same task_plan
+    # rows the live loop updates (clobber either way); 409 while a turn is live. Released in finally.
+    handle = _reserve_turn(request, body.thread_id, "plan")
+    try:
+        plan = Plan(steps=TaskPlanInput(steps=body.steps).steps)  # lenient coercion (status/field names)
+        steps_dump = [s.model_dump() for s in plan.steps]
+        total = len(plan.steps)
+        summary = f"plan · {plan.done}/{total} done" if total else "plan cleared"
+        result = ToolResult(state=RunState.OK, summary=summary, data={"plan": plan.model_dump()})
 
-    msgs = await messages.list(body.thread_id)
-    call_msg = call_part = None
-    for m in msgs:
-        for p in m.tool_calls():
-            if p.tool == "task_plan":
-                call_msg, call_part = m, p
-    if call_part is not None:
-        result_msg = next(
-            (m for m in msgs if any(rp.call_id == call_part.call_id for rp in m.tool_results())),
-            None,
+        msgs = await messages.list(body.thread_id)
+        call_msg = call_part = None
+        for m in msgs:
+            for p in m.tool_calls():
+                if p.tool == "task_plan":
+                    call_msg, call_part = m, p
+        if call_part is not None:
+            result_msg = next(
+                (m for m in msgs if any(rp.call_id == call_part.call_id for rp in m.tool_results())),
+                None,
+            )
+            call_part.args = {"steps": steps_dump}  # what the model sees next turn
+            call_part.state = RunState.OK
+            # SYS-1: the call + result rows are one edit — update them atomically.
+            async with request.app.state.db.transaction():
+                await messages.update(call_msg)
+                if result_msg is not None:
+                    for rp in result_msg.tool_results():
+                        if rp.call_id == call_part.call_id:
+                            rp.result = result
+                    await messages.update(result_msg)
+            return {"plan": plan.model_dump(), "updated": True}
+
+        # No prior plan — append a fresh task_plan pair (user-authored).
+        call_id = uuid.uuid4().hex
+        assistant = Message(
+            thread_id=body.thread_id,
+            role="assistant",
+            actor=Actor.USER,
+            parts=[
+                ToolCallPart(call_id=call_id, tool="task_plan", args={"steps": steps_dump}, state=RunState.OK)
+            ],
         )
-        call_part.args = {"steps": steps_dump}  # what the model sees next turn
-        call_part.state = RunState.OK
-        # SYS-1: the call + result rows are one edit — update them atomically.
+        tool_msg = Message(
+            thread_id=body.thread_id,
+            role="tool",
+            actor=Actor.USER,
+            parts=[ToolResultPart(call_id=call_id, result=result)],
+        )
+        # SYS-1: persist the fresh call + result pair atomically.
         async with request.app.state.db.transaction():
-            await messages.update(call_msg)
-            if result_msg is not None:
-                for rp in result_msg.tool_results():
-                    if rp.call_id == call_part.call_id:
-                        rp.result = result
-                await messages.update(result_msg)
-        return {"plan": plan.model_dump(), "updated": True}
-
-    # No prior plan — append a fresh task_plan pair (user-authored).
-    call_id = uuid.uuid4().hex
-    assistant = Message(
-        thread_id=body.thread_id,
-        role="assistant",
-        actor=Actor.USER,
-        parts=[
-            ToolCallPart(call_id=call_id, tool="task_plan", args={"steps": steps_dump}, state=RunState.OK)
-        ],
-    )
-    tool_msg = Message(
-        thread_id=body.thread_id,
-        role="tool",
-        actor=Actor.USER,
-        parts=[ToolResultPart(call_id=call_id, result=result)],
-    )
-    # SYS-1: persist the fresh call + result pair atomically.
-    async with request.app.state.db.transaction():
-        await messages.add(assistant)
-        await messages.add(tool_msg)
-    return {
-        "plan": plan.model_dump(),
-        "updated": False,
-        "messages": [assistant.model_dump(mode="json"), tool_msg.model_dump(mode="json")],
-    }
+            await messages.add(assistant)
+            await messages.add(tool_msg)
+        return {
+            "plan": plan.model_dump(),
+            "updated": False,
+            "messages": [assistant.model_dump(mode="json"), tool_msg.model_dump(mode="json")],
+        }
+    finally:
+        release(request.app.state.turns, handle)
 
 
 @router.post("/agent/resume")
@@ -714,10 +766,17 @@ async def resume(body: ResumeRequest, request: Request) -> Response:
     # specialist you last used until you `/agent`-switch on a fresh turn.
     msgs = await request.app.state.messages.list(thread.id)
     last_agent = next((m.agent for m in reversed(msgs) if m.role == "assistant" and m.agent), None)
-    session = _session(request, thread, agent_name=last_agent, privilege=body.privilege)
-    stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
-    events = session.resume(thread, body.call_id, body.decision, body.confirm_token, body.answer)
-    return await _turn_response(request, thread, events, stream=stream, count=False)
+    # Reserve the thread's turn marker (D38, kind "resume") — released by `_turn_response` in
+    # `_counted`'s finally (covers SSE + buffered); release + re-raise on any pre-handoff error.
+    handle = _reserve_turn(request, thread.id, "resume")
+    try:
+        session = _session(request, thread, agent_name=last_agent, privilege=body.privilege)
+        stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
+        events = session.resume(thread, body.call_id, body.decision, body.confirm_token, body.answer)
+        return await _turn_response(request, thread, events, stream=stream, count=False, handle=handle)
+    except Exception:
+        release(request.app.state.turns, handle)
+        raise
 
 
 class ApplyRequest(BaseModel):
@@ -756,62 +815,70 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
     if thread is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
 
-    msgs = await messages.list(body.thread_id)
-    call_msg = call_part = None
-    for m in msgs:
-        for p in m.tool_calls():
-            if p.call_id == body.call_id:
-                call_msg, call_part = m, p
-    result_msg = result_part = None
-    for m in msgs:
-        for rp in m.tool_results():
-            if rp.call_id == body.call_id:
-                result_msg, result_part = m, rp
-    if call_msg is None or call_part is None or result_msg is None or result_part is None:
-        # each msg/part is set as a pair in the loops above, so the parts imply the msgs — checking
-        # both keeps that invariant explicit for the type checker (and guards a truly missing pair).
-        raise HTTPException(status_code=404, detail=f"no tool call '{body.call_id}' in this thread")
-    if not isinstance(result_part.result.data, dict) or "proposed" not in result_part.result.data:
-        raise HTTPException(status_code=409, detail="no pending proposal for this call")
+    # Reserve the thread's turn marker (D38) — apply does the same in-place read-modify-write on the
+    # call/result rows as /agent/plan (clobber risk vs the live loop); 409 while a turn is live.
+    handle = _reserve_turn(request, body.thread_id, "apply")
+    try:
+        msgs = await messages.list(body.thread_id)
+        call_msg = call_part = None
+        for m in msgs:
+            for p in m.tool_calls():
+                if p.call_id == body.call_id:
+                    call_msg, call_part = m, p
+        result_msg = result_part = None
+        for m in msgs:
+            for rp in m.tool_results():
+                if rp.call_id == body.call_id:
+                    result_msg, result_part = m, rp
+        if call_msg is None or call_part is None or result_msg is None or result_part is None:
+            # each msg/part is set as a pair in the loops above, so the parts imply the msgs — checking
+            # both keeps that invariant explicit for the type checker (and guards a truly missing pair).
+            raise HTTPException(status_code=404, detail=f"no tool call '{body.call_id}' in this thread")
+        if not isinstance(result_part.result.data, dict) or "proposed" not in result_part.result.data:
+            raise HTTPException(status_code=409, detail="no pending proposal for this call")
 
-    if body.decision == "dismiss":
-        result_part.result = _resolved(
-            result_part.result, applied=False, summary="the owner rejected this proposed write — not applied"
+        if body.decision == "dismiss":
+            result_part.result = _resolved(
+                result_part.result,
+                applied=False,
+                summary="the owner rejected this proposed write — not applied",
+            )
+            await messages.update(result_msg)
+            return {
+                "call_id": body.call_id,
+                "decision": "dismiss",
+                "applied": False,
+                "result": result_part.result.model_dump(mode="json"),
+            }
+
+        # apply — re-run the proposing agent's write, auto-write gate aside.
+        deps = request.app.state.deps
+        agent = request.app.state.settings.resolve_agent(call_msg.agent)
+        written = await apply_proposal(deps, agent, call_part.tool, dict(call_part.args))
+        if written.state is not RunState.OK:
+            # Leave the proposal pending (it stays approvable/dismissable) and surface the failure.
+            return {
+                "call_id": body.call_id,
+                "decision": "apply",
+                "applied": False,
+                "result": written.model_dump(mode="json"),
+            }
+
+        result_part.result = _resolved(written, applied=True)
+        call_part.state = RunState.OK
+        # SYS-1: flip the call state + rewrite the result row atomically (they can be two rows).
+        async with request.app.state.db.transaction():
+            await messages.update(call_msg)
+            if result_msg is not call_msg:
+                await messages.update(result_msg)
+        await deps.events.record(
+            Event(actor=Actor.USER, action=call_part.tool, status=written.state, summary=written.summary)
         )
-        await messages.update(result_msg)
-        return {
-            "call_id": body.call_id,
-            "decision": "dismiss",
-            "applied": False,
-            "result": result_part.result.model_dump(mode="json"),
-        }
-
-    # apply — re-run the proposing agent's write, auto-write gate aside.
-    deps = request.app.state.deps
-    agent = request.app.state.settings.resolve_agent(call_msg.agent)
-    written = await apply_proposal(deps, agent, call_part.tool, dict(call_part.args))
-    if written.state is not RunState.OK:
-        # Leave the proposal pending (it stays approvable/dismissable) and surface the failure.
         return {
             "call_id": body.call_id,
             "decision": "apply",
-            "applied": False,
-            "result": written.model_dump(mode="json"),
+            "applied": True,
+            "result": result_part.result.model_dump(mode="json"),
         }
-
-    result_part.result = _resolved(written, applied=True)
-    call_part.state = RunState.OK
-    # SYS-1: flip the call state + rewrite the result row atomically (they can be two rows).
-    async with request.app.state.db.transaction():
-        await messages.update(call_msg)
-        if result_msg is not call_msg:
-            await messages.update(result_msg)
-    await deps.events.record(
-        Event(actor=Actor.USER, action=call_part.tool, status=written.state, summary=written.summary)
-    )
-    return {
-        "call_id": body.call_id,
-        "decision": "apply",
-        "applied": True,
-        "result": result_part.result.model_dump(mode="json"),
-    }
+    finally:
+        release(request.app.state.turns, handle)

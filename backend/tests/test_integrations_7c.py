@@ -150,9 +150,13 @@ def test_rediscover_busy_409_and_empty_ok() -> None:
         from app.main import create_app
 
         with TestClient(create_app()) as c:
-            c.app.state.active_turns = 1
+            # D38/S2-B: busy-truth is the turn-marker registry now, not `active_turns`. Hold a marker
+            # directly to simulate a live turn on some thread.
+            from app.services.agent.turns import reserve
+
+            reserve(c.app.state.turns, "some-thread", "chat")
             assert c.post("/api/integrations/rediscover").status_code == 409  # busy
-            c.app.state.active_turns = 0
+            c.app.state.turns.clear()
             c.app.state.integrations_dirty = True
             r = c.post("/api/integrations/rediscover")  # no servers → fast, clears dirty
             assert r.status_code == 200, r.text

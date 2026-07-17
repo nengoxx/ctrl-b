@@ -67,6 +67,7 @@ from app.services.agent.memory import FileMemoryProvider, migrate_legacy_special
 from app.services.agent.memory_backup import GitMemoryBackup
 from app.services.agent.selector import KeywordAgentSelector
 from app.services.agent.skills import FileSkillProvider, KeywordSkillSelector
+from app.services.agent.turns import TurnHandle
 from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.deps import Deps
 from app.services.events import EventService
@@ -151,6 +152,12 @@ async def lifespan(app: FastAPI):
     app.state.discovery_lock = asyncio.Lock()
     app.state.integrations_dirty = False
     app.state.active_turns = 0
+    # Per-thread turn-marker registry (ACA Slice 2, D38) — the single busy-truth for the chat stack:
+    # every thread-mutating endpoint reserves the thread's marker while its turn runs, so concurrent
+    # posts 409 and the rediscovery gates read it (`active_turns` above missed resume turns). See
+    # app/services/agent/turns.py; Slice 3's TurnRegistry extends TurnHandle in place.
+    turns: dict[str, TurnHandle] = {}  # annotated via a local — Starlette's State attrs are Any
+    app.state.turns = turns
     # Stash the Deps bundle so the runtime reconfigure seam (PUT /api/settings) can re-point its
     # adapter handles (e.g. deps.inference) on a config change. Single source: see app/runtime.py.
     app.state.deps = deps

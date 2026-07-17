@@ -94,7 +94,9 @@ async def rediscover(request: Request) -> dict[str, Any]:
     """Apply pending MCP/OpenAPI changes now. Refused (409) while an agent turn is iterating so the
     registry is never mutated under a live loop — retry once the turn finishes (or it auto-applies on
     the next chat). Declared before `/{kind}` so the literal path isn't captured as a kind."""
-    if getattr(request.app.state, "active_turns", 0) > 0:
+    # D38/S2-B: the turn-marker registry is the single busy-truth (the old `active_turns` int missed
+    # resume turns — `count=False`). Refuse while ANY thread has a live turn.
+    if request.app.state.turns:
         raise HTTPException(status_code=409, detail="agent is busy — try again in a moment")
     return await rediscover_integrations(request.app)
 
