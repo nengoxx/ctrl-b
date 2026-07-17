@@ -676,7 +676,32 @@ D38; these BIND the Slice 2 build):**
   deleteMessage/revert/shell; its summarize folds into the turn; Codex's `/compact` aborts-and-
   replaces the turn.
 
-### Slice 2 — Turn integrity (ACA-2 interim, 10, 16, 17, 19 + ACA-1 scenario 2) · M — design LOCKED 2026-07-17 (D38; v2.4 amendments above bind the build)
+### Slice 2 — Turn integrity (ACA-2 interim, 10, 16, 17, 19 + ACA-1 scenario 2) · M — ✅ EXECUTED 2026-07-17 + ADVERSARIALLY AUDITED (design LOCKED same day: D38 + the v2.4 amendments above; 4 Opus build waves + 1 audit-fix commit, per-wave hand-review + full-gate; owner eyeball pending)
+**As-built (commits `868cf8a` [D38 lock] → `afb5e22` W1 · `e228089` W2 · `26a0bdb` W3 · `dfd42d2` W4 ·
+`1d2c002` audit fixes; backend 324 tests, FE store 25; full gate 6/6 per wave).** W1
+`Database.transaction()`: BEGIN IMMEDIATE CM + contextvar join in `execute()` + nested→RuntimeError +
+`busy_timeout=5000` + the SYS-1 docstring rider; adopters = compaction/plan/apply/exec/`_run_calls`
+tail; compaction-crash test. W2 turn registry: `turns.py` (`TurnHandle{turn_id,thread_id,kind,
+started_at}`, sync no-await `reserve`, identity-guarded `release`), 409 on all six endpoints via one
+`_reserve_turn`, ownership→`_counted` finally (SSE+buffered), busy-truth switch (both rediscovery
+gates read the registry; `active_turns` = telemetry). W3 shielded-finally: the tail moved INTO
+`finally` under `anyio.CancelScope(shield=True)` (sync entry, no checkpoint gap → BEGIN always paired
+with COMMIT); `anyio>=4.2` declared; the cancel test is level-triggered (asyncio `task.cancel()` is
+edge-triggered and passes even unshielded — documented) + shield=False verified to fail. W4:
+`ResumeRequest.mode` → `session.resume(mode=)` → all THREE `_drive` sites (answer included — build
+completion over the 2-site brief); shared `_coerce_mode`; client `busyDetail()` 409 sys-note+idle
+(never a retryable bubble), `/clear`+plan+proposal streaming guards (store-guard-only, the
+established pattern), module-level `turnMode` stash. **Post-build fresh-eyes audit: NO HIGH/MED;
+spec walk + cross-slice contract CLEAN.** Fixed same day (`1d2c002`): LOW-3 shielded rollback
+(double-cancel can't abandon an open BEGIN) · LOW-2 spawn-inside-txn contextvar warning · LOW-4
+`query()` cross-task uncommitted-read note · INFO-5 apply-409 comment (busy vs no-pending-proposal).
+Accepted with reasons: marker has no TTL/admin-clear (release rides the pre-existing proven
+`_counted` finally; Slice 3's task handle adds real recovery) · `_coerce_mode` before-validator
+leniency (intended) · post-reload `turnMode` resets to default (pre-existing semantics). Recorded
+test gaps (opportunistic): SSE-mid-stream-raise release path · cross-task `execute()` lock-wait ·
+one-flow suspend→release→resume-reserve. Suspension nuance worth knowing: a SUSPENDED turn (confirm
+bubble) ends its stream and releases the marker — a new chat on that thread is allowed by design;
+resume re-reserves fresh.
 1. **Per-thread turn marker** (`dict[thread_id, TurnHandle]` on `app.state` — see the cross-slice
    contract: a registry entry, not a held lock, so Slice 3 extends it in place). Semantics:
    - **Reserve synchronously** in the endpoint handler (no `await` between check and set — atomic

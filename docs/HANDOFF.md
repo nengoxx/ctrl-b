@@ -146,6 +146,25 @@
 > `check.py --e2e` 7/7 GREEN on the tip; 298 backend tests (+44). As-built record =
 > AGENT_CHAT_AUDIT §5 Slice 1 heading.**
 >
+> **▶ SESSION 2026-07-17 (the checklist below EXECUTED through step 4): ① model check ✓ ② dev units
+> up + owner eyeball ran — round 1 found the DISMISS RETRY LOOP, fixed same session (`2e4bc18` +
+> `3638ac5`, see the note inside step 2 below) ③ PUSHED with owner OK (14 commits `6a9ac4c..3638ac5`,
+> pre-push gate 6/6, main CI GREEN) ④ **ACA SLICE 2 ✅ EXECUTED + ADVERSARIALLY AUDITED — ALL LOCAL,
+> NOT PUSHED; owner eyeball pending.** Design review first per the plan: code-truth re-verify
+> (3-agent) + an owner-directed SEVEN-AGENT source-level field pass (opencode/Goose/Codex/pi/Hermes/
+> Gemini/Claude Code — turn-state, busy handling, cancel persistence, storage atomicity; findings
+> pinned in ACA §5 v2.4-S2-F) → **D38 LOCKED** (`868cf8a`) → 4 Opus build waves (`afb5e22` txn CM ·
+> `e228089` turn registry · `26a0bdb` shielded-finally · `dfd42d2` client+mode) + audit fixes
+> (`1d2c002`). Fresh-eyes audit: NO HIGH/MED, spec+contract clean. Full gate 6/6 every wave; backend
+> 324 tests, FE 25 store tests. As-built record = ACA §5 Slice 2 heading. **Slice 2 eyeball script:**
+> ① two rapid-fire messages on one thread → the second gets the "// a turn is already running" note
+> (not an error bubble) ② mid-turn `/clear` → blocked note ③ `/local` + "reboot corsair" → deny at
+> the bubble → check the resumed turn stays local (dev log shows the endpoint) ④ mid-turn plan-dot
+> tap → nothing happens (guard) ⑤ normal turns. NEXT after eyeball+push: Slice 3 (durable turns,
+> design review first — D35 proposed in §5) or owner's pick.**
+>
+> *(The block below is the previous session's close-out checklist, kept for provenance — steps 1–3
+> are done as recorded above.)*
 > **▶ SESSION CLOSED 2026-07-17 early AM (owner to sleep) — NEXT SESSION, in order:**
 > 1. **/model check** (fable-5 + HIGH — the app selector may default low).
 > 2. **Start the dev units** (`systemctl --user start ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`;
