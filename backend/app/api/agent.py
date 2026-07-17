@@ -284,26 +284,28 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any]:
 
     call_id = uuid.uuid4().hex
     messages = request.app.state.messages
-    await messages.add(
-        Message(
-            thread_id=thread.id,
-            role="assistant",
-            actor=Actor.USER,
-            parts=[
-                ToolCallPart(
-                    call_id=call_id, tool="run_shell", args={"command": body.command}, state=result.state
-                )
-            ],
+    # SYS-1: persist the call + result pair atomically (the same shape the agent loop produces).
+    async with request.app.state.db.transaction():
+        await messages.add(
+            Message(
+                thread_id=thread.id,
+                role="assistant",
+                actor=Actor.USER,
+                parts=[
+                    ToolCallPart(
+                        call_id=call_id, tool="run_shell", args={"command": body.command}, state=result.state
+                    )
+                ],
+            )
         )
-    )
-    await messages.add(
-        Message(
-            thread_id=thread.id,
-            role="tool",
-            actor=Actor.USER,
-            parts=[ToolResultPart(call_id=call_id, result=result)],
+        await messages.add(
+            Message(
+                thread_id=thread.id,
+                role="tool",
+                actor=Actor.USER,
+                parts=[ToolResultPart(call_id=call_id, result=result)],
+            )
         )
-    )
     return {"threadId": thread.id, "callId": call_id, "state": result.state.value}
 
 
@@ -662,12 +664,14 @@ async def edit_plan(body: PlanEditRequest, request: Request) -> dict[str, Any]:
         )
         call_part.args = {"steps": steps_dump}  # what the model sees next turn
         call_part.state = RunState.OK
-        await messages.update(call_msg)
-        if result_msg is not None:
-            for rp in result_msg.tool_results():
-                if rp.call_id == call_part.call_id:
-                    rp.result = result
-            await messages.update(result_msg)
+        # SYS-1: the call + result rows are one edit — update them atomically.
+        async with request.app.state.db.transaction():
+            await messages.update(call_msg)
+            if result_msg is not None:
+                for rp in result_msg.tool_results():
+                    if rp.call_id == call_part.call_id:
+                        rp.result = result
+                await messages.update(result_msg)
         return {"plan": plan.model_dump(), "updated": True}
 
     # No prior plan — append a fresh task_plan pair (user-authored).
@@ -680,14 +684,16 @@ async def edit_plan(body: PlanEditRequest, request: Request) -> dict[str, Any]:
             ToolCallPart(call_id=call_id, tool="task_plan", args={"steps": steps_dump}, state=RunState.OK)
         ],
     )
-    await messages.add(assistant)
     tool_msg = Message(
         thread_id=body.thread_id,
         role="tool",
         actor=Actor.USER,
         parts=[ToolResultPart(call_id=call_id, result=result)],
     )
-    await messages.add(tool_msg)
+    # SYS-1: persist the fresh call + result pair atomically.
+    async with request.app.state.db.transaction():
+        await messages.add(assistant)
+        await messages.add(tool_msg)
     return {
         "plan": plan.model_dump(),
         "updated": False,
@@ -795,9 +801,11 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
 
     result_part.result = _resolved(written, applied=True)
     call_part.state = RunState.OK
-    await messages.update(call_msg)
-    if result_msg is not call_msg:
-        await messages.update(result_msg)
+    # SYS-1: flip the call state + rewrite the result row atomically (they can be two rows).
+    async with request.app.state.db.transaction():
+        await messages.update(call_msg)
+        if result_msg is not call_msg:
+            await messages.update(result_msg)
     await deps.events.record(
         Event(actor=Actor.USER, action=call_part.tool, status=written.state, summary=written.summary)
     )

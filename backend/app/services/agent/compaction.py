@@ -130,10 +130,14 @@ class Compactor:
             # folded head) on the `ORDER BY ts ASC` reload.
             ts=tail[0].ts - timedelta(microseconds=1),
         )
-        await self._messages.add(boundary)
-        for m in head:
-            m.compacted = True
-            await self._messages.update(m)
+        # SYS-1: the summary insert + the per-message `compacted` flips are one logical edit — commit
+        # them atomically so a crash mid-loop can't leave the summary AND the unfolded originals both
+        # live (duplicated content next turn).
+        async with self._messages.db.transaction():
+            await self._messages.add(boundary)
+            for m in head:
+                m.compacted = True
+                await self._messages.update(m)
         return CompactionResult(summary_id=boundary.id, removed=len(head), truncated=truncated)
 
     def _split(self, history: list[Message]) -> tuple[list[Message], list[Message]]:

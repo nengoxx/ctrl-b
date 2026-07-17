@@ -1087,12 +1087,15 @@ class AgentSession:
             )
 
         # Persist the updated call states + the results gathered this step (a new `tool` message;
-        # a suspend may leave it partial — the remaining call carries AWAITING_CONFIRM).
-        await self._messages.update(assistant)
-        if result_parts:
-            await self._messages.add(
-                Message(thread_id=thread.id, role="tool", actor=AGENT_ACTOR, parts=list(result_parts))
-            )
+        # a suspend may leave it partial — the remaining call carries AWAITING_CONFIRM). Wrapped in a
+        # transaction so the assistant update + the tool-message add land atomically (SYS-1) — a pure
+        # wrapper, no structural change (the _run_calls internals stay Slice 4's seam).
+        async with self._messages.db.transaction():
+            await self._messages.update(assistant)
+            if result_parts:
+                await self._messages.add(
+                    Message(thread_id=thread.id, role="tool", actor=AGENT_ACTOR, parts=list(result_parts))
+                )
         return events, suspended, made_progress
 
 

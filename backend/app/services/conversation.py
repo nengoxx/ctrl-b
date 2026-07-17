@@ -1,7 +1,9 @@
 """Thread + Message repositories over SQLite (DESIGN §8).
 
-Hand-written SQL (no ORM). Writes go through `Database.execute` (serialized under the write lock);
-reads use `Database.query` (lock-free under WAL). `parts` round-trips as a JSON column via the
+Hand-written SQL (no ORM). Writes go through `Database.execute` (serialized under the write lock;
+multi-write sequences batch via `Database.transaction()`, SYS-1); reads use `Database.query` —
+lock-free because the one shared connection's worker thread serializes every op anyway (see the
+db.py module docstring). `parts` round-trips as a JSON column via the
 Pydantic union in `domain/conversation.py`, so message shape can grow (tool/plan parts in 4b)
 without touching the schema.
 """
@@ -88,6 +90,13 @@ class ThreadRepo:
 class MessageRepo:
     def __init__(self, db: Database) -> None:
         self._db = db
+
+    @property
+    def db(self) -> Database:
+        """The underlying `Database` — so callers holding only this repo (the compactor, the agent
+        session) can open a `Database.transaction()` around a multi-write sequence (SYS-1) without
+        threading a separate db handle. Read-only accessor; writes still go through the repo methods."""
+        return self._db
 
     async def add(self, msg: Message) -> Message:
         await self._db.execute(
