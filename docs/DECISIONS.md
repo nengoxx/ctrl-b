@@ -1985,3 +1985,61 @@ split (the Radix/shadcn orthogonal-props pattern).
 a live Playwright computed-chrome matrix incl. the Appearance row adjacency; FE gate 427). F5's remaining
 gates (perf pass · a11y floor · e2e render case · §0 contract row-by-row) follow. The F5 items "per-host
 art override UI" + "asset format/size pass" stay PARKED (owner 2026-07-13 — revisit post-F5).
+
+## D38 — Turn integrity: per-thread turn-marker registry + `Database.transaction()` (ACA Slice 2) ✏️ LOCKED 2026-07-17 (Slice 2 design review)
+
+**Context.** The ACA audit found the chat stack has no per-thread busy state: concurrent posts interleave
+into one thread (ACA-2), plan/apply/compact/exec race the live loop's read-modify-write pairs, a mid-turn
+cancel skips `_run_calls`' persistence tail entirely (ACA-1 scenario 2), and multi-statement write
+sequences commit per statement (SYS-1 — compaction's summary+flag-flips is the sharpest torn state). The
+Slice 2 spec (AGENT_CHAT_AUDIT §5) was code-truth re-verified against HEAD (v2.4 amendments) and
+field-verified source-level against seven agents (opencode, Goose, Codex CLI, pi, Hermes Agent, Gemini
+CLI, Claude Code — 2026-07-17 four-agent research pass, recorded in the §5 Slice 2 heading).
+
+**Decision — four mechanisms, one busy-truth.**
+- **Turn marker registry:** `app.state.turns: dict[thread_id, TurnHandle]`; `TurnHandle` = frozen-ish
+  dataclass `{turn_id: uuid hex, thread_id, kind: "chat"|"resume"|"exec"|"plan"|"apply"|"compact",
+  started_at}`. A **registry entry, not a held lock** (the field consensus: Goose's
+  `active_prompt_runs: HashMap<session_id, ActivePromptRun>`, opencode's `runners` map) — Slice 3's
+  `TurnRegistry` extends the SAME entry with task/ring/seq in place; Slice 5's steer queue and
+  `expected_run_id`-style optimistic concurrency (Goose) hang off `turn_id`. Reserve **synchronously** in
+  the endpoint handler (check-and-set with no `await` between — TOCTOU-safe under the single-threaded
+  loop), release in `_turn_response._counted`'s `finally` (the one point covering BOTH SSE and buffered
+  transports; `collect_turn` has no state access) or the handler's `finally` for plain-JSON endpoints.
+- **Scope + posture:** every thread-mutating endpoint — chat, resume, plan, apply, compact, exec — 409s
+  while the thread's marker is held, detail actionable ("a turn is already running on this thread — wait
+  for it to finish"; Goose's actionable-busy-error precedent). Interim-by-design for *messages* (Slice 5
+  upgrades chat-while-busy to the steer queue — the majority field posture; Gemini walked the same
+  reject→queue path); **permanent** for plan/apply/compact/second-stream (opencode's
+  `BusyError`-on-destructive-ops split). The registry is the **single busy-truth**: the ACA-17
+  auto-rediscover gate AND the manual rediscover endpoint's check both read `app.state.turns` (the old
+  `active_turns` int misses resume turns — `count=False`; it stays as telemetry only). Handler order
+  stays rediscover→reserve (reserve-first would self-block the gate); the residual
+  reserve-mid-rediscovery window is narrow, serialized by `discovery_lock`, and matches the "skip,
+  re-fire at the next quiet boundary" posture — accepted.
+- **Shielded step persistence:** `_run_calls`' body wrapped in `try/finally`; the `finally` persists the
+  accumulated `update(assistant)` + tool-results `add` inside `anyio.CancelScope(shield=True)` —
+  yield-free, `CancelledError` re-raised. Field-validated shape: opencode's `Effect.ensuring` finalizer +
+  Hermes's repair-then-persist-before-return; Claude Code's open #3003 (persisted `tool_use`, missing
+  `tool_result` → corrupted session) is the failure mode this prevents. First direct anyio import →
+  `anyio>=4.2` pinned in deps (4.14.1 installed; #642 shield bug cleared). In-flight-call marking stays
+  Slice 3's A11 (fix-in-the-owning-phase).
+- **`Database.transaction()`:** async CM — write lock, `BEGIN IMMEDIATE`, commit / rollback-on-error.
+  Repo calls inside the block join the open transaction via a **`contextvars.ContextVar`** (the async-ORM
+  atomic pattern) — `execute()` sees the marker and skips lock re-acquire + per-statement commit.
+  `PRAGMA busy_timeout=5000` at connect (moot with today's single shared connection — SQLITE_BUSY is
+  impossible — but future-proofs the SYS-1 reader-pool seam; opencode's `busy_timeout=0`+WAL incident is
+  the cautionary precedent, its current 5000 + Goose's `BEGIN IMMEDIATE`-per-mutation + Hermes's
+  `_execute_write` chokepoint are the field validation). Adopters: compaction summary+flag-flips (SYS-1
+  headline), plan update-pair + fresh-pair adds, apply update-pair, exec add+add, and the `_run_calls`
+  tail pair as a pure wrapper (cross-slice-contract-legal; Goose wraps its INSERT+UPDATE pair the same
+  way). Rider: the db.py "WAL lock-free reads" docstring corrected (one shared connection serializes —
+  SYS-1's parenthetical).
+- **Client + resume:** 409 branch in `streamTurn` + plan/apply/compact paths surfaces the server detail
+  as a sys-note (today any 409 renders as a generic retryable error bubble); `/clear` + plan-dot taps +
+  proposal approve/dismiss gated on `status !== "streaming"` (server stays authoritative);
+  `ResumeRequest` gains `mode` threaded endpoint → `session.resume` → `_drive` (ACA-16; the
+  `privilege`-field pattern), frontend stashes the turn's mode and carries it on resume/answer.
+
+**Status.** LOCKED 2026-07-17 after the owner-directed seven-agent field research; build = Opus waves
+per the ratified methodology. As-built record lands on the AGENT_CHAT_AUDIT §5 Slice 2 heading.

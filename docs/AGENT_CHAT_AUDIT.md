@@ -638,7 +638,45 @@ refresh; these BIND the Slice 1–2 builds):**
   chatting; cache probe: two consecutive turns on the local model show a near-full prefix hit in
   the new telemetry (and the wrap-up call after a forced stall no longer re-prefills from zero).
 
-### Slice 2 — Turn integrity (ACA-2 interim, 10, 16, 17, 19 + ACA-1 scenario 2) · M
+**v2.4 amendments (2026-07-17, Slice 2 design review — code-truth vs HEAD `3638ac5` + a four-agent
+source-level field pass over opencode/Goose/Codex/pi/Hermes/Gemini/Claude Code; design LOCKED as
+D38; these BIND the Slice 2 build):**
+- **S2-A (endpoint truth):** the spec's six thread-mutating endpoints are complete at HEAD — no
+  destructive thread routes exist (no delete/clear server-side; `/clear` is a frontend-only reset).
+  The reserve/release point for BOTH SSE and buffered transports is **`_turn_response._counted`'s
+  `finally`** (`api/agent.py:189-197`), not `collect_turn` (no state access).
+- **S2-B (busy-truth):** `active_turns` **excludes resume turns** (`count=False`, agent.py:714) —
+  it cannot gate ACA-17. The marker registry is the single busy-truth; BOTH rediscover checks
+  (auto rider + the manual endpoint, integrations.py:97) read `app.state.turns`; the int gauge
+  stays as telemetry. Handler order stays rediscover→reserve (reserve-first self-blocks the gate);
+  the residual window is accepted (serialized by `discovery_lock`, "skip + re-fire" posture).
+- **S2-C (ACA-10 delta):** `startNewThread` (chat.ts:178-183) no longer splices a live bubble —
+  the work item reduces to the missing streaming guard. And the client swallows 409 details
+  (`streamTurn` renders "url → 409"; `isLikelyUnreachable` matches 5xx only) — the sys-note
+  behavior needs an explicit 409 branch reading `detail`.
+- **S2-D (ACA-16 seam):** the spec's session.py:556-559 pointer is stale; `mode` mirrors the
+  `ResumeRequest.privilege` endpoint-field pattern (agent.py:114/711) + a new `mode` param on
+  `session.resume` → `_drive` (which already accepts it; `run_turn` already threads it).
+- **S2-E (anyio):** 4.14.1 installed (≥4.2, #642 cleared) but **transitive-only** — the build adds
+  the explicit `anyio>=4.2` pin alongside the first direct import.
+- **S2-F (field findings, 2026-07-17):** busy state as a per-session **registry entry holding the
+  run/cancel handle** is the server consensus (Goose `active_prompt_runs{run_id, cancel_token}`,
+  opencode `runners` state-machine map; Codex `Option<ActiveTurn>`) — `TurnHandle` gains a
+  `turn_id` now (Goose's `run_id`: log correlation + Slice 5's optimistic-concurrency hook).
+  Reject-vs-queue on busy: pi/Goose reject (Goose's error is *actionable* — adopted for our 409
+  detail), opencode/Codex/Gemini/Hermes queue-or-steer — validating 409-interim → Slice 5 queue
+  (Gemini itself walked reject→queue). Cancel persistence: opencode `Effect.ensuring` finalizer +
+  Hermes repair-then-persist = the shielded-finally shape; **Claude Code #3003** (persisted
+  `tool_use`, missing `tool_result` → corrupted session) is the do-nothing failure mode. Storage:
+  Hermes + Goose both run **BEGIN IMMEDIATE + WAL + non-zero busy_timeout** (Goose transacts its
+  INSERT+UPDATE pair like our `_run_calls` tail wrapper); opencode ships `busy_timeout=5000`
+  today (its `=0` incident stands as the S2-5 precedent). **Correction to §3:** "only opencode
+  rejects with `BusyError`" conflated prompts with destructive ops — opencode *queues/attaches*
+  a second prompt (DB re-read at step boundaries) and reserves `BusyError` for
+  deleteMessage/revert/shell; its summarize folds into the turn; Codex's `/compact` aborts-and-
+  replaces the turn.
+
+### Slice 2 — Turn integrity (ACA-2 interim, 10, 16, 17, 19 + ACA-1 scenario 2) · M — design LOCKED 2026-07-17 (D38; v2.4 amendments above bind the build)
 1. **Per-thread turn marker** (`dict[thread_id, TurnHandle]` on `app.state` — see the cross-slice
    contract: a registry entry, not a held lock, so Slice 3 extends it in place). Semantics:
    - **Reserve synchronously** in the endpoint handler (no `await` between check and set — atomic
