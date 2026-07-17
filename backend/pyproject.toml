@@ -26,6 +26,7 @@ dependencies = [
     "beautifulsoup4==4.14.3",
     "aiosqlite==0.22.1",
     "mcp==1.28.1",                 # exact pin caps the imminent breaking v2 (drops the 3rd stream tuple element)
+    "anyio>=4.2",                  # first DIRECT use: session.py's shielded-finally CancelScope (ACA Slice 2 / D38). Floor, not exact: transitive via starlette/httpx which resolve it; >=4.2 clears anyio#642 (shield-shields-siblings). 4.14.1 installed.
 ]
 
 # Dev-only tooling (not shipped with the app). Install with:

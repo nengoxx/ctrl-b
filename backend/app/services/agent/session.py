@@ -34,6 +34,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
+import anyio
 from pydantic import ValidationError
 
 from app.adapters.inference import InferenceClient, InferenceError, StreamReport
@@ -871,231 +872,249 @@ class AgentSession:
         made_progress = False
 
         answers = resume_answers or {}
-        for cp in assistant.tool_calls():
-            if cp.state in _RESOLVED:
-                continue  # already ran (resume: an earlier call in this step)
+        try:
+            for cp in assistant.tool_calls():
+                if cp.state in _RESOLVED:
+                    continue  # already ran (resume: an earlier call in this step)
 
-            # A2 resume: the owner answered a suspended `question` — inject their reply as this call's
-            # result (the model reads it like any tool output) without re-running the tool. Mirrors
-            # the `_DISMISS` injection below; the answer text rides in `output`.
-            if cp.call_id in answers:
-                result = ToolResult(
-                    state=RunState.OK, summary="the owner answered", output=answers[cp.call_id]
-                )
-                cp.state = RunState.OK
-                made_progress = True
-                result_parts.append(ToolResultPart(call_id=cp.call_id, result=result))
-                events.append(
-                    AgentEvent(
-                        "tool.result", {"callId": cp.call_id, "result": result.model_dump(mode="json")}
-                    )
-                )
-                continue
-
-            token = resume_tokens.get(cp.call_id)
-            if token == _DISMISS:
-                # The owner reviewed the confirm/question bubble and rejected it. Record the call's
-                # signature so a fresh model re-issue of the identical call this drive gets the denial
-                # echo (below) instead of minting a new confirm bubble (the user-visible retry loop).
-                guard.denied_sigs.add(_LoopGuard.sig(cp.tool, cp.args))
-                if cp.tool == "question":
-                    result: ToolResult = ToolResult(
-                        state=RunState.DENIED,
-                        summary="question declined by the owner",
-                        output=(
-                            "The owner chose not to answer this question. Do not re-ask it or "
-                            "rephrase it. Proceed using your best judgment, or give the owner your "
-                            "final answer."
-                        ),
-                    )
-                else:
+                # A2 resume: the owner answered a suspended `question` — inject their reply as this call's
+                # result (the model reads it like any tool output) without re-running the tool. Mirrors
+                # the `_DISMISS` injection below; the answer text rides in `output`.
+                if cp.call_id in answers:
                     result = ToolResult(
-                        state=RunState.DENIED,
-                        summary=f"{cp.tool} rejected by the owner — not run",
-                        output=(
-                            "The owner reviewed this tool call and REJECTED it. It was NOT run — "
-                            "nothing happened. This is the owner's deliberate decision, not an "
-                            "error: do not retry this call, and do not attempt the same action any "
-                            "other way. If the rest of your task doesn't depend on it, continue "
-                            "without it; otherwise stop and give the owner your final answer."
-                        ),
+                        state=RunState.OK, summary="the owner answered", output=answers[cp.call_id]
                     )
-                made_progress = True
-            else:
-                sig = _LoopGuard.sig(cp.tool, cp.args)
-                # Suppression guards apply only to fresh model calls, never a user-approved resume.
-                # C1a — exact-repeat: an identical (tool,args) call past the cap echoes the prior
-                # result + a steering note. C1c — per-tool cap: any one tool called too many times
-                # this turn (the catch-all for varied-arg spam) is refused with a steering note.
-                # A suppressed call is NOT counted as progress, so repeated suppression trips stall.
-                suppressed: ToolResult | None = None
-                if token is None:
-                    if sig in guard.denied_sigs:
-                        # Denial echo — the owner already rejected this exact call this drive (the
-                        # `_DISMISS` branch above recorded it). A fresh re-issue is refused here rather
-                        # than re-suspending on a new confirm bubble; like C1a/C1c it is NOT progress,
-                        # so a persistent re-ask trips the stall guard. Checked FIRST so a denied call
-                        # never re-suspends. (`token is None` keeps a user-approved resume exempt.)
-                        suppressed = ToolResult(
-                            state=RunState.DENIED,
-                            summary=f"(already rejected) {cp.tool} — the owner rejected this call this turn",
-                            output=(
-                                "The owner already rejected this exact call this turn. It was NOT "
-                                "run. Do not ask again — continue without it or give the owner your "
-                                "final answer."
-                            ),
-                        )
-                    elif guard.counts.get(sig, 0) >= guard.max_repeat and sig in guard.last_results:
-                        prior = guard.last_results[sig]
-                        suppressed = ToolResult(
-                            state=prior.state,
-                            summary=f"(repeat suppressed) {prior.summary}",
-                            output=(
-                                "You already ran this exact call. Do not repeat it — use the "
-                                "previous result, try a different approach, or give your final answer."
-                            ),
-                        )
-                    elif guard.tool_counts.get(cp.tool, 0) >= guard.max_per_tool:
-                        suppressed = ToolResult(
-                            state=RunState.DENIED,
-                            summary=f"(call limit) {cp.tool} used too many times this turn",
-                            output=(
-                                f"You have already called {cp.tool} {guard.tool_counts[cp.tool]} "
-                                "times this turn. Stop calling it — use what you have, switch to a "
-                                "different tool, or give the owner your final answer now."
-                            ),
-                        )
-                if suppressed is not None:
-                    cp.state = suppressed.state
-                    result_parts.append(ToolResultPart(call_id=cp.call_id, result=suppressed))
+                    cp.state = RunState.OK
+                    made_progress = True
+                    result_parts.append(ToolResultPart(call_id=cp.call_id, result=result))
                     events.append(
                         AgentEvent(
-                            "tool.result",
-                            {"callId": cp.call_id, "result": suppressed.model_dump(mode="json")},
+                            "tool.result", {"callId": cp.call_id, "result": result.model_dump(mode="json")}
                         )
                     )
                     continue
-                if token is None:
-                    guard.counts[sig] = guard.counts.get(sig, 0) + 1
-                    guard.tool_counts[cp.tool] = guard.tool_counts.get(cp.tool, 0) + 1
-                if cp.invalid_raw is not None:
-                    # ACA-13: the model's raw arguments weren't valid JSON. Don't invoke the tool with
-                    # an erased `{}` (which steers it with a misleading "field required"). Hand it the
-                    # raw blob back so it can repair the JSON. This counts toward the loop-guard caps
-                    # exactly like a ValidationError above — the increments already ran, and the
-                    # last-result / progress bookkeeping below runs on this synthesized result too.
-                    # `invalid_raw` is already truncated (≤200 chars) at stamp time in `_drive`.
-                    result = ToolResult(
-                        state=RunState.ERROR,
-                        summary=f"invalid arguments for {cp.tool}",
-                        output=f"your tool arguments were not valid JSON: {cp.invalid_raw}",
-                    )
-                else:
-                    try:
-                        outcome = await self._actions.invoke(
-                            cp.tool,
-                            cp.args,
-                            actor=AGENT_ACTOR,
-                            privilege=self._agent.privilege,
-                            interactive=self._interactive,
-                            confirm_token=token,
-                            depth=self._depth,
-                            agent=self._agent,
+
+                token = resume_tokens.get(cp.call_id)
+                if token == _DISMISS:
+                    # The owner reviewed the confirm/question bubble and rejected it. Record the call's
+                    # signature so a fresh model re-issue of the identical call this drive gets the denial
+                    # echo (below) instead of minting a new confirm bubble (the user-visible retry loop).
+                    guard.denied_sigs.add(_LoopGuard.sig(cp.tool, cp.args))
+                    if cp.tool == "question":
+                        result: ToolResult = ToolResult(
+                            state=RunState.DENIED,
+                            summary="question declined by the owner",
+                            output=(
+                                "The owner chose not to answer this question. Do not re-ask it or "
+                                "rephrase it. Proceed using your best judgment, or give the owner your "
+                                "final answer."
+                            ),
                         )
-                    except UnknownTool:
-                        result = ToolResult(state=RunState.DENIED, summary=f"unknown tool '{cp.tool}'")
-                    except ValidationError as exc:
+                    else:
+                        result = ToolResult(
+                            state=RunState.DENIED,
+                            summary=f"{cp.tool} rejected by the owner — not run",
+                            output=(
+                                "The owner reviewed this tool call and REJECTED it. It was NOT run — "
+                                "nothing happened. This is the owner's deliberate decision, not an "
+                                "error: do not retry this call, and do not attempt the same action any "
+                                "other way. If the rest of your task doesn't depend on it, continue "
+                                "without it; otherwise stop and give the owner your final answer."
+                            ),
+                        )
+                    made_progress = True
+                else:
+                    sig = _LoopGuard.sig(cp.tool, cp.args)
+                    # Suppression guards apply only to fresh model calls, never a user-approved resume.
+                    # C1a — exact-repeat: an identical (tool,args) call past the cap echoes the prior
+                    # result + a steering note. C1c — per-tool cap: any one tool called too many times
+                    # this turn (the catch-all for varied-arg spam) is refused with a steering note.
+                    # A suppressed call is NOT counted as progress, so repeated suppression trips stall.
+                    suppressed: ToolResult | None = None
+                    if token is None:
+                        if sig in guard.denied_sigs:
+                            # Denial echo — the owner already rejected this exact call this drive (the
+                            # `_DISMISS` branch above recorded it). A fresh re-issue is refused here rather
+                            # than re-suspending on a new confirm bubble; like C1a/C1c it is NOT progress,
+                            # so a persistent re-ask trips the stall guard. Checked FIRST so a denied call
+                            # never re-suspends. (`token is None` keeps a user-approved resume exempt.)
+                            suppressed = ToolResult(
+                                state=RunState.DENIED,
+                                summary=f"(already rejected) {cp.tool} — the owner rejected this call this turn",
+                                output=(
+                                    "The owner already rejected this exact call this turn. It was NOT "
+                                    "run. Do not ask again — continue without it or give the owner your "
+                                    "final answer."
+                                ),
+                            )
+                        elif guard.counts.get(sig, 0) >= guard.max_repeat and sig in guard.last_results:
+                            prior = guard.last_results[sig]
+                            suppressed = ToolResult(
+                                state=prior.state,
+                                summary=f"(repeat suppressed) {prior.summary}",
+                                output=(
+                                    "You already ran this exact call. Do not repeat it — use the "
+                                    "previous result, try a different approach, or give your final answer."
+                                ),
+                            )
+                        elif guard.tool_counts.get(cp.tool, 0) >= guard.max_per_tool:
+                            suppressed = ToolResult(
+                                state=RunState.DENIED,
+                                summary=f"(call limit) {cp.tool} used too many times this turn",
+                                output=(
+                                    f"You have already called {cp.tool} {guard.tool_counts[cp.tool]} "
+                                    "times this turn. Stop calling it — use what you have, switch to a "
+                                    "different tool, or give the owner your final answer now."
+                                ),
+                            )
+                    if suppressed is not None:
+                        cp.state = suppressed.state
+                        result_parts.append(ToolResultPart(call_id=cp.call_id, result=suppressed))
+                        events.append(
+                            AgentEvent(
+                                "tool.result",
+                                {"callId": cp.call_id, "result": suppressed.model_dump(mode="json")},
+                            )
+                        )
+                        continue
+                    if token is None:
+                        guard.counts[sig] = guard.counts.get(sig, 0) + 1
+                        guard.tool_counts[cp.tool] = guard.tool_counts.get(cp.tool, 0) + 1
+                    if cp.invalid_raw is not None:
+                        # ACA-13: the model's raw arguments weren't valid JSON. Don't invoke the tool with
+                        # an erased `{}` (which steers it with a misleading "field required"). Hand it the
+                        # raw blob back so it can repair the JSON. This counts toward the loop-guard caps
+                        # exactly like a ValidationError above — the increments already ran, and the
+                        # last-result / progress bookkeeping below runs on this synthesized result too.
+                        # `invalid_raw` is already truncated (≤200 chars) at stamp time in `_drive`.
                         result = ToolResult(
                             state=RunState.ERROR,
                             summary=f"invalid arguments for {cp.tool}",
-                            error=str(exc)[:300],
+                            output=f"your tool arguments were not valid JSON: {cp.invalid_raw}",
                         )
                     else:
-                        if outcome.needs_confirm and not self._interactive:
-                            # Headless child (subagent): no UI to confirm against → deny in place so
-                            # the turn never stalls (DESIGN §5.3). The child reports it skipped the step.
+                        try:
+                            outcome = await self._actions.invoke(
+                                cp.tool,
+                                cp.args,
+                                actor=AGENT_ACTOR,
+                                privilege=self._agent.privilege,
+                                interactive=self._interactive,
+                                confirm_token=token,
+                                depth=self._depth,
+                                agent=self._agent,
+                            )
+                        except UnknownTool:
+                            result = ToolResult(state=RunState.DENIED, summary=f"unknown tool '{cp.tool}'")
+                        except ValidationError as exc:
+                            result = ToolResult(
+                                state=RunState.ERROR,
+                                summary=f"invalid arguments for {cp.tool}",
+                                error=str(exc)[:300],
+                            )
+                        else:
+                            if outcome.needs_confirm and not self._interactive:
+                                # Headless child (subagent): no UI to confirm against → deny in place so
+                                # the turn never stalls (DESIGN §5.3). The child reports it skipped the step.
+                                result = ToolResult(
+                                    state=RunState.DENIED,
+                                    summary=f"{cp.tool} needs confirmation — skipped (headless subagent)",
+                                )
+                            elif outcome.needs_confirm:
+                                cp.state = RunState.AWAITING_CONFIRM
+                                spec = self._actions.registry.get(cp.tool).spec
+                                events.append(
+                                    AgentEvent(
+                                        "tool.permission",
+                                        {
+                                            "callId": cp.call_id,
+                                            "tool": cp.tool,
+                                            "title": spec.title,
+                                            "args": cp.args,
+                                            "risk": spec.risk.value,
+                                            "token": outcome.confirm_token,
+                                            "prompt": outcome.confirm_prompt,
+                                        },
+                                    )
+                                )
+                                suspended = True
+                                break
+                            else:
+                                result = outcome.result or ToolResult(
+                                    state=RunState.ERROR, summary=f"{cp.tool} returned no result"
+                                )
+
+                    # A2 — the `question` builtin signals AWAITING_ANSWER to suspend the turn and ask the
+                    # owner. Mirrors the confirm suspend above: persist the call, emit `tool.question`,
+                    # stop — resumed with the answer injected (top of this loop). A headless subagent has
+                    # no one to ask, so (like a headless confirm) it's denied in place and the child carries on.
+                    if result.state == RunState.AWAITING_ANSWER:
+                        if not self._interactive:
                             result = ToolResult(
                                 state=RunState.DENIED,
-                                summary=f"{cp.tool} needs confirmation — skipped (headless subagent)",
+                                summary=f"{cp.tool}: cannot ask the owner — headless subagent",
                             )
-                        elif outcome.needs_confirm:
-                            cp.state = RunState.AWAITING_CONFIRM
-                            spec = self._actions.registry.get(cp.tool).spec
+                        else:
+                            cp.state = RunState.AWAITING_ANSWER
                             events.append(
                                 AgentEvent(
-                                    "tool.permission",
+                                    "tool.question",
                                     {
                                         "callId": cp.call_id,
                                         "tool": cp.tool,
-                                        "title": spec.title,
+                                        "question": result.summary,
                                         "args": cp.args,
-                                        "risk": spec.risk.value,
-                                        "token": outcome.confirm_token,
-                                        "prompt": outcome.confirm_prompt,
                                     },
                                 )
                             )
                             suspended = True
                             break
-                        else:
-                            result = outcome.result or ToolResult(
-                                state=RunState.ERROR, summary=f"{cp.tool} returned no result"
-                            )
 
-                # A2 — the `question` builtin signals AWAITING_ANSWER to suspend the turn and ask the
-                # owner. Mirrors the confirm suspend above: persist the call, emit `tool.question`,
-                # stop — resumed with the answer injected (top of this loop). A headless subagent has
-                # no one to ask, so (like a headless confirm) it's denied in place and the child carries on.
-                if result.state == RunState.AWAITING_ANSWER:
-                    if not self._interactive:
-                        result = ToolResult(
-                            state=RunState.DENIED,
-                            summary=f"{cp.tool}: cannot ask the owner — headless subagent",
-                        )
-                    else:
-                        cp.state = RunState.AWAITING_ANSWER
-                        events.append(
-                            AgentEvent(
-                                "tool.question",
-                                {
-                                    "callId": cp.call_id,
-                                    "tool": cp.tool,
-                                    "question": result.summary,
-                                    "args": cp.args,
-                                },
-                            )
-                        )
-                        suspended = True
-                        break
-
-            cp.state = result.state
-            if token != _DISMISS:  # a real execution
-                guard.last_results[sig] = result  # remember for exact-arg suppression (C1a)
-                # Progress only if this (call, outcome) pair is *new* this turn — the SAME call
-                # re-returning the SAME result is spinning and should NOT reset stall (ACA-12;
-                # the varied-arg spiral is the per-tool cap C1c's job now).
-                rsig = _LoopGuard.result_sig(sig, result)
-                if rsig not in guard.seen_results:
-                    guard.seen_results.add(rsig)
-                    made_progress = True
-            result_parts.append(ToolResultPart(call_id=cp.call_id, result=result))
-            events.append(
-                AgentEvent(
-                    "tool.result",
-                    {"callId": cp.call_id, "result": result.model_dump(mode="json")},
+                cp.state = result.state
+                if token != _DISMISS:  # a real execution
+                    guard.last_results[sig] = result  # remember for exact-arg suppression (C1a)
+                    # Progress only if this (call, outcome) pair is *new* this turn — the SAME call
+                    # re-returning the SAME result is spinning and should NOT reset stall (ACA-12;
+                    # the varied-arg spiral is the per-tool cap C1c's job now).
+                    rsig = _LoopGuard.result_sig(sig, result)
+                    if rsig not in guard.seen_results:
+                        guard.seen_results.add(rsig)
+                        made_progress = True
+                result_parts.append(ToolResultPart(call_id=cp.call_id, result=result))
+                events.append(
+                    AgentEvent(
+                        "tool.result",
+                        {"callId": cp.call_id, "result": result.model_dump(mode="json")},
+                    )
                 )
-            )
 
-        # Persist the updated call states + the results gathered this step (a new `tool` message;
-        # a suspend may leave it partial — the remaining call carries AWAITING_CONFIRM). Wrapped in a
-        # transaction so the assistant update + the tool-message add land atomically (SYS-1) — a pure
-        # wrapper, no structural change (the _run_calls internals stay Slice 4's seam).
-        async with self._messages.db.transaction():
-            await self._messages.update(assistant)
-            if result_parts:
-                await self._messages.add(
-                    Message(thread_id=thread.id, role="tool", actor=AGENT_ACTOR, parts=list(result_parts))
-                )
+        finally:
+            # Shielded persistence tail (ACA-1 scenario 2 + D38). Runs on BOTH the normal path and
+            # when `CancelledError` lands mid-batch (a cancel inside `self._actions.invoke` above): the
+            # completed calls' resolved states + their accumulated `result_parts` must survive, while
+            # the in-flight call keeps its unresolved state (`_assemble` synthesizes "not executed";
+            # A11's `cancelled` marker is Slice 3's). The persistence runs inside
+            # `anyio.CancelScope(shield=True)` — valid because Starlette runs handlers/streams under
+            # anyio task groups. The scope is entered synchronously (no checkpoint before it), so a
+            # pending cancel cannot fire between the `finally` and the shield; once inside, every await
+            # (write-lock acquire, `BEGIN IMMEDIATE`, the writes, `COMMIT`) is deferred, so `BEGIN` is
+            # always paired with `COMMIT` — no dangling transaction. On the normal path `CancelledError`
+            # is absent, so this simply persists once and the method returns below; on cancel the error
+            # re-raises naturally after the finally. NOT `asyncio.shield` (detached-task leak). This is
+            # the ONLY persistence of the assistant update + tool message — the transaction wrapper is a
+            # pure add (no `_run_calls` structural change; per-call persistence is Slice 4's seam).
+            with anyio.CancelScope(shield=True):
+                async with self._messages.db.transaction():
+                    await self._messages.update(assistant)
+                    if result_parts:
+                        await self._messages.add(
+                            Message(
+                                thread_id=thread.id,
+                                role="tool",
+                                actor=AGENT_ACTOR,
+                                parts=list(result_parts),
+                            )
+                        )
         return events, suspended, made_progress
 
 
