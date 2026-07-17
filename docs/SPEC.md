@@ -292,9 +292,9 @@ stateDiagram-v2
     pending --> awaiting_confirm: CONFIRM (interactive)
     pending --> awaiting_answer: question tool
     awaiting_confirm --> ok: resume(execute) — re-minted token
-    awaiting_confirm --> skipped: resume(dismiss)
+    awaiting_confirm --> denied: resume(dismiss) — owner rejected, no-retry steering
     awaiting_answer --> ok: resume(answer) — reply injected as result
-    awaiting_answer --> skipped: resume(dismiss)
+    awaiting_answer --> denied: resume(dismiss) — owner declined to answer
     note right of awaiting_confirm: durable in SQLite —\nsurvives reload/restart;\nabandoned → synthesized\n"skipped" in next context
 ```
 
