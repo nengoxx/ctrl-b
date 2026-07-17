@@ -701,7 +701,17 @@ leniency (intended) · post-reload `turnMode` resets to default (pre-existing se
 test gaps (opportunistic): SSE-mid-stream-raise release path · cross-task `execute()` lock-wait ·
 one-flow suspend→release→resume-reserve. Suspension nuance worth knowing: a SUSPENDED turn (confirm
 bubble) ends its stream and releases the marker — a new chat on that thread is allowed by design;
-resume re-reserves fresh.
+resume re-reserves fresh. **Pre-push 8-angle code review (2026-07-18, 6 Opus finders + verify):
+5 fixes landed** — `runShell` 409 branch (the one wave-4 miss: exec-busy read as "backend
+unreachable") · streamTurn 409 also drops the rejected user bubble · `modeByCall` per-call mode pin
+(ACA-16 held only until the next interleaved send overwrote `turnMode`; keyed+cleaned like
+`confirmTokens`) · finally exception-masking hardening (a DB failure during cancel unwind no longer
+replaces the in-flight `CancelledError`; comment now also states the subagent path's edge-triggered
+premise) · **`test_turn_guard_invariant.py`** (route-derived, fail-closed both ways — endpoint #7
+can't mutate a thread unguarded). Recorded, not fixed: `PUT /settings` tool-override mutation is a
+third ungated registry-mutation path (PRE-EXISTING — SYS-3's finding; the turns gate is its natural
+close, ride a future slice) · `active_turns` is write-only (no telemetry consumer) — Slice 3 should
+expose it or delete it.
 1. **Per-thread turn marker** (`dict[thread_id, TurnHandle]` on `app.state` — see the cross-slice
    contract: a registry entry, not a held lock, so Slice 3 extends it in place). Semantics:
    - **Reserve synchronously** in the endpoint handler (no `await` between check and set — atomic

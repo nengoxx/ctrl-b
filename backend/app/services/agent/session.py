@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import uuid
 from dataclasses import dataclass, field
 from typing import AsyncIterator
@@ -1101,26 +1102,42 @@ class AgentSession:
             # the in-flight call keeps its unresolved state (`_assemble` synthesizes "not executed";
             # A11's `cancelled` marker is Slice 3's). The persistence runs inside
             # `anyio.CancelScope(shield=True)` — valid because Starlette runs handlers/streams under
-            # anyio task groups. The scope is entered synchronously (no checkpoint before it), so a
-            # pending cancel cannot fire between the `finally` and the shield; once inside, every await
-            # (write-lock acquire, `BEGIN IMMEDIATE`, the writes, `COMMIT`) is deferred, so `BEGIN` is
-            # always paired with `COMMIT` — no dangling transaction. On the normal path `CancelledError`
-            # is absent, so this simply persists once and the method returns below; on cancel the error
-            # re-raises naturally after the finally. NOT `asyncio.shield` (detached-task leak). This is
-            # the ONLY persistence of the assistant update + tool message — the transaction wrapper is a
-            # pure add (no `_run_calls` structural change; per-call persistence is Slice 4's seam).
+            # anyio task groups. (Subagent children run under a raw asyncio TaskGroup — subagents.py —
+            # where the shield holds only incidentally: asyncio cancellation is edge-triggered, so the
+            # single cancel has already been delivered before this finally; a future re-cancelling
+            # source there must revisit this.) The scope is entered synchronously (no checkpoint
+            # before it), so a pending cancel cannot fire between the `finally` and the shield; once
+            # inside, every await (write-lock acquire, `BEGIN IMMEDIATE`, the writes, `COMMIT`) is
+            # deferred, so `BEGIN` is always paired with `COMMIT` — no dangling transaction. On the
+            # normal path `CancelledError` is absent, so this simply persists once and the method
+            # returns below; on cancel the error re-raises naturally after the finally. NOT
+            # `asyncio.shield` (detached-task leak). This is the ONLY persistence of the assistant
+            # update + tool message — the transaction wrapper is a pure add (no `_run_calls`
+            # structural change; per-call persistence is Slice 4's seam).
+            in_flight = sys.exc_info()[1]  # the exception this finally is unwinding under, if any
             with anyio.CancelScope(shield=True):
-                async with self._messages.db.transaction():
-                    await self._messages.update(assistant)
-                    if result_parts:
-                        await self._messages.add(
-                            Message(
-                                thread_id=thread.id,
-                                role="tool",
-                                actor=AGENT_ACTOR,
-                                parts=list(result_parts),
+                try:
+                    async with self._messages.db.transaction():
+                        await self._messages.update(assistant)
+                        if result_parts:
+                            await self._messages.add(
+                                Message(
+                                    thread_id=thread.id,
+                                    role="tool",
+                                    actor=AGENT_ACTOR,
+                                    parts=list(result_parts),
+                                )
                             )
-                        )
+                except Exception:
+                    # A persistence failure during unwind (e.g. a DB error while a CancelledError is
+                    # propagating) must not REPLACE the in-flight exception — a swallowed cancel would
+                    # mis-drive the caller's cancel scope. Standalone (normal path) it still raises.
+                    if in_flight is None:
+                        raise
+                    log.exception(
+                        "step persistence failed while unwinding %r — original exception preserved",
+                        type(in_flight).__name__,
+                    )
         return events, suspended, made_progress
 
 
