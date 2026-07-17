@@ -9,7 +9,7 @@ injected as the call's result. This drives `_run_calls` directly (no model) to c
   3. find pending  — `_find_pending` matches the suspended question (so resume can resolve it).
   4. answer inject — `resume_answers` injects the reply as an OK result (`output == answer`), no suspend.
   5. headless      — interactive=False → the suspend becomes a DENIED result (the subagent carries on).
-  6. dismiss       — the `_DISMISS` path skips the question (SKIPPED), like a dismissed confirm.
+  6. dismiss       — the `_DISMISS` path declines the question (DENIED), like a rejected confirm.
 
 Each test runs in an isolated `$CTRLB_HOME` temp workspace; the real config/db are never touched.
 """
@@ -148,7 +148,9 @@ def test_dismiss_skips_the_question() -> None:
             session, thread, assistant, cid = _session_and_call(c)
             events, suspended, _ = _run(session._run_calls(thread, assistant, {cid: _DISMISS}, _guard()))
             assert not suspended
-            assert _result_event(events).data["result"]["state"] == "skipped"
+            res = _result_event(events).data["result"]
+            assert res["state"] == "denied"
+            assert res["summary"] == "question declined by the owner"
 
 
 if __name__ == "__main__":

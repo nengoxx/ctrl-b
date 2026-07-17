@@ -769,7 +769,9 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
         raise HTTPException(status_code=409, detail="no pending proposal for this call")
 
     if body.decision == "dismiss":
-        result_part.result = _resolved(result_part.result, applied=False, summary="proposal dismissed")
+        result_part.result = _resolved(
+            result_part.result, applied=False, summary="the owner rejected this proposed write — not applied"
+        )
         await messages.update(result_msg)
         return {
             "call_id": body.call_id,

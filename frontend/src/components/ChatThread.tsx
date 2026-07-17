@@ -15,7 +15,7 @@ import type { ChatMessage, Part, ToolCallPart, ToolResult, WebSearchHit } from "
 // anyway for plan placement — one derivation per body, not two). Renders the `.chat-log` div (`id=chatlog`)
 // + the empty state + `messages.map(Bubbles)` — Vapor bubbles (sys / user / bot), streaming token-by-token,
 // with a thinking model's reasoning in a dimmed collapsible; command/action bubbles (.b.cmd) pair a tool
-// call with its result by call_id, and a confirm-gated call shows execute/edit/dismiss (DESIGN §12,
+// call with its result by call_id, and a confirm-gated call shows allow/edit/deny (DESIGN §12,
 // vapor.html:1934). The scroll-stick-to-bottom lives here (it targets `#app-scroll`, the shell content pane).
 
 function hm(iso: string): string {
@@ -172,13 +172,13 @@ function CmdBubble({
         {awaiting && (
           <div className="actions">
             <button className="exec" onClick={() => void resumeCall(call.call_id, "execute")}>
-              execute
+              allow
             </button>
             <button className="edit" onClick={() => fillComposer(line)}>
               edit
             </button>
             <button className="dismiss" onClick={() => void resumeCall(call.call_id, "dismiss")}>
-              dismiss
+              deny
             </button>
           </div>
         )}
@@ -211,7 +211,7 @@ function CmdBubble({
               approve
             </button>
             <button className="dismiss" onClick={() => void applyProposal(call.call_id, "dismiss")}>
-              dismiss
+              reject
             </button>
           </div>
         )}
@@ -222,7 +222,7 @@ function CmdBubble({
 }
 
 /** A `question` call (A2): the agent asked the owner something and suspended. While awaiting, show the
- *  prompt + a reply input (Send / Dismiss); once answered/dismissed, show the outcome. Sibling of
+ *  prompt + a reply input (Send / Decline); once answered/declined, show the outcome. Sibling of
  *  PlanBubble — questions render their own bubble, not a CmdBubble. */
 function QuestionBubble({
   call,
@@ -269,13 +269,18 @@ function QuestionBubble({
                 send
               </button>
               <button className="dismiss" onClick={() => void resumeCall(call.call_id, "dismiss")}>
-                dismiss
+                decline
               </button>
             </div>
           </>
         ) : result ? (
           <div className={"cmd-result " + result.state}>
-            // {result.state === "skipped" ? "dismissed" : result.output || result.summary}
+            //{" "}
+            {result.state === "denied"
+              ? "declined"
+              : result.state === "skipped"
+                ? "dismissed"
+                : result.output || result.summary}
           </div>
         ) : null}
       </div>

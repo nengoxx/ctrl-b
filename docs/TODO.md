@@ -203,7 +203,7 @@ tools + confirm bubbles) are DONE.**
       event w/ the single-use token, `done(suspended)`). `MAX_ITERATIONS=8`. `POST /api/agent/resume`
       (execute|dismiss + token) finishes the step + continues the loop over a fresh SSE stream.
 - [x] **Command/action bubbles** (frontend): Vapor `.b.cmd` pairs `tool_call`+`tool_result` by
-      `call_id`; med/high-risk show execute/edit/dismiss wired to `resumeCall()`; low-risk auto-run
+      `call_id`; med/high-risk show allow/edit/deny wired to `resumeCall()`; low-risk auto-run
       (agent privilege=CONFIRM). Net-new outcome line in `extras.css` (vapor.css verbatim, D7).
 - [x] **Verify:** `compileall` + a `TestClient` run (stubbed scriptable inference + synthetic
       LOW/HIGH tools): ALLOW loop, CONFIRM suspend→resume(execute), persistence round-trip,

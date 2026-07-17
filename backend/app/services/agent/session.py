@@ -155,6 +155,12 @@ class _LoopGuard:
     #: call returning the *identical* result) is now caught by the per-tool cap (C1c) instead, which
     #: refuses the (N+1)th call to any one tool regardless of args.
     seen_results: set[str] = field(default_factory=set)
+    #: Normalized `(tool, args)` signatures the owner DISMISSED this drive (the denial echo). A
+    #: dismissal records its signature; a fresh model re-issue of the identical call this drive is
+    #: refused with a denial echo (like C1a/C1c, NOT progress) instead of re-suspending on a new
+    #: confirm bubble — the user-visible retry loop a small model triggers by reading a skip as
+    #: transient. Only fresh calls are checked, never a user-approved resume (`token is None`).
+    denied_sigs: set[str] = field(default_factory=set)
 
     @staticmethod
     def sig(tool: str, args: dict) -> str:
@@ -888,9 +894,32 @@ class AgentSession:
 
             token = resume_tokens.get(cp.call_id)
             if token == _DISMISS:
-                result: ToolResult = ToolResult(
-                    state=RunState.SKIPPED, summary=f"{cp.tool} dismissed by the owner"
-                )
+                # The owner reviewed the confirm/question bubble and rejected it. Record the call's
+                # signature so a fresh model re-issue of the identical call this drive gets the denial
+                # echo (below) instead of minting a new confirm bubble (the user-visible retry loop).
+                guard.denied_sigs.add(_LoopGuard.sig(cp.tool, cp.args))
+                if cp.tool == "question":
+                    result: ToolResult = ToolResult(
+                        state=RunState.DENIED,
+                        summary="question declined by the owner",
+                        output=(
+                            "The owner chose not to answer this question. Do not re-ask it or "
+                            "rephrase it. Proceed using your best judgment, or give the owner your "
+                            "final answer."
+                        ),
+                    )
+                else:
+                    result = ToolResult(
+                        state=RunState.DENIED,
+                        summary=f"{cp.tool} rejected by the owner — not run",
+                        output=(
+                            "The owner reviewed this tool call and REJECTED it. It was NOT run — "
+                            "nothing happened. This is the owner's deliberate decision, not an "
+                            "error: do not retry this call, and do not attempt the same action any "
+                            "other way. If the rest of your task doesn't depend on it, continue "
+                            "without it; otherwise stop and give the owner your final answer."
+                        ),
+                    )
                 made_progress = True
             else:
                 sig = _LoopGuard.sig(cp.tool, cp.args)
@@ -901,7 +930,22 @@ class AgentSession:
                 # A suppressed call is NOT counted as progress, so repeated suppression trips stall.
                 suppressed: ToolResult | None = None
                 if token is None:
-                    if guard.counts.get(sig, 0) >= guard.max_repeat and sig in guard.last_results:
+                    if sig in guard.denied_sigs:
+                        # Denial echo — the owner already rejected this exact call this drive (the
+                        # `_DISMISS` branch above recorded it). A fresh re-issue is refused here rather
+                        # than re-suspending on a new confirm bubble; like C1a/C1c it is NOT progress,
+                        # so a persistent re-ask trips the stall guard. Checked FIRST so a denied call
+                        # never re-suspends. (`token is None` keeps a user-approved resume exempt.)
+                        suppressed = ToolResult(
+                            state=RunState.DENIED,
+                            summary=f"(already rejected) {cp.tool} — the owner rejected this call this turn",
+                            output=(
+                                "The owner already rejected this exact call this turn. It was NOT "
+                                "run. Do not ask again — continue without it or give the owner your "
+                                "final answer."
+                            ),
+                        )
+                    elif guard.counts.get(sig, 0) >= guard.max_repeat and sig in guard.last_results:
                         prior = guard.last_results[sig]
                         suppressed = ToolResult(
                             state=prior.state,

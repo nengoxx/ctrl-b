@@ -153,9 +153,17 @@
 >    test script:** ① "Ping all my hosts and give me a status summary" (the ACA-12 no-false-stall
 >    proof — pre-fix, identical ping results could cut the turn short) · ② "Which services are
 >    running on vault, and are they healthy?" (bounded reads) · ③ "Reboot corsair" → confirm bubble;
->    **DISMISS unless a real reboot is acceptable — dev controls the REAL fleet**; the full
+>    **DENY unless a real reboot is acceptable — dev controls the REAL fleet**; the full
 >    re-mint+consume path = leave the bubble >2 min then Allow (WILL reboot) · ④ composer
 >    `!echo hello` then `!sleep 90` (clean ~60s timeout result, no hang) · ⑤ a few normal turns.
+>    **▶ Eyeball round 1 (2026-07-17) found + FIXED the DISMISS RETRY LOOP:** the small model read
+>    `[skipped] {tool} dismissed by the owner` as transient and re-called → fresh bubble each time.
+>    Fix (researched vs Claude Code/Codex/Gemini/Cline denial wording; owner-approved design): dismiss
+>    now yields `DENIED` + explicit owner-refusal steering ("REJECTED… NOT run… do not retry";
+>    `question` variant "declined") · `_LoopGuard.denied_sigs` no-rebubble echo (a same-drive identical
+>    re-issue gets "(already rejected)" DENIED, not progress → stall guard; user-approved resumes
+>    exempt) · bubble labels execute/dismiss → **allow/deny** (+ proposal reject / question decline;
+>    wire values + CSS classes unchanged) · proposal-dismiss summary reworded. Gate 7/7 incl. e2e.
 >    (Cache-telemetry line is DEBUG-level — not visible at the dev units' default log level;
 >    verified via tests + a live llama-server probe instead.)
 > 3. **Owner push OK → `git push`** (12 local commits `6a9ac4c`..`6c32368`; pre-push hook runs the
@@ -1982,7 +1990,7 @@ auto-TTS, command bubbles). Port it; copy assets (logo/favicon), don't import.
 > saved"). Backend apply is covered by `test_apply_proposal_7e.py` (8). **Still un-eyeballed (low):** the
 > Approve-writes / reload-doesn't-resurrect / `skill_manage`-propose paths — backend-tested, just no human
 > glance yet; finish opportunistically. **Noted, not changed:** a *dismissed* proposal keeps `state=OK`
-> (summary "proposal dismissed") — clear enough; flip `_resolved` to SKIPPED if ever desired.
+> (summary "the owner rejected this proposed write — not applied") — clear enough; flip `_resolved` to SKIPPED if ever desired.
 >
 > **▶ 7e-g `AgentSelector` shipped (`b7ce996`) → 7e is FULLY COMPLETE.** Optional per-turn auto-router:
 > when no `/agent` is pinned **and** `agent.auto_rotate` is on, the chat endpoint picks the best-matching
@@ -3829,7 +3837,7 @@ Frontend pinned to **5190** (5173–5175 are other workspaces).
 ```
   types.ts                     #   + ToolCallPart / ToolResultPart (extend Part)
   store/chat.ts                # ⭐ multi-message turns; part.added/tool.permission/tool.result; resumeCall(); shared streamTurn()
-  tabs/AgentTab.tsx            # ⭐ Vapor .b.cmd command bubbles (pairs tool_call+result by id) + execute/edit/dismiss
+  tabs/AgentTab.tsx            # ⭐ Vapor .b.cmd command bubbles (pairs tool_call+result by id) + allow/edit/deny
   theme/extras.css             # ⭐ net-new: cmd-result outcome line (state-colored) + resolved/gate states (vapor tokens)
 ```
 **Agent privilege = `CONFIRM`** (the AgentDef default, D11): low-risk tools (wake/ping/start_service/

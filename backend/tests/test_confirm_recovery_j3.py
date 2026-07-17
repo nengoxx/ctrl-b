@@ -174,7 +174,56 @@ def test_dismiss_still_works_after_token_loss() -> None:
         c.app.state.actions._pending.clear()
         events = _run(_collect(session.resume(thread, cid, "dismiss")))
         res = next(e for e in events if e.event == "tool.result").data["result"]
-        assert res["state"] == "skipped"
+        assert res["state"] == "denied"
+        assert res["summary"] == "reboot_host rejected by the owner — not run"
+
+
+def test_dismissed_reissue_gets_denial_echo_not_a_new_bubble() -> None:
+    """The no-rebubble guard: after the owner dismisses a confirm-gated call, a fresh model re-issue
+    of the IDENTICAL (tool, args) call in the SAME drive must NOT re-suspend on a new confirm bubble
+    — it gets the '(already rejected)' DENIED echo instead. The drive-scoped `_LoopGuard` carries the
+    dismissed signature, so a guard SHARED across the two `_run_calls` passes reproduces the single
+    `_drive`'s state (the resume step + the next model iteration) — the established session-loop test
+    pattern (there is no scripted-model harness; these tests drive `_run_calls` directly)."""
+    from app.domain.conversation import Message, ToolCallPart
+    from app.domain.enums import Actor, RunState
+    from app.services.agent.session import _DISMISS, _LoopGuard
+
+    with _workspace(), _client() as c:
+        session, thread, assistant, cid = _session_and_confirm_call(c)
+        _suspend_on_confirm(session, thread, assistant)  # AWAITING_CONFIRM (its guard is discarded)
+
+        # The resume step + the model iteration that follows share ONE drive-scoped guard.
+        guard = _guard()
+        _run(session._run_calls(thread, assistant, {cid: _DISMISS}, guard))  # owner dismisses
+        sig = _LoopGuard.sig("reboot_host", {"host_id": "nope"})
+        assert sig in guard.denied_sigs  # the dismissal recorded the call signature
+
+        # The model re-issues the IDENTICAL call this same drive (a fresh PENDING assistant message).
+        recall_id = uuid.uuid4().hex
+        reissue = Message(
+            thread_id=thread.id,
+            role="assistant",
+            actor=Actor.AGENT,
+            agent="default",
+            parts=[
+                ToolCallPart(
+                    call_id=recall_id,
+                    tool="reboot_host",
+                    args={"host_id": "nope"},
+                    state=RunState.PENDING,
+                )
+            ],
+        )
+        _run(c.app.state.messages.add(reissue))
+        events, suspended, made_progress = _run(session._run_calls(thread, reissue, {}, guard))
+
+        assert not suspended  # did NOT re-suspend
+        assert not any(e.event == "tool.permission" for e in events)  # NO fresh confirm bubble
+        assert made_progress is False  # a denial echo is not progress (a re-ask trips the stall guard)
+        res = next(e for e in events if e.event == "tool.result").data["result"]
+        assert res["state"] == "denied"
+        assert res["summary"].startswith("(already rejected)")
 
 
 def test_no_double_execute() -> None:

@@ -2209,7 +2209,7 @@ body {
    The `question` builtin asks the owner mid-turn and suspends. Reuses the `.b.cmd` shell + the
    confirm bubble's `.actions`/`.exec`/`.dismiss` buttons; only the prompt + reply input are net-new. */
 /* `.b.cmd .body` is padding:0 (each child insets itself, like `.preamble`/`pre`/`.cmd-result`),
-   so the prompt + input carry their own 12px inset; the Send/Dismiss bar reuses the edge-to-edge
+   so the prompt + input carry their own 12px inset; the Send/Decline bar reuses the edge-to-edge
    `.b.cmd .actions` footer (a direct `.body` child), so the question bubble matches the confirm one. */
 .b.cmd.question .q-prompt {
   padding: 10px 12px;
