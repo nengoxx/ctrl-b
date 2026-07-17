@@ -26,6 +26,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import aiosqlite
+import anyio
 
 #: Milliseconds SQLite waits on a locked database before returning SQLITE_BUSY. Moot with today's
 #: single shared connection (the worker thread already serializes every op), but set at connect so
@@ -212,7 +213,12 @@ class Database:
         so it sees the uncommitted writes.
 
         Nested `transaction()` is a programming error — there is no savepoint support (nothing needs
-        it), so a re-entry raises `RuntimeError` rather than silently degrading atomicity."""
+        it), so a re-entry raises `RuntimeError` rather than silently degrading atomicity.
+
+        ⚠ Do NOT spawn tasks that write the DB from inside a `transaction()` block: a task created
+        inside the block inherits `_in_transaction=True` (contextvars copy at task creation), so its
+        `execute()` would join a transaction it doesn't own and race the owner's COMMIT/ROLLBACK.
+        All current adopters are spawn-free; keep it that way (Slice 2 audit finding)."""
         if _in_transaction.get():
             raise RuntimeError(
                 "transaction() is already open on this context — nested transactions are unsupported"
@@ -224,7 +230,11 @@ class Database:
                 try:
                     yield
                 except BaseException:
-                    await self.conn.rollback()
+                    # Shielded so a second cancellation landing mid-rollback can't abandon the open
+                    # BEGIN on the shared connection (which would poison every later transaction with
+                    # "cannot start a transaction within a transaction" — Slice 2 audit finding).
+                    with anyio.CancelScope(shield=True):
+                        await self.conn.rollback()
                     raise
                 else:
                     await self.conn.commit()
@@ -235,7 +245,10 @@ class Database:
         """Read rows. Lock-free by design — every op runs on the one shared connection's worker
         thread, which serializes it against writes (WAL's cross-connection read concurrency is unused;
         a reader-pool is the future seam, SYS-1). Inside a `transaction()` it sees that txn's own
-        uncommitted writes (same connection)."""
+        uncommitted writes (same connection) — which also means a read from a DIFFERENT task during
+        another task's open transaction sees those uncommitted writes and, if the txn rolls back, has
+        returned phantom rows. Reachable only via marker-ungated reads (e.g. a thread listing during a
+        live turn's txn) — transient + display-only, accepted (Slice 2 audit finding)."""
         async with self.conn.execute(sql, params) as cur:
             return list(await cur.fetchall())
 
