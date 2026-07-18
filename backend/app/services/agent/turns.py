@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import anyio
 
+from app.config import TurnsCfg
 from app.domain.enums import RunState
 
 if TYPE_CHECKING:
@@ -225,7 +226,9 @@ class TurnBusy(Exception):
 #: Default replay-ring depth when a caller doesn't pass one (test/unit paths). Production always
 #: passes `agent.turns.ring_size`; this keeps the Slice-2 unit signature `reserve(turns, id, kind)`
 #: working without threading config through every caller.
-_DEFAULT_RING_SIZE = 2048
+#: Test/unit fallback only — production always passes `cfg.ring_size`. Derived from the config
+#: field so the default has ONE source of truth (review fix: the literal was duplicated).
+_DEFAULT_RING_SIZE = TurnsCfg().ring_size
 
 
 def reserve(
@@ -478,11 +481,9 @@ def remove_subscriber(handle: TurnHandle, q: asyncio.Queue) -> None:
 # re-attach. It is read-side only — NEVER busy state — and swept opportunistically (no background
 # task), so an idle server never accumulates stale records.
 
-#: Cap on `app.state.turn_terminals` (D39/S3-B): how many finished-turn records are retained for
-#: late re-attach, evict-oldest past this many threads. Small on purpose — a client that dropped
-#: re-attaches within seconds (well under `linger_s`); older records are both linger-expired and
-#: capped away. Not a config knob: this bounds a transient read cache, not turn behavior.
-_TERMINAL_CACHE_CAP = 32
+# The terminal-cache cap lives in config (`agent.turns.terminal_cache_cap`, review fix): it
+# co-governs the cache with `linger_s`, and TurnsCfg's contract is "every tunable of the turn
+# machinery lives here" — callers pass it explicitly to `record_terminal`.
 
 
 @dataclass
@@ -511,7 +512,7 @@ def record_terminal(
     handle: TurnHandle,
     *,
     linger_s: float,
-    cap: int = _TERMINAL_CACHE_CAP,
+    cap: int,
 ) -> None:
     """Move a just-finished turn's terminal fact into the cache (called at the `_turn_response`
     done-callback seam, AFTER the drain task's finally set `handle.terminal_status` — the D39/M2

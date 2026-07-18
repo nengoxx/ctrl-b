@@ -98,7 +98,7 @@ def test_status_probe_live_then_terminal_then_expired() -> None:
             handle.task = task
 
             def _cb(_t):
-                record_terminal(s.turn_terminals, handle, linger_s=cfg.linger_s)
+                record_terminal(s.turn_terminals, handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap)
                 release(s.turns, handle)
 
             task.add_done_callback(_cb)
@@ -307,7 +307,7 @@ def test_cancel_endpoint_mid_turn_reconciles_marks_stale_and_is_idempotent() -> 
             handle.task = task
 
             def _cb(_t):
-                record_terminal(s.turn_terminals, handle, linger_s=cfg.linger_s)
+                record_terminal(s.turn_terminals, handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap)
                 release(s.turns, handle)
 
             task.add_done_callback(_cb)
@@ -504,6 +504,100 @@ def test_subagent_taskgroup_propagates_external_cancel() -> None:
 
     assert out["raised"] is True  # the subtree cancellation propagated out (not swallowed)
     assert out["cancelled_children"] == 2  # both children were cancelled + unwound
+
+
+# ── 8: done-but-unreleased window — status/stream report terminal, never live (review item 3) ─────
+
+
+def test_status_and_stream_treat_done_but_unreleased_as_terminal() -> None:
+    """A handle whose drain task finished (`terminal_status` set + sentinel pushed) but whose
+    `_cleanup` done-callback hasn't run yet — still in `state.turns`, not yet in the terminal cache —
+    must be reported NOT live by BOTH the probe and the re-attach stream. Otherwise a re-attach in
+    that one-tick window attaches a fresh queue that never receives TERMINAL → wedged SSE + leaked
+    subscriber. The window is reproduced deterministically by driving the drain to completion WITHOUT
+    registering the cleanup callback: the handle lingers in the registry, terminal_status set, cache
+    empty — exactly the state between the terminal sentinel and the `call_soon` done-callback."""
+    from app.api.agent import turn_status, turn_stream
+    from app.services.agent.turns import drain_turn, reserve
+
+    with _client() as c:
+        s = c.app.state
+        cfg = s.settings.agent.turns
+        out: dict = {}
+
+        async def scenario():
+            handle = reserve(s.turns, "th-window", "chat", ring_size=cfg.ring_size)
+
+            async def gen():
+                yield _ev("text.delta", messageId="m", delta="a")
+                yield _ev("done", threadId="th-window", state="completed")
+
+            task = asyncio.create_task(drain_turn(handle, gen(), _NoMessages()))
+            handle.task = task
+            # NO done-callback registered → after the task finishes the handle stays in state.turns
+            # with terminal_status set and the terminal cache empty (the done-but-unreleased window).
+            await task
+            out["turn_id"] = handle.turn_id
+            out["still_registered"] = s.turns.get("th-window") is handle
+            out["terminal_status"] = handle.terminal_status
+            out["cache_empty"] = "th-window" not in s.turn_terminals
+            out["probe"] = await turn_status("th-window", _Req(c.app))
+            out["stream"] = await turn_stream("th-window", _Req(c.app), cursor=None)
+
+        run_async(scenario())
+
+        assert out["still_registered"] is True  # not released yet
+        assert out["terminal_status"] == "completed"
+        assert out["cache_empty"] is True  # record_terminal hasn't run
+        assert out["probe"] == {
+            "active": False,  # NOT live despite being in state.turns
+            "terminal_status": "completed",
+            "turn_id": out["turn_id"],
+        }
+        # the re-attach returns the JSON terminal shape (not an SSE stream) → the client reloads
+        assert isinstance(out["stream"], JSONResponse)
+        assert json.loads(out["stream"].body) == {
+            "active": False,
+            "terminal_status": "completed",
+            "turn_id": out["turn_id"],
+        }
+    _clear_env()
+
+
+# ── 9: continuity guard — a force_put eviction gap stops the consumer before `done` (review item 8) ─
+
+
+def test_stream_live_breaks_on_force_put_eviction_gap_without_done() -> None:
+    """`turns._push_terminal`→`_force_put` evicts the OLDEST real event from an exactly-full but
+    still-connected subscriber queue. `_stream_live`'s continuity guard must detect the resulting seq
+    gap and BREAK before yielding the post-gap `done`, so the consumer never settles a damaged stream
+    (a permanent text gap) — the client recovers via re-attach/reload (items 3+7) instead."""
+    from app.api.agent import _stream_live
+    from app.services.agent.turns import _push_terminal, make_subscriber
+
+    out: dict = {}
+
+    async def scenario():
+        handle = _handle()
+        q = make_subscriber(handle, 2)  # maxsize 2
+        gen = _stream_live(handle, q)
+        # Baseline: the consumer reads seq 1 → its internal `expected` is now 2.
+        q.put_nowait((1, _ev("text.delta", messageId="m", delta="a")))
+        out["first"] = await gen.__anext__()
+        # Fill the queue full ([2, 3]) then force the terminal sentinel in: `_force_put` evicts the
+        # OLDEST real event (seq 2), leaving [seq3=done, TERMINAL] — a seq gap past the baseline.
+        q.put_nowait((2, _ev("text.delta", messageId="m", delta="b")))
+        q.put_nowait((3, _ev("done", threadId="t1", state="completed")))
+        _push_terminal(handle)
+        out["rest"] = [f async for f in gen]  # resumes: reads (3,done) → 3 > expected 2 → BREAK
+        out["detached"] = q not in handle.subscribers  # the finally ran
+
+    run_async(scenario())
+
+    assert _seq_of(out["first"]) == 1
+    assert out["rest"] == []  # broke on the gap → NO further frames, and crucially no `done`
+    assert all(f["event"] != "done" for f in [out["first"], *out["rest"]])
+    assert out["detached"] is True  # subscriber detached on break (no leak)
 
 
 if __name__ == "__main__":

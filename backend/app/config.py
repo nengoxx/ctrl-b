@@ -217,6 +217,9 @@ class TurnsCfg(BaseModel):
     subscriber_queue_size: int = Field(
         default=256, ge=1
     )  # per-subscriber fan-out queue bound (overflow → detach)
+    terminal_cache_cap: int = Field(
+        default=32, ge=1
+    )  # finished-turn terminal cache entries (evict-oldest; pairs with linger_s — review fix)
     ping_s: float = Field(default=15.0, gt=0)  # chat SSE keepalive comment interval (Tailscale Serve idle)
     send_timeout_s: float = Field(default=30.0, gt=0)  # drop a frozen SSE reader without touching the turn
     shutdown_grace_s: float = Field(

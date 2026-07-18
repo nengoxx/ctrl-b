@@ -247,9 +247,19 @@ async def _stream_live(
     """Frame a subscriber queue's `(seq, event)` pairs as SSE dicts until the terminal sentinel, then
     DETACH in the finally (never release — the drain task's done-callback owns that). Dedupes by
     `seq > after_seq` so a re-attach whose synchronously-built tail/snapshot prefix overlaps events
-    already queued is not double-emitted (D39). Shared by the live stream + re-attach."""
+    already queued is not double-emitted (D39). Shared by the live stream + re-attach.
+
+    Continuity guard (S3 review): `turns._force_put` (the terminal sentinel) can evict the OLDEST real
+    event from an exactly-full but still-connected queue — leaving a `seq` gap this consumer would
+    otherwise carry to `done` and settle a damaged stream over. On a gap (`seq > expected`) BREAK: the
+    finally detaches, the SSE closes with no `done`, and the client recovers via re-attach/reload
+    (items 3+7). `expected` is seeded from the first pair and advanced by dedupe-skipped frames too."""
+    expected: int | None = None
     try:
         async for seq, ev in subscribe_events(queue):
+            if expected is not None and seq > expected:
+                break  # gap from a `_force_put` eviction — stop, don't let the consumer settle damaged
+            expected = seq + 1
             if seq <= after_seq:
                 continue  # already covered by the prefix (tail-replay / snapshot)
             yield _sse_frame(handle.turn_id, seq, ev)
@@ -282,8 +292,12 @@ async def _turn_response(
     cfg = state.settings.agent.turns
 
     # Attach the subscriber synchronously, THEN spawn the drain task — no `await` between (D39
-    # zero-gap join: the task can't emit before the subscriber is listening).
-    queue = make_subscriber(handle, cfg.subscriber_queue_size)
+    # zero-gap join: the task can't emit before the subscriber is listening). The buffered (stream=
+    # False) consumer is same-process and drains as fast as the loop produces, so it gets an UNBOUNDED
+    # queue (maxsize=0): a >queue_size synchronous event burst must never detach+truncate it — that
+    # could drop the `permission` frame → a non-resumable buffered confirm. Restores the pre-inversion
+    # lossless guarantee; SSE subscribers stay bounded (overflow → detach, S3-F).
+    queue = make_subscriber(handle, cfg.subscriber_queue_size if stream else 0)
     task = asyncio.create_task(drain_turn(handle, events, state.messages))
     handle.task = task
 
@@ -294,16 +308,22 @@ async def _turn_response(
         # release-second ordering would leak the marker and 409 the thread forever — a missed
         # terminal-cache entry is merely a reload fallback, the safe failure of the two.
         release(state.turns, handle)
-        record_terminal(state.turn_terminals, handle, linger_s=cfg.linger_s)
+        record_terminal(state.turn_terminals, handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap)
 
     task.add_done_callback(_cleanup)
 
     async def _consume() -> AsyncIterator[Any]:
         # Drain the subscriber queue as `AgentEvent`s until the terminal sentinel, then DETACH (never
         # release — the task's done-callback owns that). Detach on ANY exit (completion or the client
-        # cancelling the generator) so the drain task stops fanning out to a gone consumer.
+        # cancelling the generator) so the drain task stops fanning out to a gone consumer. Same
+        # `_force_put`-eviction continuity guard as `_stream_live`: BREAK on a `seq` gap so a damaged
+        # stream never settles (the buffered queue is unbounded above, so this is belt-and-braces).
+        expected: int | None = None
         try:
-            async for _seq, ev in subscribe_events(queue):
+            async for seq, ev in subscribe_events(queue):
+                if expected is not None and seq > expected:
+                    break  # gap from a `_force_put` eviction — stop before yielding a damaged tail
+                expected = seq + 1
                 yield ev
         finally:
             remove_subscriber(handle, queue)
@@ -353,7 +373,11 @@ async def turn_status(thread_id: str, request: Request) -> dict[str, Any]:
     Wave-4's cold page-load re-attach probes this before deciding to attach or reload."""
     state = request.app.state
     handle = state.turns.get(thread_id)
-    if handle is not None:
+    # LIVE only while the task is genuinely running. A handle whose drain task already pushed the
+    # terminal sentinel (`terminal_status` set) but whose `_cleanup` done-callback hasn't run yet (one
+    # `call_soon` tick) is NOT live — a re-attach in that window would get a fresh queue that never
+    # sees TERMINAL → wedged SSE + leaked subscriber. Fall to the terminal path instead.
+    if handle is not None and handle.terminal_status is None:
         return {
             "active": True,
             "turn_id": handle.turn_id,
@@ -364,6 +388,8 @@ async def turn_status(thread_id: str, request: Request) -> dict[str, Any]:
     rec = get_terminal(state.turn_terminals, thread_id, linger_s=state.settings.agent.turns.linger_s)
     if rec is not None:
         return {"active": False, "terminal_status": rec.terminal_status, "turn_id": rec.turn_id}
+    if handle is not None:  # done-but-unreleased: the cache lacks this turn yet → read the handle
+        return {"active": False, "terminal_status": handle.terminal_status, "turn_id": handle.turn_id}
     return {"active": False}
 
 
@@ -388,13 +414,23 @@ async def turn_stream(thread_id: str, request: Request, cursor: str | None = Non
     state = request.app.state
     cfg = state.settings.agent.turns
     handle = state.turns.get(thread_id)
-    if handle is None:
+    # A handle whose drain task finished (terminal_status set) but whose `_cleanup` done-callback
+    # hasn't run yet is NOT live — attaching here would hand back a fresh queue that never receives
+    # TERMINAL (wedged SSE + leaked subscriber). Treat it as terminal: prefer the cache record, and
+    # when it's absent (this turn isn't recorded yet), fall back to the handle's settled fields.
+    if handle is None or handle.terminal_status is not None:
         rec = get_terminal(state.turn_terminals, thread_id, linger_s=cfg.linger_s)
         return JSONResponse(
             {
                 "active": False,
-                "terminal_status": rec.terminal_status if rec is not None else None,
-                "turn_id": rec.turn_id if rec is not None else None,
+                "terminal_status": (
+                    rec.terminal_status
+                    if rec is not None
+                    else (handle.terminal_status if handle is not None else None)
+                ),
+                "turn_id": (
+                    rec.turn_id if rec is not None else (handle.turn_id if handle is not None else None)
+                ),
             }
         )
 
@@ -511,7 +547,12 @@ async def chat(body: ChatRequest, request: Request) -> Response:
         events = session.run_turn(thread, body.text, mode=body.mode, skills=body.skills)
         return await _turn_response(request, thread, events, stream=stream, handle=handle)
     except Exception:
-        release(request.app.state.turns, handle)
+        # Release only PRE-handoff. Once `_turn_response` spawned the drain task (`handle.task` set),
+        # its done-callback is the SINGLE marker owner — releasing here (e.g. buffered `collect_turn`
+        # raising) would free the marker while the orphan turn still runs, letting a concurrent POST
+        # reserve the same thread (one-turn-per-thread violated).
+        if handle.task is None:
+            release(request.app.state.turns, handle)
         raise
 
 
@@ -1001,7 +1042,10 @@ async def resume(body: ResumeRequest, request: Request) -> Response:
         )
         return await _turn_response(request, thread, events, stream=stream, handle=handle)
     except Exception:
-        release(request.app.state.turns, handle)
+        # Release only PRE-handoff (see `chat`): post-spawn the drain task's done-callback is the
+        # single marker owner, so releasing here would free the marker under a still-running turn.
+        if handle.task is None:
+            release(request.app.state.turns, handle)
         raise
 
 
