@@ -20,6 +20,7 @@ session boundary turns it into a clean SSE `error` event + an `ErrorPart`, never
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator, cast
 
@@ -95,6 +96,26 @@ class InferenceClient:
     def __init__(self, cfg: InferenceCfg) -> None:
         self._cfg = cfg
         self._clients: dict[str, AsyncOpenAI] = {}
+        #: Per-endpoint request gate (D40 rider). Lazily built, keyed on `(base_url, limit)` so a
+        #: config hot-reload that CHANGES an endpoint's `max_concurrent_requests` mints a fresh
+        #: semaphore under the new key — in-flight holders keep draining the old object, new requests
+        #: queue on the new one. (A reconfigure also builds a whole new `InferenceClient`, so this dict
+        #: is usually fresh anyway; the key still protects an in-place cfg swap.) `None` limit → no
+        #: entry, no acquire (unlimited, zero behavior change).
+        self._sems: dict[tuple[str, int], asyncio.Semaphore] = {}
+
+    def _sem_for(self, ep: InferenceEndpointCfg) -> asyncio.Semaphore | None:
+        """The request-gate semaphore for this endpoint, or `None` when unlimited. Built lazily on
+        first use (inside a running loop, so the 3.14 `asyncio.Semaphore` binds to the right loop)."""
+        limit = ep.max_concurrent_requests
+        if limit is None:
+            return None
+        key = (ep.base_url, limit)
+        sem = self._sems.get(key)
+        if sem is None:
+            sem = asyncio.Semaphore(limit)
+            self._sems[key] = sem
+        return sem
 
     def _client(self, ep: InferenceEndpointCfg) -> AsyncOpenAI:
         if not ep.base_url:
@@ -216,20 +237,31 @@ class InferenceClient:
             name, ep, use_model = entry
             if not use_model:
                 raise InferenceError(f"no model configured for '{name}'")
-            # We carry messages as our own `list[dict]` (OpenAI wire shape, built across the loop);
-            # cast to the SDK's param type at this boundary rather than retyping the whole loop.
-            # Same per-endpoint `extra_body` merge as `stream_chat` (ACA-18): the summarizer's calls
-            # deserve the cache pin too, and the pin must never leak across the failover chain. The
-            # SDK's `create()` takes `extra_body` as a first-class param (None → omitted).
-            resp = await self._client(ep).chat.completions.create(
-                model=use_model,
-                messages=cast("list[ChatCompletionMessageParam]", messages),
-                stream=False,
-                extra_body=ep.extra_body or None,
-            )
-            if not resp.choices:
-                raise InferenceError("inference returned no choices")
-            return resp.choices[0].message.content or ""
+            # D40 rider: gate this endpoint per-attempt (the endpoint actually being called, inside the
+            # failover chain — never around it). Buffered call: hold the permit for the whole request
+            # and release in `finally`. The summarizer runs here AFTER the parent turn's stream closed
+            # (its permit already released), so it never deadlocks against the parent at limit 1.
+            sem = self._sem_for(ep)
+            if sem is not None:
+                await sem.acquire()
+            try:
+                # We carry messages as our own `list[dict]` (OpenAI wire shape, built across the loop);
+                # cast to the SDK's param type at this boundary rather than retyping the whole loop.
+                # Same per-endpoint `extra_body` merge as `stream_chat` (ACA-18): the summarizer's calls
+                # deserve the cache pin too, and the pin must never leak across the failover chain. The
+                # SDK's `create()` takes `extra_body` as a first-class param (None → omitted).
+                resp = await self._client(ep).chat.completions.create(
+                    model=use_model,
+                    messages=cast("list[ChatCompletionMessageParam]", messages),
+                    stream=False,
+                    extra_body=ep.extra_body or None,
+                )
+                if not resp.choices:
+                    raise InferenceError("inference returned no choices")
+                return resp.choices[0].message.content or ""
+            finally:
+                if sem is not None:
+                    sem.release()
 
         try:
             result = await failover(chain, attempt, label=lambda e: e[0])
@@ -269,23 +301,36 @@ class InferenceClient:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice or "auto"
 
-        async def attempt(entry: _ChainEntry) -> tuple[Any, Any]:
+        async def attempt(entry: _ChainEntry) -> tuple[Any, Any, asyncio.Semaphore | None]:
             name, ep, use_model = entry
             if not use_model:
                 raise InferenceError(f"no model configured for '{name}'")
-            # Merge this endpoint's `extra_body` PER-ENDPOINT, never into the shared `kwargs` — an
-            # OpenAI backend 400s on unknown args, so the local endpoint's `cache_prompt`/`return_progress`
-            # must not leak onto the cloud hop (ACA-18; same discipline as voice.py's extra_body).
-            call_kwargs = {**kwargs, "extra_body": ep.extra_body} if ep.extra_body else kwargs
-            stream = await self._client(ep).chat.completions.create(model=use_model, **call_kwargs)
+            # D40 rider: gate this endpoint per-attempt (the endpoint actually called, INSIDE the chain
+            # — never around it). A streamed response holds its slot for the ENTIRE stream lifetime, so
+            # the permit is HANDED to the consumer (returned as the 3rd tuple element) and released in
+            # the outer generator's `finally` when the stream closes — NOT here. A failed attempt
+            # (create error / dead first chunk / cancel during the probe) releases before failing over.
+            sem = self._sem_for(ep)
+            if sem is not None:
+                await sem.acquire()
             try:
-                first = await stream.__anext__()  # confirm the provider is alive + producing tokens
-            except StopAsyncIteration as exc:
-                raise InferenceError("inference returned an empty stream") from exc
-            except Exception:
-                await _safe_close(stream)  # broken on first read → release it before failing over
+                # Merge this endpoint's `extra_body` PER-ENDPOINT, never into the shared `kwargs` — an
+                # OpenAI backend 400s on unknown args, so the local endpoint's `cache_prompt`/`return_progress`
+                # must not leak onto the cloud hop (ACA-18; same discipline as voice.py's extra_body).
+                call_kwargs = {**kwargs, "extra_body": ep.extra_body} if ep.extra_body else kwargs
+                stream = await self._client(ep).chat.completions.create(model=use_model, **call_kwargs)
+                try:
+                    first = await stream.__anext__()  # confirm the provider is alive + producing tokens
+                except StopAsyncIteration as exc:
+                    raise InferenceError("inference returned an empty stream") from exc
+                except Exception:
+                    await _safe_close(stream)  # broken on first read → release it before failing over
+                    raise
+            except BaseException:
+                if sem is not None:
+                    sem.release()  # permit not handed off → release before the next endpoint / raise
                 raise
-            return first, stream
+            return first, stream, sem
 
         try:
             result = await failover(chain, attempt, label=lambda e: e[0])
@@ -293,7 +338,7 @@ class InferenceClient:
             raise InferenceError(str(exc)) from exc
         self._record(report, chain, result)
 
-        first, stream = result.value
+        first, stream, sem = result.value
         pending: dict[int, dict[str, str]] = {}
         try:
             self._capture_cache_telemetry(first, report)
@@ -314,6 +359,16 @@ class InferenceClient:
             raise
         except Exception as exc:  # noqa: BLE001 — a mid-stream error: normalize, no failover
             raise InferenceError(str(exc)) from exc
+        finally:
+            # D40 rider — the crux: release the request slot when the STREAM closes, riding this
+            # generator's own lifetime, NOT the opener's return. The stream is consumed here (yielded
+            # upward), so the permit is held across the whole response and freed on exhaustion, on a
+            # mid-stream error, or on consumer `aclose()`/GC. Callers (`session._drive`) fully drain
+            # this `async for` BEFORE running any tool / subagent fan-out, so the permit is provably
+            # released before tool execution — no completion ever holds a slot across tools (no
+            # hold-and-wait → no deadlock at limit 1, pinned by `test_inference_gate_d40`).
+            if sem is not None:
+                sem.release()
 
 
 async def _safe_close(stream: Any) -> None:

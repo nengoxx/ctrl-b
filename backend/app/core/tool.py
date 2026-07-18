@@ -57,10 +57,21 @@ class ToolSpec(BaseModel):
     #: args has no additional effect. `retry_safe` (below) = `read_only or idempotent` — a **UX** signal
     #: (I4/J-audit): the failed-turn retry auto-resends a retry-safe turn but copies a non-safe one to
     #: the composer for review, so it can't silently repeat a `reboot`/`restart`/`run_shell`/`spawn`.
-    #: A UX hint only — NOT a safety control (that stays the confirm/privilege gate; MCP says treat
-    #: hints as advisory). MCP/OpenAPI tools derive these from their own annotations.
+    #: For retry these stay a UX hint — NOT a safety control (that's the confirm/privilege gate; MCP
+    #: says treat hints as advisory). MCP/OpenAPI tools derive these from their own annotations.
+    #: **D40 elevation:** builtin-authored `read_only` is ALSO load-bearing — it is the sole gate for
+    #: parallel-dispatch eligibility (the read-only prefix runs concurrently, order-independent). That
+    #: trust holds ONLY for a flag a builtin sets in its own `@action`/`@tool`; a flag DERIVED from an
+    #: external annotation (MCP `readOnlyHint`, OpenAPI method mapping) stays advisory and is
+    #: prefix-INELIGIBLE — never trusted for ordering/concurrency.
     read_only: bool = False
     idempotent: bool = False
+    #: Classify-time marker (MCP-annotation style) for a tool whose own `run` can return a
+    #: `RunState.AWAITING_*` result — i.e. it suspends the turn (today only `question` →
+    #: AWAITING_ANSWER). Load-bearing for D40 parallel-eligibility: a suspending tool is excluded from
+    #: the read-only prefix, because suspension is only observable post-invoke so the loop must know
+    #: BEFORE dispatch (never a tool-name literal in the loop). Pinned by `test_suspending_pin_d40`.
+    suspending: bool = False
     agent_exposed: bool = True
     ui_exposed: bool = False  # shows as a Utils card / host button
     #: A core builtin every agent can always reach: `for_agent` unions these in regardless of the
@@ -293,6 +304,7 @@ def action(
     confirm: bool = False,
     read_only: bool = False,
     idempotent: bool = False,
+    suspending: bool = False,
     ui_exposed: bool = True,
     agent_exposed: bool = True,
     core: bool = False,
@@ -319,6 +331,7 @@ def action(
             confirm=confirm,
             read_only=read_only,
             idempotent=idempotent,
+            suspending=suspending,
             ui_exposed=ui_exposed,
             agent_exposed=agent_exposed,
             core=core,
@@ -339,6 +352,7 @@ def tool(
     risk: Risk = Risk.LOW,
     read_only: bool = False,
     idempotent: bool = False,
+    suspending: bool = False,
     agent_exposed: bool = True,
     timeout_s: float | None = None,
     into: ToolRegistry | None = None,
@@ -359,6 +373,7 @@ def tool(
         confirm=False,
         read_only=read_only,
         idempotent=idempotent,
+        suspending=suspending,
         ui_exposed=True,
         agent_exposed=agent_exposed,
         timeout_s=timeout_s,

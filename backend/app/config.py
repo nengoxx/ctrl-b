@@ -132,6 +132,14 @@ class InferenceEndpointCfg(BaseModel):
     #: for a cloud backend's `usage.prompt_tokens_details.cached_tokens`). Declared explicitly because
     #: `InferenceEndpointCfg` has no `extra="allow"`.
     extra_body: dict[str, Any] = Field(default_factory=dict)
+    #: Per-endpoint app-side request gate (D40 rider) for a backend that does NOT queue concurrent
+    #: completions — the owner's llama.cpp serves one model with 1–2 request slots, so overlapping
+    #: turns/subagents/summarizer would error at the server. When set, an `asyncio.Semaphore` at the
+    #: inference-client chokepoint caps in-flight requests to this endpoint, held for the ENTIRE
+    #: streamed response (queuing app-side instead). `None` = unlimited (no gating, zero behavior
+    #: change). Per-endpoint on the unified endpoint object (the `extra_body` precedent — never a
+    #: sibling map, never global).
+    max_concurrent_requests: int | None = Field(default=None, ge=1)
 
 
 class InferenceCfg(BaseModel):

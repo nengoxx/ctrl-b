@@ -86,6 +86,16 @@ pure decision function, **`core/permissions.py` `decide(spec, privilege)`** → 
 - **Risk levels** (`Risk`): `LOW` · `MED` · `HIGH`. Risk + the `confirm` flag are declared per action on its
   `ToolSpec` — the gate is data, not scattered `if`s.
 - A suspended call becomes `RunState.AWAITING_CONFIRM` and renders as the confirm bubble.
+- **`read_only` is now load-bearing for ordering (D40, Slice 4).** Parallel tool dispatch runs a
+  *prefix* of a batch's calls concurrently; a call is prefix-eligible **only** when its `read_only`
+  flag was set by a **builtin's own `@action`/`@tool`** — never an authorization decision (each
+  call still passes `decide()` independently at invoke), only an *ordering/concurrency* decision.
+  Flags **derived from external annotations are untrusted for this**: MCP (`readOnlyHint`) and
+  OpenAPI (method-mapping) tools are **prefix-ineligible by construction** (advisory annotations, a
+  remote surface — §3), so a mislabeled remote tool can never be run out-of-order against a sibling.
+  `idempotent` does not confer eligibility (re-run-safe ≠ order-independent). This promotes
+  `read_only` from a pure retry-UX hint to a load-bearing builtin annotation; pinned across every
+  privilege (incl. `FULL`) by the D40 classifier tests.
 
 ### 2.3 Confirm-tokens = a UX gate, NOT authentication
 When `decide()` returns `CONFIRM`, `services/action_service.py` mints a **single-use, TTL'd token**

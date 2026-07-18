@@ -99,3 +99,8 @@ class AgentDef(BaseModel):
     max_stall_iterations: int = 2
     max_subagent_depth: int = 2  # how deep spawn_subagents may nest
     max_concurrent_subagents: int = 3  # per-agent fan-out cap (global cap in settings)
+    #: How many read-only builtin tool calls the parallel prefix dispatches concurrently in one batch
+    #: (Slice 4, D40). Bounds the `asyncio.Semaphore` over the prefix tasks; `1` = parallel dispatch
+    #: off (every batch runs on today's serial tail). Per-agent (mirrors `max_concurrent_subagents`);
+    #: a subagent reads its own AgentDef's value. `ge=1` — a 0 cap would dispatch nothing.
+    max_parallel_tools: int = Field(default=4, ge=1)

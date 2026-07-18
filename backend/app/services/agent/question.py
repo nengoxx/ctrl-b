@@ -48,6 +48,7 @@ class QuestionInput(BaseModel):
     category="builtin",
     risk=Risk.LOW,
     read_only=True,  # just prompts the owner; no external effect → retry-safe
+    suspending=True,  # returns AWAITING_ANSWER → suspends the turn (D40: excluded from the read-only prefix)
     ui_exposed=False,
     core=True,
 )
