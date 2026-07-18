@@ -180,6 +180,21 @@
 > push OK. NEXT after push: Slice 4 (turn speed — per-call persistence + streaming + parallel
 > dispatch, the one structural `_run_calls` refactor; design review first) or owner's pick.**
 >
+> **▶ SAME DAY (2026-07-18 PM): the 8-angle review + a TRI-REVIEW (Codex CLI joined as the foreign
+> second opinion — found 2 HIGHs three same-family rounds missed) + then the owner-ordered FORMAL
+> AUDIT of every agent functionality and every ACA fix: an Opus matrix (F1–F28 + all fixes) →
+> FIVE Codex cluster verifications (`gpt-5.6-sol` high, read-only) → 5 HIGH / 16 MED / ~14 LOW
+> found, ALL dispositioned same day in three gated fix waves (`9cc7e93` confirm-flow fail-closed:
+> decision Literals, token revoke-on-deny + re-mint single-liveness, pre-invoke RUNNING persist,
+> turn-scoped cancel · `0583507` machinery: the empirically-proven dual-shield persistence tail,
+> commit-failure rollback, terminal-cache preference, never-started-task cleanup, OpenAPI
+> wall-clock backstop, compaction suspend protection, executable ACA-21 fallback, live template
+> cache pin · `a9e5199` resume skill continuity + buffered-question pins + probe race + proposal
+> truths + a 7-item regression batch). Full record = **ACA §7**; accepted-with-reason items listed
+> there. **CODEX IS NOW A STANDING PRE-PUSH REVIEWER for structural slices** (owner directive).
+> Backend 397 tests / FE 40; tip gate 7/7 incl. e2e @ `a9e5199`. ~16 commits LOCAL — awaiting the
+> owner's push OK.**
+>
 > *(The block below is the previous session's close-out checklist, kept for provenance — steps 1–3
 > are done as recorded above.)*
 > **▶ SESSION CLOSED 2026-07-17 early AM (owner to sleep) — NEXT SESSION, in order:**
