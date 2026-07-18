@@ -1,7 +1,8 @@
 import { useRef } from "react";
 
 import { useComposer } from "../../../hooks/useComposer";
-import { MicIcon, SendArrowheadIcon } from "./icons";
+import { stopTurn } from "../../../store/chat";
+import { MicIcon, SendArrowheadIcon, StopSquareIcon } from "./icons";
 import type { ComposerSlots } from "./types";
 import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 
@@ -88,16 +89,16 @@ export function LineComposer({ controlsStart, overlay }: ComposerSlots = {}) {
         {showSend && (
           <button
             type="button"
-            className="kit-send line-btn"
+            className={"kit-send line-btn" + (isStreaming ? " stop" : "")}
             id="cmd-send"
-            aria-label="send message"
-            title="send message"
-            disabled={isStreaming}
-            onClick={send}
+            aria-label={isStreaming ? "stop the running turn" : "send message"}
+            title={isStreaming ? "stop the running turn" : "send message"}
+            onClick={isStreaming ? stopTurn : send}
           >
-            {/* the SHARED arrowhead glyph — optically re-centered via the `.kit-send.line-btn svg` nudge in
+            {/* Streaming → the Stop square (D39, same swap as every composer). Idle → the SHARED
+                arrowhead glyph — optically re-centered via the `.kit-send.line-btn svg` nudge in
                 kit.css (the glyph's mass leans up-right, vapor's fix). */}
-            <SendArrowheadIcon size={20} />
+            {isStreaming ? <StopSquareIcon size={16} /> : <SendArrowheadIcon size={20} />}
           </button>
         )}
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { useComposer } from "../hooks/useComposer";
+import { stopTurn } from "../store/chat";
 
 // Shared composer (fleet + agent tabs). Ported from vapor.html: auto-growing textarea, an
 // embedded mic toggle, and the send button. Submits route through runComposer (Phase 4c): `!<cmd>`
@@ -102,14 +103,16 @@ export function Composer() {
           />
         )}
       </div>
+      {/* While a turn streams, the send button becomes a Stop control (D39): a square glyph (`.stop`
+          swaps the arrow mask in vapor.css) that cancels the server-owned turn. Not disabled while
+          streaming any more — that's the whole point; `stopTurn` guards double-taps. */}
       <button
         type="button"
-        className="send"
+        className={"send" + (isStreaming ? " stop" : "")}
         id="cmd-send"
-        aria-label="send message"
-        title="send message"
-        disabled={isStreaming}
-        onClick={send}
+        aria-label={isStreaming ? "stop turn" : "send message"}
+        title={isStreaming ? "stop turn" : "send message"}
+        onClick={isStreaming ? stopTurn : send}
       />
     </div>
   );

@@ -1,12 +1,15 @@
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearDraft, getDraft } from "../../src/store/composer";
 import {
+  initChat,
+  reattachTurn,
   resumeCall,
   retryLastTurn,
   sendMessage,
   startNewThread,
+  stopTurn,
   useChat,
 } from "../../src/store/chat";
 import type { Part } from "../../src/types";
@@ -27,12 +30,16 @@ function status409(detail?: string): Response {
 // end-to-end and we assert the resulting message list / status. This locks in the SSE wire protocol
 // handling (incl. the historical \n-vs-\r\n framing) without forking the reducer.
 
-type Frame = { event: string; data: unknown };
+type Frame = { event: string; data: unknown; id?: string };
 
-/** A fake `fetch` Response whose body streams the given SSE frames (one chunk, then close). */
+/** A fake `fetch` Response whose body streams the given SSE frames (one chunk, then close). A frame's
+ *  optional `id` is emitted as the `id:` line (the D39 `turn_id:seq` cursor the seq gate reads). */
 function sseResponse(frames: Frame[]): Response {
   const text = frames
-    .map((f) => `event: ${f.event}\r\ndata: ${JSON.stringify(f.data)}\r\n\r\n`)
+    .map(
+      (f) =>
+        `event: ${f.event}\r\n${f.id ? `id: ${f.id}\r\n` : ""}data: ${JSON.stringify(f.data)}\r\n\r\n`,
+    )
     .join("");
   const bytes = new TextEncoder().encode(text);
   const body = new ReadableStream<Uint8Array>({
@@ -674,5 +681,310 @@ describe("turn integrity — client (Slice 2)", () => {
       await resumeCall("c1", "dismiss");
     });
     expect(resumeBody.mode).toBeNull();
+  });
+});
+
+// ── Slice 3 (D39 durable turns) — the client half: the seq entry gate, the `turn.sync` re-attach
+// overlay (REPLACE semantics + token/mode re-pin), the interrupt-path re-attach, the cold-load probe,
+// and the Stop button. ──
+
+/** A live-stream fetch that streams `frames` then closes WITHOUT settling (no `done`) — models a
+ *  socket cut mid-turn (the ACA-1 case). */
+function sseResponseUnterminated(frames: Frame[]): Response {
+  return sseResponse(frames); // sseResponse never appends `done`; omit it for the unterminated case
+}
+
+describe("durable turns — client (Slice 3, D39)", () => {
+  it("the seq gate drops a duplicate-seq frame and resets on a new turn_id", async () => {
+    // Turn T1: seq 2 arrives twice ('a' then a duplicate 'b') — the second is dropped; 'c' at seq 3 applies.
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", id: "T1:1", data: { messageId: "m1" } },
+      { event: "text.delta", id: "T1:2", data: { messageId: "m1", delta: "a" } },
+      { event: "text.delta", id: "T1:2", data: { messageId: "m1", delta: "b" } }, // dup seq → dropped
+      { event: "text.delta", id: "T1:3", data: { messageId: "m1", delta: "c" } },
+      { event: "done", id: "T1:4", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    expect(textOf(result.current.messages[1].parts)).toBe("ac"); // 'b' deduped by the gate
+
+    // Turn T2: a NEW turn_id resets the gate, so seq 1/2 apply even though they are ≤ T1's last seq (4).
+    mockStream([
+      { event: "message.start", id: "T2:1", data: { messageId: "m2" } },
+      { event: "text.delta", id: "T2:2", data: { messageId: "m2", delta: "x" } },
+      { event: "done", id: "T2:3", data: { state: "completed" } },
+    ]);
+    await act(async () => {
+      await sendMessage("q2");
+    });
+    expect(textOf(result.current.messages.at(-1)!.parts)).toBe("x"); // new turn → gate reset, applied
+  });
+
+  it("turn.sync overlay REPLACES the open message text (no double-append) + seeds the confirm token & mode", async () => {
+    // Establish thread t1.
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "seed" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("hello");
+    });
+
+    // Re-attach: the forced reload returns m1 with a PARTIAL "Hel"; the snapshot carries the FULL
+    // "Hello" (must replace, not append) + a pending confirm call with a token + mode "cloud".
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/stream")) {
+        return Promise.resolve(
+          sseResponse([
+            {
+              event: "turn.sync",
+              id: "T9:5",
+              data: {
+                mode: "cloud",
+                seq: 5,
+                terminal: null,
+                message: { id: "m1", role: "assistant", agent: null, text: "Hello", reasoning: "" },
+                calls: [
+                  {
+                    call_id: "c1",
+                    tool: "wake_host",
+                    args: { host: "vault" },
+                    state: "awaiting_confirm",
+                    permission: { token: "tok-9" },
+                  },
+                ],
+              },
+            },
+            { event: "done", id: "T9:6", data: { state: "suspended" } },
+          ]),
+        );
+      }
+      // reloadChat(true) → the durable floor: a persisted user msg + a PARTIAL m1.
+      return Promise.resolve({
+        ok: true,
+        json: async () => [
+          {
+            id: "u1",
+            thread_id: "t1",
+            role: "user",
+            parts: [{ type: "text", text: "q" }],
+            actor: "user",
+            ts: "",
+            tokens: null,
+            compacted: false,
+          },
+          {
+            id: "m1",
+            thread_id: "t1",
+            role: "assistant",
+            parts: [{ type: "text", text: "Hel" }],
+            actor: "agent",
+            ts: "",
+            tokens: null,
+            compacted: false,
+          },
+        ],
+      } as unknown as Response);
+    });
+
+    await act(async () => {
+      await reattachTurn("t1", "T1:2");
+    });
+    const m1 = result.current.messages.find((m) => m.id === "m1")!;
+    expect(textOf(m1.parts)).toBe("Hello"); // REPLACED wholesale (not "HelHello")
+    const call = m1.parts.find((p) => p.type === "tool_call" && p.call_id === "c1");
+    expect(call).toMatchObject({ state: "awaiting_confirm" });
+
+    // The token + the snapshot's mode were re-pinned: a resume of c1 carries both.
+    let resumeBody: Record<string, unknown> = {};
+    globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      resumeBody = JSON.parse(init!.body as string) as Record<string, unknown>;
+      return Promise.resolve(sseResponse([{ event: "done", data: { state: "completed" } }]));
+    });
+    await act(async () => {
+      await resumeCall("c1", "execute");
+    });
+    expect(resumeBody.confirm_token).toBe("tok-9"); // seeded from the snapshot permission payload
+    expect(resumeBody.mode).toBe("cloud"); // modeByCall / turnMode re-pinned from snapshot.mode
+  });
+
+  it("an interrupted stream re-attaches (turn.sync + done) BEFORE surfacing a failure — no error bubble", async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) {
+        // Dies mid-turn: message.start + a partial delta, then close with NO `done`.
+        return Promise.resolve(
+          sseResponseUnterminated([
+            { event: "thread", data: { threadId: "t1" } },
+            { event: "message.start", id: "T1:1", data: { messageId: "m1" } },
+            { event: "text.delta", id: "T1:2", data: { messageId: "m1", delta: "Hel" } },
+          ]),
+        );
+      }
+      if (u.includes("/stream")) {
+        return Promise.resolve(
+          sseResponse([
+            {
+              event: "turn.sync",
+              id: "T1:2",
+              data: {
+                mode: null,
+                seq: 2,
+                terminal: null,
+                message: { id: "m1", role: "assistant", agent: null, text: "Hello", reasoning: "" },
+                calls: [],
+              },
+            },
+            { event: "done", id: "T1:3", data: { state: "completed" } },
+          ]),
+        );
+      }
+      // reloadChat(true) during the overlay → the persisted floor (m1 not yet persisted).
+      return Promise.resolve({
+        ok: true,
+        json: async () => [
+          {
+            id: "u1",
+            thread_id: "t1",
+            role: "user",
+            parts: [{ type: "text", text: "q" }],
+            actor: "user",
+            ts: "",
+            tokens: null,
+            compacted: false,
+          },
+        ],
+      } as unknown as Response);
+    });
+
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+
+    // The re-attach endpoint was hit, the turn completed, and NO retryable error bubble was shown.
+    const hitStream = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.some((c) => String(c[0]).includes("/stream"));
+    expect(hitStream).toBe(true);
+    expect(result.current.status).toBe("idle");
+    expect(result.current.messages.some((m) => m.parts.some((p) => p.type === "error"))).toBe(
+      false,
+    );
+    expect(textOf(result.current.messages.find((m) => m.id === "m1")!.parts)).toBe("Hello");
+  });
+
+  it("cold-load probe re-attaches to a still-running detached turn (active:true)", async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/turns/t1/stream")) {
+        return Promise.resolve(
+          sseResponse([
+            {
+              event: "turn.sync",
+              id: "T1:3",
+              data: {
+                mode: null,
+                seq: 3,
+                terminal: null,
+                message: {
+                  id: "m9",
+                  role: "assistant",
+                  agent: null,
+                  text: "resumed",
+                  reasoning: "",
+                },
+                calls: [],
+              },
+            },
+            { event: "done", id: "T1:4", data: { state: "completed" } },
+          ]),
+        );
+      }
+      if (u.includes("/agent/turns/t1"))
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ active: true, turn_id: "T1", seq: 3 }),
+        } as unknown as Response);
+      if (u.includes("/messages"))
+        return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+      if (u.includes("/threads"))
+        return Promise.resolve({
+          ok: true,
+          json: async () => [{ id: "t1", title: "t", agent: null }],
+        } as unknown as Response);
+      return Promise.resolve({ ok: true, json: async () => ({}) } as unknown as Response);
+    });
+
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await initChat();
+    });
+    // The probe re-attaches non-blockingly after paint — wait for the resumed turn to land.
+    await waitFor(() => expect(result.current.messages.some((m) => m.id === "m9")).toBe(true));
+    expect(textOf(result.current.messages.find((m) => m.id === "m9")!.parts)).toBe("resumed");
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("stopTurn posts cancel once (double-tap guarded) and settles on the streamed done{cancelled}", async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+        // Emit `thread` up front so state.threadId is set (Stop needs it), then hold open.
+        c.enqueue(
+          new TextEncoder().encode(
+            `event: thread\r\ndata: ${JSON.stringify({ threadId: "t1" })}\r\n\r\n`,
+          ),
+        );
+      },
+    });
+    let cancelCalls = 0;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      if (String(url).includes("/cancel")) {
+        cancelCalls++;
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ cancelled: true, terminal_status: "cancelled" }),
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        body,
+        headers: {
+          get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
+        },
+      } as unknown as Response);
+    });
+
+    const { result } = renderHook(() => useChat());
+    let sendP!: Promise<void>;
+    await act(async () => {
+      sendP = sendMessage("hi"); // status → streaming, holds on the open body
+    });
+    expect(result.current.status).toBe("streaming");
+
+    await act(async () => {
+      await Promise.all([stopTurn(), stopTurn()]); // double-tap
+    });
+    expect(cancelCalls).toBe(1); // guarded — exactly one cancel POST
+
+    // The server's done{cancelled} arrives via the still-attached stream → settles normally.
+    const enc = new TextEncoder();
+    controller.enqueue(
+      enc.encode(`event: done\r\ndata: ${JSON.stringify({ state: "cancelled" })}\r\n\r\n`),
+    );
+    controller.close();
+    await act(async () => {
+      await sendP;
+    });
+    expect(result.current.status).toBe("idle");
   });
 });

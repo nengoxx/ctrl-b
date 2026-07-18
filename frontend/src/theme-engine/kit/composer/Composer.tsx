@@ -1,9 +1,10 @@
 import { useRef, type ReactNode } from "react";
 
 import { useComposer } from "../../../hooks/useComposer";
+import { stopTurn } from "../../../store/chat";
 import { useUISlice } from "../../../store/ui";
 import { useComposerSkin } from "../axes";
-import { SendArrowheadIcon } from "./icons";
+import { SendArrowheadIcon, StopSquareIcon } from "./icons";
 import type { ComposerSlots } from "./types";
 import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 
@@ -87,16 +88,21 @@ export function KitComposer({
               </svg>
             </button>
           )}
+          {/* While a turn streams the send button becomes a Stop control (D39) — same swap as the
+              vapor composer; `stopTurn` guards double-taps. Not disabled: Stop IS the streaming
+              affordance. */}
           <button
             type="button"
-            className="kit-send"
+            className={"kit-send" + (isStreaming ? " stop" : "")}
             id="cmd-send"
-            aria-label="send message"
-            title="send message"
-            disabled={isStreaming}
-            onClick={send}
+            aria-label={isStreaming ? "stop the running turn" : "send message"}
+            title={isStreaming ? "stop the running turn" : "send message"}
+            onClick={isStreaming ? stopTurn : send}
           >
-            {sendIcon ??
+            {isStreaming ? (
+              <StopSquareIcon size={16} />
+            ) : (
+              (sendIcon ??
               (skin === "glass" ? (
                 <SendArrowheadIcon size={20} />
               ) : (
@@ -113,7 +119,8 @@ export function KitComposer({
                 >
                   <path d="M5 12h14M13 6l6 6-6 6" />
                 </svg>
-              ))}
+              )))
+            )}
           </button>
         </div>
       </div>

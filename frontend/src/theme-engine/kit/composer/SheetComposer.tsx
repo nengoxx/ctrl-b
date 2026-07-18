@@ -1,7 +1,8 @@
 import { useRef } from "react";
 
 import { useComposer } from "../../../hooks/useComposer";
-import { MicIcon, SendArrowheadIcon } from "./icons";
+import { stopTurn } from "../../../store/chat";
+import { MicIcon, SendArrowheadIcon, StopSquareIcon } from "./icons";
 import type { ComposerSlots } from "./types";
 import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 
@@ -76,17 +77,17 @@ export function SheetComposer({ controlsStart, overlay }: ComposerSlots = {}) {
           {/* Send — vapor-look paper-plane (§3.3), not KitComposer's arrow. Tall block beside the field. */}
           <button
             type="button"
-            className="kit-send tall"
+            className={"kit-send tall" + (isStreaming ? " stop" : "")}
             id="cmd-send"
-            aria-label="send message"
-            title="send message"
-            disabled={isStreaming}
-            onClick={send}
+            aria-label={isStreaming ? "stop the running turn" : "send message"}
+            title={isStreaming ? "stop the running turn" : "send message"}
+            onClick={isStreaming ? stopTurn : send}
           >
-            {/* the SHARED arrowhead glyph (owner pick, icon showcase 2026-07-11) — stroke language matches
+            {/* Streaming → the Stop square (D39, same swap as every composer). Idle → the SHARED
+                arrowhead glyph (owner pick, icon showcase 2026-07-11) — stroke language matches
                 the mic; 24px matches vapor's send proportion. Optically re-centered via the
                 `.kit-send.tall svg` nudge in kit.css (the glyph's mass leans up-right, vapor's fix). */}
-            <SendArrowheadIcon size={24} />
+            {isStreaming ? <StopSquareIcon size={20} /> : <SendArrowheadIcon size={24} />}
           </button>
         </div>
       </div>

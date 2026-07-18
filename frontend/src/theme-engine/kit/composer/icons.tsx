@@ -7,6 +7,17 @@
 //   • the vapor stroke MIC glyph — graduated here at its SECOND consumer (SheetComposer's embedded mic +
 //     LineComposer's morphing button; Phase E, 2026-07-11). Was inlined in SheetComposer.
 
+/** The Stop square (D39): the send button becomes a Stop control while a turn streams — every kit
+ *  layout variant renders it through the same `isStreaming ? stop : send` swap (vapor's pattern).
+ *  Rounded square, stroke language matching the arrowhead. */
+export function StopSquareIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
+  );
+}
+
 /** The outline arrowhead send glyph. Size via width/height (CSS may override per variant). */
 export function SendArrowheadIcon({ size = 24 }: { size?: number }) {
   return (

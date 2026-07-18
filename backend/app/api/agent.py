@@ -7,7 +7,8 @@ is tied to the stream: on client disconnect sse-starlette cancels the generator,
 in-flight step with it — completed steps are already persisted, so a reconnect re-reads them via
 `GET /api/threads/{id}/messages`. Buffered mode (D17 `stream:false`) runs the whole turn in the
 handler and survives disconnects. Server-owned durable turns (disconnect-proof streaming, replay,
-explicit cancel) are target design: AGENT_CHAT_AUDIT ACA-1 → Slice 3 (D35 proposed).
+explicit cancel) LANDED in Slice 3 (D39, ACA-1): a spawned drain task owns the loop and the SSE
+response is a subscriber, with re-attach/status/cancel at `/api/agent/turns/*` (below).
 """
 
 from __future__ import annotations

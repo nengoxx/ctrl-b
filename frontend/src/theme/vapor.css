@@ -808,6 +808,12 @@
             mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M3 11.5 L21 3 L13 21 L11 13 Z' fill='black'/></svg>") center/contain no-repeat;
     transform: translate(-1px, 1px);
   }
+  /* Stop control (D39): while a turn streams, `.send.stop` swaps the arrow glyph for a square. */
+  .composer .send.stop::before {
+    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='6' width='12' height='12' rx='2' fill='black'/></svg>") center/contain no-repeat;
+            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='6' width='12' height='12' rx='2' fill='black'/></svg>") center/contain no-repeat;
+    transform: none;
+  }
   /* Mic sits inside the field, between textarea and send button */
   .composer .mic {
     all: unset; cursor: pointer;
