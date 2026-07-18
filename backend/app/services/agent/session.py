@@ -568,25 +568,47 @@ class AgentSession:
         """Resume a suspended turn, then continue the loop so the model can react. Three decisions:
         `execute` (a confirm-gated call — re-run with the token), `dismiss` (skip it — works for a
         confirm *or* a question), and `answer` (a `question` — inject the owner's `answer` as the
-        call's result, A2). Anything else is treated as execute. `mode` (`/local`//`/cloud`, ACA-16)
-        is carried across the round-trip and threaded to `_drive` so a `/local` turn resumes local;
-        `None` → the configured default."""
+        call's result, A2). Fail-closed (A1/C1-H1): an unknown decision is rejected with an error, NOT
+        treated as execute, and `answer` is only honoured against an AWAITING_ANSWER call (never used to
+        silently OK a confirm). `mode` (`/local`//`/cloud`, ACA-16) is carried across the round-trip and
+        threaded to `_drive` so a `/local` turn resumes local; `None` → the configured default."""
         assistant = await self._find_pending(thread, call_id)
         if assistant is None:
             yield AgentEvent("error", {"message": "no pending action for this call", "retryable": False})
             yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
             return
+        cp = next((c for c in assistant.tool_calls() if c.call_id == call_id), None)
         if decision == "answer":
+            # A1: only a real AWAITING_ANSWER question may be answered. `_find_pending` also matches an
+            # AWAITING_CONFIRM call, so an `answer` aimed at a confirm would otherwise mark it OK without
+            # running — reject it here (no state change) instead.
+            if cp is None or cp.state != RunState.AWAITING_ANSWER:
+                yield AgentEvent(
+                    "error",
+                    {"message": "this call is not awaiting an answer", "retryable": False},
+                )
+                yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
+                return
             async for ev in self._drive(
                 thread, mode=mode, resume_assistant=assistant, resume_answers={call_id: answer or ""}
             ):
                 yield ev
             return
         if decision == "dismiss":
+            # C1-H2/C2-M1: the owner denied this bubble → revoke any live confirm token bound to this
+            # exact (action, args) so it can no longer be redeemed via POST /api/actions within its TTL.
+            # A no-op for a question (none is minted) / after a restart (`_pending` already empty).
+            if cp is not None:
+                self._actions.revoke_pending(cp.tool, cp.args)
             async for ev in self._drive(
                 thread, mode=mode, resume_assistant=assistant, resume_tokens={call_id: _DISMISS}
             ):
                 yield ev
+            return
+        if decision != "execute":
+            # Fail-closed (A1): anything that isn't execute/dismiss/answer never falls through to run.
+            yield AgentEvent("error", {"message": "unknown resume decision", "retryable": False})
+            yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
             return
         # execute. The confirmation is established by the DURABLE persisted AWAITING_CONFIRM call + the
         # explicit execute decision, so re-mint the confirm token server-side for the pending call (J3)
@@ -602,7 +624,6 @@ class AgentSession:
             yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
             return
         try:
-            cp = next((c for c in assistant.tool_calls() if c.call_id == call_id), None)
             try:
                 token = self._actions.confirm_token_for(cp.tool, cp.args) if cp else confirm_token
             except (UnknownTool, ValidationError) as exc:
@@ -982,7 +1003,7 @@ class AgentSession:
                                 state=RunState.DENIED,
                                 summary=f"(call limit) {cp.tool} used too many times this turn",
                                 output=(
-                                    f"You have already called {cp.tool} {guard.tool_counts[cp.tool]} "
+                                    f"You have already called {cp.tool} {guard.tool_counts.get(cp.tool, 0)} "
                                     "times this turn. Stop calling it — use what you have, switch to a "
                                     "different tool, or give the owner your final answer now."
                                 ),
@@ -1013,6 +1034,20 @@ class AgentSession:
                             output=f"your tool arguments were not valid JSON: {cp.invalid_raw}",
                         )
                     else:
+                        if token is not None and token != _DISMISS:
+                            # A5 (C4-H1): on a confirmed RESUME (a real confirm token — not None for a
+                            # fresh call, not `_DISMISS`), flip the persisted call AWAITING_CONFIRM →
+                            # RUNNING and persist BEFORE invoking. Otherwise `cp.state` stays
+                            # AWAITING_CONFIRM until `invoke` returns, so if the turn dies just AFTER the
+                            # side effect (an audit-write raise, a Stop landing right after invoke), the
+                            # shielded `finally` persists AWAITING_CONFIRM → the reconciler's
+                            # suspend-exclusion SKIPS it → the bubble stays resumable → a second Allow
+                            # REPEATS the side effect. The pre-invoke persist converts that death window
+                            # into effect-unknown: the reconciler flips RUNNING → CANCELLED (never
+                            # re-executable) and no AWAITING_* is left to protect it. One extra write per
+                            # owner-confirmed action — negligible for a single-user panel.
+                            cp.state = RunState.RUNNING
+                            await self._messages.update(assistant)
                         try:
                             outcome = await self._actions.invoke(
                                 cp.tool,

@@ -21,13 +21,13 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 if TYPE_CHECKING:
     from app.domain.agent import AgentDef
 
 from app.core.permissions import Decision, decide
-from app.core.tool import InvocationContext, ToolRegistry
+from app.core.tool import InvocationContext, ToolRegistry, UnknownTool
 from app.domain.enums import Actor, Privilege, RunState
 from app.domain.event import Event
 from app.domain.result import ToolResult
@@ -207,16 +207,32 @@ class ActionService:
         (the gate legitimately fired) and the owner explicitly chose `execute` — the two-step approval
         is intact; this only removes the fragile ephemeral dependency.
 
-        ACA-9 (owner 2026-07-16, CONSUME): any confirm token already outstanding for this SAME pending
-        `(action, args)` is consumed here before the re-mint, so exactly one live token remains
-        afterward. The orphaned original has no legitimate redeemer — its bubble is being resolved
-        right now — so a two-device double-tap of the stale Allow fails cleanly instead of firing the
-        action a second time via `/api/actions`. Restart-safe: `_pending` is empty after a restart
-        (the token-loss case this method exists for), so there is simply nothing to consume."""
+        ACA-9 (owner 2026-07-16, CONSUME) / C2-M1 single-liveness on the re-mint path: any confirm token
+        already outstanding for this SAME pending `(action, args)` is consumed here before the re-mint,
+        so exactly ONE live token remains afterward. The orphaned original has no legitimate redeemer —
+        its bubble is being resolved right now — so a two-device double-tap of the stale Allow fails
+        cleanly instead of firing the action a second time via `/api/actions`. (This deliberate re-mint
+        consume is scoped to `confirm_token_for`, NOT the generic gate `_mint_token`: a plain CONFIRM
+        re-ask on a stale token must be free to mint its own UX token without evicting a legitimately
+        outstanding re-minted one — the J3 recovery invariant.) Restart-safe: `_pending` is empty after a
+        restart (the token-loss case this method exists for), so there is simply nothing to consume."""
         inp = self._registry.get(name).spec.input_model.model_validate(raw_args)
         args_json = inp.model_dump_json()
         self._invalidate_pending(name, args_json)
         return self._mint_token(name, args_json)
+
+    def revoke_pending(self, action: str, raw_args: dict) -> None:
+        """Revoke any live confirm token bound to this exact `(action, args)` — the dismiss path
+        (C1-H2/C2-M1). When the owner denies a confirm bubble, its token must die so it can't be
+        redeemed via POST /api/actions inside the 120s TTL. Uses the SAME `(action, args_json)` binding
+        `invoke`/`_mint_token` compute, so it targets exactly the token(s) the gate minted. Unknown tool
+        / invalid persisted args → no token was ever minted, so treat as a clean no-op (never raise on a
+        dismiss)."""
+        try:
+            inp = self._registry.get(action).spec.input_model.model_validate(raw_args)
+        except UnknownTool, ValidationError:
+            return  # nothing could have been minted for an unresolvable (tool, args)
+        self._invalidate_pending(action, inp.model_dump_json())
 
     def begin_execute(self, call_id: str) -> bool:
         """Single-flight guard (J2) for `resume(execute)`: reserve a pending call's execution so a

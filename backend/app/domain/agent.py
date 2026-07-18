@@ -90,8 +90,12 @@ class AgentDef(BaseModel):
     #: tool* may run in a single turn regardless of args — the catch-all for a model that spams one
     #: tool with varied inputs (raise it for a research-heavy agent). `max_stall_iterations` is how
     #: many consecutive no-progress iterations (no new result, no text) force a final answer.
-    max_repeat_calls: int = 2
-    max_calls_per_tool: int = 6
+    #: `ge=1` (A4/C4): a 0 cap is nonsensical AND crashes the turn — `0 >= max_per_tool` selects the
+    #: per-tool suppression on the FIRST call, before that tool is ever counted, so the suppression
+    #: message's `tool_counts[cp.tool]` used to KeyError (now also defended with `.get`). Reject the
+    #: bad config at the boundary so it can never reach the loop.
+    max_repeat_calls: int = Field(default=2, ge=1)
+    max_calls_per_tool: int = Field(default=6, ge=1)
     max_stall_iterations: int = 2
     max_subagent_depth: int = 2  # how deep spawn_subagents may nest
     max_concurrent_subagents: int = 3  # per-agent fan-out cap (global cap in settings)

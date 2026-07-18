@@ -19,7 +19,7 @@ import shutil
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from fastapi import APIRouter, HTTPException, Request
@@ -132,7 +132,11 @@ class ResumeRequest(BaseModel):
 
     thread_id: str
     call_id: str
-    decision: str = "execute"  # "execute" | "dismiss" | "answer"
+    #: The resume decision (A1/C1-H1) — fail-closed. `Literal` 422s any junk value at the API so it
+    #: can't fall through to EXECUTE (the old `str` field's documented "anything else is execute" hole,
+    #: which also marked an `answer`-against-a-confirm OK without running). The before-validator strips
+    #: surrounding whitespace first, so a trimmed valid value ("dismiss ") still passes the Literal.
+    decision: Literal["execute", "dismiss", "answer"] = "execute"
     confirm_token: str | None = None
     answer: str | None = None  # the owner's reply when decision == "answer" (A2)
     privilege: Privilege | None = None
@@ -152,6 +156,13 @@ class ResumeRequest(BaseModel):
     @classmethod
     def _known_privilege(cls, v: object) -> object:
         return _coerce_privilege(v)
+
+    @field_validator("decision", mode="before")
+    @classmethod
+    def _strip_decision(cls, v: object) -> object:
+        """Trim surrounding whitespace before the `Literal` check (A1) so a padded valid value
+        ("dismiss ") still resolves; a truly unknown token still 422s."""
+        return v.strip() if isinstance(v, str) else v
 
 
 def resolve_session_agent(settings, name: str | None, privilege: Privilege | None) -> AgentDef:
@@ -479,6 +490,21 @@ async def turn_stream(thread_id: str, request: Request, cursor: str | None = Non
     return EventSourceResponse(gen(), ping=cfg.ping_s, send_timeout=cfg.send_timeout_s)
 
 
+async def _cancel_turn_id(request: Request) -> str | None:
+    """Parse the optional `{turn_id}` from a cancel request body (A6/C4-H2). A cancel with no body
+    (the legacy shape) or a non-JSON/non-dict body → `None` (cancel the live turn, whatever it is).
+    A non-empty string `turn_id` scopes the cancel to that specific turn."""
+    try:
+        body = await request.json()
+    except Exception:
+        return None  # empty body / not JSON → legacy unscoped cancel
+    if isinstance(body, dict):
+        tid = body.get("turn_id")
+        if isinstance(tid, str) and tid:
+            return tid
+    return None
+
+
 @router.post("/agent/turns/{thread_id}/cancel")
 async def cancel_turn_endpoint(thread_id: str, request: Request) -> dict[str, Any]:
     """Cancel a running turn (D39/S3-C, opencode's unstick affordance). Idempotent. **This handler
@@ -487,6 +513,12 @@ async def cancel_turn_endpoint(thread_id: str, request: Request) -> dict[str, An
     CancelledError path, while it still holds the thread's marker (no successor race). That is why
     this route is NOT `_reserve_turn`-guarded (cancel must work exactly while the thread is busy) and
     why `test_turn_guard_invariant.py` doesn't flag it — its source carries no mutation markers.
+
+    A6 (C4-H2): an optional JSON body `{turn_id}` scopes the cancel to a SPECIFIC turn. A delayed Stop
+    for turn A (the socket dropped, the client retried, a successor turn B started) must not cancel B —
+    so when the body names a `turn_id` that doesn't match the live handle, refuse and report the live
+    turn (`{cancelled:false, active:true, turn_id:<live>}`) so the client can re-target. An absent body
+    keeps the legacy unscoped behaviour (cancel whatever is live).
 
     Live turn → fire the single cancel (`cancelling` latch makes a repeat a no-op — a second raw
     `task.cancel()` would pierce the persistence shield, D39 H2), then await the task under
@@ -497,6 +529,11 @@ async def cancel_turn_endpoint(thread_id: str, request: Request) -> dict[str, An
     handle = state.turns.get(thread_id)
     if handle is None or handle.task is None:
         return {"cancelled": False, "active": False}
+    want_turn = await _cancel_turn_id(request)
+    if want_turn is not None and want_turn != handle.turn_id:
+        # A stale/mistargeted Stop — the named turn is not the one running now. Do NOT cancel the
+        # successor; hand back the live turn so the client can decide whether to re-issue against it.
+        return {"cancelled": False, "active": True, "turn_id": handle.turn_id}
     fired = cancel_turn(handle)  # False if already cancelling / already done (the latch)
     # `asyncio.wait` does NOT re-raise the awaited task's CancelledError (unlike a direct `await
     # task`), so the endpoint settles cleanly whether the turn ends by cancel or was already ending.
@@ -1074,7 +1111,15 @@ class ApplyRequest(BaseModel):
 
     thread_id: str
     call_id: str
-    decision: str = "apply"  # "apply" | "dismiss"
+    #: Fail-closed (A3/C1-M3). `Literal` 422s any junk so an unknown value ("reject") can no longer
+    #: fall through to APPLY the write — only exact `apply`/`dismiss` are accepted. The before-validator
+    #: strips surrounding whitespace first so a padded valid value still passes.
+    decision: Literal["apply", "dismiss"] = "apply"
+
+    @field_validator("decision", mode="before")
+    @classmethod
+    def _strip_decision(cls, v: object) -> object:
+        return v.strip() if isinstance(v, str) else v
 
 
 def _resolved(result: ToolResult, *, applied: bool, summary: str | None = None) -> ToolResult:
