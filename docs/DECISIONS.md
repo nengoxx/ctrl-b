@@ -2043,3 +2043,79 @@ CLI, Claude Code — 2026-07-17 four-agent research pass, recorded in the §5 Sl
 
 **Status.** LOCKED 2026-07-17 after the owner-directed seven-agent field research; build = Opus waves
 per the ratified methodology. As-built record lands on the AGENT_CHAT_AUDIT §5 Slice 2 heading.
+
+## D39 — Durable turns: server-owned turn tasks + snapshot-primary re-attach + terminal cache (ACA Slice 3) ✏️ LOCKED 2026-07-18 (Slice 3 design review; ACA §5's "D35 proposed" pointer was stale numbering)
+
+**Context.** ACA-1: a turn dies with its SSE socket — the response generator IS the executor, so a
+phone lock/network blip kills the loop mid-work (completed steps survive via Slice 2's shielded
+persistence; the turn doesn't). Design phase: full code-truth pass + a FIVE-source field pass
+(opencode event-planes/#19023 · LibreChat in-memory job manager · Codex live re-attach + stale-turn
+interrupt · OpenAI sequence_number/starting_after + idempotent cancel · Goose/pi/Hermes/Claude Code
+absences) + an adversarial design review that found 4 HIGHs — all resolved INTO this decision.
+
+**Decision.**
+- **Server-owned turn task (the core inversion):** `_turn_response` spawns an asyncio task that
+  drains `session.run_turn/resume` into the registry entry; the SSE generator becomes a subscriber.
+  `_counted`'s finally = subscriber-detach; marker release rides the task's `add_done_callback`
+  (idempotent cleanup ONLY — `terminal_status` is set in the task's own finally BEFORE the terminal
+  sentinel is emitted, so no done-but-unmarked window). A disconnected-but-running turn keeps its
+  marker → still 409s new posts. `_drive` body untouched (cross-slice contract).
+- **Registry stays LIVE-ONLY (adversarial H1):** release deletes, exactly as Slice 2 — every
+  `not app.state.turns` busy-read (ACA-17 gates, `max_active_turns`) stays truthful; turns.py's
+  contract survives verbatim. Finished turns move to a small capped **terminal cache**
+  (`app.state.turn_terminals`, linger-swept) — read-side convenience for late re-attach, NOT busy
+  state. `TurnHandle` extends in place: `task`, monotonic `seq`, bounded event `ring`
+  (the replay-window knob — undersizing forces snapshot, never data loss), `subscribers`
+  (per-turn bounded queues; overflow DETACHES that subscriber — events are never shed; the
+  detached client re-attaches via snapshot), `cancelling` flag, `terminal_status`, and an
+  **event-fold accumulator** (open-message id + delta LISTS joined on snapshot [no O(n²) concat] +
+  call states + the turn's `mode`) — LibreChat's aggregatedContent shape, built at the registry
+  layer so snapshots are complete regardless of ring eviction, zero `_drive` edits.
+- **Re-attach — snapshot-primary (field consensus: LibreChat sync-event, Codex history+subscribe;
+  cursors only exist where a full server event log does):** `GET
+  /api/agent/turns/{thread_id}/stream?cursor=turn_id:seq`. Live + cursor in ring → tail-replay then
+  live; else ONE `turn.sync` snapshot event (accumulator; carries `mode` → client re-pins
+  modeByCall) then live. **Atomicity invariant:** attach the subscriber queue synchronously, then
+  build tail/snapshot synchronously — no `await` between (zero-gap join; the Slice-2 reserve
+  discipline). Not live → terminal cache → terminal sentinel; else `{active:false}` → client falls
+  back to reload (per-step SQLite persistence is the durable floor; the ring is a cache, never the
+  only copy). Plus `GET /api/agent/turns/{thread_id}` — a lightweight status probe; **cold
+  page-load re-attach (adversarial M4):** `initChat`/thread-switch probes and re-attaches to a
+  live detached turn (the mobile headline case: app killed, turn still running).
+- **Client (adversarial H4/M3):** ONE reducer entry gate — events are totally ordered per turn, so
+  `seq ≤ lastSeq → drop` at `handle()`'s entry covers every branch (no per-branch rewrites).
+  Re-attach sequence pinned: forced reload (bypasses the streaming-skip guard) → `turn.sync`
+  overlay with REPLACE semantics (set accumulated text by id, never append) → live subscribe. On
+  interrupt: re-attach BEFORE the `failStream`/`retryLastTurn` fallback. **Stop button** replaces
+  the disabled send while streaming → `POST /api/agent/turns/{thread_id}/cancel`.
+- **Cancel — single-cancel discipline (adversarial H2/H3):** the `cancelling` flag ensures
+  `task.cancel()` fires EXACTLY once ever (endpoint idempotency + shutdown drain share the path;
+  a second raw cancel would pierce the anyio shield inside the persistence finally → the dangling
+  BEGIN the Slice-2 audit closed). Endpoint: cancel once → `await task` (suppress
+  CancelledError) → return status; idempotent repeat returns current state; nothing-running →
+  clean OK (opencode's unstick affordance). **Stale-call marking happens INSIDE the turn task's
+  CancelledError path** — after `_drive` unwinds + the shielded persist completes, WHILE the
+  marker is still held (no race with a successor turn; the cancel endpoint writes nothing, so the
+  D38 turn-guard invariant test stays truthful). No between-steps flag (deviation from the §5
+  sketch): Stop means now; the shielded finally saves completed work.
+- **A11 + startup reconciler:** `RunState.CANCELLED` end-to-end (enum + `_RESOLVED` + `_assemble`
+  synthesis KEYED STRICTLY ON PERSISTED CANCELLED [adversarial L3] + FE type/RUN_STATES/CSS/label).
+  `reconcile_stale_calls(thread_id|None)` — ONE helper, two call sites: lifespan boot (all
+  threads; stale PENDING/RUNNING → CANCELLED "interrupted by restart"; durable AWAITING_* suspends
+  survive; best-effort, a DB hiccup never aborts startup) and the turn task's cancel path. Field
+  grounding: opencode #19023 (no startup reconciler → permanent spinners, closed not-planned) vs
+  Codex's interrupt-stale-turns — we take Codex's side.
+- **Robustness:** chat SSE gains ping (~15s) + `send_timeout` (it has NO keepalive at HEAD);
+  lifespan drains the registry under `shutdown_grace_s` (shielded terminal persistence); CPython
+  #116720 cancellation re-assert lands in subagents.py; all knobs in config
+  `agent.turns.{ring_size, subscriber_queue_size, linger_s, ping_s, send_timeout_s,
+  shutdown_grace_s, max_active_turns}`. **`active_turns` gauge DELETED** (D38 amendment: it kept
+  "telemetry" status but is write-only; the registry supersedes it — dead state mimicking a live
+  signal is the trap D38 exists to kill). Buffered D17 collapses into a `collect_turn` subscriber
+  (buffered turns become cancellable for free); buffered re-attach is documented DEGRADED (the PWA
+  always streams). Accepted: transient sys-notes (notice/compaction) are not re-attach-recoverable.
+
+**Status.** LOCKED 2026-07-18 (owner go after the 4-HIGH adversarial review was resolved into the
+design). Build = 4 Opus waves (A11+reconciler → registry/task core → endpoints/terminal/shutdown →
+client) + adversarial audit + 8-angle pre-push review. As-built record lands on AGENT_CHAT_AUDIT §5
+Slice 3.

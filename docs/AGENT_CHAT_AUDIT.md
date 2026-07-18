@@ -759,7 +759,40 @@ expose it or delete it.
   call's does not; rediscovery-skipped-while-busy test; a compaction-crash test (raise between
   summary insert and flag flips inside the transaction → neither persists).
 
-### Slice 3 — Durable turns (ACA-1 + A11) · L — **flagship; design review first (D35 proposed)**
+**v2.5 amendments (2026-07-18, Slice 3 design review — code-truth vs HEAD `24015e5` + a five-source
+field pass [opencode event-planes + #19023/#20097 · LibreChat GenerationJobManager · Codex live
+re-attach/interrupt-stale-turns · OpenAI background-mode cursor + idempotent cancel · Goose/pi/
+Hermes/Claude Code absence findings] + an adversarial design review [4 HIGHs, all resolved into the
+design]; LOCKED as **D39** — the "D35 proposed" below was stale numbering; these BIND the build):**
+- **S3-A (re-attach reframed):** snapshot-primary, not cursor-primary — the field consensus is
+  snapshot-then-atomic-subscribe (LibreChat `sync`, Codex history+subscribe); seq-cursor gap-fill
+  only exists over a full server event log (OpenAI). The ring's tail-replay survives as the cheap
+  brief-drop path; the registry-layer event-fold ACCUMULATOR makes snapshots complete without
+  `_drive` edits.
+- **S3-B (registry stays live-only; adversarial H1):** finished turns move to a capped terminal
+  CACHE — lingering them in `app.state.turns` would poison every truthiness busy-read (ACA-17
+  gates, `max_active_turns`). turns.py's reserve/release contract survives verbatim.
+- **S3-C (cancel discipline; adversarial H2/H3):** exactly-one `task.cancel()` ever (`cancelling`
+  flag; a second raw cancel pierces the anyio shield → the dangling-BEGIN hole); endpoint =
+  cancel→await-task→status, writes NOTHING; stale-call marking runs inside the turn task's
+  CancelledError path while the marker is held. New raw-task single+double-cancel tests are
+  mandatory (the Slice-2 shield test's anyio-scope shape does not cover this).
+- **S3-D (client; adversarial H4/M3/M4):** one total-order seq entry gate in the reducer; pinned
+  re-attach sequence forced-reload → replace-semantics overlay → live; cold-load probes
+  `GET /turns/{id}` and re-attaches (the mobile app-kill headline case); snapshot carries `mode`
+  → modeByCall re-pin.
+- **S3-E (A11 + reconciler):** `RunState.CANCELLED` end-to-end; `_assemble` synthesis keyed
+  STRICTLY on persisted CANCELLED; shared `reconcile_stale_calls` (boot, best-effort + the task
+  cancel path) — opencode #19023 is the do-nothing failure mode, Codex interrupt-stale-turns the
+  precedent.
+- **S3-F (riders):** chat SSE ping/`send_timeout` (none exist at HEAD); lifespan drain under
+  `shutdown_grace_s`; CPython #116720 re-assert in subagents.py; config
+  `agent.turns.{ring_size, subscriber_queue_size, linger_s, ping_s, send_timeout_s,
+  shutdown_grace_s, max_active_turns}`; **`active_turns` DELETED** (D38 amended — write-only);
+  buffered D17 = subscriber (cancellable for free; re-attach documented degraded); accepted
+  losses: transient notice/compaction sys-notes.
+
+### Slice 3 — Durable turns (ACA-1 + A11) · L — **flagship** — design LOCKED 2026-07-18 (D39; v2.5 amendments above bind the build)
 Pattern: *resumable streams* — server-owned turn task + replayable per-turn event log; the SSE
 response is a subscriber. Grounded in §3.1–3.3 and the v1.1 research (LibreChat in-memory mode is
 the single-process reference; OpenAI `sequence_number` cursor semantics; opencode's SQLite seq
