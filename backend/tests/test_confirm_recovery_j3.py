@@ -22,7 +22,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from _async import run_async
+from _async import drain_run_calls, run_async
 
 
 def _client():
@@ -90,7 +90,7 @@ def _session_and_confirm_call(c):
 
 def _suspend_on_confirm(session, thread, assistant):
     """Run the pending call with no token → it suspends AWAITING_CONFIRM + mints a token in _pending."""
-    events, suspended, _ = _run(session._run_calls(thread, assistant, {}, _guard()))
+    events, suspended, _ = drain_run_calls(session, thread, assistant, {}, _guard())
     return events, suspended
 
 
@@ -195,7 +195,7 @@ def test_dismissed_reissue_gets_denial_echo_not_a_new_bubble() -> None:
 
         # The resume step + the model iteration that follows share ONE drive-scoped guard.
         guard = _guard()
-        _run(session._run_calls(thread, assistant, {cid: _DISMISS}, guard))  # owner dismisses
+        drain_run_calls(session, thread, assistant, {cid: _DISMISS}, guard)  # owner dismisses
         sig = _LoopGuard.sig("reboot_host", {"host_id": "nope"})
         assert sig in guard.denied_sigs  # the dismissal recorded the call signature
 
@@ -216,7 +216,7 @@ def test_dismissed_reissue_gets_denial_echo_not_a_new_bubble() -> None:
             ],
         )
         _run(c.app.state.messages.add(reissue))
-        events, suspended, made_progress = _run(session._run_calls(thread, reissue, {}, guard))
+        events, suspended, made_progress = drain_run_calls(session, thread, reissue, {}, guard)
 
         assert not suspended  # did NOT re-suspend
         assert not any(e.event == "tool.permission" for e in events)  # NO fresh confirm bubble

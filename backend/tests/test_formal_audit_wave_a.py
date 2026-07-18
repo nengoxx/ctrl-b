@@ -29,7 +29,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from _async import run_async
+from _async import drain_run_calls, run_async
 
 
 def _client():
@@ -97,7 +97,7 @@ def _session_and_confirm_call(c):
 
 def _suspend_on_confirm(session, thread, assistant):
     """Run the pending call with no token → it suspends AWAITING_CONFIRM + mints a token in _pending."""
-    events, suspended, _ = _run(session._run_calls(thread, assistant, {}, _guard()))
+    events, suspended, _ = drain_run_calls(session, thread, assistant, {}, _guard())
     return events, suspended
 
 
@@ -312,8 +312,8 @@ def test_a4_legacy_zero_cap_suppresses_without_keyerror() -> None:
     # that was never inserted — it must NOT KeyError (defensive `.get`).
     with _workspace(), _client() as c:
         session, thread, assistant, cid = _one_call_assistant(c)
-        events, suspended, made_progress = _run(
-            session._run_calls(thread, assistant, {}, _guard(max_per_tool=0))
+        events, suspended, made_progress = drain_run_calls(
+            session, thread, assistant, {}, _guard(max_per_tool=0)
         )
         assert not suspended and not made_progress
         res = next(e for e in events if e.event == "tool.result").data["result"]
@@ -354,8 +354,8 @@ def test_a4_cap_one_boundary_allows_one_then_suppresses() -> None:
 
         session._actions.invoke = fake_invoke
 
-        events, _suspended, _progress = _run(
-            session._run_calls(thread, assistant, {}, _guard(max_per_tool=1))
+        events, _suspended, _progress = drain_run_calls(
+            session, thread, assistant, {}, _guard(max_per_tool=1)
         )
         by_call = {e.data["callId"]: e.data["result"] for e in events if e.event == "tool.result"}
         assert by_call[cid1]["state"] == "ok"  # the first (cap=1) runs
@@ -405,7 +405,7 @@ def test_a5_confirmed_resume_persists_running_then_reconciles_to_cancelled() -> 
         session._actions.invoke = boom
 
         try:
-            _run(session._run_calls(thread, assistant, {cid: "a-real-confirm-token"}, _guard()))
+            drain_run_calls(session, thread, assistant, {cid: "a-real-confirm-token"}, _guard())
             raise AssertionError("the CancelledError should have propagated")
         except asyncio.CancelledError:
             pass

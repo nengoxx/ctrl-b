@@ -31,7 +31,7 @@ import uuid
 from pathlib import Path
 
 import anyio
-from _async import run_async
+from _async import drain_run_calls, run_async
 
 
 def _client():
@@ -120,8 +120,14 @@ def test_cancel_mid_batch_persists_completed_call_and_leaves_inflight_unresolved
         cancelled_seen = {"value": False}
 
         async def runner() -> None:
+            from app.services.agent.session import _BatchOutcome
+
             try:
-                await session._run_calls(thread, _assistant, {}, _guard())
+                # D40: `_run_calls` is an async generator now — drain it; the per-call persists +
+                # the finally backstop both run through the SAME dual-shield helper.
+                outcome = _BatchOutcome()
+                async for _ev in session._run_calls(thread, _assistant, {}, _guard(), outcome=outcome):
+                    pass
             except anyio.get_cancelled_exc_class():
                 # CancelledError re-raised OUT of _run_calls after the shielded finally ran.
                 cancelled_seen["value"] = True
@@ -167,8 +173,8 @@ def test_normal_two_call_batch_persists_one_tool_message() -> None:
 
         session._actions.invoke = fake_invoke
 
-        events, suspended, made_progress = run_async(session._run_calls(thread, assistant, {}, _guard()))
-        # return value unchanged on the normal path
+        events, suspended, made_progress = drain_run_calls(session, thread, assistant, {}, _guard())
+        # outcome unchanged on the normal path (now read off the `_BatchOutcome` holder)
         assert suspended is False and made_progress is True
         assert [e.event for e in events] == ["tool.result", "tool.result"]
 

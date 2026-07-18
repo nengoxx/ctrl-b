@@ -24,7 +24,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from _async import run_async
+from _async import drain_run_calls, run_async
 
 
 def _client():
@@ -141,11 +141,11 @@ def test_same_call_same_result_is_no_progress() -> None:
             guard = _guard()
             # First execution of ping_host{host_id:a} → progress (a new outcome this turn).
             t1, a1, _ = _assistant_with_call(c, session, tool="ping_host", args={"host_id": "a"})
-            _e1, _s1, prog1 = _run(session._run_calls(t1, a1, {}, guard))
+            _e1, _s1, prog1 = drain_run_calls(session, t1, a1, {}, guard)
             assert prog1 is True
             # The SAME call again (same guard, same sig, same result) → NO progress → `_drive` stalls.
             t2, a2, _ = _assistant_with_call(c, session, tool="ping_host", args={"host_id": "a"})
-            _e2, _s2, prog2 = _run(session._run_calls(t2, a2, {}, guard))
+            _e2, _s2, prog2 = drain_run_calls(session, t2, a2, {}, guard)
             assert prog2 is False
 
 
@@ -158,9 +158,9 @@ def test_two_different_calls_same_text_both_progress() -> None:
             _stub_ok(session)  # identical result text for every call
             guard = _guard()
             t1, a1, _ = _assistant_with_call(c, session, tool="ping_host", args={"host_id": "a"})
-            _e1, _s1, prog1 = _run(session._run_calls(t1, a1, {}, guard))
+            _e1, _s1, prog1 = drain_run_calls(session, t1, a1, {}, guard)
             t2, a2, _ = _assistant_with_call(c, session, tool="ping_host", args={"host_id": "b"})
-            _e2, _s2, prog2 = _run(session._run_calls(t2, a2, {}, guard))
+            _e2, _s2, prog2 = drain_run_calls(session, t2, a2, {}, guard)
             assert prog1 is True and prog2 is True
 
 
@@ -189,7 +189,7 @@ def test_malformed_args_error_without_invoking() -> None:
             calls = _stub_ok(session)  # would record any real invocation
             for raw in ("{not json", "[1,2]"):
                 t, a, cid = _assistant_with_call(c, session, tool="ping_host", args={}, invalid_raw=raw)
-                events, suspended, _prog = _run(session._run_calls(t, a, {}, _guard()))
+                events, suspended, _prog = drain_run_calls(session, t, a, {}, _guard())
                 assert not suspended
                 res = _result_event(events).data["result"]
                 assert res["state"] == "error"
@@ -204,7 +204,7 @@ def test_valid_args_still_invoke() -> None:
             session = _session(c)
             calls = _stub_ok(session)
             t, a, _ = _assistant_with_call(c, session, tool="ping_host", args={"host_id": "a"})
-            events, suspended, prog = _run(session._run_calls(t, a, {}, _guard()))  # no bad_args
+            events, suspended, prog = drain_run_calls(session, t, a, {}, _guard())  # no bad_args
             assert not suspended and prog is True
             assert calls == [("ping_host", {"host_id": "a"})]  # invoked exactly once, with the args
             assert _result_event(events).data["result"]["state"] == "ok"
@@ -219,7 +219,7 @@ def test_malformed_call_counts_toward_per_tool_cap() -> None:
             _stub_ok(session)
             guard = _guard()
             t, a, cid = _assistant_with_call(c, session, tool="ping_host", args={}, invalid_raw="{bad")
-            _run(session._run_calls(t, a, {}, guard))
+            drain_run_calls(session, t, a, {}, guard)
             assert guard.tool_counts.get("ping_host") == 1
 
 
@@ -274,13 +274,13 @@ def test_malformed_call_still_steers_after_suspend_resume() -> None:
             guard = _guard()
 
             # Pass 1: the question suspends → the malformed call is never reached (stays PENDING).
-            _e1, suspended1, _p1 = _run(session._run_calls(thread, assistant, {}, guard))
+            _e1, suspended1, _p1 = drain_run_calls(session, thread, assistant, {}, guard)
             assert suspended1
             assert invoked == ["question"]  # only the question was invoked
             assert assistant.tool_calls()[1].state == RunState.PENDING
 
             # Resume exactly as `_drive`'s resume branch does for `answer` — the owner replied.
-            e2, suspended2, _p2 = _run(session._run_calls(thread, assistant, {}, guard, {q_cid: "emma"}))
+            e2, suspended2, _p2 = drain_run_calls(session, thread, assistant, {}, guard, {q_cid: "emma"})
             assert not suspended2
             bad_res = next(e for e in e2 if e.event == "tool.result" and e.data["callId"] == bad_cid)
             assert bad_res.data["result"]["state"] == "error"

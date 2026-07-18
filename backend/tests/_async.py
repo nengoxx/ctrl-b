@@ -28,3 +28,20 @@ atexit.register(_runner.close)
 def run_async(coro):
     """Run a coroutine to completion on the shared test loop (`asyncio.Runner`; 3.14-safe). Returns its result."""
     return _runner.run(coro)
+
+
+def drain_run_calls(session, *args, **kwargs):
+    """Drive the async-generator `AgentSession._run_calls` (D40 §2 — it now `yield`s events per-call and
+    returns no value) to completion, and return the legacy `(events, suspended, made_progress)` tuple the
+    older tests were written against. Constructs the `_BatchOutcome` holder that `_drive` now passes and
+    reads it after the stream drains. Positional/keyword `*args`/`**kwargs` are forwarded verbatim (e.g.
+    `drain_run_calls(session, thread, assistant, {}, guard)` or `..., {cid: "emma"}`)."""
+    from app.services.agent.session import _BatchOutcome
+
+    outcome = _BatchOutcome()
+
+    async def _collect():
+        return [ev async for ev in session._run_calls(*args, outcome=outcome, **kwargs)]
+
+    events = run_async(_collect())
+    return events, outcome.suspended, outcome.made_progress

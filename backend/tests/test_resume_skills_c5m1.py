@@ -18,7 +18,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from _async import run_async
+from _async import drain_run_calls, run_async
 
 
 def _client():
@@ -107,7 +107,7 @@ def _suspend_confirm_call(c, session):
         ],
     )
     _run(s.messages.add(assistant))
-    _run(session._run_calls(thread, assistant, {}, _guard()))  # no token → suspends AWAITING_CONFIRM
+    drain_run_calls(session, thread, assistant, {}, _guard())  # no token → suspends AWAITING_CONFIRM
     return thread, call_id
 
 

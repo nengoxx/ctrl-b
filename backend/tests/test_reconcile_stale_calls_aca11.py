@@ -22,7 +22,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from _async import run_async
+from _async import drain_run_calls, run_async
 
 
 @contextlib.contextmanager
@@ -281,7 +281,7 @@ def test_cancelled_call_skipped_on_resume() -> None:
 
             session._actions.invoke = _fake  # type: ignore[method-assign]
             guard = _LoopGuard(max_repeat=5, max_per_tool=10)
-            events, suspended, made_progress = _run(session._run_calls(thread, msg, {}, guard))
+            events, suspended, made_progress = drain_run_calls(session, thread, msg, {}, guard)
             assert invoked == []
             assert not suspended and not made_progress
             assert not any(e.event == "tool.result" and e.data.get("callId") == cid for e in events)

@@ -19,7 +19,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from _async import run_async
+from _async import drain_run_calls, run_async
 
 
 def _client():
@@ -87,7 +87,7 @@ def _session_and_confirm_call(c):
 
 def _suspend_on_confirm(session, thread, assistant):
     """Run the pending call with no token → it suspends AWAITING_CONFIRM + mints a token in _pending."""
-    _run(session._run_calls(thread, assistant, {}, _guard()))
+    drain_run_calls(session, thread, assistant, {}, _guard())
 
 
 def _spy_drive(session):

@@ -34,7 +34,7 @@ import logging
 import sys
 import uuid
 from dataclasses import dataclass, field
-from typing import AsyncIterator
+from typing import AsyncIterator, Awaitable, Callable
 
 import anyio
 from pydantic import ValidationError
@@ -205,6 +205,23 @@ class _BatchPlan:
         single-call 'prefix' re-classifies as serial (the serial loop stays the one source of truth
         for one-call semantics), so this is the callers' gate for prefix-vs-serial dispatch."""
         return len(self.prefix) >= 2
+
+
+@dataclass
+class _BatchOutcome:
+    """Mutable holder for `_run_calls`' outcome (D40 §2). `_run_calls` is now an async generator, and
+    PEP 525 async generators return no value — so the `(suspended, made_progress)` the serial loop used
+    to `return` is written into this holder instead. `_drive` constructs it, passes it in, and reads it
+    AFTER the `async for` drains.
+
+    NOT read on the exception path: an `async for` propagates the generator's exception (or cancel)
+    BEFORE the post-loop read is reached, so a caller never observes a half-written holder under an
+    error. The fields are written synchronously at the point each fact is determined (a suspend flips
+    `suspended` right before its `tool.permission`/`tool.question` is yielded; a real tool result flips
+    `made_progress`), so a consumer draining the stream sees them settle in lockstep with the events."""
+
+    suspended: bool = False
+    made_progress: bool = False
 
 
 def _tool_content(result: ToolResult) -> str:
@@ -719,12 +736,12 @@ class AgentSession:
             max_per_tool=self._agent.max_calls_per_tool,
         )
         if resume_assistant is not None:
-            events, suspended, _ = await self._run_calls(
-                thread, resume_assistant, resume_tokens or {}, guard, resume_answers or {}
-            )
-            for ev in events:
+            outcome = _BatchOutcome()
+            async for ev in self._run_calls(
+                thread, resume_assistant, resume_tokens or {}, guard, resume_answers or {}, outcome=outcome
+            ):
                 yield ev
-            if suspended:
+            if outcome.suspended:
                 yield AgentEvent("done", {"threadId": thread.id, "state": "suspended"})
                 return
 
@@ -830,10 +847,10 @@ class AgentSession:
                 )
             yield AgentEvent("message.end", {"messageId": assistant.id})
 
-            events, suspended, made_progress = await self._run_calls(thread, assistant, {}, guard)
-            for ev in events:
+            outcome = _BatchOutcome()
+            async for ev in self._run_calls(thread, assistant, {}, guard, outcome=outcome):
                 yield ev
-            if suspended:
+            if outcome.suspended:
                 yield AgentEvent("done", {"threadId": thread.id, "state": "suspended"})
                 return
             # Stall guard (C1b): only a *new tool result* counts as progress. Narration text does
@@ -841,7 +858,7 @@ class AgentSession:
             # counting that as progress would defeat this guard entirely (the bug that let the loop
             # run to max_iterations). A text-only reply already returned `completed` above, so any
             # `text` here is just narration accompanying tool calls.
-            if made_progress:
+            if outcome.made_progress:
                 stall = 0
             else:
                 stall += 1
@@ -1056,6 +1073,55 @@ class AgentSession:
         # ≤1 eligible → pure serial path, zero guard mutation.
         return _BatchPlan(prefix=[], serial_from=0)
 
+    async def _persist_shielded(self, write: Callable[[], Awaitable[None]]) -> None:
+        """Run one persistence `write()` under the DUAL SHIELD (C3-H1, extracted verbatim from the old
+        `_run_calls` `finally` tail — D40 §6, ONE implementation now used by BOTH the per-call persists
+        and the finally backstop). `write` is a zero-arg coroutine factory that does the actual DB work
+        (typically inside a `Database.transaction()`); it must be idempotent, since a cancel may drive
+        it to completion after the caller stopped awaiting.
+
+        TWO distinct cancellation sources are defeated:
+          • a *fresh raw* `asyncio.Task.cancel()` (a Stop) arriving while we are parked awaiting the
+            lock/BEGIN/writes/COMMIT. An `anyio.CancelScope(shield=True)` ALONE does NOT reliably
+            suppress that — anyio can't attribute a raw asyncio cancel to a scope it owns, so it
+            re-raises it mid-write and rolls the write back (audit C3-H1). The deterministic
+            asyncio-native guard: run the write as its OWN task (`asyncio.ensure_future`) — genuinely
+            uncancellable by the outer cancel — and `await asyncio.shield(persist)`; on `CancelledError`
+            we `await persist` a SECOND time so it is guaranteed to finish before we re-raise (we ALWAYS
+            await it → no detached-task leak; NOT a bare `asyncio.shield` without the second await).
+          • anyio's level-triggered scope cancellation (Starlette request scope / the subagent
+            TaskGroup), which re-raises at every await — the outer `anyio.CancelScope(shield=True)` is
+            retained for THAT shape (it is what the Slice-2 shielded-persistence test pins).
+
+        **Swallow-only-while-unwinding** (kept exactly as the old tail): captured `sys.exc_info()[1]` at
+        entry. On the LIVE path (no exception in flight → `in_flight is None`) a write failure RAISES —
+        so a per-call persist that fails raises BEFORE its event is yielded (**persist-before-emit**: a
+        subscriber/snapshot can never hold a result whose row vanished). While UNWINDING an exception
+        (the finally backstop under a cancel/error) a write failure is logged + swallowed so it never
+        REPLACES the in-flight exception (a swallowed cancel would mis-drive the caller's cancel scope).
+        The scope is entered synchronously (no checkpoint before it) so `BEGIN` is always paired with
+        `COMMIT` — no dangling transaction."""
+        in_flight = sys.exc_info()[1]  # the exception this call runs under (finally backstop), if any
+
+        async def _guarded() -> None:
+            try:
+                await write()
+            except Exception:
+                if in_flight is None:
+                    raise  # live path: fail loud → the caller must NOT emit the un-persisted event
+                log.exception(
+                    "step persistence failed while unwinding %r — original exception preserved",
+                    type(in_flight).__name__,
+                )
+
+        persist = asyncio.ensure_future(_guarded())
+        with anyio.CancelScope(shield=True):
+            try:
+                await asyncio.shield(persist)
+            except asyncio.CancelledError:
+                await persist  # the inner task is uncancellable by the outer cancel — let it finish
+                raise
+
     async def _run_calls(
         self,
         thread: Thread,
@@ -1063,8 +1129,13 @@ class AgentSession:
         resume_tokens: dict[str, str | None],
         guard: _LoopGuard,
         resume_answers: dict[str, str] | None = None,
-    ) -> tuple[list[AgentEvent], bool, bool]:
-        """Process the assistant's not-yet-resolved tool calls in order. ALLOW runs immediately via
+        *,
+        outcome: _BatchOutcome,
+    ) -> AsyncIterator[AgentEvent]:
+        """Process the assistant's not-yet-resolved tool calls in order, **as an async generator** (D40
+        §2): each tool event is `yield`ed at the point it is produced instead of buffered — with the
+        D40 **persist-before-emit** rule, a call's `tool.result`/`tool.permission`/`tool.question` is
+        yielded ONLY AFTER that call's state + result are durably committed. ALLOW runs immediately via
         `ActionService` (which validates, decides, executes, records the Event); DENY/bad-args
         synthesize a clean result fed back to the model; CONFIRM suspends (persist AWAITING_CONFIRM,
         emit `tool.permission`, stop). A call whose `invalid_raw is not None` (its raw arguments
@@ -1074,16 +1145,59 @@ class AgentSession:
         an assistant message with a suspending call still steers on resume rather than silently
         invoking with `{}`. An exact-repeat call past `guard.max_repeat` is **suppressed**
         (C1): not executed, the prior result echoed back with a steering note — this both kills a
-        weak model's spiral and is the safe choice for a mutating duplicate. Returns
-        `(events, suspended, made_progress)`; `made_progress` is False when every call was a
-        suppressed repeat (so `_drive` can count a stall). A step's calls run serially and their
-        results are batched until the step ends — fine for quick local tools (ping/SSH), but one
-        slow call (web_search, MCP, terminal, subagents) holds the whole batch (ACA-4; per-call
-        streaming + parallel dispatch is ACA Slice-4 target design)."""
-        events: list[AgentEvent] = []
+        weak model's spiral and is the safe choice for a mutating duplicate.
+
+        Outcome (async generators return no value — PEP 525) is written into the caller-supplied
+        `outcome` holder: `outcome.suspended` (the turn parked on a confirm/question) and
+        `outcome.made_progress` (False when every call was a suppressed repeat, so `_drive` can count a
+        stall). Both are written synchronously as facts are determined; `_drive` reads them after the
+        `async for` drains (not on the exception path — a cancel/error propagates first).
+
+        **Per-call persistence (D40 §6):** ONE `tool` Message per invocation, created lazily on the
+        FIRST resolved call and only `update()`d thereafter (idempotent by construction — the tail
+        never `add()`s a duplicate). Each resolved call commits its tool-row upsert + the
+        `assistant.update()` state-flip in ONE `Database.transaction()`, then yields its event. The
+        `finally` tail is the BACKSTOP: on any exit it flushes the final assistant state + any
+        resolved-but-unpersisted results to the SAME tool message — never a second row. This wave is
+        still SERIAL (Wave 4 adds the parallel prefix); one slow call still holds the batch, but its
+        result is now durable + on the wire the instant it resolves, not at step end (ACA-4).
+
+        Generator discipline: the `finally` is await-only — it NEVER yields (a yield during
+        `aclose()`/GeneratorExit unwind raises RuntimeError). `aclose()`/cancellation lands at a yield
+        point; the finally backstop then runs to make the last flip/result durable before unwinding."""
         result_parts: list[ToolResultPart] = []
-        suspended = False
-        made_progress = False
+        #: The SINGLE `tool` Message for this invocation (D40 §6) — created lazily inside `_persist` on
+        #: the first resolved call, then only `update()`d (consumer AND finally backstop). Held here so
+        #: every later write targets the same row: create-once, update-thereafter, never a duplicate.
+        tool_msg: Message | None = None
+
+        async def _persist() -> None:
+            """Commit the assistant state-flip + the single `tool` Message in ONE transaction, through
+            the dual-shield helper (persist-before-emit). Create-once/update-after on `tool_msg`: the
+            holder is assigned only AFTER the txn commits, so a rolled-back create leaves it `None` and
+            the backstop re-attempts the `add()` rather than `update()`-ing a row that never landed."""
+
+            async def _write() -> None:
+                nonlocal tool_msg
+                created: Message | None = None
+                async with self._messages.db.transaction():
+                    await self._messages.update(assistant)
+                    if result_parts:
+                        if tool_msg is None:
+                            created = Message(
+                                thread_id=thread.id,
+                                role="tool",
+                                actor=AGENT_ACTOR,
+                                parts=list(result_parts),
+                            )
+                            await self._messages.add(created)
+                        else:
+                            tool_msg.parts = list(result_parts)
+                            await self._messages.update(tool_msg)
+                if created is not None:
+                    tool_msg = created  # committed — later persists now UPDATE this row (never re-add)
+
+            await self._persist_shielded(_write)
 
         answers = resume_answers or {}
         try:
@@ -1099,12 +1213,11 @@ class AgentSession:
                         state=RunState.OK, summary="the owner answered", output=answers[cp.call_id]
                     )
                     cp.state = RunState.OK
-                    made_progress = True
+                    outcome.made_progress = True
                     result_parts.append(ToolResultPart(call_id=cp.call_id, result=result))
-                    events.append(
-                        AgentEvent(
-                            "tool.result", {"callId": cp.call_id, "result": result.model_dump(mode="json")}
-                        )
+                    await _persist()  # persist-before-emit
+                    yield AgentEvent(
+                        "tool.result", {"callId": cp.call_id, "result": result.model_dump(mode="json")}
                     )
                     continue
 
@@ -1136,7 +1249,7 @@ class AgentSession:
                                 "without it; otherwise stop and give the owner your final answer."
                             ),
                         )
-                    made_progress = True
+                    outcome.made_progress = True
                 else:
                     sig = _LoopGuard.sig(cp.tool, cp.args)
                     # Suppression guards apply only to fresh model calls, never a user-approved resume.
@@ -1184,11 +1297,10 @@ class AgentSession:
                     if suppressed is not None:
                         cp.state = suppressed.state
                         result_parts.append(ToolResultPart(call_id=cp.call_id, result=suppressed))
-                        events.append(
-                            AgentEvent(
-                                "tool.result",
-                                {"callId": cp.call_id, "result": suppressed.model_dump(mode="json")},
-                            )
+                        await _persist()  # persist-before-emit
+                        yield AgentEvent(
+                            "tool.result",
+                            {"callId": cp.call_id, "result": suppressed.model_dump(mode="json")},
                         )
                         continue
                     if token is None:
@@ -1222,7 +1334,8 @@ class AgentSession:
                             cp.state = RunState.RUNNING
                             await self._messages.update(assistant)
                         try:
-                            outcome = await self._actions.invoke(
+                            # `inv` — the invoke outcome (NOT the batch `outcome` holder above).
+                            inv = await self._actions.invoke(
                                 cp.tool,
                                 cp.args,
                                 actor=AGENT_ACTOR,
@@ -1241,34 +1354,33 @@ class AgentSession:
                                 error=str(exc)[:300],
                             )
                         else:
-                            if outcome.needs_confirm and not self._interactive:
+                            if inv.needs_confirm and not self._interactive:
                                 # Headless child (subagent): no UI to confirm against → deny in place so
                                 # the turn never stalls (DESIGN §5.3). The child reports it skipped the step.
                                 result = ToolResult(
                                     state=RunState.DENIED,
                                     summary=f"{cp.tool} needs confirmation — skipped (headless subagent)",
                                 )
-                            elif outcome.needs_confirm:
+                            elif inv.needs_confirm:
                                 cp.state = RunState.AWAITING_CONFIRM
                                 spec = self._actions.registry.get(cp.tool).spec
-                                events.append(
-                                    AgentEvent(
-                                        "tool.permission",
-                                        {
-                                            "callId": cp.call_id,
-                                            "tool": cp.tool,
-                                            "title": spec.title,
-                                            "args": cp.args,
-                                            "risk": spec.risk.value,
-                                            "token": outcome.confirm_token,
-                                            "prompt": outcome.confirm_prompt,
-                                        },
-                                    )
+                                await _persist()  # persist the AWAITING_CONFIRM flip BEFORE emitting
+                                outcome.suspended = True
+                                yield AgentEvent(
+                                    "tool.permission",
+                                    {
+                                        "callId": cp.call_id,
+                                        "tool": cp.tool,
+                                        "title": spec.title,
+                                        "args": cp.args,
+                                        "risk": spec.risk.value,
+                                        "token": inv.confirm_token,
+                                        "prompt": inv.confirm_prompt,
+                                    },
                                 )
-                                suspended = True
                                 break
                             else:
-                                result = outcome.result or ToolResult(
+                                result = inv.result or ToolResult(
                                     state=RunState.ERROR, summary=f"{cp.tool} returned no result"
                                 )
 
@@ -1284,18 +1396,17 @@ class AgentSession:
                             )
                         else:
                             cp.state = RunState.AWAITING_ANSWER
-                            events.append(
-                                AgentEvent(
-                                    "tool.question",
-                                    {
-                                        "callId": cp.call_id,
-                                        "tool": cp.tool,
-                                        "question": result.summary,
-                                        "args": cp.args,
-                                    },
-                                )
+                            await _persist()  # persist the AWAITING_ANSWER flip BEFORE emitting
+                            outcome.suspended = True
+                            yield AgentEvent(
+                                "tool.question",
+                                {
+                                    "callId": cp.call_id,
+                                    "tool": cp.tool,
+                                    "question": result.summary,
+                                    "args": cp.args,
+                                },
                             )
-                            suspended = True
                             break
 
                 cp.state = result.state
@@ -1307,71 +1418,29 @@ class AgentSession:
                     rsig = _LoopGuard.result_sig(sig, result)
                     if rsig not in guard.seen_results:
                         guard.seen_results.add(rsig)
-                        made_progress = True
+                        outcome.made_progress = True
                 result_parts.append(ToolResultPart(call_id=cp.call_id, result=result))
-                events.append(
-                    AgentEvent(
-                        "tool.result",
-                        {"callId": cp.call_id, "result": result.model_dump(mode="json")},
-                    )
+                await _persist()  # persist-before-emit
+                yield AgentEvent(
+                    "tool.result",
+                    {"callId": cp.call_id, "result": result.model_dump(mode="json")},
                 )
 
         finally:
-            # Shielded persistence tail (ACA-1 scenario 2 + D38; hardened per audit C3-H1). The
-            # completed calls' resolved states + their accumulated `result_parts` must survive on BOTH
-            # the normal path and when a cancel interrupts the batch — while the in-flight call keeps
-            # its unresolved state (`_assemble` synthesizes "not executed"; A11's `cancelled` marker is
-            # Slice 3's). TWO distinct cancellation sources have to be defeated here:
-            #   • a *fresh raw* `asyncio.Task.cancel()` (a Stop) arriving while we are already parked
-            #     INSIDE this tail awaiting the lock/BEGIN/writes/COMMIT. An `anyio.CancelScope(
-            #     shield=True)` ALONE does NOT reliably suppress that — anyio can't attribute a raw
-            #     asyncio cancel to a scope it owns, so it re-raises it mid-write and rolls back the
-            #     completed-call persistence (audit C3-H1). The deterministic asyncio-native guard: run
-            #     the tail as its OWN task (`asyncio.ensure_future`) — genuinely uncancellable by the
-            #     outer cancel — and `await asyncio.shield(persist)`; on `CancelledError` we `await
-            #     persist` a SECOND time so it is guaranteed to finish before we re-raise (we ALWAYS
-            #     await it → no detached-task leak; NOT a bare `asyncio.shield` without the second
-            #     await, which would leak a detached task).
-            #   • anyio's level-triggered scope cancellation (Starlette request scope / the subagent
-            #     TaskGroup), which re-raises at every await — the outer `anyio.CancelScope(shield=True)`
-            #     is retained for THAT shape (it is what the Slice-2 shielded-persistence test pins).
-            # The scope is entered synchronously (no checkpoint before it), so `BEGIN` is always paired
-            # with `COMMIT` — no dangling transaction. This is the ONLY persistence of the assistant
-            # update + tool message (per-call persistence is Slice 4's seam).
-            in_flight = sys.exc_info()[1]  # the exception this finally is unwinding under, if any
-
-            async def _persist_tail() -> None:
-                try:
-                    async with self._messages.db.transaction():
-                        await self._messages.update(assistant)
-                        if result_parts:
-                            await self._messages.add(
-                                Message(
-                                    thread_id=thread.id,
-                                    role="tool",
-                                    actor=AGENT_ACTOR,
-                                    parts=list(result_parts),
-                                )
-                            )
-                except Exception:
-                    # A persistence failure during unwind (e.g. a DB error while a CancelledError is
-                    # propagating) must not REPLACE the in-flight exception — a swallowed cancel would
-                    # mis-drive the caller's cancel scope. Standalone (normal path) it still raises.
-                    if in_flight is None:
-                        raise
-                    log.exception(
-                        "step persistence failed while unwinding %r — original exception preserved",
-                        type(in_flight).__name__,
-                    )
-
-            persist = asyncio.ensure_future(_persist_tail())
-            with anyio.CancelScope(shield=True):
-                try:
-                    await asyncio.shield(persist)
-                except asyncio.CancelledError:
-                    await persist  # the inner task is uncancellable by the outer cancel — let it finish
-                    raise
-        return events, suspended, made_progress
+            # BACKSTOP persistence tail (ACA-1 scenario 2 + D38; hardened per audit C3-H1). With D40
+            # per-call persistence the consumer already committed each resolved call's flip+result as it
+            # went — so on the NORMAL path this re-flushes identical state (idempotent `update()` to the
+            # SAME `tool_msg` — never a duplicate row). Its real job is the EARLY-EXIT path: a cancel/
+            # error interrupting the batch (inside `invoke` for a later call, or an `aclose()`/
+            # GeneratorExit landing at a yield) must still leave the completed calls' resolved states +
+            # `result_parts` durable, while the in-flight call keeps its unresolved state (`_assemble`
+            # synthesizes "not executed"; A11's `cancelled` marker is the reconciler's). `_persist` runs
+            # through `_persist_shielded`, so the SAME dual-shield + swallow-only-while-unwinding rule
+            # covers this write: standalone (normal-path) failure raises; failure during unwind is
+            # logged + swallowed so it never replaces the in-flight cancel/error. This is await-only —
+            # a generator NEVER yields during a GeneratorExit unwind (RuntimeError otherwise).
+            await _persist()
+        return
 
 
 def _parse_args(raw: str) -> tuple[dict, str | None]:

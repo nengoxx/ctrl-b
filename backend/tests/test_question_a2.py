@@ -22,7 +22,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from _async import run_async
+from _async import drain_run_calls, run_async
 
 
 def _client():
@@ -104,7 +104,7 @@ def test_question_suspends_and_emits_event() -> None:
     with _workspace():
         with _client() as c:
             session, thread, assistant, _cid = _session_and_call(c)
-            events, suspended, _ = _run(session._run_calls(thread, assistant, {}, _guard()))
+            events, suspended, _ = drain_run_calls(session, thread, assistant, {}, _guard())
             assert suspended
             assert any(e.event == "tool.question" for e in events)
             q = next(e for e in events if e.event == "tool.question")
@@ -116,7 +116,7 @@ def test_find_pending_matches_awaiting_answer() -> None:
     with _workspace():
         with _client() as c:
             session, thread, assistant, cid = _session_and_call(c)
-            _run(session._run_calls(thread, assistant, {}, _guard()))  # suspends + persists
+            drain_run_calls(session, thread, assistant, {}, _guard())  # suspends + persists
             assert _run(session._find_pending(thread, cid)) is not None
 
 
@@ -124,7 +124,7 @@ def test_answer_injects_result_without_suspend() -> None:
     with _workspace():
         with _client() as c:
             session, thread, assistant, cid = _session_and_call(c)
-            events, suspended, _ = _run(session._run_calls(thread, assistant, {}, _guard(), {cid: "emma"}))
+            events, suspended, _ = drain_run_calls(session, thread, assistant, {}, _guard(), {cid: "emma"})
             assert not suspended
             res = _result_event(events).data["result"]
             assert res["state"] == "ok" and res["output"] == "emma"
@@ -135,7 +135,7 @@ def test_headless_subagent_denies_instead_of_suspending() -> None:
     with _workspace():
         with _client() as c:
             session, thread, assistant, _cid = _session_and_call(c, interactive=False)
-            events, suspended, _ = _run(session._run_calls(thread, assistant, {}, _guard()))
+            events, suspended, _ = drain_run_calls(session, thread, assistant, {}, _guard())
             assert not suspended
             assert _result_event(events).data["result"]["state"] == "denied"
 
@@ -146,7 +146,7 @@ def test_dismiss_skips_the_question() -> None:
     with _workspace():
         with _client() as c:
             session, thread, assistant, cid = _session_and_call(c)
-            events, suspended, _ = _run(session._run_calls(thread, assistant, {cid: _DISMISS}, _guard()))
+            events, suspended, _ = drain_run_calls(session, thread, assistant, {cid: _DISMISS}, _guard())
             assert not suspended
             res = _result_event(events).data["result"]
             assert res["state"] == "denied"

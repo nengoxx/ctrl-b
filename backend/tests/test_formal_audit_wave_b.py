@@ -80,9 +80,10 @@ def _ok_outcome(summary: str, output: str):
 
 
 def test_b1_raw_cancel_inside_tail_persists_and_reraises() -> None:
-    """A raw `task.cancel()` delivered while `_run_calls` is parked INSIDE its persistence tail (the
-    tail's first `update` is blocked) still completes the write and re-raises CancelledError — the
-    inner tail task is uncancellable by the outer cancel (C3-H1)."""
+    """A raw `task.cancel()` delivered while `_run_calls` is parked INSIDE a shielded persist (the
+    FIRST `update` is blocked — post-D40 that is call_one's PER-CALL persist, through the same
+    `_persist_shielded` helper the finally backstop uses) still completes the write and re-raises
+    CancelledError — the inner persist task is uncancellable by the outer cancel (C3-H1)."""
     from app.domain.conversation import Message, Thread, ToolCallPart
     from app.domain.enums import Actor, RunState
     from app.services.agent.session import AgentSession
@@ -125,8 +126,12 @@ def test_b1_raw_cancel_inside_tail_persists_and_reraises() -> None:
 
         async def go() -> None:
             async def runner() -> None:
+                from app.services.agent.session import _BatchOutcome
+
                 try:
-                    await session._run_calls(thread, assistant, {}, _guard())
+                    outcome = _BatchOutcome()
+                    async for _ev in session._run_calls(thread, assistant, {}, _guard(), outcome=outcome):
+                        pass
                 except asyncio.CancelledError:
                     cancelled_seen["v"] = True
                     raise
