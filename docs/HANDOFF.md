@@ -180,6 +180,25 @@
 > push OK. NEXT after push: Slice 4 (turn speed — per-call persistence + streaming + parallel
 > dispatch, the one structural `_run_calls` refactor; design review first) or owner's pick.**
 >
+> **▶ SESSION CLOSED 2026-07-18 (clean handoff) — ✅ ALL 16 COMMITS PUSHED (`24015e5..3347ed9`,
+> pre-push gate 6/6; CI watch was green-tracking at close — verify `gh run list` if in doubt). Dev
+> units STOPPED (on-demand ruling). NEXT SESSION, in order:**
+> 1. **/model check** (fable-5 + HIGH; Opus 4.8 high subagents for mechanical work; **Codex
+>    `gpt-5.6-sol` high = the STANDING foreign pre-push reviewer** — `codex exec -m gpt-5.6-sol -c
+>    model_reasoning_effort=high -s read-only`).
+> 2. **Confirm main CI green** on `3347ed9` (the push landed at session close).
+> 3. **ACA Slice 4 (turn speed) — DESIGN REVIEW FIRST**, the full pipeline: field research (the
+>    same 7-agent set; per-call persistence / parallel tool dispatch / streaming-while-tools-run
+>    are the topics) + code-truth pass → adversarial design review → D40 → Opus waves → audits →
+>    the tri-review incl. Codex. Slice 4 owns THE one sanctioned `_run_calls` structural refactor
+>    (cross-slice contract) — per-call persistence supersedes the wave-1 tail wrapper; read ACA §5
+>    Slice 4 + the §7 formal-audit record first (its accepted-debt list names what Slice 4 should
+>    sweep up: subagent-safety test pins, skills-zero-context boundary, `result_sig` fidelity).
+> 4. Owner may also pick: ROADMAP D3 Slice 1 / 6c-1/6c-2 flags, or the vapor ladder (Phase-11 tail).
+> **Standing session rules:** per-slice eyeballs PARKED (`testing-parked-wing-it`) — bugs surface
+> via daily use; rigor lives in the pipeline. Commit autonomously/clearly; push needs the owner's
+> word. Run gates under `set -o pipefail` (a piped gate once swallowed a failure).
+>
 > **▶ SAME DAY (2026-07-18 PM): the 8-angle review + a TRI-REVIEW (Codex CLI joined as the foreign
 > second opinion — found 2 HIGHs three same-family rounds missed) + then the owner-ordered FORMAL
 > AUDIT of every agent functionality and every ACA fix: an Opus matrix (F1–F28 + all fixes) →
