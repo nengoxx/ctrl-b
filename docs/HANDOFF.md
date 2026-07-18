@@ -163,6 +163,23 @@
 > tap → nothing happens (guard) ⑤ normal turns. NEXT after eyeball+push: Slice 3 (durable turns,
 > design review first — D35 proposed in §5) or owner's pick.**
 >
+> **▶ 2026-07-18: SLICE 2 PUSHED after an 8-angle pre-push code review (owner /remote-control
+> order; 5 review fixes incl. the runShell 409 miss + the modeByCall ACA-16 pin + the turn-guard
+> invariant test; main CI GREEN @ `24015e5`). Owner then PARKED per-slice formal eyeballs (bugs
+> surface through daily use; rigor moves to design+build — memory `testing-parked-wing-it`) →
+> ACA SLICE 3 (durable turns) RAN THE FULL PIPELINE same day: 5-source field research
+> (opencode/LibreChat/Codex/OpenAI-background/Goose+pi+Hermes+CC) + a code-truth pass → **D39
+> LOCKED** (`0cb9e09`; a 4-HIGH adversarial DESIGN review was resolved INTO the decision before
+> build) → 4 Opus waves (`fc500ef` A11+reconciler · `622f258` the server-owned drain-task core ·
+> `5a135aa` endpoints/terminal-cache/shutdown/#116720 · `d7ea3a7` client re-attach/seq-gate/Stop)
+> → fresh-eyes audit (NO HIGH; 2 MED client fixes + release-first ordering landed, `b7b4ca6`).
+> Backend 354 tests, FE store 31; full gate 6/6 every wave. **Turns now SURVIVE disconnects**
+> (phone lock / app kill → the cold-load probe re-attaches; Stop button on EVERY composer;
+> crash-recovery reconciler at boot). As-built = the ACA §5 Slice 3 heading. **Slice 3 is LOCAL,
+> NOT pushed (`0cb9e09..b7b4ca6` + docs) — the 8-angle pre-push review runs next, then the owner's
+> push OK. NEXT after push: Slice 4 (turn speed — per-call persistence + streaming + parallel
+> dispatch, the one structural `_run_calls` refactor; design review first) or owner's pick.**
+>
 > *(The block below is the previous session's close-out checklist, kept for provenance — steps 1–3
 > are done as recorded above.)*
 > **▶ SESSION CLOSED 2026-07-17 early AM (owner to sleep) — NEXT SESSION, in order:**

@@ -792,7 +792,39 @@ design]; LOCKED as **D39** — the "D35 proposed" below was stale numbering; the
   buffered D17 = subscriber (cancellable for free; re-attach documented degraded); accepted
   losses: transient notice/compaction sys-notes.
 
-### Slice 3 — Durable turns (ACA-1 + A11) · L — **flagship** — design LOCKED 2026-07-18 (D39; v2.5 amendments above bind the build)
+### Slice 3 — Durable turns (ACA-1 + A11) · L — **flagship** — ✅ EXECUTED 2026-07-18 + ADVERSARIALLY AUDITED (design LOCKED same day: D39 + the v2.5 amendments above; 4 Opus build waves + 1 audit-fix commit, per-wave hand-review + full gate)
+**As-built (commits `0cb9e09` [D39 lock] → `fc500ef` W1 · `622f258` W2 · `5a135aa` W3 · `d7ea3a7` W4 ·
+`b7b4ca6` audit fixes; backend 354 tests, FE store 31; full gate 6/6 per wave).** W1 A11:
+`RunState.CANCELLED` end-to-end (enum → `_RESOLVED` → `_assemble` synthesis keyed STRICTLY on the
+persisted state → FE type/`RUN_STATES`/CSS/label) + `reconcile_stale_calls` (the `json_each` narrow
+scan; best-effort boot crash-recovery — no per-message txn: `update()` is one atomic statement).
+W2 the core inversion: `drain_turn` task owns the loop (attach-then-spawn zero-gap; per event
+synchronously seq→ring→fold→fan-out; overflow DETACHES the subscriber); `TurnAccumulator` (delta
+lists, ephemeral permission/question payloads, mode); terminal_status-before-sentinel on every exit;
+shielded CancelledError reconcile WHILE the marker is held; `cancel_turn` single-cancel latch;
+`TurnsCfg` knobs; chat SSE's first ping/send_timeout; `active_turns` DELETED; `max_active_turns`
+counted BY KIND at reserve time (orchestrator hardening — task-spawn lag would under-count). W3:
+status probe + re-attach stream (ring tail-replay iff `cursor.seq >= ring[0][0]-1`, else ONE
+`turn.sync`; shared `_sse_frame`/`_stream_live` framing; non-live → JSON `{active:false,
+terminal_status}`) + write-nothing idempotent cancel endpoint + capped linger-swept terminal cache
+(populated at the done-callback) + lifespan drain BEFORE `db.close()` + the CPython #116720
+re-assert (researched, cited). W4 client: `parseSSE` id: support; ONE total-order seq gate at the
+reducer entry; `reattachTurn` (forced `reloadChat(true)` → REPLACE-semantics overlay → live);
+interrupt re-attaches before `failStream`; cold-load probe (the app-kill case); `stopTurn` + the
+Stop button on vapor AND all three kit layouts (orchestrator completion — the brief mis-scoped Stop
+to vapor). **Post-build fresh-eyes audit: NO HIGH; server core clause-clean.** Fixed same day
+(`b7b4ca6`): MED-1 LineComposer hid send/Stop in the STT resting state exactly while streaming ·
+MED-2 a turn that COMPLETED during the drop rendered a false "connection interrupted" retry trap —
+the JSON `active:false` branch now force-reloads + settles (regression test) · INFO-5 release-first
+cleanup ordering (a terminal-cache raise can't leak the marker). Accepted with reasons: INFO-3
+cancel response on a slow drain settles via the attached stream · INFO-4 the seq gate is a module
+global (single-active-thread SPA; per-turn isolation = the seam if a second concurrent stream ever
+exists) · INFO-6 a cancel racing a dispatched `done` could stamp "cancelled" (unreachable in
+practice) · INFO-7 `shutdown_grace_s` assumes uvicorn's graceful timeout ≥ its value (ops note;
+uvicorn defaults unbounded). Recorded gaps (opportunistic): re-attach during an active suspend ·
+turn.sync-with-pending-confirm through resume e2e · the buffered client path post-inversion.
+Process note: wave 4's first commit briefly carried a broken FE typecheck — a `| tail` pipe
+swallowed the gate's exit code; caught immediately, amended clean; gates now run under `pipefail`.
 Pattern: *resumable streams* — server-owned turn task + replayable per-turn event log; the SSE
 response is a subscriber. Grounded in §3.1–3.3 and the v1.1 research (LibreChat in-memory mode is
 the single-process reference; OpenAI `sequence_number` cursor semantics; opencode's SQLite seq
