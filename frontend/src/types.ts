@@ -88,7 +88,8 @@ export type RunState =
   | "error"
   | "denied"
   | "skipped"
-  | "timeout";
+  | "timeout"
+  | "cancelled";
 
 export interface ToolResult {
   state: RunState;

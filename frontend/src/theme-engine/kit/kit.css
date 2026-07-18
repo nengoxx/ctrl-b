@@ -2768,7 +2768,8 @@ body[data-motion="reduced"] .kit .b.bot .who .status-tag {
 .kit .b.cmd .cmd-result.timeout {
   color: var(--danger);
 }
-.kit .b.cmd .cmd-result.skipped {
+.kit .b.cmd .cmd-result.skipped,
+.kit .b.cmd .cmd-result.cancelled {
   color: var(--text-3);
 }
 .kit .b.cmd .cmd-result.running {

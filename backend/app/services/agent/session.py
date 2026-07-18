@@ -97,6 +97,7 @@ _RESOLVED = {
     RunState.DENIED,
     RunState.SKIPPED,
     RunState.TIMEOUT,
+    RunState.CANCELLED,  # A11/D39: a cancelled call is terminal — never re-run on resume.
 }
 #: Sentinel in the resume-token map marking "the user dismissed this call".
 _DISMISS = "__dismiss__"
@@ -404,8 +405,9 @@ class AgentSession:
         """Build the OpenAI `messages` array: the cached static system head (`_static_prefix`) + the
         non-compacted history + a one-shot reflection nudge at the tail. Reasoning is dropped (the
         model's scratchpad); tool calls + results round-trip as `assistant.tool_calls` followed by
-        `tool` messages keyed by `call_id`. Any tool call left unresolved (an abandoned confirm)
-        gets a synthesized `skipped` result so the context is always valid for the API.
+        `tool` messages keyed by `call_id`. Any tool call left unresolved gets a synthesized
+        result so the context is always valid for the API: a persisted-CANCELLED call (A11/D39) →
+        `cancelled`; any other abandoned call (e.g. a dropped confirm) → `skipped`.
 
         History is re-read every iteration on purpose: `_compactor.compact` runs before each model call
         and can fold older turns into a summary, so the history (the cache TAIL) legitimately changes —
@@ -444,9 +446,20 @@ class AgentSession:
                         }
                     )
                     for c in calls:
-                        res = results.get(c.call_id) or ToolResult(
-                            state=RunState.SKIPPED, summary="not executed"
-                        )
+                        res = results.get(c.call_id)
+                        if res is None:
+                            # No persisted result. A call persisted CANCELLED (A11/D39 — interrupted
+                            # by turn cancellation or a restart) synthesizes a `cancelled` tool
+                            # message keyed STRICTLY on that persisted state (adversarial L3): a live
+                            # in-flight call keeps its own non-CANCELLED state, so this never masks a
+                            # genuinely-running call. Any OTHER unresolved call (an abandoned confirm)
+                            # keeps the existing `skipped`/"not executed" synthesis — so the payload
+                            # always carries a tool message for every tool_call id.
+                            res = (
+                                ToolResult(state=RunState.CANCELLED, summary="cancelled — not completed")
+                                if c.state == RunState.CANCELLED
+                                else ToolResult(state=RunState.SKIPPED, summary="not executed")
+                            )
                         out.append(
                             {
                                 "role": "tool",

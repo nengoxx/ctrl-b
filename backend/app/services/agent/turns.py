@@ -20,12 +20,25 @@ fork a parallel record.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+from app.domain.enums import RunState
+
+if TYPE_CHECKING:
+    from app.services.conversation import MessageRepo
+
+log = logging.getLogger(__name__)
 
 TurnKind = Literal["chat", "resume", "exec", "plan", "apply", "compact"]
+
+#: Tool-call states a reconcile flips to CANCELLED (A11/D39): NON-terminal AND NON-suspend. The
+#: durable suspends (AWAITING_CONFIRM/AWAITING_ANSWER) are deliberately excluded — they are the
+#: owner's to resolve, not stale work — as are the already-terminal states in session `_RESOLVED`.
+_STALE_CALL_STATES = (RunState.PENDING, RunState.RUNNING)
 
 
 def _now() -> datetime:
@@ -75,3 +88,37 @@ def release(turns: dict[str, TurnHandle], handle: TurnHandle) -> None:
     current = turns.get(handle.thread_id)
     if current is not None and current.turn_id == handle.turn_id:
         del turns[handle.thread_id]
+
+
+async def reconcile_stale_calls(messages: MessageRepo, thread_id: str | None = None) -> int:
+    """Flip tool calls stranded in an OPEN state (`PENDING`/`RUNNING`) to `CANCELLED`, persist them,
+    and return how many calls were flipped (A11/D39). ONE shared helper for two call sites:
+
+    1. **Lifespan boot (crash recovery)** — `thread_id=None`, scanning ALL threads. A previous run
+       that died mid-turn (a crash, a `kill`, a hard restart) leaves calls persisted `PENDING`/
+       `RUNNING` with no result; without this they render as permanent spinners (opencode #19023 —
+       the do-nothing failure mode, closed not-planned) and re-run misleadingly on resume. At boot
+       there is never a live turn, so the full cross-thread scan is safe. Best-effort at the call
+       site so a DB hiccup never aborts startup.
+    2. **The turn task's cancel path (wave 3)** — `thread_id=<thread>`, scoped to the cancelled
+       turn's thread, marking its in-flight calls stale while the turn marker is still held (Codex's
+       interrupt-stale-turns precedent — we take Codex's side over opencode's absence).
+
+    The durable suspends (`AWAITING_CONFIRM`/`AWAITING_ANSWER`) MUST survive untouched — they are the
+    owner's to resolve, not stale work. Efficiency: the narrow `MessageRepo.with_call_states` scan is
+    a SQL `json_each` filter, so only messages that actually hold an open call are loaded (not every
+    message of every thread). A message's own multiple flips persist atomically in a single
+    `update()` (it rewrites the whole `parts` JSON in one statement), so no per-message transaction
+    is needed — each `update` is its own write."""
+    stale = await messages.with_call_states(_STALE_CALL_STATES, thread_id)
+    flipped = 0
+    for msg in stale:
+        touched = False
+        for call in msg.tool_calls():
+            if call.state in _STALE_CALL_STATES:
+                call.state = RunState.CANCELLED
+                flipped += 1
+                touched = True
+        if touched:
+            await messages.update(msg)
+    return flipped

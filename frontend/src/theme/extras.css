@@ -867,7 +867,8 @@ body {
 .b.cmd .cmd-result.timeout {
   color: var(--red);
 }
-.b.cmd .cmd-result.skipped {
+.b.cmd .cmd-result.skipped,
+.b.cmd .cmd-result.cancelled {
   color: var(--ink-faint);
 }
 .b.cmd .cmd-result.running {

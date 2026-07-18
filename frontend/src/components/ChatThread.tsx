@@ -280,7 +280,9 @@ function QuestionBubble({
               ? "declined"
               : result.state === "skipped"
                 ? "dismissed"
-                : result.output || result.summary}
+                : result.state === "cancelled"
+                  ? "cancelled"
+                  : result.output || result.summary}
           </div>
         ) : null}
       </div>

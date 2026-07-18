@@ -66,3 +66,5 @@ class RunState(StrEnum):
     DENIED = "denied"
     SKIPPED = "skipped"
     TIMEOUT = "timeout"
+    CANCELLED = "cancelled"  # a call interrupted by turn cancellation or a restart (A11/D39) —
+    #: never re-run on resume; synthesized in context like an abandoned confirm's `skipped`.

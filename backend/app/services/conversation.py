@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
@@ -19,7 +20,7 @@ from pydantic import TypeAdapter
 
 from app.db import Database
 from app.domain.conversation import Message, Part, Thread
-from app.domain.enums import Actor
+from app.domain.enums import Actor, RunState
 
 _PARTS = TypeAdapter(list[Part])
 
@@ -145,6 +146,31 @@ class MessageRepo:
         # normal rowid table (`id` is a TEXT PK, not INTEGER), so `rowid` tracks insertion order.
         sql += " ORDER BY ts ASC, rowid ASC"
         return [self._row(r) for r in await self._db.query(sql, (thread_id,))]
+
+    async def with_call_states(
+        self, states: Sequence[RunState], thread_id: str | None = None
+    ) -> list[Message]:
+        """Messages holding a `tool_call` part in one of `states` — the narrow scan behind the D39
+        `reconcile_stale_calls` helper. A SQL-level `json_each`/`json_extract` filter (the same idiom
+        the FTS triggers use over `parts`) so only the handful of messages with a matching call are
+        loaded, never every message of every thread. Scoped to `thread_id` when given, all threads
+        when `None` (boot crash-recovery). Empty `states` → `[]` (no predicate to build). Ordered like
+        `list()` so a caller sees calls in insertion order."""
+        if not states:
+            return []
+        placeholders = ", ".join("?" for _ in states)
+        sql = (
+            "SELECT * FROM messages WHERE EXISTS ("
+            "SELECT 1 FROM json_each(messages.parts) "
+            "WHERE json_extract(value, '$.type') = 'tool_call' "
+            f"AND json_extract(value, '$.state') IN ({placeholders}))"
+        )
+        params: list[Any] = [s.value for s in states]
+        if thread_id is not None:
+            sql += " AND thread_id = ?"
+            params.append(thread_id)
+        sql += " ORDER BY ts ASC, rowid ASC"
+        return [self._row(r) for r in await self._db.query(sql, tuple(params))]
 
     async def count_user_messages(self, thread_id: str) -> int:
         """Count user messages in a thread, **including compacted ones** (D27-C periodic reflection).

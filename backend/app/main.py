@@ -67,7 +67,7 @@ from app.services.agent.memory import FileMemoryProvider, migrate_legacy_special
 from app.services.agent.memory_backup import GitMemoryBackup
 from app.services.agent.selector import KeywordAgentSelector
 from app.services.agent.skills import FileSkillProvider, KeywordSkillSelector
-from app.services.agent.turns import TurnHandle
+from app.services.agent.turns import TurnHandle, reconcile_stale_calls
 from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.deps import Deps
 from app.services.events import EventService
@@ -204,6 +204,18 @@ async def lifespan(app: FastAPI):
     app.state.memory_sweep_task = asyncio.create_task(
         _memory_sweep(app.state.memory_backup, app.state.settings)
     )
+
+    # Crash recovery (A11/D39): a previous run that died mid-turn leaves tool calls persisted
+    # PENDING/RUNNING with no result — permanent spinners on the next load (opencode #19023) that
+    # would also re-run misleadingly on resume. Flip them to CANCELLED now, before serving; at boot
+    # there is never a live turn, so the full cross-thread scan is safe. Best-effort: a DB hiccup
+    # here must never abort startup, so swallow + log any failure rather than fail the lifespan.
+    try:
+        n_stale = await reconcile_stale_calls(app.state.messages)
+        if n_stale > 0:
+            logger.info("reconciled %d stale calls from a previous run", n_stale)
+    except Exception:
+        logger.exception("startup stale-call reconcile failed — continuing")
 
     try:
         yield
