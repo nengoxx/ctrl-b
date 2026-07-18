@@ -230,16 +230,45 @@ class Database:
                 try:
                     yield
                 except BaseException:
-                    # Shielded so a second cancellation landing mid-rollback can't abandon the open
-                    # BEGIN on the shared connection (which would poison every later transaction with
-                    # "cannot start a transaction within a transaction" — Slice 2 audit finding).
-                    with anyio.CancelScope(shield=True):
-                        await self.conn.rollback()
+                    # Roll back so a cancel landing mid-rollback can't abandon the open BEGIN on the
+                    # shared connection (which would poison every later transaction with "cannot start
+                    # a transaction within a transaction" — Slice 2 audit finding), THEN re-raise the
+                    # original error (or the cancel).
+                    await self._shielded_rollback()
                     raise
                 else:
-                    await self.conn.commit()
+                    # COMMIT is inside the arm too (audit C3-M3): a commit failure otherwise escaped
+                    # the rollback path, leaving the connection mid-transaction (a later BEGIN fails /
+                    # a later standalone commit commits this stale batch). Roll back on a failed
+                    # commit, then re-raise the commit error.
+                    try:
+                        await self.conn.commit()
+                    except BaseException:
+                        await self._shielded_rollback()
+                        raise
             finally:
                 _in_transaction.reset(token)
+
+    async def _shielded_rollback(self) -> None:
+        """Roll back the open transaction, guaranteed to complete even under cancellation (audit
+        C3-H1). A plain `anyio.CancelScope(shield=True)` around the rollback await does NOT reliably
+        suppress a *raw* `asyncio.Task.cancel()` (the durable-turn drain task's Stop path): anyio
+        can't attribute a raw cancel to a scope it owns, so it re-raises it mid-`rollback()` and
+        abandons the open BEGIN — poisoning every later transaction. The deterministic asyncio-native
+        guard: run the rollback as its OWN task (`asyncio.ensure_future`) — genuinely uncancellable by
+        the outer cancel — and `await asyncio.shield(rollback)`; on a `CancelledError` we `await` the
+        inner task a SECOND time so it is guaranteed to finish before we propagate (we ALWAYS await it
+        → no detached-task leak). The outer `anyio.CancelScope(shield=True)` is retained for the OTHER
+        cancellation shape — anyio's level-triggered scope cancellation (Starlette request scope /
+        subagent TaskGroup), which re-raises at every await; the two shields cover the two distinct
+        cancellation sources."""
+        rollback = asyncio.ensure_future(self.conn.rollback())
+        with anyio.CancelScope(shield=True):
+            try:
+                await asyncio.shield(rollback)
+            except asyncio.CancelledError:
+                await rollback  # the inner task is uncancellable by the outer cancel — let it finish
+                raise
 
     async def query(self, sql: str, params: tuple = ()) -> list[aiosqlite.Row]:
         """Read rows. Lock-free by design — every op runs on the one shared connection's worker

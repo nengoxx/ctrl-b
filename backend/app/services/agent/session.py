@@ -28,6 +28,7 @@ Event contract (DESIGN §12 subset emitted here):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import sys
@@ -840,36 +841,53 @@ class AgentSession:
         reasoning_buf: list[str] = []
         text_buf: list[str] = []
         report = StreamReport()
-        try:
-            # ACA-21: send the SAME cached toolset with `tool_choice="none"` (NOT `tools=None`) so the
-            # prompt-cache prefix — tools sit at its very top — stays intact for this one wrap-up call
-            # instead of re-prefilling system+memory+roster+history from zero. Live-probed against the
-            # deployed llama-server (2026-07-16): `tool_choice:"none"` is accepted, emits no parsed
-            # tool_calls, and retains the prefix cache. Caveat: with the grammar off the model can leak
-            # a *textual* tool-call into `content` (cosmetic — it's just saved as answer text). Escape
-            # hatch if wrap-up quality degrades on the local template: revert this one call to
-            # `tools=None` (drops the toolset, re-prefills — today's pre-ACA-21 behaviour).
-            async for delta in self._inference.stream_chat(
-                messages,
-                mode=eff_mode,
-                model=eff_model,
-                tools=self._tools(),
-                tool_choice="none",
-                report=report,
-            ):
-                if delta.reasoning:
-                    reasoning_buf.append(delta.reasoning)
-                    yield AgentEvent("reasoning.delta", {"messageId": assistant.id, "delta": delta.reasoning})
-                if delta.text:
-                    text_buf.append(delta.text)
-                    yield AgentEvent("text.delta", {"messageId": assistant.id, "delta": delta.text})
-        except InferenceError as exc:
-            assistant.parts = [ErrorPart(message=str(exc), retryable=True)]
-            await self._messages.add(assistant)
-            await self._threads.touch(thread.id, assistant.ts)
-            yield AgentEvent("error", {"message": str(exc), "retryable": True})
-            yield AgentEvent("done", {"threadId": thread.id, "state": "capped"})
-            return
+        # ACA-21: first send the SAME cached toolset with `tool_choice="none"` (NOT `tools=None`) so the
+        # prompt-cache prefix — tools sit at its very top — stays intact for this one wrap-up call
+        # instead of re-prefilling system+memory+roster+history from zero. Live-probed against the
+        # deployed llama-server (2026-07-16): `tool_choice:"none"` is accepted, emits no parsed
+        # tool_calls, and retains the prefix cache. Caveat: with the grammar off the model can leak a
+        # *textual* tool-call into `content` (cosmetic — it's just saved as answer text).
+        #
+        # ACA-21 v2.3 amendment made executable (audit C5-M3): an OpenAI-compatible endpoint that
+        # REJECTS `tool_choice:"none"` (some 400 on it) would otherwise raise `InferenceError` on every
+        # failover hop and cap the turn with NO answer. So fall back ONCE to `tools=None` (drops the
+        # toolset — re-prefills, but today's pre-ACA-21 behaviour still yields a wrap-up). Only retry
+        # when nothing streamed yet: a mid-stream failure can't be cleanly re-emitted, so it goes
+        # straight to capped.
+        # (tools, tool_choice) per attempt: the ACA-21 primary, then the tools=None fallback. When
+        # `tools` is None `stream_chat` ignores `tool_choice`, so the fallback sends no tool_choice.
+        for attempt, (fin_tools, fin_choice) in enumerate(((self._tools(), "none"), (None, None))):
+            reasoning_buf = []
+            text_buf = []
+            report = StreamReport()
+            try:
+                async for delta in self._inference.stream_chat(
+                    messages,
+                    mode=eff_mode,
+                    model=eff_model,
+                    tools=fin_tools,
+                    tool_choice=fin_choice,
+                    report=report,
+                ):
+                    if delta.reasoning:
+                        reasoning_buf.append(delta.reasoning)
+                        yield AgentEvent(
+                            "reasoning.delta", {"messageId": assistant.id, "delta": delta.reasoning}
+                        )
+                    if delta.text:
+                        text_buf.append(delta.text)
+                        yield AgentEvent("text.delta", {"messageId": assistant.id, "delta": delta.text})
+            except InferenceError as exc:
+                if attempt == 0 and not text_buf and not reasoning_buf:
+                    log.debug("finalize: tool_choice='none' failed (%s); retrying once with tools=None", exc)
+                    continue  # nothing streamed → safe to re-issue as a plain tool-less wrap-up
+                assistant.parts = [ErrorPart(message=str(exc), retryable=True)]
+                await self._messages.add(assistant)
+                await self._threads.touch(thread.id, assistant.ts)
+                yield AgentEvent("error", {"message": str(exc), "retryable": True})
+                yield AgentEvent("done", {"threadId": thread.id, "state": "capped"})
+                return
+            break  # streamed OK — don't run the fallback attempt
         self._log_context_cost(messages, report)  # A8 estimate + ACA-18 cache telemetry (debug)
 
         parts: list[Part] = []
@@ -1144,26 +1162,30 @@ class AgentSession:
                 )
 
         finally:
-            # Shielded persistence tail (ACA-1 scenario 2 + D38). Runs on BOTH the normal path and
-            # when `CancelledError` lands mid-batch (a cancel inside `self._actions.invoke` above): the
-            # completed calls' resolved states + their accumulated `result_parts` must survive, while
-            # the in-flight call keeps its unresolved state (`_assemble` synthesizes "not executed";
-            # A11's `cancelled` marker is Slice 3's). The persistence runs inside
-            # `anyio.CancelScope(shield=True)` — valid because Starlette runs handlers/streams under
-            # anyio task groups. (Subagent children run under a raw asyncio TaskGroup — subagents.py —
-            # where the shield holds only incidentally: asyncio cancellation is edge-triggered, so the
-            # single cancel has already been delivered before this finally; a future re-cancelling
-            # source there must revisit this.) The scope is entered synchronously (no checkpoint
-            # before it), so a pending cancel cannot fire between the `finally` and the shield; once
-            # inside, every await (write-lock acquire, `BEGIN IMMEDIATE`, the writes, `COMMIT`) is
-            # deferred, so `BEGIN` is always paired with `COMMIT` — no dangling transaction. On the
-            # normal path `CancelledError` is absent, so this simply persists once and the method
-            # returns below; on cancel the error re-raises naturally after the finally. NOT
-            # `asyncio.shield` (detached-task leak). This is the ONLY persistence of the assistant
-            # update + tool message — the transaction wrapper is a pure add (no `_run_calls`
-            # structural change; per-call persistence is Slice 4's seam).
+            # Shielded persistence tail (ACA-1 scenario 2 + D38; hardened per audit C3-H1). The
+            # completed calls' resolved states + their accumulated `result_parts` must survive on BOTH
+            # the normal path and when a cancel interrupts the batch — while the in-flight call keeps
+            # its unresolved state (`_assemble` synthesizes "not executed"; A11's `cancelled` marker is
+            # Slice 3's). TWO distinct cancellation sources have to be defeated here:
+            #   • a *fresh raw* `asyncio.Task.cancel()` (a Stop) arriving while we are already parked
+            #     INSIDE this tail awaiting the lock/BEGIN/writes/COMMIT. An `anyio.CancelScope(
+            #     shield=True)` ALONE does NOT reliably suppress that — anyio can't attribute a raw
+            #     asyncio cancel to a scope it owns, so it re-raises it mid-write and rolls back the
+            #     completed-call persistence (audit C3-H1). The deterministic asyncio-native guard: run
+            #     the tail as its OWN task (`asyncio.ensure_future`) — genuinely uncancellable by the
+            #     outer cancel — and `await asyncio.shield(persist)`; on `CancelledError` we `await
+            #     persist` a SECOND time so it is guaranteed to finish before we re-raise (we ALWAYS
+            #     await it → no detached-task leak; NOT a bare `asyncio.shield` without the second
+            #     await, which would leak a detached task).
+            #   • anyio's level-triggered scope cancellation (Starlette request scope / the subagent
+            #     TaskGroup), which re-raises at every await — the outer `anyio.CancelScope(shield=True)`
+            #     is retained for THAT shape (it is what the Slice-2 shielded-persistence test pins).
+            # The scope is entered synchronously (no checkpoint before it), so `BEGIN` is always paired
+            # with `COMMIT` — no dangling transaction. This is the ONLY persistence of the assistant
+            # update + tool message (per-call persistence is Slice 4's seam).
             in_flight = sys.exc_info()[1]  # the exception this finally is unwinding under, if any
-            with anyio.CancelScope(shield=True):
+
+            async def _persist_tail() -> None:
                 try:
                     async with self._messages.db.transaction():
                         await self._messages.update(assistant)
@@ -1186,6 +1208,14 @@ class AgentSession:
                         "step persistence failed while unwinding %r — original exception preserved",
                         type(in_flight).__name__,
                     )
+
+            persist = asyncio.ensure_future(_persist_tail())
+            with anyio.CancelScope(shield=True):
+                try:
+                    await asyncio.shield(persist)
+                except asyncio.CancelledError:
+                    await persist  # the inner task is uncancellable by the outer cancel — let it finish
+                    raise
         return events, suspended, made_progress
 
 

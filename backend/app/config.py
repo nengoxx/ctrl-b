@@ -540,6 +540,13 @@ class OpenApiServerCfg(BaseModel):
     enabled: bool = True
     risk: Risk = Risk.MED  # risk for mutating ops (low|med|high); GET/HEAD always LOW
     connect_timeout_s: float = 15.0
+    #: Wall-clock backstop for a whole tool call (ACA C2-M2). Each registered OpenAPI operation's
+    #: ToolSpec carries this as its `timeout_s`, so `ActionService`'s outer deadline (`asyncio.wait_for`)
+    #: bounds the ENTIRE request. httpx's `connect_timeout_s` only bounds the connect + the gap between
+    #: chunks (read timeout is per-chunk), so a server that drip-feeds bytes could otherwise hold the
+    #: turn open forever. Separate from `connect_timeout_s` so a legitimately slow endpoint gets a
+    #: longer overall budget; tunable per server (no hardcoding). Mirrors `McpServerCfg.call_timeout_s`.
+    call_timeout_s: float = 60.0
     api_key: str = ""  # optional bearer/api token
     auth_scheme: str = "Bearer"  # prefix for the auth header value ("" → raw key)
     auth_header: str = "Authorization"

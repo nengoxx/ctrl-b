@@ -37,6 +37,7 @@ from app.domain.conversation import (
     ToolResultPart,
 )
 from app.domain.enums import Actor
+from app.services.agent.turns import _SUSPEND_CALL_STATES
 from app.services.conversation import MessageRepo
 
 #: Marks a compaction-summary system message so repeated compaction can recognise + re-fold it.
@@ -147,6 +148,17 @@ class Compactor:
         in the head is folded in again (its content goes to the summarizer), keeping a single rolling
         summary."""
         cut = len(history) - self._cfg.keep_last_messages
+        # Never fold a durably-suspended call (AWAITING_CONFIRM/AWAITING_ANSWER) into the head (C5-M2):
+        # its eventual resume result would be orphaned from a context that no longer holds the call.
+        # Snap the boundary to BEFORE the earliest suspended-call message so it (and its later resume
+        # siblings/result) stays verbatim in the tail. Uses turns.py's `_SUSPEND_CALL_STATES` — one
+        # source of truth for "this message is mid-suspend", shared with the stale-call reconciler.
+        for i, m in enumerate(history):
+            if i >= cut:
+                break
+            if any(cp.state in _SUSPEND_CALL_STATES for cp in m.tool_calls()):
+                cut = i
+                break
         while cut > 0 and history[cut].role != "user":
             cut -= 1
         if cut <= 0:

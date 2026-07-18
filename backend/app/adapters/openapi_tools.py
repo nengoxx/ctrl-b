@@ -197,6 +197,11 @@ class OpenApiToolProvider:
                         read_only=built.method in _READ_METHODS,  # GET/HEAD → retry-safe (no state change)
                         agent_exposed=True,
                         ui_exposed=False,
+                        # Wall-clock backstop (ACA C2-M2): the httpx read timeout is per-chunk, so a
+                        # drip-feeding server would hold the turn forever. `timeout_s` hands the whole
+                        # call to `ActionService`'s outer `asyncio.wait_for` deadline. Per-server tunable
+                        # (`OpenApiServerCfg.call_timeout_s`, default 60s) — no hardcoding.
+                        timeout_s=server.call_timeout_s,
                     )
                     try:
                         registry.register(

@@ -59,6 +59,7 @@ from app.services.agent.turns import (
     reserve,
     subscribe_events,
 )
+from app.services.agent.turns import _push_terminal as push_terminal
 
 router = APIRouter(tags=["agent"])
 
@@ -316,10 +317,22 @@ async def _turn_response(
 
     def _cleanup(_t: asyncio.Task) -> None:
         # Runs once when the task ends, whichever terminal path. The task's own finally set
-        # `handle.terminal_status` BEFORE the terminal sentinel (D39/M2 ordering), so it is settled
-        # here. RELEASE FIRST (Slice-3 audit INFO-5): if the cache insert ever raised, a
-        # release-second ordering would leak the marker and 409 the thread forever — a missed
-        # terminal-cache entry is merely a reload fallback, the safe failure of the two.
+        # `handle.terminal_status` BEFORE the terminal sentinel (D39/M2 ordering), so it is normally
+        # settled here.
+        #
+        # Never-started-task window (C4-M3): a cancel landing BEFORE the drain coroutine's first step
+        # skips `drain_turn`'s try/finally entirely — so `terminal_status` is unset AND no terminal
+        # sentinel was pushed, leaving every subscriber blocked on the queue and a cancel probe
+        # reading a null terminal. The done-callback ALWAYS fires when the task reaches done, so
+        # backfill here: settle the status from the task outcome (`cancelled` if the task was
+        # cancelled, else `error`) and push the terminal sentinel so every subscriber unblocks. Both
+        # are sync — safe in a done-callback. No-op on the normal path (status already set).
+        if handle.terminal_status is None:
+            handle.terminal_status = "cancelled" if _t.cancelled() else "error"
+            push_terminal(handle)
+        # RELEASE FIRST (Slice-3 audit INFO-5): if the cache insert ever raised, a release-second
+        # ordering would leak the marker and 409 the thread forever — a missed terminal-cache entry is
+        # merely a reload fallback, the safe failure of the two.
         release(state.turns, handle)
         record_terminal(state.turn_terminals, handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap)
 
@@ -410,10 +423,17 @@ async def turn_status(thread_id: str, request: Request) -> dict[str, Any]:
             "kind": handle.kind,
             "started_at": handle.started_at.isoformat(),
         }
+    # Done-but-unreleased (C4-M2): a settled handle (`terminal_status` set — the drain task finished
+    # but its `_cleanup` done-callback hasn't recorded to the cache yet, one `call_soon` tick) is
+    # AUTHORITATIVE for its own turn. Prefer it over the cache, which in this window still holds the
+    # PREVIOUS turn's record — consulting the cache first would report the prior turn's outcome under
+    # THIS turn's probe. Only fall back to the cache (then the unsettled-handle fallback) otherwise.
+    if handle is not None and handle.terminal_status is not None:
+        return {"active": False, "terminal_status": handle.terminal_status, "turn_id": handle.turn_id}
     rec = get_terminal(state.turn_terminals, thread_id, linger_s=state.settings.agent.turns.linger_s)
     if rec is not None:
         return {"active": False, "terminal_status": rec.terminal_status, "turn_id": rec.turn_id}
-    if handle is not None:  # done-but-unreleased: the cache lacks this turn yet → read the handle
+    if handle is not None:  # an unsettled sync-kind / pre-spawn marker — report it (terminal null)
         return {"active": False, "terminal_status": handle.terminal_status, "turn_id": handle.turn_id}
     return {"active": False}
 
@@ -446,8 +466,19 @@ async def turn_stream(thread_id: str, request: Request, cursor: str | None = Non
     #   • `task is None` — a SYNC-kind marker (exec/plan/apply/compact) with no drain task ever
     #     dispatches, so a subscriber would wait forever. (A pre-spawn chat/resume handle also reads
     #     task=None briefly → JSON answer; harmless, its own POST carries the stream.)
-    # Prefer the cache record; when absent (this turn isn't recorded yet) fall back to the handle.
     if handle is None or handle.terminal_status is not None or handle.task is None:
+        # Done-but-unreleased (C4-M2): a settled handle (`terminal_status` set, `_cleanup` not yet
+        # fired) is authoritative for its own turn — prefer it over the cache, which in this one-tick
+        # window still holds the PREVIOUS turn's record. Fall back to the cache only when the handle
+        # isn't settled (a sync-kind / pre-spawn marker) or is absent.
+        if handle is not None and handle.terminal_status is not None:
+            return JSONResponse(
+                {
+                    "active": False,
+                    "terminal_status": handle.terminal_status,
+                    "turn_id": handle.turn_id,
+                }
+            )
         rec = get_terminal(state.turn_terminals, thread_id, linger_s=cfg.linger_s)
         return JSONResponse(
             {

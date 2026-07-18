@@ -31,10 +31,11 @@ inference:
     base_url: http://192.168.1.137:5001/v1
     model: minig+
     # extra_body: per-endpoint OpenAI-SDK passthrough (ACA-18) — merged only into THIS endpoint's
-    # call, never blanket (OpenAI 400s on unknown args). llama.cpp prompt-cache pin + telemetry:
+    # call, never blanket (OpenAI 400s on unknown args). Live on the local endpoint so a fresh install
+    # keeps the llama.cpp prompt-cache pin + telemetry (a commented-out pin silently regresses ACA-18):
     #   cache_prompt: true       # protective on older llama-server builds (recent builds default true)
     #   return_progress: true    # emit streaming `prompt_progress` so cache-hit telemetry shows up
-    # extra_body: { cache_prompt: true, return_progress: true }
+    extra_body: { cache_prompt: true, return_progress: true }
   cloud:
     base_url: https://openrouter.ai/api/v1
     api_key: sk-or-v1-...
