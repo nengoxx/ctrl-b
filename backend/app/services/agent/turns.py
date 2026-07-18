@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections import deque
+from collections import OrderedDict, deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -467,3 +467,71 @@ def remove_subscriber(handle: TurnHandle, q: asyncio.Queue) -> None:
         handle.subscribers.remove(q)
     except ValueError:
         pass
+
+
+# ── Terminal cache: the read-side late-re-attach convenience (ACA Slice 3, D39/S3-B) ─────────────
+#
+# The live registry (`app.state.turns`) stays LIVE-ONLY (adversarial H1): a finished turn is
+# deleted, so every truthiness busy-read (ACA-17 gates, `max_active_turns`) stays honest. A finished
+# turn's terminal FACT is instead moved into this small capped `app.state.turn_terminals` map so a
+# client that missed the terminal sentinel (phone lock, socket drop) still learns the outcome on
+# re-attach. It is read-side only — NEVER busy state — and swept opportunistically (no background
+# task), so an idle server never accumulates stale records.
+
+#: Cap on `app.state.turn_terminals` (D39/S3-B): how many finished-turn records are retained for
+#: late re-attach, evict-oldest past this many threads. Small on purpose — a client that dropped
+#: re-attaches within seconds (well under `linger_s`); older records are both linger-expired and
+#: capped away. Not a config knob: this bounds a transient read cache, not turn behavior.
+_TERMINAL_CACHE_CAP = 32
+
+
+@dataclass
+class TerminalRecord:
+    """One finished turn's terminal fact, held briefly in the capped `app.state.turn_terminals`
+    cache (D39/S3-B). Carries just what a late re-attacher needs — the turn's id + its
+    `terminal_status` — plus `ended_at` for the linger sweep. NOT busy state (the live registry is
+    the only busy-truth); this is the read-side answer for a client that missed the sentinel."""
+
+    turn_id: str
+    terminal_status: str
+    ended_at: datetime = field(default_factory=_now)
+
+
+def _sweep_terminals(cache: OrderedDict[str, TerminalRecord], linger_s: float) -> None:
+    """Drop records older than `linger_s`. Opportunistic — called on every insert and read, so
+    there is no background sweeper task (D39); an idle server self-cleans on the next probe."""
+    now = _now()
+    expired = [tid for tid, rec in cache.items() if (now - rec.ended_at).total_seconds() > linger_s]
+    for tid in expired:
+        del cache[tid]
+
+
+def record_terminal(
+    cache: OrderedDict[str, TerminalRecord],
+    handle: TurnHandle,
+    *,
+    linger_s: float,
+    cap: int = _TERMINAL_CACHE_CAP,
+) -> None:
+    """Move a just-finished turn's terminal fact into the cache (called at the `_turn_response`
+    done-callback seam, AFTER the drain task's finally set `handle.terminal_status` — the D39/M2
+    ordering). Sweeps expired first, inserts newest-at-end, then evicts oldest beyond `cap`.
+    `terminal_status` is never None at this point (the drain `finally` guarantees it); the `or
+    "error"` is a last-ditch guard so a malformed handle can never poison the record."""
+    _sweep_terminals(cache, linger_s)
+    cache[handle.thread_id] = TerminalRecord(
+        turn_id=handle.turn_id, terminal_status=handle.terminal_status or "error"
+    )
+    cache.move_to_end(handle.thread_id)  # freshest last (evict-oldest is popitem(last=False))
+    while len(cache) > cap:
+        cache.popitem(last=False)
+
+
+def get_terminal(
+    cache: OrderedDict[str, TerminalRecord], thread_id: str, *, linger_s: float
+) -> TerminalRecord | None:
+    """Read a thread's terminal record if still within its linger window (sweeps expired first, so
+    an over-lingered record is dropped on this read and reported as absent). None → the client falls
+    back to a full reload (the per-step SQLite persistence is the durable floor)."""
+    _sweep_terminals(cache, linger_s)
+    return cache.get(thread_id)

@@ -138,9 +138,23 @@ class ParallelOrchestrator(Orchestrator):
                     deps, cdef, task, index=i, depth=depth, timeout_s=self._timeout
                 )
 
+        # Capture the enclosing task so we can re-assert a cancellation the TaskGroup may swallow
+        # (CPython #116720): during its `__aexit__` a TaskGroup calls `uncancel()` to balance the
+        # cancels IT issued, but if a child also errored, its propagation logic (`raise
+        # propagate_cancellation_error … and not self._errors`) drops an externally-delivered
+        # CancelledError — so a `cancel_turn` firing while this group tears down could be absorbed and
+        # the parent turn would keep running instead of unwinding. Re-raise below if the enclosing
+        # task still carries a pending cancellation. See https://github.com/python/cpython/issues/116720
+        enclosing = asyncio.current_task()
         async with asyncio.TaskGroup() as tg:
             for i, (cdef, task) in enumerate(children):
                 tg.create_task(one(i, cdef, task))
+
+        # CPython #116720 re-assert: `cancelling() > 0` means a `cancel()` request to the enclosing
+        # task is still pending (calls to `cancel()` minus `uncancel()`); if the group swallowed the
+        # CancelledError rather than propagating it, re-raise so the subtree cancellation is honored.
+        if enclosing is not None and enclosing.cancelling() > 0:
+            raise asyncio.CancelledError
 
         # `one` always assigns (run_subagent never raises); fall back defensively just in case.
         return [

@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -67,7 +68,12 @@ from app.services.agent.memory import FileMemoryProvider, migrate_legacy_special
 from app.services.agent.memory_backup import GitMemoryBackup
 from app.services.agent.selector import KeywordAgentSelector
 from app.services.agent.skills import FileSkillProvider, KeywordSkillSelector
-from app.services.agent.turns import TurnHandle, reconcile_stale_calls
+from app.services.agent.turns import (
+    TerminalRecord,
+    TurnHandle,
+    cancel_turn,
+    reconcile_stale_calls,
+)
 from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.deps import Deps
 from app.services.events import EventService
@@ -159,6 +165,11 @@ async def lifespan(app: FastAPI):
     # D38 exists to kill. See app/services/agent/turns.py.
     turns: dict[str, TurnHandle] = {}  # annotated via a local — Starlette's State attrs are Any
     app.state.turns = turns
+    # Terminal cache (D39/S3-B): finished turns move HERE (not lingered in `turns`, which stays
+    # live-only so every busy-read stays honest). A small capped, linger-swept map read by the
+    # re-attach/status endpoints so a client that missed the terminal sentinel learns the outcome.
+    turn_terminals: OrderedDict[str, TerminalRecord] = OrderedDict()
+    app.state.turn_terminals = turn_terminals
     # Stash the Deps bundle so the runtime reconfigure seam (PUT /api/settings) can re-point its
     # adapter handles (e.g. deps.inference) on a config change. Single source: see app/runtime.py.
     app.state.deps = deps
@@ -221,6 +232,23 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # Durable-turn drain (D39) — FIRST, before any adapter/DB close: a detached turn task's
+        # shielded CancelledError `finally` still writes to `app.state.db`, so the DB must be open
+        # when we cancel + await it. Route every cancel through `cancel_turn` (the single-cancel
+        # discipline — a raw double cancel would pierce the persistence shield). Bounded by
+        # `shutdown_grace_s` so detached turns can't block emma's systemd restart indefinitely.
+        turns_cfg = app.state.settings.agent.turns
+        live = [h for h in app.state.turns.values() if h.task is not None and not h.task.done()]
+        for h in live:
+            cancel_turn(h)
+        drain_tasks = [h.task for h in live if h.task is not None]
+        if drain_tasks:
+            _, pending = await asyncio.wait(drain_tasks, timeout=turns_cfg.shutdown_grace_s)
+            for h in live:
+                if h.task in pending:
+                    logger.warning(
+                        "turn %s did not drain within %.1fs", h.turn_id, turns_cfg.shutdown_grace_s
+                    )
         app.state.memory_sweep_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.memory_sweep_task

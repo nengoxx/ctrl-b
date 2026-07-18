@@ -48,8 +48,11 @@ from app.services.agent.turns import (
     TurnHandle,
     TurnKind,
     active_task_turns,
+    cancel_turn,
     drain_turn,
+    get_terminal,
     make_subscriber,
+    record_terminal,
     release,
     remove_subscriber,
     reserve,
@@ -230,6 +233,29 @@ def _reserve_turn(request: Request, thread_id: str, kind: TurnKind) -> TurnHandl
         raise HTTPException(status_code=409, detail=_TURN_BUSY_DETAIL) from e
 
 
+def _sse_frame(turn_id: str, seq: int, ev: Any) -> dict[str, Any]:
+    """One SSE frame for an `AgentEvent`, framed EXACTLY like the live chat stream: the wire `id` is
+    `turn_id:seq` — the client's reconnect cursor (D39). One source of truth for the framing, shared
+    by `_turn_response`'s live `gen()` and the re-attach stream (`turn_stream`)."""
+    return {"event": ev.event, "id": f"{turn_id}:{seq}", "data": json.dumps(ev.data)}
+
+
+async def _stream_live(
+    handle: TurnHandle, queue: asyncio.Queue, *, after_seq: int = 0
+) -> AsyncIterator[dict[str, Any]]:
+    """Frame a subscriber queue's `(seq, event)` pairs as SSE dicts until the terminal sentinel, then
+    DETACH in the finally (never release — the drain task's done-callback owns that). Dedupes by
+    `seq > after_seq` so a re-attach whose synchronously-built tail/snapshot prefix overlaps events
+    already queued is not double-emitted (D39). Shared by the live stream + re-attach."""
+    try:
+        async for seq, ev in subscribe_events(queue):
+            if seq <= after_seq:
+                continue  # already covered by the prefix (tail-replay / snapshot)
+            yield _sse_frame(handle.turn_id, seq, ev)
+    finally:
+        remove_subscriber(handle, queue)
+
+
 async def _turn_response(
     request: Request,
     thread: Thread,
@@ -261,9 +287,11 @@ async def _turn_response(
     handle.task = task
 
     def _cleanup(_t: asyncio.Task) -> None:
-        # Idempotent, identity-guarded marker release (D38 `release`). Runs once when the task ends,
-        # whichever terminal path. Wave 3 extends THIS site with the terminal-cache move (linger-swept
-        # `app.state.turn_terminals`) for late re-attach — leaving the seam here.
+        # Runs once when the task ends, whichever terminal path. The task's own finally set
+        # `handle.terminal_status` BEFORE the terminal sentinel (D39/M2 ordering), so it is settled
+        # here: move the terminal FACT into the linger-swept cache for late re-attach FIRST, then
+        # drop the live marker (identity-guarded `release`, D38) so the registry stays live-only.
+        record_terminal(state.turn_terminals, handle, linger_s=cfg.linger_s)
         release(state.turns, handle)
 
     task.add_done_callback(_cleanup)
@@ -287,19 +315,137 @@ async def _turn_response(
 
     async def gen() -> AsyncIterator[dict[str, Any]]:
         yield {"event": "thread", "data": json.dumps(head)}
-        try:
-            async for _seq, ev in subscribe_events(queue):
-                yield {
-                    "event": ev.event,
-                    "id": f"{handle.turn_id}:{_seq}",  # `turn_id:seq` — the reconnect cursor (D39)
-                    "data": json.dumps(ev.data),
-                }
-        finally:
-            remove_subscriber(handle, queue)
+        # A fresh subscriber has no prefix to dedupe against — stream every event (`_stream_live`
+        # frames `turn_id:seq` + detaches in its finally, the shared framing with re-attach).
+        async for frame in _stream_live(handle, queue):
+            yield frame
 
     # The chat SSE gains a keepalive (ping) + a frozen-reader drop (send_timeout) — neither existed at
     # HEAD (S3-F). `ping` is int-typed in sse-starlette; the config knob is seconds.
     return EventSourceResponse(gen(), ping=int(cfg.ping_s), send_timeout=cfg.send_timeout_s)
+
+
+# ── Durable-turn re-attach / status / cancel (ACA Slice 3, D39) ─────────────────────────────────
+# The read-side surface over the server-owned drain task: a lightweight status probe (wave-4's
+# cold-load re-attach depends on it), a re-attach SSE stream (tail-replay or snapshot then live),
+# and an idempotent cancel. All read-only w.r.t. the turn marker — NONE `_reserve_turn`-guarded:
+# they must work EXACTLY while a thread is busy.
+
+
+def _parse_cursor(cursor: str | None) -> tuple[str, int] | None:
+    """Parse a `turn_id:seq` reconnect cursor → `(turn_id, seq)` or None (absent / malformed). The
+    `turn_id` is uuid4 hex (no colons), so a single split on the last `:` is unambiguous."""
+    if not cursor:
+        return None
+    turn_id, sep, seq = cursor.rpartition(":")
+    if not sep or not turn_id or not seq.isdigit():
+        return None
+    return turn_id, int(seq)
+
+
+@router.get("/agent/turns/{thread_id}")
+async def turn_status(thread_id: str, request: Request) -> dict[str, Any]:
+    """Lightweight status probe (D39/M4) — read-only, no turn-guard. A live handle → the running
+    turn's identity + current `seq` (the client's cursor floor for a re-attach); else the terminal
+    cache → the finished turn's outcome; else `{active: false}` (unknown / lingered out → reload).
+    Wave-4's cold page-load re-attach probes this before deciding to attach or reload."""
+    state = request.app.state
+    handle = state.turns.get(thread_id)
+    if handle is not None:
+        return {
+            "active": True,
+            "turn_id": handle.turn_id,
+            "seq": handle.seq,
+            "kind": handle.kind,
+            "started_at": handle.started_at.isoformat(),
+        }
+    rec = get_terminal(state.turn_terminals, thread_id, linger_s=state.settings.agent.turns.linger_s)
+    if rec is not None:
+        return {"active": False, "terminal_status": rec.terminal_status, "turn_id": rec.turn_id}
+    return {"active": False}
+
+
+@router.get("/agent/turns/{thread_id}/stream")
+async def turn_stream(thread_id: str, request: Request, cursor: str | None = None) -> Response:
+    """Re-attach to a live turn (D39). Optional `?cursor=turn_id:seq`. Read-only — NOT
+    `_reserve_turn`-guarded (a detached-but-running turn already holds its marker; this just attaches
+    another subscriber to it).
+
+    - **Live turn:** attach a subscriber queue and build the reply prefix SYNCHRONOUSLY — there is
+      deliberately NO `await` between `make_subscriber` and the tail/snapshot build (the D39 zero-gap
+      join: the drain task cannot dispatch an event we'd miss in that window). Then:
+        · cursor matches THIS turn AND its `seq+1` still sits in the ring → **tail-replay** the ring's
+          `(seq, ev)` with `seq > cursor.seq`, framed identically to the live stream, then live from
+          the queue (deduped `seq > after_seq`).
+        · otherwise → **ONE `turn.sync` snapshot** (the accumulator; carries `mode` so the client
+          re-pins `modeByCall`) then live. Snapshot is always available regardless of ring eviction —
+          the durable floor is per-step SQLite; the ring is only a cache.
+    - **No live turn:** a JSON `{active:false, terminal_status, turn_id}` (from the cache or nulls) —
+      the CHOSEN shape for D39's "terminal sentinel for late re-attachers": a plain JSON answer, not
+      an SSE stream, so the client falls back to a reload rather than opening a dead stream."""
+    state = request.app.state
+    cfg = state.settings.agent.turns
+    handle = state.turns.get(thread_id)
+    if handle is None:
+        rec = get_terminal(state.turn_terminals, thread_id, linger_s=cfg.linger_s)
+        return JSONResponse(
+            {
+                "active": False,
+                "terminal_status": rec.terminal_status if rec is not None else None,
+                "turn_id": rec.turn_id if rec is not None else None,
+            }
+        )
+
+    # ── Zero-gap join (D39): attach synchronously, THEN build the prefix synchronously. No `await`
+    # between these two steps, so no event can be dispatched to the ring/queue in the gap.
+    queue = make_subscriber(handle, cfg.subscriber_queue_size)
+    parsed = _parse_cursor(cursor)
+    prefix: list[dict[str, Any]] = []
+    if (
+        parsed is not None
+        and parsed[0] == handle.turn_id
+        and handle.ring
+        and parsed[1] >= handle.ring[0][0] - 1  # seq+1 still in the ring → tail-replay is lossless
+    ):
+        cur_seq = parsed[1]
+        prefix = [_sse_frame(handle.turn_id, seq, ev) for seq, ev in handle.ring if seq > cur_seq]
+    else:
+        snap = handle.accumulator.snapshot(mode=handle.mode, seq=handle.seq)
+        prefix = [{"event": "turn.sync", "id": f"{handle.turn_id}:{handle.seq}", "data": json.dumps(snap)}]
+    after_seq = handle.seq  # every prefix frame is through `seq` — live-dedupe strictly beyond it
+
+    async def gen() -> AsyncIterator[dict[str, Any]]:
+        for frame in prefix:
+            yield frame
+        async for frame in _stream_live(handle, queue, after_seq=after_seq):
+            yield frame
+
+    return EventSourceResponse(gen(), ping=int(cfg.ping_s), send_timeout=cfg.send_timeout_s)
+
+
+@router.post("/agent/turns/{thread_id}/cancel")
+async def cancel_turn_endpoint(thread_id: str, request: Request) -> dict[str, Any]:
+    """Cancel a running turn (D39/S3-C, opencode's unstick affordance). Idempotent. **This handler
+    WRITES NOTHING** — `cancel_turn` only fires the task's single cancel; ALL mutation (the stale
+    in-flight-call reconcile + the terminal persist) happens INSIDE the drain task's own
+    CancelledError path, while it still holds the thread's marker (no successor race). That is why
+    this route is NOT `_reserve_turn`-guarded (cancel must work exactly while the thread is busy) and
+    why `test_turn_guard_invariant.py` doesn't flag it — its source carries no mutation markers.
+
+    Live turn → fire the single cancel (`cancelling` latch makes a repeat a no-op — a second raw
+    `task.cancel()` would pierce the persistence shield, D39 H2), then await the task under
+    `shutdown_grace_s` so the response carries the settled `terminal_status`. Idempotent repeat →
+    same shape, `cancelled:false`. No live turn → `{cancelled:false, active:false}` (nothing to do)."""
+    state = request.app.state
+    cfg = state.settings.agent.turns
+    handle = state.turns.get(thread_id)
+    if handle is None or handle.task is None:
+        return {"cancelled": False, "active": False}
+    fired = cancel_turn(handle)  # False if already cancelling / already done (the latch)
+    # `asyncio.wait` does NOT re-raise the awaited task's CancelledError (unlike a direct `await
+    # task`), so the endpoint settles cleanly whether the turn ends by cancel or was already ending.
+    await asyncio.wait([handle.task], timeout=cfg.shutdown_grace_s)
+    return {"cancelled": fired, "terminal_status": handle.terminal_status}
 
 
 @router.get("/threads")
