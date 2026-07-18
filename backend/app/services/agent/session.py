@@ -42,6 +42,7 @@ from pydantic import ValidationError
 from app.adapters.inference import InferenceClient, InferenceError, StreamReport
 from app.config import Settings
 from app.core.memory import MemoryProvider
+from app.core.permissions import Decision, decide
 from app.core.skills import SkillProvider, SkillSelector
 from app.core.tool import UnknownTool
 from app.domain.agent import AgentDef
@@ -178,6 +179,32 @@ class _LoopGuard:
         "no-progress" bucket, while the SAME call returning the SAME result still repeats its key and
         trips the stall guard. `output` is truncated to bound the key size."""
         return f"{sig}|{result.state.value}|{result.summary}|{(result.output or '')[:300]}"
+
+
+@dataclass
+class _BatchPlan:
+    """The single-pass prefix classifier's verdict for one assistant tool-call batch (D40 §3).
+
+    **Wired by the Wave-4 parallel executor** — nothing calls `_classify_batch` yet this wave; it is
+    the pure, side-effect-scoped authority the parallel dispatcher will consult before `_run_calls`
+    runs its (verbatim) serial loop.
+
+    `prefix` is the maximal *leading* run of parallel-eligible tool calls (in model order); every
+    call from index `serial_from` onward is the **serial tail's** verbatim territory (today's
+    `_run_calls` loop owns its own suppression/increments/echoes/suspension there). A prefix shorter
+    than 2 is NOT worth the parallel machinery: `parallel` is then False, `prefix` is empty, and
+    `serial_from` is 0 — the caller falls back to the pure serial path, and (by construction) the
+    classifier has mutated `guard` NOT AT ALL on that path (see `_classify_batch`)."""
+
+    prefix: list[ToolCallPart]
+    serial_from: int
+
+    @property
+    def parallel(self) -> bool:
+        """True iff the parallel machinery should run — i.e. a real (≥2-call) read-only prefix. A
+        single-call 'prefix' re-classifies as serial (the serial loop stays the one source of truth
+        for one-call semantics), so this is the callers' gate for prefix-vs-serial dispatch."""
+        return len(self.prefix) >= 2
 
 
 def _tool_content(result: ToolResult) -> str:
@@ -919,6 +946,115 @@ class AgentSession:
         await self._threads.touch(thread.id, assistant.ts)
         yield AgentEvent("message.end", {"messageId": assistant.id})
         yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})
+
+    def _classify_batch(
+        self,
+        assistant: Message,
+        guard: _LoopGuard,
+        resume_tokens: dict[str, str | None],
+        resume_answers: dict[str, str] | None = None,
+    ) -> _BatchPlan:
+        """Split one assistant tool-call batch into a **parallel read-only prefix** + a **serial tail**
+        (D40 §3). PURE: one synchronous walk over `assistant.tool_calls()` in model order — NO I/O, NO
+        awaits (registry lookup + `decide()` are pure). **Wired by the Wave-4 parallel executor**;
+        unwired this wave.
+
+        A call is admitted to the prefix iff ALL predicates pass, evaluated cheap-first in THIS order
+        (the order matters because the walk's admissions ARE the dispatch increments):
+
+          (a) **fresh** — `state not in _RESOLVED`, no resume token for its `call_id`, no resume answer
+              (a resume batch's leading calls are `_RESOLVED` and the resumed call carries a token → a
+              resume ALWAYS yields an empty prefix; resumes stay serial by construction).
+          (b) **not suppressed vs the CURRENT guard** — `sig not in denied_sigs`; per-tool cap
+              `tool_counts[tool] < max_per_tool`; repeat-cap `counts[sig] < max_repeat`. Repeat-cap
+              reads **counts ONLY** — NOT `last_results`/`seen_results`: those are *completion* state
+              (populated when a call finishes), and the serial tail re-checks this call AFTER its
+              prefix twins complete and populate `last_results`, reproducing today's `>= max_repeat AND
+              sig in last_results` verdict + echo byte-for-byte. Reading completion state here would
+              diverge from that.
+          (c) **args parsed OK** — the malformed-args marker `cp.invalid_raw` IS the persisted verdict
+              of `_parse_args` (run once at `_drive` stamp time, incl. the empty-string legacy zero-arg
+              path → `invalid_raw is None` → admissible); a parse failure (`invalid_raw is not None`)
+              is NOT admitted (the serial tail owns malformed-args JSON-repair steering). We reuse that
+              stored verdict rather than re-parsing (the raw blob isn't retained; one parse authority).
+          (d) **spec exists AND builtin-authored `read_only` AND `not suspending`** — the
+              builtin-vs-derived discriminator is `spec.category != "mcp"` (MCP *and* OpenAPI tools
+              both register `category="mcp"`; their `read_only` is DERIVED from external annotations →
+              advisory → prefix-INELIGIBLE per the ToolSpec docstring). `idempotent` grants NOTHING
+              (idempotent ≠ order-independent: `start_service`/`stop_service`/`shutdown_host` are
+              idempotent but must never race a sibling read).
+          (e) `decide(...) == ALLOW` — mirroring `ActionService.invoke`'s live arguments exactly
+              (`run_shell_allowed=self._settings.shell.agent_exec_enabled`, `interactive=`this turn's).
+
+        **Overlay-then-commit** (why this shape): the classifier must NOT mutate `guard` on the ≤1
+        (serial) path, yet call *j*'s verdict must see the tentative admissions of calls *i<j* (so a
+        within-batch repeat trips the cap mid-walk exactly as the serial loop's post-increment does).
+        So the walk keeps a LOCAL counts overlay (base `guard` counts + in-walk tentative increments),
+        checks each predicate against `base + overlay`, and bumps the overlay on each tentative
+        admission — WITHOUT touching `guard`. Only AFTER the walk, iff the prefix is ≥2, are the
+        increments COMMITTED to `guard` in model order (those commits ARE the dispatch increments — no
+        second pass anywhere, no double-count). A prefix of ≤1 returns an empty-prefix plan with
+        `guard` byte-identical to entry."""
+        answers = resume_answers or {}
+        calls = assistant.tool_calls()
+        # Mirror `invoke`'s live run_shell gate value (read once — this walk is synchronous).
+        run_shell_allowed = self._settings.shell.agent_exec_enabled
+        # LOCAL overlays: tentative in-walk increments, layered over the real guard for visibility to
+        # later calls in the SAME batch, committed to `guard` only for a real (≥2) prefix.
+        counts_overlay: dict[str, int] = {}
+        tool_overlay: dict[str, int] = {}
+        tentative: list[ToolCallPart] = []
+
+        for cp in calls:
+            sig = _LoopGuard.sig(cp.tool, cp.args)
+            # (a) fresh — not already resolved, not part of a resume (token or injected answer).
+            if cp.state in _RESOLVED or cp.call_id in resume_tokens or cp.call_id in answers:
+                break
+            # (b) suppression vs CURRENT guard + tentative in-batch admissions (counts only).
+            if sig in guard.denied_sigs:
+                break
+            if guard.tool_counts.get(cp.tool, 0) + tool_overlay.get(cp.tool, 0) >= guard.max_per_tool:
+                break
+            if guard.counts.get(sig, 0) + counts_overlay.get(sig, 0) >= guard.max_repeat:
+                break
+            # (c) args parsed OK — the persisted `_parse_args` verdict (malformed → not admitted).
+            if cp.invalid_raw is not None:
+                break
+            # (d) spec present, builtin-authored read_only, not suspending. `category == "mcp"` is the
+            # verified builtin-vs-derived discriminator (MCP + OpenAPI both register there).
+            try:
+                spec = self._actions.registry.get(cp.tool).spec
+            except UnknownTool:
+                break
+            if spec.category == "mcp" or not spec.read_only or spec.suspending:
+                break
+            # (e) decide() == ALLOW — mirror invoke's exact arguments.
+            if (
+                decide(
+                    spec,
+                    self._agent.privilege,
+                    interactive=self._interactive,
+                    run_shell_allowed=run_shell_allowed,
+                )
+                != Decision.ALLOW
+            ):
+                break
+            # Tentative admission: bump the overlay so the NEXT call in this batch sees it. NO guard
+            # mutation yet — committed below only for a real (≥2) prefix.
+            counts_overlay[sig] = counts_overlay.get(sig, 0) + 1
+            tool_overlay[cp.tool] = tool_overlay.get(cp.tool, 0) + 1
+            tentative.append(cp)
+
+        if len(tentative) >= 2:
+            # Commit the overlay to the real guard IN MODEL ORDER — these ARE the dispatch increments
+            # (the parallel executor does NOT increment again; the serial tail keeps its own).
+            for cp in tentative:
+                sig = _LoopGuard.sig(cp.tool, cp.args)
+                guard.counts[sig] = guard.counts.get(sig, 0) + 1
+                guard.tool_counts[cp.tool] = guard.tool_counts.get(cp.tool, 0) + 1
+            return _BatchPlan(prefix=tentative, serial_from=len(tentative))
+        # ≤1 eligible → pure serial path, zero guard mutation.
+        return _BatchPlan(prefix=[], serial_from=0)
 
     async def _run_calls(
         self,
