@@ -99,23 +99,27 @@ def test_reconcile_flips_only_open_states() -> None:
     with _workspace():
         with _client() as c:
             thread = _thread(c)
-            msg, (c_pending, c_running, c_confirm, c_ok) = _assistant_with_calls(
+            # An in-flight message (no suspend) — PENDING + RUNNING flip, its OK terminal survives.
+            open_msg, (c_pending, c_running, c_ok) = _assistant_with_calls(
                 c,
                 thread,
                 [
                     ("ping_host", {"host_id": "a"}, RunState.PENDING),
                     ("ping_host", {"host_id": "b"}, RunState.RUNNING),
-                    ("shutdown_host", {"host_id": "c"}, RunState.AWAITING_CONFIRM),
                     ("ping_host", {"host_id": "d"}, RunState.OK),
                 ],
             )
+            # A SEPARATE suspended message — its durable AWAITING_CONFIRM survives (message-level skip).
+            confirm_msg, (c_confirm,) = _assistant_with_calls(
+                c, thread, [("shutdown_host", {"host_id": "c"}, RunState.AWAITING_CONFIRM)]
+            )
             n = _run(reconcile_stale_calls(c.app.state.messages))
-            assert n == 2  # only PENDING + RUNNING flipped
-            states = _states(c, msg.id)
-            assert states[c_pending] == "cancelled"
-            assert states[c_running] == "cancelled"
-            assert states[c_confirm] == "awaiting_confirm"  # durable suspend survives
-            assert states[c_ok] == "ok"  # terminal survives
+            assert n == 2  # only PENDING + RUNNING (in the non-suspended message) flipped
+            open_states = _states(c, open_msg.id)
+            assert open_states[c_pending] == "cancelled"
+            assert open_states[c_running] == "cancelled"
+            assert open_states[c_ok] == "ok"  # terminal survives
+            assert _states(c, confirm_msg.id)[c_confirm] == "awaiting_confirm"  # durable suspend survives
 
 
 def test_reconcile_is_thread_scoped() -> None:
@@ -149,6 +153,63 @@ def test_reconcile_no_stale_returns_zero() -> None:
             assert _run(reconcile_stale_calls(c.app.state.messages)) == 0
 
 
+def test_reconcile_skips_message_with_a_suspended_sibling() -> None:
+    """MESSAGE-LEVEL suspend exclusion (review HIGH-1): a multi-call assistant message suspended on
+    ONE call leaves its later PENDING siblings as legitimate resume work (they run after the confirm
+    resolves). A full-scan reconcile must skip the WHOLE message so those siblings are NOT flipped to
+    CANCELLED (which `_RESOLVED` would then skip forever)."""
+    from app.domain.enums import RunState
+    from app.services.agent.turns import reconcile_stale_calls
+
+    with _workspace():
+        with _client() as c:
+            thread = _thread(c)
+            msg, (c_ok, c_confirm, c_pending) = _assistant_with_calls(
+                c,
+                thread,
+                [
+                    ("ping_host", {"host_id": "a"}, RunState.OK),
+                    ("shutdown_host", {"host_id": "b"}, RunState.AWAITING_CONFIRM),
+                    ("ping_host", {"host_id": "c"}, RunState.PENDING),  # a resumable sibling
+                ],
+            )
+            n = _run(reconcile_stale_calls(c.app.state.messages))
+            assert n == 0  # the whole message was skipped — nothing flipped
+            states = _states(c, msg.id)
+            assert states[c_ok] == "ok"
+            assert states[c_confirm] == "awaiting_confirm"
+            assert states[c_pending] == "pending"  # the resumable PENDING sibling SURVIVES
+
+
+def test_reconcile_scoped_flips_only_the_non_suspended_message() -> None:
+    """Scoped (cancel-path) reconcile in a thread that ALSO holds an older suspended message: only the
+    non-suspended in-flight message flips to CANCELLED; the suspended message (incl. its own PENDING
+    sibling) survives — the exclusion is per-MESSAGE, not thread-wide (review HIGH-1)."""
+    from app.domain.enums import RunState
+    from app.services.agent.turns import reconcile_stale_calls
+
+    with _workspace():
+        with _client() as c:
+            thread = _thread(c)
+            suspended_msg, (s_confirm, s_sibling) = _assistant_with_calls(
+                c,
+                thread,
+                [
+                    ("shutdown_host", {"host_id": "a"}, RunState.AWAITING_CONFIRM),
+                    ("ping_host", {"host_id": "b"}, RunState.PENDING),
+                ],
+            )
+            live_msg, (live_call,) = _assistant_with_calls(
+                c, thread, [("ping_host", {"host_id": "c"}, RunState.RUNNING)]
+            )
+            n = _run(reconcile_stale_calls(c.app.state.messages, thread.id))
+            assert n == 1  # only the live (non-suspended) message's call flipped
+            assert _states(c, live_msg.id)[live_call] == "cancelled"
+            surv = _states(c, suspended_msg.id)
+            assert surv[s_confirm] == "awaiting_confirm"
+            assert surv[s_sibling] == "pending"  # the suspended message's PENDING sibling survives
+
+
 # ── _assemble synthesis ─────────────────────────────────────────────────────────────────────────
 
 
@@ -171,20 +232,24 @@ def test_assemble_synthesizes_cancelled_result() -> None:
 
 def test_assemble_abandoned_confirm_still_skipped() -> None:
     """The cancelled synthesis is keyed STRICTLY on the persisted CANCELLED state — a plain
-    unresolved call (never cancelled) still gets the legacy `skipped`/'not executed' synthesis."""
+    unresolved call (never cancelled) still gets the legacy `skipped`/'not executed' synthesis. The
+    two calls live in SEPARATE messages: the PENDING one (no suspend) reconciles → CANCELLED, while the
+    abandoned confirm sits in its own message the reconciler skips (message-level exclusion)."""
     from app.domain.enums import RunState
     from app.services.agent.turns import reconcile_stale_calls
 
     with _workspace():
         with _client() as c:
             thread = _thread(c)
-            _, (cancelled_id, confirm_id) = _assistant_with_calls(
+            _, (cancelled_id,) = _assistant_with_calls(
                 c,
                 thread,
-                [
-                    ("ping_host", {"host_id": "a"}, RunState.PENDING),  # → cancelled
-                    ("shutdown_host", {"host_id": "b"}, RunState.AWAITING_CONFIRM),  # abandoned
-                ],
+                [("ping_host", {"host_id": "a"}, RunState.PENDING)],  # → cancelled
+            )
+            _, (confirm_id,) = _assistant_with_calls(
+                c,
+                thread,
+                [("shutdown_host", {"host_id": "b"}, RunState.AWAITING_CONFIRM)],  # abandoned
             )
             _run(reconcile_stale_calls(c.app.state.messages))
             session = _session(c)

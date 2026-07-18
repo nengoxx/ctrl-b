@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { reloadChat } from "../store/chat";
+import { reconcileChat } from "../store/chat";
 import { setConnection } from "../store/connection";
 
 // Subscribe to the live activity feed (SSE). Any recorded Event — a UI action now, an agent or
@@ -60,7 +60,9 @@ export function useEventStream(): void {
     // just become stale and refetch when their tab next becomes active — no wasted requests.
     function reconcileAfterReconnect() {
       void qc.invalidateQueries();
-      void reloadChat();
+      // Reload + probe-for-a-live-turn (D39): a feed reconnect usually means the chat stream died
+      // too — if a detached turn is still running, re-attach live instead of leaving a static view.
+      void reconcileChat();
     }
 
     function connect() {

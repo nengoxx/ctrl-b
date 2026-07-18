@@ -206,7 +206,8 @@ class TurnsCfg(BaseModel):
 
     `subscriber_queue_size` bounds each attached consumer's fan-out queue; on overflow that ONE
     slow subscriber is detached (it re-attaches via snapshot) — events are never shed for the
-    connected subscribers (S3-F). `ping_s`/`send_timeout_s` are the chat SSE keepalive + frozen-reader
+    connected subscribers (S3-F). `ping_s` (INT seconds — sse-starlette's ping is int-typed, so a
+    sub-second keepalive is meaningless) / `send_timeout_s` are the chat SSE keepalive + frozen-reader
     drop (there is no keepalive on the chat stream at HEAD). `shutdown_grace_s` bounds the lifespan
     registry drain (kept under uvicorn's graceful timeout). `linger_s` is how long a finished turn
     stays in the capped terminal cache for late re-attach, and `max_active_turns` caps concurrently
@@ -220,7 +221,9 @@ class TurnsCfg(BaseModel):
     terminal_cache_cap: int = Field(
         default=32, ge=1
     )  # finished-turn terminal cache entries (evict-oldest; pairs with linger_s — review fix)
-    ping_s: float = Field(default=15.0, gt=0)  # chat SSE keepalive comment interval (Tailscale Serve idle)
+    ping_s: int = Field(
+        default=15, ge=1
+    )  # chat SSE keepalive interval, INT seconds (sse-starlette ping is int-typed; sub-second is meaningless)
     send_timeout_s: float = Field(default=30.0, gt=0)  # drop a frozen SSE reader without touching the turn
     shutdown_grace_s: float = Field(
         default=5.0, gt=0

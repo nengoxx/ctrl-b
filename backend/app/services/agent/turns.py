@@ -58,6 +58,11 @@ TERMINAL: Any = object()
 #: owner's to resolve, not stale work — as are the already-terminal states in session `_RESOLVED`.
 _STALE_CALL_STATES = (RunState.PENDING, RunState.RUNNING)
 
+#: The durable suspend states. A message holding one of these is mid-suspend: the reconciler skips it
+#: WHOLESALE (message-level, not per-call) so a suspended call's later PENDING SIBLINGS — legitimate
+#: resume work that runs after the confirm/answer resolves — are not flipped to CANCELLED and lost.
+_SUSPEND_CALL_STATES = (RunState.AWAITING_CONFIRM, RunState.AWAITING_ANSWER)
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -282,16 +287,25 @@ async def reconcile_stale_calls(messages: MessageRepo, thread_id: str | None = N
        interrupt-stale-turns precedent — we take Codex's side over opencode's absence).
 
     The durable suspends (`AWAITING_CONFIRM`/`AWAITING_ANSWER`) MUST survive untouched — they are the
-    owner's to resolve, not stale work. Efficiency: the narrow `MessageRepo.with_call_states` scan is
-    a SQL `json_each` filter, so only messages that actually hold an open call are loaded (not every
-    message of every thread). A message's own multiple flips persist atomically in a single
-    `update()` (it rewrites the whole `parts` JSON in one statement), so no per-message transaction
-    is needed — each `update` is its own write."""
+    owner's to resolve, not stale work. The exclusion is now **per-MESSAGE, not per-call**: a
+    multi-call assistant message suspended on one call (state AWAITING_CONFIRM/AWAITING_ANSWER) leaves
+    its LATER sibling calls legitimately PENDING — resume runs them after the confirm/answer resolves.
+    Those siblings are resumable work, not stale, so if ANY call in the message is suspended the whole
+    message is skipped (a call-level skip would flip the siblings to CANCELLED and `_RESOLVED` would
+    then skip them forever). Efficiency: the narrow `MessageRepo.with_call_states` scan is a SQL
+    `json_each` filter, so only messages that actually hold an open call are loaded (not every message
+    of every thread). A message's own multiple flips persist atomically in a single `update()` (it
+    rewrites the whole `parts` JSON in one statement), so no per-message transaction is needed — each
+    `update` is its own write."""
     stale = await messages.with_call_states(_STALE_CALL_STATES, thread_id)
     flipped = 0
     for msg in stale:
+        calls = msg.tool_calls()
+        # Message-level suspend exclusion: a message mid-suspend keeps its PENDING siblings resumable.
+        if any(c.state in _SUSPEND_CALL_STATES for c in calls):
+            continue
         touched = False
-        for call in msg.tool_calls():
+        for call in calls:
             if call.state in _STALE_CALL_STATES:
                 call.state = RunState.CANCELLED
                 flipped += 1
@@ -387,8 +401,10 @@ async def drain_turn(handle: TurnHandle, events: AsyncIterator[AgentEvent], mess
         `done{state:"cancelled"}` close (no fake tool.results — the DB reconcile is the truth the
         client re-reads), then re-raise. The shield holds because the SINGLE cancel (`cancel_turn`'s
         one-shot discipline) has already been delivered — a second raw cancel would pierce it.
-      • unexpected exception — captured as a `done{state:"error"}` close (a detached turn's error
-        can't propagate to an absent client), logged, NOT re-raised.
+      • unexpected exception — same shielded `reconcile_stale_calls` as the cancel path (the thread's
+        in-flight PENDING/RUNNING calls → CANCELLED so `_assemble` never mis-reports them "not
+        executed" when a side effect may have fired), then captured as a `done{state:"error"}` close
+        (a detached turn's error can't propagate to an absent client), logged, NOT re-raised.
     """
     emitted_done = False
     try:
@@ -413,6 +429,17 @@ async def drain_turn(handle: TurnHandle, events: AsyncIterator[AgentEvent], mess
         raise
     except Exception:
         log.exception("turn %s drain failed", handle.turn_id)
+        # Same shielded reconcile as the cancel path: an unexpected error releases the thread with its
+        # in-flight PENDING/RUNNING calls still open, which `_assemble` would later read as "not
+        # executed" — a FALSE account when the tool's side effect may already have fired
+        # (duplicate-action risk). Flip them to CANCELLED ("cancelled — not completed": interrupted,
+        # effect unknown) so they read honestly and never silently re-run. Best-effort + shielded (the
+        # marker is still held here, so no successor-turn race), before the synthesized error/done.
+        with anyio.CancelScope(shield=True):
+            try:
+                await reconcile_stale_calls(messages, handle.thread_id)
+            except Exception:  # best-effort — a DB hiccup must not swallow the error close
+                log.exception("stale-call reconcile failed on error of turn %s", handle.turn_id)
         handle.terminal_status = "error"
         if not emitted_done:
             _dispatch(handle, _agent_event("error", {"message": "turn failed", "retryable": False}))

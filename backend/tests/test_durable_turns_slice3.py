@@ -301,6 +301,47 @@ def test_drain_error_path_synthesizes_terminal_error() -> None:
     assert "error" in events and "done" in events
 
 
+def test_drain_generic_error_reconciles_in_flight_calls() -> None:
+    """The generic-exception drain path runs the SAME shielded reconcile as cancel (review HIGH-2):
+    an unexpected error flips the thread's in-flight PENDING/RUNNING calls to CANCELLED — so
+    `_assemble` never mis-reports them "not executed" when a tool's side effect may have fired — sets
+    terminal_status "error", and does NOT re-raise. Drives the REAL messages repo."""
+    from app.domain.conversation import Message, Thread, ToolCallPart
+    from app.domain.enums import Actor, RunState
+    from app.services.agent.turns import drain_turn, reserve
+
+    with _client() as c:
+        s = c.app.state
+        thread = run_async(s.threads.create(Thread()))
+        cid = uuid.uuid4().hex
+        assistant = Message(
+            thread_id=thread.id,
+            role="assistant",
+            actor=Actor.AGENT,
+            agent="default",
+            parts=[ToolCallPart(call_id=cid, tool="call_one", args={}, state=RunState.RUNNING)],
+        )
+        run_async(s.messages.add(assistant))
+        out: dict = {}
+
+        async def boom():
+            yield _ev("message.start", messageId="m", role="assistant")
+            raise RuntimeError("inference exploded")
+            yield  # pragma: no cover
+
+        async def scenario():
+            handle = reserve(s.turns, thread.id, "chat", ring_size=64)
+            await drain_turn(handle, boom(), s.messages)  # captured as done{error}, NOT re-raised
+            out["terminal_status"] = handle.terminal_status
+
+        run_async(scenario())
+        assert out["terminal_status"] == "error"
+        msgs = run_async(s.messages.list(thread.id))
+        by_id = {cp.call_id: cp for m in msgs if m.role == "assistant" for cp in m.tool_calls()}
+        assert by_id[cid].state == RunState.CANCELLED  # in-flight call reconciled on the error path
+    _clear_env()
+
+
 # ── 3: cancel_turn single/double discipline (D39 H2/H3) ────────────────────────────────────────
 
 

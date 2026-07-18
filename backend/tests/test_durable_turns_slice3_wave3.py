@@ -600,6 +600,66 @@ def test_stream_live_breaks_on_force_put_eviction_gap_without_done() -> None:
     assert out["detached"] is True  # subscriber detached on break (no leak)
 
 
+# ── 10: sync-kind marker is not live for probe/stream (review item 4) ──────────────────────────
+
+
+def test_sync_kind_marker_is_not_live_for_probe_or_stream() -> None:
+    """A SYNC-kind marker (exec/plan/apply/compact) holds the per-thread marker but spawns NO drain
+    task (task=None, terminal_status stays None forever). Both the status probe and the re-attach
+    stream must treat it as NOT live — otherwise the live checks pass and a re-attach subscriber waits
+    forever on a queue nothing ever dispatches to (review MED-4). The fallthrough JSON/terminal path
+    handles it: active:false, the handle's (null) terminal_status + its turn_id."""
+    from app.api.agent import turn_status, turn_stream
+    from app.services.agent.turns import reserve
+
+    with _client() as c:
+        s = c.app.state
+
+        async def scenario():
+            handle = reserve(s.turns, "th-plan", "plan", ring_size=8)  # sync kind → no task spawned
+            probe = await turn_status("th-plan", _Req(c.app))
+            stream = await turn_stream("th-plan", _Req(c.app), cursor=None)
+            return handle, probe, stream
+
+        handle, probe, stream = run_async(scenario())
+        assert handle.task is None
+        assert probe["active"] is False  # reserved but no live task → inactive
+        assert isinstance(stream, JSONResponse)  # JSON terminal answer, not an SSE stream
+        body = json.loads(stream.body)
+        assert body["active"] is False
+        assert body["turn_id"] == handle.turn_id  # falls back to the handle's fields
+        assert body["terminal_status"] is None
+    _clear_env()
+
+
+# ── 11: continuity guard — a LEADING-edge eviction also breaks the consumer (review item 5) ──────
+
+
+def test_stream_live_breaks_on_leading_edge_eviction() -> None:
+    """`_stream_live` seeds `expected` to `after_seq + 1`, not the first RECEIVED pair — so an eviction
+    of the queue's very FIRST event (the leading-edge gap: e.g. message.start evicted, later events
+    retained) also trips the continuity guard. Otherwise the consumer would baseline AFTER the gap and
+    settle a stream the reducer can't attach the parts to (review MED-5)."""
+    from app.api.agent import _stream_live
+    from app.services.agent.turns import make_subscriber
+
+    out: dict = {}
+
+    async def scenario():
+        handle = _handle()
+        q = make_subscriber(handle, 4)
+        gen = _stream_live(handle, q)  # fresh stream: after_seq defaults to 0 → expected seeds to 1
+        # seq 1 was evicted before we read; the queue's first item is seq 2, then done at seq 3.
+        q.put_nowait((2, _ev("text.delta", messageId="m", delta="b")))
+        q.put_nowait((3, _ev("done", threadId="t1", state="completed")))
+        out["frames"] = [f async for f in gen]  # first item seq 2 > expected 1 → BREAK, no yield
+        out["detached"] = q not in handle.subscribers
+
+    run_async(scenario())
+    assert out["frames"] == []  # leading-edge gap → nothing yielded, and crucially no `done`
+    assert out["detached"] is True  # subscriber detached on break (no leak)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

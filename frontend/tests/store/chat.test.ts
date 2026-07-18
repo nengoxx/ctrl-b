@@ -1051,4 +1051,167 @@ describe("durable turns — client (Slice 3, D39)", () => {
     });
     expect(result.current.status).toBe("idle");
   });
+
+  it("stopTurn ALWAYS reloads from the durable floor so an attached call renders cancelled (item 3)", async () => {
+    // A streaming turn with a still-pending tool_call bubble. The live-cancel reply carries NO
+    // active:false (the drain task's done{cancelled} settles status), so the pre-fix stopTurn never
+    // reloaded — leaving the local call part spinning forever even though the DB was reconciled. The
+    // fix forces reloadChat(true) on every OK cancel; the reloaded floor shows c1 CANCELLED.
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const enc = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+        c.enqueue(
+          enc.encode(`event: thread\r\ndata: ${JSON.stringify({ threadId: "t1" })}\r\n\r\n`),
+        );
+        c.enqueue(
+          enc.encode(
+            `event: message.start\r\nid: T1:1\r\ndata: ${JSON.stringify({ messageId: "m1" })}\r\n\r\n`,
+          ),
+        );
+        c.enqueue(
+          enc.encode(
+            `event: part.added\r\nid: T1:2\r\ndata: ${JSON.stringify({
+              messageId: "m1",
+              part: {
+                type: "tool_call",
+                call_id: "c1",
+                tool: "wake_host",
+                args: {},
+                state: "running",
+              },
+            })}\r\n\r\n`,
+          ),
+        );
+      },
+    });
+    let reloadCalls = 0;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/cancel")) {
+        // LIVE cancel reply — no active:false (the stream's done{cancelled} settles status).
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ cancelled: true, terminal_status: "cancelled" }),
+        } as unknown as Response);
+      }
+      if (u.includes("/messages")) {
+        reloadCalls++;
+        // The durable floor: the drain task's cancel path already reconciled c1 → CANCELLED.
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              id: "m1",
+              thread_id: "t1",
+              role: "assistant",
+              parts: [
+                {
+                  type: "tool_call",
+                  call_id: "c1",
+                  tool: "wake_host",
+                  args: {},
+                  state: "cancelled",
+                },
+              ],
+              actor: "agent",
+              ts: "",
+              tokens: null,
+              compacted: false,
+            },
+          ],
+        } as unknown as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        body,
+        headers: {
+          get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
+        },
+      } as unknown as Response);
+    });
+
+    const { result } = renderHook(() => useChat());
+    let sendP!: Promise<void>;
+    await act(async () => {
+      sendP = sendMessage("hi");
+    });
+    // the pending call bubble is showing (spinning)
+    await waitFor(() =>
+      expect(
+        result.current.messages.some((m) =>
+          m.parts.some((p) => p.type === "tool_call" && p.call_id === "c1"),
+        ),
+      ).toBe(true),
+    );
+
+    await act(async () => {
+      await stopTurn();
+    });
+    expect(reloadCalls).toBeGreaterThan(0); // the forced reload fired even on the live-cancel path
+
+    // the stream's own done{cancelled} then settles status; the reloaded call renders cancelled
+    controller.enqueue(
+      enc.encode(
+        `event: done\r\nid: T1:3\r\ndata: ${JSON.stringify({ state: "cancelled" })}\r\n\r\n`,
+      ),
+    );
+    controller.close();
+    await act(async () => {
+      await sendP;
+    });
+    const call = result.current.messages
+      .flatMap((m) => m.parts)
+      .find((p) => p.type === "tool_call" && p.call_id === "c1");
+    expect(call).toMatchObject({ state: "cancelled" });
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("reattachTurn ignores a non-ok / non-active JSON re-attach reply (item 7)", async () => {
+    // A JSON 409 (version skew / a proxy error page with a JSON content-type) must NOT be read as a
+    // completed turn — that would reload + settle idle + drop the Stop affordance while the turn is
+    // still running. The JSON branch now requires res.ok AND active:false; anything else → false.
+    let reloads = 0;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/stream")) {
+        return Promise.resolve({
+          ok: false,
+          status: 409,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({ detail: "a turn is already running" }),
+        } as unknown as Response);
+      }
+      reloads++;
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+
+    const ok = await reattachTurn("t1", "T1:2");
+    expect(ok).toBe(false); // not treated as a completed turn — the caller falls back
+    expect(reloads).toBe(0); // no forced reload / settle fired off the bad JSON
+
+    // A genuine terminal reply (res.ok + active:false) still reloads and reports handled.
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/stream")) {
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({ active: false, terminal_status: "completed", turn_id: "T1" }),
+        } as unknown as Response);
+      }
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    expect(await reattachTurn("t1", "T1:2")).toBe(true);
+  });
+
+  // Item 6 (probe races a user-started stream) is NOT unit-tested here — documented per the review's
+  // "test if cheap, otherwise document" allowance. The guard is: `probeAndReattach` bails when
+  // getChatStatus() === "streaming" after the status-probe await. Exercising the race needs a DEFERRED
+  // probe response held open while a concurrent `sendMessage` flips status to "streaming" (a second
+  // multi-route mock + an open chat stream + precise microtask ordering), and `probeAndReattach` is a
+  // private fire-and-forget off `initChat` (not awaitable/exportable). That interleaving isn't cheap in
+  // this synchronous mock harness; the one-line guard is covered by review + the backend contract.
 });

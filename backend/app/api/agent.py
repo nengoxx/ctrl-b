@@ -253,11 +253,13 @@ async def _stream_live(
     event from an exactly-full but still-connected queue — leaving a `seq` gap this consumer would
     otherwise carry to `done` and settle a damaged stream over. On a gap (`seq > expected`) BREAK: the
     finally detaches, the SSE closes with no `done`, and the client recovers via re-attach/reload
-    (items 3+7). `expected` is seeded from the first pair and advanced by dedupe-skipped frames too."""
-    expected: int | None = None
+    (items 3+7). `expected` is SEEDED to `after_seq + 1` (not the first received pair) so an eviction
+    of the queue's very FIRST event — the leading-edge gap — also trips the guard; an originating
+    stream attaches before the drain task starts, so its first event is seq 1 == `after_seq(0) + 1`."""
+    expected = after_seq + 1
     try:
         async for seq, ev in subscribe_events(queue):
-            if expected is not None and seq > expected:
+            if seq > expected:
                 break  # gap from a `_force_put` eviction — stop, don't let the consumer settle damaged
             expected = seq + 1
             if seq <= after_seq:
@@ -312,16 +314,18 @@ async def _turn_response(
 
     task.add_done_callback(_cleanup)
 
-    async def _consume() -> AsyncIterator[Any]:
+    async def _consume(after_seq: int = 0) -> AsyncIterator[Any]:
         # Drain the subscriber queue as `AgentEvent`s until the terminal sentinel, then DETACH (never
         # release — the task's done-callback owns that). Detach on ANY exit (completion or the client
         # cancelling the generator) so the drain task stops fanning out to a gone consumer. Same
-        # `_force_put`-eviction continuity guard as `_stream_live`: BREAK on a `seq` gap so a damaged
-        # stream never settles (the buffered queue is unbounded above, so this is belt-and-braces).
-        expected: int | None = None
+        # `_force_put`-eviction continuity guard as `_stream_live`, `expected` SEEDED to `after_seq + 1`
+        # (a leading-edge eviction also trips it): BREAK on a `seq` gap so a damaged stream never
+        # settles (the buffered queue is unbounded above, so this is belt-and-braces). Buffered is
+        # always a fresh attach (after_seq=0), so its first event is seq 1 == 0 + 1.
+        expected = after_seq + 1
         try:
             async for seq, ev in subscribe_events(queue):
-                if expected is not None and seq > expected:
+                if seq > expected:
                     break  # gap from a `_force_put` eviction — stop before yielding a damaged tail
                 expected = seq + 1
                 yield ev
@@ -343,8 +347,9 @@ async def _turn_response(
             yield frame
 
     # The chat SSE gains a keepalive (ping) + a frozen-reader drop (send_timeout) — neither existed at
-    # HEAD (S3-F). `ping` is int-typed in sse-starlette; the config knob is seconds.
-    return EventSourceResponse(gen(), ping=int(cfg.ping_s), send_timeout=cfg.send_timeout_s)
+    # HEAD (S3-F). `ping`/`ping_s` are int seconds (sse-starlette's ping is int-typed; a sub-second
+    # SSE keepalive is meaningless), passed straight through.
+    return EventSourceResponse(gen(), ping=cfg.ping_s, send_timeout=cfg.send_timeout_s)
 
 
 # ── Durable-turn re-attach / status / cancel (ACA Slice 3, D39) ─────────────────────────────────
@@ -373,11 +378,20 @@ async def turn_status(thread_id: str, request: Request) -> dict[str, Any]:
     Wave-4's cold page-load re-attach probes this before deciding to attach or reload."""
     state = request.app.state
     handle = state.turns.get(thread_id)
-    # LIVE only while the task is genuinely running. A handle whose drain task already pushed the
-    # terminal sentinel (`terminal_status` set) but whose `_cleanup` done-callback hasn't run yet (one
-    # `call_soon` tick) is NOT live — a re-attach in that window would get a fresh queue that never
-    # sees TERMINAL → wedged SSE + leaked subscriber. Fall to the terminal path instead.
-    if handle is not None and handle.terminal_status is None:
+    # LIVE only while a drain TASK is genuinely running. Three exclusions collapse into one guard:
+    #   • `task is None` — a SYNC-kind marker (exec/plan/apply/compact) runs inline in its handler and
+    #     never spawns a task; its `terminal_status` stays None forever, so without this it would read
+    #     active:true and a re-attach subscriber would wait on a queue nothing ever dispatches to. (A
+    #     pre-spawn chat/resume handle also briefly has task=None → reads inactive; harmless — that
+    #     turn's own POST carries its stream, no one re-attaches in that synchronous window.)
+    #   • `terminal_status` set — the drain task already pushed the terminal sentinel but its
+    #     `_cleanup` done-callback hasn't run yet (one `call_soon` tick); a re-attach then would get a
+    #     fresh queue that never sees TERMINAL → wedged SSE + leaked subscriber.
+    # Either → fall through to the terminal path. (Known one-tick divergence, accepted: in the
+    # done-but-unreleased window `reserve()` still 409s on membership while this probe reads
+    # inactive — never treat an inactive probe as "reserve will succeed"; the callback runs on the
+    # next loop iteration, before any client could round-trip a POST.)
+    if handle is not None and handle.terminal_status is None and handle.task is not None:
         return {
             "active": True,
             "turn_id": handle.turn_id,
@@ -414,11 +428,15 @@ async def turn_stream(thread_id: str, request: Request, cursor: str | None = Non
     state = request.app.state
     cfg = state.settings.agent.turns
     handle = state.turns.get(thread_id)
-    # A handle whose drain task finished (terminal_status set) but whose `_cleanup` done-callback
-    # hasn't run yet is NOT live — attaching here would hand back a fresh queue that never receives
-    # TERMINAL (wedged SSE + leaked subscriber). Treat it as terminal: prefer the cache record, and
-    # when it's absent (this turn isn't recorded yet), fall back to the handle's settled fields.
-    if handle is None or handle.terminal_status is not None:
+    # NOT live (→ the JSON terminal answer) in three cases, mirroring `turn_status`'s guard:
+    #   • no handle;
+    #   • `terminal_status` set — the drain task finished but its `_cleanup` done-callback hasn't run
+    #     yet; attaching would hand back a fresh queue that never receives TERMINAL (wedged SSE);
+    #   • `task is None` — a SYNC-kind marker (exec/plan/apply/compact) with no drain task ever
+    #     dispatches, so a subscriber would wait forever. (A pre-spawn chat/resume handle also reads
+    #     task=None briefly → JSON answer; harmless, its own POST carries the stream.)
+    # Prefer the cache record; when absent (this turn isn't recorded yet) fall back to the handle.
+    if handle is None or handle.terminal_status is not None or handle.task is None:
         rec = get_terminal(state.turn_terminals, thread_id, linger_s=cfg.linger_s)
         return JSONResponse(
             {
@@ -458,7 +476,7 @@ async def turn_stream(thread_id: str, request: Request, cursor: str | None = Non
         async for frame in _stream_live(handle, queue, after_seq=after_seq):
             yield frame
 
-    return EventSourceResponse(gen(), ping=int(cfg.ping_s), send_timeout=cfg.send_timeout_s)
+    return EventSourceResponse(gen(), ping=cfg.ping_s, send_timeout=cfg.send_timeout_s)
 
 
 @router.post("/agent/turns/{thread_id}/cancel")
