@@ -1153,3 +1153,67 @@ terminal state).
   [checkpoints (shadow git)](https://docs.cline.bot/features/checkpoints) ·
   [auto-approve](https://docs.cline.bot/features/auto-approve) ·
   [plan-and-act](https://docs.cline.bot/features/plan-and-act).
+
+## 7. Formal functionality & fix audit — 2026-07-18 (owner-ordered, pre-push; Codex external)
+
+**Method.** An Opus-compiled audit matrix (28 functionality rows F1–F28 + every fixed issue
+ACA-1..21 and all post-slice named fixes, each with commits/code/tests, honest UNVERIFIED flags) →
+five focused **Codex CLI** verification runs (`gpt-5.6-sol`, reasoning high, read-only sandbox),
+one per cluster, each returning a per-row verdict (VERIFIED / VERIFIED-WITH-NOTE / NO-TEST / FAIL)
++ findings. The matrix lived in the session scratchpad (ephemeral); the verdicts and dispositions
+below are the durable record. **Codex is now a STANDING member of the pre-push review phase for
+structural slices** (owner directive 2026-07-18) — this audit is why: five same-family review
+rounds had preceded it, and the foreign model still found 5 HIGHs.
+
+**Tally: 5 HIGH · 16 MED · ~14 LOW/NO-TEST — every row dispositioned.** Fixed same day in three
+gated waves (each with per-finding pinning tests):
+
+- **Wave A `9cc7e93` (confirm-flow fail-closed):** C1-H1 resume decisions fell OPEN (junk →
+  EXECUTE; answer-against-confirm marked OK unrun) → strict Literals + fail-closed session
+  branches · C1-H2+C2-M1 token lifecycle (dismiss now REVOKES the pending token; single-liveness
+  on the deliberate re-mint — not generic mint, which would break the J3 stale-re-ask recovery) ·
+  C1-M3 a proposal-decision typo APPLIED the write → Literal · C1-M4 a UI-reachable per-tool cap
+  of 0 KeyError'd the turn → `ge=1` + defensive get · C4-H1 a confirmed call executed while
+  persisted `AWAITING_CONFIRM` — a post-effect death left a RESUMABLE bubble that could repeat the
+  side effect → pre-invoke RUNNING persist (death window now reads effect-unknown → CANCELLED) ·
+  C4-H2 cancel was thread-scoped (a delayed Stop could kill the successor turn) → optional
+  `{turn_id}` scoping, stopTurn sends the gate's id.
+- **Wave B `0583507` (machinery):** C3-H1 a raw `task.cancel()` landing INSIDE the persistence
+  tail defeated the anyio shield → asyncio.shield-with-await INSIDE the retained anyio scope
+  (**empirically proven**: each mechanism alone fails under the other's cancellation source) ·
+  C3-M3 COMMIT failure escaped the rollback arm · C4-M2 terminal answers could report the
+  PREVIOUS turn (cache beat the settled handle) · C4-M3 a cancel before the drain task's first
+  step bypassed all cleanup (subscribers blocked) → done-callback backfill · C2-M2 OpenAPI tools
+  had per-chunk (not wall-clock) bounds → `OpenApiServerCfg.call_timeout_s` on every op ·
+  C2-M3 the ADAPTER_BOUNDED test was open by category/name → symbol-keyed + dynamic-category walk
+  + stale-entry detection · C5-M2 compaction could fold a durably-suspended call (orphaning its
+  result) → `_split` snaps before AWAITING_* · C5-M3 the ACA-21 `tools=None` fallback existed
+  only as a comment → executable one-shot retry · C5-M4 the template cache pin was commented out
+  (fresh installs silently regressed ACA-18) → live YAML.
+- **Wave C `a9e5199` (plumbing + tests):** C5-M1 skills were LOST across suspend/resume — the
+  resumed half ran on a broader toolset than the owner confirmed under → `ResumeRequest.skills` +
+  verbatim re-activation + client `skillsByCall` (the ACA-16 pattern; not snapshot-carried —
+  cold-reload falls back, documented) · C3-M4 buffered questions never seeded modeByCall ·
+  C4-M1 the probe race guard stopped one await early → `requireIdle` bail after the fetch ·
+  C3-M1/M2 proposal truths: the §1 chokepoint row corrected (approve-to-apply is its OWN
+  authorized path), failure audit Events added, apply-then-txn-fail convergence (no duplicate
+  append on re-approve) · C3-L1 the turn-guard tripwire scans code-only + states its limits ·
+  the 7-item missing-regression batch (rejected-bubble, runShell 409, buffered lossless,
+  telemetry zero, `complete()` extra_body, thrown-read re-attach, JSON capped/error).
+
+**Accepted with reasons (not fixed):** C1-L5 `result_sig` conflates changed error detail/output
+past 300 chars (the per-tool cap bounds the spiral; revisit if a real stall-false-positive shows) ·
+C2-L4 Streamable-HTTP MCP cleanup has no transport-specific test (structurally covered by the
+outer timeout; stdio is the deployed transport) · C2-L5 the #116720 re-assert's exact collision
+isn't reproducible from userland (CPython 3.14 carries the upstream fix — the guard is belt-only) ·
+C2-L6/L7 subagent-safety + skills-zero-context contracts partially unpinned (recorded debt) ·
+C4-M1-residual: the probe race is narrowed to the fetch window, not eliminated (single-user SPA) ·
+C5-L3 compaction's substantive contract tests → Slice 6 (compaction v2 owns that surface) ·
+C5-L4 an oversized owner-authored memory file can block the loop on read (owner-authored, single
+user) · S3 cold-reload of a suspended confirm still loses ephemeral token/mode/skills pins (the
+J3 re-mint makes resume WORK; mode/skills fall to defaults — persisted-on-call is the named seam
+if it ever matters).
+
+**Functionality verdicts (post-fix):** F1–F28 all VERIFIED or VERIFIED-WITH-NOTE except the
+recorded debts above; F28 (voice) excluded from the chat stack by scope. Backend 397 tests,
+FE 40 store tests; tip gate 7/7 incl. e2e on `a9e5199`.
