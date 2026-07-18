@@ -39,7 +39,10 @@ export function LineComposer({ controlsStart, overlay }: ComposerSlots = {}) {
   // its right) once there's something to send. Empty draft + STT → mic only (the compact resting look);
   // typing/dictating slides send in beside the mic; no STT → always send alone.
   const showMic = sttReady;
-  const showSend = !sttReady || draft !== "";
+  // `isStreaming` keeps the button mounted as the Stop control (D39, Slice-3 audit MED-1): `send()`
+  // clears the draft, so without it the STT+empty-draft resting state would hide Stop exactly while
+  // a turn runs — the one moment it must exist.
+  const showSend = !sttReady || draft !== "" || isStreaming;
 
   return (
     <>

@@ -880,6 +880,70 @@ describe("durable turns — client (Slice 3, D39)", () => {
     expect(textOf(result.current.messages.find((m) => m.id === "m1")!.parts)).toBe("Hello");
   });
 
+  it("a turn that COMPLETED during the drop reloads from the durable floor — no false error, no retry trap (audit MED-2)", async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) {
+        // Dies mid-turn with NO `done` — but server-side the turn actually finished + released.
+        return Promise.resolve(
+          sseResponseUnterminated([
+            { event: "thread", data: { threadId: "t1" } },
+            { event: "message.start", id: "T1:1", data: { messageId: "m1" } },
+            { event: "text.delta", id: "T1:2", data: { messageId: "m1", delta: "Hel" } },
+          ]),
+        );
+      }
+      if (u.includes("/stream")) {
+        // The re-attach finds no live turn: the D39 JSON terminal answer.
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({ active: false, terminal_status: "completed", turn_id: "T1" }),
+        } as unknown as Response);
+      }
+      // The forced reload → the persisted floor carries the COMPLETED assistant message.
+      return Promise.resolve({
+        ok: true,
+        json: async () => [
+          {
+            id: "u1",
+            thread_id: "t1",
+            role: "user",
+            parts: [{ type: "text", text: "q" }],
+            actor: "user",
+            ts: "",
+            tokens: null,
+            compacted: false,
+          },
+          {
+            id: "m1",
+            thread_id: "t1",
+            role: "assistant",
+            parts: [{ type: "text", text: "Hello — done." }],
+            actor: "agent",
+            ts: "",
+            tokens: null,
+            compacted: false,
+          },
+        ],
+      } as unknown as Response);
+    });
+
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+
+    // Reconciled from the durable floor: the persisted answer renders, status settles idle, and
+    // there is NO retryable error bubble (the pre-fix behavior was failStream("connection
+    // interrupted") — a duplicate-send retry trap over a turn that had actually succeeded).
+    expect(result.current.status).toBe("idle");
+    expect(result.current.messages.some((m) => m.parts.some((p) => p.type === "error"))).toBe(
+      false,
+    );
+    expect(textOf(result.current.messages.find((m) => m.id === "m1")!.parts)).toBe("Hello — done.");
+  });
+
   it("cold-load probe re-attaches to a still-running detached turn (active:true)", async () => {
     globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
       const u = String(url);

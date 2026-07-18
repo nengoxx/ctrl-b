@@ -290,10 +290,11 @@ async def _turn_response(
     def _cleanup(_t: asyncio.Task) -> None:
         # Runs once when the task ends, whichever terminal path. The task's own finally set
         # `handle.terminal_status` BEFORE the terminal sentinel (D39/M2 ordering), so it is settled
-        # here: move the terminal FACT into the linger-swept cache for late re-attach FIRST, then
-        # drop the live marker (identity-guarded `release`, D38) so the registry stays live-only.
-        record_terminal(state.turn_terminals, handle, linger_s=cfg.linger_s)
+        # here. RELEASE FIRST (Slice-3 audit INFO-5): if the cache insert ever raised, a
+        # release-second ordering would leak the marker and 409 the thread forever — a missed
+        # terminal-cache entry is merely a reload fallback, the safe failure of the two.
         release(state.turns, handle)
+        record_terminal(state.turn_terminals, handle, linger_s=cfg.linger_s)
 
     task.add_done_callback(_cleanup)
 
