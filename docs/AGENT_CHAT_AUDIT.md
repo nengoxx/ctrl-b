@@ -837,6 +837,24 @@ surfaces capped/error terminal states · turn.sync overlay batched to ONE `set()
 handle-first `turn_id` in a double-window edge (client reloads regardless) · cold reload of a
 non-live suspended confirm still loses ephemeral tokens (pre-existing; Slice 3 strictly improves
 the live case). Backend 356 tests, FE 31; tip gate 7/7 incl. e2e.
+**FINAL TRI-REVIEW (owner-ordered, 2026-07-18, `5175756`): Codex CLI (gpt-5.6-sol, read-only) as a
+foreign second opinion + two fresh Opus lenses (fix-round regression review + a 9-scenario
+end-to-end walk, all PASS). Codex found 2 HIGHs three same-family rounds missed:** the reconciler
+flipped a suspended message's PENDING SIBLINGS (resume would skip them forever — now message-level
+suspend exclusion; the two tests that ENCODED the buggy behavior were restructured) · the
+generic-exception drain path left ambiguous PENDING calls reading "not executed" (duplicate-action
+risk — now the same shielded reconcile; effect-unknown semantics). Plus 4 MED (Stop spinner reload ·
+sync-kind markers read as live → immortal re-attach streams · leading-edge eviction baselined past
+the continuity guard · the cold probe racing a user stream) and 2 LOW (JSON version-skew trusted ·
+`ping_s` int truncation). Opus rounds added: thrown-read-error re-attach (the clean-EOF branch
+alone missed TCP resets) · events-reconnect live-turn probe (`reconcileChat`) · the inert JSON
+error terminal now renders via `failStream` · the snapshot `capped` note + a TURN-state-vs-RunState
+narrowing bug TS exposed en route (`completed`/`capped` never settled on the snapshot path).
+Accepted/recorded: turn mode is lost across a full app relaunch for a pre-crash suspend (mode isn't
+persisted on the call — future seam) · lingering cosmetic `status:"error"` after a restart reload ·
+the one-tick probe-vs-reserve divergence (documented in code). Backend 365 tests, FE 33; tip gate
+7/7 incl. e2e. **Lesson pinned: a foreign-model reviewer catches what same-family rounds
+normalize — keep Codex in the pre-push loop for structural slices.**
 Pattern: *resumable streams* — server-owned turn task + replayable per-turn event log; the SSE
 response is a subscriber. Grounded in §3.1–3.3 and the v1.1 research (LibreChat in-memory mode is
 the single-process reference; OpenAI `sequence_number` cursor semantics; opencode's SQLite seq
