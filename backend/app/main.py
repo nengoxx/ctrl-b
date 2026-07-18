@@ -146,16 +146,17 @@ async def lifespan(app: FastAPI):
     # OpenAPI) so the originals captured here are the true built-in/remote (description, exposed, core).
     apply_tool_overrides(app)
     # Integration re-discovery state (Phase 7c-b): MCP/OpenAPI edits flip `integrations_dirty`; the
-    # next agent turn (or the manual endpoint) re-discovers under `discovery_lock`. `active_turns`
-    # lets the manual rediscover refuse (409) while a turn is iterating, so the registry is only ever
-    # rebuilt between turns, never under a live loop.
+    # next agent turn (or the manual endpoint) re-discovers under `discovery_lock`. The busy-truth for
+    # the "rebuild only between turns" gate is the turn-marker registry below (`app.state.turns`), so
+    # the registry is only ever rebuilt between turns, never under a live loop.
     app.state.discovery_lock = asyncio.Lock()
     app.state.integrations_dirty = False
-    app.state.active_turns = 0
-    # Per-thread turn-marker registry (ACA Slice 2, D38) — the single busy-truth for the chat stack:
-    # every thread-mutating endpoint reserves the thread's marker while its turn runs, so concurrent
-    # posts 409 and the rediscovery gates read it (`active_turns` above missed resume turns). See
-    # app/services/agent/turns.py; Slice 3's TurnRegistry extends TurnHandle in place.
+    # Per-thread turn-marker registry (ACA Slice 2, D38; Slice 3/D39 extends TurnHandle in place with
+    # the server-owned drain task + replay ring) — the single busy-truth for the chat stack: every
+    # thread-mutating endpoint reserves the thread's marker while its turn runs, so concurrent posts
+    # 409 and the rediscovery gates read it. The old write-only `active_turns` int is DELETED (D38
+    # amendment / D39): the registry supersedes it — dead state mimicking a live signal is the trap
+    # D38 exists to kill. See app/services/agent/turns.py.
     turns: dict[str, TurnHandle] = {}  # annotated via a local — Starlette's State attrs are Any
     app.state.turns = turns
     # Stash the Deps bundle so the runtime reconfigure seam (PUT /api/settings) can re-point its

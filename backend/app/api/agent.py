@@ -12,6 +12,7 @@ explicit cancel) are target design: AGENT_CHAT_AUDIT ACA-1 → Slice 3 (D35 prop
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 import uuid
@@ -41,7 +42,19 @@ from app.services.agent.proposals import apply_proposal
 from app.services.agent.selector import select_agent
 from app.services.agent.session import AgentSession, collect_turn
 from app.services.agent.skills import remove_skill_md, valid_skill_slug, write_skill_md
-from app.services.agent.turns import TurnBusy, TurnHandle, TurnKind, release, reserve
+from app.services.agent.turns import (
+    TASK_KINDS,
+    TurnBusy,
+    TurnHandle,
+    TurnKind,
+    active_task_turns,
+    drain_turn,
+    make_subscriber,
+    release,
+    remove_subscriber,
+    reserve,
+    subscribe_events,
+)
 
 router = APIRouter(tags=["agent"])
 
@@ -191,13 +204,28 @@ def _effective_stream(setting: str, requested: bool) -> bool:
 # The single 409 detail for a thread that already has a live turn (D38 busy-truth; the manual
 # rediscover endpoint uses its own message). Actionable per Goose's busy-error precedent.
 _TURN_BUSY_DETAIL = "a turn is already running on this thread — wait for it to finish"
+# The 409 detail when the server-wide concurrency cap (`agent.turns.max_active_turns`, D39) is hit by
+# a NEW task-bearing turn (chat/resume). Distinct + actionable, separate from the per-thread busy 409.
+_TURN_CAP_DETAIL = "too many turns are running — wait for one to finish"
 
 
 def _reserve_turn(request: Request, thread_id: str, kind: TurnKind) -> TurnHandle:
-    """Reserve the thread's turn marker (D38) or 409 — the single place `TurnBusy` maps to HTTP, so
-    the six thread-mutating endpoints share one busy response."""
+    """Reserve the thread's turn marker (D38) or 409 — the single chokepoint mapping both busy-state
+    refusals to HTTP so all six thread-mutating endpoints share them:
+
+    - **per-thread busy** (`TurnBusy`) — a turn already owns THIS thread.
+    - **server-wide cap** (D39) — a NEW task-bearing turn (chat/resume) when `max_active_turns` are
+      already running. Sync kinds (exec/plan/apply/compact) are exempt: they run inline, are short,
+      and already hold the per-thread marker, so they don't count against the detached-turn budget.
+
+    Both checks run synchronously before `reserve` inserts — no `await` between the cap read and the
+    insert, so the D38 TOCTOU guarantee extends to the cap."""
+    state = request.app.state
+    cfg = state.settings.agent.turns
+    if kind in TASK_KINDS and active_task_turns(state.turns) >= cfg.max_active_turns:
+        raise HTTPException(status_code=409, detail=_TURN_CAP_DETAIL)
     try:
-        return reserve(request.app.state.turns, thread_id, kind)
+        return reserve(state.turns, thread_id, kind, ring_size=cfg.ring_size)
     except TurnBusy as e:
         raise HTTPException(status_code=409, detail=_TURN_BUSY_DETAIL) from e
 
@@ -208,40 +236,70 @@ async def _turn_response(
     events: AsyncIterator[Any],
     *,
     stream: bool,
-    count: bool,
     handle: TurnHandle,
 ) -> Response:
-    """Return a turn as SSE or as one buffered JSON response (D17), draining the **same** event
-    generator either way — `collect_turn` is a second consumer, the loop is never forked. `events` is
-    `session.run_turn(...)` or `session.resume(...)`. `count` toggles the `active_turns` gauge (chat
-    counts; resume historically doesn't). `handle` is the reserved turn marker (D38): ownership
-    transfers here from the handler and it's released in `_counted`'s `finally` — the one point
-    covering BOTH SSE (generator drained by `EventSourceResponse`) and buffered
-    (`collect_turn(_counted(...))`) transports. The buffered payload reuses the persisted message —
-    the client re-reads it via the normal restore path, so the body stays small + authoritative."""
-    head = {"threadId": thread.id, "title": thread.title}
+    """Wire a reserved turn to its transport as a **server-owned drain task** (D39, the ACA-1 core
+    inversion). `events` is `session.run_turn(...)`/`session.resume(...)`. Instead of the client's
+    stream BEING the executor, a subscriber queue is attached synchronously and a `drain_turn` task is
+    spawned on `handle.task`: the task drives the loop to completion regardless of the client, and the
+    SSE generator (or the buffered `collect_turn` wrapper) is just a consumer reading that queue. A
+    phone lock / dropped socket now detaches the subscriber, not the loop — completed AND remaining
+    steps still run + persist.
 
-    async def _counted(src: AsyncIterator[Any]) -> AsyncIterator[Any]:
-        if count:
-            request.app.state.active_turns += 1
+    Marker release rides the task's `add_done_callback` (idempotent cleanup ONLY), which fires exactly
+    once whenever the task reaches done — every terminal path (completed/suspended/cancelled/error) —
+    decoupled from any awaiting consumer. `handle.terminal_status` is set inside the task's own
+    `finally` BEFORE the terminal sentinel, so there is no done-but-unmarked window."""
+    head = {"threadId": thread.id, "title": thread.title}
+    state = request.app.state
+    cfg = state.settings.agent.turns
+
+    # Attach the subscriber synchronously, THEN spawn the drain task — no `await` between (D39
+    # zero-gap join: the task can't emit before the subscriber is listening).
+    queue = make_subscriber(handle, cfg.subscriber_queue_size)
+    task = asyncio.create_task(drain_turn(handle, events, state.messages))
+    handle.task = task
+
+    def _cleanup(_t: asyncio.Task) -> None:
+        # Idempotent, identity-guarded marker release (D38 `release`). Runs once when the task ends,
+        # whichever terminal path. Wave 3 extends THIS site with the terminal-cache move (linger-swept
+        # `app.state.turn_terminals`) for late re-attach — leaving the seam here.
+        release(state.turns, handle)
+
+    task.add_done_callback(_cleanup)
+
+    async def _consume() -> AsyncIterator[Any]:
+        # Drain the subscriber queue as `AgentEvent`s until the terminal sentinel, then DETACH (never
+        # release — the task's done-callback owns that). Detach on ANY exit (completion or the client
+        # cancelling the generator) so the drain task stops fanning out to a gone consumer.
         try:
-            async for ev in src:
+            async for _seq, ev in subscribe_events(queue):
                 yield ev
         finally:
-            if count:
-                request.app.state.active_turns -= 1
-            release(request.app.state.turns, handle)
+            remove_subscriber(handle, queue)
 
     if not stream:
-        payload = await collect_turn(_counted(events))
+        # Buffered D17 collapses into a subscriber: `collect_turn` drains the same queue, so buffered
+        # turns are server-owned + cancellable for free (re-attach is documented degraded — the PWA
+        # always streams).
+        payload = await collect_turn(_consume())
         return JSONResponse({**head, **payload})
 
     async def gen() -> AsyncIterator[dict[str, Any]]:
         yield {"event": "thread", "data": json.dumps(head)}
-        async for ev in _counted(events):
-            yield {"event": ev.event, "data": json.dumps(ev.data)}
+        try:
+            async for _seq, ev in subscribe_events(queue):
+                yield {
+                    "event": ev.event,
+                    "id": f"{handle.turn_id}:{_seq}",  # `turn_id:seq` — the reconnect cursor (D39)
+                    "data": json.dumps(ev.data),
+                }
+        finally:
+            remove_subscriber(handle, queue)
 
-    return EventSourceResponse(gen())
+    # The chat SSE gains a keepalive (ping) + a frozen-reader drop (send_timeout) — neither existed at
+    # HEAD (S3-F). `ping` is int-typed in sse-starlette; the config knob is seconds.
+    return EventSourceResponse(gen(), ping=int(cfg.ping_s), send_timeout=cfg.send_timeout_s)
 
 
 @router.get("/threads")
@@ -294,15 +352,16 @@ async def chat(body: ChatRequest, request: Request) -> Response:
         agent_name = select_agent(request.app.state.settings, selector, body.text)
 
     # Reserve the thread's turn marker (D38) — synchronous check-and-set, after the thread is resolved
-    # and the auto-rediscover boundary, before the response is built. Ownership transfers to the stream
-    # (`_turn_response` releases it in `_counted`'s finally); if anything raises before we hand off,
-    # release + re-raise so no marker leaks.
+    # and the auto-rediscover boundary, before the response is built. Ownership transfers to the
+    # server-owned drain task (`_turn_response` releases it via the task's done-callback, D39); if
+    # anything raises before we hand off, release + re-raise so no marker leaks.
     handle = _reserve_turn(request, thread.id, "chat")
     try:
         session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
+        handle.mode = body.mode  # the turn's inference mode — the snapshot carries it (D39)
         events = session.run_turn(thread, body.text, mode=body.mode, skills=body.skills)
-        return await _turn_response(request, thread, events, stream=stream, count=True, handle=handle)
+        return await _turn_response(request, thread, events, stream=stream, handle=handle)
     except Exception:
         release(request.app.state.turns, handle)
         raise
@@ -782,16 +841,17 @@ async def resume(body: ResumeRequest, request: Request) -> Response:
     # specialist you last used until you `/agent`-switch on a fresh turn.
     msgs = await request.app.state.messages.list(thread.id)
     last_agent = next((m.agent for m in reversed(msgs) if m.role == "assistant" and m.agent), None)
-    # Reserve the thread's turn marker (D38, kind "resume") — released by `_turn_response` in
-    # `_counted`'s finally (covers SSE + buffered); release + re-raise on any pre-handoff error.
+    # Reserve the thread's turn marker (D38, kind "resume") — released via the drain task's
+    # done-callback (D39; covers SSE + buffered); release + re-raise on any pre-handoff error.
     handle = _reserve_turn(request, thread.id, "resume")
     try:
         session = _session(request, thread, agent_name=last_agent, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
+        handle.mode = body.mode  # carried onto the snapshot (D39) — same as chat
         events = session.resume(
             thread, body.call_id, body.decision, body.confirm_token, body.answer, mode=body.mode
         )
-        return await _turn_response(request, thread, events, stream=stream, count=False, handle=handle)
+        return await _turn_response(request, thread, events, stream=stream, handle=handle)
     except Exception:
         release(request.app.state.turns, handle)
         raise

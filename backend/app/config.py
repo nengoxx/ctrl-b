@@ -37,6 +37,7 @@ __all__ = [
     "ModelRef",
     "AgentDef",
     "CompactionCfg",
+    "TurnsCfg",
     "load_settings",
     "save_settings",
     "mask_secrets",
@@ -193,6 +194,40 @@ class InferenceCfg(BaseModel):
         return chain
 
 
+class TurnsCfg(BaseModel):
+    """Server-owned durable-turn knobs (ACA Slice 3, D39). Every tunable of the turn registry /
+    drain task / SSE keepalive lives here — no magic numbers anywhere in the turn machinery.
+
+    `ring_size` is the replay-window knob: the per-turn event ring keeps the last N `(seq, event)`
+    pairs so a briefly-dropped client can tail-replay from its cursor. Undersizing it never loses
+    data — it only forces a reconnecting client onto the ONE snapshot event (rebuilt from the
+    event-fold accumulator) instead of a cheap tail-replay; the per-step SQLite persistence is the
+    durable floor, the ring is purely a reconnect cache.
+
+    `subscriber_queue_size` bounds each attached consumer's fan-out queue; on overflow that ONE
+    slow subscriber is detached (it re-attaches via snapshot) — events are never shed for the
+    connected subscribers (S3-F). `ping_s`/`send_timeout_s` are the chat SSE keepalive + frozen-reader
+    drop (there is no keepalive on the chat stream at HEAD). `shutdown_grace_s` bounds the lifespan
+    registry drain (kept under uvicorn's graceful timeout). `linger_s` is how long a finished turn
+    stays in the capped terminal cache for late re-attach, and `max_active_turns` caps concurrently
+    running task-bearing turns (chat/resume) across all threads. `linger_s`/`max_active_turns` land
+    complete now but are consumed by wave 3 (terminal cache + endpoints)."""
+
+    ring_size: int = Field(default=2048, ge=1)  # per-turn replay ring depth (reconnect cache, not durability)
+    subscriber_queue_size: int = Field(
+        default=256, ge=1
+    )  # per-subscriber fan-out queue bound (overflow → detach)
+    ping_s: float = Field(default=15.0, gt=0)  # chat SSE keepalive comment interval (Tailscale Serve idle)
+    send_timeout_s: float = Field(default=30.0, gt=0)  # drop a frozen SSE reader without touching the turn
+    shutdown_grace_s: float = Field(
+        default=5.0, gt=0
+    )  # lifespan registry-drain budget (< uvicorn graceful timeout)
+    linger_s: float = Field(default=60.0, gt=0)  # terminal-cache retention for late re-attach (wave 3)
+    max_active_turns: int = Field(
+        default=4, ge=1
+    )  # cap on concurrent task-bearing turns (chat/resume; wave 3 endpoints)
+
+
 class AgentCfg(BaseModel):
     """Agent-runtime settings (D10/D11/D14). `default_agent` names which `agents/<name>/` folder a
     new thread uses (blank → the default/root agent). `global_subagent_limit` caps concurrent
@@ -202,6 +237,9 @@ class AgentCfg(BaseModel):
     model_config = {"extra": "allow"}
 
     compaction: CompactionCfg = Field(default_factory=CompactionCfg)
+    #: Server-owned durable-turn knobs (ACA Slice 3, D39) — `agent.turns.*`. Nested sub-model like
+    #: `compaction`; all turn-registry/drain/SSE tunables live here (no magic numbers in the loop).
+    turns: TurnsCfg = Field(default_factory=TurnsCfg)
     default_agent: str = ""  # name of the default agent folder; "" → built-in default
     default_title: str = ""  # optional display name for the default/root agent (slug stays "default")
     #: Inheritance base for folder-discovered agents (D14/D15 #1). An `AgentDef`-shaped mapping
