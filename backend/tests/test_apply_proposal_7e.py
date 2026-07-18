@@ -226,6 +226,64 @@ def test_non_proposal_409() -> None:
             assert _apply(c, thread.id, cid).status_code == 409
 
 
+def test_apply_gate_denied_records_a_user_event() -> None:
+    """C3-M2 — a gate-denied apply is auditable: the owner clicked Approve and the write did NOT run,
+    so a USER Event is recorded with the failure status (not left as a silent gap in the trail)."""
+    with _workspace():
+        with _client() as c:
+            c.app.state.settings.memory.enabled = False  # master switch off → gate denies
+            tid, cid = _seed_proposal(c, "memory", {"target": "memory", "action": "add", "content": "x"})
+            assert _apply(c, tid, cid).json()["applied"] is False
+            events = c.get("/api/events").json()
+            # a USER-actor `memory` event exists whose status is NOT ok (the denial was audited)
+            assert any(
+                e["action"] == "memory" and e["actor"] == "user" and e["status"] != "ok" for e in events
+            )
+
+
+def test_apply_txn_failure_retries_rows_outside_txn_no_duplicate() -> None:
+    """C3-M1 convergence — the write runs, then the atomic row-txn fails: the endpoint retries the row
+    updates INDIVIDUALLY (outside the txn) so the proposal still resolves. A re-approve then 409s
+    (nothing pending), so the memory append can NEVER be duplicated by a second click."""
+    import contextlib as _ctx
+
+    with _workspace() as (tmp, _cfg):
+        with _client() as c:
+            tid, cid = _seed_proposal(
+                c, "memory", {"target": "memory", "action": "add", "content": "once note"}
+            )
+            db = c.app.state.db
+            orig = db.transaction
+            calls = {"n": 0}
+
+            @_ctx.asynccontextmanager
+            async def flaky():
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise RuntimeError("simulated txn failure AFTER the successful write")
+                    yield  # pragma: no cover — unreachable, keeps this an async generator
+                else:
+                    async with orig():
+                        yield
+
+            db.transaction = flaky  # type: ignore[method-assign]
+            try:
+                r = _apply(c, tid, cid)
+            finally:
+                db.transaction = orig  # type: ignore[method-assign]
+
+            assert r.status_code == 200 and r.json()["applied"] is True
+            assert calls["n"] == 1  # the txn was hit once (and raised); the retry ran outside it
+            # the proposal RESOLVED despite the txn failure (rows persisted via the individual retry)
+            res = _result_part(c, tid, cid)
+            assert res["data"].get("applied") is True and "proposed" not in res["data"]
+            # a re-approve is a 409 (no pending proposal) — a duplicate append is impossible
+            assert _apply(c, tid, cid).status_code == 409
+            # and the note was written EXACTLY once
+            mem = (tmp / "memories" / "MEMORY.md").read_text(encoding="utf-8")
+            assert mem.count("once note") == 1
+
+
 def test_apply_resolves_specialist_agent() -> None:
     body = "---\nname: triage\ndescription: triage\n---\n\nDo it.\n"
     with _workspace() as (tmp, _cfg):

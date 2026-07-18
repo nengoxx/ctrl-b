@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import shutil
 import uuid
 from collections.abc import AsyncIterator
@@ -60,6 +61,8 @@ from app.services.agent.turns import (
     subscribe_events,
 )
 from app.services.agent.turns import _push_terminal as push_terminal
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["agent"])
 
@@ -146,6 +149,11 @@ class ResumeRequest(BaseModel):
     #: the turn's mode and re-sends it here so a `/local` turn *resumes* local — same per-message
     #: semantics as `ChatRequest.mode`, threaded endpoint → `session.resume` → `_drive`.
     mode: str | None = None
+    #: The turn's active skills (C5-M1), carried across the confirm round-trip so the resumed half
+    #: runs under the SAME narrowed toolset + injected instructions the owner confirmed against (same
+    #: shape as `ChatRequest.skills`; the PWA re-sends the turn's pinned skills). Re-activated verbatim
+    #: on resume — no re-selection.
+    skills: list[str] = Field(default_factory=list)
     stream: bool = False  # dual-mode delivery (D17); the PWA re-sends true so the continuation matches
 
     @field_validator("mode", mode="before")
@@ -1124,7 +1132,13 @@ async def resume(body: ResumeRequest, request: Request) -> Response:
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
         handle.mode = body.mode  # carried onto the snapshot (D39) — same as chat
         events = session.resume(
-            thread, body.call_id, body.decision, body.confirm_token, body.answer, mode=body.mode
+            thread,
+            body.call_id,
+            body.decision,
+            body.confirm_token,
+            body.answer,
+            mode=body.mode,
+            skills=body.skills,
         )
         return await _turn_response(request, thread, events, stream=stream, handle=handle)
     except Exception:
@@ -1221,6 +1235,17 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
         written = await apply_proposal(deps, agent, call_part.tool, dict(call_part.args))
         if written.state is not RunState.OK:
             # Leave the proposal pending (it stays approvable/dismissable) and surface the failure.
+            # C3-M2: a gate-denial / failed apply is auditable too — the owner clicked Approve and the
+            # write did NOT run, so record it as a USER Event with the failure state (mirrors the
+            # success record below) rather than leaving a silent gap in the audit trail.
+            await deps.events.record(
+                Event(
+                    actor=Actor.USER,
+                    action=call_part.tool,
+                    status=written.state,
+                    summary=written.summary,
+                )
+            )
             return {
                 "call_id": body.call_id,
                 "decision": "apply",
@@ -1231,10 +1256,41 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
         result_part.result = _resolved(written, applied=True)
         call_part.state = RunState.OK
         # SYS-1: flip the call state + rewrite the result row atomically (they can be two rows).
-        async with request.app.state.db.transaction():
-            await messages.update(call_msg)
-            if result_msg is not call_msg:
-                await messages.update(result_msg)
+        # C3-M1 convergence: the write has ALREADY run (the memory/skill file is mutated). Persisting
+        # the resolved call/result rows is what marks the proposal done so a re-approve can't duplicate
+        # the append. If the atomic txn fails AFTER the successful write, retry the two row-updates
+        # individually — each statement is atomic on its own, so the proposal still resolves and the
+        # dup window closes. Only if THAT also fails do we leave it pending and surface a 500 whose
+        # message states the write DID run — the owner must NOT re-approve (a re-approve would duplicate
+        # the append). Tradeoff: a rare stuck-pending bubble over a silent duplicate write.
+        try:
+            async with request.app.state.db.transaction():
+                await messages.update(call_msg)
+                if result_msg is not call_msg:
+                    await messages.update(result_msg)
+        except Exception:
+            log.exception(
+                "apply %s: row-transaction failed after a successful write — retrying rows individually",
+                call_part.tool,
+            )
+            try:
+                await messages.update(call_msg)  # each update is its own atomic write+commit
+                if result_msg is not call_msg:
+                    await messages.update(result_msg)
+            except Exception as exc:
+                log.exception(
+                    "apply %s: could NOT persist the resolution after a successful write — proposal "
+                    "stays pending; do NOT re-approve (the write already ran, a re-approve would "
+                    "duplicate)",
+                    call_part.tool,
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        "the write ran but its result could not be saved — do not re-approve "
+                        f"(it already applied): {str(exc)[:200]}"
+                    ),
+                ) from exc
         await deps.events.record(
             Event(actor=Actor.USER, action=call_part.tool, status=written.state, summary=written.summary)
         )

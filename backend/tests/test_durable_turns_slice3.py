@@ -274,6 +274,43 @@ def test_subscriber_overflow_detaches_slow_reader_turn_unaffected() -> None:
     assert handle.terminal_status is not None
 
 
+def test_buffered_burst_beyond_queue_size_stays_lossless() -> None:
+    """C6-c — the buffered (D17) consumer gets an UNBOUNDED queue (`_turn_response(stream=False)` →
+    `make_subscriber(handle, 0)`), so a synchronous event burst LARGER than `subscriber_queue_size`
+    must not detach+truncate it and drop the trailing `tool.permission` (which would make a buffered
+    confirm non-resumable). We drive the real `drain_turn` → unbounded subscriber → `collect_turn`
+    with a 300-event burst (> the 256 default bound) ending in a permission frame."""
+    from app.services.agent.session import collect_turn
+    from app.services.agent.turns import drain_turn, make_subscriber, subscribe_events
+
+    async def scenario():
+        handle = _handle(ring_size=512)
+        q = make_subscriber(handle, 0)  # maxsize=0 → UNBOUNDED, exactly what the buffered path attaches
+        burst = [_ev("text.delta", messageId="m", delta=str(i)) for i in range(300)]  # > 256 bound
+        events = _fake_gen(
+            [
+                _ev("message.start", messageId="m", role="assistant"),
+                *burst,
+                _ev("tool.permission", callId="c1", tool="wake_host", token="tok-1"),
+                _ev("done", threadId="t1", state="suspended"),
+            ]
+        )
+        task = asyncio.create_task(drain_turn(handle, events, _NoMessages()))
+
+        async def _consume():
+            async for _seq, ev in subscribe_events(q):
+                yield ev
+
+        payload = await collect_turn(_consume())
+        await task
+        return payload
+
+    payload = run_async(scenario())
+    assert payload["state"] == "suspended"
+    # the trailing permission SURVIVED the 300-event burst (a bounded queue would have detached first)
+    assert payload.get("permission", {}).get("token") == "tok-1"
+
+
 def test_drain_error_path_synthesizes_terminal_error() -> None:
     from app.services.agent.turns import TERMINAL, drain_turn, make_subscriber
 

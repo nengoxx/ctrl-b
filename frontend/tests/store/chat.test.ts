@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearDraft, getDraft } from "../../src/store/composer";
 import {
+  answerQuestion,
   initChat,
   reattachTurn,
   resumeCall,
   retryLastTurn,
+  runShell,
   sendMessage,
   startNewThread,
   stopTurn,
@@ -548,8 +550,12 @@ describe("turn integrity — client (Slice 2)", () => {
     // The server's actionable detail landed as a system breadcrumb.
     const sys = result.current.messages.find((m) => m.role === "system");
     expect(sys && textOf(sys.parts)).toContain("a turn is already running");
-    // The unclaimed empty assistant placeholder was dropped (only the user bubble + sys note remain).
+    // BOTH optimistic bubbles were dropped — the unclaimed assistant placeholder AND the rejected
+    // user message (never persisted; leaving it would render as sent-then-vanished). Only the sys
+    // note remains (C6-a regression guard).
     expect(result.current.messages.some((m) => m.role === "assistant")).toBe(false);
+    expect(result.current.messages.some((m) => m.role === "user")).toBe(false);
+    expect(result.current.messages).toHaveLength(1); // just the sys note
   });
 
   it("a 409 with a non-JSON body falls back to the canonical busy text", async () => {
@@ -1207,11 +1213,284 @@ describe("durable turns — client (Slice 3, D39)", () => {
     expect(await reattachTurn("t1", "T1:2")).toBe(true);
   });
 
-  // Item 6 (probe races a user-started stream) is NOT unit-tested here — documented per the review's
-  // "test if cheap, otherwise document" allowance. The guard is: `probeAndReattach` bails when
-  // getChatStatus() === "streaming" after the status-probe await. Exercising the race needs a DEFERRED
-  // probe response held open while a concurrent `sendMessage` flips status to "streaming" (a second
-  // multi-route mock + an open chat stream + precise microtask ordering), and `probeAndReattach` is a
-  // private fire-and-forget off `initChat` (not awaitable/exportable). That interleaving isn't cheap in
-  // this synchronous mock harness; the one-line guard is covered by review + the backend contract.
+  // Item 6 (probe races a user-started stream): the guard MOVED into `reattachTurn(requireIdle=true)`
+  // (C4-M1) — it now re-checks status AFTER its own fetch await, closing the second race window the
+  // old probe-only check missed. `reattachTurn` is exported, so the guard is now directly testable
+  // (see "the client half — formal-audit wave C" below); the old "document, don't test" note is
+  // superseded. `probeAndReattach` itself stays a private fire-and-forget off `initChat`.
+});
+
+// ── Formal-audit wave C (client) — skills carried across resume (C5-M1), buffered-question mode/skills
+// pinning (C3-M4), the cold-probe requireIdle guard (C4-M1), and the missing-regression batch (C6). ──
+describe("the client half — formal-audit wave C", () => {
+  /** Suspend a fresh turn on a confirm bubble for call `c1`, sent with the given opts. */
+  async function sendAndSuspend(
+    text: string,
+    opts?: { mode?: "local" | "cloud"; skills?: string[] },
+  ) {
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "m1" } },
+      {
+        event: "part.added",
+        data: {
+          messageId: "m1",
+          part: { type: "tool_call", call_id: "c1", tool: "wake_host", args: {}, state: "pending" },
+        },
+      },
+      { event: "tool.permission", data: { callId: "c1", token: "tok-1" } },
+      { event: "done", data: { state: "suspended" } },
+    ]);
+    await act(async () => {
+      await sendMessage(text, opts);
+    });
+  }
+
+  it("a resume carries the turn's PINNED skills after an interleaved send changed turnSkills (C5-M1)", async () => {
+    const { result } = renderHook(() => useChat());
+    await sendAndSuspend("wake", { skills: ["deploy"] }); // pins skillsByCall[c1] = ["deploy"]
+    expect(result.current.status).toBe("idle");
+
+    // An interleaved send with DIFFERENT skills overwrites the module-level turnSkills.
+    mockStream([
+      { event: "message.start", data: { messageId: "m2" } },
+      { event: "text.delta", data: { messageId: "m2", delta: "ok" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    await act(async () => {
+      await sendMessage("hi", { skills: ["backups"] });
+    });
+
+    // Resume c1: the payload must carry the ORIGINAL turn's skills, not the interleaved send's.
+    let resumeBody: Record<string, unknown> = {};
+    globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      resumeBody = JSON.parse(init!.body as string) as Record<string, unknown>;
+      return Promise.resolve(sseResponse([{ event: "done", data: { state: "completed" } }]));
+    });
+    await act(async () => {
+      await resumeCall("c1", "execute");
+    });
+    expect(resumeBody.skills).toEqual(["deploy"]);
+  });
+
+  it("a buffered question pins the turn's mode + skills across an interleaved send (C3-M4)", async () => {
+    // Turn 1: a BUFFERED (JSON) response carrying a `question` (no token), sent with /cloud + a skill.
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
+      Promise.resolve(
+        String(url).includes("/agent/chat")
+          ? ({
+              ok: true,
+              body: {},
+              headers: { get: () => "application/json" },
+              json: async () => ({
+                threadId: "t1",
+                state: "suspended",
+                question: { callId: "cq" },
+              }),
+            } as unknown as Response)
+          : ({ ok: true, json: async () => [] } as unknown as Response),
+      ),
+    );
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("ask", { mode: "cloud", skills: ["deploy"] });
+    });
+    expect(result.current.status).toBe("idle");
+
+    // An interleaved send with different mode/skills overwrites the module-level turnMode/turnSkills.
+    mockStream([
+      { event: "message.start", data: { messageId: "m2" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    await act(async () => {
+      await sendMessage("hi", { mode: "local", skills: ["backups"] });
+    });
+
+    // answerQuestion cq must carry the ORIGINAL buffered turn's mode + skills, not the interleave's.
+    let body: Record<string, unknown> = {};
+    globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      body = JSON.parse(init!.body as string) as Record<string, unknown>;
+      return Promise.resolve(sseResponse([{ event: "done", data: { state: "completed" } }]));
+    });
+    await act(async () => {
+      await answerQuestion("cq", "yes");
+    });
+    expect(body.mode).toBe("cloud");
+    expect(body.skills).toEqual(["deploy"]);
+  });
+
+  it("reattachTurn(requireIdle) bails without applying frames when a send flipped to streaming (C4-M1)", async () => {
+    // Hold a send open so status is "streaming" (mirrors the startNewThread-blocked test's pattern).
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const held = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+      },
+    });
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/stream")) {
+        // The re-attach stream WOULD apply a message.start for "zzz" if not bailed.
+        return Promise.resolve(
+          sseResponse([
+            { event: "message.start", id: "T9:1", data: { messageId: "zzz" } },
+            { event: "done", id: "T9:2", data: { state: "completed" } },
+          ]),
+        );
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        body: held,
+        headers: {
+          get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
+        },
+      } as unknown as Response);
+    });
+
+    const { result } = renderHook(() => useChat());
+    let sendP!: Promise<void>;
+    await act(async () => {
+      sendP = sendMessage("hi"); // sets status "streaming", then holds on the open body
+    });
+    expect(result.current.status).toBe("streaming");
+
+    // A cold-probe re-attach with requireIdle must NOT attach while a live stream owns the turn.
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await reattachTurn("t1", undefined, true);
+    });
+    expect(ok).toBe(false);
+    expect(result.current.messages.some((m) => m.id === "zzz")).toBe(false); // no frame leaked in
+
+    // Let the held turn finish so nothing leaks into the next case.
+    const enc = new TextEncoder();
+    controller.enqueue(
+      enc.encode(`event: done\r\ndata: ${JSON.stringify({ state: "completed" })}\r\n\r\n`),
+    );
+    controller.close();
+    await act(async () => {
+      await sendP;
+    });
+  });
+
+  it("runShell surfaces a 409 as the busy sys-note (not 'backend unreachable') (C6-b)", async () => {
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        status409("a turn is already running on this thread — wait for it to finish"),
+      ),
+    );
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await runShell("ls");
+    });
+    const sys = result.current.messages.find((m) => m.role === "system");
+    expect(sys && textOf(sys.parts)).toContain("a turn is already running");
+    // The generic catch ("shell exec failed — backend unreachable?") must NOT fire on a 409.
+    expect(
+      result.current.messages.some(
+        (m) => m.role === "system" && textOf(m.parts).includes("backend unreachable"),
+      ),
+    ).toBe(false);
+  });
+
+  it("a thrown read error (TCP reset) re-attaches BEFORE failing (C6-f)", async () => {
+    // First a completed turn so `threadId` is set (the re-attach needs it).
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "m1" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("first");
+    });
+    expect(result.current.threadId).toBe("t1");
+
+    // Second send: the body's reader.read() REJECTS mid-stream (abrupt TCP reset). The catch branch
+    // must ATTEMPT a re-attach (which reports the turn completed) before ever calling failStream.
+    let streamCalls = 0;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/stream")) {
+        streamCalls++;
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({ active: false, terminal_status: "completed", turn_id: "T1" }),
+        } as unknown as Response);
+      }
+      if (u.includes("/messages")) {
+        return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+      }
+      const body = {
+        getReader: () => ({
+          read: () => Promise.reject(new Error("ECONNRESET")),
+          cancel: async () => {},
+        }),
+      };
+      return Promise.resolve({
+        ok: true,
+        body,
+        headers: {
+          get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
+        },
+      } as unknown as Response);
+    });
+    await act(async () => {
+      await sendMessage("second");
+    });
+    expect(streamCalls).toBeGreaterThan(0); // the re-attach was attempted
+    // It reported the turn completed → NO retryable error bubble (the drop was recovered).
+    expect(result.current.messages.some((m) => m.parts.some((p) => p.type === "error"))).toBe(
+      false,
+    );
+  });
+
+  it("a JSON re-attach on a `capped` terminal surfaces the step-limit note (C6-g)", async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/stream")) {
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({ active: false, terminal_status: "capped", turn_id: "T1" }),
+        } as unknown as Response);
+      }
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    const { result } = renderHook(() => useChat());
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await reattachTurn("t1");
+    });
+    expect(ok).toBe(true);
+    expect(
+      result.current.messages.some(
+        (m) => m.role === "system" && textOf(m.parts).includes("reached the step limit"),
+      ),
+    ).toBe(true);
+  });
+
+  it("a JSON re-attach on an `error` terminal renders a failStream error part (C6-g)", async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/stream")) {
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({ active: false, terminal_status: "error", turn_id: "T1" }),
+        } as unknown as Response);
+      }
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    const { result } = renderHook(() => useChat());
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await reattachTurn("t1");
+    });
+    expect(ok).toBe(true);
+    expect(result.current.messages.some((m) => m.parts.some((p) => p.type === "error"))).toBe(true);
+    expect(result.current.status).toBe("error");
+  });
 });

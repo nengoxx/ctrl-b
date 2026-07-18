@@ -356,17 +356,27 @@ class AgentSession:
             )
         return self._tools_cache
 
-    def _activate_skills(self, user_text: str, invoked: list[str] | None) -> None:
+    def _activate_skills(self, user_text: str, invoked: list[str] | None, *, select: bool = True) -> None:
         """Resolve the skills active for this turn (4.5) and stash the prompt addition + narrowed
         tool allowlist. No-op when the subsystem is off / unprovided so the default agent is
         unchanged. `invoked` are explicit `/skill-name` requests (user-invoked); the selector adds
-        model-invoked picks by matching the user message."""
+        model-invoked picks by matching the user message.
+
+        `select=False` (the resume path, C5-M1) skips the selector entirely and re-activates EXACTLY
+        the carried `invoked` skills — the resumed half must run under the SAME narrowed toolset +
+        instructions the owner confirmed against, and there is no user message to re-select over (a
+        re-selection could drift the active set). `run_turn` uses the default `select=True`."""
         self._skills_note = None
         self._tool_allow = self._agent.tools
         if not (self._skills and self._selector and self._settings.agent.skills_enabled):
             return
         available = available_skills(self._skills, self._settings, self._agent)
-        active = resolve_skills(available, self._selector, user_text, invoked=invoked)
+        if select:
+            active = resolve_skills(available, self._selector, user_text, invoked=invoked)
+        else:
+            # Resume: re-activate the carried skills verbatim, no selector re-run (no user_text).
+            by_name = {s.name: s for s in available}
+            active = [by_name[n] for n in (invoked or []) if n in by_name]
         if not active:
             return
         self._skills_note = skills_prompt(active)
@@ -565,6 +575,7 @@ class AgentSession:
         answer: str | None = None,
         *,
         mode: str | None = None,
+        skills: list[str] | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Resume a suspended turn, then continue the loop so the model can react. Three decisions:
         `execute` (a confirm-gated call — re-run with the token), `dismiss` (skip it — works for a
@@ -572,7 +583,15 @@ class AgentSession:
         call's result, A2). Fail-closed (A1/C1-H1): an unknown decision is rejected with an error, NOT
         treated as execute, and `answer` is only honoured against an AWAITING_ANSWER call (never used to
         silently OK a confirm). `mode` (`/local`//`/cloud`, ACA-16) is carried across the round-trip and
-        threaded to `_drive` so a `/local` turn resumes local; `None` → the configured default."""
+        threaded to `_drive` so a `/local` turn resumes local; `None` → the configured default.
+
+        `skills` (C5-M1) are the turn's active skills, carried across the round-trip so the resumed
+        half runs under the SAME narrowed toolset + injected instructions the owner confirmed under —
+        a fresh session otherwise re-activates nothing and continues on a BROADER toolset. Re-activated
+        verbatim (`select=False`): no re-selection, since there's no user message on a resume."""
+        # Re-activate the carried skills BEFORE `_drive` reads `_tool_allow`/`_skills_note` (via
+        # `_tools`/`_static_prefix`) — mirrors `run_turn`'s `_activate_skills`, minus the selector.
+        self._activate_skills("", skills, select=False)
         assistant = await self._find_pending(thread, call_id)
         if assistant is None:
             yield AgentEvent("error", {"message": "no pending action for this call", "retryable": False})

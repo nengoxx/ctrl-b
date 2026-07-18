@@ -126,6 +126,35 @@ def test_extra_body_absent_when_unset():
     assert "extra_body" not in fakes["http://local/v1"].chat.completions.calls[0]
 
 
+# ── C6-e: complete() (the summarizer path, 69cddd7 rider) carries per-endpoint extra_body too ──
+def _completion(text):
+    """A non-streaming `create(stream=False)` response shape for `complete()`."""
+    return lambda _kw: SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
+
+
+def _complete(client, **kw):
+    async def go():
+        return await client.complete([{"role": "user", "content": "hi"}], **kw)
+
+    return run_async(go())
+
+
+def test_complete_merges_extra_body_per_endpoint():
+    cfg = _cfg(local_extra={"cache_prompt": True})
+    client, fakes = _build(cfg, {"http://local/v1": _completion("summary")})
+    assert _complete(client) == "summary"
+    call = fakes["http://local/v1"].chat.completions.calls[0]
+    assert call["stream"] is False
+    assert call["extra_body"] == {"cache_prompt": True}  # the summarizer gets the cache pin too
+
+
+def test_complete_extra_body_none_when_unset():
+    # `complete()` always passes the kwarg but as None when empty (SDK omits it) — never a leaked dict.
+    client, fakes = _build(_cfg(), {"http://local/v1": _completion("s")})
+    _complete(client)
+    assert fakes["http://local/v1"].chat.completions.calls[0]["extra_body"] is None
+
+
 # ── ACA-21: tool_choice threading ──
 _TOOLS = [{"type": "function", "function": {"name": "ping", "parameters": {"type": "object"}}}]
 
@@ -189,6 +218,19 @@ def test_telemetry_absent_does_not_crash():
     report = StreamReport()
     _collect(client, report=report)
     assert report.prompt_tokens is None and report.cached_tokens is None
+
+
+def test_fmt_cache_zero_cached_renders_zero_not_not_reported():
+    """C6-d — a REPORTED `cached_tokens=0` (OpenAI floors <1024-token prompts to 0) must render as
+    "cached 0 (0% hit)", NOT "not reported" (which means the endpoint reported nothing at all). Only
+    both-None is "not reported"."""
+    from app.services.agent.session import _fmt_cache
+
+    rendered = _fmt_cache(StreamReport(prompt_tokens=1200, cached_tokens=0))
+    assert "cached 0" in rendered and "0% hit" in rendered
+    assert "not reported" not in rendered
+    # both absent → the one "not reported" case
+    assert _fmt_cache(StreamReport()) == "not reported"
 
 
 # ── A8 measurement: the context-cost debug line ──
