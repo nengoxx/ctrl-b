@@ -825,6 +825,18 @@ uvicorn defaults unbounded). Recorded gaps (opportunistic): re-attach during an 
 turn.sync-with-pending-confirm through resume e2e · the buffered client path post-inversion.
 Process note: wave 4's first commit briefly carried a broken FE typecheck — a `| tail` pipe
 swallowed the gate's exit code; caught immediately, amended clean; gates now run under `pipefail`.
+**Pre-push 6-finder code review (2026-07-18, `aa83acf`): 8 verified fixes** — STRONG: the
+done-but-unreleased window wedged re-attach (both turn endpoints now treat `terminal_status≠None`
+as not-live) · buffered queue UNBOUNDED (lossless contract restored) · single release owner
+post-spawn · `_stream_live`/`_consume` seq-continuity guard (a `_force_put` terminal eviction
+can't settle a gapped stream — breaks unsettled → re-attach/reload recovery) · JSON re-attach
+surfaces capped/error terminal states · turn.sync overlay batched to ONE `set()` ·
+`terminal_cache_cap` → TurnsCfg · ring default single-sourced. Accepted/recorded: `_consume` vs
+`_stream_live` near-dup (different yield types; collapse if Slice 4 touches teardown) · the
+`_force_put` idiom echo of EventBus (deliberately different policies) · cache-first vs
+handle-first `turn_id` in a double-window edge (client reloads regardless) · cold reload of a
+non-live suspended confirm still loses ephemeral tokens (pre-existing; Slice 3 strictly improves
+the live case). Backend 356 tests, FE 31; tip gate 7/7 incl. e2e.
 Pattern: *resumable streams* — server-owned turn task + replayable per-turn event log; the SSE
 response is a subscriber. Grounded in §3.1–3.3 and the v1.1 research (LibreChat in-memory mode is
 the single-process reference; OpenAI `sequence_number` cursor semantics; opencode's SQLite seq
