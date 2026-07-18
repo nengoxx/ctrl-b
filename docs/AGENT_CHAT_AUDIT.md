@@ -906,6 +906,21 @@ log). Design sketch (confirmed refinements in **bold**):
   Stop.
 
 ### Slice 4 — Interaction speed (ACA-4, 5-notice, 11 + A2) · M
+
+> **▶ DESIGN LOCKED 2026-07-19 = D40** (full pipeline: code-truth pass [7 sketch contradictions
+> pinned] + 7-agent×3-topic source-level field research + 3-lens adversarial design review
+> [3H/9M resolved into the decision] + owner go). **The sketch below is superseded where it
+> conflicts — D40 deviations:** the parallel prefix is **builtin-authored `read_only` ONLY**
+> (NOT "read_only or idempotent" — idempotent ≠ order-independent; MCP/OpenAPI derived flags
+> excluded, per-server `parallel_ok` = future seam) · repeat-cap classifies on counts alone
+> (`last_results` is completion state) · `ToolSpec.suspending` is a prerequisite with static
+> pin + two fail-closed belts (AWAITING_* and `needs_confirm`) · per-completion single-txn
+> (tool row + assistant row) via the extracted `_persist_shielded` helper, persist-before-emit ·
+> explicit task-list lifecycle (cancel+await+harvest in `finally`) · config
+> `AgentDef.max_parallel_tools` + the **llamacpp rider** `InferenceEndpointCfg.
+> max_concurrent_requests` (owner constraint: 1–2 non-queuing slots) · §7 debts C1-L5/C2-L6/
+> C2-L7 discharged here. As-built record lands on this heading post-build.
+
 1. Per-call `tool.result` streaming + per-call persistence (`_run_calls` → async generator
    emitting through the Slice-3 log; the one structural refactor of this seam — replaces the
    Slice-2 shielded-`finally` batch persistence with persist-as-each-call-resolves).

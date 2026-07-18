@@ -2119,3 +2119,94 @@ absences) + an adversarial design review that found 4 HIGHs — all resolved INT
 design). Build = 4 Opus waves (A11+reconciler → registry/task core → endpoints/terminal/shutdown →
 client) + adversarial audit + 8-angle pre-push review. As-built record lands on AGENT_CHAT_AUDIT §5
 Slice 3.
+
+## D40 — Turn speed: parallel read-only tool prefix + per-call persistence/streaming (ACA Slice 4) ✏️ LOCKED 2026-07-19 (Slice 4 design review)
+
+**Context.** ACA-4/5-notice/11 + adoption A2: `_run_calls` resolves a whole tool batch before the
+first `tool.result` reaches the wire or the DB — N slow calls cost Σ not ≈max, and a crash loses
+every in-memory result. Design phase: full code-truth pass (7 contradictions in the §5 sketch
+pinned) + a SEVEN-agent source-level field pass across three topics (per-call persistence /
+parallel dispatch / streaming-while-tools-run: opencode·Goose·Codex·pi·Hermes·Gemini CLI·Claude
+Code) + a 3-lens adversarial design review (concurrency/cancellation · persistence/crash ·
+security/contract; 3 HIGH + 9 MED) — all resolved INTO this decision. Field consensus adopted:
+parallel siblings with harness-side read-only classification (Claude Code rule), model-order
+persistence-as-each-call-resolves (pi/Codex/opencode; Goose/Gemini's batch-at-step-end is the
+crash hole we're closing), recovery at assembly time (already ours), step-serial model↔tools
+(universal — no overlap built).
+
+**Decision.**
+- **Generator inversion (the ONE sanctioned `_run_calls` structural refactor):**
+  `_run_calls -> AsyncIterator[AgentEvent]`; `(suspended, made_progress)` moves to a mutable
+  `_BatchOutcome` holder passed by `_drive` (async generators return no value; holder not read on
+  the exception path). `_drive` re-yields per event; **zero `turns.py` changes** (fold/ring/fanout
+  verified order-independent by `callId`); Slice 5's step boundary (= the `_drive` iteration)
+  unchanged.
+- **Parallel prefix, serial tail — single-pass classifier as sole authority:** one synchronous
+  walk in model order both classifies and applies dispatch increments (the walk's increments ARE
+  the dispatch increments — no second pass; at one cap slot left exactly one call admits).
+  Admission = fresh (no token, not `_RESOLVED`) · unsuppressed vs the CURRENT guard
+  (`denied_sigs`; per-tool cap; **repeat-cap on counts ALONE** — `last_results` is completion
+  state, never read at classify; the demoted call re-checks on the serial tail AFTER its prefix
+  twins completed → byte-identical verdict+echo to today) · args parse (empty-string legacy path
+  included) · `decide(spec, priv, run_shell_allowed=live settings)==ALLOW` (mirrors `invoke`,
+  which re-runs `decide()` internally — the classifier orders, never authorizes) ·
+  **`spec.read_only` AND builtin-authored** · not `spec.suspending`. **`idempotent` is NOT
+  parallel-eligible** (re-run-safe ≠ order-independent; `start_service`/`shutdown`@FULL would
+  race sibling reads — deviation from the §5 sketch's "read_only or idempotent") and
+  **MCP/OpenAPI tools are prefix-ineligible** (derived advisory annotations; per-server
+  `parallel_ok` = the named future seam). Invariant pinned ACROSS ALL PRIVILEGES incl. FULL:
+  no mutating call ever runs before a prior call completes. Prefix ≤1 → pure serial path
+  (single source of truth). Resumes: prefix empty by construction (leading calls `_RESOLVED`,
+  resumed call carries a token).
+- **`ToolSpec.suspending: bool = False`** (+ decorator passthrough; `question`=True) — suspension
+  is only observable post-invoke, so the flag is a classify-time prerequisite. Static pin:
+  AST/grep arch-test scans builtin tools for `RunState.AWAITING_*` returns vs declared flags
+  (adapters structurally can't suspend — verified; skills only narrow the allowlist). TWO
+  symmetric fail-closed runtime belts: a prefix invoke returning AWAITING_* OR `needs_confirm`
+  → error result + ERROR log + no-progress; never suspends, never None.
+- **Executor:** explicitly-retained asyncio Tasks under `asyncio.Semaphore(agent.
+  max_parallel_tools)`; tasks map `except Exception` → per-call error result (CancelledError
+  propagates); spawned OUTSIDE any open DB txn (contextvar hazard — pinned). Primitive =
+  task-list + `asyncio.wait(FIRST_COMPLETED)` loop (NOT TaskGroup [await-all can't stream;
+  #116720 class stays out], NOT `as_completed` [loses task identity]). Single consumer does ALL
+  completion bookkeeping + assistant/tool-Message writes (Event rows inside `invoke` stay
+  concurrent — corruption-safe on the process-wide `_write_lock`). On ANY early exit the
+  `finally`: cancel pending → `gather(return_exceptions=True)` await ALL (no tool task outlives
+  the terminal persist) → HARVEST `.done()` results into `result_parts` (+bookkeeping) → shielded
+  persist tail; never yields during GeneratorExit unwind.
+- **Per-call persistence:** storage shape unchanged — ONE `tool` Message per invocation, created
+  once lazily with a stable id, then ONLY `update()`d (consumer AND tail; the tail is the
+  backstop, never a duplicate `add()`). **Each completion commits tool-row + `assistant.update()`
+  in ONE `Database.transaction()` (BEGIN IMMEDIATE)** — no torn flip-without-result. All writes
+  via the extracted `_persist_shielded` helper (= the C3-H1 dual-shield tail verbatim, one
+  implementation; swallow-only-while-unwinding kept → persist failure raises BEFORE the yield:
+  **persist-before-emit**, snapshots never hold a vanished row). NO pre-invoke RUNNING persist
+  for prefix calls (read-only ⇒ re-issue free; C4-H1's persist stays on confirmed mutating
+  resumes, serial tail). Crash matrix verified: completed+persisted survive; unresolved →
+  reconciler → CANCELLED → `_assemble` synthesis → safe model re-issue. O(N²) write bytes + FTS
+  re-index per completion accepted at homelab batch sizes.
+- **Config:** `AgentDef.max_parallel_tools: int = 4` (`ge=1`; 1=off; per-agent, mirrors
+  `max_concurrent_subagents`). **Rider (owner constraint 2026-07-19):**
+  `InferenceEndpointCfg.max_concurrent_requests: int | None = None` (`ge=1`; None=unlimited) —
+  the owner's llama.cpp backend has 1–2 non-queuing slots; a per-endpoint `asyncio.Semaphore` at
+  the inference-client chokepoint, held for the ENTIRE streamed response, released in `finally`,
+  NEVER held across tool execution/subagent fan-out (no hold-and-wait — pinned by a
+  deadlock test); failover acquires per-attempt on the endpoint actually called. Concurrent
+  turns/subagents/summarizer queue app-side instead of erroring at llama-server. (Slice 4's tool
+  prefix itself adds ZERO model calls — all prefix-eligible builtins are non-LLM.)
+- **ACA-11:** `notice` "compacting…" emitted ONLY when compaction will actually summarize (no
+  no-op-iteration spam); `collect_turn` gains `notices`; accumulator does NOT fold notices (D18
+  precedent, live-only breadcrumb — accepted).
+- **§7 debt discharge:** C1-L5 `result_sig` → `sig|state|summary|error|sha256(full output)` (the
+  per-tool cap is the AUTHORITATIVE spiral bound — byte-flapping regression test proves it) ·
+  C2-L6 → `test_subagents_safety.py` (clamp/depth/semaphores/timeout/headless-deny) · C2-L7 →
+  skills-zero-context assertion. `ToolSpec` docstring + SECURITY_MODEL row record that
+  builtin-authored `read_only` is now load-bearing for parallel-eligibility (was "UX hint only").
+
+**Status.** LOCKED 2026-07-19 (owner go 2026-07-19 after the 3-lens review was resolved into the
+design; the llamacpp rider added at the owner's direction same day). Build = Opus waves (schema/
+config+pins → classifier → generator inversion+per-call persistence → parallel executor+belts →
+notices/debt riders) + fresh-eyes audit + tri-review incl. Codex (standing, structural slice).
+As-built record lands on AGENT_CHAT_AUDIT §5 Slice 4. Explicit sketch deviations: read_only-only
+prefix (not read_only-or-idempotent) · MCP/OpenAPI excluded · notices unfolded · prefix (not
+adjacent-rebatch).
