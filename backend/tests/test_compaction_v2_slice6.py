@@ -64,6 +64,17 @@ def test_clear_keep_steps_floor_is_one() -> None:
         CompactionCfg(clear_keep_steps=0)
 
 
+@pytest.mark.parametrize("knob", ["keep_recent_tokens", "clear_output_min_tokens"])
+def test_compaction_token_floors_allow_zero_reject_negative(knob: str) -> None:
+    """P3 (D42): the two surfaced token knobs are `ge=0` — 0 is a *valid* degenerate setting
+    (keep_recent_tokens=0 → token floor off, the message floor still guards; clear_output_min_tokens=0
+    → clear every eligible output). A negative is nonsensical → rejected at the boundary."""
+    assert getattr(CompactionCfg(**{knob: 0}), knob) == 0
+    assert getattr(CompactionCfg(**{knob: 1000}), knob) == 1000
+    with pytest.raises(ValidationError):
+        CompactionCfg(**{knob: -1})
+
+
 # ── ModelRef call config (D42/A10) ──────────────────────────────────────────────────────────────
 
 
@@ -84,6 +95,18 @@ def test_modelref_reasoning_effort_literal_accepts(effort: str) -> None:
 def test_modelref_reasoning_effort_rejects_junk() -> None:
     with pytest.raises(ValidationError):
         ModelRef(reasoning_effort="turbo")
+
+
+@pytest.mark.parametrize("field", ["max_tokens", "reasoning_tokens"])
+def test_modelref_budget_fields_reject_zero_and_negative(field: str) -> None:
+    """P1 (D42): `max_tokens`/`reasoning_tokens` are `ge=1` — 0 is never a meaningful budget (a
+    0-token cap asks for an empty reply), so it is rejected at the boundary; `None` means inherit."""
+    assert getattr(ModelRef(**{field: 1}), field) == 1
+    assert getattr(ModelRef(**{field: 4096}), field) == 4096
+    assert getattr(ModelRef(**{field: None}), field) is None
+    for bad in (0, -1):
+        with pytest.raises(ValidationError):
+            ModelRef(**{field: bad})
 
 
 def test_modelref_no_extra_allow() -> None:

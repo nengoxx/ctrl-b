@@ -18,6 +18,7 @@ Five units, each testable in isolation:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import tempfile
@@ -603,6 +604,83 @@ def test_backstop_inflation_reject_falls_to_error() -> None:
             assert calls["n"] == 1  # no successful re-stream
             done = next(e for e in events if e.event == "done")
             assert done.data["state"] == "error"
+
+        _run(go())
+
+
+# ── E2. the backstop-vs-semaphore regression pin (P4, D42 post-build audit) ─────────────────────────
+
+
+def test_backstop_shares_single_slot_endpoint_without_deadlock() -> None:
+    """P4 regression pin: the reactive backstop over a REAL `InferenceClient` whose endpoint is a
+    SINGLE request slot (`max_concurrent_requests=1`), with the forced-compaction summarizer routed to
+    that SAME endpoint.
+
+    The first stream attempt context-overflows AT INIT (before any token) — so its permit MUST be
+    released on the failed attempt (`stream_chat`'s except branch). The backstop then force-folds, and
+    the summarizer's `complete()` must ACQUIRE that one slot without blocking; then the re-stream (that
+    same endpoint) recovers. If the failed stream leaked its slot, `complete()` would deadlock on
+    `sem.acquire()` — so a clean `completed` within the timeout IS the pin. Uses the section-C fake SDK
+    transport (one behavior serving both the streaming `create(stream=True)` and the buffered
+    `create(stream=False)`), NOT a stubbed `stream_chat`/`complete`, so the real semaphore path runs."""
+    with _workspace(), _client_app() as c:
+        state = c.app.state
+
+        # A REAL client over a single-slot local endpoint + fake SDK transport (no failover chain).
+        cfg = _cfg(
+            local=InferenceEndpointCfg(base_url="http://local/v1", model="minig", max_concurrent_requests=1),
+            failover=False,
+        )
+        seen = {"stream": 0, "complete": 0}
+
+        def behavior(kw):
+            if kw.get("stream"):
+                seen["stream"] += 1
+                if seen["stream"] == 1:  # first stream overflows at init (before any token)
+                    raise _sdk_error(400, "context_length_exceeded", "maximum context length is 8192")
+                return _Stream([_Chunk(_Delta(content="recovered"))])  # the post-fold re-stream
+            seen["complete"] += 1  # the summarizer, same single-slot endpoint
+            return _Resp("tiny summary")
+
+        client, _ = _build(cfg, {"http://local/v1": behavior})
+
+        # Keep only the /props window probes inert — the real semaphore path in stream_chat/complete
+        # stays live (that is what this pin exercises).
+        async def big_window(ep):
+            return 10_000_000
+
+        async def no_guard(mode=None):
+            return None
+
+        client.effective_window = big_window  # type: ignore[assignment]
+        client.effective_window_for = no_guard  # type: ignore[assignment]
+
+        async def go() -> None:
+            from app.api.agent import _build_session
+            from app.domain.conversation import Thread
+
+            thread = await state.threads.create(Thread())
+            await _seed(state, thread)
+            session = _build_session(state, thread)
+            session._inference = client  # the REAL single-slot client
+            fold_cfg = CompactionCfg(keep_last_messages=2, keep_recent_tokens=5)
+            session._compaction_cfg = fold_cfg
+            session._compactor = Compactor(client, state.messages, fold_cfg)
+
+            async def collect():
+                return [ev async for ev in session._drive(thread)]
+
+            events = await asyncio.wait_for(collect(), timeout=10.0)  # deadlock ⇒ TimeoutError, not hang
+            kinds = [e.event for e in events]
+            assert kinds.count("message.start") == 1  # one re-used assistant slot
+            assert kinds.count("compaction") == 1  # exactly one forced fold
+            done = next(e for e in events if e.event == "done")
+            assert done.data["state"] == "completed"
+            # one summarizer acquire + one recovering re-stream, all on the single slot, no deadlock
+            assert seen == {"stream": 2, "complete": 1}
+            live = await state.messages.list(thread.id, include_compacted=False)
+            recovered = [m for m in live if m.role == "assistant" and m.text() == "recovered"]
+            assert len(recovered) == 1
 
         _run(go())
 

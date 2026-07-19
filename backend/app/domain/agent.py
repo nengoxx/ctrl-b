@@ -33,17 +33,20 @@ class ModelRef(BaseModel):
 
     mode: str | None = None  # "local" | "cloud" | None → InferenceCfg.default_mode
     model: str | None = None  # None → the endpoint's configured model id
-    #: Output-token budget (D42/A10). `None` → no cap (today's behaviour). Flows as first-class kwargs
-    #: into the chat call; the per-endpoint field NAME (`max_tokens` vs `max_completion_tokens`) is
-    #: chosen by `InferenceEndpointCfg.max_tokens_field` at the wire boundary (Wave 4).
-    max_tokens: int | None = None
+    #: Output-token budget (D42/A10). `None`/blank → no cap (today's behaviour, "inherit"). `ge=1`: a
+    #: 0 is never a meaningful budget (a 0-token cap would ask the backend for an empty reply), so it is
+    #: rejected at the boundary — use `None` to inherit, not 0. Flows as first-class kwargs into the chat
+    #: call; the per-endpoint field NAME (`max_tokens` vs `max_completion_tokens`) is chosen by
+    #: `InferenceEndpointCfg.max_tokens_field` at the wire boundary (Wave 4).
+    max_tokens: int | None = Field(default=None, ge=1)
     #: Reasoning-effort ladder (D42/A10 — the universal field convention). `None` → the backend default.
     #: Silent-safe: llama.cpp drops it (harmless), cloud takes it first-class; `"off"` additionally
     #: becomes llama.cpp `chat_template_kwargs: {enable_thinking: false}` at the wire (Wave 4).
     reasoning_effort: Literal["off", "minimal", "low", "medium", "high", "xhigh", "max"] | None = None
     #: Numeric reasoning budget where a backend can express it (e.g. OpenRouter `reasoning:{max_tokens}`);
-    #: advisory/no-op elsewhere (llama.cpp has no per-request reasoning budget). `None` → unset.
-    reasoning_tokens: int | None = None
+    #: advisory/no-op elsewhere (llama.cpp has no per-request reasoning budget). `None`/blank → unset.
+    #: `ge=1` for `max_tokens` symmetry — a 0-token reasoning budget is never meaningful; inherit via None.
+    reasoning_tokens: int | None = Field(default=None, ge=1)
 
 
 class CompactionCfg(BaseModel):
@@ -69,11 +72,16 @@ class CompactionCfg(BaseModel):
     threshold_tokens: int = 6000  # the NO-WINDOW fallback trigger only (absolute working-context size)
     #: Token floor kept verbatim by the two-floor `_split` (D42) — `cut = min(message-cut, token-cut)`
     #: (pi's `keepRecentTokens` precedent). Declared now; consumed by the Wave 3 summarizer split.
-    keep_recent_tokens: int = 4096
+    #: `ge=0`: 0 turns the TOKEN floor OFF (nothing is kept on token grounds) — the message floor
+    #: (`keep_last_messages`, snapped to a turn boundary) still guards the recent context, so 0 is a
+    #: valid "message-floor-only" setting, not a footgun. A negative would be nonsensical → rejected.
+    keep_recent_tokens: int = Field(default=4096, ge=0)
     #: Tool-output trim floor (D42 Tier 1) — an output shorter than this many tokens is left alone
     #: (internally chars ≈ `CHARS_PER_TOKEN`×, the shared heuristic). Token-named per the field
-    #: convention (Codex `tool_output_token_limit` / Claude `MAX_MCP_OUTPUT_TOKENS`).
-    clear_output_min_tokens: int = 500
+    #: convention (Codex `tool_output_token_limit` / Claude `MAX_MCP_OUTPUT_TOKENS`). `ge=0`: 0 means
+    #: clear EVERY eligible tool output (aggressive but valid — no output is below the floor); negative
+    #: is meaningless → rejected at the boundary.
+    clear_output_min_tokens: int = Field(default=500, ge=0)
     #: How many most-recent steps the Tier-1 trim never touches (`ge=1` IS the most-recent-step
     #: safety — a 0 would let the just-run tool's output be cleared out from under the model).
     clear_keep_steps: int = Field(default=2, ge=1)

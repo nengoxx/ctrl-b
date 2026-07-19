@@ -92,7 +92,12 @@ afterEach(() => {
 // The agent-globals PUT payload shape (the two branches this suite asserts on).
 type SavedAgent = {
   agent: {
-    compaction: { enabled: boolean; threshold_frac: number };
+    compaction: {
+      enabled: boolean;
+      threshold_frac: number;
+      keep_recent_tokens: number;
+      clear_output_min_tokens: number;
+    };
     defaults: {
       model: {
         max_tokens: number | null;
@@ -145,6 +150,25 @@ describe("AgentsEditor · global compaction block (D42)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save agent settings" }));
     expect(lastAgentPayload().agent.compaction.threshold_frac).toBe(0.5);
   });
+
+  // P3 (D42 post-build audit): the token knobs are `ge=0` (0 is a valid degenerate setting), but a
+  // garbage keystroke must never WRITE 0 — `numOrKeep` leaves the last valid value untouched.
+  it("garbage input on a token knob keeps the last valid value (never writes 0)", () => {
+    renderEditor();
+    const keep = screen.getByLabelText("Keep recent (tokens)");
+    fireEvent.change(keep, { target: { value: "2000" } }); // valid write
+    fireEvent.change(keep, { target: { value: "20x" } }); // junk → keep 2000, not 0/2000-collapse
+    expect(value("Keep recent (tokens)")).toBe("2000");
+
+    const trim = screen.getByLabelText("Tool output trim floor (tokens)");
+    fireEvent.change(trim, { target: { value: "" } }); // cleared → keep the original, not 0
+    expect(value("Tool output trim floor (tokens)")).toBe("500");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save agent settings" }));
+    const c = lastAgentPayload().agent.compaction;
+    expect(c.keep_recent_tokens).toBe(2000); // last valid, not zeroed
+    expect(c.clear_output_min_tokens).toBe(500); // untouched, not zeroed
+  });
 });
 
 describe("AgentsEditor · per-agent ModelRef call config (D42 A10)", () => {
@@ -194,5 +218,22 @@ describe("AgentsEditor · per-agent ModelRef call config (D42 A10)", () => {
     const model = lastAgentPayload().agent.defaults.model;
     expect(model.max_tokens).toBeNull();
     expect(model.reasoning_effort).toBeNull();
+  });
+
+  // P1 (D42 post-build audit): the budget fields are `ge=1` — a "0" or non-numeric entry is never a
+  // meaningful budget, so `numOrNull` stores null (inherit), NEVER 0 (the old `Number(v) || 0` footgun).
+  it("garbage or '0' input on the budget fields round-trips as null (never 0)", () => {
+    openDefaultRow();
+    const maxT = screen.getByLabelText("Max output tokens");
+    fireEvent.change(maxT, { target: { value: "2048" } }); // valid first (makes the row dirty)
+    fireEvent.change(maxT, { target: { value: "0" } }); // 0 is not a budget → null
+    const reasT = screen.getByLabelText("Reasoning tokens");
+    fireEvent.change(reasT, { target: { value: "700" } });
+    fireEvent.change(reasT, { target: { value: "abc" } }); // junk → null
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+
+    const model = lastAgentPayload().agent.defaults.model;
+    expect(model.max_tokens).toBeNull();
+    expect(model.reasoning_tokens).toBeNull();
   });
 });

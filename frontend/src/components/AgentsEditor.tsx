@@ -37,6 +37,22 @@ import { pushToast } from "../store/toast";
 
 const SLUG = /^[a-z0-9][a-z0-9_-]*$/;
 
+// D42 post-build audit — garbage-safe numeric coercion. `Number("")` is 0 and `Number("abc")` is
+// NaN, and the old `… === "" ? null : Number(v) || 0` collapsed BOTH a cleared field and typed junk
+// to 0 — a zero-token budget footgun on the ModelRef fields (0 is never a meaningful budget; the
+// schema now `ge=1`-rejects it). `numOrNull` maps blank / non-numeric / ≤0 to `null` (inherit) for
+// the nullable budget fields. `numOrKeep` is for the non-nullable compaction knobs (`ge=0`, so 0 is
+// a *valid* setting): a valid non-negative integer is written; anything else (blank/junk) leaves the
+// last valid value untouched (the controlled input reverts to it) rather than writing a spurious 0.
+function numOrNull(raw: string): number | null {
+  const n = Number(raw);
+  return raw.trim() !== "" && Number.isFinite(n) && n > 0 ? n : null;
+}
+function numOrKeep(raw: string, current: number): number {
+  const n = Number(raw);
+  return raw.trim() !== "" && Number.isInteger(n) && n >= 0 ? n : current;
+}
+
 // `modes` (8b, D22) mirrors the Tools-tab tri-state onto the per-agent selection grid: a globally
 // **disabled** tool shows locked-off (it can't be granted), a **core** tool locked-on (it's always
 // available regardless of the allowlist). Only **enabled** tools are interactive. The skills grid
@@ -206,9 +222,7 @@ function AgentFieldsForm(props: {
         inputMode="numeric"
         value={a.model.max_tokens == null ? "" : String(a.model.max_tokens)}
         placeholder="(inherit — uncapped)"
-        onChange={(e) =>
-          setModel({ max_tokens: e.target.value === "" ? null : Number(e.target.value) || 0 })
-        }
+        onChange={(e) => setModel({ max_tokens: numOrNull(e.target.value) })}
       />
 
       <label>Reasoning effort</label>
@@ -233,10 +247,8 @@ function AgentFieldsForm(props: {
         aria-label="Reasoning tokens"
         inputMode="numeric"
         value={a.model.reasoning_tokens == null ? "" : String(a.model.reasoning_tokens)}
-        placeholder="cloud only — numeric budget where the backend supports it"
-        onChange={(e) =>
-          setModel({ reasoning_tokens: e.target.value === "" ? null : Number(e.target.value) || 0 })
-        }
+        placeholder="advisory — reserved; not yet sent to any backend"
+        onChange={(e) => setModel({ reasoning_tokens: numOrNull(e.target.value) })}
       />
 
       <label>Privilege</label>
@@ -765,7 +777,11 @@ export function AgentsEditor(props: {
             aria-label="Keep recent (tokens)"
             inputMode="numeric"
             value={String(cfg.compaction.keep_recent_tokens)}
-            onChange={(e) => setCompaction({ keep_recent_tokens: Number(e.target.value) || 0 })}
+            onChange={(e) =>
+              setCompaction({
+                keep_recent_tokens: numOrKeep(e.target.value, cfg.compaction.keep_recent_tokens),
+              })
+            }
           />
         </div>
         <div className="agent-lim-cell">
@@ -775,7 +791,12 @@ export function AgentsEditor(props: {
             inputMode="numeric"
             value={String(cfg.compaction.clear_output_min_tokens)}
             onChange={(e) =>
-              setCompaction({ clear_output_min_tokens: Number(e.target.value) || 0 })
+              setCompaction({
+                clear_output_min_tokens: numOrKeep(
+                  e.target.value,
+                  cfg.compaction.clear_output_min_tokens,
+                ),
+              })
             }
           />
         </div>
