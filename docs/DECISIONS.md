@@ -2248,7 +2248,8 @@ Claude Code's/opencode's silent loss are the footguns) + a 2-lens adversarial de
   **Transactional: peek → persist all messages in ONE `Database.transaction()` → commit() clears
   AFTER the txn** — a failed persist leaves the queue intact; un-persisted text has exactly ONE
   home at all times. Exec entries: gate re-check then the ONE existing exec pair implementation.
-  FIFO across kinds. Wire: **`steer.applied {entryId, messageId, kind}`** per entry; **the
+  FIFO across kinds. Wire: **`steer.applied {entryId, messageId, kind, text?}`** (`text?` = as-built,
+  message kind only) per entry; **the
   accumulator FOLDS steered user messages** (durable content must survive snapshot re-attach —
   the notices live-only stance does NOT apply; turns.py's only change, additive fold + test).
   Not re-triggered: skills / reflection / static head (tail-append, cache-safe);

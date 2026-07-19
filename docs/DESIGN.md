@@ -366,12 +366,40 @@ Loop responsibilities, in order, per iteration:
 7. **Loop** until the model returns text-only (done), `max_iterations` hit (emit a capped notice),
    or a `question`/`confirm` suspends the turn.
 
+> **As-built loop (Slices 3–5, D39/D40/D41).** The sketch above is the shape; the shipped `_drive`
+> iteration runs, in order:
+> 1. **Drain A** — apply any steers queued mid-turn (§10) at the loop **top**, *before* the compaction
+>    check, so compaction always sees them as ordinary history. Message steers persist as `user`
+>    messages (one `Database.transaction()` per contiguous run, **persist-before-clear**: the queue
+>    clears only after the txn commits); `!exec` steers re-check `shell.user_exec_enabled` **live**
+>    (fail-closed, commit-before-run) then run the shared `run_user_exec`. Each yields `steer.applied`.
+> 2. **Compaction** — `should_compact` gates a `// compacting…` `notice` breadcrumb (emitted **only**
+>    when compaction will actually summarize), then `compact` runs and may emit `compaction`.
+> 3. **Assemble + call model** — the cached static head + non-compacted history stream through the
+>    per-endpoint **request gate** (`InferenceEndpointCfg.max_concurrent_requests`, held for the whole
+>    streamed response, released before any tool runs — no hold-and-wait).
+> 4. **`_run_calls` is an ASYNC GENERATOR** (not an end-of-step buffer). `_classify_batch` splits the
+>    batch into a **parallel read-only prefix** — the maximal *leading* run of builtin-authored
+>    `read_only`, non-`suspending`, `decide()==ALLOW` calls (≥2, else the batch stays serial) — and a
+>    **verbatim serial tail**. The prefix dispatches under `asyncio.Semaphore(AgentDef.
+>    max_parallel_tools)` with a **single consumer** doing all bookkeeping; the tail keeps today's
+>    confirm/question **suspension** semantics unchanged. **Per-call persistence:** each resolved call
+>    commits its tool-row upsert + the assistant state-flip in ONE transaction and only THEN yields its
+>    `tool.result` (**persist-before-emit** — a subscriber never holds a row that later vanished). Both
+>    the per-call persists and the `finally` **backstop** run through the one `_persist_shielded`
+>    dual-shield helper (defeats a raw `Task.cancel()` and anyio scope-cancel; swallow-only-while-
+>    unwinding).
+> 5. **Loop** until text-only (`done(completed)`), a suspend (`done(suspended)`), or the stall/iteration
+>    guards force a tool-less `_finalize`.
+
 ### 5.3 Suspension & resumption (the nuance that makes it robust)
 
 A turn can **suspend** (awaiting confirm or an answer). The session state persists in the DB, so:
-- ▹ *Target (ACA Slice 3/5):* the SSE stream can drop and **reconnect**, replaying from the last
-  event id. *Today:* no event ids are emitted and a dropped stream cancels the in-flight step
-  (ACA-1); persisted state re-reads via `GET /api/threads/{id}/messages`.
+- **Shipped (ACA Slice 3, D39):** the turn is a server-owned task, so the SSE stream can drop and
+  **reconnect** via `GET /api/agent/turns/{id}/stream`, replaying from the last `turn_id:seq` event
+  id (tail-replay or a `turn.sync` snapshot). A dropped stream detaches a *subscriber* — the loop and
+  its remaining steps still run + persist; persisted state also re-reads via
+  `GET /api/threads/{id}/messages`.
 - The user can navigate away / close the PWA; the pending state lives in the thread.
 - Resumption is a normal API call (`POST /threads/{id}/resume` with the confirm-token or the
   answer) that re-enters `run_turn` from the suspended point.
@@ -424,7 +452,7 @@ class Orchestrator(Protocol):
   aren't swamped. The global cap holds **across the whole tree**, not per level.
 - **Structured concurrency.** Children run inside one `asyncio.TaskGroup()` (stdlib structured
   concurrency; the doc originally said anyio — the shipped code is asyncio); the group is the
-  unit of lifetime — if the parent turn is cancelled (client disconnect; `/cancel` ▹ Slice 3) or one child
+  unit of lifetime — if the parent turn is cancelled (client disconnect; `/cancel`, shipped Slice 3) or one child
   raises a fatal error, the group **cancels all siblings** and unwinds cleanly (no orphans).
 - **Isolation + partial results.** Each child gets its **own ephemeral thread id + working set**;
   a child failing yields a `SubResult(state=ERROR)` rather than killing siblings (the group only
@@ -568,6 +596,11 @@ class Settings(BaseSettings):
 > `open_terminal`, `shell`, `tailscale`, `openapi_servers`, `tool_overrides` (D22), `computers`.
 > Path resolution is rooted at **`$CTRLB_HOME`** (D15 #2). The hybrid secrets model below is
 > accurate and shipped (7a).
+> **New tunables (Slices 4/5):** `AgentDef.max_parallel_tools` (default 4; `1` = off — the D40
+> parallel read-only tool prefix) · `InferenceEndpointCfg.max_concurrent_requests` (`None` =
+> unlimited — the per-endpoint request gate for a non-queuing llama.cpp, D40 rider) ·
+> `TurnsCfg.steer_queue_max` (default 8 — per-thread steer-queue depth, D41) · `ToolSpec.suspending`
+> (marks a confirm/question tool prefix-**ineligible**, D40).
 - **Secrets model = hybrid (decided Phase 0).** `config.yaml` is the **single UI-managed source
   of truth, including nested secrets** (per-host SSH creds, per-endpoint API keys, per-MCP-server
   env/headers) — because they're structured/repeating and the Conf tab edits + round-trips them,
@@ -592,9 +625,22 @@ class Settings(BaseSettings):
   host can't stall the fleet. Results cached briefly (`poll_seconds`) so N clients share one sweep.
 - **Blocking libs** (paramiko, wakeonlan, `subprocess`): `run_in_executor` / `anyio.to_thread`.
   `run_shell` uses `asyncio.create_subprocess_exec` with a kill-on-timeout.
-- **Per-thread serialization** ▹ *target (nothing built today — ACA-2; Slice 2 ships an interim
-  409 turn-marker, Slice 5 the steer queue)*: a second message to a thread mid-turn is **queued**
-  behind the active turn — no interleaved tool calls.
+- **Per-thread serialization (shipped).** One turn owns a thread at a time via a per-thread turn
+  marker (D38); a second chat message or `!exec` to a busy chat/resume thread **steers** — it is
+  enqueued (**202**, capped by `TurnsCfg.steer_queue_max`) instead of the old 409 (D41/Slice 5) and
+  drained at the running turn's loop top (Drain A) or, on a `completed` turn end, spawns the next turn
+  (Drain B). Sync kinds (plan/apply/compact) and a queue over the cap still get the 409. No tool calls
+  ever interleave.
+- **Parallel read-only tool prefix (shipped, D40/Slice 4).** Within one tool batch, a leading run of
+  builtin-authored `read_only`, non-`suspending`, ALLOW-gated calls dispatches concurrently under
+  `asyncio.Semaphore(AgentDef.max_parallel_tools)` (default 4; `1` = off); the rest run serially. No
+  **mutating** call ever runs before a prior call completes — invariant across every privilege incl.
+  `FULL`. MCP/OpenAPI tools are prefix-ineligible (derived, advisory annotations).
+- **Per-endpoint inference request gate (shipped, D40 rider).** `InferenceEndpointCfg.
+  max_concurrent_requests` (`None` = unlimited) caps in-flight completions to a backend that doesn't
+  queue (the owner's llama.cpp has 1–2 slots); a per-`(base_url, limit)` semaphore at the inference
+  chokepoint holds the permit for the whole streamed response and releases it **before** any tool /
+  subagent runs (no hold-and-wait → no deadlock at limit 1).
 - **Subagent concurrency**: parent fans out children inside one `asyncio.TaskGroup` (structured
   concurrency) under a per-agent cap **and** a process-wide `global_subagent_limit` semaphore;
   children run on distinct ephemeral thread ids (so the parent's per-thread turn marker — ▹ Slice 2
@@ -602,10 +648,11 @@ class Settings(BaseSettings):
   limits hold tree-wide.
   Cancelling the parent cancels the whole subtree. (Full nuances in §5.5.)
 - **SQLite**: WAL + single write-lock (§8).
-- **Cancellation** ▹ *target (ACA Slice 3, D35 proposed)*: each turn/tool runs in an
-  `anyio.CancelScope`; client disconnect or a `POST /threads/{id}/cancel` cancels cleanly,
-  persisting a `cancelled` marker. *Today:* disconnect just cancels the SSE generator mid-step;
-  there is no cancel endpoint and no `cancelled` marker (ACA-1).
+- **Cancellation (shipped, ACA Slice 3, D39).** The turn task is cancellable via
+  `POST /api/agent/turns/{id}/cancel` (idempotent, single-fire latch); a client disconnect only
+  detaches a subscriber. A cancel reconciles the in-flight call to `cancelled` and persists a terminal
+  marker; a `Stop` additionally **harvests** the thread's steer queue back to the caller (D41), so it
+  can neither auto-run nor lose a queued steer.
 
 ---
 
@@ -634,8 +681,9 @@ event: text.delta         data: {messageId, delta}
 event: part.added         data: {messageId, part}              # a tool_call part → command bubble
 event: tool.permission    data: {callId, tool, args, risk, token, prompt}  # confirm bubble; single-use token
 event: tool.question      data: {callId, tool, question, args} # A2 `question` builtin → answer bubble
-event: tool.result        data: {callId, result}
-event: notice             data: {text}                         # breadcrumbs (e.g. D18 failover)
+event: tool.result        data: {callId, result}               # per-call; under the parallel prefix arrives in COMPLETION order (persistence keeps model order)
+event: steer.applied      data: {entryId, messageId, kind, text?}  # a mid-turn steer drained at the loop top (D41); text = message kind only, folded into turn.sync as steers[]
+event: notice             data: {text}                         # breadcrumbs: D18 failover · "// compacting…" (ACA-11)
 event: compaction         data: {removed, summaryId, truncated}
 event: message.end        data: {messageId}
 event: error              data: {message, retryable}
@@ -646,10 +694,15 @@ Plan updates have **no dedicated event** — they ride the `task_plan` tool's `t
 edits go through `POST /api/agent/plan`). This inventory mirrors `session.py`'s emitter docstring —
 keep the two in lockstep when adding events.
 
-▹ *Target (ACA Slice 3/5, D35 proposed):* every event carries a monotonic id (app-level
-`turn_id:seq` cursor) so reconnect **replays** missed events. *Today:* no `id:` field is emitted —
-a dropped chat stream is not replayable (ACA-1). `GET /api/events/stream` (fleet activity) is a
-separate feed off the EventBus.
+**Shipped (ACA Slice 3/5, D39/D41):** every frame carries a monotonic `id: turn_id:seq` cursor, so a
+reconnect **replays** missed events (tail-replay from the ring, or a `turn.sync` snapshot for a cold
+join). The durable-turn REST surface: `GET /api/agent/turns/{id}` (status probe — every branch
+carries the thread's `steer_queue`), `GET /api/agent/turns/{id}/stream` (re-attach),
+`POST /api/agent/turns/{id}/cancel` (idempotent Stop; the response carries the **harvested**
+`steer_queue`), and `DELETE /api/agent/turns/{id}/steer/{entry_id}` (unsend a still-queued steer →
+`{removed}`). Sending during a live chat/resume turn returns **202** `{queued, turn_id, entry_id,
+position, depth}` (both `POST /api/agent/chat` and `POST /api/exec`), not the old 409 (D41).
+`GET /api/events/stream` (fleet activity) is a separate feed off the EventBus.
 
 ---
 
@@ -710,8 +763,9 @@ privilege → gated calls hit notify-park/fallback → results to a thread + Eve
   tool error-result both normalized; `max_iterations` cap → graceful stop; **context overflow
   mid-turn** → compact then retry once; streaming-unsupported backend → buffered fallback; backend
   down → bounded retry then friendly error; **duplicate/parallel user messages** to one thread →
-  ▹ 409-guard then steer-queue (ACA Slices 2/5; unguarded today); client disconnect → completed
-  steps persist; ▹ full turn survival + replay is ACA Slice 3 (today the in-flight step cancels).
+  **202 steer-enqueue** then drained at the loop top / turn end (shipped, ACA Slices 2/5, D38/D41);
+  client disconnect → completed **and remaining** steps persist; **full turn survival + replay**
+  shipped (ACA Slice 3, D39).
 - **Confirm/question:** stale confirm (host/world changed since proposal) → re-validate at execute,
   re-confirm if drifted; confirm token single-use + TTL; headless + needs-input → notify-park or
   fallback, with a max wait then auto-skip.

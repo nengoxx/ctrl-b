@@ -36,8 +36,8 @@ design (D7) with a multi-theme engine on top (D28/D29/D31).
 | P5 | **Voice** | Push-to-talk dictation (STT proxy, 5-state mic), read-aloud TTS (per-bubble + auto-TTS, docked mini-player, blob cache), primary→fallback failover per service, capability-probed UI | ✅ |
 | P6 | **Config & ops** | Whole config editable in-app (masked secrets, comment-preserving writes, hot-apply), Tailscale Serve HTTPS toggle, live events feed + audit trail, guarded `!` shell escape hatch (opt-in), PWA install/update | ✅ |
 | P7 | **Theming** | Registry-driven multi-theme engine (vapor frozen-bespoke · minimal · cosmos), token-driven Kit scaffold, View-Transition switching, per-theme settings, cross-device appearance sync (LWW) | ✅ |
-| P8 | **Durable turns** | Server-owned turn lifecycle: disconnect-proof generation, reconnect replay/snapshot, explicit cancel + Stop button, mid-turn steering queue | ▹ ACA Slices 3/5 (D35) |
-| P9 | **Perf & routing** | Parallel read-only tool execution + per-call result streaming, compaction v2 (reserve-headroom, tool-result clearing), lead/worker model routing, persisted approvals | ▹ ACA Slices 4/6/7/8 |
+| P8 | **Durable turns** | Server-owned turn lifecycle: disconnect-proof generation, reconnect replay/snapshot, explicit cancel + Stop button, mid-turn steering queue | ✅ ACA Slices 3/5 (D39/D41) |
+| P9 | **Perf & routing** | Parallel read-only tool execution + per-call result streaming (Slice 4 ✅, D40); compaction v2 (reserve-headroom, tool-result clearing), lead/worker model routing, persisted approvals | Slice 4 ✅ · ▹ ACA 6/7/8 |
 | P10 | **Future** | Automations/schedules, notifications, wake word, idle shutdown, vector memory, privilege ladder UI | ◇ ROADMAP seams |
 
 ---
@@ -219,7 +219,7 @@ survive both. Registry rebuilds only **between** turns (▹ ACA-17 closes the au
 
 ## 5. Key flows
 
-### 5.1 Agent chat turn — stream · tool loop · confirm suspend/resume ✅ (▹ D35 deltas noted)
+### 5.1 Agent chat turn — stream · tool loop · confirm suspend/resume ✅ (durable turns + steering shipped, D39/D41)
 
 ```mermaid
 sequenceDiagram
@@ -244,15 +244,15 @@ sequenceDiagram
             S-->>U: message.end · done(completed)
         else tool calls
             S-->>U: part.added (per call) · message.end
-            loop calls in model order (▹ Slice 4: safe prefix in parallel, results streamed per call)
+            loop calls: read-only prefix in parallel (D40), serial tail; results streamed per call
                 S->>X: invoke(tool, args, privilege)
-                alt CONFIRM needed
+                alt CONFIRM needed (serial tail only)
                     X-->>S: needs_confirm + token
                     S-->>U: tool.permission {callId, token, risk} · done(suspended)
                     Note over U,S: turn ends; state durable (AWAITING_CONFIRM)
                 else executed / denied
                     X-->>S: ToolResult (Event recorded)
-                    S-->>U: tool.result (▹ today: batched end-of-step)
+                    S-->>U: tool.result (per call — persist-before-emit)
                 end
             end
             Note over S: loop guards: repeat cap · per-tool cap ·<br/>stall detector → forced tool-less finalize
@@ -262,21 +262,24 @@ sequenceDiagram
     A->>S: resume() — re-mint token (J3) · single-flight (J2) → finish step → loop continues
 ```
 
-▹ **D35 (Slice 3)** re-homes this generator into a server-owned **TurnRegistry** task with a
-monotonic-`seq` replay ring: disconnect detaches a subscriber instead of cancelling the turn;
+**Shipped (D39, Slice 3)** — this generator is re-homed into a server-owned **TurnRegistry** task
+with a monotonic-`seq` replay ring: disconnect detaches a subscriber instead of cancelling the turn;
 `GET /agent/turns/{thread}/stream` re-attaches (tail-replay or snapshot); `POST …/cancel` is the
-explicit, idempotent stop; ▹ Slice 5 drains a steering queue at each step boundary.
+explicit, idempotent stop. **Shipped (D41, Slice 5)** — sending during a live chat/resume turn
+returns **202** and enqueues a steer (a message *or* an `!exec`); the queue drains at the `_drive`
+loop top (**Drain A**) or, on a `completed` turn end, spawns the next turn (**Drain B**); a `Stop`
+**harvests** the queue back to the composer.
 
 ```mermaid
 flowchart LR
-    subgraph target["▹ Durable-turn architecture (D35 target)"]
-        chat["POST /agent/chat"] -->|spawn| task["Turn task (asyncio)\nruns _drive to completion"]
+    subgraph target["Durable-turn architecture (D39/D41, shipped)"]
+        chat["POST /agent/chat · /exec"] -->|spawn| task["Turn task (asyncio)\nruns _drive to completion"]
         task -->|"id-stamped events (turn:seq)"| ring["Replay ring + seq\n+ terminal_status"]
         ring --> sub1["SSE subscriber A (phone)"]
         ring --> sub2["SSE subscriber B (desktop)"]
-        stop["POST /turns/{t}/cancel"] -->|"cancel + between-step flag"| task
-        steer["queued user msgs (Slice 5)"] -->|"drained at step boundary"| task
-        task -->|per-step persist| db[("SQLite — durable floor")]
+        stop["POST /turns/{t}/cancel (harvests queue)"] -->|"cancel + between-step flag"| task
+        steer["202 steer queue (msg · !exec)"] -->|"Drain A: loop top · Drain B: turn end"| task
+        task -->|per-call persist| db[("SQLite — durable floor")]
     end
 ```
 
@@ -298,7 +301,7 @@ stateDiagram-v2
     note right of awaiting_confirm: durable in SQLite —\nsurvives reload/restart;\nabandoned → synthesized\n"skipped" in next context
 ```
 
-▹ D35 adds `cancelled` (in-flight calls marked + synthesized like abandoned confirms).
+D39 (shipped) adds `cancelled` (in-flight calls marked on Stop + synthesized like abandoned confirms).
 
 ### 5.3 Settings hot-apply ✅
 
@@ -408,8 +411,8 @@ $CTRLB_HOME/
 |---|---|---|
 | `server` | bind/port/poll cadence/debug | poll live; host/port/debug → restart-flagged |
 | `computers{}` (+nested `services{}`) | the fleet: ip/mac/ssh/os/services cmd-per-OS | live (projected per call) |
-| `inference` | local/cloud endpoints, default mode, failover chain, prompts | rebuild-on-change |
-| `agent` | defaults (AgentDef base), compaction, skills, subagent caps, streaming mode, auto-route | live |
+| `inference` | local/cloud endpoints, default mode, failover chain, prompts, per-endpoint request gate (`max_concurrent_requests`, D40) | rebuild-on-change |
+| `agent` | defaults (AgentDef base incl. `max_parallel_tools`, D40), compaction, skills, subagent caps, streaming mode, auto-route, durable-turn + steer-queue knobs (`turns.*` incl. `steer_queue_max`, D41) | live |
 | `memory` | stores, caps, auto-write, nudges, reflection, git backup | live |
 | `voice` / `searxng` / `embeddings` / `open_terminal` | endpoints + per-op risk | rebuild-on-change |
 | `shell` / `tailscale` | the two guarded escape hatches | live |
@@ -464,12 +467,13 @@ events ignored (forward-compatible).
 | `part.added` | tool_call part | renders command bubble |
 | `tool.permission` | callId, tool, args, risk, **token**, prompt | confirm bubble; suspends |
 | `tool.question` | callId, question | answer bubble; suspends |
-| `tool.result` | callId, ToolResult | resolves bubble (▹ per-call streaming) |
+| `tool.result` | callId, ToolResult | per-call, persist-before-emit; completion order under the parallel prefix (D40) |
+| `steer.applied` | entryId, messageId, kind, text? | mid-turn steer drained at the loop top (D41); text = message kind only |
 | `compaction` | removed, summaryId, truncated | breadcrumb |
-| `notice` | text | failover degradation (D18) |
+| `notice` | text | failover (D18) · "// compacting…" (ACA-11) |
 | `error` | message, retryable | normalized; feeds risk-aware retry (I4) |
-| `done` | state: completed·suspended·capped·error | terminal (▹ +cancelled) |
-| ▹ `id:` field | `<turnId>:<seq>` | D35 replay cursor |
+| `done` | state: completed·suspended·capped·error | terminal (+`cancelled` on Stop, D39) |
+| `id:` field | `<turnId>:<seq>` | replay cursor (D39, shipped) |
 | ▹ `retry` | attempt, category, delay | Slice 7 wire-visible retries |
 
 Dual-mode delivery (D17): same generator collected into one JSON payload when
@@ -482,12 +486,12 @@ activity, EventBus, 15 s keepalive) with client auto-reconnect + reconcile.
 |---|---|
 | hosts / services | list + status + CRUD (comment-preserving YAML edits) + wake/shutdown/reboot/start/stop/restart via actions |
 | actions / tools | catalog (specs + schemas + retry_safe) · `POST /actions/invoke` (UI two-step confirm) |
-| agent | threads CRUD · `chat` · `resume` · `compact` · `plan` · `apply` · `exec` (!) · skills CRUD · agents CRUD (+SOUL, memory stores) · default-prompt |
+| agent | threads CRUD · `chat` · `resume` · `compact` · `plan` · `apply` · `exec` (!) · skills CRUD · agents CRUD (+SOUL, memory stores) · default-prompt (`chat`/`exec` → **202 steer-enqueue** when the thread runs a chat/resume turn, D41) |
 | settings | `GET/PUT /settings` (masked/hot-apply) · `GET /appearance` |
 | integrations | MCP/OpenAPI CRUD · `rediscover` (409 while turn active) · status |
 | voice | `status` · `stt` · `tts` |
 | events / access / health | audit list + SSE · Tailscale Serve control · health |
-| ▹ agent (D35) | `GET /agent/turns/{t}/stream` · `POST /agent/turns/{t}/cancel` |
+| agent turns (D39/D41) | `GET /agent/turns/{t}` (status + `steer_queue`) · `GET …/stream` (re-attach) · `POST …/cancel` (idempotent Stop; harvests `steer_queue`) · `DELETE …/steer/{entry_id}` (unsend a queued steer) |
 
 ## 9. Repository structure
 
