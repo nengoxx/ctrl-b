@@ -920,6 +920,38 @@ log). Design sketch (confirmed refinements in **bold**):
 > `AgentDef.max_parallel_tools` + the **llamacpp rider** `InferenceEndpointCfg.
 > max_concurrent_requests` (owner constraint: 1–2 non-queuing slots) · §7 debts C1-L5/C2-L6/
 > C2-L7 discharged here. As-built record lands on this heading post-build.
+>
+> **✅ BUILT 2026-07-19 — AS-BUILT RECORD (commits `44bdfdd..62ab584`, 10; ALL LOCAL pending the
+> owner's push OK).** Five Opus waves, each hand-reviewed + full-gate-green: **W1 `dbd016b`**
+> (ToolSpec.suspending + static AST pin · AgentDef.max_parallel_tools · the llamacpp
+> per-endpoint gate w/ stream-lifetime permit + deadlock pins · docstring/SECURITY_MODEL truth) ·
+> **W2 `aad3366`** (`_classify_batch`/`_BatchPlan`: overlay-then-commit single-pass classifier,
+> builtin-vs-derived discriminator = `category != "mcp"`, 16 property tests incl. shutdown@FULL
+> never admitted) · **W3 `63f0398`** (THE structural refactor: `_run_calls` → async generator +
+> `_BatchOutcome` holder; `_persist_shielded` extracted verbatim; per-call ONE-txn persistence,
+> create-once/update-after tool Message; 24 call sites + both C3-H1 pins adapted shape-only) ·
+> **W4 `dd86c33`** (the parallel head: retained tasks + `asyncio.wait(FIRST_COMPLETED)` single
+> consumer sharing `result_parts`/`_persist`/`tool_msg`; belts; cancel→gather→harvest finally;
+> the audit reference-equality pin [parallel guard state == all-serial run]; serial loop
+> byte-identical; `max_parallel_tools==1` skips the classifier) · **W5 `6427ded`** (gated
+> "// compacting…" notice via the shared `_over_threshold` predicate · `collect_turn.notices` ·
+> `result_sig` full-output hash · `test_subagents_safety` + skills-zero-context).
+> **Audit trail:** a MID-BUILD fresh-eyes audit after W3 (sound; its MED-1 prefix↔tail checklist
+> became W4's pre-flight) · a POST-BUILD fresh-eyes audit (NO HIGH/MED; 2 of 4 LOWs fixed
+> `df5ce7a` — duplicate-call_id batches go whole-serial + the belt fails closed on ANY
+> non-`_RESOLVED` state; LOW-2 belt-token-lingers-to-TTL and LOW-3 AST-indirection accepted with
+> reasons) · **the Codex tri-review (`gpt-5.6-sol` high, read-only): 1 HIGH the three same-family
+> rounds missed — aclose/cancel released the inference permit WITHOUT closing the backend stream
+> (an abandoned generation kept the real llama.cpp slot busy while the freed permit admitted a
+> second request) → `c961e8d` close-before-release via `_shielded_close` + 2 same-client
+> regressions — plus 4 LOW vacuous-passable test gaps → `62ab584` (barrier-exact subagent peaks ·
+> the harvest sweep genuinely exercised · incremental streaming pinned fast-lands-while-slow-
+> blocked · real notice timing).** Backend 447 tests / FE 40; tip gate 7/7 incl. e2e @ `62ab584`.
+> Notable as-built rulings:
+> completion-order `tool.result` events are the D40-sanctioned UI behavior (model order lives in
+> the persisted parts; FE folds by callId — verified no FE change needed) · the
+> `_invoke_error_result` mirror duplicates the serial inline shapes BY DESIGN (serial loop
+> byte-identical was the harder invariant; consolidation left to a future simplify pass).
 
 1. Per-call `tool.result` streaming + per-call persistence (`_run_calls` → async generator
    emitting through the Slice-3 log; the one structural refactor of this seam — replaces the

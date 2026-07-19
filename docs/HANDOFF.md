@@ -214,6 +214,28 @@
 > Backend 397 tests / FE 40; tip gate 7/7 incl. e2e @ `a9e5199`. ~16 commits LOCAL — awaiting the
 > owner's push OK.**
 >
+> **▶ SESSION 2026-07-19: ACA SLICE 4 (turn speed) ✅ EXECUTED end-to-end — THE FULL PIPELINE —
+> ALL LOCAL (`44bdfdd..62ab584`, 10 commits), awaiting the owner's push OK.** Design first:
+> 7-agent×3-topic source-level field research (a usage-limit cutoff mid-research was re-run as
+> per-repo gap-fills — nothing re-bought) + a code-truth pass (7 sketch contradictions pinned) →
+> a 3-lens adversarial DESIGN review (3H/9M resolved INTO the decision; headline: the prefix
+> narrowed to builtin-authored `read_only` ONLY — idempotent ≠ order-independent) → **D40 LOCKED**
+> (`44bdfdd`; owner go, incl. the **llamacpp rider** `InferenceEndpointCfg.max_concurrent_requests`
+> — the owner's backend has 1–2 NON-QUEUING slots; per-endpoint semaphore held for the whole
+> stream, never across tools). Then 5 Opus waves (schema/gate → classifier → the `_run_calls`
+> async-generator inversion + per-call ONE-txn persistence → the parallel executor head → notices/
+> debt riders), a MID-BUILD audit after wave 3 (its prefix↔tail checklist = wave 4's pre-flight),
+> a POST-BUILD fresh-eyes audit (NO HIGH/MED; 2 LOW fixes `df5ce7a`), and **the Codex tri-review:
+> 1 HIGH the same-family rounds missed (permit released WITHOUT closing the abandoned stream →
+> `c961e8d` close-before-release) + a 4-LOW regression batch (`62ab584`)**. Full record = the ACA
+> §5 Slice 4 as-built heading. **Turns now stream + persist each tool result AS IT RESOLVES and
+> run read-only batches in parallel** (multi-host ping ≈ max not Σ). **NEXT SESSION:** ① owner
+> push OK → `git push` (pre-push gate runs full) ② owner config: set `max_concurrent_requests: 1`
+> (or 2) on the LOCAL inference endpoint in `config.yaml` (None = unlimited = today's behavior)
+> ③ live poke via dev units when desired (`testing-parked-wing-it` stands — no formal eyeball)
+> ④ next slice = owner's pick: ACA Slice 5 (steering queue) / Slice 6 (compaction v2, design
+> review first) / ROADMAP D3 Slice 1 / 6c-1/6c-2 flags / vapor ladder.**
+>
 > *(The block below is the previous session's close-out checklist, kept for provenance — steps 1–3
 > are done as recorded above.)*
 > **▶ SESSION CLOSED 2026-07-17 early AM (owner to sleep) — NEXT SESSION, in order:**
