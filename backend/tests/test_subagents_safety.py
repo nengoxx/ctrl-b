@@ -142,13 +142,20 @@ def test_concurrency_bounded_by_per_agent_and_global_sems() -> None:
     from app.domain.enums import RunState
     from app.services.agent.subagents import ParallelOrchestrator, SubResult
 
-    async def peak_in_flight(per_agent: int, global_n: int | None, n_children: int) -> int:
+    async def peak_in_flight(per_agent: int, global_n: int | None, n_children: int, expected: int) -> int:
+        """Run `n_children` fake children and return the observed peak concurrency. A `Barrier(expected)`
+        inside each child makes concurrency a REQUIREMENT, not just a ceiling: a child cannot return until
+        `expected` of them are simultaneously in flight, so an execution that accidentally became SERIAL
+        (or whose binding cap regressed below `expected`) DEADLOCKS at the barrier — caught by the outer
+        `wait_for` as a TimeoutError instead of silently passing at peak 1. The binding cap == `expected`,
+        so the shared semaphore keeps the peak from EXCEEDING it → the peak is exactly `expected`."""
         live = {"cur": 0, "max": 0}
+        barrier = asyncio.Barrier(expected)
 
         async def fake_run_subagent(deps, cdef, task, *, index, depth, timeout_s):  # noqa: ANN001
             live["cur"] += 1
             live["max"] = max(live["max"], live["cur"])
-            await asyncio.sleep(0.02)  # hold the slot so overlap is observable
+            await barrier.wait()  # blocks until `expected` children are concurrently here — or deadlocks
             live["cur"] -= 1
             return SubResult(index=index, agent="x", state=RunState.OK, summary="ok")
 
@@ -158,16 +165,18 @@ def test_concurrency_bounded_by_per_agent_and_global_sems() -> None:
             gsem = asyncio.Semaphore(global_n) if global_n is not None else None
             orch = ParallelOrchestrator(per_agent=per_agent, global_sem=gsem, child_timeout_s=5)
             children = [(object(), f"t{i}") for i in range(n_children)]
-            results = await orch.run_many(None, children, depth=1)
+            # wait_for turns a serial-regression deadlock at the barrier into a clean test failure.
+            results = await asyncio.wait_for(orch.run_many(None, children, depth=1), timeout=5)
         finally:
             sub.run_subagent = orig
         assert len(results) == n_children  # every child produced a result
         return live["max"]
 
-    # per-agent cap 2, global 5, 6 children → the per-agent cap binds (never > 2 in flight).
-    assert asyncio.run(peak_in_flight(2, 5, 6)) <= 2
-    # per-agent 10 (loose), global 3, 6 children → the process-wide global cap binds at 3.
-    assert asyncio.run(peak_in_flight(10, 3, 6)) <= 3
+    # per-agent cap 2, global 5, 6 children → the per-agent cap binds: EXACTLY 2 must be in flight at once
+    # (the barrier(2) proves ≥2 are concurrent; the semaphore proves ≤2) — a serial regression deadlocks.
+    assert asyncio.run(peak_in_flight(2, 5, 6, expected=2)) == 2
+    # per-agent 10 (loose), global 3, 6 children → the process-wide global cap binds: EXACTLY 3 concurrent.
+    assert asyncio.run(peak_in_flight(10, 3, 6, expected=3)) == 3
 
 
 # ── (d) subagent_child_timeout_s cancels a hung child ────────────────────────────────────────────

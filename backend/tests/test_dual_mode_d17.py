@@ -292,6 +292,92 @@ def test_setting_on_forces_stream_even_when_client_buffers() -> None:
             assert r.headers["content-type"].startswith("text/event-stream")  # overridden → stream
 
 
+# ── 5: the REAL ACA-11 notice timing at the _drive level (not just synthetic notices → collect_turn) ──
+
+
+def _real_drive_session(c):
+    """A real `AgentSession` whose `stream_chat` replays a single text-only turn (no model, no tools →
+    the loop runs one iteration and completes). Returns (session, thread). The caller stubs the
+    compactor to drive the ACA-11 `should_compact`/`compact` branch."""
+    from app.adapters.inference import ChatDelta
+    from app.domain.conversation import Thread
+    from app.services.agent.session import AgentSession
+
+    s = c.app.state
+    agent = s.settings.resolve_agent(None)
+    session = AgentSession(s.threads, s.messages, s.inference, s.settings, s.actions, agent, interactive=True)
+    thread = _run(s.threads.create(Thread()))
+
+    async def fake_stream(messages, **kw):
+        yield ChatDelta(text="done")
+
+    session._inference.stream_chat = fake_stream
+    return session, thread
+
+
+def test_drive_emits_compacting_notice_before_compact_runs() -> None:
+    """ACA-11 (§7 seam, `_drive` ~778): the "// compacting…" breadcrumb is yielded BEFORE the (slow)
+    compaction call runs — so a buffered/streaming consumer sees the stall immediately. `compact` is
+    gated: the notice must arrive with the gate STILL UNSET. Reorder the notice after `compact()` (or
+    drop the `should_compact` guard) and the first `__anext__` blocks on the gate → `wait_for` fails."""
+    import asyncio
+
+    with _env_cleanup():
+        with _client() as c:
+            session, thread = _real_drive_session(c)
+            gate = asyncio.Event()
+
+            async def _should(_thread):
+                return True
+
+            async def _compact(_thread):
+                await gate.wait()  # a slow, multi-second compaction stand-in
+                return None
+
+            session._compactor.should_compact = _should
+            session._compactor.compact = _compact
+
+            async def scenario():
+                gen = session.run_turn(thread, "hello")
+                first = await asyncio.wait_for(gen.__anext__(), timeout=2)
+                assert first.event == "notice"
+                assert "compacting" in first.data["text"]
+                assert not gate.is_set()  # the notice preceded compact() actually running
+                gate.set()
+                rest = [ev async for ev in gen]
+                return first, rest
+
+            _first, rest = _run(scenario())
+            # the turn still completes normally after compaction releases; no SECOND notice.
+            assert [e.event for e in rest].count("notice") == 0
+            assert any(e.event == "done" and e.data["state"] == "completed" for e in rest)
+
+
+def test_drive_no_notice_when_should_compact_false() -> None:
+    """The symmetric pin: `should_compact` False → NO `notice` event anywhere in the turn (the
+    breadcrumb is gated on the real decision, never emitted on a no-op iteration)."""
+    with _env_cleanup():
+        with _client() as c:
+            session, thread = _real_drive_session(c)
+
+            async def _should(_thread):
+                return False
+
+            async def _compact(_thread):
+                return None  # no-op: nothing to fold
+
+            session._compactor.should_compact = _should
+            session._compactor.compact = _compact
+
+            events = _run(_collect_turn_events(session.run_turn(thread, "hello")))
+            assert not any(e.event == "notice" for e in events)
+            assert any(e.event == "done" and e.data["state"] == "completed" for e in events)
+
+
+async def _collect_turn_events(gen):
+    return [ev async for ev in gen]
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

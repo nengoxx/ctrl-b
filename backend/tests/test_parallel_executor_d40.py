@@ -433,6 +433,110 @@ def test_made_progress_belt_vs_normal() -> None:
             reg.remove("_belt_np_d40")
 
 
+# ── incremental streaming: a fast call's result + row land WHILE a sibling is still gated ─────────
+def test_prefix_streams_incrementally_fast_lands_while_slow_still_blocked() -> None:
+    """Pins per-call INCREMENTAL streaming (not await-all-then-emit-all — a regression the wall-clock
+    test would NOT catch). Two prefix calls: `a` FAST, `b` blocked on an unset gate. Driving the
+    generator by hand, the FIRST `__anext__` MUST yield `a`'s `tool.result` AND commit `a`'s durable
+    row while `b` is still blocked. Were the executor to gather all tasks before emitting, that first
+    `__anext__` would block on `b`'s gate → the `wait_for` fires and the test fails."""
+    from app.domain.enums import RunState
+    from app.services.agent.session import _BatchOutcome
+
+    with _workspace(), _client() as c:
+        specs = [
+            {"tool": "ping_host", "args": {"host_id": "a"}},  # fast
+            {"tool": "ping_host", "args": {"host_id": "b"}},  # gated
+        ]
+        session, thread, assistant, cids = _session(c, specs, max_parallel=4)
+        cid_a, cid_b = cids
+        gate = asyncio.Event()  # starts UNSET → call b cannot resolve until we release it
+
+        async def fake_invoke(tool, args, **kw):
+            if args["host_id"] == "b":
+                await gate.wait()  # blocks the slow call
+            return _ok(tool, args)
+
+        session._actions.invoke = fake_invoke
+
+        async def scenario():
+            outcome = _BatchOutcome()
+            gen = session._run_calls(thread, assistant, {}, _guard(), outcome=outcome)
+            # If streaming regressed to await-all, this blocks on b's gate → wait_for raises.
+            first = await asyncio.wait_for(gen.__anext__(), timeout=2)
+            assert first.event == "tool.result"
+            assert first.data["callId"] == cid_a  # the FAST call streamed first, mid-batch
+            assert not gate.is_set()  # …and b is provably still blocked (nothing released it)
+
+            # a's durable row EXISTS now (persist-before-emit), while b is still PENDING and unpersisted.
+            msgs = await c.app.state.messages.list(thread.id)
+            trows = [m for m in msgs if m.role == "tool"]
+            assert len(trows) == 1
+            assert [r.call_id for r in trows[0].tool_results()] == [cid_a]
+            assert trows[0].tool_results()[0].result.state == RunState.OK
+            a = next(m for m in msgs if m.role == "assistant")
+            st = {cp.call_id: cp.state for cp in a.tool_calls()}
+            assert st[cid_a] == RunState.OK and st[cid_b] == RunState.PENDING
+
+            gate.set()  # release the slow call and drain the rest
+            rest = [ev async for ev in gen]
+            return first, rest
+
+        _first, rest = run_async(scenario())
+        assert cid_b in {e.data["callId"] for e in rest if e.event == "tool.result"}
+        rows = _tool_rows(c, thread)
+        assert len(rows) == 1
+        by_id = {r.call_id: r.result.state for r in rows[0].tool_results()}
+        assert by_id == {cid_a: RunState.OK, cid_b: RunState.OK}  # both durable + resolved after drain
+
+
+# ── harvest: a completed-but-UNCONSUMED prefix task is persisted on early generator close ─────────
+def test_harvest_completed_but_unconsumed_prefix_task_persists() -> None:
+    """Exercises the head `finally`'s HARVEST sweep (the `.done()`-and-unconsumed branch) — untouched
+    by the cancel test (there the pending calls are cancelled, never completed-but-unconsumed). Both
+    prefix fakes complete together (a `Barrier(2)`), so when the consumer yields the FIRST result the
+    SECOND task is already DONE but not yet consumed. Closing the generator right after that first
+    `__anext__` must still HARVEST + persist the second result. Drop the harvest sweep and the second
+    part never lands → this fails (row has one part, not two)."""
+    from app.domain.enums import RunState
+    from app.services.agent.session import _BatchOutcome
+
+    with _workspace(), _client() as c:
+        specs = [
+            {"tool": "ping_host", "args": {"host_id": "a"}},
+            {"tool": "ping_host", "args": {"host_id": "b"}},
+        ]
+        session, thread, assistant, cids = _session(c, specs, max_parallel=4)
+        cid_a, cid_b = cids
+        barrier = asyncio.Barrier(2)  # neither fake returns until BOTH are in flight → both done together
+
+        async def fake_invoke(tool, args, **kw):
+            await barrier.wait()
+            return _ok(tool, args)
+
+        session._actions.invoke = fake_invoke
+
+        async def scenario():
+            outcome = _BatchOutcome()
+            gen = session._run_calls(thread, assistant, {}, _guard(), outcome=outcome)
+            first = await gen.__anext__()  # consumes ONE of the two already-completed tasks
+            assert first.event == "tool.result"
+            await gen.aclose()  # GeneratorExit → head finally must harvest the unconsumed twin
+            return first
+
+        first = run_async(scenario())
+        consumed = first.data["callId"]
+        other = cid_b if consumed == cid_a else cid_a
+
+        # BOTH parts are durable + resolved even though only ONE tool.result was ever consumed.
+        rows = _tool_rows(c, thread)
+        assert len(rows) == 1
+        by_id = {r.call_id: r.result.state for r in rows[0].tool_results()}
+        assert by_id == {cid_a: RunState.OK, cid_b: RunState.OK}, "harvest must persist the unconsumed twin"
+        st = _states(c, thread)
+        assert st[consumed] == RunState.OK and st[other] == RunState.OK  # the harvested twin resolved too
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:
