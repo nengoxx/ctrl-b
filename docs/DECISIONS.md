@@ -2210,3 +2210,80 @@ notices/debt riders) + fresh-eyes audit + tri-review incl. Codex (standing, stru
 As-built record lands on AGENT_CHAT_AUDIT §5 Slice 4. Explicit sketch deviations: read_only-only
 prefix (not read_only-or-idempotent) · MCP/OpenAPI excluded · notices unfolded · prefix (not
 adjacent-rebatch).
+
+## D41 — The steering queue: mid-turn messages + `!exec` upgrade the D38 409 (ACA Slice 5) ✏️ LOCKED 2026-07-19 (Slice 5 design review)
+
+**Context.** A1/ACA: sending during a live turn 409s (the FE can't even POST — the guard blocks at
+`chat.ts:1090`); the owner must wait a whole turn to steer. Design phase: code-truth pass (8 pins,
+7 gaps — headline: the queue MUST outlive the live-only `TurnHandle`) + a 6-system field pass
+(Codex/pi/Claude Code/opencode/Goose/Gemini; Codex fact CORRECTED — its core drains at turn END
+into a new turn, not step-boundary injection; pi/opencode are the step-boundary precedents; pi's
+Esc-restores-draft is the best-regarded cancel semantic, Gemini's auto-resubmit and
+Claude Code's/opencode's silent loss are the footguns) + a 2-lens adversarial design review
+(5 HIGH total — one convergent — all resolved INTO this decision).
+
+**Decision.**
+- **The queue:** `app.state.steer_queues: dict[thread_id, SteerQueue]` (the `turn_terminals`
+  precedent; NOT on the handle; NOT busy-state — `not app.state.turns` truth pinned by an arch
+  test; the stale `turns.py:16` turn_id note reconciled). In-memory, accepted-with-reason
+  (restart loses seconds-lived steers — SECURITY_MODEL residual row). **`SteerEntry` is a
+  UNIFIED submission object** `{entry_id, kind: message|exec, text|cmd, mode, agent, privilege,
+  skills}` (extend-not-migrate): a MID-LOOP drain contributes TEXT only (params ignored — a
+  steer cannot re-route/escalate a running turn, stated security stance); a TURN-END spawn runs
+  under its OWN captured params (`/cloud do X` spawns on cloud; Slice 6's `context_window`
+  resolution dependency). Cap `TurnsCfg.steer_queue_max` (default 8, `ge=1`); overflow → the
+  old 409 verbatim.
+- **Enqueue (endpoints, NOT `_reserve_turn` — its handle-or-409 contract is untouched):** chat +
+  exec catch `TurnBusy` and enqueue IFF the live holder's `kind ∈ {chat, resume}` (sync holders
+  — plan/apply/compact/exec — keep 409; incoming resume/plan/apply/compact NEVER enqueue). The
+  catch→append block is synchronous-atomic, no await (no orphan window; D38 TOCTOU discipline).
+  202 `{queued, turn_id, entry_id, position, depth}`. Nothing persists at enqueue. Exec: the
+  `user_exec_enabled` 403 checks at enqueue (UX) **AND at drain (fail-closed — review HIGH: the
+  endpoint is the only home of the user-exec gate and `run_shell`@FULL is ALLOW; without the
+  drain re-check, disabling the shell mid-queue would still execute)** — drain-disabled → drop +
+  `notice`, pinned test + SECURITY_MODEL row.
+- **Drain A (running turn):** top of every `_drive` iteration, BEFORE `should_compact`
+  (compaction always sees drained steers; ordering invariant to Slice 6 — review-verified).
+  `AgentSession.steer_source` = an injected peek/commit view (session stays registry-ignorant).
+  **Transactional: peek → persist all messages in ONE `Database.transaction()` → commit() clears
+  AFTER the txn** — a failed persist leaves the queue intact; un-persisted text has exactly ONE
+  home at all times. Exec entries: gate re-check then the ONE existing exec pair implementation.
+  FIFO across kinds. Wire: **`steer.applied {entryId, messageId, kind}`** per entry; **the
+  accumulator FOLDS steered user messages** (durable content must survive snapshot re-attach —
+  the notices live-only stance does NOT apply; turns.py's only change, additive fold + test).
+  Not re-triggered: skills / reflection / static head (tail-append, cache-safe);
+  `count_user_messages` bumps for messages only.
+- **Drain B (turn end) — `completed` terminals ONLY** (deviation from the §5 sketch, both review
+  lenses convergent: spawn-on-suspended makes the owner's Approve 409 against an invisible steer
+  turn + can re-propose the pending confirm). In `_cleanup`: iff completed + queue exists +
+  NOT `app.state.shutting_down` (set at the top of the lifespan finally — a natural completion
+  during shutdown must not spawn past the drain snapshot): **reserve SYNCHRONOUSLY** (no await
+  before it — no fresh-POST race, no loser path, FIFO chronology) then `create_task` the body.
+  `start_turn(state, thread, …)` is the ONE extracted spawn path shared with the chat endpoint
+  (takes state, never Request). Head message seeds the turn (its params); the rest drain at the
+  new turn's loop top. All-exec queue → reserve + a small exec-drain task, no model turn.
+  Suspended → NO spawn: the queue survives and drains at the next turn's loop top (resume or
+  fresh message — confirm-first ordering, no starvation). Cancelled → never (below). The v1
+  `_assemble` AWAITING_* rider is DROPPED (broke the aca11 pin; can't distinguish live from
+  abandoned confirms at assembly altitude; motivating case vanished with completed-only spawn).
+- **Cancel — harvest FIRST:** the cancel endpoint's FIRST statement is a synchronous
+  `steer_queues.pop(thread_id)` — before the handle lookup (no-live-turn cancels harvest too)
+  and before any await, so a `_cleanup` racing a natural completion finds no queue → spawn
+  structurally suppressed; **Stop can neither auto-run nor lose a steer** (the review's
+  convergent HIGH). Response gains `steer_queue: [entries]`; contract: Stop harvests
+  undrained/unspawned entries — an already-spawned turn is what the cancel cancels.
+- **FE:** streaming send-guard lifted; 3-exit optimistic bubble (200 normal · 202 queued chip ·
+  409 rollback+sys-note); `steer.applied` swaps by entryId; **probe-on-done-with-queued-bubbles**
+  re-attaches to a drain-B turn (the D39 probe; mandatory — the spawn is otherwise invisible);
+  the probe response gains `steer_queue` so reloads re-render queued bubbles (no vanished-steer
+  double-send); `DELETE .../steer/{entry_id}` (drained-already → `{removed:false,"already
+  sent"}`); Stop restores the RAW composer lines (client entry_id→raw map; `/prefix` fidelity),
+  newline-joined APPEND (an `appendDraft` separator extension — never the space-join, never
+  clobber). Buffered: steer 202 = fire-and-forget, documented DEGRADED (D39 stance).
+
+**Status.** LOCKED 2026-07-19 (owner go same day; Opus 4.8 build waves mandated). Build = 5 waves
+(queue core+enqueue → drain A+accumulator → drain B+cancel+start_turn → FE → **a docs wave
+sweeping DESIGN.md/SPEC.md for the Slice 4 AND 5 behavior deltas** [owner directive: docs must
+reflect actual behavior] + SECURITY_MODEL rows) + fresh-eyes audit + Codex tri-review. As-built
+record lands on AGENT_CHAT_AUDIT §5 Slice 5. Sketch deviations recorded: completed-only spawn ·
+dropped AWAITING_* rider · queue scope messages+exec only · the Codex-fact correction.

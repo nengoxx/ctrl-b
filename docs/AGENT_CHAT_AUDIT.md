@@ -981,6 +981,18 @@ log). Design sketch (confirmed refinements in **bold**):
   repeat-suppression still trips inside one parallel batch; compaction notice within 100 ms.
 
 ### Slice 5 — Steering queue (A1; upgrades the Slice-2 409 for messages) · M — after Slice 3
+
+> **▶ DESIGN LOCKED 2026-07-19 = D41** (code-truth + 6-system field pass + 2-lens adversarial
+> review [5H resolved into the decision] + owner go). **The sketch below is superseded where it
+> conflicts — D41 deviations:** turn-end spawn fires on **`completed` terminals ONLY** (the
+> sketch's "queued message runs as a new turn while the confirm bubble stays pending" is
+> overridden — spawn-on-suspended 409s the owner's own Approve and can double-propose the
+> confirm; the queue instead survives suspension and drains at the next turn's loop top) ·
+> `SteerEntry` is a UNIFIED submission object carrying mode/agent/privilege/skills · the exec
+> gate re-checks at DRAIN (fail-closed) · cancel harvests FIRST, synchronously · the accumulator
+> folds steered messages (snapshot-visible) · queue scope = messages+exec only · the Codex
+> SQ/EQ note is corrected (its core drains at turn END, not step-boundary). As-built record
+> lands here post-build.
 Per-thread pending-message queue (a submission type on the turn registry — the SQ half of Codex's
 SQ/EQ): composer sends during a live turn enqueue + render as queued bubbles; `_drive` drains the
 queue at each step boundary and appends as user messages before the next model call
