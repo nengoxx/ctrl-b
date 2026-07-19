@@ -142,6 +142,27 @@ def test_accumulator_drops_open_message_on_end_but_keeps_pending_suspend() -> No
     assert call["permission"]["prompt"] == "Run it?"
 
 
+def test_accumulator_folds_steer_applied_message_and_exec() -> None:
+    # D41 Drain A: a mid-turn steer is DURABLE + load-bearing, so a snapshot re-attach must carry it —
+    # message kind with its `text` (renderable without a reload), exec kind id-only (durable pair floor).
+    from app.services.agent.turns import TurnAccumulator
+
+    acc = TurnAccumulator()
+    for e in [
+        _ev("steer.applied", entryId="e1", messageId="m-user", kind="message", text="also check disk"),
+        _ev("steer.applied", entryId="e2", messageId="m-exec", kind="exec"),
+    ]:
+        acc.fold(e)
+
+    snap = acc.snapshot(mode=None, seq=9)
+    assert snap["steers"] == [
+        {"entryId": "e1", "messageId": "m-user", "kind": "message", "text": "also check disk"},
+        {"entryId": "e2", "messageId": "m-exec", "kind": "exec"},  # id-only, no text
+    ]
+    # A turn with no steers has NO `steers` key (the untouched-turn snapshot shape stays stable).
+    assert "steers" not in TurnAccumulator().snapshot(mode=None, seq=0)
+
+
 def test_accumulator_resolves_call_and_records_terminal() -> None:
     from app.services.agent.turns import TurnAccumulator
 

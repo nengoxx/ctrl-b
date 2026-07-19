@@ -93,6 +93,12 @@ class TurnAccumulator:
     #: plus, for a suspended call, the ephemeral `permission`/`question` payload (token+prompt) that
     #: is NOT persisted — the one thing a snapshot must carry so a late client renders the bubble.
     calls: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: Steers applied mid-turn (D41 Drain A), in drain order: `{entryId, messageId, kind[, text]}`. A
+    #: steered user message is DURABLE + load-bearing (unlike the live-only notices, which are NOT
+    #: folded), so a snapshot re-attach must carry it — for `kind:"message"` the `text` too, so the
+    #: client renders the bubble without a reload; `exec` entries are id-only (the persisted
+    #: assistant+tool pair is the durable floor a reload re-reads).
+    steers: list[dict[str, Any]] = field(default_factory=list)
     #: Terminal info once the turn ends: `{state, ...}` from the final `done` (or a synthesized one).
     terminal: dict[str, Any] | None = None
 
@@ -145,6 +151,19 @@ class TurnAccumulator:
                 # A resolved call is no longer pending — drop the ephemeral suspend payload.
                 call.pop("permission", None)
                 call.pop("question", None)
+        elif ev == "steer.applied":
+            # A mid-turn steer landed (D41): fold its id/message/kind so `turn.sync` carries it to a
+            # re-attaching client. `text` (message kind only) rides along so the bubble renders without
+            # a reload; exec entries stay id-only (their durable pair is re-read on reload).
+            kind = data.get("kind")
+            steer: dict[str, Any] = {
+                "entryId": data.get("entryId"),
+                "messageId": data.get("messageId"),
+                "kind": kind,
+            }
+            if kind == "message":
+                steer["text"] = data.get("text", "")
+            self.steers.append(steer)
         elif ev == "message.end":
             # The assistant message (text + tool-call parts) is now persisted to SQLite; a
             # re-attaching client reads it via the normal restore path. Drop the in-flight message
@@ -176,6 +195,8 @@ class TurnAccumulator:
                 "text": "".join(self.text_deltas),
                 "reasoning": "".join(self.reasoning_deltas),
             }
+        if self.steers:  # D41: only when a steer landed, so the untouched-turn snapshot shape is stable
+            snap["steers"] = list(self.steers)
         return snap
 
 

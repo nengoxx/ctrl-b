@@ -20,6 +20,7 @@ Event contract (DESIGN §12 subset emitted here):
     tool.question    {callId, tool, question, args}   # A2: `question` builtin asks the owner (answer bubble)
     tool.result      {callId, result}         # bubble resolves
     compaction       {removed, summaryId, truncated}   # older turns folded into a summary (4e)
+    steer.applied    {entryId, messageId, kind, text?}   # a mid-turn steer drained at the loop top (D41)
     notice           {text}                    # breadcrumb (e.g. D18 inference failover)
     message.end      {messageId}
     error            {message, retryable}
@@ -35,7 +36,7 @@ import logging
 import sys
 import uuid
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Awaitable, Callable
+from typing import TYPE_CHECKING, AsyncIterator, Awaitable, Callable
 
 import anyio
 from pydantic import ValidationError
@@ -61,8 +62,12 @@ from app.domain.enums import Actor, RunState
 from app.domain.result import ToolResult
 from app.services.action_service import ActionService, InvokeOutcome
 from app.services.agent.compaction import Compactor, estimate_payload_tokens
+from app.services.agent.exec import run_user_exec
 from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
 from app.services.conversation import MessageRepo, ThreadRepo
+
+if TYPE_CHECKING:
+    from app.services.agent.steering import SteerEntry, SteerSource
 
 log = logging.getLogger(__name__)
 
@@ -282,12 +287,18 @@ class AgentSession:
         memory: MemoryProvider | None = None,
         interactive: bool = True,
         depth: int = 0,
+        steer_source: SteerSource | None = None,
     ) -> None:
         self._threads = threads
         self._messages = messages
         self._inference = inference
         self._settings = settings
         self._actions = actions
+        #: The injected peek/commit view over this thread's steer queue (D41 Drain A). `None` for
+        #: subagent sessions (children are never steered) + any non-thread call site — the drain at the
+        #: `_drive` loop top is skipped entirely then. The session never touches `app.state.steer_queues`
+        #: directly (registry-ignorant); the API layer builds this via `steer_source_for`.
+        self._steer_source = steer_source
         #: The agent definition driving this turn (D11). Resolved by the caller from the thread's
         #: `agent` field; `None` falls back to the built-in default so older call sites still work.
         self._agent = agent or settings.default_agent_def()
@@ -770,6 +781,12 @@ class AgentSession:
 
         stall = 0  # consecutive no-progress iterations (C1b) → forced wrap-up at the agent's cap
         for _ in range(self._agent.max_iterations):
+            # Drain A (D41): apply any steers queued mid-turn at the loop TOP, BEFORE `should_compact`,
+            # so compaction always sees drained steers as ordinary history (ordering invariant to Slice
+            # 6's trigger swap). No-op when unset (subagents) or the queue is empty.
+            if self._steer_source is not None:
+                async for ev in self._drain_steers(thread):
+                    yield ev
             # Compaction check before each model call (DESIGN §5.2 step 2): if the working context
             # is over the configured threshold, fold the oldest turns into a summary system message.
             # ACA-11: summarizing can be a multi-second stall (a separate LLM call), so drop a live
@@ -894,6 +911,79 @@ class AgentSession:
         # the owner always gets a final answer (C1c, opencode's max-step-guidance pattern).
         async for ev in self._finalize(thread, eff_mode, eff_model):
             yield ev
+
+    async def _drain_steers(self, thread: Thread) -> AsyncIterator[AgentEvent]:
+        """Drain A (D41): apply the steers queued mid-turn at the `_drive` loop top. `peek()` snapshots
+        the pending entries ONCE; each is processed FIFO in queue order, then `commit()`ed by id — so an
+        entry enqueued DURING this drain (not in the snapshot) survives to the next loop top.
+
+        **Message entries** persist as `role="user"` Messages (actor USER — the same shape `run_turn`
+        persists the composer message). A CONTIGUOUS run of message entries commits in ONE
+        `Database.transaction()`; `commit()` (which clears the queue) runs ONLY AFTER the txn returns
+        (**persist-before-clear**: a failed persist raises here before `commit()`, leaving the queue
+        intact, so un-persisted steer text has exactly ONE home at all times — the one-txn rule is
+        per-contiguous-message-run, NOT across an interleaved exec, so an exec between two messages
+        splits their runs). Each yields `steer.applied {entryId, messageId, kind:"message", text}` — the
+        text rides the wire so the accumulator can render the bubble on a snapshot re-attach without a
+        reload.
+
+        **Exec entries** re-check `shell.user_exec_enabled` LIVE (D41 fail-closed: the enqueue check is
+        UX only; disabled at drain → drop the entry [`commit` it away] + a `notice`, and NEVER run it).
+        Enabled → the SHARED `run_user_exec` (the same run_shell@FULL + atomic pair the `/exec` endpoint
+        uses), then `steer.applied {entryId, messageId, kind:"exec"}` (id-only — the durable pair is the
+        floor) and commit that one entry.
+
+        Deliberately does NOT re-run `_activate_skills`/reflection arm and does NOT rebuild the static
+        head (it's per-turn cached + tail-appends history — the new user rows surface via `_assemble`'s
+        history re-read next iteration; `count_user_messages` bumps for the message rows naturally)."""
+        assert self._steer_source is not None
+        entries = self._steer_source.peek()
+        if not entries:
+            return
+        i, n = 0, len(entries)
+        while i < n:
+            if entries[i].kind == "message":
+                # Gather the CONTIGUOUS message run — one txn covers exactly it (not across an exec).
+                run: list[SteerEntry] = []
+                while i < n and entries[i].kind == "message":
+                    run.append(entries[i])
+                    i += 1
+                msgs = [
+                    Message(
+                        thread_id=thread.id,
+                        role="user",
+                        actor=Actor.USER,
+                        parts=[TextPart(text=e.text)],
+                    )
+                    for e in run
+                ]
+                # persist-before-clear: the queue stays intact until this txn COMMITS. A failed persist
+                # raises out of here (the turn errors cleanly) with `commit()` never reached → the
+                # entries are still queued (retried at the next boundary / harvestable on Stop).
+                async with self._messages.db.transaction():
+                    for m in msgs:
+                        await self._messages.add(m)
+                self._steer_source.commit([e.entry_id for e in run])
+                for e, m in zip(run, msgs, strict=True):
+                    yield AgentEvent(
+                        "steer.applied",
+                        {"entryId": e.entry_id, "messageId": m.id, "kind": "message", "text": e.text},
+                    )
+            else:  # exec
+                entry = entries[i]
+                i += 1
+                if not self._settings.shell.user_exec_enabled:
+                    # Fail-closed (D41): the enqueue-time gate is UX only. Disabled at DRAIN → drop the
+                    # queued command (commit it away) + a live breadcrumb; run_shell is NEVER invoked.
+                    self._steer_source.commit([entry.entry_id])
+                    yield AgentEvent("notice", {"text": "// shell disabled — queued command dropped"})
+                    continue
+                exec_out = await run_user_exec(self._actions, self._messages, thread.id, entry.text)
+                self._steer_source.commit([entry.entry_id])
+                yield AgentEvent(
+                    "steer.applied",
+                    {"entryId": entry.entry_id, "messageId": exec_out.assistant_id, "kind": "exec"},
+                )
 
     async def _finalize(
         self, thread: Thread, eff_mode: str | None, eff_model: str | None

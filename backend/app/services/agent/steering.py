@@ -116,6 +116,38 @@ class SteerQueue:
         return len(self.entries)
 
 
+class SteerSource:
+    """The session-facing peek/commit view over ONE thread's steer queue (D41 Drain A, wave 2).
+
+    `AgentSession` consumes this and nothing else — it never reaches into `app.state.steer_queues`, so
+    the session stays **registry-ignorant** (the API layer owns the queue registry; the session owns a
+    tiny injected port). `peek()` returns a stable ordered copy of the currently-pending entries;
+    `commit(entry_ids)` removes EXACTLY those (by id, via `SteerQueue.commit`), so any entry enqueued
+    DURING a drain (it wasn't in the peeked snapshot) survives to the next loop top. A missing queue
+    (never created / already drained-to-empty) peeks empty and commits to a no-op — the session need
+    not know whether a queue exists."""
+
+    def __init__(self, queues: dict[str, SteerQueue], thread_id: str) -> None:
+        self._queues = queues
+        self._thread_id = thread_id
+
+    def peek(self) -> list[SteerEntry]:
+        q = self._queues.get(self._thread_id)
+        return q.peek() if q is not None else []
+
+    def commit(self, entry_ids: list[str]) -> None:
+        q = self._queues.get(self._thread_id)
+        if q is not None:
+            q.commit(entry_ids)
+
+
+def steer_source_for(state, thread_id: str) -> SteerSource:
+    """Build the `SteerSource` the session drains (D41). Binds `app.state.steer_queues` + `thread_id`
+    into the injected view; the API layer calls this when constructing a chat/resume session so the
+    session can drain steers without importing the registry."""
+    return SteerSource(state.steer_queues, thread_id)
+
+
 def enqueue(state, thread_id: str, entry: SteerEntry, cap: int) -> int:
     """Append `entry` to the thread's queue (creating it on first use) under the cap. Returns the
     entry's 1-based position. Raises `SteerQueueFull` when the queue already holds `cap` entries — the

@@ -39,12 +39,13 @@ from app.domain.event import Event
 from app.domain.plan import Plan
 from app.domain.result import ToolResult
 from app.runtime import rediscover_integrations
+from app.services.agent.exec import run_user_exec
 from app.services.agent.planning import TaskPlanInput
 from app.services.agent.proposals import apply_proposal
 from app.services.agent.selector import select_agent
 from app.services.agent.session import AgentSession, collect_turn
 from app.services.agent.skills import remove_skill_md, valid_skill_slug, write_skill_md
-from app.services.agent.steering import SteerEntry, SteerQueueFull, enqueue
+from app.services.agent.steering import SteerEntry, SteerQueueFull, enqueue, steer_source_for
 from app.services.agent.turns import (
     TASK_KINDS,
     TurnBusy,
@@ -212,6 +213,11 @@ def _session(
         skills=getattr(s, "skills", None),
         selector=getattr(s, "skill_selector", None),
         memory=getattr(s, "memory", None),
+        # D41 Drain A: the injected peek/commit view over this thread's steer queue so `_drive`'s
+        # loop top can apply mid-turn steers (chat/resume, buffered included). Built only when a
+        # thread is resolved; subagent sessions (constructed directly, never via `_session`) get the
+        # `None` default — children are never steered.
+        steer_source=steer_source_for(s, thread.id) if thread is not None else None,
     )
 
 
@@ -776,39 +782,12 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Re
             raise HTTPException(status_code=409, detail=_TURN_BUSY_DETAIL) from e
         return _steer_202(state, thread.id, e.handle, SteerEntry(kind="exec", text=body.command), cfg)
     try:
-        outcome = await request.app.state.actions.invoke(
-            "run_shell", {"command": body.command}, actor=Actor.USER, privilege=Privilege.FULL
+        # ONE user-exec implementation (D41): run_shell@FULL + the atomic assistant+tool pair persist,
+        # shared verbatim with the steer drain (`run_user_exec`). Response shape unchanged.
+        exec_out = await run_user_exec(
+            request.app.state.actions, request.app.state.messages, thread.id, body.command
         )
-        result = outcome.result or ToolResult(state=RunState.ERROR, summary="run_shell produced no result")
-
-        call_id = uuid.uuid4().hex
-        messages = request.app.state.messages
-        # SYS-1: persist the call + result pair atomically (the same shape the agent loop produces).
-        async with request.app.state.db.transaction():
-            await messages.add(
-                Message(
-                    thread_id=thread.id,
-                    role="assistant",
-                    actor=Actor.USER,
-                    parts=[
-                        ToolCallPart(
-                            call_id=call_id,
-                            tool="run_shell",
-                            args={"command": body.command},
-                            state=result.state,
-                        )
-                    ],
-                )
-            )
-            await messages.add(
-                Message(
-                    thread_id=thread.id,
-                    role="tool",
-                    actor=Actor.USER,
-                    parts=[ToolResultPart(call_id=call_id, result=result)],
-                )
-            )
-        return {"threadId": thread.id, "callId": call_id, "state": result.state.value}
+        return {"threadId": thread.id, "callId": exec_out.call_id, "state": exec_out.result.state.value}
     finally:
         release(request.app.state.turns, handle)
 
