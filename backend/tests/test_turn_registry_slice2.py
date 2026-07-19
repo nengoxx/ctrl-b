@@ -167,16 +167,19 @@ def _new_thread(c) -> str:
 # ── 2a: chat × chat ────────────────────────────────────────────────────────────────────────────
 
 
-def test_chat_same_thread_second_gets_409() -> None:
+def test_chat_same_thread_second_steers_202() -> None:
+    # D41 (Slice 5): a second chat during a LIVE chat/resume turn no longer 409s — it STEERS (202,
+    # enqueued on `steer_queues`). The D38 409 survives only for sync holders / cap / overflow
+    # (covered in test_steering_queue_d41.py). This asserts the upgraded busy contract.
     from app.services.agent.turns import reserve
 
     with _env_cleanup(), _client() as c:
         tid = _new_thread(c)
         reserve(c.app.state.turns, tid, "chat")  # a turn is already live on this thread
-        with _fake_session(_completed_events()):
-            r = c.post("/api/agent/chat", json={"text": "hi", "thread_id": tid, "stream": False})
-        assert r.status_code == 409
-        assert "already running" in r.json()["detail"]
+        r = c.post("/api/agent/chat", json={"text": "hi", "thread_id": tid, "stream": False})
+        assert r.status_code == 202
+        assert r.json()["queued"] is True
+        assert len(c.app.state.steer_queues[tid]) == 1
 
 
 def test_chat_different_threads_both_accepted() -> None:
@@ -193,7 +196,7 @@ def test_chat_different_threads_both_accepted() -> None:
 # ── 2b: chat-while-live blocks every other thread-mutating route ───────────────────────────────
 
 
-def test_live_turn_blocks_plan_apply_compact_exec() -> None:
+def test_live_turn_blocks_plan_apply_compact_and_steers_exec() -> None:
     from app.services.agent.turns import reserve
 
     # exec needs the `!` gate open to reach the reserve (the 403 check precedes it).
@@ -201,6 +204,7 @@ def test_live_turn_blocks_plan_apply_compact_exec() -> None:
         tid = _new_thread(c)
         reserve(c.app.state.turns, tid, "chat")  # a live turn holds the marker
 
+        # The STRUCTURAL ops still 409 during a live turn (they never enqueue — D41).
         assert c.post("/api/agent/plan", json={"thread_id": tid, "steps": []}).status_code == 409
         assert (
             c.post(
@@ -209,7 +213,8 @@ def test_live_turn_blocks_plan_apply_compact_exec() -> None:
             == 409
         )
         assert c.post("/api/agent/compact", json={"thread_id": tid}).status_code == 409
-        assert c.post("/api/exec", json={"thread_id": tid, "command": "echo hi"}).status_code == 409
+        # exec is STEERABLE (D41): a `!cmd` during a live chat/resume turn enqueues (202), not 409.
+        assert c.post("/api/exec", json={"thread_id": tid, "command": "echo hi"}).status_code == 202
         # the collision doesn't disturb the held marker
         assert set(c.app.state.turns) == {tid}
 

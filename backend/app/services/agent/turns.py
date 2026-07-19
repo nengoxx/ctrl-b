@@ -13,8 +13,9 @@ the busy signal for the rediscovery gates (that gauge missed resume turns — `c
 (D39) then DELETED `active_turns` entirely — the registry is the single busy-truth.
 
 **Cross-slice contract:** Slice 3's `TurnRegistry` extends THIS `TurnHandle` in place with
-`task`/`ring`/`seq` (the server-owned durable-turn ring), and Slice 5's steer queue +
-optimistic-concurrency hook hang off `turn_id`. Keep the class the single busy-marker shape — do not
+`task`/`ring`/`seq` (the server-owned durable-turn ring); Slice 5's steer queue is thread-id-keyed on
+`app.state.steer_queues` (it outlives this live-only handle, so it CANNOT hang off `turn_id`) and only
+its optimistic-concurrency hook rides `turn_id`. Keep the class the single busy-marker shape — do not
 fork a parallel record.
 """
 

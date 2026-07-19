@@ -103,7 +103,9 @@ def test_every_thread_mutating_endpoint_reserves_the_turn_marker() -> None:
     for fn in _route_endpoints():
         src = _code_only(inspect.getsource(fn))  # scan CODE only — markers in comments/docstrings don't count
         mutates = any(m in src for m in _MUTATION_MARKERS)
-        reserves = "_reserve_turn(" in src
+        # `_reserve_turn(` is the busy-or-409 chokepoint (5 sync endpoints); `_reserve_or_busy(` is the
+        # D41 variant chat/exec call so they can steer-enqueue on a busy thread — both reserve the marker.
+        reserves = "_reserve_turn(" in src or "_reserve_or_busy(" in src
         if mutates and fn.__name__ not in _EXEMPT:
             assert reserves, (
                 f"{fn.__name__} mutates the thread without reserving the turn marker "

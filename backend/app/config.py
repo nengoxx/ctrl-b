@@ -220,7 +220,9 @@ class TurnsCfg(BaseModel):
     registry drain (kept under uvicorn's graceful timeout). `linger_s` is how long a finished turn
     stays in the capped terminal cache for late re-attach, and `max_active_turns` caps concurrently
     running task-bearing turns (chat/resume) across all threads. `linger_s`/`max_active_turns` land
-    complete now but are consumed by wave 3 (terminal cache + endpoints)."""
+    complete now but are consumed by wave 3 (terminal cache + endpoints). `steer_queue_max` caps a
+    thread's per-thread steer queue (D41/Slice 5); a submission past the cap gets the 409 busy detail
+    verbatim, so steering a hammered thread degrades to today's refuse rather than unbounded growth."""
 
     ring_size: int = Field(default=2048, ge=1)  # per-turn replay ring depth (reconnect cache, not durability)
     subscriber_queue_size: int = Field(
@@ -240,6 +242,9 @@ class TurnsCfg(BaseModel):
     max_active_turns: int = Field(
         default=4, ge=1
     )  # cap on concurrent task-bearing turns (chat/resume; wave 3 endpoints)
+    steer_queue_max: int = Field(
+        default=8, ge=1
+    )  # per-thread steer-queue depth cap (D41/Slice 5); overflow → the 409 busy detail verbatim
 
 
 class AgentCfg(BaseModel):

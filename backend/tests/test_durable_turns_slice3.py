@@ -706,10 +706,11 @@ def test_detached_running_turn_409s_its_thread_but_not_another() -> None:
             task = _pending_task()
             ha.task = task
 
-            # same thread → per-thread busy 409
+            # same thread → the live chat turn is STEERED (D41): a same-thread chat enqueues (202),
+            # not the D38 409 (which now survives only for sync holders / cap / overflow).
             r_same = c.post("/api/agent/chat", json={"text": "hi", "thread_id": tid_a, "stream": False})
-            assert r_same.status_code == 409
-            assert "already running" in r_same.json()["detail"]
+            assert r_same.status_code == 202
+            assert r_same.json()["queued"] is True
 
             # a DIFFERENT (fresh) thread still runs (under the cap)
             tid = c.post("/api/threads").json()["id"]

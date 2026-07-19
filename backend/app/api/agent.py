@@ -44,6 +44,7 @@ from app.services.agent.proposals import apply_proposal
 from app.services.agent.selector import select_agent
 from app.services.agent.session import AgentSession, collect_turn
 from app.services.agent.skills import remove_skill_md, valid_skill_slug, write_skill_md
+from app.services.agent.steering import SteerEntry, SteerQueueFull, enqueue
 from app.services.agent.turns import (
     TASK_KINDS,
     TurnBusy,
@@ -233,6 +234,21 @@ _TURN_BUSY_DETAIL = "a turn is already running on this thread — wait for it to
 _TURN_CAP_DETAIL = "too many turns are running — wait for one to finish"
 
 
+def _reserve_or_busy(state, thread_id: str, kind: TurnKind, cfg) -> TurnHandle:
+    """Cap-check then `reserve` the thread marker (D38/D39) — but let `TurnBusy` PROPAGATE unmapped so
+    a caller that wants to inspect the live holder can (the chat/exec steer path, D41). The
+    **server-wide cap** (a NEW task-bearing chat/resume when `max_active_turns` are already running)
+    still maps to HTTP 409 here — sync kinds (exec/plan/apply/compact) are exempt. The cap read and the
+    `reserve` insert run with no `await` between them, so the D38 TOCTOU guarantee extends to the cap.
+
+    `_reserve_turn` wraps this and maps the propagated `TurnBusy` to the busy 409 — that is the
+    handle-or-409 chokepoint the five sync endpoints use, unchanged. Only chat/exec call THIS directly,
+    because they upgrade the per-thread busy case to a 202 enqueue instead of a 409 (D41)."""
+    if kind in TASK_KINDS and active_task_turns(state.turns) >= cfg.max_active_turns:
+        raise HTTPException(status_code=409, detail=_TURN_CAP_DETAIL)
+    return reserve(state.turns, thread_id, kind, ring_size=cfg.ring_size)
+
+
 def _reserve_turn(request: Request, thread_id: str, kind: TurnKind) -> TurnHandle:
     """Reserve the thread's turn marker (D38) or 409 — the single chokepoint mapping both busy-state
     refusals to HTTP so all six thread-mutating endpoints share them:
@@ -243,15 +259,36 @@ def _reserve_turn(request: Request, thread_id: str, kind: TurnKind) -> TurnHandl
       and already hold the per-thread marker, so they don't count against the detached-turn budget.
 
     Both checks run synchronously before `reserve` inserts — no `await` between the cap read and the
-    insert, so the D38 TOCTOU guarantee extends to the cap."""
+    insert, so the D38 TOCTOU guarantee extends to the cap. (Chat/exec call `_reserve_or_busy` instead
+    so they can steer-enqueue on the per-thread busy case — D41 — rather than always 409.)"""
     state = request.app.state
-    cfg = state.settings.agent.turns
-    if kind in TASK_KINDS and active_task_turns(state.turns) >= cfg.max_active_turns:
-        raise HTTPException(status_code=409, detail=_TURN_CAP_DETAIL)
     try:
-        return reserve(state.turns, thread_id, kind, ring_size=cfg.ring_size)
+        return _reserve_or_busy(state, thread_id, kind, state.settings.agent.turns)
     except TurnBusy as e:
         raise HTTPException(status_code=409, detail=_TURN_BUSY_DETAIL) from e
+
+
+def _steer_202(state, thread_id: str, holder: TurnHandle, entry: SteerEntry, cfg) -> JSONResponse:
+    """Append a steer to the thread's queue and build the 202 (D41). SYNCHRONOUS — the caller invokes
+    it in the SAME await-free block as the `TurnBusy` catch, so there is no orphan window between the
+    failed reserve and the append (the D38 TOCTOU discipline; the holder can't change under the
+    single-threaded loop). A queue already at `steer_queue_max` (`SteerQueueFull`) → the 409 busy
+    detail verbatim (an overflow is "still busy"). Nothing is persisted here — the durable thread never
+    shows text the model hasn't seen; the drain (waves 2–3) is the only writer."""
+    try:
+        position = enqueue(state, thread_id, entry, cfg.steer_queue_max)
+    except SteerQueueFull as e:
+        raise HTTPException(status_code=409, detail=_TURN_BUSY_DETAIL) from e
+    return JSONResponse(
+        {
+            "queued": True,
+            "turn_id": holder.turn_id,
+            "entry_id": entry.entry_id,
+            "position": position,
+            "depth": len(state.steer_queues[thread_id]),
+        },
+        status_code=202,
+    )
 
 
 def _sse_frame(turn_id: str, seq: int, ev: Any) -> dict[str, Any]:
@@ -410,6 +447,10 @@ async def turn_status(thread_id: str, request: Request) -> dict[str, Any]:
     Wave-4's cold page-load re-attach probes this before deciding to attach or reload."""
     state = request.app.state
     handle = state.turns.get(thread_id)
+    # D41: carry the thread's pending steer queue (ordered; [] when none) on EVERY branch so a reload /
+    # cold-load re-renders queued bubbles from server truth instead of dropping them. Read-only.
+    q = state.steer_queues.get(thread_id)
+    steer = [{"entry_id": e.entry_id, "kind": e.kind, "text": e.text} for e in q.peek()] if q else []
     # LIVE only while a drain TASK is genuinely running. Three exclusions collapse into one guard:
     #   • `task is None` — a SYNC-kind marker (exec/plan/apply/compact) runs inline in its handler and
     #     never spawns a task; its `terminal_status` stays None forever, so without this it would read
@@ -430,6 +471,7 @@ async def turn_status(thread_id: str, request: Request) -> dict[str, Any]:
             "seq": handle.seq,
             "kind": handle.kind,
             "started_at": handle.started_at.isoformat(),
+            "steer_queue": steer,
         }
     # Done-but-unreleased (C4-M2): a settled handle (`terminal_status` set — the drain task finished
     # but its `_cleanup` done-callback hasn't recorded to the cache yet, one `call_soon` tick) is
@@ -437,13 +479,28 @@ async def turn_status(thread_id: str, request: Request) -> dict[str, Any]:
     # PREVIOUS turn's record — consulting the cache first would report the prior turn's outcome under
     # THIS turn's probe. Only fall back to the cache (then the unsettled-handle fallback) otherwise.
     if handle is not None and handle.terminal_status is not None:
-        return {"active": False, "terminal_status": handle.terminal_status, "turn_id": handle.turn_id}
+        return {
+            "active": False,
+            "terminal_status": handle.terminal_status,
+            "turn_id": handle.turn_id,
+            "steer_queue": steer,
+        }
     rec = get_terminal(state.turn_terminals, thread_id, linger_s=state.settings.agent.turns.linger_s)
     if rec is not None:
-        return {"active": False, "terminal_status": rec.terminal_status, "turn_id": rec.turn_id}
+        return {
+            "active": False,
+            "terminal_status": rec.terminal_status,
+            "turn_id": rec.turn_id,
+            "steer_queue": steer,
+        }
     if handle is not None:  # an unsettled sync-kind / pre-spawn marker — report it (terminal null)
-        return {"active": False, "terminal_status": handle.terminal_status, "turn_id": handle.turn_id}
-    return {"active": False}
+        return {
+            "active": False,
+            "terminal_status": handle.terminal_status,
+            "turn_id": handle.turn_id,
+            "steer_queue": steer,
+        }
+    return {"active": False, "steer_queue": steer}
 
 
 @router.get("/agent/turns/{thread_id}/stream")
@@ -580,6 +637,18 @@ async def cancel_turn_endpoint(thread_id: str, request: Request) -> dict[str, An
     return {"cancelled": fired, "terminal_status": handle.terminal_status}
 
 
+@router.delete("/agent/turns/{thread_id}/steer/{entry_id}")
+async def delete_steer(thread_id: str, entry_id: str, request: Request) -> dict[str, Any]:
+    """Cancel a still-queued steer (D41) — the FE's "unsend a queued bubble". SYNCHRONOUS dequeue, no
+    turn-guard (the queue is not busy-state). Present → `{removed: true}`; absent (already drained /
+    spawned into a turn, or never there) → `{removed: false, reason: "already sent"}` at 200 (NOT 404,
+    so the FE resolves the bubble to its swapped form gracefully instead of erroring)."""
+    q = request.app.state.steer_queues.get(thread_id)
+    if q is not None and q.remove(entry_id):
+        return {"removed": True}
+    return {"removed": False, "reason": "already sent"}
+
+
 @router.get("/threads")
 async def list_threads(request: Request) -> list[dict[str, Any]]:
     return [t.model_dump(mode="json") for t in await request.app.state.threads.list()]
@@ -633,7 +702,33 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     # and the auto-rediscover boundary, before the response is built. Ownership transfers to the
     # server-owned drain task (`_turn_response` releases it via the task's done-callback, D39); if
     # anything raises before we hand off, release + re-raise so no marker leaks.
-    handle = _reserve_turn(request, thread.id, "chat")
+    #
+    # D41 (Slice 5): when the thread ALREADY runs a chat/resume turn, `_reserve_or_busy` raises
+    # `TurnBusy` carrying the live holder — upgrade the old 409 to a 202 STEER (enqueue the message).
+    # The catch→append block is synchronous-atomic (NO `await` between the catch and the append), so
+    # there is no orphan window between the failed reserve and the enqueue (D38 TOCTOU). A SYNC holder
+    # (exec/plan/apply/compact) keeps the 409 — queueing behind a ms-lived inline op is incoherent.
+    state = request.app.state
+    cfg = state.settings.agent.turns
+    try:
+        handle = _reserve_or_busy(state, thread.id, "chat", cfg)
+    except TurnBusy as e:
+        if e.handle.kind not in ("chat", "resume"):
+            raise HTTPException(status_code=409, detail=_TURN_BUSY_DETAIL) from e
+        return _steer_202(
+            state,
+            thread.id,
+            e.handle,
+            SteerEntry(
+                kind="message",
+                text=body.text,
+                mode=body.mode,
+                agent=body.agent,
+                privilege=body.privilege.value if body.privilege is not None else None,
+                skills=body.skills,
+            ),
+            cfg,
+        )
     try:
         session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
@@ -650,8 +745,8 @@ async def chat(body: ChatRequest, request: Request) -> Response:
         raise
 
 
-@router.post("/exec")
-async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any]:
+@router.post("/exec", response_model=None)  # union return (dict | 202 steer Response) — no response model
+async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Response:
     """Run the user's `!<cmd>` on the backend host (Phase 5). Reuses the `run_shell` action at FULL
     privilege (so it executes + is audited as an Event), then persists the command + result into the
     thread as an `assistant` tool_call + `tool` result pair — the same shape the agent loop produces —
@@ -666,9 +761,20 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any]:
     if thread is None:
         thread = await threads.create(Thread(title=f"! {body.command[:58]}"))
 
-    # Reserve the thread's turn marker (D38) — a `!cmd` also mutates the thread (revisit at Slice 5:
-    # a mid-turn `!cmd` is arguably steering). Released in the finally.
-    handle = _reserve_turn(request, thread.id, "exec")
+    # Reserve the thread's turn marker (D38). D41 (Slice 5): a `!cmd` to a thread already running a
+    # chat/resume turn STEERS — enqueue the command (202) instead of the old 409, drained at the
+    # running turn's loop top / turn end (waves 2–3). The `user_exec_enabled` 403 above stays BEFORE
+    # this reserve (fail-early UX); the drain-side re-check (fail-closed) is wave 2's. A sync holder
+    # keeps the 409. The catch→append is synchronous-atomic (no `await`; D38 TOCTOU). Non-steer path:
+    # released in the finally.
+    state = request.app.state
+    cfg = state.settings.agent.turns
+    try:
+        handle = _reserve_or_busy(state, thread.id, "exec", cfg)
+    except TurnBusy as e:
+        if e.handle.kind not in ("chat", "resume"):
+            raise HTTPException(status_code=409, detail=_TURN_BUSY_DETAIL) from e
+        return _steer_202(state, thread.id, e.handle, SteerEntry(kind="exec", text=body.command), cfg)
     try:
         outcome = await request.app.state.actions.invoke(
             "run_shell", {"command": body.command}, actor=Actor.USER, privilege=Privilege.FULL

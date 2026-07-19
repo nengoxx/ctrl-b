@@ -284,7 +284,12 @@ def test_b3_done_but_unreleased_reports_current_turn() -> None:
 
             req = SimpleNamespace(app=SimpleNamespace(state=state))
             st = await turn_status(tid, req)
-            assert st == {"active": False, "terminal_status": "completed", "turn_id": "B"}, st
+            assert st == {
+                "active": False,
+                "terminal_status": "completed",
+                "turn_id": "B",
+                "steer_queue": [],  # D41 carry (empty)
+            }, st
             resp = await turn_stream(tid, req)
             body = json.loads(bytes(resp.body))
             assert body == {"active": False, "terminal_status": "completed", "turn_id": "B"}, body

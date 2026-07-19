@@ -68,6 +68,7 @@ from app.services.agent.memory import FileMemoryProvider, migrate_legacy_special
 from app.services.agent.memory_backup import GitMemoryBackup
 from app.services.agent.selector import KeywordAgentSelector
 from app.services.agent.skills import FileSkillProvider, KeywordSkillSelector
+from app.services.agent.steering import SteerQueue
 from app.services.agent.turns import (
     TerminalRecord,
     TurnHandle,
@@ -170,6 +171,12 @@ async def lifespan(app: FastAPI):
     # re-attach/status endpoints so a client that missed the terminal sentinel learns the outcome.
     turn_terminals: OrderedDict[str, TerminalRecord] = OrderedDict()
     app.state.turn_terminals = turn_terminals
+    # Per-thread steer queues (ACA Slice 5, D41): mid-turn messages / `!exec` submitted while a
+    # chat/resume turn owns the thread queue HERE (202) instead of 409. Thread-id-keyed on app.state
+    # (the turn_terminals precedent) — it must outlive the live-only TurnHandle. NOT busy-state: every
+    # `not app.state.turns` read stays honest. See app/services/agent/steering.py.
+    steer_queues: dict[str, SteerQueue] = {}
+    app.state.steer_queues = steer_queues
     # Stash the Deps bundle so the runtime reconfigure seam (PUT /api/settings) can re-point its
     # adapter handles (e.g. deps.inference) on a config change. Single source: see app/runtime.py.
     app.state.deps = deps

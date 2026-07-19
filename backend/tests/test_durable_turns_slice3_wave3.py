@@ -115,19 +115,22 @@ def test_status_probe_live_then_terminal_then_expired() -> None:
 
         run_async(scenario())
 
+        # `steer_queue` (D41) rides every probe branch — empty here (no steers queued).
         assert out["live"] == {
             "active": True,
             "turn_id": out["turn_id"],
             "seq": 2,
             "kind": "chat",
             "started_at": out["live"]["started_at"],  # isoformat present
+            "steer_queue": [],
         }
         assert out["terminal"] == {
             "active": False,
             "terminal_status": "completed",
             "turn_id": out["turn_id"],
+            "steer_queue": [],
         }
-        assert out["expired"] == {"active": False}  # swept out of the cache → bare answer
+        assert out["expired"] == {"active": False, "steer_queue": []}  # swept out → bare answer
     _clear_env()
 
 
@@ -553,6 +556,7 @@ def test_status_and_stream_treat_done_but_unreleased_as_terminal() -> None:
             "active": False,  # NOT live despite being in state.turns
             "terminal_status": "completed",
             "turn_id": out["turn_id"],
+            "steer_queue": [],  # D41 carry (empty)
         }
         # the re-attach returns the JSON terminal shape (not an SSE stream) → the client reloads
         assert isinstance(out["stream"], JSONResponse)
