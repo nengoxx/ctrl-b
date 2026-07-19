@@ -1,6 +1,8 @@
 # SLICE7_PLAN — the D43 (model routing & retry visibility) design draft, v2
 
-> **STATUS: REVIEW-RESOLVED, AWAITING THE OWNER LOCK.** Pipeline provenance: 2 code-truth
+> **STATUS: ✅ LOCKED as D43, 2026-07-19 (owner go after two discussion rounds — the §9
+> questions are RESOLVED below; the canonical record is the DECISIONS.md D43 entry; this file
+> stays as the frozen draft + provenance).** Pipeline provenance: 2 code-truth
 > passes (inference/failover/wire · session/AgentDef/state) + 1 field pass (×8 systems,
 > sourced) + a 2-lens adversarial design review (correctness: 4H/6M/2L · design-fit: 3H/7M/2L
 > — ALL resolved into this v2; the un-enumerated option both lenses converged on is now the
@@ -46,13 +48,16 @@ sys-note.
   global base via deep-merge). Deliberate divergence from compaction's dual-home, cited.
   **Subagents: `routing` is copied by `model_copy` but INERT** — subagent sessions get no
   RoutingState and always run their configured model; documented, not sold as inheritance.
-- **`InferenceEndpointCfg.retry_attempts: int = Field(default=0, ge=0)`** — the ONE retry knob
-  (review: the D42 "one knob, one unit" bar; the curve is fixed module constants — base 2s,
-  ×2ⁿ, cap 30s, a larger `Retry-After` wins — documented, not configurable). **Default 0 = no
-  behavior change** (the `max_concurrent_requests=None` rider precedent; the v1 default-2 is
-  withdrawn). Owner-config note: set `retry_attempts: 2` on the CLOUD endpoint post-deploy
-  (cloud 429s are the main beneficiary; the local app-side gate already absorbs most
-  local-busy).
+- **The retry knob (AMENDED at lock, owner round 2):** global **`InferenceCfg.retry_attempts:
+  int = Field(default=2, ge=0)`** (the manage-once knob) + per-endpoint
+  **`InferenceEndpointCfg.retry_attempts: int | None = None`** override (`None` = inherit
+  global; `0` = disable for that endpoint) — the compaction global+override resolve pattern.
+  The curve stays fixed module constants (base 2s, ×2ⁿ, cap 30s, a larger `Retry-After` wins).
+  **Default 2 globally is safe and intended**: the transient class (429/503/Retry-After) never
+  matches a dead endpoint (connection-refused/timeout = `other` → instant next-hop as today),
+  and retrying-in-place on a busy-but-alive server KEEPS the conversation on the same model
+  instead of silently switching — closer to intent than today's instant hop. The v2 default-0
+  stance is superseded by the owner's explicit ruling.
 - The agent's `model` stays the worker. `routing.lead` is a full ModelRef; **the routed
   ModelRef threads EVERYWHERE** (§5 — the v1 "two RHS" undercount is fixed).
 
@@ -172,9 +177,11 @@ sys-note.
    sleep holds no permit and no stream.
 4. Every retry, failover, and route change is wire-visible (typed event + sys-note), and a
    re-attach during a backoff sees `retry_status` — no silent switches, no dead spinners.
-5. `retry_attempts: 0` + `routing: None` ⇒ identical behavior to today, except degraded-serve
-   narration moves from the post-hoc notice to the live typed event (the one sanctioned delta;
-   the old notice block is deleted, never double-emitted).
+5. With `routing: None` and the retry tier resolved to 0, behavior is identical to today except
+   degraded-serve narration moves from the post-hoc notice to the live typed event (deleted,
+   never double-emitted). At the SHIPPED defaults the second sanctioned delta is: a transient
+   (429/503/Retry-After) error now retries in place VISIBLY before hopping — an owner-ruled
+   improvement (same-model continuity), never silent.
 6. `failover()` remains value-agnostic; voice/embeddings/`complete()` via `failover_collect()`
    are behaviorally unchanged (no retry tier, no events).
 7. A degraded-rescued turn and a chain-exhausted outage never increment the routing failure
@@ -211,19 +218,16 @@ paths (ruled: straight next-hop) · the D18 endpoint-availability circuit breake
 axis, stays deferred) · A7 thinking transforms (do not build) · subagent routing at runtime
 (field copied, inert, documented) · per-agent routing UI (YAML per the Omit precedent).
 
-## 9. Open questions for the owner (lock blockers)
+## 9. Owner rulings (2026-07-19, two discussion rounds — the lock)
 
-1. **A4 scope — the recommendation changed after review.** Recommended: **failure-fallback
-   only** as specced in §5 (both review lenses independently converged: `lead_turns` is a
-   transplanted coding-agent pattern; the fallback half is the real homelab value D18 can't
-   provide, and the reduction dissolves three correctness edge cases outright). Alternative:
-   park A4 entirely and ship A6+A7 alone — the seams (RoutingCfg/RoutingState homes) are cheap
-   to add later, so parking costs little; but the reduced machine is now small (~a
-   CompactionState-sized dataclass + one decision point + one counter site) and serves the
-   weak-local-worker setup you actually run.
-2. **`retry_attempts` default 0** (no behavior change; the rider precedent) with the deploy
-   note recommending `2` on the cloud endpoint — OK, or do you want it on by default?
-3. **Routing UI:** v1 ships YAML-only (`agent.defaults.routing` is the global, per D16). If you
-   want a UI surface, the honest one is a GLOBAL routing row in the AgentsEditor
-   global-settings area (where global compaction went) — lead mode/model + the two numbers.
-   Proposal: skip for v1, add if routing survives real use.
+1. **A4 scope: the REDUCED failure-fallback shape as specced in §5.** Owner sign-off after the
+   clarification rounds: routing = "like a fallback, but escalating to the designated smarter
+   model when the worker crash-and-burns several turns in a row" — two tiers (worker +
+   lead), structural triggers only, temporary episodes with a return path; the D18 endpoint
+   chain runs unchanged underneath (routing only picks who is asked FIRST).
+2. **Retry: global `inference.retry_attempts: 2` + per-endpoint None-inherit/0-disable
+   override** (the owner's manage-once amendment — see §2). Visible in-place retry on
+   busy-but-alive servers is the intended behavior change.
+3. **Routing UI: none in v1** (YAML `agent.defaults.routing`; the fallback-ENDPOINT chain
+   already has its Inference-group UI — a distinct layer). A global routing row in the
+   AgentsEditor global area is the named follow-up IF routing survives real use.

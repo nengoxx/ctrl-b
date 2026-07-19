@@ -2439,3 +2439,125 @@ beyond the locked list: `reasoning_effort` exotic values ride verbatim to a stri
 400 there is config-inflicted + failover-absorbed; a per-endpoint effort-map is the future seam) ·
 the ConfTab-WIDE draft reset on any settings save is pre-existing draft-lifecycle behavior,
 DEFERRED to a Conf-surface follow-up (per-section dirty tracking).)*
+
+## D43 — Model routing (failure-fallback lead) + retryable classifier + typed retry/failover visibility (ACA Slice 7: A4-reduced, A6, A7) ✏️ LOCKED 2026-07-19 (Slice 7 design review)
+
+**Context.** ACA A4/A6/A7. Post-D42 truth: the failover chain is any-error→next-hop with NO
+classifier (the D18 §3 pre-authorized tuning seam, never built), NO same-endpoint retry anywhere
+(`max_retries=0`, deliberate), and the only failover visibility is a post-hoc coarse degraded
+`notice` — the failover loop runs inside `stream_chat` (a sub-generator), so even Slice 3's
+emit-anytime cannot narrate hops live. Separately: a weak local worker can flail (iteration cap,
+stall spirals) while every HTTP request succeeds — a failure class the request-scoped D18 chain
+STRUCTURALLY cannot see. Design pipeline (full draft + provenance:
+[`SLICE7_PLAN.md`](./SLICE7_PLAN.md)): 2 code-truth passes + a sourced field pass (×8 systems;
+Goose lead/worker verbatim defaults + its consolidation-away; pi's classifier; the
+retry-consensus table; the Gemini silent-downgrade footgun) + a 2-lens adversarial review
+(7 HIGH / 13 MED / 4 LOW — all resolved in) + two owner discussion rounds.
+
+**Decision.**
+- **(A7) The classifier — `categorize(err)`** (adapters/inference.py, beside
+  `is_context_overflow`; structured `code`/`status` first, message fallback): `transient`
+  (429 · 503 · Retry-After present · the llama.cpp busy/slot-full shapes, build-verified — the
+  pi #6364 local-backend lesson) · `overflow` (delegates to `is_context_overflow`; the D42
+  backstop consumer unchanged) · `fatal_for_endpoint` (401/403 · 404 model-not-found ·
+  quota/billing) · `other`. **`InferenceError` gains `retry_after: float | None`** parsed from
+  the RAW SDK exception's headers (delta-seconds + HTTP-date) INSIDE `attempt`, pre-conversion
+  (the D42 code/status-capture rationale — post-flattening the header is gone).
+- **(A7) The retry tier:** `transient` → retry the SAME endpoint, then next-hop;
+  `fatal_for_endpoint` → next-hop immediately, never retried-same (a different hop has
+  different credentials/models — the cross-provider walk stays correct); `other`/`overflow` →
+  next-hop immediately (D18 verbatim — tuned, never reversed; nothing aborts the chain early).
+  Budget = resolved `retry_attempts`: **global `InferenceCfg.retry_attempts: int = 2 (ge=0)` +
+  per-endpoint `InferenceEndpointCfg.retry_attempts: int | None = None`** (None = inherit,
+  0 = disable; the compaction global+override pattern — the OWNER'S manage-once amendment,
+  round 2). Curve = fixed module constants: base 2s ×2ⁿ, cap 30s, a larger Retry-After wins
+  (the D42 one-knob-one-unit bar — the curve is not configurable). Retries fire ONLY at stream
+  initiation (nothing streamed); the backoff sleep holds NO permit and NO stream (the failed
+  attempt already released; retry re-enters `attempt` which re-acquires; cancel-during-sleep
+  cleanup is a structural no-op). **Chat stream only** — `complete()` (summarizer) and voice
+  keep straight next-hop (both latency-bound; compaction has its own fallback semantics). SDK
+  `max_retries=0` stands: retries are never silent, ours are wire-visible.
+- **(A6) `failover()` becomes an async GENERATOR** (core/failover.py, still value-agnostic):
+  yields `HopRetry(index, attempt, max_attempts, delay_s)` / `HopFailover(from_index,
+  to_index)` control items live, then the terminal `FailoverResult` as the LAST item (async
+  generators can't `return` a value — the last-item contract is typed + documented). A thin
+  **`failover_collect()`** drains events for buffered callers — voice/embeddings/`complete()`
+  reduce byte-for-byte to today (policy defaults to always-next-hop, zero events). This is the
+  slice's ONE structural change and the only clean shape (a called function cannot interleave
+  events into the stream; a duplicated chain walk violates the one-source rule — review F1).
+- **(A6) Wire:** `stream_chat` re-yields the items as `RetryNotice`/`FailoverNotice` BEFORE the
+  first `ChatDelta`; **BOTH consumers** (the `_drive` loop AND `_finalize`) add an isinstance
+  branch ABOVE the delta checks that emits + continues and NEVER touches
+  `streamed_any`/text-buffers (the D42 nothing-streamed backstop flag stays honest — review
+  F9). New AgentEvent kinds **`inference.retry` {endpoint, attempt, max, delaySeconds,
+  category}** · **`inference.failover` {from, to, category}**; the post-hoc degraded-notice
+  block is DELETED (superseded — no double-narration). Durability: live-only (the D39 notice
+  stance) + `collect_turn` folds to `notices` text (buffered parity), PLUS a snapshot-carried
+  **`retry_status: {endpoint, attempt, max, until_ts} | None`** set/cleared by the session
+  around a backoff — a re-attach DURING a backoff renders the retry line instead of the dead
+  spinner A6 exists to kill (review M4); the TurnAccumulator stays notice-free. FE: two new
+  chat.ts cases (ship with the events) in the sys-note voice + `turn.sync` renders
+  `retry_status`.
+- **(A4, REDUCED) Failure-fallback routing — NO `lead_turns`** (both review lenses converged:
+  lead-opens-thread is a coding-agent pattern transplanted without its workload, and Goose —
+  the only precedent — consolidated it away; the reduction also dissolves the resume-window,
+  monotonic-counter, and prune edge cases). **`RoutingCfg`** (domain/agent.py, the
+  CompactionCfg placement): `lead: ModelRef` (required) · `failure_threshold: int = 2 (ge=1)`
+  (CONSECUTIVE hard worker failures) · `fallback_turns: int = 2 (ge=1)` (episode length).
+  `AgentDef.routing: RoutingCfg | None = None`; **the global default is
+  `agent.defaults.routing`** (the D16 precedent — a separate `Settings.agent.routing` is the
+  anti-pattern D16 rejected; deliberate divergence from compaction's dual-home, recorded).
+  Subagents: the field copies via `model_copy` but is RUNTIME-INERT (no RoutingState) —
+  documented, not sold as inheritance.
+- **The machine:** decision at the top of `_drive`, once per LOGICAL turn. The router returns
+  ONE routed `ModelRef` (lead during an episode, else `agent.model`) and **ALL FOUR derived
+  locals read from it** — `eff_mode`/`eff_model`/`eff_reasoning`/`reserve` (the compaction
+  output-reserve prices the ROUTED ref) — plus `_finalize` consumes the routed call-config via
+  params (review F4/H2: the draft's two-RHS undercount is the recorded trap).
+  `_over_threshold_now` (manual `/compact`, a sync-holder) keeps `agent.model` — benign, noted.
+  The `/local`//`/cloud` prefix WINS and bypasses the router (the 4c lock); stated plainly: the
+  prefix selects the ENDPOINT — a prefixed turn runs the WORKER ModelRef on that endpoint.
+  **`RoutingState`** (per-thread `app.state.routing_state`, the CompactionState template:
+  dataclass + `routing_state_for` + prune-when-default + `_build_session` injection):
+  `consecutive_failures` · `fallback_remaining` · **`current_route`** (the logical-turn route
+  lock: a resume READS it instead of re-deciding — the ACA-16 mode-carry parallel; no
+  mid-logical-turn model flip, no double-decrement; restart loses it → post-restart resume
+  re-resolves, recorded residual) · `turn_had_model_failure` (session-written per-turn flag).
+- **Failure counting — session-side, structural, hard-failures ONLY** (review F2/F3:
+  `_cleanup` sees neither routed-to nor degraded, and `capped` is a nearly-dead terminal —
+  counting lives IN `_drive` where every signal exists): on a worker-routed turn, a failure is
+  (a) the chain-level `InferenceError` ending the turn, EXCLUDING degraded-rescued serves AND
+  the chain-exhausted total outage (an infra event — escalating to an equally-dead lead is
+  pointless; review F12), or (b) reaching `_finalize` via ITERATION EXHAUSTION or the STALL
+  GUARD (the true weak-worker signal, flowed as an explicit flag at the two known sites — never
+  inferred from terminal strings). `completed` resets; `suspended`/`cancelled` neutral. At
+  threshold → `fallback_remaining = fallback_turns` + ONE notice each way (`// lead model for
+  the next N turns (worker failing)` / `// back to the worker model`). Honest scope: this
+  catches CRASH-AND-BURN only — a confident-wrong answer is a clean turn by design
+  (content-sniffing = the Goose regret, rejected).
+- **The D18 ~60s dead-ENDPOINT circuit breaker stays deferred as a DISTINCT concern** (review
+  M3): availability at request/endpoint granularity vs this quality-ish escalation at
+  turn/model granularity — different axes; the guard is against duplicating the SAME axis.
+- **Invariants:** (1) one route decision per logical turn, suspend/resume included, never
+  mid-turn; (2) the prefix always wins and never mutates routing state; (3) no retry after the
+  first streamed token, no mid-stream failover, permit-free/stream-free backoff; (4) every
+  retry/failover/route-change is wire-visible + `retry_status` covers re-attach-during-backoff
+  — nothing silent, no dead spinners; (5) with routing off + retry resolved 0, behavior is
+  today's except the degraded narration becomes the live typed event; at shipped defaults the
+  second sanctioned delta is the visible in-place transient retry (owner-ruled); (6)
+  `failover()` stays value-agnostic; voice/embeddings/`complete()` via `failover_collect()`
+  unchanged; (7) degraded-rescued and total-outage turns never count as worker failures;
+  control items never touch `streamed_any`.
+
+**Status.** LOCKED 2026-07-19 (owner go after two discussion rounds; rulings recorded in
+SLICE7_PLAN §9: A4-reduced as specced · retry = global-2 + per-endpoint override · no routing
+UI v1 — the AgentsEditor GLOBAL routing row is the named follow-up if routing survives real
+use). Build = ~5 Opus waves (failover generator + classifier + retry + config → session
+events/retry_status/notice-deletion → the routing machine → FE cases + Omit → the docs sweep)
++ mid/post-build audits + the Codex tri-review — the standing pipeline. Verification per
+SLICE7_PLAN §7 (incl. the three review-added pins: suspend-inside-episode stability · all-four
+locals ride the lead in BOTH call paths · a real busy llama.cpp slot reaches the retry tier).
+Out of scope recorded: content-sniffing · `lead_turns` (purely additive later) · mid-stream
+failover · SDK retries · summarizer/voice retry · the D18 endpoint breaker · A7 thinking
+transforms (code-verified unnecessary) · subagent runtime routing · per-agent routing UI.
+As-built record lands on AGENT_CHAT_AUDIT §5 Slice 7.
