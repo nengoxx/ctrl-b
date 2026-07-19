@@ -38,9 +38,12 @@ from app.services.agent.compaction import (
     OUTPUT_CLEARED_PLACEHOLDER,
     SUMMARY_PREFIX,
     TRUNCATION_NOTICE,
+    ClearingPlan,
+    CompactionState,
     Compactor,
     estimate_tokens,
     plan_clearing,
+    prune_compaction_state,
 )
 from app.services.agent.session import _tool_content
 from app.services.conversation import MessageRepo
@@ -167,7 +170,7 @@ def test_clearing_gain_pushes_trigger_net_of_clearing() -> None:
     comp = Compactor(cast("InferenceClient", None), cast("MessageRepo", None), cfg)
     # window 10000 → line 8500. An 8600 estimate is over, but net of the clearing gain it drops under.
     assert comp._over_threshold(history, window=10000, estimated_tokens=8600) is True
-    assert comp._over_threshold(history, window=10000, estimated_tokens=8600, clearing_gain=plan.gain) is (
+    assert comp._over_threshold(history, window=10000, estimated_tokens=8600, clearing=plan) is (
         8600 - plan.gain > 8500
     )
 
@@ -377,6 +380,117 @@ def test_inflation_reject_leaves_db_untouched() -> None:
     _run(go())
 
 
+class _FixedInfer:
+    """Summarizer returning a FIXED-size body, so the reject comparison is deterministic (R5)."""
+
+    def __init__(self, body: str) -> None:
+        self._body = body
+
+    async def effective_window_for(self, mode: str | None = None) -> int | None:
+        return None  # no overflow guard
+
+    async def complete(self, payload, *, mode=None, model=None, **_kw) -> str:
+        return self._body
+
+
+def test_inflation_reject_prices_head_net_of_clearing() -> None:
+    """R5: the reject prices the folded head NET of the free clearing trim. A head whose bulk is a
+    cleared tool output no longer inflates the comparison: a medium summary that would shrink against
+    the FAT (untrimmed) head but NOT against the trimmed head is now REJECTED. Without the plan (head
+    priced full) the SAME summary folds — proving the head-net pricing flips the decision."""
+
+    async def go() -> None:
+        from app.domain.conversation import Thread
+
+        # head = [user, asst_call c0, tool c0 BIG] (~757 tok); tail = [user, asst]. clearing clears c0
+        # (gain 600 → head_net ~157). A ~408-tok summary is > head_net (reject) but < head_full (accept).
+        def _history(thread_id: str) -> list[Message]:
+            msgs = [_user("u0"), *_round(0, output=_BIG), _user("u1"), _asst("reply")]
+            for m in msgs:
+                m.thread_id = thread_id
+            return msgs
+
+        cfg = CompactionCfg(keep_last_messages=1, keep_recent_tokens=1)
+        plan = ClearingPlan(frozenset({"c0"}), {"c0": len(_BIG) // CLEAR_CHARS_PER_TOKEN})
+        summary_body = "Z" * 1600  # ~408 tok once the SUMMARY_PREFIX is added
+
+        # With the clearing plan → head priced net (~157) → the summary inflates → REJECT.
+        messages, threads = await _fresh_repos()
+        thread = await threads.create(Thread())
+        for m in _history(thread.id):
+            await messages.add(m)
+        comp = Compactor(cast("InferenceClient", _FixedInfer(summary_body)), messages, cfg)
+        res = await comp.compact(thread, force=True, clearing=plan)
+        assert res is not None and res.rejected is True and res.removed == 0
+
+        # SAME summary, NO clearing plan → head priced full (~757) → the summary shrinks → FOLDS.
+        messages2, threads2 = await _fresh_repos()
+        thread2 = await threads2.create(Thread())
+        for m in _history(thread2.id):
+            await messages2.add(m)
+        comp2 = Compactor(cast("InferenceClient", _FixedInfer(summary_body)), messages2, cfg)
+        res2 = await comp2.compact(thread2, force=True)
+        assert res2 is not None and res2.rejected is False and res2.removed > 0
+
+    _run(go())
+
+
+# ── E2. the thrash-state prune (`prune_compaction_state`, R3) ──────────────────────────────────────
+
+
+def test_prune_compaction_state_pops_default_keeps_latched() -> None:
+    """R3: `prune_compaction_state` drops an all-default entry (re-mintable lazily) but PRESERVES any
+    live residual — a latched breaker, or a non-zero failure counter — so the cross-turn latch survives."""
+    store: dict[str, CompactionState] = {
+        "default": CompactionState(),
+        "latched": CompactionState(breaker_latched=True, notice_emitted=True),
+        "failing": CompactionState(consecutive_failures=2),
+    }
+    for tid in ("default", "latched", "failing", "missing"):
+        prune_compaction_state(store, tid)
+    assert "default" not in store  # all-default → popped
+    assert "latched" in store  # latched breaker survives
+    assert "failing" in store  # a live failure counter survives
+
+
+def test_manual_reset_then_prune_drops_the_entry() -> None:
+    """R3 end-to-end: a manual compact that leaves the thread under threshold RESETS the machine to
+    all-defaults; the endpoint then prunes the now-inert entry (here we call the same helper the
+    `/agent/compact` endpoint calls). A still-latched thread would be preserved instead."""
+    with _workspace(), _client() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            from app.domain.conversation import Thread
+
+            thread = await state.threads.create(Thread())
+            await _seed_history(state, thread)
+            session = _thrash_session(state, thread, max_failures=1)
+            cs = state.compaction_state[thread.id]
+
+            _ = [ev async for ev in session._drive(thread)]
+            assert cs.breaker_latched is True  # latched after one failing turn
+            # while latched, prune must NOT drop it (a live residual survives turns until reset)
+            prune_compaction_state(state.compaction_state, thread.id)
+            assert thread.id in state.compaction_state
+
+            async def big_window(ep):
+                return 10_000_000
+
+            async def small_summary(payload, *, mode=None, model=None, **_kw):
+                return "tiny"
+
+            session._inference.effective_window = big_window  # type: ignore[assignment]
+            session._inference.complete = small_summary  # type: ignore[assignment]
+
+            await session.compact(thread)  # resets to all-defaults (under threshold)
+            assert cs == CompactionState()  # confirm the reset
+            prune_compaction_state(state.compaction_state, thread.id)  # the endpoint's prune step
+            assert thread.id not in state.compaction_state  # the inert entry was dropped
+
+        _run(go())
+
+
 # ── F. the thrash machine (driving the app) ───────────────────────────────────────────────────────
 
 
@@ -568,6 +682,55 @@ def test_thrash_truncation_shrink_counts_as_success() -> None:
             events = [ev async for ev in session._drive(thread)]
             assert any(e.event == "compaction" for e in events)  # a fold happened (truncation)
             assert cs.consecutive_failures == 0  # success reset the counter
+
+        _run(go())
+
+
+# ── G. hot-settings application (D42 Invariant 11 / R6) ────────────────────────────────────────────
+
+
+def test_settings_written_compaction_applies_at_next_session() -> None:
+    """D42 Invariant 11 (R6): compaction knobs written via the settings surface apply at the NEXT
+    built session with no restart (sessions build per-turn off live settings), and a written
+    `inference.local.context_window` moves the window-aware trigger line. Uses the temp-config
+    TestClient pattern — never the real config.yaml."""
+    from app.api.agent import _build_session
+
+    with _workspace(), _client() as c:
+        state = c.app.state
+
+        # baseline: the default global compaction knobs a freshly built session sees.
+        base = _build_session(state)
+        assert base._compaction_cfg.threshold_frac == 0.85  # the D42 default
+
+        # PUT global compaction knobs + a local context window through the real settings endpoint.
+        r = c.put(
+            "/api/settings",
+            json={
+                "agent": {"compaction": {"threshold_frac": 0.6, "keep_recent_tokens": 2048}},
+                "inference": {"local": {"context_window": 40000}},
+            },
+        )
+        assert r.status_code == 200, r.text
+
+        # the NEXT built session's Compactor sees the new values (hot at next turn, no restart).
+        after = _build_session(state)
+        assert after._compaction_cfg.threshold_frac == 0.6
+        assert after._compaction_cfg.keep_recent_tokens == 2048
+
+        async def go() -> None:
+            local_ep = state.settings.inference.endpoint("local")
+            window = await state.inference.effective_window(local_ep)
+            assert window == 40000  # config context_window wins the ladder
+            # the trigger line moved: window(40000) × frac(0.6) = 24000 (was None → threshold_tokens).
+            assert after._compactor._trigger_limit(window, None) == 40000 * 0.6
+            # a DIFFERENT context window moves it again (proves the line tracks the live config).
+            r2 = c.put("/api/settings", json={"inference": {"local": {"context_window": 8192}}})
+            assert r2.status_code == 200, r2.text
+            ep2 = state.settings.inference.endpoint("local")
+            assert await state.inference.effective_window(ep2) == 8192
+            newer = _build_session(state)
+            assert newer._compactor._trigger_limit(8192, None) == 8192 * 0.6
 
         _run(go())
 

@@ -40,7 +40,7 @@ from app.domain.event import Event
 from app.domain.plan import Plan
 from app.domain.result import ToolResult
 from app.runtime import rediscover_integrations
-from app.services.agent.compaction import compaction_state_for
+from app.services.agent.compaction import compaction_state_for, prune_compaction_state
 from app.services.agent.exec import run_user_exec
 from app.services.agent.planning import TaskPlanInput
 from app.services.agent.proposals import apply_proposal
@@ -1428,7 +1428,12 @@ async def compact(body: CompactRequest, request: Request) -> dict[str, Any]:
     # `_compactor.compact` (double summary insertion); 409 while a turn is live. Released in finally.
     handle = _reserve_turn(request, thread.id, "compact")
     try:
-        return await _session(request, thread).compact(thread, instructions=body.instructions)
+        result = await _session(request, thread).compact(thread, instructions=body.instructions)
+        # D42 R3: a manual compact that leaves the thread healthy resets the thrash machine to
+        # all-defaults — drop the now-inert entry so `app.state.compaction_state` doesn't accumulate
+        # dead threads (`compaction_state_for` re-mints it lazily; a still-latched entry is preserved).
+        prune_compaction_state(request.app.state.compaction_state, thread.id)
+        return result
     finally:
         release(request.app.state.turns, handle)
 

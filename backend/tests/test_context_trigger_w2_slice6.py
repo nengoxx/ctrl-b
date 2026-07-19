@@ -23,12 +23,14 @@ from typing import cast
 import httpx
 import pytest
 
+import app.services.agent.compaction as compaction_mod
 from app.adapters.inference import InferenceClient, StreamReport
 from app.config import InferenceCfg, InferenceEndpointCfg
 from app.domain.agent import CompactionCfg
 from app.domain.conversation import Message, TextPart
 from app.domain.enums import Actor
 from app.services.agent.compaction import (
+    ClearingPlan,
     Compactor,
     ContextEstimator,
     estimate_tokens,
@@ -96,14 +98,70 @@ def test_disabled_never_over_threshold() -> None:
     assert c._over_threshold([], window=10000, estimated_tokens=999999) is False
 
 
-def test_clearing_gain_seam_subtracts_default_zero() -> None:
-    """The Wave-3 seam: `clearing_gain` subtracts from the estimate; default 0 is a no-op, and a
-    non-zero value (what Wave 3 will feed) prices the trigger net-of-clearing."""
+def test_negative_trigger_line_degrades_to_threshold_tokens(caplog) -> None:
+    """R2: a reserve ≥ window×frac would drive the line ≤ 0 (thrash every turn). Degrade to the
+    `threshold_tokens` fallback (not a negative line) and warn EXACTLY once across calls."""
+    compaction_mod._degenerate_trigger_warned = False  # reset the module once-flag for the test
+    c = _compactor(CompactionCfg(threshold_frac=0.85, reserve_output=True, threshold_tokens=6000))
+    # 1000 × 0.85 = 850, minus a 2000 reserve = −1150 ≤ 0 → fall back to threshold_tokens=6000.
+    with caplog.at_level("WARNING", logger="ctrlb.compaction"):
+        assert c._over_threshold([], window=1000, reserve_tokens=2000, estimated_tokens=6000) is False
+        assert c._over_threshold([], window=1000, reserve_tokens=2000, estimated_tokens=6001) is True
+        # a second degenerate call must NOT re-warn
+        assert c._over_threshold([], window=1000, reserve_tokens=5000, estimated_tokens=1) is False
+    warnings = [r for r in caplog.records if "trigger line" in r.getMessage()]
+    assert len(warnings) == 1, "exactly one degenerate-trigger warning"
+
+
+def test_record_stores_cleared_at_anchor_for_delta_credit() -> None:
+    """R1: `record(cleared_call_ids=…)` remembers what the anchored prompt was trimmed by, and
+    `estimate` surfaces it as `cleared_at_anchor` (which the session passes to the trigger for the
+    exact-delta credit). Heuristic mode surfaces `None`."""
+    est = ContextEstimator()
+    m1, m2 = _msg("a" * 40), _msg("b" * 40)
+    est.record(
+        total=5000, served_key="http://local/v1", watermark_id=m1.id, cleared_call_ids=frozenset({"c0"})
+    )
+    got = est.estimate([m1, m2], overhead=50, served_key="http://local/v1")
+    assert got.anchored is True and got.cleared_at_anchor == frozenset({"c0"})
+    # a fresh (heuristic) estimator surfaces None
+    assert (
+        ContextEstimator().estimate([m1], overhead=1, served_key="http://local/v1").cleared_at_anchor is None
+    )
+
+
+def test_clearing_plan_subtracts_gain_default_none() -> None:
+    """The clearing seam: a passed `ClearingPlan` subtracts its gain from the estimate; the default
+    `None` is a no-op. In heuristic mode (no `cleared_at_anchor`) the FULL gain is credited."""
     c = _compactor(CompactionCfg(threshold_frac=0.85))
-    # default 0 → fires at 8501 (as above).
+    # default None → fires at 8501 (as above).
     assert c._over_threshold([], window=10000, estimated_tokens=8501) is True
     # a 2000-token clearing gain pulls 8501 → 6501, back under the 8500 line.
-    assert c._over_threshold([], window=10000, estimated_tokens=8501, clearing_gain=2000) is False
+    plan = ClearingPlan(frozenset({"x"}), {"x": 2000})
+    assert c._over_threshold([], window=10000, estimated_tokens=8501, clearing=plan) is False
+
+
+def test_clearing_credit_is_delta_when_anchored() -> None:
+    """R1 exact-delta: an ANCHORED estimate (a `cleared_at_anchor` set is supplied) credits ONLY the
+    outputs cleared SINCE the anchor — the anchor total already reflects the anchor-time trim, so
+    crediting the full gain would double-count it."""
+    c = _compactor(CompactionCfg(threshold_frac=0.85))
+    # P2 clears {a, b} (gain 2000 total); the anchor already had {a} trimmed (1000 of that gain).
+    p2 = ClearingPlan(frozenset({"a", "b"}), {"a": 1000, "b": 1000})
+    # HEURISTIC (cleared_at_anchor=None): full 2000 credit → 9600 − 2000 = 7600 < 8500 → under.
+    assert c._over_threshold([], window=10000, estimated_tokens=9600, clearing=p2) is False
+    # ANCHORED with {a} already cleared: credit only b's 1000 → 9600 − 1000 = 8600 > 8500 → over.
+    assert (
+        c._over_threshold(
+            [], window=10000, estimated_tokens=9600, clearing=p2, cleared_at_anchor=frozenset({"a"})
+        )
+        is True
+    )
+    # ANCHORED with nothing cleared at the anchor: delta == full → same as heuristic (7600 under).
+    assert (
+        c._over_threshold([], window=10000, estimated_tokens=9600, clearing=p2, cleared_at_anchor=frozenset())
+        is False
+    )
 
 
 # ── 2. The window ladder (`effective_window`) + probe-eligibility ─────────────────────────────────

@@ -311,6 +311,50 @@ def test_stream_chat_overflow_populates_code_status() -> None:
     assert is_context_overflow(raised) is True
 
 
+# ── C2. the anchoring-inactive notice (R4) ─────────────────────────────────────────────────────────
+
+
+class _UsageChunk:
+    """A final stream chunk carrying `usage.prompt_tokens` (the cloud include_usage shape) — so the
+    telemetry capture records a prompt total and anchoring is ACTIVE."""
+
+    def __init__(self, prompt_tokens: int) -> None:
+        self.choices = []
+        self.usage = type("U", (), {"prompt_tokens": prompt_tokens, "prompt_tokens_details": None})()
+        self.model_extra = None
+
+
+def test_anchoring_notice_fires_once_when_no_prompt_total(caplog) -> None:
+    """R4: a COMPLETED stream that reports NO prompt-token total logs the anchoring-inactive notice
+    EXACTLY once per client instance — not on the second such stream."""
+    import logging
+
+    from app.adapters.inference import StreamReport
+
+    client, _ = _build(_cfg(), {"http://local/v1": _stream_ok("hi")})
+    with caplog.at_level(logging.INFO, logger="ctrlb.inference"):
+        _run(_collect(client, report=StreamReport()))  # first completed stream, no total
+        _run(_collect(client, report=StreamReport()))  # second, still no total
+    notices = [r for r in caplog.records if "anchoring inactive" in r.getMessage()]
+    assert len(notices) == 1  # emitted once, across two totals-less streams
+    assert "return_progress" in notices[0].getMessage() and "include_usage" in notices[0].getMessage()
+
+
+def test_anchoring_notice_silent_when_total_present(caplog) -> None:
+    """A stream that DOES report a prompt total (anchoring active) never emits the notice."""
+    import logging
+
+    from app.adapters.inference import StreamReport
+
+    behavior = lambda _kw: _Stream([_Chunk(_Delta(content="hi")), _UsageChunk(1234)])  # noqa: E731
+    client, _ = _build(_cfg(), {"http://local/v1": behavior})
+    report = StreamReport()
+    with caplog.at_level(logging.INFO, logger="ctrlb.inference"):
+        _run(_collect(client, report=report))
+    assert report.prompt_tokens == 1234  # the total was captured → anchoring active
+    assert not any("anchoring inactive" in r.getMessage() for r in caplog.records)
+
+
 # ── D. the summarizer wire (`_summarize`) ──────────────────────────────────────────────────────────
 
 

@@ -24,6 +24,8 @@ boundary, so it round-trips through `_assemble` and `GET /threads/{id}/messages`
 from __future__ import annotations
 
 import json
+import logging
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -39,6 +41,8 @@ from app.domain.conversation import (
 from app.domain.enums import Actor
 from app.services.agent.turns import _SUSPEND_CALL_STATES
 from app.services.conversation import MessageRepo
+
+log = logging.getLogger("ctrlb.compaction")
 
 #: Marks a compaction-summary system message so repeated compaction can recognise + re-fold it.
 SUMMARY_PREFIX = "[Earlier conversation summary]\n"
@@ -83,7 +87,14 @@ OUTPUT_CLEARED_PLACEHOLDER = "[output cleared — re-run the tool if needed]"
 #: Conservative pricing ratio for the clearing gain (D42): chars/5, deliberately BELOW the chars/4
 #: `CHARS_PER_TOKEN` the estimator counts an output at — so subtracting the priced gain from the
 #: estimate UNDER-removes headroom (clearing can never over-promise → the trigger never fires too
-#: late because it over-credited a free trim). One named constant carrying that rationale.
+#: late because it over-credited a free trim). One named constant carrying that rationale, priced
+#: PER-OUTPUT into `ClearingPlan.gains` so a subset can be re-priced without a second formula.
+#:
+#: The credit is applied differently by estimator mode (R1): in HEURISTIC mode the trigger subtracts
+#: the FULL priced gain (the heuristic history-estimate still counts every cleared output at chars/4);
+#: in ANCHORED mode the telemetry anchor already reflects the prompt AS-TRIMMED at anchor time, so the
+#: trigger credits ONLY the outputs cleared SINCE that anchor (`gain_over(cleared_now − cleared_at_
+#: anchor)`) — subtracting the full gain there would double-count the anchor-time trim.
 CLEAR_CHARS_PER_TOKEN = 5
 
 #: Builtin tools whose results are STRUCTURALLY never cleared (D42): `task_plan` (the live plan
@@ -147,15 +158,29 @@ class ClearingPlan:
     `plan_clearing` and fed to BOTH consumers so there is exactly one selection, priced once:
       - the session's `_assemble` renders a cleared result's OUTPUT as `OUTPUT_CLEARED_PLACEHOLDER`
         (its `[state] summary` line + error survive) for every `call_id` in `cleared_call_ids`;
-      - the trigger prices net of this trim via Wave-2's `clearing_gain` seam (`gain`).
-    `gain` is the reclaimed tokens priced at chars/`CLEAR_CHARS_PER_TOKEN` (conservative)."""
+      - the trigger prices net of this trim, and the inflation-reject prices the folded head net of it.
+    `gains` maps each cleared `call_id` → its reclaimed tokens priced at chars/`CLEAR_CHARS_PER_TOKEN`
+    (conservative). Pricing lives ONLY in `plan_clearing`; `gain`/`gain_over` just sum those values, so
+    a subset (the anchored-delta trigger credit R1, the head-net reject R5) is re-priced with no second
+    formula."""
 
     cleared_call_ids: frozenset[str]
-    gain: int
+    gains: Mapping[str, int]
+
+    @property
+    def gain(self) -> int:
+        """Total reclaimed tokens across every cleared output — the HEURISTIC-mode trigger credit."""
+        return sum(self.gains.values())
 
     @property
     def empty(self) -> bool:
         return not self.cleared_call_ids
+
+    def gain_over(self, call_ids: Iterable[str]) -> int:
+        """The priced gain summed over just `call_ids` — the SAME per-output prices, restricted to a
+        subset (a call_id not in the plan contributes 0). Powers the anchored-delta trigger credit (R1)
+        and the head-net inflation-reject (R5) off one home, never a second pricing pass."""
+        return sum(self.gains.get(cid, 0) for cid in call_ids)
 
 
 def plan_clearing(history: list[Message], cfg: CompactionCfg) -> ClearingPlan:
@@ -180,7 +205,7 @@ def plan_clearing(history: list[Message], cfg: CompactionCfg) -> ClearingPlan:
     subtracting it under-credits the trim and the trigger never fires too late. Gated on `cfg.enabled`
     (the master switch); the run is otherwise UNCONDITIONAL (not gated on being over threshold)."""
     if not cfg.enabled:
-        return ClearingPlan(frozenset(), 0)
+        return ClearingPlan(frozenset(), {})
     # Map each call to (its ToolCallPart, the ordinal of the step it belongs to). A "step" is an
     # assistant message bearing tool calls — the results paired to the last `clear_keep_steps` of
     # these stay full.
@@ -198,7 +223,7 @@ def plan_clearing(history: list[Message], cfg: CompactionCfg) -> ClearingPlan:
     keep_from = n_steps - cfg.clear_keep_steps  # steps with ordinal ≥ this are protected (recent)
 
     cleared: set[str] = set()
-    gain = 0
+    gains: dict[str, int] = {}
     for m in history:
         if m.role != "tool":
             continue
@@ -217,8 +242,8 @@ def plan_clearing(history: list[Message], cfg: CompactionCfg) -> ClearingPlan:
             if len(out) // CHARS_PER_TOKEN <= cfg.clear_output_min_tokens:
                 continue  # below the trim floor — not worth clearing
             cleared.add(rp.call_id)
-            gain += len(out) // CLEAR_CHARS_PER_TOKEN
-    return ClearingPlan(frozenset(cleared), gain)
+            gains[rp.call_id] = len(out) // CLEAR_CHARS_PER_TOKEN  # priced once, here — the one home
+    return ClearingPlan(frozenset(cleared), gains)
 
 
 @dataclass
@@ -252,14 +277,33 @@ def compaction_state_for(state, thread_id: str) -> CompactionState:
     return st
 
 
+def prune_compaction_state(store: dict[str, CompactionState], thread_id: str) -> None:
+    """Drop a thread's thrash-machine entry IFF it is back to all-defaults (D42 R3) — the failure
+    counter, the latching breaker, and the notice guard are all clear, so `compaction_state_for` can
+    re-mint an identical fresh one lazily with nothing lost. A LATCHED breaker (or any live residual)
+    is preserved: the cross-turn latch must survive until a manual `/compact` resets it. Mirrors
+    `steering.prune_if_empty` — keeps `app.state.compaction_state` from accumulating dead threads.
+    Call it wherever the store owner has a `(store, thread_id)` in hand: after a manual-compact reset,
+    and (if a thread-delete path is ever added) beside its other per-thread cleanup."""
+    st = store.get(thread_id)
+    if st is not None and st == CompactionState():
+        del store[thread_id]
+
+
 @dataclass
 class ContextEstimate:
     """`ContextEstimator.estimate`'s verdict: the token estimate + whether it used the telemetry
     anchor (`anchored=False` = the heuristic+overhead fallback). The flag is for the debug line/tests;
-    callers price on `.tokens`."""
+    callers price on `.tokens`.
+
+    `cleared_at_anchor` (R1) carries the set of tool-result `call_id`s that were ALREADY trimmed out of
+    the anchored prompt when it was measured — `None` in heuristic mode (the trigger then credits the
+    full clearing gain), the recorded set in anchored mode (the trigger credits only the delta cleared
+    SINCE, so the anchor-time trim isn't double-counted)."""
 
     tokens: int
     anchored: bool
+    cleared_at_anchor: frozenset[str] | None = None
 
 
 class ContextEstimator:
@@ -290,18 +334,31 @@ class ContextEstimator:
         self._anchor: int | None = None
         self._watermark_id: str | None = None
         self._served_key: str | None = None
+        #: R1: the clearing selection that was applied to the anchored prompt (the outputs already
+        #: trimmed out of the total the anchor holds). Empty until the first `record` with a plan.
+        self._cleared_at_anchor: frozenset[str] = frozenset()
 
-    def record(self, *, total: int | None, served_key: str | None, watermark_id: str | None) -> None:
+    def record(
+        self,
+        *,
+        total: int | None,
+        served_key: str | None,
+        watermark_id: str | None,
+        cleared_call_ids: frozenset[str] = frozenset(),
+    ) -> None:
         """Re-anchor after a completed model call. `total` = the backend's TOTAL prompt tokens
         (`StreamReport.prompt_tokens`); `served_key` identifies the endpoint that answered; `watermark_id`
-        = the id of the last message in the prompt that was sent. Any missing input (no usable total —
-        degraded/absent telemetry) drops the anchor (heuristic mode next)."""
+        = the id of the last message in the prompt that was sent; `cleared_call_ids` = the iteration's
+        `ClearingPlan.cleared_call_ids` that shaped the prompt this total measured (R1 — so the next
+        estimate credits only newly-cleared outputs, not the ones already trimmed here). Any missing
+        input (no usable total — degraded/absent telemetry) drops the anchor (heuristic mode next)."""
         if total is None or served_key is None or watermark_id is None:
             self.invalidate()
             return
         self._anchor = total
         self._watermark_id = watermark_id
         self._served_key = served_key
+        self._cleared_at_anchor = cleared_call_ids
 
     def invalidate(self) -> None:
         """Drop the anchor (called by the session on a fold). The next `estimate` is heuristic+overhead
@@ -309,12 +366,14 @@ class ContextEstimator:
         self._anchor = None
         self._watermark_id = None
         self._served_key = None
+        self._cleared_at_anchor = frozenset()
 
     def estimate(self, history: list[Message], *, overhead: int, served_key: str | None) -> ContextEstimate:
         """Estimate the working context in tokens. Anchored mode (a live anchor whose `served_key`
         matches the endpoint being priced AND whose watermark is still in `history`): `anchor +
         estimate_tokens(messages after the watermark)` — the anchor already accounts for head+tools, so
-        `overhead` is NOT re-added. Otherwise: `estimate_tokens(history) + overhead`."""
+        `overhead` is NOT re-added; the anchor-time clearing set rides on `cleared_at_anchor` (R1).
+        Otherwise: `estimate_tokens(history) + overhead` with `cleared_at_anchor=None`."""
         heuristic = ContextEstimate(estimate_tokens(history) + overhead, anchored=False)
         if self._anchor is None or self._watermark_id is None:
             return heuristic
@@ -323,7 +382,11 @@ class ContextEstimator:
         idx = _index_after(history, self._watermark_id)
         if idx is None:
             return heuristic  # watermark folded away — backstop to the explicit fold-invalidation
-        return ContextEstimate(self._anchor + estimate_tokens(history[idx:]), anchored=True)
+        return ContextEstimate(
+            self._anchor + estimate_tokens(history[idx:]),
+            anchored=True,
+            cleared_at_anchor=self._cleared_at_anchor,
+        )
 
 
 def _index_after(history: list[Message], msg_id: str) -> int | None:
@@ -332,6 +395,33 @@ def _index_after(history: list[Message], msg_id: str) -> int | None:
         if m.id == msg_id:
             return i + 1
     return None
+
+
+#: R2 once-flag: the degenerate-trigger warning (reserve ≥ window×frac) is emitted at most once per
+#: process — a module-level bool, since the misconfiguration is global (config-level), not per-thread,
+#: and re-warning every iteration would flood the log. Reset only on process restart (a config fix that
+#: rebuilds nothing here; the residual is a single stale bool — harmless).
+_degenerate_trigger_warned = False
+
+
+def _warn_degenerate_trigger(
+    window: int, threshold_frac: float, reserve_tokens: int | None, fallback: int
+) -> None:
+    """Warn ONCE (module once-flag) that the window-aware trigger line collapsed to ≤ 0 and we degraded
+    to the `threshold_tokens` fallback — naming the numbers so the misconfiguration is actionable."""
+    global _degenerate_trigger_warned
+    if _degenerate_trigger_warned:
+        return
+    _degenerate_trigger_warned = True
+    log.warning(
+        "compaction trigger line window(%d) × threshold_frac(%.2f) − reserve(%s) ≤ 0: the output reserve "
+        "meets/exceeds the window budget, so auto-compaction would fire every turn. Degrading to the "
+        "threshold_tokens fallback (%d). Lower the agent's ModelRef.max_tokens or raise the context window.",
+        window,
+        threshold_frac,
+        reserve_tokens,
+        fallback,
+    )
 
 
 class Compactor:
@@ -351,7 +441,8 @@ class Compactor:
         window: int | None = None,
         reserve_tokens: int | None = None,
         estimated_tokens: int | None = None,
-        clearing_gain: int = 0,
+        clearing: ClearingPlan | None = None,
+        cleared_at_anchor: frozenset[str] | None = None,
         instructions: str | None = None,
     ) -> CompactionResult | None:
         """Compact the thread if warranted. Returns a `CompactionResult` when it actually folded OR
@@ -364,9 +455,12 @@ class Compactor:
         the Compactor stays STATELESS — the session owns this state): `window` = the resolved context
         window (config > probe > None); `reserve_tokens` = the effective `ModelRef.max_tokens` output
         reserve; `estimated_tokens` = the session's anchored context estimate (None ⇒ the v1
-        `estimate_tokens(history)` heuristic); `clearing_gain` = the Wave-3 net-of-clearing seam. All
-        flow to the single `_over_threshold` predicate. `instructions` = the `/compact <instructions>`
-        summarizer steer (manual path only; auto-compaction never has one)."""
+        `estimate_tokens(history)` heuristic); `clearing` = the iteration's shared `ClearingPlan` (the
+        net-of-clearing trigger credit AND the head-net inflation-reject read off it — R1/R5);
+        `cleared_at_anchor` = the anchor-time clearing set when the estimate is anchored, `None` in
+        heuristic mode (the trigger credits the full clearing gain then). All flow to the single
+        `_over_threshold` predicate. `instructions` = the `/compact <instructions>` summarizer steer
+        (manual path only; auto-compaction never has one)."""
         if not self._cfg.enabled and not force:
             return None
 
@@ -376,7 +470,8 @@ class Compactor:
             window=window,
             reserve_tokens=reserve_tokens,
             estimated_tokens=estimated_tokens,
-            clearing_gain=clearing_gain,
+            clearing=clearing,
+            cleared_at_anchor=cleared_at_anchor,
         ):
             return None
 
@@ -399,7 +494,17 @@ class Compactor:
         # `rejected` so the session's thrash machine counts a failure. Bypassed by NOTHING (force too:
         # a doomed fold that grows the context is never worth committing). A truncation-fold notice is
         # tiny, so it only rejects on a pathologically small head (where compaction is pointless anyway).
-        if estimate_tokens([boundary]) >= estimate_tokens(head):
+        # R5: price the head NET of the free clearing trim — in the LIVE context the head's cleared
+        # outputs are already replaced by the tiny placeholder, so comparing the summary against the
+        # untrimmed head would over-accept a summary that only "shrinks" against fat, already-cleared
+        # output. Credit only the head's own cleared outputs, at the plan's per-output price (one home).
+        head_net = estimate_tokens(head)
+        if clearing is not None and not clearing.empty:
+            head_cleared = {
+                rp.call_id for m in head for rp in m.tool_results() if rp.call_id in clearing.cleared_call_ids
+            }
+            head_net -= clearing.gain_over(head_cleared)
+        if estimate_tokens([boundary]) >= head_net:
             return CompactionResult(summary_id="", removed=0, truncated=truncated, rejected=True)
         # SYS-1: the summary insert + the per-message `compacted` flips are one logical edit — commit
         # them atomically so a crash mid-loop can't leave the summary AND the unfolded originals both
@@ -418,7 +523,8 @@ class Compactor:
         window: int | None = None,
         reserve_tokens: int | None = None,
         estimated_tokens: int | None = None,
-        clearing_gain: int = 0,
+        clearing: ClearingPlan | None = None,
+        cleared_at_anchor: frozenset[str] | None = None,
     ) -> bool:
         """The enabled+threshold gate — the SINGLE source of compaction's "is the working context big
         enough to fold?" decision, shared by `compact()` and `should_compact()` so the threshold math
@@ -428,15 +534,22 @@ class Compactor:
         threshold_frac − reserve`; with NO window (`None`), fire when the estimate exceeds the absolute
         `threshold_tokens` (v1's unchanged no-regression path). `estimated_tokens` is the session's
         anchored estimate — `None` falls back to the v1 `estimate_tokens(history)` heuristic so every
-        existing caller stays valid. `clearing_gain` is the Wave-3 seam (see below)."""
+        existing caller stays valid. `clearing` (the iteration's `ClearingPlan`) prices the trigger NET
+        of the free assembly-time trim (see the credit rule below); `None` = no trim credit."""
         if not self._cfg.enabled:
             return False
         estimate = estimate_tokens(history) if estimated_tokens is None else estimated_tokens
-        # Wave-3 seam (D42 §E / §4-v2): the unconditional assembly-time tool-output trim prices the
-        # trigger NET of the tokens it reclaims for free. Named + wired to subtract, but defaulted to 0
-        # so it is a no-op THIS wave (nothing computes a gain yet) — Wave 3 passes the `plan_clearing`
-        # gain in here without duplicating the threshold math below.
-        estimate -= clearing_gain
+        # D42 §E / §4-v2 + R1: subtract the free assembly-time clearing trim so the trigger prices the
+        # context AS IT WILL BE SENT. The credit depends on the estimator mode: HEURISTIC mode (no
+        # `cleared_at_anchor`) still counts every cleared output in the history estimate, so credit the
+        # FULL gain; ANCHORED mode's total already reflects the anchor-time trim, so credit ONLY the
+        # outputs cleared SINCE (`cleared_now − cleared_at_anchor`) — crediting the full gain there
+        # would double-count the anchor-time trim (the exact-delta fix). One home: `ClearingPlan`.
+        if clearing is not None:
+            if cleared_at_anchor is None:
+                estimate -= clearing.gain
+            else:
+                estimate -= clearing.gain_over(clearing.cleared_call_ids - cleared_at_anchor)
         return estimate > self._trigger_limit(window, reserve_tokens)
 
     def _trigger_limit(self, window: int | None, reserve_tokens: int | None) -> float:
@@ -444,12 +557,22 @@ class Compactor:
         threshold_frac`, minus EXACTLY `reserve_tokens` when `reserve_output` is on AND a reserve is
         set (no global cap, no silent down-clamp — the two recorded opencode bugs; unset `max_tokens`
         ⇒ nothing reserved, the `threshold_frac` headroom being the margin). With no window: the
-        absolute `threshold_tokens` fallback (v1 semantics)."""
+        absolute `threshold_tokens` fallback (v1 semantics).
+
+        R2: if a misconfiguration (`reserve_tokens ≥ window × threshold_frac`) drives the line ≤ 0 —
+        which would make EVERY estimate over-threshold and thrash — degrade to the same
+        `threshold_tokens` fallback the no-window path uses (reuse the knob, no new magic floor) and
+        warn once (`_warn_degenerate_trigger`)."""
         if window is None:
             return self._cfg.threshold_tokens
         limit = window * self._cfg.threshold_frac
         if self._cfg.reserve_output and reserve_tokens is not None:
             limit -= reserve_tokens
+        if limit <= 0:
+            _warn_degenerate_trigger(
+                window, self._cfg.threshold_frac, reserve_tokens, self._cfg.threshold_tokens
+            )
+            return self._cfg.threshold_tokens
         return limit
 
     async def should_compact(
@@ -459,7 +582,8 @@ class Compactor:
         window: int | None = None,
         reserve_tokens: int | None = None,
         estimated_tokens: int | None = None,
-        clearing_gain: int = 0,
+        clearing: ClearingPlan | None = None,
+        cleared_at_anchor: frozenset[str] | None = None,
     ) -> bool:
         """Cheap ACA-11 pre-check: will `compact()` actually summarize on this iteration? True iff
         compaction is enabled, the working context is over threshold (`_over_threshold`, the shared
@@ -467,8 +591,8 @@ class Compactor:
         turn boundary above the floor, via the same `_split` `compact()` uses). Mirrors `compact()`'s
         non-`force` decision exactly, so the caller's "compacting…" notice never fires on a no-op
         iteration. Does its own history read; at homelab thread sizes the extra list is negligible. The
-        D42 trigger inputs (`window`/`reserve_tokens`/`estimated_tokens`/`clearing_gain`) are threaded
-        through to `_over_threshold` verbatim — all defaulted (existing callers unchanged)."""
+        D42 trigger inputs (`window`/`reserve_tokens`/`estimated_tokens`/`clearing`/`cleared_at_anchor`)
+        are threaded through to `_over_threshold` verbatim — all defaulted (existing callers unchanged)."""
         if not self._cfg.enabled:
             return False
         history = await self._messages.list(thread.id, include_compacted=False)
@@ -477,7 +601,8 @@ class Compactor:
             window=window,
             reserve_tokens=reserve_tokens,
             estimated_tokens=estimated_tokens,
-            clearing_gain=clearing_gain,
+            clearing=clearing,
+            cleared_at_anchor=cleared_at_anchor,
         ):
             return False
         head, _ = self._split(history)

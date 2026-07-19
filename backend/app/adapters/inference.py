@@ -223,6 +223,11 @@ class InferenceClient:
         #: Lazily-built httpx client for the raw `/props` GET (the SDK is chat-only). Built on first probe,
         #: reused per-process like the SDK clients; not aclosed on rebuild (same as the SDK clients here).
         self._probe_http: httpx.AsyncClient | None = None
+        #: R4 one-time guard: a completed stream that reported NO prompt-token total means the anchored
+        #: context estimator can't anchor on this endpoint (compaction runs on the chars/4 heuristic). We
+        #: log that ONCE per client instance. `set_inference` rebuilds the whole client on any inference
+        #: change, so a fresh instance re-evaluates after a config edit (return_progress/include_usage).
+        self._anchoring_notice_emitted = False
 
     def _probe_client(self) -> httpx.AsyncClient:
         if self._probe_http is None:
@@ -451,6 +456,23 @@ class InferenceClient:
             if isinstance(cache, int):
                 report.cached_tokens = cache
 
+    def _maybe_notice_anchoring_inactive(self, report: StreamReport | None) -> None:
+        """R4 (D42): once per client instance, INFO-log that context anchoring is inactive for this
+        endpoint when a COMPLETED stream reported no prompt-token total (`report.prompt_tokens is None`).
+        Without a total the anchored estimator falls back to the chars/4 heuristic silently, so name the
+        exact remedy per backend. Called only after a stream drains cleanly (never on a mid-stream
+        error); guarded so the emitted case short-circuits to two cheap comparisons on the hot path."""
+        if report is None or report.prompt_tokens is not None or self._anchoring_notice_emitted:
+            return
+        self._anchoring_notice_emitted = True
+        log.info(
+            "context anchoring inactive for endpoint '%s': the completed stream reported no prompt-token "
+            "total, so compaction falls back to the heuristic context estimate. Enable it with "
+            "extra_body={'return_progress': true} (local llama.cpp) or "
+            "stream_options={'include_usage': true} (cloud).",
+            report.served or "?",
+        )
+
     def _record(self, report: StreamReport | None, chain: list[_ChainEntry], result: Any) -> None:
         if report is not None:
             served = chain[result.served_index]
@@ -641,6 +663,9 @@ class InferenceClient:
                         for _, s in sorted(pending.items())
                     ]
                 )
+            # The stream drained cleanly: telemetry capture has concluded, so this is the honest point
+            # to notice a backend that never reported a prompt-token total (R4 — anchoring inactive).
+            self._maybe_notice_anchoring_inactive(report)
         except InferenceError:
             raise
         except Exception as exc:  # noqa: BLE001 — a mid-stream error: normalize, no failover

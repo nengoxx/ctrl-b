@@ -71,6 +71,7 @@ from app.services.agent.compaction import (
     ClearingPlan,
     CompactionState,
     Compactor,
+    ContextEstimate,
     ContextEstimator,
     estimate_payload_tokens,
     plan_clearing,
@@ -611,15 +612,14 @@ class AgentSession:
             self._tools_tokens = estimate_payload_tokens(self._tools())
         return self._head_tokens + self._tools_tokens
 
-    async def _estimate_context(self, thread: Thread, served_key: str | None) -> int:
+    async def _estimate_context(self, thread: Thread, served_key: str | None) -> ContextEstimate:
         """The session-side anchored context estimate driving the D42 trigger (Wave 2). Reads the
         working history and asks the session-held `ContextEstimator` for `anchor + heuristic(messages
         after the watermark)` when a telemetry anchor is live for `served_key`, else `estimate_tokens
-        (history) + the A8 head+tools overhead`. `should_compact`/`compact` price against this value."""
+        (history) + the A8 head+tools overhead`. Returns the full `ContextEstimate` — callers price on
+        `.tokens` and pass `.cleared_at_anchor` to the trigger so the clearing credit is exact (R1)."""
         history = await self._messages.list(thread.id, include_compacted=False)
-        return self._estimator.estimate(
-            history, overhead=self._overhead_tokens(), served_key=served_key
-        ).tokens
+        return self._estimator.estimate(history, overhead=self._overhead_tokens(), served_key=served_key)
 
     async def _plan_clearing(self, thread: Thread) -> ClearingPlan:
         """The iteration's Tier-1 clearing plan (D42) — the ONE selection shared by the trigger (its
@@ -643,8 +643,9 @@ class AgentSession:
             history,
             window=window,
             reserve_tokens=self._agent.model.max_tokens,
-            estimated_tokens=est,
-            clearing_gain=clearing.gain,
+            estimated_tokens=est.tokens,
+            clearing=clearing,
+            cleared_at_anchor=est.cleared_at_anchor,
         )
 
     async def _watermark_id(self, thread: Thread) -> str | None:
@@ -936,16 +937,18 @@ class AgentSession:
                     thread,
                     window=window,
                     reserve_tokens=reserve,
-                    estimated_tokens=est,
-                    clearing_gain=clearing.gain,
+                    estimated_tokens=est.tokens,
+                    clearing=clearing,
+                    cleared_at_anchor=est.cleared_at_anchor,
                 ):
                     yield AgentEvent("notice", {"text": "// compacting the conversation…"})
                 res = await self._compactor.compact(
                     thread,
                     window=window,
                     reserve_tokens=reserve,
-                    estimated_tokens=est,
-                    clearing_gain=clearing.gain,
+                    estimated_tokens=est.tokens,
+                    clearing=clearing,
+                    cleared_at_anchor=est.cleared_at_anchor,
                 )
                 if res is not None and res.rejected:
                     # D42 FAILURE (the ONLY one): the fold DIDN'T SHRINK (inflation-reject). Nothing was
@@ -1078,6 +1081,9 @@ class AgentSession:
                 total=report.prompt_tokens,
                 served_key=served.base_url if served is not None else None,
                 watermark_id=watermark,
+                # R1: remember WHICH tool outputs this call's prompt was trimmed by, so the next
+                # anchored estimate credits only the outputs cleared SINCE (not the ones already gone).
+                cleared_call_ids=clearing.cleared_call_ids,
             )
 
             parts: list[Part] = []
