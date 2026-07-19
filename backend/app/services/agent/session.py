@@ -38,7 +38,7 @@ import logging
 import sys
 import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, AsyncIterator, Awaitable, Callable
+from typing import TYPE_CHECKING, AsyncIterator, Awaitable, Callable, Literal
 
 import anyio
 from pydantic import ValidationError
@@ -89,6 +89,11 @@ if TYPE_CHECKING:
     from app.services.agent.steering import SteerEntry, SteerSource
 
 log = logging.getLogger(__name__)
+
+#: The durable suspend states (D43) — a tool call in one of these parked the turn on the owner. The
+#: per-call route-snapshot recording + the fresh-turn sweep both filter on these (mirrors turns.py's
+#: `_SUSPEND_CALL_STATES`, kept local so the routing sweep never couples the session to that module).
+_SUSPEND_CALL_STATES = (RunState.AWAITING_CONFIRM, RunState.AWAITING_ANSWER)
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are ctrl-b, a concise assistant embedded in a single-user homelab control panel. "
@@ -935,47 +940,65 @@ class AgentSession:
             max_repeat=self._agent.max_repeat_calls,
             max_per_tool=self._agent.max_calls_per_tool,
         )
-        if resume_assistant is not None:
-            outcome = _BatchOutcome()
-            async for ev in self._run_calls(
-                thread, resume_assistant, resume_tokens or {}, guard, resume_answers or {}, outcome=outcome
-            ):
-                yield ev
-            if outcome.suspended:
-                yield AgentEvent("done", {"threadId": thread.id, "state": "suspended"})
-                return
-
         # ── D43/A4 failure-fallback routing: resolve ONE routed `ModelRef` for this LOGICAL turn ─────
-        # The router returns the LEAD ModelRef during a fallback episode, else the agent's own (WORKER)
-        # model. ALL FOUR derived locals below read from `routed` (review F4/H2: the draft's two-RHS
-        # form silently left reasoning/max_tokens/compaction-reserve on the worker), and `_finalize`
-        # takes `routed` too. The `/local`//`/cloud` prefix (`mode`) WINS and BYPASSES the router
-        # entirely (the 4c lock): the prefix selects the ENDPOINT and runs the WORKER ModelRef on it —
-        # the owner's hand chooses infrastructure, not persona. No routing state is read/written on the
-        # prefix path (or when routing is off / this is a subagent/non-thread session).
-        routed = self._agent.model
+        # RESOLVED FIRST — above the resume batch — so a re-suspend during that batch can freeze the same
+        # `routed` under the new AWAITING call (chained suspension carries the snapshot). The router
+        # returns the LEAD ModelRef during a fallback episode, else the agent's own (WORKER) model. ALL
+        # FOUR derived locals below read from `routed` (review F4/H2: the draft's two-RHS form silently
+        # left reasoning/max_tokens/compaction-reserve on the worker), and `_finalize` takes `routed`
+        # too. The `/local`//`/cloud` prefix (`mode`) WINS and BYPASSES the router entirely (the 4c
+        # lock): the prefix selects the ENDPOINT and runs the WORKER ModelRef on it — the owner's hand
+        # chooses infrastructure, not persona. No routing state is read/written on the prefix path (or
+        # when routing is off / this is a subagent/non-thread session).
         rs, rcfg = self._routing_state, self._routing_cfg
-        if mode is None and rcfg is not None and rs is not None:
+        routed = self._agent.model
+        route: Literal["lead", "worker"] = "worker"
+        #: Per-turn hard-failure flag (was the deleted `RoutingState.turn_had_model_failure`). A PURE
+        #: turn-local: it is set ONLY at the exhaustion / stall / error terminals below, each of which
+        #: ends the turn immediately, so it NEVER needs to cross a suspend boundary (verified code-truth
+        #: — that's why it no longer lives on the cross-turn `RoutingState`). Passed to `_conclude_routing`.
+        had_failure = False
+        if mode is None and rs is not None:
             if resume_assistant is not None:
-                # RESUME: carry the route the FRESH half decided (the ACA-16 mode-carry parallel) —
-                # READ `current_route`, never re-decide, never decrement, no mid-logical-turn flip. A
-                # restart lost it (None) → fall to the worker (a recorded residual, like the compaction
-                # state class).
-                routed = rcfg.lead if rs.current_route == "lead" else self._agent.model
-            else:
-                # FRESH turn = a new logical turn: clear any stale per-turn failure flag first
-                # (defensive against a cancel that skipped the prior turn's conclude), then decide.
-                rs.turn_had_model_failure = False
+                # RESUME: use the per-call SNAPSHOT frozen at the fresh decision — VERBATIM, never
+                # re-dereferencing `rcfg.lead` (defect 2: an owner edit/disable mid-suspend must NOT
+                # change the resumed half of a logical turn). Applies even if routing was disabled
+                # mid-suspend (rcfg None) — the logical turn finishes as it started. A missing snapshot
+                # (restart / swept / a worker turn we never pinned) → the worker (recorded residual).
+                snap: ModelRef | None = None
+                for cid in set(resume_tokens or {}) | set(resume_answers or {}):
+                    if cid in rs.suspended_routes:
+                        snap = rs.suspended_routes.pop(cid)
+                        break
+                if snap is not None:
+                    routed = snap
+                    route = "lead"  # only LEAD routes are snapshotted (see `_record_suspend_routes`)
+            elif rcfg is not None:
+                # FRESH turn = a new logical turn. First SWEEP any snapshot whose call is no longer a
+                # live AWAITING call (an abandoned confirm / a restart residual): keyed here, at the
+                # fresh-decision site — the reconciler (turns.py) operates on the DB and knows nothing of
+                # routing state, so coupling the sweep there would be dirty; this is the clean hook and
+                # runs only when snapshots actually exist. Then decide the route.
+                if rs.suspended_routes:
+                    awaiting = {
+                        cp.call_id
+                        for m in await self._messages.with_call_states(_SUSPEND_CALL_STATES, thread.id)
+                        for cp in m.tool_calls()
+                        if cp.state in _SUSPEND_CALL_STATES
+                    }
+                    for cid in list(rs.suspended_routes):
+                        if cid not in awaiting:
+                            del rs.suspended_routes[cid]
                 if rs.fallback_remaining > 0:
                     # Inside a live episode → route to the lead and consume one turn. The decrement is
                     # committed HERE, at the fresh decision — a Stop that cancels this now-spawned turn
                     # mid-flight still consumes the episode turn (the episode shortens by that Stop —
                     # deliberate, matching the D41 "an already-spawned turn is what the cancel cancels"
-                    # spirit; `_cleanup` clears the route lock on the cancel terminal but not the count).
+                    # spirit; the per-turn flags are turn-locals, so a cancel leaves nothing to clean).
                     first_turn = rs.fallback_remaining == rcfg.fallback_turns
                     rs.fallback_remaining -= 1
-                    rs.current_route = "lead"
                     routed = rcfg.lead
+                    route = "lead"
                     if first_turn:  # the ONE opening notice — only on the episode's FIRST lead turn
                         yield AgentEvent(
                             "notice",
@@ -985,8 +1008,21 @@ class AgentSession:
                                 )
                             },
                         )
-                else:
-                    rs.current_route = "worker"  # no episode → the worker (today's behavior)
+                # else: no episode → `route` stays "worker" (today's behavior); nothing written.
+
+        if resume_assistant is not None:
+            outcome = _BatchOutcome()
+            async for ev in self._run_calls(
+                thread, resume_assistant, resume_tokens or {}, guard, resume_answers or {}, outcome=outcome
+            ):
+                yield ev
+            if outcome.suspended:
+                # Chained suspension: re-freeze the (unchanged) `routed` under the still-AWAITING
+                # sibling call(s) of this same logical turn, so their eventual resume re-reads it.
+                self._record_suspend_routes(resume_assistant, routed, route)
+                yield AgentEvent("done", {"threadId": thread.id, "state": "suspended"})
+                return
+
         # Effective inference target from the ROUTED ref: the per-message `mode` override (4c) still
         # wins for the ENDPOINT; the model id / reasoning / output reserve all price the routed ref.
         eff_mode = mode or routed.mode
@@ -1191,9 +1227,13 @@ class AgentSession:
                     # (`> 1`) or an ambiguous shape (`None` — config / mid-stream) is NEUTRAL (no count,
                     # no reset — review F12: escalating to an equally-dead lead is pointless).
                     single_endpoint = exc.endpoints_tried == 1
-                    if self._routing_state is not None and self._routing_state.current_route == "worker":
-                        self._routing_state.turn_had_model_failure = single_endpoint
-                    async for ev in self._conclude_routing(neutral=not single_endpoint):
+                    had_failure = route == "worker" and single_endpoint
+                    # The error terminal yields error+done SYNCHRONOUSLY (no await between conclude and
+                    # done), so unlike the finalize sites it cannot cancel-race a counted failure onto a
+                    # cancelled turn — conclude keeps its position here.
+                    async for ev in self._conclude_routing(
+                        route=route, had_failure=had_failure, neutral=not single_endpoint
+                    ):
                         yield ev
                     yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
                     return
@@ -1233,8 +1273,9 @@ class AgentSession:
                 await self._threads.touch(thread.id, assistant.ts)
                 yield AgentEvent("message.end", {"messageId": assistant.id})
                 # D43/A4: a clean text-only completion — the turn's conclusive end. On a worker turn
-                # (no failure flag set) this resets the consecutive-failure counter.
-                async for ev in self._conclude_routing():
+                # (`had_failure` still False) this resets the consecutive-failure counter; on a lead turn
+                # it emits the close notice when the episode's last lead turn just finished.
+                async for ev in self._conclude_routing(route=route, had_failure=had_failure):
                     yield ev
                 yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})
                 return
@@ -1271,6 +1312,10 @@ class AgentSession:
             async for ev in self._run_calls(thread, assistant, {}, guard, outcome=outcome):
                 yield ev
             if outcome.suspended:
+                # Freeze the turn's `routed` under this batch's AWAITING call(s) so the resume re-reads
+                # it verbatim — never re-deciding, immune to a config edit/disable mid-suspend (defects
+                # 1+2). Neutral terminal: no count, no reset (the flags are turn-locals — untouched).
+                self._record_suspend_routes(assistant, routed, route)
                 yield AgentEvent("done", {"threadId": thread.id, "state": "suspended"})
                 return
             # Stall guard (C1b): only a *new tool result* counts as progress. Narration text does
@@ -1284,15 +1329,18 @@ class AgentSession:
                 stall += 1
                 if stall >= self._agent.max_stall_iterations:
                     # D43/A4 Site 2: forced-finalize via the STALL guard is a hard worker failure (the
-                    # true weak-worker signal — set explicitly, never inferred from the terminal). The
-                    # conclude runs BEFORE `_finalize` (which owns its own `done`); it counts the
-                    # failure + emits any close notice, and `_finalize` runs on the SAME `routed` ref.
-                    if self._routing_state is not None:
-                        self._routing_state.turn_had_model_failure = True
-                    async for ev in self._conclude_routing():
-                        yield ev
-                    async for ev in self._finalize(
-                        thread, eff_mode, routed, backstop_fired=backstop_fired_this_turn
+                    # true weak-worker signal — set explicitly on a worker route, never inferred from the
+                    # terminal). Conclude runs AFTER `_finalize` (intercepting its `done`) so a Stop
+                    # DURING the wrap-up cancels before any failure is counted — the cancelled turn stays
+                    # neutral (defect 3). `_finalize` runs on the SAME `routed` ref.
+                    had_failure = route == "worker"
+                    async for ev in self._finalize_then_conclude(
+                        thread,
+                        eff_mode,
+                        routed,
+                        route=route,
+                        had_failure=had_failure,
+                        backstop_fired=backstop_fired_this_turn,
                     ):
                         yield ev
                     return
@@ -1300,43 +1348,94 @@ class AgentSession:
 
         # Iterations exhausted: instead of a silent `capped` dead-end, force one tool-less call so
         # the owner always gets a final answer (C1c, opencode's max-step-guidance pattern).
-        # D43/A4 Site 2: iteration exhaustion is a hard worker failure (set explicitly; conclude before
-        # `_finalize` — same rationale as the stall site above).
-        if self._routing_state is not None:
-            self._routing_state.turn_had_model_failure = True
-        async for ev in self._conclude_routing():
-            yield ev
-        async for ev in self._finalize(thread, eff_mode, routed, backstop_fired=backstop_fired_this_turn):
+        # D43/A4 Site 2: iteration exhaustion is a hard worker failure (set explicitly on a worker
+        # route). Conclude runs AFTER `_finalize` (intercepting its `done`) so a Stop DURING the wrap-up
+        # cancels before any failure is counted — the cancelled turn stays neutral (defect 3).
+        had_failure = route == "worker"
+        async for ev in self._finalize_then_conclude(
+            thread,
+            eff_mode,
+            routed,
+            route=route,
+            had_failure=had_failure,
+            backstop_fired=backstop_fired_this_turn,
+        ):
             yield ev
 
-    async def _conclude_routing(self, *, neutral: bool = False) -> AsyncIterator[AgentEvent]:
+    def _record_suspend_routes(
+        self, assistant: Message, routed: ModelRef, route: Literal["lead", "worker"]
+    ) -> None:
+        """Freeze the turn's routed ModelRef under EACH of the assistant message's still-AWAITING
+        call_ids (D43) — the per-call snapshot a resume re-reads verbatim, so an owner config edit /
+        disable mid-suspend never changes the resumed half of a logical turn (Invariant 1), and turn B's
+        fresh decision on the same thread can never touch turn A's lock (defect 1: per-call keys, not one
+        thread slot). Only LEAD routes are recorded: a worker resume falls to the worker naturally (no
+        snapshot needed — recording it would just bloat the map + the sweep). A chained suspension
+        re-records under the new call_id, carrying the same snapshot. No-op when routing is inert."""
+        rs = self._routing_state
+        if rs is None or route != "lead":
+            return
+        for cp in assistant.tool_calls():
+            if cp.state in _SUSPEND_CALL_STATES:
+                rs.suspended_routes[cp.call_id] = routed
+
+    async def _finalize_then_conclude(
+        self,
+        thread: Thread,
+        eff_mode: str | None,
+        routed: ModelRef,
+        *,
+        route: Literal["lead", "worker"],
+        had_failure: bool,
+        backstop_fired: bool = False,
+    ) -> AsyncIterator[AgentEvent]:
+        """Run `_finalize`, then settle routing AFTER it by intercepting `_finalize`'s terminal `done`:
+        when the `done` arrives, FIRST yield the routing conclude events (the failure count + any close
+        notice), THEN yield the `done` (events-after-`done` are forbidden — the wire ordering contract).
+
+        This ordering closes defect 3: a Stop DURING the wrap-up model call raises `CancelledError` out
+        of `_finalize` BEFORE its `done`, so conclude never runs — the cancelled turn counts no failure
+        and arms no episode (the per-turn flags are turn-locals, so there is nothing to clean up). It
+        also fixes the premature close notice — `// back to the worker model` now fires only after the
+        final lead call actually finished."""
+        async for ev in self._finalize(thread, eff_mode, routed, backstop_fired=backstop_fired):
+            if ev.event == "done":
+                async for cev in self._conclude_routing(route=route, had_failure=had_failure):
+                    yield cev
+                yield ev
+                return
+            yield ev
+
+    async def _conclude_routing(
+        self, *, route: Literal["lead", "worker"], had_failure: bool, neutral: bool = False
+    ) -> AsyncIterator[AgentEvent]:
         """Settle the failure-fallback routing machine at a LOGICAL turn's CONCLUSIVE end (D43/A4) —
-        the completed / error / capped terminals, NEVER a suspend (the logical turn continues on
-        resume, so `current_route` + `turn_had_model_failure` must survive that boundary; the suspend
-        terminals deliberately don't call this).
+        the completed / error / capped terminals, NEVER a suspend (the logical turn continues on resume;
+        the suspend terminals record a route snapshot instead of concluding). Takes the turn's `route` +
+        `had_failure` as PARAMS (the deleted `current_route` / `turn_had_model_failure` state fields are
+        now `_drive` turn-locals).
 
-        On a WORKER-routed turn: a set `turn_had_model_failure` flag → `consecutive_failures += 1`,
-        opening a fallback episode (`fallback_remaining = fallback_turns`, counter reset) once it
-        reaches `failure_threshold`; a clean completion (flag clear) → reset to 0; a `neutral` terminal
-        (a multi-endpoint total outage — review F12) does NEITHER (no count, no reset). On a
-        LEAD-routed turn: emit the ONE `// back to the worker model` close notice exactly when the
-        episode's LAST lead turn just finished (`fallback_remaining == 0`). Always clears the per-turn
-        route lock + failure flag last, so a healthy thread returns to all-defaults (prune-able).
+        On a WORKER route: `had_failure` → `consecutive_failures += 1`, opening a fallback episode
+        (`fallback_remaining = fallback_turns`, counter reset) once it reaches `failure_threshold`; a
+        clean completion (`had_failure` False) → reset to 0; a `neutral` terminal (a multi-endpoint total
+        outage — review F12) does NEITHER (no count, no reset). On a LEAD route: emit the ONE `// back to
+        the worker model` close notice exactly when the episode's LAST lead turn just finished
+        (`fallback_remaining == 0`).
 
         When routing is OFF (`rcfg is None`) — the owner disabled it mid-episode via a settings/agent
-        edit — reset the WHOLE state to defaults (the episode counters too, not just the per-turn locks),
+        edit — reset the WHOLE state to defaults (the episode counters AND any pending route snapshots),
         so the prune drops the now-orphaned entry and a later re-enable starts a FRESH count. Leaving a
-        live `fallback_remaining`/`consecutive_failures` behind would make the entry non-prunable AND
-        silently resurrect a mid-episode lead route on re-enable (D43 Invariant 4 — nothing silent)."""
+        live `fallback_remaining`/`consecutive_failures`/`suspended_routes` behind would make the entry
+        non-prunable AND silently resurrect a mid-episode lead route on re-enable (D43 Invariant 4)."""
         rs, rcfg = self._routing_state, self._routing_cfg
         if rs is None:
             return
         if rcfg is not None:
-            if rs.current_route == "lead":
+            if route == "lead":
                 if rs.fallback_remaining == 0:  # the episode's last lead turn just concluded
                     yield AgentEvent("notice", {"text": "// back to the worker model"})
-            elif rs.current_route == "worker" and not neutral:
-                if rs.turn_had_model_failure:
+            elif route == "worker" and not neutral:
+                if had_failure:
                     rs.consecutive_failures += 1
                     if rs.consecutive_failures >= rcfg.failure_threshold:
                         rs.fallback_remaining = rcfg.fallback_turns
@@ -1344,12 +1443,11 @@ class AgentSession:
                 else:
                     rs.consecutive_failures = 0
         else:
-            # Routing disabled mid-episode: drop the episode counters too, so the entry prunes and a
-            # re-enable never inherits a stale mid-episode lead route (D43 Invariant 4).
+            # Routing disabled mid-turn: drop the episode counters AND any pending snapshots, so the
+            # entry prunes and a re-enable never inherits a stale mid-episode lead route (Invariant 4).
             rs.consecutive_failures = 0
             rs.fallback_remaining = 0
-        rs.current_route = None
-        rs.turn_had_model_failure = False
+            rs.suspended_routes.clear()
 
     async def _drain_steers(self, thread: Thread) -> AsyncIterator[AgentEvent]:
         """Drain A (D41): apply the steers queued mid-turn at the `_drive` loop top. `peek()` snapshots

@@ -410,21 +410,12 @@ def _spawn_drain_task(
         # merely a reload fallback, the safe failure of the two.
         release(state.turns, handle)
         record_terminal(state.turn_terminals, handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap)
-        # D43/A4 R2: a `cancelled` turn raised before `_conclude_routing` ran, so a Stop mid-lead-turn
-        # would leave `current_route`/`turn_had_model_failure` set — a leaked route lock that also blocks
-        # the prune below. Clear them defensively for the CANCEL terminal ONLY (never `suspended`, where
-        # `current_route` is load-bearing for the resume re-read; the completed/error terminals already
-        # ran conclude). The episode counters are UNTOUCHED: a cancel mid-lead-turn consumes that episode
-        # turn (a Stop shortens the episode — the D41 "an already-spawned turn is what the cancel cancels"
-        # spirit); the decrement already happened at the fresh-turn decision.
-        if handle.terminal_status == "cancelled":
-            _rs = state.routing_state.get(thread.id)
-            if _rs is not None:
-                _rs.current_route = None
-                _rs.turn_had_model_failure = False
         # D43/A4: a turn that ended with the routing state back to all-defaults (no live episode, no
-        # route lock — a healthy worker thread) drops its now-inert entry so `app.state.routing_state`
-        # doesn't accumulate dead threads; a mid-episode state is NOT all-default → preserved.
+        # failure counter, no pending route snapshot — a healthy worker thread) drops its now-inert entry
+        # so `app.state.routing_state` doesn't accumulate dead threads; a mid-episode state (or a thread
+        # with a still-suspended lead call) is NOT all-default → preserved. No cancel-clear is needed
+        # anymore: the per-turn route lock + failure flag are `_drive` turn-locals now, so a Stop
+        # mid-turn leaks nothing (the decrement, committed at the fresh decision, deliberately stands).
         prune_routing_state(state.routing_state, thread.id)
         # D41 Drain B: a `completed` turn that leaves pending steers spawns the next turn (or drains an
         # all-exec queue) — synchronously in this sync done-callback. Suppressed at shutdown / on a

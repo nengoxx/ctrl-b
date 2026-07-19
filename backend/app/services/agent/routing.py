@@ -13,8 +13,9 @@ memory; a recorded residual — a post-restart resume re-resolves to the worker)
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, field
+
+from app.domain.agent import ModelRef
 
 
 @dataclass
@@ -24,16 +25,27 @@ class RoutingState:
 
     `consecutive_failures` counts back-to-back HARD worker failures (a clean completed worker turn
     resets it); `fallback_remaining` is how many more logical turns route to `lead` (set to
-    `fallback_turns` when the threshold trips, decremented once per lead turn); `current_route` is the
-    LOGICAL-turn route lock — set on a fresh turn's decision and READ (not re-decided) on a resume, so
-    a suspend/resume never flips the model mid-logical-turn (the ACA-16 mode-carry parallel), then
-    cleared at the turn's conclusive end; `turn_had_model_failure` is the per-turn flag the session
-    sets at the structural failure sites and consumes + clears when the turn concludes."""
+    `fallback_turns` when the threshold trips, decremented once per lead turn — the ONLY cross-turn
+    write the fresh decision makes).
+
+    `suspended_routes` is the per-SUSPENDED-CALL route snapshot map: `call_id → the RESOLVED routed
+    ModelRef frozen at the fresh decision`. It replaces the old per-thread `current_route` slot, which
+    D41's fresh-turn-while-suspended allowance made unsafe (turn B's decision could overwrite / B's
+    conclude could clear turn A's still-suspended lock). Keying by the suspended call's id means each
+    logical turn owns its own snapshot: a resume re-reads its call's frozen ModelRef VERBATIM (never
+    re-dereferencing `RoutingCfg.lead` — so an owner edit/disable mid-suspend cannot flip the resumed
+    half of a logical turn, D43 Invariant 1). A missing entry (restart / sweep) falls back to the
+    worker (the recorded residual). Only LEAD routes are snapshotted — a worker resume falls to the
+    worker naturally, so nothing to pin. Swept when a call_id is no longer a live AWAITING call.
+
+    The old per-turn locks (`current_route` / `turn_had_model_failure`) are GONE from this state: they
+    are now `_drive` turn-locals. `turn_had_model_failure` never needs to cross a suspend boundary — it
+    is set ONLY at the exhaustion / stall / error terminals, each of which ends the turn immediately
+    (no suspend can follow), so a plain turn-local suffices (documented at the sites)."""
 
     consecutive_failures: int = 0
     fallback_remaining: int = 0
-    current_route: Literal["lead", "worker"] | None = None
-    turn_had_model_failure: bool = False
+    suspended_routes: dict[str, ModelRef] = field(default_factory=dict)
 
 
 def routing_state_for(state, thread_id: str) -> RoutingState:
@@ -50,12 +62,14 @@ def routing_state_for(state, thread_id: str) -> RoutingState:
 
 
 def prune_routing_state(store: dict[str, RoutingState], thread_id: str) -> None:
-    """Drop a thread's routing entry IFF it is back to all-defaults (D43) — no live episode, no route
-    lock, no pending failure flag, the failure counter clear — so `routing_state_for` can re-mint an
-    identical fresh one lazily with nothing lost. A live episode (`fallback_remaining > 0`), an
-    in-progress counter, or a set route lock is PRESERVED (it must survive to the next turn). Mirrors
-    `prune_compaction_state`; keeps `app.state.routing_state` from accumulating dead threads. Called
-    from the turn's done-callback, where the store owner has `(store, thread_id)` in hand."""
+    """Drop a thread's routing entry IFF it is back to all-defaults (D43) — no live episode, the
+    failure counter clear, and NO suspended-route snapshots pending — so `routing_state_for` can
+    re-mint an identical fresh one lazily with nothing lost. A live episode (`fallback_remaining > 0`),
+    an in-progress counter, or a pending suspend snapshot is PRESERVED (it must survive to the next
+    turn / the resume). The empty-dict default compares equal under dataclass `==`, so an all-default
+    entry still prunes. Mirrors `prune_compaction_state`; keeps `app.state.routing_state` from
+    accumulating dead threads. Called from the turn's done-callback, where the store owner has
+    `(store, thread_id)` in hand."""
     st = store.get(thread_id)
     if st is not None and st == RoutingState():
         del store[thread_id]
