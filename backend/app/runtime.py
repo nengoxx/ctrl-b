@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.adapters.embeddings import EmbeddingsClient
-from app.adapters.inference import InferenceClient
+from app.adapters.inference import EndpointGates, InferenceClient
 from app.adapters.openterminal import OpenTerminalClient
 from app.adapters.searxng import SearxngClient
 from app.adapters.voice import VoiceClient
@@ -35,8 +35,18 @@ def set_inference(app: "FastAPI", settings: Settings) -> None:
     """Build + wire the inference client from `settings.inference`. The single construction site for
     inference, called by both lifespan and `reconfigure`. Assigns `app.state.inference` (read per
     turn by `api/agent._session`) and mirrors it onto `app.state.deps.inference` so subagents use the
-    same client. Cheap + lazy — the SDK client is only opened on first use."""
-    app.state.inference = InferenceClient(settings.inference)
+    same client. Cheap + lazy — the SDK client is only opened on first use.
+
+    D42 Codex FIX 1: the per-endpoint request-gate semaphores live in the app-owned `EndpointGates`
+    registry (created once, memoized on `app.state.endpoint_gates`), NOT on the client — so a config
+    change that rebuilds the client here keeps the SAME semaphores. Old-generation permit holders and
+    the new client's acquirers then contend on ONE object per `(base_url, limit)`, so
+    `max_concurrent_requests` is never split across client generations."""
+    gates = getattr(app.state, "endpoint_gates", None)
+    if gates is None:
+        gates = EndpointGates()
+        app.state.endpoint_gates = gates
+    app.state.inference = InferenceClient(settings.inference, gates=gates)
     deps = getattr(app.state, "deps", None)
     if deps is not None:
         deps.inference = app.state.inference

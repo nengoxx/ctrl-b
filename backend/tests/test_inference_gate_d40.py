@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 
-from app.adapters.inference import InferenceClient
+from app.adapters.inference import EndpointGates, InferenceClient
 from app.config import InferenceCfg, InferenceEndpointCfg
 
 
@@ -76,8 +76,8 @@ class _Client:
         self.chat = type("Chat", (), {"completions": _Completions(behavior)})()
 
 
-def _build(cfg: InferenceCfg, behaviors: dict[str, object]):
-    client = InferenceClient(cfg)
+def _build(cfg: InferenceCfg, behaviors: dict[str, object], gates: EndpointGates | None = None):
+    client = InferenceClient(cfg, gates=gates)
     fakes = {url: _Client(b) for url, b in behaviors.items()}
     client._client = lambda ep: fakes[ep.base_url]  # type: ignore[assignment]
     return client, fakes
@@ -160,8 +160,58 @@ def test_none_is_unlimited_no_gating():
         gate.set()
         await asyncio.wait_for(t1, timeout=2.0)
         await asyncio.wait_for(t2, timeout=2.0)
-        # And the client built no semaphore for an unlimited endpoint.
-        assert client._sems == {}
+        # And the registry built no semaphore for an unlimited endpoint.
+        assert client._gates._sems == {}
+
+    asyncio.run(scenario())
+
+
+# ── (D42 Codex FIX 1) the cap is NOT split across client generations sharing one registry ──────────
+def test_shared_gates_cap_not_split_across_generations():
+    """A settings PUT rebuilds the `InferenceClient` but `set_inference` passes the SAME `EndpointGates`
+    in — so an OLD-generation permit holder (limit 1) and a NEW-generation acquirer contend on the ONE
+    semaphore: the new client's request MUST block until the old one releases. A per-client semaphore
+    (the pre-fix bug) would let limit 1 become 2."""
+
+    async def scenario():
+        gates = EndpointGates()
+        gate = asyncio.Event()
+        cfg = _cfg(1)
+        clientA, fakesA = _build(
+            cfg, {"http://local/v1": lambda _kw: _Stream([_Chunk(_Delta("A"))], gate)}, gates
+        )
+        tA = asyncio.create_task(_collect(clientA))
+        await asyncio.sleep(0.05)  # A acquired the single permit (parked on `gate`)
+        assert len(_calls(fakesA["http://local/v1"])) == 1
+        # rebuild: a NEW client generation, SAME registry, SAME endpoint+limit.
+        clientB, fakesB = _build(
+            cfg, {"http://local/v1": lambda _kw: _Stream([_Chunk(_Delta("B"))], gate)}, gates
+        )
+        tB = asyncio.create_task(_collect(clientB))
+        await asyncio.sleep(0.05)
+        # B is BLOCKED on the shared semaphore — it never reached create() while A holds the permit.
+        assert len(_calls(fakesB["http://local/v1"])) == 0
+        gate.set()  # release A → its permit frees → B proceeds on the SAME semaphore
+        rA = await asyncio.wait_for(tA, timeout=2.0)
+        rB = await asyncio.wait_for(tB, timeout=2.0)
+        assert "".join(d.text for d in rA) == "A"
+        assert "".join(d.text for d in rB) == "B"
+        assert len(_calls(fakesB["http://local/v1"])) == 1  # B eventually served, once A freed the slot
+
+    asyncio.run(scenario())
+
+
+def test_changed_limit_mints_fresh_gate():
+    """A CHANGED limit mints a NEW semaphore under the new `(base_url, limit)` key (old holders drain on
+    the old one); an unchanged key returns the SAME object across generations."""
+
+    async def scenario():
+        gates = EndpointGates()
+        s1 = gates.sem_for("http://local/v1", 1)
+        s1_again = gates.sem_for("http://local/v1", 1)
+        s2 = gates.sem_for("http://local/v1", 2)
+        assert s1 is s1_again  # same base_url + limit ⇒ the SAME semaphore (shared across generations)
+        assert s2 is not s1  # a changed limit ⇒ a fresh gate
 
     asyncio.run(scenario())
 

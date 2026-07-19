@@ -307,3 +307,22 @@ def test_rebuilt_client_reprobes() -> None:
         assert hits["n"] == 2
 
     asyncio.run(scenario())
+
+
+def test_probe_single_flight_concurrent_first_use_one_get() -> None:
+    """D42 Codex FIX 6: N concurrent first-use `probed_context_window` calls issue EXACTLY ONE GET —
+    the single-flight lock + memo double-check serializes the probe. Without it, each racer would see
+    the empty memo and fire its own GET (hits == N)."""
+    hits = {"n": 0}
+
+    def handler(_r: httpx.Request) -> httpx.Response:
+        hits["n"] += 1
+        return httpx.Response(200, json={"default_generation_settings": {"n_ctx": 4096}})
+
+    async def scenario() -> None:
+        client, ep = _client_with_handler(handler)
+        results = await asyncio.gather(*(client.probed_context_window(ep) for _ in range(8)))
+        assert results == [4096] * 8
+        assert hits["n"] == 1  # single-flight: one GET despite 8 concurrent first-use callers
+
+    asyncio.run(scenario())

@@ -309,10 +309,19 @@ def test_finalize_retains_toolset_with_tool_choice_none():
     rec = _RecInference()
     s._inference = rec
 
-    async def _assemble(_thread):
+    async def _assemble(
+        _thread, *, clearing=None
+    ):  # D42 Codex FIX 2 — finalize now assembles net-of-clearing
         return list(s._static_head)
 
     s._assemble = _assemble
+
+    async def _plan_clearing(_thread):  # D42 Codex FIX 2 — finalize computes a clearing plan
+        from app.services.agent.compaction import ClearingPlan
+
+        return ClearingPlan(frozenset(), {})
+
+    s._plan_clearing = _plan_clearing
 
     added: list = []
     s._messages = SimpleNamespace(add=lambda m: _aret(added.append(m)))

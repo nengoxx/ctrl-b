@@ -104,8 +104,25 @@ def test_clearing_selects_old_large_outputs_only() -> None:
         history += _round(i, output=_BIG)
     plan = plan_clearing(history, cfg)
     assert plan.cleared_call_ids == frozenset({"c0", "c1"})
-    # gain is priced at chars/CLEAR_CHARS_PER_TOKEN (conservative), summed over the two cleared outputs.
-    assert plan.gain == 2 * (len(_BIG) // CLEAR_CHARS_PER_TOKEN)
+    # gain is priced at chars/CLEAR_CHARS_PER_TOKEN over the NET reclaimed chars (output minus the
+    # placeholder that replaces it — Codex FIX 5), summed over the two cleared outputs.
+    assert plan.gain == 2 * ((len(_BIG) - len(OUTPUT_CLEARED_PLACEHOLDER)) // CLEAR_CHARS_PER_TOKEN)
+
+
+def test_clearing_net_positive_only_at_floor_zero() -> None:
+    """D42 Codex FIX 5: at `clear_output_min_tokens: 0`, an output NO LONGER than the placeholder is
+    NOT selected (clearing it would GROW the prompt) — and a genuinely-larger output is still selected,
+    with its gain priced NET of the placeholder."""
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=0)
+    tiny = "z" * (len(OUTPUT_CLEARED_PLACEHOLDER) - 2)  # shorter than the placeholder → net-negative
+    big = "z" * (len(OUTPUT_CLEARED_PLACEHOLDER) + 200)  # genuinely larger → net-positive
+    # c0 tiny (old), c1 big (old), c2 protected recent step.
+    history = [_user(), *_round(0, output=tiny), *_round(1, output=big), *_round(2, output=_BIG)]
+    plan = plan_clearing(history, cfg)
+    assert "c0" not in plan.cleared_call_ids  # net-negative tiny output is skipped even at floor 0
+    assert "c1" in plan.cleared_call_ids
+    # gain reflects the NET difference, not the raw output length.
+    assert plan.gains["c1"] == (len(big) - len(OUTPUT_CLEARED_PLACEHOLDER)) // CLEAR_CHARS_PER_TOKEN
 
 
 def test_clearing_floor_skips_small_outputs() -> None:
@@ -731,6 +748,229 @@ def test_settings_written_compaction_applies_at_next_session() -> None:
             assert await state.inference.effective_window(ep2) == 8192
             newer = _build_session(state)
             assert newer._compactor._trigger_limit(8192, None) == 8192 * 0.6
+
+        _run(go())
+
+
+# ── H. `_finalize` clearing + the reactive backstop (D42 Codex FIX 2) ─────────────────────────────
+
+
+def _overflow_error():
+    from app.adapters.inference import InferenceError
+
+    # status 400 + the OpenAI overflow code → `is_context_overflow` True (structured path).
+    return InferenceError("context_length_exceeded", code="context_length_exceeded", status=400)
+
+
+async def _seed_clearable(state, thread) -> None:
+    """A history with ONE old bulky tool output (past `clear_keep_steps`) + two recent protected
+    rounds — so `plan_clearing` clears the old one and `_finalize`'s assembled payload trims it."""
+    msgs = [_user("start")]
+    for i, out in enumerate((_BIG, _SMALL, _SMALL)):  # round0 old+big → cleared; rounds 1,2 protected
+        msgs += _round(i, output=out)
+    for m in msgs:
+        m.thread_id = thread.id
+        await state.messages.add(m)
+
+
+def test_finalize_assembles_with_clearing_placeholder() -> None:
+    """D42 Codex FIX 2 (a): `_finalize` assembles under Tier-1 clearing — an old bulky tool output is
+    rendered as the placeholder in the payload the wrap-up call receives (the recent-step protection
+    keeps the just-run results). Pre-fix, `_finalize` assembled UNTRIMMED."""
+    with _workspace(), _client() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            from app.domain.conversation import Thread
+
+            thread = await state.threads.create(Thread())
+            await _seed_clearable(state, thread)
+            session = _thrash_session(state, thread)  # over-window etc. don't matter; we drive _finalize
+            seen: dict = {}
+
+            async def recording(messages, *, mode=None, model=None, tools=None, report=None, **_kw):
+                seen["messages"] = messages
+                yield ChatDelta(text="final answer")
+
+            session._inference.stream_chat = recording  # type: ignore[assignment]
+
+            events = [ev async for ev in session._finalize(thread, None, None)]
+            assert any(e.event == "done" and e.data.get("state") == "completed" for e in events)
+            payload = "\n".join(str(m.get("content") or "") for m in seen["messages"])
+            assert OUTPUT_CLEARED_PLACEHOLDER in payload  # the old bulky output was trimmed
+            assert _BIG not in payload  # ...and the raw output is NOT in the wrap-up prompt
+
+        _run(go())
+
+
+def test_finalize_overflow_one_fold_then_reattempt() -> None:
+    """D42 Codex FIX 2 (b): a context-overflow with nothing streamed → ONE forced compaction + a
+    successful re-attempt; the final text arrives and the turn completes."""
+    with _workspace(), _client() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            from app.domain.conversation import Thread
+            from app.services.agent.compaction import CompactionResult
+
+            thread = await state.threads.create(Thread())
+            await _seed_clearable(state, thread)
+            session = _thrash_session(state, thread)
+
+            folds = {"n": 0}
+
+            async def fake_compact(thread, *, force=False, **_kw):
+                folds["n"] += 1
+                return CompactionResult(summary_id="s", removed=1, truncated=False)
+
+            session._compactor.compact = fake_compact  # type: ignore[assignment]
+
+            calls = {"n": 0}
+
+            async def overflow_then_ok(messages, *, mode=None, model=None, tools=None, report=None, **_kw):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise _overflow_error()  # nothing streamed → the backstop rescue fires
+                yield ChatDelta(text="recovered answer")
+
+            session._inference.stream_chat = overflow_then_ok  # type: ignore[assignment]
+
+            events = [ev async for ev in session._finalize(thread, None, None)]
+            assert folds["n"] == 1  # exactly ONE forced compaction
+            assert any(e.event == "compaction" for e in events)
+            assert (
+                "".join(e.data.get("delta", "") for e in events if e.event == "text.delta")
+                == "recovered answer"
+            )
+            assert any(e.event == "done" and e.data.get("state") == "completed" for e in events)
+
+        _run(go())
+
+
+def test_finalize_second_overflow_is_normal_error() -> None:
+    """D42 Codex FIX 2: the rescue is ONE-SHOT — a persistent overflow (every stream call overflows)
+    folds at most once, then falls to the normal `capped` error path."""
+    with _workspace(), _client() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            from app.domain.conversation import Thread
+            from app.services.agent.compaction import CompactionResult
+
+            thread = await state.threads.create(Thread())
+            await _seed_clearable(state, thread)
+            session = _thrash_session(state, thread)
+
+            folds = {"n": 0}
+
+            async def fake_compact(thread, *, force=False, **_kw):
+                folds["n"] += 1
+                return CompactionResult(summary_id="s", removed=1, truncated=False)
+
+            session._compactor.compact = fake_compact  # type: ignore[assignment]
+
+            async def always_overflow(messages, *, mode=None, model=None, tools=None, report=None, **_kw):
+                raise _overflow_error()
+                yield  # pragma: no cover — make this an async generator
+
+            session._inference.stream_chat = always_overflow  # type: ignore[assignment]
+
+            events = [ev async for ev in session._finalize(thread, None, None)]
+            assert folds["n"] == 1  # one-shot: folded once despite repeated overflow
+            assert any(e.event == "error" for e in events)
+            assert any(e.event == "done" and e.data.get("state") == "capped" for e in events)
+
+        _run(go())
+
+
+def test_backstop_fold_priced_net_of_clearing_rejects() -> None:
+    """D42 Codex FIX 4: the backstop's forced compact receives the iteration's clearing plan, so a fold
+    whose head is mostly already-cleared output is REJECTED (head priced NET) — driven through
+    `session._overflow_fold`. With an EMPTY plan (head priced FULL) the SAME summary folds, proving the
+    clearing plan flips the decision on the backstop path (mirrors `test_inflation_reject_prices_head_
+    net_of_clearing`)."""
+    with _workspace(), _client() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            from app.api.agent import _build_session
+            from app.domain.conversation import Thread
+            from app.services.agent.session import _BackstopOutcome
+
+            def _history(thread_id: str) -> list[Message]:
+                msgs = [_user("u0"), *_round(0, output=_BIG), _user("u1"), _asst("reply")]
+                for m in msgs:
+                    m.thread_id = thread_id
+                return msgs
+
+            cfg = CompactionCfg(keep_last_messages=1, keep_recent_tokens=1)
+            plan = ClearingPlan(
+                frozenset({"c0"}),
+                {"c0": (len(_BIG) - len(OUTPUT_CLEARED_PLACEHOLDER)) // CLEAR_CHARS_PER_TOKEN},
+            )
+            summary_body = "Z" * 1600  # ~408 tok: > head_net (~157, reject) but < head_full (~757, accept)
+
+            def _build_at(thread):
+                session = _build_session(state, thread)
+                session._compaction_cfg = cfg
+                session._compactor = Compactor(
+                    cast("InferenceClient", _FixedInfer(summary_body)), state.messages, cfg
+                )
+                return session
+
+            # WITH the clearing plan → head priced net → the summary inflates → REJECT (no fold event).
+            t1 = await state.threads.create(Thread())
+            for m in _history(t1.id):
+                await state.messages.add(m)
+            s1 = _build_at(t1)
+            bo1 = _BackstopOutcome()
+            ev1 = [ev async for ev in s1._overflow_fold(t1, clearing=plan, outcome=bo1)]
+            assert bo1.folded is False and not any(e.event == "compaction" for e in ev1)
+
+            # SAME summary, EMPTY plan → head priced full → the summary shrinks → FOLDS.
+            t2 = await state.threads.create(Thread())
+            for m in _history(t2.id):
+                await state.messages.add(m)
+            s2 = _build_at(t2)
+            bo2 = _BackstopOutcome()
+            ev2 = [
+                ev async for ev in s2._overflow_fold(t2, clearing=ClearingPlan(frozenset(), {}), outcome=bo2)
+            ]
+            assert bo2.folded is True and any(e.event == "compaction" for e in ev2)
+
+        _run(go())
+
+
+# ── I. captured-config pricing (D42 Codex FIX 3) ──────────────────────────────────────────────────
+
+
+def test_pricing_uses_captured_endpoint_after_inplace_settings_mutation() -> None:
+    """D42 Codex FIX 3: `_drive` prices the trigger through the CAPTURED client's config
+    (`self._inference.endpoint`), so a settings PUT that mutates the shared `Settings` in place
+    mid-turn does NOT swing pricing to a different endpoint than the captured client streams through."""
+    from app.runtime import apply_settings_inplace
+
+    with _workspace(), _client() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            from app.api.agent import _build_session
+            from app.domain.conversation import Thread
+
+            thread = await state.threads.create(Thread())
+            session = _build_session(state, thread)
+            orig = session._inference.endpoint("local").base_url
+
+            # Mutate the shared Settings IN PLACE the way `PUT /api/settings` does — WITHOUT rebuilding
+            # the inference client (mid-turn: the client is only rebuilt between turns).
+            new = state.settings.model_copy(deep=True)
+            new.inference.local.base_url = "http://MUTATED-mid-turn/v1"
+            apply_settings_inplace(c.app, new)
+
+            # The live shared Settings now reads the mutated endpoint...
+            assert session._settings.inference.endpoint("local").base_url == "http://MUTATED-mid-turn/v1"
+            # ...but the captured client (what the turn prices + streams through) is UNCHANGED.
+            assert session._inference.endpoint("local").base_url == orig
 
         _run(go())
 

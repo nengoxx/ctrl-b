@@ -79,6 +79,11 @@ class _Fake:
     async def effective_window(self, _ep):  # D42 Wave 2 — the trigger resolves the window here; a
         return None  # scripted fake has no window → the `threshold_tokens` fallback (tiny histories)
 
+    def endpoint(self, _mode=None):  # D42 Codex FIX 3 — `_drive` prices the endpoint off the client
+        from app.config import InferenceEndpointCfg
+
+        return InferenceEndpointCfg(base_url="http://fake/v1", model="m")
+
 
 def _text(s: str):
     from app.adapters.inference import ChatDelta

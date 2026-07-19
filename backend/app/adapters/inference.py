@@ -201,25 +201,59 @@ class ChatDelta:
 _ChainEntry = tuple[str, InferenceEndpointCfg, str]
 
 
+class EndpointGates:
+    """The app-owned registry of per-endpoint request-gate semaphores (D40 rider; D42 Codex FIX 1).
+
+    Keyed by `(base_url, limit)`. Owned once on `app.state.endpoint_gates` and passed into EVERY
+    `InferenceClient` generation by `runtime.set_inference`, so a settings PUT that rebuilds the client
+    does NOT mint a second semaphore for the same endpoint: old-generation permit holders and
+    new-generation acquirers contend on the ONE object, and `max_concurrent_requests` is never split
+    across generations (the cap-doubling defect — limit 1 becoming 2 across a mid-turn reconfigure).
+    A CHANGED `limit` mints a fresh gate under the new key — the old key's semaphore keeps draining its
+    in-flight holders on the OLD cap (accepted drain semantics: a limit change is rare, and the requests
+    already in flight finish under the cap they started on). An `InferenceClient` built WITHOUT a
+    registry (tests / standalone construction) gets a private instance — behaviourally identical to the
+    old per-client dict."""
+
+    def __init__(self) -> None:
+        self._sems: dict[tuple[str, int], asyncio.Semaphore] = {}
+
+    def sem_for(self, base_url: str, limit: int) -> asyncio.Semaphore:
+        """The semaphore for `(base_url, limit)`, built lazily on first use INSIDE the running loop (so
+        the 3.14 `asyncio.Semaphore` binds to the right loop). Same key ⇒ the SAME object across every
+        client generation (the cap is shared); a new limit ⇒ a fresh object."""
+        key = (base_url, limit)
+        sem = self._sems.get(key)
+        if sem is None:
+            sem = asyncio.Semaphore(limit)
+            self._sems[key] = sem
+        return sem
+
+
 class InferenceClient:
     """Builds + caches one OpenAI client per base_url; streams chat completions as `ChatDelta`s, with
     a primary→fallback chain (D18) applied at stream initiation."""
 
-    def __init__(self, cfg: InferenceCfg) -> None:
+    def __init__(self, cfg: InferenceCfg, gates: EndpointGates | None = None) -> None:
         self._cfg = cfg
         self._clients: dict[str, AsyncOpenAI] = {}
-        #: Per-endpoint request gate (D40 rider). Lazily built, keyed on `(base_url, limit)` so a
-        #: config hot-reload that CHANGES an endpoint's `max_concurrent_requests` mints a fresh
-        #: semaphore under the new key — in-flight holders keep draining the old object, new requests
-        #: queue on the new one. (A reconfigure also builds a whole new `InferenceClient`, so this dict
-        #: is usually fresh anyway; the key still protects an in-place cfg swap.) `None` limit → no
-        #: entry, no acquire (unlimited, zero behavior change).
-        self._sems: dict[tuple[str, int], asyncio.Semaphore] = {}
+        #: The per-endpoint request-gate registry (D40 rider; D42 Codex FIX 1). The semaphores that cap
+        #: `max_concurrent_requests` live in this registry, NOT on the client — so a settings PUT that
+        #: rebuilds the client (`runtime.set_inference`) passes the SAME registry in and old-generation
+        #: permit holders + new-generation acquirers contend on ONE semaphore per `(base_url, limit)`
+        #: (the cap can't be split across client generations). `None` (tests / standalone construction)
+        #: → a private per-client registry, behaviourally identical to the old per-client dict.
+        self._gates = gates if gates is not None else EndpointGates()
         #: Memoized `/props` window probes, keyed by base_url (D42). Populated on first `probed_context_window`
         #: per URL — including FAILED probes (memoized as `_ProbedWindow(None, None)`), so a dead/cloud
         #: endpoint is hit at most once. No invalidation bookkeeping: `runtime.set_inference` rebuilds the
         #: whole `InferenceClient` on ANY inference-settings change, so a config edit re-probes for free.
         self._window_memo: dict[str, _ProbedWindow] = {}
+        #: Single-flight lock around the `/props` probe (D42 Codex FIX 6): concurrent first-use callers
+        #: would otherwise each issue a GET before the memo is written, so probe+memoize runs under this
+        #: lock with a double-check of the memo inside it. ONE lock per client (a single local endpoint is
+        #: probed — per-URL task-futures are overkill). Built lazily inside the loop (like the gates).
+        self._probe_lock: asyncio.Lock | None = None
         #: Lazily-built httpx client for the raw `/props` GET (the SDK is chat-only). Built on first probe,
         #: reused per-process like the SDK clients; not aclosed on rebuild (same as the SDK clients here).
         self._probe_http: httpx.AsyncClient | None = None
@@ -245,9 +279,18 @@ class InferenceClient:
         if not base_url:
             return None
         cached = self._window_memo.get(base_url)
-        if cached is None:
-            cached = await self._probe_props(base_url)
-            self._window_memo[base_url] = cached
+        if cached is not None:
+            return cached.n_ctx
+        # Single-flight (D42 Codex FIX 6): serialize concurrent first-use probes so exactly ONE GET is
+        # issued, double-checking the memo inside the lock (a racer that probed while we waited wins).
+        # The check-then-set of the lazy lock has no await between, so it's atomic in asyncio.
+        if self._probe_lock is None:
+            self._probe_lock = asyncio.Lock()
+        async with self._probe_lock:
+            cached = self._window_memo.get(base_url)
+            if cached is None:
+                cached = await self._probe_props(base_url)
+                self._window_memo[base_url] = cached
         return cached.n_ctx
 
     def _is_probe_eligible(self, ep: InferenceEndpointCfg) -> bool:
@@ -306,8 +349,10 @@ class InferenceClient:
             return _ProbedWindow(None, None)
 
     def _sem_for(self, ep: InferenceEndpointCfg) -> asyncio.Semaphore | None:
-        """The request-gate semaphore for this endpoint, or `None` when unlimited. Built lazily on
-        first use (inside a running loop, so the 3.14 `asyncio.Semaphore` binds to the right loop).
+        """The request-gate semaphore for this endpoint, or `None` when unlimited. Delegates to the
+        shared `EndpointGates` registry (D42 Codex FIX 1), keyed by `(base_url, limit)` so the SAME
+        endpoint shares ONE semaphore across every client generation — a hot-reload that rebuilds the
+        client reuses the same gate (limit unchanged) instead of splitting the cap across generations.
 
         LOW-1 caveat: the key is `(base_url, limit)`, so two DISTINCT endpoint entries that share a
         base_url but declare DIFFERENT `max_concurrent_requests` mint independent semaphores — their
@@ -319,12 +364,7 @@ class InferenceClient:
         limit = ep.max_concurrent_requests
         if limit is None:
             return None
-        key = (ep.base_url, limit)
-        sem = self._sems.get(key)
-        if sem is None:
-            sem = asyncio.Semaphore(limit)
-            self._sems[key] = sem
-        return sem
+        return self._gates.sem_for(ep.base_url, limit)
 
     def _client(self, ep: InferenceEndpointCfg) -> AsyncOpenAI:
         if not ep.base_url:
@@ -340,6 +380,14 @@ class InferenceClient:
 
     def model_for(self, mode: str | None = None) -> str:
         return self._cfg.endpoint(mode).model
+
+    def endpoint(self, mode: str | None = None) -> InferenceEndpointCfg:
+        """The endpoint SELECTED by `mode` off THIS client's CAPTURED config generation (D42 Codex FIX
+        3) — the mode-shaped accessor mirroring `model_for`/`effective_window_for`. The session prices
+        the compaction trigger through this, so a settings PUT that mutates the shared `Settings` in
+        place mid-turn cannot swing the pricing to a different endpoint than the CAPTURED client is
+        streaming through (the D42 hot-at-NEXT-turn pin — the client is rebuilt only between turns)."""
+        return self._cfg.endpoint(mode)
 
     @staticmethod
     def _call_config(

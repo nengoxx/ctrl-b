@@ -260,6 +260,16 @@ class _BatchOutcome:
     made_progress: bool = False
 
 
+@dataclass
+class _BackstopOutcome:
+    """Mutable holder for the reactive backstop's shared force-compaction step (D42 Codex FIX 2). Async
+    generators return no value (PEP 525), so `_overflow_fold` writes whether it actually FOLDED here:
+    `folded=True` ⇒ the caller re-assembles + re-issues the SAME model call into the SAME assistant
+    slot; a reject / nothing-to-fold leaves it `False` ⇒ the caller falls to its error path."""
+
+    folded: bool = False
+
+
 def _tool_content(result: ToolResult, *, cleared: bool = False) -> str:
     """Render a ToolResult as the `content` of an OpenAI `tool` message — what the model reads to
     reason about the outcome. Concise; `output` is already redacted + truncated upstream. `cleared`
@@ -634,7 +644,9 @@ class AgentSession:
         predicate. Used by the manual `/compact` path to decide whether a manual fold left the thread
         healthy enough to RESET the thrash breaker (net of the free clearing trim)."""
         eff_mode = self._agent.model.mode
-        price_ep = self._settings.inference.endpoint(eff_mode)
+        # D42 Codex FIX 3: price through the CAPTURED client's own config generation, not the live
+        # shared Settings (which a settings PUT can mutate in place) — the window/endpoint pin.
+        price_ep = self._inference.endpoint(eff_mode)
         window = await self._inference.effective_window(price_ep)
         est = await self._estimate_context(thread, price_ep.base_url or None)
         clearing = await self._plan_clearing(thread)
@@ -921,7 +933,11 @@ class AgentSession:
             # priced (iteration 1 = the selected endpoint; iteration 2+ = the one that actually served),
             # and pass the session's anchored estimate + the output reserve + the clearing gain. A `None`
             # window ⇒ the absolute `threshold_tokens` fallback (v1's no-regression path).
-            price_ep = served or self._settings.inference.endpoint(eff_mode)
+            # D42 Codex FIX 3: iteration 1 prices through the CAPTURED client's config generation
+            # (`self._inference.endpoint`), NOT the live shared Settings — a settings PUT mutating them
+            # mid-turn must not swing pricing to a different endpoint than the captured client streams
+            # through (the hot-at-NEXT-turn pin). Iteration 2+ uses `served` (also off the captured chain).
+            price_ep = served or self._inference.endpoint(eff_mode)
             window = await self._inference.effective_window(price_ep)
             est = await self._estimate_context(thread, price_ep.base_url or None)
             cs = self._compaction_state
@@ -1040,17 +1056,22 @@ class AgentSession:
                     # (the one-shot flag is already set) → the normal error path below.
                     if not backstop_fired_this_turn and not streamed_any and is_context_overflow(exc):
                         backstop_fired_this_turn = True
-                        res = await self._compactor.compact(thread, force=True)
-                        if res is not None and not res.rejected:
-                            self._estimator.invalidate()  # the folded head is gone → heuristic next
-                            yield AgentEvent(
-                                "compaction",
-                                {
-                                    "removed": res.removed,
-                                    "summaryId": res.summary_id,
-                                    "truncated": res.truncated,
-                                },
-                            )
+                        # D42 Codex FIX 4: the forced compact is priced NET of the iteration's clearing
+                        # plan (and the estimator context matching the proactive call site) via the
+                        # shared `_overflow_fold` — a bare `force=True` would price the folded head RAW
+                        # and could accept a fold that GROWS the real cleared prompt.
+                        bo = _BackstopOutcome()
+                        async for ev in self._overflow_fold(
+                            thread,
+                            clearing=clearing,
+                            window=window,
+                            reserve_tokens=reserve,
+                            estimated_tokens=est.tokens,
+                            cleared_at_anchor=est.cleared_at_anchor,
+                            outcome=bo,
+                        ):
+                            yield ev
+                        if bo.folded:
                             clearing = await self._plan_clearing(thread)
                             messages = await self._assemble(thread, clearing=clearing)
                             watermark = await self._watermark_id(thread)
@@ -1145,14 +1166,16 @@ class AgentSession:
             else:
                 stall += 1
                 if stall >= self._agent.max_stall_iterations:
-                    async for ev in self._finalize(thread, eff_mode, eff_model):
+                    async for ev in self._finalize(
+                        thread, eff_mode, eff_model, backstop_fired=backstop_fired_this_turn
+                    ):
                         yield ev
                     return
             # else: loop — call the model again so it can react to the tool results
 
         # Iterations exhausted: instead of a silent `capped` dead-end, force one tool-less call so
         # the owner always gets a final answer (C1c, opencode's max-step-guidance pattern).
-        async for ev in self._finalize(thread, eff_mode, eff_model):
+        async for ev in self._finalize(thread, eff_mode, eff_model, backstop_fired=backstop_fired_this_turn):
             yield ev
 
     async def _drain_steers(self, thread: Thread) -> AsyncIterator[AgentEvent]:
@@ -1240,32 +1263,88 @@ class AgentSession:
                     {"entryId": entry.entry_id, "messageId": exec_out.assistant_id, "kind": "exec"},
                 )
 
+    async def _overflow_fold(
+        self,
+        thread: Thread,
+        *,
+        clearing: ClearingPlan,
+        window: int | None = None,
+        reserve_tokens: int | None = None,
+        estimated_tokens: int | None = None,
+        cleared_at_anchor: frozenset[str] | None = None,
+        outcome: _BackstopOutcome,
+    ) -> AsyncIterator[AgentEvent]:
+        """The D42 reactive backstop's shared force-compaction step — the ONE home for the
+        classify-already-done force+retry, used by BOTH the main loop's context-overflow rescue AND
+        `_finalize`'s (Codex FIX 2). One `compact(force=True, …)` (bypasses threshold/backoff/breaker
+        but NEVER the inflation-reject), priced NET of the iteration's `clearing` plan (Codex FIX 4 —
+        without it the folded head is priced RAW and a fold that GROWS the real cleared prompt could be
+        accepted); the estimator-context kwargs mirror the proactive `compact()` call site. On a
+        SHRINKING fold: invalidate the anchor (its counted head is gone → heuristic next), emit the
+        `compaction` event, and flip `outcome.folded`. The caller owns its own
+        `is_context_overflow`/nothing-streamed/one-shot gating (it differs: the main loop tracks an
+        anchor watermark, `_finalize` does not) and its own re-assemble + re-issue."""
+        res = await self._compactor.compact(
+            thread,
+            force=True,
+            window=window,
+            reserve_tokens=reserve_tokens,
+            estimated_tokens=estimated_tokens,
+            clearing=clearing,
+            cleared_at_anchor=cleared_at_anchor,
+        )
+        if res is not None and not res.rejected:
+            self._estimator.invalidate()  # the folded head is gone → heuristic next
+            outcome.folded = True
+            yield AgentEvent(
+                "compaction",
+                {"removed": res.removed, "summaryId": res.summary_id, "truncated": res.truncated},
+            )
+
     async def _finalize(
-        self, thread: Thread, eff_mode: str | None, eff_model: str | None
+        self,
+        thread: Thread,
+        eff_mode: str | None,
+        eff_model: str | None,
+        *,
+        backstop_fired: bool = False,
     ) -> AsyncIterator[AgentEvent]:
         """Forced final answer (C1c). Reached when the loop stalls or exhausts `max_iterations` —
         one **tool-less** model call (so it can only produce text) with a nudge to wrap up, instead
         of the old silent `capped` dead-end. Always ends the turn with a reply; only if this call
-        itself fails do we fall back to `capped` so there's still a terminal event."""
+        itself fails do we fall back to `capped` so there's still a terminal event.
+
+        D42 Codex FIX 2: the wrap-up now (a) assembles under the iteration's Tier-1 `plan_clearing` —
+        the `clear_keep_steps` recent-step protection keeps the just-run results an honest wrap-up
+        needs, and the cleared outputs keep their `[state] summary` lines by design; only OLD bulky
+        outputs are trimmed — and (b) gets the SAME one-shot context-overflow rescue the main loop has:
+        a context-overflow with NOTHING streamed, if the backstop hasn't fired this turn
+        (`backstop_fired`), triggers ONE forced compaction + a re-attempt of this call, via the shared
+        `_overflow_fold` (no second copy of the classify/force/retry logic)."""
         self._reflect_now = (
             False  # the wrap-up call is tool-less — don't carry the "use the memory tool" nudge
         )
-        # No Tier-1 clearing here (D42): the forced wrap-up must SEE the full tool outcomes to
-        # summarize honestly what it did/couldn't do — trimming old outputs would undercut that. The
-        # main loop's `_assemble` (above) is where clearing applies.
-        messages = await self._assemble(thread)
-        messages.append(
-            {
-                "role": "system",
-                "content": (
-                    "You have done enough tool work for this request. Do NOT call any more tools. "
-                    "Give the owner your final answer now. Be honest: summarize only what you "
-                    "actually accomplished via the tool results above, and clearly state what you "
-                    "could NOT do. Do not claim a step or plan succeeded if its tool was never run "
-                    "or returned an error."
-                ),
-            }
-        )
+        # D42 Codex FIX 2: the forced wrap-up runs Tier-1 clearing like the main loop. The recent-step
+        # protection (`clear_keep_steps`) keeps the just-run outputs the wrap-up summarizes honestly;
+        # only OLD bulky outputs past that window are trimmed, and their `[state] summary` lines survive.
+        clearing = await self._plan_clearing(thread)
+        _WRAP_NUDGE = {
+            "role": "system",
+            "content": (
+                "You have done enough tool work for this request. Do NOT call any more tools. "
+                "Give the owner your final answer now. Be honest: summarize only what you "
+                "actually accomplished via the tool results above, and clearly state what you "
+                "could NOT do. Do not claim a step or plan succeeded if its tool was never run "
+                "or returned an error."
+            ),
+        }
+
+        async def _assemble_wrap() -> list[dict]:
+            msgs = await self._assemble(thread, clearing=clearing)
+            msgs.append(_WRAP_NUDGE)
+            return msgs
+
+        messages = await _assemble_wrap()
         assistant = Message(thread_id=thread.id, role="assistant", actor=AGENT_ACTOR, agent=self._agent.name)
         yield AgentEvent(
             "message.start",
@@ -1293,35 +1372,59 @@ class AgentSession:
             reasoning_buf = []
             text_buf = []
             report = StreamReport()
-            try:
-                async for delta in self._inference.stream_chat(
-                    messages,
-                    mode=eff_mode,
-                    model=eff_model,
-                    max_tokens=self._agent.model.max_tokens,
-                    reasoning_effort=self._agent.model.reasoning_effort,
-                    tools=fin_tools,
-                    tool_choice=fin_choice,
-                    report=report,
-                ):
-                    if delta.reasoning:
-                        reasoning_buf.append(delta.reasoning)
-                        yield AgentEvent(
-                            "reasoning.delta", {"messageId": assistant.id, "delta": delta.reasoning}
+            advance = False  # the ACA-21 tool_choice-rejection fallback → advance to the tools=None attempt
+            while True:  # D42 Codex FIX 2 overflow-rescue re-stream (one-shot), mirroring `_drive`'s backstop
+                reasoning_buf = []
+                text_buf = []
+                report = StreamReport()
+                try:
+                    async for delta in self._inference.stream_chat(
+                        messages,
+                        mode=eff_mode,
+                        model=eff_model,
+                        max_tokens=self._agent.model.max_tokens,
+                        reasoning_effort=self._agent.model.reasoning_effort,
+                        tools=fin_tools,
+                        tool_choice=fin_choice,
+                        report=report,
+                    ):
+                        if delta.reasoning:
+                            reasoning_buf.append(delta.reasoning)
+                            yield AgentEvent(
+                                "reasoning.delta", {"messageId": assistant.id, "delta": delta.reasoning}
+                            )
+                        if delta.text:
+                            text_buf.append(delta.text)
+                            yield AgentEvent("text.delta", {"messageId": assistant.id, "delta": delta.text})
+                    break  # streamed to completion
+                except InferenceError as exc:
+                    # D42 reactive backstop (Codex FIX 2): a context-overflow with NOTHING streamed and
+                    # the backstop unfired this turn → ONE forced compaction + re-issue the SAME attempt
+                    # into the now-smaller prompt. Shares `_overflow_fold` with the main loop; a reject /
+                    # nothing-to-fold (folded=False) falls through to the ACA-21 fallback / error path.
+                    if not backstop_fired and not text_buf and not reasoning_buf and is_context_overflow(exc):
+                        backstop_fired = True
+                        bo = _BackstopOutcome()
+                        async for ev in self._overflow_fold(thread, clearing=clearing, outcome=bo):
+                            yield ev
+                        if bo.folded:
+                            clearing = await self._plan_clearing(thread)
+                            messages = await _assemble_wrap()
+                            continue  # re-issue the SAME attempt with the folded (smaller) prompt
+                    if attempt == 0 and not text_buf and not reasoning_buf:
+                        log.debug(
+                            "finalize: tool_choice='none' failed (%s); retrying once with tools=None", exc
                         )
-                    if delta.text:
-                        text_buf.append(delta.text)
-                        yield AgentEvent("text.delta", {"messageId": assistant.id, "delta": delta.text})
-            except InferenceError as exc:
-                if attempt == 0 and not text_buf and not reasoning_buf:
-                    log.debug("finalize: tool_choice='none' failed (%s); retrying once with tools=None", exc)
-                    continue  # nothing streamed → safe to re-issue as a plain tool-less wrap-up
-                assistant.parts = [ErrorPart(message=str(exc), retryable=True)]
-                await self._messages.add(assistant)
-                await self._threads.touch(thread.id, assistant.ts)
-                yield AgentEvent("error", {"message": str(exc), "retryable": True})
-                yield AgentEvent("done", {"threadId": thread.id, "state": "capped"})
-                return
+                        advance = True  # nothing streamed → safe to re-issue as a plain tool-less wrap-up
+                        break
+                    assistant.parts = [ErrorPart(message=str(exc), retryable=True)]
+                    await self._messages.add(assistant)
+                    await self._threads.touch(thread.id, assistant.ts)
+                    yield AgentEvent("error", {"message": str(exc), "retryable": True})
+                    yield AgentEvent("done", {"threadId": thread.id, "state": "capped"})
+                    return
+            if advance:
+                continue  # to the tools=None fallback attempt
             break  # streamed OK — don't run the fallback attempt
         self._log_context_cost(messages, report)  # A8 estimate + ACA-18 cache telemetry (debug)
 

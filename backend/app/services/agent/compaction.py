@@ -188,7 +188,9 @@ def plan_clearing(history: list[Message], cfg: CompactionCfg) -> ClearingPlan:
     PURE function (no I/O), the ONE source of truth shared by `_assemble` and the trigger.
 
     Selection: a tool result is cleared iff its OUTPUT is larger than `clear_output_min_tokens`
-    (measured in tokens, chars/`CHARS_PER_TOKEN`) AND its paired call is OLDER than the most recent
+    (measured in tokens, chars/`CHARS_PER_TOKEN`) AND longer than `OUTPUT_CLEARED_PLACEHOLDER` itself
+    (net-positive — clearing a tinier output to the placeholder would GROW the prompt; Codex FIX 5) AND
+    its paired call is OLDER than the most recent
     `clear_keep_steps` steps — where a **step** is one assistant message that carries tool calls (i.e.
     one assistant-tool-call round; each loop iteration mints exactly one). The last `clear_keep_steps`
     such rounds stay FULL (`clear_keep_steps ≥ 1` keeps at least the just-run tool's output).
@@ -201,9 +203,11 @@ def plan_clearing(history: list[Message], cfg: CompactionCfg) -> ClearingPlan:
         None`: `ActionService._execute` stamps `duration_ms` on every genuine run, so a result built
         directly in the session/service (no run) leaves it unset. Matched on the shape, never on text.
 
-    Gain is priced at chars/`CLEAR_CHARS_PER_TOKEN` (below the estimator's chars/`CHARS_PER_TOKEN`), so
-    subtracting it under-credits the trim and the trigger never fires too late. Gated on `cfg.enabled`
-    (the master switch); the run is otherwise UNCONDITIONAL (not gated on being over threshold)."""
+    Gain is priced at chars/`CLEAR_CHARS_PER_TOKEN` (below the estimator's chars/`CHARS_PER_TOKEN`) over
+    the NET reclaimed chars — the output length MINUS the `OUTPUT_CLEARED_PLACEHOLDER` that replaces it
+    (Codex FIX 5) — so subtracting it under-credits the trim and the trigger never fires too late nor
+    over-credits a near-placeholder-sized clear. Gated on `cfg.enabled` (the master switch); the run is
+    otherwise UNCONDITIONAL (not gated on being over threshold)."""
     if not cfg.enabled:
         return ClearingPlan(frozenset(), {})
     # Map each call to (its ToolCallPart, the ordinal of the step it belongs to). A "step" is an
@@ -241,8 +245,15 @@ def plan_clearing(history: list[Message], cfg: CompactionCfg) -> ClearingPlan:
             out = res.output or ""
             if len(out) // CHARS_PER_TOKEN <= cfg.clear_output_min_tokens:
                 continue  # below the trim floor — not worth clearing
+            # D42 Codex FIX 5: clearing REPLACES the output with `OUTPUT_CLEARED_PLACEHOLDER`, so an
+            # output no longer than the placeholder would GROW the prompt (and, at `clear_output_min_
+            # tokens: 0`, still earn positive credit). Require net-positive, and price the NET reclaimed
+            # chars (output minus the placeholder that replaces it) — floor 0 handled by this check.
+            if len(out) <= len(OUTPUT_CLEARED_PLACEHOLDER):
+                continue
             cleared.add(rp.call_id)
-            gains[rp.call_id] = len(out) // CLEAR_CHARS_PER_TOKEN  # priced once, here — the one home
+            # priced once, here — the one home; NET of the placeholder (Codex FIX 5).
+            gains[rp.call_id] = (len(out) - len(OUTPUT_CLEARED_PLACEHOLDER)) // CLEAR_CHARS_PER_TOKEN
     return ClearingPlan(frozenset(cleared), gains)
 
 

@@ -27,6 +27,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.adapters.inference import EndpointGates
 from app.adapters.mcp_client import McpClient
 from app.adapters.openapi_tools import OpenApiToolProvider
 from app.api import (
@@ -202,6 +203,10 @@ async def lifespan(app: FastAPI):
     # AgentSession is built per turn in the API from these (stateless across turns). Inference is
     # built via the shared `set_inference` helper (the same one `reconfigure` calls) so the two
     # paths can't drift (audit B1).
+    # D42 Codex FIX 1: the app-owned per-endpoint request-gate registry, created ONCE here so a
+    # settings PUT that rebuilds the inference client (via `set_inference`) keeps the SAME semaphores
+    # (the cap can't be split across client generations). `set_inference` reads it off app.state.
+    app.state.endpoint_gates = EndpointGates()
     set_inference(app, app.state.settings)
     app.state.threads = ThreadRepo(app.state.db)
     app.state.messages = MessageRepo(app.state.db)
