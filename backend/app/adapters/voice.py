@@ -21,7 +21,7 @@ import httpx
 from openai import AsyncOpenAI
 
 from app.config import VoiceCfg, VoiceEndpointCfg, VoiceServiceCfg
-from app.core.failover import FailoverError, FailoverResult, failover
+from app.core.failover import FailoverError, FailoverResult, failover_collect
 
 # Local servers ignore the key but the SDK requires a non-empty string.
 _PLACEHOLDER_KEY = "sk-no-key-required"
@@ -119,7 +119,7 @@ class VoiceClient:
             return getattr(resp, "text", "") or ""
 
         try:
-            result = await failover(svc.endpoints(), attempt, label=lambda e: e.base_url)
+            result = await failover_collect(svc.endpoints(), attempt, label=lambda e: e.base_url)
         except FailoverError as exc:
             raise VoiceError(str(exc)) from exc
         return result.value, _reply(result)
@@ -146,7 +146,7 @@ class VoiceClient:
             return await resp.aread()
 
         try:
-            result = await failover(svc.endpoints(), attempt, label=lambda e: e.base_url)
+            result = await failover_collect(svc.endpoints(), attempt, label=lambda e: e.base_url)
         except FailoverError as exc:
             raise VoiceError(str(exc)) from exc
         return result.value, _MEDIA_TYPES.get(fmt, "application/octet-stream"), _reply(result)

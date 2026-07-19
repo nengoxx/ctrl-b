@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 
-from app.adapters.inference import EndpointGates, InferenceClient
+from app.adapters.inference import ChatDelta, EndpointGates, InferenceClient
 from app.config import InferenceCfg, InferenceEndpointCfg
 
 
@@ -269,7 +269,8 @@ def test_failed_attempt_releases_permit_no_deadlock():
         # call 1: local's attempt raises → failover to cloud answers. local's limit-1 permit MUST be
         # released on the failed attempt (the `except BaseException: sem.release()` in `attempt`).
         r1 = await asyncio.wait_for(_collect(client), timeout=2.0)
-        assert "".join(d.text for d in r1) == "cloud-ok"
+        # A failover serve interleaves a typed `FailoverNotice` (no `.text`) — join ChatDeltas only (D43).
+        assert "".join(d.text for d in r1 if isinstance(d, ChatDelta)) == "cloud-ok"
         # call 2: local now succeeds → it must re-acquire the SAME limit-1 permit. A permit leaked by
         # the failed attempt-1 would deadlock here; wait_for turns that into a fast, legible failure.
         r2 = await asyncio.wait_for(_collect(client), timeout=2.0)

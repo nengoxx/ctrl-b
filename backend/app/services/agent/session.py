@@ -42,8 +42,10 @@ import anyio
 from pydantic import ValidationError
 
 from app.adapters.inference import (
+    FailoverNotice,
     InferenceClient,
     InferenceError,
+    RetryNotice,
     StreamReport,
     is_context_overflow,
 )
@@ -1034,6 +1036,12 @@ class AgentSession:
                         tools=self._tools(),
                         report=report,
                     ):
+                        # D43/A6 Wave 1: skip the typed retry/failover control items (Wave 2 upgrades
+                        # this skip → an emitted AgentEvent). It MUST NOT touch `streamed_any` or the
+                        # buffers — a control item before the first delta leaves the D42 nothing-streamed
+                        # backstop honest (review F9). The post-hoc degraded notice below still narrates.
+                        if isinstance(delta, (RetryNotice, FailoverNotice)):
+                            continue
                         if delta.reasoning:
                             streamed_any = True
                             reasoning_buf.append(delta.reasoning)
@@ -1388,6 +1396,12 @@ class AgentSession:
                         tool_choice=fin_choice,
                         report=report,
                     ):
+                        # D43/A6 Wave 1: skip the typed retry/failover control items (both consumers get
+                        # this branch — review F9; Wave 2 upgrades it → an emitted AgentEvent). Never
+                        # touch the text/reasoning buffers — the ACA-21 "nothing streamed" fallback below
+                        # stays honest.
+                        if isinstance(delta, (RetryNotice, FailoverNotice)):
+                            continue
                         if delta.reasoning:
                             reasoning_buf.append(delta.reasoning)
                             yield AgentEvent(

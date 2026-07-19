@@ -23,14 +23,25 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, AsyncIterator, cast
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, cast
 
 import anyio
 import httpx
 from openai import AsyncOpenAI
 
 from app.config import InferenceCfg, InferenceEndpointCfg
-from app.core.failover import FailoverError, failover
+from app.core.failover import (
+    NEXT_HOP,
+    RETRY_AFTER,
+    FailAction,
+    FailoverError,
+    FailoverResult,
+    HopRetry,
+    failover,
+    failover_collect,
+)
 
 if TYPE_CHECKING:  # SDK param type — only needed to satisfy the typed `.create()` overload
     from openai.types.chat import ChatCompletionMessageParam
@@ -79,21 +90,64 @@ class InferenceError(RuntimeError):
     non-HTTP failure, or a MULTI-HOP error whose per-endpoint structured fields were collapsed by
     `core.failover` (which keeps only strings). The message is unchanged and still carries EVERY hop's
     text, so `is_context_overflow` can substring-match the overflow even when the structured fields are
-    absent. `status`/`code` reflect the LAST attempted hop (the common single-endpoint case = exact)."""
+    absent. `status`/`code` reflect the LAST attempted hop (the common single-endpoint case = exact).
 
-    def __init__(self, message: str, *, code: str | None = None, status: int | None = None) -> None:
+    `retry_after` (D43/A7) is the server-requested backoff in seconds, parsed from the RAW SDK
+    exception's `Retry-After` response header BEFORE the failover chain flattened the hop (post-
+    flattening the header is gone — the same pre-capture rationale as `code`/`status`). `None` when the
+    backend sent no header / it was malformed; the retry curve uses it as a floor when present."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str | None = None,
+        status: int | None = None,
+        retry_after: float | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.status = status
+        self.retry_after = retry_after
+
+
+def _parse_retry_after(exc: BaseException) -> float | None:
+    """The server-requested backoff in seconds from a RAW SDK exception's `Retry-After` header, or
+    `None` (no header / malformed). Handles BOTH RFC-7231 forms: delta-seconds (`"12"`) and an
+    HTTP-date (`"Wed, 21 Oct 2026 07:28:00 GMT"` → seconds-from-now, floored at 0). Read off
+    `exc.response.headers` (the OpenAI `APIStatusError` family carries the httpx response); a non-HTTP
+    error has no response ⇒ `None`. Never raises."""
+    resp = getattr(exc, "response", None)
+    headers = getattr(resp, "headers", None)
+    if headers is None:
+        return None
+    raw = headers.get("retry-after")
+    if not raw:
+        return None
+    raw = raw.strip()
+    try:  # delta-seconds form
+        secs = float(raw)
+        return secs if secs >= 0 else None
+    except ValueError:
+        pass
+    try:  # HTTP-date form (RFC 7231)
+        when = parsedate_to_datetime(raw)
+    except TypeError, ValueError:
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max((when - datetime.now(timezone.utc)).total_seconds(), 0.0)
 
 
 def _as_inference_error(exc: BaseException) -> InferenceError | None:
     """Wrap a LIVE backend exception into a structured `InferenceError`, capturing the OpenAI-SDK
-    `status_code` + `code` BEFORE `core.failover` flattens each hop to a string (D42 — the
-    "pre-flattening" capture). Returns `None` for a cancellation or an already-`InferenceError`
+    `status_code` + `code` + `Retry-After` BEFORE `core.failover` flattens each hop to a string (D42 —
+    the "pre-flattening" capture). Returns `None` for a cancellation or an already-`InferenceError`
     (nothing to convert — re-raise it raw). Only the OpenAI `APIStatusError` family exposes
-    `status_code`/`code`; a non-HTTP error wraps with both `None`, its message preserved so failover's
-    collected string is unchanged."""
+    `status_code`/`code`/`response`; a non-HTTP error wraps with all `None`, its message preserved so
+    failover's collected string is unchanged."""
     if isinstance(exc, (asyncio.CancelledError, InferenceError)):
         return None
     status = getattr(exc, "status_code", None)
@@ -102,6 +156,7 @@ def _as_inference_error(exc: BaseException) -> InferenceError | None:
         str(exc),
         code=code if isinstance(code, str) else None,
         status=status if isinstance(status, int) and not isinstance(status, bool) else None,
+        retry_after=_parse_retry_after(exc),
     )
 
 
@@ -144,6 +199,135 @@ def is_context_overflow(err: BaseException) -> bool:
     text = str(err).lower()
     is_400 = status == 400 or "error code: 400" in text
     return is_400 and any(marker in text for marker in _OVERFLOW_MSG_MARKERS)
+
+
+#: The retry classifier's tiers (D43/A7). `transient` = alive-but-busy, retry the same endpoint may
+#: work; `overflow` = delegates to `is_context_overflow`; `fatal_for_endpoint` = this endpoint can
+#: never serve this request (auth/model/quota — a different hop has different creds, so hop, never
+#: retry-same); `other` = everything else (connection/timeout/5xx — today's instant next-hop).
+ErrorCategory = Literal["transient", "overflow", "fatal_for_endpoint", "other"]
+
+#: HTTP statuses meaning "backend is alive but momentarily can't serve — a retry may work".
+_TRANSIENT_STATUS = frozenset({429, 503})
+#: Backend-busy message shapes for the transient class when the status was flattened away by failover
+#: (or a local backend that reports it in the body). VERIFIED against ggml-org/llama.cpp `tools/server`
+#: (2026-07, master): a still-loading server returns HTTP 503 `{"type":"unavailable_error","message":
+#: "Loading model"}` (server-http.cpp middleware_server_state) and an exhausted slot pool returns 503
+#: "no slot available" (server-context.cpp; `ERROR_TYPE_UNAVAILABLE` → 503, type "unavailable_error" in
+#: server-common.cpp `format_error_response`). "rate limit"/"too many requests" cover a cloud 429 body.
+_TRANSIENT_MSG_MARKERS = (
+    "no slot available",
+    "unavailable_error",
+    "loading model",
+    "rate limit",
+    "too many requests",
+)
+#: Endpoint-fatal HTTP statuses: this endpoint's credentials/permissions can't serve — hop, never retry.
+_FATAL_STATUS = frozenset({401, 403})
+#: Endpoint-fatal machine codes (OpenAI-family): auth/model/quota — a different hop has its own creds.
+#: Deliberately NOT the generic `invalid_request_error` type (an ordinary bad 400 is `other`, and a 400
+#: overflow is already caught by the overflow-first delegation) — only codes that name a per-endpoint
+#: credential/model/quota failure per D43's fatal list.
+_FATAL_CODES = frozenset({"invalid_api_key", "model_not_found", "insufficient_quota"})
+#: Endpoint-fatal message shapes (flattened / body-text fallback). Each is specific to a credential /
+#: model-not-found / quota failure — none appears in a transient or generic error.
+_FATAL_MSG_MARKERS = (
+    "invalid api key",
+    "incorrect api key",
+    "invalid_api_key",
+    "insufficient_quota",
+    "insufficient quota",
+    "exceeded your current quota",
+    "billing",
+    "model_not_found",
+    "model not found",
+    "does not exist",
+)
+
+
+def categorize(err: BaseException) -> ErrorCategory:
+    """Classify a backend failure into the D43/A7 retry tiers (the ONE home, beside
+    `is_context_overflow`). Structured `status`/`code`/`retry_after` first — overflow delegates; a
+    `Retry-After` header, 429, or 503 ⇒ `transient`; 401/403, 404-model-not-found, or a fatal
+    code ⇒ `fatal_for_endpoint` — then a message-substring fallback for a failover-FLATTENED error
+    whose structured fields were collapsed to a string, gated on the flattened `error code: N` the same
+    way `is_context_overflow` gates on 400 (so an unrelated string can't upgrade a plain error; the
+    busy/auth PHRASES are specific enough to scan ungated). `overflow`/`other` → straight next-hop; only
+    `transient` is retry-worthy."""
+    if is_context_overflow(err):
+        return "overflow"
+    status = getattr(err, "status", None)
+    if status is None:
+        status = getattr(err, "status_code", None)
+    status = status if isinstance(status, int) and not isinstance(status, bool) else None
+    code = getattr(err, "code", None)
+    code_l = code.lower() if isinstance(code, str) else ""
+    if getattr(err, "retry_after", None) is not None:
+        return "transient"
+    # ── structured status/code first ──
+    if status in _TRANSIENT_STATUS:
+        return "transient"
+    if status in _FATAL_STATUS or code_l in _FATAL_CODES:
+        return "fatal_for_endpoint"
+    text = str(err).lower()
+    if status == 404 and ("model" in text or code_l == "model_not_found"):
+        return "fatal_for_endpoint"
+    # ── message fallback: only when the structured fields didn't decide (flattened / body text) ──
+    if (
+        any(m in text for m in _TRANSIENT_MSG_MARKERS)
+        or "error code: 429" in text
+        or "error code: 503" in text
+    ):
+        return "transient"
+    if any(m in text for m in _FATAL_MSG_MARKERS) or "error code: 401" in text or "error code: 403" in text:
+        return "fatal_for_endpoint"
+    return "other"
+
+
+#: The transient-retry backoff curve (D43/A7 — fixed module constants, NOT configurable: the one-knob-
+#: one-unit bar. The knob is the ATTEMPT COUNT; the curve is policy). Base delay, doubled per attempt.
+_RETRY_BASE_DELAY_S = 2.0
+#: The backoff cap: a server-provided `Retry-After` larger than the curve wins, but nothing waits past
+#: this (a 10-minute `Retry-After` must not wedge a turn). Named, never inline (D42 bar).
+_RETRY_DELAY_CAP_S = 30.0
+
+
+def _retry_delay(attempt: int, retry_after: float | None) -> float:
+    """The backoff before retry `attempt` (0-based): `base × 2^attempt`, but a larger server-provided
+    `Retry-After` wins, all capped at `_RETRY_DELAY_CAP_S` (D43/A7)."""
+    curve = _RETRY_BASE_DELAY_S * (2**attempt)
+    return min(max(curve, retry_after or 0.0), _RETRY_DELAY_CAP_S)
+
+
+def _resolve_retry_attempts(cfg: InferenceCfg, ep: InferenceEndpointCfg) -> int:
+    """The per-hop chat-stream retry budget (D43/A7): the endpoint override when set, else the global
+    (`None` inherits, `0` disables) — the compaction global+override resolve pattern, one home."""
+    return ep.retry_attempts if ep.retry_attempts is not None else cfg.retry_attempts
+
+
+@dataclass(frozen=True)
+class RetryNotice:
+    """A wire item `stream_chat` interleaves BEFORE the first `ChatDelta` (D43/A6): the served endpoint
+    hit a retry-worthy error and is about to sleep `delay_s` then re-attempt (`attempt` of
+    `max_attempts`). `endpoint` is the chain entry's name; `category` is the classifier tier. Wave 2
+    re-emits it as an `inference.retry` AgentEvent; Wave-1 session consumers skip it."""
+
+    endpoint: str
+    attempt: int
+    max_attempts: int
+    delay_s: float
+    category: str
+
+
+@dataclass(frozen=True)
+class FailoverNotice:
+    """A wire item `stream_chat` interleaves BEFORE the first `ChatDelta` (D43/A6): the chain dropped
+    from `from_endpoint` to `to_endpoint`. `category` is the triggering error's classifier tier. Wave 2
+    re-emits it as an `inference.failover` AgentEvent; Wave-1 session consumers skip it."""
+
+    from_endpoint: str
+    to_endpoint: str
+    category: str
 
 
 @dataclass
@@ -592,7 +776,10 @@ class InferenceClient:
                     sem.release()
 
         try:
-            result = await failover(chain, attempt, label=lambda e: e[0])
+            # Buffered path: no retry policy (D43 — the retry tier is CHAT-STREAM only; the summarizer
+            # is latency-bound + has its own fallback semantics). `failover_collect` drains the generator
+            # and returns the result, reducing byte-for-byte to today's straight next-hop walk.
+            result = await failover_collect(chain, attempt, label=lambda e: e[0])
         except FailoverError as exc:
             raise InferenceError(
                 str(exc),
@@ -613,8 +800,9 @@ class InferenceClient:
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | None = None,
         report: StreamReport | None = None,
-    ) -> AsyncIterator[ChatDelta]:
-        """Stream a chat completion as per-token `ChatDelta`s, failing over at **stream initiation**.
+    ) -> AsyncIterator[ChatDelta | RetryNotice | FailoverNotice]:
+        """Stream a chat completion as per-token `ChatDelta`s, failing over at **stream initiation** and
+        interleaving typed control items (`RetryNotice`/`FailoverNotice`) BEFORE the first `ChatDelta`.
 
         `messages` is OpenAI shape; `tools` is the optional function toolset. `tool_choice` overrides
         the default policy when `tools` are present (`None` → today's `"auto"`; e.g. `"none"` keeps the
@@ -625,7 +813,13 @@ class InferenceClient:
         (failover at init — no token has reached the user yet). After that we iterate the rest with no
         further failover: a mid-stream drop raises `InferenceError` (can't restart a partial reply). Tool
         calls arrive as index-keyed fragments, reassembled and emitted as one terminal
-        `ChatDelta(tool_calls=[...])`. Raises `InferenceError` if every endpoint fails / none configured.
+        `ChatDelta(tool_calls=[...])`.
+
+        D43/A7: a genuinely-transient init failure (`categorize` = 429/503/Retry-After/llama.cpp busy)
+        retries the SAME endpoint up to its resolved `retry_attempts` (visible `RetryNotice` + backoff)
+        BEFORE hopping; a `FailoverNotice` narrates each hop. The permit-free backoff lives INSIDE the
+        failover generator; the D42 first-chunk/permit-release scoping below is unchanged. Raises
+        `InferenceError` if every endpoint fails / none configured.
         """
         chain = self._resolve_chain(mode, model)
         if not chain:
@@ -635,9 +829,28 @@ class InferenceClient:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice or "auto"
         last_error: InferenceError | None = None
+        #: The hop the retry policy is deciding on (set by `attempt`, read by `_retry_policy` — the
+        #: policy gets `(exc, attempt)` but not the endpoint, so `attempt` stashes it here) + the last
+        #: classifier verdict (set in the policy, read when re-yielding a notice so it carries the tier).
+        last_entry: _ChainEntry | None = None
+        last_category: ErrorCategory = "other"
+
+        def _retry_policy(exc: BaseException, done: int) -> FailAction:
+            """D43/A7 — the CHAT-STREAM retry policy handed to `failover()`: `transient` errors retry the
+            SAME endpoint (`base×2ⁿ`, `Retry-After`-floored, capped) while the hop's `retry_attempts`
+            budget lasts; `fatal_for_endpoint`/`overflow`/`other` → straight next-hop (today's walk)."""
+            nonlocal last_category
+            last_category = categorize(exc)
+            if last_entry is None or last_category != "transient":
+                return NEXT_HOP
+            budget = _resolve_retry_attempts(self._cfg, last_entry[1])
+            if done >= budget:
+                return NEXT_HOP
+            return RETRY_AFTER(_retry_delay(done, getattr(exc, "retry_after", None)), budget)
 
         async def attempt(entry: _ChainEntry) -> tuple[Any, Any, asyncio.Semaphore | None]:
-            nonlocal last_error
+            nonlocal last_error, last_entry
+            last_entry = entry  # for `_retry_policy`'s per-endpoint budget resolution
             name, ep, use_model = entry
             if not use_model:
                 raise InferenceError(f"no model configured for '{name}'")
@@ -684,14 +897,36 @@ class InferenceClient:
                 raise
             return first, stream, sem
 
+        # Drive the failover GENERATOR (D43/A6): re-yield its control items as typed wire notices
+        # BEFORE the first ChatDelta, capture the winning `FailoverResult` (the generator's last item).
+        # The retry backoff/sleep lives INSIDE the generator (permit-free — see failover.py); this loop
+        # only forwards the narration. `_retry_policy` drives the transient-retry tier.
+        result: FailoverResult[tuple[Any, Any, asyncio.Semaphore | None]] | None = None
         try:
-            result = await failover(chain, attempt, label=lambda e: e[0])
+            async for item in failover(chain, attempt, label=lambda e: e[0], policy=_retry_policy):
+                if isinstance(item, FailoverResult):
+                    result = item  # the terminal item — the generator returns right after
+                elif isinstance(item, HopRetry):
+                    yield RetryNotice(
+                        endpoint=chain[item.index][0],
+                        attempt=item.attempt,
+                        max_attempts=item.max_attempts,
+                        delay_s=item.delay_s,
+                        category=last_category,
+                    )
+                else:  # HopFailover
+                    yield FailoverNotice(
+                        from_endpoint=chain[item.from_index][0],
+                        to_endpoint=chain[item.to_index][0],
+                        category=last_category,
+                    )
         except FailoverError as exc:
             raise InferenceError(
                 str(exc),
                 code=last_error.code if last_error is not None else None,
                 status=last_error.status if last_error is not None else None,
             ) from exc
+        assert result is not None, "failover() drained without a FailoverResult and without raising"
         self._record(report, chain, result)
 
         first, stream, sem = result.value

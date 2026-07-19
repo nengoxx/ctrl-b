@@ -152,6 +152,12 @@ class InferenceEndpointCfg(BaseModel):
     #: Per-endpoint + declared (pi's `compat.maxTokensField` precedent). Consumed at the wire boundary
     #: (Wave 4) when threading `ModelRef.max_tokens`; a tiny, additive knob on the unified endpoint.
     max_tokens_field: Literal["max_tokens", "max_completion_tokens"] = "max_tokens"
+    #: Per-endpoint override of the CHAT-STREAM same-endpoint retry budget (D43/A7). `None` inherits the
+    #: global `InferenceCfg.retry_attempts`; `0` disables retries for this endpoint (straight next-hop).
+    #: Only genuinely-transient failures (429/503/Retry-After/llama.cpp busy — `categorize`) consume the
+    #: budget; a dead endpoint (connection-refused/timeout = `other`) never retries. Additive field on
+    #: the unified endpoint object (the global+override resolve pattern — never a sibling map).
+    retry_attempts: int | None = Field(default=None, ge=0)
 
 
 class InferenceCfg(BaseModel):
@@ -179,6 +185,13 @@ class InferenceCfg(BaseModel):
     #: override (an agent's `ModelRef.model`) applies only to the *selected* endpoint — fallbacks always
     #: use their own configured model (a local model id won't exist on a cloud backend).
     fallbacks: list[InferenceEndpointCfg] = Field(default_factory=list)
+    #: Global CHAT-STREAM same-endpoint retry budget (D43/A7) — the manage-once knob. On a genuinely-
+    #: transient stream-initiation failure (429/503/Retry-After/llama.cpp busy — `categorize`), the chat
+    #: stream retries the SAME endpoint up to this many times (fixed backoff curve) BEFORE hopping, so a
+    #: busy-but-alive server keeps the conversation on the same model instead of silently switching. A
+    #: per-endpoint `InferenceEndpointCfg.retry_attempts` overrides it (None inherits, 0 disables). `0`
+    #: here = today's instant next-hop everywhere. Chat stream only — `complete()`/voice keep next-hop.
+    retry_attempts: int = Field(default=2, ge=0)
 
     def endpoint(self, mode: str | None = None) -> InferenceEndpointCfg:
         return self.local if (mode or self.default_mode) == "local" else self.cloud

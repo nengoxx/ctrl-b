@@ -36,7 +36,7 @@ from app.config import (
     save_settings,
     unmask_secrets,
 )
-from app.core.failover import FailoverError, failover
+from app.core.failover import FailoverError, failover_collect
 
 
 def _run(coro):
@@ -51,7 +51,7 @@ def test_failover_primary_served() -> None:
         async def attempt(ep):
             return f"ok:{ep}"
 
-        res = await failover(["a", "b"], attempt)
+        res = await failover_collect(["a", "b"], attempt)
         assert res.value == "ok:a"
         assert res.served_index == 0
         assert res.degraded is False
@@ -67,7 +67,7 @@ def test_failover_falls_through_on_any_error() -> None:
                 raise RuntimeError("boom")  # any error → next (Q2)
             return f"ok:{ep}"
 
-        res = await failover(["a", "b"], attempt, label=str)
+        res = await failover_collect(["a", "b"], attempt, label=str)
         assert res.value == "ok:b"
         assert res.served_index == 1
         assert res.degraded is True
@@ -82,7 +82,7 @@ def test_failover_all_fail_raises() -> None:
             raise ValueError(f"down:{ep}")
 
         try:
-            await failover(["a", "b"], attempt)
+            await failover_collect(["a", "b"], attempt)
             raise AssertionError("expected FailoverError")
         except FailoverError as exc:
             assert len(exc.failures) == 2
@@ -97,7 +97,7 @@ def test_failover_empty_chain_raises() -> None:
             return ep
 
         try:
-            await failover([], attempt)
+            await failover_collect([], attempt)
             raise AssertionError("expected FailoverError on empty chain")
         except FailoverError as exc:
             assert exc.failures == []

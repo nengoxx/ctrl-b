@@ -9,8 +9,14 @@ from __future__ import annotations
 
 import asyncio
 
-from app.adapters.inference import InferenceClient, InferenceError, StreamReport
+from app.adapters.inference import ChatDelta, InferenceClient, InferenceError, StreamReport
 from app.config import InferenceCfg, InferenceEndpointCfg
+
+
+def _text(items) -> str:
+    """Join the text of the `ChatDelta`s only — a failover serve now interleaves typed
+    `FailoverNotice`/`RetryNotice` control items into the stream (D43/A6), which carry no `.text`."""
+    return "".join(d.text for d in items if isinstance(d, ChatDelta))
 
 
 # ── fakes for the AsyncOpenAI stream/buffered shapes ──
@@ -129,7 +135,7 @@ def test_stream_failover_at_create():
     client, _ = _build(_cfg(), {"http://local/v1": _down, "http://cloud/v1": _streams("from ", "cloud")})
     report = StreamReport()
     deltas = _run(_collect(client, report=report))
-    assert "".join(d.text for d in deltas) == "from cloud"
+    assert _text(deltas) == "from cloud"
     assert report.served == "cloud" and report.degraded is True
     assert len(report.failures) == 1  # local failed once before cloud answered
 
@@ -144,7 +150,7 @@ def test_stream_failover_at_first_chunk():
         },
     )
     deltas = _run(_collect(client))
-    assert "".join(d.text for d in deltas) == "ok"
+    assert _text(deltas) == "ok"
 
 
 def test_no_midstream_failover():
