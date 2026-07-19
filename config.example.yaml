@@ -32,22 +32,33 @@ inference:
     model: minig+
     # extra_body: per-endpoint OpenAI-SDK passthrough (ACA-18) — merged only into THIS endpoint's
     # call, never blanket (OpenAI 400s on unknown args). Live on the local endpoint so a fresh install
-    # keeps the llama.cpp prompt-cache pin + telemetry (a commented-out pin silently regresses ACA-18):
+    # keeps the llama.cpp prompt-cache pin + telemetry (a commented-out pin silently regresses ACA-18;
+    # return_progress also feeds the D42 context-anchoring estimator — without it compaction falls
+    # back to the chars/4 heuristic):
     #   cache_prompt: true       # protective on older llama-server builds (recent builds default true)
     #   return_progress: true    # emit streaming `prompt_progress` so cache-hit telemetry shows up
     extra_body: { cache_prompt: true, return_progress: true }
+    # context_window: 16384      # D42: manual per-endpoint window; unset = auto-probed from llama.cpp
+    #                            # /props (config always wins over the probe; cloud has no probe)
+    # max_concurrent_requests: 1 # D40: app-side gate for a backend without request slots to spare
   cloud:
     base_url: https://openrouter.ai/api/v1
     api_key: sk-or-v1-...
     model: google/gemini-2.0-flash-exp:free
     # For a cloud backend, request usage on the final stream chunk to surface cached_tokens telemetry
-    # (cached_tokens reads 0 below 1024 prompt tokens — the documented floor, not a cache miss):
+    # (cached_tokens reads 0 below 1024 prompt tokens — the documented floor, not a cache miss).
+    # It also feeds the D42 context-anchoring estimator (same role as return_progress locally):
     # extra_body: { stream_options: { include_usage: true } }
+    # context_window: 1000000    # D42: cloud windows are never probed — set manually or compaction
+    #                            # falls back to the threshold_tokens trigger
+    # max_tokens_field: max_tokens  # D42: or max_completion_tokens (OpenAI reasoning models)
 
-# Agent runtime (Phase 4e+). `compaction` folds the oldest complete turns of a thread into a single
-# summary once the working context passes `threshold_tokens` (or on a manual `/compact`); the full
-# history stays in SQLite, only the model's live context shrinks. The `summarizer` is independently
-# selectable — leave mode/model blank to reuse the chat backend, or point it at a cheap/fast model.
+# Agent runtime (Phase 4e+, compaction v2 = D42). `compaction` first clears old bulky tool outputs
+# at assembly time (free — the DB keeps them verbatim), then folds the oldest complete turns into a
+# rolling summary once the working context passes `context_window × threshold_frac` (or on a manual
+# `/compact [instructions]`); with no window resolved (config or the local /props probe) the absolute
+# `threshold_tokens` fallback triggers instead. The `summarizer` is independently selectable — leave
+# mode/model blank to reuse the chat backend, or point it at a cheap/fast model.
 agent:
   default_agent: ""          # name of the agents[] entry new threads use; blank = built-in default
   global_subagent_limit: 6   # process-wide cap on concurrent subagents across the whole tree (4.5)
@@ -60,11 +71,18 @@ agent:
   skill_max_active: 2        # max skills that activate per turn (baked at startup)
   compaction:                # global context-window default; an agent/subagent can override it below
     enabled: true
-    threshold_tokens: 6000   # working-context size (~chars/4 estimate) that triggers auto-compaction
+    threshold_frac: 0.85     # D42: compact at this fraction of the endpoint's context window
+    threshold_tokens: 6000   # NO-WINDOW fallback only (~chars/4 estimate) — used when no window resolves
     keep_last_messages: 8    # recent-message floor kept verbatim (snapped back to a turn boundary)
+    keep_recent_tokens: 4096 # D42: recent-token floor (the larger of the two floors wins); 0 = off
+    clear_output_min_tokens: 500  # D42: tool outputs bigger than this may be cleared at assembly
+    clear_keep_steps: 2      # D42: the most recent N tool-call rounds always keep full outputs (min 1)
+    max_consecutive_failures: 3   # D42: failed (non-shrinking) folds before auto-compaction latches off
+    reserve_output: true     # D42: subtract the agent's model.max_tokens from the trigger line
     summarizer:
       mode: ""               # ""/local/cloud — blank inherits inference.default_mode
       model: ""              # blank inherits the endpoint's model
+      # max_tokens: 1024     # D42: optional output cap for the summary call (ModelRef call config)
 
 # Agent definitions (Phase 4.5, D11). Optional — with none configured a built-in default chat agent
 # is used (all agent-exposed tools, CONFIRM privilege, the chat model). Add entries to run/select
@@ -96,6 +114,10 @@ agent:
 #     max_stall_iterations: 2      # consecutive no-progress iterations before a forced final answer
 #   - name: capable            # strong model — OPT OUT of auto-narrowing; full toolset, own judgment
 #     model: { mode: cloud, model: "anthropic/claude-sonnet-4.5" }
+#     # ModelRef call config (D42) — optional per-agent output/reasoning knobs (also in the Conf UI):
+#     #   model: { mode: cloud, model: "...", max_tokens: 4096, reasoning_effort: high }
+#     #   reasoning_effort ladder: off|minimal|low|medium|high|xhigh|max ("off" disables local
+#     #   thinking via chat_template_kwargs; unknown values are ignored by llama.cpp)
 #     tools: "*"
 #     skills: []               # <- the opt-out: no skill auto-selection / no tool narrowing
 #     max_calls_per_tool: 20   # a capable model can be trusted with a looser leash
