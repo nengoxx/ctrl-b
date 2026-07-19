@@ -77,7 +77,11 @@ def _session_with_calls(c, n: int):
     from app.services.agent.session import AgentSession
 
     s = c.app.state
-    agent = s.settings.resolve_agent(None)
+    # Wave 4 wired the parallel read-only prefix, which would otherwise dispatch these multi-`ping_host`
+    # batches concurrently. These are SERIAL-path per-call-persistence pins (cadence / one-tool-row /
+    # confirm-suspend / cancel / single-txn) → run with parallel dispatch OFF so they exercise exactly
+    # the serial machinery they target; the parallel executor has its own file (test_parallel_executor_d40).
+    agent = s.settings.resolve_agent(None).model_copy(update={"max_parallel_tools": 1})
     session = AgentSession(s.threads, s.messages, s.inference, s.settings, s.actions, agent, interactive=True)
     thread = run_async(s.threads.create(Thread()))
     cids = [uuid.uuid4().hex for _ in range(n)]

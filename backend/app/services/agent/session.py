@@ -58,7 +58,7 @@ from app.domain.conversation import (
 )
 from app.domain.enums import Actor, RunState
 from app.domain.result import ToolResult
-from app.services.action_service import ActionService
+from app.services.action_service import ActionService, InvokeOutcome
 from app.services.agent.compaction import Compactor, estimate_payload_tokens
 from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
 from app.services.conversation import MessageRepo, ThreadRepo
@@ -1122,6 +1122,24 @@ class AgentSession:
                 await persist  # the inner task is uncancellable by the outer cancel — let it finish
                 raise
 
+    @staticmethod
+    def _invoke_error_result(tool: str, exc: Exception) -> ToolResult:
+        """Map a failed `ActionService.invoke` to that call's ISOLATED error `ToolResult` (failure
+        isolation, D40 §5 — one call's error is only its own). Mirrors the serial loop's inline
+        `except UnknownTool` / `except ValidationError` shapes byte-for-byte so a parallel-prefix
+        failure feeds the model exactly the error a serial failure would; a GENERIC exception (which
+        the serial loop never catches — it lets it propagate) becomes a plain ERROR result so a
+        parallel task NEVER raises out of its `invoke`. The single reusable construction for the
+        parallel path (the serial loop's body is unchanged per the Wave-4 scope — it keeps its inline
+        clauses; this helper reproduces their shapes rather than refactoring them)."""
+        if isinstance(exc, UnknownTool):
+            return ToolResult(state=RunState.DENIED, summary=f"unknown tool '{tool}'")
+        if isinstance(exc, ValidationError):
+            return ToolResult(
+                state=RunState.ERROR, summary=f"invalid arguments for {tool}", error=str(exc)[:300]
+            )
+        return ToolResult(state=RunState.ERROR, summary=f"{tool} failed", error=str(exc)[:300])
+
     async def _run_calls(
         self,
         thread: Thread,
@@ -1201,6 +1219,136 @@ class AgentSession:
 
         answers = resume_answers or {}
         try:
+            # ── PARALLEL PREFIX HEAD (D40 §5) ─────────────────────────────────────────────────────
+            # Runs BEFORE the serial for-loop, as `_run_calls`' head, sharing its `result_parts` list,
+            # `_persist()` closure and `tool_msg` holder (ONE consumer of both). `_classify_batch`
+            # already COMMITTED the prefix's dispatch increments to `guard` (counts/tool_counts) in
+            # model order — so this executor must NOT increment again; and every prefix call it
+            # resolves becomes `_RESOLVED`, so the serial loop below `continue`s past it (its ONLY
+            # skip). `max_parallel_tools == 1` = parallel dispatch OFF (agent.py): skip the classifier
+            # entirely so `guard` is untouched and the batch runs on today's verbatim serial tail.
+            plan = (
+                self._classify_batch(assistant, guard, resume_tokens, resume_answers)
+                if self._agent.max_parallel_tools > 1
+                else _BatchPlan(prefix=[], serial_from=0)
+            )
+            if plan.parallel:
+                # One result slot per prefix call, filled at its MODEL-ORDER index; `result_parts` is
+                # always the filled slots in model order (gaps for not-yet-done calls dropped — the
+                # compaction preserves model order among completed ones), and later serial-tail
+                # appends go after. Concurrency is bounded by `asyncio.Semaphore(max_parallel_tools)`
+                # acquired INSIDE each task around the invoke.
+                sem = asyncio.Semaphore(self._agent.max_parallel_tools)
+                slots: list[ToolResultPart | None] = [None] * len(plan.prefix)
+                index_of: dict[str, int] = {cp.call_id: i for i, cp in enumerate(plan.prefix)}
+
+                async def _invoke_one(cp: ToolCallPart) -> tuple[ToolCallPart, InvokeOutcome | ToolResult]:
+                    """Invoke ONE prefix call under the concurrency bound. NEVER raises except
+                    `CancelledError` (which must still cancel): any invoke failure maps to that call's
+                    isolated error `ToolResult`. Returns `(cp, InvokeOutcome | ToolResult)`; the
+                    invoke construction mirrors the serial loop's exactly (a prefix call is always
+                    fresh → `confirm_token=None`). Actor audit rows are written inside `invoke`."""
+                    async with sem:
+                        try:
+                            return cp, await self._actions.invoke(
+                                cp.tool,
+                                cp.args,
+                                actor=AGENT_ACTOR,
+                                privilege=self._agent.privilege,
+                                interactive=self._interactive,
+                                confirm_token=None,
+                                depth=self._depth,
+                                agent=self._agent,
+                            )
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as exc:  # failure isolation (incl. Unknown/Validation)
+                            return cp, self._invoke_error_result(cp.tool, exc)
+
+                def _complete(cp: ToolCallPart, produced: InvokeOutcome | ToolResult) -> ToolResult:
+                    """Completion bookkeeping for ONE prefix call, copied faithfully from the serial
+                    completion path (`cp.state`, `guard.last_results`, `seen_results`+`made_progress`
+                    on a NEW real result). A prefix call is always fresh (`token is None`) so the
+                    serial `token != _DISMISS` guard is unconditionally true here. D40 §4 BELTS: an
+                    invoke that returns `needs_confirm` OR a result in an `AWAITING_*` state was
+                    MISDECLARED as prefix-eligible → replace with a loud error result, log at ERROR,
+                    and (per D40) do NOT flip `made_progress` — but still record `last_results`."""
+                    sig = _LoopGuard.sig(cp.tool, cp.args)
+                    belt = False
+                    if isinstance(produced, ToolResult):
+                        result = produced  # invoke raised → isolated error result
+                    else:
+                        inv = produced  # an InvokeOutcome
+                        if inv.needs_confirm or (
+                            inv.result is not None
+                            and inv.result.state in (RunState.AWAITING_CONFIRM, RunState.AWAITING_ANSWER)
+                        ):
+                            belt = True
+                            log.error(
+                                "tool %r misdeclared for parallel execution (needs_confirm/AWAITING_* "
+                                "under the read-only prefix) — excluded",
+                                cp.tool,
+                            )
+                            result = ToolResult(
+                                state=RunState.ERROR,
+                                summary=f"{cp.tool} misdeclared for parallel execution — excluded",
+                                output=(
+                                    "This tool tried to suspend (confirm/question) while running in "
+                                    "the parallel read-only prefix, which is not allowed. It was "
+                                    "excluded and nothing happened — re-issue it on its own if needed."
+                                ),
+                            )
+                        else:
+                            result = inv.result or ToolResult(
+                                state=RunState.ERROR, summary=f"{cp.tool} returned no result"
+                            )
+                    cp.state = result.state
+                    guard.last_results[sig] = result  # C1a — recorded even for a belt result
+                    if not belt:  # D40 §4: belt results are counted as no-progress
+                        rsig = _LoopGuard.result_sig(sig, result)
+                        if rsig not in guard.seen_results:
+                            guard.seen_results.add(rsig)
+                            outcome.made_progress = True
+                    slots[index_of[cp.call_id]] = ToolResultPart(call_id=cp.call_id, result=result)
+                    return result
+
+                def _materialize() -> None:
+                    result_parts[:] = [s for s in slots if s is not None]
+
+                # Spawn OUTSIDE any open DB transaction — the head runs before any `_persist`, so no
+                # txn is open here (D40 §5/§9, asserted by construction). Tasks retained explicitly.
+                tasks = [asyncio.ensure_future(_invoke_one(cp)) for cp in plan.prefix]
+                try:
+                    pending: set[asyncio.Task] = set(tasks)
+                    while pending:
+                        done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                        for t in done:  # SINGLE consumer, in completion order
+                            cp, produced = t.result()  # never raises (CancelledError propagates)
+                            result = _complete(cp, produced)
+                            _materialize()
+                            await _persist()  # persist-before-emit (same contract as serial)
+                            yield AgentEvent(
+                                "tool.result",
+                                {"callId": cp.call_id, "result": result.model_dump(mode="json")},
+                            )
+                finally:
+                    # Lifecycle on ANY exit (normal / exception / external cancel / GeneratorExit): NO
+                    # tool task may outlive the generator. Cancel every still-pending task, AWAIT them
+                    # all (no orphan warnings), then HARVEST every completed-but-unconsumed task so its
+                    # work survives; the existing generator-level `finally` `_persist` then flushes it
+                    # durably. NEVER yield here (a yield during GeneratorExit unwind → RuntimeError).
+                    for t in tasks:
+                        if not t.done():
+                            t.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    for t in tasks:
+                        if t.cancelled() or t.exception() is not None:
+                            continue  # cancelled / uncaught-BaseException → nothing to harvest
+                        cp, produced = t.result()
+                        if slots[index_of[cp.call_id]] is None:  # completed but not yet consumed
+                            _complete(cp, produced)
+                    _materialize()
+
             for cp in assistant.tool_calls():
                 if cp.state in _RESOLVED:
                     continue  # already ran (resume: an earlier call in this step)
