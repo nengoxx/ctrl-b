@@ -273,6 +273,11 @@ def test_queued_entries_are_not_busy_state() -> None:
             c.app.state.steer_queues[tid] = q
             assert not c.app.state.turns  # the queue is NOT a busy signal
             assert active_task_turns(c.app.state.turns) == 0
+            # Drop the orphan before the fresh turn: the busy-truth property above is already proven
+            # with it present, and the fake `run_turn` bypasses `_drive` so it would NOT drain the
+            # orphan mid-turn — leaving it to (correctly) trigger Drain B at completion (D41 wave 3,
+            # covered in test_steer_drain_b_d41). This test only checks the fresh turn releases cleanly.
+            c.app.state.steer_queues.pop(tid, None)
             orig = _patch_session(_completed_events())
             try:
                 r = c.post("/api/agent/chat", json={"text": "go", "thread_id": tid, "stream": False})

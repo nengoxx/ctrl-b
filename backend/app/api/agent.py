@@ -188,37 +188,66 @@ def resolve_session_agent(settings, name: str | None, privilege: Privilege | Non
     return agent
 
 
+def _build_session(
+    state,
+    thread: Thread | None = None,
+    agent_name: str | None = None,
+    privilege: Privilege | None = None,
+) -> AgentSession:
+    """Build a session from `app.state` (NOT a Request) — the state-shaped core of `_session`, shared
+    with the D41 drain-B spawn (`start_steer_turn`, which has only `state`, never a Request). Resolves
+    which `AgentDef` drives the turn: `agent_name` (the `/agent <name>` switch, 7d) wins; else the
+    thread's `agent` field (D11); else the configured default. `privilege` is the `/privilege` session
+    override (A1/D16). Wires the D41 Drain-A `steer_source` when a thread is resolved (subagent sessions
+    build the session directly with the `None` default — children are never steered)."""
+    name = agent_name or (thread.agent if thread else None)
+    agent = resolve_session_agent(state.settings, name, privilege)
+    return AgentSession(
+        state.threads,
+        state.messages,
+        state.inference,
+        state.settings,
+        state.actions,
+        agent,
+        skills=getattr(state, "skills", None),
+        selector=getattr(state, "skill_selector", None),
+        memory=getattr(state, "memory", None),
+        steer_source=steer_source_for(state, thread.id) if thread is not None else None,
+    )
+
+
 def _session(
     request: Request,
     thread: Thread | None = None,
     agent_name: str | None = None,
     privilege: Privilege | None = None,
 ) -> AgentSession:
-    """Build a session, resolving which `AgentDef` drives it. `agent_name` (the per-message `/agent
-    <name>` switch, 7d) wins; else the thread's `agent` field (D11); else the configured default. An
-    unknown name falls back to the default (resolve_agent is graceful). `privilege` is the `/privilege`
-    session override (A1/D16) — resume re-sends it so the continuation gates at the same level (a
-    security stance, unlike `mode` which isn't carried). Resume passes the last assistant turn's
-    `agent` here (D15 #5) so a suspended turn finishes on the agent that started it."""
-    s = request.app.state
-    name = agent_name or (thread.agent if thread else None)
-    agent = resolve_session_agent(s.settings, name, privilege)
-    return AgentSession(
-        s.threads,
-        s.messages,
-        s.inference,
-        s.settings,
-        s.actions,
-        agent,
-        skills=getattr(s, "skills", None),
-        selector=getattr(s, "skill_selector", None),
-        memory=getattr(s, "memory", None),
-        # D41 Drain A: the injected peek/commit view over this thread's steer queue so `_drive`'s
-        # loop top can apply mid-turn steers (chat/resume, buffered included). Built only when a
-        # thread is resolved; subagent sessions (constructed directly, never via `_session`) get the
-        # `None` default — children are never steered.
-        steer_source=steer_source_for(s, thread.id) if thread is not None else None,
-    )
+    """Build a session for an endpoint (the Request-shaped wrapper over `_build_session`). `agent_name`
+    (the per-message `/agent <name>` switch, 7d) wins; else the thread's `agent` field (D11); else the
+    configured default. An unknown name falls back to the default (resolve_agent is graceful).
+    `privilege` is the `/privilege` session override (A1/D16) — resume re-sends it so the continuation
+    gates at the same level (a security stance, unlike `mode` which isn't carried). Resume passes the
+    last assistant turn's `agent` here (D15 #5) so a suspended turn finishes on the agent that started
+    it."""
+    return _build_session(request.app.state, thread, agent_name, privilege)
+
+
+def _auto_route_agent(state, thread: Thread, explicit_agent: str | None, text: str) -> str | None:
+    """Resolve the agent NAME for a turn, including the auto-router (7e-g, D15 #8): an explicit
+    `/agent` (or a thread-sticky agent) always wins; only when nothing pins the agent AND the switch is
+    on does the keyword selector pick a specialist by matching `text`. Extracted so the chat endpoint
+    AND the D41 drain-B spawn resolve the agent identically (a spawned steer turn routes exactly as the
+    fresh POST that enqueued it would have — D41 §9 captured-params fidelity)."""
+    agent_name = explicit_agent
+    selector = getattr(state, "agent_selector", None)
+    if (
+        agent_name is None
+        and thread.agent is None
+        and state.settings.agent.auto_rotate
+        and selector is not None
+    ):
+        agent_name = select_agent(state.settings, selector, text)
+    return agent_name
 
 
 def _effective_stream(setting: str, requested: bool) -> bool:
@@ -332,6 +361,158 @@ async def _stream_live(
         remove_subscriber(handle, queue)
 
 
+def _spawn_drain_task(
+    state, thread: Thread, events: AsyncIterator[Any], handle: TurnHandle, cfg
+) -> asyncio.Task:
+    """The ONE server-owned drain-task spawn (D39/D41): create `drain_turn(handle, events, …)` on
+    `handle.task` and wire the idempotent `_cleanup` done-callback (marker release + terminal record +
+    the D41 drain-B chain). Shared by `_turn_response` (which ADDITIONALLY attaches a client subscriber
+    + transport around this) and the drain-B `start_steer_turn` (subscriber-less — the spawned steer
+    turn has no client). Callers that need the D39 zero-gap join attach their subscriber BEFORE calling
+    this (there is no `await` between here and `create_task`)."""
+    task = asyncio.create_task(drain_turn(handle, events, state.messages))
+    handle.task = task
+
+    def _cleanup(_t: asyncio.Task) -> None:
+        # Runs once when the task ends, whichever terminal path. The task's own finally set
+        # `handle.terminal_status` BEFORE the terminal sentinel (D39/M2 ordering), so it is normally
+        # settled here.
+        #
+        # Never-started-task window (C4-M3): a cancel landing BEFORE the drain coroutine's first step
+        # skips `drain_turn`'s try/finally entirely — so `terminal_status` is unset AND no terminal
+        # sentinel was pushed, leaving every subscriber blocked on the queue and a cancel probe
+        # reading a null terminal. The done-callback ALWAYS fires when the task reaches done, so
+        # backfill here: settle the status from the task outcome (`cancelled` if the task was
+        # cancelled, else `error`) and push the terminal sentinel so every subscriber unblocks. Both
+        # are sync — safe in a done-callback. No-op on the normal path (status already set).
+        if handle.terminal_status is None:
+            handle.terminal_status = "cancelled" if _t.cancelled() else "error"
+            push_terminal(handle)
+        # RELEASE FIRST (Slice-3 audit INFO-5): if the cache insert ever raised, a release-second
+        # ordering would leak the marker and 409 the thread forever — a missed terminal-cache entry is
+        # merely a reload fallback, the safe failure of the two.
+        release(state.turns, handle)
+        record_terminal(state.turn_terminals, handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap)
+        # D41 Drain B: a `completed` turn that leaves pending steers spawns the next turn (or drains an
+        # all-exec queue) — synchronously in this sync done-callback. Suppressed at shutdown / on a
+        # cancel that already harvested the queue (see `_maybe_spawn_drain_b`).
+        _maybe_spawn_drain_b(state, thread, handle, cfg)
+
+    task.add_done_callback(_cleanup)
+    return task
+
+
+def _maybe_spawn_drain_b(state, thread: Thread, handle: TurnHandle, cfg) -> None:
+    """D41 Drain B (turn end, `completed` ONLY). Called from the drain task's SYNC done-callback: iff
+    the turn completed AND the thread still has pending steers AND we are NOT shutting down, RESERVE the
+    thread marker SYNCHRONOUSLY (no `await` before the reserve — the callback is sync) then
+    `create_task` the async body. The synchronous reserve means no fresh-POST race and no loser path
+    (FIFO chronology holds); a `TurnBusy` here means a fresh POST already won the thread (it arrived
+    BEFORE this callback ran, not during) — leave the queue, it drains into that winner's loop top.
+
+    Suppressions: `suspended`/`cancelled`/`error` terminals never spawn (only `completed`); a cancel
+    that harvested the queue first (§Cancel) leaves it absent → nothing to spawn; `state.shutting_down`
+    (set at the top of the lifespan finally) blocks a natural completion from spawning past the drain
+    snapshot into a closing DB."""
+    if handle.terminal_status != "completed":
+        return
+    if getattr(state, "shutting_down", False):
+        return
+    q = state.steer_queues.get(thread.id)
+    if not q:  # absent (harvested by a racing cancel) or empty → nothing to drain
+        return
+    try:
+        new_handle = reserve(state.turns, thread.id, "chat", ring_size=cfg.ring_size)
+    except TurnBusy:
+        return  # a fresh POST won the thread first → it will drain the queue at its own loop top
+    asyncio.create_task(_drain_b_body(state, thread, new_handle, cfg))
+
+
+async def _run_steer_exec(state, thread: Thread, q, entry: SteerEntry) -> None:
+    """Run ONE queued `exec` steer during a drain-B body: re-check `shell.user_exec_enabled` LIVE
+    (fail-closed — disabling the shell mid-queue must drop, never run) then the SHARED `run_user_exec`
+    (the same run_shell@FULL + atomic pair the `/exec` endpoint and Drain A use). Commit the entry off
+    the queue either way. Unlike Drain A there is no live stream to carry a `notice`, so a dropped
+    command is logged at INFO."""
+    if not state.settings.shell.user_exec_enabled:
+        log.info("steer drain-B: shell disabled — dropped queued command (entry %s)", entry.entry_id)
+        q.commit([entry.entry_id])
+        return
+    await run_user_exec(state.actions, state.messages, thread.id, entry.text)
+    q.commit([entry.entry_id])
+
+
+async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
+    """The async body a drain-B spawn runs while holding the freshly-reserved `handle`. FIFO ordering
+    (D41): any `exec` steers LEADING the queue run first (gate-rechecked), then —
+      • if a `message` entry exists → pop that head message and seed a new turn via `start_steer_turn`
+        (the REST of the queue, incl. trailing execs, drains at the new turn's first loop top — Drain
+        A); `start_steer_turn` hands `handle` to the drain task (which owns the release).
+      • if the queue is ALL exec (no message) → run every entry, then release the marker + record a
+        terminal (mirroring a sync-kind marker's release) — NO model turn.
+    On failure, release the marker iff it hasn't already been handed to a drain task (`handle.task`
+    still None), mirroring the chat endpoint's pre-handoff release discipline."""
+    try:
+        q = state.steer_queues.get(thread.id)
+        if not q:  # harvested by a cancel between the sync reserve and this body → release the orphan
+            release(state.turns, handle)
+            return
+        entries = q.peek()
+        first_msg = next((i for i, e in enumerate(entries) if e.kind == "message"), None)
+        # Run any leading exec entries (all of them, when there is no message) FIFO.
+        leading = entries if first_msg is None else entries[:first_msg]
+        for e in leading:
+            live_q = state.steer_queues.get(thread.id)
+            if live_q is None:  # harvested mid-drain → stop
+                break
+            await _run_steer_exec(state, thread, live_q, e)
+        if first_msg is None:
+            # All-exec queue: no turn to spawn — release + record a terminal so a probe settles.
+            handle.terminal_status = "completed"
+            release(state.turns, handle)
+            record_terminal(state.turn_terminals, handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap)
+            return
+        # Seed a new turn with the head message; the remaining entries drain at its loop top (Drain A).
+        head = entries[first_msg]
+        live_q = state.steer_queues.get(thread.id)
+        if live_q is None:  # harvested after the leading execs ran → release the orphan marker
+            release(state.turns, handle)
+            return
+        live_q.commit([head.entry_id])  # pop ONLY the head (run_turn persists it as the user message)
+        await start_steer_turn(state, thread, [head])
+    except Exception:
+        log.exception("D41 drain-B body failed for thread %s", thread.id)
+        if handle.task is None:  # not yet handed to a drain task → free the marker so it can't leak
+            release(state.turns, handle)
+
+
+async def start_steer_turn(state, thread: Thread, entries: list[SteerEntry]) -> None:
+    """Start a fresh turn seeded by a queued steer (D41 Drain B) — the state-shaped mirror of the chat
+    endpoint's turn-start internals (`_build_session` deps → `run_turn` → the server-owned drain-task
+    spawn). `entries[0]` is a `message` head whose CAPTURED params (`mode`/`agent`/`privilege`/
+    `skills`) play the roles `body.*` play for a fresh POST, incl. the auto-router — so the spawned turn
+    runs exactly as the POST that enqueued it would have (D41 §9). The head marker is ALREADY reserved
+    (by `_maybe_spawn_drain_b`, kind `chat`); this looks it up and hands it to the drain task.
+
+    The head text is persisted as the user message by `run_turn` itself (NOT here) — mirroring the chat
+    endpoint, which never persists the message separately, it just calls `session.run_turn`. Any
+    remaining queued entries stay put and drain at this new turn's first loop top (Drain A)."""
+    head = entries[0]
+    handle = state.turns.get(thread.id)
+    if handle is None:  # defensive — the caller reserved it; a vanished marker means abandon the spawn
+        return
+    agent_name = _auto_route_agent(state, thread, head.agent, head.text)
+    # The captured privilege round-trips as a string (`body.privilege.value` at enqueue); re-hydrate it
+    # to `Privilege | None`, tolerating a junk value like the endpoint's lenient `_coerce_privilege`.
+    privilege: Privilege | None = None
+    if head.privilege is not None and head.privilege in {p.value for p in Privilege}:
+        privilege = Privilege(head.privilege)
+    session = _build_session(state, thread, agent_name=agent_name, privilege=privilege)
+    handle.mode = head.mode  # the turn's inference mode — the snapshot carries it (D39)
+    events = session.run_turn(thread, head.text, mode=head.mode, skills=head.skills)
+    _spawn_drain_task(state, thread, events, handle, state.settings.agent.turns)
+
+
 async def _turn_response(
     request: Request,
     thread: Thread,
@@ -363,31 +544,7 @@ async def _turn_response(
     # could drop the `permission` frame → a non-resumable buffered confirm. Restores the pre-inversion
     # lossless guarantee; SSE subscribers stay bounded (overflow → detach, S3-F).
     queue = make_subscriber(handle, cfg.subscriber_queue_size if stream else 0)
-    task = asyncio.create_task(drain_turn(handle, events, state.messages))
-    handle.task = task
-
-    def _cleanup(_t: asyncio.Task) -> None:
-        # Runs once when the task ends, whichever terminal path. The task's own finally set
-        # `handle.terminal_status` BEFORE the terminal sentinel (D39/M2 ordering), so it is normally
-        # settled here.
-        #
-        # Never-started-task window (C4-M3): a cancel landing BEFORE the drain coroutine's first step
-        # skips `drain_turn`'s try/finally entirely — so `terminal_status` is unset AND no terminal
-        # sentinel was pushed, leaving every subscriber blocked on the queue and a cancel probe
-        # reading a null terminal. The done-callback ALWAYS fires when the task reaches done, so
-        # backfill here: settle the status from the task outcome (`cancelled` if the task was
-        # cancelled, else `error`) and push the terminal sentinel so every subscriber unblocks. Both
-        # are sync — safe in a done-callback. No-op on the normal path (status already set).
-        if handle.terminal_status is None:
-            handle.terminal_status = "cancelled" if _t.cancelled() else "error"
-            push_terminal(handle)
-        # RELEASE FIRST (Slice-3 audit INFO-5): if the cache insert ever raised, a release-second
-        # ordering would leak the marker and 409 the thread forever — a missed terminal-cache entry is
-        # merely a reload fallback, the safe failure of the two.
-        release(state.turns, handle)
-        record_terminal(state.turn_terminals, handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap)
-
-    task.add_done_callback(_cleanup)
+    _spawn_drain_task(state, thread, events, handle, cfg)
 
     async def _consume(after_seq: int = 0) -> AsyncIterator[Any]:
         # Drain the subscriber queue as `AgentEvent`s until the terminal sentinel, then DETACH (never
@@ -627,20 +784,31 @@ async def cancel_turn_endpoint(thread_id: str, request: Request) -> dict[str, An
     `shutdown_grace_s` so the response carries the settled `terminal_status`. Idempotent repeat →
     same shape, `cancelled:false`. No live turn → `{cancelled:false, active:false}` (nothing to do)."""
     state = request.app.state
+    # D41 HARVEST-FIRST (review convergent HIGH): the queue pop is the FIRST statement — synchronous,
+    # before the handle lookup (so a no-live-turn / mistargeted cancel still harvests) and before ANY
+    # `await`. A `_cleanup` racing a natural completion then finds the queue ABSENT → its drain-B spawn
+    # is structurally suppressed: Stop can neither auto-run nor lose a steer. Every response branch
+    # carries `steer_queue: [{entry_id, kind, text}]` so the FE rebuilds the composer lines (wave 4).
+    harvested = state.steer_queues.pop(thread_id, None)
+    steer = (
+        [{"entry_id": e.entry_id, "kind": e.kind, "text": e.text} for e in harvested.peek()]
+        if harvested is not None
+        else []
+    )
     cfg = state.settings.agent.turns
     handle = state.turns.get(thread_id)
     if handle is None or handle.task is None:
-        return {"cancelled": False, "active": False}
+        return {"cancelled": False, "active": False, "steer_queue": steer}
     want_turn = await _cancel_turn_id(request)
     if want_turn is not None and want_turn != handle.turn_id:
         # A stale/mistargeted Stop — the named turn is not the one running now. Do NOT cancel the
         # successor; hand back the live turn so the client can decide whether to re-issue against it.
-        return {"cancelled": False, "active": True, "turn_id": handle.turn_id}
+        return {"cancelled": False, "active": True, "turn_id": handle.turn_id, "steer_queue": steer}
     fired = cancel_turn(handle)  # False if already cancelling / already done (the latch)
     # `asyncio.wait` does NOT re-raise the awaited task's CancelledError (unlike a direct `await
     # task`), so the endpoint settles cleanly whether the turn ends by cancel or was already ending.
     await asyncio.wait([handle.task], timeout=cfg.shutdown_grace_s)
-    return {"cancelled": fired, "terminal_status": handle.terminal_status}
+    return {"cancelled": fired, "terminal_status": handle.terminal_status, "steer_queue": steer}
 
 
 @router.delete("/agent/turns/{thread_id}/steer/{entry_id}")
@@ -694,47 +862,42 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     # Auto-route to a specialist (7e-g, D15 #8) only when nothing pins the agent — an explicit
     # `/agent` (body.agent) or a thread-sticky agent always wins, and the switch is off by default.
     # `thread.agent` is never set in normal chat (created None), so "no pin" → per-turn routing.
-    agent_name = body.agent
-    selector = getattr(request.app.state, "agent_selector", None)
-    if (
-        agent_name is None
-        and thread.agent is None
-        and request.app.state.settings.agent.auto_rotate
-        and selector is not None
-    ):
-        agent_name = select_agent(request.app.state.settings, selector, body.text)
+    state = request.app.state
+    agent_name = _auto_route_agent(state, thread, body.agent, body.text)
 
     # Reserve the thread's turn marker (D38) — synchronous check-and-set, after the thread is resolved
     # and the auto-rediscover boundary, before the response is built. Ownership transfers to the
     # server-owned drain task (`_turn_response` releases it via the task's done-callback, D39); if
     # anything raises before we hand off, release + re-raise so no marker leaks.
     #
-    # D41 (Slice 5): when the thread ALREADY runs a chat/resume turn, `_reserve_or_busy` raises
-    # `TurnBusy` carrying the live holder — upgrade the old 409 to a 202 STEER (enqueue the message).
-    # The catch→append block is synchronous-atomic (NO `await` between the catch and the append), so
-    # there is no orphan window between the failed reserve and the enqueue (D38 TOCTOU). A SYNC holder
-    # (exec/plan/apply/compact) keeps the 409 — queueing behind a ms-lived inline op is incoherent.
-    state = request.app.state
+    # D41 (Slice 5): when the thread ALREADY runs a chat/resume turn, STEER — enqueue the message
+    # (202) instead of the old 409. The captured `SteerEntry` is built ONCE and reused by both steer
+    # paths below.
     cfg = state.settings.agent.turns
+    steer_entry = SteerEntry(
+        kind="message",
+        text=body.text,
+        mode=body.mode,
+        agent=body.agent,
+        privilege=body.privilege.value if body.privilege is not None else None,
+        skills=body.skills,
+    )
+    # CAP-SHADOWS-STEER corner fix (D41 wave-1): check the LIVE holder synchronously BEFORE the reserve
+    # — if a chat/resume turn already owns this thread, enqueue directly (never touching
+    # `_reserve_or_busy`). Otherwise a saturated `max_active_turns` would make `_reserve_or_busy` raise
+    # the CAP 409 before we ever learn the thread is busy, so steering a busy thread would 409 instead
+    # of 202. The cap gates genuinely-NEW turns only; steering an already-running thread must always
+    # queue. This check→enqueue block is await-free (D38 TOCTOU). The `except TurnBusy` below stays as
+    # the belt for the race where a turn appears BETWEEN this check and the reserve.
+    live = state.turns.get(thread.id)
+    if live is not None and live.kind in ("chat", "resume"):
+        return _steer_202(state, thread.id, live, steer_entry, cfg)
     try:
         handle = _reserve_or_busy(state, thread.id, "chat", cfg)
     except TurnBusy as e:
         if e.handle.kind not in ("chat", "resume"):
             raise HTTPException(status_code=409, detail=_TURN_BUSY_DETAIL) from e
-        return _steer_202(
-            state,
-            thread.id,
-            e.handle,
-            SteerEntry(
-                kind="message",
-                text=body.text,
-                mode=body.mode,
-                agent=body.agent,
-                privilege=body.privilege.value if body.privilege is not None else None,
-                skills=body.skills,
-            ),
-            cfg,
-        )
+        return _steer_202(state, thread.id, e.handle, steer_entry, cfg)
     try:
         session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
@@ -775,12 +938,19 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Re
     # released in the finally.
     state = request.app.state
     cfg = state.settings.agent.turns
+    steer_entry = SteerEntry(kind="exec", text=body.command)
+    # CAP-SHADOWS-STEER corner fix (D41 wave-1, mirrors chat): steer a busy chat/resume thread BEFORE
+    # the reserve so a saturated `max_active_turns` cap can't shadow the enqueue with a 409. Await-free
+    # (D38 TOCTOU); the `except TurnBusy` below is the belt for the check↔reserve race.
+    live = state.turns.get(thread.id)
+    if live is not None and live.kind in ("chat", "resume"):
+        return _steer_202(state, thread.id, live, steer_entry, cfg)
     try:
         handle = _reserve_or_busy(state, thread.id, "exec", cfg)
     except TurnBusy as e:
         if e.handle.kind not in ("chat", "resume"):
             raise HTTPException(status_code=409, detail=_TURN_BUSY_DETAIL) from e
-        return _steer_202(state, thread.id, e.handle, SteerEntry(kind="exec", text=body.command), cfg)
+        return _steer_202(state, thread.id, e.handle, steer_entry, cfg)
     try:
         # ONE user-exec implementation (D41): run_shell@FULL + the atomic assistant+tool pair persist,
         # shared verbatim with the steer drain (`run_user_exec`). Response shape unchanged.

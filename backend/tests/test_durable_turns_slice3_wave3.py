@@ -322,9 +322,10 @@ def test_cancel_endpoint_mid_turn_reconciles_marks_stale_and_is_idempotent() -> 
 
         run_async(scenario())
 
-        assert out["cancel"] == {"cancelled": True, "terminal_status": "cancelled"}
+        # D41: the cancel response now carries the harvested steer queue (empty here — no steers).
+        assert out["cancel"] == {"cancelled": True, "terminal_status": "cancelled", "steer_queue": []}
         assert out["released"] is True
-        assert out["repeat"] == {"cancelled": False, "active": False}
+        assert out["repeat"] == {"cancelled": False, "active": False, "steer_queue": []}
 
         # the REAL persisted thread: call_one survived (shielded finally); call_two → CANCELLED
         msgs = run_async(s.messages.list(thread.id))
@@ -339,7 +340,7 @@ def test_cancel_idle_thread_returns_active_false() -> None:
 
     with _client() as c:
         r = run_async(cancel_turn_endpoint("never-existed", _Req(c.app)))
-        assert r == {"cancelled": False, "active": False}
+        assert r == {"cancelled": False, "active": False, "steer_queue": []}  # D41 harvest carry
     _clear_env()
 
 

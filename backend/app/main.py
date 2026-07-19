@@ -177,6 +177,10 @@ async def lifespan(app: FastAPI):
     # `not app.state.turns` read stays honest. See app/services/agent/steering.py.
     steer_queues: dict[str, SteerQueue] = {}
     app.state.steer_queues = steer_queues
+    # D41 Drain B guard: set True at the top of the lifespan finally so a turn completing DURING
+    # shutdown can't spawn a drain-B turn past the drain snapshot into a closing DB. Initialized here
+    # so `_maybe_spawn_drain_b`'s `getattr(state, "shutting_down", False)` reads a real value.
+    app.state.shutting_down = False
     # Stash the Deps bundle so the runtime reconfigure seam (PUT /api/settings) can re-point its
     # adapter handles (e.g. deps.inference) on a config change. Single source: see app/runtime.py.
     app.state.deps = deps
@@ -239,6 +243,10 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # D41: mark shutdown BEFORE snapshotting live turns — a turn that completes naturally during
+        # this drain must NOT spawn a drain-B turn past the snapshot into a DB we are about to close
+        # (`_maybe_spawn_drain_b` checks this flag). Must be the first statement of the finally.
+        app.state.shutting_down = True
         # Durable-turn drain (D39) — FIRST, before any adapter/DB close: a detached turn task's
         # shielded CancelledError `finally` still writes to `app.state.db`, so the DB must be open
         # when we cancel + await it. Route every cancel through `cancel_turn` (the single-cancel

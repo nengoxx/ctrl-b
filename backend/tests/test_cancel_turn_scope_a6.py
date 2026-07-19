@@ -99,7 +99,12 @@ def test_a6_mismatched_turn_id_does_not_cancel() -> None:
         handle = _reserved_handle(c)
         try:
             out = _cancel(c, handle.thread_id, {"turn_id": "some-other-turn"})
-            assert out == {"cancelled": False, "active": True, "turn_id": handle.turn_id}
+            assert out == {
+                "cancelled": False,
+                "active": True,
+                "turn_id": handle.turn_id,
+                "steer_queue": [],  # D41 harvest carry (empty — no steers queued)
+            }
             assert not handle.task.done()  # the live successor task was NOT cancelled
         finally:
             _drop_task(handle.task)
@@ -130,7 +135,7 @@ def test_a6_absent_body_is_legacy_unscoped_cancel() -> None:
 def test_a6_no_live_turn_reports_inactive() -> None:
     with _workspace(), _client() as c:
         out = _cancel(c, "no-such-thread", {"turn_id": "whatever"})
-        assert out == {"cancelled": False, "active": False}
+        assert out == {"cancelled": False, "active": False, "steer_queue": []}  # D41 harvest carry
 
 
 if __name__ == "__main__":
