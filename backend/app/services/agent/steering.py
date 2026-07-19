@@ -82,21 +82,38 @@ class SteerQueue:
         self.entries.append(entry)
         return len(self.entries)
 
+    def appendleft(self, entry: SteerEntry) -> int:
+        """Enqueue `entry` at the FRONT; return the new depth (D41 MED-3 requeue). Bypasses the cap — a
+        requeue restores an ALREADY-accepted entry (a drain-B head whose spawn prelude raised), it does
+        not admit a new submission, so it must not be refused by a full queue."""
+        self.entries.appendleft(entry)
+        return len(self.entries)
+
     def peek(self) -> list[SteerEntry]:
         """A stable ordered copy of the pending entries (the drain reads this, then `commit()`s)."""
         return list(self.entries)
 
-    def commit(self, ids_or_count: Iterable[str] | int) -> None:
+    def commit(self, ids_or_count: Iterable[str] | int) -> int:
         """Clear entries AFTER a successful persist (wave 2's transactional drain calls this only once
         the persist txn has committed). Accepts either an explicit set of `entry_id`s (remove exactly
         those) or an int count (pop that many from the FRONT, FIFO) — the drain uses whichever it has.
-        Shape built now; the running-turn drain (wave 2) is its first caller."""
+        Returns the COUNT actually removed (D41 MED-2): drain-B's head commit is load-bearing — a return
+        of 0 means the head we peeked is no longer owned by this queue (harvested / DELETEd / the queue
+        was popped-and-recreated by a fresh POST), so the caller must NOT spawn a turn from a stale head.
+
+        LOW (D41): a DELETE (`remove`) racing a drain's persist window can report `{removed: true}` for a
+        message the drain has ALREADY persisted (the commit here lands just after the remove) — a
+        sub-millisecond window, single-user, accepted: the worst case is one entry that both persisted
+        AND read back as unsent, not a lost or double-run message."""
         if isinstance(ids_or_count, int):
-            for _ in range(min(ids_or_count, len(self.entries))):
+            n = min(ids_or_count, len(self.entries))
+            for _ in range(n):
                 self.entries.popleft()
-        else:
-            drop = set(ids_or_count)
-            self.entries = deque(e for e in self.entries if e.entry_id not in drop)
+            return n
+        drop = set(ids_or_count)
+        before = len(self.entries)
+        self.entries = deque(e for e in self.entries if e.entry_id not in drop)
+        return before - len(self.entries)
 
     def remove(self, entry_id: str) -> bool:
         """Drop one entry by id (the DELETE endpoint / a targeted dequeue). True if it was present."""
@@ -160,3 +177,16 @@ def enqueue(state, thread_id: str, entry: SteerEntry, cap: int) -> int:
     if len(q) >= cap:
         raise SteerQueueFull(thread_id, cap)
     return q.append(entry)
+
+
+def requeue_front(state, thread_id: str, entry: SteerEntry) -> None:
+    """Put `entry` back at the FRONT of the thread's queue, CREATING the queue if it vanished (D41
+    MED-3). Drain-B's failure path calls this to return a head it had already committed off the queue
+    when the spawn prelude (`_auto_route_agent`/`_build_session`/`run_turn`) raised — so the message is
+    never lost: it drains at the next opportunity or harvests on Stop. Cap-exempt (via `appendleft`) — a
+    requeue restores an already-accepted entry, it doesn't admit a new one."""
+    q = state.steer_queues.get(thread_id)
+    if q is None:
+        q = SteerQueue()
+        state.steer_queues[thread_id] = q
+    q.appendleft(entry)

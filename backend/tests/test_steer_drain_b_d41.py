@@ -373,6 +373,155 @@ def test_reserve_race_leaves_queue_intact_no_crash() -> None:
         assert [e.text for e in s.steer_queues[thread.id].peek()] == ["q1"]  # queue intact
 
 
+# ── mid-build audit fix wave (MED-1..4) ──────────────────────────────────────────────────────────
+def _exec_outcome():
+    """A canned `ExecOutcome` for a gated `run_user_exec` stub (the command's real body is irrelevant —
+    these tests exercise commit/spawn ORDERING around the run, not the shell)."""
+    from app.domain.enums import RunState
+    from app.domain.result import ToolResult
+    from app.services.agent.exec import ExecOutcome
+
+    return ExecOutcome(call_id="x", assistant_id="a", result=ToolResult(state=RunState.OK, summary="ran"))
+
+
+def test_med1_exec_commit_before_run_harvest_midexec_no_double_run() -> None:
+    """MED-1: `_run_steer_exec` commits the entry OFF the queue BEFORE run_user_exec. A harvest landing
+    mid-execution therefore sees an EMPTY queue for that entry — it can't hand the running command back
+    to the composer (the double-run window). The command still runs exactly once."""
+    with _workspace(), _client() as c:
+        s = c.app.state
+        s.settings.shell.user_exec_enabled = True
+        thread = _new_thread(s)
+        entry = _exec_entry("echo once")
+        _enqueue(s, thread.id, entry)
+
+        gate = asyncio.Event()
+        calls = {"n": 0}
+        orig = agent_api.run_user_exec
+
+        async def gated(actions, messages, tid, command):
+            calls["n"] += 1
+            await gate.wait()  # block "mid-execution" so the harvest races us
+            return _exec_outcome()
+
+        agent_api.run_user_exec = gated
+        try:
+
+            async def _go() -> list[str]:
+                q = s.steer_queues[thread.id]
+                task = asyncio.create_task(agent_api._run_steer_exec(s, thread, q, entry))
+                for _ in range(10):
+                    await asyncio.sleep(0)  # let the task reach the gate (PAST the commit)
+                harvested = s.steer_queues.pop(thread.id, None)  # Stop harvests mid-execution
+                snap = [e.entry_id for e in harvested.peek()] if harvested else []  # snapshot BEFORE the gate
+                gate.set()
+                await task
+                return snap
+
+            snap = run_async(_go())
+        finally:
+            agent_api.run_user_exec = orig
+
+        assert snap == []  # committed before the run → the harvest saw no exec entry
+        assert calls["n"] == 1  # ran exactly once
+
+
+def test_med2_stale_head_no_double_spawn_new_queue_untouched() -> None:
+    """MED-2: the drain-B head commit is load-bearing. If the queue is harvested + recreated by a fresh
+    POST while a leading exec runs, the stale peeked head no longer belongs to the live queue, so
+    `commit` removes nothing (returns 0) and NO turn spawns — the new queue is untouched."""
+    from app.services.agent.steering import SteerQueue
+
+    with _workspace(), _client() as c:
+        s = c.app.state
+        cfg = s.settings.agent.turns
+        s.settings.shell.user_exec_enabled = True
+        thread = _new_thread(s)
+        s.inference = _Fake([[_text("must not spawn")]])
+        _enqueue(s, thread.id, _exec_entry("echo lead"))
+        _enqueue(s, thread.id, _msg_entry("stale head"))
+
+        gate = asyncio.Event()
+        orig = agent_api.run_user_exec
+
+        async def gated(actions, messages, tid, command):
+            # A fresh POST harvests the whole queue + installs a NEW one while the leading exec runs.
+            s.steer_queues.pop(thread.id, None)
+            newq = SteerQueue()
+            newq.append(_msg_entry("fresh post message"))
+            s.steer_queues[thread.id] = newq
+            await gate.wait()
+            return _exec_outcome()
+
+        agent_api.run_user_exec = gated
+        try:
+
+            async def _go() -> None:
+                h = reserve(s.turns, thread.id, "chat", ring_size=cfg.ring_size)
+                task = asyncio.create_task(agent_api._drain_b_body(s, thread, h, cfg))
+                for _ in range(10):
+                    await asyncio.sleep(0)
+                gate.set()
+                await task
+
+            run_async(_go())
+        finally:
+            agent_api.run_user_exec = orig
+
+        assert s.inference.calls == 0  # NO turn spawned from the stale head
+        assert thread.id not in s.turns  # marker released
+        assert [e.text for e in s.steer_queues[thread.id].peek()] == [
+            "fresh post message"
+        ]  # new queue intact
+
+
+def test_med3_spawn_prelude_raise_requeues_head_at_front() -> None:
+    """MED-3: a raise in the spawn prelude (`_auto_route_agent`) AFTER the head is committed off the
+    queue must not lose the message — it is re-enqueued at the FRONT, the marker is released, and nothing
+    is persisted. The body swallows the exception (no crash)."""
+    with _workspace(), _client() as c:
+        s = c.app.state
+        cfg = s.settings.agent.turns
+        thread = _new_thread(s)
+        s.inference = _Fake([[_text("unused")]])
+        _enqueue(s, thread.id, _msg_entry("keep me"))
+
+        orig = agent_api._auto_route_agent
+
+        def boom(*a, **k):
+            raise RuntimeError("prelude boom")
+
+        agent_api._auto_route_agent = boom
+        try:
+            _run_body_directly(s, thread, cfg)  # the body catches internally → no raise here
+        finally:
+            agent_api._auto_route_agent = orig
+
+        assert [e.text for e in s.steer_queues[thread.id].peek()] == ["keep me"]  # requeued at the front
+        assert thread.id not in s.turns  # marker released
+        assert _users(s, thread) == []  # nothing persisted
+
+
+def test_med4_shutdown_recheck_releases_before_body_runs() -> None:
+    """MED-4: `shutting_down` set AFTER the drain-B reserve but BEFORE the body runs → the body's first
+    statement releases the marker and bails, so a natural completion can't spawn a turn into a closing
+    DB."""
+    with _workspace(), _client() as c:
+        s = c.app.state
+        cfg = s.settings.agent.turns
+        thread = _new_thread(s)
+        s.inference = _Fake([[_text("must not run")]])
+        _enqueue(s, thread.id, _msg_entry("queued"))
+        h = reserve(s.turns, thread.id, "chat", ring_size=cfg.ring_size)
+        s.shutting_down = True  # set AFTER the reserve, BEFORE the body runs
+
+        run_async(agent_api._drain_b_body(s, thread, h, cfg))
+
+        assert thread.id not in s.turns  # released by the shutdown re-check (no spawn, marker not held)
+        assert s.inference.calls == 0  # nothing ran
+        assert [e.text for e in s.steer_queues[thread.id].peek()] == ["queued"]  # queue untouched
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

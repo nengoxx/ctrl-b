@@ -929,9 +929,11 @@ class AgentSession:
 
         **Exec entries** re-check `shell.user_exec_enabled` LIVE (D41 fail-closed: the enqueue check is
         UX only; disabled at drain → drop the entry [`commit` it away] + a `notice`, and NEVER run it).
-        Enabled → the SHARED `run_user_exec` (the same run_shell@FULL + atomic pair the `/exec` endpoint
-        uses), then `steer.applied {entryId, messageId, kind:"exec"}` (id-only — the durable pair is the
-        floor) and commit that one entry.
+        Enabled → commit the entry off the queue FIRST (D41 MED-1 commit-before-run: for a shell command
+        lost-on-crash beats double-run — a Stop/harvest mid-execution can no longer hand a running command
+        back to the composer), THEN the SHARED `run_user_exec` (the same run_shell@FULL + atomic pair the
+        `/exec` endpoint uses), then `steer.applied {entryId, messageId, kind:"exec"}` (id-only — the
+        durable pair is the floor).
 
         Deliberately does NOT re-run `_activate_skills`/reflection arm and does NOT rebuild the static
         head (it's per-turn cached + tail-appends history — the new user rows surface via `_assemble`'s
@@ -978,8 +980,14 @@ class AgentSession:
                     self._steer_source.commit([entry.entry_id])
                     yield AgentEvent("notice", {"text": "// shell disabled — queued command dropped"})
                     continue
-                exec_out = await run_user_exec(self._actions, self._messages, thread.id, entry.text)
+                # COMMIT-BEFORE-RUN (D41 MED-1): commit the entry OFF the queue BEFORE run_user_exec —
+                # for a shell command lost-on-crash beats double-run. Committing after the run left a
+                # window where a Stop/harvest arriving mid-execution handed the still-queued command back
+                # to the composer while it was already running (the audit's double-run window). The trade
+                # (a crash between commit and run loses the command) is the in-memory queue's
+                # already-accepted failure mode — it drops the whole queue on restart regardless.
                 self._steer_source.commit([entry.entry_id])
+                exec_out = await run_user_exec(self._actions, self._messages, thread.id, entry.text)
                 yield AgentEvent(
                     "steer.applied",
                     {"entryId": entry.entry_id, "messageId": exec_out.assistant_id, "kind": "exec"},

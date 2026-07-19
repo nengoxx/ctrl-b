@@ -45,7 +45,13 @@ from app.services.agent.proposals import apply_proposal
 from app.services.agent.selector import select_agent
 from app.services.agent.session import AgentSession, collect_turn
 from app.services.agent.skills import remove_skill_md, valid_skill_slug, write_skill_md
-from app.services.agent.steering import SteerEntry, SteerQueueFull, enqueue, steer_source_for
+from app.services.agent.steering import (
+    SteerEntry,
+    SteerQueueFull,
+    enqueue,
+    requeue_front,
+    steer_source_for,
+)
 from app.services.agent.turns import (
     TASK_KINDS,
     TurnBusy,
@@ -431,15 +437,21 @@ def _maybe_spawn_drain_b(state, thread: Thread, handle: TurnHandle, cfg) -> None
 async def _run_steer_exec(state, thread: Thread, q, entry: SteerEntry) -> None:
     """Run ONE queued `exec` steer during a drain-B body: re-check `shell.user_exec_enabled` LIVE
     (fail-closed — disabling the shell mid-queue must drop, never run) then the SHARED `run_user_exec`
-    (the same run_shell@FULL + atomic pair the `/exec` endpoint and Drain A use). Commit the entry off
-    the queue either way. Unlike Drain A there is no live stream to carry a `notice`, so a dropped
-    command is logged at INFO."""
+    (the same run_shell@FULL + atomic pair the `/exec` endpoint and Drain A use). Unlike Drain A there is
+    no live stream to carry a `notice`, so a dropped command is logged at INFO.
+
+    COMMIT-BEFORE-RUN (D41 MED-1): the entry is committed OFF the queue BEFORE `run_user_exec`, a
+    deliberate ruling — for a shell command a lost-on-crash outcome beats a double-run. Committing after
+    the run left a window where a Stop/harvest arriving mid-execution could hand the still-queued command
+    back to the composer while it was already running (the audit's double-run window). The trade — a
+    crash between the commit and the run loses the command — is the in-memory queue's already-accepted
+    failure mode (it drops the whole queue on restart anyway)."""
     if not state.settings.shell.user_exec_enabled:
         log.info("steer drain-B: shell disabled — dropped queued command (entry %s)", entry.entry_id)
         q.commit([entry.entry_id])
         return
+    q.commit([entry.entry_id])  # commit-before-run (MED-1): lost-on-crash beats double-run for a shell cmd
     await run_user_exec(state.actions, state.messages, thread.id, entry.text)
-    q.commit([entry.entry_id])
 
 
 async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
@@ -451,7 +463,18 @@ async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
       • if the queue is ALL exec (no message) → run every entry, then release the marker + record a
         terminal (mirroring a sync-kind marker's release) — NO model turn.
     On failure, release the marker iff it hasn't already been handed to a drain task (`handle.task`
-    still None), mirroring the chat endpoint's pre-handoff release discipline."""
+    still None), mirroring the chat endpoint's pre-handoff release discipline; a head already committed
+    off the queue this invocation is re-enqueued at the FRONT first (MED-3) so a spawn-prelude raise
+    cannot lose the message."""
+    # MED-4: re-check shutdown as the FIRST statement — closes the check→spawn→shutdown gap where a
+    # natural completion's `_maybe_spawn_drain_b` passed the shutdown guard, reserved the marker, and
+    # scheduled this body, THEN the lifespan finally's first statement set `shutting_down`. Release and
+    # bail so a natural completion can't spawn a turn into a closing DB. (The full untracked-task
+    # closure is accepted-with-reason — a one-statement window; recorded in the as-built.)
+    if getattr(state, "shutting_down", False):
+        release(state.turns, handle)
+        return
+    committed_head: SteerEntry | None = None  # MED-3: the head we popped this invocation, for requeue
     try:
         q = state.steer_queues.get(thread.id)
         if not q:  # harvested by a cancel between the sync reserve and this body → release the orphan
@@ -478,10 +501,26 @@ async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
         if live_q is None:  # harvested after the leading execs ran → release the orphan marker
             release(state.turns, handle)
             return
-        live_q.commit([head.entry_id])  # pop ONLY the head (run_turn persists it as the user message)
+        # MED-2: the head commit is LOAD-BEARING. `commit` returns the count actually removed — if it
+        # removed nothing, the head we peeked is no longer OWNED by this queue (harvested / DELETEd, or
+        # the queue was popped-and-recreated by a fresh POST between the peek and here). Spawning a turn
+        # from a stale head would double-spawn / seed a message this queue no longer owns, so release the
+        # marker (pre-handoff) and abandon — never spawn from an entry no longer owned.
+        if live_q.commit([head.entry_id]) != 1:  # pop ONLY the head (run_turn persists it as the user msg)
+            if handle.task is None:
+                release(state.turns, handle)
+            return
+        committed_head = head  # committed off the queue → requeue it in the except path if the spawn raises
         await start_steer_turn(state, thread, [head])
     except Exception:
         log.exception("D41 drain-B body failed for thread %s", thread.id)
+        # MED-3: a spawn-prelude raise (`_auto_route_agent`/`_build_session`/`run_turn`) AFTER the head
+        # was committed off the queue would LOSE the message. If we committed it this invocation and the
+        # marker hasn't been handed to a drain task yet (`handle.task` still None — the raise beat the
+        # spawn), put the head back at the FRONT of the thread's queue (created if it vanished) BEFORE
+        # releasing, so it drains at the next opportunity / harvests on Stop. Nothing is persisted.
+        if committed_head is not None and handle.task is None:
+            requeue_front(state, thread.id, committed_head)
         if handle.task is None:  # not yet handed to a drain task → free the marker so it can't leak
             release(state.turns, handle)
 
