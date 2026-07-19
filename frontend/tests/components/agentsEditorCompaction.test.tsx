@@ -171,6 +171,28 @@ describe("AgentsEditor · global compaction block (D42)", () => {
   });
 });
 
+describe("AgentsEditor · draft reseed value-guard (Codex FIX B)", () => {
+  const propsFor = (cfg: AgentSectionCfg) => (
+    <AgentsEditor cfg={cfg} toolNames={[]} toolModes={{}} skillNames={[]} />
+  );
+
+  it("a value-identical parent re-render does NOT clobber an unsaved edit", () => {
+    const { rerender } = render(propsFor(baseCfg));
+    fireEvent.change(screen.getByLabelText("Compact at % of context"), { target: { value: "70" } });
+    expect(value("Compact at % of context")).toBe("70");
+    // ConfTab rebuilds `agentCfg` fresh every render → a NEW object with identical values.
+    rerender(propsFor({ ...baseCfg, compaction: { ...baseCfg.compaction } }));
+    expect(value("Compact at % of context")).toBe("70"); // edit survives the re-render
+  });
+
+  it("a genuinely changed server value DOES reseed the draft", () => {
+    const { rerender } = render(propsFor(baseCfg));
+    fireEvent.change(screen.getByLabelText("Compact at % of context"), { target: { value: "70" } });
+    rerender(propsFor({ ...baseCfg, compaction: { ...baseCfg.compaction, threshold_frac: 0.6 } }));
+    expect(value("Compact at % of context")).toBe("60"); // reseeded to the new server value
+  });
+});
+
 describe("AgentsEditor · per-agent ModelRef call config (D42 A10)", () => {
   function openDefaultRow() {
     renderEditor();

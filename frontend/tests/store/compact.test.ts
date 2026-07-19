@@ -122,4 +122,28 @@ describe("compactThread (D42 manual /compact)", () => {
     });
     expect(noteText(result.current.messages.at(-1)!.parts)).toContain("compacted 3 messages");
   });
+
+  // Codex FIX C: a /compact whose response lands AFTER a /clear+new-thread must not write its note
+  // into the now-current thread. The threadId is captured at entry; a mismatch drops the breadcrumb.
+  it("drops the note when the thread changed while the request was in flight", async () => {
+    const result = await openThread(); // threadId "t1"
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    globalThis.fetch = vi.fn(async () => {
+      await gate;
+      return jsonResponse({ removed: 3, truncated: false });
+    });
+    await act(async () => {
+      const done = compactThread();
+      startNewThread(); // switch away (threadId → null) before the fetch resolves
+      release();
+      await done;
+    });
+    expect(result.current.threadId).toBeNull();
+    // No compaction breadcrumb leaked into the fresh (empty) thread view.
+    expect(result.current.messages.some((m) => noteText(m.parts).includes("compacted"))).toBe(
+      false,
+    );
+    expect(result.current.messages).toHaveLength(0);
+  });
 });

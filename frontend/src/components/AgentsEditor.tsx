@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
@@ -20,6 +20,7 @@ import { Seg } from "./Seg";
 import { SettingRow } from "./SettingRow";
 import { Switch } from "./Switch";
 import { disclosureToggle } from "../lib/disclosure";
+import { numOrKeep, numOrNull } from "../lib/num";
 import { PRIVILEGE_LEVELS } from "../lib/privilege";
 import { promptPreview } from "../lib/promptPreview";
 import type { AgentMode } from "../types";
@@ -37,21 +38,9 @@ import { pushToast } from "../store/toast";
 
 const SLUG = /^[a-z0-9][a-z0-9_-]*$/;
 
-// D42 post-build audit — garbage-safe numeric coercion. `Number("")` is 0 and `Number("abc")` is
-// NaN, and the old `… === "" ? null : Number(v) || 0` collapsed BOTH a cleared field and typed junk
-// to 0 — a zero-token budget footgun on the ModelRef fields (0 is never a meaningful budget; the
-// schema now `ge=1`-rejects it). `numOrNull` maps blank / non-numeric / ≤0 to `null` (inherit) for
-// the nullable budget fields. `numOrKeep` is for the non-nullable compaction knobs (`ge=0`, so 0 is
-// a *valid* setting): a valid non-negative integer is written; anything else (blank/junk) leaves the
-// last valid value untouched (the controlled input reverts to it) rather than writing a spurious 0.
-function numOrNull(raw: string): number | null {
-  const n = Number(raw);
-  return raw.trim() !== "" && Number.isFinite(n) && n > 0 ? n : null;
-}
-function numOrKeep(raw: string, current: number): number {
-  const n = Number(raw);
-  return raw.trim() !== "" && Number.isInteger(n) && n >= 0 ? n : current;
-}
+// Garbage-safe numeric coercion (D42 post-build audit) now lives in one place — `../lib/num` (shared
+// with ConfTab's context-window coercion). `numOrNull` = nullable `ge=1` budget fields; `numOrKeep` =
+// the non-nullable `ge=0` compaction knobs.
 
 // `modes` (8b, D22) mirrors the Tools-tab tri-state onto the per-agent selection grid: a globally
 // **disabled** tool shows locked-off (it can't be granted), a **core** tool locked-on (it's always
@@ -488,7 +477,17 @@ export function AgentsEditor(props: {
   const [cfg, setCfg] = useState<AgentSectionCfg>(props.cfg);
   const { data: defaultPrompt = "" } = useDefaultPrompt();
 
-  useEffect(() => setCfg(props.cfg), [props.cfg]);
+  // Codex FIX B — ConfTab rebuilds `agentCfg` fresh every render, so a reference-only prop change
+  // (any unrelated parent re-render) must NOT clobber unsaved global/compaction edits. Reseed only
+  // when the incoming cfg VALUE genuinely differs from the last-seeded one (JSON compare is cheap at
+  // this size). This is the minimal guard; the wider ConfTab draft-lifecycle refactor is deferred.
+  const seededRef = useRef(JSON.stringify(props.cfg));
+  useEffect(() => {
+    const next = JSON.stringify(props.cfg);
+    if (next === seededRef.current) return;
+    seededRef.current = next;
+    setCfg(props.cfg);
+  }, [props.cfg]);
 
   // Auto-router controls (7e-g) save immediately (mirrors the SkillsEditor master switch), so they
   // read straight off the server doc (props.cfg) rather than the savebar draft. The min-overlap

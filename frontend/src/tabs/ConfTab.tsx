@@ -16,6 +16,7 @@ import { useSections } from "../hooks/useSections";
 import { currentAppearancePatch, useSaveAppearance } from "../hooks/useAppearance";
 import { agentModeOf, useActionSpecs } from "../hooks/useActions";
 import { disclosureToggle } from "../lib/disclosure";
+import { numOrKeepNullable } from "../lib/num";
 import { useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
@@ -467,11 +468,11 @@ export function ConfTab({ active }: Props) {
     if (!draft) return;
     // Coerce numeric text fields; the backend validates and 422s on a bad value (surfaced as toast).
     const dimRaw = String(draft.embeddings.dim ?? "").trim();
-    // Per-endpoint context window (D42): blank → null (auto), else numeric. Same shape as `dim`.
-    const cw = (v: number | string | null | undefined): number | null => {
-      const s = String(v ?? "").trim();
-      return s ? Number(s) : null;
-    };
+    // Per-endpoint context window (D42): a genuinely blank input → null (auto); a valid positive
+    // integer → that number; junk / non-finite / ≤0 KEEPS the prior stored value (Codex FIX A — a
+    // NaN→null coercion silently un-configured the window). `prior` = the last-saved server value.
+    const cw = (v: number | string | null | undefined, prior: number | null): number | null =>
+      numOrKeepNullable(String(v ?? "").trim(), prior);
     const patch: Draft = {
       server: {
         ...draft.server,
@@ -484,15 +485,24 @@ export function ConfTab({ active }: Props) {
         request_timeout_s: Number(draft.inference.request_timeout_s),
         local: {
           ...draft.inference.local,
-          context_window: cw(draft.inference.local.context_window),
+          context_window: cw(
+            draft.inference.local.context_window,
+            settings?.inference.local.context_window ?? null,
+          ),
         },
         cloud: {
           ...draft.inference.cloud,
-          context_window: cw(draft.inference.cloud.context_window),
+          context_window: cw(
+            draft.inference.cloud.context_window,
+            settings?.inference.cloud.context_window ?? null,
+          ),
         },
-        fallbacks: draft.inference.fallbacks.map((fb) => ({
+        fallbacks: draft.inference.fallbacks.map((fb, i) => ({
           ...fb,
-          context_window: cw(fb.context_window),
+          context_window: cw(
+            fb.context_window,
+            settings?.inference.fallbacks[i]?.context_window ?? null,
+          ),
         })),
       },
       searxng: draft.searxng,

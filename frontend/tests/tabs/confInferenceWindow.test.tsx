@@ -162,4 +162,25 @@ describe("ConfTab · Inference context-window rows (D42)", () => {
     expect(inf.cloud.context_window).toBe(16384); // string → number
     expect(inf.fallbacks[0].context_window).toBe(4096);
   });
+
+  // Codex FIX A: junk / non-finite / ≤0 input must KEEP the prior stored window (the old
+  // `Number("abc") → NaN → null` silently un-configured the endpoint). Only a genuinely blank
+  // input means null (auto).
+  it("junk input keeps the prior stored window (never null/NaN); blank still → null", () => {
+    render(<ConfTab active />);
+    // Local had 8192 saved → a junk keystroke must not blow it away to auto.
+    fireEvent.change(screen.getByLabelText("Local context window"), { target: { value: "abc" } });
+    fireEvent.click(firstSaveButton());
+    expect(h.save).toHaveBeenCalledTimes(1);
+    const inf = (h.save.mock.calls[0][0] as SavedInf).inference;
+    expect(inf.local.context_window).toBe(8192); // junk → prior, not null/NaN
+  });
+
+  it("a zero/negative window is not a budget → keeps the prior (never 0)", () => {
+    render(<ConfTab active />);
+    fireEvent.change(screen.getByLabelText("Local context window"), { target: { value: "0" } });
+    fireEvent.click(firstSaveButton());
+    const inf = (h.save.mock.calls[0][0] as SavedInf).inference;
+    expect(inf.local.context_window).toBe(8192); // ≤0 → prior, not 0
+  });
 });

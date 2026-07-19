@@ -1566,7 +1566,11 @@ function compactionNote(removed: number, truncated: boolean, rejected = false): 
  *  4e). Full history stays in SQLite; only the live working context shrinks. `instructions` (D42) is
  *  the `/compact <text>` steer passed through to the summarizer prompt (null = no steer). */
 export async function compactThread(instructions: string | null = null): Promise<void> {
-  if (!state.threadId) {
+  // Codex FIX C — capture the target thread at entry. `/compact` is async; a `/clear`+new-thread in
+  // the response gap would otherwise land this thread's breadcrumb in the now-current thread's view.
+  // The compaction itself succeeds server-side regardless; only the client note is thread-scoped.
+  const threadId = state.threadId;
+  if (!threadId) {
     pushSystemNote("// nothing to compact yet");
     return;
   }
@@ -1574,8 +1578,10 @@ export async function compactThread(instructions: string | null = null): Promise
     const res = await fetch("/api/agent/compact", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ thread_id: state.threadId, instructions }),
+      body: JSON.stringify({ thread_id: threadId, instructions }),
     });
+    // Switched threads while the request was in flight → drop every breadcrumb (no cross-thread routing).
+    if (state.threadId !== threadId) return;
     if (res.status === 409) {
       pushSystemNote("// " + (await busyDetail(res)));
       return;
@@ -1587,7 +1593,7 @@ export async function compactThread(instructions: string | null = null): Promise
     // as the auto path. No re-read: that would surface the raw summary mid-log beside the originals.
     pushSystemNote(compactionNote(data.removed, Boolean(data.truncated), Boolean(data.rejected)));
   } catch {
-    pushSystemNote("// compaction failed — try again");
+    if (state.threadId === threadId) pushSystemNote("// compaction failed — try again");
   }
 }
 
