@@ -83,7 +83,14 @@ class TurnAccumulator:
     (the in-flight streaming message + the ephemeral confirm token/prompt on a pending suspend).
 
     `notice`/`compaction` are deliberately NOT folded — D39 accepts that transient sys-notes are not
-    re-attach-recoverable (they carry no durable state a snapshot must rebuild)."""
+    re-attach-recoverable (they carry no durable state a snapshot must rebuild).
+
+    `retry_status` (D43/A6 review M4) is the ONE exception the D43 lock carves out: a
+    snapshot-ONLY field derived from the live `inference.retry` event, set while a same-endpoint
+    backoff is in flight and cleared by the very NEXT event of any kind. It is NOT a notice log entry
+    (the fold below never appends it anywhere durable — it is dropped when the turn's handle is) — it
+    exists solely so a client that re-attaches DURING a backoff renders the "// retrying …" line
+    instead of the dead spinner A6 exists to kill, rather than a replayable narration."""
 
     #: The currently-streaming assistant message: `{id, role, agent}` or None between messages.
     open_message: dict[str, Any] | None = None
@@ -101,11 +108,30 @@ class TurnAccumulator:
     steers: list[dict[str, Any]] = field(default_factory=list)
     #: Terminal info once the turn ends: `{state, ...}` from the final `done` (or a synthesized one).
     terminal: dict[str, Any] | None = None
+    #: The in-flight same-endpoint retry backoff (D43/A6), snapshot-only: `{endpoint, attempt, max,
+    #: untilTs}` while a backoff is pending, else None. Set by an `inference.retry`, cleared by the very
+    #: next event — so a re-attach mid-backoff renders the retry line, never a dead spinner.
+    retry_status: dict[str, Any] | None = None
 
     def fold(self, event: AgentEvent) -> None:
         """Advance the reconstruction by one event. Pure state update, no awaits — called inside the
         drain task's synchronous per-event step so the accumulator is always consistent with `seq`."""
         ev, data = event.event, event.data
+        # D43/A6 (review M4): the retry-backoff snapshot field. An `inference.retry` sets it (computing
+        # the absolute `untilTs` from the event's `delaySeconds`); ANY other event clears it — the
+        # session emits the retry, then the failover generator sleeps with no events until the backoff
+        # ends, so this stays set for exactly the backoff window and is dropped on the next delta /
+        # another notice / the terminal (D43: "cleared on the next item from the stream"). Snapshot-only,
+        # never appended to a durable log — the TurnAccumulator stays notice-free.
+        if ev == "inference.retry":
+            self.retry_status = {
+                "endpoint": data.get("endpoint"),
+                "attempt": data.get("attempt"),
+                "max": data.get("max"),
+                "untilTs": _now().timestamp() + (data.get("delaySeconds") or 0),
+            }
+        else:
+            self.retry_status = None
         if ev == "message.start":
             self.open_message = {
                 "id": data.get("messageId"),
@@ -197,6 +223,8 @@ class TurnAccumulator:
             }
         if self.steers:  # D41: only when a steer landed, so the untouched-turn snapshot shape is stable
             snap["steers"] = list(self.steers)
+        if self.retry_status is not None:  # D43/A6: only mid-backoff, so the no-retry snapshot is stable
+            snap["retry_status"] = dict(self.retry_status)
         return snap
 
 

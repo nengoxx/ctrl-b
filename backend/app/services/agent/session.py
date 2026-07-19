@@ -21,7 +21,9 @@ Event contract (DESIGN §12 subset emitted here):
     tool.result      {callId, result}         # bubble resolves
     compaction       {removed, summaryId, truncated}   # older turns folded into a summary (4e)
     steer.applied    {entryId, messageId, kind, text?}   # a mid-turn steer drained at the loop top (D41)
-    notice           {text}                    # breadcrumb (e.g. D18 inference failover)
+    notice           {text}                    # breadcrumb (e.g. ACA-11 compaction)
+    inference.retry  {endpoint, attempt, max, delaySeconds, category}  # a transient same-endpoint retry (D43)
+    inference.failover {from, to, category}    # the chain dropped to the next endpoint (D43)
     message.end      {messageId}
     error            {message, retryable}
     done             {threadId, state}        # completed | suspended | capped | error
@@ -154,9 +156,20 @@ async def collect_turn(events: AsyncIterator[AgentEvent]) -> dict:
         elif ev.event == "tool.question":
             out["question"] = ev.data
         elif ev.event == "notice":
-            # Live breadcrumbs (D18 failover, ACA-11 "compacting…"): buffered-mode consumers get the
-            # text too (the TurnAccumulator deliberately does NOT fold notices — turns.py untouched).
+            # Live breadcrumbs (ACA-11 "compacting…"): buffered-mode consumers get the text too (the
+            # TurnAccumulator deliberately does NOT fold notices — turns.py untouched).
             out["notices"].append(ev.data.get("text", ""))
+        elif ev.event == "inference.retry":
+            # D43/A6 Wave 2 buffered parity: no live surface in buffered mode (D40 pattern), so render
+            # the typed retry event as a `// …` notice line in the house voice.
+            d = ev.data
+            out["notices"].append(
+                f"// retrying {d.get('endpoint')} in {d.get('delaySeconds', 0):g}s "
+                f"(attempt {d.get('attempt')}/{d.get('max')} — {d.get('category')})"
+            )
+        elif ev.event == "inference.failover":
+            d = ev.data
+            out["notices"].append(f"// failover → {d.get('to')} ({d.get('category')})")
         elif ev.event == "error":
             out["error"] = ev.data
         elif ev.event == "done":
@@ -298,6 +311,30 @@ def _fmt_cache(report: StreamReport) -> str:
         return "not reported"
     hit = f"{ct / pt:.0%} hit" if (isinstance(pt, int) and pt > 0 and isinstance(ct, int)) else "— hit"
     return f"prefill {pt if pt is not None else '—'} · cached {ct if ct is not None else '—'} ({hit})"
+
+
+def _control_event(item: RetryNotice | FailoverNotice) -> AgentEvent:
+    """Map one typed `stream_chat` control item to its AgentEvent (D43/A6 Wave 2). ONE home for both
+    consumers (`_drive` + `_finalize` — review F9) so the wire payload is byte-identical at each site:
+    a `RetryNotice` → `inference.retry {endpoint, attempt, max, delaySeconds, category}`; a
+    `FailoverNotice` → `inference.failover {from, to, category}`. The caller yields this ABOVE the delta
+    checks and `continue`s, never touching `streamed_any`/the text buffers (the D42 nothing-streamed
+    backstop stays honest)."""
+    if isinstance(item, RetryNotice):
+        return AgentEvent(
+            "inference.retry",
+            {
+                "endpoint": item.endpoint,
+                "attempt": item.attempt,
+                "max": item.max_attempts,
+                "delaySeconds": item.delay_s,
+                "category": item.category,
+            },
+        )
+    return AgentEvent(
+        "inference.failover",
+        {"from": item.from_endpoint, "to": item.to_endpoint, "category": item.category},
+    )
 
 
 class AgentSession:
@@ -1036,11 +1073,13 @@ class AgentSession:
                         tools=self._tools(),
                         report=report,
                     ):
-                        # D43/A6 Wave 1: skip the typed retry/failover control items (Wave 2 upgrades
-                        # this skip → an emitted AgentEvent). It MUST NOT touch `streamed_any` or the
-                        # buffers — a control item before the first delta leaves the D42 nothing-streamed
-                        # backstop honest (review F9). The post-hoc degraded notice below still narrates.
+                        # D43/A6 Wave 2: EMIT the typed retry/failover control items as live
+                        # AgentEvents (the wire-visible failover narration — D43 Invariant 4). It MUST
+                        # stay ABOVE the delta checks and MUST NOT touch `streamed_any` or the buffers —
+                        # a control item before the first delta leaves the D42 nothing-streamed backstop
+                        # honest (review F9 / D42 pin). Supersedes the deleted post-hoc degraded notice.
                         if isinstance(delta, (RetryNotice, FailoverNotice)):
+                            yield _control_event(delta)
                             continue
                         if delta.reasoning:
                             streamed_any = True
@@ -1091,12 +1130,10 @@ class AgentSession:
                     yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
                     return
 
-            # D18 — the request fell over to a fallback inference endpoint. Surface a breadcrumb so a
-            # down primary (e.g. the local model) is visible + actionable, not silent (it's logged too).
-            if report.degraded:
-                yield AgentEvent(
-                    "notice", {"text": f"// inference failover → {report.served} (primary unavailable)"}
-                )
+            # D43/A6 Wave 2: the post-hoc degraded `notice` is DELETED — a fallback serve is now narrated
+            # LIVE by the typed `inference.failover` event emitted above (D43 Invariant 5: superseded, no
+            # double-narration). `report.degraded`/`failures`/`served` remain for logs + telemetry (the
+            # debug context-cost line + the estimator's served-endpoint pin below).
             self._log_context_cost(messages, report)  # A8 estimate + ACA-18 cache telemetry (debug)
 
             # D42 Wave 2 — re-anchor the context estimator on THIS call's real total-prompt telemetry
@@ -1396,11 +1433,12 @@ class AgentSession:
                         tool_choice=fin_choice,
                         report=report,
                     ):
-                        # D43/A6 Wave 1: skip the typed retry/failover control items (both consumers get
-                        # this branch — review F9; Wave 2 upgrades it → an emitted AgentEvent). Never
-                        # touch the text/reasoning buffers — the ACA-21 "nothing streamed" fallback below
-                        # stays honest.
+                        # D43/A6 Wave 2: EMIT the typed retry/failover control items (both consumers get
+                        # this branch — review F9). ABOVE the delta checks and never touching the
+                        # text/reasoning buffers — the ACA-21 "nothing streamed" fallback below stays
+                        # honest. Same `_control_event` mapping as the main loop (one wire shape).
                         if isinstance(delta, (RetryNotice, FailoverNotice)):
+                            yield _control_event(delta)
                             continue
                         if delta.reasoning:
                             reasoning_buf.append(delta.reasoning)
