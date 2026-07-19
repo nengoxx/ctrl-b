@@ -149,10 +149,11 @@ def test_complete_merges_extra_body_per_endpoint():
 
 
 def test_complete_extra_body_none_when_unset():
-    # `complete()` always passes the kwarg but as None when empty (SDK omits it) — never a leaked dict.
+    # `complete()` sends NO `extra_body` kwarg when empty (D42 W4 `_call_config` omits it, mirroring
+    # `stream_chat`'s discipline above) — never a leaked/empty dict, never an explicit None.
     client, fakes = _build(_cfg(), {"http://local/v1": _completion("s")})
     _complete(client)
-    assert fakes["http://local/v1"].chat.completions.calls[0]["extra_body"] is None
+    assert "extra_body" not in fakes["http://local/v1"].chat.completions.calls[0]
 
 
 # ── ACA-21: tool_choice threading ──
@@ -302,7 +303,9 @@ def test_finalize_retains_toolset_with_tool_choice_none():
     s._head_tokens = None
     s._tools_tokens = None
     s._reflect_now = False
-    s._agent = SimpleNamespace(name="default")
+    # `_finalize` now threads `self._agent.model.max_tokens`/`.reasoning_effort` (D42 W4) → give the
+    # stub agent a `model` shape carrying the unset defaults.
+    s._agent = SimpleNamespace(name="default", model=SimpleNamespace(max_tokens=None, reasoning_effort=None))
     rec = _RecInference()
     s._inference = rec
 

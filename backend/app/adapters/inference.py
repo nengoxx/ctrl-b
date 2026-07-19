@@ -71,7 +71,79 @@ class _ProbedWindow:
 
 
 class InferenceError(RuntimeError):
-    """Any backend failure (unreachable, timeout, auth, bad response, all-endpoints-failed)."""
+    """Any backend failure (unreachable, timeout, auth, bad response, all-endpoints-failed).
+
+    Carries the OpenAI-SDK error shape where we could capture it BEFORE the failover chain flattened
+    each hop to a string (D42 reactive backstop): `status` is the HTTP status (e.g. 400) and `code` the
+    machine-readable error code (e.g. `context_length_exceeded`), each `None` when unavailable — a
+    non-HTTP failure, or a MULTI-HOP error whose per-endpoint structured fields were collapsed by
+    `core.failover` (which keeps only strings). The message is unchanged and still carries EVERY hop's
+    text, so `is_context_overflow` can substring-match the overflow even when the structured fields are
+    absent. `status`/`code` reflect the LAST attempted hop (the common single-endpoint case = exact)."""
+
+    def __init__(self, message: str, *, code: str | None = None, status: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.status = status
+
+
+def _as_inference_error(exc: BaseException) -> InferenceError | None:
+    """Wrap a LIVE backend exception into a structured `InferenceError`, capturing the OpenAI-SDK
+    `status_code` + `code` BEFORE `core.failover` flattens each hop to a string (D42 — the
+    "pre-flattening" capture). Returns `None` for a cancellation or an already-`InferenceError`
+    (nothing to convert — re-raise it raw). Only the OpenAI `APIStatusError` family exposes
+    `status_code`/`code`; a non-HTTP error wraps with both `None`, its message preserved so failover's
+    collected string is unchanged."""
+    if isinstance(exc, (asyncio.CancelledError, InferenceError)):
+        return None
+    status = getattr(exc, "status_code", None)
+    code = getattr(exc, "code", None)
+    return InferenceError(
+        str(exc),
+        code=code if isinstance(code, str) else None,
+        status=status if isinstance(status, int) and not isinstance(status, bool) else None,
+    )
+
+
+#: The machine-readable OpenAI code for "prompt longer than the model's context window".
+_OVERFLOW_CODE = "context_length_exceeded"
+#: Conservative substring markers for the SAME failure across backends that DON'T report the code
+#: (llama.cpp reports it in the 400 message text, not a code) or when the code was flattened away by
+#: failover. Each phrase is specific to a context-window overflow — none appears in an unrelated 400.
+#: (llama-server: "the request exceeds the available context size"; OpenAI: "maximum context length".)
+_OVERFLOW_MSG_MARKERS = (
+    _OVERFLOW_CODE,
+    "maximum context length",
+    "exceeds the available context",
+    "exceed the context",
+    "context window",
+    "context size",
+    "context shift",
+    "n_ctx",
+)
+
+
+def is_context_overflow(err: BaseException) -> bool:
+    """The ONE home (D42 reactive backstop) for "is this backend failure a prompt-too-long-for-the-
+    context-window error?". Matches the STRUCTURED fields first — OpenAI's HTTP 400 + code
+    `context_length_exceeded` — then falls back to a conservative message-substring scan for the
+    llama.cpp 400 shapes (which name the overflow in the error text, not a code) and for a
+    failover-flattened `InferenceError` whose per-hop structured fields were collapsed to a string. The
+    substring path is gated on the error being a 400 (its own `status`, or an "error code: 400" the
+    flattened message carries) so an unrelated 400 or any 5xx/429 never matches.
+
+    NB (recorded residual, D42): with default llama.cpp server flags the server may SILENTLY context-
+    shift/truncate an over-long prompt instead of erroring — the backstop cannot fire there, since no
+    error is raised. Documented for the Wave-6 deploy note; nothing to detect here."""
+    status = getattr(err, "status", None)
+    if status is None:
+        status = getattr(err, "status_code", None)
+    code = getattr(err, "code", None)
+    if status == 400 and isinstance(code, str) and code == _OVERFLOW_CODE:
+        return True  # OpenAI structured — the clean single-endpoint / last-hop path
+    text = str(err).lower()
+    is_400 = status == 400 or "error code: 400" in text
+    return is_400 and any(marker in text for marker in _OVERFLOW_MSG_MARKERS)
 
 
 @dataclass
@@ -264,6 +336,42 @@ class InferenceClient:
     def model_for(self, mode: str | None = None) -> str:
         return self._cfg.endpoint(mode).model
 
+    @staticmethod
+    def _call_config(
+        ep: InferenceEndpointCfg,
+        *,
+        max_tokens: int | None,
+        reasoning_effort: str | None,
+    ) -> dict[str, Any]:
+        """The per-ENDPOINT modeled call params + the per-call `extra_body` merge (D42/A10). Modeled
+        params ride as FIRST-CLASS kwargs (the codebase rule — never smuggled through extra_body):
+          - `max_tokens` → keyed by THIS endpoint's `max_tokens_field` ("max_tokens" |
+            "max_completion_tokens"), resolved per serving endpoint so a failover serve uses its own
+            field name;
+          - `reasoning_effort` → `reasoning_effort` for EVERY backend (llama.cpp drops it silently —
+            verified harmless; cloud honors it). Its `"off"` value ADDITIONALLY merges llama.cpp's
+            `chat_template_kwargs: {enable_thinking: false}` (the lever that works locally) OVER the
+            endpoint's own `extra_body` for THIS call only — agent-derived keys win, the endpoint's
+            other keys (and other `chat_template_kwargs` sub-keys) survive, and the config object is
+            NEVER mutated (a fresh dict).
+        Unset fields contribute NOTHING (no `None`-valued keys reach the wire). `ModelRef.reasoning_
+        tokens` is DECLARED but v1 ships it UNTRANSLATED — no OpenRouter-shape (`reasoning:{max_tokens}`)
+        detection exists in this codebase and inventing base_url sniffing is out of scope — so it is an
+        advisory no-op here (recorded residual); it is deliberately not a parameter of this builder."""
+        out: dict[str, Any] = {}
+        if max_tokens is not None:
+            out[ep.max_tokens_field] = max_tokens
+        if reasoning_effort is not None:
+            out["reasoning_effort"] = reasoning_effort
+        extra = dict(ep.extra_body) if ep.extra_body else {}
+        if reasoning_effort == "off":
+            ctk = dict(extra.get("chat_template_kwargs") or {})
+            ctk["enable_thinking"] = False
+            extra["chat_template_kwargs"] = ctk
+        if extra:
+            out["extra_body"] = extra
+        return out
+
     def _resolve_chain(self, mode: str | None, model_override: str | None) -> list[_ChainEntry]:
         """The failover chain with the per-entry model resolved: the override applies to the *selected*
         (index 0) endpoint only; every fallback uses its own configured model."""
@@ -359,17 +467,23 @@ class InferenceClient:
         *,
         mode: str | None = None,
         model: str | None = None,
+        max_tokens: int | None = None,
+        reasoning_effort: str | None = None,
         report: StreamReport | None = None,
     ) -> str:
         """Buffered (non-streaming) completion — used by the compactor's summarizer (4e), which wants
         the whole text at once. `mode`/`model` override the configured endpoint + model (the summarizer
-        is separately selectable, D11). Walks the failover chain (buffered: each attempt returns the
-        text). Raises `InferenceError` if every endpoint fails / none configured."""
+        is separately selectable, D11). `max_tokens`/`reasoning_effort` are the modeled per-call config
+        (D42/A10) threaded as first-class kwargs via `_call_config` — so the summarizer finally runs
+        output-capped when its `ModelRef.max_tokens` is set. Walks the failover chain (buffered: each
+        attempt returns the text). Raises `InferenceError` if every endpoint fails / none configured."""
         chain = self._resolve_chain(mode, model)
         if not chain:
             raise InferenceError("no inference endpoint configured")
+        last_error: InferenceError | None = None
 
         async def attempt(entry: _ChainEntry) -> str:
+            nonlocal last_error
             name, ep, use_model = entry
             if not use_model:
                 raise InferenceError(f"no model configured for '{name}'")
@@ -381,20 +495,28 @@ class InferenceClient:
             if sem is not None:
                 await sem.acquire()
             try:
-                # We carry messages as our own `list[dict]` (OpenAI wire shape, built across the loop);
-                # cast to the SDK's param type at this boundary rather than retyping the whole loop.
-                # Same per-endpoint `extra_body` merge as `stream_chat` (ACA-18): the summarizer's calls
-                # deserve the cache pin too, and the pin must never leak across the failover chain. The
-                # SDK's `create()` takes `extra_body` as a first-class param (None → omitted).
-                resp = await self._client(ep).chat.completions.create(
-                    model=use_model,
-                    messages=cast("list[ChatCompletionMessageParam]", messages),
-                    stream=False,
-                    extra_body=ep.extra_body or None,
-                )
-                if not resp.choices:
-                    raise InferenceError("inference returned no choices")
-                return resp.choices[0].message.content or ""
+                try:
+                    # We carry messages as our own `list[dict]` (OpenAI wire shape, built across the
+                    # loop); cast to the SDK's param type at this boundary rather than retyping the whole
+                    # loop. `_call_config` supplies the per-endpoint modeled params (max_tokens field
+                    # name, reasoning_effort) + the merged `extra_body` (ACA-18 cache pin + the "off"
+                    # chat_template_kwargs), so the pin/config never leaks across the failover chain.
+                    resp = await self._client(ep).chat.completions.create(
+                        model=use_model,
+                        messages=cast("list[ChatCompletionMessageParam]", messages),
+                        stream=False,
+                        **self._call_config(ep, max_tokens=max_tokens, reasoning_effort=reasoning_effort),
+                    )
+                    if not resp.choices:
+                        raise InferenceError("inference returned no choices")
+                    return resp.choices[0].message.content or ""
+                except BaseException as exc:
+                    # D42: capture the OpenAI-SDK code/status pre-flattening (see `_as_inference_error`).
+                    converted = _as_inference_error(exc)
+                    if converted is not None:
+                        last_error = converted
+                        raise converted from exc
+                    raise
             finally:
                 if sem is not None:
                     sem.release()
@@ -402,7 +524,11 @@ class InferenceClient:
         try:
             result = await failover(chain, attempt, label=lambda e: e[0])
         except FailoverError as exc:
-            raise InferenceError(str(exc)) from exc
+            raise InferenceError(
+                str(exc),
+                code=last_error.code if last_error is not None else None,
+                status=last_error.status if last_error is not None else None,
+            ) from exc
         self._record(report, chain, result)
         return result.value
 
@@ -412,6 +538,8 @@ class InferenceClient:
         *,
         mode: str | None = None,
         model: str | None = None,
+        max_tokens: int | None = None,
+        reasoning_effort: str | None = None,
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | None = None,
         report: StreamReport | None = None,
@@ -436,8 +564,10 @@ class InferenceClient:
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice or "auto"
+        last_error: InferenceError | None = None
 
         async def attempt(entry: _ChainEntry) -> tuple[Any, Any, asyncio.Semaphore | None]:
+            nonlocal last_error
             name, ep, use_model = entry
             if not use_model:
                 raise InferenceError(f"no model configured for '{name}'")
@@ -450,10 +580,14 @@ class InferenceClient:
             if sem is not None:
                 await sem.acquire()
             try:
-                # Merge this endpoint's `extra_body` PER-ENDPOINT, never into the shared `kwargs` — an
+                # `_call_config` merges this endpoint's modeled params (max_tokens field name,
+                # reasoning_effort) + its `extra_body` PER-ENDPOINT, never into the shared `kwargs` — an
                 # OpenAI backend 400s on unknown args, so the local endpoint's `cache_prompt`/`return_progress`
                 # must not leak onto the cloud hop (ACA-18; same discipline as voice.py's extra_body).
-                call_kwargs = {**kwargs, "extra_body": ep.extra_body} if ep.extra_body else kwargs
+                call_kwargs = {
+                    **kwargs,
+                    **self._call_config(ep, max_tokens=max_tokens, reasoning_effort=reasoning_effort),
+                }
                 stream = await self._client(ep).chat.completions.create(model=use_model, **call_kwargs)
                 try:
                     first = await stream.__anext__()  # confirm the provider is alive + producing tokens
@@ -466,16 +600,28 @@ class InferenceClient:
                     if isinstance(exc, StopAsyncIteration):
                         raise InferenceError("inference returned an empty stream") from exc
                     raise
-            except BaseException:
+            except BaseException as exc:
                 if sem is not None:
                     sem.release()  # permit not handed off → release before the next endpoint / raise
+                # D42: capture the OpenAI-SDK code/status pre-flattening (a context-overflow 400 surfaces
+                # here — at `create()`/first-chunk, before any token — so the reactive backstop can see
+                # it once failover collapses the chain). `_as_inference_error` passes a cancellation /
+                # existing InferenceError through unchanged.
+                converted = _as_inference_error(exc)
+                if converted is not None:
+                    last_error = converted
+                    raise converted from exc
                 raise
             return first, stream, sem
 
         try:
             result = await failover(chain, attempt, label=lambda e: e[0])
         except FailoverError as exc:
-            raise InferenceError(str(exc)) from exc
+            raise InferenceError(
+                str(exc),
+                code=last_error.code if last_error is not None else None,
+                status=last_error.status if last_error is not None else None,
+            ) from exc
         self._record(report, chain, result)
 
         first, stream, sem = result.value
@@ -498,7 +644,9 @@ class InferenceClient:
         except InferenceError:
             raise
         except Exception as exc:  # noqa: BLE001 — a mid-stream error: normalize, no failover
-            raise InferenceError(str(exc)) from exc
+            # Normalize + capture any SDK code/status (D42); a mid-stream drop can't overflow, but the
+            # structured wrap is free and keeps ONE construction discipline.
+            raise (_as_inference_error(exc) or InferenceError(str(exc))) from exc
         finally:
             # D40 rider — the crux: release the request slot when the STREAM closes, riding this
             # generator's own lifetime, NOT the opener's return. The stream is consumed here (yielded

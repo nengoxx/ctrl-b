@@ -438,7 +438,7 @@ def test_b8_finalize_retries_with_tools_none() -> None:
             calls = {"n": 0}
 
             async def fake_stream(
-                messages, *, mode=None, model=None, tools=None, tool_choice=None, report=None
+                messages, *, mode=None, model=None, tools=None, tool_choice=None, report=None, **_kw
             ):
                 calls["n"] += 1
                 if tool_choice is not None:  # first attempt: tools + tool_choice='none' rejected

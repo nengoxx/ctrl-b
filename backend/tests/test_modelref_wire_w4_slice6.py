@@ -1,0 +1,571 @@
+"""ACA Slice 6 / D42 Wave 4 — the ModelRef call-config wire + the reactive context-overflow backstop.
+
+Five units, each testable in isolation:
+  A. `InferenceClient._call_config` (pure): max_tokens under the endpoint's field name, reasoning_effort
+     passthrough, the `"off"` chat_template_kwargs merge (over extra_body, no clobber, no mutation),
+     unset → nothing;
+  B. `InferenceError` code/status + `is_context_overflow` (the classifier matrix: OpenAI code, llama.cpp
+     message, unrelated 400, 500);
+  C. the kwargs reach `create()` through `stream_chat`/`complete` (fake SDK client) + the failover ride
+     (params land on the fallback serve with the FALLBACK's max_tokens_field);
+  D. the summarizer (`_summarize`): capped when `summarizer.max_tokens` is set, uncapped otherwise, and
+     the overflow-guard margin tightens honestly when a cap is set;
+  E. the reactive backstop (driving `_drive` on the TestClient app): overflow + nothing-streamed → one
+     forced compaction + a same-slot re-stream; overflow after a partial stream → NO backstop; a second
+     overflow in the same turn → no second attempt; an inflation-reject during the forced compact →
+     normal error path.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import os
+import tempfile
+from pathlib import Path
+from typing import cast
+
+import httpx
+from _async import run_async
+from openai import BadRequestError
+
+from app.adapters.inference import (
+    InferenceClient,
+    InferenceError,
+    is_context_overflow,
+)
+from app.config import InferenceCfg, InferenceEndpointCfg
+from app.domain.agent import CompactionCfg, ModelRef
+from app.domain.conversation import Message, TextPart
+from app.domain.enums import Actor
+from app.services.agent.compaction import SUMMARY_PREFIX, TRUNCATION_NOTICE, Compactor
+from app.services.conversation import MessageRepo
+
+
+def _run(coro):
+    return run_async(coro)
+
+
+# ── A. `_call_config` (the pure per-endpoint wire builder) ─────────────────────────────────────────
+
+
+def _ep(**kw) -> InferenceEndpointCfg:
+    base = dict(base_url="http://local/v1", model="m")
+    base.update(kw)
+    return InferenceEndpointCfg(**base)
+
+
+def test_call_config_max_tokens_uses_endpoint_field_name() -> None:
+    """`max_tokens` lands under THIS endpoint's `max_tokens_field` — classic vs the reasoning-model name."""
+    classic = InferenceClient._call_config(_ep(), max_tokens=256, reasoning_effort=None)
+    assert classic == {"max_tokens": 256}
+    reasoning = InferenceClient._call_config(
+        _ep(max_tokens_field="max_completion_tokens"), max_tokens=256, reasoning_effort=None
+    )
+    assert reasoning == {"max_completion_tokens": 256}
+
+
+def test_call_config_reasoning_effort_passes_through() -> None:
+    cfg = InferenceClient._call_config(_ep(), max_tokens=None, reasoning_effort="high")
+    assert cfg == {"reasoning_effort": "high"}
+
+
+def test_call_config_off_merges_chat_template_kwargs_over_extra_body() -> None:
+    """`"off"` ADDITIONALLY merges `chat_template_kwargs:{enable_thinking:false}` OVER the endpoint's
+    extra_body — the endpoint's OTHER keys (and other chat_template_kwargs sub-keys) survive, and the
+    config object is NOT mutated."""
+    ep = _ep(extra_body={"cache_prompt": True, "chat_template_kwargs": {"foo": 1}})
+    original = dict(ep.extra_body)
+    cfg = InferenceClient._call_config(ep, max_tokens=None, reasoning_effort="off")
+    assert cfg["reasoning_effort"] == "off"  # still sent for every backend
+    extra = cfg["extra_body"]
+    assert extra["cache_prompt"] is True  # endpoint's other key survives
+    assert extra["chat_template_kwargs"] == {
+        "foo": 1,
+        "enable_thinking": False,
+    }  # sub-key survives, ours wins
+    # the config object was never mutated
+    assert ep.extra_body == original
+    assert ep.extra_body["chat_template_kwargs"] == {"foo": 1}
+
+
+def test_call_config_off_adds_chat_template_kwargs_with_no_extra_body() -> None:
+    cfg = InferenceClient._call_config(_ep(), max_tokens=None, reasoning_effort="off")
+    assert cfg["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def test_call_config_unset_sends_nothing() -> None:
+    """Unset fields contribute NOTHING — no None-valued keys, no empty extra_body."""
+    assert InferenceClient._call_config(_ep(), max_tokens=None, reasoning_effort=None) == {}
+
+
+def test_call_config_non_off_effort_leaves_extra_body_alone() -> None:
+    ep = _ep(extra_body={"cache_prompt": True})
+    cfg = InferenceClient._call_config(ep, max_tokens=100, reasoning_effort="low")
+    assert cfg == {"max_tokens": 100, "reasoning_effort": "low", "extra_body": {"cache_prompt": True}}
+
+
+# ── B. InferenceError code/status + `is_context_overflow` ──────────────────────────────────────────
+
+
+def _sdk_error(status: int, code: str | None, message: str) -> BadRequestError:
+    """A real OpenAI SDK status error, shaped as the SDK builds it (`body` = the nested `error` object,
+    so `.code` = body['code'] and `.status_code` = the HTTP status)."""
+    req = httpx.Request("POST", "http://local/v1/chat/completions")
+    resp = httpx.Response(status, request=req, json={"error": {"message": message, "code": code}})
+    return BadRequestError(
+        f"Error code: {status} - {message}", response=resp, body={"message": message, "code": code}
+    )
+
+
+def test_inference_error_carries_code_status() -> None:
+    err = InferenceError("boom", code="context_length_exceeded", status=400)
+    assert err.code == "context_length_exceeded" and err.status == 400
+    assert str(err) == "boom"
+    plain = InferenceError("nope")
+    assert plain.code is None and plain.status is None
+
+
+def test_overflow_openai_structured_code() -> None:
+    """OpenAI shape: 400 + code `context_length_exceeded` matches on the structured fields."""
+    err = InferenceError(
+        "Error code: 400 - context_length_exceeded", code="context_length_exceeded", status=400
+    )
+    assert is_context_overflow(err) is True
+    # the raw SDK error matches too (status_code + code attrs)
+    assert is_context_overflow(_sdk_error(400, "context_length_exceeded", "too long")) is True
+
+
+def test_overflow_llamacpp_message_shape() -> None:
+    """llama.cpp reports it in the 400 message text, not a code — the substring path catches it."""
+    err = InferenceError(
+        "local: Error code: 400 - the request exceeds the available context size, try increasing it",
+        code=None,
+        status=400,
+    )
+    assert is_context_overflow(err) is True
+    # flattened multi-hop: no status on the outer error, but "error code: 400" + a marker in the message
+    flattened = InferenceError(
+        "all endpoints failed: local: Error code: 400 - this model's maximum context length is 8192 tokens"
+    )
+    assert is_context_overflow(flattened) is True
+
+
+def test_overflow_negative_matrix() -> None:
+    """An unrelated 400 and any 5xx are NOT overflows (conservative)."""
+    assert is_context_overflow(InferenceError("Error code: 400 - invalid 'tool_choice'", status=400)) is False
+    assert is_context_overflow(_sdk_error(400, "invalid_request_error", "bad param")) is False
+    assert is_context_overflow(InferenceError("Error code: 500 - internal", status=500)) is False
+    # a marker phrase without a 400 (e.g. a 429 mentioning context) does not match
+    assert is_context_overflow(InferenceError("Error code: 429 - context window busy", status=429)) is False
+    assert is_context_overflow(RuntimeError("connection refused")) is False
+
+
+# ── C. the kwargs reach `create()` (fake SDK client) + the failover ride ───────────────────────────
+
+
+class _Delta:
+    def __init__(self, content=""):
+        self.content = content
+        self.reasoning_content = None
+        self.tool_calls = []
+        self.model_extra = None
+
+
+class _Chunk:
+    def __init__(self, delta):
+        self.choices = [type("Ch", (), {"delta": delta})()]
+
+
+class _Stream:
+    def __init__(self, items):
+        self._items = list(items)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self._items:
+            raise StopAsyncIteration
+        x = self._items.pop(0)
+        if isinstance(x, Exception):
+            raise x
+        return x
+
+    async def close(self):
+        pass
+
+
+class _Resp:
+    def __init__(self, content):
+        self.choices = [type("C", (), {"message": type("M", (), {"content": content})()})()]
+
+
+class _Completions:
+    def __init__(self, behavior):
+        self._behavior = behavior
+        self.calls: list[dict] = []
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return self._behavior(kwargs)
+
+
+class _Client:
+    def __init__(self, behavior):
+        self.chat = type("Chat", (), {"completions": _Completions(behavior)})()
+
+
+def _build(cfg: InferenceCfg, behaviors: dict[str, object]):
+    client = InferenceClient(cfg)
+    fakes = {url: _Client(b) for url, b in behaviors.items()}
+    client._client = lambda ep: fakes[ep.base_url]  # type: ignore[assignment]
+    return client, fakes
+
+
+def _cfg(**kw) -> InferenceCfg:
+    base = dict(
+        default_mode="local",
+        local=InferenceEndpointCfg(base_url="http://local/v1", model="minig"),
+        cloud=InferenceEndpointCfg(base_url="http://cloud/v1", model="gemma"),
+    )
+    base.update(kw)
+    return InferenceCfg(**base)
+
+
+def _stream_ok(*texts):
+    return lambda _kw: _Stream([_Chunk(_Delta(content=t)) for t in texts])
+
+
+async def _collect(client, **kw):
+    return [d async for d in client.stream_chat([{"role": "user", "content": "hi"}], **kw)]
+
+
+def test_stream_chat_threads_modeled_kwargs_to_create() -> None:
+    client, fakes = _build(_cfg(), {"http://local/v1": _stream_ok("hi")})
+    _run(_collect(client, max_tokens=128, reasoning_effort="high"))
+    call = fakes["http://local/v1"].chat.completions.calls[0]
+    assert call["max_tokens"] == 128
+    assert call["reasoning_effort"] == "high"
+
+
+def test_stream_chat_off_sends_chat_template_kwargs() -> None:
+    client, fakes = _build(_cfg(), {"http://local/v1": _stream_ok("hi")})
+    _run(_collect(client, reasoning_effort="off"))
+    call = fakes["http://local/v1"].chat.completions.calls[0]
+    assert call["reasoning_effort"] == "off"
+    assert call["extra_body"]["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_stream_chat_unset_kwargs_send_no_none_keys() -> None:
+    client, fakes = _build(_cfg(), {"http://local/v1": _stream_ok("hi")})
+    _run(_collect(client))
+    call = fakes["http://local/v1"].chat.completions.calls[0]
+    assert "max_tokens" not in call and "max_completion_tokens" not in call
+    assert "reasoning_effort" not in call
+    assert "extra_body" not in call  # no empty extra_body
+
+
+def test_params_ride_to_fallback_with_its_own_field_name() -> None:
+    """A failover serve applies max_tokens under the SERVING endpoint's field name (D42 chain-wide)."""
+
+    def _down(_kw):
+        raise RuntimeError("local down")
+
+    cfg = _cfg(
+        local=InferenceEndpointCfg(base_url="http://local/v1", model="minig"),  # max_tokens_field default
+        cloud=InferenceEndpointCfg(
+            base_url="http://cloud/v1", model="gemma", max_tokens_field="max_completion_tokens"
+        ),
+    )
+    client, fakes = _build(cfg, {"http://local/v1": _down, "http://cloud/v1": _stream_ok("x")})
+    _run(_collect(client, max_tokens=64))
+    local_call = fakes["http://local/v1"].chat.completions.calls[0]
+    cloud_call = fakes["http://cloud/v1"].chat.completions.calls[0]
+    assert local_call["max_tokens"] == 64  # selected endpoint: classic name
+    assert cloud_call["max_completion_tokens"] == 64  # fallback: its own field name
+    assert "max_tokens" not in cloud_call
+
+
+def test_complete_threads_modeled_kwargs_to_create() -> None:
+    client, fakes = _build(_cfg(), {"http://local/v1": lambda _kw: _Resp("done")})
+    out = _run(client.complete([{"role": "user", "content": "hi"}], max_tokens=99, reasoning_effort="low"))
+    assert out == "done"
+    call = fakes["http://local/v1"].chat.completions.calls[0]
+    assert call["max_tokens"] == 99 and call["reasoning_effort"] == "low"
+
+
+def test_stream_chat_overflow_populates_code_status() -> None:
+    """A single-endpoint context-overflow surfaces as an InferenceError carrying the structured fields."""
+
+    def _overflow(_kw):
+        raise _sdk_error(400, "context_length_exceeded", "maximum context length is 8192")
+
+    client, _ = _build(_cfg(failover=False), {"http://local/v1": _overflow})
+    raised: InferenceError | None = None
+    try:
+        _run(_collect(client))
+    except InferenceError as exc:
+        raised = exc
+    assert raised is not None
+    assert raised.status == 400 and raised.code == "context_length_exceeded"
+    assert is_context_overflow(raised) is True
+
+
+# ── D. the summarizer wire (`_summarize`) ──────────────────────────────────────────────────────────
+
+
+class _FakeInfer:
+    """Captures the `complete` kwargs + serves a canned window/reply (like the W3 fake, + kwargs)."""
+
+    def __init__(self, *, window: int | None = None, reply: str = "the summary body") -> None:
+        self._window = window
+        self._reply = reply
+        self.kwargs: list[dict] = []
+
+    async def effective_window_for(self, mode: str | None = None) -> int | None:
+        return self._window
+
+    async def complete(
+        self, payload, *, mode=None, model=None, max_tokens=None, reasoning_effort=None
+    ) -> str:
+        self.kwargs.append({"max_tokens": max_tokens, "reasoning_effort": reasoning_effort})
+        return self._reply
+
+
+def _summarize_with(summarizer: ModelRef, fake: _FakeInfer):
+    cfg = CompactionCfg(summarizer=summarizer)
+    comp = Compactor(cast("InferenceClient", fake), cast("MessageRepo", None), cfg)
+    head = [
+        Message(thread_id="t", role="user", actor=Actor.USER, parts=[TextPart(text="please wake corsair")]),
+        Message(thread_id="t", role="assistant", actor=Actor.AGENT, parts=[TextPart(text="corsair is up")]),
+    ]
+    return _run(comp._summarize(head))
+
+
+def test_summarizer_capped_when_max_tokens_set() -> None:
+    fake = _FakeInfer()
+    body, truncated = _summarize_with(ModelRef(max_tokens=512, reasoning_effort="off"), fake)
+    assert not truncated and body.startswith(SUMMARY_PREFIX)
+    assert fake.kwargs[0] == {"max_tokens": 512, "reasoning_effort": "off"}
+
+
+def test_summarizer_uncapped_when_max_tokens_unset() -> None:
+    fake = _FakeInfer()
+    _summarize_with(ModelRef(), fake)
+    assert fake.kwargs[0] == {"max_tokens": None, "reasoning_effort": None}
+
+
+def test_summarizer_overflow_guard_tightens_with_a_large_cap() -> None:
+    """The guard reserves max(max_tokens, window×margin). A cap LARGER than the fraction margin
+    tightens the guard: a transcript that fits with no cap now trips to the truncation-fold."""
+    # window 2000, margin 0.2 → fraction reserve 400; the small payload (system + tiny transcript) fits.
+    ok = _FakeInfer(window=2000)
+    body, truncated = _summarize_with(ModelRef(), ok)
+    assert not truncated and ok.kwargs  # ran the summarizer
+
+    # same window, but a 1900-token output cap → reserve 1900 → limit 100 → the payload overflows → skip.
+    tight = _FakeInfer(window=2000)
+    body2, truncated2 = _summarize_with(ModelRef(max_tokens=1900), tight)
+    assert truncated2 and body2 == TRUNCATION_NOTICE and tight.kwargs == []  # never called
+
+
+# ── E. the reactive backstop (driving `_drive`) ────────────────────────────────────────────────────
+
+
+def _client_app():
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    return TestClient(create_app())
+
+
+@contextlib.contextmanager
+def _workspace():
+    tmp = Path(tempfile.mkdtemp())
+    cfg = tmp / "config.yaml"
+    cfg.write_text("computers: {}\n", encoding="utf-8")
+    os.environ["CTRLB_HOME"] = str(tmp)
+    os.environ["CTRLB_CONFIG"] = str(cfg)
+    os.environ["CTRLB_DB"] = str(tmp / "t.db")
+    try:
+        yield tmp
+    finally:
+        for k in ("CTRLB_HOME", "CTRLB_CONFIG", "CTRLB_DB"):
+            os.environ.pop(k, None)
+
+
+def _asst(t: str) -> Message:
+    return Message(thread_id="t", role="assistant", actor=Actor.AGENT, parts=[TextPart(text=t)])
+
+
+def _user(t: str) -> Message:
+    return Message(thread_id="t", role="user", actor=Actor.USER, parts=[TextPart(text=t)])
+
+
+async def _seed(state, thread) -> None:
+    # LARGE messages so a real force-fold SHRINKS the head (a small summary is smaller).
+    for i in range(6):
+        m = _user("u" * 400) if i % 2 == 0 else _asst("a" * 400)
+        m.thread_id = thread.id
+        await state.messages.add(m)
+
+
+_OVERFLOW = InferenceError(
+    "Error code: 400 - context_length_exceeded", code="context_length_exceeded", status=400
+)
+
+
+def _backstop_session(state, thread, *, summary: str | None = "tiny summary"):
+    """A session whose pre-stream auto-compaction is inert (big window, so never over threshold) and
+    whose summarizer either shrinks (`summary` set) or inflates (`summary=None`, huge reply → reject)."""
+    from app.api.agent import _build_session
+
+    session = _build_session(state, thread)
+    cfg = CompactionCfg(keep_last_messages=2, keep_recent_tokens=5)
+    session._compaction_cfg = cfg
+    session._compactor = Compactor(session._inference, state.messages, cfg)
+
+    async def big_window(ep):
+        return 10_000_000  # pre-stream trigger never fires; the backstop's force-fold ignores it anyway
+
+    async def no_guard(mode=None):
+        return None  # no summarizer overflow guard → the summarizer actually runs
+
+    async def reply(payload, *, mode=None, model=None, max_tokens=None, reasoning_effort=None):
+        return ("Z" * 50000) if summary is None else summary
+
+    session._inference.effective_window = big_window  # type: ignore[assignment]
+    session._inference.effective_window_for = no_guard  # type: ignore[assignment]
+    session._inference.complete = reply  # type: ignore[assignment]
+    return session
+
+
+def _scripted_stream(*, overflow_calls: int, then_text: str = "recovered", partial: str | None = None):
+    """A fake `stream_chat`: raise overflow for the first `overflow_calls` calls, then stream `then_text`.
+    `partial` (if set) yields a text delta BEFORE raising on the first call (the streamed-partial case)."""
+    calls = {"n": 0}
+
+    async def stream_chat(messages, *, max_tokens=None, reasoning_effort=None, **_kw):
+        n = calls["n"]
+        calls["n"] += 1
+        from app.adapters.inference import ChatDelta
+
+        if n < overflow_calls:
+            if partial is not None:
+                yield ChatDelta(text=partial)
+            raise _OVERFLOW
+        yield ChatDelta(text=then_text)
+
+    return stream_chat, calls
+
+
+def test_backstop_overflow_nothing_streamed_recovers_with_one_fold() -> None:
+    with _workspace(), _client_app() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            from app.domain.conversation import Thread
+
+            thread = await state.threads.create(Thread())
+            await _seed(state, thread)
+            session = _backstop_session(state, thread)
+            stream_chat, calls = _scripted_stream(overflow_calls=1, then_text="recovered")
+            session._inference.stream_chat = stream_chat  # type: ignore[assignment]
+
+            events = [ev async for ev in session._drive(thread)]
+            kinds = [e.event for e in events]
+            # exactly ONE message.start (same assistant slot re-used across the re-stream) …
+            assert kinds.count("message.start") == 1
+            assert kinds.count("compaction") == 1  # the forced backstop fold
+            done = next(e for e in events if e.event == "done")
+            assert done.data["state"] == "completed"
+            assert calls["n"] == 2  # first overflowed, second (post-fold) recovered
+            # exactly ONE persisted assistant message carries the recovered text (no duplicate bubble),
+            # and no ErrorPart was persisted for this turn.
+            live = await state.messages.list(thread.id, include_compacted=False)
+            recovered = [m for m in live if m.role == "assistant" and m.text() == "recovered"]
+            assert len(recovered) == 1
+            assert not any(p.__class__.__name__ == "ErrorPart" for m in live for p in m.parts)
+
+        _run(go())
+
+
+def test_backstop_skipped_after_partial_stream() -> None:
+    """Overflow AFTER a visible partial reached the wire → NO backstop (can't re-stream a live bubble)."""
+    with _workspace(), _client_app() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            from app.domain.conversation import Thread
+
+            thread = await state.threads.create(Thread())
+            await _seed(state, thread)
+            session = _backstop_session(state, thread)
+            stream_chat, calls = _scripted_stream(overflow_calls=1, partial="half a word")
+            session._inference.stream_chat = stream_chat  # type: ignore[assignment]
+
+            events = [ev async for ev in session._drive(thread)]
+            kinds = [e.event for e in events]
+            assert "compaction" not in kinds  # no backstop fold
+            assert calls["n"] == 1  # no re-stream
+            done = next(e for e in events if e.event == "done")
+            assert done.data["state"] == "error"
+
+        _run(go())
+
+
+def test_backstop_second_overflow_same_turn_no_second_attempt() -> None:
+    """The re-stream overflows again → the one-shot flag blocks a second fold → normal error path."""
+    with _workspace(), _client_app() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            from app.domain.conversation import Thread
+
+            thread = await state.threads.create(Thread())
+            await _seed(state, thread)
+            session = _backstop_session(state, thread)
+            stream_chat, calls = _scripted_stream(overflow_calls=2)  # both calls overflow
+            session._inference.stream_chat = stream_chat  # type: ignore[assignment]
+
+            events = [ev async for ev in session._drive(thread)]
+            kinds = [e.event for e in events]
+            assert kinds.count("compaction") == 1  # the fold happened exactly once
+            assert calls["n"] == 2  # one re-stream, no third attempt
+            done = next(e for e in events if e.event == "done")
+            assert done.data["state"] == "error"
+
+        _run(go())
+
+
+def test_backstop_inflation_reject_falls_to_error() -> None:
+    """The forced compact inflation-rejects (huge summary) → nothing folded → normal error path."""
+    with _workspace(), _client_app() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            from app.domain.conversation import Thread
+
+            thread = await state.threads.create(Thread())
+            await _seed(state, thread)
+            session = _backstop_session(state, thread, summary=None)  # inflating summarizer → reject
+            stream_chat, calls = _scripted_stream(overflow_calls=1)
+            session._inference.stream_chat = stream_chat  # type: ignore[assignment]
+
+            events = [ev async for ev in session._drive(thread)]
+            kinds = [e.event for e in events]
+            assert "compaction" not in kinds  # the reject writes nothing → no compaction event
+            assert calls["n"] == 1  # no successful re-stream
+            done = next(e for e in events if e.event == "done")
+            assert done.data["state"] == "error"
+
+        _run(go())
+
+
+if __name__ == "__main__":
+    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
+    for fn in fns:
+        fn()
+        print(f"ok  {fn.__name__}")
+    print(f"\n{len(fns)} passed")

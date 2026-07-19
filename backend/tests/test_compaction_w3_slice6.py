@@ -283,7 +283,7 @@ class _FakeInfer:
     async def effective_window_for(self, mode: str | None = None) -> int | None:
         return self._window
 
-    async def complete(self, payload, *, mode=None, model=None) -> str:
+    async def complete(self, payload, *, mode=None, model=None, **_kw) -> str:
         self.payloads.append(payload)
         return self._reply
 
@@ -349,7 +349,7 @@ class _InflateInfer:
     async def effective_window_for(self, mode: str | None = None) -> int | None:
         return None  # no overflow guard → the (inflating) summarizer actually runs
 
-    async def complete(self, payload, *, mode=None, model=None) -> str:
+    async def complete(self, payload, *, mode=None, model=None, **_kw) -> str:
         return "Z" * 50000
 
 
@@ -421,14 +421,14 @@ def _thrash_session(state, thread, *, max_failures: int = 3):
     async def no_guard(mode=None):  # let the inflating summarizer actually run (no overflow guard)
         return None
 
-    async def inflate(payload, *, mode=None, model=None):
+    async def inflate(payload, *, mode=None, model=None, **_kw):
         return "Z" * 50000  # bigger than the small head → inflation-reject → a failure
 
     session._inference.effective_window = over_window  # type: ignore[assignment]
     session._inference.effective_window_for = no_guard  # type: ignore[assignment]
     session._inference.complete = inflate  # type: ignore[assignment]
 
-    async def text_only(messages, *, mode=None, model=None, tools=None, report=None):
+    async def text_only(messages, *, mode=None, model=None, tools=None, report=None, **_kw):
         yield ChatDelta(text="ok")
 
     session._inference.stream_chat = text_only  # type: ignore[assignment]
@@ -488,7 +488,7 @@ def test_thrash_backoff_skips_within_turn_retries() -> None:
 
             calls = {"n": 0}
 
-            async def counting_inflate(payload, *, mode=None, model=None):
+            async def counting_inflate(payload, *, mode=None, model=None, **_kw):
                 calls["n"] += 1
                 return "Z" * 50000
 
@@ -500,7 +500,7 @@ def test_thrash_backoff_skips_within_turn_retries() -> None:
                 ChatDelta(text="done"),
             ]
 
-            async def scripted(messages, *, mode=None, model=None, tools=None, report=None):
+            async def scripted(messages, *, mode=None, model=None, tools=None, report=None, **_kw):
                 yield seq.pop(0) if seq else ChatDelta(text="done")
 
             session._inference.stream_chat = scripted  # type: ignore[assignment]
@@ -531,7 +531,7 @@ def test_thrash_manual_reset_unlatches_and_force_works_while_latched() -> None:
             async def big_window(ep):
                 return 10_000_000  # so the post-compact re-check reads UNDER threshold
 
-            async def small_summary(payload, *, mode=None, model=None):
+            async def small_summary(payload, *, mode=None, model=None, **_kw):
                 return "tiny"
 
             session._inference.effective_window = big_window  # type: ignore[assignment]
@@ -560,7 +560,7 @@ def test_thrash_truncation_shrink_counts_as_success() -> None:
             cs = state.compaction_state[thread.id]
             cs.consecutive_failures = 2  # pretend we were mid-thrash
 
-            async def boom(payload, *, mode=None, model=None):
+            async def boom(payload, *, mode=None, model=None, **_kw):
                 raise InferenceError("summarizer down")  # → TRUNCATION_NOTICE, which SHRINKS the head
 
             session._inference.complete = boom  # type: ignore[assignment]

@@ -554,12 +554,24 @@ class Compactor:
         # Overflow guard: a transcript that won't fit the summarizer's window (minus a reserve for the
         # template + the summary it must write) would just error — fall back to the truncation-fold
         # instead of the doomed call. A `None` window (unresolvable — e.g. a cloud summarizer with no
-        # configured `context_window`) can't guard, so proceed best-effort (today's behaviour).
+        # configured `context_window`) can't guard, so proceed best-effort (today's behaviour). D42 W4:
+        # when the summarizer's `ModelRef.max_tokens` caps the OUTPUT, reserve EXACTLY that many tokens
+        # for it — but never LESS than the `_SUMMARIZER_MARGIN_FRAC` floor (a tiny cap must not loosen
+        # the guard below today's safety margin; a large cap tightens it honestly). Input (system +
+        # transcript) is already in `payload`, so the reserve covers only the generated summary.
         window = await self._inference.effective_window_for(s.mode)
-        if window is not None and estimate_payload_tokens(payload) > window * (1 - _SUMMARIZER_MARGIN_FRAC):
-            return TRUNCATION_NOTICE, True
+        if window is not None:
+            reserve = max(s.max_tokens or 0, int(window * _SUMMARIZER_MARGIN_FRAC))
+            if estimate_payload_tokens(payload) > window - reserve:
+                return TRUNCATION_NOTICE, True
         try:
-            body = await self._inference.complete(payload, mode=s.mode, model=s.model)
+            body = await self._inference.complete(
+                payload,
+                mode=s.mode,
+                model=s.model,
+                max_tokens=s.max_tokens,
+                reasoning_effort=s.reasoning_effort,
+            )
             body = body.strip()
         except InferenceError:
             return TRUNCATION_NOTICE, True

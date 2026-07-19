@@ -41,7 +41,12 @@ from typing import TYPE_CHECKING, AsyncIterator, Awaitable, Callable
 import anyio
 from pydantic import ValidationError
 
-from app.adapters.inference import InferenceClient, InferenceError, StreamReport
+from app.adapters.inference import (
+    InferenceClient,
+    InferenceError,
+    StreamReport,
+    is_context_overflow,
+)
 from app.config import InferenceEndpointCfg, Settings
 from app.core.memory import MemoryProvider
 from app.core.permissions import Decision, decide
@@ -876,6 +881,10 @@ class AgentSession:
         # (both `None` → the configured default, so the default agent is unchanged).
         eff_mode = mode or self._agent.model.mode
         eff_model = self._agent.model.model
+        #: Modeled per-call config threaded to `stream_chat` as first-class kwargs (D42/A10). The
+        #: agent's own `ModelRef.max_tokens` doubles as BOTH the wire output cap AND the window
+        #: trigger's output reserve (below); `reasoning_effort` is agent-level (no per-message override).
+        eff_reasoning = self._agent.model.reasoning_effort
         #: Output reserve subtracted from the window trigger line (D42) — the agent's own
         #: `ModelRef.max_tokens`; `None` ⇒ nothing reserved (gated further by `reserve_output`).
         reserve = self._agent.model.max_tokens
@@ -889,6 +898,10 @@ class AgentSession:
         #: compaction does not re-attempt until the NEXT turn. Turn-LOCAL — the session is per-turn, so
         #: a fresh `_drive` clears it for free (no turn-id bookkeeping in the cross-turn CompactionState).
         compaction_blocked_this_turn = False
+        #: D42 reactive backstop one-shot: a context-overflow'd model call (where nothing streamed yet)
+        #: triggers ONE forced compaction + a re-stream into the same assistant slot, at most once per
+        #: turn. Turn-LOCAL like `compaction_blocked_this_turn` — a fresh `_drive` clears it for free.
+        backstop_fired_this_turn = False
         for _ in range(self._agent.max_iterations):
             # Drain A (D41): apply any steers queued mid-turn at the loop TOP, BEFORE `should_compact`,
             # so compaction always sees drained steers as ordinary history (ordering invariant to Slice
@@ -982,27 +995,69 @@ class AgentSession:
             text_buf: list[str] = []
             reqs = []
             report = StreamReport()  # D18: learn whether inference fell over, to surface a breadcrumb
-            try:
-                async for delta in self._inference.stream_chat(
-                    messages, mode=eff_mode, model=eff_model, tools=self._tools(), report=report
-                ):
-                    if delta.reasoning:
-                        reasoning_buf.append(delta.reasoning)
-                        yield AgentEvent(
-                            "reasoning.delta", {"messageId": assistant.id, "delta": delta.reasoning}
-                        )
-                    if delta.text:
-                        text_buf.append(delta.text)
-                        yield AgentEvent("text.delta", {"messageId": assistant.id, "delta": delta.text})
-                    if delta.tool_calls:
-                        reqs = delta.tool_calls
-            except InferenceError as exc:
-                assistant.parts = [ErrorPart(message=str(exc), retryable=True)]
-                await self._messages.add(assistant)
-                await self._threads.touch(thread.id, assistant.ts)
-                yield AgentEvent("error", {"message": str(exc), "retryable": True})
-                yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
-                return
+            # The model call, wrapped so a context-overflow'd call where NOTHING streamed yet can be
+            # rescued ONCE (D42 reactive backstop). Each pass re-initialises the buffers; a clean stream
+            # `break`s, the backstop `continue`s into the SAME assistant slot, and any other failure /
+            # exhausted backstop falls to the error path. The loop runs at most twice per iteration.
+            while True:
+                reasoning_buf = []
+                text_buf = []
+                reqs = []
+                report = StreamReport()
+                streamed_any = False  # the honest "no visible partial content reached the wire" signal
+                try:
+                    async for delta in self._inference.stream_chat(
+                        messages,
+                        mode=eff_mode,
+                        model=eff_model,
+                        max_tokens=reserve,
+                        reasoning_effort=eff_reasoning,
+                        tools=self._tools(),
+                        report=report,
+                    ):
+                        if delta.reasoning:
+                            streamed_any = True
+                            reasoning_buf.append(delta.reasoning)
+                            yield AgentEvent(
+                                "reasoning.delta", {"messageId": assistant.id, "delta": delta.reasoning}
+                            )
+                        if delta.text:
+                            streamed_any = True
+                            text_buf.append(delta.text)
+                            yield AgentEvent("text.delta", {"messageId": assistant.id, "delta": delta.text})
+                        if delta.tool_calls:
+                            reqs = delta.tool_calls
+                    break  # streamed to completion — proceed to post-stream handling below
+                except InferenceError as exc:
+                    # D42 reactive backstop: a CONTEXT-OVERFLOW where nothing has streamed for this
+                    # assistant response yet, and the backstop hasn't fired this turn, gets ONE forced
+                    # compaction (force bypasses threshold/backoff/breaker but NEVER the inflation-reject)
+                    # + a re-stream into the SAME assistant slot (no new message.start — the FE never
+                    # sees a broken/duplicate bubble). A reject / nothing-to-fold, or a second overflow
+                    # (the one-shot flag is already set) → the normal error path below.
+                    if not backstop_fired_this_turn and not streamed_any and is_context_overflow(exc):
+                        backstop_fired_this_turn = True
+                        res = await self._compactor.compact(thread, force=True)
+                        if res is not None and not res.rejected:
+                            self._estimator.invalidate()  # the folded head is gone → heuristic next
+                            yield AgentEvent(
+                                "compaction",
+                                {
+                                    "removed": res.removed,
+                                    "summaryId": res.summary_id,
+                                    "truncated": res.truncated,
+                                },
+                            )
+                            clearing = await self._plan_clearing(thread)
+                            messages = await self._assemble(thread, clearing=clearing)
+                            watermark = await self._watermark_id(thread)
+                            continue  # re-issue the SAME call into the SAME assistant slot
+                    assistant.parts = [ErrorPart(message=str(exc), retryable=True)]
+                    await self._messages.add(assistant)
+                    await self._threads.touch(thread.id, assistant.ts)
+                    yield AgentEvent("error", {"message": str(exc), "retryable": True})
+                    yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
+                    return
 
             # D18 — the request fell over to a fallback inference endpoint. Surface a breadcrumb so a
             # down primary (e.g. the local model) is visible + actionable, not silent (it's logged too).
@@ -1237,6 +1292,8 @@ class AgentSession:
                     messages,
                     mode=eff_mode,
                     model=eff_model,
+                    max_tokens=self._agent.model.max_tokens,
+                    reasoning_effort=self._agent.model.reasoning_effort,
                     tools=fin_tools,
                     tool_choice=fin_choice,
                     report=report,
