@@ -16,6 +16,7 @@ Layered like the compaction W3 suite:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import tempfile
@@ -33,7 +34,7 @@ from app.domain.conversation import Message, ToolCallPart
 from app.domain.enums import Actor, RunState
 from app.services.agent.compaction import Compactor
 from app.services.agent.routing import RoutingState, prune_routing_state, routing_state_for
-from app.services.agent.session import _DISMISS
+from app.services.agent.session import _DISMISS, AgentEvent
 
 
 def _run(coro):
@@ -545,5 +546,103 @@ def test_subagent_session_builds_none_and_never_routes() -> None:
             session._inference.stream_chat = _mk_stream(cap, ["text"])  # type: ignore[assignment]
             _ = [ev async for ev in session._drive(thread)]
             assert cap[0]["model"] == "WORKER"  # never routed to the lead
+
+        _run(go())
+
+
+# ── G. R1: routing disabled mid-episode resets the WHOLE state (prunable + a fresh re-enable) ─────────
+
+
+def test_disabled_mid_episode_resets_whole_state_and_re_enable_is_fresh() -> None:
+    """The owner disables routing mid-episode (cfg → None). `_conclude_routing` must reset the WHOLE
+    state to defaults (episode counters too, not just the per-turn locks), so the entry prunes AND a
+    later re-enable starts a fresh count — never a silent mid-episode lead route (D43 Invariant 4)."""
+    with _workspace(), _client() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            thread = await _mk_thread(state)
+            # routing OFF now, but a stale mid-episode state left from before it was disabled.
+            session = _routing_session(state, thread, routing=False)
+            rs = state.routing_state[thread.id]
+            rs.fallback_remaining = 2
+            rs.consecutive_failures = 1
+            rs.current_route = "lead"
+            events = await _drive(session, thread, [], ["text"])
+            assert _notices(events) == []  # routing off → no notice
+            assert rs == RoutingState()  # the WHOLE state reset, not just the per-turn locks
+            prune_routing_state(state.routing_state, thread.id)
+            assert thread.id not in state.routing_state  # the orphaned entry now drops
+
+            # Re-enable routing: a fresh count, no resurrected episode.
+            session._routing_cfg = RoutingCfg(lead=_LEAD, failure_threshold=2, fallback_turns=2)
+            session._agent = session._agent.model_copy(update={"routing": session._routing_cfg})
+            cap: list = []
+            ev = await _drive(session, thread, cap, ["text"])
+            assert cap[0]["model"] == "WORKER"  # no silent mid-episode lead route
+            assert _notices(ev) == []  # no phantom open/close notice
+
+        _run(go())
+
+
+# ── H. R2: a cancelled turn clears the route lock in _cleanup (conclude was skipped) ──────────────────
+
+
+async def _drive_cancel_cleanup(state, thread):
+    """Drive the REAL `_spawn_drain_task` with the synthesized `done{state:cancelled}` close that
+    drain_turn emits on a Stop, so the `_cleanup` done-callback runs its R2 cancel branch."""
+    from app.api.agent import _spawn_drain_task
+    from app.services.agent.turns import reserve
+
+    handle = reserve(state.turns, thread.id, "chat")
+
+    async def _events():
+        yield AgentEvent("done", {"threadId": thread.id, "state": "cancelled"})
+
+    task = _spawn_drain_task(state, thread, _events(), handle, state.settings.agent.turns)
+    await task
+    await asyncio.sleep(0)  # let the add_done_callback `_cleanup` run on the loop
+    assert handle.terminal_status == "cancelled"
+
+
+def test_cancel_mid_lead_turn_clears_route_lock_prunes_when_default() -> None:
+    """A `cancelled` turn skipped `_conclude_routing`, so `_cleanup` defensively clears the route lock
+    (cancel terminal ONLY). When the state is otherwise all-default it then prunes."""
+    with _workspace(), _client() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            thread = await _mk_thread(state)
+            state.routing_state[thread.id] = RoutingState(current_route="lead", turn_had_model_failure=True)
+            await _drive_cancel_cleanup(state, thread)
+            assert thread.id not in state.routing_state  # lock cleared → all-default → pruned
+
+        _run(go())
+
+
+def test_cancel_mid_lead_turn_preserves_episode_and_continues_on_lead() -> None:
+    """The cancel clears only the per-turn lock/flag — the episode counter (`fallback_remaining`) is
+    UNTOUCHED (the cancel consumed that episode turn), so the state is preserved and the next fresh
+    turn continues the episode on the lead."""
+    with _workspace(), _client() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            thread = await _mk_thread(state)
+            state.routing_state[thread.id] = RoutingState(
+                current_route="lead", turn_had_model_failure=True, fallback_remaining=1
+            )
+            await _drive_cancel_cleanup(state, thread)
+            rs = state.routing_state[thread.id]
+            assert rs.current_route is None  # route lock cleared
+            assert rs.turn_had_model_failure is False  # per-turn flag cleared
+            assert rs.fallback_remaining == 1  # episode counter untouched → preserved (not pruned)
+
+            # the remaining episode turn still routes to the lead.
+            session = _routing_session(state, thread)
+            cap: list = []
+            await _drive(session, thread, cap, ["text"])
+            assert cap[0]["model"] == "LEAD"
+            assert state.routing_state[thread.id].fallback_remaining == 0  # the last episode turn ran
 
         _run(go())

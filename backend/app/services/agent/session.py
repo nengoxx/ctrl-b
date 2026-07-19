@@ -967,7 +967,11 @@ class AgentSession:
                 # (defensive against a cancel that skipped the prior turn's conclude), then decide.
                 rs.turn_had_model_failure = False
                 if rs.fallback_remaining > 0:
-                    # Inside a live episode → route to the lead and consume one turn.
+                    # Inside a live episode → route to the lead and consume one turn. The decrement is
+                    # committed HERE, at the fresh decision — a Stop that cancels this now-spawned turn
+                    # mid-flight still consumes the episode turn (the episode shortens by that Stop —
+                    # deliberate, matching the D41 "an already-spawned turn is what the cancel cancels"
+                    # spirit; `_cleanup` clears the route lock on the cancel terminal but not the count).
                     first_turn = rs.fallback_remaining == rcfg.fallback_turns
                     rs.fallback_remaining -= 1
                     rs.current_route = "lead"
@@ -1319,8 +1323,11 @@ class AgentSession:
         episode's LAST lead turn just finished (`fallback_remaining == 0`). Always clears the per-turn
         route lock + failure flag last, so a healthy thread returns to all-defaults (prune-able).
 
-        No-op when routing is off (`rcfg is None`) beyond the defensive clear — which keeps a
-        routing-inert session's minted state at all-defaults so the done-callback can prune it."""
+        When routing is OFF (`rcfg is None`) — the owner disabled it mid-episode via a settings/agent
+        edit — reset the WHOLE state to defaults (the episode counters too, not just the per-turn locks),
+        so the prune drops the now-orphaned entry and a later re-enable starts a FRESH count. Leaving a
+        live `fallback_remaining`/`consecutive_failures` behind would make the entry non-prunable AND
+        silently resurrect a mid-episode lead route on re-enable (D43 Invariant 4 — nothing silent)."""
         rs, rcfg = self._routing_state, self._routing_cfg
         if rs is None:
             return
@@ -1336,6 +1343,11 @@ class AgentSession:
                         rs.consecutive_failures = 0
                 else:
                     rs.consecutive_failures = 0
+        else:
+            # Routing disabled mid-episode: drop the episode counters too, so the entry prunes and a
+            # re-enable never inherits a stale mid-episode lead route (D43 Invariant 4).
+            rs.consecutive_failures = 0
+            rs.fallback_remaining = 0
         rs.current_route = None
         rs.turn_had_model_failure = False
 

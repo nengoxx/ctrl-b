@@ -181,6 +181,10 @@ def test_categorize_fatal_for_endpoint() -> None:
     assert categorize(_err(code="insufficient_quota", status=429)) == "transient"  # 429 wins (busy-then)
     assert categorize(_err(code="model_not_found")) == "fatal_for_endpoint"
     assert categorize(_err(msg="Error code: 401 - invalid api key")) == "fatal_for_endpoint"
+    # R3: a fatal status/code OUTRANKS a Retry-After header — an auth error carrying Retry-After must
+    # hop to different credentials, never retry in place.
+    assert categorize(_err(status=401, retry_after=5.0)) == "fatal_for_endpoint"
+    assert categorize(_err(code="insufficient_quota", retry_after=5.0)) == "fatal_for_endpoint"
 
 
 def test_categorize_other_and_overflow() -> None:

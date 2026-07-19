@@ -257,13 +257,16 @@ _FATAL_MSG_MARKERS = (
 
 def categorize(err: BaseException) -> ErrorCategory:
     """Classify a backend failure into the D43/A7 retry tiers (the ONE home, beside
-    `is_context_overflow`). Structured `status`/`code`/`retry_after` first — overflow delegates; a
-    `Retry-After` header, 429, or 503 ⇒ `transient`; 401/403, 404-model-not-found, or a fatal
-    code ⇒ `fatal_for_endpoint` — then a message-substring fallback for a failover-FLATTENED error
-    whose structured fields were collapsed to a string, gated on the flattened `error code: N` the same
-    way `is_context_overflow` gates on 400 (so an unrelated string can't upgrade a plain error; the
-    busy/auth PHRASES are specific enough to scan ungated). `overflow`/`other` → straight next-hop; only
-    `transient` is retry-worthy."""
+    `is_context_overflow`). Structured `status`/`code` first — overflow delegates; a busy 429 or 503 ⇒
+    `transient`; 401/403, 404-model-not-found, or a fatal code ⇒ `fatal_for_endpoint`; only THEN does a
+    bare `Retry-After` header ⇒ `transient`. The structured status/code ranks ABOVE the Retry-After
+    short-circuit in BOTH directions: a busy 429/503 stays retry-worthy even carrying a fatal code (the
+    "429 wins" busy-then rule), and an auth/model/quota fatal outranks a `Retry-After` header — a fatal
+    endpoint must hop to different credentials, never retry in place. Then a message-substring fallback
+    for a failover-FLATTENED error whose structured fields were collapsed to a string, gated on the
+    flattened `error code: N` the same way `is_context_overflow` gates on 400 (so an unrelated string
+    can't upgrade a plain error; the busy/auth PHRASES are specific enough to scan ungated).
+    `overflow`/`other` → straight next-hop; only `transient` is retry-worthy."""
     if is_context_overflow(err):
         return "overflow"
     status = getattr(err, "status", None)
@@ -272,16 +275,17 @@ def categorize(err: BaseException) -> ErrorCategory:
     status = status if isinstance(status, int) and not isinstance(status, bool) else None
     code = getattr(err, "code", None)
     code_l = code.lower() if isinstance(code, str) else ""
-    if getattr(err, "retry_after", None) is not None:
-        return "transient"
-    # ── structured status/code first ──
-    if status in _TRANSIENT_STATUS:
-        return "transient"
-    if status in _FATAL_STATUS or code_l in _FATAL_CODES:
-        return "fatal_for_endpoint"
     text = str(err).lower()
+    # ── structured status/code first — a decisive status/code ranks above the Retry-After header ──
+    if status in _TRANSIENT_STATUS:  # busy 429/503 wins even alongside a fatal code (busy-then)
+        return "transient"
+    if status in _FATAL_STATUS or code_l in _FATAL_CODES:  # auth/quota fatal outranks any Retry-After
+        return "fatal_for_endpoint"
     if status == 404 and ("model" in text or code_l == "model_not_found"):
         return "fatal_for_endpoint"
+    # ── a bare Retry-After header (no decisive status/code above): the server asked us to wait ──
+    if getattr(err, "retry_after", None) is not None:
+        return "transient"
     # ── message fallback: only when the structured fields didn't decide (flattened / body text) ──
     if (
         any(m in text for m in _TRANSIENT_MSG_MARKERS)
