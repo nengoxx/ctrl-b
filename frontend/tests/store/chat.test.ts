@@ -2138,7 +2138,12 @@ describe("steering queue — client (Slice 5, D41)", () => {
     });
   });
 
-  it("DELETE a queued steer: {removed:true} drops the bubble; {removed:false} resolves it to sent form", async () => {
+  it("DELETE a queued steer: {removed:true} drops the bubble; {removed:false} drops the FAKE bubble (FIX D)", async () => {
+    // FIX D — pre-fix `{removed:false}` merely cleared the queued marker, leaving a fake "sent" bubble
+    // (a client-only `steer-<id>` / `local-<id>` id) that vanishes on the next reload. Now BOTH branches
+    // DROP the optimistic bubble; `removed:false` additionally reconciles the durable truth (covered by
+    // the idle test below — here the live turn is still streaming so no reload fires, and we assert the
+    // fake bubble is gone rather than lingering as a phantom sent message).
     const { hook, controller, sendP, pushDone } = await heldTurn(() => undefined);
     // queue two steers e1 + e2 (e2 via a second chat POST)
     let chat = 0;
@@ -2167,13 +2172,635 @@ describe("steering queue — client (Slice 5, D41)", () => {
     expect(hook.result.current.messages.some((m) => textOf(m.parts) === "first steer")).toBe(false);
 
     await act(async () => {
-      await removeSteer("e2"); // removed:false (already drained) → resolve to sent form (queued cleared)
+      await removeSteer("e2"); // removed:false (already drained) → drop the FAKE bubble (no phantom sent)
     });
-    const e2 = hook.result.current.messages.find((m) => textOf(m.parts) === "second steer");
-    expect(e2).toBeTruthy();
-    expect(e2!.queued).toBeUndefined();
+    // No lingering bubble with a cleared queued marker (the pre-fix fake sent bubble) and no queued chip.
+    expect(hook.result.current.messages.some((m) => m.queued === "e2")).toBe(false);
+    expect(
+      hook.result.current.messages.some(
+        (m) => textOf(m.parts) === "second steer" && m.queued === undefined,
+      ),
+    ).toBe(false);
 
     pushDone();
+    controller.close();
+    await act(async () => {
+      await sendP;
+    });
+  });
+
+  it("DELETE {removed:false} on an idle thread renders the DURABLE truth (FIX D)", async () => {
+    // A queued steer lingers while idle (a drain-B entry committed into a spawned turn). The owner taps
+    // remove; the server says removed:false (already drained). FIX D drops the optimistic bubble AND
+    // force-probes → reloads the durable floor so the PERSISTED user row renders — not a fake bubble.
+    // First render a PENDING queued bubble (p1) via a re-attach snapshot on an idle thread.
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "m0" } },
+      { event: "text.delta", data: { messageId: "m0", delta: "prior" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const hook = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    // durable floor as the turn ended: just the prior reply (p1 is client-only until it drains)
+    const priorFloor = [
+      {
+        id: "m0",
+        thread_id: "t1",
+        role: "assistant",
+        parts: [{ type: "text", text: "prior" }],
+        actor: "agent",
+        ts: "",
+        tokens: null,
+        compacted: false,
+      },
+    ];
+    // the floor AFTER p1 drained: the durable user row for "later"
+    const drainedFloor = [
+      ...priorFloor,
+      {
+        id: "u-later",
+        thread_id: "t1",
+        role: "user",
+        parts: [{ type: "text", text: "later" }],
+        actor: "user",
+        ts: "",
+        tokens: null,
+        compacted: false,
+      },
+    ];
+    // Re-attach snapshot carrying p1 as a PENDING steer → renders the queued bubble on the idle thread.
+    // The probe (`/agent/turns/t1`) keeps p1 STILL queued and the floor is priorFloor (NO u-later), so
+    // the re-attach's own discover machinery can NOT be what renders u-later — only removeSteer can.
+    const setupFetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/stream"))
+        return Promise.resolve(
+          sseResponse([
+            {
+              event: "turn.sync",
+              id: "T7:3",
+              data: {
+                mode: null,
+                seq: 3,
+                terminal: null,
+                message: null,
+                calls: [],
+                steer_queue: [{ entry_id: "p1", kind: "message", text: "later" }],
+              },
+            },
+            { event: "done", id: "T7:4", data: { state: "completed" } },
+          ]),
+        );
+      if (u.includes("/agent/turns/t1"))
+        return Promise.resolve(
+          json({
+            active: false,
+            steer_queue: [{ entry_id: "p1", kind: "message", text: "later" }],
+          }),
+        );
+      return Promise.resolve(json(priorFloor)); // the floor has NO u-later yet
+    });
+    globalThis.fetch = setupFetch;
+    await act(async () => {
+      await reattachTurn("t1", "T7:1");
+    });
+    // Fully drain the re-attach's fire-and-forget discover probe (past the ~250ms re-probe) against the
+    // NO-u-later floor, so u-later can only appear from the removeSteer path below.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 320));
+    });
+    expect(hook.result.current.messages.some((m) => m.queued === "p1")).toBe(true);
+    expect(hook.result.current.messages.some((m) => m.id === "u-later")).toBe(false);
+    expect(hook.result.current.status).toBe("idle");
+
+    // Now DELETE p1 → the server says removed:false (already drained). The probe now reports it absent +
+    // inactive; the durable floor NOW carries the persisted "later" user row. FIX D drops the fake bubble
+    // and force-probes → the reload renders u-later. (Reverting FIX D leaves the fake bubble + no reload.)
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/steer/p1"))
+        return Promise.resolve(json({ removed: false, reason: "already sent" }));
+      if (u.includes("/agent/turns/t1"))
+        return Promise.resolve(json({ active: false, steer_queue: [] }));
+      if (u.includes("/threads/t1/messages")) return Promise.resolve(json(drainedFloor));
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    await act(async () => {
+      await removeSteer("p1");
+      await new Promise((r) => setTimeout(r, 320)); // let the force-probe's re-probe + reload land
+    });
+    // the fake bubble is gone AND the durable "later" user row rendered (via the force-probe reload)
+    expect(hook.result.current.messages.some((m) => m.id === "u-later")).toBe(true);
+    expect(hook.result.current.messages.some((m) => m.queued === "p1")).toBe(false);
+    expect(hook.result.current.messages.filter((m) => textOf(m.parts) === "later")).toHaveLength(1); // exactly the durable row, no phantom
+  });
+
+  // ── Codex FE fix wave (FIX A/B/C/E): client stream ownership, late-202 discovery, thread-scoped
+  // async flows, and the cancel-contract adoption (query scope · mismatch adopt · replay · retry). ──
+
+  /** A 200 held SSE Response whose body is `body`. */
+  const streamResp = (body: ReadableStream<Uint8Array>): Response =>
+    ({
+      ok: true,
+      status: 200,
+      body,
+      headers: {
+        get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
+      },
+    }) as unknown as Response;
+
+  it("a stale generation's late `done` does not settle a newer stream (FIX A)", async () => {
+    // Turn A streams on socket A (gen1, lastTurnId=A). A steer-race send returns a fresh 200 for turn B
+    // on socket B → adopts B (gen2). A's DELAYED terminal, arriving on its now-stale socket, must be
+    // dropped: it must NOT settle status idle nor repoint the view under turn B.
+    let ctrlA!: ReadableStreamDefaultController<Uint8Array>;
+    let ctrlB!: ReadableStreamDefaultController<Uint8Array>;
+    const bodyA = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctrlA = c;
+        c.enqueue(
+          enc.encode(`event: thread\r\ndata: ${JSON.stringify({ threadId: "t1" })}\r\n\r\n`),
+        );
+        c.enqueue(
+          enc.encode(
+            `event: message.start\r\nid: A:1\r\ndata: ${JSON.stringify({ messageId: "mA" })}\r\n\r\n`,
+          ),
+        );
+      },
+    });
+    const bodyB = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctrlB = c;
+        c.enqueue(
+          enc.encode(
+            `event: message.start\r\nid: B:1\r\ndata: ${JSON.stringify({ messageId: "mB" })}\r\n\r\n`,
+          ),
+        );
+      },
+    });
+    let chat = 0;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) {
+        chat++;
+        return Promise.resolve(streamResp(chat === 1 ? bodyA : bodyB));
+      }
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    const { result } = renderHook(() => useChat());
+    let sendA!: Promise<void>;
+    let sendB!: Promise<void>;
+    await act(async () => {
+      sendA = sendMessage("first");
+    });
+    await waitFor(() => expect(result.current.messages.some((m) => m.id === "mA")).toBe(true));
+    await act(async () => {
+      sendB = sendMessage("go B", { raw: "go B" }); // steer-race → 200 adopts turn B
+    });
+    await waitFor(() => expect(result.current.messages.some((m) => m.id === "mB")).toBe(true));
+    expect(result.current.streamingId).toBe("mB");
+
+    // A's delayed `done` on the STALE socket — must be dropped, not settle idle under B.
+    ctrlA.enqueue(
+      enc.encode(
+        `event: done\r\nid: A:2\r\ndata: ${JSON.stringify({ state: "completed" })}\r\n\r\n`,
+      ),
+    );
+    ctrlA.close();
+    await act(async () => {
+      await sendA; // A's stream tail bails (stale generation) — no settle, no re-attach
+    });
+    expect(result.current.status).toBe("streaming"); // B still owns the view
+    expect(result.current.streamingId).toBe("mB");
+
+    // Finish B cleanly — its own `done` (current generation) settles.
+    ctrlB.enqueue(
+      enc.encode(
+        `event: done\r\nid: B:2\r\ndata: ${JSON.stringify({ state: "completed" })}\r\n\r\n`,
+      ),
+    );
+    ctrlB.close();
+    await act(async () => {
+      await sendB;
+    });
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("a late 202 (the turn already ended) triggers drain-B discovery (FIX B)", async () => {
+    // A steer sent while streaming, whose 202 lands AFTER the live turn settled (the response gap). The
+    // settled-turn discovery already ran (no queued bubble then), so the LATE 202 must run discovery
+    // itself against the freshly-marked bubble, or the spawned drain-B turn is never found.
+    let ctrlA!: ReadableStreamDefaultController<Uint8Array>;
+    const bodyA = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctrlA = c;
+        c.enqueue(
+          enc.encode(`event: thread\r\ndata: ${JSON.stringify({ threadId: "t1" })}\r\n\r\n`),
+        );
+        c.enqueue(
+          enc.encode(
+            `event: message.start\r\nid: A:1\r\ndata: ${JSON.stringify({ messageId: "mA" })}\r\n\r\n`,
+          ),
+        );
+      },
+    });
+    let resolveSteer!: (r: Response) => void;
+    const steerP = new Promise<Response>((res) => (resolveSteer = res));
+    const floor = [
+      {
+        id: "u1",
+        thread_id: "t1",
+        role: "user",
+        parts: [{ type: "text", text: "later" }],
+        actor: "user",
+        ts: "",
+        tokens: null,
+        compacted: false,
+      },
+    ];
+    const drainB = () =>
+      sseResponse([
+        {
+          event: "turn.sync",
+          id: "T2:1",
+          data: {
+            mode: null,
+            seq: 1,
+            terminal: null,
+            message: { id: "m9", role: "assistant", agent: null, text: "spawned", reasoning: "" },
+            calls: [],
+            steers: [{ entryId: "e1", messageId: "u1", kind: "message", text: "later" }],
+          },
+        },
+        { event: "done", id: "T2:2", data: { state: "completed" } },
+      ]);
+    let chat = 0;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) {
+        chat++;
+        return chat === 1 ? Promise.resolve(streamResp(bodyA)) : steerP;
+      }
+      if (u.includes("/agent/turns/t1/stream")) return Promise.resolve(drainB());
+      if (u.includes("/agent/turns/t1"))
+        return Promise.resolve(
+          json({
+            active: true,
+            turn_id: "T2",
+            seq: 1,
+            steer_queue: [{ entry_id: "e1", kind: "message", text: "later" }],
+          }),
+        );
+      if (u.includes("/threads/t1/messages")) return Promise.resolve(json(floor));
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    const { result } = renderHook(() => useChat());
+    let sendA!: Promise<void>;
+    let steerSend!: Promise<void>;
+    await act(async () => {
+      sendA = sendMessage("first");
+    });
+    await waitFor(() => expect(result.current.messages.some((m) => m.id === "mA")).toBe(true));
+    await act(async () => {
+      steerSend = sendMessage("later", { raw: "later" }); // POST deferred (steerP)
+    });
+    // The live turn ends BEFORE the 202 resolves — the response gap.
+    ctrlA.enqueue(
+      enc.encode(
+        `event: done\r\nid: A:2\r\ndata: ${JSON.stringify({ state: "completed" })}\r\n\r\n`,
+      ),
+    );
+    ctrlA.close();
+    await act(async () => {
+      await sendA;
+    });
+    expect(result.current.status).toBe("idle"); // A settled; the "later" bubble is not queued yet
+    // Now the 202 lands late → FIX B: status is idle → discover the spawned drain-B turn.
+    await act(async () => {
+      resolveSteer(resp202("e1"));
+      await steerSend;
+    });
+    await waitFor(() => expect(result.current.messages.some((m) => m.id === "m9")).toBe(true));
+    expect(textOf(result.current.messages.find((m) => m.id === "m9")!.parts)).toBe("spawned");
+    await waitFor(() => expect(result.current.messages.some((m) => m.queued)).toBe(false));
+  });
+
+  it("a stale re-attach does not settle/reload another thread after a switch (FIX C)", async () => {
+    // Establish t1, then start a re-attach whose JSON terminal is DEFERRED; switch threads (/clear)
+    // before it resolves. The thread-switch guard must bail so the fresh view is never mutated.
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "m0" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    expect(result.current.threadId).toBe("t1");
+
+    let resolveJson!: (v: unknown) => void;
+    const jsonP = new Promise((res) => (resolveJson = res));
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/stream"))
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: () => jsonP,
+        } as unknown as Response);
+      // If the guard FAILED, a reload would inject this "leak" row into the fresh view.
+      return Promise.resolve(
+        json([
+          {
+            id: "leak-t1",
+            thread_id: "t1",
+            role: "assistant",
+            parts: [{ type: "text", text: "leaked" }],
+            actor: "agent",
+            ts: "",
+            tokens: null,
+            compacted: false,
+          },
+        ]),
+      );
+    });
+    let p!: Promise<boolean>;
+    await act(async () => {
+      p = reattachTurn("t1"); // enteredOn = "t1"; parks on the deferred json()
+    });
+    act(() => {
+      startNewThread(); // switch away → threadId null, messages cleared
+    });
+    expect(result.current.threadId).toBeNull();
+
+    let ok!: boolean;
+    await act(async () => {
+      resolveJson({ active: false, terminal_status: "completed" });
+      ok = await p;
+    });
+    expect(ok).toBe(false); // bailed on the thread-switch guard
+    expect(result.current.messages.some((m) => m.id === "leak-t1")).toBe(false); // fresh view untouched
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("startNewThread prunes rawByEntry: a later harvest falls back to server text (FIX C)", async () => {
+    clearDraft();
+    // 1) queue a steer carrying a `/cloud` RAW line on t1 (populates rawByEntry[t1][e1]); end + close.
+    {
+      const { hook, controller, sendP, pushDone } = await heldTurn(() => undefined);
+      globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+        const u = String(url);
+        if (u.includes("/agent/chat")) return Promise.resolve(resp202("e1"));
+        return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+      });
+      await act(async () => {
+        await sendMessage("do X", { mode: "cloud", raw: "/cloud do X" });
+      });
+      expect(hook.result.current.messages.some((m) => m.queued === "e1")).toBe(true);
+      await act(async () => {
+        pushDone();
+        controller.close();
+        await sendP;
+      });
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 320)); // drain the post-done discovery probe
+      });
+    }
+    // 2) /clear prunes rawByEntry (dropAllRaw).
+    act(() => {
+      startNewThread();
+    });
+    // 3) a fresh streaming turn; Stop harvests the SAME entry — the raw line was pruned, so the harvest
+    //    reconstructs the PLAIN server text ("do X"), NOT the "/cloud do X" raw that would survive a leak.
+    {
+      const { hook, controller, sendP } = await heldTurn((u) => {
+        if (u.includes("/cancel"))
+          return json({
+            cancelled: true,
+            active: false,
+            steer_queue: [{ entry_id: "e1", kind: "message", text: "do X" }],
+          });
+        if (u.includes("/stream")) return json({ active: false, terminal_status: "cancelled" });
+        return undefined;
+      });
+      await act(async () => {
+        await stopTurn();
+      });
+      expect(getDraft()).toBe("do X"); // reconstructed from server text — the raw "/cloud" line was pruned
+      void hook;
+      controller.close();
+      await act(async () => {
+        await sendP;
+      });
+    }
+  });
+
+  it("stopTurn scopes the cancel via the ?turn_id= query param (FIX E)", async () => {
+    // A held turn whose message.start carries an id so `lastTurnId` (the Stop scope) is set.
+    let ctrl!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctrl = c;
+        c.enqueue(
+          enc.encode(`event: thread\r\ndata: ${JSON.stringify({ threadId: "t1" })}\r\n\r\n`),
+        );
+        c.enqueue(
+          enc.encode(
+            `event: message.start\r\nid: TZ:1\r\ndata: ${JSON.stringify({ messageId: "m1" })}\r\n\r\n`,
+          ),
+        );
+      },
+    });
+    let cancelUrl = "";
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/cancel")) {
+        cancelUrl = u;
+        return Promise.resolve(json({ cancelled: true, terminal_status: "cancelled" }));
+      }
+      if (u.includes("/agent/chat")) return Promise.resolve(streamResp(body));
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    const { result } = renderHook(() => useChat());
+    let sendP!: Promise<void>;
+    await act(async () => {
+      sendP = sendMessage("hi");
+    });
+    await waitFor(() => expect(result.current.messages.some((m) => m.id === "m1")).toBe(true));
+    await act(async () => {
+      await stopTurn();
+    });
+    expect(cancelUrl).toContain("turn_id=TZ"); // the scope rides the query param (D41 FIX 3)
+
+    ctrl.enqueue(
+      enc.encode(`event: done\r\ndata: ${JSON.stringify({ state: "cancelled" })}\r\n\r\n`),
+    );
+    ctrl.close();
+    await act(async () => {
+      await sendP;
+    });
+  });
+
+  it("stopTurn on a scoped MISMATCH adopts the live turn without harvesting the peek (FIX E)", async () => {
+    // The scoped turn A finished; a successor B is live. The cancel returns {cancelled:false,active:true,
+    // turn_id:B, steer_queue:[peek]} — the peek is NOT a harvest. FE must not restore the draft; it must
+    // re-attach to B (adopt the live turn).
+    clearDraft();
+    setDraft("keep me");
+    let ctrlA!: ReadableStreamDefaultController<Uint8Array>;
+    const bodyA = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctrlA = c;
+        c.enqueue(
+          enc.encode(`event: thread\r\ndata: ${JSON.stringify({ threadId: "t1" })}\r\n\r\n`),
+        );
+        c.enqueue(
+          enc.encode(
+            `event: message.start\r\nid: A:1\r\ndata: ${JSON.stringify({ messageId: "mA" })}\r\n\r\n`,
+          ),
+        );
+      },
+    });
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/cancel"))
+        return Promise.resolve(
+          json({
+            cancelled: false,
+            active: true,
+            turn_id: "B",
+            steer_queue: [{ entry_id: "peek1", kind: "message", text: "not mine" }],
+          }),
+        );
+      if (u.includes("/agent/turns/t1/stream"))
+        return Promise.resolve(
+          sseResponse([
+            {
+              event: "turn.sync",
+              id: "B:2",
+              data: {
+                mode: null,
+                seq: 2,
+                terminal: null,
+                message: {
+                  id: "mB",
+                  role: "assistant",
+                  agent: null,
+                  text: "B reply",
+                  reasoning: "",
+                },
+                calls: [],
+              },
+            },
+            { event: "done", id: "B:3", data: { state: "completed" } },
+          ]),
+        );
+      if (u.includes("/agent/chat")) return Promise.resolve(streamResp(bodyA));
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    const { result } = renderHook(() => useChat());
+    let sendA!: Promise<void>;
+    await act(async () => {
+      sendA = sendMessage("first");
+    });
+    await waitFor(() => expect(result.current.messages.some((m) => m.id === "mA")).toBe(true));
+
+    await act(async () => {
+      await stopTurn(); // mismatch → adopt B via re-attach
+    });
+    await waitFor(() => expect(result.current.messages.some((m) => m.id === "mB")).toBe(true));
+    expect(textOf(result.current.messages.find((m) => m.id === "mB")!.parts)).toBe("B reply");
+    expect(getDraft()).toBe("keep me"); // the PEEK was not harvested — no draft restore
+    expect(result.current.messages.some((m) => m.queued === "peek1")).toBe(false); // no bubble from the peek
+
+    ctrlA.close(); // A's stale socket closes → its tail bails (superseded generation)
+    await act(async () => {
+      await sendA;
+    });
+  });
+
+  it("a replayed harvest restores to the draft only once (FIX E)", async () => {
+    clearDraft();
+    const { hook, controller, sendP } = await heldTurn(() => undefined);
+    let cancels = 0;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) return Promise.resolve(resp202("e1"));
+      if (u.includes("/cancel")) {
+        cancels++;
+        return Promise.resolve(
+          cancels === 1
+            ? json({
+                cancelled: true,
+                terminal_status: "cancelled", // no active:false → status stays streaming for a 2nd Stop
+                steer_queue: [{ entry_id: "e1", kind: "message", text: "X" }],
+              })
+            : json({
+                cancelled: false,
+                active: false,
+                harvest_replayed: true,
+                steer_queue: [{ entry_id: "e1", kind: "message", text: "X" }],
+              }),
+        );
+      }
+      if (u.includes("/stream"))
+        return Promise.resolve(json({ active: false, terminal_status: "cancelled" }));
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    await act(async () => {
+      await sendMessage("X", { mode: "cloud", raw: "/cloud X" });
+    });
+    expect(hook.result.current.messages.some((m) => m.queued === "e1")).toBe(true);
+    await act(async () => {
+      await stopTurn(); // harvests "/cloud X"
+    });
+    expect(getDraft()).toBe("/cloud X");
+    await act(async () => {
+      await stopTurn(); // the REPLAYED receipt (same entries) must not double-append
+    });
+    expect(getDraft()).toBe("/cloud X"); // idempotent — not "/cloud X\n/cloud X"
+    controller.close();
+    await act(async () => {
+      await sendP;
+    });
+  });
+
+  it("a lost Stop response retries once and the replayed harvest is restored (FIX E)", async () => {
+    clearDraft();
+    const { hook, controller, sendP } = await heldTurn(() => undefined);
+    let cancels = 0;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) return Promise.resolve(resp202("e1"));
+      if (u.includes("/cancel")) {
+        cancels++;
+        if (cancels === 1) return Promise.reject(new TypeError("network")); // the response is LOST
+        return Promise.resolve(
+          json({
+            cancelled: false,
+            active: false,
+            harvest_replayed: true, // the backend replays the receipt on the retry
+            steer_queue: [{ entry_id: "e1", kind: "message", text: "X" }],
+          }),
+        );
+      }
+      if (u.includes("/stream"))
+        return Promise.resolve(json({ active: false, terminal_status: "cancelled" }));
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    await act(async () => {
+      await sendMessage("X", { mode: "cloud", raw: "/cloud X" });
+    });
+    expect(hook.result.current.messages.some((m) => m.queued === "e1")).toBe(true);
+    await act(async () => {
+      await stopTurn();
+    });
+    expect(cancels).toBe(2); // retried exactly once
+    expect(getDraft()).toBe("/cloud X"); // the replayed receipt (raw-fidelity) was restored on retry
     controller.close();
     await act(async () => {
       await sendP;
