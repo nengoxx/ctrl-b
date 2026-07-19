@@ -76,6 +76,9 @@ class _Fake:
 
         return gen()
 
+    async def effective_window(self, _ep):  # D42 Wave 2 — the trigger resolves the window here; a
+        return None  # scripted fake has no window → the `threshold_tokens` fallback (tiny histories)
+
 
 def _text(s: str):
     from app.adapters.inference import ChatDelta
@@ -111,10 +114,10 @@ def _no_compact(session) -> None:
     """Neutralize the real compactor for turns that aren't testing compaction (a tiny history never
     compacts anyway, but this keeps the tests independent of the threshold config)."""
 
-    async def _never(_thread):
+    async def _never(_thread, **_kw):  # **_kw absorbs the D42 window/reserve/estimate kwargs
         return False
 
-    async def _none(_thread):
+    async def _none(_thread, **_kw):
         return None
 
     session._compactor.should_compact = _never
@@ -319,12 +322,12 @@ def test_drained_before_compaction_should_compact_sees_steers() -> None:
 
         seen: dict = {}
 
-        async def spy_should_compact(_thread):
+        async def spy_should_compact(_thread, **_kw):  # **_kw absorbs the D42 trigger kwargs
             rows = await s.messages.list(_thread.id)
             seen["texts"] = [m.text() for m in rows if m.role == "user"]
             return False
 
-        async def _none(_thread):
+        async def _none(_thread, **_kw):
             return None
 
         session._compactor.should_compact = spy_should_compact

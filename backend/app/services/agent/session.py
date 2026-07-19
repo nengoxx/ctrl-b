@@ -42,7 +42,7 @@ import anyio
 from pydantic import ValidationError
 
 from app.adapters.inference import InferenceClient, InferenceError, StreamReport
-from app.config import Settings
+from app.config import InferenceEndpointCfg, Settings
 from app.core.memory import MemoryProvider
 from app.core.permissions import Decision, decide
 from app.core.skills import SkillProvider, SkillSelector
@@ -61,7 +61,7 @@ from app.domain.conversation import (
 from app.domain.enums import Actor, RunState
 from app.domain.result import ToolResult
 from app.services.action_service import ActionService, InvokeOutcome
-from app.services.agent.compaction import Compactor, estimate_payload_tokens
+from app.services.agent.compaction import Compactor, ContextEstimator, estimate_payload_tokens
 from app.services.agent.exec import run_user_exec
 from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
 from app.services.conversation import MessageRepo, ThreadRepo
@@ -316,6 +316,11 @@ class AgentSession:
         # Context-window settings are per-agent (4.5): the AgentDef's `compaction` wins, else the
         # global default. A subagent inherits the parent's effective value (resolved at spawn).
         self._compactor = Compactor(inference, messages, self._agent.compaction or settings.agent.compaction)
+        #: Session-held anchored context estimator (D42 Wave 2). The Compactor stays STATELESS — this
+        #: holds the telemetry anchor + watermark that price the window-aware trigger, invalidated on a
+        #: fold / served-endpoint change / degraded telemetry. Fresh per turn (session is per-turn), so
+        #: no anchor leaks across turns; iteration 1 always runs in heuristic+overhead mode.
+        self._estimator = ContextEstimator()
         #: Per-turn skill state (4.5), set by `_activate_skills` at the start of run_turn. The
         #: effective tool allowlist defaults to the agent's; active skills may narrow it.
         self._skills_note: str | None = None
@@ -566,6 +571,35 @@ class AgentSession:
             self._reflect_now = False
         return out
 
+    def _overhead_tokens(self) -> int:
+        """The A8 invariant-prefix overhead (static head + tool schemas) as an estimated token count —
+        the per-call cost the model prefills that `estimate_tokens(history)` misses. Memoized per turn
+        in `_head_tokens`/`_tools_tokens` (the session is per-turn) and reused by BOTH the context
+        estimator's no-anchor fallback (Wave 2 trigger) AND `_log_context_cost` (debug) — ONE
+        measurement, never two (the A8 cache is the single source of truth for head+tools overhead)."""
+        if self._head_tokens is None:
+            self._head_tokens = estimate_payload_tokens(self._static_prefix())
+        if self._tools_tokens is None:
+            self._tools_tokens = estimate_payload_tokens(self._tools())
+        return self._head_tokens + self._tools_tokens
+
+    async def _estimate_context(self, thread: Thread, served_key: str | None) -> int:
+        """The session-side anchored context estimate driving the D42 trigger (Wave 2). Reads the
+        working history and asks the session-held `ContextEstimator` for `anchor + heuristic(messages
+        after the watermark)` when a telemetry anchor is live for `served_key`, else `estimate_tokens
+        (history) + the A8 head+tools overhead`. `should_compact`/`compact` price against this value."""
+        history = await self._messages.list(thread.id, include_compacted=False)
+        return self._estimator.estimate(
+            history, overhead=self._overhead_tokens(), served_key=served_key
+        ).tokens
+
+    async def _watermark_id(self, thread: Thread) -> str | None:
+        """The id of the newest non-compacted message = the tail of the prompt about to be sent (the
+        D42 anchor watermark: this call's total-prompt telemetry counts everything up to here, so the
+        NEXT iteration's delta is only what's appended after it). `None` for an empty thread."""
+        history = await self._messages.list(thread.id, include_compacted=False)
+        return history[-1].id if history else None
+
     def _log_context_cost(self, messages: list[dict], report: StreamReport) -> None:
         """A8 context-cost measurement (§4) + ACA-18 cache telemetry as ONE debug line per model call,
         so the prefix the model prefills and the cache hit rate read together — turning "should be
@@ -778,6 +812,13 @@ class AgentSession:
         # (both `None` → the configured default, so the default agent is unchanged).
         eff_mode = mode or self._agent.model.mode
         eff_model = self._agent.model.model
+        #: Output reserve subtracted from the window trigger line (D42) — the agent's own
+        #: `ModelRef.max_tokens`; `None` ⇒ nothing reserved (gated further by `reserve_output`).
+        reserve = self._agent.model.max_tokens
+        #: The endpoint that ACTUALLY served the PREVIOUS iteration (D42 §C). Iteration 2+ prices the
+        #: window trigger (and the anchor's served-endpoint consistency) against it; `None` on iteration
+        #: 1 ⇒ price against the selected endpoint.
+        served: InferenceEndpointCfg | None = None
 
         stall = 0  # consecutive no-progress iterations (C1b) → forced wrap-up at the agent's cap
         for _ in range(self._agent.max_iterations):
@@ -787,20 +828,38 @@ class AgentSession:
             if self._steer_source is not None:
                 async for ev in self._drain_steers(thread):
                     yield ev
-            # Compaction check before each model call (DESIGN §5.2 step 2): if the working context
-            # is over the configured threshold, fold the oldest turns into a summary system message.
+            # Compaction check before each model call (DESIGN §5.2 step 2): if the working context is
+            # over the trigger, fold the oldest turns into a summary system message. D42 Wave 2 — the
+            # trigger is window-aware: resolve the window (config > probe > None) for the endpoint being
+            # priced (iteration 1 = the selected endpoint; iteration 2+ = the one that actually served),
+            # and pass the session's anchored estimate + the output reserve. A `None` window ⇒ the
+            # absolute `threshold_tokens` fallback (v1's no-regression path).
+            price_ep = served or self._settings.inference.endpoint(eff_mode)
+            window = await self._inference.effective_window(price_ep)
+            est = await self._estimate_context(thread, price_ep.base_url or None)
             # ACA-11: summarizing can be a multi-second stall (a separate LLM call), so drop a live
             # breadcrumb FIRST — but only when compaction will actually fire (`should_compact` mirrors
             # `compact`'s own decision), never on a no-op iteration.
-            if await self._compactor.should_compact(thread):
+            if await self._compactor.should_compact(
+                thread, window=window, reserve_tokens=reserve, estimated_tokens=est
+            ):
                 yield AgentEvent("notice", {"text": "// compacting the conversation…"})
-            res = await self._compactor.compact(thread)
+            res = await self._compactor.compact(
+                thread, window=window, reserve_tokens=reserve, estimated_tokens=est
+            )
             if res is not None:
+                # A fold discards the history the anchor counted → invalidate it (heuristic+overhead
+                # until this call's telemetry re-anchors on the shrunk context). D42 explicit fold-inval.
+                self._estimator.invalidate()
                 yield AgentEvent(
                     "compaction",
                     {"removed": res.removed, "summaryId": res.summary_id, "truncated": res.truncated},
                 )
             messages = await self._assemble(thread)
+            # The anchor watermark: the newest persisted message = the tail of the prompt we're about
+            # to send. This call's total-prompt telemetry (below) counts up to here, so the next
+            # iteration's heuristic delta is only what's appended after it (D42 anchored estimator).
+            watermark = await self._watermark_id(thread)
             assistant = Message(
                 thread_id=thread.id, role="assistant", actor=AGENT_ACTOR, agent=self._agent.name
             )
@@ -842,6 +901,19 @@ class AgentSession:
                     "notice", {"text": f"// inference failover → {report.served} (primary unavailable)"}
                 )
             self._log_context_cost(messages, report)  # A8 estimate + ACA-18 cache telemetry (debug)
+
+            # D42 Wave 2 — re-anchor the context estimator on THIS call's real total-prompt telemetry
+            # (`report.prompt_tokens`: llama.cpp `prompt_progress.total`, else cloud `usage.prompt_tokens`)
+            # and remember who served, so the NEXT iteration prices against the endpoint that answered.
+            # No usable total (a backend without return_progress/include_usage) ⇒ `record` invalidates
+            # ⇒ heuristic+overhead next iteration. `served_endpoint` is None only if the report was never
+            # stamped (shouldn't happen on a completed stream) — then heuristic mode too.
+            served = report.served_endpoint
+            self._estimator.record(
+                total=report.prompt_tokens,
+                served_key=served.base_url if served is not None else None,
+                watermark_id=watermark,
+            )
 
             parts: list[Part] = []
             if reasoning_buf:

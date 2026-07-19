@@ -97,6 +97,88 @@ def estimate_payload_tokens(payload: list[dict]) -> int:
     return sum(len(json.dumps(d, default=str)) for d in payload) // CHARS_PER_TOKEN
 
 
+@dataclass
+class ContextEstimate:
+    """`ContextEstimator.estimate`'s verdict: the token estimate + whether it used the telemetry
+    anchor (`anchored=False` = the heuristic+overhead fallback). The flag is for the debug line/tests;
+    callers price on `.tokens`."""
+
+    tokens: int
+    anchored: bool
+
+
+class ContextEstimator:
+    """Session-held ANCHORED context-size estimator (D42 §3-v2 / Wave 2).
+
+    The v1 heuristic (`estimate_tokens`, ~4 chars/token over the working history) MISSES the system
+    head + tool schemas the model prefills every call. This anchors the estimate on the real TOTAL
+    prompt size of the most recent model call — taken from telemetry (`StreamReport.prompt_tokens`,
+    which precedence-picks llama.cpp `prompt_progress.total`, else a cloud `usage.prompt_tokens`) —
+    then adds only a heuristic estimate of the messages appended AFTER that call's watermark. With no
+    reliable total it falls back to `estimate_tokens(history)` + the caller-supplied A8 head+tools
+    `overhead`.
+
+    Stateless-Compactor contract (D42): the SESSION holds this and passes the resulting estimate into
+    `should_compact`/`compact` via their `estimated_tokens` param — the Compactor never stores window
+    or anchor state. Fresh per turn (the session is per-turn), so no anchor leaks across turns.
+
+    INVALIDATION (anchor dropped → the next estimate is heuristic+overhead):
+      - a compaction FOLD — the session calls `invalidate()` at the fold site (the history the anchor
+        counted is gone, so the total no longer maps to the shrunk context);
+      - a SERVED-ENDPOINT change — `estimate(served_key=…)` uses the anchor only when the endpoint being
+        priced matches the one the anchor was measured on (a different backend tokenizes differently);
+      - DEGRADED/ABSENT telemetry — `record(total=None)` drops the anchor (a backend without
+        `return_progress`/`include_usage` reports no total);
+      - the watermark message no longer in history (a defensive backstop to the explicit fold call)."""
+
+    def __init__(self) -> None:
+        self._anchor: int | None = None
+        self._watermark_id: str | None = None
+        self._served_key: str | None = None
+
+    def record(self, *, total: int | None, served_key: str | None, watermark_id: str | None) -> None:
+        """Re-anchor after a completed model call. `total` = the backend's TOTAL prompt tokens
+        (`StreamReport.prompt_tokens`); `served_key` identifies the endpoint that answered; `watermark_id`
+        = the id of the last message in the prompt that was sent. Any missing input (no usable total —
+        degraded/absent telemetry) drops the anchor (heuristic mode next)."""
+        if total is None or served_key is None or watermark_id is None:
+            self.invalidate()
+            return
+        self._anchor = total
+        self._watermark_id = watermark_id
+        self._served_key = served_key
+
+    def invalidate(self) -> None:
+        """Drop the anchor (called by the session on a fold). The next `estimate` is heuristic+overhead
+        until `record` re-anchors."""
+        self._anchor = None
+        self._watermark_id = None
+        self._served_key = None
+
+    def estimate(self, history: list[Message], *, overhead: int, served_key: str | None) -> ContextEstimate:
+        """Estimate the working context in tokens. Anchored mode (a live anchor whose `served_key`
+        matches the endpoint being priced AND whose watermark is still in `history`): `anchor +
+        estimate_tokens(messages after the watermark)` — the anchor already accounts for head+tools, so
+        `overhead` is NOT re-added. Otherwise: `estimate_tokens(history) + overhead`."""
+        heuristic = ContextEstimate(estimate_tokens(history) + overhead, anchored=False)
+        if self._anchor is None or self._watermark_id is None:
+            return heuristic
+        if served_key is None or served_key != self._served_key:
+            return heuristic  # served-endpoint change → the anchor's token count is on a different backend
+        idx = _index_after(history, self._watermark_id)
+        if idx is None:
+            return heuristic  # watermark folded away — backstop to the explicit fold-invalidation
+        return ContextEstimate(self._anchor + estimate_tokens(history[idx:]), anchored=True)
+
+
+def _index_after(history: list[Message], msg_id: str) -> int | None:
+    """The index of the first message AFTER the one with id `msg_id`, or `None` if it isn't present."""
+    for i, m in enumerate(history):
+        if m.id == msg_id:
+            return i + 1
+    return None
+
+
 class Compactor:
     """Folds the oldest turns of a thread into a summary when the context grows too large. One
     instance per session is fine — it's stateless (all state is the thread in the DB)."""
@@ -106,15 +188,37 @@ class Compactor:
         self._messages = messages
         self._cfg = cfg
 
-    async def compact(self, thread: Thread, *, force: bool = False) -> CompactionResult | None:
+    async def compact(
+        self,
+        thread: Thread,
+        *,
+        force: bool = False,
+        window: int | None = None,
+        reserve_tokens: int | None = None,
+        estimated_tokens: int | None = None,
+        clearing_gain: int = 0,
+    ) -> CompactionResult | None:
         """Compact the thread if warranted. Returns a `CompactionResult` when it actually compacted,
         else `None` (disabled, under threshold, or nothing safe to fold). `force` (manual `/compact`)
-        ignores the threshold but still honours the floor + turn-boundary safety."""
+        ignores the threshold but still honours the floor + turn-boundary safety.
+
+        The D42 per-call trigger inputs (all defaulted, so every existing caller/test is unchanged and
+        the Compactor stays STATELESS — the session owns this state): `window` = the resolved context
+        window (config > probe > None); `reserve_tokens` = the effective `ModelRef.max_tokens` output
+        reserve; `estimated_tokens` = the session's anchored context estimate (None ⇒ the v1
+        `estimate_tokens(history)` heuristic); `clearing_gain` = the Wave-3 net-of-clearing seam. All
+        flow to the single `_over_threshold` predicate."""
         if not self._cfg.enabled and not force:
             return None
 
         history = await self._messages.list(thread.id, include_compacted=False)
-        if not force and not self._over_threshold(history):
+        if not force and not self._over_threshold(
+            history,
+            window=window,
+            reserve_tokens=reserve_tokens,
+            estimated_tokens=estimated_tokens,
+            clearing_gain=clearing_gain,
+        ):
             return None
 
         head, tail = self._split(history)
@@ -141,23 +245,74 @@ class Compactor:
                 await self._messages.update(m)
         return CompactionResult(summary_id=boundary.id, removed=len(head), truncated=truncated)
 
-    def _over_threshold(self, history: list[Message]) -> bool:
+    def _over_threshold(
+        self,
+        history: list[Message],
+        *,
+        window: int | None = None,
+        reserve_tokens: int | None = None,
+        estimated_tokens: int | None = None,
+        clearing_gain: int = 0,
+    ) -> bool:
         """The enabled+threshold gate — the SINGLE source of compaction's "is the working context big
         enough to fold?" decision, shared by `compact()` and `should_compact()` so the threshold math
-        (`estimate_tokens` vs `threshold_tokens`) lives in exactly ONE place (no duplicated predicate)."""
-        return self._cfg.enabled and estimate_tokens(history) > self._cfg.threshold_tokens
+        lives in exactly ONE place (no duplicated predicate).
 
-    async def should_compact(self, thread: Thread) -> bool:
+        Trigger (D42): with a resolved `window`, fire when the estimate exceeds `window ×
+        threshold_frac − reserve`; with NO window (`None`), fire when the estimate exceeds the absolute
+        `threshold_tokens` (v1's unchanged no-regression path). `estimated_tokens` is the session's
+        anchored estimate — `None` falls back to the v1 `estimate_tokens(history)` heuristic so every
+        existing caller stays valid. `clearing_gain` is the Wave-3 seam (see below)."""
+        if not self._cfg.enabled:
+            return False
+        estimate = estimate_tokens(history) if estimated_tokens is None else estimated_tokens
+        # Wave-3 seam (D42 §E / §4-v2): the unconditional assembly-time tool-output trim prices the
+        # trigger NET of the tokens it reclaims for free. Named + wired to subtract, but defaulted to 0
+        # so it is a no-op THIS wave (nothing computes a gain yet) — Wave 3 passes the `plan_clearing`
+        # gain in here without duplicating the threshold math below.
+        estimate -= clearing_gain
+        return estimate > self._trigger_limit(window, reserve_tokens)
+
+    def _trigger_limit(self, window: int | None, reserve_tokens: int | None) -> float:
+        """The compaction trigger line in tokens (D42). With a resolved `window`: `window ×
+        threshold_frac`, minus EXACTLY `reserve_tokens` when `reserve_output` is on AND a reserve is
+        set (no global cap, no silent down-clamp — the two recorded opencode bugs; unset `max_tokens`
+        ⇒ nothing reserved, the `threshold_frac` headroom being the margin). With no window: the
+        absolute `threshold_tokens` fallback (v1 semantics)."""
+        if window is None:
+            return self._cfg.threshold_tokens
+        limit = window * self._cfg.threshold_frac
+        if self._cfg.reserve_output and reserve_tokens is not None:
+            limit -= reserve_tokens
+        return limit
+
+    async def should_compact(
+        self,
+        thread: Thread,
+        *,
+        window: int | None = None,
+        reserve_tokens: int | None = None,
+        estimated_tokens: int | None = None,
+        clearing_gain: int = 0,
+    ) -> bool:
         """Cheap ACA-11 pre-check: will `compact()` actually summarize on this iteration? True iff
         compaction is enabled, the working context is over threshold (`_over_threshold`, the shared
         predicate — never a second copy of the threshold math), AND there is a foldable head (a clean
         turn boundary above the floor, via the same `_split` `compact()` uses). Mirrors `compact()`'s
         non-`force` decision exactly, so the caller's "compacting…" notice never fires on a no-op
-        iteration. Does its own history read; at homelab thread sizes the extra list is negligible."""
+        iteration. Does its own history read; at homelab thread sizes the extra list is negligible. The
+        D42 trigger inputs (`window`/`reserve_tokens`/`estimated_tokens`/`clearing_gain`) are threaded
+        through to `_over_threshold` verbatim — all defaulted (existing callers unchanged)."""
         if not self._cfg.enabled:
             return False
         history = await self._messages.list(thread.id, include_compacted=False)
-        if not self._over_threshold(history):
+        if not self._over_threshold(
+            history,
+            window=window,
+            reserve_tokens=reserve_tokens,
+            estimated_tokens=estimated_tokens,
+            clearing_gain=clearing_gain,
+        ):
             return False
         head, _ = self._split(history)
         return bool(head)

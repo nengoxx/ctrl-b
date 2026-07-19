@@ -87,13 +87,19 @@ class StreamReport:
     `prompt_progress`; OpenAI `usage.prompt_tokens`/`usage.prompt_tokens_details.cached_tokens`). `None`
     means the endpoint didn't report that number (e.g. a local server without `return_progress`, or a
     cloud one without `stream_options: {include_usage: true}`) — NOT a cache miss. The session logs it
-    next to its A8 estimate so prefix cost + hit rate read together."""
+    next to its A8 estimate so prefix cost + hit rate read together.
+
+    `served_endpoint` (D42) is the endpoint OBJECT that actually answered (`chain[served_index][1]`) —
+    distinct from `served` (its name): the session prices iteration 2+'s window-aware compaction
+    trigger against the endpoint that served (its `context_window`/probe + the `prompt_tokens` anchor
+    come from the same serve). `None` until a call completes."""
 
     served: str = ""
     degraded: bool = False
     failures: list[str] = field(default_factory=list)
     prompt_tokens: int | None = None
     cached_tokens: int | None = None
+    served_endpoint: InferenceEndpointCfg | None = None
 
 
 @dataclass
@@ -166,6 +172,29 @@ class InferenceClient:
             cached = await self._probe_props(base_url)
             self._window_memo[base_url] = cached
         return cached.n_ctx
+
+    def _is_probe_eligible(self, ep: InferenceEndpointCfg) -> bool:
+        """The ONE home for the D42 probe-eligibility rule: only the configured LOCAL llama.cpp
+        endpoint is probed — cloud/OpenAI has no `/props` (verified), and `fallbacks` rely on their
+        manual `context_window`. Matched by `base_url` against the live local endpoint, so it holds for
+        BOTH the selected-endpoint object (iteration 1) and the served-endpoint object off the failover
+        chain (iteration 2+) — they are the same configured endpoints. A blank local base_url makes
+        nothing eligible."""
+        local = self._cfg.local
+        return bool(ep.base_url) and ep.base_url == local.base_url
+
+    async def effective_window(self, ep: InferenceEndpointCfg) -> int | None:
+        """Resolve `ep`'s effective context window per the D42 ladder — **config > probe > None**:
+        the explicit `ep.context_window` wins (the owner runs the server and may set a value that
+        exceeds the probe — the silent down-clamp is the recorded anti-pattern); else the probed
+        `/props` `n_ctx` **only for the probe-eligible local llama.cpp** (`_is_probe_eligible` — one
+        rule, one place); else `None` ⇒ the caller's `threshold_tokens` absolute-fallback trigger.
+        Never raises (the probe swallows all failures to `None`)."""
+        if ep.context_window is not None:
+            return ep.context_window
+        if self._is_probe_eligible(ep):
+            return await self.probed_context_window(ep)
+        return None
 
     async def _probe_props(self, base_url: str) -> _ProbedWindow:
         """GET `{root}/props` once and extract the window. NEVER raises — any exception / non-200 /
@@ -309,7 +338,11 @@ class InferenceClient:
 
     def _record(self, report: StreamReport | None, chain: list[_ChainEntry], result: Any) -> None:
         if report is not None:
-            report.served = chain[result.served_index][0]
+            served = chain[result.served_index]
+            report.served = served[0]
+            # D42: stamp the endpoint OBJECT that actually answered — the session prices iteration 2+'s
+            # window trigger against it (window + anchor from the same serve). One-line chokepoint add.
+            report.served_endpoint = served[1]
             report.degraded = result.degraded
             report.failures = result.failures
 

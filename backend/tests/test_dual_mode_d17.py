@@ -327,10 +327,10 @@ def test_drive_emits_compacting_notice_before_compact_runs() -> None:
             session, thread = _real_drive_session(c)
             gate = asyncio.Event()
 
-            async def _should(_thread):
+            async def _should(_thread, **_kw):  # **_kw absorbs the D42 window/reserve/estimate kwargs
                 return True
 
-            async def _compact(_thread):
+            async def _compact(_thread, **_kw):
                 await gate.wait()  # a slow, multi-second compaction stand-in
                 return None
 
@@ -360,10 +360,10 @@ def test_drive_no_notice_when_should_compact_false() -> None:
         with _client() as c:
             session, thread = _real_drive_session(c)
 
-            async def _should(_thread):
+            async def _should(_thread, **_kw):  # **_kw absorbs the D42 window/reserve/estimate kwargs
                 return False
 
-            async def _compact(_thread):
+            async def _compact(_thread, **_kw):
                 return None  # no-op: nothing to fold
 
             session._compactor.should_compact = _should
