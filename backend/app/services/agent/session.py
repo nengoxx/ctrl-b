@@ -1036,6 +1036,13 @@ class AgentSession:
         `guard` byte-identical to entry."""
         answers = resume_answers or {}
         calls = assistant.tool_calls()
+        # Fail-safe (audit LOW-1): a DUPLICATE call_id anywhere in the batch (a broken local model
+        # re-streaming a fragment id) would collapse the executor's call_id-keyed slot map and drop a
+        # result part. Duplicates are malformed-by-protocol → run the WHOLE batch on the serial tail
+        # (conservative; the serial loop's per-part handling is the established behavior for them).
+        ids = [cp.call_id for cp in calls]
+        if len(set(ids)) != len(ids):
+            return _BatchPlan(prefix=[], serial_from=0)
         # Mirror `invoke`'s live run_shell gate value (read once — this walk is synchronous).
         run_shell_allowed = self._settings.shell.agent_exec_enabled
         # LOCAL overlays: tentative in-walk increments, layered over the real guard for visibility to
@@ -1292,9 +1299,11 @@ class AgentSession:
                     completion path (`cp.state`, `guard.last_results`, `seen_results`+`made_progress`
                     on a NEW real result). A prefix call is always fresh (`token is None`) so the
                     serial `token != _DISMISS` guard is unconditionally true here. D40 §4 BELTS: an
-                    invoke that returns `needs_confirm` OR a result in an `AWAITING_*` state was
-                    MISDECLARED as prefix-eligible → replace with a loud error result, log at ERROR,
-                    and (per D40) do NOT flip `made_progress` — but still record `last_results`."""
+                    invoke that returns `needs_confirm` OR any result whose state is NOT `_RESOLVED`
+                    (AWAITING_* = misdeclared suspension; PENDING/RUNNING = a state no tool may
+                    return — audit LOW-4 fail-closed: an unresolved `cp.state` would make the serial
+                    loop RE-INVOKE the call) → replace with a loud error result, log at ERROR, and
+                    (per D40) do NOT flip `made_progress` — but still record `last_results`."""
                     sig = _LoopGuard.sig(cp.tool, cp.args)
                     belt = False
                     if isinstance(produced, ToolResult):
@@ -1302,8 +1311,7 @@ class AgentSession:
                     else:
                         inv = produced  # an InvokeOutcome
                         if inv.needs_confirm or (
-                            inv.result is not None
-                            and inv.result.state in (RunState.AWAITING_CONFIRM, RunState.AWAITING_ANSWER)
+                            inv.result is not None and inv.result.state not in _RESOLVED
                         ):
                             belt = True
                             log.error(

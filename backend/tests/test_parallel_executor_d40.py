@@ -282,7 +282,9 @@ def test_belts_misdeclared_suspension_degrades_loudly() -> None:
     async def _noop(inp, ctx):
         return ToolResult(state=RunState.OK, summary="ok")
 
-    for misdeclare in ("needs_confirm", "awaiting_answer"):
+    # "running" = audit LOW-4: a non-`_RESOLVED`, non-AWAITING return (a state no tool may hand back)
+    # must ALSO belt — an unresolved `cp.state` would make the serial loop re-invoke the call.
+    for misdeclare in ("needs_confirm", "awaiting_answer", "running"):
         with _workspace(), _client() as c:
             reg = c.app.state.actions.registry
             # read_only builtin, NOT suspending → admitted to the prefix; but its invoke misbehaves.
@@ -304,9 +306,10 @@ def test_belts_misdeclared_suspension_degrades_loudly() -> None:
                     if tool == "_belt_probe_d40":
                         if _md == "needs_confirm":
                             return InvokeOutcome(needs_confirm=True, confirm_token="t", confirm_prompt="?")
+                        state = RunState.RUNNING if _md == "running" else RunState.AWAITING_ANSWER
                         return InvokeOutcome(
                             needs_confirm=False,
-                            result=ToolResult(state=RunState.AWAITING_ANSWER, summary="?"),
+                            result=ToolResult(state=state, summary="?"),
                         )
                     return _ok(tool, args)
 

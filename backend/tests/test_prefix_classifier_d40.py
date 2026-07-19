@@ -593,3 +593,28 @@ def test_unknown_tool_cuts_prefix() -> None:
         )
         assert len(plan.prefix) == 2
         assert plan.serial_from == 2
+
+
+# ── audit LOW-1: a duplicate call_id anywhere in the batch → whole batch serial ───────────────────
+def test_duplicate_call_id_forces_whole_batch_serial() -> None:
+    """A broken local model can re-stream a tool-call fragment with the SAME id, yielding two
+    ToolCallParts sharing a call_id. The executor's slot map keys by call_id, so a duplicate would
+    silently drop one result part — the classifier therefore refuses the whole batch (empty prefix,
+    zero guard mutation) and the serial tail's per-part handling remains the established behavior."""
+    with _workspace(), _client() as c:
+        session = _session(c)
+        guard = _guard()
+        assistant = _assistant(
+            [
+                {"tool": "ping_host", "args": {"host_id": "x"}},
+                {"tool": "ping_host", "args": {"host_id": "y"}},
+                {"tool": "ping_host", "args": {"host_id": "z"}},
+            ]
+        )
+        calls = assistant.tool_calls()
+        calls[2].call_id = calls[0].call_id  # the malformed duplicate
+        before = _snapshot(guard)
+        plan = session._classify_batch(assistant, guard, {})
+        assert plan.prefix == [] and plan.serial_from == 0
+        assert plan.parallel is False
+        assert _snapshot(guard) == before  # zero mutation — the serial loop is sole authority
