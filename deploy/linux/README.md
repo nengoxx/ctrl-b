@@ -91,7 +91,7 @@ curl -s localhost:5434/api/health                 # dev backend; UI at http://em
 systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web    # when done
 ```
 
-## Inference tuning (owner `config.yaml` — D40/D42)
+## Inference tuning (owner `config.yaml` — D40/D42/D43)
 These are optional per-endpoint knobs the owner sets on the local llama.cpp (and cloud) endpoint in
 `~/.ctrl-b/config.yaml` (`inference.local` / `inference.cloud`, or a `fallbacks[]` row — same object).
 They apply at the next turn (no restart; a settings PUT rebuilds the inference client). None are
@@ -111,6 +111,20 @@ required for a working install, but each fixes a real degradation on this box:
   already in `config.example.yaml`) / `extra_body: { stream_options: { include_usage: true } }` on
   cloud. Without them the estimator silently falls back to the char/4 heuristic — the server logs a
   one-time `context anchoring inactive …` INFO naming the exact remedy.
+- **`inference.retry_attempts: <n>`** (Slice 7/D43) — the CHAT-STREAM same-endpoint retry budget for
+  genuinely-**transient** failures only (429 / 503 / `Retry-After` / a busy llama.cpp slot). Default **2**:
+  a busy-but-alive server is retried in place (a visible `// retrying…` note, backoff 2s×2ⁿ capped 30s, a
+  larger `Retry-After` wins) BEFORE hopping to a fallback, keeping the conversation on the same model. A
+  dead endpoint (connection-refused/timeout) never matches → straight next-hop as before. Set **`0`** to
+  disable retries globally, or override per endpoint with a `retry_attempts:` on that `inference.local` /
+  `inference.cloud` / `fallbacks[]` row (unset = inherit, `0` = disable for that endpoint). `complete()`
+  (summarizer) and voice keep straight next-hop.
+- **Failure-fallback model routing** (Slice 7/D43) — an optional `agent.defaults.routing` block escalates
+  to a designated smarter `lead` model after the worker model hard-fails `failure_threshold` turns in a
+  row, for `fallback_turns` turns, then returns to the worker (a visible `// lead model…` / `// back to
+  the worker model` note each way). Structural triggers only (crash/stall/exhaustion — never wrong
+  answers); YAML-only, off by default. See `config.example.yaml` `agent.defaults.routing`. The D18/D40
+  endpoint failover chain runs unchanged underneath — routing only picks who is asked FIRST.
 - **Disable llama.cpp context-shift so overflow surfaces** (Slice 6/D42 residual) — the reactive
   overflow backstop (force-compact + re-stream on a prompt-too-long error) only fires if llama-server
   actually *returns* the overflow error. With context-shift enabled, llama-server silently truncates the

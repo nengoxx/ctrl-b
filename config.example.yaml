@@ -27,6 +27,13 @@ inference:
   default_mode: local
   request_timeout_s: 600
   system_prompt: ""      # optional; blank = the built-in ctrl-b assistant prompt
+  retry_attempts: 2      # D43/Slice 7: CHAT-STREAM same-endpoint retry budget for TRANSIENT failures
+                         # only (429 / 503 / Retry-After / llama.cpp busy-slot) — a busy-but-alive server
+                         # is retried in place (visible // retrying… note, backoff 2s×2ⁿ capped 30s, a
+                         # larger Retry-After wins) BEFORE hopping to a fallback. A dead endpoint
+                         # (connection-refused/timeout) never matches → straight next-hop as before.
+                         # 0 = today's instant next-hop everywhere. A per-endpoint override lives on the
+                         # endpoint object (see `retry_attempts` under `local`). complete()/voice keep next-hop.
   local:
     base_url: http://192.168.1.137:5001/v1
     model: minig+
@@ -41,6 +48,8 @@ inference:
     # context_window: 16384      # D42: manual per-endpoint window; unset = auto-probed from llama.cpp
     #                            # /props (config always wins over the probe; cloud has no probe)
     # max_concurrent_requests: 1 # D40: app-side gate for a backend without request slots to spare
+    # retry_attempts: 0          # D43: per-endpoint override of the global inference.retry_attempts
+    #                            # (unset = inherit; 0 = disable retries for this endpoint = straight next-hop)
   cloud:
     base_url: https://openrouter.ai/api/v1
     api_key: sk-or-v1-...
@@ -83,6 +92,18 @@ agent:
       mode: ""               # ""/local/cloud — blank inherits inference.default_mode
       model: ""              # blank inherits the endpoint's model
       # max_tokens: 1024     # D42: optional output cap for the summary call (ModelRef call config)
+  # defaults:                # D43/Slice 7 — the AgentDef inheritance base (deep-merged into every agent).
+  #                          # Failure-fallback model routing lives HERE as agent.defaults.routing (the
+  #                          # global default — there is deliberately NO separate agent.routing; a per-agent
+  #                          # agent.yaml `routing:` block overrides it). OFF by default (omit the block).
+  #   routing:               # escalate to a designated SMARTER model after the worker crash-and-burns
+  #                          # several turns in a row, for a few turns, then drop back to the worker.
+  #     lead: { mode: cloud, model: "anthropic/claude-sonnet-4.5" }  # REQUIRED — the escalation target
+  #     failure_threshold: 2 # consecutive HARD worker failures (chain-level inference error / iteration-
+  #                          # exhaustion / stall guard — NOT wrong answers) that OPEN a fallback episode
+  #     fallback_turns: 2    # how many logical turns ONE episode routes to `lead` before returning to the
+  #                          # worker (a visible // note each way; the D18 failover chain runs unchanged
+  #                          # underneath — routing only picks who is asked FIRST). Subagents: inert.
 
 # Agent definitions (Phase 4.5, D11). Optional — with none configured a built-in default chat agent
 # is used (all agent-exposed tools, CONFIRM privilege, the chat model). Add entries to run/select

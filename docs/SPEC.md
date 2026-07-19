@@ -37,7 +37,7 @@ design (D7) with a multi-theme engine on top (D28/D29/D31).
 | P6 | **Config & ops** | Whole config editable in-app (masked secrets, comment-preserving writes, hot-apply), Tailscale Serve HTTPS toggle, live events feed + audit trail, guarded `!` shell escape hatch (opt-in), PWA install/update | ✅ |
 | P7 | **Theming** | Registry-driven multi-theme engine (vapor frozen-bespoke · minimal · cosmos), token-driven Kit scaffold, View-Transition switching, per-theme settings, cross-device appearance sync (LWW) | ✅ |
 | P8 | **Durable turns** | Server-owned turn lifecycle: disconnect-proof generation, reconnect replay/snapshot, explicit cancel + Stop button, mid-turn steering queue | ✅ ACA Slices 3/5 (D39/D41) |
-| P9 | **Perf & routing** | Parallel read-only tool execution + per-call result streaming (Slice 4 ✅, D40); compaction v2 — window-aware trigger, tool-result clearing, template, thrash breaker, ModelRef call config/A10 (Slice 6 ✅, D42); lead/worker model routing, persisted approvals | Slice 4/6 ✅ · ▹ ACA 7/8 |
+| P9 | **Perf & routing** | Parallel read-only tool execution + per-call result streaming (Slice 4 ✅, D40); compaction v2 — window-aware trigger, tool-result clearing, template, thrash breaker, ModelRef call config/A10 (Slice 6 ✅, D42); failure-fallback model routing + retry classifier + typed retry/failover events (Slice 7 ✅, D43); persisted approvals ▹ | Slice 4/6/7 ✅ · ▹ ACA 8 |
 | P10 | **Future** | Automations/schedules, notifications, wake word, idle shutdown, vector memory, privilege ladder UI | ◇ ROADMAP seams |
 
 ---
@@ -208,7 +208,7 @@ survive both. Registry rebuilds only **between** turns (▹ ACA-17 closes the au
 | Strategy via Protocol (swappable defaults) | Skill/Agent selectors, MemoryProvider/Backup, Orchestrator | D11 |
 | Derived state doctrine | fleet/service status, tailscale state, skills/agents/memory | *config declares, probes derive, nothing recomputable stored* |
 | Single-flight TTL cache | Fleet/Service sweeps | N clients share one probe |
-| Failover primitive (value-agnostic) | `core/failover` → inference (first-chunk probe), voice | degradation surfaced, never silent |
+| Failover primitive (value-agnostic) | `core/failover` async generator → inference (first-chunk probe + retry tier), voice | live typed retry/failover events (D43); degradation surfaced, never silent |
 | Structured concurrency | subagents (`asyncio.TaskGroup` + semaphores + clamps) | cancel-parent-cancels-tree |
 | Unified per-item config object | `ToolOverride`, host `services{}`, `appearance` blob | owner directive: shape to extend, not migrate |
 | Prompt-cache stability layering | agent session static head + tools cache | Codex/Claude-Code doctrine, independently converged |
@@ -238,7 +238,7 @@ sequenceDiagram
     loop ≤ max_iterations
         S->>S: clear tool outputs + compact if est > window×frac−reserve (D42: anchored · notice · breaker · backstop)
         S->>I: stream_chat(static head + history, tools)
-        Note over I: failover at first chunk only;<br/>degraded → SSE notice
+        Note over I: failover at first chunk only; transient retry-in-place first (D43);<br/>each retry/hop → live inference.retry / inference.failover event
         I-->>U: reasoning.delta* · text.delta* (relayed per token)
         alt no tool calls
             S-->>U: message.end · done(completed)
@@ -411,8 +411,8 @@ $CTRLB_HOME/
 |---|---|---|
 | `server` | bind/port/poll cadence/debug | poll live; host/port/debug → restart-flagged |
 | `computers{}` (+nested `services{}`) | the fleet: ip/mac/ssh/os/services cmd-per-OS | live (projected per call) |
-| `inference` | local/cloud endpoints, default mode, failover chain, prompts, per-endpoint request gate (`max_concurrent_requests`, D40), per-endpoint `context_window` + `max_tokens_field` (D42); fallbacks ride the same object | rebuild-on-change (window auto-probed from llama.cpp `/props`) |
-| `agent` | defaults (AgentDef base incl. `max_parallel_tools`, D40), compaction v2 (`threshold_frac`/`keep_recent_tokens`/`clear_output_min_tokens`/`clear_keep_steps`/`max_consecutive_failures`/`reserve_output` + `threshold_tokens` no-window fallback, D42), ModelRef call config (`max_tokens`/`reasoning_effort`/`reasoning_tokens`, D42/A10), skills, subagent caps, streaming mode, auto-route, durable-turn + steer-queue knobs (`turns.*` incl. `steer_queue_max`, D41) | live (compaction/window edits apply at the next turn — D42 Inv-11) |
+| `inference` | local/cloud endpoints, default mode, failover chain, prompts, per-endpoint request gate (`max_concurrent_requests`, D40), per-endpoint `context_window` + `max_tokens_field` (D42), transient chat-stream retry budget (`retry_attempts` global + per-endpoint override, D43); fallbacks ride the same object | rebuild-on-change (window auto-probed from llama.cpp `/props`; retries hot at next turn) |
+| `agent` | defaults (AgentDef base incl. `max_parallel_tools`, D40, + failure-fallback `routing` — `lead`/`failure_threshold`/`fallback_turns`, the global `agent.defaults.routing`, D43), compaction v2 (`threshold_frac`/`keep_recent_tokens`/`clear_output_min_tokens`/`clear_keep_steps`/`max_consecutive_failures`/`reserve_output` + `threshold_tokens` no-window fallback, D42), ModelRef call config (`max_tokens`/`reasoning_effort`/`reasoning_tokens`, D42/A10), skills, subagent caps, streaming mode, auto-route, durable-turn + steer-queue knobs (`turns.*` incl. `steer_queue_max`, D41) | live (compaction/window/routing edits apply at the next turn — D42 Inv-11) |
 | `memory` | stores, caps, auto-write, nudges, reflection, git backup | live |
 | `voice` / `searxng` / `embeddings` / `open_terminal` | endpoints + per-op risk | rebuild-on-change |
 | `shell` / `tailscale` | the two guarded escape hatches | live |
@@ -470,11 +470,12 @@ events ignored (forward-compatible).
 | `tool.result` | callId, ToolResult | per-call, persist-before-emit; completion order under the parallel prefix (D40) |
 | `steer.applied` | entryId, messageId, kind, text? | mid-turn steer drained at the loop top (D41); text = message kind only |
 | `compaction` | removed, summaryId, truncated | breadcrumb |
-| `notice` | text | failover (D18) · "// compacting…" (ACA-11) |
+| `notice` | text | "// compacting…" (ACA-11) · routing notes (D43) |
+| `inference.retry` | endpoint, attempt, max, delaySeconds, category | transient same-endpoint retry, live (D43/A6); a mid-backoff re-attach renders it from the snapshot's `retry_status` |
+| `inference.failover` | from, to, category | chain dropped to next endpoint, live (D43/A6; supersedes the D18 degraded notice) |
 | `error` | message, retryable | normalized; feeds risk-aware retry (I4) |
 | `done` | state: completed·suspended·capped·error | terminal (+`cancelled` on Stop, D39) |
 | `id:` field | `<turnId>:<seq>` | replay cursor (D39, shipped) |
-| ▹ `retry` | attempt, category, delay | Slice 7 wire-visible retries |
 
 Dual-mode delivery (D17): same generator collected into one JSON payload when
 `agent.streaming=off`/client asks buffered. Second feed: `GET /api/events/stream` (fleet
@@ -533,7 +534,7 @@ ctrl-b/
 | **Chat hardening** (pre/post-emma) | doc-truth fixes · MCP deadlines · per-thread turn marker (409) · shielded step persistence · SYS-1 transactions · SYS-13 composer fix · CI | ACA 0–2 · SYS |
 | **Durable turns** | §5.1 target diagram becomes real: TurnRegistry, replay/snapshot, cancel + Stop, `id:` cursors | ACA 3 (D35) |
 | **Interaction speed & steering** | parallel safe calls, per-call results, steering queue (§8.1 additions) | ACA 4–5 |
-| **Compaction v2 ✅ · routing · approvals** | window-aware anchored trigger (+`context_window` config/`/props` probe), assembly-time tool-result clearing, 5-section template + `/compact <instructions>`, thrash breaker, reactive overflow backstop, ModelRef call config/A10 (Slice 6 ✅, D42); lead/worker ModelRef routing + persisted approvals still ▹ | ACA 6 ✅ · 7–8 ▹ |
+| **Compaction v2 ✅ · routing ✅ · approvals** | window-aware anchored trigger (+`context_window` config/`/props` probe), assembly-time tool-result clearing, 5-section template + `/compact <instructions>`, thrash breaker, reactive overflow backstop, ModelRef call config/A10 (Slice 6 ✅, D42); failure-fallback model routing + retry classifier + typed retry/failover events (Slice 7 ✅, D43); persisted approvals still ▹ | ACA 6–7 ✅ · 8 ▹ |
 | **Platform futures** | automations/notifications/wake-word/vector memory slot into existing seams (EventBus, MemoryProvider, registry) | ROADMAP |
 
 *End of specification. Maintain by editing the affected section when a D-entry lands; the ✅/▹/◇

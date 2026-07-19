@@ -1152,6 +1152,20 @@ already do, keep it).
   `GET /threads/{id}/messages`, never-prune survival, thrash stop); live long session on `minig+`.
 
 ### Slice 7 — Model routing & retry visibility (A4, A6, A7-classifier) · M — design review first (new D-entry)
+
+> **▶ DESIGN LOCKED 2026-07-19 = D43** (2 code-truth + 1 sourced field pass [×8 systems] + a 2-lens
+> adversarial review [7H/13M/4L resolved in] + two owner rounds; full draft = `docs/SLICE7_PLAN.md`, frozen).
+> **The sketch below is superseded where it conflicts — headline D43 changes:** A4 is REDUCED to
+> **failure-fallback only** — `lead_turns` (lead-opens-thread) is **DROPPED** (both lenses converged; Goose,
+> the only precedent, consolidated it away), so `RoutingCfg` is just `lead`/`failure_threshold`/`fallback_turns`
+> · the global default is **`agent.defaults.routing`** (D16 — no `Settings.agent.routing`) · the retry knob is
+> the global **`inference.retry_attempts=2`** + a per-endpoint override (owner round 2), NOT a per-`routing`
+> field · `failover()` becomes an **async generator** (the one structural change) emitting typed
+> `inference.retry`/`inference.failover` events, and the post-hoc D18 degraded `notice` is **DELETED**
+> (superseded, no double-narration) · failure counting is **structural, hard-failures only** (single-endpoint
+> `InferenceError` / stall / iteration-exhaustion — a `retry_status` snapshot covers re-attach-mid-backoff).
+> As-built record lands on §5 (Slice 7) at close-out.
+
 Lead/worker routing on the existing seams: `AgentDef.model` stays the base; a `routing` block
 (lead `ModelRef`, `lead_turns`, `failure_threshold`, `fallback_turns`) resolved inside `_drive`'s
 existing `eff_mode/eff_model` seam; failover chain unchanged underneath. Typed `retry`/failover

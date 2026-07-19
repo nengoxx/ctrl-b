@@ -318,8 +318,9 @@ class ModelRef(BaseModel):              # "pointer + call config" (D42/A10)
 > `prompt`** (= `SOUL.md`), carrying **only overrides**; absent fields inherit a `config.yaml`
 > **`agent.defaults`** block via `deep_merge` (D15 #1). The **default agent** has no folder/`agent.yaml`
 > — it's the root + `config.yaml` globals. There is **no `AgentDef.memory` field** (memory is the file
-> model, §6); real fields include `prompt_append`/`inherit_append` (7e-a), `compaction`, the loop
-> guards (`max_repeat_calls`/`max_calls_per_tool`/`max_stall_iterations`), and `max_iterations=16`.
+> model, §6); real fields include `prompt_append`/`inherit_append` (7e-a), `compaction`, `routing` (D43 —
+> failure-fallback lead model; global default via `agent.defaults.routing`, no `Settings.agent.routing`),
+> the loop guards (`max_repeat_calls`/`max_calls_per_tool`/`max_stall_iterations`), and `max_iterations=16`.
 > `ModelRef.mode`/`model` are **both optional** (None → inherit `inference.default_mode`/the endpoint).
 
 ### 5.2 The loop as an explicit state machine
@@ -398,6 +399,45 @@ Loop responsibilities, in order, per iteration:
 >    unwinding).
 > 5. **Loop** until text-only (`done(completed)`), a suspend (`done(suspended)`), or the stall/iteration
 >    guards force a tool-less `_finalize`.
+
+> **Failure-fallback routing & failover visibility (Slice 7, D43).** The loop now resolves ONE routed
+> `ModelRef` per **logical** turn at the top of `_drive` (the `eff_mode`/`eff_model`/`eff_reasoning`/`reserve`
+> seam), and narrates the failover chain live:
+> - **The routing machine** (`services/agent/routing.py` `RoutingState`, the `CompactionState` template —
+>   per-thread `app.state.routing_state`, lazy-mint + `routing_state_for` + `prune_routing_state`).
+>   `RoutingCfg` (`lead: ModelRef` · `failure_threshold=2` · `fallback_turns=2`) is an `AgentDef.routing`
+>   field; the global default is **`agent.defaults.routing`** (D16 — deliberately NO `Settings.agent.routing`,
+>   the divergence from compaction's dual home). On a FRESH turn the router returns `lead` while a fallback
+>   episode is live (`fallback_remaining > 0`) else `agent.model` (the WORKER); **all four derived locals
+>   read the routed ref**, and `_finalize` takes `routed` too (so a lead turn's `max_tokens`/`reasoning`/the
+>   compaction output-reserve all price the lead). A **resume READS `current_route`** instead of re-deciding
+>   (the ACA-16 mode-carry parallel — no mid-logical-turn flip, no double-decrement; a restart loses it →
+>   re-resolves to the worker, a recorded residual). The `/local`//`/cloud` prefix **wins and bypasses** the
+>   router (selects the ENDPOINT, runs the WORKER ref on it). Subagents copy the field but are runtime-inert
+>   (no `RoutingState`).
+> - **Structural failure counting** (session-side, in `_drive` — `_conclude_routing` settles it at the
+>   completed/error/capped terminals, never a suspend): a worker-routed turn counts a HARD failure for (a) a
+>   single-endpoint chain `InferenceError` (`InferenceError.endpoints_tried == 1` — a multi-endpoint total
+>   outage / ambiguous shape is NEUTRAL, review F12) or (b) reaching `_finalize` via the STALL guard or
+>   ITERATION EXHAUSTION (explicit flags, never inferred from terminal strings). A clean `completed` resets;
+>   `suspended`/`cancelled` are neutral. At `failure_threshold` → open an episode + ONE `// lead model for
+>   the next N turns (worker failing)` notice; the episode's last lead turn emits `// back to the worker
+>   model`. Crash-and-burn only — a confident-wrong answer is a clean turn by design (content-sniffing
+>   rejected).
+> - **The retry tier & typed events** (A6/A7). `core/failover.failover()` is now an **async generator**:
+>   it yields `HopRetry`/`HopFailover` control items live then the terminal `FailoverResult` as its LAST
+>   item (buffered callers — voice/embeddings/`complete()` — drain it via `failover_collect()`, byte-for-byte
+>   unchanged). `adapters/inference.categorize()` (beside `is_context_overflow`) classifies a failure
+>   `transient`/`overflow`/`fatal_for_endpoint`/`other`; a `transient` chat-stream init failure retries the
+>   SAME endpoint up to its resolved `retry_attempts` (fixed curve base 2s×2ⁿ capped 30s, a larger
+>   `Retry-After` — parsed pre-flattening into `InferenceError.retry_after` — wins; the permit-free backoff
+>   sleeps INSIDE the generator), then hops. `stream_chat` re-yields the items as `RetryNotice`/`FailoverNotice`
+>   before the first `ChatDelta`; **both** session consumers (`_drive` + `_finalize`) map them via one
+>   `_control_event` helper to the `inference.retry`/`inference.failover` AgentEvents ABOVE the delta checks,
+>   never touching `streamed_any` (the D42 nothing-streamed backstop stays honest). The **post-hoc degraded
+>   `notice` is DELETED** — a fallback serve is narrated live by the typed event (no double-narration); a
+>   snapshot-carried `retry_status` (on the `TurnAccumulator`) renders the retry line on a re-attach mid-backoff
+>   instead of a dead spinner; `collect_turn` folds both kinds to `notices` text for buffered parity.
 
 ### 5.3 Suspension & resumption (the nuance that makes it robust)
 
@@ -504,9 +544,11 @@ class Compactor:                          # services/agent/compaction.py — sta
 >   the now-inert entry). In-memory → a restart resets it (recorded residual).
 > - **The reactive backstop** catches the case the estimate missed. `InferenceError` carries
 >   structured `code`/`status` captured *pre-flattening* (`_as_inference_error`, before the failover
->   chain collapses each hop to a string); `is_context_overflow` is the one classifier (OpenAI 400 +
->   `context_length_exceeded`, else a 400-gated substring scan for the llama.cpp shapes /
->   failover-flattened case). On an overflow **where nothing streamed yet** (`streamed_any` false)
+>   chain collapses each hop to a string) — D43 adds `retry_after` (from the raw `Retry-After` header) and
+>   `endpoints_tried` (from `FailoverError.failures`) to that same pre-flattening capture. `is_context_overflow`
+>   is the overflow classifier (OpenAI 400 + `context_length_exceeded`, else a 400-gated substring scan for
+>   the llama.cpp shapes / failover-flattened case); D43's `categorize()` sits beside it and delegates the
+>   `overflow` tier to it (consumer unchanged). On an overflow **where nothing streamed yet** (`streamed_any` false)
 >   and once per turn, the loop runs one **forced** compaction — via the shared `_overflow_fold`
 >   helper, passing the iteration's clearing plan so the inflation-reject prices the head net — and
 >   re-streams into the *same* assistant slot (no duplicate bubble); a reject or a second overflow
@@ -645,6 +687,12 @@ class InferenceClient(Protocol):
     async def chat(self, ref, messages, tools=None, stream=True) -> ...: ...
     async def embed(self, ref, texts) -> list[list[float]]: ...
 # one OpenAI-compatible client; base_url/key/model per purpose (chat / summarizer / embeddings).
+# As-built: the client delegates endpoint failover to `core/failover.failover()` — an async generator
+# (D43) that yields live retry/failover control items then the winning `FailoverResult` last. `stream_chat`
+# re-yields them as typed RetryNotice/FailoverNotice before the first ChatDelta; buffered callers
+# (complete()/embeddings/voice) drain via `failover_collect()`, unchanged. `categorize()` classifies a
+# failure (transient/overflow/fatal_for_endpoint/other) — only `transient` earns a bounded same-endpoint
+# retry (`inference.retry_attempts`, §5.2); everything else is today's straight next-hop.
 
 class McpClient:                       # manages many servers, both transports
     async def connect_all(self, cfgs: list[McpServerCfg]) -> None: ...  # stdio + Streamable HTTP
@@ -774,8 +822,11 @@ class Settings(BaseSettings):
 - **Exceptions** (`core/errors.py`): `UnknownTool`, `ValidationFailed`, `BackendUnavailable`,
   `McpServerError`, `ConfigError` — caught at the service boundary, converted to a `ToolResult` or
   an HTTP error + an `ErrorPart`/SSE `error` event. Nothing leaks a stack trace to the client.
-- **Backend 5xx / network**: bounded retry w/ backoff in `InferenceClient`; on exhaustion →
-  `BackendUnavailable` → friendly chat error, turn ends recoverably.
+- **Backend 5xx / network**: the `InferenceClient` failover chain walks endpoints on any error; a
+  genuinely-**transient** chat-stream init failure (`categorize` = 429/503/`Retry-After`/llama.cpp busy)
+  gets a bounded, wire-visible same-endpoint retry first (`inference.retry_attempts`, fixed backoff curve —
+  D43), then hops. On chain exhaustion → an `InferenceError`/`BackendUnavailable` → friendly chat error,
+  turn ends recoverably. `complete()`/voice keep straight next-hop (no retry tier).
 - **Redaction** (`core/redact.py`) runs on every `output`, `summary`, log line, and SSE payload.
 
 ---
@@ -794,7 +845,9 @@ event: tool.permission    data: {callId, tool, args, risk, token, prompt}  # con
 event: tool.question      data: {callId, tool, question, args} # A2 `question` builtin → answer bubble
 event: tool.result        data: {callId, result}               # per-call; under the parallel prefix arrives in COMPLETION order (persistence keeps model order)
 event: steer.applied      data: {entryId, messageId, kind, text?}  # a mid-turn steer drained at the loop top (D41); text = message kind only, folded into turn.sync as steers[]
-event: notice             data: {text}                         # breadcrumbs: D18 failover · "// compacting…" (ACA-11)
+event: notice             data: {text}                         # breadcrumbs: "// compacting…" (ACA-11) · routing notes (D43)
+event: inference.retry    data: {endpoint, attempt, max, delaySeconds, category}  # a transient same-endpoint retry, live (D43/A6)
+event: inference.failover data: {from, to, category}           # the chain dropped to the next endpoint, live (D43/A6; supersedes the D18 degraded notice)
 event: compaction         data: {removed, summaryId, truncated}
 event: message.end        data: {messageId}
 event: error              data: {message, retryable}
