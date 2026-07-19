@@ -177,6 +177,12 @@ async def lifespan(app: FastAPI):
     # `not app.state.turns` read stays honest. See app/services/agent/steering.py.
     steer_queues: dict[str, SteerQueue] = {}
     app.state.steer_queues = steer_queues
+    # D41 FIX 4: replayable Stop-harvest receipts (the turn_terminals linger pattern). A cancel harvests
+    # the steer queue destructively; this short-lived, linger-swept map lets a Stop whose response was
+    # lost (socket drop) retry and recover the SAME harvested entries. Cleared on linger expiry (swept on
+    # read) or when a new turn starts on the thread. See app/api/agent.py `_record_or_replay_harvest`.
+    steer_harvests: dict[str, dict] = {}
+    app.state.steer_harvests = steer_harvests
     # D41 Drain B guard: set True at the top of the lifespan finally so a turn completing DURING
     # shutdown can't spawn a drain-B turn past the drain snapshot into a closing DB. Initialized here
     # so `_maybe_spawn_drain_b`'s `getattr(state, "shutting_down", False)` reads a real value.

@@ -2273,6 +2273,21 @@ Claude Code's/opencode's silent loss are the footguns) + a 2-lens adversarial de
   structurally suppressed; **Stop can neither auto-run nor lose a steer** (the review's
   convergent HIGH). Response gains `steer_queue: [entries]`; contract: Stop harvests
   undrained/unspawned entries — an already-spawned turn is what the cancel cancels.
+  *(AMENDED as-built 2026-07-19, Codex-review FIX 3+4:* the harvest is no longer literally the
+  FIRST statement — a **synchronous scope-check runs BEFORE it**. The turn-id scope moved from the
+  JSON body (only readable via `await request.json()`, hence after the harvest) to a **`?turn_id=`
+  QUERY PARAM** readable synchronously; the FE sends it, the legacy body is still accepted after the
+  harvest for back-compat, query wins. New order: **(1)** sync — if the query `turn_id` names a turn
+  OTHER than the live handle, refuse `{cancelled:false, active:true, turn_id:<live>}` **without
+  harvesting** (the reviewer's D39-scoping rationale: a delayed scoped Stop for finished turn A must
+  not harvest successor turn B's queue — that queue is not A's); **(2)** sync harvest-first (as
+  above, now for the unscoped / scoped-match / no-live-turn cases); **(3)** cancel + settle. The
+  destructive harvest also writes a **replayable receipt** to `app.state.steer_harvests`
+  (`{entries, turn_id, ts}`, the `turn_terminals` linger pattern, swept by `linger_s`): a REPEAT Stop
+  within the linger — a lost Stop response, socket drop — returns the SAME entries with
+  `harvest_replayed:true` instead of an empty queue (superseding the old lossy "second harvest is
+  empty" behaviour). The receipt is cleared on linger expiry or when a new turn starts on the
+  thread.)*
 - **FE:** streaming send-guard lifted; 3-exit optimistic bubble (200 normal · 202 queued chip ·
   409 rollback+sys-note); `steer.applied` swaps by entryId; **probe-on-done-with-queued-bubbles**
   re-attaches to a drain-B turn (the D39 probe; mandatory — the spawn is otherwise invisible);

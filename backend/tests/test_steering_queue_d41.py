@@ -225,7 +225,7 @@ def test_delete_steer_present_then_absent() -> None:
             eid = c.post("/api/agent/chat", json={"text": "x", "thread_id": tid}).json()["entry_id"]
             r1 = c.delete(f"/api/agent/turns/{tid}/steer/{eid}")
             assert r1.status_code == 200 and r1.json() == {"removed": True}
-            assert len(c.app.state.steer_queues[tid]) == 0
+            assert tid not in c.app.state.steer_queues  # emptied queue pruned from the registry (FIX 5)
             # A second DELETE (already gone) → graceful 200, not 404.
             r2 = c.delete(f"/api/agent/turns/{tid}/steer/{eid}")
             assert r2.status_code == 200

@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import shutil
+import time
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -49,6 +50,7 @@ from app.services.agent.steering import (
     SteerEntry,
     SteerQueueFull,
     enqueue,
+    prune_if_empty,
     requeue_front,
     steer_source_for,
 )
@@ -431,7 +433,12 @@ def _maybe_spawn_drain_b(state, thread: Thread, handle: TurnHandle, cfg) -> None
         new_handle = reserve(state.turns, thread.id, "chat", ring_size=cfg.ring_size)
     except TurnBusy:
         return  # a fresh POST won the thread first → it will drain the queue at its own loop top
-    asyncio.create_task(_drain_b_body(state, thread, new_handle, cfg))
+    # FIX 2: the body task IS the durable task — assign it to `new_handle.task` immediately (no None
+    # gap after the sync reserve), so from this instant `turn_status` reads active, Stop can cancel the
+    # drain (all-exec queues included, which previously ran task-less + invisible), and the lifespan
+    # drain snapshot (`h.task is not None`) includes it. The message-seed path later REPLACES this task
+    # with the seeded turn's drain task (via `_spawn_drain_task`) — single ownership at every instant.
+    new_handle.task = asyncio.create_task(_drain_b_body(state, thread, new_handle, cfg))
 
 
 async def _run_steer_exec(state, thread: Thread, q, entry: SteerEntry) -> None:
@@ -440,45 +447,53 @@ async def _run_steer_exec(state, thread: Thread, q, entry: SteerEntry) -> None:
     (the same run_shell@FULL + atomic pair the `/exec` endpoint and Drain A use). Unlike Drain A there is
     no live stream to carry a `notice`, so a dropped command is logged at INFO.
 
-    COMMIT-BEFORE-RUN (D41 MED-1): the entry is committed OFF the queue BEFORE `run_user_exec`, a
-    deliberate ruling — for a shell command a lost-on-crash outcome beats a double-run. Committing after
-    the run left a window where a Stop/harvest arriving mid-execution could hand the still-queued command
-    back to the composer while it was already running (the audit's double-run window). The trade — a
-    crash between the commit and the run loses the command — is the in-memory queue's already-accepted
-    failure mode (it drops the whole queue on restart anyway)."""
+    ATOMIC CLAIM-BEFORE-RUN (D41 FIX 1, formerly MED-1): the entry is claimed OFF the queue BEFORE
+    `run_user_exec` AND the claim is verified — `commit` returns the count removed, and a return != 1
+    means the entry was DELETEd/harvested since the `peek()` snapshot (e.g. a DELETE landed while the
+    prior leading exec's run was awaiting), so it is no longer ours to run: skip it, never invoke
+    run_shell. Claim-first also gives lost-on-crash over double-run — a Stop/harvest arriving
+    mid-execution can no longer hand a still-queued, already-running command back to the composer. The
+    trade (a crash between claim and run loses the command) is the in-memory queue's accepted failure."""
     if not state.settings.shell.user_exec_enabled:
         log.info("steer drain-B: shell disabled — dropped queued command (entry %s)", entry.entry_id)
         q.commit([entry.entry_id])
+        prune_if_empty(state.steer_queues, thread.id, q)
         return
-    q.commit([entry.entry_id])  # commit-before-run (MED-1): lost-on-crash beats double-run for a shell cmd
+    if q.commit([entry.entry_id]) != 1:
+        return  # DELETEd/harvested since the peek — skip, never run
+    prune_if_empty(state.steer_queues, thread.id, q)
     await run_user_exec(state.actions, state.messages, thread.id, entry.text)
 
 
 async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
-    """The async body a drain-B spawn runs while holding the freshly-reserved `handle`. FIFO ordering
+    """The async body a drain-B spawn runs while holding the freshly-reserved `handle` (FIX 2: this
+    coroutine IS `handle.task` — the durable, cancellable, snapshot-visible drain-B task). FIFO ordering
     (D41): any `exec` steers LEADING the queue run first (gate-rechecked), then —
-      • if a `message` entry exists → pop that head message and seed a new turn via `start_steer_turn`
-        (the REST of the queue, incl. trailing execs, drains at the new turn's first loop top — Drain
-        A); `start_steer_turn` hands `handle` to the drain task (which owns the release).
-      • if the queue is ALL exec (no message) → run every entry, then release the marker + record a
-        terminal (mirroring a sync-kind marker's release) — NO model turn.
-    On failure, release the marker iff it hasn't already been handed to a drain task (`handle.task`
-    still None), mirroring the chat endpoint's pre-handoff release discipline; a head already committed
-    off the queue this invocation is re-enqueued at the FRONT first (MED-3) so a spawn-prelude raise
-    cannot lose the message."""
+      • if a `message` entry exists → pop that head message and seed a new turn via `start_steer_turn`,
+        which hands `handle` to the seeded turn's OWN drain task (`_spawn_drain_task` REPLACES
+        `handle.task` and attaches the `_cleanup` done-callback that owns release/terminal/chain). We set
+        `handed_off` so this body's `finally` does NOT also release — single ownership.
+      • if the queue is ALL exec (no message) → run every entry, mark `completed`; the `finally` then
+        releases + records a terminal + CHAINS `_maybe_spawn_drain_b` (picking up any message a steer
+        202'd DURING the all-exec run — the stranded-message fix) — NO model turn.
+
+    Ownership (FIX 2): unless we `handed_off` to a seeded turn's drain task, the `finally` is the SINGLE
+    release point. A Stop cancelling this task mid-exec surfaces as `CancelledError` (marked `cancelled`,
+    then released by the finally); a spawn-prelude raise re-enqueues the committed head at the FRONT
+    (MED-3) so no message is lost. `record_terminal`/the chain fire ONLY on a clean `completed` all-exec
+    drain, never on cancel/abandon/stale-head."""
     # MED-4: re-check shutdown as the FIRST statement — closes the check→spawn→shutdown gap where a
     # natural completion's `_maybe_spawn_drain_b` passed the shutdown guard, reserved the marker, and
     # scheduled this body, THEN the lifespan finally's first statement set `shutting_down`. Release and
-    # bail so a natural completion can't spawn a turn into a closing DB. (The full untracked-task
-    # closure is accepted-with-reason — a one-statement window; recorded in the as-built.)
+    # bail so a natural completion can't spawn a turn into a closing DB.
     if getattr(state, "shutting_down", False):
         release(state.turns, handle)
         return
     committed_head: SteerEntry | None = None  # MED-3: the head we popped this invocation, for requeue
+    handed_off = False  # FIX 2: True once the seeded turn's drain task owns `handle` (skip finally release)
     try:
         q = state.steer_queues.get(thread.id)
-        if not q:  # harvested by a cancel between the sync reserve and this body → release the orphan
-            release(state.turns, handle)
+        if not q:  # harvested by a cancel between the sync reserve and this body → the finally releases
             return
         entries = q.peek()
         first_msg = next((i for i, e in enumerate(entries) if e.kind == "message"), None)
@@ -486,43 +501,59 @@ async def _drain_b_body(state, thread: Thread, handle: TurnHandle, cfg) -> None:
         leading = entries if first_msg is None else entries[:first_msg]
         for e in leading:
             live_q = state.steer_queues.get(thread.id)
-            if live_q is None:  # harvested mid-drain → stop
+            if live_q is None:  # harvested mid-drain → stop (the finally releases)
                 break
             await _run_steer_exec(state, thread, live_q, e)
         if first_msg is None:
-            # All-exec queue: no turn to spawn — release + record a terminal so a probe settles.
+            # All-exec queue: no turn to spawn — mark completed; the finally releases + records a
+            # terminal + chains (a message that arrived DURING the run drains via the chain, FIX 2).
             handle.terminal_status = "completed"
-            release(state.turns, handle)
-            record_terminal(state.turn_terminals, handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap)
             return
         # Seed a new turn with the head message; the remaining entries drain at its loop top (Drain A).
         head = entries[first_msg]
         live_q = state.steer_queues.get(thread.id)
-        if live_q is None:  # harvested after the leading execs ran → release the orphan marker
-            release(state.turns, handle)
+        if live_q is None:  # harvested after the leading execs ran → the finally releases the orphan
             return
         # MED-2: the head commit is LOAD-BEARING. `commit` returns the count actually removed — if it
         # removed nothing, the head we peeked is no longer OWNED by this queue (harvested / DELETEd, or
         # the queue was popped-and-recreated by a fresh POST between the peek and here). Spawning a turn
-        # from a stale head would double-spawn / seed a message this queue no longer owns, so release the
-        # marker (pre-handoff) and abandon — never spawn from an entry no longer owned.
+        # from a stale head would double-spawn / seed a message this queue no longer owns, so abandon —
+        # never spawn from an entry no longer owned (the finally releases; terminal stays unset so it
+        # neither records a terminal nor chains).
         if live_q.commit([head.entry_id]) != 1:  # pop ONLY the head (run_turn persists it as the user msg)
-            if handle.task is None:
-                release(state.turns, handle)
             return
+        prune_if_empty(state.steer_queues, thread.id, live_q)  # FIX 5: head-only queue → drop the shell
         committed_head = head  # committed off the queue → requeue it in the except path if the spawn raises
         await start_steer_turn(state, thread, [head])
+        handed_off = True  # the seeded turn's drain task now owns `handle` (release/terminal/chain)
+    except asyncio.CancelledError:
+        # A Stop / shutdown cancelled this body task mid-drain (before the handoff). The in-flight
+        # `run_user_exec` was already claimed off the queue (FIX 1), so nothing double-runs. Mark the
+        # terminal so the cancel endpoint's response carries it, then re-raise: the finally releases.
+        handle.terminal_status = "cancelled"
+        raise
     except Exception:
         log.exception("D41 drain-B body failed for thread %s", thread.id)
         # MED-3: a spawn-prelude raise (`_auto_route_agent`/`_build_session`/`run_turn`) AFTER the head
-        # was committed off the queue would LOSE the message. If we committed it this invocation and the
-        # marker hasn't been handed to a drain task yet (`handle.task` still None — the raise beat the
-        # spawn), put the head back at the FRONT of the thread's queue (created if it vanished) BEFORE
-        # releasing, so it drains at the next opportunity / harvests on Stop. Nothing is persisted.
-        if committed_head is not None and handle.task is None:
+        # was committed off the queue would LOSE the message. If we committed it this invocation and have
+        # NOT handed off to a seeded drain task yet (the raise beat the spawn), put the head back at the
+        # FRONT of the thread's queue (created if it vanished) so it drains at the next opportunity /
+        # harvests on Stop. Nothing is persisted; the finally releases.
+        if committed_head is not None and not handed_off:
             requeue_front(state, thread.id, committed_head)
-        if handle.task is None:  # not yet handed to a drain task → free the marker so it can't leak
+    finally:
+        # SINGLE release point (FIX 2): unless a seeded turn's drain task took ownership (`handed_off`),
+        # free the marker here. A clean `completed` all-exec drain ALSO records a terminal (so a probe
+        # settles) and CHAINS — re-checking the queue for a message that arrived during the run. On any
+        # non-completed exit (cancel / abandon / stale-head / prelude-raise) we ONLY release: no terminal
+        # record, no chain (`_maybe_spawn_drain_b`'s own `!= "completed"` guard would suppress it anyway).
+        if not handed_off:
             release(state.turns, handle)
+            if handle.terminal_status == "completed":
+                record_terminal(
+                    state.turn_terminals, handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap
+                )
+                _maybe_spawn_drain_b(state, thread, handle, cfg)
 
 
 async def start_steer_turn(state, thread: Thread, entries: list[SteerEntry]) -> None:
@@ -810,51 +841,108 @@ async def _cancel_turn_id(request: Request) -> str | None:
     return None
 
 
-@router.post("/agent/turns/{thread_id}/cancel")
-async def cancel_turn_endpoint(thread_id: str, request: Request) -> dict[str, Any]:
-    """Cancel a running turn (D39/S3-C, opencode's unstick affordance). Idempotent. **This handler
-    WRITES NOTHING** — `cancel_turn` only fires the task's single cancel; ALL mutation (the stale
-    in-flight-call reconcile + the terminal persist) happens INSIDE the drain task's own
-    CancelledError path, while it still holds the thread's marker (no successor race). That is why
-    this route is NOT `_reserve_turn`-guarded (cancel must work exactly while the thread is busy) and
-    why `test_turn_guard_invariant.py` doesn't flag it — its source carries no mutation markers.
+# ── Replayable Stop-harvest receipt (D41 FIX 4) ────────────────────────────────────────────────
+# `app.state.steer_harvests: dict[thread_id, {entries, turn_id, ts}]` — the `turn_terminals` linger
+# pattern applied to Stop's steer harvest. A cancel harvests the queue destructively (pop), so a Stop
+# whose RESPONSE was lost (socket drop) would, on retry, get an EMPTY queue and the composer would
+# never restore the harvested lines. This small short-lived cache lets a repeat cancel within
+# `linger_s` return the SAME entries (`harvest_replayed:true`). Cleared when the linger expires (swept
+# on read) or a new turn starts on the thread (the entries are stale context by then — see chat/exec).
 
-    A6 (C4-H2): an optional JSON body `{turn_id}` scopes the cancel to a SPECIFIC turn. A delayed Stop
-    for turn A (the socket dropped, the client retried, a successor turn B started) must not cancel B —
-    so when the body names a `turn_id` that doesn't match the live handle, refuse and report the live
-    turn (`{cancelled:false, active:true, turn_id:<live>}`) so the client can re-target. An absent body
-    keeps the legacy unscoped behaviour (cancel whatever is live).
+
+def _sweep_harvests(harvests: dict[str, dict[str, Any]], linger_s: float, now: float) -> None:
+    """Drop receipts older than `linger_s` (monotonic seconds). Opportunistic — called on every
+    record/replay, so there is no background sweeper (the `turn_terminals` discipline)."""
+    for tid in [t for t, r in harvests.items() if now - r["ts"] > linger_s]:
+        del harvests[tid]
+
+
+def _record_or_replay_harvest(
+    state, thread_id: str, harvested, handle: TurnHandle | None, cfg
+) -> tuple[list[dict[str, Any]], bool]:
+    """FIX 4. If THIS cancel harvested a live queue → snapshot its entries into a replayable receipt and
+    return `(entries, replayed=False)`. If the queue was already gone (a repeat Stop) → return a still
+    lingering prior receipt's entries as `(entries, replayed=True)` so a lost Stop response recovers;
+    absent → `([], False)`."""
+    harvests = state.steer_harvests
+    now = time.monotonic()
+    _sweep_harvests(harvests, cfg.linger_s, now)
+    if harvested is not None:
+        entries = [{"entry_id": e.entry_id, "kind": e.kind, "text": e.text} for e in harvested.peek()]
+        harvests[thread_id] = {
+            "entries": entries,
+            "turn_id": handle.turn_id if handle is not None else None,
+            "ts": now,
+        }
+        return entries, False
+    rec = harvests.get(thread_id)
+    if rec is not None:
+        return rec["entries"], True
+    return [], False
+
+
+@router.post("/agent/turns/{thread_id}/cancel")
+async def cancel_turn_endpoint(
+    thread_id: str, request: Request, turn_id: str | None = None
+) -> dict[str, Any]:
+    """Cancel a running turn (D39/S3-C, opencode's unstick affordance). Idempotent. **This handler
+    WRITES NOTHING to the thread** — `cancel_turn` only fires the task's single cancel; ALL thread
+    mutation (the stale in-flight-call reconcile + the terminal persist) happens INSIDE the drain task's
+    own CancelledError path, while it still holds the thread's marker (no successor race). That is why
+    this route is NOT `_reserve_turn`-guarded (cancel must work exactly while the thread is busy) and why
+    `test_turn_guard_invariant.py` doesn't flag it — its source carries no mutation markers.
+
+    Scope (A6 / D41 FIX 3): the `?turn_id=` QUERY PARAM scopes the cancel to a SPECIFIC turn. It is read
+    SYNCHRONOUSLY and the scope check runs BEFORE the harvest, so a DELAYED Stop for turn A (the socket
+    dropped, the client retried, a successor turn B started) neither cancels B nor HARVESTS B's steer
+    queue — the successor's queue is not yours. On a scoped mismatch we refuse WITHOUT harvesting and
+    hand back the live turn (`{cancelled:false, active:true, turn_id:<live>}`). A stale JSON body
+    `{turn_id}` is still accepted for back-compat (below, after the harvest) but the query param wins;
+    the FE sends the query param.
+
+    Order (D41 FIX 3): (1) sync scope-check-before-harvest; (2) sync harvest-first (the D41 convergent
+    HIGH — a `_cleanup` racing a natural completion finds the queue ABSENT → its drain-B spawn is
+    structurally suppressed; Stop can neither auto-run nor lose a steer); (3) the cancel + settle.
+
+    Replayable harvest (D41 FIX 4): the harvest is stored in `app.state.steer_harvests` (the
+    `turn_terminals` linger pattern) BEFORE returning, so a Stop whose RESPONSE was lost (socket drop)
+    can retry: a REPEAT cancel within the linger returns the SAME entries with `harvest_replayed:true`
+    instead of an empty queue (the old lossy behaviour). Cleared when the linger expires or a new turn
+    starts on the thread (see chat/exec).
 
     Live turn → fire the single cancel (`cancelling` latch makes a repeat a no-op — a second raw
     `task.cancel()` would pierce the persistence shield, D39 H2), then await the task under
-    `shutdown_grace_s` so the response carries the settled `terminal_status`. Idempotent repeat →
-    same shape, `cancelled:false`. No live turn → `{cancelled:false, active:false}` (nothing to do)."""
+    `shutdown_grace_s` so the response carries the settled `terminal_status`."""
     state = request.app.state
-    # D41 HARVEST-FIRST (review convergent HIGH): the queue pop is the FIRST statement — synchronous,
-    # before the handle lookup (so a no-live-turn / mistargeted cancel still harvests) and before ANY
-    # `await`. A `_cleanup` racing a natural completion then finds the queue ABSENT → its drain-B spawn
-    # is structurally suppressed: Stop can neither auto-run nor lose a steer. Every response branch
-    # carries `steer_queue: [{entry_id, kind, text}]` so the FE rebuilds the composer lines (wave 4).
-    harvested = state.steer_queues.pop(thread_id, None)
-    steer = (
-        [{"entry_id": e.entry_id, "kind": e.kind, "text": e.text} for e in harvested.peek()]
-        if harvested is not None
-        else []
-    )
     cfg = state.settings.agent.turns
     handle = state.turns.get(thread_id)
-    if handle is None or handle.task is None:
-        return {"cancelled": False, "active": False, "steer_queue": steer}
-    want_turn = await _cancel_turn_id(request)
-    if want_turn is not None and want_turn != handle.turn_id:
-        # A stale/mistargeted Stop — the named turn is not the one running now. Do NOT cancel the
-        # successor; hand back the live turn so the client can decide whether to re-issue against it.
+    # (1) SYNC SCOPE-CHECK BEFORE HARVEST (FIX 3): the query-param turn_id is available synchronously, so
+    # a scoped Stop that names a turn OTHER than the live one refuses WITHOUT touching the successor's
+    # queue. Only guards a genuinely-live task-bearing turn; no-live-turn / sync-kind falls through to
+    # the harvest (an orphan / no-successor scoped Stop harvests correctly).
+    if turn_id and handle is not None and handle.task is not None and turn_id != handle.turn_id:
+        q = state.steer_queues.get(thread_id)  # read-only peek — do NOT harvest the successor's queue
+        steer = [{"entry_id": e.entry_id, "kind": e.kind, "text": e.text} for e in q.peek()] if q else []
         return {"cancelled": False, "active": True, "turn_id": handle.turn_id, "steer_queue": steer}
+    # (2) HARVEST-FIRST (D41 convergent HIGH): synchronous pop before any `await`, so a racing `_cleanup`
+    # finds the queue absent. FIX 4: store the harvest receipt (or replay a prior one on a repeat Stop).
+    harvested = state.steer_queues.pop(thread_id, None)
+    steer, replayed = _record_or_replay_harvest(state, thread_id, harvested, handle, cfg)
+    resp: dict[str, Any] = {"steer_queue": steer}
+    if replayed:
+        resp["harvest_replayed"] = True
+    if handle is None or handle.task is None:
+        return {**resp, "cancelled": False, "active": False}
+    # (3) back-compat: a JSON-body `{turn_id}` still scopes (the query param already won above if set).
+    want_turn = turn_id or await _cancel_turn_id(request)
+    if want_turn is not None and want_turn != handle.turn_id:
+        # A stale/mistargeted Stop via the legacy body — the named turn is not the one running now.
+        return {**resp, "cancelled": False, "active": True, "turn_id": handle.turn_id}
     fired = cancel_turn(handle)  # False if already cancelling / already done (the latch)
     # `asyncio.wait` does NOT re-raise the awaited task's CancelledError (unlike a direct `await
     # task`), so the endpoint settles cleanly whether the turn ends by cancel or was already ending.
     await asyncio.wait([handle.task], timeout=cfg.shutdown_grace_s)
-    return {"cancelled": fired, "terminal_status": handle.terminal_status, "steer_queue": steer}
+    return {**resp, "cancelled": fired, "terminal_status": handle.terminal_status}
 
 
 @router.delete("/agent/turns/{thread_id}/steer/{entry_id}")
@@ -865,6 +953,7 @@ async def delete_steer(thread_id: str, entry_id: str, request: Request) -> dict[
     so the FE resolves the bubble to its swapped form gracefully instead of erroring)."""
     q = request.app.state.steer_queues.get(thread_id)
     if q is not None and q.remove(entry_id):
+        prune_if_empty(request.app.state.steer_queues, thread_id, q)  # FIX 5: drop an emptied queue shell
         return {"removed": True}
     return {"removed": False, "reason": "already sent"}
 
@@ -944,6 +1033,9 @@ async def chat(body: ChatRequest, request: Request) -> Response:
         if e.handle.kind not in ("chat", "resume"):
             raise HTTPException(status_code=409, detail=_TURN_BUSY_DETAIL) from e
         return _steer_202(state, thread.id, e.handle, steer_entry, cfg)
+    # D41 FIX 4: a genuinely-new turn started → drop any lingering Stop-harvest receipt (its entries are
+    # stale context now that a fresh turn owns the thread). A steer-enqueue (202 above) is NOT a new turn.
+    state.steer_harvests.pop(thread.id, None)
     try:
         session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
@@ -997,6 +1089,7 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Re
         if e.handle.kind not in ("chat", "resume"):
             raise HTTPException(status_code=409, detail=_TURN_BUSY_DETAIL) from e
         return _steer_202(state, thread.id, e.handle, steer_entry, cfg)
+    state.steer_harvests.pop(thread.id, None)  # D41 FIX 4: a new turn started → drop the stale receipt
     try:
         # ONE user-exec implementation (D41): run_shell@FULL + the atomic assistant+tool pair persist,
         # shared verbatim with the steer drain (`run_user_exec`). Response shape unchanged.

@@ -304,7 +304,7 @@ def test_exec_fail_closed_disabled_at_drain_drops_and_never_invokes() -> None:
         assert "run_shell" not in invoked  # command NEVER ran
         assert any(e.event == "notice" and "shell disabled" in e.data.get("text", "") for e in events)
         assert not any(e.event == "steer.applied" for e in events)  # dropped, not applied
-        assert len(s.steer_queues[thread.id]) == 0  # committed away (dropped)
+        assert len(s.steer_queues.get(thread.id) or []) == 0  # committed away (dropped); queue pruned (FIX 5)
         rows = run_async(s.messages.list(thread.id))
         assert not any(p.tool == "run_shell" for m in rows if m.role == "assistant" for p in m.tool_calls())
 
@@ -385,6 +385,41 @@ def test_none_steer_source_never_drains() -> None:
         events = _run(session, thread)
         assert not any(e.event == "steer.applied" for e in events)
         assert [e.text for e in s.steer_queues[thread.id].peek()] == ["ignored"]  # untouched
+
+
+# ── FIX 1: an exec DELETEd during the preceding message txn is never run (atomic claim) ───────────
+def test_fix1_delete_exec_during_preceding_message_txn_never_runs() -> None:
+    """FIX 1: the exec drain claims its entry atomically (`commit([id]) != 1` → skip). A DELETE that
+    lands while the preceding message run's txn is awaiting removes the exec from the queue, so its
+    claim returns 0 at the drain and run_shell is NEVER invoked."""
+    with _workspace(), _client() as c:
+        s = c.app.state
+        s.settings.shell.user_exec_enabled = True
+        fake = _Fake([[_text("done")]])
+        session, thread = _session(c, fake)
+        _no_compact(session)
+        e = _exec_entry("echo should-not-run")
+        _enqueue(s, thread.id, _msg_entry("m1"))
+        _enqueue(s, thread.id, e)
+
+        real_add = s.messages.add
+
+        async def hook_add(msg):
+            # While the preceding message "m1" is persisting inside its txn, a DELETE removes the exec.
+            if msg.role == "user" and msg.text() == "m1":
+                s.steer_queues[thread.id].remove(e.entry_id)
+            return await real_add(msg)
+
+        s.messages.add = hook_add
+        try:
+            events = _run(session, thread)
+        finally:
+            s.messages.add = real_add
+
+        applied = [ev for ev in events if ev.event == "steer.applied"]
+        assert [a.data["kind"] for a in applied] == ["message"]  # only the message applied
+        rows = run_async(s.messages.list(thread.id))
+        assert not any(p.tool == "run_shell" for m in rows if m.role == "assistant" for p in m.tool_calls())
 
 
 if __name__ == "__main__":

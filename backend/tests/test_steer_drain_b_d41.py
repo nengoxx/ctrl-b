@@ -311,7 +311,10 @@ def test_no_live_turn_cancel_still_harvests() -> None:
         assert thread.id not in s.steer_queues
 
 
-def test_double_cancel_second_harvest_is_empty() -> None:
+def test_double_cancel_replays_the_same_harvest() -> None:
+    """FIX 4: a Stop whose response was lost (socket drop) can retry — a REPEAT cancel within the linger
+    returns the SAME harvested entries (`harvest_replayed:true`) instead of an empty queue. Replaces the
+    old lossy `test_double_cancel_second_harvest_is_empty` pin (the reviewer's explicit call)."""
     with _workspace(), _client() as c:
         s = c.app.state
         thread = _new_thread(s)
@@ -319,7 +322,33 @@ def test_double_cancel_second_harvest_is_empty() -> None:
         first = run_async(agent_api.cancel_turn_endpoint(thread.id, _Req(c.app)))
         second = run_async(agent_api.cancel_turn_endpoint(thread.id, _Req(c.app)))
         assert [(e["kind"], e["text"]) for e in first["steer_queue"]] == [("message", "once")]
-        assert second["steer_queue"] == []  # already harvested by the first cancel
+        assert "harvest_replayed" not in first  # the first is the live harvest, not a replay
+        # The retry recovers the SAME entries from the replayable receipt.
+        assert [(e["kind"], e["text"]) for e in second["steer_queue"]] == [("message", "once")]
+        assert second["harvest_replayed"] is True
+
+
+def test_new_turn_clears_the_harvest_receipt() -> None:
+    """FIX 4: the replayable receipt is stale context once a fresh turn owns the thread — a chat POST
+    that starts a new turn drops it, so a later Stop no longer replays the old harvest."""
+    from test_durable_turns_slice3 import _completed_events, _patch_session, _restore_session
+
+    with _workspace(), _client() as c:
+        s = c.app.state
+        thread = _new_thread(s)
+        _enqueue(s, thread.id, _msg_entry("stale"))
+        run_async(agent_api.cancel_turn_endpoint(thread.id, _Req(c.app)))  # harvest → receipt stored
+        assert thread.id in s.steer_harvests
+        orig = _patch_session(_completed_events())
+        try:
+            r = c.post("/api/agent/chat", json={"text": "fresh", "thread_id": thread.id, "stream": False})
+        finally:
+            _restore_session(orig)
+        assert r.status_code == 200
+        assert thread.id not in s.steer_harvests  # cleared by the new turn
+        # A later Stop no longer replays the stale harvest.
+        out = run_async(agent_api.cancel_turn_endpoint(thread.id, _Req(c.app)))
+        assert out["steer_queue"] == [] and "harvest_replayed" not in out
 
 
 # ── the cap-shadows-steer corner fix ─────────────────────────────────────────────────────────────
@@ -520,6 +549,206 @@ def test_med4_shutdown_recheck_releases_before_body_runs() -> None:
         assert thread.id not in s.turns  # released by the shutdown re-check (no spawn, marker not held)
         assert s.inference.calls == 0  # nothing ran
         assert [e.text for e in s.steer_queues[thread.id].peek()] == ["queued"]  # queue untouched
+
+
+# ── FIX 1: a second exec DELETEd while drain-B's first exec awaits is never run ───────────────────
+def test_fix1_delete_second_exec_during_drain_b_first_exec_never_runs() -> None:
+    """FIX 1 (drain-B): `_run_steer_exec` claims its entry atomically before running. A DELETE that
+    removes the SECOND exec while the FIRST exec is mid-run makes the second's claim return 0 → it is
+    skipped, never run."""
+    with _workspace(), _client() as c:
+        s = c.app.state
+        cfg = s.settings.agent.turns
+        s.settings.shell.user_exec_enabled = True
+        thread = _new_thread(s)
+        e1, e2 = _exec_entry("echo one"), _exec_entry("echo two")
+        _enqueue(s, thread.id, e1)
+        _enqueue(s, thread.id, e2)
+
+        gate = asyncio.Event()
+        ran: list[str] = []
+        orig = agent_api.run_user_exec
+
+        async def gated(actions, messages, tid, command):
+            ran.append(command)
+            if command == "echo one":
+                await gate.wait()  # block the first exec so the DELETE races the second
+            return _exec_outcome()
+
+        agent_api.run_user_exec = gated
+        try:
+
+            async def _go() -> None:
+                h = reserve(s.turns, thread.id, "chat", ring_size=cfg.ring_size)
+                task = asyncio.create_task(agent_api._drain_b_body(s, thread, h, cfg))
+                for _ in range(10):
+                    await asyncio.sleep(0)  # let exec1 reach the gate (past its own claim)
+                s.steer_queues[thread.id].remove(e2.entry_id)  # DELETE the second exec mid-drain
+                gate.set()
+                await task
+
+            run_async(_go())
+        finally:
+            agent_api.run_user_exec = orig
+
+        assert ran == ["echo one"]  # exec2 claimed→0 → skipped, never ran
+        assert thread.id not in s.turns  # marker released
+
+
+# ── FIX 2: the all-exec drain-B is a REAL durable task (visible / cancellable / snapshot / chain) ──
+def test_fix2_all_exec_drain_b_visible_on_status_and_cancellable() -> None:
+    with _workspace(), _client() as c:
+        s = c.app.state
+        cfg = s.settings.agent.turns
+        s.settings.shell.user_exec_enabled = True
+        thread = _new_thread(s)
+        _enqueue(s, thread.id, _exec_entry("echo long"))
+
+        gate = asyncio.Event()
+        orig = agent_api.run_user_exec
+
+        async def gated(actions, messages, tid, command):
+            await gate.wait()
+            return _exec_outcome()
+
+        agent_api.run_user_exec = gated
+        try:
+
+            async def _go() -> tuple[dict, dict]:
+                agent_api._maybe_spawn_drain_b(s, thread, _completed_handle(thread.id, "completed"), cfg)
+                for _ in range(10):
+                    await asyncio.sleep(0)  # let the body reach the gated exec
+                probe = await agent_api.turn_status(thread.id, _Req(c.app))
+                cancel = await agent_api.cancel_turn_endpoint(thread.id, _Req(c.app))  # Stop mid-exec
+                gate.set()
+                for _ in range(10):
+                    await asyncio.sleep(0)
+                return probe, cancel
+
+            probe, cancel = run_async(_go())
+        finally:
+            agent_api.run_user_exec = orig
+
+        assert probe["active"] is True and probe["kind"] == "chat"  # visible while running (was invisible)
+        assert cancel["cancelled"] is True  # Stop cancelled the all-exec drain-B task
+        assert thread.id not in s.turns  # released via the body's finally on cancel
+
+
+def test_fix2_message_202d_during_all_exec_drain_is_picked_up_by_chain() -> None:
+    """FIX 2 stranded-message: a message enqueued DURING a long all-exec drain-B is picked up by the
+    completion chain (the finally's `_maybe_spawn_drain_b` re-check), which spawns a turn for it."""
+    with _workspace(), _client() as c:
+        s = c.app.state
+        cfg = s.settings.agent.turns
+        s.settings.shell.user_exec_enabled = True
+        thread = _new_thread(s)
+        s.inference = _Fake([[_text("ok")]])
+        _enqueue(s, thread.id, _exec_entry("echo lead"))
+
+        gate = asyncio.Event()
+        orig = agent_api.run_user_exec
+
+        async def gated(actions, messages, tid, command):
+            _enqueue(s, thread.id, _msg_entry("stranded"))  # 202'd DURING the all-exec drain
+            await gate.wait()
+            return _exec_outcome()
+
+        agent_api.run_user_exec = gated
+        try:
+
+            async def _go() -> None:
+                agent_api._maybe_spawn_drain_b(s, thread, _completed_handle(thread.id, "completed"), cfg)
+                for _ in range(10):
+                    await asyncio.sleep(0)
+                gate.set()
+                await _settle_thread(s, thread)
+
+            run_async(_go())
+        finally:
+            agent_api.run_user_exec = orig
+
+        assert "stranded" in _users(s, thread)  # the chain re-checked the queue and seeded a turn
+        assert thread.id not in s.turns
+
+
+def test_fix2_shutdown_snapshot_includes_all_exec_body_task() -> None:
+    """FIX 2: the all-exec body IS `handle.task`, so the lifespan drain snapshot
+    (`h.task is not None and not h.task.done()`) includes it (previously it ran task-less + invisible)."""
+    with _workspace(), _client() as c:
+        s = c.app.state
+        cfg = s.settings.agent.turns
+        s.settings.shell.user_exec_enabled = True
+        thread = _new_thread(s)
+        _enqueue(s, thread.id, _exec_entry("echo x"))
+
+        gate = asyncio.Event()
+        orig = agent_api.run_user_exec
+
+        async def gated(actions, messages, tid, command):
+            await gate.wait()
+            return _exec_outcome()
+
+        agent_api.run_user_exec = gated
+        try:
+
+            async def _go() -> tuple[TurnHandle, list]:
+                agent_api._maybe_spawn_drain_b(s, thread, _completed_handle(thread.id, "completed"), cfg)
+                for _ in range(10):
+                    await asyncio.sleep(0)
+                handle = s.turns.get(thread.id)
+                snapshot = [h for h in s.turns.values() if h.task is not None and not h.task.done()]
+                gate.set()
+                for _ in range(20):
+                    await asyncio.sleep(0)
+                return handle, snapshot
+
+            handle, snapshot = run_async(_go())
+        finally:
+            agent_api.run_user_exec = orig
+
+        assert handle is not None and handle.task is not None  # the body IS the durable task
+        assert handle in snapshot  # → the shutdown drain snapshot catches it
+
+
+# ── FIX 3: scoped Stop checks the turn-id BEFORE harvesting (no successor-queue harvest) ───────────
+def test_fix3_scoped_mismatch_cancel_does_not_harvest_successor_queue() -> None:
+    with _workspace(), _client() as c:
+        s = c.app.state
+        cfg = s.settings.agent.turns
+        thread = _new_thread(s)
+        # A live successor turn B owns the thread; steers are queued behind IT.
+        handle = reserve(s.turns, thread.id, "chat", ring_size=cfg.ring_size)
+        _enqueue(s, thread.id, _msg_entry("behind B"))
+
+        async def _go() -> dict:
+            handle.task = asyncio.create_task(asyncio.sleep(3600))
+            # A DELAYED Stop for the FINISHED turn A (a different turn_id) must not harvest B's queue.
+            return await agent_api.cancel_turn_endpoint(thread.id, _Req(c.app), turn_id="turn-A-stale")
+
+        out = run_async(_go())
+        handle.task.cancel()
+        assert out["cancelled"] is False and out["active"] is True
+        assert out["turn_id"] == handle.turn_id  # hands back the LIVE turn so the FE can re-target
+        assert [e.text for e in s.steer_queues[thread.id].peek()] == ["behind B"]  # queue NOT harvested
+        assert thread.id in s.steer_queues
+
+
+def test_fix3_scoped_match_still_harvests_first() -> None:
+    with _workspace(), _client() as c:
+        s = c.app.state
+        cfg = s.settings.agent.turns
+        thread = _new_thread(s)
+        handle = reserve(s.turns, thread.id, "chat", ring_size=cfg.ring_size)
+        _enqueue(s, thread.id, _msg_entry("mine"))
+
+        async def _go() -> dict:
+            handle.task = asyncio.create_task(asyncio.sleep(3600))
+            return await agent_api.cancel_turn_endpoint(thread.id, _Req(c.app), turn_id=handle.turn_id)
+
+        out = run_async(_go())
+        assert out["cancelled"] is True  # scope matched → cancel fired
+        assert [(e["kind"], e["text"]) for e in out["steer_queue"]] == [("message", "mine")]
+        assert thread.id not in s.steer_queues  # harvested (scope matched)
 
 
 if __name__ == "__main__":

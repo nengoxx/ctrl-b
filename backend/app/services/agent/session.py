@@ -980,13 +980,17 @@ class AgentSession:
                     self._steer_source.commit([entry.entry_id])
                     yield AgentEvent("notice", {"text": "// shell disabled — queued command dropped"})
                     continue
-                # COMMIT-BEFORE-RUN (D41 MED-1): commit the entry OFF the queue BEFORE run_user_exec —
-                # for a shell command lost-on-crash beats double-run. Committing after the run left a
-                # window where a Stop/harvest arriving mid-execution handed the still-queued command back
-                # to the composer while it was already running (the audit's double-run window). The trade
-                # (a crash between commit and run loses the command) is the in-memory queue's
-                # already-accepted failure mode — it drops the whole queue on restart regardless.
-                self._steer_source.commit([entry.entry_id])
+                # ATOMIC CLAIM-BEFORE-RUN (D41 FIX 1, formerly MED-1 commit-before-run): claim the entry
+                # OFF the queue BEFORE run_user_exec AND verify the claim removed exactly it. `commit`
+                # returns the count removed — a return != 1 means the entry was DELETEd/harvested since
+                # the `peek()` snapshot (e.g. a DELETE landed while the preceding message run's txn was
+                # awaiting), so it is NO LONGER ours to run: skip it, never invoke run_shell (a
+                # deleted/harvested exec must never still execute). Claim-first also gives lost-on-crash
+                # over double-run: a Stop/harvest arriving mid-execution can no longer hand a
+                # still-queued, already-running command back to the composer. The trade (a crash between
+                # claim and run loses the command) is the in-memory queue's already-accepted failure mode.
+                if self._steer_source.commit([entry.entry_id]) != 1:
+                    continue  # DELETEd/harvested since the peek — skip, never run
                 exec_out = await run_user_exec(self._actions, self._messages, thread.id, entry.text)
                 yield AgentEvent(
                     "steer.applied",

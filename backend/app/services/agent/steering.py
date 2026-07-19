@@ -152,10 +152,28 @@ class SteerSource:
         q = self._queues.get(self._thread_id)
         return q.peek() if q is not None else []
 
-    def commit(self, entry_ids: list[str]) -> None:
+    def commit(self, entry_ids: list[str]) -> int:
+        """Remove EXACTLY `entry_ids` from the thread's queue and return the COUNT actually removed
+        (D41 FIX 1 — every exec run point claims its entry atomically: `commit([id]) != 1` means the
+        entry was DELETEd/harvested since the peek, so the caller must skip it, never run it). A missing
+        queue commits to 0. Prunes an emptied queue's registry key (FIX 5 registry-leak sweep)."""
         q = self._queues.get(self._thread_id)
-        if q is not None:
-            q.commit(entry_ids)
+        if q is None:
+            return 0
+        removed = q.commit(entry_ids)
+        prune_if_empty(self._queues, self._thread_id, q)
+        return removed
+
+
+def prune_if_empty(queues: dict[str, SteerQueue], thread_id: str, queue: SteerQueue) -> None:
+    """Drop an emptied queue's registry key — but ONLY if the registry still references THIS exact queue
+    object (identity guard, D41 FIX 5). A drain/DELETE that empties a queue would otherwise leave an
+    empty `SteerQueue` shell keyed on the thread forever; sweeping it here (in the one module helper, not
+    scattered at every call site) keeps `app.state.steer_queues` from accumulating dead threads. The
+    identity check means a queue a fresh POST recreated between the empty and this call is never clobbered
+    (the recreated object is a different instance → the `is` test fails → left intact)."""
+    if len(queue) == 0 and queues.get(thread_id) is queue:
+        del queues[thread_id]
 
 
 def steer_source_for(state, thread_id: str) -> SteerSource:
