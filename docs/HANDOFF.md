@@ -257,6 +257,27 @@
 > pokes per `testing-parked-wing-it` (the ACA §5 Slice 5 LIVE-VERIFY list) ④ next: ACA Slice 6
 > (compaction v2 — design review first, the `context_window` prerequisite) or owner's pick.**
 >
+> **▶ SESSION CLOSED 2026-07-19 (clean handoff). Slice 5 PUSHED + main CI GREEN @ `f80c1d9`.
+> SLICE 6 DESIGN PHASE ✅ COMPLETE — D42 v4 AWAITING THE OWNER'S LOCK: the full draft is
+> [`docs/SLICE6_PLAN.md`](./SLICE6_PLAN.md)** (pipeline: 2 code-truth + 3 field passes + a
+> 2-lens adversarial review [4H resolved in] + TWO owner direction rounds — ① settings surface
+> [Conf UI knobs, hot at next turn] + window discovery [llama.cpp `/props` probe > config >
+> fallback, source-verified] ② fallback windows [free-ride on the unified endpoint object] +
+> per-agent output budgets ON ModelRef [the summarizer gets capping free; reserve_output
+> subtracts from the trigger] + reasoning effort/tokens [= ACA A10 SCHEDULED; universal ladder;
+> llama.cpp translates `off`→enable_thinking:false, silently-drops the rest — verified]).
+> **NEXT SESSION, in order:** ① /model check (fable-5 HIGH) ② confirm CI green @ `f80c1d9` ③
+> owner reads SLICE6_PLAN → **LOCK D42** into DECISIONS.md → ~6 Opus build waves (schema/config
+> +probe → estimator/trigger → clearing+summarizer+thrash → reactive+ModelRef wire → Conf UI →
+> the DESIGN/SPEC docs sweep) + mid/post-build audits + the Codex tri-review — the standing
+> pipeline. ④ **Dev units LEFT RUNNING** (owner intends to poke Slice-5 steering on :5173 —
+> ⚠ dev drives the REAL fleet; stop the units after). ⑤ Owner config reminders:
+> `max_concurrent_requests: 1` on the local endpoint (Slice 4) · `context_window` per endpoint
+> once Slice 6 ships. **OWNER DIRECTIVE REITERATED at close (standing, memory
+> `orchestrate-with-opus-subagents`): Fable 5 = ORCHESTRATOR + FEATURE REVIEWER ONLY, alongside
+> Codex (`gpt-5.6-sol` high) as the standing co-reviewer; ALL specified implementation /
+> mechanical work / research = Opus 4.8 subagents — never burn Fable on menial tasks.**
+>
 > *(The block below is the previous session's close-out checklist, kept for provenance — steps 1–3
 > are done as recorded above.)*
 > **▶ SESSION CLOSED 2026-07-17 early AM (owner to sleep) — NEXT SESSION, in order:**
