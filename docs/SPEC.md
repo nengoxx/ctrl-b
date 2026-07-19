@@ -37,7 +37,7 @@ design (D7) with a multi-theme engine on top (D28/D29/D31).
 | P6 | **Config & ops** | Whole config editable in-app (masked secrets, comment-preserving writes, hot-apply), Tailscale Serve HTTPS toggle, live events feed + audit trail, guarded `!` shell escape hatch (opt-in), PWA install/update | ✅ |
 | P7 | **Theming** | Registry-driven multi-theme engine (vapor frozen-bespoke · minimal · cosmos), token-driven Kit scaffold, View-Transition switching, per-theme settings, cross-device appearance sync (LWW) | ✅ |
 | P8 | **Durable turns** | Server-owned turn lifecycle: disconnect-proof generation, reconnect replay/snapshot, explicit cancel + Stop button, mid-turn steering queue | ✅ ACA Slices 3/5 (D39/D41) |
-| P9 | **Perf & routing** | Parallel read-only tool execution + per-call result streaming (Slice 4 ✅, D40); compaction v2 (reserve-headroom, tool-result clearing), lead/worker model routing, persisted approvals | Slice 4 ✅ · ▹ ACA 6/7/8 |
+| P9 | **Perf & routing** | Parallel read-only tool execution + per-call result streaming (Slice 4 ✅, D40); compaction v2 — window-aware trigger, tool-result clearing, template, thrash breaker, ModelRef call config/A10 (Slice 6 ✅, D42); lead/worker model routing, persisted approvals | Slice 4/6 ✅ · ▹ ACA 7/8 |
 | P10 | **Future** | Automations/schedules, notifications, wake word, idle shutdown, vector memory, privilege ladder UI | ◇ ROADMAP seams |
 
 ---
@@ -236,7 +236,7 @@ sequenceDiagram
     A->>S: run_turn()
     S->>S: activate skills · persist user msg · arm reflection?
     loop ≤ max_iterations
-        S->>S: compact if over threshold (▹ v2: reserve-headroom + notice)
+        S->>S: clear tool outputs + compact if est > window×frac−reserve (D42: anchored · notice · breaker · backstop)
         S->>I: stream_chat(static head + history, tools)
         Note over I: failover at first chunk only;<br/>degraded → SSE notice
         I-->>U: reasoning.delta* · text.delta* (relayed per token)
@@ -411,8 +411,8 @@ $CTRLB_HOME/
 |---|---|---|
 | `server` | bind/port/poll cadence/debug | poll live; host/port/debug → restart-flagged |
 | `computers{}` (+nested `services{}`) | the fleet: ip/mac/ssh/os/services cmd-per-OS | live (projected per call) |
-| `inference` | local/cloud endpoints, default mode, failover chain, prompts, per-endpoint request gate (`max_concurrent_requests`, D40) | rebuild-on-change |
-| `agent` | defaults (AgentDef base incl. `max_parallel_tools`, D40), compaction, skills, subagent caps, streaming mode, auto-route, durable-turn + steer-queue knobs (`turns.*` incl. `steer_queue_max`, D41) | live |
+| `inference` | local/cloud endpoints, default mode, failover chain, prompts, per-endpoint request gate (`max_concurrent_requests`, D40), per-endpoint `context_window` + `max_tokens_field` (D42); fallbacks ride the same object | rebuild-on-change (window auto-probed from llama.cpp `/props`) |
+| `agent` | defaults (AgentDef base incl. `max_parallel_tools`, D40), compaction v2 (`threshold_frac`/`keep_recent_tokens`/`clear_output_min_tokens`/`clear_keep_steps`/`max_consecutive_failures`/`reserve_output` + `threshold_tokens` no-window fallback, D42), ModelRef call config (`max_tokens`/`reasoning_effort`/`reasoning_tokens`, D42/A10), skills, subagent caps, streaming mode, auto-route, durable-turn + steer-queue knobs (`turns.*` incl. `steer_queue_max`, D41) | live (compaction/window edits apply at the next turn — D42 Inv-11) |
 | `memory` | stores, caps, auto-write, nudges, reflection, git backup | live |
 | `voice` / `searxng` / `embeddings` / `open_terminal` | endpoints + per-op risk | rebuild-on-change |
 | `shell` / `tailscale` | the two guarded escape hatches | live |
@@ -486,7 +486,7 @@ activity, EventBus, 15 s keepalive) with client auto-reconnect + reconcile.
 |---|---|
 | hosts / services | list + status + CRUD (comment-preserving YAML edits) + wake/shutdown/reboot/start/stop/restart via actions |
 | actions / tools | catalog (specs + schemas + retry_safe) · `POST /actions/invoke` (UI two-step confirm) |
-| agent | threads CRUD · `chat` · `resume` · `compact` · `plan` · `apply` · `exec` (!) · skills CRUD · agents CRUD (+SOUL, memory stores) · default-prompt (`chat`/`exec` → **202 steer-enqueue** when the thread runs a chat/resume turn, D41) |
+| agent | threads CRUD · `chat` · `resume` · `compact` (D42: `instructions?` in → `{removed, summaryId?, truncated?, rejected?}` out) · `plan` · `apply` · `exec` (!) · skills CRUD · agents CRUD (+SOUL, memory stores) · default-prompt (`chat`/`exec` → **202 steer-enqueue** when the thread runs a chat/resume turn, D41) |
 | settings | `GET/PUT /settings` (masked/hot-apply) · `GET /appearance` |
 | integrations | MCP/OpenAPI CRUD · `rediscover` (409 while turn active) · status |
 | voice | `status` · `stt` · `tts` |
@@ -533,7 +533,7 @@ ctrl-b/
 | **Chat hardening** (pre/post-emma) | doc-truth fixes · MCP deadlines · per-thread turn marker (409) · shielded step persistence · SYS-1 transactions · SYS-13 composer fix · CI | ACA 0–2 · SYS |
 | **Durable turns** | §5.1 target diagram becomes real: TurnRegistry, replay/snapshot, cancel + Stop, `id:` cursors | ACA 3 (D35) |
 | **Interaction speed & steering** | parallel safe calls, per-call results, steering queue (§8.1 additions) | ACA 4–5 |
-| **Compaction v2 · routing · approvals** | reserve-headroom trigger (+`context_window` config), assembly-time tool-result clearing, lead/worker ModelRef routing, persisted approvals row in §4.2 | ACA 6–8 |
+| **Compaction v2 ✅ · routing · approvals** | window-aware anchored trigger (+`context_window` config/`/props` probe), assembly-time tool-result clearing, 5-section template + `/compact <instructions>`, thrash breaker, reactive overflow backstop, ModelRef call config/A10 (Slice 6 ✅, D42); lead/worker ModelRef routing + persisted approvals still ▹ | ACA 6 ✅ · 7–8 ▹ |
 | **Platform futures** | automations/notifications/wake-word/vector memory slot into existing seams (EventBus, MemoryProvider, registry) | ROADMAP |
 
 *End of specification. Maintain by editing the affected section when a D-entry lands; the ✅/▹/◇

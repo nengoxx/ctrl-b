@@ -301,7 +301,12 @@ class AgentDef(BaseModel):
     max_subagent_depth: int = 2
     max_concurrent_subagents: int = 3      # per-agent fan-out cap (global cap lives in settings)
 
-class ModelRef(BaseModel): mode: Literal["local","cloud"]; model: str
+class ModelRef(BaseModel):              # "pointer + call config" (D42/A10)
+    mode: str | None = None             # local|cloud|None → inference.default_mode
+    model: str | None = None            # None → the endpoint's configured model
+    max_tokens: int | None = None       # output budget → per-endpoint max_tokens_field kwarg
+    reasoning_effort: Literal["off","minimal","low","medium","high","xhigh","max"] | None = None
+    reasoning_tokens: int | None = None # numeric budget; declared, v1-untranslated (advisory)
 ```
 
 `AgentSession` (shipped name; the sketch says `AgentRunner`) is constructed per turn from an
@@ -373,8 +378,10 @@ Loop responsibilities, in order, per iteration:
 >    messages (one `Database.transaction()` per contiguous run, **persist-before-clear**: the queue
 >    clears only after the txn commits); `!exec` steers re-check `shell.user_exec_enabled` **live**
 >    (fail-closed, commit-before-run) then run the shared `run_user_exec`. Each yields `steer.applied`.
-> 2. **Compaction** — `should_compact` gates a `// compacting…` `notice` breadcrumb (emitted **only**
->    when compaction will actually summarize), then `compact` runs and may emit `compaction`.
+> 2. **Compaction** — a free Tier-1 tool-output clearing plan is computed, then the **window-aware
+>    trigger** (D42, §5.4): `should_compact` gates a `// compacting…` `notice` breadcrumb (emitted
+>    **only** when compaction will actually summarize), then `compact` runs and may emit `compaction`.
+>    The reactive context-overflow backstop (§5.4) wraps the model call one iteration lower.
 > 3. **Assemble + call model** — the cached static head + non-compacted history stream through the
 >    per-endpoint **request gate** (`InferenceEndpointCfg.max_concurrent_requests`, held for the whole
 >    streamed response, released before any tool runs — no hold-and-wait).
@@ -409,13 +416,106 @@ A turn can **suspend** (awaiting confirm or an answer). The session state persis
 ### 5.4 Compaction
 
 ```python
-class Compactor(Protocol):
-    async def compact(self, msgs: list[Message], budget: Tokens,
-                      summarizer: ModelRef) -> CompactionResult: ...
-# default impl: summarize the oldest run of messages with the SELECTED summarizer model (D11),
-# keep the last N verbatim, store the summary as Memory(kind=summary) + a system message.
-# Failure → fall back to head/tail truncation; NEVER drop DB history (only flips `compacted`).
+class Compactor:                          # services/agent/compaction.py — stateless, one per session
+    def __init__(self, inference, messages, cfg: CompactionCfg): ...
+    async def compact(self, thread, *, force=False, window=None, reserve_tokens=None,
+                      estimated_tokens=None, clearing=None, cleared_at_anchor=None,
+                      instructions=None) -> CompactionResult | None: ...
+# folds the oldest COMPLETE turns into one summary `system` message with the SELECTED summarizer
+# model (D11), keeps a recent floor verbatim, flips the folded rows `compacted` (never deleted — DB
+# stays the audit trail). Summarizer failure → a truncation placeholder (the context still shrinks).
 ```
+
+> **As-built (D42, ACA Slice 6 — context management & compaction v2).** The v1 sketch above still
+> holds (summary-as-system-message, `compacted` overlay, turn-boundary safety, never-lose-history);
+> Slice 6 makes the *trigger* window-aware, adds a free pre-summary trim tier, a structured
+> template, a thrash breaker, and a reactive backstop. The **Compactor stays stateless** — the
+> per-turn `AgentSession` owns all window/anchor/thrash state and passes decisions in (all new
+> `compact`/`should_compact` params are defaulted, so every existing caller is unchanged). The
+> single `_over_threshold` predicate serves *both* `compact()` and the `should_compact()` ACA-11
+> pre-check, so the trigger math lives in exactly one place.
+>
+> - **Context windows & the trigger.** A per-endpoint window resolves on the `InferenceClient` via
+>   the ladder **`InferenceEndpointCfg.context_window` (config) > llama.cpp `/props` probe > `None`**
+>   (`effective_window`). The **probe** (`probed_context_window`) is a raw `GET {base_url}/props` →
+>   `default_generation_settings.n_ctx` (with `meta.n_ctx_train` kept as a sanity ceiling; an upward
+>   override is honoured + logged), on a lazily-built httpx client (no new dep), **lazy + memoized
+>   per `base_url` — failed probes memoized too — and it NEVER raises or blocks a turn** (any
+>   failure/non-200/malformed ⇒ `None`). No cache-invalidation bookkeeping: `runtime.set_inference`
+>   rebuilds the whole client on any inference-settings change, so a config edit re-probes for free.
+>   Only the configured **local** endpoint is probe-eligible (`_is_probe_eligible`, matched by
+>   `base_url`) — cloud/OpenAI has no `/props`, fallbacks rely on manual `context_window`. The
+>   trigger fires when the estimate exceeds **`window × threshold_frac − reserve`** (`threshold_frac`
+>   default 0.85; `reserve` = the effective `ModelRef.max_tokens` output budget when
+>   `reserve_output`), or the absolute **`threshold_tokens`** when no window resolves (v1's
+>   no-regression path). A degenerate line (`reserve ≥ window × threshold_frac`, i.e. ≤ 0) degrades
+>   to the `threshold_tokens` fallback and warns once. Iteration 1 prices against the *selected*
+>   endpoint; **iteration 2+ prices against the endpoint that actually served** — `_record` stamps
+>   `StreamReport.served_endpoint` (`chain[served_index][1]`), so the anchor + window come from the
+>   same serve.
+> - **The anchored estimator** (`ContextEstimator`, session-held) fixes the v1 blind spot — the
+>   char/4 heuristic misses the system head + tool schemas the model prefills each call. It anchors
+>   on the real **total prompt tokens** of the last call (`StreamReport.prompt_tokens`: llama.cpp
+>   `prompt_progress.total`, else cloud `usage.prompt_tokens`) and adds a heuristic only of the
+>   messages appended *after* that call's watermark. With no reliable total it falls back to
+>   `estimate_tokens(history)` + the A8 head+tools `overhead`. The anchor is dropped on a **fold**
+>   (explicit `invalidate()`), a **served-endpoint change** (a different backend tokenizes
+>   differently), **degraded/absent telemetry** (`record(total=None)`), or the watermark falling out
+>   of history. A backend that reports no total (no `return_progress`/`include_usage`) runs
+>   heuristic-only — the client logs an *anchoring-inactive* INFO once naming the exact remedy.
+> - **Tier 1 — assembly-time tool-output clearing** runs free before any paid summary: the pure,
+>   shared `plan_clearing(history, cfg) → ClearingPlan` selects tool-result OUTPUTS to blank
+>   (`OUTPUT_CLEARED_PLACEHOLDER`), keeping the `[state] summary` line + any error. One selection per
+>   iteration feeds **both** `_assemble` (renders the placeholder for each `call_id` — a
+>   rendering-time substitution only, the DB row stays verbatim, A12) and the trigger (priced
+>   net-of-clearing at a conservative **chars/5**, below the estimator's chars/4). Structural
+>   never-clear: a call in a suspend state, a `task_plan`/`memory` result, a *synthesized* result
+>   (`duration_ms is None` — never a real tool run), an output at/below `clear_output_min_tokens`, or
+>   one within the most-recent `clear_keep_steps` steps (a **step** = one assistant-tool-call round).
+>   The credit is exact per estimator mode (R1): heuristic mode credits the full priced gain;
+>   anchored mode credits only `cleared_now − cleared_at_anchor` (the anchor total already reflects
+>   the anchor-time trim — no double-count).
+> - **`_split` two floors.** `cut = min(message-cut, token-cut)` — the `keep_last_messages` message
+>   floor AND a `keep_recent_tokens` token floor (walk the tail back until it holds ≥
+>   `keep_recent_tokens`); whichever keeps *more* recent context wins. Then three snaps that only
+>   ever *grow* the tail: the suspend-snap (an `AWAITING_*` call + its resume siblings/result stay
+>   verbatim), the **active-`task_plan` snap** (the most-recent `task_plan` pair round-trips in the
+>   tail; superseded older pairs may fold), and the user-boundary snap (the tail starts at a `user`
+>   message, so a `tool` result is never orphaned).
+> - **Tier 2 — the summarizer** fills a fixed **five-section template** (Goals & Requests · Key Facts
+>   & State · Actions Taken & Outcomes · Rules & Constraints · Next Steps), scoped to the folded
+>   head (a prior rolling summary re-folds). `/compact <instructions>` rides as an extra emphasis
+>   block (manual path only). An **overflow guard** reads the summarizer's *own* endpoint window and
+>   reserves `max(summarizer.max_tokens, window × 0.2)`; a transcript that won't fit falls back to
+>   the truncation-fold instead of a doomed call. The **inflation-reject** abandons a fold whose
+>   summary wouldn't shrink the *live* (net-of-clearing) head — `CompactionResult.rejected`, no DB
+>   write; `force` bypasses threshold/backoff/breaker but **never** the reject.
+> - **The thrash machine** (`app.state.compaction_state`, a per-thread `CompactionState` injected
+>   like the steer-queue view — the Compactor stays stateless) counts **only** the inflation-reject
+>   as a failure (a truncation-fold that shrinks is a *success*). A failed fold backs auto-compaction
+>   off for the rest of the turn (a turn-local flag); at `max_consecutive_failures` the **breaker
+>   latches** (auto-compaction stops on the thread) and emits exactly one `// …` notice. A manual
+>   `/compact` that leaves the thread under threshold resets it (and `prune_compaction_state` drops
+>   the now-inert entry). In-memory → a restart resets it (recorded residual).
+> - **The reactive backstop** catches the case the estimate missed. `InferenceError` carries
+>   structured `code`/`status` captured *pre-flattening* (`_as_inference_error`, before the failover
+>   chain collapses each hop to a string); `is_context_overflow` is the one classifier (OpenAI 400 +
+>   `context_length_exceeded`, else a 400-gated substring scan for the llama.cpp shapes /
+>   failover-flattened case). On an overflow **where nothing streamed yet** (`streamed_any` false)
+>   and once per turn, the loop runs one **forced** compaction and re-streams into the *same*
+>   assistant slot (no duplicate bubble); a reject or a second overflow falls to the normal error
+>   path. Residual: with context-shift *enabled*, llama.cpp may silently truncate instead of erroring
+>   — the backstop can't fire, so the deploy note recommends disabling it (see the deploy runbook).
+> - **ModelRef is now "pointer + call config"** (A10 lands here). `InferenceClient._call_config` is
+>   the one wire builder: `max_tokens` rides under the *serving* endpoint's `max_tokens_field`
+>   (`max_tokens` | `max_completion_tokens`); `reasoning_effort` is sent to every backend (llama.cpp
+>   drops it silently — verified harmless; cloud honours it) and its `"off"` value additionally
+>   merges `chat_template_kwargs: {enable_thinking: false}` *over* the endpoint's `extra_body` for
+>   that call only (agent keys win, the config object is never mutated). Modeled params are
+>   first-class kwargs on `stream_chat`/`complete`; `extra_body` stays unmodeled-passthrough only.
+>   `reasoning_tokens` is declared but v1 ships it **untranslated** (no OpenRouter-shape detection
+>   exists — advisory no-op, recorded residual). Both consumers benefit: the agent's own calls *and*
+>   the compaction summarizer (capped for free). Rule: never gate behaviour on a param taking effect.
 
 ### 5.5 Subagents & orchestration (concurrent, swappable)
 
@@ -769,8 +869,11 @@ privilege → gated calls hit notify-park/fallback → results to a thread + Eve
 - **Confirm/question:** stale confirm (host/world changed since proposal) → re-validate at execute,
   re-confirm if drifted; confirm token single-use + TTL; headless + needs-input → notify-park or
   fallback, with a max wait then auto-skip.
-- **Compaction:** summarizer backend down → truncation fallback; never lose DB history; don't
-  compact below a floor of recent turns.
+- **Compaction (D42):** summarizer backend down / transcript won't fit the summarizer window →
+  truncation fallback; a fold that wouldn't shrink the live context → inflation-reject (no write);
+  repeated rejects latch a per-thread breaker (one notice; manual `/compact` resets); never lose DB
+  history; two floors (recent messages + `keep_recent_tokens`) plus suspend/`task_plan`/user-boundary
+  snaps keep the tail intact.
 - **Subagents (concurrent):** bounded parallelism (per-agent + global semaphore, tree-wide); depth
   **and** breadth limits + total-spawn counter to prevent fan-out explosion; **structured
   concurrency** (one task group → parent cancel cancels all children, no orphans); one child's
@@ -814,8 +917,9 @@ registry/Protocol design rather than hoped for.
 - ✅ **Resolved — skill-selection**: shipped as `KeywordSkillSelector` (token overlap, model-agnostic);
   the `SkillSelector` Protocol keeps an LLM selector a drop-in. **Subagent orchestration**: shipped as
   `ParallelOrchestrator` (asyncio.TaskGroup + semaphores).
-- ✅ **Resolved — tokenizer**: a **heuristic char/4 estimate** is used for compaction budgeting (no
-  model-specific tokenizer dep).
+- ✅ **Resolved — tokenizer**: the char/4 heuristic remains the fallback, but D42 (Slice 6) anchors
+  the estimate on the backend's real **total prompt tokens** telemetry when available (no
+  model-specific tokenizer dep); see §5.4.
 - ✅ **Resolved — plan persistence**: the latest `task_plan` call **rides the message history** (no
   `plans` table); reload + the model's context recover it.
 - ⏳ **AgentSelector auto-rotate algorithm** (D15 #8) — seam locked (off-by-default `agent.auto_rotate`,

@@ -91,6 +91,34 @@ curl -s localhost:5434/api/health                 # dev backend; UI at http://em
 systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web    # when done
 ```
 
+## Inference tuning (owner `config.yaml` — D40/D42)
+These are optional per-endpoint knobs the owner sets on the local llama.cpp (and cloud) endpoint in
+`~/.ctrl-b/config.yaml` (`inference.local` / `inference.cloud`, or a `fallbacks[]` row — same object).
+They apply at the next turn (no restart; a settings PUT rebuilds the inference client). None are
+required for a working install, but each fixes a real degradation on this box:
+- **`max_concurrent_requests: 1`** (Slice 4/D40) — the owner's llama.cpp serves one model with 1–2
+  NON-queuing slots, so overlapping turns/subagents/the summarizer would error at llama-server. Set it
+  to the real slot count so ctrl-b queues app-side instead.
+- **`context_window: <tokens>`** (Slice 6/D42) — the size of the model's usable context, driving the
+  fraction-of-window compaction trigger. **For local llama.cpp you can usually leave it blank** — the
+  window is auto-probed from `GET /props` (`default_generation_settings.n_ctx`). Set it explicitly to
+  override the probe (config wins; upward overrides allowed), and **cloud endpoints MUST set it
+  manually** (OpenAI-style APIs expose no window field, so there is nothing to probe). With neither, the
+  trigger falls back to the absolute `agent.compaction.threshold_tokens`.
+- **Context anchoring needs telemetry flags** (Slice 6/D42) — the anchored context estimator prices
+  compaction off the backend's real total-prompt count. It only sees that count when the endpoint
+  reports it: `extra_body: { return_progress: true }` on a local llama.cpp (streaming `prompt_progress`;
+  already in `config.example.yaml`) / `extra_body: { stream_options: { include_usage: true } }` on
+  cloud. Without them the estimator silently falls back to the char/4 heuristic — the server logs a
+  one-time `context anchoring inactive …` INFO naming the exact remedy.
+- **Disable llama.cpp context-shift so overflow surfaces** (Slice 6/D42 residual) — the reactive
+  overflow backstop (force-compact + re-stream on a prompt-too-long error) only fires if llama-server
+  actually *returns* the overflow error. With context-shift enabled, llama-server silently truncates the
+  oldest tokens instead of erroring, muting the backstop. Recent llama.cpp builds disable context-shift
+  by DEFAULT (overflow errors surface — good); on a build/config where it is on, pass
+  **`--no-context-shift`** to `llama-server` (older flag name; newer builds use `--context-shift` to
+  *enable* it — verify against your build's `llama-server --help`).
+
 ## The Claude agent services (development continues ON the box)
 The agents are first-class always-on services (owner decisions 2026-07-09 + 2026-07-10): the TEMPLATE
 unit **`ctrl-b-agent@.service`** is enabled by `install.sh dev` as **two boot instances** —
