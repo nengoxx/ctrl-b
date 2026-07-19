@@ -423,6 +423,7 @@ def test_b7_split_keeps_suspended_call_in_tail() -> None:
 
 def test_b8_finalize_retries_with_tools_none() -> None:
     from app.adapters.inference import ChatDelta, InferenceError
+    from app.domain.agent import ModelRef
     from app.domain.conversation import Thread
     from app.services.agent.session import AgentSession
 
@@ -447,7 +448,7 @@ def test_b8_finalize_retries_with_tools_none() -> None:
 
             session._inference.stream_chat = fake_stream
 
-            events = [ev async for ev in session._finalize(thread, None, None)]
+            events = [ev async for ev in session._finalize(thread, None, ModelRef())]
             kinds = [e.event for e in events]
             done = next(e for e in events if e.event == "done")
             text = "".join(e.data["delta"] for e in events if e.event == "text.delta")

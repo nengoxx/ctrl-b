@@ -28,7 +28,7 @@ from _async import run_async
 
 from app.adapters.inference import ChatDelta, InferenceClient, ToolCallRequest
 from app.db import Database
-from app.domain.agent import CompactionCfg
+from app.domain.agent import CompactionCfg, ModelRef
 from app.domain.conversation import Message, TextPart, ToolCallPart, ToolResultPart
 from app.domain.enums import Actor, RunState
 from app.domain.result import ToolResult
@@ -794,7 +794,7 @@ def test_finalize_assembles_with_clearing_placeholder() -> None:
 
             session._inference.stream_chat = recording  # type: ignore[assignment]
 
-            events = [ev async for ev in session._finalize(thread, None, None)]
+            events = [ev async for ev in session._finalize(thread, None, ModelRef())]
             assert any(e.event == "done" and e.data.get("state") == "completed" for e in events)
             payload = "\n".join(str(m.get("content") or "") for m in seen["messages"])
             assert OUTPUT_CLEARED_PLACEHOLDER in payload  # the old bulky output was trimmed
@@ -835,7 +835,7 @@ def test_finalize_overflow_one_fold_then_reattempt() -> None:
 
             session._inference.stream_chat = overflow_then_ok  # type: ignore[assignment]
 
-            events = [ev async for ev in session._finalize(thread, None, None)]
+            events = [ev async for ev in session._finalize(thread, None, ModelRef())]
             assert folds["n"] == 1  # exactly ONE forced compaction
             assert any(e.event == "compaction" for e in events)
             assert (
@@ -875,7 +875,7 @@ def test_finalize_second_overflow_is_normal_error() -> None:
 
             session._inference.stream_chat = always_overflow  # type: ignore[assignment]
 
-            events = [ev async for ev in session._finalize(thread, None, None)]
+            events = [ev async for ev in session._finalize(thread, None, ModelRef())]
             assert folds["n"] == 1  # one-shot: folded once despite repeated overflow
             assert any(e.event == "error" for e in events)
             assert any(e.event == "done" and e.data.get("state") == "capped" for e in events)

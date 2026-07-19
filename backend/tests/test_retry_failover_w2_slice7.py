@@ -27,6 +27,7 @@ from _async import run_async
 from test_modelref_wire_w4_slice6 import _client_app, _workspace
 
 from app.adapters.inference import ChatDelta, FailoverNotice, RetryNotice
+from app.domain.agent import ModelRef
 from app.services.agent.session import AgentEvent, collect_turn
 from app.services.agent.turns import TurnAccumulator
 
@@ -177,7 +178,7 @@ def test_finalize_emits_control_events() -> None:
                     ChatDelta(text="final answer"),
                 ]
             )
-            events = [ev async for ev in session._finalize(thread, "local", None)]
+            events = [ev async for ev in session._finalize(thread, "local", ModelRef())]
             kinds = [e.event for e in events]
             assert "inference.retry" in kinds and "inference.failover" in kinds
             r = next(e for e in events if e.event == "inference.retry")

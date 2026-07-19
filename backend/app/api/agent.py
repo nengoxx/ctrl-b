@@ -44,6 +44,7 @@ from app.services.agent.compaction import compaction_state_for, prune_compaction
 from app.services.agent.exec import run_user_exec
 from app.services.agent.planning import TaskPlanInput
 from app.services.agent.proposals import apply_proposal
+from app.services.agent.routing import prune_routing_state, routing_state_for
 from app.services.agent.selector import select_agent
 from app.services.agent.session import AgentSession, collect_turn
 from app.services.agent.skills import remove_skill_md, valid_skill_slug, write_skill_md
@@ -228,6 +229,7 @@ def _build_session(
         memory=getattr(state, "memory", None),
         steer_source=steer_source_for(state, thread.id) if thread is not None else None,
         compaction_state=(compaction_state_for(state, thread.id) if thread is not None else None),
+        routing_state=(routing_state_for(state, thread.id) if thread is not None else None),
     )
 
 
@@ -408,6 +410,10 @@ def _spawn_drain_task(
         # merely a reload fallback, the safe failure of the two.
         release(state.turns, handle)
         record_terminal(state.turn_terminals, handle, linger_s=cfg.linger_s, cap=cfg.terminal_cache_cap)
+        # D43/A4: a turn that ended with the routing state back to all-defaults (no live episode, no
+        # route lock — a healthy worker thread) drops its now-inert entry so `app.state.routing_state`
+        # doesn't accumulate dead threads; a mid-episode state is NOT all-default → preserved.
+        prune_routing_state(state.routing_state, thread.id)
         # D41 Drain B: a `completed` turn that leaves pending steers spawns the next turn (or drains an
         # all-exec queue) — synchronously in this sync done-callback. Suppressed at shutdown / on a
         # cancel that already harvested the queue (see `_maybe_spawn_drain_b`).

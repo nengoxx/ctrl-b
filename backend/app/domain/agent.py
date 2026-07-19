@@ -97,6 +97,32 @@ class CompactionCfg(BaseModel):
     summarizer: ModelRef = Field(default_factory=ModelRef)
 
 
+class RoutingCfg(BaseModel):
+    """Failure-fallback model routing (ACA Slice 7, D43/A4-reduced). Two tiers — the agent's own
+    `model` (the WORKER) and a designated `lead` — with TEMPORARY escalation: after
+    `failure_threshold` consecutive HARD worker failures (a chain-level inference error on a
+    single-endpoint chain, or reaching the forced-finalize via iteration-exhaustion / the stall guard)
+    the next `fallback_turns` logical turns route to `lead`, then the machine returns to the worker.
+    Structural triggers ONLY — a confident-wrong answer is a clean turn by design (content-sniffing was
+    the Goose regret, rejected). The D18 endpoint failover chain runs unchanged underneath; routing
+    only picks who is asked FIRST.
+
+    Lives here (not config.py), like `CompactionCfg`, so an `AgentDef` can carry a per-agent override
+    without a config↔domain import cycle. UNLIKE compaction's dual home there is NO
+    `Settings.agent.routing` global: the global default is `agent.defaults.routing` (D16 — the
+    separate-Settings-field anti-pattern D16 rejected; a deliberate, recorded divergence). A subagent
+    copies the field via `model_copy` but it is RUNTIME-INERT — a headless child is built with no
+    `RoutingState`, so it never routes (documented, not sold as inheritance)."""
+
+    lead: ModelRef  # REQUIRED — the escalation target (a bigger/smarter backend+model pointer).
+    #: Consecutive HARD worker failures that OPEN a fallback episode. `ge=1`: a 0 would escalate on the
+    #: first hiccup and is meaningless as a "threshold" — rejected at the boundary.
+    failure_threshold: int = Field(default=2, ge=1)
+    #: How many logical turns ONE episode routes to `lead` before returning to the worker. `ge=1`: a
+    #: 0-turn episode would trip then never actually use the lead — rejected at the boundary.
+    fallback_turns: int = Field(default=2, ge=1)
+
+
 class AgentDef(BaseModel):
     """One agent's definition (D11). `tools`/`skills` are allowlists — `"*"` means every
     `agent_exposed` tool / discovered skill, or a list of names/globs to narrow it (a skill may
@@ -134,6 +160,12 @@ class AgentDef(BaseModel):
     #: Per-agent context-window override. `None` → inherit `Settings.agent.compaction` (the global
     #: default). A subagent inherits its parent's effective value unless its own def sets this.
     compaction: CompactionCfg | None = None
+    #: Per-agent failure-fallback routing override (D43/A4). `None` → routing OFF for this agent; the
+    #: global default arrives via `agent.defaults.routing` baked into every AgentDef at config-build
+    #: time (deep_merge) — there is NO separate `Settings.agent.routing` (the D16 divergence from
+    #: compaction's dual home). A subagent copies this via `model_copy`, but it is RUNTIME-INERT: a
+    #: headless child gets no `RoutingState`, so the router never engages for it.
+    routing: RoutingCfg | None = None
     max_iterations: int = 16  # tool-call loop safety cap
     #: Loop-discipline guards (capability layer C1). A weak model can spiral — repeating one tool
     #: or churning many calls without ever answering. `max_repeat_calls` is how many *identical*

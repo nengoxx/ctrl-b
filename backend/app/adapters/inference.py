@@ -95,7 +95,15 @@ class InferenceError(RuntimeError):
     `retry_after` (D43/A7) is the server-requested backoff in seconds, parsed from the RAW SDK
     exception's `Retry-After` response header BEFORE the failover chain flattened the hop (post-
     flattening the header is gone — the same pre-capture rationale as `code`/`status`). `None` when the
-    backend sent no header / it was malformed; the retry curve uses it as a floor when present."""
+    backend sent no header / it was malformed; the retry curve uses it as a floor when present.
+
+    `endpoints_tried` (D43/A4) is how many DISTINCT chain endpoints were attempted-and-failed to
+    produce this terminal error — set ONLY on the all-endpoints-failed path (from
+    `FailoverError.failures`), `None` for every other shape (no-endpoint-configured / a mid-stream
+    drop after a successful serve). The routing machine counts a WORKER failure only for a
+    single-endpoint chain failure (`endpoints_tried == 1` — the lead may live on a different
+    endpoint): a multi-endpoint total outage (`> 1`) is an infra event, not worker quality, so
+    escalating to an equally-dead lead is pointless (D43 review F12)."""
 
     def __init__(
         self,
@@ -104,11 +112,13 @@ class InferenceError(RuntimeError):
         code: str | None = None,
         status: int | None = None,
         retry_after: float | None = None,
+        endpoints_tried: int | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.status = status
         self.retry_after = retry_after
+        self.endpoints_tried = endpoints_tried
 
 
 def _parse_retry_after(exc: BaseException) -> float | None:
@@ -785,6 +795,10 @@ class InferenceClient:
                 str(exc),
                 code=last_error.code if last_error is not None else None,
                 status=last_error.status if last_error is not None else None,
+                # D43/A4: how many endpoints the chain walked-and-failed — the routing machine's
+                # single-endpoint-vs-total-outage discriminator (one failed hop = countable worker
+                # failure; >1 = infra outage, excluded). Post-flattening this is the only survivor.
+                endpoints_tried=len(exc.failures),
             ) from exc
         self._record(report, chain, result)
         return result.value
@@ -925,6 +939,10 @@ class InferenceClient:
                 str(exc),
                 code=last_error.code if last_error is not None else None,
                 status=last_error.status if last_error is not None else None,
+                # D43/A4: how many endpoints the chain walked-and-failed — the routing machine's
+                # single-endpoint-vs-total-outage discriminator (one failed hop = countable worker
+                # failure; >1 = infra outage, excluded). Post-flattening this is the only survivor.
+                endpoints_tried=len(exc.failures),
             ) from exc
         assert result is not None, "failover() drained without a FailoverResult and without raising"
         self._record(report, chain, result)

@@ -68,6 +68,7 @@ from app.services.actions.terminal import register_openterminal
 from app.services.agent.compaction import CompactionState
 from app.services.agent.memory import FileMemoryProvider, migrate_legacy_specialist_memory
 from app.services.agent.memory_backup import GitMemoryBackup
+from app.services.agent.routing import RoutingState
 from app.services.agent.selector import KeywordAgentSelector
 from app.services.agent.skills import FileSkillProvider, KeywordSkillSelector
 from app.services.agent.steering import SteerQueue
@@ -191,6 +192,13 @@ async def lifespan(app: FastAPI):
     # app/services/agent/compaction.py `CompactionState` / `compaction_state_for`.
     compaction_state: dict[str, CompactionState] = {}
     app.state.compaction_state = compaction_state
+    # Per-thread failure-fallback routing state (D43/A4): the consecutive-failure counter + the live
+    # fallback episode (`fallback_remaining`) + the logical-turn route lock, thread-id-keyed like the
+    # compaction state so an episode outlives any one turn (the session is rebuilt per turn). NOT
+    # busy-state. Restart resets it. See app/services/agent/routing.py `RoutingState` /
+    # `routing_state_for`; pruned back to nothing on a healthy turn's done-callback.
+    routing_state: dict[str, RoutingState] = {}
+    app.state.routing_state = routing_state
     # D41 Drain B guard: set True at the top of the lifespan finally so a turn completing DURING
     # shutdown can't spawn a drain-B turn past the drain snapshot into a closing DB. Initialized here
     # so `_maybe_spawn_drain_b`'s `getattr(state, "shutting_down", False)` reads a real value.

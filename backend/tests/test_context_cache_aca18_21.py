@@ -24,6 +24,7 @@ from _async import run_async
 
 from app.adapters.inference import ChatDelta, InferenceClient, StreamReport
 from app.config import InferenceCfg, InferenceEndpointCfg
+from app.domain.agent import ModelRef
 
 
 # ── fakes for the AsyncOpenAI stream shape (chunk carries optional usage / model_extra) ──
@@ -329,7 +330,7 @@ def test_finalize_retains_toolset_with_tool_choice_none():
     thread = SimpleNamespace(id="t1")
 
     async def drain():
-        return [ev async for ev in s._finalize(thread, None, None)]
+        return [ev async for ev in s._finalize(thread, None, ModelRef())]
 
     events = run_async(drain())
     # The wrap-up call keeps the SAME cached toolset (prefix stays cached) but forbids calls.

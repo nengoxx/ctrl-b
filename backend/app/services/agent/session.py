@@ -56,7 +56,7 @@ from app.core.memory import MemoryProvider
 from app.core.permissions import Decision, decide
 from app.core.skills import SkillProvider, SkillSelector
 from app.core.tool import UnknownTool
-from app.domain.agent import AgentDef
+from app.domain.agent import AgentDef, ModelRef
 from app.domain.conversation import (
     ErrorPart,
     Message,
@@ -81,6 +81,7 @@ from app.services.agent.compaction import (
     plan_clearing,
 )
 from app.services.agent.exec import run_user_exec
+from app.services.agent.routing import RoutingState
 from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
 from app.services.conversation import MessageRepo, ThreadRepo
 
@@ -356,6 +357,7 @@ class AgentSession:
         depth: int = 0,
         steer_source: SteerSource | None = None,
         compaction_state: CompactionState | None = None,
+        routing_state: RoutingState | None = None,
     ) -> None:
         self._threads = threads
         self._messages = messages
@@ -389,6 +391,17 @@ class AgentSession:
         #: subagent sessions + non-thread call sites (their auto-compaction never latches a breaker).
         #: The Compactor stays STATELESS; the session reads/writes this off `compact()`'s outcome.
         self._compaction_state = compaction_state
+        #: The injected per-thread failure-fallback routing view (D43/A4, the CompactionState
+        #: precedent) — `None` for subagent sessions + non-thread call sites, which makes routing
+        #: RUNTIME-INERT (the `_drive` decision falls straight to `agent.model`, today's behavior).
+        #: The state MACHINE (the reads/writes at the loop's terminals) lives in `_drive`; this is just
+        #: the injected holder.
+        self._routing_state = routing_state
+        #: The effective routing cfg for this agent (D43). `AgentDef.routing` already carries the
+        #: `agent.defaults.routing` global default (baked in at config-build via deep_merge; there is
+        #: NO `Settings.agent.routing` — the D16 divergence from compaction's dual home). `None` ⇒
+        #: routing is off for this agent (the decision short-circuits to the worker model).
+        self._routing_cfg = self._agent.routing
         #: Session-held anchored context estimator (D42 Wave 2). The Compactor stays STATELESS — this
         #: holds the telemetry anchor + watermark that price the window-aware trigger, invalidated on a
         #: fold / served-endpoint change / degraded telemetry. Fresh per turn (session is per-turn), so
@@ -681,7 +694,11 @@ class AgentSession:
         """Is the thread OVER the compaction trigger right now (D42)? Resolves the window for the
         agent's own mode + the session's (unanchored) estimate and asks the shared `_over_threshold`
         predicate. Used by the manual `/compact` path to decide whether a manual fold left the thread
-        healthy enough to RESET the thrash breaker (net of the free clearing trim)."""
+        healthy enough to RESET the thrash breaker (net of the free clearing trim).
+
+        D43/A4: this keeps `self._agent.model` (NOT a routed ref) — the manual `/compact` path is a
+        sync-holder that never enters a routed turn, so pricing against the worker's window is correct
+        + benign (noted, not a bug)."""
         eff_mode = self._agent.model.mode
         # D42 Codex FIX 3: price through the CAPTURED client's own config generation, not the live
         # shared Settings (which a settings PUT can mutate in place) — the window/endpoint pin.
@@ -928,18 +945,55 @@ class AgentSession:
                 yield AgentEvent("done", {"threadId": thread.id, "state": "suspended"})
                 return
 
-        # Effective inference target: the per-message mode override (4c `/local`//`/cloud`) wins,
-        # else the agent's own `model.mode`; the agent's `model.model` overrides the endpoint model
-        # (both `None` → the configured default, so the default agent is unchanged).
-        eff_mode = mode or self._agent.model.mode
-        eff_model = self._agent.model.model
-        #: Modeled per-call config threaded to `stream_chat` as first-class kwargs (D42/A10). The
-        #: agent's own `ModelRef.max_tokens` doubles as BOTH the wire output cap AND the window
-        #: trigger's output reserve (below); `reasoning_effort` is agent-level (no per-message override).
-        eff_reasoning = self._agent.model.reasoning_effort
-        #: Output reserve subtracted from the window trigger line (D42) — the agent's own
-        #: `ModelRef.max_tokens`; `None` ⇒ nothing reserved (gated further by `reserve_output`).
-        reserve = self._agent.model.max_tokens
+        # ── D43/A4 failure-fallback routing: resolve ONE routed `ModelRef` for this LOGICAL turn ─────
+        # The router returns the LEAD ModelRef during a fallback episode, else the agent's own (WORKER)
+        # model. ALL FOUR derived locals below read from `routed` (review F4/H2: the draft's two-RHS
+        # form silently left reasoning/max_tokens/compaction-reserve on the worker), and `_finalize`
+        # takes `routed` too. The `/local`//`/cloud` prefix (`mode`) WINS and BYPASSES the router
+        # entirely (the 4c lock): the prefix selects the ENDPOINT and runs the WORKER ModelRef on it —
+        # the owner's hand chooses infrastructure, not persona. No routing state is read/written on the
+        # prefix path (or when routing is off / this is a subagent/non-thread session).
+        routed = self._agent.model
+        rs, rcfg = self._routing_state, self._routing_cfg
+        if mode is None and rcfg is not None and rs is not None:
+            if resume_assistant is not None:
+                # RESUME: carry the route the FRESH half decided (the ACA-16 mode-carry parallel) —
+                # READ `current_route`, never re-decide, never decrement, no mid-logical-turn flip. A
+                # restart lost it (None) → fall to the worker (a recorded residual, like the compaction
+                # state class).
+                routed = rcfg.lead if rs.current_route == "lead" else self._agent.model
+            else:
+                # FRESH turn = a new logical turn: clear any stale per-turn failure flag first
+                # (defensive against a cancel that skipped the prior turn's conclude), then decide.
+                rs.turn_had_model_failure = False
+                if rs.fallback_remaining > 0:
+                    # Inside a live episode → route to the lead and consume one turn.
+                    first_turn = rs.fallback_remaining == rcfg.fallback_turns
+                    rs.fallback_remaining -= 1
+                    rs.current_route = "lead"
+                    routed = rcfg.lead
+                    if first_turn:  # the ONE opening notice — only on the episode's FIRST lead turn
+                        yield AgentEvent(
+                            "notice",
+                            {
+                                "text": (
+                                    f"// lead model for the next {rcfg.fallback_turns} turns (worker failing)"
+                                )
+                            },
+                        )
+                else:
+                    rs.current_route = "worker"  # no episode → the worker (today's behavior)
+        # Effective inference target from the ROUTED ref: the per-message `mode` override (4c) still
+        # wins for the ENDPOINT; the model id / reasoning / output reserve all price the routed ref.
+        eff_mode = mode or routed.mode
+        eff_model = routed.model
+        #: Modeled per-call config threaded to `stream_chat` as first-class kwargs (D42/A10). The routed
+        #: `ModelRef.max_tokens` doubles as BOTH the wire output cap AND the window trigger's output
+        #: reserve (below); `reasoning_effort` is model-level (no per-message override).
+        eff_reasoning = routed.reasoning_effort
+        #: Output reserve subtracted from the window trigger line (D42) — the routed `ModelRef.max_tokens`
+        #: (a lead turn reserves the lead's cap); `None` ⇒ nothing reserved (gated by `reserve_output`).
+        reserve = routed.max_tokens
         #: The endpoint that ACTUALLY served the PREVIOUS iteration (D42 §C). Iteration 2+ prices the
         #: window trigger (and the anchor's served-endpoint consistency) against it; `None` on iteration
         #: 1 ⇒ price against the selected endpoint.
@@ -1127,6 +1181,16 @@ class AgentSession:
                     await self._messages.add(assistant)
                     await self._threads.touch(thread.id, assistant.ts)
                     yield AgentEvent("error", {"message": str(exc), "retryable": True})
+                    # D43/A4 Site 1: a chain-level InferenceError ENDS the turn. On a WORKER-routed turn
+                    # it's a hard failure ONLY for a single-endpoint chain failure (`endpoints_tried ==
+                    # 1` — the lead may live on a different endpoint); a multi-endpoint total outage
+                    # (`> 1`) or an ambiguous shape (`None` — config / mid-stream) is NEUTRAL (no count,
+                    # no reset — review F12: escalating to an equally-dead lead is pointless).
+                    single_endpoint = exc.endpoints_tried == 1
+                    if self._routing_state is not None and self._routing_state.current_route == "worker":
+                        self._routing_state.turn_had_model_failure = single_endpoint
+                    async for ev in self._conclude_routing(neutral=not single_endpoint):
+                        yield ev
                     yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
                     return
 
@@ -1164,6 +1228,10 @@ class AgentSession:
                 await self._messages.add(assistant)
                 await self._threads.touch(thread.id, assistant.ts)
                 yield AgentEvent("message.end", {"messageId": assistant.id})
+                # D43/A4: a clean text-only completion — the turn's conclusive end. On a worker turn
+                # (no failure flag set) this resets the consecutive-failure counter.
+                async for ev in self._conclude_routing():
+                    yield ev
                 yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})
                 return
 
@@ -1211,8 +1279,16 @@ class AgentSession:
             else:
                 stall += 1
                 if stall >= self._agent.max_stall_iterations:
+                    # D43/A4 Site 2: forced-finalize via the STALL guard is a hard worker failure (the
+                    # true weak-worker signal — set explicitly, never inferred from the terminal). The
+                    # conclude runs BEFORE `_finalize` (which owns its own `done`); it counts the
+                    # failure + emits any close notice, and `_finalize` runs on the SAME `routed` ref.
+                    if self._routing_state is not None:
+                        self._routing_state.turn_had_model_failure = True
+                    async for ev in self._conclude_routing():
+                        yield ev
                     async for ev in self._finalize(
-                        thread, eff_mode, eff_model, backstop_fired=backstop_fired_this_turn
+                        thread, eff_mode, routed, backstop_fired=backstop_fired_this_turn
                     ):
                         yield ev
                     return
@@ -1220,8 +1296,48 @@ class AgentSession:
 
         # Iterations exhausted: instead of a silent `capped` dead-end, force one tool-less call so
         # the owner always gets a final answer (C1c, opencode's max-step-guidance pattern).
-        async for ev in self._finalize(thread, eff_mode, eff_model, backstop_fired=backstop_fired_this_turn):
+        # D43/A4 Site 2: iteration exhaustion is a hard worker failure (set explicitly; conclude before
+        # `_finalize` — same rationale as the stall site above).
+        if self._routing_state is not None:
+            self._routing_state.turn_had_model_failure = True
+        async for ev in self._conclude_routing():
             yield ev
+        async for ev in self._finalize(thread, eff_mode, routed, backstop_fired=backstop_fired_this_turn):
+            yield ev
+
+    async def _conclude_routing(self, *, neutral: bool = False) -> AsyncIterator[AgentEvent]:
+        """Settle the failure-fallback routing machine at a LOGICAL turn's CONCLUSIVE end (D43/A4) —
+        the completed / error / capped terminals, NEVER a suspend (the logical turn continues on
+        resume, so `current_route` + `turn_had_model_failure` must survive that boundary; the suspend
+        terminals deliberately don't call this).
+
+        On a WORKER-routed turn: a set `turn_had_model_failure` flag → `consecutive_failures += 1`,
+        opening a fallback episode (`fallback_remaining = fallback_turns`, counter reset) once it
+        reaches `failure_threshold`; a clean completion (flag clear) → reset to 0; a `neutral` terminal
+        (a multi-endpoint total outage — review F12) does NEITHER (no count, no reset). On a
+        LEAD-routed turn: emit the ONE `// back to the worker model` close notice exactly when the
+        episode's LAST lead turn just finished (`fallback_remaining == 0`). Always clears the per-turn
+        route lock + failure flag last, so a healthy thread returns to all-defaults (prune-able).
+
+        No-op when routing is off (`rcfg is None`) beyond the defensive clear — which keeps a
+        routing-inert session's minted state at all-defaults so the done-callback can prune it."""
+        rs, rcfg = self._routing_state, self._routing_cfg
+        if rs is None:
+            return
+        if rcfg is not None:
+            if rs.current_route == "lead":
+                if rs.fallback_remaining == 0:  # the episode's last lead turn just concluded
+                    yield AgentEvent("notice", {"text": "// back to the worker model"})
+            elif rs.current_route == "worker" and not neutral:
+                if rs.turn_had_model_failure:
+                    rs.consecutive_failures += 1
+                    if rs.consecutive_failures >= rcfg.failure_threshold:
+                        rs.fallback_remaining = rcfg.fallback_turns
+                        rs.consecutive_failures = 0
+                else:
+                    rs.consecutive_failures = 0
+        rs.current_route = None
+        rs.turn_had_model_failure = False
 
     async def _drain_steers(self, thread: Thread) -> AsyncIterator[AgentEvent]:
         """Drain A (D41): apply the steers queued mid-turn at the `_drive` loop top. `peek()` snapshots
@@ -1350,7 +1466,7 @@ class AgentSession:
         self,
         thread: Thread,
         eff_mode: str | None,
-        eff_model: str | None,
+        routed: ModelRef,
         *,
         backstop_fired: bool = False,
     ) -> AsyncIterator[AgentEvent]:
@@ -1358,6 +1474,11 @@ class AgentSession:
         one **tool-less** model call (so it can only produce text) with a nudge to wrap up, instead
         of the old silent `capped` dead-end. Always ends the turn with a reply; only if this call
         itself fails do we fall back to `capped` so there's still a terminal event.
+
+        D43/A4: the wrap-up consumes the turn's ROUTED `ModelRef` — model id + `max_tokens` +
+        `reasoning_effort` all come from `routed` (a lead turn wraps up on the lead), not a re-read of
+        `self._agent.model` (review F4/H2: that asymmetry left the wrap-up on the worker's call-config).
+        `eff_mode` still carries the `/local`//`/cloud` endpoint override.
 
         D42 Codex FIX 2: the wrap-up now (a) assembles under the iteration's Tier-1 `plan_clearing` —
         the `clear_keep_steps` recent-step protection keeps the just-run results an honest wrap-up
@@ -1426,9 +1547,9 @@ class AgentSession:
                     async for delta in self._inference.stream_chat(
                         messages,
                         mode=eff_mode,
-                        model=eff_model,
-                        max_tokens=self._agent.model.max_tokens,
-                        reasoning_effort=self._agent.model.reasoning_effort,
+                        model=routed.model,
+                        max_tokens=routed.max_tokens,
+                        reasoning_effort=routed.reasoning_effort,
                         tools=fin_tools,
                         tool_choice=fin_choice,
                         report=report,
