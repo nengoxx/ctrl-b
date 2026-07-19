@@ -993,6 +993,42 @@ log). Design sketch (confirmed refinements in **bold**):
 > folds steered messages (snapshot-visible) · queue scope = messages+exec only · the Codex
 > SQ/EQ note is corrected (its core drains at turn END, not step-boundary). As-built record
 > lands here post-build.
+>
+> **✅ BUILT 2026-07-19 — AS-BUILT RECORD (commits `0d000d4..5e383d6`, 15; ALL LOCAL with the
+> pushed Slice 4 beneath them, awaiting the owner's push OK).** Five Opus waves: **W1 `855c661`**
+> (steering.py SteerQueue/SteerEntry + enqueue 202s + probe/DELETE + `_reserve_or_busy`) ·
+> **W2 `1c7e5f8`** (drain A at the `_drive` loop top: transactional persist-before-clear,
+> fail-closed exec re-check, the SHARED `run_user_exec` extraction [the /exec endpoint's inline
+> block deleted], `steer.applied{...text?}`, the accumulator steer fold) · **W3 `7ff227e`**
+> (drain B: `_spawn_drain_task` = the ONE spawn; completed-only `_maybe_spawn_drain_b`;
+> `start_steer_turn` via `_build_session`/`_auto_route_agent` extractions; harvest-first cancel;
+> the cap-shadows-steer pre-check fix) · **W4 `e8a26f8`** (FE: guard lift, 3-exit bubbles,
+> probe-on-done, reload reconcile, Stop raw-line restore; + a latent optimistic-id collision
+> fix) · **W5 `dbdaee4`** (the OWNER-DIRECTED docs sweep: DESIGN/SPEC to as-built for Slices
+> 4+5, 8 stale-claim clusters fixed; SECURITY_MODEL D41 rows).
+> **Audit trail (the deepest yet):** MID-BUILD audit (4 MED → `ec50eae`: commit-before-run
+> execs · load-bearing head commit · requeue-on-failure · shutdown re-check) · POST-BUILD audit
+> (2 HIGH + 1 MED → `6dfdcae`: **the feature was UNREACHABLE from the UI** — the store guard was
+> lifted but every composer still blocked send-while-streaming, caught only because the
+> fresh-eyes pass exists [store-level tests structurally cannot prove UI reachability — a
+> composer-DRIVEN test is now the house pattern]; all-exec drain-B rendered nothing; turn.sync
+> wiped queued bubbles) · **the Codex tri-review: 7 HIGH + 1 MED + 1 LOW — its largest haul;
+> the foreign model owns the async-interleaving class (delayed/lost responses, thread switches
+> mid-fetch)** → two gated fix waves: `7adf8b2` (atomic exec claims · the drain-B body IS
+> handle.task w/ chain re-check · scope-before-harvest via `?turn_id=` [D41 cancel bullet
+> AMENDED] · the replayable harvest receipt [the lossy double-cancel pin REPLACED] · registry
+> pruning) + `5e383d6` (stream-generation ownership [stale frames dropped before the seq gate] ·
+> late-202 discovery · thread-scoped probes + per-thread rawByEntry · DELETE truth · contract
+> adoption + retry-once; rider: chat.ts's pre-existing literal NUL/SOH → escapes, the file was
+> grep-opaque) → a FIX-SET VERIFIER pass: **all 9 CLOSED, no introduced regressions**
+> (start_steer_turn proven await-free → the head commit is cancel-atomic; the `_cleanup`
+> single-fire invariant holds through the ownership handoff). Two accepted observations: the
+> all-exec body records no terminal on cancel/error (the cancel response + floor reload cover
+> it) · late-202 discovery may settle an already-ended watched turn (self-correcting).
+> Backend 48 steering + FE 64 steering tests among the suites; tip gate 7/7 incl. e2e.
+> LIVE-VERIFY items (deferred to daily use per `testing-parked-wing-it`): real-model drain-B
+> probe timing · mobile app-kill cold-load with pending steers · a `/cloud` steer spawning on
+> cloud under real inference · an on-device typed steer + queued `!cmd` round.
 Per-thread pending-message queue (a submission type on the turn registry — the SQ half of Codex's
 SQ/EQ): composer sends during a live turn enqueue + render as queued bubbles; `_drive` drains the
 queue at each step boundary and appends as user messages before the next model call

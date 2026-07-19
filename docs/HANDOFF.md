@@ -236,6 +236,27 @@
 > ④ next slice = owner's pick: ACA Slice 5 (steering queue) / Slice 6 (compaction v2, design
 > review first) / ROADMAP D3 Slice 1 / 6c-1/6c-2 flags / vapor ladder.**
 >
+> **▶ SAME DAY (2026-07-19, continued): SLICE 4 PUSHED (owner OK; `44bdfdd..1e112b5`, main CI
+> GREEN @ `1e112b5`) → ACA SLICE 5 (steering queue) ✅ EXECUTED end-to-end — 15 commits LOCAL
+> (`0d000d4..5e383d6` + the close-out docs), awaiting the owner's push OK.** The full pipeline:
+> code-truth + 6-system field pass (Codex fact corrected: core drains at turn END) → 2-lens
+> design review (5H resolved in) → **D41 LOCKED** → 5 Opus waves (queue core+202s → drain A →
+> drain B+cancel → FE → **the owner-directed DESIGN/SPEC docs sweep** [8 stale-claim clusters
+> fixed]) → mid-build audit (4 MED fixed) → post-build audit (**2 HIGH: the feature was
+> UNREACHABLE from the UI** [composer guards; a composer-DRIVEN test is now house pattern] +
+> all-exec drains rendered nothing — fixed) → **Codex: 7 HIGH/1 MED/1 LOW, its largest haul**
+> (async interleavings: delayed dones, lost Stop responses, thread-switch races, the task-less
+> all-exec drain, the successor-queue harvest) → two gated fix waves (`7adf8b2` backend incl.
+> the D41 cancel AMENDMENT [`?turn_id=` scope-before-harvest] + the replayable harvest receipt;
+> `5e383d6` FE incl. stream-generation ownership) → a fix-set verifier: **all 9 CLOSED, no
+> regressions**. Tip gate 7/7 incl. e2e. **You can now TYPE (or voice) MID-TURN — Enter/mic
+> steer, the button is Stop; queued bubbles are tappable-to-remove; Stop returns drafts to the
+> composer.** As-built = the ACA §5 Slice 5 heading. **NEXT: ① owner push OK (15 commits;
+> pre-push runs the gate) ② owner config when it reaches prod: `max_concurrent_requests: 1` on
+> the LOCAL inference endpoint (the Slice-4 llamacpp rider; None = today's behavior) ③ live
+> pokes per `testing-parked-wing-it` (the ACA §5 Slice 5 LIVE-VERIFY list) ④ next: ACA Slice 6
+> (compaction v2 — design review first, the `context_window` prerequisite) or owner's pick.**
+>
 > *(The block below is the previous session's close-out checklist, kept for provenance — steps 1–3
 > are done as recorded above.)*
 > **▶ SESSION CLOSED 2026-07-17 early AM (owner to sleep) — NEXT SESSION, in order:**
