@@ -140,6 +140,18 @@ class InferenceEndpointCfg(BaseModel):
     #: change). Per-endpoint on the unified endpoint object (the `extra_body` precedent — never a
     #: sibling map, never global).
     max_concurrent_requests: int | None = Field(default=None, ge=1)
+    #: Manual per-endpoint context window in tokens (D42) — the size of the model's usable context,
+    #: driving the fraction-of-window compaction trigger. Precedence: this explicit value **>** the
+    #: probed llama.cpp `/props` `n_ctx` **>** None (⇒ the `threshold_tokens` absolute fallback). Config
+    #: wins over the probe on purpose: the owner runs the server and knows the real `--ctx-size`, and
+    #: MAY set a value that EXCEEDS the probe (upward overrides allowed — the silent down-clamp is the
+    #: recorded anti-pattern). `None` = auto (probe for a local llama.cpp; fallback trigger for cloud).
+    context_window: int | None = Field(default=None, ge=1)
+    #: Which OpenAI field carries the output cap for THIS endpoint (D42/A10). `max_tokens` is the
+    #: classic name; reasoning models on some cloud APIs deprecate it for `max_completion_tokens`.
+    #: Per-endpoint + declared (pi's `compat.maxTokensField` precedent). Consumed at the wire boundary
+    #: (Wave 4) when threading `ModelRef.max_tokens`; a tiny, additive knob on the unified endpoint.
+    max_tokens_field: Literal["max_tokens", "max_completion_tokens"] = "max_tokens"
 
 
 class InferenceCfg(BaseModel):

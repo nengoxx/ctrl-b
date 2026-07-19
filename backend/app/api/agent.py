@@ -136,6 +136,11 @@ class CompactRequest(BaseModel):
     """Manual `/compact` (4e) — fold the thread's older turns into a summary now."""
 
     thread_id: str
+    #: Optional free-text steer for the summarizer (D42) — `/compact <instructions>` passthrough (e.g.
+    #: "focus on the deploy steps, drop the chit-chat"). Additive + schema-only in this wave; the FE may
+    #: send nothing today. Threaded into the summarizer prompt by a later wave. `None`/blank → the
+    #: default fixed-section template unchanged.
+    instructions: str | None = None
 
 
 class ResumeRequest(BaseModel):

@@ -20,28 +20,72 @@ from app.domain.enums import Privilege
 
 
 class ModelRef(BaseModel):
-    """A pointer to an inference backend + model name (DESIGN §5.1). Both optional so a consumer can
-    inherit the chat backend (`mode=None` → `InferenceCfg.default_mode`) and/or its model
-    (`model=None` → the endpoint's configured model). Set one or both to override — used by the
-    selectable compaction summarizer and by each `AgentDef.model`."""
+    """A pointer to an inference backend + model name **plus its per-call config** (DESIGN §5.1, D42).
+    `mode`/`model` are the pointer half — both optional so a consumer can inherit the chat backend
+    (`mode=None` → `InferenceCfg.default_mode`) and/or its model (`model=None` → the endpoint's
+    configured model). Set one or both to override. The `max_tokens`/`reasoning_*` fields are the
+    call-config half (D42/A10): modeled call params threaded as first-class kwargs into
+    `stream_chat`/`complete` (the codebase rule — modeled params are kwargs, `extra_body` is unmodeled
+    passthrough only). Used by each `AgentDef.model` (the agent's own calls) and by the selectable
+    compaction summarizer (which today runs uncapped — a `max_tokens` here caps it for free).
+
+    Fields are DECLARED (no `extra="allow"`): an unknown key is a typo, not a silent passthrough."""
 
     mode: str | None = None  # "local" | "cloud" | None → InferenceCfg.default_mode
     model: str | None = None  # None → the endpoint's configured model id
+    #: Output-token budget (D42/A10). `None` → no cap (today's behaviour). Flows as first-class kwargs
+    #: into the chat call; the per-endpoint field NAME (`max_tokens` vs `max_completion_tokens`) is
+    #: chosen by `InferenceEndpointCfg.max_tokens_field` at the wire boundary (Wave 4).
+    max_tokens: int | None = None
+    #: Reasoning-effort ladder (D42/A10 — the universal field convention). `None` → the backend default.
+    #: Silent-safe: llama.cpp drops it (harmless), cloud takes it first-class; `"off"` additionally
+    #: becomes llama.cpp `chat_template_kwargs: {enable_thinking: false}` at the wire (Wave 4).
+    reasoning_effort: Literal["off", "minimal", "low", "medium", "high", "xhigh", "max"] | None = None
+    #: Numeric reasoning budget where a backend can express it (e.g. OpenRouter `reasoning:{max_tokens}`);
+    #: advisory/no-op elsewhere (llama.cpp has no per-request reasoning budget). `None` → unset.
+    reasoning_tokens: int | None = None
 
 
 class CompactionCfg(BaseModel):
-    """Context-window compaction (Phase 4e, D10/D11). When the working context (non-compacted
-    history) grows past `threshold_tokens`, the oldest complete turns are summarized into a single
-    system message and marked `compacted` (kept verbatim in SQLite). `keep_last_messages` is the
-    floor of recent messages always kept; the summarizer is independently selectable.
+    """Context-window compaction (Phase 4e, D10/D11; windows + trim tier + call config, D42). When the
+    working context (non-compacted history) crosses the trigger — `window × threshold_frac` where a
+    window is resolvable, else the absolute `threshold_tokens` fallback — the oldest complete turns are
+    summarized into a single system message and marked `compacted` (kept verbatim in SQLite).
+    `keep_last_messages`/`keep_recent_tokens` are the two floors of recent context always kept; the
+    summarizer is independently selectable.
 
     Lives here (not config.py) so an `AgentDef` can carry a per-agent override without a config↔domain
     import cycle. `Settings.agent.compaction` is the global default; `AgentDef.compaction`, when set,
     wins for that agent (and is inherited by its subagents)."""
 
     enabled: bool = True
-    threshold_tokens: int = 6000  # working-context size that triggers auto-compaction
+    #: Fraction-of-window trigger (D42) — fire compaction when the estimated context exceeds
+    #: `window × threshold_frac` (presented in the UI as "Compact at N% of context"). The field
+    #: plurality (Goose 0.8, Gemini 0.5–0.7, Hermes 0.5); `le=0.95` keeps a too-late-to-summarize
+    #: fire impossible, `ge=0.5` is the sanity floor. Only used when a window is resolvable
+    #: (config `context_window` > probed `/props` n_ctx); with NO window, `threshold_tokens` is the
+    #: fallback trigger instead.
+    threshold_frac: float = Field(default=0.85, ge=0.5, le=0.95)
+    threshold_tokens: int = 6000  # the NO-WINDOW fallback trigger only (absolute working-context size)
+    #: Token floor kept verbatim by the two-floor `_split` (D42) — `cut = min(message-cut, token-cut)`
+    #: (pi's `keepRecentTokens` precedent). Declared now; consumed by the Wave 3 summarizer split.
+    keep_recent_tokens: int = 4096
+    #: Tool-output trim floor (D42 Tier 1) — an output shorter than this many tokens is left alone
+    #: (internally chars ≈ `CHARS_PER_TOKEN`×, the shared heuristic). Token-named per the field
+    #: convention (Codex `tool_output_token_limit` / Claude `MAX_MCP_OUTPUT_TOKENS`).
+    clear_output_min_tokens: int = 500
+    #: How many most-recent steps the Tier-1 trim never touches (`ge=1` IS the most-recent-step
+    #: safety — a 0 would let the just-run tool's output be cleared out from under the model).
+    clear_keep_steps: int = Field(default=2, ge=1)
+    #: Thrash breaker (D42) — after this many consecutive didn't-shrink compactions the breaker
+    #: latches (one notice, no more attempts this run). Consumed by the Wave 3 thrash machine.
+    max_consecutive_failures: int = 3
     keep_last_messages: int = 8  # recent-message floor kept verbatim (snapped to a turn boundary)
+    #: Output-reserve toggle (D42) — when the effective `ModelRef.max_tokens` is set, subtract EXACTLY
+    #: it from the trigger line (`window × threshold_frac − max_tokens`): no global cap, no silent
+    #: down-clamp (the two recorded opencode bugs). Unset `max_tokens` ⇒ nothing reserved (the
+    #: `threshold_frac` headroom is the margin). Consumed by the Wave 2 trigger.
+    reserve_output: bool = True
     summarizer: ModelRef = Field(default_factory=ModelRef)
 
 

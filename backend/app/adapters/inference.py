@@ -21,10 +21,12 @@ session boundary turns it into a clean SSE `error` event + an `ErrorPart`, never
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator, cast
 
 import anyio
+import httpx
 from openai import AsyncOpenAI
 
 from app.config import InferenceCfg, InferenceEndpointCfg
@@ -33,8 +35,39 @@ from app.core.failover import FailoverError, failover
 if TYPE_CHECKING:  # SDK param type — only needed to satisfy the typed `.create()` overload
     from openai.types.chat import ChatCompletionMessageParam
 
+log = logging.getLogger("ctrlb.inference")
+
 # llama.cpp / many local servers ignore the key but the SDK requires a non-empty string.
 _PLACEHOLDER_KEY = "sk-no-key-required"
+
+#: The llama.cpp window probe (D42). `/props` is served at the SERVER ROOT, not under the OpenAI
+#: `/v1` path, so the probe strips a trailing `/v1` off the base_url before appending this.
+_PROPS_PATH = "/props"
+#: Probe timeout — a few seconds, independent of `request_timeout_s` (a 10-minute thinking budget must
+#: not stall the lazy window probe; a failed probe just memoizes None). Named, never inline (D42).
+_PROBE_TIMEOUT_S = 3.0
+
+
+def _props_url(base_url: str) -> str:
+    """Turn an OpenAI-style base_url (usually `…/v1`) into the llama.cpp `/props` URL at the server
+    root. Strips ONE trailing `/v1` (with any trailing slashes) then appends `/props`, so
+    `http://host:5001/v1` → `http://host:5001/props` and a root-style `http://host:5001` still works."""
+    root = base_url.rstrip("/")
+    if root.endswith("/v1"):
+        root = root[: -len("/v1")]
+    return f"{root}{_PROPS_PATH}"
+
+
+@dataclass(frozen=True)
+class _ProbedWindow:
+    """One memoized `/props` probe result (D42). `n_ctx` is the effective per-slot window
+    (`default_generation_settings.n_ctx`) or `None` when the probe failed / the field was absent;
+    `n_ctx_train` (`meta.n_ctx_train`) is the model's training context, kept as a sanity ceiling —
+    an `n_ctx` above it is still honoured (upward overrides allowed) but logged. A failed probe is
+    memoized as `_ProbedWindow(None, None)` too, so a dead endpoint is asked exactly once."""
+
+    n_ctx: int | None
+    n_ctx_train: int | None
 
 
 class InferenceError(RuntimeError):
@@ -104,6 +137,60 @@ class InferenceClient:
         #: is usually fresh anyway; the key still protects an in-place cfg swap.) `None` limit → no
         #: entry, no acquire (unlimited, zero behavior change).
         self._sems: dict[tuple[str, int], asyncio.Semaphore] = {}
+        #: Memoized `/props` window probes, keyed by base_url (D42). Populated on first `probed_context_window`
+        #: per URL — including FAILED probes (memoized as `_ProbedWindow(None, None)`), so a dead/cloud
+        #: endpoint is hit at most once. No invalidation bookkeeping: `runtime.set_inference` rebuilds the
+        #: whole `InferenceClient` on ANY inference-settings change, so a config edit re-probes for free.
+        self._window_memo: dict[str, _ProbedWindow] = {}
+        #: Lazily-built httpx client for the raw `/props` GET (the SDK is chat-only). Built on first probe,
+        #: reused per-process like the SDK clients; not aclosed on rebuild (same as the SDK clients here).
+        self._probe_http: httpx.AsyncClient | None = None
+
+    def _probe_client(self) -> httpx.AsyncClient:
+        if self._probe_http is None:
+            self._probe_http = httpx.AsyncClient(timeout=_PROBE_TIMEOUT_S)
+        return self._probe_http
+
+    async def probed_context_window(self, ep: InferenceEndpointCfg) -> int | None:
+        """The effective context window for `ep` as reported by the llama.cpp `/props` probe, or `None`
+        when unavailable (probe failed, non-200, malformed body, no `n_ctx`, or a blank base_url). Lazy +
+        memoized per base_url for the client's lifetime; NEVER raises (the `_capture_cache_telemetry`
+        posture — a probe must not block or fail a turn). Endpoint-agnostic: it probes whatever base_url
+        it is given (only meaningful for a local llama.cpp — cloud has no `/props` — but callers decide
+        who to probe; the config>probe>fallback resolution policy lands in Wave 2)."""
+        base_url = ep.base_url
+        if not base_url:
+            return None
+        cached = self._window_memo.get(base_url)
+        if cached is None:
+            cached = await self._probe_props(base_url)
+            self._window_memo[base_url] = cached
+        return cached.n_ctx
+
+    async def _probe_props(self, base_url: str) -> _ProbedWindow:
+        """GET `{root}/props` once and extract the window. NEVER raises — any exception / non-200 /
+        malformed body ⇒ `_ProbedWindow(None, None)` (memoized by the caller, so no retry storm)."""
+        url = _props_url(base_url)
+        try:
+            resp = await self._probe_client().get(url)
+            if resp.status_code != 200:
+                return _ProbedWindow(None, None)
+            body = resp.json()
+            gen = body.get("default_generation_settings") if isinstance(body, dict) else None
+            meta = body.get("meta") if isinstance(body, dict) else None
+            n_ctx = gen.get("n_ctx") if isinstance(gen, dict) else None
+            n_ctx_train = meta.get("n_ctx_train") if isinstance(meta, dict) else None
+            n_ctx = n_ctx if isinstance(n_ctx, int) and not isinstance(n_ctx, bool) else None
+            n_ctx_train = (
+                n_ctx_train if isinstance(n_ctx_train, int) and not isinstance(n_ctx_train, bool) else None
+            )
+            if n_ctx is not None and n_ctx_train is not None and n_ctx > n_ctx_train:
+                # Upward overrides are allowed (the owner may raise the served window past the model's
+                # training context), but it's worth a breadcrumb — an unexpectedly huge n_ctx is a smell.
+                log.info("probe %s: n_ctx=%d exceeds n_ctx_train=%d (honoured)", url, n_ctx, n_ctx_train)
+            return _ProbedWindow(n_ctx, n_ctx_train)
+        except Exception:  # noqa: BLE001 — a window probe must NEVER fail or block a turn (D42)
+            return _ProbedWindow(None, None)
 
     def _sem_for(self, ep: InferenceEndpointCfg) -> asyncio.Semaphore | None:
         """The request-gate semaphore for this endpoint, or `None` when unlimited. Built lazily on

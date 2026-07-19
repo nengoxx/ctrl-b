@@ -139,8 +139,16 @@ def test_no_secret_looking_field_is_unclassified() -> None:
     """Broad heuristic (test-time only): flag every Settings field whose NAME looks secret and require
     it to be either a declared secret or an explicit known-non-secret. Adding e.g. `client_secret`
     fails here until it's classified — moving the guesswork to review-time, not runtime."""
-    # Config fields whose name matches SECRET_HINTS but are genuinely NOT secrets (reviewed).
-    known_non_secret = {"threshold_tokens"}
+    # Config fields whose name matches SECRET_HINTS but are genuinely NOT secrets (reviewed). The D42
+    # additions are all plain tunables/pointers (token budgets + the output-cap field name), not creds.
+    known_non_secret = {
+        "threshold_tokens",
+        "keep_recent_tokens",
+        "clear_output_min_tokens",
+        "max_tokens",
+        "max_tokens_field",
+        "reasoning_tokens",
+    }
     names = _all_field_names(Settings)
     candidates = {n for n in names if any(h in n.lower() for h in SECRET_HINTS)}
     classified = set(_SECRET_LEAF_KEYS) | set(_SECRET_MAP_KEYS) | known_non_secret
