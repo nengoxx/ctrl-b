@@ -220,6 +220,11 @@ export interface ChatMessage {
   tokens: number | null;
   compacted: boolean;
   agent?: string | null; // which AgentDef produced this assistant turn (7e-c); null on user/default
+  // D41/Slice 5 — a client-only marker for a QUEUED steer bubble (a mid-turn message/`!exec` accepted
+  // with a 202 while a turn is live): the server-assigned `entry_id`. Present → render muted + a "queued"
+  // chip; cleared (or the bubble dropped) when the entry drains (`steer.applied`), is harvested (Stop),
+  // or is removed (DELETE). Never set by the durable messages endpoint — it's optimistic-only.
+  queued?: string;
 }
 
 export interface Thread {

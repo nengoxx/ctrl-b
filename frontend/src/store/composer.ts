@@ -41,14 +41,15 @@ export function clearDraft(): void {
   setDraft("");
 }
 
-/** Append text to the current draft (Phase 6b dictation hand-off) — separated by a space when the
- *  draft already has content, so a transcript lands after whatever the user already typed rather than
- *  clobbering it. Reads state imperatively (no stale closure), then routes through `setDraft`. */
-export function appendDraft(text: string): void {
+/** Append text to the current draft, separated from existing content by `separator` (Phase 6b dictation
+ *  hand-off; the D41 Stop-harvest passes `"\n"` to newline-join restored steer lines). Defaults to a
+ *  space so a dictated transcript lands after whatever the user already typed rather than clobbering it.
+ *  Reads state imperatively (no stale closure), then routes through `setDraft`. Empty input → no-op. */
+export function appendDraft(text: string, separator = " "): void {
   const add = text.trim();
   if (!add) return;
   const cur = state.draft.trimEnd();
-  setDraft(cur ? `${cur} ${add}` : add);
+  setDraft(cur ? `${cur}${separator}${add}` : add);
 }
 
 /** Read the current draft imperatively (non-reactive) — for callers outside render that need the live

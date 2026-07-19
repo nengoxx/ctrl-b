@@ -103,7 +103,9 @@ export function runComposer(raw: string): void {
     routeSlash(text);
     return;
   }
-  void sendMessage(text);
+  // Plain NL send. `raw` == `text` here (no prefix), but pass it explicitly so a queued steer restores
+  // the exact line on Stop (D41 §6) — the raw-line map is keyed uniformly for every send path.
+  void sendMessage(text, { raw: text });
 }
 
 /** `!<cmd>` — the guarded shell escape hatch (Phase 5). Runs `run_shell` on the backend host via
@@ -118,13 +120,16 @@ function routeSlash(text: string): void {
   const sp = text.indexOf(" ");
   const verb = (sp === -1 ? text : text.slice(0, sp)).slice(1).toLowerCase();
   const rest = sp === -1 ? "" : text.slice(sp + 1).trim();
+  // The RAW composer line (WITH the `/prefix`) for a D41 Stop-harvest — the server stores only the
+  // stripped `rest`, so a queued `/cloud do X` must restore `/cloud do X`, not `do X`.
+  const raw = text;
 
   switch (verb) {
     case "local":
     case "cloud": {
       const mode = verb; // narrowed to "local" | "cloud" by the switch cases
       if (rest) {
-        void sendMessage(rest, { mode }); // one-shot: this message only
+        void sendMessage(rest, { mode, raw }); // one-shot: this message only
       } else {
         setSessionMode(mode); // sticky: subsequent messages until changed
         pushSystemNote(`// inference → ${mode}`);
@@ -181,7 +186,7 @@ function routeSlash(text: string): void {
     default:
       if (knownSkills.has(verb)) {
         // /skill-name <task> → run the task with that skill explicitly active (user-invoked, 4.5).
-        if (rest) void sendMessage(rest, { skills: [verb] });
+        if (rest) void sendMessage(rest, { skills: [verb], raw });
         else pushSystemNote(`// /${verb} needs a task: /${verb} <what to do>`);
       } else {
         pushSystemNote(`// unknown command: /${verb} — try /help`);

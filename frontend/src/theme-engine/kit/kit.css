@@ -2292,6 +2292,29 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   padding: 9px 13px;
   border-radius: 16px 16px 4px 16px;
 }
+/* D41 — a queued steer (mid-turn message waiting to drain): muted bubble + a small tappable chip. The
+ * chip right-aligns under the body via an auto left margin on a fit-content block (no flex change to the
+ * shrink-wrapped `.b.user`). Semantic tokens; the pill radius matches the reskin's badges. */
+.kit .b.user.queued .body {
+  opacity: 0.55;
+}
+.kit .b.user .steer-chip {
+  display: block;
+  width: fit-content;
+  margin: 4px 0 0 auto;
+  padding: 1px 9px;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.kit .b.user .steer-chip:active {
+  background: var(--accent-soft);
+}
 /* assistant — quiet, borderless (inherits `.b .body`); the prose/markdown is the main flow */
 .kit .b.bot {
   max-width: 92%;

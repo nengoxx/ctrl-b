@@ -9,7 +9,7 @@ import { clearAudioCache } from "../lib/audioController";
 import { currentPlanOf } from "../lib/plan";
 import type { Privilege } from "../lib/privilege";
 import type { ChatMessage, Part, Plan, PlanStep, RunState, Thread, ToolResult } from "../types";
-import { setDraft } from "./composer";
+import { appendDraft, setDraft } from "./composer";
 import { createStore } from "./createStore";
 import { setConnection } from "./connection";
 
@@ -47,6 +47,54 @@ const modeByCall: Record<string, ChatMode | null> = {};
 // confirmed against. (Not recoverable after a cold reload — skills aren't persisted/snapshotted;
 // falls back to `turnSkills`, same known limit as a pre-pin persisted bubble's mode.)
 const skillsByCall: Record<string, string[]> = {};
+
+// ── D41/Slice 5: the steering queue (client side) ────────────────────────────────────────────────
+// A queued steer's RAW composer line (WITH any `/prefix` or leading `!`), keyed by the server-assigned
+// `entry_id`. The server stores the STRIPPED text + resolved params; the raw line is what belongs back
+// in the composer on Stop (harvest fidelity — D41 §6). Populated on the 202, cleared when the entry
+// drains (`steer.applied`/`turn.sync` fold), is harvested (Stop), or is removed (DELETE). Module-level
+// like the other per-turn maps; survives a `reloadChat` (the durable floor never carries raw lines).
+const rawByEntry: Record<string, string> = {};
+
+/** Build an optimistic QUEUED steer bubble (D41 §3/§1). `text` is the stripped body; an exec entry
+ *  renders its command with the `!` sigil restored so the bubble reads like the `!cmd` the owner typed. */
+function makeQueuedBubble(entryId: string, kind: "message" | "exec", text: string): ChatMessage {
+  return {
+    id: `steer-${entryId}`,
+    thread_id: state.threadId ?? "",
+    role: "user",
+    parts: [{ type: "text", text: kind === "exec" ? `!${text}` : text }],
+    actor: "user",
+    ts: new Date().toISOString(),
+    tokens: null,
+    compacted: false,
+    queued: entryId,
+  };
+}
+
+/** Resolve a queued steer bubble once it DRAINS (`steer.applied` or the `turn.sync` `steers` fold): the
+ *  entry is now a durable user message. PURE (messages in → out). If a durable message with `messageId`
+ *  is already present (the re-attach reload brought it), drop the local queued dup; otherwise adopt the
+ *  real id + clear the marker (and, for a message steer, the carried text). No local queued bubble → a
+ *  no-op (the durable floor carries it). */
+function resolveSteerBubble(
+  messages: ChatMessage[],
+  entryId: string,
+  messageId: string | undefined,
+  kind: "message" | "exec",
+  text: string | undefined,
+): ChatMessage[] {
+  const idx = messages.findIndex((m) => m.queued === entryId);
+  if (idx < 0) return messages;
+  const dup = !!messageId && messages.some((m) => m.id === messageId && m.queued !== entryId);
+  if (dup) return messages.filter((_, i) => i !== idx);
+  return messages.map((m, i) => {
+    if (i !== idx) return m;
+    const parts =
+      kind === "message" && text !== undefined ? [{ type: "text", text } as Part] : m.parts;
+    return { ...m, id: messageId ?? m.id, queued: undefined, parts };
+  });
+}
 
 // ── D39/S3-D: the ONE total-order seq entry gate ────────────────────────────────────────────────
 // Server turn events are totally ordered by a per-turn monotonic `seq` (wire id `turn_id:seq`), so a
@@ -602,6 +650,24 @@ function makeTurnReducer(ctx: TurnCtx) {
         if (text) pushSystemNote(text);
         break;
       }
+      case "steer.applied": {
+        // D41 §4 — a queued steer just drained into the running turn (as a durable user message, or an
+        // exec pair). Swap the optimistic queued bubble (keyed by entryId) to its sent form.
+        const entryId = nonEmpty(data.entryId);
+        if (!entryId) return dropWarn(event, "missing entryId");
+        const kind = data.kind === "exec" ? "exec" : "message";
+        delete rawByEntry[entryId];
+        set({
+          messages: resolveSteerBubble(
+            state.messages,
+            entryId,
+            nonEmpty(data.messageId),
+            kind,
+            str(data.text),
+          ),
+        });
+        break;
+      }
       case "message.end":
         break;
       case "error":
@@ -639,6 +705,7 @@ async function streamTurn(
   body: Record<string, unknown>,
   placeholderId?: string,
   pendingUserId?: string,
+  raw?: string,
 ): Promise<void> {
   const ctx: TurnCtx = { claimed: !placeholderId, placeholderId, settled: false };
   const handle = makeTurnReducer(ctx);
@@ -663,14 +730,34 @@ async function streamTurn(
       const rejected = new Set(
         [placeholderId && !ctx.claimed ? placeholderId : null, pendingUserId].filter(Boolean),
       );
+      // D41 — a STEER (no placeholder, has a pending user bubble) that 409s (cap overflow / a sync
+      // holder) rolls the steer bubble back WITHOUT settling status: the LIVE turn still owns the view
+      // and is streaming on its own socket. A fresh (non-steer) send settles to idle as before (D38).
+      const isSteer = !placeholderId && !!pendingUserId;
       set({
         messages: rejected.size
           ? state.messages.filter((m) => !rejected.has(m.id))
           : state.messages,
-        status: "idle",
-        streamingId: null,
+        ...(isSteer ? {} : { status: "idle", streamingId: null }),
       });
       pushSystemNote("// " + detail);
+      return;
+    }
+    // 202 = the live holder is a chat/resume turn that ACCEPTS a steer (D41): this POST was ENQUEUED,
+    // not rejected. Mark the optimistic user bubble QUEUED (keyed by the server's entry_id) and stash
+    // its RAW line for a Stop harvest; the live turn keeps the view, so do NOT touch status/streamingId.
+    // A `steer.applied` (drain) later swaps it to a normal bubble; Stop harvests it back to the composer.
+    if (res.status === 202) {
+      const info = (await res.json().catch(() => ({}))) as { entry_id?: string };
+      if (info.entry_id && pendingUserId) {
+        const entryId = info.entry_id;
+        rawByEntry[entryId] = raw ?? (typeof body.text === "string" ? body.text : "");
+        set({
+          messages: state.messages.map((m) =>
+            m.id === pendingUserId ? { ...m, queued: entryId } : m,
+          ),
+        });
+      }
       return;
     }
     if (!res.ok || !res.body) throw new Error(`${url} → ${res.status}`);
@@ -703,9 +790,15 @@ async function streamTurn(
       if (payload.state === "capped")
         pushSystemNote("// reached the step limit — send a message to continue");
       if (payload.state === "error") set({ status: "error" });
+      discoverSpawnedSteerTurn(); // D41 §3 — a buffered turn can also leave queued steers to a drain-B turn
       return;
     }
 
+    // D41 — a STEER send (no placeholder) races the turn ending: the marker released before our POST
+    // landed, so the server started a FRESH turn and streamed it (200, not 202). Adopt it as a live
+    // turn — the reducer's message.start creates the bubble; we just need the view in "streaming" so it
+    // renders + the Stop control appears. A normal/resume send is already streaming here (no-op).
+    if (getChatStatus() !== "streaming") set({ status: "streaming" });
     // Reduce the SSE stream through the shared byte-parser (each frame carries `id: turn_id:seq`,
     // fed to the seq gate + the re-attach cursor).
     await parseSSE(res.body, handle);
@@ -722,6 +815,10 @@ async function streamTurn(
       const tid = state.threadId;
       const reattached = tid ? await reattachTurn(tid, cursor) : false;
       if (!reattached) failStream("connection interrupted");
+    } else {
+      // D41 §3 — the turn settled cleanly; if queued steers remain, a drain-B turn may have spawned
+      // for them (invisible until probed). Discover + re-attach (reuses the D39 probe path).
+      discoverSpawnedSteerTurn();
     }
   } catch (e) {
     // Cross-channel reconnect signal (F16): if this looks like a backend-unreachable error
@@ -920,6 +1017,22 @@ export async function reattachTurn(
     }
     for (const c of Array.isArray(snap.calls) ? snap.calls : [])
       if (isObj(c)) msgs = overlaySyncCall(msgs, c, mode, openId);
+    // D41 §4 — the snapshot FOLDS drained steers (`steers: [{entryId,messageId,kind,text}]`) so a
+    // re-attach renders steered user messages without a reload. Reconcile each against the just-reloaded
+    // durable floor: drop the local queued dup if the durable message is present, else adopt its id.
+    for (const s of Array.isArray(snap.steers) ? snap.steers : []) {
+      if (!isObj(s)) continue;
+      const eid = nonEmpty(s.entryId);
+      if (!eid) continue;
+      delete rawByEntry[eid];
+      msgs = resolveSteerBubble(
+        msgs,
+        eid,
+        nonEmpty(s.messageId),
+        s.kind === "exec" ? "exec" : "message",
+        str(s.text),
+      );
+    }
     set({ messages: msgs });
     // (c) go live — OR settle if the turn already ended in the tiny window before we attached (a
     // trailing/absent live `done` would otherwise strand the chat in "streaming").
@@ -990,7 +1103,10 @@ export async function reattachTurn(
       }
       if (!res.ok || !res.body) return false;
       await parseSSE(res.body, onFrame);
-      if (ctx.settled) return true; // reached a terminal — fully handled
+      if (ctx.settled) {
+        discoverSpawnedSteerTurn(); // D41 §3 — a re-attached (incl. drain-B) turn may chain another
+        return true; // reached a terminal — fully handled
+      }
       if (attempt === 0) continue; // disconnected mid-re-attach → retry ONCE
       return false; // repeated drop → caller falls back
     } catch {
@@ -1001,15 +1117,55 @@ export async function reattachTurn(
   return false;
 }
 
+/** The still-queued (undrained) steer entries a probe / cancel response carries (D41 §3/§7). The server
+ *  stores the STRIPPED text; the raw line lives in the client `rawByEntry` map. */
+interface SteerQueueEntry {
+  entry_id?: string;
+  kind?: string;
+  text?: string;
+}
+
+/** D41 §3 — reconcile the local queued bubbles against the server's authoritative `steer_queue` (from
+ *  the status probe / a cold load). Server-present + locally-missing → create a queued bubble (a reload
+ *  must never DROP a still-queued steer — the vanished-steer double-send hazard). Locally-queued +
+ *  server-absent → the entry DRAINED (or was removed): drop the local bubble; the durable floor carries
+ *  the sent message. Also prunes `rawByEntry` of anything no longer queued. */
+function reconcileSteerQueue(queue: SteerQueueEntry[]): void {
+  const serverIds = new Set(queue.map((e) => e.entry_id).filter((x): x is string => !!x));
+  // drop drained/removed local bubbles; then append any server entry we don't have locally
+  let msgs = state.messages.filter((m) => !(m.queued && !serverIds.has(m.queued)));
+  const localQueued = new Set(msgs.filter((m) => m.queued).map((m) => m.queued));
+  for (const e of queue) {
+    if (!e.entry_id || localQueued.has(e.entry_id)) continue;
+    msgs = [
+      ...msgs,
+      makeQueuedBubble(e.entry_id, e.kind === "exec" ? "exec" : "message", e.text ?? ""),
+    ];
+  }
+  set({ messages: msgs });
+  for (const eid of Object.keys(rawByEntry)) if (!serverIds.has(eid)) delete rawByEntry[eid];
+}
+
+/** D41 §3 — after a turn settles, if queued steer bubbles remain a drain-B turn may have spawned for
+ *  them (invisible until probed). Probe + reconcile + re-attach (reuses the D39 path). No-op if none. */
+function discoverSpawnedSteerTurn(): void {
+  if (state.threadId && state.messages.some((m) => m.queued)) void probeAndReattach(state.threadId);
+}
+
 /** Cold page-load re-attach (D39/M4): probe the thread's turn status and, if a turn is still running
  *  detached (the mobile app-kill case), re-attach via the snapshot path (no cursor). Non-blocking of
  *  the initial paint. If the re-attach set the view streaming but couldn't reach a terminal, reconcile
- *  from the durable floor so the cold view never hangs spinning. */
+ *  from the durable floor so the cold view never hangs spinning. Also reconciles the D41 steer_queue so
+ *  a reload / cold load re-renders any still-queued steers instead of dropping them (§3). */
 async function probeAndReattach(threadId: string): Promise<void> {
   try {
     const probe = (await (await fetch(`/api/agent/turns/${threadId}`)).json()) as {
       active?: boolean;
+      steer_queue?: SteerQueueEntry[];
     };
+    // Re-render queued steers from server truth BEFORE any streaming bail — the reconcile is truthful
+    // regardless of the attach decision (kills the vanished-steer double-send hazard on a reload).
+    if (Array.isArray(probe.steer_queue)) reconcileSteerQueue(probe.steer_queue);
     // The probe is fire-and-forget from initChat; if the owner sent a message while it round-tripped,
     // a live stream is already attached to the (new) turn. Re-attaching now would add a SECOND
     // subscriber whose `turn.sync` snapshot rewinds the seq gate mid-stream (corrupting the live
@@ -1060,7 +1216,27 @@ export async function stopTurn(): Promise<void> {
       body: JSON.stringify({ turn_id: lastTurnId }),
     });
     if (!res.ok) throw new Error(`cancel → ${res.status}`);
-    const data = (await res.json()) as { cancelled?: boolean; active?: boolean };
+    const data = (await res.json()) as {
+      cancelled?: boolean;
+      active?: boolean;
+      steer_queue?: SteerQueueEntry[];
+    };
+    // D41 §6 — harvest undrained steers back to the composer draft. Restore each RAW line from the
+    // client `entry_id → raw` map (with its `/prefix` / `!` intact — the server only stored the stripped
+    // text); fall back to reconstructing from the entry. Newline-joined and APPENDED (never clobber an
+    // existing draft; a racing second Stop harvests `[]` and appends nothing). The reload below drops
+    // the now-harvested queued bubbles (they're client-only). Done BEFORE the reload — order-independent
+    // (rawByEntry is module state) but keeps the intent adjacent to the response read.
+    const harvested = Array.isArray(data.steer_queue) ? data.steer_queue : [];
+    const lines: string[] = [];
+    for (const e of harvested) {
+      if (!e.entry_id) continue;
+      const line =
+        rawByEntry[e.entry_id] ?? (e.kind === "exec" ? `!${e.text ?? ""}` : (e.text ?? ""));
+      if (line) lines.push(line);
+      delete rawByEntry[e.entry_id];
+    }
+    if (lines.length) appendDraft(lines.join("\n"), "\n");
     // No live turn (active:false) → no stream will deliver a `done`, so settle status here. Either
     // way ALWAYS reload from the durable floor: the drain task's cancel path already reconciled the
     // in-flight calls to CANCELLED server-side, but the ATTACHED client's local call parts still
@@ -1084,18 +1260,28 @@ export async function stopTurn(): Promise<void> {
  */
 export async function sendMessage(
   text: string,
-  opts?: { mode?: ChatMode; skills?: string[] },
+  opts?: { mode?: ChatMode; skills?: string[]; raw?: string },
 ): Promise<void> {
   const body = text.trim();
-  if (!body || state.status === "streaming") return;
-  // Per-message `/cloud <msg>` wins; else the sticky session mode; else the server default (null).
+  if (!body) return;
+  // D41 — the send-while-streaming guard is LIFTED: a send during a live turn is a STEER (enqueued via a
+  // 202, drained into the running turn or spawned at its end). Per-message `/cloud <msg>` wins; else the
+  // sticky session mode; else the server default (null). Only a FRESH (non-steer) send stashes
+  // turnMode/turnSkills — those pin the LIVE turn's resume/answer context (ACA-16/C5-M1); a steer must
+  // not re-point them (its own captured params ride the POST for a turn-end spawn instead).
+  const steering = state.status === "streaming";
   const mode = opts?.mode ?? sessionMode ?? null;
-  turnMode = mode; // stash for a resume/answer of this turn (ACA-16) — a per-message override sticks
   const skills = opts?.skills ?? []; // explicit /skill-name invocations (4.5)
-  turnSkills = skills; // stash for a resume/answer of this turn (C5-M1) — see skillsByCall
+  if (!steering) {
+    turnMode = mode;
+    turnSkills = skills;
+  }
 
   const tempUser: ChatMessage = {
-    id: `local-${Date.now()}`,
+    // A random suffix (not just `Date.now()`) so back-to-back STEERS queued within the same millisecond
+    // get DISTINCT ids — the 202 marks the bubble by this id, and two colliding ids would mark/drop both
+    // (D41: multiple queued steers must be independently addressable). Mirrors `pushLocal`'s id scheme.
+    id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     thread_id: state.threadId ?? "",
     role: "user",
     parts: [{ type: "text", text: body }],
@@ -1104,27 +1290,35 @@ export async function sendMessage(
     tokens: null,
     compacted: false,
   };
+  const reqBody = {
+    text: body,
+    thread_id: state.threadId,
+    mode,
+    skills,
+    agent: sessionAgent,
+    privilege: state.sessionPrivilege,
+    stream: true, // the PWA always prefers streaming; the server's agent.streaming=off can override (D17)
+  };
+  // The RAW composer line (WITH any `/prefix`) for a Stop harvest — falls back to the body when the
+  // caller didn't thread it through (direct sends, retry). Captured before prefix-stripping upstream.
+  const raw = opts?.raw ?? body;
+
+  if (steering) {
+    // A STEER: append ONLY the user bubble (no assistant placeholder — the live turn owns the stream),
+    // leave status/streamingId untouched, and POST. streamTurn's 202 branch marks the bubble queued; a
+    // 409 (cap overflow / a sync holder) rolls it back; a 200 (the turn just ended) adopts it live.
+    set({ messages: [...state.messages, tempUser] });
+    await streamTurn("/api/agent/chat", reqBody, undefined, tempUser.id, raw);
+    return;
+  }
+
   const placeholderId = `assist-${Date.now()}`;
   set({
     messages: [...state.messages, tempUser, emptyAssistant(placeholderId)],
     status: "streaming",
     streamingId: placeholderId,
   });
-
-  await streamTurn(
-    "/api/agent/chat",
-    {
-      text: body,
-      thread_id: state.threadId,
-      mode,
-      skills,
-      agent: sessionAgent,
-      privilege: state.sessionPrivilege,
-      stream: true, // the PWA always prefers streaming; the server's agent.streaming=off can override (D17)
-    },
-    placeholderId,
-    tempUser.id,
-  );
+  await streamTurn("/api/agent/chat", reqBody, placeholderId, tempUser.id, raw);
 }
 
 /** One-line sys breadcrumb for a compaction event (auto or manual). */
@@ -1183,12 +1377,48 @@ export async function runShell(command: string): Promise<void> {
       pushSystemNote("// " + (await busyDetail(res)));
       return;
     }
+    // 202 = a chat/resume turn is live and ACCEPTED this `!cmd` as a queued exec steer (D41). Render an
+    // optimistic queued `!cmd` bubble (keyed by entry_id) + stash its raw line for a Stop harvest; the
+    // durable tool_call/result pair arrives on a later reload. `steer.applied{kind:exec}` resolves it.
+    if (res.status === 202) {
+      const info = (await res.json().catch(() => ({}))) as { entry_id?: string };
+      if (info.entry_id) {
+        rawByEntry[info.entry_id] = `!${command}`;
+        set({ messages: [...state.messages, makeQueuedBubble(info.entry_id, "exec", command)] });
+      }
+      return;
+    }
     if (!res.ok) throw new Error(`exec → ${res.status}`);
     const data = (await res.json()) as { threadId: string };
     if (data.threadId) set({ threadId: data.threadId });
     await reloadChat();
   } catch {
     pushSystemNote("// shell exec failed — backend unreachable?");
+  }
+}
+
+/** D41 §5 — remove a queued steer (the owner tapped its chip). DELETE the entry: `{removed:true}` drops
+ *  the bubble + its raw line; `{removed:false}` (it already drained) resolves the bubble to its sent form
+ *  (clears the queued marker; the durable message reconciles on the next reload). Single tap — a queued
+ *  draft is not a destructive action, so no confirm. Best-effort: on failure the chip stays and a later
+ *  probe/reload reconciles from the server's steer_queue. */
+export async function removeSteer(entryId: string): Promise<void> {
+  if (!state.threadId) return;
+  try {
+    const res = await fetch(
+      `/api/agent/turns/${state.threadId}/steer/${encodeURIComponent(entryId)}`,
+      { method: "DELETE" },
+    );
+    if (!res.ok) throw new Error(`steer delete → ${res.status}`);
+    const data = (await res.json()) as { removed?: boolean };
+    delete rawByEntry[entryId];
+    set({
+      messages: data.removed
+        ? state.messages.filter((m) => m.queued !== entryId)
+        : state.messages.map((m) => (m.queued === entryId ? { ...m, queued: undefined } : m)),
+    });
+  } catch {
+    /* best-effort — the chip stays; a reload reconciles from the server's steer_queue */
   }
 }
 

@@ -40,7 +40,8 @@ describe("runComposer routing", () => {
 
   it("plain text goes to the agent", () => {
     runComposer("wake the vault");
-    expect(chat.sendMessage).toHaveBeenCalledWith("wake the vault");
+    // D41 — the RAW composer line rides along so a queued steer restores the exact text on Stop.
+    expect(chat.sendMessage).toHaveBeenCalledWith("wake the vault", { raw: "wake the vault" });
   });
 
   it("every route jumps to the Agent tab", () => {
@@ -56,7 +57,8 @@ describe("runComposer routing", () => {
 
   it("`/local <msg>` sends one message on the local backend", () => {
     runComposer("/local ping");
-    expect(chat.sendMessage).toHaveBeenCalledWith("ping", { mode: "local" });
+    // D41 — the RAW `/local ping` line rides along (with its prefix) for a Stop-harvest restore.
+    expect(chat.sendMessage).toHaveBeenCalledWith("ping", { mode: "local", raw: "/local ping" });
   });
 
   it("bare `/cloud` sets the sticky session mode", () => {

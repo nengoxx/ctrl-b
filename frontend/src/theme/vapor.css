@@ -849,6 +849,16 @@
     border: 1px solid rgba(92,230,255,0.3);
     padding: 9px 13px; border-radius: 16px 16px 4px 16px;
   }
+  /* D41 — queued steer: muted bubble + a teal-tinted "queued" chip, right-aligned under the body */
+  .b.user.queued .body { opacity: 0.5; }
+  .b.user .steer-chip {
+    display: block; width: fit-content; margin: 5px 0 0 auto;
+    padding: 1px 9px; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--ink-faint);
+    background: rgba(92,230,255,0.1); border: 1px solid rgba(92,230,255,0.28);
+    border-radius: 999px; cursor: pointer;
+  }
+  .b.user .steer-chip:active { background: rgba(92,230,255,0.2); }
   .b.bot { max-width: 92%; }
   .b.bot .body {
     background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.10), rgba(var(--accent-rgb-2), 0.04));

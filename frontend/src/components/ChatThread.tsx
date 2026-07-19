@@ -6,7 +6,13 @@ import { toggle as playMessage, usePlayback } from "../lib/audioController";
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
 import { planFrom } from "../lib/plan";
-import { answerQuestion, applyProposal, resumeCall, retryLastTurn } from "../store/chat";
+import {
+  answerQuestion,
+  applyProposal,
+  removeSteer,
+  resumeCall,
+  retryLastTurn,
+} from "../store/chat";
 import type { ChatMessage, Part, ToolCallPart, ToolResult, WebSearchHit } from "../types";
 
 // The agent-chat LOG (F4) — the reusable `.chat-log` transcript, split out of AgentTab so a bespoke theme
@@ -328,10 +334,25 @@ const Bubbles = memo(function Bubbles({
     );
   }
   if (m.role === "user") {
+    // D41 — a QUEUED steer (a mid-turn message/`!exec` waiting to drain into the live turn): render it
+    // muted with a tappable "queued" chip. A single tap removes it (it's a queued draft, not a
+    // destructive action — no confirm); if it already drained the DELETE resolves it to its sent form.
+    const entryId = m.queued;
     return (
-      <div className="b user">
+      <div className={"b user" + (entryId ? " queued" : "")}>
         <div className="who">you · {hm(m.ts)}</div>
         <div className="body">{textOf(m.parts)}</div>
+        {entryId && (
+          <button
+            type="button"
+            className="steer-chip"
+            onClick={() => void removeSteer(entryId)}
+            aria-label="remove queued message"
+            title="queued — tap to remove"
+          >
+            queued
+          </button>
+        )}
       </div>
     );
   }

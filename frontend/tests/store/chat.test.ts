@@ -1,11 +1,12 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearDraft, getDraft } from "../../src/store/composer";
+import { clearDraft, getDraft, setDraft } from "../../src/store/composer";
 import {
   answerQuestion,
   initChat,
   reattachTurn,
+  removeSteer,
   resumeCall,
   retryLastTurn,
   runShell,
@@ -1213,6 +1214,8 @@ describe("durable turns — client (Slice 3, D39)", () => {
     expect(await reattachTurn("t1", "T1:2")).toBe(true);
   });
 
+  // NOTE: the Slice-5 (D41) steering-queue tests live in their own describe block at the end of this file.
+
   // Item 6 (probe races a user-started stream): the guard MOVED into `reattachTurn(requireIdle=true)`
   // (C4-M1) — it now re-checks status AFTER its own fetch await, closing the second race window the
   // old probe-only check missed. `reattachTurn` is exported, so the guard is now directly testable
@@ -1492,5 +1495,531 @@ describe("the client half — formal-audit wave C", () => {
     expect(ok).toBe(true);
     expect(result.current.messages.some((m) => m.parts.some((p) => p.type === "error"))).toBe(true);
     expect(result.current.status).toBe("error");
+  });
+});
+
+// ── Slice 5 (D41 steering queue) — the client half: the streaming send-guard is LIFTED (a send during a
+// live turn is a STEER, enqueued via a 202), the 3-exit optimistic-bubble lifecycle, `steer.applied`
+// swaps by entryId, the `turn.sync` steers fold, probe-on-done discovery of a drain-B turn, reload
+// reconcile, Stop→draft harvest (raw-line fidelity), and the queued-bubble DELETE. ──
+
+/** A 202 "queued steer" response (D41): the chat/exec endpoints return this while a chat/resume turn
+ *  holds the marker. `res.ok` is true (2xx) — streamTurn's `status===202` branch catches it first. */
+function resp202(entryId: string): Response {
+  return {
+    ok: true,
+    status: 202,
+    headers: { get: () => null },
+    json: async () => ({ queued: true, turn_id: "T1", entry_id: entryId, position: 1, depth: 1 }),
+  } as unknown as Response;
+}
+
+/** JSON helper for the probe / cancel / delete responses. */
+function json(body: unknown, ok = true, status = 200): Response {
+  return {
+    ok,
+    status,
+    headers: new Headers({ "content-type": "application/json" }),
+    json: async () => body,
+  } as unknown as Response;
+}
+
+describe("steering queue — client (Slice 5, D41)", () => {
+  const enc = new TextEncoder();
+
+  // Probe-on-done discovery (`void probeAndReattach`) is fire-and-forget; drain any pending probe /
+  // re-attach chain after each case so a floating promise can't inject a queued bubble into the NEXT
+  // test's shared module state (the store is a singleton). `startNewThread` in the global beforeEach
+  // then resets messages, so a drained probe settles harmlessly against the finishing test.
+  afterEach(async () => {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  });
+
+  /** Open a turn whose FIRST /agent/chat POST is a held-open SSE stream (status → streaming, thread t1).
+   *  All other fetches route through `dispatch`; an unmatched URL returns an empty messages array (the
+   *  durable-floor default). Returns the held stream's controller + the held send promise. */
+  async function heldTurn(dispatch: (u: string, init?: RequestInit) => Response | undefined) {
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+        c.enqueue(
+          enc.encode(`event: thread\r\ndata: ${JSON.stringify({ threadId: "t1" })}\r\n\r\n`),
+        );
+      },
+    });
+    let chatCalls = 0;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) {
+        chatCalls++;
+        if (chatCalls === 1) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            body,
+            headers: {
+              get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
+            },
+          } as unknown as Response);
+        }
+      }
+      const r = dispatch(u, init);
+      if (r) return Promise.resolve(r);
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    const hook = renderHook(() => useChat());
+    let sendP!: Promise<void>;
+    await act(async () => {
+      sendP = sendMessage("first");
+    });
+    expect(hook.result.current.status).toBe("streaming");
+    const pushDone = () =>
+      controller.enqueue(
+        enc.encode(`event: done\r\ndata: ${JSON.stringify({ state: "completed" })}\r\n\r\n`),
+      );
+    return { hook, controller, sendP, pushDone };
+  }
+
+  it("202 → the optimistic user bubble becomes a queued steer (chip); the live turn is untouched", async () => {
+    const { hook, controller, sendP, pushDone } = await heldTurn(() => undefined);
+    // steer while streaming — the send-guard is lifted; the POST returns 202
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) return Promise.resolve(resp202("e1"));
+      // the post-done discovery probe keeps e1 queued (server-present); everything else → empty floor
+      if (u.includes("/agent/turns/t1"))
+        return Promise.resolve(
+          json({
+            active: false,
+            steer_queue: [{ entry_id: "e1", kind: "message", text: "steer me" }],
+          }),
+        );
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    await act(async () => {
+      await sendMessage("steer me", { raw: "steer me" });
+    });
+    const steer = hook.result.current.messages.find(
+      (m) => m.role === "user" && textOf(m.parts) === "steer me",
+    );
+    expect(steer?.queued).toBe("e1"); // marked queued by entry_id
+    expect(hook.result.current.status).toBe("streaming"); // the live turn kept the view
+
+    await act(async () => {
+      pushDone();
+      controller.close();
+      await sendP;
+    });
+    // the live turn settled; the queued steer survives the discovery reconcile (still server-present)
+    await waitFor(() => expect(hook.result.current.status).toBe("idle"));
+    expect(hook.result.current.messages.some((m) => m.queued === "e1")).toBe(true);
+  });
+
+  it("409 while steering rolls the steer bubble back with a sys-note; the live turn keeps streaming", async () => {
+    const { hook, controller, sendP, pushDone } = await heldTurn(() => undefined);
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) return Promise.resolve(status409("steer queue full"));
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    await act(async () => {
+      await sendMessage("overflow", { raw: "overflow" });
+    });
+    // the rejected steer bubble is gone; a sys-note carries the detail; the live turn is still streaming
+    expect(hook.result.current.messages.some((m) => textOf(m.parts) === "overflow")).toBe(false);
+    expect(
+      hook.result.current.messages.some(
+        (m) => m.role === "system" && textOf(m.parts).includes("steer queue full"),
+      ),
+    ).toBe(true);
+    expect(hook.result.current.status).toBe("streaming");
+
+    pushDone();
+    controller.close();
+    await act(async () => {
+      await sendP;
+    });
+  });
+
+  it("steer.applied swaps a queued message bubble to its sent form (by entryId)", async () => {
+    const { hook, controller, sendP } = await heldTurn(() => undefined);
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) return Promise.resolve(resp202("e1"));
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    await act(async () => {
+      await sendMessage("steer me", { raw: "steer me" });
+    });
+    expect(hook.result.current.messages.find((m) => m.queued === "e1")).toBeTruthy();
+
+    // the running turn drains the steer → steer.applied on the live stream
+    await act(async () => {
+      controller.enqueue(
+        enc.encode(
+          `event: steer.applied\r\nid: T1:5\r\ndata: ${JSON.stringify({
+            entryId: "e1",
+            messageId: "u-real",
+            kind: "message",
+            text: "steer me",
+          })}\r\n\r\n`,
+        ),
+      );
+    });
+    const swapped = hook.result.current.messages.find((m) => m.id === "u-real");
+    expect(swapped).toBeTruthy();
+    expect(swapped!.queued).toBeUndefined(); // no longer queued
+    expect(hook.result.current.messages.some((m) => m.queued === "e1")).toBe(false);
+
+    controller.enqueue(
+      enc.encode(`event: done\r\ndata: ${JSON.stringify({ state: "completed" })}\r\n\r\n`),
+    );
+    controller.close();
+    await act(async () => {
+      await sendP;
+    });
+  });
+
+  it("a queued `!exec` steer (runShell 202) resolves on steer.applied{kind:exec}", async () => {
+    const { hook, controller, sendP } = await heldTurn(() => undefined);
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/api/exec")) return Promise.resolve(resp202("x1"));
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    await act(async () => {
+      await runShell("ls -la");
+    });
+    const q = hook.result.current.messages.find((m) => m.queued === "x1");
+    expect(q).toBeTruthy();
+    expect(textOf(q!.parts)).toBe("!ls -la"); // the `!` sigil restored on the bubble
+
+    await act(async () => {
+      controller.enqueue(
+        enc.encode(
+          `event: steer.applied\r\nid: T1:6\r\ndata: ${JSON.stringify({
+            entryId: "x1",
+            messageId: "u-exec",
+            kind: "exec",
+          })}\r\n\r\n`,
+        ),
+      );
+    });
+    expect(hook.result.current.messages.some((m) => m.queued === "x1")).toBe(false); // resolved
+
+    controller.enqueue(
+      enc.encode(`event: done\r\ndata: ${JSON.stringify({ state: "completed" })}\r\n\r\n`),
+    );
+    controller.close();
+    await act(async () => {
+      await sendP;
+    });
+  });
+
+  it("a turn.sync snapshot's `steers` fold dedups a queued bubble against the durable floor", async () => {
+    // held turn (t1) → steer 202 (e1 queued) → close EOF w/o done → interrupt re-attach: the snapshot
+    // folds steers[e1→u1] and the reload floor already carries the durable u1, so the queued dup drops.
+    const { hook, controller, sendP } = await heldTurn((u) => {
+      if (u.includes("/stream")) {
+        return json({}); // replaced below via a full re-stub after the steer
+      }
+      return undefined;
+    });
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) return Promise.resolve(resp202("e1"));
+      if (u.includes("/stream")) {
+        return Promise.resolve(
+          sseResponse([
+            {
+              event: "turn.sync",
+              id: "T1:2",
+              data: {
+                mode: null,
+                seq: 2,
+                terminal: null,
+                message: null,
+                calls: [],
+                steers: [{ entryId: "e1", messageId: "u1", kind: "message", text: "steered" }],
+              },
+            },
+            { event: "done", id: "T1:3", data: { state: "completed" } },
+          ]),
+        );
+      }
+      // the forced reload floor carries the durable steered user message u1
+      return Promise.resolve({
+        ok: true,
+        json: async () => [
+          {
+            id: "u1",
+            thread_id: "t1",
+            role: "user",
+            parts: [{ type: "text", text: "steered" }],
+            actor: "user",
+            ts: "",
+            tokens: null,
+            compacted: false,
+          },
+        ],
+      } as unknown as Response);
+    });
+    await act(async () => {
+      await sendMessage("steered", { raw: "steered" });
+    });
+    expect(hook.result.current.messages.find((m) => m.queued === "e1")).toBeTruthy();
+
+    controller.close(); // EOF w/o done → the clean-EOF re-attach path folds the steers
+    await act(async () => {
+      await sendP;
+    });
+    // the local queued dup was dropped; the durable u1 renders once; no leftover queued bubble
+    expect(hook.result.current.messages.filter((m) => m.id === "u1")).toHaveLength(1);
+    expect(hook.result.current.messages.some((m) => m.queued)).toBe(false);
+    expect(hook.result.current.status).toBe("idle");
+  });
+
+  it("probe-on-done discovers a spawned drain-B turn when queued bubbles remain", async () => {
+    const spawned = {
+      active: true,
+      turn_id: "T2",
+      seq: 1,
+      steer_queue: [{ entry_id: "e1", kind: "message", text: "later" }],
+    };
+    const { hook, controller, sendP, pushDone } = await heldTurn((u) => {
+      if (u.includes("/agent/turns/t1/stream")) {
+        return sseResponse([
+          {
+            event: "turn.sync",
+            id: "T2:1",
+            data: {
+              mode: null,
+              seq: 1,
+              terminal: null,
+              message: {
+                id: "m9",
+                role: "assistant",
+                agent: null,
+                text: "spawned reply",
+                reasoning: "",
+              },
+              calls: [],
+              steers: [{ entryId: "e1", messageId: "u1", kind: "message", text: "later" }],
+            },
+          },
+          { event: "done", id: "T2:2", data: { state: "completed" } },
+        ]);
+      }
+      if (u.includes("/agent/turns/t1")) return json(spawned);
+      return undefined;
+    });
+    // steer while streaming
+    const dispatch = (u: string): Response | undefined => {
+      if (u.includes("/agent/chat")) return resp202("e1");
+      if (u.includes("/agent/turns/t1/stream")) {
+        return sseResponse([
+          {
+            event: "turn.sync",
+            id: "T2:1",
+            data: {
+              mode: null,
+              seq: 1,
+              terminal: null,
+              message: {
+                id: "m9",
+                role: "assistant",
+                agent: null,
+                text: "spawned reply",
+                reasoning: "",
+              },
+              calls: [],
+              steers: [{ entryId: "e1", messageId: "u1", kind: "message", text: "later" }],
+            },
+          },
+          { event: "done", id: "T2:2", data: { state: "completed" } },
+        ]);
+      }
+      if (u.includes("/agent/turns/t1")) return json(spawned);
+      return undefined;
+    };
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const r = dispatch(String(url));
+      return Promise.resolve(r ?? ({ ok: true, json: async () => [] } as unknown as Response));
+    });
+    await act(async () => {
+      await sendMessage("later", { raw: "later" });
+    });
+    expect(hook.result.current.messages.find((m) => m.queued === "e1")).toBeTruthy();
+
+    // the live turn completes → discovery probes, finds the spawned turn active, re-attaches
+    await act(async () => {
+      pushDone();
+      controller.close();
+      await sendP;
+    });
+    await waitFor(() => expect(hook.result.current.messages.some((m) => m.id === "m9")).toBe(true));
+    expect(textOf(hook.result.current.messages.find((m) => m.id === "m9")!.parts)).toBe(
+      "spawned reply",
+    );
+    expect(hook.result.current.messages.some((m) => m.queued)).toBe(false); // e1 drained via the fold
+  });
+
+  it("reload reconcile: server-present → create a queued bubble; locally-queued + server-absent → drop", async () => {
+    const { hook, controller, sendP, pushDone } = await heldTurn((u) => {
+      // after the live turn completes, the discovery probe reports e1 DRAINED (absent) + a new e2 queued
+      if (u.includes("/agent/turns/t1"))
+        return json({
+          active: false,
+          steer_queue: [{ entry_id: "e2", kind: "exec", text: "whoami" }],
+        });
+      return undefined;
+    });
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) return Promise.resolve(resp202("e1"));
+      if (u.includes("/agent/turns/t1"))
+        return Promise.resolve(
+          json({ active: false, steer_queue: [{ entry_id: "e2", kind: "exec", text: "whoami" }] }),
+        );
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    await act(async () => {
+      await sendMessage("gone", { raw: "gone" });
+    });
+    expect(hook.result.current.messages.find((m) => m.queued === "e1")).toBeTruthy();
+
+    await act(async () => {
+      pushDone();
+      controller.close();
+      await sendP;
+    });
+    // e1 drained (server-absent) → dropped; e2 (server-present, locally-missing) → created as `!whoami`
+    await waitFor(() =>
+      expect(hook.result.current.messages.some((m) => m.queued === "e2")).toBe(true),
+    );
+    expect(hook.result.current.messages.some((m) => m.queued === "e1")).toBe(false);
+    expect(textOf(hook.result.current.messages.find((m) => m.queued === "e2")!.parts)).toBe(
+      "!whoami",
+    );
+  });
+
+  it("Stop harvests undrained steers to the composer draft (raw-line fidelity, newline-join, no clobber)", async () => {
+    clearDraft();
+    setDraft("existing note"); // pre-existing draft must NOT be clobbered
+    const { hook, controller, sendP } = await heldTurn((u) => {
+      if (u.includes("/cancel"))
+        return json({
+          cancelled: true,
+          active: false,
+          steer_queue: [
+            { entry_id: "e1", kind: "message", text: "do X" },
+            { entry_id: "e2", kind: "exec", text: "ls" },
+          ],
+        });
+      if (u.includes("/stream")) return json({ active: false, terminal_status: "cancelled" });
+      return undefined;
+    });
+    // queue two steers: a `/cloud do X` (raw with prefix) + a `!ls` exec
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) return Promise.resolve(resp202("e1"));
+      if (u.includes("/api/exec")) return Promise.resolve(resp202("e2"));
+      if (u.includes("/cancel"))
+        return Promise.resolve(
+          json({
+            cancelled: true,
+            active: false,
+            steer_queue: [
+              { entry_id: "e1", kind: "message", text: "do X" },
+              { entry_id: "e2", kind: "exec", text: "ls" },
+            ],
+          }),
+        );
+      if (u.includes("/stream"))
+        return Promise.resolve(json({ active: false, terminal_status: "cancelled" }));
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    await act(async () => {
+      await sendMessage("do X", { mode: "cloud", raw: "/cloud do X" });
+    });
+    await act(async () => {
+      await runShell("ls");
+    });
+    expect(hook.result.current.messages.filter((m) => m.queued)).toHaveLength(2);
+
+    await act(async () => {
+      await stopTurn();
+    });
+    // the RAW lines (with `/cloud` prefix + `!` sigil) restored, newline-joined, APPENDED after the draft
+    expect(getDraft()).toBe("existing note\n/cloud do X\n!ls");
+
+    controller.close();
+    await act(async () => {
+      await sendP;
+    });
+  });
+
+  it("Stop with an empty harvest appends nothing (draft untouched)", async () => {
+    clearDraft();
+    setDraft("keep me");
+    const { hook, controller, sendP } = await heldTurn((u) => {
+      if (u.includes("/cancel")) return json({ cancelled: true, active: false, steer_queue: [] });
+      if (u.includes("/stream")) return json({ active: false, terminal_status: "cancelled" });
+      return undefined;
+    });
+    await act(async () => {
+      await stopTurn();
+    });
+    expect(getDraft()).toBe("keep me"); // nothing to harvest → unchanged
+    void hook;
+    controller.close();
+    await act(async () => {
+      await sendP;
+    });
+  });
+
+  it("DELETE a queued steer: {removed:true} drops the bubble; {removed:false} resolves it to sent form", async () => {
+    const { hook, controller, sendP, pushDone } = await heldTurn(() => undefined);
+    // queue two steers e1 + e2 (e2 via a second chat POST)
+    let chat = 0;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/agent/chat")) {
+        chat++;
+        return Promise.resolve(resp202(chat === 1 ? "e1" : "e2"));
+      }
+      if (u.includes("/steer/e1")) return Promise.resolve(json({ removed: true }));
+      if (u.includes("/steer/e2"))
+        return Promise.resolve(json({ removed: false, reason: "already sent" }));
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    await act(async () => {
+      await sendMessage("first steer", { raw: "first steer" });
+    });
+    await act(async () => {
+      await sendMessage("second steer", { raw: "second steer" });
+    });
+    expect(hook.result.current.messages.filter((m) => m.queued)).toHaveLength(2);
+
+    await act(async () => {
+      await removeSteer("e1"); // removed:true → bubble dropped
+    });
+    expect(hook.result.current.messages.some((m) => textOf(m.parts) === "first steer")).toBe(false);
+
+    await act(async () => {
+      await removeSteer("e2"); // removed:false (already drained) → resolve to sent form (queued cleared)
+    });
+    const e2 = hook.result.current.messages.find((m) => textOf(m.parts) === "second steer");
+    expect(e2).toBeTruthy();
+    expect(e2!.queued).toBeUndefined();
+
+    pushDone();
+    controller.close();
+    await act(async () => {
+      await sendP;
+    });
   });
 });
