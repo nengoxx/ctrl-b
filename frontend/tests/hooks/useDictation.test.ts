@@ -113,13 +113,15 @@ describe("useDictation", () => {
     expect(result.current.status).toBe("insecure");
   });
 
-  it("auto-send is held back when a turn is already streaming (left in the draft, not dropped)", async () => {
-    vi.mocked(getChatStatus).mockReturnValue("streaming"); // a turn is in flight
-    mockStt(200, { text: "queued line" });
+  it("auto-send STEERS during a live turn (HIGH-1/D41): routes through runComposer, not held back", async () => {
+    // The old gate held voice back while streaming; D41 lifts it — a voice message during a live turn
+    // QUEUES as a steer (voice is the owner's primary mobile input; the queued bubble is visible).
+    vi.mocked(getChatStatus).mockReturnValue("streaming"); // a turn is in flight — no longer a barrier
+    mockStt(200, { text: "steer line" });
     const { result } = renderHook(() => useDictation(opts(true)));
     await recordOnce(result);
-    await waitFor(() => expect(getDraft()).toBe("queued line")); // appended for review
-    expect(runComposer).not.toHaveBeenCalled(); // NOT sent into the streaming turn (would be dropped)
+    await waitFor(() => expect(runComposer).toHaveBeenCalledWith("steer line")); // steered, not stranded
+    expect(getDraft()).toBe(""); // cleared like any auto-send (the steer bubble carries it now)
   });
 
   it("an empty transcript prompts a retry rather than appending nothing", async () => {

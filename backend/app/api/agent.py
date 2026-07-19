@@ -776,6 +776,13 @@ async def turn_stream(thread_id: str, request: Request, cursor: str | None = Non
         prefix = [_sse_frame(handle.turn_id, seq, ev) for seq, ev in handle.ring if seq > cur_seq]
     else:
         snap = handle.accumulator.snapshot(mode=handle.mode, seq=handle.seq)
+        # D41 MED-1 — carry the thread's PENDING steer queue (read LIVE at snapshot-build time; disjoint
+        # from the accumulator's already-drained `steers`) so a cold-load / re-attach re-renders queued
+        # bubbles instead of the FE's forced reload wiping them. Mirrors `turn_status`'s per-branch carry.
+        q = state.steer_queues.get(thread_id)
+        snap["steer_queue"] = (
+            [{"entry_id": e.entry_id, "kind": e.kind, "text": e.text} for e in q.peek()] if q else []
+        )
         prefix = [{"event": "turn.sync", "id": f"{handle.turn_id}:{handle.seq}", "data": json.dumps(snap)}]
     after_seq = handle.seq  # every prefix frame is through `seq` — live-dedupe strictly beyond it
 

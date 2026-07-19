@@ -1530,10 +1530,12 @@ describe("steering queue — client (Slice 5, D41)", () => {
   // Probe-on-done discovery (`void probeAndReattach`) is fire-and-forget; drain any pending probe /
   // re-attach chain after each case so a floating promise can't inject a queued bubble into the NEXT
   // test's shared module state (the store is a singleton). `startNewThread` in the global beforeEach
-  // then resets messages, so a drained probe settles harmlessly against the finishing test.
+  // then resets messages, so a drained probe settles harmlessly against the finishing test. The drain
+  // waits past HIGH-2's ~250ms re-probe delay (probeAndReattach's drain-B window bridge) so that timer
+  // fires + completes here, never inside the next case (its threadId guard also bails a stale reload).
   afterEach(async () => {
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 320));
     });
   });
 
@@ -1782,6 +1784,72 @@ describe("steering queue — client (Slice 5, D41)", () => {
     expect(hook.result.current.status).toBe("idle");
   });
 
+  it("a turn.sync snapshot's `steer_queue` re-renders a PENDING queued bubble after the reload (MED-1, cold-load-with-pending-steers)", async () => {
+    // Establish thread t1 with a prior completed reply.
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "m0" } },
+      { event: "text.delta", data: { messageId: "m0", delta: "prior reply" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const hook = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+
+    // Re-attach: the snapshot carries a PENDING steer (`steer_queue`, disjoint from any drained
+    // `steers`). The forced reload returns the durable floor (the prior reply) — WITHOUT the client-only
+    // queued bubble. MED-1: applyTurnSync must reconcile `steer_queue` AFTER the reload so the pending
+    // bubble re-renders instead of being wiped by the floor.
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/stream")) {
+        return Promise.resolve(
+          sseResponse([
+            {
+              event: "turn.sync",
+              id: "T7:3",
+              data: {
+                mode: null,
+                seq: 3,
+                terminal: null,
+                message: null,
+                calls: [],
+                steer_queue: [{ entry_id: "p1", kind: "message", text: "pending steer" }],
+              },
+            },
+            { event: "done", id: "T7:4", data: { state: "completed" } },
+          ]),
+        );
+      }
+      // durable floor — the prior reply only; the pending steer is NOT persisted (client-only until drain)
+      return Promise.resolve(
+        json([
+          {
+            id: "m0",
+            thread_id: "t1",
+            role: "assistant",
+            parts: [{ type: "text", text: "prior reply" }],
+            actor: "agent",
+            ts: "",
+            tokens: null,
+            compacted: false,
+          },
+        ]),
+      );
+    });
+    await act(async () => {
+      await reattachTurn("t1", "T7:1");
+    });
+    // both survive: the durable floor reply AND the re-rendered pending steer bubble
+    expect(
+      hook.result.current.messages.some((m) => m.id === "m0" && textOf(m.parts) === "prior reply"),
+    ).toBe(true);
+    const pending = hook.result.current.messages.find((m) => m.queued === "p1");
+    expect(pending).toBeTruthy();
+    expect(textOf(pending!.parts)).toBe("pending steer");
+  });
+
   it("probe-on-done discovers a spawned drain-B turn when queued bubbles remain", async () => {
     const spawned = {
       active: true,
@@ -1867,19 +1935,31 @@ describe("steering queue — client (Slice 5, D41)", () => {
     expect(hook.result.current.messages.some((m) => m.queued)).toBe(false); // e1 drained via the fold
   });
 
-  it("reload reconcile: server-present → create a queued bubble; locally-queued + server-absent → drop", async () => {
-    const { hook, controller, sendP, pushDone } = await heldTurn((u) => {
-      // after the live turn completes, the discovery probe reports e1 DRAINED (absent) + a new e2 queued
-      if (u.includes("/agent/turns/t1"))
-        return json({
-          active: false,
-          steer_queue: [{ entry_id: "e2", kind: "exec", text: "whoami" }],
-        });
-      return undefined;
-    });
+  it("reload reconcile (HIGH-2): a drained steer's durable content RENDERS after the re-probe reload; a still-queued one survives", async () => {
+    // e1 ("gone") drains while the turn runs; the discovery probe reports it ABSENT (drained) + a new
+    // e2 still queued. HIGH-2: because we held queued bubbles, the probe path re-probes after ~250ms
+    // and — still inactive — RELOADS the durable floor so e1's sent message actually renders (the
+    // pre-fix bug: the bubble merely dropped and the durable content silently vanished). e2 (still
+    // server-present) survives the reconcile against the reloaded floor.
+    const floor = [
+      {
+        id: "u-gone",
+        thread_id: "t1",
+        role: "user",
+        parts: [{ type: "text", text: "gone" }],
+        actor: "user",
+        ts: "",
+        tokens: null,
+        compacted: false,
+      },
+    ];
+    const { hook, controller, sendP, pushDone } = await heldTurn(() => undefined);
     globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
       const u = String(url);
       if (u.includes("/agent/chat")) return Promise.resolve(resp202("e1"));
+      // the durable floor: e1's persisted "gone" user message (the reload target)
+      if (u.includes("/threads/t1/messages")) return Promise.resolve(json(floor));
+      // the probe (and re-probe): e1 drained (absent), e2 still queued
       if (u.includes("/agent/turns/t1"))
         return Promise.resolve(
           json({ active: false, steer_queue: [{ entry_id: "e2", kind: "exec", text: "whoami" }] }),
@@ -1896,14 +1976,91 @@ describe("steering queue — client (Slice 5, D41)", () => {
       controller.close();
       await sendP;
     });
-    // e1 drained (server-absent) → dropped; e2 (server-present, locally-missing) → created as `!whoami`
+    // After the re-probe reload: e1's DURABLE "gone" message renders (not silently lost) …
+    await waitFor(() =>
+      expect(
+        hook.result.current.messages.some((m) => m.id === "u-gone" && textOf(m.parts) === "gone"),
+      ).toBe(true),
+    );
+    // … the drained e1 bubble is gone, and e2 (server-present) survives as `!whoami`.
+    expect(hook.result.current.messages.some((m) => m.queued === "e1")).toBe(false);
     await waitFor(() =>
       expect(hook.result.current.messages.some((m) => m.queued === "e2")).toBe(true),
     );
-    expect(hook.result.current.messages.some((m) => m.queued === "e1")).toBe(false);
     expect(textOf(hook.result.current.messages.find((m) => m.queued === "e2")!.parts)).toBe(
       "!whoami",
     );
+  });
+
+  it("all-exec drain-B (HIGH-2): a queued `!cmd` whose exec pair persisted RENDERS via the re-probe reload; the bubble is gone", async () => {
+    // The deterministic silent-loss case: a lone `!cmd` steer is drained by an all-exec drain-B turn
+    // that runs the command INLINE and only persists the durable tool_call/result pair — no live
+    // stream, no `steer.applied`. The probe then reports {active:false, steer_queue:[]} (committed).
+    // Pre-fix: the reconcile dropped the queued bubble and NOTHING reloaded the pair → it vanished.
+    // HIGH-2: the re-probe reload renders the persisted pair.
+    const pair = [
+      {
+        id: "m-exec",
+        thread_id: "t1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool_call",
+            call_id: "x9",
+            tool: "run_shell",
+            args: { command: "id" },
+            state: "ok",
+          },
+          {
+            type: "tool_result",
+            call_id: "x9",
+            result: {
+              state: "ok",
+              summary: "uid=1000",
+              data: {},
+              output: "uid=1000",
+              error: null,
+              artifacts: [],
+              duration_ms: 1,
+            },
+          },
+        ],
+        actor: "agent",
+        ts: "",
+        tokens: null,
+        compacted: false,
+      },
+    ];
+    const { hook, controller, sendP, pushDone } = await heldTurn(() => undefined);
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/api/exec")) return Promise.resolve(resp202("x9"));
+      if (u.includes("/threads/t1/messages")) return Promise.resolve(json(pair));
+      // the exec already committed off the queue → empty steer_queue, still inactive
+      if (u.includes("/agent/turns/t1"))
+        return Promise.resolve(json({ active: false, steer_queue: [] }));
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    await act(async () => {
+      await runShell("id");
+    });
+    expect(hook.result.current.messages.find((m) => m.queued === "x9")).toBeTruthy();
+
+    await act(async () => {
+      pushDone();
+      controller.close();
+      await sendP;
+    });
+    // the durable exec pair renders …
+    await waitFor(() =>
+      expect(
+        hook.result.current.messages.some((m) =>
+          m.parts.some((p) => p.type === "tool_call" && p.call_id === "x9"),
+        ),
+      ).toBe(true),
+    );
+    // … and the optimistic queued `!id` bubble is gone (no silent loss, no lingering chip)
+    expect(hook.result.current.messages.some((m) => m.queued)).toBe(false);
   });
 
   it("Stop harvests undrained steers to the composer draft (raw-line fidelity, newline-join, no clobber)", async () => {

@@ -757,6 +757,12 @@ async function streamTurn(
             m.id === pendingUserId ? { ...m, queued: entryId } : m,
           ),
         });
+      } else if (pendingUserId) {
+        // Defensive (audit LOW): a 202 with NO entry_id can't be tracked (no queued marker → no
+        // Stop-harvest, no drain reconcile). Rather than strand a permanent unmarked bubble, drop the
+        // optimistic user bubble and surface a sys-note so the owner knows to resend.
+        set({ messages: state.messages.filter((m) => m.id !== pendingUserId) });
+        pushSystemNote("// steer not queued — try again");
       }
       return;
     }
@@ -1034,6 +1040,13 @@ export async function reattachTurn(
       );
     }
     set({ messages: msgs });
+    // D41 MED-1 — the snapshot ALSO carries the still-PENDING queue (`steer_queue`, disjoint from the
+    // drained `steers` folded above): reconcile it AFTER the reload+fold so a cold-load / re-attach
+    // re-renders queued bubbles instead of the reload wiping them. Empty/absent → drops any stale
+    // local bubble (server truth). Runs after the `set` so it reconciles against the folded floor.
+    reconcileSteerQueue(
+      Array.isArray(snap.steer_queue) ? (snap.steer_queue as SteerQueueEntry[]) : [],
+    );
     // (c) go live — OR settle if the turn already ended in the tiny window before we attached (a
     // trailing/absent live `done` would otherwise strand the chat in "streaming").
     // A turn TERMINAL carries `completed|suspended|capped|error` — TURN states, not tool-call
@@ -1152,6 +1165,23 @@ function discoverSpawnedSteerTurn(): void {
   if (state.threadId && state.messages.some((m) => m.queued)) void probeAndReattach(state.threadId);
 }
 
+// D41 HIGH-2 — the re-probe delay covering the backend's reserve→spawn `task=None` window (below). A
+// drain-B turn is reserved SYNCHRONOUSLY in the settling turn's done-callback, then its body runs on a
+// fresh task; between the reserve and the body recording its terminal (all-exec) or attaching a task
+// (message steer), the handle reads `task=None` → the probe sees active:false for a turn that is about
+// to render. One short re-probe bridges it. Module constant (no magic number).
+const DRAIN_B_REPROBE_MS = 250;
+
+/** Re-attach if the probe says the turn is live; else settle from the durable floor. Shared by the
+ *  first probe and the HIGH-2 re-probe. Returns nothing; the caller has already reconciled the queue. */
+async function attachOrSettle(threadId: string): Promise<void> {
+  const ok = await reattachTurn(threadId, undefined, true);
+  if (!ok && getChatStatus() === "streaming") {
+    set({ status: "idle", streamingId: null });
+    await reloadChat();
+  }
+}
+
 /** Cold page-load re-attach (D39/M4): probe the thread's turn status and, if a turn is still running
  *  detached (the mobile app-kill case), re-attach via the snapshot path (no cursor). Non-blocking of
  *  the initial paint. If the re-attach set the view streaming but couldn't reach a terminal, reconcile
@@ -1163,6 +1193,10 @@ async function probeAndReattach(threadId: string): Promise<void> {
       active?: boolean;
       steer_queue?: SteerQueueEntry[];
     };
+    // Track BEFORE the reconcile (HIGH-2): did we hold optimistic queued bubbles going in? If so, a
+    // just-settled turn that left steers may have spawned a drain-B turn whose durable output isn't
+    // rendered yet — the reconcile below may DROP those bubbles without ever reloading the floor.
+    const hadQueued = state.messages.some((m) => m.queued);
     // Re-render queued steers from server truth BEFORE any streaming bail — the reconcile is truthful
     // regardless of the attach decision (kills the vanished-steer double-send hazard on a reload).
     if (Array.isArray(probe.steer_queue)) reconcileSteerQueue(probe.steer_queue);
@@ -1173,12 +1207,37 @@ async function probeAndReattach(threadId: string): Promise<void> {
     // `reattachTurn(requireIdle=true)` after ITS fetch await (C4-M1): the fetch is a second window
     // where a send can flip us to "streaming" between this check and the first applied frame.
     if (getChatStatus() === "streaming") return;
-    if (!probe.active) return;
-    const ok = await reattachTurn(threadId, undefined, true);
-    if (!ok && getChatStatus() === "streaming") {
-      set({ status: "idle", streamingId: null });
-      await reloadChat();
+    if (!probe.active) {
+      // HIGH-2 (+ its MED racy variant): we saw an inactive turn while we HELD queued bubbles. The
+      // reconcile just aligned the bubbles to server truth, but an all-exec drain-B renders NOTHING
+      // (it runs the execs inline and only persists the durable exec pair — no live stream, no
+      // `steer.applied`), so without a reload the drained command silently vanishes. Close two
+      // windows with ONE short re-probe: (a) the reserve→spawn `task=None` gap where a drain-B turn
+      // is about to go live (→ attach), and (b) the all-exec drain that already finished (→ reload the
+      // durable floor so the exec pair renders). Status is idle here, so the reload is safe.
+      if (hadQueued) {
+        await new Promise((r) => setTimeout(r, DRAIN_B_REPROBE_MS));
+        // The owner may have sent / navigated during the wait — never reload a thread we left, and
+        // never add a subscriber onto a now-live stream (both would corrupt the live view).
+        if (getChatStatus() === "streaming" || state.threadId !== threadId) return;
+        const re = (await (await fetch(`/api/agent/turns/${threadId}`)).json()) as {
+          active?: boolean;
+          steer_queue?: SteerQueueEntry[];
+        };
+        if (re.active) {
+          if (Array.isArray(re.steer_queue)) reconcileSteerQueue(re.steer_queue);
+          await attachOrSettle(threadId);
+          return;
+        }
+        // Still not live → the durable floor is the truth. Reload it (renders the exec pair / a
+        // completed drain-B turn's messages), THEN reconcile the queue against the reloaded floor so
+        // any still-pending steer re-renders and any drained one drops.
+        await reloadChat();
+        if (Array.isArray(re.steer_queue)) reconcileSteerQueue(re.steer_queue);
+      }
+      return;
     }
+    await attachOrSettle(threadId);
   } catch {
     /* probe / re-attach failed — the plain history is already shown */
   }

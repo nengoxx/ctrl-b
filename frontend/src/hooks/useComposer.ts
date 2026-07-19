@@ -12,8 +12,9 @@ import { clearDraft, getDraft, setDraft, useDraft } from "../store/composer";
 export interface ComposerController {
   draft: string;
   setDraft: (v: string) => void;
-  /** Route + send the current draft (`!`→shell · `/`→slash · else→agent) then clear it. No-op while
-   *  streaming or when the draft is blank. */
+  /** Route + send the current draft (`!`→shell · `/`→slash · else→agent) then clear it. No-op only
+   *  when the draft is blank — a send DURING a live turn is a STEER (D41), enqueued by the store's
+   *  `sendMessage`/`runShell`; the send BUTTON stays Stop, but Enter (and mic auto-send) steer. */
   send: () => void;
   isStreaming: boolean;
   /** The dictation mic state machine (idle/recording/sending/unavailable). */
@@ -35,10 +36,13 @@ export function useComposer(): ComposerController {
   });
   const isStreaming = status === "streaming";
 
-  // Reads the draft imperatively (no stale closure) so it always sends what's currently typed.
+  // Reads the draft imperatively (no stale closure) so it always sends what's currently typed. NO
+  // `isStreaming` gate (HIGH-1, owner-ratified UX): while a turn streams, Enter/mic-send STEER — the
+  // store's `sendMessage`/`runShell` enqueue a 202 steer bubble. Only the send BUTTON stays Stop
+  // (`isStreaming ? stopTurn : send` in each composer variant); Enter routes through here to steer.
   function send(): void {
     const text = getDraft().trim();
-    if (!text || isStreaming) return;
+    if (!text) return;
     runComposer(text); // prefix routing: !shell · /slash · else agent (lib/composer)
     clearDraft();
   }

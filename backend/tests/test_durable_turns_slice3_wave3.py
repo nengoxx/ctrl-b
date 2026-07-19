@@ -247,6 +247,55 @@ def test_reattach_snapshot_first_frame_then_live() -> None:
     _clear_env()
 
 
+def test_snapshot_carries_pending_steer_queue_med1() -> None:
+    """MED-1 — the `turn.sync` snapshot carries the thread's PENDING steer queue (read live at
+    snapshot-build time; DISJOINT from the accumulator's already-drained `steers`), so a re-attaching
+    client re-renders queued bubbles instead of the FE's forced reload wiping them."""
+    from app.api.agent import turn_stream
+    from app.services.agent.steering import SteerEntry, enqueue
+    from app.services.agent.turns import drain_turn, release, reserve
+
+    with _client() as c:
+        s = c.app.state
+        cfg = s.settings.agent.turns
+        out: dict = {}
+
+        async def scenario():
+            handle = reserve(s.turns, "th-sq", "chat", ring_size=cfg.ring_size)
+            gate = asyncio.Event()
+            before = [
+                _ev("message.start", messageId="m", role="assistant"),
+                _ev("text.delta", messageId="m", delta="hi"),
+            ]
+            after = [_ev("done", threadId="th-sq", state="completed")]
+            task = asyncio.create_task(drain_turn(handle, _gated_gen(before, gate, after), _NoMessages()))
+            handle.task = task
+            task.add_done_callback(lambda _t: release(s.turns, handle))
+            await _drive_to_seq(handle, 2)
+            # two PENDING steers queued mid-turn (a 202 enqueue) — NOT drained into the accumulator
+            enqueue(s, "th-sq", SteerEntry(kind="message", text="steer me"), cfg.steer_queue_max)
+            enqueue(s, "th-sq", SteerEntry(kind="exec", text="ls"), cfg.steer_queue_max)
+            resp = await turn_stream("th-sq", _Req(c.app), cursor="deadbeef:2")  # stale cursor → snapshot
+            it = resp.body_iterator
+            out["first"] = await it.__anext__()
+            gate.set()
+            _rest = [f async for f in it]
+            await task
+
+        run_async(scenario())
+
+        first = out["first"]
+        assert first["event"] == "turn.sync"
+        snap = json.loads(first["data"])
+        # the PENDING queue rides the snapshot, ordered, each with an entry_id …
+        q = snap["steer_queue"]
+        assert [(e["kind"], e["text"]) for e in q] == [("message", "steer me"), ("exec", "ls")]
+        assert all(isinstance(e["entry_id"], str) and e["entry_id"] for e in q)
+        # … and it is DISJOINT from the drained-steers fold (nothing drained → no `steers` key)
+        assert "steers" not in snap
+    _clear_env()
+
+
 # ── 4: non-live stream → JSON ──────────────────────────────────────────────────────────────────
 
 

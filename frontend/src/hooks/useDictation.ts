@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { runComposer } from "../lib/composer";
-import { getChatStatus } from "../store/chat";
 import { appendDraft, clearDraft, getDraft } from "../store/composer";
 import { pushToast } from "../store/toast";
 
@@ -149,10 +148,11 @@ export function useDictation({
       const data = (await res.json()) as { text?: string };
       if (data.text?.trim()) {
         appendDraft(data.text); // always show it in the composer first
-        // Auto-send routes it like a typed+sent message — but only when idle. Firing into an in-flight
-        // turn would be silently dropped (sendMessage no-ops while streaming), so leave it in the
-        // composer to send manually (the typed path is likewise blocked by the disabled send button).
-        if (autoSend && getChatStatus() !== "streaming") {
+        // Auto-send routes it like a typed+sent message. NO streaming gate (HIGH-1, D41): a voice
+        // message during a live turn QUEUES as a steer (the 202 path), same as Enter — voice is the
+        // owner's primary mobile input, and a queued bubble is visible/removable. `runComposer` →
+        // `sendMessage`/`runShell` enqueue the steer; the running turn keeps the view.
+        if (autoSend) {
           // Reads the just-appended draft imperatively (combines with anything already typed).
           const full = getDraft().trim();
           if (full) {
