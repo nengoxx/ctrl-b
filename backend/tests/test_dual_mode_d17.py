@@ -88,7 +88,9 @@ def test_collect_completed() -> None:
 
 def test_collect_folds_notices() -> None:
     """ACA-11/D40: `collect_turn` buffers each `notice` event's text into `notices` (live breadcrumbs
-    like failover + "compacting…" aren't persisted, so a buffered consumer would otherwise miss them)."""
+    like "compacting…" + the compaction breaker aren't persisted, so a buffered consumer would
+    otherwise miss them). (D43 note: failover is no longer a `notice` — it is the typed
+    inference.failover event, folded to notices by its own collect_turn branch; see the W2 suite.)"""
     from app.services.agent.session import collect_turn
 
     out = _run(
@@ -97,7 +99,7 @@ def test_collect_folds_notices() -> None:
                 [
                     _ev("message.start", messageId="m1"),
                     _ev("notice", text="// compacting the conversation…"),
-                    _ev("notice", text="// inference failover → cloud (primary unavailable)"),
+                    _ev("notice", text="// compaction keeps failing — use /compact or start a new thread"),
                     _ev("message.end", messageId="m1"),
                     _ev("done", threadId="t1", state="completed"),
                 ]
@@ -106,7 +108,7 @@ def test_collect_folds_notices() -> None:
     )
     assert out["notices"] == [
         "// compacting the conversation…",
-        "// inference failover → cloud (primary unavailable)",
+        "// compaction keeps failing — use /compact or start a new thread",
     ]
 
 
