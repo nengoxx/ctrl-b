@@ -691,6 +691,150 @@ describe("turn integrity — client (Slice 2)", () => {
   });
 });
 
+// ── Slice 7 (D43) — inference retry/failover LIVE notes + the retry_status re-attach render. ──
+describe("inference retry/failover notes (Slice 7, D43)", () => {
+  const sysNotes = (msgs: { role: string; parts: Part[] }[]) =>
+    msgs.filter((m) => m.role === "system").map((m) => textOf(m.parts));
+
+  it("an inference.retry event renders the house-voice retry note", async () => {
+    mockStream([
+      { event: "message.start", data: { messageId: "m1" } },
+      {
+        event: "inference.retry",
+        data: { endpoint: "local", attempt: 1, max: 2, delaySeconds: 2, category: "transient" },
+      },
+      { event: "text.delta", data: { messageId: "m1", delta: "ok" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    expect(sysNotes(result.current.messages)).toContain(
+      "// retrying local in 2s (attempt 1/2 — transient)",
+    );
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("an inference.failover event renders the house-voice failover note", async () => {
+    mockStream([
+      { event: "message.start", data: { messageId: "m1" } },
+      { event: "inference.failover", data: { from: "local", to: "cloud", category: "other" } },
+      { event: "text.delta", data: { messageId: "m1", delta: "ok" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    expect(sysNotes(result.current.messages)).toContain("// failover → cloud (other)");
+  });
+
+  it("drops a malformed inference.retry / inference.failover instead of half-rendering", async () => {
+    mockStream([
+      { event: "message.start", data: { messageId: "m1" } },
+      { event: "inference.retry", data: { endpoint: "local", category: "transient" } }, // no numbers → drop
+      { event: "inference.failover", data: { from: "local", category: "other" } }, // no `to` → drop
+      { event: "text.delta", data: { messageId: "m1", delta: "ok" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("q");
+    });
+    expect(result.current.messages.some((m) => m.role === "system")).toBe(false);
+    expect(result.current.status).toBe("idle"); // valid frames still applied
+  });
+});
+
+describe("retry_status re-attach render (Slice 7, D43)", () => {
+  /** Seed thread t1 (a completed turn) so a subsequent reattachTurn has a thread to attach to. */
+  async function seedThread() {
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "seed" } },
+      { event: "done", data: { state: "completed" } },
+    ]);
+    await act(async () => {
+      await sendMessage("hello");
+    });
+  }
+
+  /** A re-attach fetch: `/stream` yields a `turn.sync` carrying `retry_status` (with the given absolute
+   *  `untilTs`, epoch SECONDS) then a suspended `done`; the durable-floor reload returns one user msg. */
+  function mockReattach(untilTs: number) {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/stream")) {
+        return Promise.resolve(
+          sseResponse([
+            {
+              event: "turn.sync",
+              id: "T9:5",
+              data: {
+                seq: 5,
+                terminal: null,
+                retry_status: { endpoint: "local", attempt: 1, max: 2, untilTs },
+              },
+            },
+            { event: "done", id: "T9:6", data: { state: "suspended" } },
+          ]),
+        );
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => [
+          {
+            id: "u1",
+            thread_id: "t1",
+            role: "user",
+            parts: [{ type: "text", text: "q" }],
+            actor: "user",
+            ts: "",
+            tokens: null,
+            compacted: false,
+          },
+        ],
+      } as unknown as Response);
+    });
+  }
+
+  it("renders the retry line once for a future backoff — no duplicate on a snapshot replay", async () => {
+    const { result } = renderHook(() => useChat());
+    await seedThread();
+    const untilTs = Date.now() / 1000 + 60; // 60s in the future — backoff still pending
+
+    mockReattach(untilTs);
+    await act(async () => {
+      await reattachTurn("t1", "T1:2");
+    });
+    mockReattach(untilTs); // the SAME backoff replayed on a second re-attach
+    await act(async () => {
+      await reattachTurn("t1", "T1:2");
+    });
+
+    const notes = result.current.messages.filter(
+      (m) => m.role === "system" && textOf(m.parts).includes("retrying local"),
+    );
+    expect(notes).toHaveLength(1); // the forced reload wipes the prior client note → exactly one, never stacked
+    expect(textOf(notes[0].parts)).toBe("// retrying local (attempt 1/2)…");
+  });
+
+  it("renders nothing for an already-expired untilTs", async () => {
+    const { result } = renderHook(() => useChat());
+    await seedThread();
+    mockReattach(Date.now() / 1000 - 60); // backoff already elapsed
+    await act(async () => {
+      await reattachTurn("t1", "T1:2");
+    });
+    expect(
+      result.current.messages.some(
+        (m) => m.role === "system" && textOf(m.parts).includes("retrying"),
+      ),
+    ).toBe(false);
+  });
+});
+
 // ── Slice 3 (D39 durable turns) — the client half: the seq entry gate, the `turn.sync` re-attach
 // overlay (REPLACE semantics + token/mode re-pin), the interrupt-path re-attach, the cold-load probe,
 // and the Stop button. ──

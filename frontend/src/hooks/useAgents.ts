@@ -49,6 +49,7 @@ export interface AgentDef {
   skills: string[] | "*";
   privilege: Privilege;
   compaction: unknown; // not edited here — preserved on round-trip (unknown already admits null)
+  routing: unknown; // D43 — the failure-fallback routing block; not edited here, preserved on round-trip (YAML-only)
   max_iterations: number;
   max_repeat_calls: number;
   max_calls_per_tool: number;
@@ -81,12 +82,14 @@ export interface AgentFull {
 }
 
 /** The AgentDef fields the editor manages (everything except the slug `name`, the SOUL-backed
- *  `prompt`, and the unedited `compaction`). Written to agent.yaml (specialist) or `agent.defaults`
- *  (default). `title` is excluded for the default agent by the caller (it maps to `default_title`). */
-export type AgentFields = Omit<AgentDef, "name" | "prompt" | "compaction">;
+ *  `prompt`, and the unedited `compaction`/`routing`). Written to agent.yaml (specialist) or
+ *  `agent.defaults` (default). `title` is excluded for the default agent by the caller (it maps to
+ *  `default_title`). `routing` (D43) is excluded like `compaction`: the editor never sends it, so the
+ *  YAML block survives the file-API deep-merge untouched (no UI in v1 — the Omit precedent). */
+export type AgentFields = Omit<AgentDef, "name" | "prompt" | "compaction" | "routing">;
 
 export function pickFields(a: AgentDef): AgentFields {
-  const { name: _n, prompt: _p, compaction: _c, ...rest } = a;
+  const { name: _n, prompt: _p, compaction: _c, routing: _r, ...rest } = a;
   return rest;
 }
 

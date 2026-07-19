@@ -700,6 +700,37 @@ function makeTurnReducer(ctx: TurnCtx) {
         if (text) pushSystemNote(text);
         break;
       }
+      case "inference.retry": {
+        // D43/A6 — a transient error triggered a same-endpoint retry that is now backing off before
+        // the next attempt. Surface it live in the house voice (byte-for-byte the buffered
+        // `collect_turn` parity line). Validate-or-drop like compaction: a malformed frame (missing
+        // endpoint/category, non-numeric attempt/max/delay) is dropped, never half-rendered.
+        const endpoint = str(data.endpoint);
+        const category = str(data.category);
+        const { attempt, max, delaySeconds } = data;
+        if (
+          endpoint === undefined ||
+          category === undefined ||
+          typeof attempt !== "number" ||
+          typeof max !== "number" ||
+          typeof delaySeconds !== "number"
+        )
+          return dropWarn(event, "invalid inference.retry");
+        pushSystemNote(
+          `// retrying ${endpoint} in ${delaySeconds}s (attempt ${attempt}/${max} — ${category})`,
+        );
+        break;
+      }
+      case "inference.failover": {
+        // D43/A6 — the failover chain dropped to the next endpoint. Live house-voice breadcrumb
+        // (matches the buffered parity line); the superseded post-hoc degraded `notice` is gone.
+        const to = str(data.to);
+        const category = str(data.category);
+        if (to === undefined || category === undefined)
+          return dropWarn(event, "invalid inference.failover");
+        pushSystemNote(`// failover → ${to} (${category})`);
+        break;
+      }
       case "steer.applied": {
         // D41 §4 — a queued steer just drained into the running turn (as a durable user message, or an
         // exec pair). Swap the optimistic queued bubble (keyed by entryId) to its sent form.
@@ -1134,6 +1165,34 @@ export async function reattachTurn(
       threadId,
       Array.isArray(snap.steer_queue) ? (snap.steer_queue as SteerQueueEntry[]) : [],
     );
+    // D43/A6 (review M4) — a re-attach DURING a same-endpoint retry backoff: the snapshot carries
+    // `retry_status {endpoint, attempt, max, untilTs}` set by the session around the sleep. If the
+    // backoff is still pending (untilTs — epoch SECONDS — is in the future), surface the retry line so
+    // a reconnect mid-backoff shows the pending retry instead of a dead spinner. An already-expired
+    // untilTs renders nothing (the retry has fired — the live stream carries what came next).
+    // Dedup: the forced `reloadChat(true)` above already dropped any client-only note (the retry line
+    // included), so a replayed snapshot re-renders exactly ONE note rather than stacking; the
+    // content-presence guard backs that up so any render not preceded by a wipe can't duplicate it.
+    const rs = snap.retry_status;
+    if (isObj(rs)) {
+      const endpoint = str(rs.endpoint);
+      const { attempt, max, untilTs } = rs;
+      if (
+        endpoint !== undefined &&
+        typeof attempt === "number" &&
+        typeof max === "number" &&
+        typeof untilTs === "number" &&
+        untilTs * 1000 > Date.now()
+      ) {
+        const note = `// retrying ${endpoint} (attempt ${attempt}/${max})…`;
+        if (
+          !state.messages.some(
+            (m) => m.role === "system" && m.parts.some((p) => p.type === "text" && p.text === note),
+          )
+        )
+          pushSystemNote(note);
+      }
+    }
     // (c) go live — OR settle if the turn already ended in the tiny window before we attached (a
     // trailing/absent live `done` would otherwise strand the chat in "streaming").
     // A turn TERMINAL carries `completed|suspended|capped|error` — TURN states, not tool-call
