@@ -1056,6 +1056,72 @@ for *messages* only.
   queued turn coexist coherently; queue order preserved.
 
 ### Slice 6 — Compaction v2 (A3, absorbs ACA-5 riders) · M–L — design review first
+
+> **▶ DESIGN LOCKED 2026-07-19 = D42** (2 code-truth + 3 field passes [compaction ×6 agents ·
+> knob/window ×8 incl. llama.cpp source-verified · reasoning surfaces] + a 2-lens adversarial
+> review [4H resolved in] + TWO owner direction rounds; full draft = `docs/SLICE6_PLAN.md`, frozen).
+> **The sketch below is superseded where it conflicts — headline D42 upgrades:** the trigger is
+> `window × threshold_frac` (fraction, not `window − reserve`; `reserve_output` subtracts the
+> agent's `max_tokens` on top) · windows come config > llama.cpp `/props` probe > the
+> `threshold_tokens` fallback · an UNCONDITIONAL assembly-time clearing tier runs before any paid
+> summary · the estimator ANCHORS on real prompt-total telemetry · ModelRef becomes "pointer +
+> call config" (max_tokens / reasoning_effort ladder / reasoning_tokens = **A10 lands here**) ·
+> all owner knobs get a Conf UI surface, hot at next turn.
+>
+> **✅ BUILT 2026-07-19 — AS-BUILT RECORD (12 commits `d8c6744..2e4dac9`, ALL LOCAL, awaiting the
+> owner's push OK).** Six Opus waves: **W1 `681310f`** (CompactionCfg v2 knobs · ModelRef call-config
+> fields · `context_window`/`max_tokens_field` per endpoint · the `/props` probe: lazy, memoized,
+> never-raises, `/v1`-stripped) · **W2 `76b4a85`** (config>probe>fallback ladder [probe-eligible =
+> the configured local endpoint] · the ONE `_over_threshold` with exact `reserve_output`
+> subtraction · `StreamReport.served_endpoint` pricing [iter 2+ prices the endpoint that ANSWERED]
+> · the anchored `ContextEstimator`: `prompt_progress.total`-preferred anchor + watermark,
+> invalidated on fold/served-change/degraded, A8-overhead reuse in heuristic mode) · **W3
+> `f9c43bb`** (Tier-1 `plan_clearing` — one plan feeds trigger AND `_assemble`, A12 DB-verbatim,
+> never-clear = suspend/task_plan/memory/synthesized[`duration_ms is None`]/recent-steps ·
+> two-floor `_split` + active-task_plan snap · the 5-section template + `/compact <instructions>`
+> + the summarizer-overflow guard + the inflation-reject · the thrash machine:
+> `app.state.compaction_state`, didn't-shrink-only failure, per-turn backoff, latching breaker +
+> one notice) · **W4 `7313155`** (`_call_config` = the ONE ModelRef wire: `max_tokens` under the
+> SERVING endpoint's field name chain-wide, the effort ladder + `"off"`→`enable_thinking:false`
+> per-call merge, the summarizer runs capped · structured `InferenceError` + `is_context_overflow`
+> · the one-shot nothing-streamed reactive backstop; `reasoning_tokens` declared-unwired residual)
+> · **W5 `c3d1dec`** (FE: context-window Fields on local/cloud/per-fallback · the global
+> compaction block · per-agent Max-output/Reasoning Seg on `setModel` · `/compact` instructions +
+> the `rejected` note) · **W6 `c04e1f4`+`08ade3e`** (DESIGN §5.4 rewritten as-built · SPEC
+> inventories · deploy README "Inference tuning" owner section [anchoring flags + the ctx-shift
+> caveat] · config.example.yaml refresh; SECURITY_MODEL judged non-row ×2, recorded).
+> **Audit trail:** MID-BUILD audit (1 HIGH — the ANCHORED estimate double-credited clearing gain,
+> first flagged by the W3 builder itself — + 1 MED [anchoring silently inert without the
+> telemetry extra_body flags → one-time INFO + deploy note] + 3 LOW → `483dc6a`: the EXACT-DELTA
+> credit [`cleared_at_anchor`], degenerate-trigger fallback, state prune [no thread-delete path
+> exists — reported, the helper is the ready seam], net-of-clearing reject, + the promised Inv-11
+> hot-settings pin) · POST-BUILD audit (**GO**, no HIGH; the backstop-vs-semaphore deadlock trace
+> proven SAFE; all 5 reachability/contract traces intact — the Slice-5 composer-reachability
+> lesson held; 1 MED + 4 LOW → `2acd592`: `max_tokens ge=1` [an FE-coerced 0 silently zeroed
+> generation], garbage-safe FE coercion, knob floors, + the real-client backstop-semaphore
+> regression pin) · **the Codex tri-review (`gpt-5.6-sol` high, read-only): 2 HIGH + 6 MED + 2
+> LOW, verdict NOT-READY → two gated fix waves.** The HIGHs: a mid-turn settings PUT **split the
+> D40 semaphore across client generations** (limit 1 became 2) → the app-owned `EndpointGates`
+> registry, `2e4dac9`; and **`_finalize` bypassed both tiers + the backstop** (an overflow at
+> wrap-up died `capped` with nothing) → finalize now clears + rescues via the shared
+> `_overflow_fold`, same commit (supersedes the W3 exemption ruling). MEDs: captured-cfg pricing
+> [the hot-at-next-turn pin now holds mid-turn] · the backstop's forced compact now passes the
+> clearing plan · net-of-placeholder gain [clearing could enlarge the prompt at floor 0] ·
+> junk-window input kept-prior (`b1d0262`, shared `lib/num.ts`) · the AgentsEditor reseed
+> value-guard · thread-scoped `/compact` notes · single-flight probe. **1 MED DEFERRED with
+> reason** (the ConfTab-wide draft reset on any save = pre-existing draft lifecycle, a
+> Conf-surface follow-up). → a FIX-SET VERIFIER pass: **all 9 CLOSED at minimal ruled shape, the
+> 4 earlier rulings still hold, no over-engineering drift, no regressions.** D42 carries the full
+> AMENDED-as-built list. Backend 617 / FE 507 tests; final tree gate 6/6.
+> **Accepted residuals:** `reasoning_effort` exotics ride verbatim to a strict cloud hop
+> (failover-absorbed; per-endpoint effort-map = the future seam) · anchoring needs the telemetry
+> flags (INFO + deploy note; local ships pinned) · llama.cpp ctx-shift mutes the backstop (deploy
+> note) · `reasoning_tokens` advisory-unwired · in-memory `compaction_state` restart-resets.
+> **LIVE-VERIFY items (deferred to daily use per `testing-parked-wing-it`):** a long minig+
+> session — watch the trim tier then a summary fire at the window line · `/compact focus on X`
+> steers the summary · the Conf UI knobs apply next turn without restart · the anchoring-inactive
+> INFO appears iff the flags are unset · a real context-overflow triggers the one-shot rescue.
+
 Reserve-headroom trigger (`window − reserve`, replacing the fixed 6000 default — `CompactionCfg`
 gains `reserve_tokens`/`keep_recent_tokens`, per-agent like today); estimator includes static head
 + tools (Slice-1 measurement feeds this); tool-result-clearing tier before summarizing; structured

@@ -278,6 +278,32 @@
 > Codex (`gpt-5.6-sol` high) as the standing co-reviewer; ALL specified implementation /
 > mechanical work / research = Opus 4.8 subagents — never burn Fable on menial tasks.**
 >
+> **▶ SAME WEEKEND (2026-07-19, the next session): D42 LOCKED (owner go) → ACA SLICE 6 (compaction
+> v2) ✅ EXECUTED end-to-end — 12 commits LOCAL (`d8c6744..2e4dac9` + this close-out), awaiting the
+> owner's push OK. Final tree gate 6/6; backend 617 / FE 507 tests.** The full standing pipeline:
+> D42 transcribed into DECISIONS (`d8c6744`) → SIX Opus waves (schema/config+probe `681310f` →
+> window ladder + fraction trigger + served-endpoint pricing + the anchored estimator `76b4a85` →
+> clearing tier + 5-section summarizer + `/compact <instructions>` + thrash machine `f9c43bb` →
+> the `_call_config` ModelRef wire + the reactive overflow backstop `7313155` → the Conf UI
+> surface `c3d1dec` → the DESIGN/SPEC/deploy/config-example docs sweep `c04e1f4`+`08ade3e`) →
+> MID-BUILD audit (1 HIGH: anchored clearing double-credit → the exact-delta fix `483dc6a`) →
+> POST-BUILD audit (GO; polish `2acd592`) → **Codex tri-review: 2 HIGH/6 MED/2 LOW NOT-READY →
+> two gated fix waves (`2e4dac9` backend: the app-owned EndpointGates [a settings PUT split the
+> D40 cap across client generations] + `_finalize` joins clearing/backstop; `b1d0262` FE)** → a
+> fix-set verifier: **all 9 CLOSED, no drift, no regressions** (1 MED deferred with reason: the
+> pre-existing ConfTab draft lifecycle). D42 carries the AMENDED-as-built list; the full record =
+> the ACA §5 Slice 6 heading. **You can now: set per-endpoint context windows in the Conf UI (or
+> let the local one auto-probe /props) · watch old tool outputs trim for free before any paid
+> summary · `/compact focus on X` · cap any agent's output + reasoning effort per agent · survive
+> a context overflow via the one-shot fold+retry.** **NEXT SESSION, in order:** ① owner push OK
+> (12+1 commits; pre-push runs the full gate) ② owner config when it reaches prod: the deploy
+> README §"Inference tuning" — `context_window` per endpoint (cloud manual), the anchoring
+> telemetry flags (local already pinned via `return_progress`; cloud wants
+> `stream_options.include_usage`), consider disabling llama.cpp context-shift so overflows
+> surface ③ live pokes per `testing-parked-wing-it` (the ACA §5 Slice 6 LIVE-VERIFY list) ④
+> next: ACA Slice 7 (model routing & retry visibility — design review first) or Slice 8
+> (approvals) or the owner's pick (ROADMAP D3 Slice 1 · 6c-1/6c-2 flags · vapor ladder).**
+>
 > *(The block below is the previous session's close-out checklist, kept for provenance — steps 1–3
 > are done as recorded above.)*
 > **▶ SESSION CLOSED 2026-07-17 early AM (owner to sleep) — NEXT SESSION, in order:**

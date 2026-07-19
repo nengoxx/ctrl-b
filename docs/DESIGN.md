@@ -440,7 +440,8 @@ class Compactor:                          # services/agent/compaction.py — sta
 >   (`effective_window`). The **probe** (`probed_context_window`) is a raw `GET {base_url}/props` →
 >   `default_generation_settings.n_ctx` (with `meta.n_ctx_train` kept as a sanity ceiling; an upward
 >   override is honoured + logged), on a lazily-built httpx client (no new dep), **lazy + memoized
->   per `base_url` — failed probes memoized too — and it NEVER raises or blocks a turn** (any
+>   per `base_url` — failed probes memoized too, single-flight (a per-client lock, concurrent
+>   first-uses issue ONE GET) — and it NEVER raises or blocks a turn** (any
 >   failure/non-200/malformed ⇒ `None`). No cache-invalidation bookkeeping: `runtime.set_inference`
 >   rebuilds the whole client on any inference-settings change, so a config edit re-probes for free.
 >   Only the configured **local** endpoint is probe-eligible (`_is_probe_eligible`, matched by
@@ -468,10 +469,14 @@ class Compactor:                          # services/agent/compaction.py — sta
 >   (`OUTPUT_CLEARED_PLACEHOLDER`), keeping the `[state] summary` line + any error. One selection per
 >   iteration feeds **both** `_assemble` (renders the placeholder for each `call_id` — a
 >   rendering-time substitution only, the DB row stays verbatim, A12) and the trigger (priced
->   net-of-clearing at a conservative **chars/5**, below the estimator's chars/4). Structural
+>   net-of-clearing at a conservative **chars/5**, below the estimator's chars/4; the gain is the
+>   **net difference over the placeholder** and only net-positive outputs are eligible — clearing can
+>   never enlarge the prompt, even at `clear_output_min_tokens: 0`). Structural
 >   never-clear: a call in a suspend state, a `task_plan`/`memory` result, a *synthesized* result
 >   (`duration_ms is None` — never a real tool run), an output at/below `clear_output_min_tokens`, or
 >   one within the most-recent `clear_keep_steps` steps (a **step** = one assistant-tool-call round).
+>   The forced tool-less `_finalize` assembles under the same clearing plan (its recent-step
+>   protection keeps what an honest wrap-up needs).
 >   The credit is exact per estimator mode (R1): heuristic mode credits the full priced gain;
 >   anchored mode credits only `cleared_now − cleared_at_anchor` (the anchor total already reflects
 >   the anchor-time trim — no double-count).
@@ -502,9 +507,12 @@ class Compactor:                          # services/agent/compaction.py — sta
 >   chain collapses each hop to a string); `is_context_overflow` is the one classifier (OpenAI 400 +
 >   `context_length_exceeded`, else a 400-gated substring scan for the llama.cpp shapes /
 >   failover-flattened case). On an overflow **where nothing streamed yet** (`streamed_any` false)
->   and once per turn, the loop runs one **forced** compaction and re-streams into the *same*
->   assistant slot (no duplicate bubble); a reject or a second overflow falls to the normal error
->   path. Residual: with context-shift *enabled*, llama.cpp may silently truncate instead of erroring
+>   and once per turn, the loop runs one **forced** compaction — via the shared `_overflow_fold`
+>   helper, passing the iteration's clearing plan so the inflation-reject prices the head net — and
+>   re-streams into the *same* assistant slot (no duplicate bubble); a reject or a second overflow
+>   falls to the normal error path. `_finalize` gets the same one-shot rescue through the same
+>   helper (an overflow at wrap-up folds once and re-attempts instead of dying `capped`).
+>   Residual: with context-shift *enabled*, llama.cpp may silently truncate instead of erroring
 >   — the backstop can't fire, so the deploy note recommends disabling it (see the deploy runbook).
 > - **ModelRef is now "pointer + call config"** (A10 lands here). `InferenceClient._call_config` is
 >   the one wire builder: `max_tokens` rides under the *serving* endpoint's `max_tokens_field`
@@ -740,7 +748,10 @@ class Settings(BaseSettings):
   max_concurrent_requests` (`None` = unlimited) caps in-flight completions to a backend that doesn't
   queue (the owner's llama.cpp has 1–2 slots); a per-`(base_url, limit)` semaphore at the inference
   chokepoint holds the permit for the whole streamed response and releases it **before** any tool /
-  subagent runs (no hold-and-wait → no deadlock at limit 1).
+  subagent runs (no hold-and-wait → no deadlock at limit 1). The gates live in an **app-owned
+  `EndpointGates` registry** shared across `set_inference` client rebuilds, so a mid-turn settings
+  PUT can't split the cap across generations (same `(base_url, limit)` → the same semaphore; a
+  changed limit mints a fresh gate and old holders drain on the old one).
 - **Subagent concurrency**: parent fans out children inside one `asyncio.TaskGroup` (structured
   concurrency) under a per-agent cap **and** a process-wide `global_subagent_limit` semaphore;
   children run on distinct ephemeral thread ids (so the parent's per-thread turn marker — ▹ Slice 2

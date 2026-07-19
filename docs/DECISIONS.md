@@ -2413,3 +2413,29 @@ standing pipeline. Verification per SLICE6_PLAN §10 (probe matrix · settings r
 Conf UI rows · threshold bounds · live long-session watch). Out of scope recorded: per-agent
 compaction UI · summarizer picker UI · cloud probing · non-llama.cpp probe adapters. As-built
 record lands on AGENT_CHAT_AUDIT §5 Slice 6.
+
+*(AMENDED as-built 2026-07-19, the audit + Codex fix sets — all verified CLOSED, no drift:* ① the
+per-call clearing param is the PLAN object (`ClearingPlan.gains` + `gain_over`), and an ANCHORED
+estimate credits only the **delta** over the plan recorded at the anchor (`cleared_at_anchor`) —
+the anchor already reflects a trimmed prompt, so full-gain subtraction double-credited (the
+mid-build HIGH); the inflation-reject prices the folded head net-of-clearing; clearing gain is
+**net-of-placeholder** with net-positive-only eligibility (clearing can never enlarge the prompt).
+② A degenerate trigger line (reserve ≥ window×frac) degrades to the `threshold_tokens` fallback +
+a once-per-process warning. ③ The D40 per-endpoint gates moved to an **app-owned `EndpointGates`
+registry** shared across `set_inference` client rebuilds (Codex HIGH: a mid-turn settings PUT
+split the cap across client generations); keyed `(base_url, limit)`, changed limit mints a fresh
+gate. ④ `_finalize` joins Tier-1 clearing AND the one-shot overflow rescue via the shared
+`_overflow_fold` helper (Codex HIGH — supersedes the W3 finalize exemption: an overflow at
+wrap-up folded nothing and died `capped`). ⑤ Turn pricing resolves endpoints via the CAPTURED
+client's cfg (`InferenceClient.endpoint(mode)`), never the live-mutated Settings — the
+hot-at-NEXT-turn pin now holds mid-turn. ⑥ The probe is single-flight (per-client lock +
+double-check). ⑦ Hardening: `ModelRef.max_tokens`/`reasoning_tokens` `ge=1` (an FE-coerced 0
+silently zeroed generation); `keep_recent_tokens`/`clear_output_min_tokens` `ge=0`; FE numeric
+inputs are garbage-safe via the shared `lib/num.ts` helpers (junk keeps the prior value / inherits
+— never 0, never a silent null on the window fields); the `reasoning_tokens` row copy says
+advisory-unwired. ⑧ FE: the AgentsEditor global draft reseeds only on a genuine value change; a
+delayed `/compact` note is thread-scoped (dropped if the view moved on). Accepted residuals
+beyond the locked list: `reasoning_effort` exotic values ride verbatim to a strict cloud hop (a
+400 there is config-inflicted + failover-absorbed; a per-endpoint effort-map is the future seam) ·
+the ConfTab-WIDE draft reset on any settings save is pre-existing draft-lifecycle behavior,
+DEFERRED to a Conf-surface follow-up (per-section dirty tracking).)*
