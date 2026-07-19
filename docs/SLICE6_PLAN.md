@@ -1,7 +1,8 @@
 # SLICE6_PLAN — the D42 (context management & compaction v2) design draft, v4
 
-> **STATUS: DESIGN COMPLETE, NOT YET LOCKED** (session close 2026-07-19). The next session
-> presents this to the owner for the D42 lock, then builds (~6 waves). Pipeline provenance:
+> **STATUS: ✅ LOCKED as D42, 2026-07-19 (owner go).** The canonical record is now
+> [`DECISIONS.md` D42](./DECISIONS.md) — this file stays as the full design draft + provenance.
+> Pipeline provenance:
 > 2 code-truth passes + 3 field passes (compaction mechanics ×6 agents · knob exposure +
 > window discovery ×8 incl. llama.cpp source-verified · reasoning/output surfaces) + a
 > 2-lens adversarial design review (4H resolved in) + two owner direction rounds

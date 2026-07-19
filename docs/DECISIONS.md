@@ -2303,3 +2303,113 @@ sweeping DESIGN.md/SPEC.md for the Slice 4 AND 5 behavior deltas** [owner direct
 reflect actual behavior] + SECURITY_MODEL rows) + fresh-eyes audit + Codex tri-review. As-built
 record lands on AGENT_CHAT_AUDIT §5 Slice 5. Sketch deviations recorded: completed-only spawn ·
 dropped AWAITING_* rider · queue scope messages+exec only · the Codex-fact correction.
+
+## D42 — Context management & compaction v2: windows + trim tier + template + thrash + ModelRef call config (ACA Slice 6, absorbs A10) ✏️ LOCKED 2026-07-19 (Slice 6 design review)
+
+**Context.** ACA A3: compaction v1 triggers on a fixed `threshold_tokens: 6000` absolute (no notion
+of the model's window), summarizes free-form, has no cheap pre-summary tier, no thrash protection,
+and no `/compact <instructions>`. `context_window` exists nowhere in config; ModelRef is a bare
+mode/model pointer (no output cap — the summarizer runs uncapped; no reasoning control = A10).
+Design pipeline (full draft + provenance: [`SLICE6_PLAN.md`](./SLICE6_PLAN.md), v3 body + v4
+addendum): 2 code-truth passes + 3 field passes (compaction mechanics ×6 agents · knob exposure +
+window discovery ×8 incl. llama.cpp source-verified · reasoning/output surfaces) + a 2-lens
+adversarial design review (4H resolved in) + TWO owner direction rounds (① settings surface +
+window discovery ② fallback windows + output budgets + reasoning ladder).
+
+**Decision.**
+- **Windows & trigger:** per-endpoint `InferenceEndpointCfg.context_window: int | None` (manual;
+  may exceed the probe — the Codex silent-down-clamp is the recorded anti-pattern) + a llama.cpp
+  **`/props` probe** on the InferenceClient (lazy first-use, memoized per base_url; cache
+  auto-invalidates because `set_inference` rebuilds the client; NEVER raises — failure ⇒ None;
+  reads `default_generation_settings.n_ctx` = the effective per-slot window, `meta.n_ctx_train`
+  as sanity ceiling; cloud = no probe, manual only). **Precedence: config > probe > None ⇒ the
+  `threshold_tokens` fallback trigger** (unchanged semantics as the no-window path). Trigger =
+  estimated context > `window × threshold_frac` (`CompactionCfg.threshold_frac: float = 0.85`,
+  `ge=0.5, le=0.95` — fraction-of-window, the field plurality; replaces/inverts v2's
+  `reserve_frac`, identical math; `reserve_tokens` absolute override DROPPED — one knob, one
+  unit). The trigger resolves the window per `endpoint(eff_mode)` (mode-only); **iteration 2+
+  prices against the endpoint that ACTUALLY served** via a new `StreamReport.served_endpoint`
+  stamp in `_record` (`chain[served_index][1]`, one-line chokepoint) — anchor + window from the
+  same serve; iteration 1 uses the selected endpoint. The summarizer's overflow guard reads its
+  OWN ModelRef endpoint's window.
+- **Knobs (field-aligned names/units; global = `Settings.agent.compaction`, per-agent =
+  `AgentDef.compaction`, resolve unchanged):** `enabled` (stays) · `threshold_frac` ·
+  `threshold_tokens` (no-window fallback only) · **`keep_recent_tokens: int = 4096`** (token
+  floor; two-floor `_split`: `cut = min(message-cut, token-cut)` → C5-M2 suspend-snap + task_plan
+  snap → user-boundary snap; `keep_last_messages: 8` stays) · **`clear_output_min_tokens: int =
+  500`** (trim floor, internally chars≈4×) · `clear_keep_steps: int = 2, ge=1` (the ge=1 IS the
+  most-recent-step safety) · `max_consecutive_failures: int = 3` · `summarizer: ModelRef` (stays;
+  YAML-only, no UI picker) · **`reserve_output: bool = True`** — when the effective ModelRef has
+  `max_tokens`, the trigger line subtracts EXACTLY it (no global cap, no silent down-clamp — the
+  two recorded opencode bugs); threading = an optional per-call `reserve_tokens: int | None`
+  param on `compact`/`should_compact`/`_over_threshold` (existing callers unchanged; the session
+  passes `self._agent.model.max_tokens` at its two call sites; Compactor stays stateless).
+- **Anchored estimator:** per-backend TOTAL-prompt semantics — `prompt_progress.total` preferred
+  (already flowing, the ACA-18 `return_progress` pin); telemetry precedence fixed;
+  no-reliable-total ⇒ no anchor (heuristic only); session-held anchor + watermark, invalidated on
+  fold/served-change/degraded; overhead = the A8 head+tools cache; **ONE `_over_threshold`
+  predicate serves BOTH gates** (no duplicated threshold math).
+- **Tier 1 — unconditional assembly-time tool-output trim (runs free before any paid summary):**
+  pure shared `plan_clearing` feeds the trigger **net-of-clearing** (gain priced chars/5,
+  conservative); output-only rendering keeps the `[state] summary` line; placeholder = `[output
+  cleared — re-run the tool if needed]`; A12 pinned — DB stays verbatim, `_assemble`-time
+  substitution only; synthesized results structurally exempt; **never-clear:** AWAITING_*-paired ·
+  `task_plan` · `memory` results · the most recent `clear_keep_steps` steps.
+- **Tier 2 — the summarizer:** fixed 5-section template (pending scoped to the folded head;
+  rolling carry-forward re-fold); `/compact <instructions>` passthrough (`CompactRequest.
+  instructions` + FE/store/Compactor threading; `CompactionResult.rejected` + endpoint JSON +
+  `compactionNote` branch); task_plan joins the `_split` snap; the summarizer-overflow
+  truncation-fold guard.
+- **Thrash machine:** `app.state.compaction_state` view; failure = **didn't-shrink ONLY** (a
+  TRUNCATION_NOTICE fold = success); per-turn backoff; latching breaker + ONE notice; `force`
+  bypasses threshold/backoff/breaker but NEVER the inflation-reject; reset = not-over-threshold
+  after a manual compact; restart-resets + cold-client blindness recorded residuals.
+- **Reactive backstop:** `InferenceError` gains code/status pre-flattening; on a context-overflow
+  error with the **nothing-streamed precondition**: ONE forced compaction + same-assistant
+  re-stream (one-shot); llama.cpp silent ctx-shift = recorded residual + deploy note.
+- **ModelRef extension (A10 lands here; declared fields, no extra="allow"):** `max_tokens: int |
+  None` — first-class kwargs into `stream_chat`/`complete` (modeled params = kwargs; extra_body =
+  unmodeled passthrough only); both consumers benefit (agent calls AND the summarizer — capped
+  free) · `reasoning_effort: Literal["off","minimal","low","medium","high","xhigh","max"] | None`
+  (the universal ladder) · `reasoning_tokens: int | None` (numeric where expressible, e.g.
+  OpenRouter `reasoning:{max_tokens}`; advisory elsewhere). **Per-backend translation
+  (silent-safe by design):** llama.cpp honours `max_tokens`, silently drops `reasoning_effort`
+  (verified — harmless to send) BUT `"off"` additionally translates to `chat_template_kwargs:
+  {enable_thinking: false}` merged per-call OVER the endpoint's extra_body (agent keys win);
+  cloud gets `reasoning_effort` first-class + `InferenceEndpointCfg.max_tokens_field:
+  Literal["max_tokens","max_completion_tokens"] = "max_tokens"` (pi's `compat.maxTokensField`
+  precedent). Rule: NEVER gate behavior on a param taking effect; reasoning stays read-only
+  (reasoning_content-first, <think>-parse fallback, dropped at assembly — unchanged).
+- **Fallbacks free-ride (the unified-object payoff):** `fallbacks: list[InferenceEndpointCfg]`
+  are full endpoint objects → `context_window`/`max_concurrent_requests`/`max_tokens_field` ride
+  with zero schema work. PUT semantics verified: the list replaces wholesale; only api_key is
+  secret-carried by base_url — non-secret new fields round-trip clean.
+- **Settings surface (Conf UI; hot at NEXT turn — sessions build per-turn off live settings,
+  verified, no new plumbing):** Inference group: `Local/Cloud context window` Fields (blank =
+  auto: probe/fallback) + a `Context window` input per fallback row (both hand-written render
+  paths touched). Agents group: the global-compaction block in AgentsEditor's global-settings
+  area — `Auto-compact` Switch · `Compact at % of context` (`threshold_frac`×100) · `Keep recent
+  (tokens)` · `Tool output trim floor (tokens)` (the inline numeric-grid precedent).
+  AgentsEditor model block (the `setModel` seam): `Max output tokens` + `Reasoning effort` Seg +
+  `Reasoning tokens`. FE `ModelRef` interface gains the declared fields (typed, no index
+  signature). `clear_keep_steps`/`max_consecutive_failures`/per-agent compaction/summarizer
+  picker stay YAML-only (the agents-UI `Omit<"compaction">` stands).
+- **Invariants (v2's eight stand + three new):** 10. the probe never blocks or fails a turn;
+  window chain = config > probe > fallback, upward overrides allowed. 11. settings-written
+  compaction knobs apply at the next turn (no restart) — pinned by test. 12. the Conf UI edits
+  GLOBAL compaction only; per-agent stays YAML.
+- **Probe table recorded for future adapters (research field pass; llama.cpp source-verified, the
+  rest recorded-unbuilt):** llama.cpp `GET /props` → `default_generation_settings.n_ctx` (+
+  `meta.n_ctx_train` ceiling) — SHIPS · Ollama `POST /api/show` → `model_info` context_length
+  (training value; effective `num_ctx` differs) · LM Studio `GET /api/v0/models` →
+  `max_context_length`/`loaded_context_length` · vLLM `GET /v1/models` → `max_model_len` ·
+  OpenAI-style cloud: NO window field exists (manual config only). Adapters are additive
+  follow-ups on the same probe seam.
+
+**Status.** LOCKED 2026-07-19 (owner go same session; Opus 4.8 build waves mandated). Build = ~6
+waves (schema/config+probe → estimator/trigger → clearing+summarizer+thrash → reactive+ModelRef
+wire → Conf UI → the DESIGN/SPEC docs sweep) + mid/post-build audits + the Codex tri-review — the
+standing pipeline. Verification per SLICE6_PLAN §10 (probe matrix · settings round-trip hot pin ·
+Conf UI rows · threshold bounds · live long-session watch). Out of scope recorded: per-agent
+compaction UI · summarizer picker UI · cloud probing · non-llama.cpp probe adapters. As-built
+record lands on AGENT_CHAT_AUDIT §5 Slice 6.
