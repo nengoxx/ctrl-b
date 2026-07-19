@@ -64,6 +64,7 @@ from app.runtime import (
 from app.services.action_service import ActionService
 from app.services.actions import build_registry
 from app.services.actions.terminal import register_openterminal
+from app.services.agent.compaction import CompactionState
 from app.services.agent.memory import FileMemoryProvider, migrate_legacy_specialist_memory
 from app.services.agent.memory_backup import GitMemoryBackup
 from app.services.agent.selector import KeywordAgentSelector
@@ -183,6 +184,12 @@ async def lifespan(app: FastAPI):
     # read) or when a new turn starts on the thread. See app/api/agent.py `_record_or_replay_harvest`.
     steer_harvests: dict[str, dict] = {}
     app.state.steer_harvests = steer_harvests
+    # Per-thread compaction thrash-machine state (D42 Wave 3): the consecutive-failure counter +
+    # latching breaker + one-notice guard, thread-id-keyed like the steer queues so it outlives any one
+    # turn (the session is rebuilt per turn). NOT busy-state. Restart resets it. See
+    # app/services/agent/compaction.py `CompactionState` / `compaction_state_for`.
+    compaction_state: dict[str, CompactionState] = {}
+    app.state.compaction_state = compaction_state
     # D41 Drain B guard: set True at the top of the lifespan finally so a turn completing DURING
     # shutdown can't spawn a drain-B turn past the drain snapshot into a closing DB. Initialized here
     # so `_maybe_spawn_drain_b`'s `getattr(state, "shutting_down", False)` reads a real value.

@@ -40,6 +40,7 @@ from app.domain.event import Event
 from app.domain.plan import Plan
 from app.domain.result import ToolResult
 from app.runtime import rediscover_integrations
+from app.services.agent.compaction import compaction_state_for
 from app.services.agent.exec import run_user_exec
 from app.services.agent.planning import TaskPlanInput
 from app.services.agent.proposals import apply_proposal
@@ -226,6 +227,7 @@ def _build_session(
         selector=getattr(state, "skill_selector", None),
         memory=getattr(state, "memory", None),
         steer_source=steer_source_for(state, thread.id) if thread is not None else None,
+        compaction_state=(compaction_state_for(state, thread.id) if thread is not None else None),
     )
 
 
@@ -1414,7 +1416,10 @@ async def put_agent_store(name: str, store: str, body: MemoryContent, request: R
 @router.post("/agent/compact")
 async def compact(body: CompactRequest, request: Request) -> dict[str, Any]:
     """Force context compaction on a thread (manual `/compact`). Returns `{removed, summaryId?,
-    truncated?}` — `removed: 0` means nothing was foldable (already compact / within the floor)."""
+    truncated?, rejected?}` — `removed: 0` means nothing was foldable (already compact / within the
+    floor), `rejected: true` (D42) means the produced summary would not shrink the context so the fold
+    was abandoned. `body.instructions` (the `/compact <instructions>` steer) threads into the
+    summarizer prompt as an emphasis block."""
     threads = request.app.state.threads
     thread = await threads.get(body.thread_id)
     if thread is None:
@@ -1423,7 +1428,7 @@ async def compact(body: CompactRequest, request: Request) -> dict[str, Any]:
     # `_compactor.compact` (double summary insertion); 409 while a turn is live. Released in finally.
     handle = _reserve_turn(request, thread.id, "compact")
     try:
-        return await _session(request, thread).compact(thread)
+        return await _session(request, thread).compact(thread, instructions=body.instructions)
     finally:
         release(request.app.state.turns, handle)
 

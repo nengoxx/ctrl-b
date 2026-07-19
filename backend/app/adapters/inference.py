@@ -196,6 +196,13 @@ class InferenceClient:
             return await self.probed_context_window(ep)
         return None
 
+    async def effective_window_for(self, mode: str | None = None) -> int | None:
+        """The effective context window for the endpoint SELECTED by `mode` (the D42 ladder via
+        `effective_window`) — the mode-shaped convenience mirroring `model_for(mode)`. Used by the
+        compaction summarizer's overflow guard (Wave 3) to read its OWN `ModelRef.mode` endpoint's
+        window without reaching into `_cfg`. `None` ⇒ no window resolvable (the caller decides)."""
+        return await self.effective_window(self._cfg.endpoint(mode))
+
     async def _probe_props(self, base_url: str) -> _ProbedWindow:
         """GET `{root}/props` once and extract the window. NEVER raises — any exception / non-200 /
         malformed body ⇒ `_ProbedWindow(None, None)` (memoized by the caller, so no retry storm)."""

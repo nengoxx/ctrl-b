@@ -45,21 +45,65 @@ SUMMARY_PREFIX = "[Earlier conversation summary]\n"
 #: Inserted instead of a summary when the summarizer backend is unavailable (truncation fallback).
 TRUNCATION_NOTICE = "[Earlier messages were dropped to stay within the context window.]"
 
+#: The fixed five-section summarizer template (D42 Wave 3), replacing the v1 free-form prompt. The
+#: section NAMES "Rules & Constraints" + "Next Steps" are ACA-pinned; the other three are the
+#: field-standard shape (goals/requests · key facts/state · actions & outcomes). The model fills
+#: EVERY section (or "none"), and "pending"/"next" is scoped to the folded head it is shown — never
+#: the kept tail it can't see. A prior rolling summary in the head is re-folded by `_render_transcript`.
+_SUMMARIZER_SECTIONS = (
+    "Goals & Requests",
+    "Key Facts & State",
+    "Actions Taken & Outcomes",
+    "Rules & Constraints",
+    "Next Steps",
+)
 _SUMMARIZER_SYSTEM = (
     "You compress the earlier part of a conversation between a user and an assistant that controls "
-    "a single-user homelab (waking/monitoring/managing PCs and services). Produce a concise summary "
-    "that preserves what later turns will need: the user's goals and requests, key facts learned, "
-    "actions taken and their outcomes, decisions made, and anything still pending or unresolved. "
-    "Use terse bullet points; omit pleasantries. This summary will replace the omitted messages in "
-    "the assistant's working context, so keep every load-bearing detail and drop the rest."
+    "a single-user homelab (waking/monitoring/managing PCs and services). Rewrite the earlier "
+    "messages as a STRUCTURED summary that later turns can rely on. Output EXACTLY these five "
+    "sections, each a markdown heading followed by terse bullet points; if a section has nothing, "
+    "write 'none' under it:\n"
+    + "".join(f"## {s}\n" for s in _SUMMARIZER_SECTIONS)
+    + "Fill EVERY section. 'Next Steps' and anything you mark still pending refer ONLY to the earlier "
+    "messages shown to you here (the folded-away head) — do NOT speculate about messages you cannot "
+    "see. Preserve every load-bearing detail (ids, names, decisions, errors) and omit pleasantries. "
+    "This summary REPLACES the earlier messages in the assistant's working context."
 )
+#: Fraction of the summarizer endpoint's own window reserved (system prompt + generated summary) by
+#: the overflow guard (D42): a transcript estimated ABOVE `window × (1 − this)` would push a doomed
+#: call, so the summarizer is skipped for the truncation-fold instead. 0.2 = a generous margin
+#: (the fixed template is small; the bulk of the reserve is headroom for the summary the model writes).
+_SUMMARIZER_MARGIN_FRAC = 0.2
+
+#: The Tier-1 assembly-time clearing placeholder (D42 §4-v2) — replaces ONLY a cleared tool result's
+#: OUTPUT payload (its `[state] summary` line + any error survive). A11/A12: rendering-time only; the
+#: DB row stays verbatim, so `GET /threads/{id}/messages` is unchanged.
+OUTPUT_CLEARED_PLACEHOLDER = "[output cleared — re-run the tool if needed]"
+
+#: Conservative pricing ratio for the clearing gain (D42): chars/5, deliberately BELOW the chars/4
+#: `CHARS_PER_TOKEN` the estimator counts an output at — so subtracting the priced gain from the
+#: estimate UNDER-removes headroom (clearing can never over-promise → the trigger never fires too
+#: late because it over-credited a free trim). One named constant carrying that rationale.
+CLEAR_CHARS_PER_TOKEN = 5
+
+#: Builtin tools whose results are STRUCTURALLY never cleared (D42): `task_plan` (the live plan
+#: round-trips through the model's context) + `memory` (durable-memory edits). Matched by the paired
+#: call's `tool` name — the same by-name convention session.py uses (`cp.tool == "question"`). These
+#: are the canonical builtin keys registered by `@action("task_plan"/"memory", …)`.
+_NEVER_CLEAR_TOOLS = frozenset({"task_plan", "memory"})
 
 
 @dataclass
 class CompactionResult:
-    summary_id: str  # id of the inserted summary system message
-    removed: int  # how many messages were folded away (now `compacted`)
+    summary_id: str  # id of the inserted summary system message ("" when rejected — nothing inserted)
+    removed: int  # how many messages were folded away (now `compacted`); 0 when rejected
     truncated: bool  # True if the summarizer failed and we fell back to a placeholder
+    #: Inflation-reject (D42 Wave 3): the produced summary would NOT shrink the working context
+    #: (summary estimate ≥ the folded head's estimate), so the fold was ABANDONED — no DB write, the
+    #: head stays live. This is the thrash machine's ONLY "failure" signal (a truncation-fold that
+    #: shrinks is a SUCCESS). `force` (manual `/compact`) bypasses threshold/backoff/breaker but NEVER
+    #: this reject. Surfaced in the `/compact` endpoint JSON.
+    rejected: bool = False
 
 
 #: The one ~4-chars/token heuristic shared by both estimators below (message-shaped + payload-shaped).
@@ -95,6 +139,117 @@ def estimate_payload_tokens(payload: list[dict]) -> int:
     `Message` objects, so `estimate_tokens` can't consume them. Used only by the A8 context-cost debug
     line (session.py), which measures the tools + system head the model prefills each call."""
     return sum(len(json.dumps(d, default=str)) for d in payload) // CHARS_PER_TOKEN
+
+
+@dataclass(frozen=True)
+class ClearingPlan:
+    """The Tier-1 clearing selection for ONE iteration (D42 §4-v2). Produced by the PURE, shared
+    `plan_clearing` and fed to BOTH consumers so there is exactly one selection, priced once:
+      - the session's `_assemble` renders a cleared result's OUTPUT as `OUTPUT_CLEARED_PLACEHOLDER`
+        (its `[state] summary` line + error survive) for every `call_id` in `cleared_call_ids`;
+      - the trigger prices net of this trim via Wave-2's `clearing_gain` seam (`gain`).
+    `gain` is the reclaimed tokens priced at chars/`CLEAR_CHARS_PER_TOKEN` (conservative)."""
+
+    cleared_call_ids: frozenset[str]
+    gain: int
+
+    @property
+    def empty(self) -> bool:
+        return not self.cleared_call_ids
+
+
+def plan_clearing(history: list[Message], cfg: CompactionCfg) -> ClearingPlan:
+    """Select tool-result OUTPUTS to clear at assembly time + price the total gain (D42 Tier 1) — a
+    PURE function (no I/O), the ONE source of truth shared by `_assemble` and the trigger.
+
+    Selection: a tool result is cleared iff its OUTPUT is larger than `clear_output_min_tokens`
+    (measured in tokens, chars/`CHARS_PER_TOKEN`) AND its paired call is OLDER than the most recent
+    `clear_keep_steps` steps — where a **step** is one assistant message that carries tool calls (i.e.
+    one assistant-tool-call round; each loop iteration mints exactly one). The last `clear_keep_steps`
+    such rounds stay FULL (`clear_keep_steps ≥ 1` keeps at least the just-run tool's output).
+
+    STRUCTURAL exemptions (never cleared, by shape not by string-matching content):
+      - a call in `_SUSPEND_CALL_STATES` (AWAITING_*-paired — its result round-trips on resume);
+      - a `task_plan` / `memory` result (`_NEVER_CLEAR_TOOLS`);
+      - a SYNTHESIZED result — one that never came from a real tool execution (a skipped/denied/
+        steering placeholder, an injected answer). The structural marker is `result.duration_ms is
+        None`: `ActionService._execute` stamps `duration_ms` on every genuine run, so a result built
+        directly in the session/service (no run) leaves it unset. Matched on the shape, never on text.
+
+    Gain is priced at chars/`CLEAR_CHARS_PER_TOKEN` (below the estimator's chars/`CHARS_PER_TOKEN`), so
+    subtracting it under-credits the trim and the trigger never fires too late. Gated on `cfg.enabled`
+    (the master switch); the run is otherwise UNCONDITIONAL (not gated on being over threshold)."""
+    if not cfg.enabled:
+        return ClearingPlan(frozenset(), 0)
+    # Map each call to (its ToolCallPart, the ordinal of the step it belongs to). A "step" is an
+    # assistant message bearing tool calls — the results paired to the last `clear_keep_steps` of
+    # these stay full.
+    calls_by_id: dict[str, ToolCallPart] = {}
+    step_of: dict[str, int] = {}
+    n_steps = 0
+    for m in history:
+        tcs = m.tool_calls()
+        if not tcs:
+            continue
+        for cp in tcs:
+            calls_by_id[cp.call_id] = cp
+            step_of[cp.call_id] = n_steps
+        n_steps += 1
+    keep_from = n_steps - cfg.clear_keep_steps  # steps with ordinal ≥ this are protected (recent)
+
+    cleared: set[str] = set()
+    gain = 0
+    for m in history:
+        if m.role != "tool":
+            continue
+        for rp in m.tool_results():
+            cp = calls_by_id.get(rp.call_id)
+            if cp is None:
+                continue  # orphan result (no paired call) — leave alone
+            if step_of.get(rp.call_id, 0) >= keep_from:
+                continue  # within the most-recent `clear_keep_steps` rounds — kept full
+            if cp.state in _SUSPEND_CALL_STATES or cp.tool in _NEVER_CLEAR_TOOLS:
+                continue  # structural exemptions (suspend-paired / task_plan / memory)
+            res = rp.result
+            if res.duration_ms is None:
+                continue  # synthesized/steering placeholder — never a real tool output
+            out = res.output or ""
+            if len(out) // CHARS_PER_TOKEN <= cfg.clear_output_min_tokens:
+                continue  # below the trim floor — not worth clearing
+            cleared.add(rp.call_id)
+            gain += len(out) // CLEAR_CHARS_PER_TOKEN
+    return ClearingPlan(frozenset(cleared), gain)
+
+
+@dataclass
+class CompactionState:
+    """Per-thread thrash-machine view (D42 Wave 3), held in `app.state.compaction_state` (the
+    `turn_terminals` / steer-queue precedent — thread-id-keyed, outliving any one turn). The
+    `Compactor` stays STATELESS: the SESSION owns the reads/writes and passes decisions in, exactly as
+    D41 injected `steer_source`. Restart resets it (in-memory; a recorded residual — fine).
+
+    `consecutive_failures` counts back-to-back inflation-rejects (a shrinking fold resets it);
+    `breaker_latched` stops AUTO-compaction attempting on this thread once the cap is hit (manual
+    `/compact` with `force` still runs); `notice_emitted` guards the single latch breadcrumb. The
+    per-turn backoff (no re-attempt until the NEXT turn after a failure) is a turn-LOCAL flag in
+    `_drive` — the session is per-turn, so a fresh `_drive` clears it for free with no turn-id
+    bookkeeping here."""
+
+    consecutive_failures: int = 0
+    breaker_latched: bool = False
+    notice_emitted: bool = False
+
+
+def compaction_state_for(state, thread_id: str) -> CompactionState:
+    """The per-thread `CompactionState` the session injects (D42 Wave 3) — lazily created + memoized in
+    `app.state.compaction_state`, so the breaker/failure counter persist across a thread's turns (the
+    session is rebuilt per turn). Mirrors `steer_source_for`; the session never reaches into the map."""
+    store = state.compaction_state
+    st = store.get(thread_id)
+    if st is None:
+        st = CompactionState()
+        store[thread_id] = st
+    return st
 
 
 @dataclass
@@ -197,17 +352,21 @@ class Compactor:
         reserve_tokens: int | None = None,
         estimated_tokens: int | None = None,
         clearing_gain: int = 0,
+        instructions: str | None = None,
     ) -> CompactionResult | None:
-        """Compact the thread if warranted. Returns a `CompactionResult` when it actually compacted,
-        else `None` (disabled, under threshold, or nothing safe to fold). `force` (manual `/compact`)
-        ignores the threshold but still honours the floor + turn-boundary safety.
+        """Compact the thread if warranted. Returns a `CompactionResult` when it actually folded OR
+        REJECTED a would-inflate fold (`rejected=True` — nothing written), else `None` (disabled,
+        under threshold, or nothing safe to fold). `force` (manual `/compact`) ignores the threshold
+        but still honours the floor + turn-boundary safety AND the inflation-reject (force bypasses
+        threshold/backoff/breaker but NEVER the reject).
 
         The D42 per-call trigger inputs (all defaulted, so every existing caller/test is unchanged and
         the Compactor stays STATELESS — the session owns this state): `window` = the resolved context
         window (config > probe > None); `reserve_tokens` = the effective `ModelRef.max_tokens` output
         reserve; `estimated_tokens` = the session's anchored context estimate (None ⇒ the v1
         `estimate_tokens(history)` heuristic); `clearing_gain` = the Wave-3 net-of-clearing seam. All
-        flow to the single `_over_threshold` predicate."""
+        flow to the single `_over_threshold` predicate. `instructions` = the `/compact <instructions>`
+        summarizer steer (manual path only; auto-compaction never has one)."""
         if not self._cfg.enabled and not force:
             return None
 
@@ -225,7 +384,7 @@ class Compactor:
         if not head:
             return None  # everything is within the floor / no clean boundary — nothing to fold
 
-        summary, truncated = await self._summarize(head)
+        summary, truncated = await self._summarize(head, instructions=instructions)
         boundary = Message(
             thread_id=thread.id,
             role="system",
@@ -235,6 +394,13 @@ class Compactor:
             # folded head) on the `ORDER BY ts ASC` reload.
             ts=tail[0].ts - timedelta(microseconds=1),
         )
+        # Inflation-reject (D42): the fold must SHRINK the working context. If the produced summary is
+        # no smaller than the head it replaces, abandon — no DB write, the head stays live — and report
+        # `rejected` so the session's thrash machine counts a failure. Bypassed by NOTHING (force too:
+        # a doomed fold that grows the context is never worth committing). A truncation-fold notice is
+        # tiny, so it only rejects on a pathologically small head (where compaction is pointless anyway).
+        if estimate_tokens([boundary]) >= estimate_tokens(head):
+            return CompactionResult(summary_id="", removed=0, truncated=truncated, rejected=True)
         # SYS-1: the summary insert + the per-message `compacted` flips are one logical edit — commit
         # them atomically so a crash mid-loop can't leave the summary AND the unfolded originals both
         # live (duplicated content next turn).
@@ -318,43 +484,82 @@ class Compactor:
         return bool(head)
 
     def _split(self, history: list[Message]) -> tuple[list[Message], list[Message]]:
-        """Split into (head to fold, tail to keep verbatim). The cut is `keep_last_messages` from the
-        end, then snapped *back* to the nearest `user` message so the tail begins on a complete turn
-        — never orphaning a `tool` result from its assistant `tool_calls`. A previous summary message
-        in the head is folded in again (its content goes to the summarizer), keeping a single rolling
-        summary."""
-        cut = len(history) - self._cfg.keep_last_messages
-        # Never fold a durably-suspended call (AWAITING_CONFIRM/AWAITING_ANSWER) into the head (C5-M2):
-        # its eventual resume result would be orphaned from a context that no longer holds the call.
-        # Snap the boundary to BEFORE the earliest suspended-call message so it (and its later resume
-        # siblings/result) stays verbatim in the tail. Uses turns.py's `_SUSPEND_CALL_STATES` — one
-        # source of truth for "this message is mid-suspend", shared with the stale-call reconciler.
+        """Split into (head to fold, tail to keep verbatim). D42 two-floor cut: `cut = min(message-cut,
+        token-cut)` — whichever keeps MORE recent context wins (the smaller cut index = the larger
+        tail). The **message floor** is `keep_last_messages` from the end; the **token floor** walks
+        back from the tail until the kept tail holds ≥ `keep_recent_tokens` (fat messages then keep
+        fewer of them, thin messages keep more). Then three snaps, each only ever GROWING the tail:
+          1. the C5-M2 suspend-snap — before the earliest durably-suspended call, so an
+             AWAITING_CONFIRM/AWAITING_ANSWER call (and its later resume siblings/result) stays verbatim
+             in the tail (a folded head could orphan its resume result);
+          2. the ACTIVE task_plan pair — the MOST-RECENT `task_plan` call + its result must stay in the
+             tail (the live plan round-trips through the model's context via its call args); snap before
+             it if the cut would fold it. SUPERSEDED older task_plan pairs may fold;
+          3. the user-boundary snap — the tail begins on a `user` message so a `tool` result is never
+             orphaned from its assistant `tool_calls`.
+        A previous summary in the head is re-folded by `_render_transcript` (one rolling summary)."""
+        msg_cut = len(history) - self._cfg.keep_last_messages
+        # Token floor: expand the tail (walk `tok_cut` left) until it holds ≥ keep_recent_tokens.
+        tok_cut = len(history)
+        while tok_cut > 0 and estimate_tokens(history[tok_cut:]) < self._cfg.keep_recent_tokens:
+            tok_cut -= 1
+        cut = min(msg_cut, tok_cut)  # keep whichever floor preserves MORE recent context
+        # (1) Suspend-snap: BEFORE the earliest suspended-call message within the head. Uses turns.py's
+        # `_SUSPEND_CALL_STATES` — one source of truth for "this message is mid-suspend".
         for i, m in enumerate(history):
             if i >= cut:
                 break
             if any(cp.state in _SUSPEND_CALL_STATES for cp in m.tool_calls()):
                 cut = i
                 break
+        # (2) Active-task_plan snap: the MOST-RECENT task_plan assistant message must be in the tail so
+        # its call args (the live plan) + result round-trip. Snap to it if the cut would fold it;
+        # superseded earlier task_plan rounds (before it) may still fold.
+        active_tp = next(
+            (
+                i
+                for i in range(len(history) - 1, -1, -1)
+                if any(cp.tool == "task_plan" for cp in history[i].tool_calls())
+            ),
+            None,
+        )
+        if active_tp is not None and active_tp < cut:
+            cut = active_tp
+        # (3) User-boundary snap: the kept tail must start at a `user` message.
         while cut > 0 and history[cut].role != "user":
             cut -= 1
         if cut <= 0:
             return [], history
         return history[:cut], history[cut:]
 
-    async def _summarize(self, head: list[Message]) -> tuple[str, bool]:
-        """Summarize the head via the selected summarizer model. On failure, fall back to a
-        truncation placeholder (DESIGN §5.4) so the context still shrinks. Returns (text, truncated)."""
+    async def _summarize(self, head: list[Message], *, instructions: str | None = None) -> tuple[str, bool]:
+        """Summarize the head via the selected summarizer model against the fixed five-section
+        template (D42). `instructions` (the `/compact <instructions>` steer, manual path only) rides as
+        an extra emphasis block. Returns (text, truncated). Two paths fall back to the truncation
+        placeholder (DESIGN §5.4 — the context still shrinks): the summarizer backend failing
+        (`InferenceError`/empty), AND the **overflow guard** — if the transcript is estimated to exceed
+        the summarizer's OWN endpoint window (its `ModelRef.mode` via `effective_window_for`) minus the
+        `_SUMMARIZER_MARGIN_FRAC` reserve, the call is doomed, so skip it for the truncation-fold
+        (still a shrinking SUCCESS for the thrash machine — the failure signal is the inflation-reject,
+        not this)."""
         transcript = _render_transcript(head)
         s = self._cfg.summarizer
+        system = _SUMMARIZER_SYSTEM
+        if instructions and instructions.strip():
+            system += "\n\nThe user asked to focus this summary on: " + instructions.strip()
+        payload = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": transcript},
+        ]
+        # Overflow guard: a transcript that won't fit the summarizer's window (minus a reserve for the
+        # template + the summary it must write) would just error — fall back to the truncation-fold
+        # instead of the doomed call. A `None` window (unresolvable — e.g. a cloud summarizer with no
+        # configured `context_window`) can't guard, so proceed best-effort (today's behaviour).
+        window = await self._inference.effective_window_for(s.mode)
+        if window is not None and estimate_payload_tokens(payload) > window * (1 - _SUMMARIZER_MARGIN_FRAC):
+            return TRUNCATION_NOTICE, True
         try:
-            body = await self._inference.complete(
-                [
-                    {"role": "system", "content": _SUMMARIZER_SYSTEM},
-                    {"role": "user", "content": transcript},
-                ],
-                mode=s.mode,
-                model=s.model,
-            )
+            body = await self._inference.complete(payload, mode=s.mode, model=s.model)
             body = body.strip()
         except InferenceError:
             return TRUNCATION_NOTICE, True

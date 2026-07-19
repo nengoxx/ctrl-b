@@ -144,22 +144,30 @@ def test_compaction_crash_persists_neither_summary_nor_flags(monkeypatch) -> Non
         messages = MessageRepo(db)
         thread = await threads.create(Thread())
 
-        # A foldable history: with keep_last_messages=1 the head is [user, assistant], tail [user].
+        # A foldable history: with keep_last_messages=1 + keep_recent_tokens=1 (the D42 two-floor
+        # split's token floor set low) the head is [user, assistant], tail [user]. The head messages
+        # are LARGE so the stub summary genuinely SHRINKS the context (the D42 inflation-reject would
+        # otherwise abandon a fold whose summary is no smaller than a tiny head).
         base = await messages.add(
-            Message(thread_id=thread.id, role="user", actor=Actor.USER, parts=[TextPart(text="hi")])
+            Message(thread_id=thread.id, role="user", actor=Actor.USER, parts=[TextPart(text="hi " * 300)])
         )
         await messages.add(
-            Message(thread_id=thread.id, role="assistant", actor=Actor.AGENT, parts=[TextPart(text="hello")])
+            Message(
+                thread_id=thread.id,
+                role="assistant",
+                actor=Actor.AGENT,
+                parts=[TextPart(text="hello " * 300)],
+            )
         )
         await messages.add(
             Message(thread_id=thread.id, role="user", actor=Actor.USER, parts=[TextPart(text="again")])
         )
         assert base is not None
 
-        cfg = CompactionCfg(enabled=True, keep_last_messages=1)
+        cfg = CompactionCfg(enabled=True, keep_last_messages=1, keep_recent_tokens=1)
         comp = Compactor(cast("InferenceClient", None), messages, cfg)
 
-        async def _stub_summarize(_head):  # avoid touching a real inference backend
+        async def _stub_summarize(_head, *, instructions=None):  # avoid touching a real inference backend
             return "[Earlier conversation summary]\nstub", False
 
         # Fail on the FIRST flag flip — i.e. AFTER the summary insert has run inside the txn.

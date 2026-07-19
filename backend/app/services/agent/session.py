@@ -61,7 +61,15 @@ from app.domain.conversation import (
 from app.domain.enums import Actor, RunState
 from app.domain.result import ToolResult
 from app.services.action_service import ActionService, InvokeOutcome
-from app.services.agent.compaction import Compactor, ContextEstimator, estimate_payload_tokens
+from app.services.agent.compaction import (
+    OUTPUT_CLEARED_PLACEHOLDER,
+    ClearingPlan,
+    CompactionState,
+    Compactor,
+    ContextEstimator,
+    estimate_payload_tokens,
+    plan_clearing,
+)
 from app.services.agent.exec import run_user_exec
 from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
 from app.services.conversation import MessageRepo, ThreadRepo
@@ -246,11 +254,15 @@ class _BatchOutcome:
     made_progress: bool = False
 
 
-def _tool_content(result: ToolResult) -> str:
+def _tool_content(result: ToolResult, *, cleared: bool = False) -> str:
     """Render a ToolResult as the `content` of an OpenAI `tool` message — what the model reads to
-    reason about the outcome. Concise; `output` is already redacted + truncated upstream."""
+    reason about the outcome. Concise; `output` is already redacted + truncated upstream. `cleared`
+    (D42 Tier 1) replaces ONLY the OUTPUT payload with `OUTPUT_CLEARED_PLACEHOLDER` — the `[state]
+    summary` line + any error survive — an assembly-time transform (the DB row stays verbatim, A12)."""
     body = f"[{result.state.value}] {result.summary}"
-    if result.output:
+    if cleared:
+        body += f"\n{OUTPUT_CLEARED_PLACEHOLDER}"
+    elif result.output:
         body += f"\n{result.output}"
     if result.error:
         body += f"\nerror: {result.error}"
@@ -288,6 +300,7 @@ class AgentSession:
         interactive: bool = True,
         depth: int = 0,
         steer_source: SteerSource | None = None,
+        compaction_state: CompactionState | None = None,
     ) -> None:
         self._threads = threads
         self._messages = messages
@@ -315,7 +328,12 @@ class AgentSession:
         self._depth = depth
         # Context-window settings are per-agent (4.5): the AgentDef's `compaction` wins, else the
         # global default. A subagent inherits the parent's effective value (resolved at spawn).
-        self._compactor = Compactor(inference, messages, self._agent.compaction or settings.agent.compaction)
+        self._compaction_cfg = self._agent.compaction or settings.agent.compaction
+        self._compactor = Compactor(inference, messages, self._compaction_cfg)
+        #: The injected per-thread thrash-machine view (D42 Wave 3), like `steer_source` — `None` for
+        #: subagent sessions + non-thread call sites (their auto-compaction never latches a breaker).
+        #: The Compactor stays STATELESS; the session reads/writes this off `compact()`'s outcome.
+        self._compaction_state = compaction_state
         #: Session-held anchored context estimator (D42 Wave 2). The Compactor stays STATELESS — this
         #: holds the telemetry anchor + watermark that price the window-aware trigger, invalidated on a
         #: fold / served-endpoint change / degraded telemetry. Fresh per turn (session is per-turn), so
@@ -489,7 +507,7 @@ class AgentSession:
             self._static_head = head
         return self._static_head
 
-    async def _assemble(self, thread: Thread) -> list[dict]:
+    async def _assemble(self, thread: Thread, *, clearing: ClearingPlan | None = None) -> list[dict]:
         """Build the OpenAI `messages` array: the cached static system head (`_static_prefix`) + the
         non-compacted history + a one-shot reflection nudge at the tail. Reasoning is dropped (the
         model's scratchpad); tool calls + results round-trip as `assistant.tool_calls` followed by
@@ -497,9 +515,14 @@ class AgentSession:
         result so the context is always valid for the API: a persisted-CANCELLED call (A11/D39) →
         `cancelled`; any other abandoned call (e.g. a dropped confirm) → `skipped`.
 
+        `clearing` (D42 Tier 1) is the iteration's shared `ClearingPlan`: any tool result whose
+        `call_id` is in `clearing.cleared_call_ids` renders its OUTPUT as the placeholder (assembly-time
+        only — the DB row stays verbatim, A12). `None` (the resume/finalize legacy callers) → no trim.
+
         History is re-read every iteration on purpose: `_compactor.compact` runs before each model call
         and can fold older turns into a summary, so the history (the cache TAIL) legitimately changes —
         only the static head above is held stable."""
+        cleared_ids = clearing.cleared_call_ids if clearing is not None else frozenset()
         history = await self._messages.list(thread.id, include_compacted=False)
         results: dict[str, ToolResult] = {}
         for m in history:
@@ -552,7 +575,7 @@ class AgentSession:
                             {
                                 "role": "tool",
                                 "tool_call_id": c.call_id,
-                                "content": _tool_content(res),
+                                "content": _tool_content(res, cleared=c.call_id in cleared_ids),
                             }
                         )
                 elif text:
@@ -592,6 +615,32 @@ class AgentSession:
         return self._estimator.estimate(
             history, overhead=self._overhead_tokens(), served_key=served_key
         ).tokens
+
+    async def _plan_clearing(self, thread: Thread) -> ClearingPlan:
+        """The iteration's Tier-1 clearing plan (D42) — the ONE selection shared by the trigger (its
+        `gain` net-of-clearing) and `_assemble` (its `cleared_call_ids`). Reads the working history and
+        delegates to the pure `plan_clearing`, so both consumers price/render off the same object."""
+        history = await self._messages.list(thread.id, include_compacted=False)
+        return plan_clearing(history, self._compaction_cfg)
+
+    async def _over_threshold_now(self, thread: Thread) -> bool:
+        """Is the thread OVER the compaction trigger right now (D42)? Resolves the window for the
+        agent's own mode + the session's (unanchored) estimate and asks the shared `_over_threshold`
+        predicate. Used by the manual `/compact` path to decide whether a manual fold left the thread
+        healthy enough to RESET the thrash breaker (net of the free clearing trim)."""
+        eff_mode = self._agent.model.mode
+        price_ep = self._settings.inference.endpoint(eff_mode)
+        window = await self._inference.effective_window(price_ep)
+        est = await self._estimate_context(thread, price_ep.base_url or None)
+        clearing = await self._plan_clearing(thread)
+        history = await self._messages.list(thread.id, include_compacted=False)
+        return self._compactor._over_threshold(
+            history,
+            window=window,
+            reserve_tokens=self._agent.model.max_tokens,
+            estimated_tokens=est,
+            clearing_gain=clearing.gain,
+        )
 
     async def _watermark_id(self, thread: Thread) -> str | None:
         """The id of the newest non-compacted message = the tail of the prompt about to be sent (the
@@ -663,13 +712,28 @@ class AgentSession:
         # against a 0 reaching here via a direct mutation (tests) rather than risk a ZeroDivisionError.
         self._reflect_now = interval > 0 and count > 0 and count % interval == 0
 
-    async def compact(self, thread: Thread) -> dict:
-        """Manual `/compact` (4e): force-fold the oldest turns now, ignoring the token threshold but
-        still honouring the recent-message floor + turn-boundary safety. Returns `{removed,
-        summaryId?, truncated?}` for a one-shot JSON response (no SSE — there's no turn to stream)."""
-        res = await self._compactor.compact(thread, force=True)
+    async def compact(self, thread: Thread, *, instructions: str | None = None) -> dict:
+        """Manual `/compact` (4e/D42): force-fold the oldest turns now, ignoring the token threshold +
+        the backoff/breaker (force) but still honouring the recent-message floor + turn-boundary safety
+        AND the inflation-reject. `instructions` (the `/compact <instructions>` steer) threads into the
+        summarizer as an emphasis block. Returns `{removed, summaryId?, truncated?, rejected?}` for a
+        one-shot JSON response (no SSE — there's no turn to stream).
+
+        D42 thrash RESET: a manual compact that leaves the thread UNDER threshold clears the breaker
+        (the owner's escape hatch worked — failures=0, unlatched, notice re-armed). A rejected /
+        still-over manual leaves the machine as-is; the breaker governs AUTO attempts only, and a manual
+        run never itself latches it."""
+        res = await self._compactor.compact(thread, force=True, instructions=instructions)
+        cs = self._compaction_state
+        if cs is not None and not (res is not None and res.rejected):
+            if not await self._over_threshold_now(thread):
+                cs.consecutive_failures = 0
+                cs.breaker_latched = False
+                cs.notice_emitted = False
         if res is None:
             return {"removed": 0}
+        if res.rejected:
+            return {"removed": 0, "rejected": True, "truncated": res.truncated}
         return {"removed": res.removed, "summaryId": res.summary_id, "truncated": res.truncated}
 
     async def resume(
@@ -821,6 +885,10 @@ class AgentSession:
         served: InferenceEndpointCfg | None = None
 
         stall = 0  # consecutive no-progress iterations (C1b) → forced wrap-up at the agent's cap
+        #: D42 per-turn compaction backoff: set True after a failed (didn't-shrink) fold so AUTO-
+        #: compaction does not re-attempt until the NEXT turn. Turn-LOCAL — the session is per-turn, so
+        #: a fresh `_drive` clears it for free (no turn-id bookkeeping in the cross-turn CompactionState).
+        compaction_blocked_this_turn = False
         for _ in range(self._agent.max_iterations):
             # Drain A (D41): apply any steers queued mid-turn at the loop TOP, BEFORE `should_compact`,
             # so compaction always sees drained steers as ordinary history (ordering invariant to Slice
@@ -828,34 +896,76 @@ class AgentSession:
             if self._steer_source is not None:
                 async for ev in self._drain_steers(thread):
                     yield ev
+            # D42 Tier 1 — the unconditional assembly-time tool-output clearing plan for THIS iteration
+            # (ONE shared selection): its `gain` prices the trigger net-of-clearing below, its
+            # `cleared_call_ids` drive `_assemble`'s output-trim rendering. Runs whenever compaction is
+            # enabled (the master switch), independent of being over threshold.
+            clearing = await self._plan_clearing(thread)
             # Compaction check before each model call (DESIGN §5.2 step 2): if the working context is
             # over the trigger, fold the oldest turns into a summary system message. D42 Wave 2 — the
             # trigger is window-aware: resolve the window (config > probe > None) for the endpoint being
             # priced (iteration 1 = the selected endpoint; iteration 2+ = the one that actually served),
-            # and pass the session's anchored estimate + the output reserve. A `None` window ⇒ the
-            # absolute `threshold_tokens` fallback (v1's no-regression path).
+            # and pass the session's anchored estimate + the output reserve + the clearing gain. A `None`
+            # window ⇒ the absolute `threshold_tokens` fallback (v1's no-regression path).
             price_ep = served or self._settings.inference.endpoint(eff_mode)
             window = await self._inference.effective_window(price_ep)
             est = await self._estimate_context(thread, price_ep.base_url or None)
-            # ACA-11: summarizing can be a multi-second stall (a separate LLM call), so drop a live
-            # breadcrumb FIRST — but only when compaction will actually fire (`should_compact` mirrors
-            # `compact`'s own decision), never on a no-op iteration.
-            if await self._compactor.should_compact(
-                thread, window=window, reserve_tokens=reserve, estimated_tokens=est
-            ):
-                yield AgentEvent("notice", {"text": "// compacting the conversation…"})
-            res = await self._compactor.compact(
-                thread, window=window, reserve_tokens=reserve, estimated_tokens=est
-            )
-            if res is not None:
-                # A fold discards the history the anchor counted → invalidate it (heuristic+overhead
-                # until this call's telemetry re-anchors on the shrunk context). D42 explicit fold-inval.
-                self._estimator.invalidate()
-                yield AgentEvent(
-                    "compaction",
-                    {"removed": res.removed, "summaryId": res.summary_id, "truncated": res.truncated},
+            cs = self._compaction_state
+            # D42 thrash machine: AUTO-compaction skips ENTIRELY while the breaker is latched OR after a
+            # didn't-shrink attempt earlier THIS turn (per-turn backoff). Clearing (above) still applies.
+            # Manual `/compact` (force) bypasses both. `None` state (subagents) never latches.
+            auto_ok = not compaction_blocked_this_turn and not (cs is not None and cs.breaker_latched)
+            if auto_ok:
+                # ACA-11: summarizing can be a multi-second stall (a separate LLM call), so drop a live
+                # breadcrumb FIRST — but only when compaction will actually fire (`should_compact`
+                # mirrors `compact`'s own decision, net of clearing), never on a no-op iteration.
+                if await self._compactor.should_compact(
+                    thread,
+                    window=window,
+                    reserve_tokens=reserve,
+                    estimated_tokens=est,
+                    clearing_gain=clearing.gain,
+                ):
+                    yield AgentEvent("notice", {"text": "// compacting the conversation…"})
+                res = await self._compactor.compact(
+                    thread,
+                    window=window,
+                    reserve_tokens=reserve,
+                    estimated_tokens=est,
+                    clearing_gain=clearing.gain,
                 )
-            messages = await self._assemble(thread)
+                if res is not None and res.rejected:
+                    # D42 FAILURE (the ONLY one): the fold DIDN'T SHRINK (inflation-reject). Nothing was
+                    # written. Back off for the rest of this turn; count it, and at the cap latch the
+                    # breaker + emit EXACTLY ONE notice (in the codebase's `// …` voice).
+                    compaction_blocked_this_turn = True
+                    if cs is not None:
+                        cs.consecutive_failures += 1
+                        if (
+                            cs.consecutive_failures >= self._compaction_cfg.max_consecutive_failures
+                            and not cs.breaker_latched
+                        ):
+                            cs.breaker_latched = True
+                            if not cs.notice_emitted:
+                                cs.notice_emitted = True
+                                yield AgentEvent(
+                                    "notice",
+                                    {
+                                        "text": "// compaction keeps failing — use /compact or start a new thread"
+                                    },
+                                )
+                elif res is not None:
+                    # A SHRINKING fold (summary OR a truncation-notice fallback) = SUCCESS: reset the
+                    # failure counter and invalidate the anchor (its counted history is gone →
+                    # heuristic+overhead until this call re-anchors). D42 explicit fold-invalidation.
+                    if cs is not None:
+                        cs.consecutive_failures = 0
+                    self._estimator.invalidate()
+                    yield AgentEvent(
+                        "compaction",
+                        {"removed": res.removed, "summaryId": res.summary_id, "truncated": res.truncated},
+                    )
+            messages = await self._assemble(thread, clearing=clearing)
             # The anchor watermark: the newest persisted message = the tail of the prompt we're about
             # to send. This call's total-prompt telemetry (below) counts up to here, so the next
             # iteration's heuristic delta is only what's appended after it (D42 anchored estimator).
@@ -1079,6 +1189,9 @@ class AgentSession:
         self._reflect_now = (
             False  # the wrap-up call is tool-less — don't carry the "use the memory tool" nudge
         )
+        # No Tier-1 clearing here (D42): the forced wrap-up must SEE the full tool outcomes to
+        # summarize honestly what it did/couldn't do — trimming old outputs would undercut that. The
+        # main loop's `_assemble` (above) is where clearing applies.
         messages = await self._assemble(thread)
         messages.append(
             {
