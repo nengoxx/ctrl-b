@@ -261,3 +261,71 @@ if __name__ == "__main__":
             print(f"ok  {name}")
             passed += 1
     print(f"\n{passed} passed")
+
+
+# ── Codex HIGH regressions: CLOSE-BEFORE-RELEASE (an abandoned stream must be closed, not leaked) ──
+def test_midstream_aclose_closes_stream_before_permit_release():
+    """`aclose()` after the first delta (a Stop cancelling the D39 drain task lands here): the
+    backend stream must be CLOSED — an abandoned generation still occupies the real llama.cpp slot,
+    so releasing the permit without closing would admit a second request while the backend is busy
+    (the Codex HIGH). The follow-up call proves the permit was released as well (close THEN release)."""
+
+    async def scenario():
+        streams: list[_Stream] = []
+
+        def behavior(_kw):
+            # never-exhausting stream: one chunk, then parked on an unset gate (mid-generation)
+            s = _Stream([_Chunk(_Delta("hi"))], asyncio.Event())
+            streams.append(s)
+            return s
+
+        client, _ = _build(_cfg(1), {"http://local/v1": behavior})
+        agen = client.stream_chat([{"role": "user", "content": "hi"}])
+        first = await agen.__anext__()  # probe + first delta reach the consumer
+        assert first.text == "hi"
+        await agen.aclose()  # consumer abandons mid-generation
+        assert streams[0].closed is True  # the backend slot was actually freed, not leaked
+        # ...and the permit was released AFTER the close: a SECOND call on the SAME client (same
+        # semaphore) must proceed at limit 1 — a leaked permit would park it forever.
+        agen2 = client.stream_chat([{"role": "user", "content": "again"}])
+        second = await asyncio.wait_for(agen2.__anext__(), timeout=2.0)
+        assert second.text == "hi"
+        await agen2.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_cancel_during_probe_closes_stream_and_releases():
+    """CancelledError during the first-chunk probe (`__anext__` parked, cancel arrives): the old
+    `except Exception` close let a cancel — a BaseException — slip past `_safe_close`, leaking the
+    live generation while the outer handler released the permit. Now ANY first-read failure closes
+    the stream (shielded) before the release; the follow-up call proves no deadlock at limit 1."""
+
+    async def scenario():
+        streams: list[_Stream] = []
+        probe_entered = asyncio.Event()
+
+        class _ProbeBlockedStream(_Stream):
+            async def __anext__(self):
+                probe_entered.set()
+                await asyncio.Event().wait()  # park forever — only cancellation exits
+
+        def behavior(_kw):
+            s = _ProbeBlockedStream([])
+            streams.append(s)
+            return s
+
+        client, fakes = _build(_cfg(1), {"http://local/v1": behavior})
+        t = asyncio.create_task(_collect(client))
+        await asyncio.wait_for(probe_entered.wait(), timeout=2.0)  # the probe holds the permit
+        t.cancel()
+        with __import__("pytest").raises(asyncio.CancelledError):
+            await t
+        assert streams[0].closed is True  # closed despite the cancel (BaseException path)
+        # permit released after the close → a normal call on the SAME client (same semaphore)
+        # proceeds at limit 1; a leaked permit would park it forever.
+        fakes["http://local/v1"].chat.completions._behavior = lambda _kw: _Stream([_Chunk(_Delta("ok"))])
+        out = await asyncio.wait_for(_collect(client), timeout=2.0)
+        assert "".join(d.text for d in out) == "ok"
+
+    asyncio.run(scenario())

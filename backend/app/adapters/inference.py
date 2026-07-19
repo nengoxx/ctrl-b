@@ -24,6 +24,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator, cast
 
+import anyio
 from openai import AsyncOpenAI
 
 from app.config import InferenceCfg, InferenceEndpointCfg
@@ -329,10 +330,14 @@ class InferenceClient:
                 stream = await self._client(ep).chat.completions.create(model=use_model, **call_kwargs)
                 try:
                     first = await stream.__anext__()  # confirm the provider is alive + producing tokens
-                except StopAsyncIteration as exc:
-                    raise InferenceError("inference returned an empty stream") from exc
-                except Exception:
-                    await _safe_close(stream)  # broken on first read → release it before failing over
+                except BaseException as exc:
+                    # ANY first-read failure closes the backend stream BEFORE the permit is released
+                    # by the outer handler below — incl. `CancelledError` (a BaseException; the old
+                    # `except Exception` close let a cancel-during-probe leak the live generation) and
+                    # the empty-stream case (Codex HIGH: close-before-release, see the finally below).
+                    await _shielded_close(stream)
+                    if isinstance(exc, StopAsyncIteration):
+                        raise InferenceError("inference returned an empty stream") from exc
                     raise
             except BaseException:
                 if sem is not None:
@@ -375,8 +380,18 @@ class InferenceClient:
             # this `async for` BEFORE running any tool / subagent fan-out, so the permit is provably
             # released before tool execution — no completion ever holds a slot across tools (no
             # hold-and-wait → no deadlock at limit 1, pinned by `test_inference_gate_d40`).
-            if sem is not None:
-                sem.release()
+            #
+            # CLOSE-BEFORE-RELEASE (Codex HIGH, 2026-07-19): on `aclose()`/cancel the backend is still
+            # GENERATING — an abandoned stream occupies the real llama.cpp slot, so releasing the
+            # permit first would admit a second request while the backend is busy, defeating
+            # `max_concurrent_requests` exactly where it matters. Close to completion (shielded, so a
+            # cancel can't interrupt the close and free the permit early), THEN release — the nested
+            # finally guarantees the release even if the close path re-raises the in-flight cancel.
+            try:
+                await _shielded_close(stream)
+            finally:
+                if sem is not None:
+                    sem.release()
 
 
 async def _safe_close(stream: Any) -> None:
@@ -385,3 +400,21 @@ async def _safe_close(stream: Any) -> None:
         await stream.close()
     except Exception:  # noqa: BLE001 — closing a broken stream is best-effort
         pass
+
+
+async def _shielded_close(stream: Any) -> None:
+    """Drive `_safe_close` to COMPLETION even under cancellation (Codex HIGH, 2026-07-19 — the D40
+    request gate's close-before-release rule). An abandoned/cancelled stream still occupies the real
+    backend slot until the HTTP response is closed, so the close must LAND before the caller releases
+    the endpoint permit; an unshielded `await` here could be interrupted by the very cancel that
+    triggered the cleanup, freeing the permit while the backend keeps generating. Same retained-task +
+    `asyncio.shield` + second-await discipline as the session's `_persist_shielded` (both cancellation
+    shapes defeated); `_safe_close` itself never raises, so the only re-raise out of here is an
+    in-flight `CancelledError` — which the caller's release path must (and does) tolerate."""
+    task = asyncio.ensure_future(_safe_close(stream))
+    with anyio.CancelScope(shield=True):
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await task  # the inner task is uncancellable by the outer cancel — let it finish
+            raise
