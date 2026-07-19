@@ -320,6 +320,14 @@ export function ConfTab({ active }: Props) {
     auto_rotate: agentSection?.auto_rotate ?? false,
     auto_rotate_min_overlap: agentSection?.auto_rotate_min_overlap ?? 2,
     streaming: agentSection?.streaming ?? "auto",
+    // D42 — global compaction defaults (per-agent overrides stay YAML-only). Defaults mirror
+    // CompactionCfg's backend defaults; only these four knobs are surfaced.
+    compaction: {
+      enabled: agentSection?.compaction?.enabled ?? true,
+      threshold_frac: agentSection?.compaction?.threshold_frac ?? 0.85,
+      keep_recent_tokens: agentSection?.compaction?.keep_recent_tokens ?? 4096,
+      clear_output_min_tokens: agentSection?.compaction?.clear_output_min_tokens ?? 500,
+    },
   };
   // The per-agent tool grid mirrors the global tri-state (8b, D22): show every tool that's an agent
   // tool *by default* (so a globally-disabled tool still appears, locked-off, rather than vanishing)
@@ -370,8 +378,8 @@ export function ConfTab({ active }: Props) {
   }
   function setEndpoint(
     which: "local" | "cloud",
-    key: "base_url" | "api_key" | "model",
-    val: string,
+    key: "base_url" | "api_key" | "model" | "context_window",
+    val: string | null,
   ) {
     setDraft((d) =>
       d
@@ -384,7 +392,11 @@ export function ConfTab({ active }: Props) {
   function setFallbacks(next: Draft["inference"]["fallbacks"]) {
     setDraft((d) => (d ? { ...d, inference: { ...d.inference, fallbacks: next } } : d));
   }
-  function setFallback(idx: number, key: "base_url" | "api_key" | "model", val: string) {
+  function setFallback(
+    idx: number,
+    key: "base_url" | "api_key" | "model" | "context_window",
+    val: string | null,
+  ) {
     setFallbacks(
       (draft?.inference.fallbacks ?? []).map((fb, i) => (i === idx ? { ...fb, [key]: val } : fb)),
     );
@@ -392,7 +404,7 @@ export function ConfTab({ active }: Props) {
   function addFallback() {
     const next = [
       ...(draft?.inference.fallbacks ?? []),
-      { base_url: "", api_key: null, model: "" },
+      { base_url: "", api_key: null, model: "", context_window: null },
     ];
     setFallbacks(next);
     setOpenFallback(next.length - 1); // open the new row so its fields are immediately editable
@@ -455,6 +467,11 @@ export function ConfTab({ active }: Props) {
     if (!draft) return;
     // Coerce numeric text fields; the backend validates and 422s on a bad value (surfaced as toast).
     const dimRaw = String(draft.embeddings.dim ?? "").trim();
+    // Per-endpoint context window (D42): blank → null (auto), else numeric. Same shape as `dim`.
+    const cw = (v: number | string | null | undefined): number | null => {
+      const s = String(v ?? "").trim();
+      return s ? Number(s) : null;
+    };
     const patch: Draft = {
       server: {
         ...draft.server,
@@ -465,6 +482,18 @@ export function ConfTab({ active }: Props) {
       inference: {
         ...draft.inference,
         request_timeout_s: Number(draft.inference.request_timeout_s),
+        local: {
+          ...draft.inference.local,
+          context_window: cw(draft.inference.local.context_window),
+        },
+        cloud: {
+          ...draft.inference.cloud,
+          context_window: cw(draft.inference.cloud.context_window),
+        },
+        fallbacks: draft.inference.fallbacks.map((fb) => ({
+          ...fb,
+          context_window: cw(fb.context_window),
+        })),
       },
       searxng: draft.searxng,
       embeddings: { ...draft.embeddings, dim: dimRaw ? Number(dimRaw) : null },
@@ -562,6 +591,13 @@ export function ConfTab({ active }: Props) {
             onChange={(v) => setEndpoint("local", "api_key", v)}
           />
           <Field
+            label="Local context window"
+            desc="tokens — blank = auto: probed from the server"
+            value={inf?.local.context_window == null ? "" : String(inf.local.context_window)}
+            onChange={(v) => setEndpoint("local", "context_window", v === "" ? null : v)}
+            placeholder="auto"
+          />
+          <Field
             label="Cloud endpoint"
             desc="openai-compatible base url"
             value={inf?.cloud.base_url ?? ""}
@@ -580,6 +616,13 @@ export function ConfTab({ active }: Props) {
             type="password"
             value={inf?.cloud.api_key ?? ""}
             onChange={(v) => setEndpoint("cloud", "api_key", v)}
+          />
+          <Field
+            label="Cloud context window"
+            desc="tokens — blank = auto: token-threshold fallback"
+            value={inf?.cloud.context_window == null ? "" : String(inf.cloud.context_window)}
+            onChange={(v) => setEndpoint("cloud", "context_window", v === "" ? null : v)}
+            placeholder="auto"
           />
           {/* D18 — fallback endpoints as collapsible rows, tried in order after local↔cloud (failover
               on). Reuses the .mwrap/.mconf machine-row dropdown pattern so each row's fields are clearly
@@ -631,6 +674,20 @@ export function ConfTab({ active }: Props) {
                         value={fb.api_key ?? ""}
                         placeholder="optional — masked"
                         onChange={(e) => setFallback(i, "api_key", e.target.value)}
+                      />
+                      <label>Context window</label>
+                      <input
+                        aria-label="Fallback context window"
+                        inputMode="numeric"
+                        value={fb.context_window == null ? "" : String(fb.context_window)}
+                        placeholder="auto"
+                        onChange={(e) =>
+                          setFallback(
+                            i,
+                            "context_window",
+                            e.target.value === "" ? null : e.target.value,
+                          )
+                        }
                       />
                     </div>
                     <div className="mfoot">

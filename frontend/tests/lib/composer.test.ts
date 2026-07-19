@@ -70,8 +70,14 @@ describe("runComposer routing", () => {
   it("`/clear` and `/compact` map to their thread actions", () => {
     runComposer("/clear");
     expect(chat.startNewThread).toHaveBeenCalled();
+    // bare `/compact` → no steer (null instructions), D42.
     runComposer("/compact");
-    expect(chat.compactThread).toHaveBeenCalled();
+    expect(chat.compactThread).toHaveBeenCalledWith(null);
+  });
+
+  it("`/compact <text>` threads everything after the verb as the summarizer steer (D42)", () => {
+    runComposer("/compact focus on the deploy steps");
+    expect(chat.compactThread).toHaveBeenCalledWith("focus on the deploy steps");
   });
 
   it("`/privilege <level>` sets a valid level and rejects an invalid one", () => {

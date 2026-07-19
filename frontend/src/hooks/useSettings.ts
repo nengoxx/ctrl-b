@@ -13,6 +13,7 @@ export interface InferenceEndpoint {
   base_url: string;
   api_key: string | null; // masked on read (e.g. "ab…yz"); echo unchanged to keep the stored secret
   model: string;
+  context_window?: number | null; // D42 — per-endpoint window; null = auto (probe local / token-threshold fallback cloud)
 }
 
 // Voice (Phase 6) — one STT + one TTS service, each a primary→fallback failover chain (D18).

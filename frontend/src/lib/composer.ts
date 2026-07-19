@@ -73,7 +73,7 @@ const HELP = [
   "/cloud [msg]   force the cloud inference backend",
   "/agent [name]  switch the active agent (bare = back to default)",
   "/privilege [lvl] set the session privilege (read|confirm|auto_low|full; bare = agent default)",
-  "/compact       summarize older turns to free up context",
+  "/compact [note] summarize older turns to free up context (note steers the summary)",
   "/clear         start a new thread",
   "/<skill> [task] run a task with a skill active",
   "/help          show this list",
@@ -178,7 +178,8 @@ function routeSlash(text: string): void {
       startNewThread();
       break;
     case "compact":
-      void compactThread();
+      // Everything after `/compact` is a free-text steer for the summarizer (D42); bare → null.
+      void compactThread(rest || null);
       break;
     case "help":
       pushSystemNote(HELP);

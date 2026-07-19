@@ -1811,6 +1811,13 @@ body {
   box-shadow: 0 0 0 1px var(--magenta), 0 0 10px rgba(var(--accent-rgb), 0.25);
 }
 
+/* D42 — the Reasoning-effort Seg carries 8 options (Inherit + the 7-value ladder), more than any
+   other Seg. Let Segs inside the narrow .mform value column wrap so it stays overflow-safe on a phone;
+   harmless for the short Backend/Privilege segs (3–4 options never reach the wrap width). */
+.mform .seg {
+  flex-wrap: wrap;
+}
+
 /* ── Conf → Skills · SKILL.md editor (Phase 7d-c, net-new) ────────────────────────────────────
    A standalone raw-markdown editor (rendered above the .mfoot buttons, not inside the .mform grid),
    so it's self-styled from the same VAPOR_PATTERNS recipe as .kv-text but taller for a whole file. */

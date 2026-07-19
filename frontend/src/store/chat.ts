@@ -1553,16 +1553,19 @@ export async function sendMessage(
   await streamTurn("/api/agent/chat", reqBody, placeholderId, tempUser.id, raw);
 }
 
-/** One-line sys breadcrumb for a compaction event (auto or manual). */
-function compactionNote(removed: number, truncated: boolean): string {
+/** One-line sys breadcrumb for a compaction event (auto or manual). `rejected` (D42, manual only)
+ *  = the produced summary wouldn't shrink the context, so nothing was folded. */
+function compactionNote(removed: number, truncated: boolean, rejected = false): string {
+  if (rejected) return "// nothing folded — the summary wouldn't shrink the context";
   if (!removed) return "// nothing to compact yet";
   const tail = truncated ? " (summarizer unavailable — older messages dropped)" : "";
   return `// compacted ${removed} message${removed === 1 ? "" : "s"} into a summary${tail}`;
 }
 
-/** `/compact`: fold this thread's older turns into a summary now (manual compaction, 4e). Full
- *  history stays in SQLite; only the live working context shrinks. */
-export async function compactThread(): Promise<void> {
+/** `/compact [instructions]`: fold this thread's older turns into a summary now (manual compaction,
+ *  4e). Full history stays in SQLite; only the live working context shrinks. `instructions` (D42) is
+ *  the `/compact <text>` steer passed through to the summarizer prompt (null = no steer). */
+export async function compactThread(instructions: string | null = null): Promise<void> {
   if (!state.threadId) {
     pushSystemNote("// nothing to compact yet");
     return;
@@ -1571,18 +1574,18 @@ export async function compactThread(): Promise<void> {
     const res = await fetch("/api/agent/compact", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ thread_id: state.threadId }),
+      body: JSON.stringify({ thread_id: state.threadId, instructions }),
     });
     if (res.status === 409) {
       pushSystemNote("// " + (await busyDetail(res)));
       return;
     }
     if (!res.ok) throw new Error(`compact → ${res.status}`);
-    const data = (await res.json()) as { removed: number; truncated?: boolean };
+    const data = (await res.json()) as { removed: number; truncated?: boolean; rejected?: boolean };
     // Compaction only shrinks the model's *working* context; the visible chat log keeps the full
     // history (the summary lives server-side for the next turn), so just drop a breadcrumb — same
     // as the auto path. No re-read: that would surface the raw summary mid-log beside the originals.
-    pushSystemNote(compactionNote(data.removed, Boolean(data.truncated)));
+    pushSystemNote(compactionNote(data.removed, Boolean(data.truncated), Boolean(data.rejected)));
   } catch {
     pushSystemNote("// compaction failed — try again");
   }

@@ -14,6 +14,7 @@ import {
   type AgentDef,
   type AgentSectionCfg,
   type Privilege,
+  type ReasoningEffort,
 } from "../hooks/useAgents";
 import { Seg } from "./Seg";
 import { SettingRow } from "./SettingRow";
@@ -195,6 +196,47 @@ function AgentFieldsForm(props: {
         value={a.model.model ?? ""}
         placeholder="(inherit endpoint model)"
         onChange={(e) => setModel({ model: e.target.value })}
+      />
+
+      {/* D42 (A10) — per-agent call config on the ModelRef. Blank numeric → null (inherit); the
+          Reasoning-effort Seg follows the Backend Seg's "" = Inherit convention, mapped to null. */}
+      <label>Max output tokens</label>
+      <input
+        aria-label="Max output tokens"
+        inputMode="numeric"
+        value={a.model.max_tokens == null ? "" : String(a.model.max_tokens)}
+        placeholder="(inherit — uncapped)"
+        onChange={(e) =>
+          setModel({ max_tokens: e.target.value === "" ? null : Number(e.target.value) || 0 })
+        }
+      />
+
+      <label>Reasoning effort</label>
+      <Seg<"" | ReasoningEffort>
+        label="Reasoning effort"
+        current={a.model.reasoning_effort ?? ""}
+        onPick={(v) => setModel({ reasoning_effort: v === "" ? null : v })}
+        options={[
+          { val: "", label: "Inherit" },
+          { val: "off", label: "Off" },
+          { val: "minimal", label: "Minimal" },
+          { val: "low", label: "Low" },
+          { val: "medium", label: "Medium" },
+          { val: "high", label: "High" },
+          { val: "xhigh", label: "Xhigh" },
+          { val: "max", label: "Max" },
+        ]}
+      />
+
+      <label>Reasoning tokens</label>
+      <input
+        aria-label="Reasoning tokens"
+        inputMode="numeric"
+        value={a.model.reasoning_tokens == null ? "" : String(a.model.reasoning_tokens)}
+        placeholder="cloud only — numeric budget where the backend supports it"
+        onChange={(e) =>
+          setModel({ reasoning_tokens: e.target.value === "" ? null : Number(e.target.value) || 0 })
+        }
       />
 
       <label>Privilege</label>
@@ -457,8 +499,12 @@ export function AgentsEditor(props: {
     cfg.default_agent !== props.cfg.default_agent ||
     cfg.global_subagent_limit !== props.cfg.global_subagent_limit ||
     cfg.subagent_clamp_privilege !== props.cfg.subagent_clamp_privilege ||
-    cfg.streaming !== props.cfg.streaming;
+    cfg.streaming !== props.cfg.streaming ||
+    JSON.stringify(cfg.compaction) !== JSON.stringify(props.cfg.compaction);
   useRegisterDirty("agents-globals", globalsDirty);
+
+  const setCompaction = (p: Partial<AgentSectionCfg["compaction"]>) =>
+    setCfg((c) => ({ ...c, compaction: { ...c.compaction, ...p } }));
 
   const toggle = (name: string) => setOpen((o) => (o === name ? null : name));
 
@@ -488,6 +534,15 @@ export function AgentsEditor(props: {
         global_subagent_limit: cfg.global_subagent_limit,
         subagent_clamp_privilege: cfg.subagent_clamp_privilege,
         streaming: cfg.streaming,
+        // D42 — only the four surfaced compaction knobs; a partial PUT deep-merges so the YAML-only
+        // fields (clear_keep_steps, summarizer, reserve_output, …) round-trip untouched. threshold_frac
+        // is clamped to the schema bounds (0.5–0.95) at commit — the field's ge/le guard is the backstop.
+        compaction: {
+          enabled: cfg.compaction.enabled,
+          threshold_frac: Math.min(0.95, Math.max(0.5, cfg.compaction.threshold_frac)),
+          keep_recent_tokens: cfg.compaction.keep_recent_tokens,
+          clear_output_min_tokens: cfg.compaction.clear_output_min_tokens,
+        },
       },
     });
   };
@@ -672,6 +727,59 @@ export function AgentsEditor(props: {
           ]}
         />
       </SettingRow>
+
+      {/* D42 — GLOBAL compaction defaults (per-agent overrides stay YAML-only). The threshold is a
+          percent of the context window (stored as a fraction); the two token knobs feed the keep-recent
+          floor + the tool-output trim tier. Saved with the other globals via the bar below. */}
+      <SettingRow
+        label="Auto-compact"
+        desc="fold older turns into a summary as the context window fills"
+      >
+        <Switch
+          on={cfg.compaction.enabled}
+          label="Auto-compact"
+          onToggle={() => setCompaction({ enabled: !cfg.compaction.enabled })}
+        />
+      </SettingRow>
+      <div className="confrow">
+        <div className="k">
+          <div className="label">Compaction thresholds</div>
+          <div className="desc">
+            % of window to compact at (50–95) · recent tokens kept · trim floor
+          </div>
+        </div>
+      </div>
+      <div className="agent-lim">
+        <div className="agent-lim-cell">
+          <span>compact at %</span>
+          <input
+            aria-label="Compact at % of context"
+            inputMode="numeric"
+            value={String(Math.round(cfg.compaction.threshold_frac * 100))}
+            onChange={(e) => setCompaction({ threshold_frac: (Number(e.target.value) || 0) / 100 })}
+          />
+        </div>
+        <div className="agent-lim-cell">
+          <span>keep recent</span>
+          <input
+            aria-label="Keep recent (tokens)"
+            inputMode="numeric"
+            value={String(cfg.compaction.keep_recent_tokens)}
+            onChange={(e) => setCompaction({ keep_recent_tokens: Number(e.target.value) || 0 })}
+          />
+        </div>
+        <div className="agent-lim-cell">
+          <span>trim floor</span>
+          <input
+            aria-label="Tool output trim floor (tokens)"
+            inputMode="numeric"
+            value={String(cfg.compaction.clear_output_min_tokens)}
+            onChange={(e) =>
+              setCompaction({ clear_output_min_tokens: Number(e.target.value) || 0 })
+            }
+          />
+        </div>
+      </div>
 
       <div className="conf-savebar">
         <button

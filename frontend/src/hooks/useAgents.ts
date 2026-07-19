@@ -13,9 +13,28 @@ export type { Privilege }; // re-export so existing `import { Privilege } from "
 // config.yaml `agent.defaults` block + `agent.default_title` (saved via PUT /api/settings), its
 // persona to the root SOUL.md. Specialists map to their own folder. One unified editor drives both.
 
+/** The reasoning-effort ladder (D42 A10) — the universal field convention. `null`/absent = inherit. */
+export type ReasoningEffort = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+/** A model pointer + per-call config (D42). `mode`/`model` select the endpoint + model; the three
+ *  call-config fields are the A10 output/reasoning surfaces, threaded per-agent (setModel). Typed —
+ *  no index signature (any extra server keys still round-trip verbatim through the spread merge). */
 export interface ModelRef {
   mode: string | null; // ""/null/local/cloud — blank inherits inference.default_mode
   model: string | null; // blank inherits the endpoint's model
+  max_tokens?: number | null; // output budget (kwargs into stream_chat/complete); null = uncapped/inherit
+  reasoning_effort?: ReasoningEffort | null; // reasoning ladder; null = inherit / leave to the endpoint
+  reasoning_tokens?: number | null; // numeric reasoning budget where the backend expresses it (cloud); advisory else
+}
+
+/** Global compaction knobs surfaced in the Conf UI (D42). The remaining CompactionCfg fields
+ *  (clear_keep_steps, threshold_tokens, summarizer, reserve_output, …) stay YAML-only — a partial
+ *  PUT deep-merges, so they round-trip untouched. Percent is stored as a fraction (0.5–0.95). */
+export interface CompactionCfg {
+  enabled: boolean;
+  threshold_frac: number; // fire when est. context > window × this (schema 0.5–0.95; shown ×100 as a %)
+  keep_recent_tokens: number; // token floor kept unfolded
+  clear_output_min_tokens: number; // tool-output trim floor
 }
 
 export interface AgentDef {
@@ -48,6 +67,7 @@ export interface AgentSectionCfg {
   auto_rotate: boolean; // auto-route a turn to the best-matching specialist when no /agent is pinned (7e-g)
   auto_rotate_min_overlap: number; // min matching tokens for an auto-route pick
   streaming: "auto" | "on" | "off"; // dual-mode chat delivery (D17): on=always SSE, off=always buffered, auto=honor client
+  compaction: CompactionCfg; // D42 — the GLOBAL default compaction knobs (per-agent overrides stay YAML-only)
 }
 
 /** The `default` slug — the workspace-root / generalist agent (no agent.yaml). */
