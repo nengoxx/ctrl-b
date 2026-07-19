@@ -83,7 +83,31 @@ def test_collect_completed() -> None:
             )
         )
     )
-    assert out == {"state": "completed", "messageId": "m1"}
+    assert out == {"state": "completed", "messageId": "m1", "notices": []}  # notices empty on a plain turn
+
+
+def test_collect_folds_notices() -> None:
+    """ACA-11/D40: `collect_turn` buffers each `notice` event's text into `notices` (live breadcrumbs
+    like failover + "compacting…" aren't persisted, so a buffered consumer would otherwise miss them)."""
+    from app.services.agent.session import collect_turn
+
+    out = _run(
+        collect_turn(
+            _stream(
+                [
+                    _ev("message.start", messageId="m1"),
+                    _ev("notice", text="// compacting the conversation…"),
+                    _ev("notice", text="// inference failover → cloud (primary unavailable)"),
+                    _ev("message.end", messageId="m1"),
+                    _ev("done", threadId="t1", state="completed"),
+                ]
+            )
+        )
+    )
+    assert out["notices"] == [
+        "// compacting the conversation…",
+        "// inference failover → cloud (primary unavailable)",
+    ]
 
 
 def test_collect_suspended_confirm_carries_token() -> None:

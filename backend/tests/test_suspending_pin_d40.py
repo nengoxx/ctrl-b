@@ -23,6 +23,16 @@ tool's `run`), and `turns.py` only folds the states into events. Neither registe
 neither maps to a spec — the scan keys on `return` statements, which structurally excludes both.
 MCP/OpenAPI adapters are out of scope too: they are dynamically registered (not in `build_registry`)
 and structurally cannot return `AWAITING_*` (D40 — verified against both adapters).
+
+LOW-2 scan-limitation note: `_returns_awaiting` matches an `AWAITING_`-prefixed attribute *under a
+`Return` node* — i.e. DIRECT returns (`return ToolResult(state=RunState.AWAITING_ANSWER, …)` or
+`return RunState.AWAITING_*`). An INDIRECTED suspend that binds the result first —
+`r = ToolResult(state=RunState.AWAITING_ANSWER, …); return r` — slips the AST scan (the `AWAITING_`
+attr lives on the assignment, not under the `Return`). This is a known house-style limitation shared
+with the other static pins (e.g. the ADAPTER_BOUNDED / arch-invariant scans): they trade total
+dataflow fidelity for a cheap, readable, fail-closed check against the direct-return idiom the
+codebase actually uses. Runtime belts (§4: the parallel-prefix fail-closed conversion of an
+AWAITING_*/needs_confirm result to an error) catch a misdeclaration this scan can't see.
 """
 
 from __future__ import annotations

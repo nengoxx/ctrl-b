@@ -106,7 +106,15 @@ class InferenceClient:
 
     def _sem_for(self, ep: InferenceEndpointCfg) -> asyncio.Semaphore | None:
         """The request-gate semaphore for this endpoint, or `None` when unlimited. Built lazily on
-        first use (inside a running loop, so the 3.14 `asyncio.Semaphore` binds to the right loop)."""
+        first use (inside a running loop, so the 3.14 `asyncio.Semaphore` binds to the right loop).
+
+        LOW-1 caveat: the key is `(base_url, limit)`, so two DISTINCT endpoint entries that share a
+        base_url but declare DIFFERENT `max_concurrent_requests` mint independent semaphores — their
+        limits add, over-subscribing that backend. Unreachable in the shipped config (the chain is
+        local + `cloud=None`, one entry per base_url) and keyed this way deliberately: a hot-reload
+        that changes an endpoint's limit must NOT reuse the old-limit semaphore, so `limit` is part of
+        the key on purpose. Coalesce on `base_url` alone only if a future config lets two live entries
+        share one URL with different caps."""
         limit = ep.max_concurrent_requests
         if limit is None:
             return None

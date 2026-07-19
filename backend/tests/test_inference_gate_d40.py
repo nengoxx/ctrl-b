@@ -166,6 +166,93 @@ def test_none_is_unlimited_no_gating():
     asyncio.run(scenario())
 
 
+class _RaisingStream:
+    """Yields its chunks, then RAISES `exc` on the next pull — a mid-stream drop after the first
+    (probe) chunk has already committed the endpoint. Used to prove the permit is freed on a
+    mid-stream error, not only on clean exhaustion."""
+
+    def __init__(self, chunks, exc: Exception):
+        self._chunks = list(chunks)
+        self._exc = exc
+        self.closed = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._chunks:
+            return self._chunks.pop(0)
+        raise self._exc
+
+    async def close(self):
+        self.closed = True
+
+
+def _cfg2(limit: int | None) -> InferenceCfg:
+    """A two-endpoint failover chain (local → cloud), each gated at `limit`."""
+    return InferenceCfg(
+        default_mode="local",
+        failover=True,
+        local=InferenceEndpointCfg(base_url="http://local/v1", model="m", max_concurrent_requests=limit),
+        cloud=InferenceEndpointCfg(base_url="http://cloud/v1", model="m", max_concurrent_requests=limit),
+    )
+
+
+# ── (LOW-3a) a FAILED failover attempt releases its permit before the next same-endpoint acquire ──
+def test_failed_attempt_releases_permit_no_deadlock():
+    async def scenario():
+        state = {"local": 0}
+
+        def local_behavior(_kw):
+            state["local"] += 1
+            if state["local"] == 1:
+                raise RuntimeError("local down")  # attempt-1 fails INSIDE create() → must free its permit
+            return _Stream([_Chunk(_Delta("local-ok"))])
+
+        client, _ = _build(
+            _cfg2(1),
+            {
+                "http://local/v1": local_behavior,
+                "http://cloud/v1": lambda _kw: _Stream([_Chunk(_Delta("cloud-ok"))]),
+            },
+        )
+        # call 1: local's attempt raises → failover to cloud answers. local's limit-1 permit MUST be
+        # released on the failed attempt (the `except BaseException: sem.release()` in `attempt`).
+        r1 = await asyncio.wait_for(_collect(client), timeout=2.0)
+        assert "".join(d.text for d in r1) == "cloud-ok"
+        # call 2: local now succeeds → it must re-acquire the SAME limit-1 permit. A permit leaked by
+        # the failed attempt-1 would deadlock here; wait_for turns that into a fast, legible failure.
+        r2 = await asyncio.wait_for(_collect(client), timeout=2.0)
+        assert "".join(d.text for d in r2) == "local-ok"
+
+    asyncio.run(scenario())
+
+
+# ── (LOW-3b) a MID-STREAM error releases the permit → the next call at limit 1 doesn't deadlock ────
+def test_midstream_error_releases_permit_no_deadlock():
+    async def scenario():
+        def behavior(kw):
+            # First (streamed) call: probe chunk commits, then the stream raises mid-iteration.
+            # Second (buffered) call: a plain OK response.
+            if kw.get("stream"):
+                return _RaisingStream([_Chunk(_Delta("partial"))], RuntimeError("mid-stream drop"))
+            return _Resp("recovered")
+
+        client, _ = _build(_cfg(1), {"http://local/v1": behavior})
+        # call 1: mid-stream error surfaces as InferenceError; the generator's `finally` frees the slot.
+        raised = False
+        try:
+            await _collect(client)
+        except Exception:  # noqa: BLE001 — the normalized InferenceError is expected
+            raised = True
+        assert raised
+        # call 2: must acquire the now-free limit-1 permit (a leaked mid-stream permit → deadlock).
+        text = await asyncio.wait_for(client.complete([{"role": "user", "content": "x"}]), timeout=2.0)
+        assert text == "recovered"
+
+    asyncio.run(scenario())
+
+
 if __name__ == "__main__":
     passed = 0
     for name, fn in list(globals().items()):

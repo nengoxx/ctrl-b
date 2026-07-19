@@ -114,7 +114,7 @@ class Compactor:
             return None
 
         history = await self._messages.list(thread.id, include_compacted=False)
-        if not force and estimate_tokens(history) <= self._cfg.threshold_tokens:
+        if not force and not self._over_threshold(history):
             return None
 
         head, tail = self._split(history)
@@ -140,6 +140,27 @@ class Compactor:
                 m.compacted = True
                 await self._messages.update(m)
         return CompactionResult(summary_id=boundary.id, removed=len(head), truncated=truncated)
+
+    def _over_threshold(self, history: list[Message]) -> bool:
+        """The enabled+threshold gate — the SINGLE source of compaction's "is the working context big
+        enough to fold?" decision, shared by `compact()` and `should_compact()` so the threshold math
+        (`estimate_tokens` vs `threshold_tokens`) lives in exactly ONE place (no duplicated predicate)."""
+        return self._cfg.enabled and estimate_tokens(history) > self._cfg.threshold_tokens
+
+    async def should_compact(self, thread: Thread) -> bool:
+        """Cheap ACA-11 pre-check: will `compact()` actually summarize on this iteration? True iff
+        compaction is enabled, the working context is over threshold (`_over_threshold`, the shared
+        predicate — never a second copy of the threshold math), AND there is a foldable head (a clean
+        turn boundary above the floor, via the same `_split` `compact()` uses). Mirrors `compact()`'s
+        non-`force` decision exactly, so the caller's "compacting…" notice never fires on a no-op
+        iteration. Does its own history read; at homelab thread sizes the extra list is negligible."""
+        if not self._cfg.enabled:
+            return False
+        history = await self._messages.list(thread.id, include_compacted=False)
+        if not self._over_threshold(history):
+            return False
+        head, _ = self._split(history)
+        return bool(head)
 
     def _split(self, history: list[Message]) -> tuple[list[Message], list[Message]]:
         """Split into (head to fold, tail to keep verbatim). The cut is `keep_last_messages` from the

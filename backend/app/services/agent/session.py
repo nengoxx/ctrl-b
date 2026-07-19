@@ -29,6 +29,7 @@ Event contract (DESIGN §12 subset emitted here):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import sys
@@ -118,10 +119,12 @@ async def collect_turn(events: AsyncIterator[AgentEvent]) -> dict:
     `text`/`reasoning` deltas are discarded (the turn persists the full assistant message to SQLite
     regardless of transport; the client re-reads it via the normal restore path), so the payload
     carries only the control data needed to drive the UI: terminal `state`, the assistant `messageId`,
-    and — when the turn suspended — the `permission` (which **carries the confirm token+prompt**, the
-    one thing not persisted, required for a buffered confirm to be resumable) or `question` event, or
-    the `error`. The endpoint merges `{threadId, title}` on top."""
-    out: dict = {"state": "completed"}
+    the live `notices` breadcrumbs (D18 failover, ACA-11 compaction — never persisted, so buffered
+    consumers would otherwise miss them), and — when the turn suspended — the `permission` (which
+    **carries the confirm token+prompt**, the one thing not persisted, required for a buffered confirm
+    to be resumable) or `question` event, or the `error`. The endpoint merges `{threadId, title}` on
+    top."""
+    out: dict = {"state": "completed", "notices": []}
     async for ev in events:
         if ev.event in ("message.start", "message.end"):
             out["messageId"] = ev.data.get("messageId")
@@ -129,6 +132,10 @@ async def collect_turn(events: AsyncIterator[AgentEvent]) -> dict:
             out["permission"] = ev.data
         elif ev.event == "tool.question":
             out["question"] = ev.data
+        elif ev.event == "notice":
+            # Live breadcrumbs (D18 failover, ACA-11 "compacting…"): buffered-mode consumers get the
+            # text too (the TurnAccumulator deliberately does NOT fold notices — turns.py untouched).
+            out["notices"].append(ev.data.get("text", ""))
         elif ev.event == "error":
             out["error"] = ev.data
         elif ev.event == "done":
@@ -174,11 +181,21 @@ class _LoopGuard:
     @staticmethod
     def result_sig(sig: str, result: ToolResult) -> str:
         """Call-scoped progress key (ACA-12): the exact-call signature (`sig(tool, args)`, the same
-        canonical string C1a uses for repeat suppression) + the outcome. Scoping by the call means two
-        *different* calls returning identical text (two `ping`s both "ok") no longer collide into one
-        "no-progress" bucket, while the SAME call returning the SAME result still repeats its key and
-        trips the stall guard. `output` is truncated to bound the key size."""
-        return f"{sig}|{result.state.value}|{result.summary}|{(result.output or '')[:300]}"
+        canonical string C1a uses for repeat suppression) + the full outcome. Scoping by the call means
+        two *different* calls returning identical text (two `ping`s both "ok") no longer collide into
+        one "no-progress" bucket, while the SAME call returning the SAME result still repeats its key
+        and trips the stall guard.
+
+        This sig is ONLY a fidelity aid for the stall heuristic — it exists to avoid *false* progress
+        collisions, not to bound a spiral. The **per-tool cap (C1c) is the AUTHORITATIVE spiral bound**
+        (ACA-12 stance): a tool whose output flaps every call (a timestamp, a counter) makes every
+        `result_sig` distinct, so the stall guard reads "progress" forever — the per-tool cap, which
+        counts dispatches regardless of args or output, is what actually terminates it. `error` is
+        folded in (empty-string when `None`) and the full `output` is hashed (sha256 hex over the raw
+        bytes; empty output → the hash of `b""`) so a difference anywhere in the result — not just the
+        first 300 chars — mints a distinct key without unbounded key growth (C1-L5 fidelity fix)."""
+        out_hash = hashlib.sha256((result.output or "").encode("utf-8")).hexdigest()
+        return f"{sig}|{result.state.value}|{result.summary}|{result.error or ''}|{out_hash}"
 
 
 @dataclass
@@ -755,6 +772,11 @@ class AgentSession:
         for _ in range(self._agent.max_iterations):
             # Compaction check before each model call (DESIGN §5.2 step 2): if the working context
             # is over the configured threshold, fold the oldest turns into a summary system message.
+            # ACA-11: summarizing can be a multi-second stall (a separate LLM call), so drop a live
+            # breadcrumb FIRST — but only when compaction will actually fire (`should_compact` mirrors
+            # `compact`'s own decision), never on a no-op iteration.
+            if await self._compactor.should_compact(thread):
+                yield AgentEvent("notice", {"text": "// compacting the conversation…"})
             res = await self._compactor.compact(thread)
             if res is not None:
                 yield AgentEvent(

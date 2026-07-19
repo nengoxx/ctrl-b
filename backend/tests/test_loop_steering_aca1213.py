@@ -113,6 +113,27 @@ def _stub_ok(session, *, summary: str = "ok", output: str = "pong"):
     return calls
 
 
+def _stub_flapping(session):
+    """Replace `ActionService.invoke` with a read-only-shaped stub whose OUTPUT differs on every call
+    (a monotonic counter — timestamp-like), so no two results share a `result_sig`. Isolates the
+    per-tool cap as the ONLY thing that can terminate the spiral (the stall guard never trips)."""
+    from app.domain.enums import RunState
+    from app.domain.result import ToolResult
+    from app.services.action_service import InvokeOutcome
+
+    n = {"i": 0}
+
+    async def _fake(name, args, **kw):
+        n["i"] += 1
+        return InvokeOutcome(
+            needs_confirm=False,
+            result=ToolResult(state=RunState.OK, summary="pong", output=f"ts={n['i']}"),
+        )
+
+    session._actions.invoke = _fake  # type: ignore[method-assign]
+    return n
+
+
 def _result_event(events):
     return next(e for e in events if e.event == "tool.result")
 
@@ -162,6 +183,41 @@ def test_two_different_calls_same_text_both_progress() -> None:
             t2, a2, _ = _assistant_with_call(c, session, tool="ping_host", args={"host_id": "b"})
             _e2, _s2, prog2 = drain_run_calls(session, t2, a2, {}, guard)
             assert prog1 is True and prog2 is True
+
+
+# ── C1-L5 · byte-flapping output is still bounded by the per-tool cap (D40 §9) ───────────────────
+
+
+def test_byte_flapping_output_still_terminates_via_per_tool_cap() -> None:
+    """C1-L5 regression: a read-only tool whose output flaps every call (a timestamp/counter) makes
+    every `result_sig` distinct, so the stall guard reads "progress" forever and never fires. The
+    per-tool cap (C1c) is the AUTHORITATIVE spiral bound — it counts DISPATCHES regardless of args or
+    output, so it still terminates the spiral after exactly `max_per_tool` calls. Args are varied too
+    (so the C1a exact-repeat cap can't be what bites), leaving the per-tool cap the sole bound."""
+    with _workspace():
+        with _client() as c:
+            from app.services.agent.session import _LoopGuard
+
+            session = _session(c)
+            _stub_flapping(session)
+            n = 3
+            guard = _LoopGuard(max_repeat=100, max_per_tool=n)  # repeat cap high → only per-tool can bite
+            # `n` real dispatches: flapping output ⇒ each is fresh progress, never a stall repeat.
+            for i in range(n):
+                t, a, _ = _assistant_with_call(c, session, tool="ping_host", args={"host_id": f"h{i}"})
+                events, suspended, prog = drain_run_calls(session, t, a, {}, guard)
+                assert not suspended
+                assert prog is True  # distinct output every time = always "progress"
+                assert _result_event(events).data["result"]["state"] == "ok"
+            assert guard.tool_counts["ping_host"] == n
+            # The (n+1)th call (fresh args again): the per-tool cap refuses it — the spiral ends here.
+            t, a, _ = _assistant_with_call(c, session, tool="ping_host", args={"host_id": "hN"})
+            events, suspended, prog = drain_run_calls(session, t, a, {}, guard)
+            res = _result_event(events).data["result"]
+            assert res["state"] == "denied"
+            assert "(call limit)" in res["summary"]  # the cap echo fired
+            assert prog is False  # a suppressed call is NOT progress
+            assert guard.tool_counts["ping_host"] == n  # the capped call did not run / increment
 
 
 # ── ACA-13 · malformed-args steering ────────────────────────────────────────────────────────────
