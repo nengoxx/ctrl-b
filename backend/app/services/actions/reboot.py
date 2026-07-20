@@ -64,13 +64,13 @@ async def reboot_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolResul
     stdin_data = secret if host.os_type != OSType.WINDOWS else None
     res = await run_ssh_failover(  # ordered LAN>VPN candidates + connect-failover (D47)
         host,
-        lambda address, timeout: ssh.run_command(
+        lambda address, connect_timeout: ssh.run_command(
             host=address,
             port=host.ssh_port,
             username=username,
             password=secret,
             command=command,
-            timeout=timeout,
+            connect_timeout=connect_timeout,  # exec/read keeps run_command's own 10s timeout
             stdin_data=stdin_data,
         ),
     )

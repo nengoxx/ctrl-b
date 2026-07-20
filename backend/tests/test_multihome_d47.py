@@ -9,6 +9,7 @@ under pytest. No real SSH: the failover tests fake the per-candidate run callabl
 from __future__ import annotations
 
 import asyncio
+import socket
 
 from app.adapters import ssh
 from app.adapters.ssh import SshResult
@@ -117,40 +118,84 @@ def test_failover_prefers_vpn_first_when_flagged() -> None:
 # --------------------------------------------------------------------------- SshResult.kind
 
 
-class _FakeClient:
-    """Stand-in for paramiko.SSHClient whose `connect` raises a chosen exception (or succeeds)."""
+class _FakeStream:
+    """A paramiko channel-file stand-in whose `read` returns data or raises (read-phase failures)."""
 
-    def __init__(self, exc: BaseException | None) -> None:
+    def __init__(self, *, data: bytes = b"", exc: BaseException | None = None) -> None:
+        self._data = data
         self._exc = exc
+
+    def read(self) -> bytes:
+        if self._exc is not None:
+            raise self._exc
+        return self._data
+
+
+class _FakeClient:
+    """Stand-in for paramiko.SSHClient. `connect_exc` raises during the connect PHASE; `read_exc`
+    lets `connect` succeed but makes the stdout READ raise (a slow-but-connected command)."""
+
+    def __init__(
+        self, *, connect_exc: BaseException | None = None, read_exc: BaseException | None = None
+    ) -> None:
+        self._connect_exc = connect_exc
+        self._read_exc = read_exc
 
     def set_missing_host_key_policy(self, _policy: object) -> None:
         pass
 
     def connect(self, *_a: object, **_k: object) -> None:
-        if self._exc is not None:
-            raise self._exc
+        if self._connect_exc is not None:
+            raise self._connect_exc
+
+    def exec_command(self, _command: str, timeout: float | None = None) -> tuple[object, object, object]:
+        return _FakeStream(), _FakeStream(exc=self._read_exc), _FakeStream()
 
     def close(self) -> None:
         pass
 
 
-def _kind_for(monkeypatch, exc: BaseException) -> str:
+def _connect_kind_for(monkeypatch, exc: BaseException) -> str:
+    """`kind` when `exc` is raised during the CONNECT phase."""
     import paramiko
 
-    monkeypatch.setattr(paramiko, "SSHClient", lambda: _FakeClient(exc))
-    res = ssh.run_command(host="h", port=22, username="u", password="p", command="x")
-    return res.kind
+    monkeypatch.setattr(paramiko, "SSHClient", lambda: _FakeClient(connect_exc=exc))
+    return ssh.run_command(host="h", port=22, username="u", password="p", command="x").kind
 
 
 def test_sshresult_kind_per_exception(monkeypatch) -> None:
-    """Each exception CLASS maps to its category — the failover loop dispatches on this, never on
-    string-sniffing. AuthenticationException MUST be caught as `auth` even though it subclasses
-    SSHException (it's listed first in the adapter)."""
+    """Each CONNECT-phase exception CLASS maps to its category — the failover loop dispatches on this,
+    never on string-sniffing. AuthenticationException MUST be caught as `auth` even though it
+    subclasses SSHException (it's listed first in the adapter). A `socket.timeout` DURING connect is
+    still the retryable `connect` class (it subclasses OSError, pre-connect)."""
     import paramiko
 
-    assert _kind_for(monkeypatch, paramiko.AuthenticationException("bad")) == "auth"
-    assert _kind_for(monkeypatch, paramiko.SSHException("proto")) == "ssh"
-    assert _kind_for(monkeypatch, OSError("unreachable")) == "connect"  # the failover class
+    assert _connect_kind_for(monkeypatch, paramiko.AuthenticationException("bad")) == "auth"
+    assert _connect_kind_for(monkeypatch, paramiko.SSHException("proto")) == "ssh"
+    assert _connect_kind_for(monkeypatch, OSError("unreachable")) == "connect"  # the failover class
+    assert _connect_kind_for(monkeypatch, socket.timeout("connect timed out")) == "connect"
+
+
+def test_read_timeout_is_ssh_not_connect_and_no_failover(monkeypatch) -> None:
+    """The core review defect: a `socket.timeout` during the READ phase of a slow-but-connected
+    command (e.g. `docker restart`'s graceful stop) is classified `ssh` — NOT `connect` — so the
+    failover loop never RE-EXECUTES the command on the next address (a double-restart footgun)."""
+    import paramiko
+
+    monkeypatch.setattr(paramiko, "SSHClient", lambda: _FakeClient(read_exc=socket.timeout("read timed out")))
+    h = _host(ip="10.0.0.1", vpn_host="corsair")  # two candidates available
+    tried: list[str] = []
+
+    def run(address: str, connect_timeout: float) -> SshResult:
+        assert connect_timeout == SSH_CONNECT_TIMEOUT_S  # forwarded as the connect-phase bound
+        tried.append(address)
+        return ssh.run_command(
+            host=address, port=22, username="u", password="p", command="x", connect_timeout=connect_timeout
+        )
+
+    res = asyncio.run(run_ssh_failover(h, run))
+    assert res.kind == "ssh" and not res.ok  # post-connect read failure → ssh, not the failover class
+    assert tried == ["10.0.0.1"]  # NO second candidate — the command may already have run
 
 
 def test_sshresult_kind_defaults_ok() -> None:

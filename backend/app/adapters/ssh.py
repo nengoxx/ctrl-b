@@ -39,23 +39,32 @@ def run_command(
     password: str,
     command: str,
     timeout: float = 10.0,
+    connect_timeout: float | None = None,
     stdin_data: str | None = None,
 ) -> SshResult:
     """Run `command` over SSH. `stdin_data`, when set, is written to the command's stdin then the
     write side is closed — used to feed a password to `sudo -S` (no TTY on an exec channel). It's
-    treated as a secret: never logged, scrubbed from output by the caller's `redact`."""
+    treated as a secret: never logged, scrubbed from output by the caller's `redact`.
+
+    `timeout` bounds the exec/channel-read PHASE; `connect_timeout` (None ⇒ reuse `timeout`) bounds
+    ONLY the TCP-connect PHASE. The split is load-bearing for D47 failover: only a PRE-connect socket
+    error is the retryable `connect` class — a post-connect OSError (e.g. a `socket.timeout` while
+    reading a slow-but-connected command's output) is classified `ssh`, NEVER `connect`, so the
+    failover loop can't re-execute a command that may already be running (a double-restart footgun)."""
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    connected = False
     try:
         client.connect(
             host,
             port=port,
             username=username,
             password=password,
-            timeout=timeout,
+            timeout=connect_timeout if connect_timeout is not None else timeout,
             allow_agent=False,
             look_for_keys=False,
         )
+        connected = True  # past this line every failure is post-connect (exec/read), not the failover class
         stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
         if stdin_data is not None:
             try:
@@ -73,8 +82,11 @@ def run_command(
         return SshResult(ok=False, error="authentication failed — check username/password", kind="auth")
     except paramiko.SSHException as exc:
         return SshResult(ok=False, error=f"SSH error: {exc}", kind="ssh")
-    except OSError as exc:  # the failover class: socket errors — unreachable / timeout / refused /
-        # DNS (gaierror) / NoValidConnectionsError all subclass OSError. Advance to the next address.
-        return SshResult(ok=False, error=str(exc), kind="connect")
+    except OSError as exc:
+        # PHASE rule (D47): only a PRE-connect socket error is the retryable failover class —
+        # unreachable / refused / timeout / DNS (gaierror) / NoValidConnectionsError all subclass
+        # OSError. A POST-connect OSError (a `socket.timeout` during the exec/read phase of a
+        # slow-but-connected command) must NOT re-execute elsewhere → classify it `ssh`, not `connect`.
+        return SshResult(ok=False, error=str(exc), kind="connect" if not connected else "ssh")
     finally:
         client.close()

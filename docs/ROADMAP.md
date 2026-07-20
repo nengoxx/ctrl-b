@@ -15,8 +15,10 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
 > **Shipped since drafting** (carry inline ✅ markers below; listed here so the doc isn't mistaken
 > for a pure futures list): **A1** privilege levels (as the `decide()` gate + AgentDef privilege) ·
 > **A2** `question` kind · **C1** streaming `auto|on|off` (D17) · **D1** Tailscale Serve HTTPS ·
-> **D2** access panel/QR core · the **theme engine** (D28–D34; vapor/minimal/cosmos). Still future:
-> the rest — notably **ROADMAP D3** multi-homed addressing, A3 automations, B-series memory backends.
+> **D2** access panel/QR core · the **theme engine** (D28–D34; vapor/minimal/cosmos) · **ROADMAP D3
+> Slice 1** multi-homed addressing (backend, D47). Still future: the rest — notably **ROADMAP D3
+> Slices 2–3** (frontend vantage-aware links + Conf editor + VPN discovery), A3 automations,
+> B-series memory backends.
 
 ---
 

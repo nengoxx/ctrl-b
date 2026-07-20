@@ -35,12 +35,14 @@ log = logging.getLogger(__name__)
 #: do NOT add a parallel config map now.
 SSH_ACTION_TIMEOUT_S = 30.0
 
-#: Per-candidate SSH connect/attempt deadline for the D47 failover loop — distinct from and NESTED
-#: inside the 30 s whole-call `SSH_ACTION_TIMEOUT_S` backstop. Kept SHORT so a two-candidate failover
-#: (LAN then VPN, or vice-versa) still fits: 2 × 6 s attempts + per-attempt getaddrinfo margin stays
-#: well under 30 s. 6 s is generous for a TCP connect on both the LAN and the overlay (each measured
-#: ~0–1 ms, ROADMAP D3) yet ≤ paramiko's own 10 s default. Passed as `run_command`'s `timeout`, so it
-#: also caps the (near-instant) fleet-control command's channel reads — acceptable for these commands.
+#: Per-candidate SSH CONNECT-phase deadline for the D47 failover loop — distinct from and NESTED
+#: inside the 30 s whole-call `SSH_ACTION_TIMEOUT_S` backstop. Passed as `run_command`'s
+#: `connect_timeout`, so it bounds ONLY the TCP connect, leaving the exec/channel-read phase on
+#: `run_command`'s own 10 s `timeout` (a slow-but-connected command must not be cut off or re-run).
+#: Kept SHORT so failover stays snappy: 6 s is generous for a TCP connect on both the LAN and the
+#: overlay (each measured ~0–1 ms, ROADMAP D3) yet ≤ paramiko's 10 s default. Worst real case fits
+#: the 30 s backstop: 6 s failed connect + 6 s connect + 10 s exec ≈ 22 s (a post-connect failure
+#: never triggers a second candidate, so at most one exec phase runs).
 SSH_CONNECT_TIMEOUT_S = 6.0
 
 #: A bare `sudo` not already in stdin mode (`-S`), and not part of a longer word. Rewritten so an
@@ -86,11 +88,13 @@ async def run_ssh_failover(host: Host, run: Callable[[str, float], SshResult]) -
 
     Iterates `host_addresses(host, host.ssh_prefer_vpn)` (the single LAN>VPN source of truth),
     invoking `run(address, SSH_CONNECT_TIMEOUT_S)` per candidate on a worker thread (SYS-16: never
-    block the event loop with paramiko). Advances to the next address ONLY on `kind == "connect"`
-    (the timeout/refused/DNS failover class) — an `ok`/`auth`/`ssh` result returns immediately
-    (connected + wrong password is a real error, not a retry). The last candidate's result returns
-    as-is, whatever it is. The whole loop runs INSIDE the 30 s `SSH_ACTION_TIMEOUT_S` action backstop,
-    so the per-candidate timeout is deliberately short enough for two attempts to fit.
+    block the event loop with paramiko) — the callable's second arg is the CONNECT-phase timeout it
+    forwards as `run_command`'s `connect_timeout`. Advances to the next address ONLY on
+    `kind == "connect"` (a PRE-connect socket error — the timeout/refused/DNS failover class); an
+    `ok`/`auth`/`ssh` result returns immediately (connected + wrong password, or a post-connect read
+    failure, is a real error the command may already have run — never a retry). The last candidate's
+    result returns as-is, whatever it is. The whole loop runs INSIDE the 30 s `SSH_ACTION_TIMEOUT_S`
+    action backstop, so the per-candidate connect timeout is deliberately short enough to fit.
 
     This is the ONE failover implementation — the three SSH call sites (service control here, plus
     shutdown/reboot) route through it, so address resolution + failover semantics are identical
@@ -146,13 +150,13 @@ async def run_service_command(
         run_cmd, pipe_pw = _prepare_sudo(command)
     res = await run_ssh_failover(
         host,
-        lambda address, timeout: ssh.run_command(
+        lambda address, connect_timeout: ssh.run_command(
             host=address,
             port=host.ssh_port,
             username=username,
             password=secret,
             command=run_cmd,
-            timeout=timeout,
+            connect_timeout=connect_timeout,  # exec/read keeps run_command's own 10s timeout
             stdin_data=secret if pipe_pw else None,
         ),
     )
