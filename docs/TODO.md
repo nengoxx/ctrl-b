@@ -962,7 +962,15 @@ retroactively.** The cross-slice contract (ACA §5) governs which slice may touc
       (queue-then-inject); the 409 stays for plan/apply/compact collisions.
 - [ ] **Slice 6 — compaction v2** (A3, absorbs ACA-5 riders) · M–L — design review first.
 - [ ] **Slice 7 — model routing & retry visibility** (A4, A6, A7) · M — design review first (new D-entry).
-- [ ] **Slice 8 — approvals evolution** (A5) · M — aligns with ROADMAP privilege levels (D16/A1).
+- [x] **Slice 8 — approvals evolution** (A5) · M — aligns with ROADMAP privilege levels (D16/A1).
+      ✅ BUILT 2026-07-20 (design LOCKED same day = **D44**; brief = [`SLICE8_PLAN.md`](./SLICE8_PLAN.md);
+      as-built record = ACA §5 Slice 8). 3 waves: `08ef3c1` policy core (`ApprovalRule` +
+      `ToolOverride.approvals` · `canonical_str`/`glob_escape`/`approval_match` · `decide(approved=…)`
+      with `spec.confirm` split into its own un-downgradable rung · the `[auto-allowed: …]` summary
+      marker · R1 `run_shell` pinned `confirm=True`) · `919680b` the server-side `execute_always` grant
+      path (`runtime.grant_approval` + the shared `settings_write_lock`/`apply_settings_patch`, re-homed
+      from `api/settings.py`; `always_eligible`) · `e080731` FE (the **always** bubble action + the
+      `ApprovalsEditor` in `ToolCatalog` through the one `useSaveToolOverrides` write).
 
 ---
 

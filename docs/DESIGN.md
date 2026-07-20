@@ -217,20 +217,64 @@ is one registration.
 class Decision(StrEnum): ALLOW="allow"; CONFIRM="confirm"; DENY="deny"
 
 def decide(spec: ToolSpec, privilege: Privilege, *, interactive: bool,
-           run_shell_allowed: bool) -> Decision:
+           run_shell_allowed: bool, approved: bool = False) -> Decision:   # `approved` = D44
     if spec.name == "run_shell" and not run_shell_allowed and privilege != Privilege.FULL:
         return Decision.DENY
     if privilege == Privilege.READONLY and spec.category in ("action",) and spec.risk != Risk.LOW:
         return Decision.DENY
-    if spec.confirm or spec.risk == Risk.HIGH:
-        return Decision.CONFIRM if privilege != Privilege.FULL else Decision.ALLOW
+    if spec.confirm:                                       # designer forced-confirm — `approved` ignored
+        return Decision.ALLOW if privilege == Privilege.FULL else Decision.CONFIRM
+    if spec.risk == Risk.HIGH:
+        return Decision.ALLOW if privilege == Privilege.FULL or approved else Decision.CONFIRM
     if spec.risk == Risk.MED:
-        return Decision.ALLOW if privilege in (Privilege.AUTO_LOW, Privilege.FULL) else Decision.CONFIRM
+        return Decision.ALLOW if privilege in (Privilege.AUTO_LOW, Privilege.FULL) or approved else Decision.CONFIRM
     return Decision.ALLOW   # low risk
 ```
 
 Headless (`interactive=False`): `CONFIRM` becomes **notify-and-park** (F1) or the automation's
 fallback (skip / default), never an interactive prompt.
+
+> **Persisted approvals (Slice 8, D44).** `decide()` owns the WHOLE ladder — the caller computes a
+> match, never a verdict (the `run_shell_allowed` precedent). Order: **policy DENY > `spec.confirm`
+> (un-downgradable) > `approved` > the risk decision**, so an approval can only turn a *risk-derived*
+> CONFIRM into ALLOW.
+>
+> The rest of the policy is pure and lives in the same module: `canonical_str(value)` (the one
+> match form — `str` as-is · other scalars JSON-encoded · `None` → `"null"` · list/dict → `None`,
+> unmatchable) · `glob_escape(s)` · `exact_arg_pins(args)` (the args-EXACT pin map: every top-level
+> field → `glob_escape(canonical_str(v))`, or `None` if any value is non-scalar — the ONE builder
+> shared by the grant write and the eligibility flag) · `approval_match(rules, args) -> ApprovalRule
+> | None` (OR across rules, AND within one, `fnmatchcase`; unlisted fields unconstrained by design =
+> the Conf widening semantics; unknown field / non-scalar → the rule is inert, fail closed).
+>
+> Storage is the third dimension on the existing unified per-tool object:
+> `ToolOverride.approvals: list[ApprovalRule] | None` (`ApprovalRule{args: dict[str,str] | None}`,
+> `extra="forbid"`, pattern values str-coerced). Approvals are **settings state, never a spec
+> overlay** — `runtime.apply_tool_overrides` doesn't touch them.
+>
+> **In `ActionService.invoke`:** after arg validation, consult `self._deps.settings.tool_overrides`
+> live — `rule = approval_match(override.approvals, inp.model_dump(mode="json"))`, computed **only**
+> when the tool has rules AND `not spec.confirm` (skip the matcher when it can't apply) — then pass
+> `approved=rule is not None` into `decide()`. On a matched run, the mandatory audit marker
+> `" [auto-allowed: …]"` is appended to `result.summary` **before** `_record`, so the one Event per
+> action carries it (no new event kind, no migration). Because settings is the shared object mutated
+> in place by `apply_settings_inplace`, a revoke wins from the very next invoke — no cache, no TOCTOU.
+> `ActionService.approval_eligible(name, raw_args)` answers whether a bubble grant here would be both
+> *expressible* (`exact_arg_pins` non-None) and *ever able to fire* (`not spec.confirm`) — it drives
+> `always_eligible` / `alwaysEligible` on the `tool.permission` event so the FE hides a dead affordance.
+>
+> **The grant path is server-side.** `ResumeRequest.decision` gains **`execute_always`**: a
+> `resume`-local branch (invisible to `_drive`) calls `runtime.grant_approval(app, tool, args)` BEFORE
+> running the call, then proceeds byte-identically to `execute`. `grant_approval` re-validates the
+> suspended call's args, builds the rule via `exact_arg_pins`, and appends it under the shared
+> **`runtime.settings_write_lock`** through the shared **`runtime.apply_settings_patch`** (the
+> merge→validate→persist→`reconfigure` core, **re-homed from `api/settings.py` — the PUT now shares
+> both**, so there is exactly one lock and one write sequence). It is idempotent (an identical rule is
+> a no-op) and **never blocks the run**: inexpressible args or a persist failure return a short
+> breadcrumb note that `_run_calls` appends to that call's summary (`resume_notes`), and the call
+> still executes as a human-confirmed run.
+
+
 
 ---
 
@@ -841,7 +885,7 @@ event: message.start      data: {messageId, role, agent}       # agent = resolve
 event: reasoning.delta    data: {messageId, delta}             # thinking-model CoT (rendered dimmed)
 event: text.delta         data: {messageId, delta}
 event: part.added         data: {messageId, part}              # a tool_call part → command bubble
-event: tool.permission    data: {callId, tool, args, risk, token, prompt}  # confirm bubble; single-use token
+event: tool.permission    data: {callId, tool, args, risk, token, prompt, alwaysEligible}  # confirm bubble; single-use token; alwaysEligible gates the "always" grant (D44)
 event: tool.question      data: {callId, tool, question, args} # A2 `question` builtin → answer bubble
 event: tool.result        data: {callId, result}               # per-call; under the parallel prefix arrives in COMPLETION order (persistence keeps model order)
 event: steer.applied      data: {entryId, messageId, kind, text?}  # a mid-turn steer drained at the loop top (D41); text = message kind only, folded into turn.sync as steers[]
@@ -906,6 +950,17 @@ execute → `ToolResult` + `Event` (→ activity SSE) → row updates.
 (§12). If the model calls `shutdown_host`: `tool.permission` event → bubble → user confirms via
 `resume` → `tool.result` → model summarizes → `message.end`/`done`. If tokens spike mid-thread →
 `compaction` first. If the model needs info → `tool.question` → user answers → resume.
+
+**"Always allow" grant (D44, Slice 8):** the `tool.permission` frame carries `alwaysEligible`
+(`ActionService.approval_eligible`) → the bubble renders an **always** action beside allow/deny →
+`POST /api/agent/resume {decision:"execute_always"}` → the resume branch calls
+`runtime.grant_approval` (validate args → `exact_arg_pins` → append to
+`tool_overrides[tool].approvals` under `settings_write_lock` via `apply_settings_patch` → persist +
+`reconfigure`) → the call then runs exactly as `execute`. The rule is live *before* that execute, so
+`invoke` re-consults it and the run's own `Event.summary` already carries `[auto-allowed: …]`
+(benign — the run is both human-confirmed and now approval-covered). Every later identical call skips
+the bubble. Management: `GET /api/actions` carries each tool's live `approvals` list, and Conf → Tools
+(`ToolCatalog`) lists / revokes / widens them through the one `useSaveToolOverrides` write.
 
 **Voice:** push-to-talk → `MediaRecorder` blob → `POST /voice/stt` → text fills composer → normal
 chat turn → if auto-TTS, each finalized assistant text → `POST /voice/tts` → audio playback.

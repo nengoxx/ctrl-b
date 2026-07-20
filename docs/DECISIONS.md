@@ -2650,3 +2650,19 @@ five owner rulings → 2-lens adversarial review (design + security, both GO-WIT
 
 **Verify** = SLICE8_PLAN §9 (`test_approvals_slice8.py` ladder/matching/grant-path/liveness/
 audit suites; vitest affordance/editor; SECURITY_MODEL + DESIGN §3/§14 + config.example rows).
+
+*(AMENDED as-built 2026-07-20 — BUILT in three waves, `08ef3c1` policy core / `919680b`
+server-side grant path / `e080731` FE + editor:* ① the §6 marker also stamps the **granting run
+itself** — `grant_approval` lands the rule before the resume executes and `invoke` re-consults live
+settings, so that run reads as approval-covered; benign (it is also human-confirmed) and mutually
+exclusive with a grant-failure note. ② `always_eligible` gained a **second gate in W3**: `not
+spec.confirm`. Expressibility alone still offered "always" on the forced-confirm tools
+(shutdown/reboot/`run_shell`), persisting a rule the gate never reads; the ToolCatalog approvals
+editor is hidden for the same tools — so a hand-edited rule on one of them is inert AND not
+UI-revocable (recorded, SECURITY_MODEL §2.5). ③ `exact_arg_pins` was factored as the ONE pin builder
+shared by the eligibility flag and the grant write. ④ `GET /api/actions` DTOs carry each tool's live
+`approvals` — the editor's read source; approvals are settings state, so they're read beside the live
+settings, never through `spec_dto`. ⑤ The write-path re-homing is real and shared:
+`settings_write_lock` + the new `apply_settings_patch` (merge→validate→persist→`reconfigure`) moved
+into `runtime.py`, and `PUT /api/settings` was refactored onto both — one lock, one write sequence,
+no parallel path. Full as-built narrative: AGENT_CHAT_AUDIT §5 Slice 8; banner: SLICE8_PLAN.)

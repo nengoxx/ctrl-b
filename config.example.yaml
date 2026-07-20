@@ -152,9 +152,32 @@ agent:
 # disabled; absent = the tool's built-in default). Applied live (no restart); edit in Conf → Tools.
 # Names are the registry names (`ping_host`, `mcp__web-tools__search_web`, `api__<server>__<opId>`, ...).
 # (The legacy flat `tool_descriptions:` map is still folded in on load, but this is the shape to write.)
+# `approvals` (D44) is the third dimension on the SAME object: standing "always allow" grants that
+# downgrade a *risk-derived* confirm to allow. Allow-only — a rule can never deny, and it can never
+# bypass a designer forced-confirm (shutdown_host / reboot_host / run_shell stay un-approvable).
+# Normally you don't hand-write these: tap "always" on a confirm bubble (the server writes an
+# args-exact rule) and manage/revoke them in Conf → Tools. The YAML shape, for reference:
+#   - a rule matches when EVERY field it lists matches (glob, `fnmatch`-style); rules are OR'd.
+#   - **patterns are STRINGS** — quote numbers/booleans (`port: "22"`, `force: "true"`), they're
+#     compared against the arg's canonical form (`5`, `1.5`, `true`, `null` for an omitted optional).
+#   - a field the rule OMITS is **unconstrained** — that's the deliberate widening semantics.
+#     `approvals: [{}]` (or `args: null`) is a whole-action grant: any args, always.
+#   - deleting the entry (or the whole list) revokes; revocation is live from the next call.
 # tool_overrides:
 #   ping_host: { description: "Check whether a fleet host is reachable right now (ICMP). Use before assuming a host is up." }
 #   web_search: { description: "Search the public internet. Use ONLY for information that isn't about the local fleet.", agent_mode: enabled }
+#   terminal_exec:
+#     approvals:
+#       # 1) args-EXACT — what tapping "always" on a bubble writes: every top-level field pinned
+#       #    (an omitted optional is pinned as the literal "null", so this does NOT match a call
+#       #    that passes `cwd`).
+#       - args: { command: "docker ps", cwd: "null" }
+#       # 2) widened with a glob — hand-written / Conf-panel territory: any `systemctl status …`,
+#       #    in any cwd (`cwd` is unlisted, therefore unconstrained).
+#       - args: { command: "systemctl status *" }
+#   restart_service:
+#     # 3) a whole-action grant — this MED-risk action never asks again, whatever the args.
+#     approvals: [{}]
 
 # Embeddings backend (Phase 4f, D9) — one OpenAI-compatible `/v1/embeddings` endpoint, local
 # (llama.cpp) or cloud (e.g. OpenRouter `qwen/qwen3-embedding-4b`, which does serve embeddings).

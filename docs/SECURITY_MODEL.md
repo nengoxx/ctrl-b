@@ -76,8 +76,9 @@ pure decision function, **`core/permissions.py` `decide(spec, privilege)`** → 
 |---|---|
 | `run_shell` and privilege ≠ `FULL` (and not explicitly allowed) | **DENY** |
 | privilege `READONLY` and it's an `action` with risk ≠ `LOW` | **DENY** |
-| `spec.confirm` **or** risk `HIGH` | `FULL` → ALLOW, else **CONFIRM** |
-| risk `MED` | `AUTO_LOW`/`FULL` → ALLOW, else **CONFIRM** |
+| `spec.confirm` (designer forced-confirm) | `FULL` → ALLOW, else **CONFIRM** — *un-downgradable; a persisted approval is ignored here (§2.5)* |
+| risk `HIGH` | `FULL` **or an approval matched** → ALLOW, else **CONFIRM** |
+| risk `MED` | `AUTO_LOW`/`FULL` **or an approval matched** → ALLOW, else **CONFIRM** |
 | risk `LOW` | **ALLOW** |
 
 - **Privilege levels** (`domain/enums.py Privilege`): `READONLY` · `CONFIRM` · `AUTO_LOW` · `FULL`. The UI
@@ -130,6 +131,63 @@ credential maps (`env`/`headers`) mask only entries whose own key looks secret (
 introspects the whole `Settings` model and fails if a future secret-looking field is left unclassified,
 so the classification can't silently rot. (Tests: `backend/tests/test_secret_hygiene.py`.)
 
+### 2.5 Persisted approvals — "always allow" (D44, ACA Slice 8)
+
+The owner can make a confirm-gated call stop asking. An **approval** is an allow-only rule stored on the
+tool's own override (`tool_overrides.<tool>.approvals`, a list of `ApprovalRule{args}`); when a call's args
+match one, `decide()` is called with `approved=True` and a **risk-derived CONFIRM becomes ALLOW — nothing
+else**. Full record: **D44** + [`SLICE8_PLAN.md`](./SLICE8_PLAN.md).
+
+**The amended ladder** (XACML *ordered-deny-overrides*; an approval discharges a *discretionary*
+obligation, never a mandatory one):
+
+**policy DENY** (READONLY denials, `run_shell` gating — these branches run first in `decide()`, so an
+approval can never resurrect a denied action) **> designer forced-confirm** (`ToolSpec.confirm=True` —
+`approved` is ignored on that rung) **> persisted approval** (risk CONFIRM→ALLOW) **> the normal risk
+decision**.
+
+- **Allow-only by construction.** There are **no deny matchers** — a rule shape that could force a CONFIRM
+  or a DENY is deliberately excluded (the sudoers `!`-in-a-NOPASSWD-list anti-pattern, where a
+  later-matching negation is trivially defeated by ordering). Denial is policy-rung material, not
+  approval-rung material. Because the layer only ever grants, first-vs-last-match ordering is
+  meaningless: rules are OR'd (the OPA incremental-allow idiom).
+- **Matching** is per-field `fnmatchcase` globs over the **validated** args (`canonical_str`: `str` as-is ·
+  other scalars JSON-encoded · `None` → `"null"` · list/dict → unmatchable). A rule ANDs its listed
+  fields; **fields it does not list are unconstrained — by design**, that is the Tools-tab *widening*
+  semantics. An unknown field or a non-scalar value makes the rule **inert (fail closed)**, never a
+  wildcard.
+- **The bubble grant is args-EXACT.** Tapping "always" on a confirm bubble sends the `execute_always`
+  resume verb; the **server** builds the rule from the suspended call's validated args, pinning **every**
+  top-level field (omitted optionals pinned as `"null"`, values glob-escaped) — so it matches that one
+  arg tuple and nothing else. Widening (globs, dropping fields) is a deliberate act in **Conf → Tools**.
+  The frontend never serializes or canonicalizes a rule.
+- **`run_shell` is un-approvable** — pinned `confirm=True` (D44 R1; behavior-neutral, since `decide()`
+  already treated HIGH ≡ confirm below FULL), as are `shutdown_host`/`reboot_host`, which were already
+  forced-confirm. **Owner-configured-risk tools deliberately STAY approvable**: `terminal_exec` /
+  `terminal_write_file` (risk from `open_terminal.exec_risk`/`write_risk`) and MCP/OpenAPI server `risk`.
+  Their HIGH is the owner's own setting, and pinning them would break the deliberate `exec_risk: low`
+  escape — so the stance is explicit rather than accidental.
+- **Actor-agnostic — the interactive→headless crossing is DELIBERATE.** One grant covers USER, AGENT and
+  headless-subagent callers. A rule born from a chat bubble therefore also auto-allows the agent (and a
+  headless subagent) re-running that exact call, with no second prompt. That is owner ruling ④, not an
+  oversight; a headless call that does *not* match still fails closed (CONFIRM → DENIED, unchanged).
+  Its **sole visibility is the audit marker**: every approval-fired run appends
+  `[auto-allowed: <field=pattern, …>]` to the executed action's `Event.summary` (the `Event` model has a
+  fixed column set — no new kind, no migration). Rule *creation* is not evented: it is a visible,
+  diffable config change.
+- **No expiry in v1.** A standing grant lasts until revoked — no TTL, no decay-on-disuse, no global
+  toggle (an absent list IS off). **Revoke** = the approvals editor in **Conf → Tools** (one tap per
+  rule, saved through the single `tool_overrides` write path) or an edit to `config.yaml`. Revocation is
+  live: the gate re-reads the shared settings object per invocation, so the very next call re-asks.
+- **As-built caveat (W3):** the Tools-tab approvals editor is hidden for `confirm=True` tools (a rule
+  there could never fire), and the catalog only lists the agent-tool set. A rule hand-written into
+  `config.yaml` for such a tool is therefore **not revocable in the UI** — harmless, because the gate
+  never consults approvals on a forced-confirm tool (the rule is inert), but recorded so it isn't
+  mistaken for a live grant.
+- **Accepted:** the Conf-panel save path shares the existing settings **last-write-wins** draft contract
+  (two devices editing settings concurrently); the bubble grant path does **not** — it is server-side and
+  atomic under the one settings write lock.
+
 ---
 
 ## 3. Residual & accepted risks + known gaps
@@ -149,6 +207,8 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 | Prod backend on `0.0.0.0:5433` (LAN + tailnet, plain HTTP) | **accepted, owner waiver 2026-07-10** | §2.1; trusted home LAN; strictly narrower than the dev path above; Serve HTTPS remains for mic/secure-context. |
 | MCP / OpenAPI tool providers are external surfaces | **accepted, annotated** | Risk-annotated per tool; never grant blanket `ALLOW`. |
 | **`!exec` steer gate is enforced at DRAIN, not only at enqueue (D41)** | **accepted, fail-closed** | A `!<cmd>` steered into a busy turn checks `shell.user_exec_enabled` at enqueue (UX 403) **and again, live, at drain** — the drain is the only place `run_shell`@FULL actually runs, so disabling the shell mid-queue **drops** the queued command instead of running it. **Commit-before-run:** a harvested/crashed queue **loses** the command rather than double-running it (for a shell command, lost-on-crash beats double-run). |
+| **A persisted approval also auto-allows AGENT + headless re-runs of that exact call (D44)** | **accepted, deliberate** | Owner ruling ④ — approvals are actor-agnostic (§2.5). A grant given at a chat bubble silences the same call for the agent and headless subagents. Bounded by args-exact pinning, allow-only matching, the un-approvable forced-confirm rung, and the mandatory `[auto-allowed: …]` summary marker; revocable any time in Conf → Tools. Fail-closed on a miss (headless CONFIRM → DENIED, unchanged). |
+| **Approvals never expire in v1 (D44)** | **accepted** | No TTL / decay-on-disuse (that needs a queryable fire-log = an events-schema migration; reserved). A grant stands until revoked in Conf → Tools or `config.yaml`; revocation is live from the next invoke. |
 | **The steer queue is in-memory (D41)** | **accepted** | A backend restart loses queued-but-undrained steers — no durability is promised (mirrors the in-memory confirm-token stance). Single-user, the queue is seconds-lived; accepted. |
 
 ---
@@ -196,11 +256,14 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
 - [ ] `shell.user_exec_enabled` / `shell.agent_exec_enabled` set to what you actually intend (default off).
 - [ ] No secrets tracked in git: `config.yaml`, `.env`, `clients/`, `*_prompt.*` all gitignored.
 - [ ] MCP / OpenAPI tools reviewed + risk-annotated; no blanket `ALLOW`.
+- [ ] **`tool_overrides.<tool>.approvals` reviewed** (§2.5) — every standing "always allow" rule is one you
+      meant to grant; no unintended widening (a rule that omits fields, or globs a destructive arg); remember
+      each one also silences that call for the agent and headless subagents.
 - [ ] `config.yaml` present and owner-only readable on the host (`chmod 600`).
 
 ---
 
 ## References
-- Enforced rules for agents: [`AGENTS.md`](../AGENTS.md) §6 · Deploy/exposure: [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) · DECISIONS D1 (Tailscale Serve HTTPS), D3 (hybrid execution model), D32 (topology).
-- Code anchors: `config.py` (`ServerCfg`, `ShellCfg`, `secret_values`/`mask_secrets`) · `core/permissions.py` (`decide`) · `core/tool.py` (registry, `ToolSpec`) · `services/action_service.py` (confirm-tokens) · `core/redact.py` · `adapters/ssh.py`.
+- Enforced rules for agents: [`AGENTS.md`](../AGENTS.md) §6 · Deploy/exposure: [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) · DECISIONS D1 (Tailscale Serve HTTPS), D3 (hybrid execution model), D32 (topology), D44 (persisted approvals — §2.5).
+- Code anchors: `config.py` (`ServerCfg`, `ShellCfg`, `ApprovalRule`/`ToolOverride`, `secret_values`/`mask_secrets`) · `core/permissions.py` (`decide`, `canonical_str`/`glob_escape`/`exact_arg_pins`/`approval_match`) · `core/tool.py` (registry, `ToolSpec`) · `services/action_service.py` (confirm-tokens, the gate consult + the `[auto-allowed: …]` marker) · `runtime.py` (`grant_approval`, `settings_write_lock`) · `core/redact.py` · `adapters/ssh.py`.
 - Hardening that closes the flagged gaps: [`PRE_DEPLOY.md`](./PRE_DEPLOY.md) steps 3 (secret-hygiene tests) + 4b (stale confirm-token recovery).

@@ -343,6 +343,40 @@
 > Fable 5 = orchestrator + feature reviewer alongside Codex (`gpt-5.6-sol` high); ALL specified
 > implementation / mechanical work / research = Opus 4.8 subagents.**
 >
+> **▶ SESSION 2026-07-20 (cont.): ACA SLICE 8 (persisted approvals / "always allow", D44) ✅ BUILT
+> end-to-end across W1–W4 — 5 LOCAL COMMITS, NOT PUSHED (`b2a2cb4` owner rig art + `2279d26` D44 LOCK
+> + `08ef3c1` W1 + `919680b` W2 + `e080731` W3, plus this doc close-out).** The pipeline: ACA §5 Slice
+> 8 sketch + §6 Q7/Q8 → 1 code-truth pass + **3 sourced field passes** (CLI tools · agent
+> frameworks/SDKs — the Claude Agent SDK's un-bypassable `requiresUserInteraction` class, goose's
+> `permission.yaml`, opencode's Once/Always · mature policy systems — XACML combining algorithms, OPA,
+> polkit, sudoers NOPASSWD footguns, browser/mobile grant decay) → **five owner rulings** → **2-lens
+> adversarial review** (design + security, both GO-WITH-FIXES; 3 HIGH / 6 MED / 6 LOW all resolved into
+> the plan) → **D44 LOCKED** (`2279d26`; brief = `docs/SLICE8_PLAN.md`) → 3 Opus build waves + this doc
+> wave. **What you now GET, plainly: tap "always" on a confirm bubble and that EXACT command never asks
+> again** — same tool, same arguments, down to an omitted optional (a `docker ps` grant does not cover
+> `docker ps` in a different directory). **Manage or revoke them in Conf → Tools** (each tool card lists
+> its rules; one tap to revoke, or add a widened rule with a glob). **`shutdown`, `reboot` and
+> `run_shell` ALWAYS ask** — the designer's forced-confirm can't be bought off, and those bubbles show
+> no "always" button at all. Every auto-allowed run is stamped `[auto-allowed: …]` in its activity
+> summary, and a grant is actor-agnostic **by design** — it also silences that exact call for the agent
+> and headless subagents (owner ruling ④, recorded as an accepted risk in SECURITY_MODEL §2.5). No
+> expiry: a grant stands until you revoke it. **As-built amendments** (all in D44 AMENDED +
+> SLICE8_PLAN's banner): the `[auto-allowed: …]` marker DOES stamp the granting run itself (benign —
+> the rule lands before that run executes) · the eligibility check gained a `not spec.confirm` gate in
+> W3 and the Tools editor is hidden for pinned tools (a hand-edited rule there is inert and not
+> UI-revocable) · `exact_arg_pins` is the one shared pin builder · `/api/actions` carries `approvals`
+> as the editor's read source · `settings_write_lock` + `apply_settings_patch` were re-homed into
+> `runtime.py` and `PUT /api/settings` refactored onto them (one lock, one write sequence).
+> **State:** dev units still RUNNING (:5434 + Vite :5173); **prod is still v1.1.1**.
+> **NEXT SESSION, in order:** ① /model check (fable-5 HIGH) ② **push OK** → `git push` (5 + doc commits;
+> pre-push runs the full gate) ③ live-verify pokes, all still outstanding — the ACA §5 LIVE-VERIFY
+> lists for Slices 5, 6, 7 **and 8** (Slice 8: tap **always** on a real `terminal_exec` read → re-run
+> never re-asks + the row shows `[auto-allowed: …]`; revoke in Conf → Tools → the next call re-asks; a
+> `shutdown_host` bubble shows NO always button; ⚠ dev drives the REAL fleet) ④ release via
+> `deploy/linux/README.md` §Release when the owner wants Slices 4–8 live on :5433 ⑤ next = the owner's
+> pick (ROADMAP D3 Slice 1 · 6c-1/6c-2 flags · vapor ladder · the parked Composer Surface) — **the ACA
+> plan's built slices now run 0–8, i.e. the whole §5 execution plan.**
+>
 > *(The block below is the previous session's close-out checklist, kept for provenance — steps 1–3
 > are done as recorded above.)*
 > **▶ SESSION CLOSED 2026-07-17 early AM (owner to sleep) — NEXT SESSION, in order:**

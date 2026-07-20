@@ -511,7 +511,7 @@ intent-skill narrows the toolset. Adoption: measure and budget the manifest (ACA
 | **A2** | Annotation-driven parallel tool execution (`read_only`/`idempotent` concurrent, mutating serial, suspend-on-first-CONFIRM preserved) + per-call result streaming (Claude Code rule; Codex/Goose/pi mechanics) | **ADOPT** | Slice 4 |
 | **A3** | Compaction v2 package: reserve-headroom trigger vs model window · tool-result-clearing tier before summarizing · keep-recent-**tokens** floor · structured never-prune template · anti-thrash guard · `/compact &lt;instructions&gt;` (composite: all six agents, §3.7) | **ADOPT** | Slice 6 |
 | **A4** | Lead/worker model routing: cloud model for first N planning turns → local worker → fallback to lead on failure threshold (Goose) | **ADOPT (design-review first)** — fits `AgentDef.ModelRef`+failover seams; new D-entry | Slice 7 |
-| **A5** | Persisted "always allow" approvals + pattern rules on the confirm gate (opencode Once/Always, Gemini PolicyEngine, Claude Code allow-rules) | **ADAPT** into the ROADMAP privilege-levels seam (D16/A1) — a new `approvals` store, gate-checked before `decide()` | Slice 8 |
+| **A5** | Persisted "always allow" approvals + pattern rules on the confirm gate (opencode Once/Always, Gemini PolicyEngine, Claude Code allow-rules) | **ADAPT** into the ROADMAP privilege-levels seam (D16/A1) — **as built (D44): `ToolOverride.approvals` on the unified per-tool object (no new store), per-field arg globs, allow-only, resolved INSIDE `decide()` via `approved:bool`** | Slice 8 ✅ built 2026-07-20 |
 | **A6** | Wire-visible retries: typed `retry`/failover events with attempt + category (Claude Code `api_retry`); `done` reason subtypes (already have ⭐) | **ADOPT (small)** | Slice 7 |
 | **A7** | Retry classifier/policy split + provider-portable context transforms (thinking-block normalization) for clean mid-thread local↔cloud handoff (pi) | **ADAPT** — classifier explicit in `core/failover` policy; transforms only when a reasoning local model lands | Slice 7 (classifier) / backlog (transforms) |
 | **A8** | Context-economy budget: measure tools+head token cost per agent (log it), keep manifests lean, skills-as-docs bias (pi; Claude Code deferred schemas) | **ADOPT (measure first)** | Slice 1 rider (measurement) → backlog (deferred schemas) |
@@ -1240,6 +1240,64 @@ owns *what next*).
   endpoint churn.
 
 ### Slice 8 — Approvals evolution (A5) · M — aligns with ROADMAP privilege levels (D16/A1)
+
+> **▶ DESIGN LOCKED 2026-07-20 = D44** (1 code-truth pass + 3 sourced field passes [CLI tools · agent
+> frameworks/SDKs · mature policy systems: XACML, OPA, polkit, sudoers, browser/mobile grants] + five
+> owner rulings + a 2-lens adversarial review [design GO-WITH-FIXES H1-H3/M1-M3/L1-L4 · security
+> GO-WITH-FIXES F1-F8, all resolved in]; full brief = `docs/SLICE8_PLAN.md`, frozen).
+> **The sketch below is superseded where it conflicts — headline D44 changes:** storage is
+> **`ToolOverride.approvals` on the unified per-tool object**, NOT a new `approvals` table (the
+> CLAUDE.md extend-don't-migrate rule) · matching is **structured per-field globs on typed args**, OR
+> across rules — **not** a glob over the args JSON, and **not** opencode's last-match-wins (allow-only
+> dissolves ordering) · **allowlist-only**, no deny matchers (the sudoers `!` anti-pattern) · the
+> ladder gains a rung: **policy DENY > designer forced-confirm > persisted approval > the risk
+> decision**, implemented INSIDE `decide()` via `approved: bool` (not "between the DENY and CONFIRM
+> branches of `invoke`") · the bubble grant is a **server-side resume verb** (`execute_always`), not an
+> FE settings write. As-built record follows.
+>
+> **✅ BUILT 2026-07-20 — AS-BUILT RECORD (3 build commits + this close-out; ALL LOCAL, awaiting the
+> owner's push OK).** Three Opus waves: **W1 `08ef3c1`** (the policy core — `ApprovalRule`
+> [`extra="forbid"` + a str-coercing field validator so an unquoted YAML scalar can't brick
+> `Settings.model_validate`] · `ToolOverride.approvals` · the pure `canonical_str`/`glob_escape`/
+> `approval_match` in `core/permissions.py` · `decide(approved=…)` with the `spec.confirm` rung split
+> OUT of the old `confirm or HIGH` branch · the `invoke` consult, computed only when the tool has rules
+> AND `not spec.confirm` · the mandatory `[auto-allowed: …]` `Event.summary` marker · **R1**:
+> `run_shell` pinned `confirm=True`, verified behavior-neutral at every call site, no pins on
+> owner-configured-risk tools) · **W2 `919680b`** (the SERVER-SIDE grant path — `ResumeRequest.decision`
+> gains `execute_always`, a `resume`-local branch invisible to `_drive`; `runtime.grant_approval`
+> builds the args-EXACT rule via the new shared `exact_arg_pins` and appends it under the
+> **re-homed** `runtime.settings_write_lock` through the **new shared** `runtime.apply_settings_patch`
+> — `api/settings.py`'s PUT was refactored onto both, so there is exactly ONE lock and ONE
+> merge→validate→persist→`reconfigure` sequence; idempotent double-tap; the write NEVER blocks the run,
+> failures breadcrumb via `resume_notes` onto that call's summary; `approval_eligible` →
+> `alwaysEligible` on `tool.permission`) · **W3 `e080731`** (FE: the `always` bubble action on the
+> `.exec` allow-family hook, gated by `alwaysEligibleFor(callId)` [store-side, cleaned with the confirm
+> token, carried across `turn.sync` re-attach and the buffered-JSON path]; `resumeCall`'s third verb;
+> the **`ApprovalsEditor` inside `ToolCatalog`** — list/revoke/add through the ONE
+> `useSaveToolOverrides` write, full-replacement lists, the deliberate widening surface [globs +
+> field-omission allowed HERE]; `/api/actions` DTOs now carry the tool's live `approvals`).
+> **Fix found mid-build (W3):** `approval_eligible` originally gated on expressibility only, so a
+> forced-confirm tool (shutdown/reboot/run_shell) still offered "always" and would have persisted an
+> **inert** rule — the confirm gate was added to the eligibility check, and the Tools-tab editor is
+> hidden for those tools for the same reason.
+> **As-built amendments vs the locked plan:** ① the marker DOES stamp the granting run itself (the rule
+> lands before the resume executes and `invoke` re-consults live settings) — benign and now documented,
+> and the marker + a failure note are mutually exclusive · ② the W3 `approval_eligible` confirm gate
+> above (plan §4 specified expressibility only) · ③ `exact_arg_pins` was factored as the ONE pin builder
+> shared by `always_eligible` and the grant write (the plan described the computation twice) · ④ the
+> `/api/actions` DTO carries `approvals` as the editor's read source (the plan didn't name a read path;
+> approvals are settings state, so they're read beside the live settings, not from `spec_dto`).
+> **Accepted residuals:** a rule hand-written for a `confirm=True` tool isn't revocable in the UI (inert
+> at the gate — SECURITY_MODEL §2.5) · the ConfTab draft/save LWW race (the existing settings contract;
+> the bubble path is atomic and doesn't share it) · renaming a tool's arg field silently voids rules
+> listing it (fail-closed re-ask) · an orphan confirm token after an `execute_always` race is swept by
+> TTL and grants nothing.
+> **LIVE-VERIFY items (per `testing-parked-wing-it`):** tap **always** on a real MED/HIGH bubble (e.g.
+> a `terminal_exec` read) → the same command re-run never re-asks, and its activity row shows
+> `[auto-allowed: …]` · the rule appears in Conf → Tools; revoke it → the very next call re-asks · a
+> `shutdown_host`/`run_shell` bubble shows NO always button · widen a rule with a glob in Conf and watch
+> a neighbouring command auto-run.
+
 Persisted per-action "always allow" (a small `approvals` table keyed by action name + optional
 args-pattern; consulted by the gate); pattern rules for arg-bearing actions (glob on the
 normalized args json, opencode-style last-match-wins); Conf UI panel + "don't ask again"
@@ -1272,7 +1330,7 @@ ROADMAP B1).
 | `DECISIONS.md` **D37 — Lead/worker model routing** | Slice 7 design review |
 | `DESIGN.md` §5.3/§6/§12 rewrite | Slice 0 (interim), Slice 3/5 (final) |
 | `TODO.md` new phase "Chat hardening & adoption (ACA)" | on plan approval |
-| `SECURITY_MODEL.md` rows for ACA-9 outcome + Slice 8 approvals | Slices 1/8 |
+| `SECURITY_MODEL.md` rows for ACA-9 outcome + Slice 8 approvals | Slices 1/8 — ✅ both landed (ACA-9 single-liveness row §2.3; approvals = §2.5 + two §3 rows + a §6 checklist item) |
 
 ---
 
@@ -1293,11 +1351,17 @@ ROADMAP B1).
    per-session freeze (stronger cache, staler memory)? Default recommendation: keep per-turn.
 6. **Timing vs emma deploy:** Slices 0–2 pre-deploy, 3+ post-deploy on emma — agreed?
 7. **Slice 8 priority:** approvals-persistence is pure UX (fewer confirm taps); schedule after 7,
-   or pull earlier?
+   or pull earlier? — **ANSWERED (owner): schedule after 7.** Built 2026-07-20 as the last ACA slice
+   (D44; as-built record on §5 Slice 8).
 8. **Forced-confirm bypass (Slice 8):** may a persisted "always allow" bypass
    `ToolSpec.confirm=True` (e.g. `shutdown`)? Recommendation in the slice: no — approvals only
    downgrade *risk-derived* confirms; the designer's forced-confirm stays un-bypassable. Confirm
-   or overrule.
+   or overrule. — **ANSWERED (owner, 2026-07-20, ruling ①): NO BYPASS — recommendation confirmed.**
+   The field is near-unanimous (Claude Agent SDK's un-bypassable `requiresUserInteraction` class);
+   the deliberate divergence is from polkit's local-overrides-vendor. `spec.confirm` became its own
+   rung in `decide()` above `approved`, and `run_shell` was pinned `confirm=True` (R1) to encode the
+   intent. Owner-*configured* risk (`exec_risk`/`write_risk`, MCP/OpenAPI `risk`) deliberately stays
+   approvable — pinning it would break the intended `exec_risk: low` escape.
 9. **Steering drain semantics (Slice 5, pre-answered — veto if wrong):** complete/suspend with a
    non-empty queue → queued messages auto-run as the next turn (FIFO); **cancel** → queue returns
    to the composer instead of auto-running. And `!exec` mid-turn becomes a steering submission

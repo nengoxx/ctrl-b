@@ -6,6 +6,25 @@
 > 2-lens adversarial review (design: GO-WITH-FIXES H1-H3/M1-M3/L1-L4 · security: GO-WITH-FIXES
 > F1-F8) → the unified fix-set below → LOCK. Condensed record = DECISIONS.md D44.
 
+> **✅ AS-BUILT 2026-07-20 — the plan below SHIPPED in three waves:** **W1 `08ef3c1`** (policy core:
+> `ApprovalRule`/`ToolOverride.approvals` · `canonical_str`/`glob_escape`/`approval_match` ·
+> `decide(approved=…)` · the `invoke` consult + the `[auto-allowed: …]` marker · R1 `run_shell` pin) ·
+> **W2 `919680b`** (the server-side `execute_always` grant path: `runtime.grant_approval` + the
+> re-homed `settings_write_lock` and the new shared `apply_settings_patch` — `api/settings.py`'s PUT
+> now shares both; `always_eligible`) · **W3 `e080731`** (FE: the `always` bubble action + the
+> `ApprovalsEditor` in `ToolCatalog`). **Amendments vs this locked plan:**
+> ① §6's marker also stamps the **granting run itself** — the rule lands before the resume executes
+> and `invoke` re-consults live settings; benign (the run is human-confirmed AND approval-covered) and
+> mutually exclusive with a grant-failure note. ② §4's `always_eligible` gained a **second gate in W3**:
+> `not spec.confirm` — expressibility alone still offered "always" on shutdown/reboot/`run_shell`,
+> which would persist an inert rule; the Tools-tab editor is hidden for those tools for the same
+> reason (a hand-edited rule there is inert and not UI-revocable — recorded in SECURITY_MODEL §2.5).
+> ③ `exact_arg_pins` was factored as the ONE pin builder shared by `always_eligible` and the grant
+> write (§4 described the computation twice). ④ `GET /api/actions` DTOs carry the tool's live
+> `approvals` as the editor's read source (§5 named the write path but no read path) — approvals are
+> settings state, so they're read beside the live settings, not from `spec_dto`.
+> Condensed record: **D44 AMENDED (as-built 2026-07-20)** · narrative: ACA §5 Slice 8.
+
 ## 1. Decision summary
 
 A persisted-approval layer on the ONE action gate: owner-authored **allow-only rules** keyed by
