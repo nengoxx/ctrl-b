@@ -72,7 +72,7 @@ async def shutdown_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolRes
     stdin_data = secret if host.os_type != OSType.WINDOWS else None
     res = await run_ssh_failover(  # ordered LAN>VPN candidates + connect-failover (D47)
         host,
-        lambda address, connect_timeout: ssh.run_command(
+        lambda address, connect_timeout, exec_cutoff_s: ssh.run_command(
             host=address,
             port=host.ssh_port,
             username=username,
@@ -80,6 +80,7 @@ async def shutdown_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolRes
             command=command,
             connect_timeout=connect_timeout,  # short per-candidate connect budget
             timeout=SSH_EXEC_TIMEOUT_S,  # exec/read phase (explicit — the loop's deadline gate uses it)
+            exec_cutoff_s=exec_cutoff_s,  # measured no-late-execution guarantee (verify-2)
             stdin_data=stdin_data,
         ),
     )

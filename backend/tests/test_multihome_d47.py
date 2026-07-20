@@ -61,8 +61,8 @@ def _run_failover(host: Host, results: dict[str, SshResult]) -> tuple[SshResult,
     and records the addresses actually attempted (order = failover order)."""
     tried: list[str] = []
 
-    def run(address: str, timeout: float) -> SshResult:
-        assert timeout == SSH_CONNECT_TIMEOUT_S  # the short per-candidate connect timeout is used
+    def run(address: str, connect_timeout: float, exec_cutoff_s: float) -> SshResult:
+        assert connect_timeout == SSH_CONNECT_TIMEOUT_S  # the short per-candidate connect timeout is used
         tried.append(address)
         return results[address]
 
@@ -127,7 +127,7 @@ def test_failover_deadline_gate_skips_second_candidate() -> None:
     h = _host(ip="10.0.0.1", vpn_host="corsair")  # two candidates
     tried: list[str] = []
 
-    def run(address: str, connect_timeout: float) -> SshResult:
+    def run(address: str, connect_timeout: float, exec_cutoff_s: float) -> SshResult:
         tried.append(address)
         return SshResult(ok=False, error="dns-wedged", kind="connect")
 
@@ -135,6 +135,27 @@ def test_failover_deadline_gate_skips_second_candidate() -> None:
     res = asyncio.run(run_ssh_failover(h, run, budget_s=SSH_CONNECT_TIMEOUT_S + SSH_EXEC_TIMEOUT_S - 1))
     assert tried == ["10.0.0.1"]  # second candidate NEVER started
     assert not res.ok and res.kind == "connect" and res.error == "dns-wedged"  # last result surfaced
+
+
+def test_failover_passes_measured_exec_cutoff_per_attempt() -> None:
+    """verify-2: the loop passes each attempt a MEASURED `exec_cutoff_s = remaining - SSH_EXEC_TIMEOUT_S`.
+    Candidate 0 gets one derived from the full budget; after a connect hop it SHRINKS for candidate 1
+    (time elapsed). No real sleeps — the loop's own bookkeeping makes candidate 1's value smaller."""
+    h = _host(ip="10.0.0.1", vpn_host="corsair")  # two candidates
+    budget = 40.0  # generous so both candidates run and the pre-gate never trips
+    cutoffs: list[float] = []
+
+    def run(address: str, connect_timeout: float, exec_cutoff_s: float) -> SshResult:
+        cutoffs.append(exec_cutoff_s)
+        return SshResult(ok=False, error="connect", kind="connect")  # force a hop to reach candidate 1
+
+    res = asyncio.run(run_ssh_failover(h, run, budget_s=budget))
+    assert len(cutoffs) == 2  # both candidates attempted
+    # candidate 0's cutoff ≈ budget - exec window; candidate 1's is strictly smaller (time passed).
+    assert cutoffs[0] <= budget - SSH_EXEC_TIMEOUT_S
+    assert cutoffs[0] > budget - SSH_EXEC_TIMEOUT_S - 1.0  # ~full budget, minus tiny bookkeeping
+    assert cutoffs[1] < cutoffs[0]  # shrinks for the later candidate
+    assert not res.ok and res.kind == "connect"
 
 
 # --------------------------------------------------------------------------- SshResult.kind
@@ -155,13 +176,15 @@ class _FakeStream:
 
 class _FakeClient:
     """Stand-in for paramiko.SSHClient. `connect_exc` raises during the connect PHASE; `read_exc`
-    lets `connect` succeed but makes the stdout READ raise (a slow-but-connected command)."""
+    lets `connect` succeed but makes the stdout READ raise (a slow-but-connected command). Records
+    `exec_called` so a test can assert the command was NEVER started (the exec-cutoff path)."""
 
     def __init__(
         self, *, connect_exc: BaseException | None = None, read_exc: BaseException | None = None
     ) -> None:
         self._connect_exc = connect_exc
         self._read_exc = read_exc
+        self.exec_called = False
 
     def set_missing_host_key_policy(self, _policy: object) -> None:
         pass
@@ -171,6 +194,7 @@ class _FakeClient:
             raise self._connect_exc
 
     def exec_command(self, _command: str, timeout: float | None = None) -> tuple[object, object, object]:
+        self.exec_called = True
         return _FakeStream(), _FakeStream(exc=self._read_exc), _FakeStream()
 
     def close(self) -> None:
@@ -224,7 +248,7 @@ def test_read_timeout_is_ssh_not_connect_and_no_failover(monkeypatch) -> None:
     h = _host(ip="10.0.0.1", vpn_host="corsair")  # two candidates available
     tried: list[str] = []
 
-    def run(address: str, connect_timeout: float) -> SshResult:
+    def run(address: str, connect_timeout: float, exec_cutoff_s: float) -> SshResult:
         assert connect_timeout == SSH_CONNECT_TIMEOUT_S  # forwarded as the connect-phase bound
         tried.append(address)
         return ssh.run_command(
@@ -234,6 +258,31 @@ def test_read_timeout_is_ssh_not_connect_and_no_failover(monkeypatch) -> None:
     res = asyncio.run(run_ssh_failover(h, run))
     assert res.kind == "ssh" and not res.ok  # post-connect read failure → ssh, not the failover class
     assert tried == ["10.0.0.1"]  # NO second candidate — the command may already have run
+
+
+def test_exec_cutoff_refuses_to_start_command(monkeypatch) -> None:
+    """verify-2 core invariant: `connect` succeeds, but a tiny/negative `exec_cutoff_s` means the
+    measured handshake time has already overrun → `run_command` returns WITHOUT calling `exec_command`
+    (nothing executed), terminal `kind == "ssh"`. With `exec_cutoff_s=None` it executes as before."""
+    import paramiko
+
+    holder: dict[str, _FakeClient] = {}
+
+    def _make() -> _FakeClient:
+        holder["client"] = _FakeClient()  # connect succeeds, read returns b""
+        return holder["client"]
+
+    monkeypatch.setattr(paramiko, "SSHClient", _make)
+
+    # negative cutoff = no time left → the command must NOT begin
+    res = ssh.run_command(host="h", port=22, username="u", password="p", command="x", exec_cutoff_s=-1.0)
+    assert res.kind == "ssh" and not res.ok
+    assert "not executed" in (res.error or "")
+    assert holder["client"].exec_called is False  # exec_command never reached
+
+    # None cutoff = the pre-existing behavior: the command runs
+    res2 = ssh.run_command(host="h", port=22, username="u", password="p", command="x", exec_cutoff_s=None)
+    assert res2.ok and holder["client"].exec_called is True
 
 
 def test_sshresult_kind_defaults_ok() -> None:

@@ -3140,9 +3140,16 @@ corrected in the map below).
   ssh` / `OSError → connect` is refined to the phase rule. (2) **Split timeouts** — `run_command` gains
   `connect_timeout` (bounds connect + the SSH banner read, via `banner_timeout`; `auth_timeout` left at
   default so a slow-but-succeeding auth isn't cut) separate from `timeout` (exec/read phase); consts
-  `SSH_CONNECT_TIMEOUT_S=6` + `SSH_EXEC_TIMEOUT_S=10`. (3) **Deadline-gated candidates** — `run_ssh_failover`
-  never STARTS a later candidate unless a full connect+exec phase still fits the caller's `budget_s`
-  (`SSH_ACTION_TIMEOUT_S`), so the backstop can't fire mid-exec of a second attempt while the command
-  completes in an abandoned worker. (4) **Omit-preserves CRUD** — `_apply_fields` touches `vpn_host`/
+  `SSH_CONNECT_TIMEOUT_S=6` + `SSH_EXEC_TIMEOUT_S=10`. (3) **No-late-execution — TWO layers** (verify
+  round 2: the round-1 static pre-gate was insufficient — auth is deliberately unbounded, so no static
+  reservation can prove an exec window remains after a slow handshake): **(a) pre-gate** in
+  `run_ssh_failover` skips a LATER candidate when connect+exec no longer fits `budget_s` — a cheap
+  optimization only, not the guarantee; **(b) measured exec cutoff** is the actual invariant —
+  `run_command` gains `exec_cutoff_s` (seconds from call entry after which the command must not begin),
+  captures `t0=monotonic()`, and after a successful connect returns `kind="ssh"` ("…not executed")
+  WITHOUT calling `exec_command` if the measured handshake already overran the cutoff. The loop passes
+  each attempt `exec_cutoff_s = remaining - SSH_EXEC_TIMEOUT_S`, candidate 0 INCLUDED — so the command
+  never launches unless a full exec window is left however long connect+banner+auth took, and the
+  pre-existing acknowledged single-candidate overrun is now closed too. (4) **Omit-preserves CRUD** — `_apply_fields` touches `vpn_host`/
   `ssh_prefer_vpn` only when the client actually sent them (`model_fields_set`), so the pre-Slice-2
   editor (which never sends them) can't wipe a hand-configured VPN address; explicit null/false still clears.

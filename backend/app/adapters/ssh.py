@@ -11,6 +11,7 @@ tracked post-v1 hardening item (ROADMAP G).
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Literal
 
@@ -40,6 +41,7 @@ def run_command(
     command: str,
     timeout: float = 10.0,
     connect_timeout: float | None = None,
+    exec_cutoff_s: float | None = None,
     stdin_data: str | None = None,
 ) -> SshResult:
     """Run `command` over SSH. `stdin_data`, when set, is written to the command's stdin then the
@@ -52,10 +54,21 @@ def run_command(
     connect timeout). `auth_timeout` is deliberately left at paramiko's default: a slow-but-succeeding
     auth must not be aborted at the short connect budget — it stays bounded by the caller's backstop.
 
+    `exec_cutoff_s` (D47 verify-2) is the MEASURED no-late-execution guarantee: seconds FROM THIS
+    CALL'S ENTRY after which the command must NOT begin. Because auth is deliberately unbounded, no
+    static pre-reservation can prove an exec window remains — so we MEASURE elapsed time (connect +
+    banner + auth) and, if it has already overrun `exec_cutoff_s` once connected, we return WITHOUT
+    calling `exec_command`. The command NEVER starts unless a full exec window is left, no matter how
+    long the handshake took. This is what the caller's failover pre-gate cannot provide, and it also
+    closes the pre-existing single-candidate overrun (even a lone attempt can't launch an exec it
+    can't finish inside the backstop). Not executing ⇒ terminal `kind="ssh"` (no failover: by
+    construction there is no budget for another candidate either).
+
     The connect/exec split is load-bearing for D47 failover: only a PRE-connect failure is the
     retryable `connect` class — a POST-connect error (a `socket.timeout` reading a slow-but-connected
     command's output, or a mid-command SSHException) is classified `ssh`, NEVER `connect`, so the
     failover loop can't re-execute a command that may already be running (a double-restart footgun)."""
+    t0 = time.monotonic()  # measured from call entry — the exec-cutoff clock (spans connect+banner+auth)
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     connect_t = connect_timeout if connect_timeout is not None else timeout
@@ -72,6 +85,15 @@ def run_command(
             look_for_keys=False,
         )
         connected = True  # past this line every failure is post-connect (exec/read), not the failover class
+        if exec_cutoff_s is not None and time.monotonic() - t0 > exec_cutoff_s:
+            # Connected, but the handshake (unbounded auth) ate the window — do NOT start the command.
+            # Nothing was executed (the point); `finally` still closes the client. Terminal, no retry.
+            return SshResult(
+                ok=False,
+                kind="ssh",
+                error="connected, but too little time remained in the action budget to run the "
+                "command safely — not executed",
+            )
         stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
         if stdin_data is not None:
             try:

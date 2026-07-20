@@ -91,31 +91,34 @@ class ServiceTargetInput(BaseModel):
 
 
 async def run_ssh_failover(
-    host: Host, run: Callable[[str, float], SshResult], *, budget_s: float = SSH_ACTION_TIMEOUT_S
+    host: Host,
+    run: Callable[[str, float, float], SshResult],
+    *,
+    budget_s: float = SSH_ACTION_TIMEOUT_S,
 ) -> SshResult:
     """Run one SSH operation against a multi-homed host with ordered connect-failover (D47).
 
     Iterates `host_addresses(host, host.ssh_prefer_vpn)` (the single LAN>VPN source of truth),
-    invoking `run(address, SSH_CONNECT_TIMEOUT_S)` per candidate on a worker thread (SYS-16: never
-    block the event loop with paramiko) — the callable's second arg is the CONNECT-phase timeout it
-    forwards as `run_command`'s `connect_timeout`. Advances to the next address ONLY on
-    `kind == "connect"` (a PRE-connect socket error — the timeout/refused/DNS failover class); an
-    `ok`/`auth`/`ssh` result returns immediately (connected + wrong password, or a post-connect read
-    failure, is a real error the command may already have run — never a retry). The last candidate's
-    result returns as-is, whatever it is.
+    invoking `run(address, connect_timeout, exec_cutoff_s)` per candidate on a worker thread (SYS-16:
+    never block the event loop with paramiko) — the callable forwards `connect_timeout` as
+    `run_command`'s `connect_timeout` and `exec_cutoff_s` as its `exec_cutoff_s`. Advances to the next
+    address ONLY on `kind == "connect"` (a PRE-connect socket error — the timeout/refused/DNS failover
+    class); an `ok`/`auth`/`ssh` result returns immediately (connected + wrong password, a post-connect
+    read failure, or a not-executed cutoff is a real error the command may already have run — never a
+    retry). The last candidate's result returns as-is, whatever it is.
 
-    DEADLINE GATE (Codex HIGH-1): the whole loop runs INSIDE the caller's `budget_s` backstop
-    (`SSH_ACTION_TIMEOUT_S`, enforced by `ActionService` via `asyncio.wait_for`). Because paramiko's
-    socket timeout does NOT bound `getaddrinfo`, a first candidate can eat most of the budget; if the
-    loop then STARTED a second candidate that connects + executes, the backstop could fire mid-read —
-    the caller reports TIMEOUT (and may retry) while the command actually completes in the abandoned
-    worker thread. So the invariant is: OUR loop never STARTS an attempt it cannot see through inside
-    the backstop. Candidate 0 always runs; before each later candidate we require a full
-    connect+exec phase (`SSH_CONNECT_TIMEOUT_S + SSH_EXEC_TIMEOUT_S`) to still fit — otherwise we log
-    and return the last (connect-class) result, which is accurate since nothing was executed on the
-    skipped address. The pre-existing single-candidate overrun (a lone attempt whose own I/O outlives
-    the backstop — acknowledged in `action_service.py`) is unchanged; this only stops us from
-    ADDING a second such attempt.
+    NO-LATE-EXECUTION (Codex HIGH-1 / verify-2) — TWO LAYERS inside the caller's `budget_s` backstop
+    (`SSH_ACTION_TIMEOUT_S`, enforced by `ActionService` via `asyncio.wait_for`):
+      1. **Pre-gate (cheap optimization):** before each LATER candidate, if a full connect+exec phase
+         (`SSH_CONNECT_TIMEOUT_S + SSH_EXEC_TIMEOUT_S`) no longer fits, skip it — avoids a pointless
+         connect we know can't finish. This is NOT the guarantee: auth is deliberately unbounded, so a
+         static reservation can't prove an exec window remains after a slow handshake.
+      2. **Measured exec cutoff (the actual invariant):** each attempt gets `exec_cutoff_s = remaining
+         - SSH_EXEC_TIMEOUT_S`, and `run_command` MEASURES elapsed handshake time and refuses to START
+         `exec_command` past that cutoff. So the command never launches unless a full exec window is
+         left, however long connect+banner+auth took. Applied to candidate 0 too — which also closes
+         the pre-existing single-candidate overrun (a lone attempt can no longer start an exec it can't
+         finish inside the backstop).
 
     This is the ONE failover implementation — the three SSH call sites (service control here, plus
     shutdown/reboot) route through it, so address resolution + failover semantics are identical
@@ -125,20 +128,23 @@ async def run_ssh_failover(
     last = len(addresses) - 1
     loop = asyncio.get_running_loop()
     deadline = loop.time() + budget_s
-    #: A candidate we START must be able to run connect+exec fully before the backstop fires.
+    #: The pre-gate reservation — a full connect+exec phase. Cheap optimization only (see layer 1).
     need = SSH_CONNECT_TIMEOUT_S + SSH_EXEC_TIMEOUT_S
     prev: SshResult | None = None
     for i, address in enumerate(addresses):
-        if i > 0 and (deadline - loop.time()) < need:
+        remaining = deadline - loop.time()
+        if i > 0 and remaining < need:
             log.info(
                 "ssh failover for %s: skipping %s — %.1fs left < %.1fs needed for a full attempt",
                 host.name,
                 address,
-                deadline - loop.time(),
+                remaining,
                 need,
             )
             break  # prev is a connect-class error (we only reach here after a failover hop)
-        res = await asyncio.to_thread(run, address, SSH_CONNECT_TIMEOUT_S)
+        # Layer 2: the measured cutoff run_command enforces post-connect (applies to candidate 0 too).
+        exec_cutoff_s = remaining - SSH_EXEC_TIMEOUT_S
+        res = await asyncio.to_thread(run, address, SSH_CONNECT_TIMEOUT_S, exec_cutoff_s)
         if res.kind != "connect" or i == last:
             return res
         log.info("ssh connect-failover for %s: %s → %s", host.name, address, addresses[i + 1])
@@ -188,7 +194,7 @@ async def run_service_command(
         run_cmd, pipe_pw = _prepare_sudo(command)
     res = await run_ssh_failover(
         host,
-        lambda address, connect_timeout: ssh.run_command(
+        lambda address, connect_timeout, exec_cutoff_s: ssh.run_command(
             host=address,
             port=host.ssh_port,
             username=username,
@@ -196,6 +202,7 @@ async def run_service_command(
             command=run_cmd,
             connect_timeout=connect_timeout,  # short per-candidate connect budget
             timeout=SSH_EXEC_TIMEOUT_S,  # exec/read phase (explicit — the loop's deadline gate uses it)
+            exec_cutoff_s=exec_cutoff_s,  # measured no-late-execution guarantee (verify-2)
             stdin_data=secret if pipe_pw else None,
         ),
     )
