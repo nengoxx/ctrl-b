@@ -113,8 +113,12 @@ test("Conf — an editor form's inputs are findable by their label (D25 associat
   // The Computers group is expanded by default; expand the vault machine row to reveal its form.
   await page.locator(".mwrap > .confrow").filter({ hasText: "vault" }).first().click();
   // getByLabel resolves an input only via its accessible name — proof the labels are associated.
-  await expect(page.getByLabel("Hostname")).toBeVisible();
-  await expect(page.getByLabel("IP address")).toBeVisible();
+  // `exact` on both: getByLabel matches SUBSTRINGS, so a label containing another's text resolves
+  // two elements and trips strict mode. What's under test is the ASSOCIATION, not the wording.
+  await expect(page.getByLabel("Hostname", { exact: true })).toBeVisible();
+  // The address field takes a DNS/MagicDNS name as well as a dotted quad (the numeric `inputMode`
+  // that made a name un-typeable on Android was dropped).
+  await expect(page.getByLabel("IP or DNS name", { exact: true })).toBeVisible();
 });
 
 test("Conf — changing the vapor palette updates body[data-theme]", async ({ page }) => {

@@ -204,15 +204,15 @@ function MachineForm(props: {
           onChange={(e) => set({ name: e.target.value })}
         />
 
-        <label>IP or hostname</label>
+        <label>IP or DNS name</label>
         {/* `ComputerCfg.ip` is a plain `str` — a DNS/MagicDNS name is as valid as a dotted quad, and
             the owner relies on that today (corsair's LAN SSH is firewalled, the tailnet name works).
             NO `inputMode` hint: `decimal` opened Android's number pad, making a name un-typeable
             (copy-paste only). Reverts to the full keyboard. (ROADMAP D3 splits LAN vs VPN properly.) */}
         <input
-          aria-label="IP or hostname"
+          aria-label="IP or DNS name"
           value={d.ip}
-          placeholder="192.168.1.x or host-name"
+          placeholder="192.168.1.x or a DNS name"
           onChange={(e) => set({ ip: e.target.value })}
         />
 
