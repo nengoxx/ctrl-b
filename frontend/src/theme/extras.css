@@ -1643,6 +1643,13 @@ body {
 .mform textarea.kv-text::placeholder {
   color: var(--ink-faint);
 }
+/* D3 slice 2 — the "SSH via VPN first" Switch cell in the .mform grid's value column. A plain flex
+   cell so the toggle sits left-aligned at input row height (the grid already centers it vertically). */
+.mconf .mform .mrow-switch {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+}
 .mform textarea.kv-text:focus {
   border-color: var(--magenta);
   box-shadow: 0 0 0 1px var(--magenta), 0 0 10px rgba(var(--accent-rgb), 0.25);

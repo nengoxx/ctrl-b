@@ -1,6 +1,7 @@
 import { memo, type MouseEvent } from "react";
 
 import type { FleetAction } from "../hooks/useActions";
+import { rebaseServiceUrl, serviceBase } from "../lib/serviceBase";
 import type { Host, Service } from "../types";
 
 // One fleet row + its expandable dropdown (services + kv detail + wake/stop buttons), ported from
@@ -44,6 +45,9 @@ function DeviceRowImpl({ host, services, index, featured, open, busy, onToggle, 
   const invoke = (action: FleetAction) => onAction(action, host);
   const online = !!host.status?.online;
   const ping = host.status?.ping_ms ?? null;
+  // Vantage-aware base for OUTBOUND links (D3 slice 2): over a VPN origin the LAN ip may be
+  // unreachable, so links prefer vpn_host. Display strings below stay on `ip` (that's the LAN fact).
+  const base = serviceBase(host, window.location);
   const svcCount = services.length ? ` · ${services.length} svc` : "";
   const sub = online
     ? `${host.os_type} · ${ping != null ? `${ping}ms` : "online"}${svcCount}`
@@ -125,7 +129,7 @@ function DeviceRowImpl({ host, services, index, featured, open, busy, onToggle, 
               <a
                 key={s.id}
                 className="svc-row on"
-                href={s.url}
+                href={rebaseServiceUrl(s.url, base)}
                 target="_blank"
                 rel="noopener"
                 onClick={(e) => e.stopPropagation()}
@@ -166,6 +170,12 @@ function DeviceRowImpl({ host, services, index, featured, open, busy, onToggle, 
           <div className="kvgrid">
             <div className="k">ip</div>
             <div className="v">{host.ip}</div>
+            {host.vpn_host ? (
+              <>
+                <div className="k">vpn</div>
+                <div className="v">{host.vpn_host}</div>
+              </>
+            ) : null}
             <div className="k">mac</div>
             <div className="v mac">{host.mac ?? "—"}</div>
             <div className="k">ssh</div>
@@ -182,12 +192,12 @@ function DeviceRowImpl({ host, services, index, featured, open, busy, onToggle, 
           {online ? (
             <a
               className="open"
-              href={`http://${host.ip}`}
+              href={`http://${base}`}
               target="_blank"
               rel="noopener"
               onClick={(e) => e.stopPropagation()}
             >
-              ↗ http://{host.ip}
+              ↗ http://{base}
             </a>
           ) : (
             <button disabled={busy} onClick={(e) => act(e, () => invoke("wake"))}>

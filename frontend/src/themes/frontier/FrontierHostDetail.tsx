@@ -66,6 +66,7 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
   // Meta line — role · ip, then a live tail: online adds the ping (only when a value exists); offline reads as
   // WOL-ready when the host has a MAC to wake it, else powered down. Segments joined by " · " (prototype .ro2).
   const meta = [host.role ?? host.os_type, host.ip];
+  if (host.vpn_host) meta.push(host.vpn_host); // D3 slice 2 — the VPN/overlay address, next to the LAN ip
   if (online) {
     if (ping != null) meta.push(`${ping} ms`);
   } else {

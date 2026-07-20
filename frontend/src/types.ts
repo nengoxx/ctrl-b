@@ -20,6 +20,11 @@ export interface Host {
   ssh_port: number;
   os_type: OSType;
   role: string | null;
+  // D3/D47: the VPN/overlay address (a MagicDNS name — preferred — or an overlay IP). Generic: today's
+  // overlay is Tailscale but neither the field nor `serviceBase` names it. `serviceBase` prefers this
+  // over `ip` when the SPA was reached over a VPN origin; `ssh_prefer_vpn` is the per-host SSH toggle.
+  vpn_host?: string | null;
+  ssh_prefer_vpn?: boolean;
   tags: string[];
   status: HostStatus | null;
   has_password?: boolean; // Phase 7b: whether an ssh_password is stored (the value is never sent)

@@ -25,6 +25,8 @@ interface SvcDraft {
 interface Draft {
   name: string;
   ip: string;
+  vpn_host: string; // D3 slice 2 — VPN/overlay address (MagicDNS name preferred); "" clears it
+  ssh_prefer_vpn: boolean; // D3 slice 2 — try the VPN address first for SSH
   mac: string;
   ssh_username: string;
   ssh_password: string; // "" = unchanged (keep stored) on an existing host
@@ -50,6 +52,8 @@ function draftFromHost(h: Host): Draft {
   return {
     name: h.name,
     ip: h.ip,
+    vpn_host: h.vpn_host ?? "",
+    ssh_prefer_vpn: !!h.ssh_prefer_vpn,
     mac: h.mac ?? "",
     ssh_username: h.ssh_username ?? "",
     ssh_password: "",
@@ -65,6 +69,8 @@ function blankDraft(): Draft {
   return {
     name: "",
     ip: "",
+    vpn_host: "",
+    ssh_prefer_vpn: false,
     mac: "",
     ssh_username: "",
     ssh_password: "",
@@ -91,6 +97,10 @@ function toPayload(d: Draft) {
   return {
     name: d.name.trim(),
     ip: d.ip.trim(),
+    // Always sent (this editor manages both fields now): a blank vpn_host clears it. The backend's
+    // omit-preserves is only for OLD clients that never send them — explicit null here is correct (D47).
+    vpn_host: d.vpn_host.trim() || null,
+    ssh_prefer_vpn: d.ssh_prefer_vpn,
     mac: d.mac.trim() || null,
     ssh_username: d.ssh_username.trim() || null,
     ssh_password: d.ssh_password, // "" → keep (existing) / null-ish (new)
@@ -215,6 +225,27 @@ function MachineForm(props: {
           placeholder="192.168.1.x or a DNS name"
           onChange={(e) => set({ ip: e.target.value })}
         />
+
+        {/* D3 slice 2 — the VPN/overlay address. The field/payload key stay GENERIC (`vpn_host`); only
+            this helper text names Tailscale. A MagicDNS name is preferred (it's reachable from any
+            vantage); an overlay IP works too. Blank = LAN-only. Service links & SSH failover prefer it
+            when you're on the tailnet (serviceBase + host_addresses). Plain text input, no inputMode. */}
+        <label>VPN host</label>
+        <input
+          aria-label="VPN host"
+          value={d.vpn_host}
+          placeholder="corsair.tail-net.ts.net · MagicDNS name or IP"
+          onChange={(e) => set({ vpn_host: e.target.value })}
+        />
+
+        <label>SSH via VPN first</label>
+        <div className="mrow-switch">
+          <Switch
+            on={d.ssh_prefer_vpn}
+            onToggle={() => set({ ssh_prefer_vpn: !d.ssh_prefer_vpn })}
+            label="SSH via VPN first"
+          />
+        </div>
 
         <label>MAC</label>
         <input
@@ -388,6 +419,7 @@ export function MachineEditor({ hosts }: { hosts: Host[] }) {
                   ? `${h.ssh_username}@${h.ip}:${h.ssh_port}`
                   : `${h.ip}:${h.ssh_port}`}{" "}
                 · {h.os_type}
+                {h.vpn_host ? " · vpn" : ""}
               </div>
             </div>
             <span className={"badge" + (h.status?.online ? "" : " stale")}>

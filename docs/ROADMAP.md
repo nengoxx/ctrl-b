@@ -500,10 +500,17 @@ user configure URLs manually + split `href`/`siteMonitor`; this design auto-reso
      `_common` service control) route through — advance on `connect` only, never `auth`. Tests: `test_multihome_d47`
      (order/flip/collapse + failover-on-connect + no-failover-on-auth + `SshResult.kind` + shutdown-still-confirms)
      and `test_hosts_7b::test_vpn_host_fields_roundtrip`.
-  2. **Frontend** — host DTO exposes `ip`+`vpn_host`; a `serviceBase(host, location)` util (name-preferred,
-     vantage-aware) for the svc-row links + `url_for`/`open_service_url`; the VPN line in `CosmosHostDetail` + Kit
-     DeviceRow; Conf host editor gains the two address fields + the SSH toggle.
-  3. **(Later improvement) VPN discovery** — a backend `tailscale status --json` peer read (reuses
+  2. **Frontend** ✅ **SHIPPED 2026-07-21 (D3 slice 2)** — the host DTO already exposes `ip`+`vpn_host` (Slice 1);
+     new `lib/serviceBase.ts` (`serviceBase(host, location)` name-preferred + vantage-aware `isVpnOrigin` for
+     `*.ts.net` / `100.64.0.0/10`, + `rebaseServiceUrl`) drives DeviceRow's outbound links (host-open + svc-row
+     hrefs); VPN display lines added to `DeviceRow` (kv `vpn` row), `CosmosHostDetail` (hd-ids), `FrontierHostDetail`
+     (meta); the Conf host editor (`MachineEditor`) gains the `VPN host` field + `SSH via VPN first` Switch (Draft →
+     PUT, always-sent) + a ` · vpn` row-summary tag; `Host` type gains `vpn_host?`/`ssh_prefer_vpn?`. Tests:
+     `serviceBase.test` (vantage matrix + CGNAT /10 boundaries + rebase) · `machineEditor.test` (fields + round-trip
+     + omit-preserves-regression) · `deviceRowVpn.test`. **Note:** Frontier/Cosmos svc-row *link* retargeting was
+     scoped display-only here — those themes' service hrefs still use the backend ip URL; a trivial follow-up can
+     route them through `serviceBase` if VPN-vantage service links are wanted in the spatial themes.
+  3. **(Later improvement — still future) VPN discovery** — a backend `tailscale status --json` peer read (reuses
      `actions/tailscale.py` CLI plumbing) → a Conf "Discover from Tailscale" button that auto-fills `vpn_host` by
      **HostName** match (LAN-IP match is unreliable; browser can't enumerate the tailnet). Opt-in, not on every load.
 - **Stopgap now typeable (2026-07-20, `fb59c83`).** The interim workaround — put the MagicDNS *name* in `ip` — was

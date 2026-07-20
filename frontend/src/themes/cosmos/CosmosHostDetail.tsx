@@ -125,6 +125,7 @@ export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }:
         <div className="hd-ids">
           <span>{online && ping != null ? `${ping} ms` : "—"}</span>
           <span>{host.ip}</span>
+          {host.vpn_host ? <span>{host.vpn_host}</span> : null}
           <span>{host.mac ?? "—"}</span>
         </div>
       </div>
