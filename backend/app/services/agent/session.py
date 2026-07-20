@@ -1057,8 +1057,11 @@ class AgentSession:
         eff_model = routed.model
         #: Modeled per-call config threaded to `stream_chat` as first-class kwargs (D42/A10). The routed
         #: `ModelRef.max_tokens` doubles as BOTH the wire output cap AND the window trigger's output
-        #: reserve (below); `reasoning_effort` is model-level (no per-message override).
+        #: reserve (below); `reasoning_effort` is model-level (no per-message override). `reasoning_
+        #: tokens` rides alongside as the explicit per-dialect budget OVERRIDE (D45) — the wire builder
+        #: applies it only where the serving endpoint's dialect has a budget concept.
         eff_reasoning = routed.reasoning_effort
+        eff_reasoning_tokens = routed.reasoning_tokens
         #: Output reserve subtracted from the window trigger line (D42) — the routed `ModelRef.max_tokens`
         #: (a lead turn reserves the lead's cap); `None` ⇒ nothing reserved (gated by `reserve_output`).
         reserve = routed.max_tokens
@@ -1192,6 +1195,7 @@ class AgentSession:
                         model=eff_model,
                         max_tokens=reserve,
                         reasoning_effort=eff_reasoning,
+                        reasoning_tokens=eff_reasoning_tokens,
                         tools=self._tools(),
                         report=report,
                     ):
@@ -1688,6 +1692,7 @@ class AgentSession:
                         model=routed.model,
                         max_tokens=routed.max_tokens,
                         reasoning_effort=routed.reasoning_effort,
+                        reasoning_tokens=routed.reasoning_tokens,
                         tools=fin_tools,
                         tool_choice=fin_choice,
                         report=report,

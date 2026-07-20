@@ -165,11 +165,13 @@ back to the analysis.
   when the model actually reaches for it (Claude-Code pattern). *Deferred because:* Slice 1 shipped
   the measurement rider (per-turn tools+head token cost is logged) and it has **not** shown pressure —
   build it when the log says the manifest is expensive, not before. ACA §4 A8.
-- **A10 — hard reasoning budget** for local thinking models (a `</think>` cap). *Partly done:* D42
-  (Slice 6) absorbed the call-config half — per-agent `max_tokens` + the `reasoning_effort` ladder on
-  `ModelRef`. *Deferred because:* the remaining `reasoning_tokens` hard cap has a declared field on
-  `ModelRef` that reaches **no adapter** — a real cap needs a llama.cpp control surface that doesn't
-  exist yet. ACA §4 A10.
+- ~~**A10 — hard reasoning budget** for local thinking models (a `</think>` cap).~~ **CLOSED / BUILT
+  2026-07-20 (D45).** D42 (Slice 6) had absorbed the call-config half (per-agent `max_tokens` + the
+  `reasoning_effort` ladder); this entry's deferral rested on "a real cap needs a llama.cpp control
+  surface that doesn't exist yet" — **which turned out to be false**: llama-server parses a
+  per-request `reasoning_budget_tokens` (and ignores `reasoning_effort` entirely, so the knob we were
+  sending was the no-op). D45 wires it via the per-endpoint `reasoning_dialect` field: the ladder is
+  translated per backend and `ModelRef.reasoning_tokens` is now a live explicit override. ACA §4 A10.
 - **Gemini-style content-chant detector** — spot a model looping the same narration and break it.
   *Deferred because:* purely speculative; build it only if narration loops actually appear in use.
   ACA §5 Backlog.

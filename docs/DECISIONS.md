@@ -2722,3 +2722,69 @@ editor-exclusion caveat now covers BOTH exclusions: forced-confirm tools (rule i
 ⓖ The three untested §9 promises are covered: grant vs a concurrent settings write (asserting
 non-overlap, not just the end state), the marker on a HEADLESS-subagent run, sibling
 `description`/`agent_mode` preservation on grant.
+
+## D45 — Per-dialect reasoning budgets: one ladder, translated at the wire (ACA §4 A10 remainder) ✏️ LOCKED 2026-07-20
+
+**Context.** A10's remainder — `ModelRef.reasoning_tokens` shipped **declared but unwired** in D42,
+recorded as "advisory, no-op: llama.cpp has no per-request reasoning budget". A verification pass
+against llama.cpp master found **both halves of that premise false**, and worse in the opposite
+direction than assumed:
+- **llama-server never reads `reasoning_effort`** (maintainer-confirmed; zero occurrences in the
+  server source). The one reasoning knob we *did* send was being silently discarded by the owner's
+  PRIMARY local endpoint — the ladder was decorative exactly where it mattered most.
+- **llama-server DOES accept a per-request integer budget** — `reasoning_budget_tokens` (current) /
+  `thinking_budget_tokens` (older alias), parsed in `tools/server/server-common.cpp`, and a
+  per-request value OVERRIDES the `--reasoning-budget` launch flag (PR #23116). `-1` = unrestricted,
+  `0` = end thinking immediately.
+- Upstream is genuinely split: OpenAI/Ollama are effort-only (`max_completion_tokens` is a COMBINED
+  reasoning+output cap, **not** a reasoning budget); vLLM takes `thinking_token_budget`; OpenRouter
+  takes both but `reasoning.effort` and `reasoning.max_tokens` are **MUTUALLY EXCLUSIVE** — sending
+  both is a hard 400.
+
+**Decision.**
+- **One primary knob stays `ModelRef.reasoning_effort`** (the `off…max` ladder), made meaningful on
+  every backend by TRANSLATING it at the wire instead of hoping the server understands our spelling.
+  **`reasoning_tokens` becomes an explicit OVERRIDE, not a parallel setting**: where a dialect has a
+  budget it wins over the ladder-derived value; where a dialect has none it is ignored (correct, not
+  a gap — there is no field to put it in).
+- **The signal is a new per-endpoint `InferenceEndpointCfg.reasoning_dialect`**
+  (`openai` | `llamacpp` | `openrouter` | `none`) — the `max_tokens_field` precedent, a "which wire
+  shape does this server speak" field on the unified endpoint object (never a sibling map).
+  **CONFIG, deliberately not a probe and not a model-name sniff:** the dialect is a property of the
+  **SERVER**, not the model — the same `qwen3` behind llama-server vs behind OpenRouter needs
+  *opposite* payloads, so a model sniff is structurally incapable of being right, and only whoever
+  pointed `base_url` at a server knows the answer. Default **`openai` = today's payload
+  byte-for-byte**: no migration, no upgrade surprise, pinned by a back-compat test.
+- **The ladder→tokens table is fixed module constants** in `adapters/inference.py`, not config —
+  the D43 precedent (a policy curve, like the retry backoff, is constants), and the per-agent
+  `reasoning_tokens` override IS the configurability escape hatch, so a second config surface would
+  be a parallel mechanism for a knob we already have. `off → 0 · minimal → 256 · low → 512 ·
+  medium → 2048 · high → 8192 · xhigh → 16384 · max → -1`. **The two ends are not invented
+  mappings** — `0` and `-1` are llama.cpp's OWN documented sentinels; only the middle is ours.
+- **Per dialect:** `openai` → effort verbatim, tokens dropped. `llamacpp` → **no `reasoning_effort`
+  at all** (dropping a field the server provably ignores is the honest fix, not a shrug) + the
+  resolved budget under **BOTH** budget keys (older builds know only the alias; unknown keys are
+  ignored ⇒ free back-compat). `openrouter` → an explicit budget sends `reasoning:{max_tokens}` and
+  **suppresses the effort key** (the mutual-exclusion 400 is a landmine, not a warning), else effort
+  verbatim with our `"off"` mapped onto its enum's `"none"`. `none` → both dropped.
+- **`"off"` keeps its `chat_template_kwargs:{enable_thinking:false}` merge unchanged** on every
+  dialect: that is the TEMPLATE-level lever and it COMPLEMENTS the sampler-level budget `0` — two
+  levers on two layers, not a duplicate.
+- Every D42 wire invariant survives: modeled params ride as first-class kwargs (never smuggled
+  through `extra_body`), unset fields contribute nothing, per-call keys win over the endpoint's
+  `extra_body` while its other keys survive, and the config object is never mutated.
+
+This **cashes in D42's reserved "a per-endpoint effort-map is the future seam"** — the seam is
+spent, and `reasoning_dialect` is the shape it took (a dialect switch, not a per-endpoint mapping
+table: the mapping is policy, the dialect is fact about the server).
+
+**Verify** = `test_modelref_wire_w4_slice6.py` §A2 (per-dialect payload shapes · override precedence ·
+the `off`/`max` sentinels · the extra_body merge + non-mutation across all four dialects · the
+default-dialect back-compat pin); §A's pre-existing tests run on the default dialect and so pin
+today's payload unchanged.
+
+**Residual (recorded, not a bug).** `reasoning_tokens` is `ge=1`, so the `0` and `-1` sentinels are
+reachable ONLY through the ladder (`off` / `max`) — deliberate: an explicit 0 would be a confusing
+second spelling of `off`, and the ladder already owns both ends. vLLM (`thinking_token_budget`) has
+no dialect entry yet; adding one is a new `Literal` member plus a branch, which is exactly the shape
+this field was chosen for.

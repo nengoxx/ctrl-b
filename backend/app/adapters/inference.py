@@ -319,6 +319,34 @@ def _resolve_retry_attempts(cfg: InferenceCfg, ep: InferenceEndpointCfg) -> int:
     return ep.retry_attempts if ep.retry_attempts is not None else cfg.retry_attempts
 
 
+#: The reasoning-effort LADDER → per-request token budget, for the dialects that accept a budget (D45).
+#: FIXED module constants, not config — the D43 precedent: a policy curve (like the retry backoff) is
+#: constants, and the per-agent `ModelRef.reasoning_tokens` override IS the configurability escape hatch.
+#: The two ends are NOT invented mappings — they are llama.cpp's OWN documented sentinels: `0` = end
+#: thinking immediately, `-1` = unrestricted. The middle is the ladder spread across a typical thinking
+#: window. A per-request value overrides the server's `--reasoning-budget` launch flag (PR #23116).
+_REASONING_BUDGETS: dict[str, int] = {
+    "off": 0,
+    "minimal": 256,
+    "low": 512,
+    "medium": 2048,
+    "high": 8192,
+    "xhigh": 16384,
+    "max": -1,
+}
+
+
+def _resolve_reasoning_budget(effort: str | None, tokens: int | None) -> int | None:
+    """The per-request reasoning budget for a budget-speaking dialect (D45): an EXPLICIT
+    `ModelRef.reasoning_tokens` wins, else the `reasoning_effort` ladder, else `None` (send nothing —
+    the server keeps its own default). One home for the precedence, shared by every dialect branch."""
+    if tokens is not None:
+        return tokens
+    if effort is not None:
+        return _REASONING_BUDGETS.get(effort)
+    return None
+
+
 @dataclass(frozen=True)
 class RetryNotice:
     """A wire item `stream_chat` interleaves BEFORE the first `ChatDelta` (D43/A6): the served endpoint
@@ -593,27 +621,51 @@ class InferenceClient:
         *,
         max_tokens: int | None,
         reasoning_effort: str | None,
+        reasoning_tokens: int | None = None,
     ) -> dict[str, Any]:
-        """The per-ENDPOINT modeled call params + the per-call `extra_body` merge (D42/A10). Modeled
-        params ride as FIRST-CLASS kwargs (the codebase rule — never smuggled through extra_body):
+        """The per-ENDPOINT modeled call params + the per-call `extra_body` merge (D42/A10; per-dialect
+        reasoning D45). Modeled params ride as FIRST-CLASS kwargs (the codebase rule — never smuggled
+        through extra_body):
           - `max_tokens` → keyed by THIS endpoint's `max_tokens_field` ("max_tokens" |
             "max_completion_tokens"), resolved per serving endpoint so a failover serve uses its own
             field name;
-          - `reasoning_effort` → `reasoning_effort` for EVERY backend (llama.cpp drops it silently —
-            verified harmless; cloud honors it). Its `"off"` value ADDITIONALLY merges llama.cpp's
-            `chat_template_kwargs: {enable_thinking: false}` (the lever that works locally) OVER the
-            endpoint's own `extra_body` for THIS call only — agent-derived keys win, the endpoint's
-            other keys (and other `chat_template_kwargs` sub-keys) survive, and the config object is
-            NEVER mutated (a fresh dict).
-        Unset fields contribute NOTHING (no `None`-valued keys reach the wire). `ModelRef.reasoning_
-        tokens` is DECLARED but v1 ships it UNTRANSLATED — no OpenRouter-shape (`reasoning:{max_tokens}`)
-        detection exists in this codebase and inventing base_url sniffing is out of scope — so it is an
-        advisory no-op here (recorded residual); it is deliberately not a parameter of this builder."""
+          - reasoning → translated ONCE through this endpoint's `reasoning_dialect` (D45). The single
+            primary knob is the `reasoning_effort` LADDER; `reasoning_tokens` is an explicit OVERRIDE
+            that wins WHERE THE DIALECT HAS A BUDGET and is dropped where it has none (correct, not a
+            gap). `"off"` ADDITIONALLY merges llama.cpp's `chat_template_kwargs:{enable_thinking:false}`
+            (the template-level lever, complementing the sampler-level budget 0) OVER the endpoint's own
+            `extra_body` for THIS call only — agent-derived keys win, the endpoint's other keys (and
+            other `chat_template_kwargs` sub-keys) survive, and the config object is NEVER mutated.
+        Unset fields contribute NOTHING (no `None`-valued keys reach the wire)."""
         out: dict[str, Any] = {}
         if max_tokens is not None:
             out[ep.max_tokens_field] = max_tokens
-        if reasoning_effort is not None:
-            out["reasoning_effort"] = reasoning_effort
+        dialect = ep.reasoning_dialect
+        if dialect == "openai":
+            # Effort-only API. `reasoning_tokens` is DROPPED: OpenAI exposes no reasoning-token budget
+            # (`max_completion_tokens` is a COMBINED reasoning+output cap, not a reasoning budget).
+            if reasoning_effort is not None:
+                out["reasoning_effort"] = reasoning_effort
+        elif dialect == "llamacpp":
+            # llama-server never reads `reasoning_effort` (zero occurrences in the server source —
+            # maintainer-confirmed), so we deliberately do NOT send it: the honest translation is the
+            # per-request integer budget it DOES parse. `reasoning_budget_tokens` is the current name,
+            # `thinking_budget_tokens` the older alias — send BOTH (older builds know only the alias,
+            # and unknown keys are ignored, so the pair is free back-compat).
+            budget = _resolve_reasoning_budget(reasoning_effort, reasoning_tokens)
+            if budget is not None:
+                out["reasoning_budget_tokens"] = budget
+                out["thinking_budget_tokens"] = budget
+        elif dialect == "openrouter":
+            # `reasoning.effort` and `reasoning.max_tokens` are MUTUALLY EXCLUSIVE — sending both is a
+            # hard 400. An explicit budget wins; otherwise send the ladder verbatim (OpenRouter publishes
+            # its own effort→% mapping, so effort is the better signal when no budget was set) with our
+            # `"off"` mapped onto its enum's `"none"`.
+            if reasoning_tokens is not None:
+                out["reasoning"] = {"max_tokens": reasoning_tokens}
+            elif reasoning_effort is not None:
+                out["reasoning_effort"] = "none" if reasoning_effort == "off" else reasoning_effort
+        # dialect == "none": the server understands no reasoning control — drop both.
         extra = dict(ep.extra_body) if ep.extra_body else {}
         if reasoning_effort == "off":
             ctk = dict(extra.get("chat_template_kwargs") or {})
@@ -737,6 +789,7 @@ class InferenceClient:
         model: str | None = None,
         max_tokens: int | None = None,
         reasoning_effort: str | None = None,
+        reasoning_tokens: int | None = None,
         report: StreamReport | None = None,
     ) -> str:
         """Buffered (non-streaming) completion — used by the compactor's summarizer (4e), which wants
@@ -773,7 +826,12 @@ class InferenceClient:
                         model=use_model,
                         messages=cast("list[ChatCompletionMessageParam]", messages),
                         stream=False,
-                        **self._call_config(ep, max_tokens=max_tokens, reasoning_effort=reasoning_effort),
+                        **self._call_config(
+                            ep,
+                            max_tokens=max_tokens,
+                            reasoning_effort=reasoning_effort,
+                            reasoning_tokens=reasoning_tokens,
+                        ),
                     )
                     if not resp.choices:
                         raise InferenceError("inference returned no choices")
@@ -815,6 +873,7 @@ class InferenceClient:
         model: str | None = None,
         max_tokens: int | None = None,
         reasoning_effort: str | None = None,
+        reasoning_tokens: int | None = None,
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | None = None,
         report: StreamReport | None = None,
@@ -887,7 +946,12 @@ class InferenceClient:
                 # must not leak onto the cloud hop (ACA-18; same discipline as voice.py's extra_body).
                 call_kwargs = {
                     **kwargs,
-                    **self._call_config(ep, max_tokens=max_tokens, reasoning_effort=reasoning_effort),
+                    **self._call_config(
+                        ep,
+                        max_tokens=max_tokens,
+                        reasoning_effort=reasoning_effort,
+                        reasoning_tokens=reasoning_tokens,
+                    ),
                 }
                 stream = await self._client(ep).chat.completions.create(model=use_model, **call_kwargs)
                 try:

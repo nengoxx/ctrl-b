@@ -159,6 +159,20 @@ class InferenceEndpointCfg(BaseModel):
     #: budget; a dead endpoint (connection-refused/timeout = `other`) never retries. Additive field on
     #: the unified endpoint object (the global+override resolve pattern — never a sibling map).
     retry_attempts: int | None = Field(default=None, ge=0)
+    #: Which reasoning-control wire shape THIS server speaks (D45) — the `max_tokens_field` precedent,
+    #: one dialect switch consumed at the wire boundary so the single `ModelRef.reasoning_effort` ladder
+    #: means something on every backend:
+    #:   - `openai`     — `reasoning_effort` verbatim; no token budget exists (DEFAULT = today's payload
+    #:                    byte-for-byte, so an existing config upgrades with zero behaviour change);
+    #:   - `llamacpp`   — NO `reasoning_effort` (llama-server never reads it — maintainer-confirmed);
+    #:                    the budget rides as `reasoning_budget_tokens` + the older `thinking_budget_tokens`;
+    #:   - `openrouter` — `reasoning.max_tokens` OR `reasoning_effort`, never both (mutually exclusive →
+    #:                    hard 400); our `"off"` maps to its `"none"`;
+    #:   - `none`       — the server understands no reasoning control; both are dropped.
+    #: CONFIG, deliberately not a probe or a model-name sniff: the dialect is a property of the SERVER,
+    #: not the model — the same `qwen3` behind llama-server vs behind OpenRouter needs opposite payloads,
+    #: so only the person who pointed `base_url` at a server knows the answer.
+    reasoning_dialect: Literal["openai", "llamacpp", "openrouter", "none"] = "openai"
 
 
 class InferenceCfg(BaseModel):

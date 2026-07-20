@@ -50,6 +50,13 @@ inference:
     # max_concurrent_requests: 1 # D40: app-side gate for a backend without request slots to spare
     # retry_attempts: 0          # D43: per-endpoint override of the global inference.retry_attempts
     #                            # (unset = inherit; 0 = disable retries for this endpoint = straight next-hop)
+    # D45: which reasoning-control wire shape THIS server speaks — the knob that makes an agent's
+    # `reasoning_effort` ladder mean something here. llama-server IGNORES `reasoning_effort` entirely
+    # but DOES honour a per-request token budget, so set `llamacpp` on a llama.cpp endpoint: the ladder
+    # is translated to `reasoning_budget_tokens` (0 = think-not-at-all … -1 = unrestricted), which also
+    # overrides the server's own `--reasoning-budget` launch flag. Options: openai (default — effort
+    # only) | llamacpp | openrouter (effort OR reasoning.max_tokens, never both) | none.
+    reasoning_dialect: llamacpp
   cloud:
     base_url: https://openrouter.ai/api/v1
     api_key: sk-or-v1-...
@@ -61,6 +68,9 @@ inference:
     # context_window: 1000000    # D42: cloud windows are never probed — set manually or compaction
     #                            # falls back to the threshold_tokens trigger
     # max_tokens_field: max_tokens  # D42: or max_completion_tokens (OpenAI reasoning models)
+    reasoning_dialect: openrouter   # D45: `reasoning.max_tokens` when an agent sets an explicit
+    #                               # reasoning_tokens, else `reasoning_effort` (our "off" → its "none").
+    #                               # The two are MUTUALLY EXCLUSIVE upstream — sending both is a 400.
 
 # Agent runtime (Phase 4e+, compaction v2 = D42). `compaction` first clears old bulky tool outputs
 # at assembly time (free — the DB keeps them verbatim), then folds the oldest complete turns into a

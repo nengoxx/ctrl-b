@@ -4,6 +4,8 @@ Five units, each testable in isolation:
   A. `InferenceClient._call_config` (pure): max_tokens under the endpoint's field name, reasoning_effort
      passthrough, the `"off"` chat_template_kwargs merge (over extra_body, no clobber, no mutation),
      unset → nothing;
+  A2. the D45 per-dialect reasoning translation (openai / llamacpp / openrouter / none) + the explicit
+     `reasoning_tokens` override precedence + the default-dialect back-compat pin;
   B. `InferenceError` code/status + `is_context_overflow` (the classifier matrix: OpenAI code, llama.cpp
      message, unrelated 400, 500);
   C. the kwargs reach `create()` through `stream_chat`/`complete` (fake SDK client) + the failover ride
@@ -26,8 +28,10 @@ from pathlib import Path
 from typing import cast
 
 import httpx
+import pytest
 from _async import run_async
 from openai import BadRequestError
+from pydantic import ValidationError
 
 from app.adapters.inference import (
     InferenceClient,
@@ -103,6 +107,121 @@ def test_call_config_non_off_effort_leaves_extra_body_alone() -> None:
     ep = _ep(extra_body={"cache_prompt": True})
     cfg = InferenceClient._call_config(ep, max_tokens=100, reasoning_effort="low")
     assert cfg == {"max_tokens": 100, "reasoning_effort": "low", "extra_body": {"cache_prompt": True}}
+
+
+# ── A2. `_call_config` per-dialect reasoning translation (D45) ─────────────────────────────────────
+# NOTE: every section-A test above runs on the DEFAULT dialect ("openai"), so they double as the
+# back-compat regression — an untouched config still produces today's payload byte-for-byte.
+
+
+def test_call_config_default_dialect_is_openai_backcompat() -> None:
+    """The default dialect keeps TODAY's exact payload: effort verbatim, no budget keys ever."""
+    assert _ep().reasoning_dialect == "openai"
+    cfg = InferenceClient._call_config(_ep(), max_tokens=64, reasoning_effort="high", reasoning_tokens=4096)
+    assert cfg == {"max_tokens": 64, "reasoning_effort": "high"}
+
+
+def test_call_config_openai_drops_reasoning_tokens() -> None:
+    """OpenAI has no reasoning-token budget (`max_completion_tokens` is a COMBINED cap) — dropping the
+    override is correct, not a gap."""
+    cfg = InferenceClient._call_config(_ep(), max_tokens=None, reasoning_effort=None, reasoning_tokens=999)
+    assert cfg == {}
+
+
+def test_call_config_llamacpp_ladder_sends_both_budget_keys_and_no_effort() -> None:
+    """llama.cpp: the ladder becomes a budget under BOTH the current name and the older alias, and
+    `reasoning_effort` is deliberately NOT sent (llama-server never reads it)."""
+    cfg = InferenceClient._call_config(
+        _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="high"
+    )
+    assert cfg == {"reasoning_budget_tokens": 8192, "thinking_budget_tokens": 8192}
+    assert "reasoning_effort" not in cfg
+
+
+def test_call_config_llamacpp_explicit_tokens_override_the_ladder() -> None:
+    cfg = InferenceClient._call_config(
+        _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="high", reasoning_tokens=333
+    )
+    assert cfg == {"reasoning_budget_tokens": 333, "thinking_budget_tokens": 333}
+
+
+def test_call_config_llamacpp_off_is_budget_zero_plus_enable_thinking_false() -> None:
+    """`"off"` → the server's own 0 sentinel (sampler level) AND the template-level lever, both."""
+    cfg = InferenceClient._call_config(
+        _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="off"
+    )
+    assert cfg["reasoning_budget_tokens"] == 0 and cfg["thinking_budget_tokens"] == 0
+    assert cfg["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+    assert "reasoning_effort" not in cfg
+
+
+def test_call_config_llamacpp_max_is_unrestricted_sentinel() -> None:
+    cfg = InferenceClient._call_config(
+        _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="max"
+    )
+    assert cfg == {"reasoning_budget_tokens": -1, "thinking_budget_tokens": -1}
+
+
+def test_call_config_llamacpp_unset_sends_no_budget() -> None:
+    """Nothing set ⇒ nothing on the wire — the server keeps its own `--reasoning-budget` default."""
+    assert (
+        InferenceClient._call_config(
+            _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort=None
+        )
+        == {}
+    )
+
+
+def test_call_config_openrouter_explicit_tokens_excludes_effort() -> None:
+    """OpenRouter: `reasoning.effort` and `reasoning.max_tokens` are MUTUALLY EXCLUSIVE (hard 400) —
+    an explicit budget wins and the effort key must be absent."""
+    cfg = InferenceClient._call_config(
+        _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="high", reasoning_tokens=2000
+    )
+    assert cfg == {"reasoning": {"max_tokens": 2000}}
+    assert "reasoning_effort" not in cfg
+
+
+def test_call_config_openrouter_ladder_only_sends_effort() -> None:
+    cfg = InferenceClient._call_config(
+        _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="low"
+    )
+    assert cfg == {"reasoning_effort": "low"}
+
+
+def test_call_config_openrouter_off_maps_to_none_enum() -> None:
+    """Our ladder's `"off"` is spelled `"none"` in OpenRouter's enum."""
+    cfg = InferenceClient._call_config(
+        _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="off"
+    )
+    assert cfg["reasoning_effort"] == "none"
+    assert cfg["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def test_call_config_dialect_none_drops_both() -> None:
+    cfg = InferenceClient._call_config(
+        _ep(reasoning_dialect="none"), max_tokens=32, reasoning_effort="high", reasoning_tokens=500
+    )
+    assert cfg == {"max_tokens": 32}
+
+
+def test_call_config_dialect_branches_keep_extra_body_merge_and_no_mutation() -> None:
+    """Every dialect preserves the invariants: the endpoint's extra_body still merges, per-call keys win,
+    and the config object is NEVER mutated."""
+    for dialect in ("openai", "llamacpp", "openrouter", "none"):
+        ep = _ep(
+            reasoning_dialect=dialect, extra_body={"cache_prompt": True, "chat_template_kwargs": {"foo": 1}}
+        )
+        original = {k: dict(v) if isinstance(v, dict) else v for k, v in ep.extra_body.items()}
+        cfg = InferenceClient._call_config(ep, max_tokens=None, reasoning_effort="off", reasoning_tokens=77)
+        assert cfg["extra_body"]["cache_prompt"] is True
+        assert cfg["extra_body"]["chat_template_kwargs"] == {"foo": 1, "enable_thinking": False}
+        assert ep.extra_body == original, f"{dialect} mutated the endpoint config"
+
+
+def test_endpoint_reasoning_dialect_literal_rejects_junk() -> None:
+    with pytest.raises(ValidationError):
+        InferenceEndpointCfg(reasoning_dialect="llama")
 
 
 # ── B. InferenceError code/status + `is_context_overflow` ──────────────────────────────────────────
@@ -371,9 +490,15 @@ class _FakeInfer:
         return self._window
 
     async def complete(
-        self, payload, *, mode=None, model=None, max_tokens=None, reasoning_effort=None
+        self, payload, *, mode=None, model=None, max_tokens=None, reasoning_effort=None, reasoning_tokens=None
     ) -> str:
-        self.kwargs.append({"max_tokens": max_tokens, "reasoning_effort": reasoning_effort})
+        self.kwargs.append(
+            {
+                "max_tokens": max_tokens,
+                "reasoning_effort": reasoning_effort,
+                "reasoning_tokens": reasoning_tokens,
+            }
+        )
         return self._reply
 
 
@@ -389,15 +514,18 @@ def _summarize_with(summarizer: ModelRef, fake: _FakeInfer):
 
 def test_summarizer_capped_when_max_tokens_set() -> None:
     fake = _FakeInfer()
-    body, truncated = _summarize_with(ModelRef(max_tokens=512, reasoning_effort="off"), fake)
+    # D45: the summarizer's `reasoning_tokens` threads through too (a summary benefits from a low budget)
+    body, truncated = _summarize_with(
+        ModelRef(max_tokens=512, reasoning_effort="off", reasoning_tokens=128), fake
+    )
     assert not truncated and body.startswith(SUMMARY_PREFIX)
-    assert fake.kwargs[0] == {"max_tokens": 512, "reasoning_effort": "off"}
+    assert fake.kwargs[0] == {"max_tokens": 512, "reasoning_effort": "off", "reasoning_tokens": 128}
 
 
 def test_summarizer_uncapped_when_max_tokens_unset() -> None:
     fake = _FakeInfer()
     _summarize_with(ModelRef(), fake)
-    assert fake.kwargs[0] == {"max_tokens": None, "reasoning_effort": None}
+    assert fake.kwargs[0] == {"max_tokens": None, "reasoning_effort": None, "reasoning_tokens": None}
 
 
 def test_summarizer_overflow_guard_tightens_with_a_large_cap() -> None:
@@ -477,7 +605,7 @@ def _backstop_session(state, thread, *, summary: str | None = "tiny summary"):
     async def no_guard(mode=None):
         return None  # no summarizer overflow guard → the summarizer actually runs
 
-    async def reply(payload, *, mode=None, model=None, max_tokens=None, reasoning_effort=None):
+    async def reply(payload, *, mode=None, model=None, max_tokens=None, reasoning_effort=None, **_kw):
         return ("Z" * 50000) if summary is None else summary
 
     session._inference.effective_window = big_window  # type: ignore[assignment]

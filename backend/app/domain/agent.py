@@ -39,13 +39,19 @@ class ModelRef(BaseModel):
     #: call; the per-endpoint field NAME (`max_tokens` vs `max_completion_tokens`) is chosen by
     #: `InferenceEndpointCfg.max_tokens_field` at the wire boundary (Wave 4).
     max_tokens: int | None = Field(default=None, ge=1)
-    #: Reasoning-effort ladder (D42/A10 — the universal field convention). `None` → the backend default.
-    #: Silent-safe: llama.cpp drops it (harmless), cloud takes it first-class; `"off"` additionally
-    #: becomes llama.cpp `chat_template_kwargs: {enable_thinking: false}` at the wire (Wave 4).
+    #: Reasoning-effort ladder (D42/A10 — the universal field convention) and, since D45, the ONE primary
+    #: reasoning knob: it is TRANSLATED per backend at the wire by the serving endpoint's
+    #: `reasoning_dialect`. An effort-only API takes it verbatim; llama.cpp (which never reads
+    #: `reasoning_effort` — hence the translation, not a shrug) takes the ladder's token budget instead;
+    #: OpenRouter takes it with `"off"` → its `"none"`. `"off"` additionally becomes llama.cpp
+    #: `chat_template_kwargs: {enable_thinking: false}`. `None` → the backend default.
     reasoning_effort: Literal["off", "minimal", "low", "medium", "high", "xhigh", "max"] | None = None
-    #: Numeric reasoning budget where a backend can express it (e.g. OpenRouter `reasoning:{max_tokens}`);
-    #: advisory/no-op elsewhere (llama.cpp has no per-request reasoning budget). `None`/blank → unset.
-    #: `ge=1` for `max_tokens` symmetry — a 0-token reasoning budget is never meaningful; inherit via None.
+    #: Explicit per-request reasoning-token budget (D45) — an OVERRIDE of the ladder above, not a parallel
+    #: setting. Where the serving endpoint's `reasoning_dialect` accepts a budget (llama.cpp
+    #: `reasoning_budget_tokens`, OpenRouter `reasoning:{max_tokens}`) this wins over the ladder-derived
+    #: value; where the dialect is effort-only (OpenAI) it is ignored. `None`/blank → the ladder decides.
+    #: `ge=1` for `max_tokens` symmetry — a 0-token reasoning budget is never a meaningful *explicit*
+    #: setting (use `reasoning_effort: "off"`, which the ladder maps to the server's own 0 sentinel).
     reasoning_tokens: int | None = Field(default=None, ge=1)
 
 

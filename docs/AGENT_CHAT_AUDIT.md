@@ -518,7 +518,7 @@ intent-skill narrows the toolset. Adoption: measure and budget the manifest (ACA
 | **A7** | Retry classifier/policy split + provider-portable context transforms (thinking-block normalization) for clean mid-thread local↔cloud handoff (pi) | **ADAPT** — classifier explicit in `core/failover` policy; transforms only when a reasoning local model lands | Slice 7 (classifier) / backlog (transforms) |
 | **A8** | Context-economy budget: measure tools+head token cost per agent (log it), keep manifests lean, skills-as-docs bias (pi; Claude Code deferred schemas) | **ADOPT (measure first)** | Slice 1 rider (measurement) → backlog (deferred schemas) |
 | **A9** | Per-session memory-snapshot freeze knob (Hermes) — stronger cache stance, edits surface next thread | **DEFER (owner call — STILL UNRULED as of 2026-07-20)**; per-turn read is already head-stable within a turn. Standing default = **per-turn (current behavior), by inaction, not an owner ruling** | §6 Q5 (open) → ROADMAP B1 |
-| **A10** | Hard reasoning budget for local thinking models (Hermes 4 `&lt;/think&gt;` cap) | **PARTLY ADOPTED** — the call-config/`ModelRef` half (per-agent `max_tokens` + `reasoning_effort`) shipped in D42; the hard `reasoning_tokens` cap stays **EXPLORE**, still gated on a llama.cpp control surface | Slice 6 (D42) / backlog → ROADMAP A5 |
+| **A10** | Hard reasoning budget for local thinking models (Hermes 4 `&lt;/think&gt;` cap) | **ADOPTED — FULLY BUILT.** The call-config/`ModelRef` half (per-agent `max_tokens` + `reasoning_effort`) shipped in D42; the hard `reasoning_tokens` cap is **WIRED** by D45 — llama.cpp's per-request `reasoning_budget_tokens` was the control surface the deferral assumed didn't exist | Slice 6 (D42) + D45 |
 | **A11** | Cancelled-turn context hygiene: mark in-flight calls `cancelled`, filter/synthesize like abandoned confirms (opencode `isOrphanedInterruptedTool`) | **ADOPT** — extends the existing `_assemble` synthesized-result seam | Slice 3 |
 | **A12** | Event-log-as-truth framing: compaction stays a derived overlay over the untouched message log (pi tree-JSONL model) — **already ctrl-b's design** (`compacted` flag, rows never deleted) | **KEEP (no work)** — cite as validation | — |
 
@@ -1086,7 +1086,8 @@ for *messages* only.
 > one notice) · **W4 `7313155`** (`_call_config` = the ONE ModelRef wire: `max_tokens` under the
 > SERVING endpoint's field name chain-wide, the effort ladder + `"off"`→`enable_thinking:false`
 > per-call merge, the summarizer runs capped · structured `InferenceError` + `is_context_overflow`
-> · the one-shot nothing-streamed reactive backstop; `reasoning_tokens` declared-unwired residual)
+> · the one-shot nothing-streamed reactive backstop; `reasoning_tokens` declared-unwired residual —
+> *SUPERSEDED 2026-07-20 by D45, which wired it per-dialect*)
 > · **W5 `c3d1dec`** (FE: context-window Fields on local/cloud/per-fallback · the global
 > compaction block · per-agent Max-output/Reasoning Seg on `setModel` · `/compact` instructions +
 > the `rejected` note) · **W6 `c04e1f4`+`08ade3e`** (DESIGN §5.4 rewritten as-built · SPEC
@@ -1119,6 +1120,9 @@ for *messages* only.
 > (failover-absorbed; per-endpoint effort-map = the future seam) · anchoring needs the telemetry
 > flags (INFO + deploy note; local ships pinned) · llama.cpp ctx-shift mutes the backstop (deploy
 > note) · `reasoning_tokens` advisory-unwired · in-memory `compaction_state` restart-resets.
+> *(The first and fourth are CLOSED by D45: the reserved per-endpoint effort-map seam was spent as
+> `reasoning_dialect`, and `reasoning_tokens` is wired — an exotic effort no longer rides verbatim to
+> a hop that speaks a different dialect.)*
 > **LIVE-VERIFY items (deferred to daily use per `testing-parked-wing-it`):** a long minig+
 > session — watch the trim tier then a summary fire at the window line · `/compact focus on X`
 > steers the summary · the Conf UI knobs apply next turn without restart · the anchoring-inactive
@@ -1320,12 +1324,13 @@ affordance on the confirm bubble.
 ### Backlog (explicitly not scheduled)
 A8 deferred tool schemas (until the Slice-1 measurement shows pressure) · A9 memory freeze knob
 (§6 Q5 — **the one owner question never ruled on**; standing default = per-turn reads, see below) ·
-A10 reasoning budget — **partially absorbed by D42**: the call-config/`ModelRef` half SHIPPED in
-Slice 6 (`max_tokens` + the `reasoning_effort` ladder per agent), so D42's title says "absorbs A10";
-what remains OPEN is the **`reasoning_tokens` hard-cap wiring** — the field is declared on `ModelRef`
-(`domain/agent.py`) but reaches no adapter (`inference._call_config` sends `max_tokens` +
-`reasoning_effort` only), because a real `</think>` budget needs a llama.cpp control surface we
-don't have. Under active owner discussion 2026-07-20; no decision recorded · Gemini-style content-chant detector (only if narration
+A10 reasoning budget — **CLOSED 2026-07-20, fully built**: D42 absorbed the call-config/`ModelRef`
+half in Slice 6 (`max_tokens` + the `reasoning_effort` ladder per agent), and **D45 wired the
+remainder**. The deferral above ("a real `</think>` budget needs a llama.cpp control surface we don't
+have") was **factually wrong**: llama-server parses a per-request `reasoning_budget_tokens` and
+conversely ignores `reasoning_effort` entirely — the knob we were already sending was the no-op, not
+the missing one. `reasoning_tokens` now reaches the adapter as an explicit override, translated per
+the endpoint's new `reasoning_dialect` · Gemini-style content-chant detector (only if narration
 loops appear) · pi-style provider-portable thinking-block transforms (when a reasoning local model
 lands; D43 code-verified them unnecessary today) · Claude-Code-style progressive memory index (when
 caps grow, ROADMAP B1).

@@ -707,6 +707,7 @@ class Compactor:
                 model=s.model,
                 max_tokens=s.max_tokens,
                 reasoning_effort=s.reasoning_effort,
+                reasoning_tokens=s.reasoning_tokens,
             )
             body = body.strip()
         except InferenceError:
