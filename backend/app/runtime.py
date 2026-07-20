@@ -320,8 +320,9 @@ async def grant_approval(app: "FastAPI", tool: str, args: dict[str, object]) -> 
     human-confirmed run.
 
     The rule pins EVERY top-level validated field to `glob_escape(canonical_str(value))` (None → the
-    literal `"null"`) via `exact_arg_pins`, so it matches THIS exact call and nothing else (§7
-    invariant 5). Idempotent: an identical rule already on the tool is a no-op (no duplicate). Reuses
+    `permissions.NONE_CANON` sentinel, pinned unescaped — NOT the plain `"null"`, which a string arg
+    could also produce; post-audit MED-2) via `exact_arg_pins`, so it matches THIS exact call and
+    nothing else (§7 invariant 5, modulo the documented `int | str` type-blindness). Idempotent: an identical rule already on the tool is a no-op (no duplicate). Reuses
     the ONE settings write lock + apply/patch machinery, mirroring the PUT flow, so the bubble grant is
     atomic (no list-through-deep-merge from a stale FE cache).
 
