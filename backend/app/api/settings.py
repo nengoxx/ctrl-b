@@ -11,22 +11,14 @@ Thin by design (AGENTS conventions): validate + delegate to `config.py` helpers 
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import ValidationError
 
-from app.config import (
-    Settings,
-    apply_patch_to_yaml,
-    deep_merge,
-    mask_secrets,
-    prune_unchanged,
-    unmask_secrets,
-)
-from app.runtime import reconfigure
+from app.config import Settings, mask_secrets
+from app.runtime import apply_settings_patch, settings_write_lock
 
 router = APIRouter(tags=["settings"])
 
@@ -34,10 +26,6 @@ router = APIRouter(tags=["settings"])
 #: the UI can say "restart to apply". host/port can't rebind the live uvicorn socket; debug is
 #: fixed at app construction (FastAPI(debug=…)).
 _RESTART_REQUIRED = ("server.host", "server.port", "server.debug")
-
-#: Serialize PUTs: the read-modify-write (merge onto current config) isn't atomic, so two racing
-#: saves could interleave and lose one's changes.
-_write_lock = asyncio.Lock()
 
 
 def _restart_paths(old: Settings, new: Settings) -> list[str]:
@@ -86,24 +74,18 @@ async def put_settings(patch: dict[str, Any], request: Request) -> dict[str, Any
             "appearance": {**patch["appearance"], "updated_at": datetime.now(timezone.utc).isoformat()},
         }
 
-    async with _write_lock:
-        current: Settings = request.app.state.settings
-        current_raw = current.model_dump(mode="json")  # real (unmasked) secrets
-        merged = deep_merge(current_raw, patch)
-        # Restore secrets the form echoed back masked/blank — never overwrite a real credential.
-        merged = unmask_secrets(merged, current_raw)
+    async with settings_write_lock:
+        # Snapshot the OLD settings before applying: `apply_settings_patch`→`reconfigure` mutates
+        # `app.state.settings` IN PLACE (rebinds its top-level fields), so a live reference would read
+        # as already-updated. A shallow copy keeps the pre-update nested objects for the diff.
+        old: Settings = request.app.state.settings.model_copy()
+        # `apply_settings_patch` (runtime) is the shared merge→validate→persist→hot-apply core (secret
+        # carry-over + minimal-write pruning + `reconfigure`); the D44 grant path reuses it too.
         try:
-            new = Settings.model_validate(merged)
+            new = await apply_settings_patch(request.app, patch)
         except ValidationError as exc:
             raise HTTPException(status_code=422, detail=exc.errors()) from exc
-
-        restart_required = _restart_paths(current, new)
-        # Persist only what actually changed, comment/format-preserving (audit C1): unmask the patch
-        # against real secrets, drop unchanged leaves, then edit the file in place. A masked secret
-        # echoed back unchanged prunes away → its original line (text + quoting) is left untouched.
-        to_write = prune_unchanged(unmask_secrets(patch, current_raw), current_raw)
-        apply_patch_to_yaml(to_write)
-        await reconfigure(request.app, new)
+        restart_required = _restart_paths(old, new)
 
     return {
         "settings": mask_secrets(new.model_dump(mode="json")),

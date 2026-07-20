@@ -146,10 +146,12 @@ class CompactRequest(BaseModel):
 
 
 class ResumeRequest(BaseModel):
-    """Resolve a suspended tool call. `decision` is execute|dismiss|answer: `execute` re-runs a
-    confirm-gated call (carry the `confirm_token` from `tool.permission`), `dismiss` skips it (confirm
-    *or* question), `answer` supplies the owner's reply to a `question` (A2) in `answer`. `privilege`
-    carries the session override across the round-trip (A1/D16) so the continuation gates the same."""
+    """Resolve a suspended tool call. `decision` is execute|execute_always|dismiss|answer: `execute`
+    re-runs a confirm-gated call (carry the `confirm_token` from `tool.permission`), `execute_always`
+    runs it AND persists an args-exact 'always allow' rule so future identical calls auto-run (D44 W2),
+    `dismiss` skips it (confirm *or* question), `answer` supplies the owner's reply to a `question` (A2)
+    in `answer`. `privilege` carries the session override across the round-trip (A1/D16) so the
+    continuation gates the same."""
 
     thread_id: str
     call_id: str
@@ -157,7 +159,9 @@ class ResumeRequest(BaseModel):
     #: can't fall through to EXECUTE (the old `str` field's documented "anything else is execute" hole,
     #: which also marked an `answer`-against-a-confirm OK without running). The before-validator strips
     #: surrounding whitespace first, so a trimmed valid value ("dismiss ") still passes the Literal.
-    decision: Literal["execute", "dismiss", "answer"] = "execute"
+    #: `execute_always` (D44 W2) behaves EXACTLY as `execute` downstream except it first persists the
+    #: grant rule — a `resume`-local branch, invisible to `_drive`.
+    decision: Literal["execute", "execute_always", "dismiss", "answer"] = "execute"
     confirm_token: str | None = None
     answer: str | None = None  # the owner's reply when decision == "answer" (A2)
     privilege: Privilege | None = None
@@ -1557,6 +1561,7 @@ async def resume(body: ResumeRequest, request: Request) -> Response:
             body.answer,
             mode=body.mode,
             skills=body.skills,
+            app=request.app,  # D44 W2: the `execute_always` grant reuses the settings write machinery
         )
         return await _turn_response(request, thread, events, stream=stream, handle=handle)
     except Exception:

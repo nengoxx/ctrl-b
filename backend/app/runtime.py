@@ -18,17 +18,32 @@ call them from lifespan too, and extend `reconfigure` — never a parallel reloa
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import asyncio
+import logging
+from typing import TYPE_CHECKING, Any
+
+from pydantic import ValidationError
 
 from app.adapters.embeddings import EmbeddingsClient
 from app.adapters.inference import EndpointGates, InferenceClient
 from app.adapters.openterminal import OpenTerminalClient
 from app.adapters.searxng import SearxngClient
 from app.adapters.voice import VoiceClient
-from app.config import Settings
+from app.config import (
+    ApprovalRule,
+    Settings,
+    apply_patch_to_yaml,
+    deep_merge,
+    prune_unchanged,
+    unmask_secrets,
+)
+from app.core.permissions import exact_arg_pins
+from app.core.tool import UnknownTool
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+
+logger = logging.getLogger(__name__)
 
 
 def set_inference(app: "FastAPI", settings: Settings) -> None:
@@ -257,3 +272,81 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
         apply_tool_overrides(app, new)
     if caches_stale:
         invalidate_status_caches(app)
+
+
+#: Serialize every persisted settings write: the read-modify-write (merge onto the live config) isn't
+#: atomic, so two racing saves could interleave and lose one's changes. THE one lock — `PUT
+#: /api/settings` AND the D44 approval-grant path (Slice 8 W2) both hold it (re-homed here from
+#: `api/settings.py` so there is a single lock object, never two — D44 §4/H2).
+settings_write_lock = asyncio.Lock()
+
+
+async def apply_settings_patch(app: "FastAPI", patch: dict[str, Any]) -> Settings:
+    """The atomic merge→validate→persist→hot-apply core shared by `PUT /api/settings` and the D44
+    grant path. MUST be called while holding `settings_write_lock`. Deep-merges `patch` onto the live
+    config, restores unchanged secrets, validates (raises `ValidationError` — the caller maps it),
+    persists comment/format-preserving, and hot-applies via `reconfigure`. Returns the new validated
+    `Settings`. Factored so the two write paths share ONE sequence rather than copy-pasting it."""
+    current: Settings = app.state.settings
+    current_raw = current.model_dump(mode="json")  # real (unmasked) secrets
+    merged = unmask_secrets(deep_merge(current_raw, patch), current_raw)
+    new = Settings.model_validate(merged)
+    # Persist only the changed leaves, comment/format-preserving (a masked secret echoed back prunes
+    # away → its original line is untouched). The grant patch carries the FULL replacement approvals
+    # list, so `deep_merge`/`_deep_set` replace it wholesale (no list-through-merge — D44 H2).
+    to_write = prune_unchanged(unmask_secrets(patch, current_raw), current_raw)
+    apply_patch_to_yaml(to_write)
+    await reconfigure(app, new)
+    return new
+
+
+#: The W2 counterpart to `action_service._APPROVAL_MARKER` — breadcrumbs appended to the run's summary
+#: when a bubble grant could NOT be persisted (defense in depth behind the FE's `always_eligible`).
+#: Defined once here, beside the grant that returns them; a successful grant returns None (no note).
+_GRANT_INEXPRESSIBLE_NOTE = " [always-allow skipped: non-scalar args can't be pinned]"
+_GRANT_WRITE_FAILED_NOTE = " [always-allow not saved: settings write failed]"
+
+
+async def grant_approval(app: "FastAPI", tool: str, args: dict[str, object]) -> str | None:
+    """Persist an args-EXACT 'always allow' rule for this call (D44 W2 grant path) and hot-apply it,
+    then return `None` on success or a short breadcrumb note (to append to THIS call's run summary)
+    when the grant could not be written. Called by the resume path on `execute_always` BEFORE
+    executing; the write NEVER blocks the run — the owner's intent to run is primary, so an
+    inexpressible-args skip or a persist failure is logged/noted and the call still executes as a
+    human-confirmed run.
+
+    The rule pins EVERY top-level validated field to `glob_escape(canonical_str(value))` (None → the
+    literal `"null"`) via `exact_arg_pins`, so it matches THIS exact call and nothing else (§7
+    invariant 5). Idempotent: an identical rule already on the tool is a no-op (no duplicate). Reuses
+    the ONE settings write lock + apply/patch machinery, mirroring the PUT flow, so the bubble grant is
+    atomic (no list-through-deep-merge from a stale FE cache).
+
+    Note: because the grant lands BEFORE the resume executes and `ActionService.invoke` re-consults
+    live settings on that execute, the W1 audit marker (`[auto-allowed: …]`) DOES stamp this very run —
+    the rule already matches by the time the gate re-runs. Benign: the run is both human-confirmed and
+    now approval-covered, and the marker + a failure note are mutually exclusive (a note only returns
+    when NO rule was written)."""
+    actions = app.state.actions
+    settings: Settings = app.state.settings
+    try:
+        inp = actions.registry.get(tool).spec.input_model.model_validate(args)
+    except UnknownTool, ValidationError:
+        return _GRANT_INEXPRESSIBLE_NOTE  # args already validated upstream; fail-closed if not
+    pins = exact_arg_pins(inp.model_dump(mode="json"))
+    if pins is None:
+        return _GRANT_INEXPRESSIBLE_NOTE  # a non-scalar field — nothing to persist (behind FE gate)
+    new_rule = ApprovalRule(args=pins)
+    async with settings_write_lock:
+        override = settings.tool_overrides.get(tool)
+        existing = list(override.approvals) if override and override.approvals else []
+        if any(rule == new_rule for rule in existing):
+            return None  # idempotent double-tap — the identical grant already stands
+        approvals = [rule.model_dump(mode="json") for rule in existing]
+        approvals.append(new_rule.model_dump(mode="json"))
+        patch = {"tool_overrides": {tool: {"approvals": approvals}}}
+        try:
+            await apply_settings_patch(app, patch)
+        except Exception:
+            logger.exception("approval grant persist failed for tool %r", tool)
+            return _GRANT_WRITE_FAILED_NOTE
+    return None

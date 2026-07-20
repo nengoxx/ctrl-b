@@ -26,7 +26,7 @@ from pydantic import BaseModel, ValidationError
 if TYPE_CHECKING:
     from app.domain.agent import AgentDef
 
-from app.core.permissions import Decision, approval_match, decide
+from app.core.permissions import Decision, approval_match, decide, exact_arg_pins
 from app.core.tool import InvocationContext, ToolRegistry, UnknownTool
 from app.domain.enums import Actor, Privilege, RunState
 from app.domain.event import Event
@@ -81,6 +81,20 @@ class ActionService:
     @property
     def registry(self) -> ToolRegistry:
         return self._registry
+
+    def approval_eligible(self, name: str, raw_args: dict) -> bool:
+        """True iff a bubble 'always allow' rule for this EXACT call is expressible (D44 W2) — drives
+        the `always_eligible` flag on `tool.permission` so the FE hides an affordance that would only
+        persist a never-matching rule. Value-based (`exact_arg_pins`): validate the args, then require
+        every top-level value to canonicalize to a scalar pattern (a `None` optional pins as `"null"`).
+        False only when a field is non-scalar (list/dict — today just `spawn_subagents.tasks`) or the
+        args no longer validate. Actor-agnostic; does NOT consider `spec.confirm` (an un-approvable
+        forced-confirm tool is still *expressible*, just inert at the gate — R1)."""
+        try:
+            inp = self._registry.get(name).spec.input_model.model_validate(raw_args)
+        except UnknownTool, ValidationError:
+            return False
+        return exact_arg_pins(inp.model_dump(mode="json")) is not None
 
     async def invoke(
         self,

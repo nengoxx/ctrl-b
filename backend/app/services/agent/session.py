@@ -16,7 +16,7 @@ Event contract (DESIGN §12 subset emitted here):
     reasoning.delta  {messageId, delta}       # thinking model's chain-of-thought (dimmed)
     text.delta       {messageId, delta}       # answer content
     part.added       {messageId, part}        # a tool_call part — UI renders the command bubble
-    tool.permission  {callId, tool, args, risk, token, prompt}   # confirm bubble
+    tool.permission  {callId, tool, args, risk, token, prompt, alwaysEligible}   # confirm bubble (D44)
     tool.question    {callId, tool, question, args}   # A2: `question` builtin asks the owner (answer bubble)
     tool.result      {callId, result}         # bubble resolves
     compaction       {removed, summaryId, truncated}   # older turns folded into a summary (4e)
@@ -69,6 +69,7 @@ from app.domain.conversation import (
 )
 from app.domain.enums import Actor, RunState
 from app.domain.result import ToolResult
+from app.runtime import grant_approval
 from app.services.action_service import ActionService, InvokeOutcome
 from app.services.agent.compaction import (
     OUTPUT_CLEARED_PLACEHOLDER,
@@ -86,6 +87,8 @@ from app.services.agent.skills import available_skills, narrow_tools, resolve_sk
 from app.services.conversation import MessageRepo, ThreadRepo
 
 if TYPE_CHECKING:
+    from fastapi import FastAPI
+
     from app.services.agent.steering import SteerEntry, SteerSource
 
 log = logging.getLogger(__name__)
@@ -825,14 +828,18 @@ class AgentSession:
         *,
         mode: str | None = None,
         skills: list[str] | None = None,
+        app: "FastAPI | None" = None,
     ) -> AsyncIterator[AgentEvent]:
-        """Resume a suspended turn, then continue the loop so the model can react. Three decisions:
-        `execute` (a confirm-gated call — re-run with the token), `dismiss` (skip it — works for a
-        confirm *or* a question), and `answer` (a `question` — inject the owner's `answer` as the
-        call's result, A2). Fail-closed (A1/C1-H1): an unknown decision is rejected with an error, NOT
-        treated as execute, and `answer` is only honoured against an AWAITING_ANSWER call (never used to
-        silently OK a confirm). `mode` (`/local`//`/cloud`, ACA-16) is carried across the round-trip and
-        threaded to `_drive` so a `/local` turn resumes local; `None` → the configured default.
+        """Resume a suspended turn, then continue the loop so the model can react. Four decisions:
+        `execute` (a confirm-gated call — re-run with the token), `execute_always` (D44 W2 — persist an
+        args-exact grant, then run EXACTLY as `execute`), `dismiss` (skip it — works for a confirm *or*
+        a question), and `answer` (a `question` — inject the owner's `answer` as the call's result, A2).
+        Fail-closed (A1/C1-H1): an unknown decision is rejected with an error, NOT treated as execute,
+        and `answer` is only honoured against an AWAITING_ANSWER call (never used to silently OK a
+        confirm). `mode` (`/local`//`/cloud`, ACA-16) is carried across the round-trip and threaded to
+        `_drive` so a `/local` turn resumes local; `None` → the configured default. `app` is passed only
+        by the API endpoint (the `execute_always` grant reuses the settings write machinery via
+        `runtime.grant_approval`); the write never blocks the run.
 
         `skills` (C5-M1) are the turn's active skills, carried across the round-trip so the resumed
         half runs under the SAME narrowed toolset + injected instructions the owner confirmed under —
@@ -847,6 +854,16 @@ class AgentSession:
             yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
             return
         cp = next((c for c in assistant.tool_calls() if c.call_id == call_id), None)
+        grant_note: str | None = None
+        if decision == "execute_always":
+            # D44 W2: persist an args-EXACT 'always allow' rule for this call BEFORE running it, then run
+            # it EXACTLY as `execute` (normalized below). The write NEVER blocks the run — a failure /
+            # inexpressible args returns a breadcrumb note appended to THIS call's result summary. Since
+            # the rule lands before the execute, `invoke` re-consults it and the W1 `[auto-allowed: …]`
+            # marker DOES stamp this run too (benign — human-confirmed AND now approval-covered).
+            if cp is not None and app is not None:
+                grant_note = await grant_approval(app, cp.tool, cp.args)
+            decision = "execute"
         if decision == "answer":
             # A1: only a real AWAITING_ANSWER question may be answered. `_find_pending` also matches an
             # AWAITING_CONFIRM call, so an `answer` aimed at a confirm would otherwise mark it OK without
@@ -903,7 +920,11 @@ class AgentSession:
                 yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
                 return
             async for ev in self._drive(
-                thread, mode=mode, resume_assistant=assistant, resume_tokens={call_id: token}
+                thread,
+                mode=mode,
+                resume_assistant=assistant,
+                resume_tokens={call_id: token},
+                resume_notes={call_id: grant_note} if grant_note else None,
             ):
                 yield ev
         finally:
@@ -929,6 +950,7 @@ class AgentSession:
         resume_assistant: Message | None = None,
         resume_tokens: dict[str, str | None] | None = None,
         resume_answers: dict[str, str] | None = None,
+        resume_notes: dict[str, str] | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """The loop state machine (DESIGN §5.2). On resume, first finish the suspended step; then
         run model iterations until text-only / suspended / capped. `mode` forces the inference
@@ -1013,7 +1035,13 @@ class AgentSession:
         if resume_assistant is not None:
             outcome = _BatchOutcome()
             async for ev in self._run_calls(
-                thread, resume_assistant, resume_tokens or {}, guard, resume_answers or {}, outcome=outcome
+                thread,
+                resume_assistant,
+                resume_tokens or {},
+                guard,
+                resume_answers or {},
+                outcome=outcome,
+                resume_notes=resume_notes or {},
             ):
                 yield ev
             if outcome.suspended:
@@ -1914,6 +1942,7 @@ class AgentSession:
         resume_answers: dict[str, str] | None = None,
         *,
         outcome: _BatchOutcome,
+        resume_notes: dict[str, str] | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Process the assistant's not-yet-resolved tool calls in order, **as an async generator** (D40
         §2): each tool event is `yield`ed at the point it is produced instead of buffered — with the
@@ -2290,6 +2319,10 @@ class AgentSession:
                                         "risk": spec.risk.value,
                                         "token": inv.confirm_token,
                                         "prompt": inv.confirm_prompt,
+                                        # D44 W2: whether a bubble 'always allow' grant is expressible for
+                                        # these exact args (value-based) — the FE hides the affordance when
+                                        # false (a non-scalar field, e.g. spawn_subagents.tasks).
+                                        "alwaysEligible": self._actions.approval_eligible(cp.tool, cp.args),
                                     },
                                 )
                                 break
@@ -2324,6 +2357,10 @@ class AgentSession:
                             break
 
                 cp.state = result.state
+                if resume_notes and token != _DISMISS and (note := resume_notes.get(cp.call_id)):
+                    # D44 W2: an `execute_always` whose grant couldn't be persisted breadcrumbs why on
+                    # THIS (executed) call's summary — the call still ran; only the standing rule is lost.
+                    result.summary = f"{result.summary}{note}"
                 if token != _DISMISS:  # a real execution
                     guard.last_results[sig] = result  # remember for exact-arg suppression (C1a)
                     # Progress only if this (call, outcome) pair is *new* this turn — the SAME call

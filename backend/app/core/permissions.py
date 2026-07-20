@@ -63,6 +63,24 @@ def glob_escape(s: str) -> str:
     return s.translate({ord("*"): "[*]", ord("?"): "[?]", ord("["): "[[]"})
 
 
+def exact_arg_pins(args: dict[str, object]) -> dict[str, str] | None:
+    """The args-EXACT pin map for a bubble grant (D44 W2), built from a *validated*
+    `model_dump(mode="json")`: every top-level field → `glob_escape(canonical_str(value))` (None →
+    the literal `"null"`, glob-escaped so a value containing `*?[` matches literally). `None` when
+    ANY field is non-scalar (list/dict) — the rule would be inexpressible / never-matching. THE one
+    computation shared by two W2 call sites: `always_eligible` (a suspend emits `pins is not None`)
+    and the grant write (`ApprovalRule(args=pins)`). Value-based, NOT model-based: an optional
+    non-scalar field that is `None` on THIS call pins as `"null"` and stays eligible — only a call
+    actually carrying a list/dict (e.g. `spawn_subagents.tasks`) is ineligible."""
+    pins: dict[str, str] = {}
+    for field, value in args.items():
+        canon = canonical_str(value)
+        if canon is None:
+            return None  # a non-scalar field — the rule can't be expressed as scalar patterns
+        pins[field] = glob_escape(canon)
+    return pins
+
+
 def approval_match(rules: Iterable[ApprovalRule], args: dict[str, object]) -> ApprovalRule | None:
     """The first rule that matches `args`, else None (D44). OR across rules; AND within a rule — a
     rule matches iff EVERY `(field, pattern)` entry does: `field in args`, `canonical_str` non-None,
