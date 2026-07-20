@@ -343,7 +343,64 @@
 > Fable 5 = orchestrator + feature reviewer alongside Codex (`gpt-5.6-sol` high); ALL specified
 > implementation / mechanical work / research = Opus 4.8 subagents.**
 >
-> **▶▶ SESSION CLOSE 2026-07-20 PM — READ THIS FIRST. ALL PUSHED, CI green, tree clean @ `bee6760`.**
+> **▶▶ SESSION 2026-07-20 late → 21 — READ THIS FIRST. ~11 commits LOCAL awaiting the owner's push
+> OK (`c5538fa..d879532` + this docs commit, on top of the pushed `4af01ee`); full gate 6/6 on the
+> tip; dev units RUNNING; prod still v1.1.1.**
+> **① The reasoning-arc FINAL FOREIGN REVIEW (checklist ③) ran and EARNED ITS KEEP: Codex NO-GO,
+> 4 HIGH / 2 MED** — all six verified real by the orchestrator (headline: `off` was NOT absolute
+> when an endpoint hand-set `extra_body.reasoning`; the forbidden OpenRouter pair was still
+> emittable via the extra_body shorthand; a concurrency race skipped the D46 degradation) → Opus
+> fix wave `bcdebfe` + an orchestrator-found SEVENTH door (`agent.defaults` reasoning edits never
+> cleared demotions — `5c6c5a5`) → fresh-eyes verifier **GO** → close-out `4af01ee` (shape-only
+> namespace now FOLDS the effort instead of dropping it) → **PUSHED with owner OK, main CI GREEN.**
+> **② `api_mode` is SET ON DEV** (`local: llamacpp` · `cloud: openrouter`, schema-validated, backup
+> beside it) — D45/D46 are live on :5434; prod gets the same two lines at release.
+> **③ A9 RULED (owner): keep per-turn memory reads; freeze REJECTED as premature. Shipped the head
+> reorder** `c5538fa` — memory now rides AFTER the roster (D15 #4 AMENDED; order-pinning test), so a
+> memory write never evicts the roster from a prefix cache. Next = observe `cache_n`/`prompt_n` at
+> turn boundaries in daily use. §6 is now FULLY ruled. *(Also: the Composer Surface was found
+> already-COMPLETE since 2026-07-11 — the stale CLAUDE.md "parked" row fixed, `392200b`.)*
+> **④ Slices 4–8 LIVE-VERIFY EXECUTED (owner-ordered, via a Codex live-tester on the dev API —
+> repo read-only, fleet rails on): 12 PASS / 3 FAIL / 1 NOT-TRIGGERED.** S4 parallel dispatch +
+> per-call persistence REAL (pings ≈ max not Σ) · S5 steering all four scenarios · S8 approvals
+> end-to-end (grant/exact-pin/revoke/no-always-on-forced-confirm). **The S6 FAILs were ONE root
+> cause, found+fixed same night `3563bb9`: vault's llama-server runs in ROUTER mode and `/props`
+> reports `n_ctx: 0`, which the D42 probe accepted as the window** (activated that day by ②!) —
+> window 0 made the summarizer's overflow guard short-circuit to the truncation placeholder without
+> ever calling the summarizer (the tester's "destructive compaction + hallucinated recall").
+> Non-positive probe ⇒ no-probe now. **⚠ OWNER CONFIG: router-mode endpoints CANNOT be probed — set
+> `context_window` explicitly on `inference.local`** (deploy README §Inference tuning has the
+> caveat). **S7.11 "re-attach turn loss" = NOT A DEFECT** (DB-verified full persistence; the
+> `terminal_status: null` was the 60s/32-entry terminal-cache eviction — a display artifact; two LOW
+> backlog items recorded in ROADMAP A5-x, `b7a0724`). A tester-induced junk memory entry was cleaned
+> from dev's memories/.
+> **⑤ ROADMAP D3 SLICE 1 (multi-homed addressing) ✅ BUILT + 3-ROUND FOREIGN-REVIEWED — D47.**
+> The full pipeline: code-truth (design HELD + 6 amendments — typed `SshResult.kind`, ONE shared
+> failover loop, blank-drop resolver) → **D47 LOCKED** `6837833` → build `925c71c` (schema
+> `vpn_host`/`ssh_prefer_vpn` + `host_addresses()` chokepoint + connect-only failover at all three
+> SSH sites + CRUD round-trip; 11 tests) → orchestrator review fix `c0bc4c9` (read-phase timeout
+> was misclassified as connect ⇒ spurious re-execution) → **Codex NO-GO** (2H/1M/1L) → `8dbdb1f`
+> (deadline-gated candidates · **omit-preserves on the two new fields** [the shipped MachineEditor
+> predates them — an edit would have WIPED a configured vpn_host] · banner-timeout is
+> connect-phase) → verify-2 `10c1165` (the 16s pre-gate can't be sufficient because auth is
+> deliberately unbounded ⇒ the MEASURED post-connect exec cutoff: a command never starts without a
+> full exec window remaining — also closes the pre-existing single-candidate overrun) → round 3
+> `d879532` (paramiko's exec timeout is PER-OP not total ⇒ the total-exec channel re-slice +
+> `SSH_BUDGET_SLACK_S` + the TIMEOUT summary now says "may still be completing on the host").
+> **CLOSED BY ORCHESTRATOR RULING with an ACCEPTED RESIDUAL recorded in D47 AMENDED-2** (once the
+> command is transmitted the remote host runs it regardless — irreducible; Codex's final NO-GO
+> position recorded, not chased; forced-confirm bounds the destructive cases). **You can now give a
+> host a `vpn_host` + `ssh_prefer_vpn: true` (YAML or API — corsair's firewalled LAN SSH finally
+> gets VPN-first failover); the Conf editor fields + vantage-aware links = Slice 2 (ROADMAP D3).**
+> **NEXT SESSION, in order:** ① /model check ② owner push OK → `git push` (~11 commits; pre-push
+> runs the full gate) ③ owner config on dev when poking: `context_window` on `inference.local`
+> (router-mode can't be probed); the standing Slice-4/6 reminders + `api_mode` on PROD at release
+> ④ dev units are RUNNING — stop after poking (`systemctl --user stop ctrl-b-dashboard-dev
+> ctrl-b-dashboard-dev-web`) ⑤ next = D3 Slice 2 (frontend: editor fields + vantage-aware service
+> links) or the owner's pick (6c-1/6c-2 flags · vapor ladder) ⑥ prod release (Slices 1–8 + the
+> reasoning arc + D47 s1 are all unreleased) via `deploy/linux/README.md` §Release when wanted.
+>
+> **▶ SESSION CLOSE 2026-07-20 PM (the previous close) — ALL PUSHED, CI green, tree clean @ `bee6760`.**
 > **What shipped after Slice 8** (all on origin/main): `fb59c83`+`4dae8d5` host address field takes a
 > DNS name on mobile (the numeric `inputMode` made it paste-only; label is now "IP or DNS name" — the
 > e2e caught that "IP or host**name**" collides with "Hostname" under Playwright's SUBSTRING
