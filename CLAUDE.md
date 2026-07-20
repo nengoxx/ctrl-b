@@ -42,7 +42,7 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | [`docs/DEPLOY_EMMA.md`](./docs/DEPLOY_EMMA.md) | The emma (Linux) deploy runbook + topology (D32). |
   | [`docs/QUALITY.md`](./docs/QUALITY.md) | The code-quality harness (lint/format/typecheck/test + `check-all` + conventions). Read before touching tooling. |
   | [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md) | The trust boundary, privilege gate, confirm-tokens, secret handling + safe-defaults checklist. Read before touching anything that executes or handles secrets. |
-  | [`docs/COMPOSER_SURFACE_PLAN.md`](./docs/COMPOSER_SURFACE_PLAN.md) | The **parked** (post-deploy) executable plan for the Composer Surface slice — still current, not superseded. |
+  | [`docs/COMPOSER_SURFACE_PLAN.md`](./docs/COMPOSER_SURFACE_PLAN.md) | The Composer Surface build record — **✅ COMPLETE 2026-07-11** (catalog later deduped to `[stacked, sheet, line]` + the `composerSkin` axis, D37). Historical except Phase D's vapor bullet (→ the §14.15.3 ladder). |
   | [`docs/FRONTIER_PLAN.md`](./docs/FRONTIER_PLAN.md) | The frontier theme (T5) executable plan — design LOCKED 2026-07-07; incl. the SECTION LAYOUT SYSTEM v1 (T5 step 0). |
 
   *Historical records (provenance, not live guidance): `COSMOS_HANDOFF.md` (cosmos build record —
