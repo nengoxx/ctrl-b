@@ -1,5 +1,6 @@
 import type { FleetAction } from "../../hooks/useActions";
 import { relativeTime } from "../../lib/relativeTime";
+import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
 import type { Host, Service } from "../../types";
 
 // Frontier host-detail sheet content (F3) — rendered inside the shared <BottomSheet> (the C3 primitive cosmos
@@ -171,7 +172,13 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
             const svcOn = !!s.status?.online;
             const addr = `${host.ip}:${s.port ?? "—"}`;
             return svcOn && s.url ? (
-              <a key={s.id} className="svc up" href={s.url} target="_blank" rel="noopener">
+              <a
+                key={s.id}
+                className="svc up"
+                href={rebaseServiceUrl(s.url, serviceBase(host, window.location))}
+                target="_blank"
+                rel="noopener"
+              >
                 <span className="led" aria-hidden />
                 <span className="info">
                   <span className="nm">{s.name}</span>

@@ -29,6 +29,7 @@ export function rebaseServiceUrl(url: string, base: string): string {
   if (!base) return url;
   try {
     const u = new URL(url);
+    if (u.hostname === base.toLowerCase()) return url; // true identity — never re-serialize
     u.hostname = base;
     return u.toString();
   } catch {

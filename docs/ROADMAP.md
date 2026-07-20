@@ -507,9 +507,9 @@ user configure URLs manually + split `href`/`siteMonitor`; this design auto-reso
      (meta); the Conf host editor (`MachineEditor`) gains the `VPN host` field + `SSH via VPN first` Switch (Draft →
      PUT, always-sent) + a ` · vpn` row-summary tag; `Host` type gains `vpn_host?`/`ssh_prefer_vpn?`. Tests:
      `serviceBase.test` (vantage matrix + CGNAT /10 boundaries + rebase) · `machineEditor.test` (fields + round-trip
-     + omit-preserves-regression) · `deviceRowVpn.test`. **Note:** Frontier/Cosmos svc-row *link* retargeting was
-     scoped display-only here — those themes' service hrefs still use the backend ip URL; a trivial follow-up can
-     route them through `serviceBase` if VPN-vantage service links are wanted in the spatial themes.
+     + omit-preserves-regression) · `deviceRowVpn.test`. Frontier/Cosmos svc-row hrefs were retargeted through
+     `rebaseServiceUrl`/`serviceBase` in the same-day follow-up (the VPN-vantage phone case is exactly the spatial
+     themes' daily use), so ALL service links are vantage-aware.
   3. **(Later improvement — still future) VPN discovery** — a backend `tailscale status --json` peer read (reuses
      `actions/tailscale.py` CLI plumbing) → a Conf "Discover from Tailscale" button that auto-fills `vpn_host` by
      **HostName** match (LAN-IP match is unreliable; browser can't enumerate the tailnet). Opt-in, not on every load.

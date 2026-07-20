@@ -1,5 +1,6 @@
 import type { FleetAction } from "../../hooks/useActions";
 import { relativeTime } from "../../lib/relativeTime";
+import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
 import type { Host, Service } from "../../types";
 import { assignBanners } from "./serviceBanners";
 
@@ -179,7 +180,7 @@ export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }:
               <a
                 key={s.id}
                 className="hd-svc on"
-                href={s.url}
+                href={rebaseServiceUrl(s.url, serviceBase(host, window.location))}
                 target="_blank"
                 rel="noopener"
                 style={bannerStyle}
