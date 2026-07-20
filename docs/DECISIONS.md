@@ -2770,9 +2770,15 @@ direction than assumed:
 - **`"off"` keeps its `chat_template_kwargs:{enable_thinking:false}` merge unchanged** on every
   dialect: that is the TEMPLATE-level lever and it COMPLEMENTS the sampler-level budget `0` — two
   levers on two layers, not a duplicate.
-- Every D42 wire invariant survives: modeled params ride as first-class kwargs (never smuggled
-  through `extra_body`), unset fields contribute nothing, per-call keys win over the endpoint's
-  `extra_body` while its other keys survive, and the config object is never mutated.
+- **Transport:** the D42 rule is "params **the SDK models** ride as first-class kwargs". The OpenAI
+  SDK's `AsyncCompletions.create` has a **CLOSED signature** (no `**kwargs`) and models
+  `reasoning_effort` but NOT `reasoning_budget_tokens` / `thinking_budget_tokens` / `reasoning` — so
+  those three ride in **`extra_body`**, the SDK's designated passthrough for un-modeled body keys (the
+  `cache_prompt`/`return_progress` precedent). This is not a weakening of the invariant: passing them
+  as kwargs raises `TypeError` *before a byte reaches the wire*. Caught by the build audit (see the
+  amendment below) and now pinned by a signature test.
+- Every other D42 wire invariant survives: unset fields contribute nothing, per-call keys win over the
+  endpoint's `extra_body` while its other keys survive, and the config object is never mutated.
 
 This **cashes in D42's reserved "a per-endpoint effort-map is the future seam"** — the seam is
 spent, and `reasoning_dialect` is the shape it took (a dialect switch, not a per-endpoint mapping
@@ -2788,3 +2794,24 @@ reachable ONLY through the ladder (`off` / `max`) — deliberate: an explicit 0 
 second spelling of `off`, and the ladder already owns both ends. vLLM (`thinking_token_budget`) has
 no dialect entry yet; adding one is a new `Literal` member plus a branch, which is exactly the shape
 this field was chosen for.
+
+*(AMENDED post-audit 2026-07-20 — the build audit's one HIGH, fixed before the feature was ever
+exercised:)* ⓐ **The vendor reasoning keys were emitted as TOP-LEVEL kwargs and could never have
+worked.** `_call_config`'s dict is splatted into `AsyncCompletions.create`, whose signature is closed;
+`reasoning_budget_tokens` / `thinking_budget_tokens` / `reasoning` are not modeled, so every
+`llamacpp` call with a reasoning setting — the exact case D45 exists to fix — would have raised
+`TypeError`, been wrapped by `_as_inference_error`, and **burned the whole failover chain** before
+surfacing a Python error message to the user. Fixed by routing them through `extra_body` (above). The
+unit tests missed it because the section-C fake client takes `**kwargs`: a dict-shape assertion cannot
+catch a signature mismatch. Now pinned by `test_call_config_emits_only_keys_the_sdk_actually_models`,
+which checks every dialect × rung × override against `inspect.signature(AsyncCompletions.create)` and
+fails loudly if the SDK ever grows `**kwargs`. **Durable lesson:** when a wire change adds a key,
+assert against the REAL client signature, not only against the payload dict you built.
+ⓑ **The ladder table is now pinned TOTAL over the effort `Literal`**
+(`test_reasoning_budget_table_covers_every_ladder_rung`) — `_resolve_reasoning_budget` looks up with
+`.get()`, so a rung added to `ModelRef` without a table entry would have silently sent no budget.
+ⓒ **Recorded, not fixed:** the `openai` dialect still passes `off`/`xhigh`/`max` verbatim even though
+they are outside OpenAI's `none|minimal|low|medium|high` enum. Pre-existing D42 behaviour, deliberately
+left alone here because the default dialect's payload is contractually byte-for-byte unchanged; the
+asymmetry with the `openrouter` branch (which DOES map `off`→`none`) is the price of that pin. Fix it
+under its own decision if a strict cloud endpoint ever 400s on it.

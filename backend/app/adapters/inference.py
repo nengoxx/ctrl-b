@@ -624,8 +624,7 @@ class InferenceClient:
         reasoning_tokens: int | None = None,
     ) -> dict[str, Any]:
         """The per-ENDPOINT modeled call params + the per-call `extra_body` merge (D42/A10; per-dialect
-        reasoning D45). Modeled params ride as FIRST-CLASS kwargs (the codebase rule — never smuggled
-        through extra_body):
+        reasoning D45).
           - `max_tokens` → keyed by THIS endpoint's `max_tokens_field` ("max_tokens" |
             "max_completion_tokens"), resolved per serving endpoint so a failover serve uses its own
             field name;
@@ -633,13 +632,26 @@ class InferenceClient:
             primary knob is the `reasoning_effort` LADDER; `reasoning_tokens` is an explicit OVERRIDE
             that wins WHERE THE DIALECT HAS A BUDGET and is dropped where it has none (correct, not a
             gap). `"off"` ADDITIONALLY merges llama.cpp's `chat_template_kwargs:{enable_thinking:false}`
-            (the template-level lever, complementing the sampler-level budget 0) OVER the endpoint's own
-            `extra_body` for THIS call only — agent-derived keys win, the endpoint's other keys (and
-            other `chat_template_kwargs` sub-keys) survive, and the config object is NEVER mutated.
+            (the template-level lever, complementing the sampler-level budget 0).
+
+        TRANSPORT (D45 build audit, HIGH): "modeled params ride as first-class kwargs, never smuggled
+        through extra_body" holds for params the SDK actually MODELS. `AsyncCompletions.create` has a
+        CLOSED signature (no `**kwargs`) and models `reasoning_effort` but NOT `reasoning_budget_tokens`
+        / `thinking_budget_tokens` / `reasoning` — passing those as kwargs raises `TypeError` before a
+        byte reaches the wire (and, wrapped by the failover chain, would burn every endpoint first). So
+        the vendor-specific reasoning keys ride in `extra_body`, which is precisely the SDK's designated
+        passthrough for un-modeled body keys (the `cache_prompt`/`return_progress` precedent). Pinned by
+        a signature test — if the SDK ever models them, that test fails and the branch can move up.
+
+        Per-call keys WIN over the endpoint's own `extra_body` while its other keys (and other
+        `chat_template_kwargs` sub-keys) survive; the config object is NEVER mutated (fresh dicts).
         Unset fields contribute NOTHING (no `None`-valued keys reach the wire)."""
         out: dict[str, Any] = {}
         if max_tokens is not None:
             out[ep.max_tokens_field] = max_tokens
+        #: Un-modeled, vendor-specific body keys for THIS call — merged into `extra_body` below (see
+        #: TRANSPORT above). `reasoning_effort` is NOT here: the SDK models it, so it stays a kwarg.
+        body: dict[str, Any] = {}
         dialect = ep.reasoning_dialect
         if dialect == "openai":
             # Effort-only API. `reasoning_tokens` is DROPPED: OpenAI exposes no reasoning-token budget
@@ -654,19 +666,20 @@ class InferenceClient:
             # and unknown keys are ignored, so the pair is free back-compat).
             budget = _resolve_reasoning_budget(reasoning_effort, reasoning_tokens)
             if budget is not None:
-                out["reasoning_budget_tokens"] = budget
-                out["thinking_budget_tokens"] = budget
+                body["reasoning_budget_tokens"] = budget
+                body["thinking_budget_tokens"] = budget
         elif dialect == "openrouter":
             # `reasoning.effort` and `reasoning.max_tokens` are MUTUALLY EXCLUSIVE — sending both is a
             # hard 400. An explicit budget wins; otherwise send the ladder verbatim (OpenRouter publishes
             # its own effort→% mapping, so effort is the better signal when no budget was set) with our
             # `"off"` mapped onto its enum's `"none"`.
             if reasoning_tokens is not None:
-                out["reasoning"] = {"max_tokens": reasoning_tokens}
+                body["reasoning"] = {"max_tokens": reasoning_tokens}
             elif reasoning_effort is not None:
                 out["reasoning_effort"] = "none" if reasoning_effort == "off" else reasoning_effort
         # dialect == "none": the server understands no reasoning control — drop both.
         extra = dict(ep.extra_body) if ep.extra_body else {}
+        extra.update(body)  # per-call reasoning keys win over an endpoint that hand-set the same key
         if reasoning_effort == "off":
             ctk = dict(extra.get("chat_template_kwargs") or {})
             ctk["enable_thinking"] = False

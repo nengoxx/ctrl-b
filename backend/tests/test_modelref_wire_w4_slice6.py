@@ -134,7 +134,7 @@ def test_call_config_llamacpp_ladder_sends_both_budget_keys_and_no_effort() -> N
     cfg = InferenceClient._call_config(
         _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="high"
     )
-    assert cfg == {"reasoning_budget_tokens": 8192, "thinking_budget_tokens": 8192}
+    assert cfg == {"extra_body": {"reasoning_budget_tokens": 8192, "thinking_budget_tokens": 8192}}
     assert "reasoning_effort" not in cfg
 
 
@@ -142,7 +142,7 @@ def test_call_config_llamacpp_explicit_tokens_override_the_ladder() -> None:
     cfg = InferenceClient._call_config(
         _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="high", reasoning_tokens=333
     )
-    assert cfg == {"reasoning_budget_tokens": 333, "thinking_budget_tokens": 333}
+    assert cfg == {"extra_body": {"reasoning_budget_tokens": 333, "thinking_budget_tokens": 333}}
 
 
 def test_call_config_llamacpp_off_is_budget_zero_plus_enable_thinking_false() -> None:
@@ -150,8 +150,11 @@ def test_call_config_llamacpp_off_is_budget_zero_plus_enable_thinking_false() ->
     cfg = InferenceClient._call_config(
         _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="off"
     )
-    assert cfg["reasoning_budget_tokens"] == 0 and cfg["thinking_budget_tokens"] == 0
-    assert cfg["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+    assert cfg["extra_body"] == {
+        "reasoning_budget_tokens": 0,
+        "thinking_budget_tokens": 0,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
     assert "reasoning_effort" not in cfg
 
 
@@ -159,7 +162,7 @@ def test_call_config_llamacpp_max_is_unrestricted_sentinel() -> None:
     cfg = InferenceClient._call_config(
         _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="max"
     )
-    assert cfg == {"reasoning_budget_tokens": -1, "thinking_budget_tokens": -1}
+    assert cfg == {"extra_body": {"reasoning_budget_tokens": -1, "thinking_budget_tokens": -1}}
 
 
 def test_call_config_llamacpp_unset_sends_no_budget() -> None:
@@ -178,7 +181,7 @@ def test_call_config_openrouter_explicit_tokens_excludes_effort() -> None:
     cfg = InferenceClient._call_config(
         _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="high", reasoning_tokens=2000
     )
-    assert cfg == {"reasoning": {"max_tokens": 2000}}
+    assert cfg == {"extra_body": {"reasoning": {"max_tokens": 2000}}}
     assert "reasoning_effort" not in cfg
 
 
@@ -196,6 +199,43 @@ def test_call_config_openrouter_off_maps_to_none_enum() -> None:
     )
     assert cfg["reasoning_effort"] == "none"
     assert cfg["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def test_call_config_emits_only_keys_the_sdk_actually_models() -> None:
+    """D45 build-audit HIGH: `_call_config`'s dict is splatted into `AsyncCompletions.create`, whose
+    signature is CLOSED (no `**kwargs`). Any top-level key the SDK does not model raises `TypeError`
+    before a byte reaches the wire — so vendor keys MUST ride in `extra_body`. This pins the rule
+    across every dialect: if the SDK ever models the reasoning keys, this fails and the branch may
+    move back up to first-class kwargs."""
+    import inspect
+
+    from openai.resources.chat.completions import AsyncCompletions
+
+    params = inspect.signature(AsyncCompletions.create).parameters
+    assert not any(p.kind is p.VAR_KEYWORD for p in params.values()), "SDK grew **kwargs — re-check"
+    for dialect in ("openai", "llamacpp", "openrouter", "none"):
+        for effort in (None, "off", "minimal", "low", "medium", "high", "xhigh", "max"):
+            for tokens in (None, 512):
+                cfg = InferenceClient._call_config(
+                    _ep(reasoning_dialect=dialect),
+                    max_tokens=16,
+                    reasoning_effort=effort,
+                    reasoning_tokens=tokens,
+                )
+                unmodeled = set(cfg) - set(params)
+                assert not unmodeled, f"{dialect}/{effort}/{tokens} would TypeError on: {unmodeled}"
+
+
+def test_reasoning_budget_table_covers_every_ladder_rung() -> None:
+    """The ladder table must be TOTAL over `ModelRef.reasoning_effort`'s Literal: `_resolve_reasoning_
+    budget` looks up with `.get()`, so a rung added to the Literal without a table entry would SILENTLY
+    send no budget on the budget dialects (no error, no failing test) — pin the two together."""
+    from typing import get_args
+
+    from app.adapters.inference import _REASONING_BUDGETS
+
+    rungs = set(get_args(get_args(ModelRef.model_fields["reasoning_effort"].annotation)[0]))
+    assert rungs == set(_REASONING_BUDGETS), "ladder Literal and _REASONING_BUDGETS drifted apart"
 
 
 def test_call_config_dialect_none_drops_both() -> None:
