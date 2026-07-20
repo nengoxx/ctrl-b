@@ -11,7 +11,9 @@
 > **Status:** audit verified · comparative research complete (8 agents, 2026-07-07) · consistency
 > pass done (v2.1: +ACA-17, cross-slice contract, per-slice edge-case specs) · **plan APPROVED by
 > the owner 2026-07-07** — tracked as `TODO.md` **Phase 12**; Slice 0 pre-landed (`ee23209`);
-> D-entries (D35–D37) are drafted at each slice's design review, per §5 · DB/context/cache pass
+> D-entries are drafted at each slice's design review, per §5 (**as built: D38–D44**, one per slice
+> from Slice 2 up; the "D35–D37" reserved here is stale numbering — see §5's doc-artifacts note) ·
+> DB/context/cache pass
 > done (v2.2, 2026-07-08: +ACA-18–21 and the ACA-5/ACA-15 riders, folded into Slices 1/2/6 —
 > no new slices, no re-sequencing) · **pre-build re-verification pass done (v2.3, 2026-07-16,
 > three-agent code-truth + research refresh): every Slice 1–2 item HOLDS against HEAD; ACA-7
@@ -515,8 +517,8 @@ intent-skill narrows the toolset. Adoption: measure and budget the manifest (ACA
 | **A6** | Wire-visible retries: typed `retry`/failover events with attempt + category (Claude Code `api_retry`); `done` reason subtypes (already have ⭐) | **ADOPT (small)** | Slice 7 |
 | **A7** | Retry classifier/policy split + provider-portable context transforms (thinking-block normalization) for clean mid-thread local↔cloud handoff (pi) | **ADAPT** — classifier explicit in `core/failover` policy; transforms only when a reasoning local model lands | Slice 7 (classifier) / backlog (transforms) |
 | **A8** | Context-economy budget: measure tools+head token cost per agent (log it), keep manifests lean, skills-as-docs bias (pi; Claude Code deferred schemas) | **ADOPT (measure first)** | Slice 1 rider (measurement) → backlog (deferred schemas) |
-| **A9** | Per-session memory-snapshot freeze knob (Hermes) — stronger cache stance, edits surface next thread | **DEFER (owner call)** — per-turn read is already head-stable within a turn | §6 question |
-| **A10** | Hard reasoning budget for local thinking models (Hermes 4 `&lt;/think&gt;` cap) | **EXPLORE** — depends on llama.cpp control surface | backlog |
+| **A9** | Per-session memory-snapshot freeze knob (Hermes) — stronger cache stance, edits surface next thread | **DEFER (owner call — STILL UNRULED as of 2026-07-20)**; per-turn read is already head-stable within a turn. Standing default = **per-turn (current behavior), by inaction, not an owner ruling** | §6 Q5 (open) → ROADMAP B1 |
+| **A10** | Hard reasoning budget for local thinking models (Hermes 4 `&lt;/think&gt;` cap) | **PARTLY ADOPTED** — the call-config/`ModelRef` half (per-agent `max_tokens` + `reasoning_effort`) shipped in D42; the hard `reasoning_tokens` cap stays **EXPLORE**, still gated on a llama.cpp control surface | Slice 6 (D42) / backlog → ROADMAP A5 |
 | **A11** | Cancelled-turn context hygiene: mark in-flight calls `cancelled`, filter/synthesize like abandoned confirms (opencode `isOrphanedInterruptedTool`) | **ADOPT** — extends the existing `_assemble` synthesized-result seam | Slice 3 |
 | **A12** | Event-log-as-truth framing: compaction stays a derived overlay over the untouched message log (pi tree-JSONL model) — **already ctrl-b's design** (`compacted` flag, rows never deleted) | **KEEP (no work)** — cite as validation | — |
 
@@ -921,8 +923,8 @@ log). Design sketch (confirmed refinements in **bold**):
 > max_concurrent_requests` (owner constraint: 1–2 non-queuing slots) · §7 debts C1-L5/C2-L6/
 > C2-L7 discharged here. As-built record lands on this heading post-build.
 >
-> **✅ BUILT 2026-07-19 — AS-BUILT RECORD (commits `44bdfdd..62ab584`, 10; ALL LOCAL pending the
-> owner's push OK).** Five Opus waves, each hand-reviewed + full-gate-green: **W1 `dbd016b`**
+> **✅ BUILT 2026-07-19 — AS-BUILT RECORD (commits `44bdfdd..62ab584`, 10; ✅ PUSHED — on
+> `origin/main`, CI green).** Five Opus waves, each hand-reviewed + full-gate-green: **W1 `dbd016b`**
 > (ToolSpec.suspending + static AST pin · AgentDef.max_parallel_tools · the llamacpp
 > per-endpoint gate w/ stream-lifetime permit + deadlock pins · docstring/SECURITY_MODEL truth) ·
 > **W2 `aad3366`** (`_classify_batch`/`_BatchPlan`: overlay-then-commit single-pass classifier,
@@ -994,8 +996,8 @@ log). Design sketch (confirmed refinements in **bold**):
 > SQ/EQ note is corrected (its core drains at turn END, not step-boundary). As-built record
 > lands here post-build.
 >
-> **✅ BUILT 2026-07-19 — AS-BUILT RECORD (commits `0d000d4..5e383d6`, 15; ALL LOCAL with the
-> pushed Slice 4 beneath them, awaiting the owner's push OK).** Five Opus waves: **W1 `855c661`**
+> **✅ BUILT 2026-07-19 — AS-BUILT RECORD (commits `0d000d4..5e383d6`, 15; ✅ PUSHED — on
+> `origin/main`, CI green).** Five Opus waves: **W1 `855c661`**
 > (steering.py SteerQueue/SteerEntry + enqueue 202s + probe/DELETE + `_reserve_or_busy`) ·
 > **W2 `1c7e5f8`** (drain A at the `_drive` loop top: transactional persist-before-clear,
 > fail-closed exec re-check, the SHARED `run_user_exec` extraction [the /exec endpoint's inline
@@ -1068,8 +1070,8 @@ for *messages* only.
 > call config" (max_tokens / reasoning_effort ladder / reasoning_tokens = **A10 lands here**) ·
 > all owner knobs get a Conf UI surface, hot at next turn.
 >
-> **✅ BUILT 2026-07-19 — AS-BUILT RECORD (12 commits `d8c6744..2e4dac9`, ALL LOCAL, awaiting the
-> owner's push OK).** Six Opus waves: **W1 `681310f`** (CompactionCfg v2 knobs · ModelRef call-config
+> **✅ BUILT 2026-07-19 — AS-BUILT RECORD (12 commits `d8c6744..2e4dac9`, ✅ PUSHED 2026-07-20 —
+> `f2aed3f..0ed9d80`, main CI green @ `0ed9d80`).** Six Opus waves: **W1 `681310f`** (CompactionCfg v2 knobs · ModelRef call-config
 > fields · `context_window`/`max_tokens_field` per endpoint · the `/props` probe: lazy, memoized,
 > never-raises, `/v1`-stripped) · **W2 `76b4a85`** (config>probe>fallback ladder [probe-eligible =
 > the configured local endpoint] · the ONE `_over_threshold` with exact `reserve_output`
@@ -1166,8 +1168,8 @@ already do, keep it).
 > `InferenceError` / stall / iteration-exhaustion — a `retry_status` snapshot covers re-attach-mid-backoff).
 > As-built record lands on §5 (Slice 7) at close-out.
 >
-> **✅ BUILT 2026-07-20 — AS-BUILT RECORD (11 commits `a7faef1..` + this close-out, ALL LOCAL,
-> awaiting the owner's push OK).** Five Opus waves: **W1 `de88a54`** (`failover()` → async
+> **✅ BUILT 2026-07-20 — AS-BUILT RECORD (11 commits `a7faef1..c00a640` + this close-out, ✅ PUSHED
+> same day — `0ed9d80..0977e91`, main CI green @ `0977e91`).** Five Opus waves: **W1 `de88a54`** (`failover()` → async
 > GENERATOR [HopRetry/HopFailover control items, FailoverResult last-item contract;
 > `failover_collect()` reduces voice/`complete()` byte-for-byte] · `categorize`
 > [transient/overflow/fatal_for_endpoint/other; llama.cpp busy shapes SOURCE-verified] ·
@@ -1255,8 +1257,8 @@ owns *what next*).
 > branches of `invoke`") · the bubble grant is a **server-side resume verb** (`execute_always`), not an
 > FE settings write. As-built record follows.
 >
-> **✅ BUILT 2026-07-20 — AS-BUILT RECORD (3 build commits + this close-out; ALL LOCAL, awaiting the
-> owner's push OK).** Three Opus waves: **W1 `08ef3c1`** (the policy core — `ApprovalRule`
+> **✅ BUILT 2026-07-20 — AS-BUILT RECORD (3 build commits + the W5 fix wave + this close-out; ✅ PUSHED
+> — `b2a2cb4..96105de` on `origin/main`).** Three Opus waves: **W1 `08ef3c1`** (the policy core — `ApprovalRule`
 > [`extra="forbid"` + a str-coercing field validator so an unquoted YAML scalar can't brick
 > `Settings.model_validate`] · `ToolOverride.approvals` · the pure `canonical_str`/`glob_escape`/
 > `approval_match` in `core/permissions.py` · `decide(approved=…)` with the `spec.confirm` rung split
@@ -1317,17 +1319,37 @@ affordance on the confirm bubble.
 
 ### Backlog (explicitly not scheduled)
 A8 deferred tool schemas (until the Slice-1 measurement shows pressure) · A9 memory freeze knob
-(§6) · A10 reasoning budget (llama.cpp control surface) · Gemini-style content-chant detector
-(only if narration loops appear) · pi-style provider-portable thinking-block transforms (when a
-reasoning local model lands) · Claude-Code-style progressive memory index (when caps grow,
-ROADMAP B1).
+(§6 Q5 — **the one owner question never ruled on**; standing default = per-turn reads, see below) ·
+A10 reasoning budget — **partially absorbed by D42**: the call-config/`ModelRef` half SHIPPED in
+Slice 6 (`max_tokens` + the `reasoning_effort` ladder per agent), so D42's title says "absorbs A10";
+what remains OPEN is the **`reasoning_tokens` hard-cap wiring** — the field is declared on `ModelRef`
+(`domain/agent.py`) but reaches no adapter (`inference._call_config` sends `max_tokens` +
+`reasoning_effort` only), because a real `</think>` budget needs a llama.cpp control surface we
+don't have. Under active owner discussion 2026-07-20; no decision recorded · Gemini-style content-chant detector (only if narration
+loops appear) · pi-style provider-portable thinking-block transforms (when a reasoning local model
+lands; D43 code-verified them unnecessary today) · Claude-Code-style progressive memory index (when
+caps grow, ROADMAP B1).
+
+> **↪ RE-HOMED 2026-07-20 (post-ACA bookkeeping).** This document closes with the ACA chapter, so
+> every item above now also lives in [`ROADMAP.md`](./ROADMAP.md) — **§A5** (agent runtime: A8
+> deferred schemas, A10's remaining reasoning-token cap, the chant detector, the thinking-block
+> transforms) and **§B1** (A9 memory freeze, the progressive memory index). ROADMAP is the durable
+> home; these entries stay as the provenance.
 
 ### Doc/decision artifacts
+
+> ⚠ **Numbering correction (2026-07-20).** This table was written before the slices ran and reserved
+> **D35/D36/D37** for durable turns / turn serialization / lead-worker routing. Those numbers went to
+> the **frontier theme** track instead (D35 section layout · D36 chat hooks · D37 presentation axes),
+> so the ACA entries landed **one-per-slice from D38 up**. Rows below carry the REAL numbers; if you
+> hit an old "D35 proposed"/"drafts D35" cross-reference elsewhere, read it as **D39**.
+
 | Artifact | When |
 |---|---|
-| `DECISIONS.md` **D35 — Durable turns** (turn registry + replayable event log + explicit cancel + steering submissions) | Slice 3 design review (steering rider at Slice 5) |
-| `DECISIONS.md` **D36 — Per-thread turn serialization** (lock now, steer queue as the end state) | Slice 2 |
-| `DECISIONS.md` **D37 — Lead/worker model routing** | Slice 7 design review |
+| `DECISIONS.md` **D39 — Durable turns** *(was reserved as "D35")* (turn registry + replayable event log + explicit cancel; steering split out to D41) | Slice 3 design review — ✅ LOCKED 2026-07-18 (`0cb9e09`) |
+| `DECISIONS.md` **D38 — Per-thread turn serialization** *(was reserved as "D36")* (turn marker now, steer queue as the end state) | Slice 2 — ✅ LOCKED 2026-07-17 (`868cf8a`) |
+| `DECISIONS.md` **D43 — Model routing** *(was reserved as "D37 — Lead/worker")*; A4 was reduced at review to **failure-fallback** routing + the retry classifier + typed visibility (`lead_turns` DROPPED) | Slice 7 design review — ✅ LOCKED 2026-07-19 (`8c4a7b2`) |
+| `DECISIONS.md` **D40 — Turn speed** (Slice 4, `44bdfdd`) · **D41 — Steering queue** (Slice 5, `0d000d4`) · **D42 — Compaction v2** (Slice 6, `d8c6744`) · **D44 — Persisted approvals** (Slice 8, `2279d26`) | not foreseen by this table; ✅ all LOCKED |
 | `DESIGN.md` §5.3/§6/§12 rewrite | Slice 0 (interim), Slice 3/5 (final) |
 | `TODO.md` new phase "Chat hardening & adoption (ACA)" | on plan approval |
 | `SECURITY_MODEL.md` rows for ACA-9 outcome + Slice 8 approvals | Slices 1/8 — ✅ both landed (ACA-9 single-liveness row §2.3; approvals = §2.5 + two §3 rows + a §6 checklist item) |
@@ -1349,6 +1371,10 @@ ROADMAP B1).
    rate demands it? (It's the most speculative adoption; everything else is defect-adjacent.)
 5. **A9 memory freeze:** keep per-turn memory reads (edits apply immediately) or adopt Hermes's
    per-session freeze (stronger cache, staler memory)? Default recommendation: keep per-turn.
+   — **STILL OPEN (the only §6 question never ruled on; recorded 2026-07-20).** The **standing
+   default is per-turn reads — i.e. current behavior, unchanged, by inaction, NOT an owner ruling.**
+   Flagged for an explicit owner call; until then nothing is built either way. Durable home =
+   ROADMAP §B1.
 6. **Timing vs emma deploy:** Slices 0–2 pre-deploy, 3+ post-deploy on emma — agreed?
 7. **Slice 8 priority:** approvals-persistence is pure UX (fewer confirm taps); schedule after 7,
    or pull earlier? — **ANSWERED (owner): schedule after 7.** Built 2026-07-20 as the last ACA slice

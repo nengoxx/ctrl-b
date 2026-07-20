@@ -207,6 +207,12 @@ This is documented in `Waveform.tsx` with a leading comment so the mistake isn't
 - **DO** consider `useDeferredValue` on the chat message *list* when status is `"streaming"`, only after we cross ~200 messages — keeps token-by-token visible while the off-screen list virtualizes its catch-up.
 - Defer the actual implementation until we observe a real bottleneck (today, the app is fast enough that adding these would be premature). **Mark F9 as "defer until measured."**
 
+**MEASUREMENT TRIGGER (added 2026-07-20 — so "until measured" isn't indefinite).** "Defer until measured" with no trigger is just "never", and the same deferral now has a second owner: `AGENT_CHAT_AUDIT.md` **ACA-14** found the matching backend-side shape — `appendDelta` rebuilds the message array per token and `useAgentChat`'s `useMemo` is keyed on `messages`, so `pairResults` re-pairs **per token**; cost is O(messages) per token and is only contained by the `Bubbles` memo. ACA-14 is filed INFO/"watch, don't fix yet" and names **F13's wave as its owning item** — i.e. neither doc will act first without a trigger. So: **measure when EITHER fires —**
+1. **a single thread passes ~200 messages** (the threshold this entry already names for `useDeferredValue`, and roughly where the per-token re-pair stops being free), **or**
+2. **the owner reports input lag / a sluggish composer while a turn is streaming** (the subjective symptom that actually matters on the phone, which is the real target device).
+
+**When one fires, measure before implementing** — a React Profiler trace on a long thread mid-stream, so we learn whether the cost is the re-pair, the array rebuild, or render, and fix *that*. Note compaction (D42) cuts the *model's* context, not the client's message list — a long thread stays long on screen, so trigger 1 does not self-resolve. F9's own safety rule still binds: **never** wrap streaming-token updates in `startTransition`; `useDeferredValue` on the message *list* is the sanctioned lever.
+
 ---
 
 ### F10 🟢 — `resultByCall` / `latestPlanCall` rebuilt linearly on every AgentTab render
@@ -264,11 +270,11 @@ This is documented in `Waveform.tsx` with a leading comment so the mistake isn't
 | F6 | Lazy-load Conf only, prefetch on idle | 🔴 | ⚠️ MITIGATED | S | ✅ Slice 6 (+ follow-up fix for true lazy mount) |
 | F7 | `lucide-react` tree-shake audit | 🟡 | ✅ SAFE | XS | ✅ Slice 8 (dead dep removed; bundle was already React-dominated) |
 | F8 | Body-attr mirroring into `setUI()` | 🟡 | ✅ SAFE | S | ✅ Slice 4 |
-| F9 | `useTransition` / `useDeferredValue` | 🟢 | 🛑 DEFER | — | ⏸️ defer until measured |
+| F9 | `useTransition` / `useDeferredValue` | 🟢 | 🛑 DEFER | — | ⏸️ defer until measured — **trigger set 2026-07-20:** a thread >~200 messages **or** owner-reported input lag while streaming (see F9) |
 | F10 | Memoize `resultByCall` in AgentTab | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
 | F11 | PWA icon fan-out + PNG compression | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
 | F12 | Bundle analyzer in build | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
-| F13 | React Compiler trial | 🟢 | 🛑 DEFER | — | ⏸️ defer until F1–F12 stable |
+| F13 | React Compiler trial | 🟢 | 🛑 DEFER | — | ⏸️ defer until F1–F12 stable (they are) — now gated on the **same F9 trigger**; also carries the 29 deferred eslint warns (the Compiler-prep backlog, SYS-16) and owns ACA-14 |
 | F14 | Interactive divs missing keyboard/role | 🔴 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-02 |
 | F15 | `prefers-reduced-motion` not respected | 🔴 | ✅ SAFE | S | 🆕 follow-up audit 2026-06-02 |
 | F16 | SSE no error handler / no reconnect UI | 🟡 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-02 |
@@ -646,4 +652,4 @@ the offline row the equivalent auditory cue. (Minimal fix per the owner — low-
 ---
 
 **Next action (perf pass):** complete — Slices 1–8 shipped.
-**Next action (follow-up audit):** ✅ COMPLETE — the 2026-06-08 a11y session shipped the backlog in this order: Slice A = F25+F14 (`ab24a27`) → Slice B = F15 (`fa0742d`) → Slice C1 = F23 (`98f30f0`) → Slice C2 = F22 (`f647ee7`) → Slice D1 = F17 (`c7bd0d9`) → Slice D2 = F18 (`25d942c`) → Slice E0 = F28 (`3b2e45c`) → Slice E1 = F19 (`4ea10a9`) → Slice E3 = F26 (`76b8490`) → Slice F1 = F16 (`be86f40`) → Slice F2 = F20 (`40f94e8`); F29 (`6f6c7e9`) folded in; F21 → Phase 6 (done). **F24 ✅ SHIPPED** (PRE_DEPLOY step 5, 2026-07-02): the Playwright `e2e/a11y.spec.ts` axe (WCAG A/AA) suite scans all 4 tabs in the real built app — it caught + drove the fix of a real `aria-toggle-field-name` violation (the unlabelled `Switch`, now a required `label` prop). F27 (offline-row SR indicator) shipped 2026-06-24. F9/F13 perf items remain deferred until measured pressure.
+**Next action (follow-up audit):** ✅ COMPLETE — the 2026-06-08 a11y session shipped the backlog in this order: Slice A = F25+F14 (`ab24a27`) → Slice B = F15 (`fa0742d`) → Slice C1 = F23 (`98f30f0`) → Slice C2 = F22 (`f647ee7`) → Slice D1 = F17 (`c7bd0d9`) → Slice D2 = F18 (`25d942c`) → Slice E0 = F28 (`3b2e45c`) → Slice E1 = F19 (`4ea10a9`) → Slice E3 = F26 (`76b8490`) → Slice F1 = F16 (`be86f40`) → Slice F2 = F20 (`40f94e8`); F29 (`6f6c7e9`) folded in; F21 → Phase 6 (done). **F24 ✅ SHIPPED** (PRE_DEPLOY step 5, 2026-07-02): the Playwright `e2e/a11y.spec.ts` axe (WCAG A/AA) suite scans all 4 tabs in the real built app — it caught + drove the fix of a real `aria-toggle-field-name` violation (the unlabelled `Switch`, now a required `label` prop). F27 (offline-row SR indicator) shipped 2026-06-24. F9/F13 perf items remain deferred until measured pressure — **with an explicit trigger since 2026-07-20** (thread >~200 messages, or owner-reported input lag while streaming; see F9). They also own `AGENT_CHAT_AUDIT.md` ACA-14 (per-token O(messages) re-pairing).

@@ -2,8 +2,11 @@
 // to the agreed v2 grammar (ARCHITECTURE §"Composer", DECISIONS): one shared composer drives both
 // the Fleet and Agent tabs, and on submit the raw text is routed by its leading sigil:
 //
-//   !<cmd>            → guarded shell escape hatch (run_shell). Phase 5 wires the real exec; here it
-//                       routes + stubs so the path is visibly distinct.
+//   !<cmd>            → the guarded local-shell escape hatch (Phase 5, BUILT). Routes to
+//                       `store/chat.runShell`, which POSTs `/api/exec`; the backend runs it on the
+//                       host and persists a tool_call + result pair into the thread, so it renders
+//                       as a command bubble and the agent sees it next turn. Handles disabled
+//                       (403), thread-busy (409) and queued-as-a-steer (202, D41).
 //   /<verb> [args]    → slash commands. /local //cloud force the inference backend (replacing the old
 //                       k:/o:); /clear starts a fresh thread; /help lists commands. A /verb that
 //                       matches a discovered skill invokes it for that message (4.5, user-invoked).
@@ -108,7 +111,7 @@ export function runComposer(raw: string): void {
   void sendMessage(text, { raw: text });
 }
 
-/** `!<cmd>` — the guarded shell escape hatch (Phase 5). Runs `run_shell` on the backend host via
+/** `!<cmd>` — the guarded shell escape hatch (Phase 5, built). Runs `run_shell` on the backend host via
  *  `/api/exec`; the result persists into the thread and renders as a command bubble (store/chat). */
 function routeShell(cmd: string): void {
   if (!cmd) return;

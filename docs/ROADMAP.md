@@ -154,6 +154,30 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
   not duplicating the plan the model can already see, compaction interaction (re-inject after a fold), and
   honoring manual edits immediately. Reuse the plan already in history — no separate plan store.
 
+#### A5-x. Deferred chat-loop items inherited from the ACA (re-homed 2026-07-20)
+
+The agent-chat audit ([`AGENT_CHAT_AUDIT.md`](./AGENT_CHAT_AUDIT.md)) shipped as `TODO.md` Phase 12
+(Slices 0–8, all built). Its "Backlog (explicitly not scheduled)" items lived only in that closing
+document; they are re-homed here so they survive the chapter. Each keeps its ACA id as the pointer
+back to the analysis.
+
+- **A8 — deferred tool schemas.** Send lean tool manifests and fetch a tool's full JSON schema only
+  when the model actually reaches for it (Claude-Code pattern). *Deferred because:* Slice 1 shipped
+  the measurement rider (per-turn tools+head token cost is logged) and it has **not** shown pressure —
+  build it when the log says the manifest is expensive, not before. ACA §4 A8.
+- **A10 — hard reasoning budget** for local thinking models (a `</think>` cap). *Partly done:* D42
+  (Slice 6) absorbed the call-config half — per-agent `max_tokens` + the `reasoning_effort` ladder on
+  `ModelRef`. *Deferred because:* the remaining `reasoning_tokens` hard cap has a declared field on
+  `ModelRef` that reaches **no adapter** — a real cap needs a llama.cpp control surface that doesn't
+  exist yet. ACA §4 A10.
+- **Gemini-style content-chant detector** — spot a model looping the same narration and break it.
+  *Deferred because:* purely speculative; build it only if narration loops actually appear in use.
+  ACA §5 Backlog.
+- **pi-style provider-portable thinking-block transforms** — normalize reasoning blocks so a thread
+  can hand off mid-conversation between providers. *Deferred because:* D43 (Slice 7) **code-verified
+  it unnecessary today** — our local model emits no reasoning blocks to normalize. Revisit when a
+  reasoning local model lands. ACA §4 A7 (transforms half).
+
 ### A6. Multiple agents + subagents (configurable agent design)
 
 - **What:** the agent is a **definition**, and there can be **several** (the owner can add more) —
@@ -259,6 +283,19 @@ Round out the agent into a real system (study opencode + public Claude-Code patt
   URL, fitting the existing pattern). Don't hardcode a single memory mechanism.
 - **Open:** which embeddings backend; chunking strategy; whether memory is global vs per-thread vs
   per-project; retention/pruning UI.
+- **Deferred memory items inherited from the ACA (re-homed 2026-07-20)** — from
+  [`AGENT_CHAT_AUDIT.md`](./AGENT_CHAT_AUDIT.md)'s closing backlog, which was that document's only home:
+  - **A9 — per-session memory-snapshot freeze knob** (Hermes): read memory once per *session* instead
+    of once per *turn*, trading fresher edits for a stronger prompt-cache stance. *Deferred because:*
+    it is **ACA §6 Q5 — the one owner question never ruled on.** The **standing default is per-turn
+    reads, i.e. today's behavior, unchanged by inaction — NOT an owner ruling.** The doc's own
+    recommendation is to keep per-turn (a per-turn read is already head-stable *within* a turn, so the
+    cache win is small and the staleness cost is real). **Flagged for an explicit owner call**; nothing
+    is built either way until then.
+  - **Claude-Code-style progressive memory index** — load only a small index (Claude Code caps it at
+    ~200 lines / 25 KB) and read topic files on demand, instead of loading memory whole. *Deferred
+    because:* our memory file is nowhere near the caps; this is the natural next step for **this
+    section's file backend** when it grows. ACA §3 (Claude Code pack) + §5 Backlog.
 
 ---
 
@@ -428,6 +465,11 @@ user configure URLs manually + split `href`/`siteMonitor`; this design auto-reso
   3. **(Later improvement) VPN discovery** — a backend `tailscale status --json` peer read (reuses
      `actions/tailscale.py` CLI plumbing) → a Conf "Discover from Tailscale" button that auto-fills `vpn_host` by
      **HostName** match (LAN-IP match is unreliable; browser can't enumerate the tailnet). Opt-in, not on every load.
+- **Stopgap now typeable (2026-07-20, `fb59c83`).** The interim workaround — put the MagicDNS *name* in `ip` — was
+  reachable only by paste on Android: the Conf host editor's IP field carried `inputMode="decimal"`, which opens the
+  number pad. `ComputerCfg.ip` is a plain `str` and a DNS name has always been valid there, so the numeric hint was
+  simply wrong; it's dropped, and the label/placeholder now say a hostname is accepted. **This changes nothing about
+  the design above** — one overloaded field is still one overloaded field, and D3 remains the proper LAN-vs-VPN split.
 - **Open:** ship slice 1 as its own near-term backend slice (it affects the daily driver — you can't shut Windows
   hosts down from emma until it lands)? Full diagnosis:
   [`external_audit/CTRL-B Corsair Shutdown Audit 2026-06-29.md`](./external_audit/CTRL-B%20Corsair%20Shutdown%20Audit%202026-06-29.md) · routing in [`external_audit/TRIAGE-3.md`](./external_audit/TRIAGE-3.md).

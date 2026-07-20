@@ -115,6 +115,16 @@ chat stack (non-Optional fields), or have tools receive the ActionService via
 `InvocationContext` only (it's already there implicitly — the invoking service could inject
 itself), letting `Deps` drop the back-reference and the cycle with it.
 
+**STATUS 2026-07-20 — STILL OPEN, UNSCHEDULED (re-homed).** This was parked on "pairs with ACA
+Slice 3 (both touch lifespan wiring)". **Slice 3 shipped 2026-07-18 without it** — durable turns
+reshaped who *iterates* the loop, not how `Deps` is assembled — and Phase 12 has since closed at
+Slice 8, so the parking slot is gone. Nothing here regressed and nothing is blocked: the finding is
+design debt, not a defect, and the "subagent runtime is not fully wired" guards still read correctly
+at runtime. **Next home:** it is a post-ACA refactor-wave candidate with no owning phase — pick it up
+opportunistically alongside any other lifespan/`main.py` wiring change (that adjacency, not a slice,
+is the real trigger). Tracked in §4's table; **not** in `TODO.md` — deliberately, since scheduling it
+is an owner call, not a bookkeeping one.
+
 ### SYS-3 · Tool overrides mutate shared registry specs in place — **LOW-MED (ties into ACA-17)**
 
 `apply_tool_overrides` (`runtime.py:114‑144`) overwrites `spec.description`/`agent_exposed`/`core`
@@ -126,6 +136,23 @@ Slice 2 gates rediscovery, consider inverting this to an **overlay-at-read** (re
 `to_openai_tools` + the catalog DTO from `settings.tool_overrides` directly) so specs become
 immutable after registration and the side-table (`tool_spec_orig`) disappears. Decide there —
 don't fix twice.
+
+**STATUS 2026-07-20 — the RACE is closed; the STRUCTURE is still open.**
+- ✅ **Race closed** (`f0bbef4`). `PUT /api/settings` now **409s on a `tool_overrides` patch while any
+  turn is live**, reusing the D38 turn-marker registry as the single busy-truth — the same gate and
+  the same 409 shape as `POST /api/integrations/rediscover` (the ACA-17 precedent), so there is no
+  parallel mechanism. Deliberately **scoped**, and the scoping is the load-bearing part: the trigger
+  is the *presence* of the `tool_overrides` key on the raw patch, so appearance/inference/voice/memory
+  writes are untouched (appearance sync is frequent + cross-device — a blanket 409 would be a real UX
+  regression); and the gate lives **in the API handler, not in `apply_settings_patch`/the write lock**,
+  because D44's `runtime.grant_approval` writes a `tool_overrides` patch *during* a live turn by design
+  from the resume path. **Do not hoist this check into the shared core — that would break the "always
+  allow" grant.** Tests: `test_settings_7a.py` + `test_approvals_grant_w2.py`.
+- 🔓 **Still open, unscheduled: the overlay-at-read improvement itself.** Resolving overrides at
+  `to_openai_tools`/catalog-DTO time (so registered `ToolSpec`s are immutable and `tool_spec_orig`
+  disappears) removes the shared mutable state rather than serializing access to it. It is now a
+  standalone refactor, no longer "decide inside Slice 2" — ACA is closed and Slice 2 shipped the
+  interim gate instead. Size M; home = the table in §4 below.
 
 ### SYS-4 · Dev topology quietly widens the security boundary — **LOW-MED (documentation + one default)**
 
@@ -308,6 +335,32 @@ CRUD cluster (~:377-520, `.read_text()`/`.mkdir()`/`.unlink()` — the largest) 
 yield-in-async-generator findings in `events.py` (preview stays OFF); B008/`Depends()`-in-default
 count today = 0 — a future hit resolves via `Annotated[...]`, never a project-wide ignore.
 
+**✅ CLOSED 2026-07-20 — the deep pass ran (`1b47e50` + `f550a2d`).** The ratchet itself was pulled
+2026-07-16 (`f5c8e05`, its 3 findings fixed); this closes the *deferred blind-spot list* above — the
+item that was addressed to "the ACA Phase-12 deep pass" and that no ACA slice ever owned. Every site
+moved off the loop with the convention already in the tree (`memory_backup._prep_repo_dir`): hoist the
+whole blocking sequence into ONE module-level sync helper reached by a single `asyncio.to_thread` hop,
+rather than wrapping each call (fewer thread hops, and it does not widen the is_file/unlink and
+mkdir/write TOCTOU windows). No behavior or error-semantics change — the 404/422 paths are preserved
+by a sentinel return. Sites: the `api/agent.py` agent/skill CRUD cluster (the largest — **note the
+addendum's `~:377-520` line refs were already stale; the cluster sat at ~:1183-1338 before the fix**) ·
+`services/agent/memory.py` `overwrite` **and `write`** · `memory_backup.reconcile`. Two entries above
+did **not** need work: `db.py` connect-time mkdir is deliberately left on the loop (startup, before
+traffic — it is the guard's one allowlist entry), and `services/actions/terminal.py:184` was a false
+positive (an `await`ed *remote* HTTP glob, never blocking).
+
+The durable part is **`backend/tests/test_arch_invariants_sys16.py`** — a QH-9-style AST drift guard
+with **two** invariants, one per blind spot the addendum named: (1) direct blocking fs calls lexically
+inside an `async def` (excluding nested sync defs and awaited calls), and (2) an `async def` calling a
+module-level sync helper that transitively does blocking fs work — the shape ruff can never see.
+Both fail on anything not explicitly allowlisted-with-a-reason, and both also fail on a *stale*
+allowlist entry so it can't rot. Invariant (2) earned its keep immediately: it found **2 sites the
+hand audit missed** — `memory.write` (the agent's own memory-tool write path, sibling of the
+`overwrite` fixed in the parent commit; its whole read-merge-cap-write critical section is now one
+hop) and `tailscale._bin`'s `shutil.which`/`os.path.exists` PATH probe. 715 backend tests green.
+*(Ratchet-green still ≠ async-audited for non-fs blocking — network/CPU sync calls are out of this
+guard's scope; the note above stands as the reason ruff alone is insufficient.)*
+
 (a) `POST /voice/tts` accepts unbounded `text` (`api/voice.py:61‑67`) — an accidental huge input
 synthesizes a huge clip fully in memory (the buffered-clip design is deliberate; the missing piece
 is just a char cap → 422, mirroring the memory caps' floor pattern). (b) `POST /voice/stt` reads
@@ -342,15 +395,15 @@ Unlike ACA, nothing here warrants a multi-slice program. Map:
 | **SYS-13 fix `fillComposer` → `setDraft`+focus, + the jsdom regression test** | **XS–S** | **Now — it's a live user-facing bug on every theme** (confirm-bubble edit sends stale text). |
 | SYS-1 `Database.transaction()` + adopt in compaction/plan/exec/apply (+ docstring fix) | S–M | Standalone slice, promptly. Also a rider candidate for ACA Slice 2 (same integrity theme). |
 | **SYS-14 CI workflow running `tools/check.py` on ubuntu-latest** | **S** | **Pre-emma-deploy** — the only way the code runs on Linux before Linux is production. |
-| SYS-16 pull the ruff `ASYNC`+`B` ratchet (+ fix wave) | S–M | Pre-ACA-build-waves, so new code is born under the stricter bar. Pyright `strict` = its own post-emma slice. |
+| ~~SYS-16 pull the ruff `ASYNC`+`B` ratchet (+ fix wave)~~ | S–M | **✅ DONE.** Ratchet pulled 2026-07-16 (`f5c8e05`); the deferred blind-spot list closed 2026-07-20 by the deep pass + the two-invariant AST guard (`1b47e50`+`f550a2d`) — see the SYS-16 addendum. Pyright `strict` = still its own post-emma slice. |
 | SYS-15 coverage reporting (measure-only) + Compactor & fleet/svc characterization tests | M | Coverage + pure-function tests promptly; Compactor tests **must precede ACA Slice 6**; adapter tests ride ACA Slice 1; subagent tests ride ACA Slice 3. |
 | SYS-4 SECURITY_MODEL dev-exposure paragraph + `target_port` default decision | S | Doc-only + one default; pre-emma-deploy sensible. |
 | SYS-17 voice caps (tts text / stt upload) | XS | Opportunistic robustness posture. |
 | SYS-5 `/api` 404 guard in SPA fallback | XS | Opportunistic. |
 | SYS-6 fence `save_settings` | XS | Opportunistic. |
 | SYS-9.2 editor `loadSkills()` verify · SYS-18a kit-class comments | XS | Opportunistic. |
-| SYS-3 overlay-at-read for tool overrides | M | **Decide inside ACA Slice 2's ACA-17 work** — one decision, not two fixes. |
-| SYS-2 Deps split / context-injected ActionService | M | Post-emma refactor wave; pairs with ACA Slice 3 (both touch lifespan wiring). |
+| SYS-3 overlay-at-read for tool overrides | M | **Still open, unscheduled.** The *race* was closed 2026-07-20 (`f0bbef4`: `PUT /api/settings` 409s on a `tool_overrides` patch while a turn is live). The structural inversion — resolve overrides at `to_openai_tools`/catalog time so specs are immutable and `tool_spec_orig` disappears — is now a standalone refactor; ACA is closed, so "decide inside Slice 2" no longer applies. |
+| SYS-2 Deps split / context-injected ActionService | M | **Still open, unscheduled** — its parking slice (ACA Slice 3) shipped 2026-07-18 without it and Phase 12 has closed. Design debt, nothing blocked; pick it up opportunistically with the next lifespan/`main.py` wiring change. |
 | SYS-7 polling tunables → `ServerCfg` | S | Fold into the ROADMAP D3 (`vpn_host`) slice. |
 | SYS-8 / SYS-10 / SYS-11 / SYS-18c | S | Named seams; build on demand. |
 

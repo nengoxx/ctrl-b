@@ -2412,7 +2412,11 @@ wire → Conf UI → the DESIGN/SPEC docs sweep) + mid/post-build audits + the C
 standing pipeline. Verification per SLICE6_PLAN §10 (probe matrix · settings round-trip hot pin ·
 Conf UI rows · threshold bounds · live long-session watch). Out of scope recorded: per-agent
 compaction UI · summarizer picker UI · cloud probing · non-llama.cpp probe adapters. As-built
-record lands on AGENT_CHAT_AUDIT §5 Slice 6.
+record lands on AGENT_CHAT_AUDIT §5 Slice 6. *(Added 2026-07-20, lifted from SLICE6_PLAN §4 so it
+outlives the plan: **"placeholder-shows-probe"** — the Conf context-window Fields were specced with
+"blank = auto; the placeholder shows the probed value when live", tagged "a nicety, decide at build".
+It was **never decided either way** — recorded here as an open nicety, not a deferral with a reason.
+The blank-is-auto behavior itself shipped; only the live-probed placeholder hint is unresolved.)*
 
 *(AMENDED as-built 2026-07-19, the audit + Codex fix sets — all verified CLOSED, no drift:* ① the
 per-call clearing param is the PLAN object (`ClearingPlan.gains` + `gain_over`), and an ANCHORED
@@ -2650,6 +2654,31 @@ five owner rulings → 2-lens adversarial review (design + security, both GO-WIT
 
 **Verify** = SLICE8_PLAN §9 (`test_approvals_slice8.py` ladder/matching/grant-path/liveness/
 audit suites; vitest affordance/editor; SECURITY_MODEL + DESIGN §3/§14 + config.example rows).
+
+**Out of scope recorded** (SLICE8_PLAN §8; lifted here 2026-07-20 so the seams outlive the slice
+plan): TTL / decay-on-disuse (needs the fire-log migration) · deny/ask states in the approval layer ·
+rule-creation events · in-bubble arg editing (review L1). Plus the four with a shape worth keeping:
+- **Subject/context scoping** (owner ruling ④ reserved it, deliberately unbuilt). The shape is an
+  **additive optional field on `ApprovalRule`** — `allow_active`-style: a grant that holds only in a
+  named context (a specific agent / thread / privilege) rather than universally. It is additive
+  precisely because `ApprovalRule` is `extra="forbid"` with declared fields: a future `subject` field
+  is a new optional key with a default, never a migration. **Today a grant is actor-agnostic by
+  design** (one grant covers USER/AGENT/headless) — subject scoping is the escape hatch if that ever
+  proves too wide, not a correction of it.
+- **Tool-wide one-click grain from the bubble.** The bubble grants args-EXACT only; a "always allow
+  *this tool*" verb beside it would need a second grain in the same affordance. Deliberately not
+  shipped — widening is the Conf editor's job (write a glob rule there), where the blast radius is
+  visible before you save. The seam is a second resume verb, not new storage.
+- **Gate-computed rule suggestions.** `decide()` knows exactly which pins caused a re-ask, so it
+  could propose the minimal widening ("this differs only in `cwd` — widen it?"). Not built: it is a
+  UX layer over a security surface, and a *suggested* widening is the easiest way to talk someone
+  into a rule they didn't mean. Wants deliberate design if picked up.
+- **OCC on the Conf settings draft** (review F3). The race is durable above (the ConfTab LWW draft
+  race, accepted as the existing settings contract) — the *remedy* is recorded here: optimistic
+  concurrency on the settings draft (version/etag on read, 409 on a stale write). **Ruled
+  settings-wide, not slice-scoped:** approvals just made an existing whole-settings contract more
+  visible, so fixing it inside the approvals editor would be a parallel mechanism on one surface.
+  If built, it goes on `PUT /api/settings` for every writer.
 
 *(AMENDED as-built 2026-07-20 — BUILT in three waves, `08ef3c1` policy core / `919680b`
 server-side grant path / `e080731` FE + editor:* ① the §6 marker also stamps the **granting run

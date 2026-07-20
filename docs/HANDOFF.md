@@ -392,14 +392,48 @@
 > earlier today pins the old literal `"null"` and will no longer match — it fails CLOSED (the call
 > re-asks); re-tap "always" to regenerate. Prod is unaffected (still v1.1.1).
 > **State:** dev units still RUNNING (:5434 + Vite :5173); **prod is still v1.1.1**.
-> **NEXT SESSION, in order:** ① /model check (fable-5 HIGH) ② **push OK** → `git push` (5 + doc commits;
-> pre-push runs the full gate) ③ live-verify pokes, all still outstanding — the ACA §5 LIVE-VERIFY
+> **NEXT SESSION, in order:** ① /model check (fable-5 HIGH) ② ~~**push OK** → `git push` (5 + doc commits;
+> pre-push runs the full gate)~~ **✅ DONE — ACA Slice 8 is on `origin/main` (`b2a2cb4..96105de`); the whole
+> ACA track, Slices 0–8, is pushed.** ③ live-verify pokes, all still outstanding — the ACA §5 LIVE-VERIFY
 > lists for Slices 5, 6, 7 **and 8** (Slice 8: tap **always** on a real `terminal_exec` read → re-run
 > never re-asks + the row shows `[auto-allowed: …]`; revoke in Conf → Tools → the next call re-asks; a
 > `shutdown_host` bubble shows NO always button; ⚠ dev drives the REAL fleet) ④ release via
 > `deploy/linux/README.md` §Release when the owner wants Slices 4–8 live on :5433 ⑤ next = the owner's
 > pick (ROADMAP D3 Slice 1 · 6c-1/6c-2 flags · vapor ladder · the parked Composer Surface) — **the ACA
 > plan's built slices now run 0–8, i.e. the whole §5 execution plan.**
+>
+> **▶ SESSION 2026-07-20 (post-ACA): three fixes + a docs bookkeeping/re-homing pass. 4 code commits
+> LOCAL, NOT PUSHED** (`fb59c83` · `1b47e50` · `f550a2d` · `f0bbef4`) **+ this docs commit.** Slice 8
+> and everything before it ARE pushed (`origin/main` @ `96105de`); these four are on top.
+> - **`fb59c83`** — the Conf host-editor IP field dropped `inputMode="decimal"`, so a MagicDNS
+>   hostname can finally be *typed* on Android, not only pasted (`ComputerCfg.ip` is a plain `str`).
+>   Stopgap only — **ROADMAP D3** remains the proper LAN-vs-VPN split, and now records this.
+> - **`1b47e50` + `f550a2d` — SYS-16 is CLOSED.** The deep pass the addendum deferred to "the ACA
+>   Phase-12 deep pass" (which no slice ever owned) ran: every deferred blocking-fs site moved off the
+>   event loop via one `asyncio.to_thread` hop per hoisted sync helper (the existing
+>   `memory_backup._prep_repo_dir` convention), plus `tests/test_arch_invariants_sys16.py` — **two**
+>   AST ratchets, one per blind spot ruff can't see (direct blocking calls in `async def`, **and**
+>   async defs calling sync helpers that block). The second guard immediately found **2 sites the hand
+>   audit missed**, including `memory.write`. 715 backend tests.
+> - **`f0bbef4` — SYS-3/ACA-17 race closed.** `PUT /api/settings` 409s on a `tool_overrides` patch
+>   while a turn is live (the integrations-rediscover gate precedent, same busy-truth registry),
+>   scoped so appearance writes and the **D44 grant path are unaffected** — the gate is in the API
+>   handler deliberately; do not hoist it into `apply_settings_patch`. SYS-3's structural half
+>   (overlay-at-read) stays open + unscheduled.
+> - **Docs pass:** Phase 12 Slices 1–7 ticked with commit evidence (they were built + pushed but still
+>   `[ ]`); three shipped post-v1 backlog items ticked (A1 privilege levels, A2 `bb82882`, C1/D17
+>   `3fb6603`); ACA §5's "ALL LOCAL, awaiting push OK" records corrected; the §5 doc-artifacts table's
+>   stale **D35/D36/D37** → the real **D39/D38/D43** (with an inline correction note); SECURITY_MODEL's
+>   confirm-token "gap → step 4b" row corrected to **closed** (4b shipped 2026-07-02); SYS-2 re-homed
+>   (its parking slice, ACA Slice 3, shipped without it) — still open, unscheduled; UI_AUDIT F9/F13 +
+>   ACA-14 got a real **measurement trigger** (>~200-message thread, or owner-reported streaming input
+>   lag); the ACA Backlog's six orphans lifted into **ROADMAP A5-x + B1**; five slice-plan seams
+>   appended to **DECISIONS D42/D44** out-of-scope blocks; the `!<cmd>`-is-a-stub code comments
+>   corrected (it has been fully built since Phase 5).
+> - **⚠ ONE OWNER CALL OUTSTANDING — ACA §6 Q5 / A9** (per-turn memory reads vs a Hermes-style
+>   per-session freeze). It is the only §6 question never answered. **The standing default is per-turn
+>   reads — today's behavior, by inaction, NOT an owner ruling.** Recorded as such in ACA §6, the §4
+>   adoption row, and ROADMAP B1; nothing built either way.
 >
 > *(The block below is the previous session's close-out checklist, kept for provenance — steps 1–3
 > are done as recorded above.)*

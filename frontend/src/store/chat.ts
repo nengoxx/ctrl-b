@@ -324,7 +324,9 @@ export async function reloadChat(force = false): Promise<void> {
 }
 
 /** Append a client-only message (system note or shell echo) — not persisted; gone on reload. Used
- *  by the composer router for `/help`, mode-switch notes, and the Phase-5 shell stub (lib/composer). */
+ *  by the composer router for `/help`, mode-switch notes, and unknown-verb replies (lib/composer), and
+ *  by `runShell` for its non-fatal outcomes (shell disabled / thread busy / backend unreachable).
+ *  NOTE: a real `!<cmd>` result is NOT a local note — it persists server-side; see `runShell`. */
 function pushLocal(role: "system" | "user", text: string): void {
   set({
     messages: [

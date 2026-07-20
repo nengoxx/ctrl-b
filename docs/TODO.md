@@ -937,31 +937,66 @@ UI (LWW + reconcile suffices for one user).
 Sequencing: *truth → hangs → integrity → durable turns → speed → steering → compaction v2 → routing →
 approvals*. **Slices 1–2 are small/safe pre-deploy candidates; Slice 3+ is post-deploy** (4/5 reshape the
 same event flow as 3 — don't reorder). Every slice ends with `python tools/check.py` + targeted pytest +
-an owner-review pause. **New D-entries (D35–D37) are drafted at each slice's design review, not
-retroactively.** The cross-slice contract (ACA §5) governs which slice may touch which seam
+an owner-review pause. **New D-entries are drafted at each slice's design review, not
+retroactively** — as built they landed as **D38 (Slice 2) · D39 (Slice 3) · D40 (Slice 4) · D41
+(Slice 5) · D42 (Slice 6) · D43 (Slice 7) · D44 (Slice 8)**; the original "D35–D37" placeholders were
+stale numbering (D35–D37 went to the frontier theme track). The cross-slice contract (ACA §5) governs which slice may touch which seam
 (`_run_calls` internals · the per-thread turn marker · the append-only message log · suspension semantics).
 
 - [x] **Slice 0 — doc truth** (no behavior change) ✅ PRE-LANDED 2026-07-07 (`ee23209`): api/agent.py +
       session.py docstrings → actual semantics; DESIGN ▹ target-design markers; MemGPT→Letta lineage notes.
-- [ ] **Slice 1 — hang-proofing & hardening batch** · M — MCP handshake/call deadline both transports
+- [x] **Slice 1 — hang-proofing & hardening batch** · M — MCP handshake/call deadline both transports
       (ACA-3, incl. the stdio-`__aexit__` cleanup-hang nuance) · timeout-normalizer `None` guard (ACA-6) ·
       backstop deadlines on SSH-backed actions + MCP/OpenAPI specs (ACA-7) · de-hardcode
       `subagent_child_timeout_s` + skill-selector tunables (ACA-8) · confirm-token hygiene on re-mint
       (ACA-9, owner call) · stall-guard call-sig (ACA-12) · malformed-args steering (ACA-13) · A8
       context-size debug measurement.
-- [ ] **Slice 2 — turn integrity** · M — per-thread **turn marker** + 409s on every thread-mutating
+      ✅ BUILT 2026-07-16 (as-built record = ACA §5 Slice 1). 5 build commits `423b8e4` (ACA-3 MCP
+      deadline) · `6ede3b5` (ACA-6/7) · `d693c00` (ACA-8/9) · `1223a79` (ACA-12/13/15e/20) · `1b5cbc8`
+      (ACA-18/21 + A8) + the adversarial-audit fixes `69cddd7`+`c5097cd` (MED-1 `ToolCallPart.invalid_raw`)
+      + the record `6c32368`.
+- [x] **Slice 2 — turn integrity** · M — per-thread **turn marker** + 409s on every thread-mutating
       endpoint (chat/resume/plan/apply/compact/exec; ACA-2 interim) · rediscovery gated on quiet
       boundaries (ACA-17) · shielded-`finally` step persistence on cancel (ACA-1 scenario 2) · frontend
       guards: `/clear` while streaming (ACA-10), plan/apply gating, `mode` on resume (ACA-16).
-- [ ] **Slice 3 — durable turns** (ACA-1 + A11) · L — **flagship; design review first → drafts D35.**
-      TurnRegistry + replayable per-turn event log (`turn_id:seq` cursor + snapshot fallback), SSE as
-      subscriber, explicit cancel + Stop button, `cancelled` marker.
-- [ ] **Slice 4 — interaction speed** · M — parallel read-only tool dispatch + per-call result streaming
+      ✅ BUILT 2026-07-17 (design LOCKED = **D38**, `868cf8a`; as-built = ACA §5 Slice 2). 4 waves
+      `afb5e22` (`Database.transaction()`, SYS-1) · `e228089` (the turn-marker registry) · `26a0bdb`
+      (shielded-`finally`) · `dfd42d2` (FE 409 surfacing) + audit follow-ups `1d2c002`, record `0e1d057`,
+      pre-push round `24015e5`.
+- [x] **Slice 3 — durable turns** (ACA-1 + A11) · L — **flagship; design review first → D39** *(the
+      "drafts D35" plan text was stale numbering)*. TurnRegistry + replayable per-turn event log
+      (`turn_id:seq` cursor + snapshot fallback), SSE as subscriber, explicit cancel + Stop button,
+      `cancelled` marker.
+      ✅ BUILT 2026-07-18 (design LOCKED = **D39**, `0cb9e09`; as-built = ACA §5 Slice 3). 4 waves
+      `fc500ef` (RunState.CANCELLED + `reconcile_stale_calls`) · `622f258` (server-owned turn tasks) ·
+      `5a135aa` (re-attach/status/cancel + terminal cache) · `d7ea3a7` (FE re-attach + Stop) + `b7b4ca6`,
+      the pre-push review rounds `aa83acf`+`5175756` (+ records `9669955`/`3d82e17`/`9ef46e9`) and the
+      formal functionality audit `9cc7e93`+`0583507`+`a9e5199` (record `23b2098`, ACA §7).
+- [x] **Slice 4 — interaction speed** · M — parallel read-only tool dispatch + per-call result streaming
       (the one structural `_run_calls` refactor; ACA-4) · `notice` in buffered mode (ACA-11) · A2 riders.
-- [ ] **Slice 5 — steering queue** (A1) · M — after Slice 3; upgrades the Slice-2 409 for *messages*
+      ✅ BUILT 2026-07-19 (design LOCKED = **D40**, `44bdfdd`; as-built = ACA §5 Slice 4). 5 waves
+      `dbd016b` (`ToolSpec.suspending` + `max_parallel_tools` + the llamacpp request gate) · `aad3366`
+      (`_classify_batch`) · `63f0398` (**the** `_run_calls` async-generator inversion) · `dd86c33` (the
+      parallel head) · `6427ded` (ACA-11 notice + debt discharge) + Codex fixes `df5ce7a`+`c961e8d`+
+      `62ab584`, record `1e112b5`.
+- [x] **Slice 5 — steering queue** (A1) · M — after Slice 3; upgrades the Slice-2 409 for *messages*
       (queue-then-inject); the 409 stays for plan/apply/compact collisions.
-- [ ] **Slice 6 — compaction v2** (A3, absorbs ACA-5 riders) · M–L — design review first.
-- [ ] **Slice 7 — model routing & retry visibility** (A4, A6, A7) · M — design review first (new D-entry).
+      ✅ BUILT 2026-07-19 (design LOCKED = **D41**, `0d000d4`; as-built = ACA §5 Slice 5). 5 waves
+      `855c661` (queue core) · `1c7e5f8` (drain A) · `7ff227e` (drain B + harvest-first cancel) ·
+      `e8a26f8` (the steering FE) · `dbdaee4` (DESIGN/SPEC sweep) + `ec50eae`/`6dfdcae` audit fixes and
+      the Codex rounds `7adf8b2`+`5e383d6`, record `f80c1d9`.
+- [x] **Slice 6 — compaction v2** (A3, absorbs ACA-5 riders) · M–L — design review first.
+      ✅ BUILT 2026-07-19 (design LOCKED = **D42**, `d8c6744`; as-built = ACA §5 Slice 6). 6 waves
+      `681310f` (v2 knobs + ModelRef call config + the `/props` probe) · `76b4a85` (window ladder +
+      anchored estimator) · `f9c43bb` (clearing tier + summarizer template + thrash machine) · `7313155`
+      (ModelRef wire + overflow backstop) · `c3d1dec` (Conf UI) · `c04e1f4`+`08ade3e` (docs/config sweep)
+      + audits `483dc6a`/`2acd592` and the Codex fix waves `b1d0262`+`2e4dac9`, record `0ed9d80`.
+- [x] **Slice 7 — model routing & retry visibility** (A4, A6, A7) · M — design review first (new D-entry).
+      ✅ BUILT 2026-07-20 (design LOCKED = **D43**, `8c4a7b2`, draft `a7faef1`; as-built = ACA §5 Slice 7).
+      5 waves `de88a54` (failover generator + retryable classifier) · `c748b58` (typed retry/failover
+      events + `retry_status`) · `fa50a09` (the failure-fallback routing machine) · `4a62857` (FE) ·
+      `77ea3a9` (DESIGN/SPEC sweep) + `1d8d520`, post-audit `0b46f19` and the Codex 3-HIGH unified fix
+      `c00a640`, record `0977e91`. **`lead_turns` was DROPPED at review** (A4 reduced to failure-fallback).
 - [x] **Slice 8 — approvals evolution** (A5) · M — aligns with ROADMAP privilege levels (D16/A1).
       ✅ BUILT 2026-07-20 (design LOCKED same day = **D44**; brief = [`SLICE8_PLAN.md`](./SLICE8_PLAN.md);
       as-built record = ACA §5 Slice 8). 3 waves: `08ef3c1` policy core (`ApprovalRule` +
@@ -1011,16 +1046,27 @@ Not v1 scope, but the owner wants these; v1 must leave room. Detail + design not
       `MemoryProvider` interface; action `risk` levels on every action; **typed chat-message kinds**
       (`text`/`action`/`question`) + turn-based agent loop; chat endpoint supports **streaming AND
       buffered**; a settings/policy layer; Conf tab in **functional groups**.
-- [ ] Agent **privilege levels** (read-only → confirm-each → auto-low-risk → full) — policy over
-      `risk` (ROADMAP A1).
-- [ ] Agent **clarifying questions** (`question` bubble, pause/resume) (A2); **notify-and-wait**
-      when unattended/low-privilege (bridges A1+A3+F1).
+- [x] Agent **privilege levels** (read-only → confirm-each → auto-low-risk → full) — policy over
+      `risk` (ROADMAP A1). **✅ SHIPPED** — the ladder itself lives in `core/permissions.decide()`
+      (audited 2026-06-14, see "Found *better* than documented" above); the selection/persistence layer
+      is DECISIONS **D16** (`agent.defaults.privilege` · `AgentDef.privilege` · `ChatRequest.privilege`
+      + the header chip / sticky `/privilege` verb). ACA Slice 8 (**D44**, `08ef3c1`) added the
+      persisted-approvals rung inside the same `decide()`. *Still open (ROADMAP A1 tail): per-host +
+      time-boxed escalation.*
+- [x] Agent **clarifying questions** (`question` bubble, pause/resume) (A2) **✅ SHIPPED 2026-06-21
+      (`bb82882`)** — `services/agent/question.py` suspends via the existing `RunState.AWAITING_ANSWER`
+      path + a `tool.question` SSE event; `/api/agent/resume` extended with `decision="answer"` (no
+      parallel endpoint). *Still open:* **notify-and-wait** when unattended/low-privilege (bridges
+      A1+A3+F1).
 - [ ] **Slash commands** registry + custom/extensible commands (A4). *(Basic `!`/`/` prefix routing
       + markdown/copy is in Phase 4 above.)*
 - [ ] **Scheduled automations**: `Automation` table + cron runner + headless agent runs (A3).
-- [ ] **Streaming, decoupled per-transport (C1, 2026-06-16):** chat = `AgentCfg.streaming` auto|on|off
+- [x] **Streaming, decoupled per-transport (C1, 2026-06-16):** chat = `AgentCfg.streaming` auto|on|off
       (decided D17); TTS = own chunked-playback knob (Phase 6); STT = always buffered, no toggle. **Not**
-      one global toggle.
+      one global toggle. **✅ SHIPPED 2026-06-21 (`3fb6603`, D17)** — `session.collect_turn()` drains the
+      one `run_turn`/`resume` generator into a buffered payload (loop not forked); the signal is the
+      `stream` body field, `AgentCfg.streaming` authoritative. *(ROADMAP C3 chunked TTS synthesis remains
+      the open sibling; the OpenAI `/v1/chat/completions` facade stays deferred — ROADMAP E2.)*
 - [ ] **Wake word** (client-side, openWakeWord/Porcupine WASM, off by default) (C2).
 - [ ] **Idle sleep → OS-native (decided 2026-06-16, D1):** let each host's own OS power plan
       suspend on idle; ctrl-b builds nothing for now (no remote idle detection). **Compute-aware idle**

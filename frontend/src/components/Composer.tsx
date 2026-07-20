@@ -5,7 +5,8 @@ import { stopTurn } from "../store/chat";
 
 // Shared composer (fleet + agent tabs). Ported from vapor.html: auto-growing textarea, an
 // embedded mic toggle, and the send button. Submits route through runComposer (Phase 4c): `!<cmd>`
-// → guarded shell (Phase-5 stub), `/<verb>` → slash commands (incl. /local //cloud), else → agent;
+// → the guarded local shell via `/api/exec` (Phase 5, built), `/<verb>` → slash commands (incl.
+// /local //cloud), else → agent;
 // every route jumps to the Agent tab.
 // Lives in normal flow at the bottom of the app-shell (App), so no bottom-padding bookkeeping.
 //
