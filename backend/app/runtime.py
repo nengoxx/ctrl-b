@@ -72,6 +72,17 @@ def set_inference(app: "FastAPI", settings: Settings) -> None:
         deps.inference = app.state.inference
 
 
+def clear_reasoning_demotions(app: "FastAPI") -> None:
+    """Clear the inference client's learned reasoning demotions (D46/F6) through the runtime chokepoint,
+    so the API layer never reaches into the client directly. Called by the agent-file mutation handlers
+    (PUT/DELETE agent): an agent's reasoning edit must be RETRIED, not stay stripped, and — unlike an
+    inference-section edit — it does NOT rebuild the client. A no-op before the client is wired (i.e.
+    before lifespan's first `set_inference`)."""
+    client = getattr(app.state, "inference", None)
+    if client is not None:
+        client.clear_reasoning_demotions()
+
+
 async def _swap_client(app: "FastAPI", attr: str, new_client: object) -> None:
     """Assign a freshly built adapter client onto `app.state.<attr>` (and mirror onto `deps.<attr>`),
     closing the previous one's httpx session first. The single-source helper for the scalar

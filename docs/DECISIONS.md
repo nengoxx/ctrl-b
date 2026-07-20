@@ -2779,7 +2779,10 @@ direction than assumed:
   that is the TEMPLATE-level lever and it COMPLEMENTS the sampler-level budget `0` — two levers on two
   layers, not a duplicate. *(Originally "on every dialect"; corrected in AMENDED-2 ⓓ — it is a
   llama.cpp/vLLM key, so on a cloud dialect it is just an unknown body arg.)*
-- **`"off"` is ABSOLUTE** *(AMENDED-2 ⓒ)*: it outranks an explicit `reasoning_tokens` on every dialect.
+- **`"off"` is ABSOLUTE** *(AMENDED-2 ⓒ)*: it outranks an explicit `reasoning_tokens` on every dialect
+  *(and, per D46's final foreign review F1, also outranks a hand-set `extra_body.reasoning` namespace —
+  its controls are pruned and the off signal carried as `reasoning.effort: "none"` so nothing re-enables
+  reasoning)*.
 - **Transport:** the D42 rule is "params **the SDK models** ride as first-class kwargs". The OpenAI
   SDK's `AsyncCompletions.create` has a **CLOSED signature** (no `**kwargs`) and models
   `reasoning_effort` but NOT `reasoning_budget_tokens` / `thinking_budget_tokens` / `reasoning` — so
@@ -2944,10 +2947,12 @@ Scope is deliberately narrow: **reasoning controls only**, nothing else.
   `chat_template_kwargs.enable_thinking`; every other operator key survives, config still never mutated)
   and re-attempt the **SAME endpoint exactly ONCE**.
 - **Remember** — the `(base_url, model)` demotion is kept on the `InferenceClient` for the process
-  lifetime, so later turns skip the doomed attempt entirely. Client-instance state on purpose: any
-  inference-settings change rebuilds the whole client via `runtime.set_inference`, so editing `api_mode`
-  or an agent's reasoning settings **clears the demotions for free** (the `_window_memo` precedent — no
-  invalidation bookkeeping anywhere in this class).
+  lifetime, so later turns skip the doomed attempt entirely. Client-instance state on purpose, cleared on
+  a config edit by **two paths** (corrected by the final foreign review, F6 — the original "for free on
+  any agent edit" was FALSE): an **inference-section** edit rebuilds the whole client via
+  `runtime.set_inference` (the `_window_memo` precedent), minting a fresh empty set; an **agent-file**
+  edit (the folder-per-agent API) never rebuilds the client, so it clears explicitly through the
+  `runtime.clear_reasoning_demotions` hook, called blanket-on-mutation from PUT/DELETE `agent`.
 - **Warn LOUDLY, once per `(endpoint, model)`** — RFC 9413 §5.1: a fault must receive attention.
   LiteLLM's silent `drop_params` is the documented anti-pattern; aider's
   `Warning: <model> does not support '<param>', ignoring.` is the model followed, extended with the
@@ -3018,3 +3023,44 @@ endpoint left on the default `api_mode: openai` could 400 on the new spelling**,
 covered by the D46 feedback path (it is not a reasoning key) — it would burn the chain. The remedy is one
 line (`max_tokens_field: max_tokens`, or the right `api_mode`), and `warn_suspect_api_modes` only nags
 self-hosted base_urls. Revisit if anyone hits it.
+
+*(AMENDED 2026-07-20 — the FINAL foreign review (Codex), six findings verified against the code and
+fixed in one wave. The prior post-audit pass proved the permit/notice invariants by exercising them; this
+pass caught six correctness gaps in the reconciliation + classifier + invalidation logic:)*
+- **F1 (HIGH) — `off` was not ABSOLUTE against a merged `reasoning` namespace.** On openrouter,
+  `reasoning_effort: "off"` set the top-level `"none"`, but the mutual-exclusion tail popped that kwarg
+  whenever the merged namespace was non-empty — so an endpoint's `reasoning: {exclude|effort|max_tokens|
+  enabled}` silently RE-ENABLED reasoning. Now the off path prunes every control from the namespace and,
+  if response-shape flags survive, carries the off signal INSIDE it as `effort: "none"` (OpenRouter's
+  documented top-level↔`reasoning.effort` shorthand); an empty namespace is dropped and the top-level
+  `"none"` kept.
+- **F2 (HIGH) — the mutual-exclusion sweep only evicted `out["reasoning_effort"]`, not
+  `extra_body`'s.** An endpoint `extra_body: {reasoning_effort: high}` + a per-call `reasoning_tokens`
+  emitted BOTH `reasoning_effort` and `reasoning.max_tokens` — the exact hard-400 pair D45 promises
+  impossible, and its "Only one of…" shape is not a degradation marker (deliberately NOT added — the
+  emission is prevented instead). The sweep now pops `reasoning_effort` from `extra` as well.
+- **F3 (HIGH) — the classifier's key gate scanned the whole flattened text for the param-NAMING
+  shapes.** OpenRouter echoes the request/upstream body in `metadata.raw`, so `Unsupported parameter:
+  tool_choice … {"reasoning_effort":"high"}` classified as OURS → a wasted retry + a permanent wrong
+  demotion. For `Unsupported parameter:` / `Unrecognized request argument supplied:` the gate now
+  isolates the token named right after the marker and requires IT to be a reasoning key; the value-shape
+  markers (`Invalid option: expected one of`, a bare `not supported with this model`) keep the whole-text
+  scan (documented residual). Mandatory-reasoning marker unchanged.
+- **F4 (HIGH) — the demotion cache failed a concurrent request's genuine 400.**
+  `_note_reasoning_demotion` returned False when the pair was already recorded ("about something else"),
+  but under concurrency (no semaphore / `max_concurrent_requests > 1`) a second unstripped request's
+  real reasoning-400 arrives after the first records the demotion and would skip its strip-retry. Now:
+  compute `dropped` first, and an already-present key returns True (retry stripped) without a second
+  warning (a debug line marks the race). Loop-safety is untouched — a stripped-built request never
+  reaches `_note`.
+- **F5 (MED) — `enabled` is a reasoning CONTROL, not a shape flag.** OpenRouter documents
+  `reasoning.enabled: true` as "enable reasoning at the default effort", so a provider that rejected our
+  controls rejects it again. Moved into `_REASONING_NS_CONTROL_KEYS`, so both the strip and the F1 off
+  prune remove it; only `exclude` survives a demotion. The LOW-2 rationale comment is corrected.
+- **F6 (MED) — the "agent edit clears demotions for free" claim was FALSE.** `runtime.reconfigure`
+  rebuilds the inference client only when the `inference` section changes, and the file-per-agent API
+  never touches runtime — so a demotion recorded for a rejected `max` kept stripping a corrected `high`.
+  Made TRUE (not weakened): `InferenceClient.clear_reasoning_demotions()`, exposed through
+  `runtime.clear_reasoning_demotions(app)` and called blanket-on-mutation from PUT/DELETE `agent`. The
+  field comment, the "Remember" bullet above, and the demotion WARNING wording ("for the rest of the
+  process" → "until a config edit clears it") are all corrected.

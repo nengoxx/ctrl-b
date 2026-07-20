@@ -39,7 +39,7 @@ from app.domain.enums import Actor, Privilege, RunState
 from app.domain.event import Event
 from app.domain.plan import Plan
 from app.domain.result import ToolResult
-from app.runtime import rediscover_integrations
+from app.runtime import clear_reasoning_demotions, rediscover_integrations
 from app.services.agent.compaction import compaction_state_for, prune_compaction_state
 from app.services.agent.exec import run_user_exec
 from app.services.agent.planning import TaskPlanInput
@@ -1352,7 +1352,13 @@ async def put_agent(name: str, body: AgentBody, request: Request) -> dict[str, A
         AgentDef.model_validate(merged)
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=f"invalid agent: {e.errors()[0]['msg']}") from e
-    return await asyncio.to_thread(_scaffold_agent, s, name, folder, fields, DEFAULT_SYSTEM_PROMPT)
+    payload = await asyncio.to_thread(_scaffold_agent, s, name, folder, fields, DEFAULT_SYSTEM_PROMPT)
+    # D46/F6: an agent-file edit can change reasoning_effort/reasoning_tokens, but (unlike an
+    # inference-section edit) it never rebuilds the inference client — so clear the learned reasoning
+    # demotions here or a corrected setting would stay stripped. Blanket-on-mutation (not field-diffing):
+    # simpler, and re-learning a still-unsupported control costs one 400 on the next turn.
+    clear_reasoning_demotions(request.app)
+    return payload
 
 
 @router.delete("/agents/{name}")
@@ -1362,6 +1368,9 @@ async def delete_agent(name: str, request: Request) -> dict[str, Any]:
     folder, _ = _agent_folder(request, name)
     if not await asyncio.to_thread(_delete_agent_folder, folder):
         raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
+    # D46/F6: deleting a specialist drops its reasoning settings — clear demotions so a later agent that
+    # reuses the same (endpoint, model) starts fresh (blanket-on-mutation; see `put_agent`).
+    clear_reasoning_demotions(request.app)
     return {"name": name, "deleted": True}
 
 

@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -235,33 +236,45 @@ _REASONING_PAYLOAD_KEYS = (
     "reasoning_budget_tokens",
     "thinking_budget_tokens",
 )
-#: The CONTROL sub-keys inside the `reasoning` vendor namespace — the only ones the strip removes. Its
-#: other keys are response-SHAPE flags (`exclude`, `enabled`) that an operator set deliberately and that
-#: no provider rejects for capability reasons, so they survive a demotion (D46 audit LOW-2).
-_REASONING_NS_CONTROL_KEYS = ("effort", "max_tokens")
-#: HTTP-400 message shapes that mean "I rejected one of your PARAMETERS", MEASURED against the live
-#: OpenRouter API 2026-07-20 + OpenAI's published error strings — not a guess:
-#:   - `Invalid option: expected one of "max"|"xhigh"|…`  OpenRouter, value outside a model's enum;
-#:   - `Reasoning is mandatory for this endpoint and cannot be disabled.`  OpenRouter, `effort: none`
-#:     against a mandatory-reasoning model (the ONE shape that names no key — see the gate below);
-#:   - `Unrecognized request argument supplied: …` / `Unsupported parameter: …` / `… is not supported
-#:     with this model`  the OpenAI-family unknown/unsupported-key shapes.
-_PARAM_REJECT_MSG_MARKERS = (
-    "invalid option: expected one of",
+#: The CONTROL sub-keys inside the `reasoning` vendor namespace — the ones the strip removes AND the
+#: ones the absolute-`off` prune removes (F1). `enabled` IS a control: OpenRouter documents
+#: `reasoning.enabled: true` as "enable reasoning at the default effort", so a provider that rejected our
+#: controls will reject it again — a remembered-demotion retry that kept it would stay ineffective
+#: (final foreign review, F5). The ONE key that survives a demotion is `exclude` — a response-SHAPE flag
+#: (hide the reasoning from the response) an operator set deliberately, which no provider rejects for
+#: capability reasons; dropping it would silently start streaming reasoning back to someone who excluded
+#: it (D46 audit LOW-2, as corrected).
+_REASONING_NS_CONTROL_KEYS = ("effort", "max_tokens", "enabled")
+#: HTTP-400 param-rejection shapes that NAME the offending parameter RIGHT AFTER the marker, MEASURED
+#: against the live OpenRouter API 2026-07-20 + OpenAI's published error strings — not a guess:
+#:   - `Unrecognized request argument supplied: <name>`  the OpenAI-family unknown-key shape;
+#:   - `Unsupported parameter: '<name>' is not supported with this model`  the unsupported-key shape.
+#: For THESE two the gate isolates the named token and requires IT to be a reasoning key (F3) — never a
+#: whole-text scan, because OpenRouter echoes the request/upstream body in `metadata.raw`, so a rejection
+#: naming `tool_choice` can carry a genuine `"reasoning_effort":"high"` elsewhere in the text and would
+#: otherwise false-positive into a wasted call + a permanent wrong demotion.
+_PARAM_REJECT_NAMING_MARKERS = (
     "unrecognized request argument supplied",
     "unsupported parameter",
+)
+#: HTTP-400 param-rejection shapes that name NO key at the marker (the offending param is named ELSEWHERE
+#: — before the marker, or not at all), so these keep the whole-text exact-spelling key scan (F3
+#: documented residual):
+#:   - `Invalid option: expected one of "max"|"xhigh"|…`  OpenRouter value-outside-enum; the key rides
+#:     BEFORE it (`reasoning_effort: Invalid option: …`);
+#:   - `… is not supported with this model` STANDING ALONE (no `Unsupported parameter:` prefix).
+_PARAM_REJECT_VALUE_MARKERS = (
+    "invalid option: expected one of",
     "not supported with this model",
 )
 #: The mandatory-reasoning shape — self-identifying (it IS about reasoning), so it needs no key gate.
 _MANDATORY_REASONING_MARKER = "reasoning is mandatory for this endpoint"
-#: A param-rejection only counts as OURS when the provider's message names a reasoning-related key.
-#: Without this gate a rejected `tool_choice`/`response_format` would strip reasoning and retry blind.
+#: The whole-text key scan for the VALUE-shape markers only (F3): a param-rejection whose key is named
+#: elsewhere counts as OURS when this exact spelling appears anywhere in the flattened error.
 #: **EXACT WIRE SPELLINGS ONLY — deliberately not the bare tokens `reasoning`/`thinking`** (D46 audit,
-#: MED-1). The gate substring-scans the WHOLE flattened error text, and OpenRouter echoes the upstream
-#: body (incl. the model id) in `metadata.raw`, so a bare `thinking` matched any unrelated rejection on
-#: a model slug like `qwen/qwen3-30b-a3b-thinking-2507` — a wasted call, a PERMANENT wrong demotion and
-#: a WARNING blaming the wrong parameter, while the real (`tool_choice`) problem went unfixed. The
-#: quoted forms cover `Unsupported parameter: 'reasoning'`, where the key stands alone.
+#: MED-1): the scan reads the WHOLE flattened error text, and OpenRouter echoes the upstream body (model
+#: id included) in `metadata.raw`, so a bare `thinking` matched any unrelated rejection on a model slug
+#: like `qwen/qwen3-30b-a3b-thinking-2507`. The quoted forms cover `Unsupported parameter: 'reasoning'`.
 _REASONING_KEY_NAMES = (
     "reasoning_effort",
     "reasoning_budget_tokens",
@@ -272,6 +285,34 @@ _REASONING_KEY_NAMES = (
     "'reasoning'",
     '"reasoning"',
 )
+#: Reasoning parameter names for the NAMED-TOKEN gate (F3). When a naming marker isolates the offending
+#: parameter, we compare the extracted token (quotes stripped) against THIS set — so the bare `reasoning`
+#: form is SAFE here (it is the precise parameter name the provider objected to, never a model slug, so
+#: MED-1's whole-text hazard does not apply). Dotted paths included for OpenRouter's `reasoning.effort`.
+_REASONING_NAMED_PARAMS = frozenset(
+    {
+        "reasoning_effort",
+        "reasoning",
+        "reasoning_budget_tokens",
+        "thinking_budget_tokens",
+        "reasoning.effort",
+        "reasoning.max_tokens",
+        "enable_thinking",
+    }
+)
+#: Grabs the first `param`-shaped token after a naming marker, tolerating a leading `:`/whitespace and
+#: surrounding quotes: `: 'reasoning_effort' is not supported` → `reasoning_effort`; `: tool_choice …` →
+#: `tool_choice`; `: reasoning.effort` → `reasoning.effort` (a `.` is part of the token).
+_NAMED_PARAM_RE = re.compile(r"""['"]?([a-z0-9_.]+)['"]?""")
+
+
+def _named_reject_param(text: str, marker: str) -> str | None:
+    """The parameter token the provider named right after `marker` in a lowered error `text`, or None.
+    `text` already contains `marker` (the caller checked). Strips the `:`/whitespace lead + one layer of
+    quotes and returns the first token; None only if nothing token-shaped follows."""
+    tail = text[text.find(marker) + len(marker) :].lstrip(": \t")
+    m = _NAMED_PARAM_RE.match(tail)
+    return m.group(1) if m else None
 
 
 def is_reasoning_param_rejection(err: BaseException) -> bool:
@@ -285,17 +326,34 @@ def is_reasoning_param_rejection(err: BaseException) -> bool:
     accept `max`; many lack `none`/`minimal`). No static table in this file can be correct, so the app has
     to LEARN from the one authority that knows: the provider's own 400.
 
-    Gated on a 400 the same way `is_context_overflow` is (own `status` or a flattened `error code: 400`)
-    AND on the message naming a reasoning key — except for the self-identifying mandatory-reasoning
-    shape. A 400 about anything else (`tool_choice`, `response_format`, a bad model id) never matches."""
+    Gated on a 400 the same way `is_context_overflow` is (own `status` or a flattened `error code: 400`).
+    Then, per marker family (F3, final foreign review):
+      - the self-identifying mandatory-reasoning shape → OURS, no key gate;
+      - a NAMING marker (`Unsupported parameter:` / `Unrecognized request argument supplied:`) — the
+        offending parameter is named right after it, so isolate THAT token and require it to be a
+        reasoning key. This does NOT fall through to the whole-text scan: OpenRouter echoes the request
+        body in `metadata.raw`, so a `tool_choice` rejection can quote a real `reasoning_effort` value
+        elsewhere, and the whole-text scan would false-positive into a wasted call + a permanent wrong
+        demotion;
+      - a VALUE-shape marker (`Invalid option: expected one of` — the key rides BEFORE it — or a bare
+        `not supported with this model`) names no key at the marker, so keep the whole-text exact-spelling
+        key scan (the documented residual).
+    A 400 about anything else (`tool_choice`, `response_format`, a bad model id) never matches."""
     text = str(err).lower()
     if not _is_400(err, text):
         return False
     if _MANDATORY_REASONING_MARKER in text:
         return True
-    if not any(marker in text for marker in _PARAM_REJECT_MSG_MARKERS):
-        return False
-    return any(key in text for key in _REASONING_KEY_NAMES)
+    for marker in _PARAM_REJECT_NAMING_MARKERS:
+        if marker in text:
+            # The provider named the offending parameter — decide on THAT token alone (never the whole
+            # text). A naming marker is authoritative: if its token isn't a reasoning key, this 400 is
+            # someone else's even when the echoed body quotes a reasoning value.
+            named = _named_reject_param(text, marker)
+            return named in _REASONING_NAMED_PARAMS
+    if any(marker in text for marker in _PARAM_REJECT_VALUE_MARKERS):
+        return any(key in text for key in _REASONING_KEY_NAMES)
+    return False
 
 
 def _reasoning_keys_in(call_cfg: dict[str, Any]) -> list[str]:
@@ -676,16 +734,28 @@ class InferenceClient:
         self._anchoring_notice_emitted = False
         #: D46 capability feedback: `(base_url, model)` pairs whose provider 400'd on our reasoning
         #: controls. Once recorded, every later request to that pair is built WITHOUT them — so the
-        #: doomed attempt is paid exactly once, not once per turn. Client-instance state on purpose:
-        #: `runtime.set_inference` rebuilds the whole `InferenceClient` on ANY inference-settings change,
-        #: so editing `api_mode` / an agent's reasoning settings clears the demotions for free (the
-        #: `_window_memo` precedent — no invalidation bookkeeping anywhere in this class).
+        #: doomed attempt is paid exactly once, not once per turn. Client-instance state on purpose, with
+        #: TWO invalidation paths (final foreign review, F6 — the old comment's "for free on any agent
+        #: edit" was FALSE): an INFERENCE-section edit rebuilds the whole `InferenceClient` via
+        #: `runtime.set_inference`, minting a fresh empty set (the `_window_memo` precedent); an AGENT-FILE
+        #: edit (the folder-per-agent API) never rebuilds the client, so it clears explicitly through
+        #: `clear_reasoning_demotions()` below, driven by the `runtime.clear_reasoning_demotions` hook.
         self._reasoning_demoted: set[tuple[str, str]] = set()
 
     def _reasoning_is_demoted(self, ep: InferenceEndpointCfg, model: str) -> bool:
         """Has `(endpoint, model)` already been demoted (D46)? ⇒ build the payload stripped from the
         start; the provider already told us these controls are unusable there."""
         return (ep.base_url, model) in self._reasoning_demoted
+
+    def clear_reasoning_demotions(self) -> None:
+        """Forget every learned reasoning demotion (D46/F6). The explicit invalidation hook for the
+        file-per-agent API, which mutates an agent's `reasoning_effort`/`reasoning_tokens` WITHOUT
+        rebuilding the client (only an inference-section edit does that), so a corrected setting would
+        otherwise keep being stripped until an unrelated inference edit or a restart. Called through the
+        `runtime.clear_reasoning_demotions` chokepoint so the API layer never imports the client."""
+        if self._reasoning_demoted:
+            log.debug("clearing %d reasoning demotion(s) after a config edit", len(self._reasoning_demoted))
+        self._reasoning_demoted.clear()
 
     def _note_reasoning_demotion(
         self,
@@ -705,12 +775,18 @@ class InferenceClient:
         unsupported params (LiteLLM's `drop_params`) is the documented anti-pattern; aider's
         `Warning: <model> does not support '<param>', ignoring.` is the model followed here, extended with
         the provider's own message so the operator can act. Fires once per `(endpoint, model)` per client
-        generation, NOT once per turn — the demotion set is both the memory and the log guard."""
+        generation, NOT once per turn — the demotion set is both the memory and the log guard.
+
+        Order matters under CONCURRENCY (final foreign review, F4): compute `dropped` FIRST (the genuine
+        "is there anything to strip?" gate), then handle an already-present key. Two unstripped requests
+        can 400 on the same pair before either records the demotion (no semaphore, or
+        `max_concurrent_requests > 1`); the LATE one finds the key already recorded, but it is STILL a
+        genuine reasoning-400, so it must be told to retry stripped — the old "return False, this 400 is
+        about something else" wrongly failed the hop for nothing. It just skips the second WARNING (a
+        debug line marks the race). Loop-safety is untouched: a request BUILT stripped never reaches here
+        at all (its caller short-circuits `_note` on `stripped`), so this can never cause a strip loop."""
         if not is_reasoning_param_rejection(exc):
             return False
-        key = (ep.base_url, model)
-        if key in self._reasoning_demoted:
-            return False  # already stripped for this pair — this 400 is about something else
         dropped = _reasoning_keys_in(
             self._call_config(
                 ep, max_tokens=None, reasoning_effort=reasoning_effort, reasoning_tokens=reasoning_tokens
@@ -718,14 +794,21 @@ class InferenceClient:
         )
         if not dropped:
             return False  # nothing to strip ⇒ not our 400 to fix
+        key = (ep.base_url, model)
+        if key in self._reasoning_demoted:
+            # A concurrent request already recorded this exact demotion — retry stripped, but don't
+            # re-warn (already emitted once, and the demotion set is the log guard).
+            log.debug("reasoning demotion for %s already recorded by a concurrent request", key)
+            return True
         self._reasoning_demoted.add(key)
         log.warning(
             "inference endpoint '%s' (%s, model=%s) REJECTED the reasoning controls %s with HTTP 400 — "
-            "retrying this request once without them, and dropping them for this endpoint+model for the "
-            "rest of the process. Reasoning support is per-MODEL (OpenRouter publishes "
-            "reasoning.supported_efforts per model), so this is capability feedback, not necessarily a "
-            "config error: to stop it, change the agent's reasoning_effort/reasoning_tokens or this "
-            "endpoint's api_mode. The provider said: %s",
+            "retrying this request once without them, and dropping them for this endpoint+model until a "
+            "config edit clears it (an inference-section edit rebuilds the client; an agent's reasoning "
+            "edit clears via the runtime hook — D46/F6). Reasoning support is per-MODEL (OpenRouter "
+            "publishes reasoning.supported_efforts per model), so this is capability feedback, not "
+            "necessarily a config error: to stop it, change the agent's reasoning_effort/reasoning_tokens "
+            "or this endpoint's api_mode. The provider said: %s",
             name,
             ep.base_url,
             model,
@@ -988,17 +1071,49 @@ class InferenceClient:
                 extra[key] = {**prior, **val}
             else:
                 extra[key] = val
+        # The mutual-exclusion / off-absolute reconciliation is for the LIVE payload only. When
+        # `strip_reasoning`, the block above already removed every reasoning control (ours AND the
+        # endpoint's), so there is nothing to reconcile and — crucially — nothing to RE-INTRODUCE (an
+        # `off` request must not add `effort: "none"` back onto a payload we are stripping).
         merged_reasoning = extra.get("reasoning")
-        if isinstance(merged_reasoning, dict) and merged_reasoning:
+        if strip_reasoning:
+            pass
+        elif reasoning_effort == "off":
+            # `off` is ABSOLUTE (final foreign review, F1): a merged `reasoning` namespace — per-call OR
+            # endpoint-hand-set — must never silently RE-ENABLE reasoning. The old tail only popped the
+            # top-level `reasoning_effort` kwarg when the namespace was non-empty, so an endpoint's
+            # `reasoning: {effort: high}` / `{enabled: true}` / `{max_tokens: N}` overrode the `off`
+            # request. So: prune EVERY control (`effort`/`max_tokens`/`enabled`) from the namespace; if
+            # response-shape flags survive (e.g. `exclude`), carry the off signal INSIDE the namespace as
+            # `effort: "none"` — OpenRouter documents top-level `reasoning_effort` as shorthand for
+            # `reasoning.effort`, so this is the same wire meaning, unambiguous — and drop the top-level
+            # kwarg; if the namespace empties, drop it and keep today's top-level `reasoning_effort:
+            # "none"`. The mandatory-reasoning 400 on `"none"` stays covered by the D46 marker (no change).
+            if isinstance(merged_reasoning, dict):
+                kept = {k: v for k, v in merged_reasoning.items() if k not in _REASONING_NS_CONTROL_KEYS}
+                if kept:
+                    kept["effort"] = "none"
+                    extra["reasoning"] = kept
+                    out.pop("reasoning_effort", None)
+                else:
+                    extra.pop("reasoning", None)
+            # F2 — the `reasoning_effort` shorthand can ALSO ride in the endpoint's own extra_body; evict
+            # it so a stale re-enabling value can't survive an `off` request (supersedes the F2 rule below).
+            extra.pop("reasoning_effort", None)
+        elif isinstance(merged_reasoning, dict) and merged_reasoning:
             # The mutual-exclusion guarantee has to survive an endpoint that hand-set `reasoning` itself
-            # (audit FIX 2) — otherwise both spellings ride in one request, the exact hard 400 this
-            # dialect exists to prevent. Two rules, both "the per-call budget wins":
+            # (audit FIX 2 + final foreign review F2) — otherwise both spellings ride in one request, the
+            # exact hard 400 this dialect exists to prevent. Three rules, all "the per-call budget wins":
             #   1. within the object, a `max_tokens` evicts any `effort`;
-            #   2. a non-empty `reasoning` object suppresses the top-level `reasoning_effort` kwarg.
+            #   2. a non-empty `reasoning` object suppresses the top-level `reasoning_effort` kwarg (`out`);
+            #   3. …AND the same OpenRouter shorthand hand-set in the endpoint's `extra_body` (F2) — e.g.
+            #      `extra_body: {reasoning_effort: high}` + per-call `reasoning_tokens` used to emit BOTH
+            #      `reasoning_effort` and `reasoning.max_tokens`, the exact D45 hard-400 pair.
             if "max_tokens" in merged_reasoning and "effort" in merged_reasoning:
                 merged_reasoning = {k: v for k, v in merged_reasoning.items() if k != "effort"}
                 extra["reasoning"] = merged_reasoning
             out.pop("reasoning_effort", None)
+            extra.pop("reasoning_effort", None)
         if extra:
             out["extra_body"] = extra
         return out

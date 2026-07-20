@@ -294,6 +294,65 @@ def test_call_config_off_is_absolute_and_ignores_an_explicit_budget() -> None:
     assert _resolve_reasoning_budget("off", 4096) == 0
 
 
+def test_call_config_off_is_absolute_against_a_hand_set_reasoning_namespace() -> None:
+    """F1 (final foreign review): `off` must NOT be re-enabled by an endpoint's own `reasoning` namespace.
+    Its controls (`effort`/`max_tokens`/`enabled`) are pruned; a surviving shape flag (`exclude`) carries
+    the off signal as `reasoning.effort: "none"` (OpenRouter's top-level↔`reasoning.effort` shorthand) and
+    the top-level kwarg is dropped; an all-control namespace empties and the top-level `"none"` is kept."""
+    # `exclude` survives → off rides INSIDE the namespace, no top-level `reasoning_effort` kwarg.
+    ep = _ep(
+        api_mode="openrouter",
+        extra_body={"reasoning": {"exclude": True, "effort": "high", "enabled": True, "max_tokens": 100}},
+    )
+    original = {k: dict(v) for k, v in ep.extra_body.items()}
+    cfg = InferenceClient._call_config(ep, max_tokens=None, reasoning_effort="off")
+    assert cfg == {"extra_body": {"reasoning": {"exclude": True, "effort": "none"}}}
+    assert ep.extra_body == original  # config never mutated
+    # an ALL-control namespace empties → dropped, and the top-level `"none"` is kept.
+    cfg2 = InferenceClient._call_config(
+        _ep(api_mode="openrouter", extra_body={"reasoning": {"effort": "high", "enabled": True}}),
+        max_tokens=None,
+        reasoning_effort="off",
+    )
+    assert cfg2 == {"reasoning_effort": "none"}
+
+
+def test_call_config_off_evicts_an_extra_body_reasoning_effort_shorthand() -> None:
+    """F2: an endpoint's own top-level `reasoning_effort` shorthand in extra_body must not survive an
+    `off` request (it would re-enable reasoning behind the `"none"`)."""
+    cfg = InferenceClient._call_config(
+        _ep(api_mode="openrouter", extra_body={"reasoning_effort": "high"}),
+        max_tokens=None,
+        reasoning_effort="off",
+    )
+    assert cfg == {"reasoning_effort": "none"}
+
+
+def test_call_config_extra_body_effort_and_per_call_budget_never_coexist() -> None:
+    """F2: `extra_body: {reasoning_effort: high}` + a per-call `reasoning_tokens` used to emit BOTH the
+    shorthand AND `reasoning.max_tokens` — the exact hard-400 pair D45 exists to prevent. The sweep now
+    evicts the extra_body shorthand too, so only the budget rides."""
+    cfg = InferenceClient._call_config(
+        _ep(api_mode="openrouter", extra_body={"reasoning_effort": "high"}),
+        max_tokens=None,
+        reasoning_tokens=500,
+        reasoning_effort=None,
+    )
+    assert cfg == {"extra_body": {"reasoning": {"max_tokens": 500}}}
+
+
+def test_call_config_strip_prunes_the_enabled_control_keeping_exclude() -> None:
+    """F5: `enabled` is a reasoning CONTROL (`reasoning.enabled: true` = "enable at default effort"), so a
+    demotion strip removes it; only the `exclude` shape flag survives."""
+    cfg = InferenceClient._call_config(
+        _ep(api_mode="llamacpp", extra_body={"reasoning": {"enabled": True, "exclude": True}}),
+        max_tokens=None,
+        reasoning_effort="high",
+        strip_reasoning=True,
+    )
+    assert cfg == {"extra_body": {"reasoning": {"exclude": True}}}
+
+
 def test_call_config_emits_only_keys_the_sdk_actually_models() -> None:
     """D45 build-audit HIGH: `_call_config`'s dict is splatted into `AsyncCompletions.create`, whose
     signature is CLOSED (no `**kwargs`). Any top-level key the SDK does not model raises `TypeError`
@@ -1113,6 +1172,24 @@ def test_reasoning_rejection_ignores_a_reasoning_word_in_the_model_slug() -> Non
         ), key
 
 
+def test_named_marker_gate_ignores_a_reasoning_value_echoed_in_the_body() -> None:
+    """F3 (final foreign review): OpenRouter echoes the request body in `metadata.raw`, so a rejection
+    naming `tool_choice` can carry a genuine `"reasoning_effort":"high"` VALUE elsewhere in the text. The
+    naming-marker gate decides on the parameter named AT the marker, never the whole text, so the echoed
+    value does not false-positive into a wasted retry + a permanent wrong demotion."""
+    echoed = (
+        "Unsupported parameter: tool_choice is not supported with this model "
+        '{"reasoning_effort":"high","tool_choice":"auto"}'
+    )
+    assert not is_reasoning_param_rejection(_sdk_error(400, None, echoed))
+    # a genuine reasoning rejection still matches even when an unrelated param is echoed in the body
+    named = 'Unsupported parameter: reasoning_effort is not supported {"tool_choice":"auto"}'
+    assert is_reasoning_param_rejection(_sdk_error(400, None, named))
+    # the VALUE-shape markers keep the whole-text scan (documented residual): the key rides BEFORE the
+    # marker, so there is no named token to isolate.
+    assert is_reasoning_param_rejection(_sdk_error(400, None, f"reasoning_effort: {_ENUM_REJECT}"))
+
+
 def test_stream_chat_strips_reasoning_and_retries_the_same_endpoint_once(caplog) -> None:
     """The whole mechanism end-to-end on one endpoint: attempt 1 carries `reasoning_effort` and 400s,
     attempt 2 goes to the SAME endpoint without it and succeeds — and the warning names the endpoint,
@@ -1225,6 +1302,50 @@ def test_complete_degrades_the_same_way() -> None:
     assert out == "summary"
     assert len(calls) == 2
     assert "extra_body" in calls[0] and "extra_body" not in calls[1]
+
+
+def test_demotion_cache_serves_a_concurrent_racing_request(caplog) -> None:
+    """F4 (final foreign review): two UNSTRIPPED requests can 400 on the same `(endpoint, model)` before
+    either records the demotion (no semaphore / `max_concurrent_requests > 1`). The late one finds the key
+    already present, but its 400 is genuinely a reasoning rejection — so `_note` must still return True
+    (retry stripped), just without a SECOND warning. The old code returned False and failed the hop."""
+    client = InferenceClient(_cfg())
+    ep = client._cfg.local
+    err = _sdk_error(400, None, f"reasoning_effort: {_ENUM_REJECT}")
+    note = lambda: client._note_reasoning_demotion(  # noqa: E731 — terse test-local
+        err, name="local", ep=ep, model="minig", reasoning_effort="high", reasoning_tokens=None
+    )
+    with caplog.at_level(logging.WARNING, logger="ctrlb.inference"):
+        first = note()  # request A records the demotion + warns
+        second = note()  # request B (raced in unstripped) must still be told to retry stripped
+    assert first is True and second is True
+    assert len([r for r in caplog.records if r.levelno == logging.WARNING]) == 1  # warned once, not twice
+    # a 400 with nothing to strip is still not ours (the `dropped` gate is computed first)
+    no_reasoning = InferenceClient(_cfg())
+    assert (
+        no_reasoning._note_reasoning_demotion(
+            err, name="local", ep=ep, model="m", reasoning_effort=None, reasoning_tokens=None
+        )
+        is False
+    )
+
+
+def test_runtime_hook_clears_reasoning_demotions_on_an_agent_edit() -> None:
+    """F6 (final foreign review): an agent-file edit changes reasoning settings but does NOT rebuild the
+    inference client, so the demotion must be cleared through the explicit runtime hook — otherwise a
+    corrected setting stays stripped until an unrelated inference edit / restart. (The API test would be
+    heavy; the brief permits driving the runtime chokepoint directly.)"""
+    from types import SimpleNamespace
+
+    from app.runtime import clear_reasoning_demotions
+
+    client = InferenceClient(_cfg())
+    client._reasoning_demoted.add(("http://local/v1", "minig"))
+    app = SimpleNamespace(state=SimpleNamespace(inference=client))
+    clear_reasoning_demotions(app)
+    assert client._reasoning_demoted == set()
+    # a no-op before the client is wired (lifespan hasn't run) — must not raise
+    clear_reasoning_demotions(SimpleNamespace(state=SimpleNamespace()))
 
 
 if __name__ == "__main__":
