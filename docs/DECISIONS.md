@@ -2948,11 +2948,13 @@ Scope is deliberately narrow: **reasoning controls only**, nothing else.
   and re-attempt the **SAME endpoint exactly ONCE**.
 - **Remember** — the `(base_url, model)` demotion is kept on the `InferenceClient` for the process
   lifetime, so later turns skip the doomed attempt entirely. Client-instance state on purpose, cleared on
-  a config edit by **two paths** (corrected by the final foreign review, F6 — the original "for free on
-  any agent edit" was FALSE): an **inference-section** edit rebuilds the whole client via
+  a config edit by **three paths** (corrected by the final foreign review, F6 + rider — the original "for
+  free on any agent edit" was FALSE): an **inference-section** edit rebuilds the whole client via
   `runtime.set_inference` (the `_window_memo` precedent), minting a fresh empty set; an **agent-file**
   edit (the folder-per-agent API) never rebuilds the client, so it clears explicitly through the
-  `runtime.clear_reasoning_demotions` hook, called blanket-on-mutation from PUT/DELETE `agent`.
+  `runtime.clear_reasoning_demotions` hook, called blanket-on-mutation from PUT/DELETE `agent`; and an
+  **`agent`-SECTION settings edit** (`agent.defaults` can carry the same reasoning fields, D15 #1)
+  clears through the same hook from `reconfigure` (`elif agent_changed` — the F6 rider).
 - **Warn LOUDLY, once per `(endpoint, model)`** — RFC 9413 §5.1: a fault must receive attention.
   LiteLLM's silent `drop_params` is the documented anti-pattern; aider's
   `Warning: <model> does not support '<param>', ignoring.` is the model followed, extended with the
@@ -3063,4 +3065,17 @@ pass caught six correctness gaps in the reconciliation + classifier + invalidati
   Made TRUE (not weakened): `InferenceClient.clear_reasoning_demotions()`, exposed through
   `runtime.clear_reasoning_demotions(app)` and called blanket-on-mutation from PUT/DELETE `agent`. The
   field comment, the "Remember" bullet above, and the demotion WARNING wording ("for the rest of the
-  process" → "until a config edit clears it") are all corrected.
+  process" → "until a config edit clears it") are all corrected. **Rider (same day):** the orchestrator's
+  review found a third door the fix wave's brief missed — `agent.defaults` (D15 #1) carries the same
+  reasoning fields and rides `PUT /api/settings` → `reconfigure`, which neither rebuilds the client nor
+  hit the new hook; `reconfigure` now clears on an `agent`-section change (`elif agent_changed` — an
+  inference rebuild already mints an empty set).
+- **Verifier NEW-2 (LOW, fixed same day) — a shape-only `reasoning` object no longer evicts the
+  requested effort.** The F2 sweep evicted both `reasoning_effort` spellings whenever ANY non-empty
+  namespace survived — including one carrying only the non-conflicting shape flag `exclude`, silently
+  dropping an operator's/agent's effort to the provider default. Now a namespace carrying a CONTROL
+  (`effort`/`max_tokens`/`enabled`) owns the config (evicts both spellings, unchanged), while a
+  shape-only object FOLDS the requested effort in (the F1 off-carry pattern; per-call wins over the
+  endpoint's hand-set shorthand). Verifier INFO notes accepted as residuals: the off-carry is
+  dialect-blind (a hand-set namespace on an `openai` endpoint is already an unknown key there), and
+  `_NAMED_PARAM_RE` keeps a trailing dot on an unquoted token (unreachable in the measured shapes).

@@ -1105,15 +1105,24 @@ class InferenceClient:
             # (audit FIX 2 + final foreign review F2) — otherwise both spellings ride in one request, the
             # exact hard 400 this dialect exists to prevent. Three rules, all "the per-call budget wins":
             #   1. within the object, a `max_tokens` evicts any `effort`;
-            #   2. a non-empty `reasoning` object suppresses the top-level `reasoning_effort` kwarg (`out`);
-            #   3. …AND the same OpenRouter shorthand hand-set in the endpoint's `extra_body` (F2) — e.g.
-            #      `extra_body: {reasoning_effort: high}` + per-call `reasoning_tokens` used to emit BOTH
-            #      `reasoning_effort` and `reasoning.max_tokens`, the exact D45 hard-400 pair.
+            #   2. a `reasoning` object carrying a CONTROL owns the reasoning config: it suppresses the
+            #      top-level `reasoning_effort` kwarg (`out`) AND the same OpenRouter shorthand hand-set
+            #      in the endpoint's `extra_body` (F2) — e.g. `extra_body: {reasoning_effort: high}` +
+            #      per-call `reasoning_tokens` used to emit BOTH `reasoning_effort` and
+            #      `reasoning.max_tokens`, the exact D45 hard-400 pair;
+            #   3. a SHAPE-ONLY object (`exclude`) is no conflict — the requested effort FOLDS INTO it
+            #      (the F1 off-carry pattern; verifier NEW-2) instead of being silently dropped to the
+            #      provider default; the per-call value wins over the endpoint's hand-set shorthand,
+            #      matching the body-merge precedence.
             if "max_tokens" in merged_reasoning and "effort" in merged_reasoning:
                 merged_reasoning = {k: v for k, v in merged_reasoning.items() if k != "effort"}
                 extra["reasoning"] = merged_reasoning
-            out.pop("reasoning_effort", None)
-            extra.pop("reasoning_effort", None)
+            call_effort = out.pop("reasoning_effort", None)
+            ep_effort = extra.pop("reasoning_effort", None)
+            if not any(k in merged_reasoning for k in _REASONING_NS_CONTROL_KEYS):
+                folded = call_effort if call_effort is not None else ep_effort
+                if folded is not None:
+                    extra["reasoning"] = {**merged_reasoning, "effort": folded}
         if extra:
             out["extra_body"] = extra
         return out

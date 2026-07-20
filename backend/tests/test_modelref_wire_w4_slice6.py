@@ -341,6 +341,34 @@ def test_call_config_extra_body_effort_and_per_call_budget_never_coexist() -> No
     assert cfg == {"extra_body": {"reasoning": {"max_tokens": 500}}}
 
 
+def test_call_config_shape_only_namespace_folds_the_effort_instead_of_dropping_it() -> None:
+    """Verifier NEW-2 (final foreign review): a SHAPE-ONLY `reasoning` object (`exclude`) is not a
+    mutual-exclusion conflict, so evicting the requested effort silently dropped an operator's/agent's
+    preference to the provider default. The effort now FOLDS INTO the object (the F1 off-carry
+    pattern); per-call wins over the endpoint's hand-set shorthand."""
+    # endpoint shorthand + shape-only object → shorthand folds in
+    cfg = InferenceClient._call_config(
+        _ep(api_mode="openrouter", extra_body={"reasoning_effort": "high", "reasoning": {"exclude": True}}),
+        max_tokens=None,
+        reasoning_effort=None,
+    )
+    assert cfg == {"extra_body": {"reasoning": {"exclude": True, "effort": "high"}}}
+    # per-call effort + shape-only object → per-call folds in (and beats the endpoint shorthand)
+    cfg = InferenceClient._call_config(
+        _ep(api_mode="openrouter", extra_body={"reasoning_effort": "low", "reasoning": {"exclude": True}}),
+        max_tokens=None,
+        reasoning_effort="medium",
+    )
+    assert cfg == {"extra_body": {"reasoning": {"exclude": True, "effort": "medium"}}}
+    # a CONTROL in the object still owns the config: both shorthand spellings evicted, no fold
+    cfg = InferenceClient._call_config(
+        _ep(api_mode="openrouter", extra_body={"reasoning_effort": "low", "reasoning": {"enabled": True}}),
+        max_tokens=None,
+        reasoning_effort="medium",
+    )
+    assert cfg == {"extra_body": {"reasoning": {"enabled": True}}}
+
+
 def test_call_config_strip_prunes_the_enabled_control_keeping_exclude() -> None:
     """F5: `enabled` is a reasoning CONTROL (`reasoning.enabled: true` = "enable at default effort"), so a
     demotion strip removes it; only the `exclude` shape flag survives."""
