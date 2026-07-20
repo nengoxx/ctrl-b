@@ -343,6 +343,120 @@
 > Fable 5 = orchestrator + feature reviewer alongside Codex (`gpt-5.6-sol` high); ALL specified
 > implementation / mechanical work / research = Opus 4.8 subagents.**
 >
+> **▶▶ SESSION CLOSE 2026-07-20 PM — READ THIS FIRST. ALL PUSHED, CI green, tree clean @ `bee6760`.**
+> **What shipped after Slice 8** (all on origin/main): `fb59c83`+`4dae8d5` host address field takes a
+> DNS name on mobile (the numeric `inputMode` made it paste-only; label is now "IP or DNS name" — the
+> e2e caught that "IP or host**name**" collides with "Hostname" under Playwright's SUBSTRING
+> `getByLabel`) · `1b47e50`+`f550a2d` **SYS-16 CLOSED** (13 blocking fs calls off the event loop via
+> `asyncio.to_thread` + TWO AST ratchets in `test_arch_invariants_sys16.py`; the 2nd guard — async defs
+> calling sync helpers — found 2 sites the hand audit missed incl. `memory.write`) · `f0bbef4`
+> **SYS-3/ACA-17 race CLOSED** (`PUT /api/settings` 409s on a `tool_overrides` patch while a turn is
+> live; scoped so appearance writes AND the D44 grant path are unaffected — do NOT hoist that gate into
+> `apply_settings_patch`, there's a named test) · `92dc3a3` post-ACA bookkeeping (7 built-but-unticked
+> Phase-12 boxes ticked; 6 backlog items + 5 slice seams RE-HOMED into ROADMAP/DECISIONS so they survive
+> the chapter closing) · `8172cfc`→`bee6760` **the reasoning arc (D45+D46)**.
+>
+> **▶ THE REASONING ARC (D45 + D46) — ✅ COMPLETE, and it is the cautionary tale of the session.**
+> The premise the old code encoded was INVERTED: llama-server **ignores `reasoning_effort`** entirely
+> (maintainer-confirmed) and **accepts a per-request integer budget** — so we were sending the dead knob
+> and withholding the live one. Now: ONE explicit **`api_mode`** per endpoint
+> (`openai|llamacpp|openrouter|none`, the Hermes naming convention; absorbed `max_tokens_field` as
+> derived-with-override) → the `reasoning_effort` ladder translates per dialect (llama.cpp gets a token
+> budget, `off`→0 and `max`→-1 being llama.cpp's OWN sentinels), `reasoning_tokens` is an explicit
+> override, `off` is ABSOLUTE. **NO auto-detection** — field research across 13 systems found nobody
+> infers wire shape from `base_url`, and Hermes shipped URL auto-detection then RETREATED from it; the
+> self-hosted heuristic survives as an advisory WARNING only (`warn_suspect_api_modes`), never a branch.
+> **⚠ THE OWNER MUST SET `api_mode: llamacpp` ON THE LIVE CONFIG** — it defaults to `openai` for
+> back-compat, so on an untouched `config.yaml` the feature is INERT (that's what the warning nags
+> about). No UI for it yet → YAML edit or a settings PUT.
+> **Three corrections I got wrong first, all fixed, all recorded honestly in D45/D46:** ⓐ I ruled that
+> OpenRouter rejects `max` from a docs page narrower than reality and shipped a clamp — **live testing
+> proved `max` is accepted (HTTP 200), their own invalid-value error literally reads `expected one of
+> "max"|"xhigh"|…`**; clamp reverted. ⓑ the `off`→`none` map was right but incomplete (`none` 400s on
+> mandatory-reasoning models). ⓒ the real lesson: **`supported_efforts` is PER-MODEL** (339 OpenRouter
+> models, wildly varying sets; only 22 accept `max`) so **no static table can be correct** → D46 makes a
+> reasoning-param 400 into capability FEEDBACK: strip the reasoning keys, retry the SAME endpoint ONCE,
+> remember the demotion per `(endpoint, model)`, and WARN LOUDLY (silent dropping is LiteLLM's
+> most-complained-about behaviour; RFC 9413 §5.1 says a fault must receive attention).
+> **Method note for the next session: the live API was the only source that got this right.** Two of my
+> own research passes and one adversarial audit each asserted a different wrong enum. When a wire
+> contract matters, hit the endpoint.
+>
+> **▶ TOPIC THE OWNER WANTS TO DISCUSS NEXT: A9 / §6 Q5 — agent-memory freshness ("the frozen memory
+> thing"). Researched 2026-07-20; the binary framing is FALSE and the recommendation is cheap.**
+> Posed as per-turn re-read (today) vs Hermes-style per-session freeze. Reality: every backend
+> invalidates a cache **only from the change point onward** (Anthropic breakpoints cascade downward,
+> OpenAI prefix-matches, vLLM chains block hashes, llama.cpp reuses the common prefix), so what matters
+> is **what sits AFTER memory**, not whether memory changes. Hermes' own tracker argues this: issues
+> #13631 and #25971 (1% hit rate, 5–10× cost, 5-min prefills) were fixed by MOVING the volatile block
+> after the cache breakpoint, not by freezing harder. **Code truth:** `session.py:_static_prefix()`
+> orders system → appends → **memory** → roster → skills-note, and the roster is config-projected
+> (~never changes) while the skills note changes per turn. **⇒ RECOMMENDED FIRST ACTION (2 lines,
+> zero risk): reorder to system → appends → roster → memory → skills-note**, so a memory write stops
+> needlessly invalidating the roster. **THEN MEASURE** — `cache_n`/`prompt_n` are already parsed
+> (`inference.py:1031-1033`) and nobody has ever looked at them; compare turn boundaries with vs
+> without a memory write. **Verdict: a per-session freeze is premature optimization HERE** — we already
+> freeze within a turn (the loop reuses the head byte-identically), writes are rare (~2.2KB cap,
+> consolidation-driven), and the decisive asymmetry is that **ctrl-b has NO memory `read` tool** (a
+> deliberate Hermes-parity choice): Claude Code can freeze safely because its agent can always Read the
+> file back, Hermes freezes without that hatch and eats exactly the "I told it to remember X and it
+> acts like it doesn't know" defect. If measurement ever demands more, the right escalation is
+> **read-through with write-invalidation** (reuse the snapshot unless THIS thread's agent wrote), not
+> the freeze — the write is the invalidation signal, so the confusing failure becomes impossible.
+>
+> **▶ REMAINING BACKBONE TOPICS (the completeness sweep's open set, all with a home now):**
+> ① **SYS-3 structural half** — the race is closed, but "overlay-at-read" (resolve tool overrides at
+> `to_openai_tools`/catalog time so live specs become immutable and `tool_spec_orig` disappears) would
+> make the gate unnecessary rather than merely correct. ② **SYS-2** — two-phase `Deps` / subagent
+> runtime guards; its parking slice (ACA 3) shipped without it, now "open, unscheduled" with
+> lifespan/`main.py` adjacency as the trigger. ③ **ACA backlog, re-homed into ROADMAP** — A8 deferred
+> tool schemas · Gemini-style content-chant detector · pi thinking-block transforms · progressive
+> memory index (B1). ④ **UI_AUDIT F9/F13** (chat render cost) now carry a concrete trigger: a
+> >~200-message thread OR owner-reported input lag, measure with a Profiler trace first. ⑤ **The
+> `openai` api_mode still passes `off`/`xhigh`/`max` verbatim** where OpenAI's enum may differ —
+> recorded residual, and D46's 400-feedback now absorbs it at runtime.
+>
+> **▶ LIVE-VERIFY still outstanding (~19 owner pokes, Slices 5–8)** — the compact list is the ACA §5
+> per-slice LIVE-VERIFY blocks. Slice 8's is short: tap **always** on a real MED bubble → the same
+> command never re-asks and the row shows `[auto-allowed: …]` · the rule appears in Conf → Tools, revoke
+> → next call re-asks · a `shutdown_host`/`run_shell` bubble shows NO always button. ⚠ dev drives the
+> REAL fleet. ⚠ any approval granted on dev BEFORE `e0c1482` pins the old literal `"null"` and now fails
+> CLOSED (re-tap "always" to regenerate).
+>
+> **▶ ENVIRONMENT — the session's biggest time sink, READ BEFORE DEBUGGING ANY "FLAKY" TEST.**
+> emma's **`/tmp` is a RAM-backed tmpfs (16G of 30G RAM)**, not disk (the NVMe is at 21%). It hit 100%,
+> and the failures LIE: Playwright died with `Check failed: No space left on device` presenting as
+> varying "Target crashed" tests, agent tool calls silently lost stdout, and a **pre-push gate failed
+> with 20 test errors that then passed four different ways**. RAM was 25G/30G used, `shared` ≈14G,
+> **swap 511M/511M fully exhausted** (a suspiciously small swap for this box — owner flagged both for
+> review). **Workaround that works: `TMPDIR=/home/emma/.cache/tmp` on every heavy command** (gates,
+> pushes, e2e). Culprits: another project's `hermes-*` dirs (~4.6G, owner's, left untouched) and MY OWN
+> research subagents cloning source repos into the scratchpad (~5G in one session — **clean those up
+> after a research pass**). tmpfs only empties on reboot; the owner rebooted deliberately as the fix.
+> Memory note: `emma-tmp-is-tmpfs-ram.md`.
+>
+> **▶ NEXT SESSION, in order:** ① /model check (fable-5 HIGH) ② confirm CI green @ `bee6760`
+> ③ **⭐ OWNER-REQUESTED: a FINAL FOREIGN REVIEW of the WHOLE reasoning arc by Codex (`gpt-5.6-sol`,
+> HIGH)** — the standing tri-review pattern that caught HIGHs on Slices 3–7 that same-family rounds
+> normalized. Scope it at the full arc, not one commit: **`8172cfc` (D45 feature) → `811699b` (SDK
+> signature fix) → `51e4c0f` (5 audit fixes) → `bee6760` (D46 `api_mode` + 400-degradation + clamp
+> revert)**, plus DECISIONS **D45 (incl. AMENDED/AMENDED-2)** and **D46**. Point it especially at:
+> the **400-degradation retry** (does it consume a D43 failover hop or a transient-retry attempt? can it
+> loop? permit/semaphore handling on the retry? does the per-`(endpoint, model)` demotion leak across
+> config reloads?) · the **`extra_body` deep-merge** (`chat_template_kwargs` + OpenRouter `reasoning`)
+> and whether any input pair can still emit the mutually-exclusive `effort`+`max_tokens` · **per-hop
+> `api_mode` resolution** across failover/routing (a llamacpp-shaped body must never reach an OpenAI
+> hop) · the derived-with-override `max_tokens_field` · and whether D45/D46 as written match the code
+> as shipped (three of my own rulings in this arc were WRONG before live testing — assume the docs may
+> still overstate). ④ **set `api_mode: llamacpp` on the live config** (dev first, prod at release) —
+> without it D45/D46 do nothing ⑤ the A9 memory reorder + measurement above (cheap, evidence-backed)
+> ⑥ **the owner wants a working session on the AGENT-BACKBONE open set** — A9 (above), the REMAINING
+> BACKBONE TOPICS list, and any nuance surfacing from ③'s review ⑦ **prod is STILL v1.1.1 and now
+> ~100 commits behind** — Slices 1–8, approvals, the reasoning arc and today's fixes are all
+> unreleased; release via `deploy/linux/README.md` §Release when the owner wants them live ⑥ then the
+> owner's pick (ROADMAP D3 Slice 1 multi-homed addressing is the one that bites daily — corsair's LAN
+> SSH is firewalled, the MagicDNS-name-in-the-`ip`-field stopgap is now at least typeable).
+>
 > **▶ SESSION 2026-07-20 (cont.): ACA SLICE 8 (persisted approvals / "always allow", D44) ✅ BUILT
 > end-to-end across W1–W5 + POST-BUILD AUDITED — 7 LOCAL COMMITS, NOT PUSHED (`b2a2cb4` owner rig art
 > + `2279d26` D44 LOCK + `08ef3c1` W1 + `919680b` W2 + `e080731` W3 + `137efe2` W4 docs + `e0c1482` W5

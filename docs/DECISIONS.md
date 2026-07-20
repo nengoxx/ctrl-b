@@ -2984,3 +2984,37 @@ at all until the agent's setting or the client is changed. Deliberate — the fi
 `supported_efforts` fetch (`GET /api/v1/models`), which is a network call at config load and a cache to
 invalidate, i.e. exactly the complexity this decision avoids. Revisit only if the coarse demotion proves
 annoying in use.
+
+*(AMENDED post-audit 2026-07-20 — an independent adversarial pass over the shipped D46 code. It
+confirmed the three load-bearing invariants by EXERCISING them, not by reading: the permit is never
+leaked/double-released/released-before-close across eight paths incl. cancellation during either
+attempt; the re-attempt never pollutes `endpoints_tried` / `failures` / the notices; and with
+`retry_attempts: 0` the degradation still works, i.e. it consumes no transient budget. Four fixes:)*
+ⓐ **MED — the key gate false-positived on a model SLUG.** `_REASONING_KEY_NAMES` held the bare tokens
+`reasoning` / `thinking`, and the gate substring-scans the whole FLATTENED error text — into which
+OpenRouter echoes the upstream body, model id included. So `Unsupported parameter: tool_choice is not
+supported with this model {"model":"qwen/qwen3-30b-a3b-thinking-2507"}` classified as a reasoning
+rejection: one wasted call, a **permanent** wrong demotion, a WARNING blaming the wrong parameter, and
+the real `tool_choice` fault still unfixed. Now **exact wire spellings only** (`reasoning_effort`,
+`*_budget_tokens`, `reasoning.effort`, `reasoning.max_tokens`, `enable_thinking`, and the quoted
+`'reasoning'` forms for `Unsupported parameter: 'reasoning'`). **Durable lesson: a substring gate over a
+flattened error must match the exact wire spelling — provider errors quote your whole request back.**
+ⓑ **LOW — the strip dropped `extra_body.reasoning` wholesale**, taking `exclude` with it. `reasoning` is
+a NAMESPACE, not a control: `exclude` is a response-SHAPE flag, so a demotion silently started streaming
+reasoning back to an operator who had explicitly excluded it. It now gets the same copy-and-replace prune
+`chat_template_kwargs` already had — `_REASONING_NS_CONTROL_KEYS` (`effort`/`max_tokens`) out, siblings
+survive, the object dropped only if it empties.
+ⓒ **LOW — the `status == 400 or "error code: 400" in text` gate was copy-pasted** between
+`is_context_overflow` and `is_reasoning_param_rejection`; extracted to `_is_400`, one home.
+ⓓ **LOW — "retry the SAME endpoint once" was per-HOP, documented as per-request.** A chain whose
+endpoints all reject reasoning pays one extra call PER ENDPOINT on the first request (then zero). That is
+correct — each hop must learn its own `(endpoint, model)` capability — but the comment now says so.
+
+**Recorded, NOT fixed (owner's ruling stands, flagged for visibility).** The `max_tokens_field` default
+flip (part 2) changes the wire for every existing config, since `config.yaml` is gitignored and untouched
+by an upgrade: an endpoint that set neither field now sends `max_completion_tokens` instead of
+`max_tokens`. Harmless on llama.cpp (aliases both) and correct on OpenAI, but a **non-OpenAI cloud
+endpoint left on the default `api_mode: openai` could 400 on the new spelling**, and that failure is NOT
+covered by the D46 feedback path (it is not a reasoning key) — it would burn the chain. The remedy is one
+line (`max_tokens_field: max_tokens`, or the right `api_mode`), and `warn_suspect_api_modes` only nags
+self-hosted base_urls. Revisit if anyone hits it.

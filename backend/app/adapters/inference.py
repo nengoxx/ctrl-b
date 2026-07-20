@@ -190,6 +190,19 @@ _OVERFLOW_MSG_MARKERS = (
 )
 
 
+def _is_400(err: BaseException, text: str) -> bool:
+    """ "Is this a 400?" for the message-substring classifiers — the structured `status`/`status_code`,
+    else the `error code: 400` a failover-FLATTENED error still carries in its text. ONE home, shared by
+    `is_context_overflow` and `is_reasoning_param_rejection` (D46 audit LOW-3: it was copy-pasted). The
+    gate matters: it is what stops an unrelated 5xx/429 whose body happens to quote a marker phrase from
+    being upgraded into an overflow / a param rejection. `text` is the caller's already-lowered
+    `str(err)` (both callers need it anyway — no second lowering)."""
+    status = getattr(err, "status", None)
+    if status is None:
+        status = getattr(err, "status_code", None)
+    return status == 400 or "error code: 400" in text
+
+
 def is_context_overflow(err: BaseException) -> bool:
     """The ONE home (D42 reactive backstop) for "is this backend failure a prompt-too-long-for-the-
     context-window error?". Matches the STRUCTURED fields first — OpenAI's HTTP 400 + code
@@ -209,8 +222,7 @@ def is_context_overflow(err: BaseException) -> bool:
     if status == 400 and isinstance(code, str) and code == _OVERFLOW_CODE:
         return True  # OpenAI structured — the clean single-endpoint / last-hop path
     text = str(err).lower()
-    is_400 = status == 400 or "error code: 400" in text
-    return is_400 and any(marker in text for marker in _OVERFLOW_MSG_MARKERS)
+    return _is_400(err, text) and any(marker in text for marker in _OVERFLOW_MSG_MARKERS)
 
 
 #: ── D46 reasoning-capability feedback ─────────────────────────────────────────────────────────────
@@ -223,6 +235,10 @@ _REASONING_PAYLOAD_KEYS = (
     "reasoning_budget_tokens",
     "thinking_budget_tokens",
 )
+#: The CONTROL sub-keys inside the `reasoning` vendor namespace — the only ones the strip removes. Its
+#: other keys are response-SHAPE flags (`exclude`, `enabled`) that an operator set deliberately and that
+#: no provider rejects for capability reasons, so they survive a demotion (D46 audit LOW-2).
+_REASONING_NS_CONTROL_KEYS = ("effort", "max_tokens")
 #: HTTP-400 message shapes that mean "I rejected one of your PARAMETERS", MEASURED against the live
 #: OpenRouter API 2026-07-20 + OpenAI's published error strings — not a guess:
 #:   - `Invalid option: expected one of "max"|"xhigh"|…`  OpenRouter, value outside a model's enum;
@@ -240,12 +256,21 @@ _PARAM_REJECT_MSG_MARKERS = (
 _MANDATORY_REASONING_MARKER = "reasoning is mandatory for this endpoint"
 #: A param-rejection only counts as OURS when the provider's message names a reasoning-related key.
 #: Without this gate a rejected `tool_choice`/`response_format` would strip reasoning and retry blind.
+#: **EXACT WIRE SPELLINGS ONLY — deliberately not the bare tokens `reasoning`/`thinking`** (D46 audit,
+#: MED-1). The gate substring-scans the WHOLE flattened error text, and OpenRouter echoes the upstream
+#: body (incl. the model id) in `metadata.raw`, so a bare `thinking` matched any unrelated rejection on
+#: a model slug like `qwen/qwen3-30b-a3b-thinking-2507` — a wasted call, a PERMANENT wrong demotion and
+#: a WARNING blaming the wrong parameter, while the real (`tool_choice`) problem went unfixed. The
+#: quoted forms cover `Unsupported parameter: 'reasoning'`, where the key stands alone.
 _REASONING_KEY_NAMES = (
     "reasoning_effort",
-    "reasoning",
-    "thinking",
     "reasoning_budget_tokens",
     "thinking_budget_tokens",
+    "reasoning.effort",
+    "reasoning.max_tokens",
+    "enable_thinking",
+    "'reasoning'",
+    '"reasoning"',
 )
 
 
@@ -263,11 +288,8 @@ def is_reasoning_param_rejection(err: BaseException) -> bool:
     Gated on a 400 the same way `is_context_overflow` is (own `status` or a flattened `error code: 400`)
     AND on the message naming a reasoning key — except for the self-identifying mandatory-reasoning
     shape. A 400 about anything else (`tool_choice`, `response_format`, a bad model id) never matches."""
-    status = getattr(err, "status", None)
-    if status is None:
-        status = getattr(err, "status_code", None)
     text = str(err).lower()
-    if not (status == 400 or "error code: 400" in text):
+    if not _is_400(err, text):
         return False
     if _MANDATORY_REASONING_MARKER in text:
         return True
@@ -934,10 +956,22 @@ class InferenceClient:
         if strip_reasoning:
             # D46: the endpoint's OWN reasoning config goes too — it is part of "the reasoning controls
             # in this payload", and a provider that just rejected them will reject them again. Scoped
-            # EXACTLY to `_REASONING_PAYLOAD_KEYS` + the one reasoning sub-sub-key; every other operator
-            # key (`cache_prompt`, `stream_options`, other `chat_template_kwargs` siblings) survives.
+            # EXACTLY to the reasoning CONTROLS; every other operator key (`cache_prompt`,
+            # `stream_options`, other `chat_template_kwargs` siblings) survives.
             for key in _REASONING_PAYLOAD_KEYS:
-                extra.pop(key, None)
+                if key != "reasoning":  # the vendor namespace is pruned per-sub-key just below
+                    extra.pop(key, None)
+            # `reasoning` is a NAMESPACE, not a control: `exclude` is a response-SHAPE flag (hide the
+            # reasoning from the response), so dropping the object wholesale would silently start
+            # streaming reasoning back to an operator who explicitly asked to exclude it (audit LOW-2).
+            # Same copy-and-replace prune `chat_template_kwargs` gets — controls out, siblings survive.
+            reasoning_ns = extra.get("reasoning")
+            if isinstance(reasoning_ns, dict):
+                kept = {k: v for k, v in reasoning_ns.items() if k not in _REASONING_NS_CONTROL_KEYS}
+                if kept:
+                    extra["reasoning"] = kept
+                else:
+                    extra.pop("reasoning")
             ctk = extra.get("chat_template_kwargs")
             if isinstance(ctk, dict) and "enable_thinking" in ctk:
                 pruned = {k: v for k, v in ctk.items() if k != "enable_thinking"}
@@ -1291,8 +1325,12 @@ class InferenceClient:
                 # for a busy backend. The permit is untouched: it was acquired above and is released by the
                 # single handler below (failure) or handed to the consumer (success) — a stripped
                 # re-attempt is just a second `create()` under the SAME permit, exactly like the first.
-                # Bounded to ONE by construction: the second call passes `strip=True` and can never
-                # re-enter (`_note_reasoning_demotion` is skipped when `stripped`).
+                # Bounded to ONE PER HOP by construction: the second call passes `strip=True` and can
+                # never re-enter (`_note_reasoning_demotion` is skipped when `stripped`). Per-hop, not
+                # per-request, is the honest description (audit LOW-1): a chain whose endpoints ALL
+                # reject reasoning pays one extra call per endpoint on the FIRST request, then zero —
+                # each hop must learn its own `(endpoint, model)` capability, and a demotion learned on
+                # the local endpoint says nothing about the cloud one.
                 stripped = self._reasoning_is_demoted(ep, use_model)
                 try:
                     first, stream = await _open(stripped)

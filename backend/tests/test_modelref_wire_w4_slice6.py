@@ -1076,14 +1076,41 @@ def test_strip_reasoning_removes_only_reasoning_keys() -> None:
     )
     assert cfg == {
         "max_tokens": 64,
-        "extra_body": {"cache_prompt": True, "chat_template_kwargs": {"foo": 1}},
+        # audit LOW-2: `reasoning` is a NAMESPACE — `exclude` is a response-SHAPE flag the operator set
+        # deliberately, so the strip takes the CONTROLS (`effort`/`max_tokens`) and leaves it. Dropping
+        # the object wholesale would silently start streaming reasoning back to someone who excluded it.
+        "extra_body": {
+            "cache_prompt": True,
+            "reasoning": {"exclude": True},
+            "chat_template_kwargs": {"foo": 1},
+        },
     }
     assert ep.extra_body == original
-    # a chat_template_kwargs that held ONLY the reasoning sub-key disappears entirely (no empty dict)
+    # a sub-object that held ONLY reasoning controls disappears entirely (no empty dict on the wire)
     lone = InferenceClient._call_config(
-        _ep(api_mode="llamacpp"), max_tokens=None, reasoning_effort="off", strip_reasoning=True
+        _ep(api_mode="llamacpp", extra_body={"reasoning": {"effort": "high", "max_tokens": 10}}),
+        max_tokens=None,
+        reasoning_effort="off",
+        strip_reasoning=True,
     )
     assert lone == {}
+
+
+def test_reasoning_rejection_ignores_a_reasoning_word_in_the_model_slug() -> None:
+    """Audit MED-1: the key gate substring-scans the WHOLE flattened error, and OpenRouter echoes the
+    upstream body (model id included) in `metadata.raw` — so bare `reasoning`/`thinking` tokens matched
+    ANY rejection on a model slug like `…-thinking-2507`, permanently demoting reasoning over somebody
+    else's bad parameter. Only exact wire spellings count."""
+    slug_noise = (
+        "Unsupported parameter: tool_choice is not supported with this model "
+        '{"model":"qwen/qwen3-30b-a3b-thinking-2507"}'
+    )
+    assert not is_reasoning_param_rejection(_sdk_error(400, None, slug_noise))
+    # the same shape naming a real reasoning key still matches, on every spelling we can emit
+    for key in ("reasoning_effort", "reasoning_budget_tokens", "thinking_budget_tokens", "'reasoning'"):
+        assert is_reasoning_param_rejection(
+            _sdk_error(400, None, f"Unsupported parameter: {key} is not supported with this model")
+        ), key
 
 
 def test_stream_chat_strips_reasoning_and_retries_the_same_endpoint_once(caplog) -> None:
