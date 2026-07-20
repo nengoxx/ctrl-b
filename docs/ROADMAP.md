@@ -288,12 +288,15 @@ back to the analysis.
 - **Deferred memory items inherited from the ACA (re-homed 2026-07-20)** — from
   [`AGENT_CHAT_AUDIT.md`](./AGENT_CHAT_AUDIT.md)'s closing backlog, which was that document's only home:
   - **A9 — per-session memory-snapshot freeze knob** (Hermes): read memory once per *session* instead
-    of once per *turn*, trading fresher edits for a stronger prompt-cache stance. *Deferred because:*
-    it is **ACA §6 Q5 — the one owner question never ruled on.** The **standing default is per-turn
-    reads, i.e. today's behavior, unchanged by inaction — NOT an owner ruling.** The doc's own
-    recommendation is to keep per-turn (a per-turn read is already head-stable *within* a turn, so the
-    cache win is small and the staleness cost is real). **Flagged for an explicit owner call**; nothing
-    is built either way until then.
+    of once per *turn*, trading fresher edits for a stronger prompt-cache stance. **RULED (owner,
+    2026-07-20): keep per-turn reads; the freeze is REJECTED as premature** — ctrl-b has no memory
+    `read` tool, so a freeze buys Hermes's "I told it to remember X" defect with no hatch, and prefix
+    caches invalidate only from the change point onward anyway. **Shipped with the ruling:** memory
+    moved AFTER the roster in the static head (D15 #4 AMENDED) so a memory write re-prefills only
+    memory + the skills note. **Open rider: measure** turn-boundary cache hits via the already-parsed
+    `cache_n`/`prompt_n` (`inference.py`); if measurement ever shows real pressure, the escalation is
+    **read-through with write-invalidation** (reuse the snapshot unless THIS thread's agent wrote),
+    never the blind freeze.
   - **Claude-Code-style progressive memory index** — load only a small index (Claude Code caps it at
     ~200 lines / 25 KB) and read topic files on demand, instead of loading memory whole. *Deferred
     because:* our memory file is nowhere near the caps; this is the natural next step for **this

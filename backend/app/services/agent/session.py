@@ -554,11 +554,17 @@ class AgentSession:
         self._tool_allow = narrow_tools(active, self._agent.tools)
 
     def _static_prefix(self) -> list[dict]:
-        """The INVARIANT system head for this turn — system prompt + appends + durable-memory block +
-        fleet roster + active-skill note, in that fixed order (7e-a/7e-d/D15 #4). Built ONCE per turn
-        and reused byte-identically every loop iteration so the cache prefix stays stable (see the
-        `_static_head` field note). The reflection nudge is deliberately NOT here — it's an ephemeral
-        tail layer appended in `_assemble`, so it never perturbs this cached head.
+        """The INVARIANT system head for this turn — system prompt + appends + fleet roster +
+        durable-memory block + active-skill note, in that fixed order (7e-a/7e-d/D15 #4, AMENDED
+        2026-07-20: memory moved AFTER the roster). Every prefix cache — llama.cpp KV, cloud prefix —
+        invalidates from the first changed byte ONWARD, and memory is the only block here that ever
+        changes across a session's turns (a `memory`-tool write); the roster is config-projected and
+        ~static. Memory-last-among-stable-blocks means a write re-prefills only memory + the skills
+        note (which changes per turn anyway) instead of also evicting the roster (A9; the Hermes
+        volatile-block-after-breakpoint precedent). Built ONCE per turn and reused byte-identically
+        every loop iteration so the cache prefix stays stable (see the `_static_head` field note). The
+        reflection nudge is deliberately NOT here — it's an ephemeral tail layer appended in
+        `_assemble`, so it never perturbs this cached head.
 
         Turn-invariant WITHIN ONE UNINTERRUPTED TURN: the system prompt / appends / roster project
         from per-turn-stable config + AgentDef, `_skills_note` is fixed at turn start by
@@ -572,12 +578,12 @@ class AgentSession:
             head: list[dict] = [{"role": "system", "content": self._system_prompt()}]
             for extra in self._appends():  # additive guidance, base-first (7e-a)
                 head.append({"role": "system", "content": extra})
-            memory = self._memory_block()  # durable memory, after appends (7e-d, D15 #4)
-            if memory:
-                head.append({"role": "system", "content": memory})
-            roster = self._roster()
+            roster = self._roster()  # config-projected, ~static — ahead of the mutable memory block
             if roster:
                 head.append({"role": "system", "content": roster})
+            memory = self._memory_block()  # durable memory, after the roster (7e-d, D15 #4 AMENDED)
+            if memory:
+                head.append({"role": "system", "content": memory})
             if self._skills_note:  # active skills' instructions (4.5)
                 head.append({"role": "system", "content": self._skills_note})
             self._static_head = head

@@ -1,11 +1,13 @@
 """Phase 7e-d-1 — file memory read path (`FileMemoryProvider.load_context` + `_assemble` injection).
 
 Exercises the read path only (the `memory` tool + Conf panel are 7e-d-2/7e-d-3): the saved files are
-injected as their own `system` message, after the prompt appends and before the roster (D15 #4), with
-Hermes-style usage headers, and the toggles/caps behave.
+injected as their own `system` message, after the prompt appends and the roster (D15 #4, AMENDED
+2026-07-20: memory rides AFTER the roster so a memory write never evicts the roster from a prefix
+cache — A9), with Hermes-style usage headers, and the toggles/caps behave.
 
 What's exercised:
-  1. Inject order  — MEMORY.md → a `system` message right after the base, before any roster.
+  1. Inject order  — MEMORY.md → a `system` message after the base (and after any roster — see
+     `test_roster_precedes_memory_in_the_static_head`).
   2. Usage header  — the section header shows chars/cap and a percentage.
   3. User profile   — USER.md is a second section; agent memory leads.
   4. Profile toggle — `memory.user_profile_enabled=False` drops USER.md, keeps agent memory.
@@ -113,6 +115,21 @@ def test_memory_injected_after_base_with_usage_header() -> None:
             assert "Owner prefers dark mode." in block
             # header: chars/cap + percentage (24 chars vs 2200 cap → 1%)
             assert "## Agent memory (1% — 24/2,200)" in block
+
+
+def test_roster_precedes_memory_in_the_static_head() -> None:
+    """D15 #4 AMENDED (A9, owner 2026-07-20): the fleet roster (config-projected, ~static) rides
+    BEFORE the durable-memory block, so a `memory`-tool write invalidates only memory + the skills
+    note in a prefix cache — never the roster. Pins the amended order: base → appends → roster →
+    memory."""
+    cfg = "server:\n  port: 5433\ncomputers:\n  testbox:\n    ip: 192.0.2.1\n"
+    with _workspace(cfg) as (tmp, _cfg):
+        with _client() as c:
+            _write(tmp / "memories" / "MEMORY.md", "Owner prefers dark mode.")
+            systems = _systems(_assemble(c, _make_thread(c)))
+            roster_i = next(i for i, s in enumerate(systems) if "testbox" in s)
+            memory_i = next(i for i, s in enumerate(systems) if "Owner prefers dark mode." in s)
+            assert roster_i < memory_i
 
 
 def test_user_profile_is_second_section() -> None:

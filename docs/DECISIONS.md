@@ -418,7 +418,16 @@ Each cites the existing seam it extends. **All eight were ratified one-by-one wi
    agent+user block), `write(target, action, content, old_text=None)` (the `memory` tool's backend;
    enforces caps → raises over-cap so the agent consolidates), `read_raw(target)`, `clear(target)`.
    **Injected in `_assemble` right after `_appends()`** → order becomes base → appends → **memory** →
-   roster → skills → history; frozen per turn (compaction ignores fresh system blocks). Config:
+   roster → skills → history; frozen per turn (compaction ignores fresh system blocks).
+   **AMENDED (owner, 2026-07-20 — the A9 ruling):** memory moves AFTER the roster → the order is now
+   base → appends → **roster** → **memory** → skills → history. Rationale: prefix caches (llama.cpp
+   KV, cloud prefix) invalidate from the first changed byte onward; memory is the only ~static-head
+   block that ever changes across a session (a `memory`-tool write), while the roster is
+   config-projected — memory-last keeps a write from evicting the roster (the Hermes
+   volatile-block-after-breakpoint precedent). Same ruling: per-turn memory reads STAY (the
+   per-session freeze is rejected as premature — no memory `read` tool = no hatch); measure via
+   `cache_n`/`prompt_n`; escalation path if ever needed = read-through with write-invalidation.
+   Pinned by `test_roster_precedes_memory_in_the_static_head`. Config:
    `memory.memory_char_limit` (2200) · `memory.user_char_limit` (1375) · `memory.enabled` ·
    `memory.user_profile_enabled` · `memory.auto_write` (Hermes-named keys, for portability).
    **✅ Decided 2026-06-14:** the injected block **mirrors Hermes' format** — a per-section usage

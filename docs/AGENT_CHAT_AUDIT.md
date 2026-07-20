@@ -517,7 +517,7 @@ intent-skill narrows the toolset. Adoption: measure and budget the manifest (ACA
 | **A6** | Wire-visible retries: typed `retry`/failover events with attempt + category (Claude Code `api_retry`); `done` reason subtypes (already have ⭐) | **ADOPT (small)** | Slice 7 |
 | **A7** | Retry classifier/policy split + provider-portable context transforms (thinking-block normalization) for clean mid-thread local↔cloud handoff (pi) | **ADAPT** — classifier explicit in `core/failover` policy; transforms only when a reasoning local model lands | Slice 7 (classifier) / backlog (transforms) |
 | **A8** | Context-economy budget: measure tools+head token cost per agent (log it), keep manifests lean, skills-as-docs bias (pi; Claude Code deferred schemas) | **ADOPT (measure first)** | Slice 1 rider (measurement) → backlog (deferred schemas) |
-| **A9** | Per-session memory-snapshot freeze knob (Hermes) — stronger cache stance, edits surface next thread | **DEFER (owner call — STILL UNRULED as of 2026-07-20)**; per-turn read is already head-stable within a turn. Standing default = **per-turn (current behavior), by inaction, not an owner ruling** | §6 Q5 (open) → ROADMAP B1 |
+| **A9** | Per-session memory-snapshot freeze knob (Hermes) — stronger cache stance, edits surface next thread | **RULED (owner, 2026-07-20): keep per-turn reads; freeze REJECTED as premature** (no memory `read` tool = no hatch). Shipped instead: memory moved AFTER the roster in the static head (D15 #4 AMENDED) so a write never evicts the roster; measure via `cache_n`/`prompt_n`; escalation if ever needed = read-through with write-invalidation | §6 Q5 (answered) → ROADMAP B1 |
 | **A10** | Hard reasoning budget for local thinking models (Hermes 4 `&lt;/think&gt;` cap) | **ADOPTED — FULLY BUILT.** The call-config/`ModelRef` half (per-agent `max_tokens` + `reasoning_effort`) shipped in D42; the hard `reasoning_tokens` cap is **WIRED** by D45 — llama.cpp's per-request `reasoning_budget_tokens` was the control surface the deferral assumed didn't exist | Slice 6 (D42) + D45 |
 | **A11** | Cancelled-turn context hygiene: mark in-flight calls `cancelled`, filter/synthesize like abandoned confirms (opencode `isOrphanedInterruptedTool`) | **ADOPT** — extends the existing `_assemble` synthesized-result seam | Slice 3 |
 | **A12** | Event-log-as-truth framing: compaction stays a derived overlay over the untouched message log (pi tree-JSONL model) — **already ctrl-b's design** (`compacted` flag, rows never deleted) | **KEEP (no work)** — cite as validation | — |
@@ -1376,9 +1376,15 @@ caps grow, ROADMAP B1).
    rate demands it? (It's the most speculative adoption; everything else is defect-adjacent.)
 5. **A9 memory freeze:** keep per-turn memory reads (edits apply immediately) or adopt Hermes's
    per-session freeze (stronger cache, staler memory)? Default recommendation: keep per-turn.
-   — **STILL OPEN (the only §6 question never ruled on; recorded 2026-07-20).** The **standing
-   default is per-turn reads — i.e. current behavior, unchanged, by inaction, NOT an owner ruling.**
-   Flagged for an explicit owner call; until then nothing is built either way. Durable home =
+   — **ANSWERED (owner, 2026-07-20): KEEP PER-TURN READS; the freeze is REJECTED as premature.**
+   Every §6 question is now ruled. Rationale (researched same day): prefix caches invalidate only
+   from the change point onward, so what matters is what sits AFTER memory, not whether memory
+   changes; and ctrl-b has no memory `read` tool, so a freeze would buy Hermes's "I told it to
+   remember X" defect with no hatch. **Shipped with the ruling:** the head reorder — memory moved
+   AFTER the roster (D15 #4 AMENDED) so a memory write re-prefills only memory + the skills note,
+   never the roster. **Next:** measure at turn boundaries with the already-parsed `cache_n`/
+   `prompt_n`; if measurement ever demands more, the escalation is read-through with
+   write-invalidation (this thread's write = the invalidation signal), not a freeze. Durable home =
    ROADMAP §B1.
 6. **Timing vs emma deploy:** Slices 0–2 pre-deploy, 3+ post-deploy on emma — agreed?
 7. **Slice 8 priority:** approvals-persistence is pure UX (fewer confirm taps); schedule after 7,
