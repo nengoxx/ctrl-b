@@ -65,6 +65,23 @@ async def put_settings(patch: dict[str, Any], request: Request) -> dict[str, Any
     if not isinstance(patch, dict):
         raise HTTPException(status_code=422, detail="settings patch must be a JSON object")
 
+    # SYS-3 / ACA-17: a `tool_overrides` patch reaches `apply_tool_overrides`, which mutates the LIVE
+    # registered `ToolSpec` objects (description/agent_exposed/core) — mutating the registry under an
+    # agent loop that may be iterating it. D38/S2-B: the turn-marker registry is the single busy-truth
+    # (same gate + same 409 shape as `POST /api/integrations/rediscover`). Scoped deliberately:
+    #   * ONLY when the patch carries `tool_overrides` — appearance/inference/voice/memory writes touch
+    #     no registry state, and appearance sync is frequent + cross-device, so a blanket 409 would be a
+    #     real UX regression. Key PRESENCE is the trigger (checked on the raw patch, before the write
+    #     lock — cheap, no merge needed); refusing a no-op tool_overrides patch mid-turn is accepted as
+    #     simpler and safer than diffing old-vs-new.
+    #   * The gate lives HERE, in the API handler — NOT in `apply_settings_patch`/`reconfigure`/the lock.
+    #     The D44 "always allow" grant path (`runtime.grant_approval`, Slice 8 W2) calls
+    #     `apply_settings_patch` with a `tool_overrides` patch DURING a live turn, by design, from the
+    #     resume path; it does not go through this handler, so it stays exempt. Do NOT hoist this check
+    #     down into the shared core — that would break the approval grant.
+    if "tool_overrides" in patch and request.app.state.turns:
+        raise HTTPException(status_code=409, detail="agent is busy — try again in a moment")
+
     # Appearance writes are server-stamped LWW (§9.11): stamp `updated_at` on the server's own clock so
     # cross-device order is unambiguous (no client clocks). Stamp the PATCH (not just the live object) so
     # the timestamp flows through the merge AND the YAML persistence — it survives a restart.

@@ -342,6 +342,25 @@ def test_grant_survives_a_concurrent_settings_write() -> None:
         assert "approvals" in text and "max_steps: 9" in text  # both landed on disk
 
 
+def test_grant_still_succeeds_while_a_turn_is_live() -> None:
+    """SYS-3/ACA-17 exemption guard: the turn gate that refuses a `tool_overrides` PUT (409) lives in
+    the `PUT /api/settings` HANDLER only. `grant_approval` is called BY the resume path DURING a live
+    turn, by design — it must keep working with a marker held. If someone ever hoists that gate down
+    into `apply_settings_patch`/`reconfigure`, this test fails and 'always allow' is broken."""
+    with _workspace() as tmp, _client() as c:
+        from app.services.agent.turns import reserve
+
+        reserve(c.app.state.turns, "some-thread", "chat")  # a live turn, as during a resume
+        # the HTTP path is refused …
+        r = c.put("/api/settings", json={"tool_overrides": {"web_search": {"description": "x"}}})
+        assert r.status_code == 409, r.text
+        # … while the grant path goes straight through and persists.
+        assert _grant(c.app, "web_search", {"query": "granted-mid-turn"}) is None
+        rules = _approvals(c.app, "web_search")
+        assert len(rules) == 1 and rules[0].args["query"] == "granted-mid-turn"
+        assert "approvals" in (tmp / "config.yaml").read_text(encoding="utf-8")
+
+
 def test_grant_preserves_sibling_override_fields() -> None:
     """§9: `approvals` is the THIRD dimension on the unified per-tool object — a grant must append to
     it without disturbing the `description`/`agent_mode` siblings (in memory or in the file)."""

@@ -241,6 +241,45 @@ def test_api_get_put_roundtrip() -> None:
         os.environ.pop("CTRLB_DB", None)
 
 
+def test_tool_overrides_put_is_gated_on_a_live_turn() -> None:
+    """SYS-3 / ACA-17: a `tool_overrides` PUT mutates the live registry (`apply_tool_overrides`), so it
+    is refused 409 while ANY thread holds a turn marker (D38/S2-B busy-truth) — and nothing is written
+    to disk. Non-registry writes (appearance) pass through mid-turn: the gate is key-scoped on purpose,
+    because appearance sync is frequent + cross-device."""
+    tmp = Path(tempfile.mkdtemp())
+    cfg = tmp / "config.yaml"
+    cfg.write_text("server:\n  poll_seconds: 5\n", encoding="utf-8")
+    os.environ["CTRLB_CONFIG"] = str(cfg)
+    os.environ["CTRLB_DB"] = str(tmp / "t.db")
+    try:
+        with _client() as c:
+            from app.services.agent.turns import reserve
+
+            before = cfg.read_text(encoding="utf-8")
+            reserve(c.app.state.turns, "some-thread", "chat")  # a live turn on some thread
+
+            r = c.put("/api/settings", json={"tool_overrides": {"web_search": {"description": "nope"}}})
+            assert r.status_code == 409, r.text
+            assert r.json()["detail"] == "agent is busy — try again in a moment"
+            assert cfg.read_text(encoding="utf-8") == before  # nothing persisted
+            assert "web_search" not in c.app.state.settings.tool_overrides
+
+            # anti-regression: a NON-tool_overrides write still succeeds mid-turn
+            r_app = c.put("/api/settings", json={"appearance": {"theme": "vapor"}})
+            assert r_app.status_code == 200, r_app.text
+            assert c.app.state.settings.appearance.theme == "vapor"
+
+            # turn over → the same tool_overrides PUT applies
+            c.app.state.turns.clear()
+            r2 = c.put("/api/settings", json={"tool_overrides": {"web_search": {"description": "nope"}}})
+            assert r2.status_code == 200, r2.text
+            assert c.app.state.settings.tool_overrides["web_search"].description == "nope"
+            assert "tool_overrides" in cfg.read_text(encoding="utf-8")
+    finally:
+        os.environ.pop("CTRLB_CONFIG", None)
+        os.environ.pop("CTRLB_DB", None)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:
