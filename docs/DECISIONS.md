@@ -2587,3 +2587,66 @@ may live elsewhere; only the >1-endpoint total outage is neutral) · a worker tu
 an episode opened meanwhile finishes as WORKER (one route per logical turn; episodes govern
 fresh decisions only — verifier-ruled honest) · the llama.cpp busy shapes are source-verified
 (503 `no slot available` / `Loading model` / `unavailable_error`).)*
+
+---
+
+## D44 — Persisted approvals ("always allow") on the confirm gate (ACA Slice 8: A5) ✏️ LOCKED 2026-07-20 (Slice 8 design review)
+
+**Context.** ACA §5 Slice 8 + §6 Q7/Q8. Design pipeline (full brief + provenance:
+[`SLICE8_PLAN.md`](./SLICE8_PLAN.md)): 1 code-truth pass + 3 sourced field passes (CLI tools ·
+agent frameworks/SDKs — Claude Agent SDK's un-bypassable `requiresUserInteraction` class, goose's
+`permission.yaml`, opencode Once/Always · mature policy systems — XACML combining algorithms,
+OPA, polkit `auth_*_keep`, sudoers NOPASSWD/last-match footguns, browser/mobile grant decay) →
+five owner rulings → 2-lens adversarial review (design + security, both GO-WITH-FIXES;
+3 HIGH / 6 MED / 6 LOW, all resolved into the plan) → LOCK.
+
+**Decision.**
+- **The ladder** (XACML: *ordered-deny-overrides*; an approval discharges a *discretionary*
+  obligation): **policy DENY > `ToolSpec.confirm=True`** (un-downgradable below FULL; FULL's
+  existing auto-run unchanged) **> persisted approval** (risk-derived CONFIRM→ALLOW only) **>
+  the normal risk decision**. Q8 CLOSED: no forced-confirm bypass (field near-unanimous;
+  deliberate divergence from polkit's local-overrides-vendor, recorded). Implemented INSIDE
+  `decide()` via a new `approved: bool = False` param (the `run_shell_allowed` precedent —
+  `invoke` computes the match, never overrides the verdict; all policy in one pure module).
+- **Storage = `ToolOverride.approvals: list[ApprovalRule] | None`** — the third dimension on
+  the unified per-tool object (the CLAUDE.md hard rule; NOT the ACA sketch's "approvals table").
+  `ApprovalRule{args: dict[str,str] | None}` with **`extra="forbid"`** (review H1: a typo'd key
+  must 422 — `args=None` means whole-action, so a silently-dropped key would fail OPEN) +
+  str-coerced values. No TTL/subject/toggle in v1 (declared as real fields when built).
+- **Matching:** per-field `fnmatchcase` globs against `canonical_str` of the VALIDATED
+  `model_dump(mode="json")` fields (str as-is · scalars JSON-encoded · None→`"null"` ·
+  non-scalar→unmatchable); rule = AND over listed fields, list = OR (**allow-only dissolves
+  first-vs-last-match ordering** — the OPA incremental-allow idiom); unlisted fields
+  unconstrained BY DESIGN (the Conf widening semantics); unknown/non-scalar → rule inert (fail
+  closed). Allowlist-only: deny-shaped rules are policy-rung material (sudoers `!` anti-pattern).
+- **The grant path is SERVER-SIDE** (reviews H2+H3+F1 — the slice's one structural piece):
+  `ResumeRequest.decision` gains **`"execute_always"`**; the resume path builds the args-exact
+  rule from the suspended call's validated args — **every top-level field pinned**, None as
+  `"null"`, values glob-escaped backend-side — appends under the settings write lock, persists,
+  then executes. Kills in one move: the FE list-through-deep-merge clobber, the two-device
+  revoke race on the bubble path, the JS/Python canonicalization split (`String(1.0)`≠`"1.0"`),
+  and the omitted-optional wildcard hole (a `{command}` grant must NOT match `{command,
+  cwd:"/"}`). `tool.permission` gains **`always_eligible`** (false on non-scalar input models —
+  `spawn_subagents` — the FE hides the affordance; a persisted-but-inert rule would break trust).
+- **Actor-agnostic + fail-closed** (owner ruling ④): one grant covers USER/AGENT/headless;
+  headless miss stays CONFIRM→DENIED. The interactive→headless crossing (a bubble-born grant
+  auto-allows headless re-runs) is DELIBERATE and documented in SECURITY_MODEL; visibility = a
+  **mandatory `[auto-allowed: …]` marker on the executed action's `Event.summary`** (the Event
+  model has no payload column — no migration, no new kind; a queryable fire-log is the reserved
+  decay-on-disuse seam).
+- **R1 scoped** (review F4): `run_shell` pinned `confirm=True` (verified behavior-neutral at
+  every call site) → un-approvable. NO pins on config-risk tools (`terminal_exec`/`write_file`,
+  MCP/OpenAPI `risk`): owner-configured HIGH stays approvable BY STANCE (a pin would break the
+  deliberate `exec_risk: low` escape).
+- **FE:** bubble = the `execute_always` verb only (no settings PUT, no serialization; shown iff
+  `always_eligible`; pins the ORIGINAL proposed args — the `edit` action routes to the composer,
+  not an in-bubble editor). Conf = the approvals editor inside **ToolCatalog** writing through
+  **`useSaveToolOverrides`** (no second write path); the ConfTab LWW draft race = the existing
+  settings contract, accepted + documented.
+- **Liveness verified at review:** `deps.settings` is the shared object,
+  `apply_settings_inplace` mutates in place — the gate consult is live per-invocation; a revoke
+  wins from the next call (no caching, no TOCTOU). `fnmatchcase` is a deliberate divergence
+  from the `fnmatch` sites (no OS case folding in a security matcher) — do not "fix" it back.
+
+**Verify** = SLICE8_PLAN §9 (`test_approvals_slice8.py` ladder/matching/grant-path/liveness/
+audit suites; vitest affordance/editor; SECURITY_MODEL + DESIGN §3/§14 + config.example rows).
