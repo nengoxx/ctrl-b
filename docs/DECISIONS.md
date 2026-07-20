@@ -2725,6 +2725,12 @@ non-overlap, not just the end state), the marker on a HEADLESS-subagent run, sib
 
 ## D45 — Per-dialect reasoning budgets: one ladder, translated at the wire (ACA §4 A10 remainder) ✏️ LOCKED 2026-07-20
 
+> **Renamed by D46 (same day):** the field this decision introduced as **`reasoning_dialect`** ships as
+> **`api_mode`**, widened to own the derived `max_tokens_field` too. Read "dialect" below as "api_mode";
+> the values (`openai | llamacpp | openrouter | none`) and every payload rule are unchanged except
+> AMENDED-2 ⓐ, which D46 **reverted** (`max` rides verbatim). No migration shim exists and none is
+> needed — `reasoning_dialect` was live for hours and `config.yaml` is gitignored.
+
 **Context.** A10's remainder — `ModelRef.reasoning_tokens` shipped **declared but unwired** in D42,
 recorded as "advisory, no-op: llama.cpp has no per-request reasoning budget". A verification pass
 against llama.cpp master found **both halves of that premise false**, and worse in the opposite
@@ -2767,7 +2773,8 @@ direction than assumed:
   under **BOTH** budget keys (older builds know only the alias; unknown keys are ignored ⇒ free
   back-compat). `openrouter` → an explicit budget sends `reasoning:{max_tokens}` and **suppresses the
   effort key** (the mutual-exclusion 400 is a landmine, not a warning), else effort through
-  `_OPENROUTER_EFFORT` (`"off"`→`"none"`, `"max"`→`"xhigh"`). `none` → both dropped.
+  `_OPENROUTER_EFFORT` (`"off"`→`"none"` **only** — the `"max"`→`"xhigh"` clamp was REVERTED by D46, see
+  AMENDED-2 ⓐ). `none` → both dropped.
 - **`"off"` carries a `chat_template_kwargs:{enable_thinking:false}` merge on the `llamacpp` dialect**:
   that is the TEMPLATE-level lever and it COMPLEMENTS the sampler-level budget `0` — two levers on two
   layers, not a duplicate. *(Originally "on every dialect"; corrected in AMENDED-2 ⓓ — it is a
@@ -2823,13 +2830,22 @@ what was asked — point that agent at a dialect that has those rungs.
 
 *(AMENDED-2 post-adversarial-audit 2026-07-20 — five findings against the shipped code, all fixed; the
 audit was empirical, every finding reproduced from a real `_call_config` payload:)*
-ⓐ **HIGH — the `openrouter` dialect sent `max`, which OpenRouter rejects.** Its `reasoning_effort` enum
-is exactly `xhigh | high | medium | low | minimal | none`
-(<https://openrouter.ai/docs/api_reference/parameters>); the `max` in its reasoning-tokens guide belongs
-to the separate `verbosity` parameter. So *every* `max` request 400s at `create()` and burns the whole
-failover chain before surfacing a flattened error. **`max` → `xhigh`** (`_OPENROUTER_EFFORT`): our `max`
-exists chiefly as llama.cpp's `-1` sentinel, so clamping to the top rung the API actually accepts is the
-faithful translation. `xhigh` IS in the enum and still passes verbatim.
+ⓐ ~~**HIGH — the `openrouter` dialect sent `max`, which OpenRouter rejects.**~~ **WRONG — REVERTED by
+D46 (2026-07-20, same day).** State it plainly: this finding was derived from a **stale docs page**
+(<https://openrouter.ai/docs/api_reference/parameters>), never from the API, and the `max → xhigh` clamp
+it produced fixed a **NON-BUG** while silently downgrading effort on the 22 models that *do* support
+`max`. **Live experiments against the OpenRouter API (2026-07-20) measured the opposite:**
+`reasoning_effort: "max"` on a model whose `supported_efforts` LACKS `max` returns **HTTP 200**, and the
+provider's own error text for a genuinely invalid value reads
+`Invalid option: expected one of "max"|"xhigh"|"high"|…` — i.e. **`max` is in the enum**, and the enum is
+`max | xhigh | high | medium | low | minimal | none`. `_OPENROUTER_EFFORT` is back to `{"off": "none"}`
+only; `max` and `xhigh` both ride verbatim. The `"off" → "none"` half survives and is still correct in
+general, though it too is per-model: a mandatory-reasoning model answers `effort: none` with **HTTP 400
+`"Reasoning is mandatory for this endpoint and cannot be disabled."`** **The durable lesson, and the
+reason D46 exists:** `GET /api/v1/models` publishes `reasoning.supported_efforts` **per MODEL**, and
+across 339 models the sets vary widely — so **no static provider-level table in this codebase can be
+correct**, and adding another clamp is the wrong shape of fix. The residual is handled REACTIVELY
+(D46: detect the reasoning-param 400, strip, retry once, remember, warn).
 ⓑ **HIGH — an endpoint's own `extra_body.reasoning` defeated the mutual-exclusion guarantee** this
 decision calls structurally impossible. `extra.update(body)` was a FLAT merge, so an endpoint with
 `reasoning: {exclude: true, effort: high}` plus a per-call effort put BOTH spellings in one request (the
@@ -2869,3 +2885,102 @@ positive is one advisory log line. The FE `InferenceEndpoint` interface gained `
 (YAML-only, no control yet — typed so the settings round-trip is visibly lossless), and
 `deploy/linux/README.md` + `config.example.yaml` now spell out that **the example file is not the live
 file**.
+
+## D46 — One explicit `api_mode`, and a reasoning-param 400 is capability FEEDBACK ✏️ LOCKED 2026-07-20
+
+**Context.** D45 shipped `reasoning_dialect` in the morning; live experiments against the OpenRouter API
+the same day invalidated two of its premises. ⓐ `max` **is** in OpenRouter's `reasoning_effort` enum
+(HTTP 200 even on a model whose `supported_efforts` lacks it; the provider's own reject text for an
+invalid value reads `Invalid option: expected one of "max"|"xhigh"|"high"…`), so D45 AMENDED-2 ⓐ's
+`max → xhigh` clamp fixed a non-bug and silently downgraded effort on the 22 models that support `max`.
+ⓑ `reasoning_effort: "none"` on a mandatory-reasoning model is **HTTP 400 `"Reasoning is mandatory for
+this endpoint and cannot be disabled."`** ⓒ The structural finding behind both: `GET /api/v1/models`
+publishes `reasoning.supported_efforts` **per MODEL**, and across 339 models the sets vary widely (only
+22 accept `max`; many lack `none`/`minimal`). **No static provider-level table can be correct.**
+
+**Decision — three parts.**
+
+**1. The clamp is REVERTED.** `_OPENROUTER_EFFORT` is `{"off": "none"}`; `max`/`xhigh` ride verbatim.
+D45 AMENDED-2 ⓐ is corrected in place with the measured evidence. A comment at the constant records that
+`supported_efforts` is per-MODEL, so any value can still be rejected — which part 3 handles. **The rule
+this sets: never add a clamp for a limit that is per-model. Clamping lies about what was asked.**
+
+**2. `reasoning_dialect` → `api_mode`, absorbing `max_tokens_field`.** One explicit field naming the
+wire shape a server speaks, driving BOTH the reasoning translation and the output-cap field name. Values
+unchanged (`openai | llamacpp | openrouter | none`, default `openai`).
+- **The name** is the Hermes-Agent convention for exactly this concept (Codex's `wire_api` was the
+  runner-up). "kind"/"provider" were rejected: *provider* means IDENTITY, and the same model behind
+  llama-server vs behind OpenRouter needs opposite payloads.
+- **NO `auto`, no hostname inference.** Field research was unanimous across 13 systems: nobody infers
+  wire shape from `base_url`, and Hermes shipped URL auto-detection then **retreated** to an explicit
+  field with detection demoted to a blank-value fallback. `warn_suspect_api_modes` (D45 ⓔ) stays exactly
+  as it was — **advisory only, nothing branches on it**; its job is to tell a human to set the field.
+- **`max_tokens_field` becomes derived-with-override**: `Literal[…] | None = None`, where `None` derives
+  from `api_mode` (`openai` → `max_completion_tokens`, everything else → `max_tokens`) via the one-home
+  `resolved_max_tokens_field` property; an explicit value always wins. This is the **two-layer pattern**
+  every mature system uses — one enum plus retained per-capability escape hatches — not a second knob to
+  keep in sync. The field only ever mattered for OpenAI reasoning models: llama.cpp aliases BOTH
+  spellings (`tools/server/server-schema.cpp` `add_alias`). *Recorded behaviour change:* a default-mode
+  endpoint's output cap now rides as `max_completion_tokens` (the current OpenAI name; `max_tokens` is
+  deprecated there for reasoning models). Harmless on llama.cpp/vLLM, correct on OpenAI; a strict server
+  that wants the old spelling sets `max_tokens_field: max_tokens`.
+- **No migration shim**: `reasoning_dialect` existed for hours and `config.yaml` is gitignored, so no
+  user can have persisted it. Every occurrence — backend, tests, FE `InferenceEndpoint`,
+  `config.example.yaml`, `deploy/linux/README.md`, docs — was renamed. Had any user-reachable persistence
+  existed, the fix would have been a pydantic validation alias, never a silent ignore.
+
+**3. A reasoning-param 400 is CAPABILITY FEEDBACK — the app learns what it cannot predict.**
+Scope is deliberately narrow: **reasoning controls only**, nothing else.
+- **Detect** — `is_reasoning_param_rejection`, a sibling predicate of `is_context_overflow` in the same
+  one-home classifier section. A 400 (own `status`, or a failover-flattened `error code: 400`) whose
+  message matches a MEASURED param-rejection shape (`Invalid option: expected one of` ·
+  `Unrecognized request argument supplied` · `Unsupported parameter` · `not supported with this model`)
+  **and** names a reasoning key (`reasoning_effort`, `reasoning`, `thinking`, `*_budget_tokens`), or is
+  the self-identifying `Reasoning is mandatory for this endpoint` shape. Deliberately **not** a new
+  `ErrorCategory` member: this is handled *inside* a hop, so it must never become a wire-visible retry
+  tier or change a hop decision.
+- **Degrade** — strip the reasoning controls (`_call_config(strip_reasoning=True)`: ours AND the
+  endpoint's own `extra_body` reasoning keys, scoped exactly to `_REASONING_PAYLOAD_KEYS` +
+  `chat_template_kwargs.enable_thinking`; every other operator key survives, config still never mutated)
+  and re-attempt the **SAME endpoint exactly ONCE**.
+- **Remember** — the `(base_url, model)` demotion is kept on the `InferenceClient` for the process
+  lifetime, so later turns skip the doomed attempt entirely. Client-instance state on purpose: any
+  inference-settings change rebuilds the whole client via `runtime.set_inference`, so editing `api_mode`
+  or an agent's reasoning settings **clears the demotions for free** (the `_window_memo` precedent — no
+  invalidation bookkeeping anywhere in this class).
+- **Warn LOUDLY, once per `(endpoint, model)`** — RFC 9413 §5.1: a fault must receive attention.
+  LiteLLM's silent `drop_params` is the documented anti-pattern; aider's
+  `Warning: <model> does not support '<param>', ignoring.` is the model followed, extended with the
+  endpoint, base_url, model, the stripped key list and **the provider's own message** so the operator can
+  act. The demotion set is both the memory and the log guard — once per pair, never once per turn.
+- **The D43 boundary, and it is the crux of the placement:** the re-attempt lives INSIDE `attempt` (both
+  `stream_chat` and `complete`), so `failover()` never sees the rejected try. It is therefore **not a
+  failover hop** (`FailoverError.failures` / `endpoints_tried` unchanged, no `FailoverNotice`) and never
+  reaches `_retry_policy`, so it **cannot consume a `retry_attempts` attempt** reserved for transient
+  errors — pinned by a test that degrades successfully with `retry_attempts: 0`. The **permit** is
+  untouched: it was acquired before the first `create()` and is released by the single existing handler
+  (failure) or handed to the consumer (success); a stripped re-attempt is just a second `create()` under
+  the same permit. Bounded to ONE by construction — the second call passes `strip=True`, and the
+  demotion check is skipped when already stripped, so re-entry is impossible.
+- **Fall-through:** if the stripped payload 400s too, the hop fails normally and the chain moves on. A
+  demotion is per `(endpoint, model)`, so the fallback still gets its own full reasoning payload.
+
+**Why reactive at all (the ruling):** prediction requires a table; the limits are per-model; therefore
+the table cannot exist. The one authority that knows a model's limits is the provider's own 400, so the
+app asks once, listens, and remembers. This is the same shape as D42's reactive context-overflow
+backstop, and it is why part 1 is a revert rather than a better clamp.
+
+**Verify** = `test_modelref_wire_w4_slice6.py` §F (the classifier's message matrix + negative matrix ·
+strip-only-reasoning-keys · strip-and-retry-once on the same endpoint · the remembered demotion + the
+warn-once + the reset on a rebuilt client · no failover hop and no transient attempt consumed · buffered
+`complete` degrades identically · persistent-400 fall-through), plus §A/§A2 for the reverted clamp
+(`test_call_config_openrouter_max_rides_verbatim`, the enum-coverage test now pinning the real
+`max…none` enum) and the derived `max_tokens_field`
+(`test_endpoint_max_tokens_field_literal_and_derivation` in `test_compaction_v2_slice6.py`).
+
+**Residual (recorded, not a bug).** The demotion is coarse: it strips ALL reasoning controls, not just
+the one rung the provider objected to, so a model that rejects `max` but accepts `high` gets no reasoning
+at all until the agent's setting or the client is changed. Deliberate — the finer fix is a per-model
+`supported_efforts` fetch (`GET /api/v1/models`), which is a network call at config load and a cache to
+invalidate, i.e. exactly the complexity this decision avoids. Revisit only if the coarse demotion proves
+annoying in use.

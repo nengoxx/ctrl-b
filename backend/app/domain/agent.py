@@ -37,18 +37,20 @@ class ModelRef(BaseModel):
     #: 0 is never a meaningful budget (a 0-token cap would ask the backend for an empty reply), so it is
     #: rejected at the boundary — use `None` to inherit, not 0. Flows as first-class kwargs into the chat
     #: call; the per-endpoint field NAME (`max_tokens` vs `max_completion_tokens`) is chosen by
-    #: `InferenceEndpointCfg.max_tokens_field` at the wire boundary (Wave 4).
+    #: `InferenceEndpointCfg.resolved_max_tokens_field` at the wire boundary (Wave 4; derived from
+    #: `api_mode` unless the endpoint sets `max_tokens_field` explicitly — D46).
     max_tokens: int | None = Field(default=None, ge=1)
     #: Reasoning-effort ladder (D42/A10 — the universal field convention) and, since D45, the ONE primary
     #: reasoning knob: it is TRANSLATED per backend at the wire by the serving endpoint's
-    #: `reasoning_dialect`. An effort-only API takes it verbatim; llama.cpp (which never reads
+    #: `api_mode`. An effort-only API takes it verbatim; llama.cpp (which never reads
     #: `reasoning_effort` — hence the translation, not a shrug) takes the ladder's token budget instead;
-    #: OpenAI/OpenRouter take it with `"off"` → their `"none"` (and OpenRouter's `"max"` → `"xhigh"`, the
-    #: top rung its enum actually accepts). On the llama.cpp dialect `"off"` additionally becomes
-    #: `chat_template_kwargs: {enable_thinking: false}`. `None` → the backend default.
+    #: OpenAI/OpenRouter take it with `"off"` → their `"none"`, every other rung verbatim. On the
+    #: `llamacpp` api_mode `"off"` additionally becomes `chat_template_kwargs: {enable_thinking: false}`.
+    #: `None` → the backend default. Support is per-MODEL, not per-mode: a model that rejects the rung you
+    #: picked makes the server WARN, retry that request once without reasoning, and remember (D46).
     reasoning_effort: Literal["off", "minimal", "low", "medium", "high", "xhigh", "max"] | None = None
     #: Explicit per-request reasoning-token budget (D45) — an OVERRIDE of the ladder above, not a parallel
-    #: setting. Where the serving endpoint's `reasoning_dialect` accepts a budget (llama.cpp
+    #: setting. Where the serving endpoint's `api_mode` accepts a budget (llama.cpp
     #: `reasoning_budget_tokens`, OpenRouter `reasoning:{max_tokens}`) this wins over the ladder-derived
     #: value; where the dialect is effort-only (OpenAI) it is ignored. `None`/blank → the ladder decides.
     #: ONE exception, and it is absolute: when `reasoning_effort` is `"off"` this field is IGNORED on

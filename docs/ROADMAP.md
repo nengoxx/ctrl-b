@@ -170,7 +170,7 @@ back to the analysis.
   `reasoning_effort` ladder); this entry's deferral rested on "a real cap needs a llama.cpp control
   surface that doesn't exist yet" — **which turned out to be false**: llama-server parses a
   per-request `reasoning_budget_tokens` (and ignores `reasoning_effort` entirely, so the knob we were
-  sending was the no-op). D45 wires it via the per-endpoint `reasoning_dialect` field: the ladder is
+  sending was the no-op). D45 wires it via the per-endpoint `api_mode` field: the ladder is
   translated per backend and `ModelRef.reasoning_tokens` is now a live explicit override. ACA §4 A10.
 - **Gemini-style content-chant detector** — spot a model looping the same narration and break it.
   *Deferred because:* purely speculative; build it only if narration loops actually appear in use.

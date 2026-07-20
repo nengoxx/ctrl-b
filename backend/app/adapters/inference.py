@@ -213,6 +213,82 @@ def is_context_overflow(err: BaseException) -> bool:
     return is_400 and any(marker in text for marker in _OVERFLOW_MSG_MARKERS)
 
 
+#: ── D46 reasoning-capability feedback ─────────────────────────────────────────────────────────────
+#: Reasoning-control keys we can put on the wire, i.e. the ONLY keys the degradation path may strip.
+#: Top-level (`reasoning_effort`) + `extra_body` sub-keys; `chat_template_kwargs.enable_thinking` is
+#: handled separately (a sub-sub-key whose siblings must survive).
+_REASONING_PAYLOAD_KEYS = (
+    "reasoning_effort",
+    "reasoning",
+    "reasoning_budget_tokens",
+    "thinking_budget_tokens",
+)
+#: HTTP-400 message shapes that mean "I rejected one of your PARAMETERS", MEASURED against the live
+#: OpenRouter API 2026-07-20 + OpenAI's published error strings — not a guess:
+#:   - `Invalid option: expected one of "max"|"xhigh"|…`  OpenRouter, value outside a model's enum;
+#:   - `Reasoning is mandatory for this endpoint and cannot be disabled.`  OpenRouter, `effort: none`
+#:     against a mandatory-reasoning model (the ONE shape that names no key — see the gate below);
+#:   - `Unrecognized request argument supplied: …` / `Unsupported parameter: …` / `… is not supported
+#:     with this model`  the OpenAI-family unknown/unsupported-key shapes.
+_PARAM_REJECT_MSG_MARKERS = (
+    "invalid option: expected one of",
+    "unrecognized request argument supplied",
+    "unsupported parameter",
+    "not supported with this model",
+)
+#: The mandatory-reasoning shape — self-identifying (it IS about reasoning), so it needs no key gate.
+_MANDATORY_REASONING_MARKER = "reasoning is mandatory for this endpoint"
+#: A param-rejection only counts as OURS when the provider's message names a reasoning-related key.
+#: Without this gate a rejected `tool_choice`/`response_format` would strip reasoning and retry blind.
+_REASONING_KEY_NAMES = (
+    "reasoning_effort",
+    "reasoning",
+    "thinking",
+    "reasoning_budget_tokens",
+    "thinking_budget_tokens",
+)
+
+
+def is_reasoning_param_rejection(err: BaseException) -> bool:
+    """ "Did the provider 400 because of the REASONING CONTROLS we sent?" — the D46 sibling of
+    `is_context_overflow`, in the same one-home classifier section (and, like it, deliberately kept OUT
+    of `categorize`'s `ErrorCategory`: this is handled INSIDE a hop, so it must not become a wire-visible
+    retry tier or change any hop decision).
+
+    Why a reactive predicate exists at all: reasoning limits are per-MODEL, not per-provider — OpenRouter
+    publishes `reasoning.supported_efforts` per model and across 339 models the sets vary wildly (only 22
+    accept `max`; many lack `none`/`minimal`). No static table in this file can be correct, so the app has
+    to LEARN from the one authority that knows: the provider's own 400.
+
+    Gated on a 400 the same way `is_context_overflow` is (own `status` or a flattened `error code: 400`)
+    AND on the message naming a reasoning key — except for the self-identifying mandatory-reasoning
+    shape. A 400 about anything else (`tool_choice`, `response_format`, a bad model id) never matches."""
+    status = getattr(err, "status", None)
+    if status is None:
+        status = getattr(err, "status_code", None)
+    text = str(err).lower()
+    if not (status == 400 or "error code: 400" in text):
+        return False
+    if _MANDATORY_REASONING_MARKER in text:
+        return True
+    if not any(marker in text for marker in _PARAM_REJECT_MSG_MARKERS):
+        return False
+    return any(key in text for key in _REASONING_KEY_NAMES)
+
+
+def _reasoning_keys_in(call_cfg: dict[str, Any]) -> list[str]:
+    """The reasoning keys a built `_call_config` payload actually carries (dotted paths, for the log).
+    Empty ⇒ this request had no reasoning controls, so a param-rejection cannot be ours to fix."""
+    keys = [k for k in call_cfg if k in _REASONING_PAYLOAD_KEYS]
+    extra = call_cfg.get("extra_body")
+    if isinstance(extra, dict):
+        keys += [f"extra_body.{k}" for k in extra if k in _REASONING_PAYLOAD_KEYS]
+        ctk = extra.get("chat_template_kwargs")
+        if isinstance(ctk, dict) and "enable_thinking" in ctk:
+            keys.append("extra_body.chat_template_kwargs.enable_thinking")
+    return sorted(keys)
+
+
 #: The retry classifier's tiers (D43/A7). `transient` = alive-but-busy, retry the same endpoint may
 #: work; `overflow` = delegates to `is_context_overflow`; `fatal_for_endpoint` = this endpoint can
 #: never serve this request (auth/model/quota — a different hop has different creds, so hop, never
@@ -357,14 +433,18 @@ def _resolve_reasoning_budget(effort: str | None, tokens: int | None) -> int | N
     return None
 
 
-#: Our ladder → OpenRouter's `reasoning_effort` enum, which is EXACTLY
-#: `xhigh | high | medium | low | minimal | none` — https://openrouter.ai/docs/api_reference/parameters
-#: Only the two ends need translating: our `"off"` is their `"none"`, and `"max"` IS NOT ACCEPTED (their
-#: reasoning-tokens guide conflates it with the separate `verbosity` parameter, which does have `max`) —
-#: sending it is a hard 400 that burns the whole failover chain. `max` exists in our ladder chiefly as
-#: llama.cpp's `-1` "unrestricted" sentinel, so clamping it to the top REAL rung (`xhigh`) is the
-#: faithful translation. Do not "fix" `max` back to verbatim — check the URL above first.
-_OPENROUTER_EFFORT: dict[str, str] = {"off": "none", "max": "xhigh"}
+#: Our ladder → OpenRouter's `reasoning_effort` enum, which is
+#: `max | xhigh | high | medium | low | minimal | none` — MEASURED against the live API 2026-07-20, not
+#: read off a docs page (D45 AMENDED-3 / D46). Only ONE end needs translating: our `"off"` is their
+#: `"none"`. `"max"` rides VERBATIM — the earlier `max → xhigh` clamp fixed a non-bug from a stale docs
+#: page and silently downgraded effort on the 22 models that do accept `max`; the provider's own reject
+#: text for a genuinely invalid value reads `Invalid option: expected one of "max"|"xhigh"|"high"…`,
+#: i.e. `max` is in the enum. **Per-MODEL caveat:** `GET /api/v1/models` publishes
+#: `reasoning.supported_efforts` PER MODEL and the sets vary wildly (across 339 models only 22 accept
+#: `max`; many lack `none`/`minimal`), so ANY value here can still be rejected by a particular model.
+#: No static table can be correct — that residual is handled REACTIVELY by the D46 capability feedback
+#: (`is_reasoning_param_rejection` → strip + retry once + remember), never by more clamping here.
+_OPENROUTER_EFFORT: dict[str, str] = {"off": "none"}
 
 #: `extra_body` sub-objects that are DEEP-merged (per-call sub-keys win, the endpoint's others survive)
 #: rather than replaced wholesale. Both are dict-valued vendor namespaces where an endpoint legitimately
@@ -399,8 +479,8 @@ def _looks_self_hosted(base_url: str) -> bool:
     return port is not None and port not in (80, 443)
 
 
-def warn_suspect_reasoning_dialects(cfg: InferenceCfg) -> None:
-    """Log a WARNING for every configured endpoint that keeps the DEFAULT `reasoning_dialect: openai`
+def warn_suspect_api_modes(cfg: InferenceCfg) -> None:
+    """Log a WARNING for every configured endpoint that keeps the DEFAULT `api_mode: openai`
     while its `base_url` looks self-hosted (D45 audit FIX 5).
 
     Why this exists: D45's default is `openai` for byte-for-byte back-compat, but its whole premise is
@@ -409,21 +489,22 @@ def warn_suspect_reasoning_dialects(cfg: InferenceCfg) -> None:
     was built for. This is the feedback. Called from `runtime.set_inference`, i.e. once per config load
     and once per settings PUT that rebuilds the client, which is the natural "the config just changed"
     boundary. It is advisory: nothing branches on it, and a cloud endpoint on a custom port simply gets
-    one line telling it no action is needed."""
+    one line telling it no action is needed — and NOTHING ever branches on it (D46: no wire shape is
+    ever inferred from a `base_url`; this heuristic exists only to tell a HUMAN to set the field)."""
     named: list[tuple[str, InferenceEndpointCfg]] = [
         ("inference.local", cfg.local),
         ("inference.cloud", cfg.cloud),
         *((f"inference.fallbacks[{i}]", ep) for i, ep in enumerate(cfg.fallbacks)),
     ]
     for path, ep in named:
-        if not ep.base_url or ep.reasoning_dialect != "openai" or not _looks_self_hosted(ep.base_url):
+        if not ep.base_url or ep.api_mode != "openai" or not _looks_self_hosted(ep.base_url):
             continue
         log.warning(
-            "%s (base_url=%s) uses the default reasoning_dialect 'openai', but that base_url looks "
+            "%s (base_url=%s) uses the default api_mode 'openai', but that base_url looks "
             "self-hosted. llama-server IGNORES `reasoning_effort`, so every agent's reasoning_effort / "
             "reasoning_tokens setting is a NO-OP on this endpoint. If it is llama.cpp, set "
-            "`%s.reasoning_dialect: llamacpp` in your config.yaml (D45); vLLM/other → 'none' until a "
-            "dialect exists; a real OpenAI-compatible cloud API on a custom port → no action needed.",
+            "`%s.api_mode: llamacpp` in your config.yaml (D45/D46); vLLM/other → 'none' until a "
+            "mode exists; a real OpenAI-compatible cloud API on a custom port → no action needed.",
             path,
             ep.base_url,
             path,
@@ -571,6 +652,65 @@ class InferenceClient:
         #: log that ONCE per client instance. `set_inference` rebuilds the whole client on any inference
         #: change, so a fresh instance re-evaluates after a config edit (return_progress/include_usage).
         self._anchoring_notice_emitted = False
+        #: D46 capability feedback: `(base_url, model)` pairs whose provider 400'd on our reasoning
+        #: controls. Once recorded, every later request to that pair is built WITHOUT them — so the
+        #: doomed attempt is paid exactly once, not once per turn. Client-instance state on purpose:
+        #: `runtime.set_inference` rebuilds the whole `InferenceClient` on ANY inference-settings change,
+        #: so editing `api_mode` / an agent's reasoning settings clears the demotions for free (the
+        #: `_window_memo` precedent — no invalidation bookkeeping anywhere in this class).
+        self._reasoning_demoted: set[tuple[str, str]] = set()
+
+    def _reasoning_is_demoted(self, ep: InferenceEndpointCfg, model: str) -> bool:
+        """Has `(endpoint, model)` already been demoted (D46)? ⇒ build the payload stripped from the
+        start; the provider already told us these controls are unusable there."""
+        return (ep.base_url, model) in self._reasoning_demoted
+
+    def _note_reasoning_demotion(
+        self,
+        exc: BaseException,
+        *,
+        name: str,
+        ep: InferenceEndpointCfg,
+        model: str,
+        reasoning_effort: str | None,
+        reasoning_tokens: int | None,
+    ) -> bool:
+        """ "Was this failure the provider rejecting our reasoning controls, and is there something to
+        strip?" — if so, record the demotion for `(endpoint, model)`, log it LOUDLY **once**, and return
+        True so the caller re-attempts the SAME endpoint ONCE with a stripped payload (D46).
+
+        The WARNING is not decoration: RFC 9413 §5.1 — a fault must receive attention. Silently dropping
+        unsupported params (LiteLLM's `drop_params`) is the documented anti-pattern; aider's
+        `Warning: <model> does not support '<param>', ignoring.` is the model followed here, extended with
+        the provider's own message so the operator can act. Fires once per `(endpoint, model)` per client
+        generation, NOT once per turn — the demotion set is both the memory and the log guard."""
+        if not is_reasoning_param_rejection(exc):
+            return False
+        key = (ep.base_url, model)
+        if key in self._reasoning_demoted:
+            return False  # already stripped for this pair — this 400 is about something else
+        dropped = _reasoning_keys_in(
+            self._call_config(
+                ep, max_tokens=None, reasoning_effort=reasoning_effort, reasoning_tokens=reasoning_tokens
+            )
+        )
+        if not dropped:
+            return False  # nothing to strip ⇒ not our 400 to fix
+        self._reasoning_demoted.add(key)
+        log.warning(
+            "inference endpoint '%s' (%s, model=%s) REJECTED the reasoning controls %s with HTTP 400 — "
+            "retrying this request once without them, and dropping them for this endpoint+model for the "
+            "rest of the process. Reasoning support is per-MODEL (OpenRouter publishes "
+            "reasoning.supported_efforts per model), so this is capability feedback, not necessarily a "
+            "config error: to stop it, change the agent's reasoning_effort/reasoning_tokens or this "
+            "endpoint's api_mode. The provider said: %s",
+            name,
+            ep.base_url,
+            model,
+            ", ".join(dropped),
+            exc,
+        )
+        return True
 
     def _probe_client(self) -> httpx.AsyncClient:
         if self._probe_http is None:
@@ -705,13 +845,14 @@ class InferenceClient:
         max_tokens: int | None,
         reasoning_effort: str | None,
         reasoning_tokens: int | None = None,
+        strip_reasoning: bool = False,
     ) -> dict[str, Any]:
-        """The per-ENDPOINT modeled call params + the per-call `extra_body` merge (D42/A10; per-dialect
-        reasoning D45).
-          - `max_tokens` → keyed by THIS endpoint's `max_tokens_field` ("max_tokens" |
-            "max_completion_tokens"), resolved per serving endpoint so a failover serve uses its own
-            field name;
-          - reasoning → translated ONCE through this endpoint's `reasoning_dialect` (D45). The single
+        """The per-ENDPOINT modeled call params + the per-call `extra_body` merge (D42/A10; per-mode
+        reasoning D45/D46).
+          - `max_tokens` → keyed by THIS endpoint's `resolved_max_tokens_field` ("max_tokens" |
+            "max_completion_tokens" — explicit override, else derived from `api_mode`, D46), resolved per
+            serving endpoint so a failover serve uses its own field name;
+          - reasoning → translated ONCE through this endpoint's `api_mode` (D45). The single
             primary knob is the `reasoning_effort` LADDER; `reasoning_tokens` is an explicit OVERRIDE
             that wins WHERE THE DIALECT HAS A BUDGET and is dropped where it has none (correct, not a
             gap). **`"off"` is ABSOLUTE and outranks the override** (audit FIX 3) — it means "no
@@ -736,23 +877,28 @@ class InferenceClient:
 
         Per-call keys WIN over the endpoint's own `extra_body` while its other keys (and other
         `chat_template_kwargs` sub-keys) survive; the config object is NEVER mutated (fresh dicts).
-        Unset fields contribute NOTHING (no `None`-valued keys reach the wire)."""
+        Unset fields contribute NOTHING (no `None`-valued keys reach the wire).
+
+        `strip_reasoning=True` (D46) builds the SAME payload with every reasoning control removed — ours
+        AND any the endpoint hand-set in `extra_body` — and nothing else touched. It is the degraded
+        re-attempt after a provider 400s on the reasoning controls (`is_reasoning_param_rejection`),
+        because those limits are per-MODEL and no static table here can predict them."""
         out: dict[str, Any] = {}
         if max_tokens is not None:
-            out[ep.max_tokens_field] = max_tokens
+            out[ep.resolved_max_tokens_field] = max_tokens
         #: Un-modeled, vendor-specific body keys for THIS call — merged into `extra_body` below (see
         #: TRANSPORT above). `reasoning_effort` is NOT here: the SDK models it, so it stays a kwarg.
         body: dict[str, Any] = {}
-        dialect = ep.reasoning_dialect
+        dialect = "none" if strip_reasoning else ep.api_mode
         if dialect == "openai":
             # Effort-only API. `reasoning_tokens` is DROPPED: OpenAI exposes no reasoning-token budget
             # (`max_completion_tokens` is a COMBINED reasoning+output cap, not a reasoning budget).
             # Our `"off"` is spelled `"none"` in OpenAI's `none|minimal|low|medium|high` enum — mapping
             # it (audit FIX 4 / LOW-6) turns what was a DOUBLE 400 (bad enum value AND an unknown
             # `chat_template_kwargs` body key) into a valid request. `xhigh`/`max` still pass verbatim:
-            # they have no OpenAI spelling at all, and a strict endpoint rejecting them is a config
-            # error (point that agent at a dialect that has those rungs), not something to silently
-            # clamp — see D45 residual ⓒ.
+            # they have no OpenAI spelling at all, and silently clamping would LIE about what was asked.
+            # A strict endpoint that rejects them now feeds back (D46: warn + one stripped retry +
+            # remember) instead of burning the chain — see D45 residual ⓒ.
             if reasoning_effort is not None:
                 out["reasoning_effort"] = "none" if reasoning_effort == "off" else reasoning_effort
         elif dialect == "llamacpp":
@@ -774,7 +920,9 @@ class InferenceClient:
             # `reasoning.effort` and `reasoning.max_tokens` are MUTUALLY EXCLUSIVE — sending both is a
             # hard 400. `off` is absolute (→ its `"none"` enum, budget ignored); else an explicit budget
             # wins; else the ladder through `_OPENROUTER_EFFORT` (OpenRouter publishes its own effort→%
-            # mapping, so effort is the better signal when no budget was set).
+            # mapping, so effort is the better signal when no budget was set). Only `off` is translated
+            # — `max`/`xhigh` are real enum members and ride verbatim (the D45 AMENDED-2 ⓐ clamp was a
+            # stale-docs non-bug); per-MODEL rejection is D46's job, not another clamp here.
             if reasoning_effort == "off":
                 out["reasoning_effort"] = _OPENROUTER_EFFORT["off"]
             elif reasoning_tokens is not None:
@@ -783,6 +931,20 @@ class InferenceClient:
                 out["reasoning_effort"] = _OPENROUTER_EFFORT.get(reasoning_effort, reasoning_effort)
         # dialect == "none": the server understands no reasoning control — drop both.
         extra = dict(ep.extra_body) if ep.extra_body else {}
+        if strip_reasoning:
+            # D46: the endpoint's OWN reasoning config goes too — it is part of "the reasoning controls
+            # in this payload", and a provider that just rejected them will reject them again. Scoped
+            # EXACTLY to `_REASONING_PAYLOAD_KEYS` + the one reasoning sub-sub-key; every other operator
+            # key (`cache_prompt`, `stream_options`, other `chat_template_kwargs` siblings) survives.
+            for key in _REASONING_PAYLOAD_KEYS:
+                extra.pop(key, None)
+            ctk = extra.get("chat_template_kwargs")
+            if isinstance(ctk, dict) and "enable_thinking" in ctk:
+                pruned = {k: v for k, v in ctk.items() if k != "enable_thinking"}
+                if pruned:  # copy-and-replace: never mutate the endpoint's nested dict
+                    extra["chat_template_kwargs"] = pruned
+                else:
+                    extra.pop("chat_template_kwargs")
         for key, val in body.items():
             # Per-call keys win over an endpoint that hand-set the same key; the dict-valued vendor
             # namespaces DEEP-merge so the endpoint's sibling sub-keys (`chat_template_kwargs` extras,
@@ -947,27 +1109,47 @@ class InferenceClient:
             sem = self._sem_for(ep)
             if sem is not None:
                 await sem.acquire()
+
+            async def _once(strip: bool) -> str:
+                # We carry messages as our own `list[dict]` (OpenAI wire shape, built across the
+                # loop); cast to the SDK's param type at this boundary rather than retyping the whole
+                # loop. `_call_config` supplies the per-endpoint modeled params (max_tokens field
+                # name, reasoning_effort) + the merged `extra_body` (ACA-18 cache pin + the "off"
+                # chat_template_kwargs), so the pin/config never leaks across the failover chain.
+                resp = await self._client(ep).chat.completions.create(
+                    model=use_model,
+                    messages=cast("list[ChatCompletionMessageParam]", messages),
+                    stream=False,
+                    **self._call_config(
+                        ep,
+                        max_tokens=max_tokens,
+                        reasoning_effort=reasoning_effort,
+                        reasoning_tokens=reasoning_tokens,
+                        strip_reasoning=strip,
+                    ),
+                )
+                if not resp.choices:
+                    raise InferenceError("inference returned no choices")
+                return resp.choices[0].message.content or ""
+
             try:
                 try:
-                    # We carry messages as our own `list[dict]` (OpenAI wire shape, built across the
-                    # loop); cast to the SDK's param type at this boundary rather than retyping the whole
-                    # loop. `_call_config` supplies the per-endpoint modeled params (max_tokens field
-                    # name, reasoning_effort) + the merged `extra_body` (ACA-18 cache pin + the "off"
-                    # chat_template_kwargs), so the pin/config never leaks across the failover chain.
-                    resp = await self._client(ep).chat.completions.create(
-                        model=use_model,
-                        messages=cast("list[ChatCompletionMessageParam]", messages),
-                        stream=False,
-                        **self._call_config(
-                            ep,
-                            max_tokens=max_tokens,
+                    # D46: exactly ONE stripped re-attempt, INSIDE this hop — see `stream_chat.attempt`
+                    # for the full rationale (no failover hop, no transient-retry attempt, same permit).
+                    stripped = self._reasoning_is_demoted(ep, use_model)
+                    try:
+                        return await _once(stripped)
+                    except BaseException as exc:
+                        if stripped or not self._note_reasoning_demotion(
+                            exc,
+                            name=name,
+                            ep=ep,
+                            model=use_model,
                             reasoning_effort=reasoning_effort,
                             reasoning_tokens=reasoning_tokens,
-                        ),
-                    )
-                    if not resp.choices:
-                        raise InferenceError("inference returned no choices")
-                    return resp.choices[0].message.content or ""
+                        ):
+                            raise
+                    return await _once(True)
                 except BaseException as exc:
                     # D42: capture the OpenAI-SDK code/status pre-flattening (see `_as_inference_error`).
                     converted = _as_inference_error(exc)
@@ -1071,7 +1253,8 @@ class InferenceClient:
             sem = self._sem_for(ep)
             if sem is not None:
                 await sem.acquire()
-            try:
+
+            async def _open(strip: bool) -> tuple[Any, Any]:
                 # `_call_config` merges this endpoint's modeled params (max_tokens field name,
                 # reasoning_effort) + its `extra_body` PER-ENDPOINT, never into the shared `kwargs` — an
                 # OpenAI backend 400s on unknown args, so the local endpoint's `cache_prompt`/`return_progress`
@@ -1083,6 +1266,7 @@ class InferenceClient:
                         max_tokens=max_tokens,
                         reasoning_effort=reasoning_effort,
                         reasoning_tokens=reasoning_tokens,
+                        strip_reasoning=strip,
                     ),
                 }
                 stream = await self._client(ep).chat.completions.create(model=use_model, **call_kwargs)
@@ -1097,6 +1281,32 @@ class InferenceClient:
                     if isinstance(exc, StopAsyncIteration):
                         raise InferenceError("inference returned an empty stream") from exc
                     raise
+                return first, stream
+
+            try:
+                # D46 — the reasoning-capability re-attempt lives HERE, inside one hop, and that placement
+                # IS the design: `failover()` never sees the rejected attempt, so it is not a failover hop
+                # (`FailoverError.failures`/`endpoints_tried` unchanged, no `FailoverNotice`) and never
+                # reaches `_retry_policy`, so it cannot consume a transient `retry_attempts` budget meant
+                # for a busy backend. The permit is untouched: it was acquired above and is released by the
+                # single handler below (failure) or handed to the consumer (success) — a stripped
+                # re-attempt is just a second `create()` under the SAME permit, exactly like the first.
+                # Bounded to ONE by construction: the second call passes `strip=True` and can never
+                # re-enter (`_note_reasoning_demotion` is skipped when `stripped`).
+                stripped = self._reasoning_is_demoted(ep, use_model)
+                try:
+                    first, stream = await _open(stripped)
+                except BaseException as exc:
+                    if stripped or not self._note_reasoning_demotion(
+                        exc,
+                        name=name,
+                        ep=ep,
+                        model=use_model,
+                        reasoning_effort=reasoning_effort,
+                        reasoning_tokens=reasoning_tokens,
+                    ):
+                        raise
+                    first, stream = await _open(True)
             except BaseException as exc:
                 if sem is not None:
                     sem.release()  # permit not handed off → release before the next endpoint / raise

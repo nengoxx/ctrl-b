@@ -16,6 +16,10 @@ Five units, each testable in isolation:
      forced compaction + a same-slot re-stream; overflow after a partial stream → NO backstop; a second
      overflow in the same turn → no second attempt; an inflation-reject during the forced compact →
      normal error path.
+  F. D46 — a reasoning-param 400 as CAPABILITY FEEDBACK: `is_reasoning_param_rejection`'s message matrix
+     (+ its negative matrix), the strip-and-retry-once on the same endpoint, the remembered
+     `(endpoint, model)` demotion, the warn-once, and the fall-through when stripping doesn't help
+     (never a failover hop, never a transient-retry attempt).
 """
 
 from __future__ import annotations
@@ -36,12 +40,17 @@ from pydantic import ValidationError
 
 from app.adapters.inference import (
     _REASONING_BUDGETS,
+    ChatDelta,
+    FailoverNotice,
     InferenceClient,
     InferenceError,
+    RetryNotice,
+    StreamReport,
     _looks_self_hosted,
     _resolve_reasoning_budget,
     is_context_overflow,
-    warn_suspect_reasoning_dialects,
+    is_reasoning_param_rejection,
+    warn_suspect_api_modes,
 )
 from app.config import InferenceCfg, InferenceEndpointCfg
 from app.domain.agent import CompactionCfg, ModelRef
@@ -65,13 +74,16 @@ def _ep(**kw) -> InferenceEndpointCfg:
 
 
 def test_call_config_max_tokens_uses_endpoint_field_name() -> None:
-    """`max_tokens` lands under THIS endpoint's `max_tokens_field` — classic vs the reasoning-model name."""
-    classic = InferenceClient._call_config(_ep(), max_tokens=256, reasoning_effort=None)
+    """`max_tokens` lands under THIS endpoint's `resolved_max_tokens_field` — DERIVED from `api_mode`
+    (D46) unless the endpoint set the field explicitly, in which case the explicit value wins."""
+    classic = InferenceClient._call_config(_ep(api_mode="llamacpp"), max_tokens=256, reasoning_effort=None)
     assert classic == {"max_tokens": 256}
-    reasoning = InferenceClient._call_config(
-        _ep(max_tokens_field="max_completion_tokens"), max_tokens=256, reasoning_effort=None
+    derived = InferenceClient._call_config(_ep(), max_tokens=256, reasoning_effort=None)
+    assert derived == {"max_completion_tokens": 256}  # default api_mode "openai" derives the new spelling
+    override = InferenceClient._call_config(
+        _ep(max_tokens_field="max_tokens"), max_tokens=256, reasoning_effort=None
     )
-    assert reasoning == {"max_completion_tokens": 256}
+    assert override == {"max_tokens": 256}
 
 
 def test_call_config_reasoning_effort_passes_through() -> None:
@@ -83,9 +95,7 @@ def test_call_config_off_merges_chat_template_kwargs_over_extra_body() -> None:
     """`"off"` merges `chat_template_kwargs:{enable_thinking:false}` OVER the endpoint's extra_body —
     the endpoint's OTHER keys (and other chat_template_kwargs sub-keys) survive, and the config object
     is NOT mutated. On the LLAMACPP dialect only: that key is a llama.cpp/vLLM concept (D45 audit FIX 4)."""
-    ep = _ep(
-        reasoning_dialect="llamacpp", extra_body={"cache_prompt": True, "chat_template_kwargs": {"foo": 1}}
-    )
+    ep = _ep(api_mode="llamacpp", extra_body={"cache_prompt": True, "chat_template_kwargs": {"foo": 1}})
     original = dict(ep.extra_body)
     cfg = InferenceClient._call_config(ep, max_tokens=None, reasoning_effort="off")
     assert "reasoning_effort" not in cfg  # llama-server never reads it
@@ -101,9 +111,7 @@ def test_call_config_off_merges_chat_template_kwargs_over_extra_body() -> None:
 
 
 def test_call_config_off_adds_chat_template_kwargs_with_no_extra_body() -> None:
-    cfg = InferenceClient._call_config(
-        _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="off"
-    )
+    cfg = InferenceClient._call_config(_ep(api_mode="llamacpp"), max_tokens=None, reasoning_effort="off")
     assert cfg["extra_body"]["chat_template_kwargs"] == {"enable_thinking": False}
 
 
@@ -112,14 +120,9 @@ def test_call_config_off_template_lever_never_leaks_to_a_non_llamacpp_dialect() 
     on unknown body args (the ACA-18 rule) — so `off` must NOT smuggle it onto the cloud dialects, and
     `none` ("the server understands no reasoning control") must stay literally empty."""
     for dialect in ("openai", "openrouter", "none"):
-        cfg = InferenceClient._call_config(
-            _ep(reasoning_dialect=dialect), max_tokens=None, reasoning_effort="off"
-        )
+        cfg = InferenceClient._call_config(_ep(api_mode=dialect), max_tokens=None, reasoning_effort="off")
         assert "chat_template_kwargs" not in cfg.get("extra_body", {}), dialect
-    assert (
-        InferenceClient._call_config(_ep(reasoning_dialect="none"), max_tokens=None, reasoning_effort="off")
-        == {}
-    )
+    assert InferenceClient._call_config(_ep(api_mode="none"), max_tokens=None, reasoning_effort="off") == {}
 
 
 def test_call_config_unset_sends_nothing() -> None:
@@ -130,7 +133,11 @@ def test_call_config_unset_sends_nothing() -> None:
 def test_call_config_non_off_effort_leaves_extra_body_alone() -> None:
     ep = _ep(extra_body={"cache_prompt": True})
     cfg = InferenceClient._call_config(ep, max_tokens=100, reasoning_effort="low")
-    assert cfg == {"max_tokens": 100, "reasoning_effort": "low", "extra_body": {"cache_prompt": True}}
+    assert cfg == {
+        "max_completion_tokens": 100,  # D46: derived from the default api_mode "openai"
+        "reasoning_effort": "low",
+        "extra_body": {"cache_prompt": True},
+    }
 
 
 # ── A2. `_call_config` per-dialect reasoning translation (D45) ─────────────────────────────────────
@@ -139,10 +146,12 @@ def test_call_config_non_off_effort_leaves_extra_body_alone() -> None:
 
 
 def test_call_config_default_dialect_is_openai_backcompat() -> None:
-    """The default dialect keeps TODAY's exact payload: effort verbatim, no budget keys ever."""
-    assert _ep().reasoning_dialect == "openai"
+    """The default api_mode keeps the reasoning payload unchanged: effort verbatim, no budget keys ever.
+    (D46 DID move the output-cap spelling on this mode: `max_tokens` → the derived `max_completion_tokens`,
+    which is the current OpenAI name — llama.cpp aliases both, so only a strict OpenAI endpoint sees it.)"""
+    assert _ep().api_mode == "openai"
     cfg = InferenceClient._call_config(_ep(), max_tokens=64, reasoning_effort="high", reasoning_tokens=4096)
-    assert cfg == {"max_tokens": 64, "reasoning_effort": "high"}
+    assert cfg == {"max_completion_tokens": 64, "reasoning_effort": "high"}
 
 
 def test_call_config_openai_drops_reasoning_tokens() -> None:
@@ -155,25 +164,21 @@ def test_call_config_openai_drops_reasoning_tokens() -> None:
 def test_call_config_llamacpp_ladder_sends_both_budget_keys_and_no_effort() -> None:
     """llama.cpp: the ladder becomes a budget under BOTH the current name and the older alias, and
     `reasoning_effort` is deliberately NOT sent (llama-server never reads it)."""
-    cfg = InferenceClient._call_config(
-        _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="high"
-    )
+    cfg = InferenceClient._call_config(_ep(api_mode="llamacpp"), max_tokens=None, reasoning_effort="high")
     assert cfg == {"extra_body": {"reasoning_budget_tokens": 8192, "thinking_budget_tokens": 8192}}
     assert "reasoning_effort" not in cfg
 
 
 def test_call_config_llamacpp_explicit_tokens_override_the_ladder() -> None:
     cfg = InferenceClient._call_config(
-        _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="high", reasoning_tokens=333
+        _ep(api_mode="llamacpp"), max_tokens=None, reasoning_effort="high", reasoning_tokens=333
     )
     assert cfg == {"extra_body": {"reasoning_budget_tokens": 333, "thinking_budget_tokens": 333}}
 
 
 def test_call_config_llamacpp_off_is_budget_zero_plus_enable_thinking_false() -> None:
     """`"off"` → the server's own 0 sentinel (sampler level) AND the template-level lever, both."""
-    cfg = InferenceClient._call_config(
-        _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="off"
-    )
+    cfg = InferenceClient._call_config(_ep(api_mode="llamacpp"), max_tokens=None, reasoning_effort="off")
     assert cfg["extra_body"] == {
         "reasoning_budget_tokens": 0,
         "thinking_budget_tokens": 0,
@@ -183,19 +188,14 @@ def test_call_config_llamacpp_off_is_budget_zero_plus_enable_thinking_false() ->
 
 
 def test_call_config_llamacpp_max_is_unrestricted_sentinel() -> None:
-    cfg = InferenceClient._call_config(
-        _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="max"
-    )
+    cfg = InferenceClient._call_config(_ep(api_mode="llamacpp"), max_tokens=None, reasoning_effort="max")
     assert cfg == {"extra_body": {"reasoning_budget_tokens": -1, "thinking_budget_tokens": -1}}
 
 
 def test_call_config_llamacpp_unset_sends_no_budget() -> None:
     """Nothing set ⇒ nothing on the wire — the server keeps its own `--reasoning-budget` default."""
     assert (
-        InferenceClient._call_config(
-            _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort=None
-        )
-        == {}
+        InferenceClient._call_config(_ep(api_mode="llamacpp"), max_tokens=None, reasoning_effort=None) == {}
     )
 
 
@@ -203,24 +203,20 @@ def test_call_config_openrouter_explicit_tokens_excludes_effort() -> None:
     """OpenRouter: `reasoning.effort` and `reasoning.max_tokens` are MUTUALLY EXCLUSIVE (hard 400) —
     an explicit budget wins and the effort key must be absent."""
     cfg = InferenceClient._call_config(
-        _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="high", reasoning_tokens=2000
+        _ep(api_mode="openrouter"), max_tokens=None, reasoning_effort="high", reasoning_tokens=2000
     )
     assert cfg == {"extra_body": {"reasoning": {"max_tokens": 2000}}}
     assert "reasoning_effort" not in cfg
 
 
 def test_call_config_openrouter_ladder_only_sends_effort() -> None:
-    cfg = InferenceClient._call_config(
-        _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="low"
-    )
+    cfg = InferenceClient._call_config(_ep(api_mode="openrouter"), max_tokens=None, reasoning_effort="low")
     assert cfg == {"reasoning_effort": "low"}
 
 
 def test_call_config_openrouter_off_maps_to_none_enum() -> None:
     """Our ladder's `"off"` is spelled `"none"` in OpenRouter's enum — and nothing else rides along."""
-    cfg = InferenceClient._call_config(
-        _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="off"
-    )
+    cfg = InferenceClient._call_config(_ep(api_mode="openrouter"), max_tokens=None, reasoning_effort="off")
     assert cfg == {"reasoning_effort": "none"}
 
 
@@ -231,29 +227,25 @@ def test_call_config_openai_off_maps_to_none_enum() -> None:
     assert cfg == {"reasoning_effort": "none"}
 
 
-def test_call_config_openrouter_max_clamps_to_xhigh() -> None:
-    """D45 audit FIX 1: OpenRouter's enum is EXACTLY xhigh|high|medium|low|minimal|none — `max` is NOT
-    accepted (https://openrouter.ai/docs/api_reference/parameters), so sending it 400s every request and
-    burns the whole failover chain. Our `max` is chiefly llama.cpp's `-1` sentinel ⇒ clamp to the top
-    real rung. `xhigh` IS accepted and must still pass verbatim."""
-    clamped = InferenceClient._call_config(
-        _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="max"
-    )
-    assert clamped == {"reasoning_effort": "xhigh"}
-    verbatim = InferenceClient._call_config(
-        _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="xhigh"
-    )
-    assert verbatim == {"reasoning_effort": "xhigh"}
+def test_call_config_openrouter_max_rides_verbatim() -> None:
+    """D46 / D45 AMENDED-3 — the REVERT of the `max → xhigh` clamp. The clamp was read off a stale docs
+    page; LIVE testing against the API (2026-07-20) shows `reasoning_effort: "max"` returns HTTP 200, and
+    the provider's own reject text for a genuinely invalid value reads
+    `Invalid option: expected one of "max"|"xhigh"|"high"…` — i.e. `max` IS in the enum. Clamping
+    silently downgraded effort on the 22 models that support it. Both top rungs ride verbatim now."""
+    for rung in ("max", "xhigh"):
+        cfg = InferenceClient._call_config(_ep(api_mode="openrouter"), max_tokens=None, reasoning_effort=rung)
+        assert cfg == {"reasoning_effort": rung}
 
 
 def test_call_config_openrouter_effort_map_stays_inside_the_published_enum() -> None:
-    """Every ladder rung must translate to a value OpenRouter actually accepts — a rung added later that
-    silently passes verbatim would 400 in production, not in CI."""
-    accepted = {"xhigh", "high", "medium", "low", "minimal", "none"}
+    """Every ladder rung must translate to a value inside OpenRouter's REAL enum (measured from its own
+    error text, D46) — a rung added later that silently passes verbatim would 400 in production, not in
+    CI. NB this pins the enum, not per-MODEL support: `supported_efforts` is published per model and any
+    of these can still be rejected by a particular one — that residual is D46's reactive job."""
+    accepted = {"max", "xhigh", "high", "medium", "low", "minimal", "none"}
     for rung in _REASONING_BUDGETS:
-        cfg = InferenceClient._call_config(
-            _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort=rung
-        )
+        cfg = InferenceClient._call_config(_ep(api_mode="openrouter"), max_tokens=None, reasoning_effort=rung)
         assert cfg["reasoning_effort"] in accepted, f"{rung} → {cfg['reasoning_effort']} is not in the enum"
 
 
@@ -263,13 +255,13 @@ def test_call_config_endpoint_reasoning_object_deep_merges_and_suppresses_the_ef
     hand_set = {"reasoning": {"exclude": True, "effort": "high"}}
     # 1. both spellings in ONE request — the exact hard 400 the openrouter branch exists to prevent.
     cfg = InferenceClient._call_config(
-        _ep(reasoning_dialect="openrouter", extra_body=hand_set), max_tokens=None, reasoning_effort="medium"
+        _ep(api_mode="openrouter", extra_body=hand_set), max_tokens=None, reasoning_effort="medium"
     )
     assert "reasoning_effort" not in cfg
     assert cfg["extra_body"]["reasoning"] == {"exclude": True, "effort": "high"}
     # 2. a per-call budget DEEP-merges: the endpoint's `exclude` survives (it used to be replaced
     #    wholesale by `extra.update(body)`), and the per-call `max_tokens` evicts the endpoint's `effort`.
-    ep = _ep(reasoning_dialect="openrouter", extra_body=hand_set)
+    ep = _ep(api_mode="openrouter", extra_body=hand_set)
     original = {k: dict(v) for k, v in ep.extra_body.items()}
     cfg = InferenceClient._call_config(ep, max_tokens=None, reasoning_tokens=500, reasoning_effort=None)
     assert cfg == {"extra_body": {"reasoning": {"exclude": True, "max_tokens": 500}}}
@@ -286,7 +278,7 @@ def test_call_config_off_is_absolute_and_ignores_an_explicit_budget() -> None:
     """D45 audit FIX 3: `off` + `reasoning_tokens` used to emit "think up to N" at the sampler AND
     "emit no thinking block" at the template. `off` means off — the override is ignored everywhere."""
     llama = InferenceClient._call_config(
-        _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="off", reasoning_tokens=4096
+        _ep(api_mode="llamacpp"), max_tokens=None, reasoning_effort="off", reasoning_tokens=4096
     )
     assert llama == {
         "extra_body": {
@@ -296,7 +288,7 @@ def test_call_config_off_is_absolute_and_ignores_an_explicit_budget() -> None:
         }
     }
     router = InferenceClient._call_config(
-        _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="off", reasoning_tokens=4096
+        _ep(api_mode="openrouter"), max_tokens=None, reasoning_effort="off", reasoning_tokens=4096
     )
     assert router == {"reasoning_effort": "none"}
     assert _resolve_reasoning_budget("off", 4096) == 0
@@ -318,7 +310,7 @@ def test_call_config_emits_only_keys_the_sdk_actually_models() -> None:
         for effort in (None, "off", "minimal", "low", "medium", "high", "xhigh", "max"):
             for tokens in (None, 512):
                 cfg = InferenceClient._call_config(
-                    _ep(reasoning_dialect=dialect),
+                    _ep(api_mode=dialect),
                     max_tokens=16,
                     reasoning_effort=effort,
                     reasoning_tokens=tokens,
@@ -341,7 +333,7 @@ def test_reasoning_budget_table_covers_every_ladder_rung() -> None:
 
 def test_call_config_dialect_none_drops_both() -> None:
     cfg = InferenceClient._call_config(
-        _ep(reasoning_dialect="none"), max_tokens=32, reasoning_effort="high", reasoning_tokens=500
+        _ep(api_mode="none"), max_tokens=32, reasoning_effort="high", reasoning_tokens=500
     )
     assert cfg == {"max_tokens": 32}
 
@@ -352,9 +344,7 @@ def test_call_config_dialect_branches_keep_extra_body_merge_and_no_mutation() ->
     `off` + 77 and check only the template half, i.e. it ENCODED the FIX 3 contradiction: the template
     lever now exists on `llamacpp` alone (FIX 4), and the 77 is ignored outright (FIX 3)."""
     for dialect in ("openai", "llamacpp", "openrouter", "none"):
-        ep = _ep(
-            reasoning_dialect=dialect, extra_body={"cache_prompt": True, "chat_template_kwargs": {"foo": 1}}
-        )
+        ep = _ep(api_mode=dialect, extra_body={"cache_prompt": True, "chat_template_kwargs": {"foo": 1}})
         original = {k: dict(v) if isinstance(v, dict) else v for k, v in ep.extra_body.items()}
         cfg = InferenceClient._call_config(ep, max_tokens=None, reasoning_effort="off", reasoning_tokens=77)
         assert cfg["extra_body"]["cache_prompt"] is True  # the endpoint's own keys always survive
@@ -364,9 +354,9 @@ def test_call_config_dialect_branches_keep_extra_body_merge_and_no_mutation() ->
         assert ep.extra_body == original, f"{dialect} mutated the endpoint config"
 
 
-def test_endpoint_reasoning_dialect_literal_rejects_junk() -> None:
+def test_endpoint_api_mode_literal_rejects_junk() -> None:
     with pytest.raises(ValidationError):
-        InferenceEndpointCfg(reasoning_dialect="llama")
+        InferenceEndpointCfg(api_mode="llama")
 
 
 # ── A3. the "your dialect is probably wrong" startup warning (D45 audit FIX 5) ─────────────────────
@@ -400,23 +390,21 @@ def test_warn_fires_for_default_dialect_on_a_self_hosted_endpoint(caplog) -> Non
         fallbacks=[InferenceEndpointCfg(base_url="http://emma:8081/v1", model="m")],
     )
     with caplog.at_level(logging.WARNING, logger="ctrlb.inference"):
-        warn_suspect_reasoning_dialects(cfg)
+        warn_suspect_api_modes(cfg)
     msgs = [r.getMessage() for r in caplog.records]
     assert len(msgs) == 2, msgs  # local + the fallback; the real cloud endpoint stays quiet
-    assert "inference.local.reasoning_dialect: llamacpp" in msgs[0]
+    assert "inference.local.api_mode: llamacpp" in msgs[0]
     assert "http://127.0.0.1:8080/v1" in msgs[0]
-    assert "inference.fallbacks[0].reasoning_dialect: llamacpp" in msgs[1]
+    assert "inference.fallbacks[0].api_mode: llamacpp" in msgs[1]
 
 
 def test_warn_silent_once_the_dialect_is_set_or_the_endpoint_is_blank(caplog) -> None:
     cfg = InferenceCfg(
-        local=InferenceEndpointCfg(
-            base_url="http://127.0.0.1:8080/v1", model="m", reasoning_dialect="llamacpp"
-        ),
+        local=InferenceEndpointCfg(base_url="http://127.0.0.1:8080/v1", model="m", api_mode="llamacpp"),
         cloud=InferenceEndpointCfg(base_url="", model=""),
     )
     with caplog.at_level(logging.WARNING, logger="ctrlb.inference"):
-        warn_suspect_reasoning_dialects(cfg)
+        warn_suspect_api_modes(cfg)
     assert caplog.records == []
 
 
@@ -560,16 +548,14 @@ def test_stream_chat_threads_modeled_kwargs_to_create() -> None:
     client, fakes = _build(_cfg(), {"http://local/v1": _stream_ok("hi")})
     _run(_collect(client, max_tokens=128, reasoning_effort="high"))
     call = fakes["http://local/v1"].chat.completions.calls[0]
-    assert call["max_tokens"] == 128
+    assert call["max_completion_tokens"] == 128  # derived from the default api_mode (D46)
     assert call["reasoning_effort"] == "high"
 
 
 def test_stream_chat_off_sends_chat_template_kwargs() -> None:
     """End-to-end through `stream_chat`: the template lever reaches the wire on a llamacpp endpoint —
     and (D45 audit FIX 4) does NOT on the default dialect, which sends the `none` enum value instead."""
-    llama = _cfg(
-        local=InferenceEndpointCfg(base_url="http://local/v1", model="m", reasoning_dialect="llamacpp")
-    )
+    llama = _cfg(local=InferenceEndpointCfg(base_url="http://local/v1", model="m", api_mode="llamacpp"))
     client, fakes = _build(llama, {"http://local/v1": _stream_ok("hi")})
     _run(_collect(client, reasoning_effort="off"))
     call = fakes["http://local/v1"].chat.completions.calls[0]
@@ -599,7 +585,7 @@ def test_params_ride_to_fallback_with_its_own_field_name() -> None:
         raise RuntimeError("local down")
 
     cfg = _cfg(
-        local=InferenceEndpointCfg(base_url="http://local/v1", model="minig"),  # max_tokens_field default
+        local=InferenceEndpointCfg(base_url="http://local/v1", model="minig", api_mode="llamacpp"),
         cloud=InferenceEndpointCfg(
             base_url="http://cloud/v1", model="gemma", max_tokens_field="max_completion_tokens"
         ),
@@ -618,7 +604,7 @@ def test_complete_threads_modeled_kwargs_to_create() -> None:
     out = _run(client.complete([{"role": "user", "content": "hi"}], max_tokens=99, reasoning_effort="low"))
     assert out == "done"
     call = fakes["http://local/v1"].chat.completions.calls[0]
-    assert call["max_tokens"] == 99 and call["reasoning_effort"] == "low"
+    assert call["max_completion_tokens"] == 99 and call["reasoning_effort"] == "low"
 
 
 def test_stream_chat_overflow_populates_code_status() -> None:
@@ -1018,6 +1004,200 @@ def test_backstop_shares_single_slot_endpoint_without_deadlock() -> None:
             assert len(recovered) == 1
 
         _run(go())
+
+
+# ── F. D46 — reasoning-param 400 = capability feedback (strip · retry once · remember · warn) ──────
+# Limits are per-MODEL (OpenRouter publishes `reasoning.supported_efforts` per model), so no static
+# table can predict them: the app LEARNS from the provider's own 400. These pin the classifier shapes,
+# the exactly-once retry, the remembered demotion, the loud-once warning, and the fall-through.
+
+
+def _reject(message: str):
+    """A fake `create` that always 400s with `message` (the provider's own text)."""
+
+    def _behavior(_kw):
+        raise _sdk_error(400, None, message)
+
+    return _behavior
+
+
+_ENUM_REJECT = 'Invalid option: expected one of "max"|"xhigh"|"high"|"medium"|"low"|"minimal"|"none"'
+_MANDATORY_REJECT = "Reasoning is mandatory for this endpoint and cannot be disabled."
+
+
+def test_reasoning_param_rejection_matches_every_known_message_shape() -> None:
+    """The four MEASURED shapes (OpenRouter enum reject + mandatory reasoning; OpenAI unknown key +
+    unsupported parameter). All are 400s; all but the self-identifying mandatory one must ALSO name a
+    reasoning key, which is what keeps an unrelated rejected param from stripping reasoning."""
+    assert is_reasoning_param_rejection(_sdk_error(400, None, f"reasoning_effort: {_ENUM_REJECT}"))
+    assert is_reasoning_param_rejection(_sdk_error(400, None, _MANDATORY_REJECT))
+    assert is_reasoning_param_rejection(
+        _sdk_error(400, None, "Unrecognized request argument supplied: reasoning_budget_tokens")
+    )
+    assert is_reasoning_param_rejection(
+        _sdk_error(400, None, "Unsupported parameter: 'reasoning_effort' is not supported with this model.")
+    )
+    # a failover-FLATTENED error (structured status collapsed to a string) still matches on `error code: 400`
+    assert is_reasoning_param_rejection(
+        InferenceError(f"all endpoints failed: local: Error code: 400 - reasoning_effort: {_ENUM_REJECT}")
+    )
+
+
+def test_non_reasoning_400_is_never_a_reasoning_rejection() -> None:
+    """The negative matrix — the gate that stops a blind strip-and-retry on somebody else's 400."""
+    assert not is_reasoning_param_rejection(
+        _sdk_error(400, None, f"tool_choice: {_ENUM_REJECT}")  # right shape, WRONG key
+    )
+    assert not is_reasoning_param_rejection(
+        _sdk_error(400, None, "Unsupported parameter: 'response_format' is not supported with this model.")
+    )
+    assert not is_reasoning_param_rejection(_sdk_error(400, None, "context length exceeded"))
+    assert not is_reasoning_param_rejection(  # a reasoning key named in a 429/500 is not a param reject
+        InferenceError("Error code: 429 - reasoning_effort queue full", status=429)
+    )
+    assert not is_reasoning_param_rejection(RuntimeError("connection refused"))
+
+
+def test_strip_reasoning_removes_only_reasoning_keys() -> None:
+    """The stripped payload drops OUR reasoning controls AND the endpoint's own — and nothing else:
+    `cache_prompt`, the output cap and other `chat_template_kwargs` siblings all survive, and the config
+    object is still never mutated."""
+    ep = _ep(
+        api_mode="llamacpp",
+        extra_body={
+            "cache_prompt": True,
+            "reasoning": {"exclude": True},
+            "chat_template_kwargs": {"foo": 1, "enable_thinking": True},
+        },
+    )
+    original = {k: dict(v) if isinstance(v, dict) else v for k, v in ep.extra_body.items()}
+    cfg = InferenceClient._call_config(
+        ep, max_tokens=64, reasoning_effort="off", reasoning_tokens=99, strip_reasoning=True
+    )
+    assert cfg == {
+        "max_tokens": 64,
+        "extra_body": {"cache_prompt": True, "chat_template_kwargs": {"foo": 1}},
+    }
+    assert ep.extra_body == original
+    # a chat_template_kwargs that held ONLY the reasoning sub-key disappears entirely (no empty dict)
+    lone = InferenceClient._call_config(
+        _ep(api_mode="llamacpp"), max_tokens=None, reasoning_effort="off", strip_reasoning=True
+    )
+    assert lone == {}
+
+
+def test_stream_chat_strips_reasoning_and_retries_the_same_endpoint_once(caplog) -> None:
+    """The whole mechanism end-to-end on one endpoint: attempt 1 carries `reasoning_effort` and 400s,
+    attempt 2 goes to the SAME endpoint without it and succeeds — and the warning names the endpoint,
+    the model, the stripped key and the provider's own message."""
+    calls: list[dict] = []
+
+    def _behavior(kw):
+        calls.append(kw)
+        if "reasoning_effort" in kw:
+            raise _sdk_error(400, None, f"reasoning_effort: {_ENUM_REJECT}")
+        return _Stream([_Chunk(_Delta(content="hi"))])
+
+    client, _fakes = _build(_cfg(), {"http://local/v1": _behavior})
+    with caplog.at_level(logging.WARNING, logger="ctrlb.inference"):
+        deltas = _run(_collect(client, reasoning_effort="max"))
+    assert [d.text for d in deltas if isinstance(d, ChatDelta)] == ["hi"]
+    assert len(calls) == 2  # EXACTLY one re-attempt
+    assert calls[0]["reasoning_effort"] == "max" and "reasoning_effort" not in calls[1]
+    assert calls[1]["model"] == calls[0]["model"]  # same endpoint, same model
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1, warnings
+    assert "local" in warnings[0] and "minig" in warnings[0]
+    assert "reasoning_effort" in warnings[0] and "Invalid option" in warnings[0]
+
+
+def test_reasoning_demotion_is_remembered_and_warns_once(caplog) -> None:
+    """Turn 2 must not pay the doomed attempt again: the `(endpoint, model)` demotion is remembered for
+    the client's lifetime, so the second turn goes straight to the stripped payload — and the WARNING
+    fires once per pair, not once per turn (loud, but not a log flood)."""
+    calls: list[dict] = []
+
+    def _behavior(kw):
+        calls.append(kw)
+        if "reasoning_effort" in kw:
+            raise _sdk_error(400, None, f"reasoning_effort: {_ENUM_REJECT}")
+        return _Stream([_Chunk(_Delta(content="ok"))])
+
+    client, _fakes = _build(_cfg(), {"http://local/v1": _behavior})
+    with caplog.at_level(logging.WARNING, logger="ctrlb.inference"):
+        _run(_collect(client, reasoning_effort="max"))
+        _run(_collect(client, reasoning_effort="max"))
+        _run(_collect(client, reasoning_effort="high"))
+    assert len(calls) == 4  # turn 1: rejected + stripped; turns 2 and 3: stripped only
+    assert all("reasoning_effort" not in c for c in calls[1:])
+    assert len([r for r in caplog.records if r.levelno == logging.WARNING]) == 1
+    # a config change rebuilds the client (`runtime.set_inference`) ⇒ the memory resets naturally
+    fresh, _ = _build(_cfg(), {"http://local/v1": _behavior})
+    _run(_collect(fresh, reasoning_effort="max"))
+    assert "reasoning_effort" in calls[4]
+
+
+def test_reasoning_400_that_persists_after_stripping_falls_through_to_failover() -> None:
+    """The retry is one attempt, not a loop: if the stripped payload 400s too, the hop fails normally and
+    the chain moves on — and the fallback serves with its OWN (unstripped) reasoning payload, because a
+    demotion is per `(endpoint, model)`, never global."""
+    local_calls: list[dict] = []
+
+    def _always_400(kw):
+        local_calls.append(kw)
+        raise _sdk_error(400, None, f"reasoning_effort: {_ENUM_REJECT}")
+
+    cloud_calls: list[dict] = []
+
+    def _cloud(kw):
+        cloud_calls.append(kw)
+        return _Stream([_Chunk(_Delta(content="from cloud"))])
+
+    client, _fakes = _build(_cfg(), {"http://local/v1": _always_400, "http://cloud/v1": _cloud})
+    deltas = _run(_collect(client, reasoning_effort="max"))
+    assert [d.text for d in deltas if isinstance(d, ChatDelta)] == ["from cloud"]
+    assert len(local_calls) == 2  # the rejected attempt + exactly ONE stripped re-attempt, then hop
+    assert cloud_calls[0]["reasoning_effort"] == "max"
+
+
+def test_reasoning_retry_costs_no_failover_hop_and_no_transient_attempt() -> None:
+    """The hard D43 constraint: the stripped re-attempt happens INSIDE one hop, so `failover()` never
+    sees it — no `FailoverNotice`, no `RetryNotice`, `endpoints_tried` unchanged — and it cannot consume
+    a `retry_attempts` budget reserved for genuinely-transient errors (here: budget 0, i.e. retries
+    disabled, and the degradation still works)."""
+    seen: list[dict] = []
+
+    def _behavior(kw):
+        seen.append(kw)
+        if "reasoning_effort" in kw:
+            raise _sdk_error(400, None, _MANDATORY_REJECT)
+        return _Stream([_Chunk(_Delta(content="hi"))])
+
+    cfg = _cfg(retry_attempts=0)
+    client, _fakes = _build(cfg, {"http://local/v1": _behavior})
+    report = StreamReport()
+    items = _run(_collect(client, reasoning_effort="off", report=report))
+    assert len(seen) == 2
+    assert not [i for i in items if isinstance(i, (RetryNotice, FailoverNotice))]
+    assert report.served == "local" and report.degraded is False and report.failures == []
+
+
+def test_complete_degrades_the_same_way() -> None:
+    """The buffered path (the compaction summarizer) shares the mechanism — one home, both callers."""
+    calls: list[dict] = []
+
+    def _behavior(kw):
+        calls.append(kw)
+        if "extra_body" in kw:
+            raise _sdk_error(400, None, "Unrecognized request argument supplied: reasoning_budget_tokens")
+        return _Resp("summary")
+
+    cfg = _cfg(local=InferenceEndpointCfg(base_url="http://local/v1", model="m", api_mode="llamacpp"))
+    client, _fakes = _build(cfg, {"http://local/v1": _behavior})
+    out = _run(client.complete([{"role": "user", "content": "hi"}], reasoning_effort="high"))
+    assert out == "summary"
+    assert len(calls) == 2
+    assert "extra_body" in calls[0] and "extra_body" not in calls[1]
 
 
 if __name__ == "__main__":

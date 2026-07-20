@@ -127,12 +127,17 @@ def test_endpoint_context_window_defaults_none_and_floor() -> None:
         InferenceEndpointCfg(context_window=0)
 
 
-def test_endpoint_max_tokens_field_literal() -> None:
-    assert InferenceEndpointCfg().max_tokens_field == "max_tokens"
-    assert (
-        InferenceEndpointCfg(max_tokens_field="max_completion_tokens").max_tokens_field
-        == "max_completion_tokens"
-    )
+def test_endpoint_max_tokens_field_literal_and_derivation() -> None:
+    """D46: the raw field is now `None`-by-default and DERIVED from `api_mode`
+    (`openai` → `max_completion_tokens`, everything else → `max_tokens`); an explicit value always wins.
+    Only `resolved_max_tokens_field` may be read at the wire."""
+    assert InferenceEndpointCfg().max_tokens_field is None
+    assert InferenceEndpointCfg().resolved_max_tokens_field == "max_completion_tokens"  # default api_mode
+    for mode in ("llamacpp", "openrouter", "none"):
+        assert InferenceEndpointCfg(api_mode=mode).resolved_max_tokens_field == "max_tokens"
+    override = InferenceEndpointCfg(api_mode="llamacpp", max_tokens_field="max_completion_tokens")
+    assert override.resolved_max_tokens_field == "max_completion_tokens"  # explicit always wins
+    assert InferenceEndpointCfg(max_tokens_field="max_tokens").resolved_max_tokens_field == "max_tokens"
     with pytest.raises(ValidationError):
         InferenceEndpointCfg(max_tokens_field="tokens")
 

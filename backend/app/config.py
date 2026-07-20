@@ -150,32 +150,51 @@ class InferenceEndpointCfg(BaseModel):
     context_window: int | None = Field(default=None, ge=1)
     #: Which OpenAI field carries the output cap for THIS endpoint (D42/A10). `max_tokens` is the
     #: classic name; reasoning models on some cloud APIs deprecate it for `max_completion_tokens`.
-    #: Per-endpoint + declared (pi's `compat.maxTokensField` precedent). Consumed at the wire boundary
-    #: (Wave 4) when threading `ModelRef.max_tokens`; a tiny, additive knob on the unified endpoint.
-    max_tokens_field: Literal["max_tokens", "max_completion_tokens"] = "max_tokens"
+    #: **DERIVED-WITH-OVERRIDE (D46):** `None` (the default) means "derive from `api_mode`" —
+    #: `openai` → `max_completion_tokens`, every other mode → `max_tokens`. An explicit value ALWAYS
+    #: wins; see `resolved_max_tokens_field`. This is the two-layer pattern (one wire-shape enum plus
+    #: retained per-capability escape hatches) rather than a second knob the operator must keep in sync.
+    #: It only ever mattered for OpenAI reasoning models: llama.cpp aliases BOTH spellings
+    #: (`tools/server/server-schema.cpp` `add_alias`), so either name works there.
+    max_tokens_field: Literal["max_tokens", "max_completion_tokens"] | None = None
     #: Per-endpoint override of the CHAT-STREAM same-endpoint retry budget (D43/A7). `None` inherits the
     #: global `InferenceCfg.retry_attempts`; `0` disables retries for this endpoint (straight next-hop).
     #: Only genuinely-transient failures (429/503/Retry-After/llama.cpp busy — `categorize`) consume the
     #: budget; a dead endpoint (connection-refused/timeout = `other`) never retries. Additive field on
     #: the unified endpoint object (the global+override resolve pattern — never a sibling map).
     retry_attempts: int | None = Field(default=None, ge=0)
-    #: Which reasoning-control wire shape THIS server speaks (D45) — the `max_tokens_field` precedent,
-    #: one dialect switch consumed at the wire boundary so the single `ModelRef.reasoning_effort` ladder
-    #: means something on every backend:
+    #: Which API wire shape THIS server speaks (D45, renamed + widened by D46 — was `reasoning_dialect`).
+    #: ONE explicit enum consumed at the wire boundary; it drives the reasoning translation (so the single
+    #: `ModelRef.reasoning_effort` ladder means something on every backend) AND the derived
+    #: `max_tokens_field`. Named after the Hermes-Agent convention for exactly this concept (Codex's
+    #: `wire_api` is the runner-up); "kind"/"provider" were rejected — *provider* means IDENTITY, and the
+    #: same model behind llama-server vs behind OpenRouter needs opposite payloads:
     #:   - `openai`     — `reasoning_effort` verbatim (our `"off"` → its `"none"`); no token budget
-    #:                    exists. DEFAULT — which means an existing llama.cpp install stays on it and the
-    #:                    ladder is a NO-OP there, so `warn_suspect_reasoning_dialects` logs a WARNING at
-    #:                    config load for a default-dialect endpoint with a self-hosted `base_url`;
+    #:                    exists; output cap under `max_completion_tokens`. DEFAULT — which means an
+    #:                    existing llama.cpp install stays on it and the ladder is a NO-OP there, so
+    #:                    `warn_suspect_api_modes` logs a WARNING at config load for a
+    #:                    default-mode endpoint with a self-hosted `base_url`;
     #:   - `llamacpp`   — NO `reasoning_effort` (llama-server never reads it — maintainer-confirmed);
     #:                    the budget rides as `reasoning_budget_tokens` + the older `thinking_budget_tokens`;
     #:   - `openrouter` — `reasoning.max_tokens` OR `reasoning_effort`, never both (mutually exclusive →
-    #:                    hard 400); our `"off"` maps to its `"none"` and our `"max"` to its `"xhigh"`
-    #:                    (its enum has no `max` — sending one is a 400);
+    #:                    hard 400); our `"off"` maps to its `"none"`, every other rung rides verbatim;
     #:   - `none`       — the server understands no reasoning control; both are dropped.
-    #: CONFIG, deliberately not a probe or a model-name sniff: the dialect is a property of the SERVER,
-    #: not the model — the same `qwen3` behind llama-server vs behind OpenRouter needs opposite payloads,
-    #: so only the person who pointed `base_url` at a server knows the answer.
-    reasoning_dialect: Literal["openai", "llamacpp", "openrouter", "none"] = "openai"
+    #: CONFIG, deliberately not a probe, not a model-name sniff and **not auto-detected from `base_url`**
+    #: (D46 field research: of 13 surveyed systems none infers the wire shape from the URL, and Hermes
+    #: shipped URL auto-detection then RETREATED to an explicit field). Only the person who pointed
+    #: `base_url` at a server knows the answer. Per-MODEL limits inside a mode are learned REACTIVELY
+    #: instead — see the D46 reasoning-param-rejection feedback in `adapters/inference.py`.
+    api_mode: Literal["openai", "llamacpp", "openrouter", "none"] = "openai"
+
+    @property
+    def resolved_max_tokens_field(self) -> Literal["max_tokens", "max_completion_tokens"]:
+        """The output-cap field name for THIS endpoint (D46): the explicit `max_tokens_field` when set,
+        else derived from `api_mode` — `openai` speaks the current `max_completion_tokens` spelling
+        (`max_tokens` is deprecated there for reasoning models), everything else the classic
+        `max_tokens`. The one home; the wire boundary must never read the raw field."""
+        if self.max_tokens_field is not None:
+            return self.max_tokens_field
+        return "max_completion_tokens" if self.api_mode == "openai" else "max_tokens"
 
 
 class InferenceCfg(BaseModel):

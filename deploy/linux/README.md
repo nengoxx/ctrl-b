@@ -111,17 +111,29 @@ required for a working install, but each fixes a real degradation on this box:
   already in `config.example.yaml`) / `extra_body: { stream_options: { include_usage: true } }` on
   cloud. Without them the estimator silently falls back to the char/4 heuristic — the server logs a
   one-time `context anchoring inactive …` INFO naming the exact remedy.
-- **`reasoning_dialect: <openai|llamacpp|openrouter|none>`** (D45) — which reasoning-control wire shape
-  each `inference.*` endpoint speaks. **This is opt-in on an existing install and that is the one thing
+- **`api_mode: <openai|llamacpp|openrouter|none>`** (D45; named `reasoning_dialect` for a few hours on
+  2026-07-20, renamed by D46) — which API wire shape each `inference.*` endpoint speaks. It drives the
+  reasoning translation **and** the derived `max_tokens_field` (unset = `max_completion_tokens` on
+  `openai`, `max_tokens` elsewhere; set the field explicitly to override). It is never auto-detected from
+  `base_url`. **This is opt-in on an existing install and that is the one thing
   to remember here: `config.example.yaml` is the EXAMPLE, `config.yaml` is the LIVE file** — it is
   gitignored, an upgrade never rewrites it, so an endpoint you configured before D45 keeps the
   back-compat default `openai`. On a llama.cpp endpoint that default makes every agent's
   `reasoning_effort` / `reasoning_tokens` a silent **no-op** (llama-server never reads `reasoning_effort`),
-  so add `reasoning_dialect: llamacpp` to your `inference.local` block by hand. The server logs a startup
-  **WARNING** naming the endpoint and the exact key to set whenever it sees a default-dialect endpoint
-  with a loopback/private/LAN/non-web-port `base_url`. Related: on the `openai` dialect, effort `off` is
-  sent as OpenAI's `none` and no longer carries llama.cpp's `chat_template_kwargs`, so an `off` agent on a
-  still-default llama.cpp endpoint loses the template lever until you set the dialect.
+  so add `api_mode: llamacpp` to your `inference.local` block by hand. The server logs a startup
+  **WARNING** naming the endpoint and the exact key to set whenever it sees a default-mode endpoint
+  with a loopback/private/LAN/non-web-port `base_url` (advisory only — nothing branches on it). Related:
+  on the `openai` mode, effort `off` is sent as OpenAI's `none` and no longer carries llama.cpp's
+  `chat_template_kwargs`, so an `off` agent on a still-default llama.cpp endpoint loses the template lever
+  until you set the mode.
+- **Reasoning support is per-MODEL, and the server learns it (D46).** `api_mode` gets the wire SHAPE
+  right; which efforts a given *model* accepts is a different question (OpenRouter publishes
+  `reasoning.supported_efforts` per model — of 339 models only 22 accept `max`, and many lack
+  `none`/`minimal`). If a provider 400s on the reasoning controls, the server logs a **WARNING** naming
+  the endpoint, model, stripped keys and the provider's own message, retries that one request **once**
+  without them, and remembers the demotion for that endpoint+model — so you pay the failed attempt once,
+  not every turn. It is never silent (the LiteLLM `drop_params` anti-pattern) and it never strips anything
+  but reasoning keys. A settings change that rebuilds the inference client clears the memory.
 - **`inference.retry_attempts: <n>`** (Slice 7/D43) — the CHAT-STREAM same-endpoint retry budget for
   genuinely-**transient** failures only (429 / 503 / `Retry-After` / a busy llama.cpp slot). Default **2**:
   a busy-but-alive server is retried in place (a visible `// retrying…` note, backoff 2s×2ⁿ capped 30s, a
