@@ -225,6 +225,31 @@ def test_probe_zero_n_ctx_is_no_window() -> None:
     asyncio.run(scenario())
 
 
+def test_probe_sends_the_model_param_and_memoizes_per_model() -> None:
+    """Owner find (2026-07-21): a ROUTER-mode llama-server reports `n_ctx: 0` at the router layer but
+    serves the real per-model window on `GET /props?model=<id>` (live-verified on vault b10069 —
+    bare → 0, `?model=gemma4` → 16384). The probe now sends the endpoint's model and memoizes per
+    `(base_url, model)`, so two models behind one router URL each get their own window; a plain
+    single-model llama-server ignores the unknown param."""
+    a = InferenceEndpointCfg(base_url="http://local/v1", model="alpha")
+    b = InferenceEndpointCfg(base_url="http://local/v1", model="beta")
+    seen: list[str] = []
+
+    def handler(r: httpx.Request) -> httpx.Response:
+        seen.append(r.url.params.get("model", ""))
+        n = 16384 if r.url.params.get("model") == "alpha" else 8192
+        return httpx.Response(200, json={"default_generation_settings": {"n_ctx": n}})
+
+    async def scenario() -> None:
+        client = _client_with_handler(handler, local=a)
+        assert await client.probed_context_window(a) == 16384
+        assert await client.probed_context_window(b) == 8192
+        assert await client.probed_context_window(a) == 16384  # memo hit — no third GET
+
+    asyncio.run(scenario())
+    assert seen == ["alpha", "beta"]
+
+
 def test_neither_config_nor_probe_is_none() -> None:
     """Config unset AND the probe fails ⇒ None (⇒ the caller's `threshold_tokens` fallback)."""
     local = InferenceEndpointCfg(base_url="http://local/v1", model="m")

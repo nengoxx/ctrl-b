@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, cast
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import anyio
 import httpx
@@ -62,14 +62,20 @@ _PROPS_PATH = "/props"
 _PROBE_TIMEOUT_S = 3.0
 
 
-def _props_url(base_url: str) -> str:
+def _props_url(base_url: str, model: str | None = None) -> str:
     """Turn an OpenAI-style base_url (usually `…/v1`) into the llama.cpp `/props` URL at the server
     root. Strips ONE trailing `/v1` (with any trailing slashes) then appends `/props`, so
-    `http://host:5001/v1` → `http://host:5001/props` and a root-style `http://host:5001` still works."""
+    `http://host:5001/v1` → `http://host:5001/props` and a root-style `http://host:5001` still works.
+
+    `model` (owner find, 2026-07-21): a ROUTER-mode llama-server (`role: "router"`, model autoload)
+    reports `n_ctx: 0` at the router layer, but `GET /props?model=<id>` returns THAT model's real
+    per-instance settings (live-verified on vault b10069: bare → 0, `?model=gemma4` → 16384). A plain
+    single-model llama-server ignores the unknown query param, so the param rides unconditionally."""
     root = base_url.rstrip("/")
     if root.endswith("/v1"):
         root = root[: -len("/v1")]
-    return f"{root}{_PROPS_PATH}"
+    query = f"?model={quote(model, safe='')}" if model else ""
+    return f"{root}{_PROPS_PATH}{query}"
 
 
 @dataclass(frozen=True)
@@ -714,11 +720,13 @@ class InferenceClient:
         #: (the cap can't be split across client generations). `None` (tests / standalone construction)
         #: → a private per-client registry, behaviourally identical to the old per-client dict.
         self._gates = gates if gates is not None else EndpointGates()
-        #: Memoized `/props` window probes, keyed by base_url (D42). Populated on first `probed_context_window`
-        #: per URL — including FAILED probes (memoized as `_ProbedWindow(None, None)`), so a dead/cloud
-        #: endpoint is hit at most once. No invalidation bookkeeping: `runtime.set_inference` rebuilds the
-        #: whole `InferenceClient` on ANY inference-settings change, so a config edit re-probes for free.
-        self._window_memo: dict[str, _ProbedWindow] = {}
+        #: Memoized `/props` window probes, keyed by `(base_url, model)` (D42; per MODEL since
+        #: 2026-07-21 — a router-mode llama-server serves different windows per model behind one URL,
+        #: probed via `?model=`). Populated on first `probed_context_window` per key — including FAILED
+        #: probes (memoized as `_ProbedWindow(None, None)`), so a dead/cloud endpoint is hit at most
+        #: once. No invalidation bookkeeping: `runtime.set_inference` rebuilds the whole
+        #: `InferenceClient` on ANY inference-settings change, so a config edit re-probes for free.
+        self._window_memo: dict[tuple[str, str], _ProbedWindow] = {}
         #: Single-flight lock around the `/props` probe (D42 Codex FIX 6): concurrent first-use callers
         #: would otherwise each issue a GET before the memo is written, so probe+memoize runs under this
         #: lock with a double-check of the memo inside it. ONE lock per client (a single local endpoint is
@@ -825,14 +833,16 @@ class InferenceClient:
     async def probed_context_window(self, ep: InferenceEndpointCfg) -> int | None:
         """The effective context window for `ep` as reported by the llama.cpp `/props` probe, or `None`
         when unavailable (probe failed, non-200, malformed body, no `n_ctx`, or a blank base_url). Lazy +
-        memoized per base_url for the client's lifetime; NEVER raises (the `_capture_cache_telemetry`
-        posture — a probe must not block or fail a turn). Endpoint-agnostic: it probes whatever base_url
-        it is given (only meaningful for a local llama.cpp — cloud has no `/props` — but callers decide
-        who to probe; the config>probe>fallback resolution policy lands in Wave 2)."""
+        memoized per `(base_url, model)` for the client's lifetime — per MODEL because a router-mode
+        llama-server serves different windows per model behind one URL (`?model=` — see `_props_url`);
+        NEVER raises (the `_capture_cache_telemetry` posture — a probe must not block or fail a turn).
+        Endpoint-agnostic: it probes whatever base_url it is given (only meaningful for a local
+        llama.cpp — cloud has no `/props` — but callers decide who to probe)."""
         base_url = ep.base_url
         if not base_url:
             return None
-        cached = self._window_memo.get(base_url)
+        key = (base_url, ep.model or "")
+        cached = self._window_memo.get(key)
         if cached is not None:
             return cached.n_ctx
         # Single-flight (D42 Codex FIX 6): serialize concurrent first-use probes so exactly ONE GET is
@@ -841,10 +851,10 @@ class InferenceClient:
         if self._probe_lock is None:
             self._probe_lock = asyncio.Lock()
         async with self._probe_lock:
-            cached = self._window_memo.get(base_url)
+            cached = self._window_memo.get(key)
             if cached is None:
-                cached = await self._probe_props(base_url)
-                self._window_memo[base_url] = cached
+                cached = await self._probe_props(base_url, ep.model or None)
+                self._window_memo[key] = cached
         return cached.n_ctx
 
     def _is_probe_eligible(self, ep: InferenceEndpointCfg) -> bool:
@@ -877,10 +887,11 @@ class InferenceClient:
         window without reaching into `_cfg`. `None` ⇒ no window resolvable (the caller decides)."""
         return await self.effective_window(self._cfg.endpoint(mode))
 
-    async def _probe_props(self, base_url: str) -> _ProbedWindow:
-        """GET `{root}/props` once and extract the window. NEVER raises — any exception / non-200 /
-        malformed body ⇒ `_ProbedWindow(None, None)` (memoized by the caller, so no retry storm)."""
-        url = _props_url(base_url)
+    async def _probe_props(self, base_url: str, model: str | None = None) -> _ProbedWindow:
+        """GET `{root}/props` (with `?model=` when given — the router-mode lever, see `_props_url`)
+        once and extract the window. NEVER raises — any exception / non-200 / malformed body ⇒
+        `_ProbedWindow(None, None)` (memoized by the caller, so no retry storm)."""
+        url = _props_url(base_url, model)
         try:
             resp = await self._probe_client().get(url)
             if resp.status_code != 200:

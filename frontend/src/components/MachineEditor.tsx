@@ -384,7 +384,10 @@ export function MachineEditor({ hosts }: { hosts: Host[] }) {
             <div className="k">
               <div className="label">{h.name}</div>
               <div className="desc code">
-                {h.ip} · {h.ssh_username ?? "—"}@{h.os_type}:{h.ssh_port}
+                {h.ssh_username
+                  ? `${h.ssh_username}@${h.ip}:${h.ssh_port}`
+                  : `${h.ip}:${h.ssh_port}`}{" "}
+                · {h.os_type}
               </div>
             </div>
             <span className={"badge" + (h.status?.online ? "" : " stale")}>

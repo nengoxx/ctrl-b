@@ -210,7 +210,8 @@ def test_probe_reads_n_ctx_and_hits_server_root() -> None:
     async def scenario() -> None:
         client, ep = _client_with_handler(handler)
         assert await client.probed_context_window(ep) == 16384
-        assert seen == ["http://local/props"]  # /v1 stripped, root /props hit
+        # /v1 stripped, root /props hit; the model param rides (the 2026-07-21 router-mode lever)
+        assert seen == ["http://local/props?model=m"]
 
     asyncio.run(scenario())
 

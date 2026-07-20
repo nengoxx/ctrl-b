@@ -215,21 +215,27 @@ function AgentFieldsForm(props: {
       />
 
       <label>Reasoning effort</label>
-      <Seg<"" | ReasoningEffort>
-        label="Reasoning effort"
-        current={a.model.reasoning_effort ?? ""}
-        onPick={(v) => setModel({ reasoning_effort: v === "" ? null : v })}
-        options={[
-          { val: "", label: "Inherit" },
-          { val: "off", label: "Off" },
-          { val: "minimal", label: "Minimal" },
-          { val: "low", label: "Low" },
-          { val: "medium", label: "Medium" },
-          { val: "high", label: "High" },
-          { val: "xhigh", label: "Xhigh" },
-          { val: "max", label: "Max" },
-        ]}
-      />
+      {/* A <select>, not a Seg (owner, 2026-07-21): the 8-rung ladder wraps a capsule Seg into a
+          multi-row blob at phone width. Same "" = Inherit convention, mapped to null (the
+          MachineEditor OS select precedent). */}
+      <select
+        aria-label="Reasoning effort"
+        value={a.model.reasoning_effort ?? ""}
+        onChange={(e) =>
+          setModel({
+            reasoning_effort: e.target.value === "" ? null : (e.target.value as ReasoningEffort),
+          })
+        }
+      >
+        <option value="">inherit</option>
+        <option value="off">off</option>
+        <option value="minimal">minimal</option>
+        <option value="low">low</option>
+        <option value="medium">medium</option>
+        <option value="high">high</option>
+        <option value="xhigh">xhigh</option>
+        <option value="max">max</option>
+      </select>
 
       <label>Reasoning tokens</label>
       <input

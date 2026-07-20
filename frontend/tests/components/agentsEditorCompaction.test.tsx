@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // AgentsEditor — the D42 Slice-6 additions: the GLOBAL compaction block (Auto-compact Switch +
@@ -203,19 +203,16 @@ describe("AgentsEditor · per-agent ModelRef call config (D42 A10)", () => {
     openDefaultRow();
     expect(value("Max output tokens")).toBe("");
     expect(value("Reasoning tokens")).toBe("");
-    // The Seg unset convention (Backend Seg precedent): the "" option labelled "Inherit" is active.
-    const seg = screen.getByRole("group", { name: "Reasoning effort" });
-    expect(within(seg).getByRole("button", { name: "Inherit" }).getAttribute("aria-pressed")).toBe(
-      "true",
-    );
+    // A <select> since 2026-07-21 (the 8-rung ladder wrapped a capsule Seg into a blob at phone
+    // width); the "" option ("inherit") is the unset state, same null mapping as the old Seg.
+    expect(value("Reasoning effort")).toBe("");
   });
 
   it("round-trips the three fields through the agents PUT payload (string→number, effort→literal)", () => {
     openDefaultRow();
     fireEvent.change(screen.getByLabelText("Max output tokens"), { target: { value: "2048" } });
     fireEvent.change(screen.getByLabelText("Reasoning tokens"), { target: { value: "800" } });
-    const seg = screen.getByRole("group", { name: "Reasoning effort" });
-    fireEvent.click(within(seg).getByRole("button", { name: "High" }));
+    fireEvent.change(screen.getByLabelText("Reasoning effort"), { target: { value: "high" } });
     fireEvent.click(screen.getByRole("button", { name: "save" })); // the default row footer
 
     // The default agent saves through PUT /api/settings → { agent: { defaults: { model } } }.
@@ -227,14 +224,13 @@ describe("AgentsEditor · per-agent ModelRef call config (D42 A10)", () => {
     });
   });
 
-  it("blank numeric → null; the Seg 'Inherit' pick → null (not empty string)", () => {
+  it("blank numeric → null; the select 'inherit' pick → null (not empty string)", () => {
     openDefaultRow();
     // set then clear → the coercion must yield null, not 0 or ""
     fireEvent.change(screen.getByLabelText("Max output tokens"), { target: { value: "2048" } });
     fireEvent.change(screen.getByLabelText("Max output tokens"), { target: { value: "" } });
-    const seg = screen.getByRole("group", { name: "Reasoning effort" });
-    fireEvent.click(within(seg).getByRole("button", { name: "High" }));
-    fireEvent.click(within(seg).getByRole("button", { name: "Inherit" })); // back to unset
+    fireEvent.change(screen.getByLabelText("Reasoning effort"), { target: { value: "high" } });
+    fireEvent.change(screen.getByLabelText("Reasoning effort"), { target: { value: "" } }); // back to unset
     fireEvent.click(screen.getByRole("button", { name: "save" }));
 
     const model = lastAgentPayload().agent.defaults.model;

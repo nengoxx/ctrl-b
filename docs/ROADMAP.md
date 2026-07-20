@@ -279,6 +279,26 @@ back to the analysis.
 
 ---
 
+### A11. Unified inference endpoints — retire the local/cloud dichotomy (**owner, 2026-07-21 — design session wanted**)
+*(numbered A11, skipping A10, so the heavily-cited "ACA §4 A10" reasoning-budget id stays unambiguous)*
+
+- **What:** replace the hardwired `inference.local` / `inference.cloud` pair (+ `fallbacks[]` as a
+  third shape) with **one list of named custom endpoints** — each the SAME object (base_url, model,
+  api_mode, context_window, api_key, max_concurrent_requests, extra_body, …) — plus a default
+  pointer and an ordered failover chain over names. "Local" and "cloud" become just *names* (or
+  tags), not schema positions; the Conf UI renders one endpoint list instead of the current
+  Local-block/Cloud-block/Fallbacks trio.
+- **Why (owner):** the current Conf inference section duplicates every field three ways and the
+  wording doesn't scale past two roles; the unified-per-item-object rule ("shape data to extend,
+  not migrate") says this list is the right shape — `fallbacks[]` already IS that object.
+- **Design implications / seams that make this cheap:** the D42 "same unified endpoint object"
+  ruling already unified the per-endpoint fields; `endpoint_chain(mode)` is the ONE place the
+  local→cloud order lives; D43's failover generator + D45/D46 `api_mode` are position-agnostic;
+  `/local` `/cloud` composer verbs + `ModelRef.mode` would map onto endpoint names (keep the two
+  names working as aliases — zero muscle-memory breakage). Needs a real design session: config
+  migration story (the map keys change), `default_mode` → `default_endpoint`, and the Conf UI
+  redesign. **Not scheduled; owner wants a dedicated future session.**
+
 ## B. Memory (configurable, pluggable)
 
 ### B1. Selectable memory backends
