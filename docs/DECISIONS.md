@@ -2561,3 +2561,29 @@ Out of scope recorded: content-sniffing · `lead_turns` (purely additive later) 
 failover · SDK retries · summarizer/voice retry · the D18 endpoint breaker · A7 thinking
 transforms (code-verified unnecessary) · subagent runtime routing · per-agent routing UI.
 As-built record lands on AGENT_CHAT_AUDIT §5 Slice 7.
+
+*(AMENDED as-built 2026-07-20, the audit + Codex fix sets — verifier: all 6 findings CLOSED at
+the ruled minimal shape, 668 backend tests, no drift:* ① audit fixes (`0b46f19`): disabling
+routing mid-episode resets the WHOLE RoutingState (prunable; a re-enable starts fresh — never a
+silent mid-episode lead route, Invariant 4) · `categorize` runs the fatal status/code check
+BEFORE the bare `retry_after` short-circuit (an auth error carrying Retry-After is fatal, never
+retried; the 429/503-transient check stays first — "busy wins"). ② Codex tri-review fixes
+(`c00a640`, 3 HIGH — the routing lifecycle): the thread-global `current_route`/
+`turn_had_model_failure` state fields are **DELETED** — the route + failure flag are `_drive`
+turn-locals (code-truth: the failure flag is only ever set at sites that terminate the turn, so
+it never crosses a suspend), and the suspend carry is a per-suspended-call **snapshot map
+`RoutingState.suspended_routes: dict[call_id, ModelRef]`** (lead routes only; a missing entry =
+worker): an interleaved fresh or prefixed turn can no longer clobber a suspended turn's route
+(D41 explicitly allows fresh-during-suspend — the Codex repro), and a mid-suspend routing edit
+or disable can no longer change the resumed half (the snapshot is the FROZEN object, not a
+live-config pointer); swept at the fresh decision against the live AWAITING set; chained
+re-suspends re-record. The exhaustion/stall conclude moved AFTER `_finalize` via a
+done-interception (`_finalize_then_conclude`: conclude events, THEN done): a Stop mid-wrap-up
+now stays neutral — the "cancelled → no count either way" pin genuinely holds — and the close
+notice precedes `done`. ③ Recorded as-built nuances: a cancel mid-lead-turn consumes that
+episode turn (decrement-at-decision — the D41 "an already-spawned turn is what the cancel
+cancels" spirit) · a single-endpoint transient exhaustion counts as a worker failure (the lead
+may live elsewhere; only the >1-endpoint total outage is neutral) · a worker turn resumed after
+an episode opened meanwhile finishes as WORKER (one route per logical turn; episodes govern
+fresh decisions only — verifier-ruled honest) · the llama.cpp busy shapes are source-verified
+(503 `no slot available` / `Loading model` / `unavailable_error`).)*

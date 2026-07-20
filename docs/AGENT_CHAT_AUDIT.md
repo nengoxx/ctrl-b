@@ -1165,6 +1165,54 @@ already do, keep it).
 > (superseded, no double-narration) · failure counting is **structural, hard-failures only** (single-endpoint
 > `InferenceError` / stall / iteration-exhaustion — a `retry_status` snapshot covers re-attach-mid-backoff).
 > As-built record lands on §5 (Slice 7) at close-out.
+>
+> **✅ BUILT 2026-07-20 — AS-BUILT RECORD (11 commits `a7faef1..` + this close-out, ALL LOCAL,
+> awaiting the owner's push OK).** Five Opus waves: **W1 `de88a54`** (`failover()` → async
+> GENERATOR [HopRetry/HopFailover control items, FailoverResult last-item contract;
+> `failover_collect()` reduces voice/`complete()` byte-for-byte] · `categorize`
+> [transient/overflow/fatal_for_endpoint/other; llama.cpp busy shapes SOURCE-verified] ·
+> `InferenceError.retry_after` [both header forms, captured pre-flattening] · the visible
+> transient retry tier [initiation-only, permit-free backoff 2s×2ⁿ cap 30s Retry-After-wins;
+> global `inference.retry_attempts=2` + per-endpoint None-inherit/0-disable override — the
+> owner's manage-once amendment]) · **W2 `c748b58`+`1d8d520`** (skip→emit at BOTH consumers:
+> `inference.retry`/`inference.failover` typed events; the post-hoc D18 degraded notice DELETED;
+> `collect_turn` parity; `TurnAccumulator.retry_status` — the accumulator-fold home is
+> zero-plumbing and clears correctly by construction [the generator emits nothing during the
+> sleep]) · **W3 `fa50a09`** (RoutingCfg/RoutingState on the CompactionState templates; the
+> once-per-LOGICAL-turn decision; the routed ModelRef through ALL FOUR eff locals +
+> `_finalize(routed)`; structural counting via the new `InferenceError.endpoints_tried`
+> [single-endpoint counts, >1 total outage neutral]; episode open/close notices) · **W4
+> `4a62857`** (FE: two event cases in the sys-note voice; `turn.sync` renders a future
+> `retry_status` [the wipe-first + presence-guard dedupe — a naive signature guard would vanish
+> the note on the second re-attach, caught by the builder]; `Omit<"routing">` round-trip) ·
+> **W5 `77ea3a9`** (DESIGN §11's stale "bounded retry w/ backoff" aspiration → as-built; SPEC
+> inventories; config.example retry+routing blocks; deploy README §Inference-tuning D43 rows;
+> SECURITY_MODEL judged non-row — routing swaps a model pointer, never privilege).
+> **Audit trail:** POST-BUILD fresh-eyes audit doing mid+post double duty (**GO**; the
+> generator/deadlock surface CLEAN; 1 MED [routing disabled mid-episode → non-prunable state +
+> silent lead on re-enable] + 2 LOW → `0b46f19`: whole-state reset on disabled cfg ·
+> cancel-clears-route-lock [later superseded] · fatal-outranks-retry_after) · **the Codex
+> tri-review (`gpt-5.6-sol` high): 3 HIGH, NO-GO — all three in the routing lifecycle, its
+> specialty again:** the thread-global route lock clobbered by D41's fresh-during-suspend
+> interleaving · the lock re-dereferencing LIVE config on resume (a mid-suspend edit changed the
+> "locked" model) · conclude-before-`_finalize` counting a failure on a cancelled turn → **ONE
+> unified fix shape closed all three AND simplified the machine** (`c00a640`): per-suspended-call
+> `suspended_routes: dict[call_id, ModelRef]` SNAPSHOTS (frozen objects — no clobbering, no
+> config drift), route/failure flags demoted to turn-locals (they never cross a suspend —
+> code-truth verified), conclude via `_finalize_then_conclude` done-interception (Stop
+> mid-wrap-up = neutral; close notice precedes done); the earlier cancel-clear removed as
+> obsolete → a fresh-eyes FIX-SET VERIFIER: **all 6 CLOSED, no drift, no dead remnants, 668
+> backend / 514 FE tests, final tree gate 6/6.** D43 carries the AMENDED-as-built list.
+> **Accepted residuals:** in-memory RoutingState restart-reset (post-restart resume → worker) ·
+> a cancel mid-lead-turn consumes that episode turn · single-endpoint transient exhaustion
+> counts (the lead may live elsewhere) · a worker turn resumed mid-episode finishes as worker
+> (episodes govern fresh decisions only — verifier-ruled honest) · `_over_threshold_now` keeps
+> `agent.model` (sync-holder) · subagent routing copied-but-inert.
+> **LIVE-VERIFY items (per `testing-parked-wing-it`):** a real busy llama.cpp slot reaches the
+> retry tier (watch `// retrying local…`) · cloud-lead/local-worker on the dev units — force two
+> worker stalls, watch the episode open/close notices + the lead actually serving · a phone
+> re-attach during a cloud-429 backoff shows the retry line, not a spinner · `/local` mid-episode
+> bypasses the router · cache telemetry stays churn-free across a routed turn.
 
 Lead/worker routing on the existing seams: `AgentDef.model` stays the base; a `routing` block
 (lead `ModelRef`, `lead_turns`, `failure_threshold`, `fallback_turns`) resolved inside `_drive`'s

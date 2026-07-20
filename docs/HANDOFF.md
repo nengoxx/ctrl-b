@@ -304,6 +304,35 @@
 > next: ACA Slice 7 (model routing & retry visibility — design review first) or Slice 8
 > (approvals) or the owner's pick (ROADMAP D3 Slice 1 · 6c-1/6c-2 flags · vapor ladder).**
 >
+> **▶ NEXT DAY (2026-07-19→20, same session): SLICE 6 PUSHED (owner OK; `f2aed3f..0ed9d80`, main
+> CI GREEN @ `0ed9d80`) → ACA SLICE 7 (model routing & retry visibility, D43) ✅ EXECUTED
+> end-to-end — 11 commits LOCAL (`a7faef1..` + the close-out), awaiting the owner's push OK.
+> Final tree gate 6/6; backend 668 / FE 514 tests.** The full pipeline: 2 code-truth + 1 sourced
+> field pass (Goose's lead/worker retreat; pi's classifier; the retry-consensus table) → my D43
+> draft → 2-lens adversarial review (7H/13M/4L — **`lead_turns` DROPPED**, both lenses converged)
+> → TWO owner discussion rounds (the fallback-chain-vs-routing clarification landed on: "like a
+> fallback, but escalating to the designated smarter model after crash-and-burn turns"; retry
+> reshaped to the GLOBAL `inference.retry_attempts: 2` + per-endpoint override) → **D43 LOCKED**
+> (`8c4a7b2`) → 5 Opus waves (`de88a54` failover-async-generator + classifier + visible
+> transient retry tier → `c748b58` typed events + `retry_status` snapshot + degraded-notice
+> deletion → `fa50a09` the failure-fallback routing machine → `4a62857` FE → `77ea3a9` docs) →
+> post-build audit (GO; 1 MED + 2 LOW → `0b46f19`) → **Codex tri-review: 3 HIGH NO-GO (the
+> routing lifecycle — thread-global route lock vs D41 fresh-during-suspend; live-config re-deref
+> on resume; conclude-before-finalize counting a cancelled turn) → ONE unified fix
+> (`c00a640`): per-suspended-call ModelRef SNAPSHOTS + turn-local flags + conclude-after-finalize
+> — closed all three and DELETED two state fields** → verifier: all 6 CLOSED, no drift. **You
+> now get: visible in-place retries on busy servers (`// retrying local in 2s…`) instead of
+> silent model switches · live `// failover → cloud` narration · a retry line on phone re-attach
+> instead of a dead spinner · and optional two-tier routing (set `agent.defaults.routing:` in
+> YAML — after N crash-and-burn worker turns the designated lead model takes over for M turns,
+> announced both ways).** As-built = the ACA §5 Slice 7 heading; D43 AMENDED-as-built. **NEXT
+> SESSION, in order:** ① owner push OK (11 commits; pre-push runs the full gate) ② owner config
+> when desired: `agent.defaults.routing:` (config.example has the block) — retry needs NOTHING
+> (global default 2 shipped per the owner's ruling) ③ live pokes per `testing-parked-wing-it`
+> (the ACA §5 Slice 7 LIVE-VERIFY list) ④ next: ACA Slice 8 (approvals evolution — design review
+> first, aligns with ROADMAP privilege levels) or the owner's pick (ROADMAP D3 Slice 1 ·
+> 6c-1/6c-2 flags · vapor ladder · the parked Composer Surface).**
+>
 > *(The block below is the previous session's close-out checklist, kept for provenance — steps 1–3
 > are done as recorded above.)*
 > **▶ SESSION CLOSED 2026-07-17 early AM (owner to sleep) — NEXT SESSION, in order:**
