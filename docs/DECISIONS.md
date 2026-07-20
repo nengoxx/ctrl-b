@@ -3131,3 +3131,18 @@ corrected in the map below).
 - **Out of scope (Slice 2/3, ROADMAP D3):** frontend vantage-aware `serviceBase`, the Conf editor
   address fields + SSH toggle, display lines (incl. the frontier/Hero consumers that postdate the
   design), and the `tailscale status --json` discovery button.
+- **AMENDED (2026-07-20, Codex review) — four fixes as shipped, superseding the bullets above where
+  they differ:** (1) **Phase-based classification** — the `connect` class is a PRE-connect failure
+  only. `run_command` sets `connected=True` right after `client.connect` returns; both `except OSError`
+  AND `except SSHException` become `kind = "connect" if not connected else "ssh"` (a post-connect read
+  timeout / channel death is terminal `ssh`, never re-executed — a double-run footgun); `Authentication
+  Exception` stays caught FIRST as `auth` and is never a failover. So amendment-1's flat `SSHException →
+  ssh` / `OSError → connect` is refined to the phase rule. (2) **Split timeouts** — `run_command` gains
+  `connect_timeout` (bounds connect + the SSH banner read, via `banner_timeout`; `auth_timeout` left at
+  default so a slow-but-succeeding auth isn't cut) separate from `timeout` (exec/read phase); consts
+  `SSH_CONNECT_TIMEOUT_S=6` + `SSH_EXEC_TIMEOUT_S=10`. (3) **Deadline-gated candidates** — `run_ssh_failover`
+  never STARTS a later candidate unless a full connect+exec phase still fits the caller's `budget_s`
+  (`SSH_ACTION_TIMEOUT_S`), so the backstop can't fire mid-exec of a second attempt while the command
+  completes in an abandoned worker. (4) **Omit-preserves CRUD** — `_apply_fields` touches `vpn_host`/
+  `ssh_prefer_vpn` only when the client actually sent them (`model_fields_set`), so the pre-Slice-2
+  editor (which never sends them) can't wipe a hand-configured VPN address; explicit null/false still clears.

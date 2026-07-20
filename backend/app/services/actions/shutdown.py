@@ -12,7 +12,12 @@ from app.core.redact import redact
 from app.core.tool import InvocationContext, action
 from app.domain.enums import OSType, Risk, RunState
 from app.domain.result import ToolResult
-from app.services.actions._common import SSH_ACTION_TIMEOUT_S, HostTargetInput, run_ssh_failover
+from app.services.actions._common import (
+    SSH_ACTION_TIMEOUT_S,
+    SSH_EXEC_TIMEOUT_S,
+    HostTargetInput,
+    run_ssh_failover,
+)
 
 #: Per-OS shutdown command. Windows mirrors the live `wol_server_win.py`. POSIX uses `sudo -S`
 #: (read the password from stdin, `-p ''` silences the prompt) because an SSH exec channel has no
@@ -73,7 +78,8 @@ async def shutdown_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolRes
             username=username,
             password=secret,
             command=command,
-            connect_timeout=connect_timeout,  # exec/read keeps run_command's own 10s timeout
+            connect_timeout=connect_timeout,  # short per-candidate connect budget
+            timeout=SSH_EXEC_TIMEOUT_S,  # exec/read phase (explicit — the loop's deadline gate uses it)
             stdin_data=stdin_data,
         ),
     )

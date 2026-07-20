@@ -171,7 +171,7 @@ def test_vpn_host_fields_roundtrip() -> None:
             assert after.vpn_host is None and after.ssh_prefer_vpn is False
             assert "vpn_host:" not in cfg.read_text(encoding="utf-8").split("beta:")[1].split("corsair:")[0]
 
-            # --- update: set both on beta, then clear them → keys disappear ---
+            # --- update: set both on beta ---
             r = c.put(
                 "/api/hosts/beta",
                 json={"name": "beta", "ip": "192.168.1.20", "vpn_host": "beta-vpn", "ssh_prefer_vpn": True},
@@ -180,10 +180,22 @@ def test_vpn_host_fields_roundtrip() -> None:
             b2 = load_settings(cfg).computers["beta"]
             assert b2.vpn_host == "beta-vpn" and b2.ssh_prefer_vpn is True
 
-            r = c.put("/api/hosts/beta", json={"name": "beta", "ip": "192.168.1.20"})
+            # --- OMIT-PRESERVES (Codex HIGH-2): an edit that DOESN'T send the fields keeps them ---
+            # (the shipped MachineEditor never sends them — this edit must not wipe a configured VPN).
+            r = c.put("/api/hosts/beta", json={"name": "beta", "ip": "192.168.1.21"})
             assert r.status_code == 200, r.text
             b3 = load_settings(cfg).computers["beta"]
-            assert b3.vpn_host is None and b3.ssh_prefer_vpn is False  # cleared → back to defaults
+            assert b3.ip == "192.168.1.21"  # the unrelated edit landed
+            assert b3.vpn_host == "beta-vpn" and b3.ssh_prefer_vpn is True  # PRESERVED, not wiped
+
+            # --- explicit null/false DOES clear (Slice-2 editor semantics) ---
+            r = c.put(
+                "/api/hosts/beta",
+                json={"name": "beta", "ip": "192.168.1.21", "vpn_host": None, "ssh_prefer_vpn": False},
+            )
+            assert r.status_code == 200, r.text
+            b4 = load_settings(cfg).computers["beta"]
+            assert b4.vpn_host is None and b4.ssh_prefer_vpn is False  # explicitly cleared
     finally:
         os.environ.pop("CTRLB_CONFIG", None)
         os.environ.pop("CTRLB_DB", None)

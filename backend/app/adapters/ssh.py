@@ -47,12 +47,18 @@ def run_command(
     treated as a secret: never logged, scrubbed from output by the caller's `redact`.
 
     `timeout` bounds the exec/channel-read PHASE; `connect_timeout` (None ⇒ reuse `timeout`) bounds
-    ONLY the TCP-connect PHASE. The split is load-bearing for D47 failover: only a PRE-connect socket
-    error is the retryable `connect` class — a post-connect OSError (e.g. a `socket.timeout` while
-    reading a slow-but-connected command's output) is classified `ssh`, NEVER `connect`, so the
+    ONLY the connect PHASE — both the TCP connect AND the SSH protocol-banner read (paramiko's own
+    `banner_timeout` defaults to 15 s, which would blow a short connect budget, so we pin it to the
+    connect timeout). `auth_timeout` is deliberately left at paramiko's default: a slow-but-succeeding
+    auth must not be aborted at the short connect budget — it stays bounded by the caller's backstop.
+
+    The connect/exec split is load-bearing for D47 failover: only a PRE-connect failure is the
+    retryable `connect` class — a POST-connect error (a `socket.timeout` reading a slow-but-connected
+    command's output, or a mid-command SSHException) is classified `ssh`, NEVER `connect`, so the
     failover loop can't re-execute a command that may already be running (a double-restart footgun)."""
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    connect_t = connect_timeout if connect_timeout is not None else timeout
     connected = False
     try:
         client.connect(
@@ -60,7 +66,8 @@ def run_command(
             port=port,
             username=username,
             password=password,
-            timeout=connect_timeout if connect_timeout is not None else timeout,
+            timeout=connect_t,
+            banner_timeout=connect_t,  # else paramiko's 15s banner read outlives a short connect budget
             allow_agent=False,
             look_for_keys=False,
         )
@@ -81,9 +88,13 @@ def run_command(
         # failover trigger (connected + wrong password is a real error, not a next-address retry).
         return SshResult(ok=False, error="authentication failed — check username/password", kind="auth")
     except paramiko.SSHException as exc:
-        return SshResult(ok=False, error=f"SSH error: {exc}", kind="ssh")
+        # PHASE rule (D47): a PRE-connect SSHException is a PATH problem worth the other address —
+        # paramiko 5.x wraps a banner-read timeout as `SSHException("Error reading SSH protocol
+        # banner…")`, and negotiation failures land here too. A POST-connect SSHException (channel
+        # died mid-command) is terminal — the command may already have run, so never re-execute.
+        return SshResult(ok=False, error=f"SSH error: {exc}", kind="ssh" if connected else "connect")
     except OSError as exc:
-        # PHASE rule (D47): only a PRE-connect socket error is the retryable failover class —
+        # Same phase rule: only a PRE-connect socket error is the retryable failover class —
         # unreachable / refused / timeout / DNS (gaierror) / NoValidConnectionsError all subclass
         # OSError. A POST-connect OSError (a `socket.timeout` during the exec/read phase of a
         # slow-but-connected command) must NOT re-execute elsewhere → classify it `ssh`, not `connect`.

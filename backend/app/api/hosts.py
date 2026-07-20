@@ -188,14 +188,23 @@ def _apply_fields(node: Any, body: HostIn, *, password: str | None) -> None:
     if node.get("os_type") != (body.os_type or "linux"):
         node["os_type"] = body.os_type or "linux"
     _set_or_del(node, "role", body.role.strip() if body.role else None)
-    _set_or_del(node, "vpn_host", body.vpn_host.strip() if body.vpn_host else None)
-    # bool default-False: set only when on, delete when cleared (so a False toggle disappears — the
-    # `_set_or_del` shape for a boolean; `False in (None, "")` is False, so it can't reuse that helper).
-    if body.ssh_prefer_vpn:
-        if node.get("ssh_prefer_vpn") is not True:
-            node["ssh_prefer_vpn"] = True
-    elif "ssh_prefer_vpn" in node:
-        del node["ssh_prefer_vpn"]
+    # D47 vpn fields — OMIT-PRESERVES (Codex HIGH-2): the SHIPPED MachineEditor predates these two
+    # fields and never sends them, so applying them unconditionally would WIPE a hand-configured VPN
+    # address on any unrelated host edit (un-fixing Corsair). Touch them ONLY when the client actually
+    # sent them (`model_fields_set`, pydantic v2); an omitted field preserves the existing YAML value.
+    # Explicitly-sent null/false still clears, as today. Scoped to these two — every other field keeps
+    # its existing omission behavior. Slice 2 adds the editor fields; PATCH semantics stay correct then.
+    sent = body.model_fields_set
+    if "vpn_host" in sent:
+        _set_or_del(node, "vpn_host", body.vpn_host.strip() if body.vpn_host else None)
+    if "ssh_prefer_vpn" in sent:
+        # bool default-False: set only when on, delete when cleared (the `_set_or_del` shape for a
+        # boolean; `False in (None, "")` is False, so it can't reuse that helper).
+        if body.ssh_prefer_vpn:
+            if node.get("ssh_prefer_vpn") is not True:
+                node["ssh_prefer_vpn"] = True
+        elif "ssh_prefer_vpn" in node:
+            del node["ssh_prefer_vpn"]
     if body.tags:
         node["tags"] = list(body.tags)
 

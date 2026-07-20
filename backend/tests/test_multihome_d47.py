@@ -16,7 +16,11 @@ from app.adapters.ssh import SshResult
 from app.domain.enums import OSType
 from app.domain.host import Host, host_addresses
 from app.services.actions import build_registry
-from app.services.actions._common import SSH_CONNECT_TIMEOUT_S, run_ssh_failover
+from app.services.actions._common import (
+    SSH_CONNECT_TIMEOUT_S,
+    SSH_EXEC_TIMEOUT_S,
+    run_ssh_failover,
+)
 
 
 def _host(*, ip: str = "192.168.1.10", vpn_host: str | None = None, prefer_vpn: bool = False) -> Host:
@@ -115,6 +119,24 @@ def test_failover_prefers_vpn_first_when_flagged() -> None:
     assert tried == ["corsair"] and res.ok  # VPN tried first and succeeded — LAN never attempted
 
 
+def test_failover_deadline_gate_skips_second_candidate() -> None:
+    """Codex HIGH-1: when candidate 0's attempt has eaten the budget, the loop must NOT START a
+    second candidate it can't see connect+exec through (else the caller's backstop fires mid-read of
+    a command that actually completes). Simulated with a tiny `budget_s` < connect+exec need — after
+    candidate 0 returns a connect error, candidate 1 is skipped and the connect error surfaces."""
+    h = _host(ip="10.0.0.1", vpn_host="corsair")  # two candidates
+    tried: list[str] = []
+
+    def run(address: str, connect_timeout: float) -> SshResult:
+        tried.append(address)
+        return SshResult(ok=False, error="dns-wedged", kind="connect")
+
+    # budget smaller than one full connect+exec phase → the gate trips before candidate 1.
+    res = asyncio.run(run_ssh_failover(h, run, budget_s=SSH_CONNECT_TIMEOUT_S + SSH_EXEC_TIMEOUT_S - 1))
+    assert tried == ["10.0.0.1"]  # second candidate NEVER started
+    assert not res.ok and res.kind == "connect" and res.error == "dns-wedged"  # last result surfaced
+
+
 # --------------------------------------------------------------------------- SshResult.kind
 
 
@@ -163,17 +185,33 @@ def _connect_kind_for(monkeypatch, exc: BaseException) -> str:
     return ssh.run_command(host="h", port=22, username="u", password="p", command="x").kind
 
 
-def test_sshresult_kind_per_exception(monkeypatch) -> None:
-    """Each CONNECT-phase exception CLASS maps to its category — the failover loop dispatches on this,
-    never on string-sniffing. AuthenticationException MUST be caught as `auth` even though it
-    subclasses SSHException (it's listed first in the adapter). A `socket.timeout` DURING connect is
-    still the retryable `connect` class (it subclasses OSError, pre-connect)."""
+def _read_kind_for(monkeypatch, exc: BaseException) -> str:
+    """`kind` when `connect` succeeds but the exec/READ phase raises `exc`."""
     import paramiko
 
+    monkeypatch.setattr(paramiko, "SSHClient", lambda: _FakeClient(read_exc=exc))
+    return ssh.run_command(host="h", port=22, username="u", password="p", command="x").kind
+
+
+def test_sshresult_kind_per_exception(monkeypatch) -> None:
+    """Each exception CLASS maps to its category by PHASE — the failover loop dispatches on this,
+    never on string-sniffing. AuthenticationException MUST be caught as `auth` even though it
+    subclasses SSHException (it's listed first in the adapter). A PRE-connect SSHException (paramiko
+    5.x's banner-read timeout / negotiation failure) is the retryable `connect` class; a POST-connect
+    SSHException (channel died mid-command) is terminal `ssh`. socket.timeout subclasses OSError."""
+    import paramiko
+
+    # connect phase → a path problem worth trying the other address (or an auth stop)
     assert _connect_kind_for(monkeypatch, paramiko.AuthenticationException("bad")) == "auth"
-    assert _connect_kind_for(monkeypatch, paramiko.SSHException("proto")) == "ssh"
+    assert (
+        _connect_kind_for(monkeypatch, paramiko.SSHException("Error reading SSH protocol banner"))
+        == "connect"
+    )
     assert _connect_kind_for(monkeypatch, OSError("unreachable")) == "connect"  # the failover class
     assert _connect_kind_for(monkeypatch, socket.timeout("connect timed out")) == "connect"
+    # exec/read phase → terminal: the command may already have run, never re-execute elsewhere
+    assert _read_kind_for(monkeypatch, paramiko.SSHException("SSH session not active")) == "ssh"
+    assert _read_kind_for(monkeypatch, socket.timeout("read timed out")) == "ssh"
 
 
 def test_read_timeout_is_ssh_not_connect_and_no_failover(monkeypatch) -> None:
