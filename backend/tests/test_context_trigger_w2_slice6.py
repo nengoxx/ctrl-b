@@ -207,6 +207,24 @@ def test_probe_used_when_config_unset() -> None:
     asyncio.run(scenario())
 
 
+def test_probe_zero_n_ctx_is_no_window() -> None:
+    """Live-test find (2026-07-20): llama-server in ROUTER mode serves
+    `default_generation_settings.n_ctx: 0` at the router layer (the real window is per model
+    instance behind it — confirmed on vault b10069). Accepting 0 as the window made the D42
+    trigger degenerate (constant overflow → destructive truncation), so a non-positive probe
+    value now means "no usable probe" → the ladder falls through to config/threshold fallback."""
+    local = InferenceEndpointCfg(base_url="http://local/v1", model="m")
+
+    def handler(_r: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"default_generation_settings": {"params": None, "n_ctx": 0}})
+
+    async def scenario() -> None:
+        client = _client_with_handler(handler, local=local)
+        assert await client.effective_window(local) is None
+
+    asyncio.run(scenario())
+
+
 def test_neither_config_nor_probe_is_none() -> None:
     """Config unset AND the probe fails ⇒ None (⇒ the caller's `threshold_tokens` fallback)."""
     local = InferenceEndpointCfg(base_url="http://local/v1", model="m")

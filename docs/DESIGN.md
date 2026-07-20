@@ -879,7 +879,7 @@ class Settings(BaseSettings):
 
 ## 12. SSE wire protocol (chat + events)
 
-`GET /api/agent/chat` (or `/threads/{id}/stream`) emits ordered, id'd events the client reduces into
+`POST /api/agent/chat` (or `/threads/{id}/stream`) emits ordered, id'd events the client reduces into
 the message list:
 
 ```

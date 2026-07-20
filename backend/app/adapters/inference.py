@@ -890,9 +890,16 @@ class InferenceClient:
             meta = body.get("meta") if isinstance(body, dict) else None
             n_ctx = gen.get("n_ctx") if isinstance(gen, dict) else None
             n_ctx_train = meta.get("n_ctx_train") if isinstance(meta, dict) else None
-            n_ctx = n_ctx if isinstance(n_ctx, int) and not isinstance(n_ctx, bool) else None
+            # POSITIVE ints only (live-test find, 2026-07-20): llama-server in ROUTER mode
+            # (`role: "router"`, models_autoload) serves `default_generation_settings.n_ctx: 0` at the
+            # router layer — the real window lives per model instance behind it (confirmed on vault
+            # b10069). A 0/negative "window" would make the D42 trigger degenerate (constant overflow →
+            # destructive truncation), so it means "no usable probe" → fall through the ladder.
+            n_ctx = n_ctx if isinstance(n_ctx, int) and not isinstance(n_ctx, bool) and n_ctx > 0 else None
             n_ctx_train = (
-                n_ctx_train if isinstance(n_ctx_train, int) and not isinstance(n_ctx_train, bool) else None
+                n_ctx_train
+                if isinstance(n_ctx_train, int) and not isinstance(n_ctx_train, bool) and n_ctx_train > 0
+                else None
             )
             if n_ctx is not None and n_ctx_train is not None and n_ctx > n_ctx_train:
                 # Upward overrides are allowed (the owner may raise the served window past the model's
