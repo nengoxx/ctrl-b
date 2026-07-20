@@ -306,7 +306,7 @@
 >
 > **▶ NEXT DAY (2026-07-19→20, same session): SLICE 6 PUSHED (owner OK; `f2aed3f..0ed9d80`, main
 > CI GREEN @ `0ed9d80`) → ACA SLICE 7 (model routing & retry visibility, D43) ✅ EXECUTED
-> end-to-end — 11 commits LOCAL (`a7faef1..` + the close-out), awaiting the owner's push OK.
+> end-to-end — and ✅ PUSHED same day (owner OK; `0ed9d80..0977e91`, main CI GREEN @ `0977e91`).
 > Final tree gate 6/6; backend 668 / FE 514 tests.** The full pipeline: 2 code-truth + 1 sourced
 > field pass (Goose's lead/worker retreat; pi's classifier; the retry-consensus table) → my D43
 > draft → 2-lens adversarial review (7H/13M/4L — **`lead_turns` DROPPED**, both lenses converged)
@@ -325,13 +325,23 @@
 > silent model switches · live `// failover → cloud` narration · a retry line on phone re-attach
 > instead of a dead spinner · and optional two-tier routing (set `agent.defaults.routing:` in
 > YAML — after N crash-and-burn worker turns the designated lead model takes over for M turns,
-> announced both ways).** As-built = the ACA §5 Slice 7 heading; D43 AMENDED-as-built. **NEXT
-> SESSION, in order:** ① owner push OK (11 commits; pre-push runs the full gate) ② owner config
-> when desired: `agent.defaults.routing:` (config.example has the block) — retry needs NOTHING
-> (global default 2 shipped per the owner's ruling) ③ live pokes per `testing-parked-wing-it`
-> (the ACA §5 Slice 7 LIVE-VERIFY list) ④ next: ACA Slice 8 (approvals evolution — design review
-> first, aligns with ROADMAP privilege levels) or the owner's pick (ROADMAP D3 Slice 1 ·
-> 6c-1/6c-2 flags · vapor ladder · the parked Composer Surface).**
+> announced both ways).** As-built = the ACA §5 Slice 7 heading; D43 AMENDED-as-built.
+>
+> **▶ SESSION CLOSED 2026-07-20 (clean handoff; both slices pushed, main CI green @ `0977e91`).
+> Dev units LEFT RUNNING** (:5434 + Vite :5173 — the Slice 5/6/7 LIVE-VERIFY pokes are all still
+> outstanding per `testing-parked-wing-it`; ⚠ dev drives the REAL fleet — stop the units after:
+> `systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`). **NEXT SESSION, in
+> order:** ① /model check (fable-5 HIGH — the app selector may default low) ② owner config when
+> desired: `agent.defaults.routing:` (config.example has the block) — retry needs NOTHING
+> (global default 2 shipped per the owner's ruling); the Slice-6 reminders stand (deploy README
+> §Inference tuning: per-endpoint `context_window`, the cloud `include_usage` anchoring flag,
+> the ctx-shift note) ③ live pokes when desired (the ACA §5 Slice 6 + Slice 7 LIVE-VERIFY
+> lists) ④ **prod is still v1.1.1** — release via `deploy/linux/README.md` §Release when the
+> owner wants Slices 4–7 live on :5433 ⑤ next: ACA Slice 8 (approvals evolution — design review
+> first, aligns with ROADMAP privilege levels/D16) or the owner's pick (ROADMAP D3 Slice 1 ·
+> 6c-1/6c-2 flags · vapor ladder · the parked Composer Surface). **The standing directives hold:
+> Fable 5 = orchestrator + feature reviewer alongside Codex (`gpt-5.6-sol` high); ALL specified
+> implementation / mechanical work / research = Opus 4.8 subagents.**
 >
 > *(The block below is the previous session's close-out checklist, kept for provenance — steps 1–3
 > are done as recorded above.)*
