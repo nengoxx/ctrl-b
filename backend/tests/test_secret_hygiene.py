@@ -167,7 +167,7 @@ def test_destructive_actions_keep_their_declared_gate() -> None:
     expected: dict[str, tuple[Risk, bool]] = {
         "shutdown_host": (Risk.HIGH, True),
         "reboot_host": (Risk.HIGH, True),
-        "run_shell": (Risk.HIGH, False),
+        "run_shell": (Risk.HIGH, True),  # R1/D44: designer forced-confirm pin (un-approvable)
         "restart_service": (Risk.MED, False),
         "stop_service": (Risk.MED, False),
         "wake_host": (Risk.LOW, False),

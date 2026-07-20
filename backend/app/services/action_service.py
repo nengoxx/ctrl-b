@@ -26,14 +26,28 @@ from pydantic import BaseModel, ValidationError
 if TYPE_CHECKING:
     from app.domain.agent import AgentDef
 
-from app.core.permissions import Decision, decide
+from app.core.permissions import Decision, approval_match, decide
 from app.core.tool import InvocationContext, ToolRegistry, UnknownTool
 from app.domain.enums import Actor, Privilege, RunState
 from app.domain.event import Event
 from app.domain.result import ToolResult
 from app.services.deps import Deps
 
+if TYPE_CHECKING:
+    from app.config import ApprovalRule
+
 _CONFIRM_TTL_S = 120.0
+#: Mandatory audit marker appended to the executed action's summary when a persisted approval fired
+#: (D44 §6): the sole visibility on the interactive→headless crossing. One format, defined once.
+_APPROVAL_MARKER = " [auto-allowed: {detail}]"
+
+
+def _approval_detail(rule: "ApprovalRule") -> str:
+    """The args summary inside `_APPROVAL_MARKER` — `field=pattern` pairs, or `any args` for a
+    whole-action grant (`args` None/empty)."""
+    if not rule.args:
+        return "any args"
+    return ", ".join(f"{field}={pattern}" for field, pattern in rule.args.items())
 
 
 @dataclass
@@ -86,6 +100,15 @@ class ActionService:
         inp = tool.spec.input_model.model_validate(raw_args)  # ValidationError → API 422
         args_json = inp.model_dump_json()
 
+        # Persisted approvals (D44, SLICE8_PLAN §3): consult the tool's live override rules ONLY when
+        # they can apply — an override that has rules on a tool whose confirm the designer did NOT force
+        # (`spec.confirm` is un-downgradable, R1). Live via `self._deps.settings` (shared object, mutated
+        # in place by `runtime.apply_settings_inplace`), so a revoke wins from the very next invoke.
+        override = self._deps.settings.tool_overrides.get(name)
+        rule: "ApprovalRule | None" = None
+        if override is not None and override.approvals and not tool.spec.confirm:
+            rule = approval_match(override.approvals, inp.model_dump(mode="json"))
+
         # `run_shell` (Phase 5) is denied below FULL unless the owner opts the agent in via
         # `shell.agent_exec_enabled`; the user `!` path invokes it at FULL, so this never blocks it.
         decision = decide(
@@ -93,6 +116,7 @@ class ActionService:
             privilege,
             interactive=interactive,
             run_shell_allowed=self._deps.settings.shell.agent_exec_enabled,
+            approved=rule is not None,  # a matched approval downgrades a risk-derived CONFIRM to ALLOW
         )
 
         if decision is Decision.DENY:
@@ -121,6 +145,8 @@ class ActionService:
             depth=depth,
             agent=agent,
         )
+        if rule is not None:  # D44 §6: mandatory audit marker on the approval-fired run's Event summary
+            result.summary = f"{result.summary}{_APPROVAL_MARKER.format(detail=_approval_detail(rule))}"
         event = await self._record(actor, name, raw_args, result)
         return InvokeOutcome(needs_confirm=False, result=result, event=event)
 

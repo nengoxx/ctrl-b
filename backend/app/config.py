@@ -16,6 +16,7 @@ of the parsed YAML before validation.
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 from datetime import datetime
@@ -685,6 +686,34 @@ class ComputerCfg(BaseModel):
 AgentMode = Literal["core", "enabled", "disabled"]
 
 
+class ApprovalRule(BaseModel):
+    """One standing 'always allow' grant for a tool (Slice 8, D44). Allow-only by construction —
+    matching NEVER produces a deny, only a risk-derived CONFIRM→ALLOW downgrade in
+    `permissions.decide`. Consulted per-invocation by `ApprovalRule`-aware `ActionService.invoke`.
+
+    `extra="forbid"` (review H1): a typo'd key must 422, never silently degrade into a whole-action
+    grant (`args=None` matches every call). Reserved-but-unbuilt fields (TTL/subject, §8) become real
+    optional fields when built, not smuggled through `extra`."""
+
+    model_config = {"extra": "forbid"}
+
+    #: {top-level input field: fnmatch glob}; None/{} = whole-action grant. Values are match patterns
+    #: (globs), compared against `permissions.canonical_str` of the arg at gate time.
+    args: dict[str, str] | None = None
+
+    @field_validator("args", mode="before")
+    @classmethod
+    def _coerce_scalar_patterns(cls, v: Any) -> Any:
+        """Str-coerce scalar pattern values so an unquoted YAML scalar (`cwd: 5`) doesn't brick
+        `Settings.model_validate` (review F8) — pydantic won't lax-coerce int→str for a `dict[str,str]`
+        field. JSON encoding is used (not `str`) so the stored pattern mirrors `canonical_str`'s
+        encoding (`true`/`5`/`1.5`), keeping a YAML-authored scalar matchable; non-scalars pass through
+        to fail validation normally."""
+        if not isinstance(v, dict):
+            return v
+        return {k: json.dumps(x) if isinstance(x, bool | int | float) else x for k, x in v.items()}
+
+
 class ToolOverride(BaseModel):
     """Per-tool override of the registry spec (Phase 8b, D22) — the **one unified object** the owner
     edits in the Tools tab, keyed by tool name in `Settings.tool_overrides`. Each dimension is an
@@ -695,12 +724,15 @@ class ToolOverride(BaseModel):
     - `description`: the model-facing text in the OpenAI tool schema (generalizes the 7d-a override).
       Blank/None → the built-in description.
     - `agent_mode`: the tri-state agent-access mode (`AgentMode`). None → the compile-time default.
+    - `approvals`: standing 'always allow' grants (`ApprovalRule` list, D44). None/empty = no grants;
+      NEVER touched by `apply_tool_overrides` — consulted live per-invocation by `ActionService`.
     """
 
     model_config = {"extra": "allow"}  # forward-compat: an unknown future field round-trips
 
     description: str | None = None
     agent_mode: AgentMode | None = None
+    approvals: list[ApprovalRule] | None = None
 
 
 class AppearanceCfg(BaseModel):

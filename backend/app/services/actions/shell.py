@@ -90,6 +90,7 @@ async def _run(command: str, ctx: InvocationContext) -> ToolResult:
     icon="terminal",
     category="action",
     risk=Risk.HIGH,
+    confirm=True,  # R1/D44: designer forced-confirm — un-approvable; behavior-neutral (decide treats HIGH ≡ confirm below FULL)
     ui_exposed=False,
     agent_exposed=True,
 )
