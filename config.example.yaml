@@ -56,6 +56,10 @@ inference:
     # is translated to `reasoning_budget_tokens` (0 = think-not-at-all … -1 = unrestricted), which also
     # overrides the server's own `--reasoning-budget` launch flag. Options: openai (default — effort
     # only) | llamacpp | openrouter (effort OR reasoning.max_tokens, never both) | none.
+    # NOTE this file is the EXAMPLE, not your LIVE config — `config.yaml` is gitignored and an upgrade
+    # never touches it, so an existing install keeps the back-compat `openai` default and the whole
+    # ladder stays a NO-OP until you add this line yourself. The server logs a WARNING at startup when
+    # it spots a default-dialect endpoint with a self-hosted base_url; that warning is the reminder.
     reasoning_dialect: llamacpp
   cloud:
     base_url: https://openrouter.ai/api/v1
@@ -69,8 +73,9 @@ inference:
     #                            # falls back to the threshold_tokens trigger
     # max_tokens_field: max_tokens  # D42: or max_completion_tokens (OpenAI reasoning models)
     reasoning_dialect: openrouter   # D45: `reasoning.max_tokens` when an agent sets an explicit
-    #                               # reasoning_tokens, else `reasoning_effort` (our "off" → its "none").
-    #                               # The two are MUTUALLY EXCLUSIVE upstream — sending both is a 400.
+    #                               # reasoning_tokens, else `reasoning_effort` (our "off" → its "none",
+    #                               # our "max" → its "xhigh" — its enum has no "max"). The two are
+    #                               # MUTUALLY EXCLUSIVE upstream — sending both is a 400.
 
 # Agent runtime (Phase 4e+, compaction v2 = D42). `compaction` first clears old bulky tool outputs
 # at assembly time (free — the DB keeps them verbatim), then folds the oldest complete turns into a

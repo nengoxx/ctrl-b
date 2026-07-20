@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import ValidationError
 
 from app.adapters.embeddings import EmbeddingsClient
-from app.adapters.inference import EndpointGates, InferenceClient
+from app.adapters.inference import EndpointGates, InferenceClient, warn_suspect_reasoning_dialects
 from app.adapters.openterminal import OpenTerminalClient
 from app.adapters.searxng import SearxngClient
 from app.adapters.voice import VoiceClient
@@ -56,7 +56,12 @@ def set_inference(app: "FastAPI", settings: Settings) -> None:
     registry (created once, memoized on `app.state.endpoint_gates`), NOT on the client — so a config
     change that rebuilds the client here keeps the SAME semaphores. Old-generation permit holders and
     the new client's acquirers then contend on ONE object per `(base_url, limit)`, so
-    `max_concurrent_requests` is never split across client generations."""
+    `max_concurrent_requests` is never split across client generations.
+
+    Also the config-load boundary where `warn_suspect_reasoning_dialects` flags an endpoint left on the
+    default `reasoning_dialect: openai` with a self-hosted `base_url` (D45 audit FIX 5) — advisory only,
+    it never changes what gets built."""
+    warn_suspect_reasoning_dialects(settings.inference)
     gates = getattr(app.state, "endpoint_gates", None)
     if gates is None:
         gates = EndpointGates()

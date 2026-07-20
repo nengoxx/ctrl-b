@@ -111,6 +111,17 @@ required for a working install, but each fixes a real degradation on this box:
   already in `config.example.yaml`) / `extra_body: { stream_options: { include_usage: true } }` on
   cloud. Without them the estimator silently falls back to the char/4 heuristic — the server logs a
   one-time `context anchoring inactive …` INFO naming the exact remedy.
+- **`reasoning_dialect: <openai|llamacpp|openrouter|none>`** (D45) — which reasoning-control wire shape
+  each `inference.*` endpoint speaks. **This is opt-in on an existing install and that is the one thing
+  to remember here: `config.example.yaml` is the EXAMPLE, `config.yaml` is the LIVE file** — it is
+  gitignored, an upgrade never rewrites it, so an endpoint you configured before D45 keeps the
+  back-compat default `openai`. On a llama.cpp endpoint that default makes every agent's
+  `reasoning_effort` / `reasoning_tokens` a silent **no-op** (llama-server never reads `reasoning_effort`),
+  so add `reasoning_dialect: llamacpp` to your `inference.local` block by hand. The server logs a startup
+  **WARNING** naming the endpoint and the exact key to set whenever it sees a default-dialect endpoint
+  with a loopback/private/LAN/non-web-port `base_url`. Related: on the `openai` dialect, effort `off` is
+  sent as OpenAI's `none` and no longer carries llama.cpp's `chat_template_kwargs`, so an `off` agent on a
+  still-default llama.cpp endpoint loses the template lever until you set the dialect.
 - **`inference.retry_attempts: <n>`** (Slice 7/D43) — the CHAT-STREAM same-endpoint retry budget for
   genuinely-**transient** failures only (429 / 503 / `Retry-After` / a busy llama.cpp slot). Default **2**:
   a busy-but-alive server is retried in place (a visible `// retrying…` note, backoff 2s×2ⁿ capped 30s, a

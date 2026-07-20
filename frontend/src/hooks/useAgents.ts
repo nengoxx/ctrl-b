@@ -25,7 +25,8 @@ export interface ModelRef {
   max_tokens?: number | null; // output budget (kwargs into stream_chat/complete); null = uncapped/inherit
   reasoning_effort?: ReasoningEffort | null; // reasoning ladder; null = inherit / leave to the endpoint
   reasoning_tokens?: number | null; // D45: explicit budget — OVERRIDES the ladder on budget-speaking
-  // endpoints (llama.cpp, OpenRouter); ignored on effort-only ones (OpenAI). null = the ladder decides
+  // endpoints (llama.cpp, OpenRouter); ignored on effort-only ones (OpenAI), and ignored outright when
+  // the ladder is "off" (off is ABSOLUTE). null = the ladder decides
 }
 
 /** Global compaction knobs surfaced in the Conf UI (D42). The remaining CompactionCfg fields

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -34,9 +35,13 @@ from openai import BadRequestError
 from pydantic import ValidationError
 
 from app.adapters.inference import (
+    _REASONING_BUDGETS,
     InferenceClient,
     InferenceError,
+    _looks_self_hosted,
+    _resolve_reasoning_budget,
     is_context_overflow,
+    warn_suspect_reasoning_dialects,
 )
 from app.config import InferenceCfg, InferenceEndpointCfg
 from app.domain.agent import CompactionCfg, ModelRef
@@ -75,13 +80,15 @@ def test_call_config_reasoning_effort_passes_through() -> None:
 
 
 def test_call_config_off_merges_chat_template_kwargs_over_extra_body() -> None:
-    """`"off"` ADDITIONALLY merges `chat_template_kwargs:{enable_thinking:false}` OVER the endpoint's
-    extra_body — the endpoint's OTHER keys (and other chat_template_kwargs sub-keys) survive, and the
-    config object is NOT mutated."""
-    ep = _ep(extra_body={"cache_prompt": True, "chat_template_kwargs": {"foo": 1}})
+    """`"off"` merges `chat_template_kwargs:{enable_thinking:false}` OVER the endpoint's extra_body —
+    the endpoint's OTHER keys (and other chat_template_kwargs sub-keys) survive, and the config object
+    is NOT mutated. On the LLAMACPP dialect only: that key is a llama.cpp/vLLM concept (D45 audit FIX 4)."""
+    ep = _ep(
+        reasoning_dialect="llamacpp", extra_body={"cache_prompt": True, "chat_template_kwargs": {"foo": 1}}
+    )
     original = dict(ep.extra_body)
     cfg = InferenceClient._call_config(ep, max_tokens=None, reasoning_effort="off")
-    assert cfg["reasoning_effort"] == "off"  # still sent for every backend
+    assert "reasoning_effort" not in cfg  # llama-server never reads it
     extra = cfg["extra_body"]
     assert extra["cache_prompt"] is True  # endpoint's other key survives
     assert extra["chat_template_kwargs"] == {
@@ -94,8 +101,25 @@ def test_call_config_off_merges_chat_template_kwargs_over_extra_body() -> None:
 
 
 def test_call_config_off_adds_chat_template_kwargs_with_no_extra_body() -> None:
-    cfg = InferenceClient._call_config(_ep(), max_tokens=None, reasoning_effort="off")
-    assert cfg["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+    cfg = InferenceClient._call_config(
+        _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="off"
+    )
+    assert cfg["extra_body"]["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_call_config_off_template_lever_never_leaks_to_a_non_llamacpp_dialect() -> None:
+    """D45 audit FIX 4: `chat_template_kwargs` is a llama.cpp/vLLM key and an OpenAI-shaped backend 400s
+    on unknown body args (the ACA-18 rule) — so `off` must NOT smuggle it onto the cloud dialects, and
+    `none` ("the server understands no reasoning control") must stay literally empty."""
+    for dialect in ("openai", "openrouter", "none"):
+        cfg = InferenceClient._call_config(
+            _ep(reasoning_dialect=dialect), max_tokens=None, reasoning_effort="off"
+        )
+        assert "chat_template_kwargs" not in cfg.get("extra_body", {}), dialect
+    assert (
+        InferenceClient._call_config(_ep(reasoning_dialect="none"), max_tokens=None, reasoning_effort="off")
+        == {}
+    )
 
 
 def test_call_config_unset_sends_nothing() -> None:
@@ -193,12 +217,89 @@ def test_call_config_openrouter_ladder_only_sends_effort() -> None:
 
 
 def test_call_config_openrouter_off_maps_to_none_enum() -> None:
-    """Our ladder's `"off"` is spelled `"none"` in OpenRouter's enum."""
+    """Our ladder's `"off"` is spelled `"none"` in OpenRouter's enum — and nothing else rides along."""
     cfg = InferenceClient._call_config(
         _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="off"
     )
-    assert cfg["reasoning_effort"] == "none"
-    assert cfg["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+    assert cfg == {"reasoning_effort": "none"}
+
+
+def test_call_config_openai_off_maps_to_none_enum() -> None:
+    """D45 audit FIX 4 / LOW-6: `off` on the OpenAI dialect used to be a DOUBLE 400 — an out-of-enum
+    `reasoning_effort: "off"` AND an unknown `chat_template_kwargs` body key. OpenAI's enum has `none`."""
+    cfg = InferenceClient._call_config(_ep(), max_tokens=None, reasoning_effort="off")
+    assert cfg == {"reasoning_effort": "none"}
+
+
+def test_call_config_openrouter_max_clamps_to_xhigh() -> None:
+    """D45 audit FIX 1: OpenRouter's enum is EXACTLY xhigh|high|medium|low|minimal|none — `max` is NOT
+    accepted (https://openrouter.ai/docs/api_reference/parameters), so sending it 400s every request and
+    burns the whole failover chain. Our `max` is chiefly llama.cpp's `-1` sentinel ⇒ clamp to the top
+    real rung. `xhigh` IS accepted and must still pass verbatim."""
+    clamped = InferenceClient._call_config(
+        _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="max"
+    )
+    assert clamped == {"reasoning_effort": "xhigh"}
+    verbatim = InferenceClient._call_config(
+        _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="xhigh"
+    )
+    assert verbatim == {"reasoning_effort": "xhigh"}
+
+
+def test_call_config_openrouter_effort_map_stays_inside_the_published_enum() -> None:
+    """Every ladder rung must translate to a value OpenRouter actually accepts — a rung added later that
+    silently passes verbatim would 400 in production, not in CI."""
+    accepted = {"xhigh", "high", "medium", "low", "minimal", "none"}
+    for rung in _REASONING_BUDGETS:
+        cfg = InferenceClient._call_config(
+            _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort=rung
+        )
+        assert cfg["reasoning_effort"] in accepted, f"{rung} → {cfg['reasoning_effort']} is not in the enum"
+
+
+def test_call_config_endpoint_reasoning_object_deep_merges_and_suppresses_the_effort_kwarg() -> None:
+    """D45 audit FIX 2: an endpoint that hand-sets `extra_body.reasoning` defeated the whole
+    mutual-exclusion guarantee three ways. All three are pinned here."""
+    hand_set = {"reasoning": {"exclude": True, "effort": "high"}}
+    # 1. both spellings in ONE request — the exact hard 400 the openrouter branch exists to prevent.
+    cfg = InferenceClient._call_config(
+        _ep(reasoning_dialect="openrouter", extra_body=hand_set), max_tokens=None, reasoning_effort="medium"
+    )
+    assert "reasoning_effort" not in cfg
+    assert cfg["extra_body"]["reasoning"] == {"exclude": True, "effort": "high"}
+    # 2. a per-call budget DEEP-merges: the endpoint's `exclude` survives (it used to be replaced
+    #    wholesale by `extra.update(body)`), and the per-call `max_tokens` evicts the endpoint's `effort`.
+    ep = _ep(reasoning_dialect="openrouter", extra_body=hand_set)
+    original = {k: dict(v) for k, v in ep.extra_body.items()}
+    cfg = InferenceClient._call_config(ep, max_tokens=None, reasoning_tokens=500, reasoning_effort=None)
+    assert cfg == {"extra_body": {"reasoning": {"exclude": True, "max_tokens": 500}}}
+    assert ep.extra_body == original  # still no config mutation
+    # 3. the suppression is structural, not openrouter-specific: any non-empty merged `reasoning` object
+    #    wins over the top-level kwarg, so the two spellings can never co-occur on any dialect.
+    cfg = InferenceClient._call_config(
+        _ep(extra_body={"reasoning": {"effort": "low"}}), max_tokens=None, reasoning_effort="high"
+    )
+    assert "reasoning_effort" not in cfg
+
+
+def test_call_config_off_is_absolute_and_ignores_an_explicit_budget() -> None:
+    """D45 audit FIX 3: `off` + `reasoning_tokens` used to emit "think up to N" at the sampler AND
+    "emit no thinking block" at the template. `off` means off — the override is ignored everywhere."""
+    llama = InferenceClient._call_config(
+        _ep(reasoning_dialect="llamacpp"), max_tokens=None, reasoning_effort="off", reasoning_tokens=4096
+    )
+    assert llama == {
+        "extra_body": {
+            "reasoning_budget_tokens": 0,
+            "thinking_budget_tokens": 0,
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+    }
+    router = InferenceClient._call_config(
+        _ep(reasoning_dialect="openrouter"), max_tokens=None, reasoning_effort="off", reasoning_tokens=4096
+    )
+    assert router == {"reasoning_effort": "none"}
+    assert _resolve_reasoning_budget("off", 4096) == 0
 
 
 def test_call_config_emits_only_keys_the_sdk_actually_models() -> None:
@@ -247,21 +348,76 @@ def test_call_config_dialect_none_drops_both() -> None:
 
 def test_call_config_dialect_branches_keep_extra_body_merge_and_no_mutation() -> None:
     """Every dialect preserves the invariants: the endpoint's extra_body still merges, per-call keys win,
-    and the config object is NEVER mutated."""
+    and the config object is NEVER mutated. Post-audit this asserts the RULED behaviour — it used to pass
+    `off` + 77 and check only the template half, i.e. it ENCODED the FIX 3 contradiction: the template
+    lever now exists on `llamacpp` alone (FIX 4), and the 77 is ignored outright (FIX 3)."""
     for dialect in ("openai", "llamacpp", "openrouter", "none"):
         ep = _ep(
             reasoning_dialect=dialect, extra_body={"cache_prompt": True, "chat_template_kwargs": {"foo": 1}}
         )
         original = {k: dict(v) if isinstance(v, dict) else v for k, v in ep.extra_body.items()}
         cfg = InferenceClient._call_config(ep, max_tokens=None, reasoning_effort="off", reasoning_tokens=77)
-        assert cfg["extra_body"]["cache_prompt"] is True
-        assert cfg["extra_body"]["chat_template_kwargs"] == {"foo": 1, "enable_thinking": False}
+        assert cfg["extra_body"]["cache_prompt"] is True  # the endpoint's own keys always survive
+        assert 77 not in cfg["extra_body"].values(), f"{dialect} honoured a budget under `off`"
+        expected_ctk = {"foo": 1, "enable_thinking": False} if dialect == "llamacpp" else {"foo": 1}
+        assert cfg["extra_body"]["chat_template_kwargs"] == expected_ctk, dialect
         assert ep.extra_body == original, f"{dialect} mutated the endpoint config"
 
 
 def test_endpoint_reasoning_dialect_literal_rejects_junk() -> None:
     with pytest.raises(ValidationError):
         InferenceEndpointCfg(reasoning_dialect="llama")
+
+
+# ── A3. the "your dialect is probably wrong" startup warning (D45 audit FIX 5) ─────────────────────
+
+
+def test_self_hosted_base_url_heuristic() -> None:
+    """Purely lexical, no DNS, no probe: loopback / private range / .local / a bare dotless host / any
+    non-web port ⇒ self-hosted; a real cloud API on 443 ⇒ not."""
+    for url in (
+        "http://127.0.0.1:8080/v1",
+        "http://localhost:5433/v1",
+        "http://192.168.1.50:8080/v1",
+        "http://10.0.0.4/v1",
+        "http://172.20.3.9/v1",
+        "http://emma:8080/v1",  # bare LAN hostname
+        "http://box.local/v1",
+        "https://emma.lobster-vector.ts.net:8080/v1",  # tailnet, non-web port
+    ):
+        assert _looks_self_hosted(url), url
+    for url in ("https://api.openai.com/v1", "https://openrouter.ai/api/v1", "http://example.com/v1", ""):
+        assert not _looks_self_hosted(url), url
+
+
+def test_warn_fires_for_default_dialect_on_a_self_hosted_endpoint(caplog) -> None:
+    """The feature ships INERT on every existing install (config.yaml is gitignored and keeps the
+    back-compat default) — this warning is the only feedback the owner gets, so pin that it names the
+    endpoint AND the exact key to set."""
+    cfg = InferenceCfg(
+        local=InferenceEndpointCfg(base_url="http://127.0.0.1:8080/v1", model="m"),
+        cloud=InferenceEndpointCfg(base_url="https://api.openai.com/v1", model="gpt"),
+        fallbacks=[InferenceEndpointCfg(base_url="http://emma:8081/v1", model="m")],
+    )
+    with caplog.at_level(logging.WARNING, logger="ctrlb.inference"):
+        warn_suspect_reasoning_dialects(cfg)
+    msgs = [r.getMessage() for r in caplog.records]
+    assert len(msgs) == 2, msgs  # local + the fallback; the real cloud endpoint stays quiet
+    assert "inference.local.reasoning_dialect: llamacpp" in msgs[0]
+    assert "http://127.0.0.1:8080/v1" in msgs[0]
+    assert "inference.fallbacks[0].reasoning_dialect: llamacpp" in msgs[1]
+
+
+def test_warn_silent_once_the_dialect_is_set_or_the_endpoint_is_blank(caplog) -> None:
+    cfg = InferenceCfg(
+        local=InferenceEndpointCfg(
+            base_url="http://127.0.0.1:8080/v1", model="m", reasoning_dialect="llamacpp"
+        ),
+        cloud=InferenceEndpointCfg(base_url="", model=""),
+    )
+    with caplog.at_level(logging.WARNING, logger="ctrlb.inference"):
+        warn_suspect_reasoning_dialects(cfg)
+    assert caplog.records == []
 
 
 # ── B. InferenceError code/status + `is_context_overflow` ──────────────────────────────────────────
@@ -409,11 +565,22 @@ def test_stream_chat_threads_modeled_kwargs_to_create() -> None:
 
 
 def test_stream_chat_off_sends_chat_template_kwargs() -> None:
+    """End-to-end through `stream_chat`: the template lever reaches the wire on a llamacpp endpoint —
+    and (D45 audit FIX 4) does NOT on the default dialect, which sends the `none` enum value instead."""
+    llama = _cfg(
+        local=InferenceEndpointCfg(base_url="http://local/v1", model="m", reasoning_dialect="llamacpp")
+    )
+    client, fakes = _build(llama, {"http://local/v1": _stream_ok("hi")})
+    _run(_collect(client, reasoning_effort="off"))
+    call = fakes["http://local/v1"].chat.completions.calls[0]
+    assert "reasoning_effort" not in call
+    assert call["extra_body"]["chat_template_kwargs"] == {"enable_thinking": False}
+
     client, fakes = _build(_cfg(), {"http://local/v1": _stream_ok("hi")})
     _run(_collect(client, reasoning_effort="off"))
     call = fakes["http://local/v1"].chat.completions.calls[0]
-    assert call["reasoning_effort"] == "off"
-    assert call["extra_body"]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert call["reasoning_effort"] == "none"
+    assert "extra_body" not in call
 
 
 def test_stream_chat_unset_kwargs_send_no_none_keys() -> None:

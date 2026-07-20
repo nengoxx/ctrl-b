@@ -43,13 +43,18 @@ class ModelRef(BaseModel):
     #: reasoning knob: it is TRANSLATED per backend at the wire by the serving endpoint's
     #: `reasoning_dialect`. An effort-only API takes it verbatim; llama.cpp (which never reads
     #: `reasoning_effort` — hence the translation, not a shrug) takes the ladder's token budget instead;
-    #: OpenRouter takes it with `"off"` → its `"none"`. `"off"` additionally becomes llama.cpp
+    #: OpenAI/OpenRouter take it with `"off"` → their `"none"` (and OpenRouter's `"max"` → `"xhigh"`, the
+    #: top rung its enum actually accepts). On the llama.cpp dialect `"off"` additionally becomes
     #: `chat_template_kwargs: {enable_thinking: false}`. `None` → the backend default.
     reasoning_effort: Literal["off", "minimal", "low", "medium", "high", "xhigh", "max"] | None = None
     #: Explicit per-request reasoning-token budget (D45) — an OVERRIDE of the ladder above, not a parallel
     #: setting. Where the serving endpoint's `reasoning_dialect` accepts a budget (llama.cpp
     #: `reasoning_budget_tokens`, OpenRouter `reasoning:{max_tokens}`) this wins over the ladder-derived
     #: value; where the dialect is effort-only (OpenAI) it is ignored. `None`/blank → the ladder decides.
+    #: ONE exception, and it is absolute: when `reasoning_effort` is `"off"` this field is IGNORED on
+    #: every dialect (D45 adversarial audit, FIX 3). "Think up to N tokens" and "do not think" cannot
+    #: both be honoured, and the earlier "the override always wins" reading produced a payload that told
+    #: the sampler one thing and the chat template the other. `off` means off.
     #: `ge=1` for `max_tokens` symmetry — a 0-token reasoning budget is never a meaningful *explicit*
     #: setting (use `reasoning_effort: "off"`, which the ladder maps to the server's own 0 sentinel).
     reasoning_tokens: int | None = Field(default=None, ge=1)

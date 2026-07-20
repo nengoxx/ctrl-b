@@ -234,7 +234,7 @@ function AgentFieldsForm(props: {
       <label>Reasoning tokens</label>
       <input
         aria-label="Reasoning tokens"
-        title="Overrides the level above on endpoints that accept a token budget (llama.cpp, OpenRouter). Effort-only endpoints (OpenAI) use the level above. An agent can hit both across turns, so leave blank to let the level decide."
+        title="Overrides the level above on endpoints that accept a token budget (llama.cpp, OpenRouter) — EXCEPT when the level is Off, which always wins and means no reasoning at all. Effort-only endpoints (OpenAI) ignore this and use the level above. An agent can hit both across turns, so leave blank to let the level decide."
         inputMode="numeric"
         value={a.model.reasoning_tokens == null ? "" : String(a.model.reasoning_tokens)}
         placeholder="(inherit — the level above decides)"

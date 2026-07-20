@@ -14,6 +14,11 @@ export interface InferenceEndpoint {
   api_key: string | null; // masked on read (e.g. "ab…yz"); echo unchanged to keep the stored secret
   model: string;
   context_window?: number | null; // D42 — per-endpoint window; null = auto (probe local / token-threshold fallback cloud)
+  // D45 — which reasoning-control wire shape THIS server speaks. YAML-only (no UI control yet); typed
+  // here so the settings round-trip is visibly lossless. Default "openai" = an effort-only cloud API;
+  // set "llamacpp" for llama-server (it IGNORES reasoning_effort, so the default makes the whole
+  // reasoning ladder a no-op there — the backend logs a warning at config load if it spots that).
+  reasoning_dialect?: "openai" | "llamacpp" | "openrouter" | "none";
 }
 
 // Voice (Phase 6) — one STT + one TTS service, each a primary→fallback failover chain (D18).

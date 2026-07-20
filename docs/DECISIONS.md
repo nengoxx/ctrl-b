@@ -2761,15 +2761,18 @@ direction than assumed:
   be a parallel mechanism for a knob we already have. `off → 0 · minimal → 256 · low → 512 ·
   medium → 2048 · high → 8192 · xhigh → 16384 · max → -1`. **The two ends are not invented
   mappings** — `0` and `-1` are llama.cpp's OWN documented sentinels; only the middle is ours.
-- **Per dialect:** `openai` → effort verbatim, tokens dropped. `llamacpp` → **no `reasoning_effort`
-  at all** (dropping a field the server provably ignores is the honest fix, not a shrug) + the
-  resolved budget under **BOTH** budget keys (older builds know only the alias; unknown keys are
-  ignored ⇒ free back-compat). `openrouter` → an explicit budget sends `reasoning:{max_tokens}` and
-  **suppresses the effort key** (the mutual-exclusion 400 is a landmine, not a warning), else effort
-  verbatim with our `"off"` mapped onto its enum's `"none"`. `none` → both dropped.
-- **`"off"` keeps its `chat_template_kwargs:{enable_thinking:false}` merge unchanged** on every
-  dialect: that is the TEMPLATE-level lever and it COMPLEMENTS the sampler-level budget `0` — two
-  levers on two layers, not a duplicate.
+- **Per dialect** *(as AMENDED-2 below — this list is the shipped behaviour)*: `openai` → effort
+  verbatim with `"off"` → its `"none"`, tokens dropped. `llamacpp` → **no `reasoning_effort` at all**
+  (dropping a field the server provably ignores is the honest fix, not a shrug) + the resolved budget
+  under **BOTH** budget keys (older builds know only the alias; unknown keys are ignored ⇒ free
+  back-compat). `openrouter` → an explicit budget sends `reasoning:{max_tokens}` and **suppresses the
+  effort key** (the mutual-exclusion 400 is a landmine, not a warning), else effort through
+  `_OPENROUTER_EFFORT` (`"off"`→`"none"`, `"max"`→`"xhigh"`). `none` → both dropped.
+- **`"off"` carries a `chat_template_kwargs:{enable_thinking:false}` merge on the `llamacpp` dialect**:
+  that is the TEMPLATE-level lever and it COMPLEMENTS the sampler-level budget `0` — two levers on two
+  layers, not a duplicate. *(Originally "on every dialect"; corrected in AMENDED-2 ⓓ — it is a
+  llama.cpp/vLLM key, so on a cloud dialect it is just an unknown body arg.)*
+- **`"off"` is ABSOLUTE** *(AMENDED-2 ⓒ)*: it outranks an explicit `reasoning_tokens` on every dialect.
 - **Transport:** the D42 rule is "params **the SDK models** ride as first-class kwargs". The OpenAI
   SDK's `AsyncCompletions.create` has a **CLOSED signature** (no `**kwargs`) and models
   `reasoning_effort` but NOT `reasoning_budget_tokens` / `thinking_budget_tokens` / `reasoning` — so
@@ -2778,7 +2781,8 @@ direction than assumed:
   as kwargs raises `TypeError` *before a byte reaches the wire*. Caught by the build audit (see the
   amendment below) and now pinned by a signature test.
 - Every other D42 wire invariant survives: unset fields contribute nothing, per-call keys win over the
-  endpoint's `extra_body` while its other keys survive, and the config object is never mutated.
+  endpoint's `extra_body` while its other keys survive (**deep**-merged for the dict-valued vendor
+  namespaces `chat_template_kwargs` + `reasoning` — AMENDED-2 ⓑ), and the config object is never mutated.
 
 This **cashes in D42's reserved "a per-endpoint effort-map is the future seam"** — the seam is
 spent, and `reasoning_dialect` is the shape it took (a dialect switch, not a per-endpoint mapping
@@ -2810,8 +2814,58 @@ assert against the REAL client signature, not only against the payload dict you 
 ⓑ **The ladder table is now pinned TOTAL over the effort `Literal`**
 (`test_reasoning_budget_table_covers_every_ladder_rung`) — `_resolve_reasoning_budget` looks up with
 `.get()`, so a rung added to `ModelRef` without a table entry would have silently sent no budget.
-ⓒ **Recorded, not fixed:** the `openai` dialect still passes `off`/`xhigh`/`max` verbatim even though
-they are outside OpenAI's `none|minimal|low|medium|high` enum. Pre-existing D42 behaviour, deliberately
-left alone here because the default dialect's payload is contractually byte-for-byte unchanged; the
-asymmetry with the `openrouter` branch (which DOES map `off`→`none`) is the price of that pin. Fix it
-under its own decision if a strict cloud endpoint ever 400s on it.
+ⓒ ~~**Recorded, not fixed:** the `openai` dialect still passes `off`/`xhigh`/`max` verbatim…~~
+**SUPERSEDED by AMENDED-2 ⓓ** — this understated the blast radius: `off` on the default dialect was a
+*double* 400 (out-of-enum value AND an unknown `chat_template_kwargs` body key), and the default dialect
+is what every existing install runs. `off` now maps to OpenAI's `none`. `xhigh`/`max` still pass
+verbatim there, deliberately: they have no OpenAI spelling at all, so silently clamping would lie about
+what was asked — point that agent at a dialect that has those rungs.
+
+*(AMENDED-2 post-adversarial-audit 2026-07-20 — five findings against the shipped code, all fixed; the
+audit was empirical, every finding reproduced from a real `_call_config` payload:)*
+ⓐ **HIGH — the `openrouter` dialect sent `max`, which OpenRouter rejects.** Its `reasoning_effort` enum
+is exactly `xhigh | high | medium | low | minimal | none`
+(<https://openrouter.ai/docs/api_reference/parameters>); the `max` in its reasoning-tokens guide belongs
+to the separate `verbosity` parameter. So *every* `max` request 400s at `create()` and burns the whole
+failover chain before surfacing a flattened error. **`max` → `xhigh`** (`_OPENROUTER_EFFORT`): our `max`
+exists chiefly as llama.cpp's `-1` sentinel, so clamping to the top rung the API actually accepts is the
+faithful translation. `xhigh` IS in the enum and still passes verbatim.
+ⓑ **HIGH — an endpoint's own `extra_body.reasoning` defeated the mutual-exclusion guarantee** this
+decision calls structurally impossible. `extra.update(body)` was a FLAT merge, so an endpoint with
+`reasoning: {exclude: true, effort: high}` plus a per-call effort put BOTH spellings in one request (the
+exact hard 400), and a per-call `reasoning_tokens` silently DROPPED the operator's `exclude`. Fixed with
+the same deep-merge `chat_template_kwargs` already had, plus two precedence rules: within the merged
+object a per-call `max_tokens` evicts any `effort`, and a non-empty merged `reasoning` suppresses the
+top-level `reasoning_effort` kwarg — so the two spellings can no longer co-occur on any dialect.
+ⓒ **MED — `off` + an explicit `reasoning_tokens` was self-contradictory** and the documented precedence
+was false: `off` + 4096 told the sampler "think up to 4096" while the template lever told the model to
+emit no thinking block. **Ruling: `off` is ABSOLUTE** — it outranks the override on every dialect
+(budget `0`, tokens ignored). `_resolve_reasoning_budget`, the `ModelRef.reasoning_tokens` docstring and
+the Conf-UI tooltip now all say the same thing. The pre-existing test
+`test_call_config_dialect_branches_keep_extra_body_merge_and_no_mutation` *encoded* the contradiction
+(passed `off`+77, asserted only the template half) and was updated to the ruled behaviour.
+ⓓ **MED — the `off` template lever leaked to every dialect.** `chat_template_kwargs` is a
+llama.cpp/vLLM concept, and this file's own ACA-18 rule is that an OpenAI backend 400s on unknown body
+args (why `cache_prompt`/`return_progress` must not ride to the cloud hop); the `none` dialect —
+"the server understands no reasoning control, drop both" — contradicted itself outright. The merge moved
+INSIDE the `llamacpp` branch, and `openai` now maps `off` → `none`.
+**Deliberate back-compat break, recorded:** this changes the default-`openai`-dialect payload for the
+`off` case, which the back-compat pin protected. The pin was protecting *unchanged* behaviour, but that
+behaviour 400s on any real OpenAI endpoint — a bug-for-bug pin is not a contract worth keeping. The pin
+now covers every other rung, and the `off` case is pinned to the corrected payload.
+**Migration note (interaction with ⓔ):** someone running llama.cpp on the still-DEFAULT dialect loses
+the `off` template lever until they set `reasoning_dialect: llamacpp`. That is exactly the population
+ⓔ's warning targets, and setting the dialect is the fix for both.
+ⓔ **MED — the feature was inert on every existing install, silently.** `config.yaml` is gitignored and
+untouched by the release, so every deployed endpoint keeps the back-compat `openai` default — including
+the owner's llama.cpp `inference.local`, i.e. the feature did nothing for the person it was built for,
+with zero feedback, and there is no FE surface for the field. Now `warn_suspect_reasoning_dialects`
+(called from `runtime.set_inference`, the one config-load/settings-PUT boundary) logs a WARNING naming
+the endpoint's config path, its `base_url`, and the exact key to set, whenever a default-dialect endpoint
+has a self-hosted-looking `base_url`. The heuristic (`_looks_self_hosted`) is **purely lexical** —
+loopback / private range / `.local` / a bare dotless hostname / any non-80/443 port — deliberately **no
+DNS and no network probe**: a startup check must not block on the network, and the cost of a false
+positive is one advisory log line. The FE `InferenceEndpoint` interface gained `reasoning_dialect?`
+(YAML-only, no control yet — typed so the settings round-trip is visibly lossless), and
+`deploy/linux/README.md` + `config.example.yaml` now spell out that **the example file is not the live
+file**.

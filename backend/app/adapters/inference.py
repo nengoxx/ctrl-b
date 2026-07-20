@@ -21,11 +21,13 @@ session boundary turns it into a clean SSE `error` event + an `ErrorPart`, never
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, cast
+from urllib.parse import urlsplit
 
 import anyio
 import httpx
@@ -337,14 +339,95 @@ _REASONING_BUDGETS: dict[str, int] = {
 
 
 def _resolve_reasoning_budget(effort: str | None, tokens: int | None) -> int | None:
-    """The per-request reasoning budget for a budget-speaking dialect (D45): an EXPLICIT
-    `ModelRef.reasoning_tokens` wins, else the `reasoning_effort` ladder, else `None` (send nothing —
-    the server keeps its own default). One home for the precedence, shared by every dialect branch."""
+    """The per-request reasoning budget for a budget-speaking dialect (D45): `"off"` is ABSOLUTE, then
+    an EXPLICIT `ModelRef.reasoning_tokens` wins, else the `reasoning_effort` ladder, else `None` (send
+    nothing — the server keeps its own default). One home for the precedence, shared by every dialect
+    branch.
+
+    `"off"` OUTRANKS the explicit override (D45 adversarial audit, FIX 3): the pair `off` + a budget is
+    self-contradictory, and honouring the budget produced a payload that told the sampler "think up to N"
+    while the template lever told the model "emit no thinking block". "The user asked for no reasoning"
+    is the unambiguous reading, so `off` collapses to the `0` sentinel and the override is ignored."""
+    if effort == "off":
+        return _REASONING_BUDGETS["off"]
     if tokens is not None:
         return tokens
     if effort is not None:
         return _REASONING_BUDGETS.get(effort)
     return None
+
+
+#: Our ladder → OpenRouter's `reasoning_effort` enum, which is EXACTLY
+#: `xhigh | high | medium | low | minimal | none` — https://openrouter.ai/docs/api_reference/parameters
+#: Only the two ends need translating: our `"off"` is their `"none"`, and `"max"` IS NOT ACCEPTED (their
+#: reasoning-tokens guide conflates it with the separate `verbosity` parameter, which does have `max`) —
+#: sending it is a hard 400 that burns the whole failover chain. `max` exists in our ladder chiefly as
+#: llama.cpp's `-1` "unrestricted" sentinel, so clamping it to the top REAL rung (`xhigh`) is the
+#: faithful translation. Do not "fix" `max` back to verbatim — check the URL above first.
+_OPENROUTER_EFFORT: dict[str, str] = {"off": "none", "max": "xhigh"}
+
+#: `extra_body` sub-objects that are DEEP-merged (per-call sub-keys win, the endpoint's others survive)
+#: rather than replaced wholesale. Both are dict-valued vendor namespaces where an endpoint legitimately
+#: hand-sets sibling keys we never touch (`chat_template_kwargs: {…}`, OpenRouter `reasoning: {exclude}`),
+#: so a flat `update()` would silently drop the operator's configuration (D45 adversarial audit, FIX 2).
+_EXTRA_BODY_DEEP_MERGE_KEYS = ("chat_template_kwargs", "reasoning")
+
+
+def _looks_self_hosted(base_url: str) -> bool:
+    """Cheap, PURELY LEXICAL "does this base_url point at a server on my own machine/LAN?" — no DNS, no
+    network probe (D45 audit FIX 5: a startup check must never touch the network). Loopback / private
+    range / `.local` / a bare dotless hostname (`emma:8080`) / any non-web port all say self-hosted;
+    `https://api.openai.com/v1` says cloud. Deliberately advisory-only: its single caller emits a
+    WARNING, so a false positive costs one log line and a false negative costs nothing new."""
+    try:
+        parts = urlsplit(base_url if "://" in base_url else f"http://{base_url}")
+        host = (parts.hostname or "").lower()
+        port = parts.port
+    except ValueError:
+        return False
+    if not host:
+        return False
+    if host == "localhost" or host.endswith(".local") or "." not in host.strip("[]"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        if ip.is_loopback or ip.is_private:
+            return True
+    return port is not None and port not in (80, 443)
+
+
+def warn_suspect_reasoning_dialects(cfg: InferenceCfg) -> None:
+    """Log a WARNING for every configured endpoint that keeps the DEFAULT `reasoning_dialect: openai`
+    while its `base_url` looks self-hosted (D45 audit FIX 5).
+
+    Why this exists: D45's default is `openai` for byte-for-byte back-compat, but its whole premise is
+    that llama-server DISCARDS `reasoning_effort`. Every already-deployed `config.yaml` is gitignored
+    and untouched by the release, so the feature lands INERT — and silently — on exactly the install it
+    was built for. This is the feedback. Called from `runtime.set_inference`, i.e. once per config load
+    and once per settings PUT that rebuilds the client, which is the natural "the config just changed"
+    boundary. It is advisory: nothing branches on it, and a cloud endpoint on a custom port simply gets
+    one line telling it no action is needed."""
+    named: list[tuple[str, InferenceEndpointCfg]] = [
+        ("inference.local", cfg.local),
+        ("inference.cloud", cfg.cloud),
+        *((f"inference.fallbacks[{i}]", ep) for i, ep in enumerate(cfg.fallbacks)),
+    ]
+    for path, ep in named:
+        if not ep.base_url or ep.reasoning_dialect != "openai" or not _looks_self_hosted(ep.base_url):
+            continue
+        log.warning(
+            "%s (base_url=%s) uses the default reasoning_dialect 'openai', but that base_url looks "
+            "self-hosted. llama-server IGNORES `reasoning_effort`, so every agent's reasoning_effort / "
+            "reasoning_tokens setting is a NO-OP on this endpoint. If it is llama.cpp, set "
+            "`%s.reasoning_dialect: llamacpp` in your config.yaml (D45); vLLM/other → 'none' until a "
+            "dialect exists; a real OpenAI-compatible cloud API on a custom port → no action needed.",
+            path,
+            ep.base_url,
+            path,
+        )
 
 
 @dataclass(frozen=True)
@@ -631,8 +714,16 @@ class InferenceClient:
           - reasoning → translated ONCE through this endpoint's `reasoning_dialect` (D45). The single
             primary knob is the `reasoning_effort` LADDER; `reasoning_tokens` is an explicit OVERRIDE
             that wins WHERE THE DIALECT HAS A BUDGET and is dropped where it has none (correct, not a
-            gap). `"off"` ADDITIONALLY merges llama.cpp's `chat_template_kwargs:{enable_thinking:false}`
-            (the template-level lever, complementing the sampler-level budget 0).
+            gap). **`"off"` is ABSOLUTE and outranks the override** (audit FIX 3) — it means "no
+            reasoning", so the budget collapses to `0` and `reasoning_tokens` is ignored. On the
+            `llamacpp` dialect ONLY, `"off"` ADDITIONALLY merges `chat_template_kwargs:
+            {enable_thinking:false}` (the template-level lever, complementing the sampler-level budget
+            0). That lever is a llama.cpp/vLLM concept: leaking it onto a cloud dialect is the same
+            unknown-body-key 400 that ACA-18 fixed for `cache_prompt`/`return_progress` (audit FIX 4).
+
+        PRECEDENCE, one sentence: `off` beats `reasoning_tokens` beats the `reasoning_effort` ladder;
+        and within `extra_body["reasoning"]`, a per-call `max_tokens` beats any `effort` the endpoint
+        hand-set (they are mutually exclusive on OpenRouter — a hard 400 — so exactly one survives).
 
         TRANSPORT (D45 build audit, HIGH): "modeled params ride as first-class kwargs, never smuggled
         through extra_body" holds for params the SDK actually MODELS. `AsyncCompletions.create` has a
@@ -656,8 +747,14 @@ class InferenceClient:
         if dialect == "openai":
             # Effort-only API. `reasoning_tokens` is DROPPED: OpenAI exposes no reasoning-token budget
             # (`max_completion_tokens` is a COMBINED reasoning+output cap, not a reasoning budget).
+            # Our `"off"` is spelled `"none"` in OpenAI's `none|minimal|low|medium|high` enum — mapping
+            # it (audit FIX 4 / LOW-6) turns what was a DOUBLE 400 (bad enum value AND an unknown
+            # `chat_template_kwargs` body key) into a valid request. `xhigh`/`max` still pass verbatim:
+            # they have no OpenAI spelling at all, and a strict endpoint rejecting them is a config
+            # error (point that agent at a dialect that has those rungs), not something to silently
+            # clamp — see D45 residual ⓒ.
             if reasoning_effort is not None:
-                out["reasoning_effort"] = reasoning_effort
+                out["reasoning_effort"] = "none" if reasoning_effort == "off" else reasoning_effort
         elif dialect == "llamacpp":
             # llama-server never reads `reasoning_effort` (zero occurrences in the server source —
             # maintainer-confirmed), so we deliberately do NOT send it: the honest translation is the
@@ -668,22 +765,44 @@ class InferenceClient:
             if budget is not None:
                 body["reasoning_budget_tokens"] = budget
                 body["thinking_budget_tokens"] = budget
+            if reasoning_effort == "off":
+                # The TEMPLATE-level lever, complementing the sampler-level budget 0 — two layers, not a
+                # duplicate. Scoped to this branch: `chat_template_kwargs` is a llama.cpp/vLLM key and an
+                # OpenAI-shaped backend 400s on unknown body args (the ACA-18 rule, 15 lines below).
+                body["chat_template_kwargs"] = {"enable_thinking": False}
         elif dialect == "openrouter":
             # `reasoning.effort` and `reasoning.max_tokens` are MUTUALLY EXCLUSIVE — sending both is a
-            # hard 400. An explicit budget wins; otherwise send the ladder verbatim (OpenRouter publishes
-            # its own effort→% mapping, so effort is the better signal when no budget was set) with our
-            # `"off"` mapped onto its enum's `"none"`.
-            if reasoning_tokens is not None:
+            # hard 400. `off` is absolute (→ its `"none"` enum, budget ignored); else an explicit budget
+            # wins; else the ladder through `_OPENROUTER_EFFORT` (OpenRouter publishes its own effort→%
+            # mapping, so effort is the better signal when no budget was set).
+            if reasoning_effort == "off":
+                out["reasoning_effort"] = _OPENROUTER_EFFORT["off"]
+            elif reasoning_tokens is not None:
                 body["reasoning"] = {"max_tokens": reasoning_tokens}
             elif reasoning_effort is not None:
-                out["reasoning_effort"] = "none" if reasoning_effort == "off" else reasoning_effort
+                out["reasoning_effort"] = _OPENROUTER_EFFORT.get(reasoning_effort, reasoning_effort)
         # dialect == "none": the server understands no reasoning control — drop both.
         extra = dict(ep.extra_body) if ep.extra_body else {}
-        extra.update(body)  # per-call reasoning keys win over an endpoint that hand-set the same key
-        if reasoning_effort == "off":
-            ctk = dict(extra.get("chat_template_kwargs") or {})
-            ctk["enable_thinking"] = False
-            extra["chat_template_kwargs"] = ctk
+        for key, val in body.items():
+            # Per-call keys win over an endpoint that hand-set the same key; the dict-valued vendor
+            # namespaces DEEP-merge so the endpoint's sibling sub-keys (`chat_template_kwargs` extras,
+            # OpenRouter's `reasoning:{exclude}`) survive instead of being replaced wholesale.
+            prior = extra.get(key)
+            if key in _EXTRA_BODY_DEEP_MERGE_KEYS and isinstance(prior, dict) and isinstance(val, dict):
+                extra[key] = {**prior, **val}
+            else:
+                extra[key] = val
+        merged_reasoning = extra.get("reasoning")
+        if isinstance(merged_reasoning, dict) and merged_reasoning:
+            # The mutual-exclusion guarantee has to survive an endpoint that hand-set `reasoning` itself
+            # (audit FIX 2) — otherwise both spellings ride in one request, the exact hard 400 this
+            # dialect exists to prevent. Two rules, both "the per-call budget wins":
+            #   1. within the object, a `max_tokens` evicts any `effort`;
+            #   2. a non-empty `reasoning` object suppresses the top-level `reasoning_effort` kwarg.
+            if "max_tokens" in merged_reasoning and "effort" in merged_reasoning:
+                merged_reasoning = {k: v for k, v in merged_reasoning.items() if k != "effort"}
+                extra["reasoning"] = merged_reasoning
+            out.pop("reasoning_effort", None)
         if extra:
             out["extra_body"] = extra
         return out
