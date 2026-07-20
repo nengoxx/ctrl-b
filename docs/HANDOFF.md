@@ -344,8 +344,9 @@
 > implementation / mechanical work / research = Opus 4.8 subagents.**
 >
 > **▶ SESSION 2026-07-20 (cont.): ACA SLICE 8 (persisted approvals / "always allow", D44) ✅ BUILT
-> end-to-end across W1–W4 — 5 LOCAL COMMITS, NOT PUSHED (`b2a2cb4` owner rig art + `2279d26` D44 LOCK
-> + `08ef3c1` W1 + `919680b` W2 + `e080731` W3, plus this doc close-out).** The pipeline: ACA §5 Slice
+> end-to-end across W1–W5 + POST-BUILD AUDITED — 7 LOCAL COMMITS, NOT PUSHED (`b2a2cb4` owner rig art
+> + `2279d26` D44 LOCK + `08ef3c1` W1 + `919680b` W2 + `e080731` W3 + `137efe2` W4 docs + `e0c1482` W5
+> post-audit fixes). Final gate `check.py --e2e` **7/7 GREEN**; backend 711 / FE 527 tests.** The pipeline: ACA §5 Slice
 > 8 sketch + §6 Q7/Q8 → 1 code-truth pass + **3 sourced field passes** (CLI tools · agent
 > frameworks/SDKs — the Claude Agent SDK's un-bypassable `requiresUserInteraction` class, goose's
 > `permission.yaml`, opencode's Once/Always · mature policy systems — XACML combining algorithms, OPA,
@@ -367,6 +368,29 @@
 > UI-revocable) · `exact_arg_pins` is the one shared pin builder · `/api/actions` carries `approvals`
 > as the editor's read source · `settings_write_lock` + `apply_settings_patch` were re-homed into
 > `runtime.py` and `PUT /api/settings` refactored onto them (one lock, one write sequence).
+> **▶ POST-BUILD AUDIT → W5 (`e0c1482`, SHIP-WITH-FIXES, all 7 findings closed):** the audit VERIFIED
+> the riskiest piece (the settings write-path re-homing — incl. the `model_copy()` restart-path
+> subtlety that looks like a bug and isn't) and the 8 invariants, then found two real ones. **MED-1:**
+> the `[auto-allowed: …]` marker dumped UNTRUNCATED arg values into every auto-allowed run's
+> `Event.summary` — a `terminal_write_file` grant would have appended KB of file content per run, and a
+> credential-bearing MCP arg would land in the log in the clear → values now clip at 32 chars (field
+> names stay whole). **MED-2 (invariant 5 was literally FALSE):** `canonical_str(None)` and
+> `canonical_str("null")` both produced `"null"`, so a grant pinning an omitted optional also matched a
+> call passing the literal string — reachable end-to-end on `web_search` → `None` now canonicalizes to
+> `NONE_CANON = "\x00null"`, pinned unescaped, **YAML round-trip verified empirically by test** (the
+> writer escapes it, the loader returns it byte-identical, the rule still matches; residual documented
+> limitation: canonicalization stays type-blind for an `int | str` field — no tool has one). Plus:
+> `args: {}` (empty AND, zero-field tools) no longer conflated with `args: null` (whole-action) — the
+> silent-widening path is closed · **ONE settings lock** (hosts + integrations CRUD dropped their
+> private locks for `runtime.settings_write_lock`; no re-entrancy, taken at the outermost site only —
+> a pre-existing two-lock/no-lock hazard W2's re-homing made cheap to fix) · a grant FAILURE now
+> reaches the audit row too (`invoke(summary_note=…)` folded in before `_record`, not just the SSE
+> frame) · the §9 promises that had no test now have one (concurrent settings write — **the first
+> version passed without the lock, so it was rewritten with a `reconfigure` tracer and confirmed to
+> FAIL on a no-op lock** · the headless-subagent marker · sibling `description`/`agent_mode`
+> preservation). **⚠ Behavior break on dev-granted rules:** any rule granted on the dev instance
+> earlier today pins the old literal `"null"` and will no longer match — it fails CLOSED (the call
+> re-asks); re-tap "always" to regenerate. Prod is unaffected (still v1.1.1).
 > **State:** dev units still RUNNING (:5434 + Vite :5173); **prod is still v1.1.1**.
 > **NEXT SESSION, in order:** ① /model check (fable-5 HIGH) ② **push OK** → `git push` (5 + doc commits;
 > pre-push runs the full gate) ③ live-verify pokes, all still outstanding — the ACA §5 LIVE-VERIFY
