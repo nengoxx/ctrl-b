@@ -181,6 +181,16 @@ back to the analysis.
   can hand off mid-conversation between providers. *Deferred because:* D43 (Slice 7) **code-verified
   it unnecessary today** — our local model emits no reasoning blocks to normalize. Revisit when a
   reasoning local model lands. ACA §4 A7 (transforms half).
+- **Turn-status DB fallback after cache eviction** (2026-07-20 live-test find, LOW). A completed
+  thread whose terminal-cache entry evicted (`linger_s`=60s / cap 32) reports `terminal_status:
+  null` from `GET /api/agent/turns/{thread}` — indistinguishable from "unknown/lost", though the
+  messages are durably in SQLite (a tester misread it as turn loss). Optional hardening: fall back
+  to a cheap DB check (trailing assistant message for the last user turn) before returning bare
+  `{active: false}`. Display-surface only; D39 persistence itself verified end-to-end.
+- **`/compact`-on-small-thread UX** (2026-07-20 live-test find, LOW). A forced `/compact` on a
+  thread too small to fold correctly inflation-rejects (`removed: 0, rejected: true` — a real
+  5-section summary would GROW the context), but the response reads like a failure. Surface a
+  "thread too small to compact" message instead. Semantics are correct; signal is confusing.
 
 ### A6. Multiple agents + subagents (configurable agent design)
 

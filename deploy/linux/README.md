@@ -105,6 +105,11 @@ required for a working install, but each fixes a real degradation on this box:
   override the probe (config wins; upward overrides allowed), and **cloud endpoints MUST set it
   manually** (OpenAI-style APIs expose no window field, so there is nothing to probe). With neither, the
   trigger falls back to the absolute `agent.compaction.threshold_tokens`.
+  **⚠ Router-mode llama-server (the owner's vault setup, `role: "router"` with model autoload) CANNOT
+  be probed** — its `/props` reports `n_ctx: 0` at the router layer (the real window lives per model
+  instance behind it; a non-positive probe value is treated as no-probe since 2026-07-20). On such an
+  endpoint set `context_window` explicitly — it also restores the summarizer's pre-emptive overflow
+  guard, which is skipped when no window is known.
 - **Context anchoring needs telemetry flags** (Slice 6/D42) — the anchored context estimator prices
   compaction off the backend's real total-prompt count. It only sees that count when the endpoint
   reports it: `extra_body: { return_progress: true }` on a local llama.cpp (streaming `prompt_progress`;
