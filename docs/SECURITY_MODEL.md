@@ -152,13 +152,24 @@ decision**.
   approval-rung material. Because the layer only ever grants, first-vs-last-match ordering is
   meaningless: rules are OR'd (the OPA incremental-allow idiom).
 - **Matching** is per-field `fnmatchcase` globs over the **validated** args (`canonical_str`: `str` as-is ·
-  other scalars JSON-encoded · `None` → `"null"` · list/dict → unmatchable). A rule ANDs its listed
-  fields; **fields it does not list are unconstrained — by design**, that is the Tools-tab *widening*
-  semantics. An unknown field or a non-scalar value makes the rule **inert (fail closed)**, never a
-  wildcard.
+  other scalars JSON-encoded · `None` → the `NONE_CANON` sentinel · list/dict → unmatchable). A rule ANDs
+  its listed fields; **fields it does not list are unconstrained — by design**, that is the Tools-tab
+  *widening* semantics. An unknown field or a non-scalar value makes the rule **inert (fail closed)**,
+  never a wildcard. `args: null` on a rule is the **whole-action grant** (matches any call); `args: {}`
+  is the **empty AND** — it matches only a call that has no args at all (a zero-field tool). The two are
+  distinct: conflating them would let an "exact" grant on a zero-field tool silently widen if that tool
+  ever gained a field.
+  **Canonicalization exactness + its one limit.** `None` canonicalizes to a NUL-prefixed sentinel, not
+  the plain string `"null"`, so a rule pinning an *omitted* optional can no longer be matched by a call
+  passing the literal string `"null"` (it could before the post-audit fix — the args-exact guarantee was
+  false for that pair). What remains is **type-blindness within the string form**: a field typed
+  `int | str` would give `5` and `"5"` the same canonical form. **No tool has such a field today**; a tool
+  that introduces one must not rely on approvals to distinguish the two. Corollary: a `None` pin is
+  produced by the grant path, not hand-authored — the sentinel is not practically typeable in
+  `config.yaml`.
 - **The bubble grant is args-EXACT.** Tapping "always" on a confirm bubble sends the `execute_always`
   resume verb; the **server** builds the rule from the suspended call's validated args, pinning **every**
-  top-level field (omitted optionals pinned as `"null"`, values glob-escaped) — so it matches that one
+  top-level field (omitted optionals pinned as the `None` sentinel, values glob-escaped) — so it matches that one
   arg tuple and nothing else. Widening (globs, dropping fields) is a deliberate act in **Conf → Tools**.
   The frontend never serializes or canonicalizes a rule.
 - **`run_shell` is un-approvable** — pinned `confirm=True` (D44 R1; behavior-neutral, since `decide()`
@@ -179,11 +190,21 @@ decision**.
   toggle (an absent list IS off). **Revoke** = the approvals editor in **Conf → Tools** (one tap per
   rule, saved through the single `tool_overrides` write path) or an edit to `config.yaml`. Revocation is
   live: the gate re-reads the shared settings object per invocation, so the very next call re-asks.
-- **As-built caveat (W3):** the Tools-tab approvals editor is hidden for `confirm=True` tools (a rule
-  there could never fire), and the catalog only lists the agent-tool set. A rule hand-written into
-  `config.yaml` for such a tool is therefore **not revocable in the UI** — harmless, because the gate
-  never consults approvals on a forced-confirm tool (the rule is inert), but recorded so it isn't
-  mistaken for a live grant.
+- **As-built caveat (W3) — two exclusions from the editor, only one of them harmless.** The Tools-tab
+  approvals editor is hidden for **(a)** `confirm=True` tools and **(b)** tools whose
+  `default_agent_mode` is `disabled` (e.g. `tailscale_serve_enable`/`_disable`). A rule hand-written into
+  `config.yaml` for either is **not revocable in the UI**, but the two differ:
+  - **(a) inert.** The gate never consults approvals on a forced-confirm tool, so such a rule grants
+    nothing — it is dead config, not a standing permission.
+  - **(b) LIVE but unmanaged.** These tools are ordinary risk-gated tools: an approval there **does**
+    fire and does downgrade their confirm. It simply has no editor row, so revoking it means editing
+    `config.yaml`. Treat any hand-written rule on a `disabled`-default tool as a real standing grant —
+    the pre-deploy checklist's `tool_overrides.<tool>.approvals` review covers it.
+- **The audit marker is truncated by design.** Each `field=pattern` value in `[auto-allowed: …]` clips to
+  32 characters. The marker is appended to *every* auto-allowed run's `Event.summary`, and approvable
+  tools accept large or credential-bearing args (`terminal_write_file.content`, MCP tool args) — an
+  untruncated pattern would copy them into the audit log on every run. Field **names** are never
+  truncated: which rule matched is the point.
 - **Accepted:** the Conf-panel save path shares the existing settings **last-write-wins** draft contract
   (two devices editing settings concurrently); the bubble grant path does **not** — it is server-side and
   atomic under the one settings write lock.

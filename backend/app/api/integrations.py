@@ -9,7 +9,6 @@ toolset, and `POST /integrations/rediscover` applies on demand (refused while a 
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -24,11 +23,14 @@ from app.config import (
     sync_mapping,
     unmask_secrets,
 )
-from app.runtime import apply_settings_inplace, integrations_status, rediscover_integrations
+from app.runtime import (
+    apply_settings_inplace,
+    integrations_status,
+    rediscover_integrations,
+    settings_write_lock,
+)
 
 router = APIRouter(tags=["integrations"], prefix="/integrations")
-
-_write_lock = asyncio.Lock()
 
 # kind → (yaml list key, settings attr, Cfg model)
 _KINDS: dict[str, tuple[str, str, type[BaseModel]]] = {
@@ -107,7 +109,7 @@ async def create_server(kind: str, body: dict[str, Any], request: Request) -> di
     name = str(body.get("name", "")).strip()
     if not name:
         raise HTTPException(status_code=422, detail="server name is required")
-    async with _write_lock:
+    async with settings_write_lock:
         if _current(request, attr, name) is not None:
             raise HTTPException(status_code=409, detail=f"a {kind} server named '{name}' already exists")
         entry = _minimal(_validate(model_cls, {**body, "name": name}))
@@ -119,7 +121,7 @@ async def create_server(kind: str, body: dict[str, Any], request: Request) -> di
 @router.put("/{kind}/{name}")
 async def update_server(kind: str, name: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
     key, attr, model_cls = _kind(kind)
-    async with _write_lock:
+    async with settings_write_lock:
         cur = _current(request, attr, name)
         if cur is None:
             raise HTTPException(status_code=404, detail=f"unknown {kind} server '{name}'")
@@ -145,7 +147,7 @@ async def update_server(kind: str, name: str, body: dict[str, Any], request: Req
 @router.delete("/{kind}/{name}", status_code=200)
 async def delete_server(kind: str, name: str, request: Request) -> dict[str, Any]:
     key, attr, _ = _kind(kind)
-    async with _write_lock:
+    async with settings_write_lock:
         if _current(request, attr, name) is None:
             raise HTTPException(status_code=404, detail=f"unknown {kind} server '{name}'")
 

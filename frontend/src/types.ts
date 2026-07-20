@@ -107,7 +107,8 @@ export type AgentMode = "core" | "enabled" | "disabled";
 
 /** One standing 'always allow' grant for a tool (D44) — an allow-only rule that downgrades a
  *  risk-derived confirm to allow when a call's args match. `args` maps a top-level field → a glob
- *  pattern (every listed field must match, OR across rules); `null`/omitted = a whole-action grant.
+ *  pattern (every listed field must match, OR across rules); `null`/omitted = a whole-action grant,
+ *  while `{}` is the empty AND — it matches only a call that has no args at all (a zero-field tool).
  *  Bubble-written grants pin EVERY field (args-exact); the Tools-tab editor may widen with globs or
  *  omit fields. Serialization lives server-side — the FE only lists/edits these, never canonicalizes. */
 export interface ApprovalRule {

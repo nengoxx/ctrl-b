@@ -39,9 +39,19 @@ class Decision(StrEnum):
     DENY = "deny"
 
 
+#: The canonical form of `None` (an omitted/null optional). A NUL-prefixed sentinel, NOT the plain
+#: `"null"`: a plain-string arg canonicalizes as-is, so `"null"` as the None form made a None-pinning
+#: rule also match a call passing the literal string `"null"` (post-audit MED-2 — invariant 5 was
+#: false). No JSON/YAML-authored *text* value realistically contains a NUL, so the two forms can no
+#: longer collide. Also a glob no-op (no `*?[`), so `exact_arg_pins` pins it verbatim. Remaining,
+#: documented limitation: canonicalization is type-blind for a field typed `int | str`, where `5` and
+#: `"5"` still share a form — no tool has such a field today.
+NONE_CANON = "\x00null"
+
+
 def canonical_str(value: object) -> str | None:
     """The one canonical form an arg value is matched in (D44). `str` as-is; other scalars via JSON
-    encoding (`true`/`false`/`5`/`1.5`); `None` → `"null"` (an omitted optional must be pinnable —
+    encoding (`true`/`false`/`5`/`1.5`); `None` → `NONE_CANON` (an omitted optional must be pinnable —
     review F1); non-scalar (list/dict/other) → `None`, i.e. not matchable. `bool` is tested before
     `int` because `isinstance(True, int)` is True — a bool must encode as `true`/`false`, not `1`."""
     if isinstance(value, str):
@@ -51,7 +61,7 @@ def canonical_str(value: object) -> str | None:
     if isinstance(value, int | float):
         return json.dumps(value)  # 5 / 1.5
     if value is None:
-        return "null"
+        return NONE_CANON
     return None  # list/dict/other — not expressible as a scalar pattern
 
 
@@ -65,34 +75,43 @@ def glob_escape(s: str) -> str:
 
 def exact_arg_pins(args: dict[str, object]) -> dict[str, str] | None:
     """The args-EXACT pin map for a bubble grant (D44 W2), built from a *validated*
-    `model_dump(mode="json")`: every top-level field → `glob_escape(canonical_str(value))` (None →
-    the literal `"null"`, glob-escaped so a value containing `*?[` matches literally). `None` when
-    ANY field is non-scalar (list/dict) — the rule would be inexpressible / never-matching. THE one
+    `model_dump(mode="json")`: every top-level field → `glob_escape(canonical_str(value))`, so a value
+    containing `*?[` matches literally. `None` pins as `NONE_CANON` *unescaped* — the sentinel is a
+    literal produced by this module, not user text, so it must never be rewritten by the escaper (it
+    holds no metacharacters today; bypassing keeps that from becoming a silent dependency). The pin
+    map is `None` when ANY field is non-scalar (list/dict) — inexpressible / never-matching. THE one
     computation shared by two W2 call sites: `always_eligible` (a suspend emits `pins is not None`)
     and the grant write (`ApprovalRule(args=pins)`). Value-based, NOT model-based: an optional
-    non-scalar field that is `None` on THIS call pins as `"null"` and stays eligible — only a call
+    non-scalar field that is `None` on THIS call pins as `NONE_CANON` and stays eligible — only a call
     actually carrying a list/dict (e.g. `spawn_subagents.tasks`) is ineligible."""
     pins: dict[str, str] = {}
     for field, value in args.items():
         canon = canonical_str(value)
         if canon is None:
             return None  # a non-scalar field — the rule can't be expressed as scalar patterns
-        pins[field] = glob_escape(canon)
+        pins[field] = canon if value is None else glob_escape(canon)
     return pins
 
 
 def approval_match(rules: Iterable[ApprovalRule], args: dict[str, object]) -> ApprovalRule | None:
     """The first rule that matches `args`, else None (D44). OR across rules; AND within a rule — a
     rule matches iff EVERY `(field, pattern)` entry does: `field in args`, `canonical_str` non-None,
-    `fnmatch.fnmatchcase(canon, pattern)`. `None`/`{}` args on a rule = whole-action grant (matches
-    any call). Fields a rule does NOT list are unconstrained by design (the Conf widening semantics —
+    `fnmatch.fnmatchcase(canon, pattern)`. `args: None` = whole-action grant (matches any call);
+    `args: {}` is the EMPTY AND — it matches only a call whose validated dump is itself empty (a
+    zero-field tool). The two are NOT interchangeable (post-audit LOW-1): conflating them made an
+    "exact" grant on a zero-field tool a whole-action grant that would silently widen if the tool ever
+    gained a field. Fields a rule does NOT list are unconstrained by design (the Conf widening semantics —
     bubble-written rules pin every field, §5, so exact grants stay exact). `fnmatchcase`, not
     `fnmatch` — no OS-dependent case folding in a security matcher (review L2; deliberate divergence
     from the `core/tool.py`/`skills.py` display sites)."""
     for rule in rules:
-        patterns = rule.args or {}
-        if not patterns:
+        patterns = rule.args
+        if patterns is None:
             return rule  # whole-action grant
+        if not patterns:
+            if not args:
+                return rule  # the empty AND — satisfied only by a call with no args at all
+            continue
         if all(
             field in args
             and (canon := canonical_str(args[field])) is not None

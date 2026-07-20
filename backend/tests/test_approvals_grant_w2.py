@@ -75,7 +75,7 @@ def _approvals(app, tool):
     return list(override.approvals) if override and override.approvals else []
 
 
-def _session_and_pending(c, tool: str, args: dict):
+def _session_and_pending(c, tool: str, args: dict, *, interactive: bool = True):
     """Session + a persisted assistant message holding one PENDING call for `tool`/`args`."""
     from app.domain.conversation import Message, Thread, ToolCallPart
     from app.domain.enums import Actor, RunState
@@ -83,7 +83,9 @@ def _session_and_pending(c, tool: str, args: dict):
 
     s = c.app.state
     agent = s.settings.resolve_agent(None)  # default privilege = CONFIRM → med/high suspends
-    session = AgentSession(s.threads, s.messages, s.inference, s.settings, s.actions, agent, interactive=True)
+    session = AgentSession(
+        s.threads, s.messages, s.inference, s.settings, s.actions, agent, interactive=interactive
+    )
     thread = _run(s.threads.create(Thread()))
     call_id = uuid.uuid4().hex
     assistant = Message(
@@ -101,12 +103,14 @@ def _session_and_pending(c, tool: str, args: dict):
 def test_grant_pins_every_field_null_optional_and_canonical_scalars() -> None:
     """`web_search` (query:str, count:int=5, categories:str|None=None) — the grant pins ALL THREE:
     the omitted optional as "null", the int in canonical form, so the rule is args-EXACT (§7 inv 5)."""
+    from app.core.permissions import NONE_CANON
+
     with _workspace(), _client() as c:
         note = _grant(c.app, "web_search", {"query": "homelab"})
         assert note is None  # success → no breadcrumb
         rules = _approvals(c.app, "web_search")
         assert len(rules) == 1
-        assert rules[0].args == {"query": "homelab", "count": "5", "categories": "null"}
+        assert rules[0].args == {"query": "homelab", "count": "5", "categories": NONE_CANON}
 
 
 def test_grant_rule_is_persisted_to_yaml() -> None:
@@ -114,6 +118,30 @@ def test_grant_rule_is_persisted_to_yaml() -> None:
         _grant(c.app, "web_search", {"query": "hi"})
         text = (tmp / "config.yaml").read_text(encoding="utf-8")
         assert "tool_overrides" in text and "approvals" in text and "web_search" in text
+
+
+def test_none_sentinel_survives_the_yaml_round_trip() -> None:
+    """MED-2, the hard requirement: the None sentinel is only sound if it round-trips through the REAL
+    writer + loader. Grant `web_search {"query":"x"}` (which pins the omitted `categories` optional),
+    re-load `Settings` from the written FILE, and assert the reloaded rule still matches that same call
+    — and still does NOT match the literal-string `"null"` call that used to collide with it."""
+    from app.config import load_settings
+    from app.core.permissions import NONE_CANON, approval_match
+
+    with _workspace() as tmp, _client() as c:
+        assert _grant(c.app, "web_search", {"query": "x"}) is None
+        text = (tmp / "config.yaml").read_text(encoding="utf-8")
+        assert "\x00" not in text  # the writer escapes it rather than emitting a raw NUL byte
+
+        reloaded = load_settings().tool_overrides["web_search"].approvals  # from the FILE, not memory
+        assert reloaded is not None and len(reloaded) == 1
+        assert reloaded[0].args["categories"] == NONE_CANON  # byte-identical after the round-trip
+
+        model = c.app.state.actions.registry.get("web_search").spec.input_model
+        omitted = model.model_validate({"query": "x"}).model_dump(mode="json")
+        literal = model.model_validate({"query": "x", "categories": "null"}).model_dump(mode="json")
+        assert approval_match(reloaded, omitted) is not None  # the grant still fires post-reload
+        assert approval_match(reloaded, literal) is None  # …and stays exact
 
 
 def test_grant_glob_escapes_pattern_values() -> None:
@@ -260,6 +288,98 @@ def test_write_failure_still_executes_and_notes_it_in_summary() -> None:
         result_ev = next(e for e in events if e.event == "tool.result")  # it RAN despite the failure
         assert _GRANT_WRITE_FAILED_NOTE in result_ev.data["result"]["summary"]
         assert _approvals(c.app, "restart_service") == []  # nothing persisted
+
+        # LOW-3: the breadcrumb must reach the AUDIT LOG too, not just the SSE stream — it's threaded
+        # into `invoke` so the Event carries it. (It was appended post-hoc before, leaving an audit
+        # reader with no trace that a grant had failed.)
+        events_rows = _run(c.app.state.events.recent(limit=10))
+        row = next(e for e in events_rows if e.action == "restart_service")
+        assert _GRANT_WRITE_FAILED_NOTE in row.summary
+
+
+# ── post-audit: the §9 promises that shipped untested ──────────────────────────────────────────
+def test_grant_survives_a_concurrent_settings_write() -> None:
+    """§9/LOW-2: the grant append and a settings PUT are two read-modify-write sequences over the SAME
+    live config — run concurrently through the ONE `settings_write_lock`, neither may lose the other's
+    change (in memory OR on disk). `reconfigure` (the only await inside a critical section, hence the
+    only place a second writer could slip in) is wrapped to record its enter/exit order and to yield
+    the loop while "inside": under the shared lock the two sequences MUST NOT overlap, and the test
+    fails if they do — the read-modify-write is only atomic while it is exclusive."""
+    import asyncio
+
+    import app.runtime as runtime_mod
+    from app.runtime import apply_settings_patch, grant_approval, settings_write_lock
+
+    with _workspace() as tmp, _client() as c:
+        trace: list[str] = []
+        orig = runtime_mod.reconfigure
+
+        async def _traced(app, new):
+            trace.append("enter")
+            await asyncio.sleep(0)  # a real suspension point mid-sequence
+            await orig(app, new)
+            trace.append("exit")
+
+        async def _put():  # the PUT /api/settings body, minus the HTTP layer
+            async with settings_write_lock:
+                await apply_settings_patch(c.app, {"agent": {"max_steps": 9}})
+
+        async def _both():
+            return await asyncio.gather(grant_approval(c.app, "web_search", {"query": "race"}), _put())
+
+        runtime_mod.reconfigure = _traced
+        try:
+            note, _ = _run(_both())
+        finally:
+            runtime_mod.reconfigure = orig
+        assert note is None
+        assert trace == ["enter", "exit", "enter", "exit"]  # serialized, never interleaved
+
+        rules = _approvals(c.app, "web_search")  # the grant survived the interleaving …
+        assert len(rules) == 1 and rules[0].args["query"] == "race"
+        assert c.app.state.settings.agent.max_steps == 9  # … and so did the PUT
+        text = (tmp / "config.yaml").read_text(encoding="utf-8")
+        assert "approvals" in text and "max_steps: 9" in text  # both landed on disk
+
+
+def test_grant_preserves_sibling_override_fields() -> None:
+    """§9: `approvals` is the THIRD dimension on the unified per-tool object — a grant must append to
+    it without disturbing the `description`/`agent_mode` siblings (in memory or in the file)."""
+    cfg = (
+        "server:\n  port: 5433\n"
+        "tool_overrides:\n"
+        "  restart_service:\n"
+        "    description: my own words\n"
+        "    agent_mode: enabled\n"
+    )
+    with _workspace(cfg) as tmp, _client() as c:
+        assert _grant(c.app, "restart_service", {"service_id": "ghost"}) is None
+        override = c.app.state.settings.tool_overrides["restart_service"]
+        assert override.description == "my own words"
+        assert str(override.agent_mode) == "enabled"
+        assert override.approvals and override.approvals[0].args == {"service_id": "ghost"}
+        text = (tmp / "config.yaml").read_text(encoding="utf-8")
+        assert "my own words" in text and "agent_mode: enabled" in text
+
+
+def test_marker_stamped_on_a_headless_subagent_run() -> None:
+    """§9/D44 §6: the audit marker is the SOLE visibility on the interactive→headless crossing — a
+    bubble-born grant auto-allows a HEADLESS subagent's re-run of the matched call, and that run must
+    carry the marker too (only the interactive path was asserted before)."""
+    from app.config import ApprovalRule, ToolOverride
+
+    with _workspace(), _client() as c:
+        args = {"service_id": "ghost"}
+        c.app.state.settings.tool_overrides["restart_service"] = ToolOverride(
+            approvals=[ApprovalRule(args={"service_id": "ghost"})]
+        )
+        session, thread, assistant, _ = _session_and_pending(c, "restart_service", args, interactive=False)
+        events, suspended, _ = drain_run_calls(session, thread, assistant, {}, _guard())
+        assert not suspended  # the approval downgraded the confirm — no headless DENIED conversion
+        result_ev = next(e for e in events if e.event == "tool.result")
+        assert "[auto-allowed: service_id=ghost]" in result_ev.data["result"]["summary"]
+        rows = _run(c.app.state.events.recent(limit=10))
+        assert "[auto-allowed: service_id=ghost]" in rows[0].summary  # …and in the audit row
 
 
 if __name__ == "__main__":

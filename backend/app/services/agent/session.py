@@ -2165,6 +2165,14 @@ class AgentSession:
                     continue
 
                 token = resume_tokens.get(cp.call_id)
+                # D44 W2 breadcrumb for an `execute_always` whose rule could NOT be persisted. Passed
+                # INTO `invoke` below so it's part of the summary the Event records (post-audit LOW-3 —
+                # a post-hoc append reached the SSE stream only, leaving no audit trace of a failed
+                # grant). `note_recorded` tracks whether that happened: results NOT produced by a
+                # recorded invoke (an UnknownTool/ValidationError raise, a headless deny) still need the
+                # append at the tail, and a recorded one must not get it twice.
+                note = resume_notes.get(cp.call_id) if resume_notes and token != _DISMISS else None
+                note_recorded = False
                 if token == _DISMISS:
                     # The owner reviewed the confirm/question bubble and rejected it. Record the call's
                     # signature so a fresh model re-issue of the identical call this drive gets the denial
@@ -2287,6 +2295,7 @@ class AgentSession:
                                 confirm_token=token,
                                 depth=self._depth,
                                 agent=self._agent,
+                                summary_note=note,
                             )
                         except UnknownTool:
                             result = ToolResult(state=RunState.DENIED, summary=f"unknown tool '{cp.tool}'")
@@ -2297,6 +2306,7 @@ class AgentSession:
                                 error=str(exc)[:300],
                             )
                         else:
+                            note_recorded = inv.event is not None  # invoke already folded it in
                             if inv.needs_confirm and not self._interactive:
                                 # Headless child (subagent): no UI to confirm against → deny in place so
                                 # the turn never stalls (DESIGN §5.3). The child reports it skipped the step.
@@ -2357,9 +2367,9 @@ class AgentSession:
                             break
 
                 cp.state = result.state
-                if resume_notes and token != _DISMISS and (note := resume_notes.get(cp.call_id)):
-                    # D44 W2: an `execute_always` whose grant couldn't be persisted breadcrumbs why on
-                    # THIS (executed) call's summary — the call still ran; only the standing rule is lost.
+                if note and not note_recorded:
+                    # The result never reached an Event (see above) — breadcrumb it on the SSE result at
+                    # least; the call still ran, only the standing rule is lost.
                     result.summary = f"{result.summary}{note}"
                 if token != _DISMISS:  # a real execution
                     guard.last_results[sig] = result  # remember for exact-arg suppression (C1a)

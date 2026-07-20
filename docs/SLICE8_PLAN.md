@@ -24,6 +24,21 @@
 > `approvals` as the editor's read source (§5 named the write path but no read path) — approvals are
 > settings state, so they're read beside the live settings, not from `spec_dto`.
 > Condensed record: **D44 AMENDED (as-built 2026-07-20)** · narrative: ACA §5 Slice 8.
+>
+> **✅ W5 post-audit fix wave (2026-07-20), SHIP-WITH-FIXES closed:** ⓐ MED-1 — the `[auto-allowed: …]`
+> marker clips each pattern value to 32 chars (it lands on EVERY auto-allowed run's `Event.summary`, and
+> `terminal_write_file.content`/MCP args are large or credential-bearing); field names stay whole. ⓑ MED-2
+> — `None` canonicalizes to the `NONE_CANON` sentinel (`"\x00null"`, verified round-tripping through the
+> real YAML writer + loader), not the plain `"null"` a string value can also produce; §7 invariant 5 was
+> false before this. ⓒ LOW-1 — `args: null` (whole-action) and `args: {}` (empty AND, zero-field tools)
+> are no longer conflated in the matcher, the marker, or the Tools-tab chips. ⓓ LOW-2 — `hosts` and
+> `integrations` CRUD now take `runtime.settings_write_lock` (their two private locks are gone): ONE lock
+> across every config writer. ⓔ LOW-3 — a grant-failure breadcrumb is threaded into `invoke` (new
+> `summary_note`) so it reaches the persisted `Event`, not just the SSE stream. ⓕ LOW-4 — the §2.5
+> editor-exclusion caveat now covers `default_agent_mode: disabled` tools too (live-but-unmanaged, unlike
+> the inert forced-confirm case). ⓖ LOW-5 — the three untested §9 promises now have tests (grant under a
+> concurrent settings write, the marker on a HEADLESS-subagent run, sibling `description`/`agent_mode`
+> preservation on grant).
 
 ## 1. Decision summary
 
@@ -160,8 +175,12 @@ migration — reserved in §8, not built.
 3. The approval layer is allow-only — no rule shape can force a CONFIRM or DENY.
 4. Approvals are consulted per-invocation from live settings (verified shared-object,
    mutate-in-place) — a revoke wins from the next call.
-5. A bubble-written rule pins EVERY top-level validated field (None as "null", values
-   glob-escaped) and therefore matches exactly the grant call's arg tuple and nothing else.
+5. A bubble-written rule pins EVERY top-level validated field (None as the `NONE_CANON` sentinel,
+   values glob-escaped) and therefore matches exactly the grant call's arg tuple and nothing else.
+   *(Post-audit MED-2: with `"null"` as the None form this was literally FALSE — a rule pinning an
+   omitted optional also matched a call passing the literal string `"null"`. The sentinel restores it.
+   Residual, documented: canonicalization is type-blind inside the string form, so a hypothetical
+   `int | str` field would conflate `5` and `"5"`; no tool has one.)*
 6. Headless approval-miss stays fail-closed (CONFIRM → DENIED conversion untouched).
 7. FULL-privilege behavior is byte-identical; the `!` path is byte-identical.
 8. No new routes/tables/stores/toggles; one canonicalization implementation (backend); no new

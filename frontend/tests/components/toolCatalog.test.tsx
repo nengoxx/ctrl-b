@@ -71,6 +71,15 @@ describe("ToolCatalog · approvals editor (D44 W3)", () => {
     expect(screen.getByText("any args")).toBeTruthy();
   });
 
+  it("renders an empty-args rule as 'no args', NOT 'any args' (LOW-1)", () => {
+    // `args: {}` is the empty AND — it matches only a zero-field call, so it must not read like the
+    // `args: null` whole-action grant above.
+    specs = [spec({ approvals: [{ args: {} }] })];
+    render(<ToolCatalog />);
+    expect(screen.getByText("no args")).toBeTruthy();
+    expect(screen.queryByText("any args")).toBeNull();
+  });
+
   it("revoke removes the rule from the saved payload (full replacement list)", () => {
     specs = [spec()];
     render(<ToolCatalog />);

@@ -275,9 +275,13 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
 
 
 #: Serialize every persisted settings write: the read-modify-write (merge onto the live config) isn't
-#: atomic, so two racing saves could interleave and lose one's changes. THE one lock — `PUT
-#: /api/settings` AND the D44 approval-grant path (Slice 8 W2) both hold it (re-homed here from
-#: `api/settings.py` so there is a single lock object, never two — D44 §4/H2).
+#: atomic, so two racing saves could interleave and lose one's changes — or leave `app.state.settings`
+#: stale in memory when one writer's reload lands before another's file write. THE one lock, held by
+#: EVERY config writer: `PUT /api/settings`, the D44 approval-grant path (Slice 8 W2), the `hosts`
+#: CRUD and the `integrations` CRUD (re-homed here from `api/settings.py`, and the per-router locks
+#: those two kept were folded in post-audit — a single lock object, never three; D44 §4/H2). Taken at
+#: the OUTERMOST site only: nothing it guards (`apply_settings_patch`, `_persist_and_reload`,
+#: `reconfigure`, `apply_settings_inplace`) re-acquires it, so the writers never nest.
 settings_write_lock = asyncio.Lock()
 
 

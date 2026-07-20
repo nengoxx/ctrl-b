@@ -26,7 +26,7 @@ from pydantic import BaseModel, ValidationError
 if TYPE_CHECKING:
     from app.domain.agent import AgentDef
 
-from app.core.permissions import Decision, approval_match, decide, exact_arg_pins
+from app.core.permissions import NONE_CANON, Decision, approval_match, decide, exact_arg_pins
 from app.core.tool import InvocationContext, ToolRegistry, UnknownTool
 from app.domain.enums import Actor, Privilege, RunState
 from app.domain.event import Event
@@ -40,14 +40,29 @@ _CONFIRM_TTL_S = 120.0
 #: Mandatory audit marker appended to the executed action's summary when a persisted approval fired
 #: (D44 §6): the sole visibility on the interactive→headless crossing. One format, defined once.
 _APPROVAL_MARKER = " [auto-allowed: {detail}]"
+#: Per-value cap inside the marker (post-audit MED-1). The marker is appended to EVERY auto-allowed
+#: run's persisted `Event.summary`, and approvable tools take large or credential-bearing args
+#: (`terminal_write_file.content`, MCP tool args) — an untruncated pattern would copy them into the
+#: audit log on every run. Field NAMES stay full: which rule matched is the point of the marker.
+_APPROVAL_VALUE_MAX = 32
 
 
 def _approval_detail(rule: "ApprovalRule") -> str:
-    """The args summary inside `_APPROVAL_MARKER` — `field=pattern` pairs, or `any args` for a
-    whole-action grant (`args` None/empty)."""
-    if not rule.args:
+    """The args summary inside `_APPROVAL_MARKER` — `field=pattern` pairs (each pattern truncated to
+    `_APPROVAL_VALUE_MAX`), `any args` for a whole-action grant (`args is None`), or `no args` for the
+    empty-AND rule (`args == {}`, a zero-field tool — NOT a whole-action grant, LOW-1)."""
+    if rule.args is None:
         return "any args"
-    return ", ".join(f"{field}={pattern}" for field, pattern in rule.args.items())
+    if not rule.args:
+        return "no args"
+    return ", ".join(f"{field}={_clip(pattern)}" for field, pattern in rule.args.items())
+
+
+def _clip(pattern: str) -> str:
+    """One pattern rendered for the audit marker: the `None` sentinel as readable `null` (it holds a
+    NUL byte — never write that into a summary row), anything longer than the cap ellipsized."""
+    shown = pattern.replace(NONE_CANON, "null")
+    return shown if len(shown) <= _APPROVAL_VALUE_MAX else f"{shown[:_APPROVAL_VALUE_MAX]}…"
 
 
 @dataclass
@@ -113,9 +128,16 @@ class ActionService:
         confirm_token: str | None = None,
         depth: int = 0,
         agent: "AgentDef | None" = None,
+        summary_note: str | None = None,
     ) -> InvokeOutcome:
         """Run an action. Raises `UnknownTool` (→404) / `ValidationError` (→422) for the API to
-        map; every other outcome is data on a ToolResult."""
+        map; every other outcome is data on a ToolResult.
+
+        `summary_note` is a caller-supplied breadcrumb appended to the result summary BEFORE the Event
+        is recorded (post-audit LOW-3), so a note the caller can only know at call time — today the D44
+        grant-failure note from `execute_always` — lands in the AUDIT LOG, not just the SSE stream.
+        Appended on every recorded outcome (DENY included); a suspend records nothing, so it carries
+        no note and the caller re-supplies it on the resumed call."""
         tool = self._registry.get(name)  # UnknownTool → API 404
         inp = tool.spec.input_model.model_validate(raw_args)  # ValidationError → API 422
         args_json = inp.model_dump_json()
@@ -144,6 +166,8 @@ class ActionService:
                 state=RunState.DENIED,
                 summary=f"{tool.spec.title} denied by policy (privilege={privilege.value})",
             )
+            if summary_note:
+                result.summary = f"{result.summary}{summary_note}"
             event = await self._record(actor, name, raw_args, result)
             return InvokeOutcome(needs_confirm=False, result=result, event=event)
 
@@ -167,6 +191,8 @@ class ActionService:
         )
         if rule is not None:  # D44 §6: mandatory audit marker on the approval-fired run's Event summary
             result.summary = f"{result.summary}{_APPROVAL_MARKER.format(detail=_approval_detail(rule))}"
+        if summary_note:
+            result.summary = f"{result.summary}{summary_note}"
         event = await self._record(actor, name, raw_args, result)
         return InvokeOutcome(needs_confirm=False, result=result, event=event)
 

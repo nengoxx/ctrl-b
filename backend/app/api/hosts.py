@@ -11,7 +11,6 @@ inner field comments.
 
 from __future__ import annotations
 
-import asyncio
 import socket
 from typing import Any
 
@@ -20,12 +19,9 @@ from pydantic import BaseModel, ValidationError
 
 from app.config import ComputerCfg, edit_config_yaml, host_slug, load_settings, sync_mapping
 from app.domain.host import Host, HostStatus
-from app.runtime import reconfigure
+from app.runtime import reconfigure, settings_write_lock
 
 router = APIRouter(tags=["fleet"])
-
-#: Serialize config writes — read-modify-write of the YAML isn't atomic across concurrent requests.
-_hosts_lock = asyncio.Lock()
 
 #: The server's own hostname (casefolded, computed once) — the fleet entry whose NAME matches it is the
 #: machine ctrl-b itself runs on, surfaced as `self` on the DTO (owner directive 2026-07-12: the agent's
@@ -207,6 +203,9 @@ def _computers(doc: Any) -> Any:
 
 
 async def _persist_and_reload(request: Request, mutate: Any) -> None:
+    """MUST be called holding `settings_write_lock` (never taken here — the callers hold it across
+    their read-modify-write): the file edit + the in-memory reload are two steps, and interleaving
+    with another writer leaves `app.state.settings` stale."""
     edit_config_yaml(mutate)
     await reconfigure(request.app, load_settings())
 
@@ -234,7 +233,7 @@ async def host_status(host_id: str, request: Request) -> HostStatus:
 async def create_host(body: HostIn, request: Request) -> dict[str, Any]:
     """Add a machine — writes a fresh `computers:` entry (409 if the name's slug already exists)."""
     _check_basics(body)
-    async with _hosts_lock:
+    async with settings_write_lock:
         settings = request.app.state.settings
         new_slug = host_slug(body.name)
         if any(host_slug(n) == new_slug for n in settings.computers):
@@ -250,7 +249,7 @@ async def update_host(host_id: str, body: HostIn, request: Request) -> dict[str,
     """Edit a machine. Blank password keeps the stored secret; renaming re-keys the entry (and its id)
     while preserving inner field comments; removed services disappear."""
     _check_basics(body)
-    async with _hosts_lock:
+    async with settings_write_lock:
         settings = request.app.state.settings
         cur_name = next((n for n in settings.computers if host_slug(n) == host_id), None)
         if cur_name is None:
@@ -277,7 +276,7 @@ async def update_host(host_id: str, body: HostIn, request: Request) -> dict[str,
 @router.delete("/hosts/{host_id}", status_code=204)
 async def delete_host(host_id: str, request: Request) -> None:
     """Remove a machine from `config.yaml`."""
-    async with _hosts_lock:
+    async with settings_write_lock:
         settings = request.app.state.settings
         cur_name = next((n for n in settings.computers if host_slug(n) == host_id), None)
         if cur_name is None:

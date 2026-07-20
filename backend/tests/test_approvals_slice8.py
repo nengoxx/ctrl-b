@@ -66,14 +66,17 @@ def _spec(risk, *, confirm: bool = False, name: str = "probe", category: str = "
 
 # ── canonical_str: the one match form ──────────────────────────────────────────────────────────
 def test_canonical_str_scalar_forms() -> None:
-    from app.core.permissions import canonical_str
+    from app.core.permissions import NONE_CANON, canonical_str
 
     assert canonical_str("ls") == "ls"
     assert canonical_str(True) == "true"  # bool BEFORE int — not "1"
     assert canonical_str(False) == "false"
     assert canonical_str(5) == "5"
     assert canonical_str(1.5) == "1.5"
-    assert canonical_str(None) == "null"  # an omitted optional is pinnable (F1)
+    # MED-2: None canonicalizes to a sentinel a plain string CANNOT produce — the literal "null" is a
+    # different, non-matching form (see test_canonical_none_does_not_collide_with_literal_null).
+    assert canonical_str(None) == NONE_CANON
+    assert canonical_str("null") == "null" != NONE_CANON
     assert canonical_str([1, 2]) is None  # non-scalar → not matchable
     assert canonical_str({"a": 1}) is None
 
@@ -108,11 +111,16 @@ def test_match_or_across_rules_and_within_rule() -> None:
     assert approval_match(rules, {"command": "df"}) is None
 
 
-def test_match_whole_action_grant() -> None:
+def test_match_whole_action_grant_vs_empty_and() -> None:
+    """LOW-1: `args: None` is the whole-action grant; `args: {}` is the EMPTY AND — it matches only a
+    call whose validated dump is itself empty (a zero-field tool), so an "exact" grant on such a tool
+    can't silently widen into a whole-action grant if the tool later gains a field."""
     from app.core.permissions import approval_match
 
     assert approval_match([_rule(None)], {"command": "anything"}) is not None  # None args = whole-action
-    assert approval_match([_rule({})], {}) is not None  # {} args = whole-action
+    assert approval_match([_rule(None)], {}) is not None
+    assert approval_match([_rule({})], {}) is not None  # {} matches the zero-field call …
+    assert approval_match([_rule({})], {"command": "anything"}) is None  # … and NOTHING else
 
 
 def test_match_unknown_field_and_nonscalar_are_inert() -> None:
@@ -164,16 +172,34 @@ def test_match_null_pinned_field_is_exact_F1() -> None:
     """F1: a bubble rule captured from `{command:X}` pins the omitted `cwd` as `"null"`, so it matches
     ONLY cwd-omitted calls and NOT `{command:X, cwd:"/"}`. A rule pinning ONLY `command` DOES match
     both (the deliberate Conf widening)."""
-    from app.core.permissions import approval_match
+    from app.core.permissions import NONE_CANON, approval_match
 
-    # invoke passes `model_dump(mode="json")`, so an omitted optional is PRESENT as None → "null".
-    exact = [_rule({"command": "rm", "cwd": "null"})]  # bubble args-exact (cwd was omitted → null)
-    assert approval_match(exact, {"command": "rm", "cwd": None}) is not None  # cwd omitted → "null"
+    # invoke passes `model_dump(mode="json")`, so an omitted optional is PRESENT as None → NONE_CANON.
+    exact = [_rule({"command": "rm", "cwd": NONE_CANON})]  # bubble args-exact (cwd omitted → sentinel)
+    assert approval_match(exact, {"command": "rm", "cwd": None}) is not None  # cwd omitted → sentinel
     assert approval_match(exact, {"command": "rm", "cwd": "/"}) is None  # cwd set ⇒ not the null grant
 
     wide = [_rule({"command": "rm"})]  # Conf partial rule (cwd unconstrained)
     assert approval_match(wide, {"command": "rm", "cwd": None}) is not None
     assert approval_match(wide, {"command": "rm", "cwd": "/"}) is not None
+
+
+def test_canonical_none_does_not_collide_with_literal_null() -> None:
+    """MED-2 (the reachable case): `web_search {"query":"x"}` pins the omitted `categories` optional.
+    With `"null"` as the None form that rule ALSO matched a call passing the literal STRING "null" —
+    invariant 5 (args-exact) was false. The sentinel makes the two forms distinct in both directions."""
+    from app.core.permissions import approval_match, exact_arg_pins
+
+    omitted = {"query": "x", "count": 5, "categories": None}
+    literal = {"query": "x", "count": 5, "categories": "null"}
+
+    from_omitted = [_rule(exact_arg_pins(omitted))]
+    assert approval_match(from_omitted, omitted) is not None  # its own call still matches
+    assert approval_match(from_omitted, literal) is None  # the literal string is NOT the null pin
+
+    from_literal = [_rule(exact_arg_pins(literal))]
+    assert approval_match(from_literal, literal) is not None
+    assert approval_match(from_literal, omitted) is None  # …and not the other way round either
 
 
 # ── decide(approved=): the ladder ──────────────────────────────────────────────────────────────
@@ -259,6 +285,46 @@ def test_invoke_med_executes_with_matching_rule_and_stamps_marker() -> None:
         assert out.event is not None
         assert "[auto-allowed:" in out.event.summary  # the mandatory audit marker (D44 §6)
         assert "service_id=ghost" in out.event.summary
+
+
+def test_invoke_marker_truncates_long_pattern_values() -> None:
+    """MED-1: the marker is appended to EVERY auto-allowed run's persisted Event summary, so a long
+    pinned value (`terminal_write_file.content`, an MCP credential arg) must not be copied into the
+    audit log in full. Values clip to `_APPROVAL_VALUE_MAX`; the field NAME stays whole, and the
+    marker stays ONE short line."""
+    from app.config import ApprovalRule
+    from app.domain.enums import Actor, Privilege
+    from app.services.action_service import _APPROVAL_VALUE_MAX
+
+    long_value = "x" * 400
+    with _workspace(), _client() as c:
+        actions = c.app.state.actions
+        _set_approvals(actions, "restart_service", [ApprovalRule(args={"service_id": long_value})])
+        out = _run(
+            actions.invoke(
+                "restart_service", {"service_id": long_value}, actor=Actor.AGENT, privilege=Privilege.CONFIRM
+            )
+        )
+        assert not out.needs_confirm and out.event is not None
+        summary = out.event.summary
+        marker = summary[summary.index(" [auto-allowed:") :]
+        assert marker == f" [auto-allowed: service_id={'x' * _APPROVAL_VALUE_MAX}…]"
+        # ONE short line: the marker adds a bounded suffix regardless of the pinned value's size (what
+        # the tool's OWN summary says about its args is the tool's business, not the marker's).
+        assert "\n" not in marker and len(marker) < 80
+
+
+def test_approval_detail_shapes() -> None:
+    """The marker's three arg shapes: the NUL-bearing None sentinel renders readably (it must never be
+    written into a summary row verbatim), `args: None` reads "any args", and `args: {}` — the empty
+    AND — reads "no args", NOT "any args" (LOW-1)."""
+    from app.config import ApprovalRule
+    from app.core.permissions import NONE_CANON
+    from app.services.action_service import _approval_detail
+
+    assert _approval_detail(ApprovalRule(args={"cwd": NONE_CANON})) == "cwd=null"
+    assert _approval_detail(ApprovalRule(args=None)) == "any args"
+    assert _approval_detail(ApprovalRule(args={})) == "no args"
 
 
 def test_invoke_marker_whole_action_reads_any_args() -> None:

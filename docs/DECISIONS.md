@@ -2614,15 +2614,15 @@ five owner rulings → 2-lens adversarial review (design + security, both GO-WIT
   must 422 — `args=None` means whole-action, so a silently-dropped key would fail OPEN) +
   str-coerced values. No TTL/subject/toggle in v1 (declared as real fields when built).
 - **Matching:** per-field `fnmatchcase` globs against `canonical_str` of the VALIDATED
-  `model_dump(mode="json")` fields (str as-is · scalars JSON-encoded · None→`"null"` ·
+  `model_dump(mode="json")` fields (str as-is · scalars JSON-encoded · None→a sentinel (W5 ⓑ) ·
   non-scalar→unmatchable); rule = AND over listed fields, list = OR (**allow-only dissolves
   first-vs-last-match ordering** — the OPA incremental-allow idiom); unlisted fields
   unconstrained BY DESIGN (the Conf widening semantics); unknown/non-scalar → rule inert (fail
   closed). Allowlist-only: deny-shaped rules are policy-rung material (sudoers `!` anti-pattern).
 - **The grant path is SERVER-SIDE** (reviews H2+H3+F1 — the slice's one structural piece):
   `ResumeRequest.decision` gains **`"execute_always"`**; the resume path builds the args-exact
-  rule from the suspended call's validated args — **every top-level field pinned**, None as
-  `"null"`, values glob-escaped backend-side — appends under the settings write lock, persists,
+  rule from the suspended call's validated args — **every top-level field pinned**, None as the
+  sentinel, values glob-escaped backend-side — appends under the settings write lock, persists,
   then executes. Kills in one move: the FE list-through-deep-merge clobber, the two-device
   revoke race on the bubble path, the JS/Python canonicalization split (`String(1.0)`≠`"1.0"`),
   and the omitted-optional wildcard hole (a `{command}` grant must NOT match `{command,
@@ -2666,3 +2666,30 @@ settings, never through `spec_dto`. ⑤ The write-path re-homing is real and sha
 `settings_write_lock` + the new `apply_settings_patch` (merge→validate→persist→`reconfigure`) moved
 into `runtime.py`, and `PUT /api/settings` was refactored onto both — one lock, one write sequence,
 no parallel path. Full as-built narrative: AGENT_CHAT_AUDIT §5 Slice 8; banner: SLICE8_PLAN.)
+
+*(AMENDED post-audit 2026-07-20 — the W5 fix wave closing the build audit's SHIP-WITH-FIXES:)*
+ⓐ **Marker truncation** — `[auto-allowed: …]` clips each pattern VALUE to 32 chars (field names stay
+whole). It is appended to every auto-allowed run's `Event.summary`, and approvable tools take large /
+credential-bearing args (`terminal_write_file.content`, MCP args), so an untruncated pattern would
+copy them into the audit log on every run. ⓑ **`None` gets a sentinel canonical form**
+(`permissions.NONE_CANON = "\x00null"`, one constant used at BOTH pin and match time, pinned
+unescaped as a module literal). `"null"` was ALSO the canonical form of the literal string `"null"`,
+so a rule pinning an omitted optional matched a different call — §7 invariant 5 was literally false
+(reachable via `web_search.categories`). The sentinel is verified round-tripping through the real
+YAML writer + loader by test. **Documented residual:** canonicalization is type-blind inside the
+string form (an `int | str` field would conflate `5` and `"5"`); no tool has such a field today.
+ⓒ **`args: {}` ≠ `args: null`** — null is the whole-action grant, `{}` is the EMPTY AND (matches only
+a zero-field call), in the matcher, the marker (`no args` vs `any args`) and the Tools-tab chips.
+Conflated, an "exact" grant on `tailscale_serve_*` was stored as a whole-action grant that would have
+silently widened if the tool ever gained a field. ⓓ **ONE settings write lock, finally** — `api/hosts`
+and `api/integrations` dropped their private locks for `runtime.settings_write_lock` (hosts'
+`_persist_and_reload` did `edit_config_yaml` + `reconfigure(load_settings())` with no coverage at
+all), so a grant can't interleave with a host/integration write and leave `app.state.settings` stale.
+Taken at the outermost site only — nothing under it re-acquires. ⓔ **Grant failures are audited** —
+`ActionService.invoke` gained `summary_note`, folded into the summary BEFORE the Event is recorded, so
+`[always-allow not saved: …]` reaches the audit log and not just the SSE stream. ⓕ SECURITY_MODEL §2.5's
+editor-exclusion caveat now covers BOTH exclusions: forced-confirm tools (rule inert) and
+`default_agent_mode: disabled` tools (rule **live** but unmanaged — revoke via `config.yaml`).
+ⓖ The three untested §9 promises are covered: grant vs a concurrent settings write (asserting
+non-overlap, not just the end state), the marker on a HEADLESS-subagent run, sibling
+`description`/`agent_mode` preservation on grant.

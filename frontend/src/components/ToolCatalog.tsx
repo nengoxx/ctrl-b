@@ -220,7 +220,8 @@ interface Pair {
 }
 
 /** The per-tool 'always allow' rules editor (D44 W3) — lists existing rules (each rule's args as
- *  compact `field=pattern` chips; a rule with no args reads "any args"), a one-tap revoke, and a
+ *  compact `field=pattern` chips; `args: null` reads "any args", `args: {}` reads "no args"), a
+ *  one-tap revoke, and a
  *  minimal add form (field:pattern pairs; globs and field-omission allowed HERE — the deliberate
  *  widening surface, §3/§5). Every edit calls `onChange` with the FULL next list; ToolCatalog folds it
  *  into the tool's draft and the ONE `useSaveToolOverrides` write (no second write path). Only the
@@ -262,14 +263,18 @@ function ApprovalsEditor({
       {rules.map((r, i) => (
         <div className="tcat-appr-rule" key={i}>
           <div className="tcat-appr-chips">
-            {r.args && Object.keys(r.args).length ? (
+            {r.args == null ? (
+              // `null`/omitted only — a whole-action grant. `{}` is the empty AND (matches a
+              // zero-field call and nothing else), so it must NOT read as "any args".
+              <span className="tcat-appr-chip any">any args</span>
+            ) : Object.keys(r.args).length === 0 ? (
+              <span className="tcat-appr-chip any">no args</span>
+            ) : (
               Object.entries(r.args).map(([f, p]) => (
                 <span className="tcat-appr-chip" key={f}>
                   {f}={p}
                 </span>
               ))
-            ) : (
-              <span className="tcat-appr-chip any">any args</span>
             )}
           </div>
           <button
