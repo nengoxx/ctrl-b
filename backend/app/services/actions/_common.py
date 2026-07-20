@@ -49,8 +49,17 @@ SSH_CONNECT_TIMEOUT_S = 6.0
 #: `run_command`'s `timeout` (matches its own default; passed EXPLICITLY so the connect/exec budget
 #: coupling is visible here, not an implicit reliance on the adapter default). Used by the failover
 #: loop's deadline gate: it only starts a LATER candidate when at least a full connect+exec phase
-#: (`SSH_CONNECT_TIMEOUT_S + SSH_EXEC_TIMEOUT_S`) still fits inside the caller's backstop.
+#: (`SSH_CONNECT_TIMEOUT_S + SSH_EXEC_TIMEOUT_S`) still fits inside the caller's backstop. Also passed
+#: as `run_command`'s `exec_budget_s` (D47 round 3) to bound the WHOLE sequential exec phase, not per-op.
 SSH_EXEC_TIMEOUT_S = 10.0
+
+#: Scheduling-skew slack subtracted from every attempt's exec-cutoff / pre-gate reservation (D47 round
+#: 3). `exec_cutoff_s` is computed at `loop.time()` BEFORE `asyncio.to_thread`, but `run_command`'s
+#: `t0` clock starts INSIDE the worker (the thread-pool queue delay is uncharged), and the loop's
+#: `deadline` begins fractionally after the caller's `wait_for`. Both skews are normally sub-ms —
+#: seconds only under thread-pool contention — so a 2 s cushion keeps the measured cutoff honestly
+#: inside the real backstop without ever refusing a healthy fast command.
+SSH_BUDGET_SLACK_S = 2.0
 
 #: A bare `sudo` not already in stdin mode (`-S`), and not part of a longer word. Rewritten so an
 #: SSH exec (no TTY) can authenticate sudo by piping the password to stdin (same trick as
@@ -128,8 +137,9 @@ async def run_ssh_failover(
     last = len(addresses) - 1
     loop = asyncio.get_running_loop()
     deadline = loop.time() + budget_s
-    #: The pre-gate reservation — a full connect+exec phase. Cheap optimization only (see layer 1).
-    need = SSH_CONNECT_TIMEOUT_S + SSH_EXEC_TIMEOUT_S
+    #: The pre-gate reservation — a full connect+exec phase plus scheduling slack. Cheap optimization
+    #: only (see layer 1); the measured cutoff below is the real guarantee.
+    need = SSH_CONNECT_TIMEOUT_S + SSH_EXEC_TIMEOUT_S + SSH_BUDGET_SLACK_S
     prev: SshResult | None = None
     for i, address in enumerate(addresses):
         remaining = deadline - loop.time()
@@ -143,7 +153,8 @@ async def run_ssh_failover(
             )
             break  # prev is a connect-class error (we only reach here after a failover hop)
         # Layer 2: the measured cutoff run_command enforces post-connect (applies to candidate 0 too).
-        exec_cutoff_s = remaining - SSH_EXEC_TIMEOUT_S
+        # Slack absorbs to_thread queue delay + deadline skew so the cutoff stays inside the real backstop.
+        exec_cutoff_s = remaining - SSH_EXEC_TIMEOUT_S - SSH_BUDGET_SLACK_S
         res = await asyncio.to_thread(run, address, SSH_CONNECT_TIMEOUT_S, exec_cutoff_s)
         if res.kind != "connect" or i == last:
             return res
@@ -201,8 +212,9 @@ async def run_service_command(
             password=secret,
             command=run_cmd,
             connect_timeout=connect_timeout,  # short per-candidate connect budget
-            timeout=SSH_EXEC_TIMEOUT_S,  # exec/read phase (explicit — the loop's deadline gate uses it)
+            timeout=SSH_EXEC_TIMEOUT_S,  # exec/read phase initial per-op value
             exec_cutoff_s=exec_cutoff_s,  # measured no-late-execution guarantee (verify-2)
+            exec_budget_s=SSH_EXEC_TIMEOUT_S,  # bound the WHOLE sequential exec phase, not per-op (round 3)
             stdin_data=secret if pipe_pw else None,
         ),
     )

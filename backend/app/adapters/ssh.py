@@ -29,6 +29,11 @@ class SshResult:
     stdout: str = ""
     stderr: str = ""
     error: str | None = None  # connection-level failure (auth / unreachable / timeout)
+    #: Failover taxonomy (set from the exception CLASS + connect PHASE, never string-sniffed): "ok" ·
+    #: "auth" (bad credentials, terminal) · "connect" (PRE-connect socket/banner failure — the failover
+    #: class, try the next address) · "ssh" = every TERMINAL non-auth outcome: a pre-exec protocol error,
+    #: a POST-connect failure (read timeout / channel death / exhausted exec budget), OR "connected but
+    #: not executed" (handshake ate the budget) — none of which may be retried on another address.
     kind: Literal["ok", "auth", "connect", "ssh"] = "ok"
 
 
@@ -42,6 +47,7 @@ def run_command(
     timeout: float = 10.0,
     connect_timeout: float | None = None,
     exec_cutoff_s: float | None = None,
+    exec_budget_s: float | None = None,
     stdin_data: str | None = None,
 ) -> SshResult:
     """Run `command` over SSH. `stdin_data`, when set, is written to the command's stdin then the
@@ -63,6 +69,12 @@ def run_command(
     closes the pre-existing single-candidate overrun (even a lone attempt can't launch an exec it
     can't finish inside the backstop). Not executing ⇒ terminal `kind="ssh"` (no failover: by
     construction there is no budget for another candidate either).
+
+    `exec_budget_s` (D47 round 3) is the TOTAL exec-phase budget. `exec_command(timeout=…)` sets only a
+    PER-blocking-op channel timeout; our exec phase is SEQUENTIAL (stdin write/flush, stdout.read,
+    stderr.read), so it could legally burn ~3× that per-op value. Instead we anchor ONE exec deadline
+    on the same `t0` clock and re-slice the shared channel's timeout before each op, bounding the whole
+    phase to `exec_budget_s` (±one op's granularity). `None` ⇒ old per-op behavior.
 
     The connect/exec split is load-bearing for D47 failover: only a PRE-connect failure is the
     retryable `connect` class — a POST-connect error (a `socket.timeout` reading a slow-but-connected
@@ -95,14 +107,30 @@ def run_command(
                 "command safely — not executed",
             )
         stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+        chan = stdout.channel  # paramiko shares ONE channel across stdin/stdout/stderr
+        # Total exec-phase deadline on the t0 clock: from the cutoff point (t0+exec_cutoff_s), or from
+        # now if no cutoff was given. `None` ⇒ leave exec_command's per-op `timeout` untouched (old behavior).
+        exec_deadline: float | None = None
+        if exec_budget_s is not None:
+            base = (t0 + exec_cutoff_s) if exec_cutoff_s is not None else time.monotonic()
+            exec_deadline = base + exec_budget_s
+
+        def _reslice() -> None:
+            """Bound the NEXT blocking channel op by the remaining slice of the total exec budget."""
+            if exec_deadline is not None:
+                chan.settimeout(max(0.1, exec_deadline - time.monotonic()))
+
         if stdin_data is not None:
+            _reslice()
             try:
                 stdin.write(stdin_data if stdin_data.endswith("\n") else stdin_data + "\n")
                 stdin.flush()
                 stdin.channel.shutdown_write()
             except OSError:
                 pass  # channel already closing (e.g. the command exited fast) — read what we got
+        _reslice()
         out = stdout.read().decode(errors="replace")
+        _reslice()
         err = stderr.read().decode(errors="replace")
         return SshResult(ok=True, stdout=out, stderr=err)
     except paramiko.AuthenticationException:

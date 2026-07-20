@@ -17,6 +17,7 @@ from app.domain.enums import OSType
 from app.domain.host import Host, host_addresses
 from app.services.actions import build_registry
 from app.services.actions._common import (
+    SSH_BUDGET_SLACK_S,
     SSH_CONNECT_TIMEOUT_S,
     SSH_EXEC_TIMEOUT_S,
     run_ssh_failover,
@@ -151,9 +152,10 @@ def test_failover_passes_measured_exec_cutoff_per_attempt() -> None:
 
     res = asyncio.run(run_ssh_failover(h, run, budget_s=budget))
     assert len(cutoffs) == 2  # both candidates attempted
-    # candidate 0's cutoff ≈ budget - exec window; candidate 1's is strictly smaller (time passed).
-    assert cutoffs[0] <= budget - SSH_EXEC_TIMEOUT_S
-    assert cutoffs[0] > budget - SSH_EXEC_TIMEOUT_S - 1.0  # ~full budget, minus tiny bookkeeping
+    # candidate 0's cutoff ≈ budget - exec window - slack (round 3); candidate 1's is strictly smaller.
+    reserved = SSH_EXEC_TIMEOUT_S + SSH_BUDGET_SLACK_S  # the slack is now charged per attempt
+    assert cutoffs[0] <= budget - reserved
+    assert cutoffs[0] > budget - reserved - 1.0  # ~full budget, minus reservation + tiny bookkeeping
     assert cutoffs[1] < cutoffs[0]  # shrinks for the later candidate
     assert not res.ok and res.kind == "connect"
 
@@ -161,10 +163,25 @@ def test_failover_passes_measured_exec_cutoff_per_attempt() -> None:
 # --------------------------------------------------------------------------- SshResult.kind
 
 
-class _FakeStream:
-    """A paramiko channel-file stand-in whose `read` returns data or raises (read-phase failures)."""
+class _FakeChannel:
+    """The ONE channel paramiko shares across stdin/stdout/stderr — records `settimeout` re-slices."""
 
-    def __init__(self, *, data: bytes = b"", exc: BaseException | None = None) -> None:
+    def __init__(self) -> None:
+        self.settimeouts: list[float] = []
+
+    def settimeout(self, value: float) -> None:
+        self.settimeouts.append(value)
+
+    def shutdown_write(self) -> None:
+        pass
+
+
+class _FakeStream:
+    """A paramiko channel-file stand-in whose `read` returns data or raises (read-phase failures);
+    `write`/`flush` are no-ops (stdin path) and `.channel` is the shared `_FakeChannel`."""
+
+    def __init__(self, channel: _FakeChannel, *, data: bytes = b"", exc: BaseException | None = None) -> None:
+        self.channel = channel
         self._data = data
         self._exc = exc
 
@@ -173,11 +190,18 @@ class _FakeStream:
             raise self._exc
         return self._data
 
+    def write(self, _s: str) -> None:
+        pass
+
+    def flush(self) -> None:
+        pass
+
 
 class _FakeClient:
     """Stand-in for paramiko.SSHClient. `connect_exc` raises during the connect PHASE; `read_exc`
     lets `connect` succeed but makes the stdout READ raise (a slow-but-connected command). Records
-    `exec_called` so a test can assert the command was NEVER started (the exec-cutoff path)."""
+    `exec_called` so a test can assert the command was NEVER started (the exec-cutoff path); `channel`
+    is the shared channel whose `settimeout` re-slices the total exec budget."""
 
     def __init__(
         self, *, connect_exc: BaseException | None = None, read_exc: BaseException | None = None
@@ -185,6 +209,7 @@ class _FakeClient:
         self._connect_exc = connect_exc
         self._read_exc = read_exc
         self.exec_called = False
+        self.channel = _FakeChannel()
 
     def set_missing_host_key_policy(self, _policy: object) -> None:
         pass
@@ -195,7 +220,8 @@ class _FakeClient:
 
     def exec_command(self, _command: str, timeout: float | None = None) -> tuple[object, object, object]:
         self.exec_called = True
-        return _FakeStream(), _FakeStream(exc=self._read_exc), _FakeStream()
+        ch = self.channel
+        return _FakeStream(ch), _FakeStream(ch, data=b"out", exc=self._read_exc), _FakeStream(ch, data=b"err")
 
     def close(self) -> None:
         pass
@@ -283,6 +309,44 @@ def test_exec_cutoff_refuses_to_start_command(monkeypatch) -> None:
     # None cutoff = the pre-existing behavior: the command runs
     res2 = ssh.run_command(host="h", port=22, username="u", password="p", command="x", exec_cutoff_s=None)
     assert res2.ok and holder["client"].exec_called is True
+
+
+def test_total_exec_budget_reslices_channel(monkeypatch) -> None:
+    """round 3: `exec_command(timeout=)` is only PER-op, so we re-slice the shared channel's timeout
+    before EACH sequential op (stdin write, stdout.read, stderr.read) to bound the WHOLE exec phase to
+    `exec_budget_s`. With a fake monotonic advancing 1 s per call, the recorded `settimeout` values
+    strictly DECREASE and stay within (0, exec_budget_s]. `exec_budget_s=None` ⇒ no re-slicing."""
+    import paramiko
+
+    client = _FakeClient()  # connect ok; stdout/stderr return data
+    monkeypatch.setattr(paramiko, "SSHClient", lambda: client)
+    clock = iter(float(n) for n in range(1000, 1100))  # advances 1s each monotonic() call
+    monkeypatch.setattr(ssh.time, "monotonic", lambda: next(clock))
+
+    res = ssh.run_command(
+        host="h",
+        port=22,
+        username="u",
+        password="p",
+        command="x",
+        exec_budget_s=10.0,
+        stdin_data="pw",  # stdin path → a re-slice before each of the 3 sequential blocking ops
+    )
+    assert res.ok
+    slices = client.channel.settimeouts
+    assert len(slices) == 3  # one before stdin-write, stdout.read, stderr.read
+    assert slices == sorted(slices, reverse=True) and len(set(slices)) == 3  # strictly decreasing
+    assert all(0.0 < s <= 10.0 for s in slices)  # each within the total budget window
+
+    # exec_budget_s=None → channel timeout left as exec_command set it (old per-op behavior, no re-slice)
+    client2 = _FakeClient()
+    monkeypatch.setattr(paramiko, "SSHClient", lambda: client2)
+    clock2 = iter(float(n) for n in range(2000, 2100))
+    monkeypatch.setattr(ssh.time, "monotonic", lambda: next(clock2))
+    ssh.run_command(
+        host="h", port=22, username="u", password="p", command="x", exec_budget_s=None, stdin_data="pw"
+    )
+    assert client2.channel.settimeouts == []  # no re-slicing when the total budget is off
 
 
 def test_sshresult_kind_defaults_ok() -> None:

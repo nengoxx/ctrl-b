@@ -237,9 +237,13 @@ class ActionService:
             # 3.10). Guard the format: `timeout` is None in the in-tool case, so `{timeout:.0f}` would
             # raise a `TypeError` *inside* the handler and escape `_execute` un-normalized (ACA-6).
             detail = f"after {timeout:.0f}s" if timeout else "(no spec deadline; in-tool timeout)"
+            # Honest wording (D47 round 3): `wait_for` gives up WAITING but does not kill the work
+            # (Python threads aren't cancellable — see the note above), so a just-started remote command
+            # may still run to completion on the host. Say so — the irreducible remote-execution residual.
             result = ToolResult(
                 state=RunState.TIMEOUT,
-                summary=f"{tool.spec.title} timed out {detail}",
+                summary=f"{tool.spec.title} timed out {detail} — it was not cancelled and may still "
+                "be completing on the host",
             )
         except Exception as exc:  # noqa: BLE001 — normalize any escape into a clean result
             result = ToolResult(state=RunState.ERROR, summary=f"{tool.spec.title} failed", error=str(exc))

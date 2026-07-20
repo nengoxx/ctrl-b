@@ -79,8 +79,9 @@ async def shutdown_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolRes
             password=secret,
             command=command,
             connect_timeout=connect_timeout,  # short per-candidate connect budget
-            timeout=SSH_EXEC_TIMEOUT_S,  # exec/read phase (explicit — the loop's deadline gate uses it)
+            timeout=SSH_EXEC_TIMEOUT_S,  # exec/read phase initial per-op value
             exec_cutoff_s=exec_cutoff_s,  # measured no-late-execution guarantee (verify-2)
+            exec_budget_s=SSH_EXEC_TIMEOUT_S,  # bound the WHOLE sequential exec phase, not per-op (round 3)
             stdin_data=stdin_data,
         ),
     )

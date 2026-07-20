@@ -3153,3 +3153,19 @@ corrected in the map below).
   pre-existing acknowledged single-candidate overrun is now closed too. (4) **Omit-preserves CRUD** — `_apply_fields` touches `vpn_host`/
   `ssh_prefer_vpn` only when the client actually sent them (`model_fields_set`), so the pre-Slice-2
   editor (which never sends them) can't wipe a hand-configured VPN address; explicit null/false still clears.
+- **AMENDED-2 (2026-07-20, foreign review round 3) — total-exec budget + slack + the ACCEPTED
+  RESIDUAL:** `run_command` gains `exec_budget_s` (the closures pass `SSH_EXEC_TIMEOUT_S`): because
+  `exec_command(timeout=)` is only a PER-blocking-op channel timeout and our exec phase is sequential
+  (stdin write · stdout.read · stderr.read), it anchors ONE deadline on the `t0` clock and re-slices
+  the shared channel's timeout (`stdout.channel.settimeout(remaining)`) before each op, bounding the
+  WHOLE phase to `exec_budget_s` instead of ~3×. A new `SSH_BUDGET_SLACK_S=2` is subtracted from every
+  attempt's `exec_cutoff_s` and the pre-gate `need` — it absorbs the `to_thread` queue delay + the
+  loop-vs-`wait_for` deadline skew (normally sub-ms; seconds only under thread-pool contention). The
+  caller's TIMEOUT summary now states the command "was not cancelled and may still be completing on
+  the host." **ACCEPTED RESIDUAL (owner ruling, verbatim in substance):** once `exec_command` transmits
+  the command the remote host runs it regardless of any local deadline — no client-side arithmetic can
+  un-execute it. The layered budget (pre-gate → measured post-connect cutoff → total-exec budget →
+  slack) shrinks the late-start window to sub-slack scheduling anomalies; the remaining exposure is a
+  TIMEOUT report while a just-started command completes remotely, which the TIMEOUT wording
+  acknowledges and which forced-confirm gates on the destructive actions bound in practice. Ruled
+  accepted 2026-07-20 (final foreign review round 3); further tightening is not planned.
