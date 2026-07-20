@@ -113,11 +113,10 @@ class GitMemoryBackup:
                 return
             for rel in await self._dirty_paths(root):
                 abspath = root / rel
-                exists = abspath.exists()
+                exists, date = await asyncio.to_thread(self._file_state, abspath)
                 msg = f"memory: external {'edit to' if exists else 'removal of'} {rel}"
                 await self._run(root, ["add", "--", rel])
                 args = ["commit", "-m", msg, "--", rel]
-                date = self._mtime_iso(abspath) if exists else None
                 if date:
                     args.insert(1, f"--date={date}")  # ["commit", "--date=…", "-m", msg, "--", rel]
                 await self._run(root, args)
@@ -250,6 +249,13 @@ class GitMemoryBackup:
             if path:
                 out.append(path)
         return out
+
+    @classmethod
+    def _file_state(cls, p: Path) -> tuple[bool, str | None]:
+        """`(exists, mtime-iso-or-None)` for the reconcile loop — the exists+stat pair in one
+        `asyncio.to_thread` hop (SYS-16), and one fs view rather than two."""
+        exists = p.exists()
+        return exists, (cls._mtime_iso(p) if exists else None)
 
     @staticmethod
     def _mtime_iso(p: Path) -> str | None:

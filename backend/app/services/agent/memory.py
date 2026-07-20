@@ -13,6 +13,7 @@ tool and Conf editing extend this provider in 7e-d-2 / 7e-d-3.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import os
@@ -266,12 +267,9 @@ class FileMemoryProvider:
         `read_raw` would return next)."""
         path, spec = self._target(agent, target)
         async with self._backup.guard():
-            if content.strip():
-                _atomic_write(path, content.rstrip("\n") + "\n")
-            elif path.is_file():
-                path.unlink()
+            stored = await asyncio.to_thread(_overwrite_file, path, content)
             await self._backup.commit([path], _commit_msg(agent, spec.filename, "overwrite"))
-        return _read(path)
+        return stored
 
 
 def migrate_legacy_specialist_memory(settings: Settings) -> int:
@@ -304,6 +302,18 @@ def migrate_legacy_specialist_memory(settings: Settings) -> int:
 
 def _read(p: Path) -> str:
     return p.read_text(encoding="utf-8").strip() if p.is_file() else ""
+
+
+def _overwrite_file(path: Path, content: str) -> str:
+    """The blocking write-or-remove + read-back behind `MemoryProvider.overwrite`, hoisted into a
+    single `asyncio.to_thread` hop (SYS-16) so the whole read-modify-write sequence runs on one
+    thread instead of widening the is_file/unlink window across several. Returns the stored text
+    (== what `read_raw` returns next); the git commit that follows doesn't touch content."""
+    if content.strip():
+        _atomic_write(path, content.rstrip("\n") + "\n")
+    elif path.is_file():
+        path.unlink()
+    return _read(path)
 
 
 def _commit_msg(agent: AgentDef, filename: str, action: str) -> str:

@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from sse_starlette.sse import EventSourceResponse
 from starlette.responses import Response
 
-from app.config import deep_merge
+from app.config import Settings, deep_merge
 from app.core.fsutil import write_text_eol
 from app.core.memory import StoreScope, StoreSpec, store_by_key
 from app.domain.agent import AgentDef
@@ -1183,14 +1183,21 @@ def _skill_root(request: Request, name: str) -> Path:
     return request.app.state.settings.skills_dir_path()
 
 
+def _read_skill_md(p: Path) -> str | None:
+    """Blocking read of a `SKILL.md`, or None if absent — one `to_thread` hop for the exists+read
+    pair (SYS-16) so the check and the read can't straddle the event loop."""
+    return p.read_text(encoding="utf-8") if p.is_file() else None
+
+
 @router.get("/skills/{name}")
 async def get_skill(name: str, request: Request) -> dict[str, Any]:
     """The raw `SKILL.md` text for the editor (7d). 404 if the skill doesn't exist; a fresh name
     returns the scaffold template so the editor opens populated."""
     p = _skill_root(request, name) / name / "SKILL.md"
-    if not p.is_file():
+    content = await asyncio.to_thread(_read_skill_md, p)
+    if content is None:
         raise HTTPException(status_code=404, detail=f"unknown skill '{name}'")
-    return {"name": name, "content": p.read_text(encoding="utf-8")}
+    return {"name": name, "content": content}
 
 
 @router.put("/skills/{name}")
@@ -1199,7 +1206,7 @@ async def put_skill(name: str, body: SkillContent, request: Request) -> dict[str
     a save is live with no restart. Blank content → the scaffold template (used by 'add skill')."""
     root = _skill_root(request, name)
     content = body.content if body.content.strip() else _SKILL_TEMPLATE.format(name=name)
-    write_skill_md(root, name, content)
+    await asyncio.to_thread(write_skill_md, root, name, content)
     return {"name": name, "content": content}
 
 
@@ -1207,7 +1214,7 @@ async def put_skill(name: str, body: SkillContent, request: Request) -> dict[str
 async def delete_skill(name: str, request: Request) -> dict[str, Any]:
     """Remove a skill's `SKILL.md` (7d) and its folder if it's left empty (resource files the owner
     dropped in are preserved — only an empty folder is cleaned up). Idempotent: 404 if not present."""
-    if not remove_skill_md(_skill_root(request, name), name):
+    if not await asyncio.to_thread(remove_skill_md, _skill_root(request, name), name):
         raise HTTPException(status_code=404, detail=f"unknown skill '{name}'")
     return {"name": name, "deleted": True}
 
@@ -1261,16 +1268,72 @@ def _agent_payload(name: str, agent: AgentDef, folder: Path, is_default: bool) -
     }
 
 
+def _load_agent_payload(s: Settings, name: str, folder: Path, is_default: bool) -> dict[str, Any] | None:
+    """Blocking load (agent.yaml) + payload build (SOUL.md read) in one `to_thread` hop (SYS-16).
+    None → no such specialist folder (the caller 404s)."""
+    agent = s.load_agent(name)
+    if agent is None:
+        return None
+    return _agent_payload(name, agent, folder, is_default)
+
+
+def _scaffold_agent(
+    s: Settings, name: str, folder: Path, fields: dict[str, Any], default_prompt: str
+) -> dict[str, Any]:
+    """The whole blocking write side of `PUT /agents/{name}` — mkdir → agent.yaml → scaffold SOUL.md
+    → reload → payload — hoisted into one `to_thread` hop (SYS-16). Kept as one sequence so the
+    mkdir/is_file/write chain doesn't straddle the loop (validation already ran on the caller)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    write_text_eol(folder / "agent.yaml", yaml.safe_dump(fields, sort_keys=False, allow_unicode=True))
+    soul_p = folder / "SOUL.md"
+    if not soul_p.is_file():
+        write_text_eol(soul_p, default_prompt + "\n")
+    agent = s.load_agent(name)
+    assert agent is not None, "agent.yaml was just written, so the folder resolves"
+    return _agent_payload(name, agent, folder, False)
+
+
+def _delete_agent_folder(folder: Path) -> bool:
+    """Blocking is_dir + rmtree in one hop (SYS-16). False → nothing there (the caller 404s)."""
+    if not folder.is_dir():
+        return False
+    shutil.rmtree(folder)
+    return True
+
+
+def _read_soul(folder: Path, *, require_folder: bool) -> str | None:
+    """Blocking SOUL.md read in one hop (SYS-16). None → the specialist folder is missing (404);
+    "" → no SOUL.md yet (the loop falls back to inference.system_prompt → baked)."""
+    if require_folder and not folder.is_dir():
+        return None
+    p = folder / "SOUL.md"
+    return p.read_text(encoding="utf-8") if p.is_file() else ""
+
+
+def _write_soul(folder: Path, content: str, *, require_folder: bool) -> bool:
+    """Blocking SOUL.md write-or-remove in one hop (SYS-16). False → folder missing (the caller
+    404s). Blank content removes the file so the prompt falls back to inference.system_prompt."""
+    if require_folder and not folder.is_dir():
+        return False
+    p = folder / "SOUL.md"
+    if content.strip():
+        folder.mkdir(parents=True, exist_ok=True)
+        write_text_eol(p, content)
+    elif p.is_file():
+        p.unlink()
+    return True
+
+
 @router.get("/agents/{name}")
 async def get_agent(name: str, request: Request) -> dict[str, Any]:
     """The resolved `AgentDef` (agent.yaml merged onto `agent.defaults`) + its `SOUL.md` persona, for
     the editor. 404 if a specialist folder is absent. The `default` name returns the root agent."""
     s = request.app.state.settings
     folder, is_default = _agent_folder(request, name, allow_default=True)
-    agent = s.load_agent(name)
-    if agent is None:
+    payload = await asyncio.to_thread(_load_agent_payload, s, name, folder, is_default)
+    if payload is None:
         raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
-    return _agent_payload(name, agent, folder, is_default)
+    return payload
 
 
 @router.put("/agents/{name}")
@@ -1289,12 +1352,7 @@ async def put_agent(name: str, body: AgentBody, request: Request) -> dict[str, A
         AgentDef.model_validate(merged)
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=f"invalid agent: {e.errors()[0]['msg']}") from e
-    folder.mkdir(parents=True, exist_ok=True)
-    write_text_eol(folder / "agent.yaml", yaml.safe_dump(fields, sort_keys=False, allow_unicode=True))
-    soul_p = folder / "SOUL.md"
-    if not soul_p.is_file():
-        write_text_eol(soul_p, DEFAULT_SYSTEM_PROMPT + "\n")
-    return _agent_payload(name, s.load_agent(name), folder, False)
+    return await asyncio.to_thread(_scaffold_agent, s, name, folder, fields, DEFAULT_SYSTEM_PROMPT)
 
 
 @router.delete("/agents/{name}")
@@ -1302,9 +1360,8 @@ async def delete_agent(name: str, request: Request) -> dict[str, Any]:
     """Delete a specialist agent's whole folder (agent.yaml + SOUL.md + its memories). The default
     agent can't be deleted. Idempotent: 404 if absent."""
     folder, _ = _agent_folder(request, name)
-    if not folder.is_dir():
+    if not await asyncio.to_thread(_delete_agent_folder, folder):
         raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
-    shutil.rmtree(folder)
     return {"name": name, "deleted": True}
 
 
@@ -1313,10 +1370,11 @@ async def get_agent_soul(name: str, request: Request) -> dict[str, Any]:
     """The raw `SOUL.md` persona for an agent (incl. `default` → root SOUL.md). Empty string if the
     file doesn't exist yet (the loop falls back to inference.system_prompt → baked)."""
     folder, _ = _agent_folder(request, name, allow_default=True)
-    if name != request.app.state.settings.DEFAULT_AGENT_NAME and not folder.is_dir():
+    require = name != request.app.state.settings.DEFAULT_AGENT_NAME
+    content = await asyncio.to_thread(_read_soul, folder, require_folder=require)
+    if content is None:
         raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
-    p = folder / "SOUL.md"
-    return {"name": name, "content": p.read_text(encoding="utf-8") if p.is_file() else ""}
+    return {"name": name, "content": content}
 
 
 @router.put("/agents/{name}/soul")
@@ -1324,14 +1382,9 @@ async def put_agent_soul(name: str, body: SoulContent, request: Request) -> dict
     """Write an agent's `SOUL.md` persona (incl. `default` → root SOUL.md). Blank content removes the
     file → the loop falls back to `inference.system_prompt` → the baked default."""
     folder, is_default = _agent_folder(request, name, allow_default=True)
-    if not is_default and not folder.is_dir():
+    ok = await asyncio.to_thread(_write_soul, folder, body.content, require_folder=not is_default)
+    if not ok:
         raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
-    p = folder / "SOUL.md"
-    if body.content.strip():
-        folder.mkdir(parents=True, exist_ok=True)
-        write_text_eol(p, body.content)
-    elif p.is_file():
-        p.unlink()  # blank → remove so the prompt falls back to inference.system_prompt → baked
     return {"name": name, "content": body.content}
 
 
