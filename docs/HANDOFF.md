@@ -368,7 +368,16 @@
 > self-hosted heuristic survives as an advisory WARNING only (`warn_suspect_api_modes`), never a branch.
 > **⚠ THE OWNER MUST SET `api_mode: llamacpp` ON THE LIVE CONFIG** — it defaults to `openai` for
 > back-compat, so on an untouched `config.yaml` the feature is INERT (that's what the warning nags
-> about). No UI for it yet → YAML edit or a settings PUT.
+> about). No UI for it yet → YAML edit or a settings PUT. **Verified 2026-07-20: BOTH dev and prod have
+> `api_mode` unset on `inference.local` AND `inference.cloud`** (local `192.168.1.137:5001` = llama.cpp,
+> cloud = openrouter.ai) — so set `local: llamacpp` + `cloud: openrouter` on both.
+> **The build wave's flagged risk on the `max_tokens_field` derivation flip was EMPIRICALLY CLEARED for
+> this config:** with `api_mode` unset the derivation now sends `max_completion_tokens`, and a live
+> probe confirmed **OpenRouter accepts BOTH spellings (HTTP 200 each)**; llama.cpp aliases both by
+> design (`server-schema.cpp add_alias`). So no endpoint here breaks. The residual risk stands only for
+> a *different* non-OpenAI cloud left on the default `api_mode` — recorded in D46, one-line remedy
+> (set its `api_mode`, or pin `max_tokens_field` explicitly), and NOT covered by the D46 400-feedback
+> path (it isn't a reasoning key, so it would burn the chain).
 > **Three corrections I got wrong first, all fixed, all recorded honestly in D45/D46:** ⓐ I ruled that
 > OpenRouter rejects `max` from a docs page narrower than reality and shipped a clamp — **live testing
 > proved `max` is accepted (HTTP 200), their own invalid-value error literally reads `expected one of
