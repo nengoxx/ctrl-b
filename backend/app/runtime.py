@@ -271,11 +271,18 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
     open_terminal_changed = _changed(old, new, "open_terminal")
     voice_changed = _changed(old, new, "voice")
     tool_overrides_changed = _changed(old, new, "tool_overrides")
+    agent_changed = _changed(old, new, "agent")
     caches_stale = _changed(old, new, "server") or _changed(old, new, "computers")
 
     apply_settings_inplace(app, new)
     if inference_changed:
         set_inference(app, new)
+    elif agent_changed:
+        # `agent.defaults` can carry reasoning settings (D15 #1 / D42 ModelRef rider); a settings-PUT
+        # edit there does NOT rebuild the client, so learned demotions clear explicitly — the same
+        # D46/F6 blanket-on-mutation rule the file-per-agent handlers follow. `elif`: a rebuild above
+        # already minted an empty set.
+        clear_reasoning_demotions(app)
     if searxng_changed:
         await set_searxng(app, new)
     if embeddings_changed:

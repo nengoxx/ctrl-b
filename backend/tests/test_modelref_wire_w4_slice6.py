@@ -1348,6 +1348,28 @@ def test_runtime_hook_clears_reasoning_demotions_on_an_agent_edit() -> None:
     clear_reasoning_demotions(SimpleNamespace(state=SimpleNamespace()))
 
 
+def test_reconfigure_clears_demotions_on_an_agent_section_edit() -> None:
+    """F6 rider (final foreign review): `agent.defaults` can carry reasoning settings too (D15 #1 /
+    the D42 ModelRef rider), and a `PUT /api/settings` agent-section edit reaches `reconfigure`
+    WITHOUT an inference rebuild — so the demotions must clear through the same hook (`elif
+    agent_changed`). Driven at the runtime chokepoint like the hook test above: with ONLY the agent
+    section changed, `reconfigure` touches nothing but `apply_settings_inplace` + the clear."""
+    from types import SimpleNamespace
+
+    from app.config import Settings
+    from app.runtime import reconfigure
+
+    client = InferenceClient(_cfg())
+    client._reasoning_demoted.add(("http://local/v1", "minig"))
+    old = Settings()
+    new = Settings(agent={"defaults": {"model": {"reasoning_effort": "high"}}})
+    app = SimpleNamespace(state=SimpleNamespace(settings=old, inference=client))
+    run_async(reconfigure(app, new))
+    assert client._reasoning_demoted == set()
+    # an inference-section edit instead → the rebuild path owns invalidation (fresh client, empty set);
+    # the elif keeps the hook off that path — nothing to assert here beyond "it didn't crash above".
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:
