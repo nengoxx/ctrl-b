@@ -12,6 +12,7 @@ The `tailscale` binary is exec'd directly with argv (no shell → no injection; 
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -65,7 +66,7 @@ async def resolve_status(cfg: TailscaleCfg) -> dict:
         "target_port": cfg.target_port,
         "reason": None,
     }
-    binpath = _bin()
+    binpath = await asyncio.to_thread(_bin)
     if not binpath:
         out["reason"] = "tailscale CLI not found"
         return out
@@ -114,7 +115,7 @@ async def _serve_cmd(ctx: InvocationContext, *, off: bool) -> ToolResult:
     cfg = ctx.require_deps().settings.tailscale
     if not cfg.enabled:
         return ToolResult(state=RunState.DENIED, summary="Tailscale control is disabled (tailscale.enabled)")
-    binpath = _bin()
+    binpath = await asyncio.to_thread(_bin)
     if not binpath:
         return ToolResult(
             state=RunState.ERROR, summary="tailscale CLI not found", error="tailscale not on PATH"

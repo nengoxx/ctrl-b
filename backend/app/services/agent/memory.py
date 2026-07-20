@@ -202,18 +202,37 @@ class FileMemoryProvider:
         # raise (bad `old_text`/action) or the cap-check can raise — both propagate out of the lock with
         # no file change and no commit (the lock simply releases).
         async with self._backup.guard():
-            body = _read(path)
-            new = self._merge(spec, action, content, old_text, body, label)
-            # F1 — the cap is a *growth* guard, not an absolute ceiling: reject only an edit that pushes
-            # the store further over cap. A `remove`/shrinking `replace`/smaller `set` is always allowed
-            # even while over cap, so an over-cap store (a lowered cap, or the uncapped manual
-            # `overwrite`) can never trap the very edits that resolve it.
-            if len(new) > cap and len(new) > len(body):
-                raise MemoryCapError(label, len(new), cap, action)
-            _atomic_write(path, new + "\n" if new else "")
+            new = await asyncio.to_thread(
+                self._merge_and_write, path, spec, action, content, old_text, cap, label
+            )
             await self._backup.commit([path], _commit_msg(agent, spec.filename, action))
         pct = round(100 * len(new) / cap) if cap > 0 else 0
         return f"{label} updated ({action}) — {pct}% ({len(new):,}/{cap:,})"
+
+    def _merge_and_write(
+        self,
+        path: Path,
+        spec: StoreSpec,
+        action: str,
+        content: str,
+        old_text: str | None,
+        cap: int,
+        label: str,
+    ) -> str:
+        """The blocking read-modify-write half of `write`, hoisted into a single `asyncio.to_thread`
+        hop (SYS-16): the read and the write must not straddle the event loop, and one hop keeps the
+        whole critical section on one thread. `_merge` (bad `old_text`/action) and the cap check raise
+        exactly as before — both propagate out of the thread with no file change and no commit."""
+        body = _read(path)
+        new = self._merge(spec, action, content, old_text, body, label)
+        # F1 — the cap is a *growth* guard, not an absolute ceiling: reject only an edit that pushes
+        # the store further over cap. A `remove`/shrinking `replace`/smaller `set` is always allowed
+        # even while over cap, so an over-cap store (a lowered cap, or the uncapped manual
+        # `overwrite`) can never trap the very edits that resolve it.
+        if len(new) > cap and len(new) > len(body):
+            raise MemoryCapError(label, len(new), cap, action)
+        _atomic_write(path, new + "\n" if new else "")
+        return new
 
     @staticmethod
     def _merge(

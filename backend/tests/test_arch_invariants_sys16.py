@@ -76,6 +76,9 @@ _ALLOWED = {
     "app/db.py:180: mkdir",
 }
 
+#: Direct `async def` → blocking-sync-helper calls deliberately left as-is (same format, same rules).
+_ALLOWED_HELPER_CALLS: set[str] = set()
+
 
 def _own_body(fn: ast.AST) -> list[ast.AST]:
     """Every node lexically inside `fn`, **excluding** nested `def`/`async def`/`lambda` bodies —
@@ -149,6 +152,76 @@ def test_no_blocking_filesystem_calls_inside_async_defs():
     assert not stale, f"allowlisted blocking-fs sites are gone — prune the allowlist: {stale}"
 
 
+def _blocking_helpers(tree: ast.Module) -> set[str]:
+    """Module-level sync `def`s that perform blocking fs work, directly or by calling another such
+    helper in the same file (transitive closure). These are exactly the functions that must only be
+    reached via `asyncio.to_thread`, never called straight from an `async def`."""
+    defs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+    blocking = {
+        name
+        for name, fn in defs.items()
+        if any(isinstance(x, ast.Call) and _blocking_label(x) for x in _own_body(fn))
+    }
+    changed = True
+    while changed:  # propagate: a helper calling a blocking helper is itself blocking
+        changed = False
+        for name, fn in defs.items():
+            if name in blocking:
+                continue
+            for x in _own_body(fn):
+                if isinstance(x, ast.Call) and isinstance(x.func, ast.Name) and x.func.id in blocking:
+                    blocking.add(name)
+                    changed = True
+                    break
+    return blocking
+
+
+def _sync_helper_calls_in_async(src: str, rel: str) -> list[str]:
+    """`<rel>:<line>: <helper>()` for every direct call to a blocking sync helper from an `async def`.
+
+    This closes the ratchet's other blind spot (shared with ASYNC240): moving the blocking calls into
+    a sync helper is only a fix if the helper is then reached via `to_thread`. Passing the helper as
+    a *reference* (`asyncio.to_thread(_write_soul, ...)`) is not a Call node, so the correct shape
+    never trips this — only dropping the `to_thread` does.
+    """
+    tree = ast.parse(src)
+    helpers = _blocking_helpers(tree)
+    if not helpers:
+        return []
+    awaited = {
+        id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Await) and isinstance(n.value, ast.Call)
+    }
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.AsyncFunctionDef):
+            continue
+        for x in _own_body(node):
+            if (
+                isinstance(x, ast.Call)
+                and id(x) not in awaited
+                and isinstance(x.func, ast.Name)
+                and x.func.id in helpers
+            ):
+                found.append(f"{rel}:{x.lineno}: {x.func.id}()")
+    return found
+
+
+def test_no_blocking_sync_helpers_called_straight_from_async():
+    hits: list[str] = []
+    for py in sorted((BACKEND / "app").rglob("*.py")):
+        hits += _sync_helper_calls_in_async(
+            py.read_text(encoding="utf-8"), py.relative_to(BACKEND).as_posix()
+        )
+
+    unexpected = sorted(set(hits) - _ALLOWED_HELPER_CALLS)
+    assert not unexpected, (
+        "an `async def` calls a blocking sync helper directly (SYS-16) — hoisting the fs work into a "
+        f"helper only fixes the stall if the helper is reached via `asyncio.to_thread`: {unexpected}"
+    )
+    stale = sorted(_ALLOWED_HELPER_CALLS - set(hits))
+    assert not stale, f"allowlisted helper calls are gone — prune the allowlist: {stale}"
+
+
 def test_ratchet_detects_a_planted_violation():
     """The guard's own smoke test: it must flag a blocking call in an async def, ignore the same
     call inside a nested sync helper, and ignore awaited (non-fs) calls of the same name."""
@@ -170,3 +243,30 @@ async def good(p: Path, threads) -> str:
 """
     labels = sorted(h.split(": ", 1)[1] for h in _scan(src, "sample.py"))
     assert labels == ["is_file", "read_text"]  # only the two in `bad`
+
+
+def test_ratchet_detects_a_dropped_to_thread():
+    """The second guard's smoke test: calling the blocking helper directly must fail, while reaching
+    it via `asyncio.to_thread` (a reference, not a call) must not."""
+    tmpl = """
+import asyncio
+from pathlib import Path
+
+def _read_soul(p: Path) -> str:
+    return p.read_text() if p.is_file() else ""
+
+def _wrapper(p: Path) -> str:
+    return _read_soul(p)
+
+async def handler(p: Path) -> str:
+    return {body}
+"""
+    good = _sync_helper_calls_in_async(tmpl.format(body="await asyncio.to_thread(_read_soul, p)"), "s.py")
+    assert good == [], f"the to_thread form must not trip the guard: {good}"
+
+    bad = _sync_helper_calls_in_async(tmpl.format(body="_read_soul(p)"), "s.py")
+    assert [h.split(": ", 1)[1] for h in bad] == ["_read_soul()"]
+
+    # transitive: a helper that only *calls* a blocking helper is itself blocking
+    trans = _sync_helper_calls_in_async(tmpl.format(body="_wrapper(p)"), "s.py")
+    assert [h.split(": ", 1)[1] for h in trans] == ["_wrapper()"]
