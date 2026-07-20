@@ -3088,3 +3088,46 @@ pass caught six correctness gaps in the reconciliation + classifier + invalidati
   endpoint's hand-set shorthand). Verifier INFO notes accepted as residuals: the off-carry is
   dialect-blind (a hand-set namespace on an `openai` endpoint is already an unknown key there), and
   `_NAMED_PARAM_RE` keeps a trailing dot on an unquoted token (unreachable in the measured shapes).
+
+## D47 — Multi-homed host addressing, Slice 1 (backend) ✏️ LOCKED 2026-07-20 (owner go; design = ROADMAP D3 2026-06-30 + the same-day code-truth amendments)
+
+**What:** a host is reachable at a LAN address AND a VPN/overlay address; the backend picks
+server-side with ordered failover. The full design (vantage analysis, measurements, the
+hardcoding audit) lives in **ROADMAP §D3** — this entry locks the Slice-1 build contract against
+HEAD (code-truth re-verified 2026-07-20; the 2026-06-30 call-site lines were stale and are
+corrected in the map below).
+
+- **Schema (additive, generic — no VPN product named in config/logic):** `ComputerCfg` +
+  domain `Host` + the `Settings.hosts()` projection gain `vpn_host: str | None = None` (a MagicDNS
+  name preferred, or an IP; display label may say "VPN (Tailscale)", the field stays neutral) and
+  `ssh_prefer_vpn: bool = False`. The hosts CRUD round-trips both (`HostIn` → `_host_entry` /
+  `_apply_fields`; `_host_dto` exposes `vpn_host` — the Conf editor fields themselves are Slice 2).
+  CRUD already runs under `runtime.settings_write_lock` (2026-07-20 re-homing) — no new locking.
+- **ONE chokepoint resolver:** `host_addresses(host, prefer_vpn) -> list[str]` — ordered,
+  de-duplicated, blank/None-dropped candidates; `[ip, vpn_host]` by default, flipped when
+  `prefer_vpn` (the `endpoint_chain` blank-drop precedent). A host with no `vpn_host` yields
+  exactly `[ip]` — today's behavior, zero change. The LAN>VPN preference lives HERE only, never at
+  call sites.
+- **Typed SSH error category (code-truth amendment 1):** `SshResult` gains
+  `kind: Literal["ok", "auth", "connect", "ssh"]`, set at the existing three `except` sites in
+  `adapters/ssh.py` (`AuthenticationException` → `auth`; `SSHException` → `ssh`; `OSError` —
+  which absorbs timeout/refused/gaierror/`NoValidConnectionsError` → `connect`). No string-sniffing.
+- **ONE shared failover loop (amendment 3):** candidate iteration + a short per-candidate connect
+  timeout (a new named const, distinct from the 30s whole-call `SSH_ACTION_TIMEOUT_S` backstop) +
+  advance ONLY on `kind == "connect"` — never on `auth` (connected + wrong password is a real
+  error) or `ssh`. Lives beside `run_service_command` in `_common.py` (or a thin adapter wrapper);
+  the three SSH call sites (`_common.py:107` service control · `shutdown.py:69` · `reboot.py:66`)
+  all use it — no triplication.
+- **Unchanged on `ip` (explicit):** ping (`fleet.py:46`), port probe (`svc.py:74`), and — Slice-1
+  ruling on the design's open point — `svc.url_for` (`svc.py:119`) + the `open_service_url` tool
+  stay LAN: the backend has no browser vantage; vantage-aware links are inherently client-side
+  (Slice 2's `serviceBase(host, location)`).
+- **Interplay verified (2026-07-20):** D44 forced-confirm short-circuits BEFORE approvals for
+  `shutdown_host`/`reboot_host` (approval-immune), and grants pin only tool args (`service_id`/
+  `host_id`) — the address is resolved server-side, so failover can never break a grant. The
+  QH-9 OS-branch allowlist is untouched (the resolver branches on host data, not server OS).
+- **Tests (amendment 6):** resolver order/flip/blank-collapse · failover advances on `connect`,
+  refuses on `auth` · shutdown still forced-confirms · CRUD round-trips both fields.
+- **Out of scope (Slice 2/3, ROADMAP D3):** frontend vantage-aware `serviceBase`, the Conf editor
+  address fields + SSH toggle, display lines (incl. the frontier/Hero consumers that postdate the
+  design), and the `tailscale status --json` discovery button.
