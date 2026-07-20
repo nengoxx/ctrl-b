@@ -136,6 +136,59 @@ def test_hosts_crud_roundtrip() -> None:
         os.environ.pop("CTRLB_DB", None)
 
 
+def test_vpn_host_fields_roundtrip() -> None:
+    """D47 Slice 1: `vpn_host` + `ssh_prefer_vpn` round-trip through create/update, the DTO exposes
+    both (never a password), and an omitted field defaults to None/False and is absent from the file."""
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        client, cfg = _client(tmp)
+        with client as c:
+            # --- create WITH both fields ---
+            r = c.post(
+                "/api/hosts",
+                json={
+                    "name": "corsair",
+                    "ip": "192.168.1.128",
+                    "vpn_host": "corsair",  # MagicDNS name (generic — no vendor string in config/logic)
+                    "ssh_prefer_vpn": True,
+                    "os_type": "windows",
+                },
+            )
+            assert r.status_code == 201, r.text
+            dto = _host(c, "corsair")
+            assert dto["vpn_host"] == "corsair"
+            assert dto["ssh_prefer_vpn"] is True
+            assert "ssh_password" not in dto  # unchanged: secret never leaves the server
+            s = load_settings(cfg)
+            assert s.computers["corsair"].vpn_host == "corsair"
+            assert s.computers["corsair"].ssh_prefer_vpn is True
+
+            # --- create WITHOUT them → None/False, and absent from the YAML entry ---
+            assert c.post("/api/hosts", json={"name": "beta", "ip": "192.168.1.20"}).status_code == 201
+            beta = _host(c, "beta")
+            assert beta["vpn_host"] is None and beta["ssh_prefer_vpn"] is False
+            after = load_settings(cfg).computers["beta"]
+            assert after.vpn_host is None and after.ssh_prefer_vpn is False
+            assert "vpn_host:" not in cfg.read_text(encoding="utf-8").split("beta:")[1].split("corsair:")[0]
+
+            # --- update: set both on beta, then clear them → keys disappear ---
+            r = c.put(
+                "/api/hosts/beta",
+                json={"name": "beta", "ip": "192.168.1.20", "vpn_host": "beta-vpn", "ssh_prefer_vpn": True},
+            )
+            assert r.status_code == 200, r.text
+            b2 = load_settings(cfg).computers["beta"]
+            assert b2.vpn_host == "beta-vpn" and b2.ssh_prefer_vpn is True
+
+            r = c.put("/api/hosts/beta", json={"name": "beta", "ip": "192.168.1.20"})
+            assert r.status_code == 200, r.text
+            b3 = load_settings(cfg).computers["beta"]
+            assert b3.vpn_host is None and b3.ssh_prefer_vpn is False  # cleared → back to defaults
+    finally:
+        os.environ.pop("CTRLB_CONFIG", None)
+        os.environ.pop("CTRLB_DB", None)
+
+
 def test_multi_os_cmd_preserved() -> None:
     """Editing a service while submitting the full `cmd` it received keeps the other-OS commands."""
     tmp = Path(tempfile.mkdtemp())

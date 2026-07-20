@@ -7,14 +7,12 @@ echoed output are redacted against the host password before they touch a ToolRes
 
 from __future__ import annotations
 
-import asyncio
-
 from app.adapters import ssh
 from app.core.redact import redact
 from app.core.tool import InvocationContext, action
 from app.domain.enums import OSType, Risk, RunState
 from app.domain.result import ToolResult
-from app.services.actions._common import SSH_ACTION_TIMEOUT_S, HostTargetInput
+from app.services.actions._common import SSH_ACTION_TIMEOUT_S, HostTargetInput, run_ssh_failover
 
 #: Per-OS reboot command. Windows mirrors the shutdown action with `/r` (restart). POSIX uses
 #: `sudo -S -p ''` (password from stdin, prompt silenced) because an SSH exec channel has no TTY.
@@ -61,15 +59,20 @@ async def reboot_host(inp: HostTargetInput, ctx: InvocationContext) -> ToolResul
             summary=f"no reboot command defined for {host.os_type.value} hosts",
         )
     secret = host.ssh_password.get_secret_value()
-    res = await asyncio.to_thread(
-        ssh.run_command,
-        host=host.ip,
-        port=host.ssh_port,
-        username=host.ssh_username,
-        password=secret,
-        command=command,
-        # POSIX reboot runs under `sudo -S`; feed the SSH password as the sudo password.
-        stdin_data=secret if host.os_type != OSType.WINDOWS else None,
+    username = host.ssh_username  # narrowed to str by the guard above; bound for the closure
+    # POSIX reboot runs under `sudo -S`; feed the SSH password as the sudo password.
+    stdin_data = secret if host.os_type != OSType.WINDOWS else None
+    res = await run_ssh_failover(  # ordered LAN>VPN candidates + connect-failover (D47)
+        host,
+        lambda address, timeout: ssh.run_command(
+            host=address,
+            port=host.ssh_port,
+            username=username,
+            password=secret,
+            command=command,
+            timeout=timeout,
+            stdin_data=stdin_data,
+        ),
     )
 
     if not res.ok:

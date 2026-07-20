@@ -50,6 +50,8 @@ class HostIn(BaseModel):
     ssh_port: int = 22
     os_type: str = "linux"
     role: str | None = None
+    vpn_host: str | None = None  # D47: VPN/overlay address (MagicDNS name preferred) — Conf editor is Slice 2
+    ssh_prefer_vpn: bool = False  # D47: VPN-first SSH failover toggle
     tags: list[str] = []
     services: list[ServiceIn] = []
 
@@ -80,6 +82,8 @@ def _host_dto(host: Host, status: HostStatus | None, cfg: ComputerCfg | None) ->
         "ssh_port": host.ssh_port,
         "os_type": host.os_type.value,
         "role": host.role,
+        "vpn_host": host.vpn_host,  # D47 — exposed for Slice-2's vantage-aware service links
+        "ssh_prefer_vpn": host.ssh_prefer_vpn,
         "tags": host.tags,
         "has_password": bool(cfg and cfg.ssh_password),  # never the value — just whether one is set
         "services": _services_dto(cfg),
@@ -128,6 +132,10 @@ def _host_entry(body: HostIn, *, password: str | None) -> dict[str, Any]:
     e["os_type"] = body.os_type or "linux"
     if body.role:
         e["role"] = body.role.strip()
+    if body.vpn_host:  # optional string — omit-when-absent, like mac/role
+        e["vpn_host"] = body.vpn_host.strip()
+    if body.ssh_prefer_vpn:  # bool default False — omit-when-default, like a service's `autostart`
+        e["ssh_prefer_vpn"] = True
     if body.tags:
         e["tags"] = list(body.tags)
     svcs = {s.name.strip(): _svc_entry(s) for s in body.services}
@@ -180,6 +188,14 @@ def _apply_fields(node: Any, body: HostIn, *, password: str | None) -> None:
     if node.get("os_type") != (body.os_type or "linux"):
         node["os_type"] = body.os_type or "linux"
     _set_or_del(node, "role", body.role.strip() if body.role else None)
+    _set_or_del(node, "vpn_host", body.vpn_host.strip() if body.vpn_host else None)
+    # bool default-False: set only when on, delete when cleared (so a False toggle disappears — the
+    # `_set_or_del` shape for a boolean; `False in (None, "")` is False, so it can't reuse that helper).
+    if body.ssh_prefer_vpn:
+        if node.get("ssh_prefer_vpn") is not True:
+            node["ssh_prefer_vpn"] = True
+    elif "ssh_prefer_vpn" in node:
+        del node["ssh_prefer_vpn"]
     if body.tags:
         node["tags"] = list(body.tags)
 

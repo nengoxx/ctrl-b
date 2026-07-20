@@ -704,6 +704,16 @@ class ComputerCfg(BaseModel):
     ssh_port: int = 22
     os_type: str = "linux"
     role: str | None = None
+    #: VPN/overlay address (Slice 1, D47 / ROADMAP D3) — a MagicDNS **name** (PREFERRED over an IP)
+    #: or an IP on the overlay network. Deliberately GENERIC: today's overlay is Tailscale, but
+    #: neither this field nor the `host_addresses` resolver names it — the only `tailscale` coupling
+    #: stays in the Serve integration (ROADMAP D3 hardcoding note). `None` ⇒ the host is LAN-only and
+    #: `host_addresses` yields exactly `[ip]` (today's behavior, byte-identical for configs without it).
+    vpn_host: str | None = None
+    #: Per-host SSH failover preference (Slice 1, D47). `False` ⇒ the general LAN>VPN candidate order;
+    #: `True` ⇒ VPN-first SSH connect/failover (e.g. a host whose LAN sshd is firewalled but whose
+    #: overlay sshd answers). The LAN>VPN order lives ONLY in `host_addresses`, never at a call site.
+    ssh_prefer_vpn: bool = False
     tags: list[str] = []
     services: dict[str, ServiceCfg] = Field(default_factory=dict)
     #: Per-host, per-theme presentation override (Phase 11 / D28 §9.9) — an OPEN pass-through blob the
@@ -887,6 +897,8 @@ class Settings(BaseModel):
                 ssh_port=cfg.ssh_port,
                 os_type=OSType.coerce(cfg.os_type),
                 role=cfg.role,
+                vpn_host=cfg.vpn_host,
+                ssh_prefer_vpn=cfg.ssh_prefer_vpn,
                 tags=cfg.tags,
             )
             for name, cfg in self.computers.items()

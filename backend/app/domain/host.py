@@ -25,7 +25,35 @@ class Host(BaseModel):
     ssh_port: int = 22
     os_type: OSType = OSType.LINUX
     role: str | None = None
+    #: VPN/overlay address (D47 / ROADMAP D3) — a MagicDNS name (preferred) or an overlay IP; generic,
+    #: never named after a VPN product in logic. `None` ⇒ LAN-only (see `host_addresses`).
+    vpn_host: str | None = None
+    #: Per-host SSH failover preference (D47). See `ComputerCfg.ssh_prefer_vpn`.
+    ssh_prefer_vpn: bool = False
     tags: list[str] = []
+
+
+def host_addresses(host: Host, prefer_vpn: bool) -> list[str]:
+    """The ordered, de-duplicated reach candidates for a multi-homed host (D47 / ROADMAP D3).
+
+    THE single source of truth for the LAN>VPN preference — call sites never hardcode a candidate
+    order. Default order is `[ip, vpn_host]`; `prefer_vpn` flips it to `[vpn_host, ip]` (a host whose
+    LAN sshd is firewalled but whose overlay answers). Blank/`None` entries are dropped and duplicates
+    removed preserving first-seen order (the `endpoint_chain` blank-drop precedent, config.py). A host
+    with no `vpn_host` yields exactly `[ip]` — today's behavior, zero change.
+
+    Pure helper on the domain leaf (no services/adapters imports) so the failover loop in the
+    services layer can depend on it without an import cycle.
+    """
+    ordered = [host.vpn_host, host.ip] if prefer_vpn else [host.ip, host.vpn_host]
+    seen: set[str] = set()
+    out: list[str] = []
+    for addr in ordered:
+        a = (addr or "").strip()
+        if a and a not in seen:
+            seen.add(a)
+            out.append(a)
+    return out
 
 
 class HostStatus(BaseModel):

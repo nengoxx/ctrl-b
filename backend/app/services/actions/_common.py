@@ -9,15 +9,21 @@ actions stay one tiny file each (DESIGN.md §3) while sharing the lookup/redacti
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
+from collections.abc import Callable
 
 from pydantic import BaseModel, Field
 
 from app.adapters import ssh
+from app.adapters.ssh import SshResult
 from app.core.redact import redact
 from app.core.tool import InvocationContext
 from app.domain.enums import OSType, RunState
+from app.domain.host import Host, host_addresses
 from app.domain.result import ToolResult
+
+log = logging.getLogger(__name__)
 
 #: The `ActionService`-level backstop deadline for every SSH-backed fleet action (reboot/shutdown +
 #: the service start/stop/restart controls). paramiko's own `timeout=10` (ssh.py) covers TCP connect
@@ -28,6 +34,14 @@ from app.domain.result import ToolResult
 #: consistent; config-overridability arrives later as an additive ToolOverride field (ROADMAP E0a) —
 #: do NOT add a parallel config map now.
 SSH_ACTION_TIMEOUT_S = 30.0
+
+#: Per-candidate SSH connect/attempt deadline for the D47 failover loop — distinct from and NESTED
+#: inside the 30 s whole-call `SSH_ACTION_TIMEOUT_S` backstop. Kept SHORT so a two-candidate failover
+#: (LAN then VPN, or vice-versa) still fits: 2 × 6 s attempts + per-attempt getaddrinfo margin stays
+#: well under 30 s. 6 s is generous for a TCP connect on both the LAN and the overlay (each measured
+#: ~0–1 ms, ROADMAP D3) yet ≤ paramiko's own 10 s default. Passed as `run_command`'s `timeout`, so it
+#: also caps the (near-instant) fleet-control command's channel reads — acceptable for these commands.
+SSH_CONNECT_TIMEOUT_S = 6.0
 
 #: A bare `sudo` not already in stdin mode (`-S`), and not part of a longer word. Rewritten so an
 #: SSH exec (no TTY) can authenticate sudo by piping the password to stdin (same trick as
@@ -67,6 +81,33 @@ class ServiceTargetInput(BaseModel):
     service_id: str = Field(description="Stable slug id of the target service (GET /api/services → id)")
 
 
+async def run_ssh_failover(host: Host, run: Callable[[str, float], SshResult]) -> SshResult:
+    """Run one SSH operation against a multi-homed host with ordered connect-failover (D47).
+
+    Iterates `host_addresses(host, host.ssh_prefer_vpn)` (the single LAN>VPN source of truth),
+    invoking `run(address, SSH_CONNECT_TIMEOUT_S)` per candidate on a worker thread (SYS-16: never
+    block the event loop with paramiko). Advances to the next address ONLY on `kind == "connect"`
+    (the timeout/refused/DNS failover class) — an `ok`/`auth`/`ssh` result returns immediately
+    (connected + wrong password is a real error, not a retry). The last candidate's result returns
+    as-is, whatever it is. The whole loop runs INSIDE the 30 s `SSH_ACTION_TIMEOUT_S` action backstop,
+    so the per-candidate timeout is deliberately short enough for two attempts to fit.
+
+    This is the ONE failover implementation — the three SSH call sites (service control here, plus
+    shutdown/reboot) route through it, so address resolution + failover semantics are identical
+    everywhere with zero triplication.
+    """
+    addresses = host_addresses(host, host.ssh_prefer_vpn)
+    last = len(addresses) - 1
+    for i, address in enumerate(addresses):
+        res = await asyncio.to_thread(run, address, SSH_CONNECT_TIMEOUT_S)
+        if res.kind != "connect" or i == last:
+            return res
+        log.info("ssh connect-failover for %s: %s → %s", host.name, address, addresses[i + 1])
+    # `ip` is required so `host_addresses` never returns [] in practice — this only guards the
+    # type checker (and a degenerate blank-ip config) against the empty-candidate case.
+    return SshResult(ok=False, error="no reachable address configured", kind="connect")
+
+
 async def run_service_command(
     action: str, verb: str, inp: ServiceTargetInput, ctx: InvocationContext
 ) -> ToolResult:
@@ -97,19 +138,23 @@ async def run_service_command(
         )
 
     secret = host.ssh_password.get_secret_value()
+    username = host.ssh_username  # narrowed to str by the guard above; bound for the closure
     # POSIX: rewrite `sudo` → `sudo -S` and feed the SSH password as the sudo password (no TTY on
     # an exec channel). Windows commands run as-is (its sudo has no `-S`).
     run_cmd, pipe_pw = (command, False)
     if host.os_type != OSType.WINDOWS:
         run_cmd, pipe_pw = _prepare_sudo(command)
-    res = await asyncio.to_thread(
-        ssh.run_command,
-        host=host.ip,
-        port=host.ssh_port,
-        username=host.ssh_username,
-        password=secret,
-        command=run_cmd,
-        stdin_data=secret if pipe_pw else None,
+    res = await run_ssh_failover(
+        host,
+        lambda address, timeout: ssh.run_command(
+            host=address,
+            port=host.ssh_port,
+            username=username,
+            password=secret,
+            command=run_cmd,
+            timeout=timeout,
+            stdin_data=secret if pipe_pw else None,
+        ),
     )
     if not res.ok:
         return ToolResult(

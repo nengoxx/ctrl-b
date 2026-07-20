@@ -425,7 +425,7 @@ user configure URLs manually + split `href`/`siteMonitor`; this design auto-reso
   works — Windows Firewall almost certainly allows sshd on the Tailscale interface but blocks the LAN profile (same on
   G5; Vault was just off). Over MagicDNS the **existing** shutdown path succeeds end-to-end (238 ms vs a 10 s timeout)
   — **not a code bug**; `ip` is just overloaded (LAN/service/display **and** SSH/ping target — 5 uses, one field:
-  `_common.py:100` SSH, `svc.py:127` URLs, `svc.py:82` probe, `fleet.py:46` ping, `CosmosHostDetail.tsx:94` display).
+  `_common.py:107` SSH, `svc.py:119` URLs, `svc.py:74` probe, `fleet.py:46` ping, `CosmosHostDetail.tsx:127` display).
   Also: service links are built from `ip`, so when browsing over MagicDNS / TS Serve they point at an unreachable LAN
   IP. Blocks controlling the Windows hosts from emma post-migration.
 - **Data model (additive on the unified `Host`/`ComputerCfg`; generic naming — owner directive "shape data to extend,
@@ -461,9 +461,13 @@ user configure URLs manually + split `href`/`siteMonitor`; this design auto-reso
   resolver are introduced **generic** (`vpn_host`, no "tailscale" string in logic). Keep the Serve integration as-is;
   the UI may *label* `vpn_host` "VPN (Tailscale)" while config/logic stay neutral.
 - **Slices (1 unblocks Corsair on its own):**
-  1. **Backend** — `vpn_host` + `ssh_prefer_vpn` on `ComputerCfg`/`Host`/`to_hosts`; the `host_addresses()` helper;
-     SSH callers (shutdown/reboot/`_common` service control) use ordered failover. Tests: order + failover-on-connect
-     + no-failover-on-auth + shutdown still confirms.
+  1. **Backend** ✅ **SHIPPED 2026-07-20 (D47)** — `vpn_host` + `ssh_prefer_vpn` on `ComputerCfg`/`Host`/`hosts()` +
+     the hosts CRUD (`HostIn`/`_host_entry`/`_apply_fields`/`_host_dto`); the `host_addresses()` chokepoint helper
+     (`domain/host.py`); a typed `SshResult.kind` (`ok`/`auth`/`connect`/`ssh`); and ONE shared `run_ssh_failover`
+     loop (`_common.py`, short `SSH_CONNECT_TIMEOUT_S` per candidate) the three SSH call sites (shutdown/reboot/
+     `_common` service control) route through — advance on `connect` only, never `auth`. Tests: `test_multihome_d47`
+     (order/flip/collapse + failover-on-connect + no-failover-on-auth + `SshResult.kind` + shutdown-still-confirms)
+     and `test_hosts_7b::test_vpn_host_fields_roundtrip`.
   2. **Frontend** — host DTO exposes `ip`+`vpn_host`; a `serviceBase(host, location)` util (name-preferred,
      vantage-aware) for the svc-row links + `url_for`/`open_service_url`; the VPN line in `CosmosHostDetail` + Kit
      DeviceRow; Conf host editor gains the two address fields + the SSH toggle.

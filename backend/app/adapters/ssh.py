@@ -12,16 +12,23 @@ tracked post-v1 hardening item (ROADMAP G).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import paramiko
 
 
 @dataclass
 class SshResult:
+    """Never-raises outcome of one SSH attempt. `kind` is the failure CATEGORY (from the exception
+    CLASS, never string-sniffed) the D47 failover loop dispatches on: "ok" on success · "auth" (bad
+    credentials — a REAL error, never retried) · "connect" (the failover class: timeout / refused /
+    DNS failure / no-route — advance to the next address) · "ssh" (a protocol-level SSHException)."""
+
     ok: bool
     stdout: str = ""
     stderr: str = ""
     error: str | None = None  # connection-level failure (auth / unreachable / timeout)
+    kind: Literal["ok", "auth", "connect", "ssh"] = "ok"
 
 
 def run_command(
@@ -61,10 +68,13 @@ def run_command(
         err = stderr.read().decode(errors="replace")
         return SshResult(ok=True, stdout=out, stderr=err)
     except paramiko.AuthenticationException:
-        return SshResult(ok=False, error="authentication failed — check username/password")
+        # MUST stay above SSHException — AuthenticationException subclasses it. Auth is never a
+        # failover trigger (connected + wrong password is a real error, not a next-address retry).
+        return SshResult(ok=False, error="authentication failed — check username/password", kind="auth")
     except paramiko.SSHException as exc:
-        return SshResult(ok=False, error=f"SSH error: {exc}")
-    except OSError as exc:  # socket errors: unreachable / timeout / DNS
-        return SshResult(ok=False, error=str(exc))
+        return SshResult(ok=False, error=f"SSH error: {exc}", kind="ssh")
+    except OSError as exc:  # the failover class: socket errors — unreachable / timeout / refused /
+        # DNS (gaierror) / NoValidConnectionsError all subclass OSError. Advance to the next address.
+        return SshResult(ok=False, error=str(exc), kind="connect")
     finally:
         client.close()

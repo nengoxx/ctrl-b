@@ -109,6 +109,8 @@ class Host(BaseModel):
     ssh_port: int = 22
     os_type: OSType
     role: str | None = None
+    vpn_host: str | None = None      # D47: VPN/overlay address (MagicDNS name preferred); generic, no vendor string
+    ssh_prefer_vpn: bool = False     # D47: per-host VPN-first SSH failover toggle (order lives in host_addresses)
     tags: list[str] = []
     idle_action: Literal["none","sleep","shutdown"] = "none"   # D1 (opt-in)
     idle_minutes: int | None = None
