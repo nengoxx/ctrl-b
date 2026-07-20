@@ -83,16 +83,22 @@ class ActionService:
         return self._registry
 
     def approval_eligible(self, name: str, raw_args: dict) -> bool:
-        """True iff a bubble 'always allow' rule for this EXACT call is expressible (D44 W2) — drives
-        the `always_eligible` flag on `tool.permission` so the FE hides an affordance that would only
-        persist a never-matching rule. Value-based (`exact_arg_pins`): validate the args, then require
-        every top-level value to canonicalize to a scalar pattern (a `None` optional pins as `"null"`).
-        False only when a field is non-scalar (list/dict — today just `spawn_subagents.tasks`) or the
-        args no longer validate. Actor-agnostic; does NOT consider `spec.confirm` (an un-approvable
-        forced-confirm tool is still *expressible*, just inert at the gate — R1)."""
+        """True iff a bubble 'always allow' rule for this EXACT call is expressible AND could ever fire
+        (D44 W2/W3) — drives the `always_eligible` flag on `tool.permission` so the FE hides an
+        affordance that would only persist an inert rule. Two gates: (1) value-based expressibility
+        (`exact_arg_pins`): validate the args, then require every top-level value to canonicalize to a
+        scalar pattern (a `None` optional pins as `"null"`) — False on a non-scalar field (list/dict —
+        today just `spawn_subagents.tasks`) or on args that no longer validate; (2) `not spec.confirm`
+        (W3 §1): a designer-pinned forced-confirm tool (shutdown/reboot/run_shell) is un-downgradable
+        below FULL (R1, invariant 2), so a grant there writes a rule the gate's approval consult never
+        reads (`invoke` skips `approval_match` when `spec.confirm`) — the affordance must never offer
+        it. Actor-agnostic."""
         try:
-            inp = self._registry.get(name).spec.input_model.model_validate(raw_args)
+            tool = self._registry.get(name)
+            inp = tool.spec.input_model.model_validate(raw_args)
         except UnknownTool, ValidationError:
+            return False
+        if tool.spec.confirm:  # W3 §1: un-downgradable — an approval rule here would be inert
             return False
         return exact_arg_pins(inp.model_dump(mode="json")) is not None
 

@@ -1,4 +1,4 @@
-import { cleanup, render, renderHook, screen } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // ChatThread (F4) — the reusable chat LOG extracted from AgentTab. Two things this file locks in:
@@ -15,12 +15,13 @@ vi.mock("../../src/hooks/useActions", () => ({ useActionSpecs: () => ({ data: []
 
 import { ChatThread } from "../../src/components/ChatThread";
 import type { AgentChat } from "../../src/hooks/useAgentChat";
+import { sendMessage, useChat } from "../../src/store/chat";
 import {
   setPlanSheetOpen,
   usePlanOpenAutoClose,
   usePlanSheetOpen,
 } from "../../src/store/planSheet";
-import type { Plan } from "../../src/types";
+import type { ChatMessage, Plan } from "../../src/types";
 
 beforeAll(() => {
   class ResizeObserverStub {
@@ -78,6 +79,105 @@ describe("A4 chat live region (F5 Gate A)", () => {
     const streaming: AgentChat = { ...emptyChat(), status: "streaming" };
     const { container } = render(<ChatThread active chat={streaming} />);
     expect(container.querySelector("#chatlog")?.getAttribute("aria-busy")).toBe("true");
+  });
+});
+
+// ── D44 W3 — the CmdBubble 'always allow' affordance. It renders ONLY when the store flagged the
+// suspended call as approval-eligible (`alwaysEligibleFor`), which the reducer sets from the
+// `tool.permission` event's `alwaysEligible`. We drive a real suspend through the store to set that
+// module flag, then render ChatThread with an awaiting_confirm bubble for the same call_id.
+function sseResponse(frames: { event: string; data: unknown }[]): Response {
+  const text = frames
+    .map((f) => `event: ${f.event}\r\ndata: ${JSON.stringify(f.data)}\r\n\r\n`)
+    .join("");
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      c.enqueue(new TextEncoder().encode(text));
+      c.close();
+    },
+  });
+  return {
+    ok: true,
+    body,
+    headers: {
+      get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
+    },
+  } as unknown as Response;
+}
+
+/** Drive one confirm-suspend for call `c1` with the given `alwaysEligible` so the store's module flag
+ *  is set (true/false/absent), mirroring a live `tool.permission`. */
+async function suspendCall(alwaysEligible?: boolean) {
+  const perm: Record<string, unknown> = { callId: "c1", token: "tok-1" };
+  if (alwaysEligible !== undefined) perm.alwaysEligible = alwaysEligible;
+  globalThis.fetch = vi.fn(() =>
+    Promise.resolve(
+      sseResponse([
+        { event: "thread", data: { threadId: "t1" } },
+        { event: "message.start", data: { messageId: "m1" } },
+        {
+          event: "part.added",
+          data: {
+            messageId: "m1",
+            part: {
+              type: "tool_call",
+              call_id: "c1",
+              tool: "wake_host",
+              args: {},
+              state: "pending",
+            },
+          },
+        },
+        { event: "tool.permission", data: perm },
+        { event: "done", data: { state: "suspended" } },
+      ]),
+    ),
+  );
+  renderHook(() => useChat());
+  await act(async () => {
+    await sendMessage("wake");
+  });
+}
+
+/** An AgentChat holding one awaiting_confirm command bubble for call `c1`. */
+function awaitingChat(): AgentChat {
+  const msg: ChatMessage = {
+    id: "m1",
+    thread_id: "t1",
+    role: "assistant",
+    actor: "agent",
+    ts: new Date().toISOString(),
+    tokens: null,
+    compacted: false,
+    parts: [
+      {
+        type: "tool_call",
+        call_id: "c1",
+        tool: "wake_host",
+        args: { host: "vault" },
+        state: "awaiting_confirm",
+      },
+    ],
+  };
+  return { ...emptyChat(), messages: [msg] };
+}
+
+describe("D44 W3 · the CmdBubble always-allow affordance", () => {
+  it("shows the `always` action when the call is approval-eligible", async () => {
+    await suspendCall(true);
+    render(<ChatThread active chat={awaitingChat()} />);
+    // the base allow/edit/deny always render; the always-allow sibling only when eligible
+    expect(screen.getByText("allow")).toBeTruthy();
+    const always = screen.getByText("always");
+    expect(always).toBeTruthy();
+    expect(always.className).toContain("exec-always"); // reuses the allow-family `.exec` hook
+  });
+
+  it("hides the `always` action when the call is not eligible (false or absent flag)", async () => {
+    await suspendCall(false);
+    render(<ChatThread active chat={awaitingChat()} />);
+    expect(screen.getByText("allow")).toBeTruthy(); // the row still renders
+    expect(screen.queryByText("always")).toBeNull(); // but no always-allow affordance
   });
 });
 

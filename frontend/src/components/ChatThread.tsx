@@ -7,6 +7,7 @@ import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
 import { planFrom } from "../lib/plan";
 import {
+  alwaysEligibleFor,
   answerQuestion,
   applyProposal,
   removeSteer,
@@ -180,6 +181,21 @@ function CmdBubble({
             <button className="exec" onClick={() => void resumeCall(call.call_id, "execute")}>
               allow
             </button>
+            {/* D44 W3 — the "always allow" grant: shown ONLY when the backend flagged this exact call
+                as approval-eligible (scalar args, not a designer forced-confirm tool). Reuses the `.exec`
+                allow-family styling (identical treatment in every theme — the chat tree is a pinned
+                class contract, D36) with an `.exec-always` hook; a tap runs the call AND has the SERVER
+                persist an args-exact grant (no FE settings write — the whole point of the resume verb).
+                Short label so the 4-action row stays uncrowded at 390px. */}
+            {alwaysEligibleFor(call.call_id) && (
+              <button
+                className="exec exec-always"
+                title="always allow this exact command (persists a grant you can revoke in Tools)"
+                onClick={() => void resumeCall(call.call_id, "execute_always")}
+              >
+                always
+              </button>
+            )}
             <button className="edit" onClick={() => fillComposer(line)}>
               edit
             </button>

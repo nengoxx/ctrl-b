@@ -157,6 +157,20 @@ def test_approval_eligible_scalar_true_nonscalar_false() -> None:
         assert actions.approval_eligible("spawn_subagents", {"tasks": [{"task": "x"}]}) is False
 
 
+def test_approval_eligible_false_for_confirm_pinned_tool_even_with_scalar_args() -> None:
+    """W3 §1: a designer-pinned forced-confirm tool (`shutdown_host`, `confirm=True`) is un-approvable
+    (R1, invariant 2) — a grant there writes a rule `invoke` never consults. Eligibility must be False
+    EVEN THOUGH its args (`host_id: str`) are perfectly scalar/expressible, so the FE hides the affordance."""
+    with _workspace(), _client() as c:
+        actions = c.app.state.actions
+        from app.core.permissions import exact_arg_pins
+
+        model = actions.registry.get("shutdown_host").spec.input_model
+        pins = exact_arg_pins(model.model_validate({"host_id": "corsair"}).model_dump(mode="json"))
+        assert pins is not None  # the rule WOULD be expressible …
+        assert actions.approval_eligible("shutdown_host", {"host_id": "corsair"}) is False  # … but it's inert
+
+
 def test_permission_event_carries_always_eligible_true_for_scalar_call() -> None:
     with _workspace(), _client() as c:
         session, thread, assistant, _ = _session_and_pending(c, "restart_service", {"service_id": "ghost"})

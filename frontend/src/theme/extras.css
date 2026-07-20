@@ -2406,6 +2406,127 @@ body {
   margin-left: 2px;
 }
 
+/* ── Approvals ('always allow') editor (Phase 8 / D44 W3) ──────────────────────────────────────────
+   Sits under the tool description in a catalog row. Lists standing grants as compact `field=pattern`
+   chips with a one-tap revoke, plus a minimal add form (field:pattern pairs). The deliberate WIDENING
+   surface (globs + field-omission allowed here). Tokens from VAPOR_PATTERNS; theme-neutral (tracks all
+   skins); vapor.css untouched (D7). */
+.tcat-appr {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+.tcat-appr-head {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.tcat-appr-empty {
+  font-size: 10px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  margin-bottom: 6px;
+}
+.tcat-appr-rule {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+.tcat-appr-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.tcat-appr-chip {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.tcat-appr-chip.any {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+.tcat-appr-revoke {
+  all: unset;
+  cursor: pointer;
+  flex: none;
+  color: var(--ink-faint);
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.tcat-appr-revoke:hover {
+  color: var(--danger, #ff5c8a);
+}
+.tcat-appr-form {
+  margin-top: 6px;
+}
+.tcat-appr-pair {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+.tcat-appr-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+}
+.tcat-appr-input:focus {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+.tcat-appr-eq {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+.tcat-appr-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.tcat-appr-pairbtn {
+  all: unset;
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 2px 4px;
+}
+.tcat-appr-pairbtn:hover {
+  color: var(--ink);
+}
+.tcat-appr-add {
+  all: unset;
+  cursor: pointer;
+  color: var(--green, var(--accent));
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--green, var(--accent)) 45%, transparent);
+  border-radius: 6px;
+}
+.tcat-appr-add:active {
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
 /* ── DeviceRow chevron toggle as a real <button> (D25, a11y) ──────────────────────────────────────
    The row header is a plain `<div onClick>` (tap-anywhere-to-toggle, unchanged); the chevron is a real
    `<button>` so the toggle is keyboard-operable, and both it and the action buttons stop propagation so

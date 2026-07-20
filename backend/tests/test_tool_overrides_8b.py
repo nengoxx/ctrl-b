@@ -221,6 +221,26 @@ def test_dto_reports_default_mode_even_when_overridden() -> None:
         assert actions["wake_host"]["core"] is False
 
 
+def test_dto_carries_approvals_from_live_overrides() -> None:
+    """D44 W3: `GET /api/actions` enriches each DTO with the tool's live persisted 'always allow' rules
+    (`tool_overrides[name].approvals`) — `[]` when none — so the Tools-tab catalog can list/revoke them
+    from the SAME always-active `["actions"]` query (approvals are settings state, not a spec property)."""
+    from app.config import ApprovalRule, ToolOverride
+
+    with _app() as c:
+        # No override → empty approvals list on every DTO.
+        actions = {a["name"]: a for a in c.get("/api/actions").json()}
+        assert actions["wake_host"]["approvals"] == []
+
+        # A rule persisted on the live settings surfaces on the DTO (args-map round-trips).
+        c.app.state.settings.tool_overrides = {
+            "wake_host": ToolOverride(approvals=[ApprovalRule(args={"host_id": "vault"})])
+        }
+        actions = {a["name"]: a for a in c.get("/api/actions").json()}
+        assert actions["wake_host"]["approvals"] == [{"args": {"host_id": "vault"}}]
+        assert actions["ping_host"]["approvals"] == []  # untouched tools stay empty
+
+
 def test_disabled_utility_still_user_runnable() -> None:
     """A Section-A run card stays **user-runnable regardless of the agent-access toggle**: disabling a
     utility's `agent_mode` flips `agent_exposed` (the agent can't call it) but never `ui_exposed`, so

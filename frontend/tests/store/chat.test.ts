@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearDraft, getDraft, setDraft } from "../../src/store/composer";
 import {
+  alwaysEligibleFor,
   answerQuestion,
   initChat,
   reattachTurn,
@@ -688,6 +689,67 @@ describe("turn integrity — client (Slice 2)", () => {
       await resumeCall("c1", "dismiss");
     });
     expect(resumeBody.mode).toBeNull();
+  });
+
+  // ── D44 W3 — the 'always allow' grant: `alwaysEligible` on tool.permission + the execute_always verb.
+  function suspendWith(alwaysEligible?: boolean) {
+    const perm: Record<string, unknown> = { callId: "c1", token: "tok-1" };
+    if (alwaysEligible !== undefined) perm.alwaysEligible = alwaysEligible;
+    return mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "m1" } },
+      {
+        event: "part.added",
+        data: {
+          messageId: "m1",
+          part: { type: "tool_call", call_id: "c1", tool: "wake_host", args: {}, state: "pending" },
+        },
+      },
+      { event: "tool.permission", data: perm },
+      { event: "done", data: { state: "suspended" } },
+    ]);
+  }
+
+  it("stores alwaysEligible=true from tool.permission → alwaysEligibleFor is true", async () => {
+    suspendWith(true);
+    renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("wake");
+    });
+    expect(alwaysEligibleFor("c1")).toBe(true);
+  });
+
+  it("alwaysEligibleFor is false when the flag is false or absent (fail-closed)", async () => {
+    suspendWith(false);
+    renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("wake");
+    });
+    expect(alwaysEligibleFor("c1")).toBe(false);
+
+    suspendWith(undefined); // older bubble with no flag
+    await act(async () => {
+      await sendMessage("wake again");
+    });
+    expect(alwaysEligibleFor("c1")).toBe(false);
+  });
+
+  it("resumeCall(execute_always) POSTs decision: execute_always with the confirm token", async () => {
+    suspendWith(true);
+    renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("wake");
+    });
+    let resumeBody: Record<string, unknown> = {};
+    globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      resumeBody = JSON.parse(init!.body as string) as Record<string, unknown>;
+      return Promise.resolve(sseResponse([{ event: "done", data: { state: "completed" } }]));
+    });
+    await act(async () => {
+      await resumeCall("c1", "execute_always");
+    });
+    expect(resumeBody.decision).toBe("execute_always");
+    expect(resumeBody.confirm_token).toBe("tok-1");
   });
 });
 

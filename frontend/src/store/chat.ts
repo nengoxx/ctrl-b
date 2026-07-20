@@ -47,6 +47,19 @@ const modeByCall: Record<string, ChatMode | null> = {};
 // confirmed against. (Not recoverable after a cold reload — skills aren't persisted/snapshotted;
 // falls back to `turnSkills`, same known limit as a pre-pin persisted bubble's mode.)
 const skillsByCall: Record<string, string[]> = {};
+// Whether a suspended confirm call is eligible for a bubble 'always allow' grant (D44 W3), keyed like
+// `confirmTokens`. Ephemeral — set from `tool.permission`'s `alwaysEligible` (the backend already
+// gates it: only an args-expressible, non-forced-confirm call is true), read by CmdBubble to show the
+// affordance, cleaned with the token when the call resolves. Absent/false → the affordance is hidden.
+const alwaysEligibleByCall: Record<string, boolean> = {};
+
+/** True iff the suspended call may show the 'always allow' affordance (D44 W3) — the backend's
+ *  `alwaysEligible` flag from `tool.permission`, defaulting false when unset (older bubbles, a
+ *  non-eligible call). CmdBubble reads this in render, populated by the same reducer that flips the
+ *  call to `awaiting_confirm`, so the flag is in place before the confirm row paints. */
+export function alwaysEligibleFor(callId: string): boolean {
+  return alwaysEligibleByCall[callId] === true;
+}
 
 // ── D41/Slice 5: the steering queue (client side) ────────────────────────────────────────────────
 // A queued steer's RAW composer line (WITH any `/prefix` or leading `!`), keyed by the server-assigned
@@ -411,6 +424,7 @@ function addToolResult(callId: string, result: ToolResult) {
   delete confirmTokens[callId];
   delete modeByCall[callId];
   delete skillsByCall[callId];
+  delete alwaysEligibleByCall[callId];
   set({
     messages: state.messages.map((m) => {
       if (!m.parts.some((p) => p.type === "tool_call" && p.call_id === callId)) return m;
@@ -662,6 +676,7 @@ function makeTurnReducer(ctx: TurnCtx) {
         if (!callId) return dropWarn(event, "missing callId");
         const token = str(data.token);
         if (token) confirmTokens[callId] = token;
+        alwaysEligibleByCall[callId] = data.alwaysEligible === true; // D44 W3: gate the affordance
         modeByCall[callId] = turnMode; // pin THIS turn's mode for the eventual resume (ACA-16)
         skillsByCall[callId] = turnSkills; // …and its active skills (C5-M1)
         setCallState(callId, "awaiting_confirm");
@@ -872,9 +887,11 @@ async function streamTurn(
     if (res.headers.get("content-type")?.includes("application/json")) {
       const payload = (await res.json()) as Record<string, unknown>;
       if (payload.threadId) set({ threadId: payload.threadId as string });
-      const perm = payload.permission as { callId?: string; token?: string } | undefined;
+      const perm = payload.permission as
+        { callId?: string; token?: string; alwaysEligible?: boolean } | undefined;
       if (perm?.callId && perm.token) {
         confirmTokens[perm.callId] = perm.token;
+        alwaysEligibleByCall[perm.callId] = perm.alwaysEligible === true; // D44 W3, mirrors the SSE branch
         modeByCall[perm.callId] = turnMode; // buffered confirm: pin the turn's mode too (ACA-16)
         skillsByCall[perm.callId] = turnSkills; // …and its skills (C5-M1)
       }
@@ -1030,10 +1047,12 @@ function overlaySyncCall(
   if (perm) {
     const token = str(perm.token);
     if (token) confirmTokens[callId] = token; // ephemeral — the snapshot is the only carrier
+    alwaysEligibleByCall[callId] = perm.alwaysEligible === true; // D44 W3: carry the affordance gate across re-attach
   }
   if (result) {
     delete confirmTokens[callId];
     delete modeByCall[callId];
+    delete alwaysEligibleByCall[callId];
   } else {
     modeByCall[callId] = mode; // pending call → pin its turn's mode for the eventual resume (ACA-16)
   }
@@ -1920,8 +1939,14 @@ export async function answerQuestion(callId: string, answer: string): Promise<vo
   });
 }
 
-/** Resolve a suspended tool call (the command bubble's execute/dismiss) and continue the turn. */
-export async function resumeCall(callId: string, decision: "execute" | "dismiss"): Promise<void> {
+/** Resolve a suspended tool call (the command bubble's execute/dismiss/always-allow) and continue the
+ *  turn. `execute_always` (D44 W3) runs the call AND has the server persist an args-exact 'always
+ *  allow' grant so future identical calls auto-run — the WHOLE FE grant path is this verb; no settings
+ *  write, no rule serialization here (the server owns it). */
+export async function resumeCall(
+  callId: string,
+  decision: "execute" | "execute_always" | "dismiss",
+): Promise<void> {
   if (state.status === "streaming" || !state.threadId) return;
   set({ status: "streaming" });
   await streamTurn("/api/agent/resume", {

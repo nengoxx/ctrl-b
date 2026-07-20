@@ -105,11 +105,23 @@ export interface ToolResult {
  *  per-agent allowlist + skill narrowing); enabled = in the general toolset; disabled = never offered. */
 export type AgentMode = "core" | "enabled" | "disabled";
 
+/** One standing 'always allow' grant for a tool (D44) — an allow-only rule that downgrades a
+ *  risk-derived confirm to allow when a call's args match. `args` maps a top-level field → a glob
+ *  pattern (every listed field must match, OR across rules); `null`/omitted = a whole-action grant.
+ *  Bubble-written grants pin EVERY field (args-exact); the Tools-tab editor may widen with globs or
+ *  omit fields. Serialization lives server-side — the FE only lists/edits these, never canonicalizes. */
+export interface ApprovalRule {
+  args?: Record<string, string> | null;
+}
+
 /** A per-tool override (Phase 8b, D22) — the unified object keyed by tool name in
- *  `Settings.tool_overrides`. Each field falls back to the tool's compile-time default when unset. */
+ *  `Settings.tool_overrides`. Each field falls back to the tool's compile-time default when unset.
+ *  `approvals` (D44) is the third dimension on the SAME object (after description/agent_mode): the
+ *  standing grants list (absent/empty = no grants, i.e. off). */
 export interface ToolOverride {
   description?: string | null;
   agent_mode?: AgentMode | null;
+  approvals?: ApprovalRule[] | null;
 }
 
 export interface ActionSpec {
@@ -131,6 +143,10 @@ export interface ActionSpec {
   /** The tri-state mode the tool's compile-time `(agent_exposed, core)` represents — lets the
    *  catalog mark defaults, store only deviations, and reset (Phase 8b). */
   default_agent_mode?: AgentMode;
+  /** The tool's live persisted 'always allow' rules (D44 W3) — read from `tool_overrides[name].
+   *  approvals`, `[]` when none. The Tools-tab catalog lists/revokes/adds these; a save re-invalidates
+   *  `["actions"]` so the effective list re-renders. */
+  approvals?: ApprovalRule[];
   input_schema: Record<string, unknown>;
 }
 

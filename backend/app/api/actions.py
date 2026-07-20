@@ -27,9 +27,21 @@ class InvokeRequest(BaseModel):
 async def list_actions(request: Request) -> list[dict[str, Any]]:
     """The action registry — metadata + input JSON Schema (drives UI buttons; the agent toolset; and
     the Phase-8b Tools-tab catalog). Each DTO carries `default_agent_mode` (see `runtime.spec_dto`) so
-    the catalog can mark defaults, store only deviations, and offer a reset."""
+    the catalog can mark defaults, store only deviations, and offer a reset, plus `approvals` (D44 W3):
+    the tool's live persisted 'always allow' rules (`tool_overrides[name].approvals`, `[]` when none) —
+    approvals are settings state, NOT a spec property (they never overlay the spec, §3), so they're
+    read here beside the live settings rather than in `spec_dto`. This keeps the catalog's invariant
+    that its whole state reconstructs from this ONE always-active `["actions"]` query (the approvals
+    editor renders + revokes from these, and `useSaveToolOverrides` re-invalidates `["actions"]`)."""
     app = request.app
-    return [spec_dto(app, t.spec) for t in app.state.actions.registry.all()]
+    overrides = app.state.settings.tool_overrides
+    dtos: list[dict[str, Any]] = []
+    for t in app.state.actions.registry.all():
+        d = spec_dto(app, t.spec)
+        ov = overrides.get(t.spec.name)
+        d["approvals"] = [r.model_dump(mode="json") for r in ov.approvals] if ov and ov.approvals else []
+        dtos.append(d)
+    return dtos
 
 
 @router.post("/actions/{name}")
