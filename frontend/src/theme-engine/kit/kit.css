@@ -1182,12 +1182,13 @@ body[data-composer-skin="sleek"] .kit-composer.stacked .field:focus-within {
 .kit .seg {
   display: inline-flex;
   /* many-option segs (composer's 5) flow their chips to a second line rather than overflowing (§14.11:
-   * no x-overflow, ever). Rounded RECT, not the 999px capsule (owner, 2026-07-21): a wrapped capsule
-   * renders as a tall oval with bulbous end-caps; a radius-sm rect stays clean at any row count.
-   * Chips are concentric (container 11 − 3 padding = 8). */
+   * no x-overflow, ever). The .kit-composer.line STADIUM TRICK (owner round 2, 2026-07-21): the radius
+   * equals ~half the one-row height (3+1 frame + ~26px chip ≈ 34px), so a single-row seg renders as a
+   * true capsule (the radius clamps to half-height) while a WRAPPED seg relaxes into a rounded rect —
+   * no JS, geometry does the morph, exactly like the line composer's 24px. */
   flex-wrap: wrap;
   justify-content: flex-end;
-  border-radius: var(--radius-sm);
+  border-radius: 18px;
   padding: 3px;
   background: var(--surface-2);
   border: 1px solid var(--line);
@@ -1196,7 +1197,7 @@ body[data-composer-skin="sleek"] .kit-composer.stacked .field:focus-within {
   all: unset;
   cursor: pointer;
   padding: 6px 12px;
-  border-radius: calc(var(--radius-sm) - 3px);
+  border-radius: 999px; /* chips never wrap individually — always a capsule (clamps to half-height) */
   font-size: 11.5px;
   font-weight: 600;
   color: var(--text-3);

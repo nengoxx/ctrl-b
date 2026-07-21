@@ -1040,9 +1040,9 @@
   .confrow .k .label { font-size: 13px; color: var(--ink); }
   .confrow .k .desc { font-size: 9px; color: var(--ink-faint); margin-top: 2px; letter-spacing: 1.2px; text-transform: uppercase; word-break: break-all; }
   .confrow .k .desc.code { font-family: "JetBrains Mono"; text-transform: none; letter-spacing: 0.5px; color: var(--ink-soft); }
-  /* rounded RECT, not a capsule (owner 2026-07-21): wrapped multi-row segs rendered as bulbous ovals. Chips concentric (10−3=7). */
-  .seg { display: inline-flex; border-radius: 10px; padding: 3px; background: var(--bg-3); border: 1px solid var(--line); }
-  .seg button { all: unset; cursor: pointer; padding: 6px 10px; border-radius: 7px; font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-soft); font-weight: 600; }
+  /* the line-composer STADIUM TRICK (owner round 2, 2026-07-21): radius ≈ half the one-row height (~31px) — a single-row seg clamps to a true capsule, a wrapped one relaxes into a rounded rect. No JS. */
+  .seg { display: inline-flex; border-radius: 16px; padding: 3px; background: var(--bg-3); border: 1px solid var(--line); }
+  .seg button { all: unset; cursor: pointer; padding: 6px 10px; border-radius: 999px; font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-soft); font-weight: 600; }
   .seg button.active { background: linear-gradient(135deg, var(--magenta), var(--violet)); color: #fff; box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.4); }
   .switch { display: inline-flex; align-items: center; cursor: pointer; }
   /* Toggle: explicit transition lists (Slice 3) — narrows from `0.2s` shorthand. Browsers don't
