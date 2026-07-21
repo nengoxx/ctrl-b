@@ -1182,10 +1182,12 @@ body[data-composer-skin="sleek"] .kit-composer.stacked .field:focus-within {
 .kit .seg {
   display: inline-flex;
   /* many-option segs (composer's 5) flow their chips to a second line rather than overflowing (§14.11:
-   * no x-overflow, ever); the 999px container relaxes into a rounded rect when wrapped. */
+   * no x-overflow, ever). Rounded RECT, not the 999px capsule (owner, 2026-07-21): a wrapped capsule
+   * renders as a tall oval with bulbous end-caps; a radius-sm rect stays clean at any row count.
+   * Chips are concentric (container 11 − 3 padding = 8). */
   flex-wrap: wrap;
   justify-content: flex-end;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   padding: 3px;
   background: var(--surface-2);
   border: 1px solid var(--line);
@@ -1194,7 +1196,7 @@ body[data-composer-skin="sleek"] .kit-composer.stacked .field:focus-within {
   all: unset;
   cursor: pointer;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: calc(var(--radius-sm) - 3px);
   font-size: 11.5px;
   font-weight: 600;
   color: var(--text-3);
