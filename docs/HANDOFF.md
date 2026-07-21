@@ -1,6 +1,6 @@
 # Handoff — start here for a fresh session
 
-> ## ▶ ACTIVE — develop ON emma. PROD = v1.2.0 (2026-07-21 — ACA Slices 1–8 + the D45/D46 reasoning arc + D47 multi-homed s1–2 + UI polish; released via runbook §Release by the agent, gate run 29801506922 green incl. e2e; **the prod config riders are LIVE: `api_mode: llamacpp` + `max_concurrent_requests: 1` on local, `api_mode: openrouter` on cloud**; DB snapshot `ctrlb-20260721-063649.db.gz`; the owner's "v1.2.0 reserved for hero art" note was superseded by their release order). Prior: v1.1.1 2026-07-16 · v1.1.0 2026-07-10 · v1.0.0 same day.
+> ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21 — the seg stadium-trick patch on top of v1.2.0 same night: ACA Slices 1–8 + the D45/D46 reasoning arc + D47 multi-homed s1–2 + UI polish; both released via runbook §Release by the agent — v1.2.0 gate 29801506922, v1.2.1 gate 29802230245, both green incl. e2e; **the prod config riders are LIVE: `api_mode: llamacpp` + `max_concurrent_requests: 1` on local, `api_mode: openrouter` on cloud**; snapshots `ctrlb-20260721-063649` + `-065258.db.gz`). Prior: v1.1.1 2026-07-16 · v1.1.0 2026-07-10 · v1.0.0 same day.
 > **✅ ctrl-b v1.0.0 (tag `v1.0.0` = `8fa8404`) deployed to emma per the D32-amended plan — first try,
 > release gate green on its maiden tag run (full gate + Playwright e2e on ubuntu).** As-executed record:
 > the PRE-FLIGHT block atop [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md); living runbook: `deploy/linux/README.md`.
@@ -343,19 +343,73 @@
 > Fable 5 = orchestrator + feature reviewer alongside Codex (`gpt-5.6-sol` high); ALL specified
 > implementation / mechanical work / research = Opus 4.8 subagents.**
 >
-> **▶▶ SESSION 2026-07-20 late → 21 — READ THIS FIRST. Ended with the v1.2.0 RELEASE (see the ACTIVE
-> banner): everything through `837be03` PUSHED (main CI green) + tagged + live on prod. The owner
-> then kept iterating: post-release fixes on main are `e1dd001` (seg stadium-trick round 2 —
-> capsule at one row, rounded rect when wrapped, the line-composer geometry) + the close-out docs;
-> those are dev-only until the next release (v1.2.1 candidate or ride-along). The owner-poke rounds
-> that landed IN v1.2.0: per-model window probe (`?model=` — the router lever, owner's find),
-> reasoning-effort select (the 8-rung Seg wrapped into a blob), host-row summary fix, SOUL preview
-> legibility (10px→12px + wrap), password-manager suppression at the Field chokepoint, seg
-> rounded-rect round 1, D3 Slice 2 (Conf vpn fields + vantage-aware service links incl. the
-> spatial themes). NEW ROADMAP entries from the owner: **A11** unified custom inference endpoints
-> (design session wanted — retire local/cloud as schema positions) · **H1** the "gacha" anime theme
-> (frontier-mold; amends the theme-population closure). Dev units RUNNING again post-release for
-> the owner's seg eyeball.**
+> **▶▶ SESSION 2026-07-20 late → 21 — READ THIS FIRST (the thorough close-out). SESSION CLOSED
+> CLEAN: main == origin @ the v1.2.1 tag + this docs commit, CI green, BOTH releases live
+> (v1.2.0 → v1.2.1 same night, see the ACTIVE banner), dev units STOPPED (on-demand), prod
+> healthy (version 1.2.1, HTTPS 200, riders verified).**
+>
+> **WHAT SHIPPED TONIGHT (compressed; full detail in the numbered blocks below):** the reasoning-arc
+> final foreign review (Codex NO-GO → 7 doors closed → verifier GO) · the A9 owner ruling + head
+> reorder (D15 #4 AMENDED) · Slices 4–8 live-verified via a Codex API tester (12 PASS; the S6 fails
+> = ONE probe bug, fixed) · D47 multi-homed addressing Slices 1+2 through 3 Codex rounds (SSH
+> VPN-failover + Conf fields + vantage-aware links) · the owner-poke UI rounds (reasoning select,
+> SOUL legibility, seg stadium-trick, password-manager suppression, host-row summary, per-model
+> window probe) · TWO production releases via the runbook agent.
+>
+> **▶ OWNER ACTIONS NOW AVAILABLE (nothing blocking, all one-tap/one-edit):**
+> ① **Set corsair's `vpn_host` + `SSH via VPN first` in Conf → Computers** — the WHOLE POINT of D47
+> is live on prod but corsair's field is still EMPTY; until it's set, its firewalled LAN SSH still
+> can't be shut down from emma. One edit closes the original 2026-06-30 pain.
+> ② Optional: `agent.defaults.routing:` (two-tier lead/worker — config.example has the block).
+> ③ Optional: bump `max_concurrent_requests` 1→2 via a settings PUT if the 3060 serves 2 slots.
+> ④ On-device eyeballs pending (gate-verified, not phone-eyeballed): the SOUL preview legibility,
+> the reasoning select, seg round 2 (capsule when single-row), and whether Chrome's save-password
+> nag is actually gone (the fix is the standard suppressor; a stronger escalation exists if not).
+> ⑤ Infra you flagged for yourself: emma's 16G RAM tmpfs + the 511M swap sizing.
+>
+> **▶ NEXT-STEP MENU (pick the next session's work; each has a pinned home):**
+> - **A11 — unified custom inference endpoints** (ROADMAP A11; owner-requested DESIGN SESSION):
+>   retire local/cloud as schema positions → one named-endpoint list + failover chain over names.
+>   Biggest design piece on the table; the seams are recorded in the entry.
+> - **H1 — the "gacha" anime theme** (ROADMAP H1; owner-requested design): frontier-mold, kit-based;
+>   FRONTIER_PLAN is the template; collect REAL reference images at design time (standing rule).
+> - **D3 Slice 3 — "Discover from Tailscale"** (ROADMAP D3): auto-fill `vpn_host` from
+>   `tailscale status --json` by HostName match; small backend+Conf slice on the shipped fields.
+> - **The final frontier hero art** — the original v1.2.0 reservation, still outstanding; owner
+>   supplies/choses art, the pipeline (palette-256+oxipng, contrast gate) exists.
+> - **Vapor ladder** (THEME_ENGINE §14.15.3, Phase-11 tail) · **6c-1/6c-2 flags** (TODO) — the two
+>   remaining pre-existing tails.
+> - **Backbone (unscheduled, trigger-gated):** SYS-3 structural half (overlay-at-read makes the
+>   settings-409 gate unnecessary) · SYS-2 two-phase `Deps` (trigger: next lifespan/main.py work) ·
+>   the ACA backlog in ROADMAP A5-x (A8 deferred tool schemas · content-chant detector ·
+>   thinking-block transforms · B1 progressive memory index) · UI_AUDIT F9/F13 chat render cost
+>   (trigger: >~200-msg thread or input lag — Profiler first).
+> - **LOW backlog from the live-test** (ROADMAP A5-x): turn-status DB fallback after terminal-cache
+>   eviction (a completed thread reads `terminal_status: null` — display-only) · `/compact`-on-
+>   small-thread UX (inflation-reject reads like a failure).
+> - **A9 measurement rider:** just OBSERVE `cache_n`/`prompt_n` at turn boundaries in daily use
+>   (parsed at `inference.py` ~1031; nobody has looked yet); escalation path if pressure appears =
+>   read-through with write-invalidation, never the freeze (owner-ruled).
+>
+> **▶ NUANCES + ACCEPTED RESIDUALS a cold session must not re-litigate (all recorded in their
+> D-entries):** D47's remote-execution residual (a transmitted command runs regardless of local
+> deadlines — layered budgets + honest TIMEOUT wording + forced-confirm bound it; Codex's final
+> NO-GO position recorded, ruled accepted) · D46's `openai` api_mode passes `off`/`xhigh`/`max`
+> verbatim (the 400-feedback absorbs it) · `chat_template_kwargs` is not in the classifier's
+> named-param set (a llamacpp-misconfig against an OpenAI server may not degrade on that key) ·
+> the reasoning fold is dialect-blind + `_NAMED_PARAM_RE` keeps a trailing dot (both INFO,
+> unreachable in measured shapes) · vault's router-mode llama-server: the probe now sends
+> `?model=` (owner's find — bare `/props` reports n_ctx 0; NO manual `context_window` needed) ·
+> Slice-7 retry tier remains NOT-TRIGGERED live (never forced; will show under real slot
+> contention) · grants pin tool args only, so SSH failover can never break an approval.
+>
+> **▶ Standing session rules (unchanged):** /model check at start (fable-5 HIGH) · Fable =
+> orchestrator/reviewer alongside Codex (`gpt-5.6-sol` high, the standing foreign reviewer — it
+> caught real HIGHs again tonight, THREE rounds on D47); ALL mechanical/specified work = Opus 4.8
+> subagents (incl. runbook releases — two more executed flawlessly tonight) · commit autonomously,
+> push on the owner's word · `TMPDIR=/home/emma/.cache/tmp` on heavy commands (tmpfs!) · dev
+> units on-demand · live-tester/reviewer HIGH claims get final-judge verification before fixes
+> (two of three live-test "defects" tonight were artifacts).**
 > **① The reasoning-arc FINAL FOREIGN REVIEW (checklist ③) ran and EARNED ITS KEEP: Codex NO-GO,
 > 4 HIGH / 2 MED** — all six verified real by the orchestrator (headline: `off` was NOT absolute
 > when an endpoint hand-set `extra_body.reasoning`; the forbidden OpenRouter pair was still
