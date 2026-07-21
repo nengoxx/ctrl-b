@@ -1,6 +1,6 @@
 # Handoff — start here for a fresh session
 
-> ## ▶ ACTIVE — develop ON emma. PROD = v1.1.1 (2026-07-16 — UI-polish close-out: hero art ×2, SettingRow sweep, contrast-gate fix, SYS-16 ratchet). Prior: v1.1.0 2026-07-10; first deploy v1.0.0 same day.
+> ## ▶ ACTIVE — develop ON emma. PROD = v1.2.0 (2026-07-21 — ACA Slices 1–8 + the D45/D46 reasoning arc + D47 multi-homed s1–2 + UI polish; released via runbook §Release by the agent, gate run 29801506922 green incl. e2e; **the prod config riders are LIVE: `api_mode: llamacpp` + `max_concurrent_requests: 1` on local, `api_mode: openrouter` on cloud**; DB snapshot `ctrlb-20260721-063649.db.gz`; the owner's "v1.2.0 reserved for hero art" note was superseded by their release order). Prior: v1.1.1 2026-07-16 · v1.1.0 2026-07-10 · v1.0.0 same day.
 > **✅ ctrl-b v1.0.0 (tag `v1.0.0` = `8fa8404`) deployed to emma per the D32-amended plan — first try,
 > release gate green on its maiden tag run (full gate + Playwright e2e on ubuntu).** As-executed record:
 > the PRE-FLIGHT block atop [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md); living runbook: `deploy/linux/README.md`.
@@ -343,9 +343,19 @@
 > Fable 5 = orchestrator + feature reviewer alongside Codex (`gpt-5.6-sol` high); ALL specified
 > implementation / mechanical work / research = Opus 4.8 subagents.**
 >
-> **▶▶ SESSION 2026-07-20 late → 21 — READ THIS FIRST. ~11 commits LOCAL awaiting the owner's push
-> OK (`c5538fa..d879532` + this docs commit, on top of the pushed `4af01ee`); full gate 6/6 on the
-> tip; dev units RUNNING; prod still v1.1.1.**
+> **▶▶ SESSION 2026-07-20 late → 21 — READ THIS FIRST. Ended with the v1.2.0 RELEASE (see the ACTIVE
+> banner): everything through `837be03` PUSHED (main CI green) + tagged + live on prod. The owner
+> then kept iterating: post-release fixes on main are `e1dd001` (seg stadium-trick round 2 —
+> capsule at one row, rounded rect when wrapped, the line-composer geometry) + the close-out docs;
+> those are dev-only until the next release (v1.2.1 candidate or ride-along). The owner-poke rounds
+> that landed IN v1.2.0: per-model window probe (`?model=` — the router lever, owner's find),
+> reasoning-effort select (the 8-rung Seg wrapped into a blob), host-row summary fix, SOUL preview
+> legibility (10px→12px + wrap), password-manager suppression at the Field chokepoint, seg
+> rounded-rect round 1, D3 Slice 2 (Conf vpn fields + vantage-aware service links incl. the
+> spatial themes). NEW ROADMAP entries from the owner: **A11** unified custom inference endpoints
+> (design session wanted — retire local/cloud as schema positions) · **H1** the "gacha" anime theme
+> (frontier-mold; amends the theme-population closure). Dev units RUNNING again post-release for
+> the owner's seg eyeball.**
 > **① The reasoning-arc FINAL FOREIGN REVIEW (checklist ③) ran and EARNED ITS KEEP: Codex NO-GO,
 > 4 HIGH / 2 MED** — all six verified real by the orchestrator (headline: `off` was NOT absolute
 > when an endpoint hand-set `extra_body.reasoning`; the forbidden OpenRouter pair was still
