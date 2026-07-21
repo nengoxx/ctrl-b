@@ -209,6 +209,7 @@ function MachineForm(props: {
         <label>Hostname</label>
         <input
           aria-label="Hostname"
+          autoComplete="off"
           value={d.name}
           placeholder={props.isNew ? "pegasus" : ""}
           onChange={(e) => set({ name: e.target.value })}
@@ -221,6 +222,7 @@ function MachineForm(props: {
             (copy-paste only). Reverts to the full keyboard. (ROADMAP D3 splits LAN vs VPN properly.) */}
         <input
           aria-label="IP or DNS name"
+          autoComplete="off"
           value={d.ip}
           placeholder="192.168.1.x or a DNS name"
           onChange={(e) => set({ ip: e.target.value })}
@@ -233,6 +235,7 @@ function MachineForm(props: {
         <label>VPN host</label>
         <input
           aria-label="VPN host"
+          autoComplete="off"
           value={d.vpn_host}
           placeholder="corsair.tail-net.ts.net · MagicDNS name or IP"
           onChange={(e) => set({ vpn_host: e.target.value })}
@@ -258,6 +261,7 @@ function MachineForm(props: {
         <label>SSH user</label>
         <input
           aria-label="SSH user"
+          autoComplete="off"
           value={d.ssh_username}
           placeholder="root"
           onChange={(e) => set({ ssh_username: e.target.value })}

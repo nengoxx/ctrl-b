@@ -142,6 +142,12 @@ function Field(props: {
       </div>
       <input
         type={props.type ?? "text"}
+        // Chrome's password manager pairs a bare type="password" with a nearby text field as a
+        // "username" and offers to save the pair (the owner saw it latch onto the IP field). These
+        // are API keys, not login credentials — `new-password` suppresses autofill AND the save
+        // prompt (the MachineEditor/ServerListEditor precedent), derived here so every password
+        // Field gets it and no call site can forget.
+        autoComplete={props.type === "password" ? "new-password" : undefined}
         value={props.value}
         placeholder={props.placeholder}
         aria-labelledby={labelId}
@@ -681,6 +687,7 @@ export function ConfTab({ active }: Props) {
                       <input
                         aria-label="Fallback API key"
                         type="password"
+                        autoComplete="new-password"
                         value={fb.api_key ?? ""}
                         placeholder="optional — masked"
                         onChange={(e) => setFallback(i, "api_key", e.target.value)}

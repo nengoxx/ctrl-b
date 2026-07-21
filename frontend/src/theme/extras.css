@@ -2036,7 +2036,9 @@ body {
 }
 .prompt-preview {
   margin-top: 5px;
-  font-size: 10px;
+  /* 12px, not the vapor micro-type 10px: this is CONTENT (the prompt's first line), not chrome —
+     10px mono was unreadable on a phone (owner, 2026-07-21). */
+  font-size: 12px;
   line-height: 1.4;
   color: var(--ink-soft);
   font-family: "JetBrains Mono", ui-monospace, monospace;
@@ -2067,10 +2069,11 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap; /* narrow cell → the opener drops BELOW the preview instead of crushing it */
 }
 .kv-prompt .prompt-preview {
   margin-top: 2px;
-  flex: 1;
+  flex: 1 1 180px; /* keep at least a readable measure before sharing the row with the opener */
   min-width: 0;
 }
 /* SKILL.md keeps its inline 320px editor; this is just the fullscreen-opener toolbar above it. */

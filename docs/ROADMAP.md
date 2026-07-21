@@ -670,6 +670,30 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
 
 ---
 
+## H. Themes (post-T5 additions)
+
+### H1. "gacha" — an anime-styled theme in the frontier mold (**owner, 2026-07-21 — design wanted**)
+
+- **What:** a fifth theme, structurally like **frontier** (kit-based, tokens + axis declarations +
+  an optional bespoke body layer) but with an **anime / gacha-game visual identity** — the owner's
+  naming: "gacha".
+- **Ruling note:** this AMENDS the 2026-07-15 "theme population is CLOSED" ruling (which closed the
+  population *at the time* — the four themes formalizing onto the kit). The kit is exactly why a
+  fifth is now cheap: a new theme = a tokens file + axis declarations (`outlines`, `composerSkin`,
+  appbar/layout prefs) + per-theme art, with a bespoke body ONLY where the design demands it
+  (frontier's Agent tab is the precedent and the budget ceiling).
+- **How to design it (when scheduled):** follow the frontier playbook — `FRONTIER_PLAN.md` is the
+  template (design lock → F-slices → gates incl. the on-device Gecko round); THEME_ENGINE §14.11
+  (smoothness allowlist), §14.15.1 (hardening invariants incl. the contrast gate — gradient/`<image>`
+  tokens need the §14.15.1-⑨ probe), §15 (the chat hooks contract: reskin the ONE shared chat tree,
+  never fork), D37 (axes own composer chrome — a gacha look = new *skins/tokens*, not new layouts).
+  Reference art should come from real gacha-game UI references the owner points at (per the
+  use-real-reference-images rule) — collect those at design time.
+- **Open (for the design session):** the actual visual direction (which gacha aesthetic — soft
+  pastel UI? holo-foil cards? SSR-banner chrome?); whether hosts get character-card treatment (the
+  cosmos planet precedent says a bespoke Fleet body is viable); art sourcing/licensing for any
+  baked-in imagery.
+
 ## Settings tab — organized by functionality (informs v1 Conf layout)
 
 Even pre-implementation, lay out the Conf tab in **functional groups** so these land in obvious

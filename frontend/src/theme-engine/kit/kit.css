@@ -3547,10 +3547,11 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap; /* narrow cell → the opener drops BELOW the preview instead of crushing it */
 }
 .kit .kv-prompt .prompt-preview {
   margin-top: 2px;
-  flex: 1;
+  flex: 1 1 180px; /* keep at least a readable measure before sharing the row with the opener */
   min-width: 0;
 }
 
