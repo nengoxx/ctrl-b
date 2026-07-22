@@ -239,6 +239,28 @@ describe("MachineEditor — Discover from Tailscale (D3 slice 3)", () => {
     expect(api.putJSON).not.toHaveBeenCalled();
   });
 
+  it("eligibility comes from the FRESH DTO: a value set after discovery is never overwritten", async () => {
+    // Discovery saw an empty current, but by the fresh hosts fetch the value exists → NO PUT.
+    mockGets(
+      {
+        ok: true,
+        results: [
+          { id: "alpha", name: "alpha", current: null, proposed: "alpha.ts.net", online: true },
+        ],
+        unmatched: [],
+      },
+      [mkHost({ id: "alpha", name: "alpha", ip: "10.0.0.1", vpn_host: "hand-set.ts.net" })],
+    );
+    renderWithClient(
+      <MachineEditor hosts={[mkHost({ id: "alpha", name: "alpha", ip: "10.0.0.1" })]} />,
+    );
+
+    clickDiscover();
+
+    expect(await screen.findByText("differs: alpha.ts.net")).toBeTruthy();
+    expect(api.putJSON).not.toHaveBeenCalled();
+  });
+
   it("renders the endpoint reason on ok:false and applies nothing", async () => {
     mockGets({ ok: false, reason: "tailscale daemon not running" }, []);
     renderWithClient(<MachineEditor hosts={[mkHost({ id: "alpha", name: "alpha" })]} />);

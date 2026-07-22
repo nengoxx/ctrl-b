@@ -166,27 +166,29 @@ export function useDiscoverVpn() {
       const applies: Promise<unknown>[] = [];
 
       for (const r of res.results ?? []) {
-        const current = (r.current ?? "").trim();
+        const host = byId.get(r.id);
+        if (!host) {
+          // Result host missing from the fresh list — never PUT a guessed body.
+          lines.push({ name: r.name, status: "failed" });
+          continue;
+        }
+        // Eligibility comes from the FRESH DTO, not the discovery response's `current` (Codex
+        // verify: a value set between the two requests must not be overwritten).
+        const current = (host.vpn_host ?? "").trim();
         if (current === "") {
           if (r.id === skipId) {
             lines.push({ name: r.name, status: "skipped" });
           } else {
-            const host = byId.get(r.id);
-            if (!host) {
-              // Result host missing from the fresh list — never PUT a guessed body.
-              lines.push({ name: r.name, status: "failed" });
-            } else {
-              const line: VpnApplyLine = { name: r.name, status: "filled", proposed: r.proposed };
-              lines.push(line);
-              applies.push(
-                putJSON<Host>(`/api/hosts/${r.id}`, {
-                  ...hostToPayload(host),
-                  vpn_host: r.proposed,
-                }).catch(() => {
-                  line.status = "failed"; // one failed PUT stays per-host; the batch never rejects
-                }),
-              );
-            }
+            const line: VpnApplyLine = { name: r.name, status: "filled", proposed: r.proposed };
+            lines.push(line);
+            applies.push(
+              putJSON<Host>(`/api/hosts/${r.id}`, {
+                ...hostToPayload(host),
+                vpn_host: r.proposed,
+              }).catch(() => {
+                line.status = "failed"; // one failed PUT stays per-host; the batch never rejects
+              }),
+            );
           }
         } else if (current.toLowerCase() === r.proposed.toLowerCase()) {
           lines.push({ name: r.name, status: "already-set" });
