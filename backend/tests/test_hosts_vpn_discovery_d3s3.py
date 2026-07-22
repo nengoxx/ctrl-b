@@ -123,6 +123,70 @@ def test_tailscale_disabled_403() -> None:
         os.environ.pop("CTRLB_DB", None)
 
 
+def test_fill_style_full_put_preserves_other_fields() -> None:
+    """Pins the contract the frontend fill relies on (audit MED-1): the hosts PUT is NOT a PATCH —
+    `_apply_fields` omit-preserves only vpn_host/ssh_prefer_vpn, so the fill sends the FULL host body
+    (blank ssh_password = keep secret; tags [] = untouched). A fill-shaped PUT must set vpn_host and
+    leave mac / os_type / ssh_username / ssh_port / role / services / password intact in the YAML."""
+    tmp = Path(tempfile.mkdtemp())
+    seed = """\
+computers:
+  rig:
+    ip: 192.168.1.20
+    mac: aa:bb:cc:dd:ee:ff
+    ssh_username: gamer
+    ssh_password: sekrit
+    ssh_port: 2222
+    os_type: windows
+    role: rig
+    services:
+      sunshine:
+        port: 47990
+"""
+    try:
+        client, cfg = _client(tmp, seed)
+        with client as c:
+            r = c.put(
+                "/api/hosts/rig",
+                json={
+                    "name": "rig",
+                    "ip": "192.168.1.20",
+                    "vpn_host": "rig",  # the discovered fill
+                    "ssh_prefer_vpn": False,
+                    "mac": "aa:bb:cc:dd:ee:ff",
+                    "ssh_username": "gamer",
+                    "ssh_password": "",  # blank → keep the stored secret
+                    "ssh_port": 2222,
+                    "os_type": "windows",
+                    "role": "rig",
+                    "tags": [],
+                    "services": [
+                        {
+                            "name": "sunshine",
+                            "kind": None,
+                            "port": 47990,
+                            "path": "",
+                            "autostart": False,
+                            "cmd": {},
+                        }
+                    ],
+                },
+            )
+            assert r.status_code == 200, r.text
+        text = cfg.read_text(encoding="utf-8")
+        assert "vpn_host: rig" in text
+        assert "aa:bb:cc:dd:ee:ff" in text
+        assert "os_type: windows" in text
+        assert "ssh_username: gamer" in text
+        assert "ssh_password: sekrit" in text  # blank password kept the secret
+        assert "ssh_port: 2222" in text
+        assert "role: rig" in text
+        assert "sunshine" in text  # service survived
+    finally:
+        os.environ.pop("CTRLB_CONFIG", None)
+        os.environ.pop("CTRLB_DB", None)
+
+
 def test_cli_failure_envelope_passthrough() -> None:
     tmp = Path(tempfile.mkdtemp())
     try:

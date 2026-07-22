@@ -85,18 +85,20 @@ def test_happy_self_and_peer():
     }
 
 
-def test_exit_node_and_location_skipped():
+def test_location_skipped_but_own_exit_node_kept():
+    # Location (Mullvad/geo exit peer) skips; a fleet host merely ADVERTISING exit capability
+    # (ExitNodeOption) must SURVIVE — it's a real machine (Codex review fix).
     res = _run(
         _status(
             Peer={
-                "k:1": {"DNSName": f"mullvad-us.{_SUFFIX}.", "ExitNodeOption": True},
+                "k:1": {"DNSName": f"nas.{_SUFFIX}.", "ExitNodeOption": True},
                 "k:2": {"DNSName": f"se-sto.{_SUFFIX}.", "Location": {"Country": "Sweden"}},
                 "k:3": {"DNSName": f"keep.{_SUFFIX}.", "TailscaleIPs": ["100.64.0.9"]},
             }
         )
     )
     assert res["ok"] is True
-    assert [c["name"] for c in res["candidates"]] == ["keep"]
+    assert [c["name"] for c in res["candidates"]] == ["nas", "keep"]
 
 
 def test_foreign_suffix_skipped():

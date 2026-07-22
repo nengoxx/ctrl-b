@@ -9,10 +9,12 @@ import type { Host } from "../../src/types";
 // MachineEditor — D3 slice 3: the "Discover from Tailscale" button + inline per-host results. Unlike
 // the slice-2 test (which mocks useHostMutations wholesale), the apply logic lives INSIDE the real
 // useDiscoverVpn hook, so to observe the PUTs we mock the layer BELOW it — the api/client fetch
-// helpers + the toast store — and drive the REAL hook through a real QueryClient. create/update/remove
-// stay real but unused. Covers: empty-current hosts get a PUT {name,ip,vpn_host}; a differing current
-// gets NO PUT and shows `differs`; the open-editor row is skipped; unmatched → no match; ok:false
-// renders the reason; the summary toast fires exactly once.
+// helpers + the toast store — and drive the REAL hook through a real QueryClient.
+//
+// THE load-bearing assertion (audit HIGH-1): the fill PUT must carry the FULL host body. The hosts
+// PUT is not a PATCH — the backend omit-preserves ONLY vpn_host/ssh_prefer_vpn (D47); a partial body
+// would reset os_type to linux and DELETE mac/ssh_username/role/services. The body is built from a
+// host list fetched FRESH inside the mutation (never the possibly-stale prop/cache).
 
 const api = vi.hoisted(() => ({
   getJSON: vi.fn(),
@@ -45,6 +47,13 @@ function mkHost(over: Partial<Host> = {}): Host {
   };
 }
 
+/** Route the two GETs the hook makes: the discovery endpoint + the fresh hosts fetch. */
+function mockGets(discovery: unknown, freshHosts: Host[]) {
+  api.getJSON.mockImplementation((url: string) =>
+    url === "/api/hosts/vpn-discovery" ? Promise.resolve(discovery) : Promise.resolve(freshHosts),
+  );
+}
+
 function renderWithClient(ui: ReactElement) {
   const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
@@ -62,43 +71,76 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("MachineEditor — Discover from Tailscale (D3 slice 3)", () => {
-  it("PUTs {name,ip,vpn_host} ONLY for empty-current hosts; differing/set are left alone", async () => {
-    api.getJSON.mockResolvedValue({
-      ok: true,
-      results: [
-        { id: "alpha", name: "alpha", current: null, proposed: "alpha.ts.net", online: true },
-        { id: "beta", name: "beta", current: "beta.ts.net", proposed: "beta.ts.net", online: true },
-        {
-          id: "gamma",
-          name: "gamma",
-          current: "old.ts.net",
-          proposed: "new.ts.net",
-          online: false,
-        },
+  it("PUTs the FULL host body (fields preserved) ONLY for empty-current hosts", async () => {
+    const alpha = mkHost({
+      id: "alpha",
+      name: "alpha",
+      ip: "10.0.0.1",
+      mac: "aa:bb:cc:dd:ee:ff",
+      ssh_username: "gamer",
+      ssh_port: 2222,
+      os_type: "windows",
+      role: "rig",
+      services: [
+        { name: "sunshine", kind: null, port: 47990, path: "", autostart: false, cmd: {} },
       ],
-      unmatched: ["delta"],
+      vpn_host: null,
     });
-    renderWithClient(
-      <MachineEditor
-        hosts={[
-          mkHost({ id: "alpha", name: "alpha", ip: "10.0.0.1", vpn_host: null }),
-          mkHost({ id: "beta", name: "beta", ip: "10.0.0.2", vpn_host: "beta.ts.net" }),
-          mkHost({ id: "gamma", name: "gamma", ip: "10.0.0.3", vpn_host: "old.ts.net" }),
-        ]}
-      />,
+    const hosts = [
+      alpha,
+      // Case-only difference vs the casefolded proposal → "already set", never "differs".
+      mkHost({ id: "beta", name: "beta", ip: "10.0.0.2", vpn_host: "Beta.TS.NET" }),
+      mkHost({ id: "gamma", name: "gamma", ip: "10.0.0.3", vpn_host: "old.ts.net" }),
+    ];
+    mockGets(
+      {
+        ok: true,
+        results: [
+          { id: "alpha", name: "alpha", current: null, proposed: "alpha.ts.net", online: true },
+          {
+            id: "beta",
+            name: "beta",
+            current: "Beta.TS.NET",
+            proposed: "beta.ts.net",
+            online: true,
+          },
+          {
+            id: "gamma",
+            name: "gamma",
+            current: "old.ts.net",
+            proposed: "new.ts.net",
+            online: false,
+          },
+        ],
+        unmatched: ["delta"],
+      },
+      hosts,
     );
+    renderWithClient(<MachineEditor hosts={hosts} />);
 
     clickDiscover();
 
-    // Exactly one apply, for the empty-current host, with the minimal name+ip+vpn_host body.
+    // Exactly one apply, for the empty-current host, with the FULL body — os_type/mac/services/
+    // ssh_username/ssh_port/role all carried; blank password = keep stored secret.
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     expect(api.putJSON).toHaveBeenCalledWith("/api/hosts/alpha", {
       name: "alpha",
       ip: "10.0.0.1",
       vpn_host: "alpha.ts.net",
+      ssh_prefer_vpn: false,
+      mac: "aa:bb:cc:dd:ee:ff",
+      ssh_username: "gamer",
+      ssh_password: "",
+      ssh_port: 2222,
+      os_type: "windows",
+      role: "rig",
+      tags: [],
+      services: [
+        { name: "sunshine", kind: null, port: 47990, path: "", autostart: false, cmd: {} },
+      ],
     });
 
-    // Inline lines: filled / already set / differs:<proposed> / no match.
+    // Inline lines: filled / already set (case-only) / differs:<proposed> / no match.
     await screen.findByText("filled");
     expect(screen.getByText("already set")).toBeTruthy();
     expect(screen.getByText("differs: new.ts.net")).toBeTruthy();
@@ -106,16 +148,18 @@ describe("MachineEditor — Discover from Tailscale (D3 slice 3)", () => {
   });
 
   it("one summary toast, once, with the counts", async () => {
-    api.getJSON.mockResolvedValue({
-      ok: true,
-      results: [
-        { id: "alpha", name: "alpha", current: null, proposed: "alpha.ts.net", online: true },
-      ],
-      unmatched: ["delta"],
-    });
-    renderWithClient(
-      <MachineEditor hosts={[mkHost({ id: "alpha", name: "alpha", ip: "10.0.0.1" })]} />,
+    const hosts = [mkHost({ id: "alpha", name: "alpha", ip: "10.0.0.1" })];
+    mockGets(
+      {
+        ok: true,
+        results: [
+          { id: "alpha", name: "alpha", current: null, proposed: "alpha.ts.net", online: true },
+        ],
+        unmatched: ["delta"],
+      },
+      hosts,
     );
+    renderWithClient(<MachineEditor hosts={hosts} />);
 
     clickDiscover();
 
@@ -124,16 +168,18 @@ describe("MachineEditor — Discover from Tailscale (D3 slice 3)", () => {
   });
 
   it("skips the host whose editor row is open (no PUT, skip note shown)", async () => {
-    api.getJSON.mockResolvedValue({
-      ok: true,
-      results: [
-        { id: "alpha", name: "alpha", current: null, proposed: "alpha.ts.net", online: true },
-      ],
-      unmatched: [],
-    });
-    renderWithClient(
-      <MachineEditor hosts={[mkHost({ id: "alpha", name: "alpha", ip: "10.0.0.1" })]} />,
+    const hosts = [mkHost({ id: "alpha", name: "alpha", ip: "10.0.0.1" })];
+    mockGets(
+      {
+        ok: true,
+        results: [
+          { id: "alpha", name: "alpha", current: null, proposed: "alpha.ts.net", online: true },
+        ],
+        unmatched: [],
+      },
+      hosts,
     );
+    renderWithClient(<MachineEditor hosts={hosts} />);
 
     fireEvent.click(screen.getByText("alpha")); // open the row → its draft is seeded at mount
     clickDiscover();
@@ -143,25 +189,25 @@ describe("MachineEditor — Discover from Tailscale (D3 slice 3)", () => {
   });
 
   it("a rejected PUT downgrades that host's line to fill failed; the batch survives and toasts err", async () => {
-    api.getJSON.mockResolvedValue({
-      ok: true,
-      results: [
-        { id: "alpha", name: "alpha", current: null, proposed: "alpha.ts.net", online: true },
-        { id: "beta", name: "beta", current: null, proposed: "beta.ts.net", online: true },
-      ],
-      unmatched: [],
-    });
+    const hosts = [
+      mkHost({ id: "alpha", name: "alpha", ip: "10.0.0.1" }),
+      mkHost({ id: "beta", name: "beta", ip: "10.0.0.2" }),
+    ];
+    mockGets(
+      {
+        ok: true,
+        results: [
+          { id: "alpha", name: "alpha", current: null, proposed: "alpha.ts.net", online: true },
+          { id: "beta", name: "beta", current: null, proposed: "beta.ts.net", online: true },
+        ],
+        unmatched: [],
+      },
+      hosts,
+    );
     api.putJSON.mockImplementation((url: string) =>
       url === "/api/hosts/beta" ? Promise.reject(new Error("boom")) : Promise.resolve({}),
     );
-    renderWithClient(
-      <MachineEditor
-        hosts={[
-          mkHost({ id: "alpha", name: "alpha", ip: "10.0.0.1" }),
-          mkHost({ id: "beta", name: "beta", ip: "10.0.0.2" }),
-        ]}
-      />,
-    );
+    renderWithClient(<MachineEditor hosts={hosts} />);
 
     clickDiscover();
 
@@ -172,14 +218,17 @@ describe("MachineEditor — Discover from Tailscale (D3 slice 3)", () => {
     expect(toast.pushToast).toHaveBeenCalledWith("VPN discovery: 1 filled · 1 failed", "err");
   });
 
-  it("a result host missing from the hosts prop gets NO PUT (never a guessed body)", async () => {
-    api.getJSON.mockResolvedValue({
-      ok: true,
-      results: [
-        { id: "ghost", name: "ghost", current: null, proposed: "ghost.ts.net", online: true },
-      ],
-      unmatched: [],
-    });
+  it("a result host missing from the FRESH host list gets NO PUT (never a guessed body)", async () => {
+    mockGets(
+      {
+        ok: true,
+        results: [
+          { id: "ghost", name: "ghost", current: null, proposed: "ghost.ts.net", online: true },
+        ],
+        unmatched: [],
+      },
+      [mkHost({ id: "alpha", name: "alpha", ip: "10.0.0.1" })], // fresh list has no "ghost"
+    );
     renderWithClient(
       <MachineEditor hosts={[mkHost({ id: "alpha", name: "alpha", ip: "10.0.0.1" })]} />,
     );
@@ -191,7 +240,7 @@ describe("MachineEditor — Discover from Tailscale (D3 slice 3)", () => {
   });
 
   it("renders the endpoint reason on ok:false and applies nothing", async () => {
-    api.getJSON.mockResolvedValue({ ok: false, reason: "tailscale daemon not running" });
+    mockGets({ ok: false, reason: "tailscale daemon not running" }, []);
     renderWithClient(<MachineEditor hosts={[mkHost({ id: "alpha", name: "alpha" })]} />);
 
     clickDiscover();

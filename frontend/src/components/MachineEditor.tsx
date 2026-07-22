@@ -513,7 +513,7 @@ export function MachineEditor({ hosts }: { hosts: Host[] }) {
           type="button"
           className="conf-save alt"
           disabled={discover.isPending}
-          onClick={() => discover.mutate({ hosts, skipId: openId })}
+          onClick={() => discover.mutate({ skipId: openId })}
         >
           {discover.isPending ? "Discovering…" : "Discover from Tailscale"}
         </button>

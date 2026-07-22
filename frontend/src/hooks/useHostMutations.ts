@@ -114,26 +114,54 @@ const APPLY_LABEL: Record<VpnApplyStatus, string> = {
   failed: "failed",
 };
 
+/** Full `HostIn` body from a loaded Host DTO. The hosts PUT is NOT a PATCH — `_apply_fields`
+ *  omit-preserves ONLY vpn_host/ssh_prefer_vpn (D47); every other omitted field would reset to its
+ *  HostIn default (os_type→linux, mac/ssh_username/role/services DELETED, ssh_port→22). So a fill
+ *  must send the whole host back. Blank ssh_password = keep the stored secret; tags [] = leave tags
+ *  untouched — both per the editor's own toPayload contract. */
+function hostToPayload(
+  h: Host,
+): HostPayload & { vpn_host: string | null; ssh_prefer_vpn: boolean } {
+  return {
+    name: h.name,
+    ip: h.ip,
+    vpn_host: h.vpn_host ?? null,
+    ssh_prefer_vpn: h.ssh_prefer_vpn ?? false,
+    mac: h.mac ?? null,
+    ssh_username: h.ssh_username ?? null,
+    ssh_password: "", // "" → keep existing secret
+    ssh_port: h.ssh_port,
+    os_type: h.os_type,
+    role: h.role ?? null,
+    tags: [],
+    services: h.services ?? [],
+  };
+}
+
 /**
  * Fetch VPN-address proposals and auto-fill every host whose `vpn_host` is empty — EXCEPT the host
  * whose editor row is currently open (`skipId`); its unsaved draft was seeded at mount, so a fill
  * would be silently discarded on the next keystroke/save. Existing (differing) addresses are NEVER
- * overwritten. Applies go through the same per-host PUT + `["hosts"]`/`["settings"]` invalidation as
- * a manual edit, invalidated ONCE after the batch.
+ * overwritten (compared case-insensitively — MagicDNS labels are casefolded). Applies go through the
+ * same per-host PUT + `["hosts"]`/`["settings"]` invalidation as a manual edit, invalidated ONCE
+ * after the batch.
  *
- * The PUT body carries `{name, ip, vpn_host}` — the endpoint's `HostIn` requires name+ip, and
- * pydantic's `model_fields_set` omit-preserves keeps every other field (name equals the current name,
- * so no rename). A bare `{vpn_host}` body would 422.
+ * Each apply sends the FULL host body (`hostToPayload` + the proposed vpn_host), built from a host
+ * list fetched FRESH inside the mutation — never from a possibly-stale query cache/prop, since a
+ * full-body PUT would faithfully write back any staleness. Residual (accepted, single-user app):
+ * a concurrent edit landing inside the sub-second fetch→PUT window is last-writer-wins, same as the
+ * manual editor.
  */
 export function useDiscoverVpn() {
   const invalidate = useInvalidate();
-  return useMutation<VpnDiscoveryOutcome, Error, { hosts: Host[]; skipId: string | null }>({
-    mutationFn: async ({ hosts, skipId }) => {
+  return useMutation<VpnDiscoveryOutcome, Error, { skipId: string | null }>({
+    mutationFn: async ({ skipId }) => {
       const res = await getJSON<VpnDiscoveryResponse>("/api/hosts/vpn-discovery");
       if (!res.ok) {
         return { ok: false, reason: res.reason || "discovery failed", lines: [], summary: "" };
       }
-      const byId = new Map(hosts.map((h) => [h.id, h]));
+      const fresh = await getJSON<Host[]>("/api/hosts");
+      const byId = new Map(fresh.map((h) => [h.id, h]));
       const lines: VpnApplyLine[] = [];
       const applies: Promise<unknown>[] = [];
 
@@ -145,17 +173,14 @@ export function useDiscoverVpn() {
           } else {
             const host = byId.get(r.id);
             if (!host) {
-              // Stale hosts prop — never PUT a guessed body (an empty ip would be WRITTEN server-side).
+              // Result host missing from the fresh list — never PUT a guessed body.
               lines.push({ name: r.name, status: "failed" });
             } else {
-              // Minimal body: name+ip (required by HostIn) + the proposed vpn_host. Everything else is
-              // omit-preserved server-side; name equals the current name, so no rename.
               const line: VpnApplyLine = { name: r.name, status: "filled", proposed: r.proposed };
               lines.push(line);
               applies.push(
                 putJSON<Host>(`/api/hosts/${r.id}`, {
-                  name: host.name,
-                  ip: host.ip,
+                  ...hostToPayload(host),
                   vpn_host: r.proposed,
                 }).catch(() => {
                   line.status = "failed"; // one failed PUT stays per-host; the batch never rejects
@@ -163,7 +188,7 @@ export function useDiscoverVpn() {
               );
             }
           }
-        } else if (current === r.proposed) {
+        } else if (current.toLowerCase() === r.proposed.toLowerCase()) {
           lines.push({ name: r.name, status: "already-set" });
         } else {
           lines.push({ name: r.name, status: "differs", proposed: r.proposed });

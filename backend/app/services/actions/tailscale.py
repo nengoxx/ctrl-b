@@ -108,11 +108,14 @@ async def resolve_status(cfg: TailscaleCfg) -> dict:
 
 def _vpn_candidate(node: dict, suffix: str) -> dict | None:
     """One provider-neutral VPN candidate from a status node (`Self` or a `Peer`), or None to skip it.
-    LENIENT — every field may be absent; never KeyError. Skips exit-node / Mullvad-location nodes and
-    foreign-tailnet nodes (DNSName not under `suffix`). `suffix` = the tailnet MagicDNS suffix, no dots,
-    casefolded, or "" when unknown (then no foreign-suffix filtering)."""
-    if node.get("ExitNodeOption") or node.get("Location") is not None:
-        return None  # exit node / Mullvad location — not a real fleet peer
+    LENIENT — every field may be absent; never KeyError. Skips Mullvad/geo-located exit-node peers and
+    foreign-tailnet nodes (DNSName not under `suffix`); an own-fleet host that merely ADVERTISES exit
+    capability (`ExitNodeOption`) is kept. `suffix` = the tailnet MagicDNS suffix, no dots, casefolded,
+    or "" when unknown (then no foreign-suffix filtering)."""
+    if node.get("Location") is not None:
+        return None  # Mullvad/geo exit-node peer — not a real fleet peer. NOT ExitNodeOption: that
+        # only means the node CAN exit-route, and an own-fleet host may advertise it (Codex review);
+        # other-tailnet exit nodes fall to the foreign-suffix filter below.
     dns_norm = (node.get("DNSName") or "").rstrip(".").casefold()  # DNSName carries a trailing dot
     if suffix and dns_norm and not dns_norm.endswith("." + suffix):
         return None  # foreign / shared-tailnet node
