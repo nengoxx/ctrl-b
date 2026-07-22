@@ -1680,6 +1680,45 @@ body {
   border-color: var(--magenta);
 }
 
+/* ── Conf → Computers · VPN-discovery results (D3 slice 3, net-new) ────────────────────────────
+   Transient per-host outcome lines under the "Discover from Tailscale" button. Sits as a direct
+   child of the .conf-card (like the .conf-savebar it follows), so it inherits the same 12px inset. */
+.vpn-discover-results {
+  margin: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vpn-discover-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+.vpn-discover-line.err {
+  color: var(--danger, #ff6b6b);
+}
+.vpn-dh {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.vpn-ds {
+  color: var(--ink-faint);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.vpn-ds.filled {
+  color: var(--magenta);
+}
+.vpn-ds.differs {
+  color: var(--warn, #e0a94f);
+}
+.vpn-ds.failed {
+  color: var(--danger, #ff6b6b);
+}
+
 /* ── Conf → Agent tools · per-tool description overrides (Phase 7d-a, net-new) ─────────────────
    Reuses the 7a .conf-textrow/.conf-textarea recipe; these add a category heading + the mono tool
    name + a "custom" tag. Tokens from VAPOR_PATTERNS; vapor.css untouched (D7). */

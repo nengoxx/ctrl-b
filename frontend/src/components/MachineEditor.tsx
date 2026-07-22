@@ -1,7 +1,13 @@
 import { useState } from "react";
 
 import { Switch } from "./Switch";
-import { useCreateHost, useDeleteHost, useUpdateHost } from "../hooks/useHostMutations";
+import {
+  useCreateHost,
+  useDeleteHost,
+  useDiscoverVpn,
+  useUpdateHost,
+} from "../hooks/useHostMutations";
+import type { VpnApplyLine } from "../hooks/useHostMutations";
 import { disclosureToggle } from "../lib/disclosure";
 import { requestConfirm } from "../store/confirm";
 import type { Host, HostServiceCfg, OSType } from "../types";
@@ -381,12 +387,31 @@ function MachineForm(props: {
   );
 }
 
+/** Inline text for one discovery outcome line (D3 slice 3). */
+function applyLineText(l: VpnApplyLine): string {
+  switch (l.status) {
+    case "filled":
+      return "filled";
+    case "already-set":
+      return "already set";
+    case "differs":
+      return `differs: ${l.proposed ?? ""}`;
+    case "no-match":
+      return "no match";
+    case "skipped":
+      return "skipped — editor open";
+    case "failed":
+      return "fill failed";
+  }
+}
+
 export function MachineEditor({ hosts }: { hosts: Host[] }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const create = useCreateHost();
   const update = useUpdateHost();
   const remove = useDeleteHost();
+  const discover = useDiscoverVpn(); // D3 slice 3 — VPN-address discovery (on-demand only)
 
   const save = (id: string | null, d: Draft) => {
     const payload = toPayload(d);
@@ -476,6 +501,37 @@ export function MachineEditor({ hosts }: { hosts: Host[] }) {
           )}
         </div>
       </div>
+
+      {/* D3 slice 3 — fill empty VPN hosts from the tailnet peer list. Read-only fetch, then auto-apply
+          the proposal to every host whose vpn_host is blank (except the currently-open editor row, whose
+          draft was seeded at mount). Existing values are never overwritten. Reuses the redisc bar recipe;
+          the results below are transient (mutation state), not persisted. Tailscale wording lives only
+          in the button label — the hook/types are provider-neutral. */}
+      <div className="conf-savebar redisc">
+        <span className="redisc-hint">// fill empty VPN hosts from the tailnet</span>
+        <button
+          type="button"
+          className="conf-save alt"
+          disabled={discover.isPending}
+          onClick={() => discover.mutate({ hosts, skipId: openId })}
+        >
+          {discover.isPending ? "Discovering…" : "Discover from Tailscale"}
+        </button>
+      </div>
+      {discover.data && (
+        <div className="vpn-discover-results">
+          {!discover.data.ok ? (
+            <div className="vpn-discover-line err">{discover.data.reason}</div>
+          ) : (
+            discover.data.lines.map((l, i) => (
+              <div className="vpn-discover-line" key={`${l.name}-${i}`}>
+                <span className="vpn-dh">{l.name}</span>
+                <span className={"vpn-ds " + l.status}>{applyLineText(l)}</span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

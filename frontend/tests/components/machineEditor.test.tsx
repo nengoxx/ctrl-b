@@ -10,12 +10,18 @@ import type { Host } from "../../src/types";
 // always SEND them (the backend's omit-preserves is for old clients that don't) — an untouched host's
 // loaded vpn_host/ssh_prefer_vpn must appear in the payload, not be dropped.
 
-const h = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), remove: vi.fn() }));
+const h = vi.hoisted(() => ({
+  create: vi.fn(),
+  update: vi.fn(),
+  remove: vi.fn(),
+  discover: vi.fn(),
+}));
 
 vi.mock("../../src/hooks/useHostMutations", () => ({
   useCreateHost: () => ({ mutate: h.create, isPending: false }),
   useUpdateHost: () => ({ mutate: h.update, isPending: false }),
   useDeleteHost: () => ({ mutate: h.remove, isPending: false }),
+  useDiscoverVpn: () => ({ mutate: h.discover, isPending: false, data: undefined }),
 }));
 
 function mkHost(over: Partial<Host> = {}): Host {
