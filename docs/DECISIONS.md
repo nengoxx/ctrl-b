@@ -3169,3 +3169,349 @@ corrected in the map below).
   TIMEOUT report while a just-started command completes remotely, which the TIMEOUT wording
   acknowledges and which forced-confirm gates on the destructive actions bound in practice. Ruled
   accepted 2026-07-20 (final foreign review round 3); further tightening is not planned.
+
+---
+
+## D48 — Unified provider registry (A11): `providers` + model catalog + flat primary/fallbacks ✏️ LOCKED 2026-07-22 (design session; owner sign-off pending)
+
+**Context — what this retires.** Today inference hardwires a `local` + `cloud` pair (`InferenceEndpointCfg`
+× 2) plus a third `fallbacks[]` shape; voice hardwires `primary`/`fallback` slots per role
+(`VoiceEndpointCfg`); embeddings is a single endpoint with no failover. Every connection field is homed
+three-plus ways, and the Conf UI renders a Local-block / Cloud-block / Fallbacks trio that does not scale
+past two roles. A11 replaces all of it with **one top-level `providers:` map of CONNECTIONS**, each
+carrying a name-keyed **model catalog**, and gives every consumer section (`inference`, `voice.stt`,
+`voice.tts`, `embeddings`) a **flat `provider` primary + ordered `fallbacks[]`** of `{provider, model?}`
+refs. This is the owner's "shape data to extend, not migrate" rule applied end-to-end: the next connection
+knob is one additive field on `ProviderCfg`, the next per-model datum one additive field on `ModelCfg` — no
+new parallel sibling maps. Config-only; **no DB schema change**.
+
+**Final config shape** (the owner's real fleet; the API key is a placeholder — the real value is
+gitignored in `config.yaml`):
+
+```yaml
+providers:                       # top-level name-keyed map: connection + server behavior + model catalog
+  llamacpp:                      # slug ^[a-z0-9][a-z0-9_+.-]{0,31}$ (exact limit 32); the /llamacpp verb
+    base_url: http://192.168.1.137:5001/v1
+    api_mode: llamacpp           # openai | llamacpp | openrouter | none  (D45/D46 enum KEPT)
+    max_concurrent_requests: 1   # SERVER capacity — provider-level; the D40 semaphore keys here (C4)
+    models:                      # name-keyed catalog; KEY = clean display name, id defaults to key
+      minig+:
+        context_window: 32768    # chat; D42 precedence: explicit > /props probe > None
+        extra_body:              # chat-call passthrough — MODEL-level home (never provider-wide)
+          cache_prompt: true
+  openrouter:                    # the /openrouter verb
+    base_url: https://openrouter.ai/api/v1
+    api_key: sk-…                # optional; omitted = no-auth. Masked in the API; blank-keeps on PUT
+    api_mode: openrouter
+    models:
+      qwen3.5:
+        id: qwen/qwen3.5-72b     # wire model id sent to the server (auto-hidden in UI when == key)
+        context_window: 262144
+      qwen-embed:
+        id: qwen/qwen3-embedding-4b
+        dim: 2560                # embeddings-scoped model field
+  speaches:
+    base_url: http://emma:9000/v1
+    models:
+      parakeet:
+        id: istupakov/parakeet-tdt-0.6b-v3-onnx   # STT
+      kokoro:
+        id: speaches-ai/Kokoro-82M-v1.0-ONNX
+        voice: bf_isabella       # TTS-scoped model field (voice ids are model-specific)
+  vault-whisper:
+    base_url: http://192.168.1.137:9000/v1
+    models:
+      whisper-large-v3:          # bare key → ModelCfg() defaults, id = key
+  vault-alltalk:
+    base_url: http://192.168.1.137:7851/v1
+    models:
+      tts-1:
+
+inference:                       # request_timeout_s / system_prompt* / failover / retry_attempts STAY
+  provider: llamacpp             # PRIMARY (flat); model omittable iff the catalog has exactly one model
+  fallbacks:                     # ordered, N-deep; each {provider, model?}
+    - provider: openrouter
+      model: qwen3.5             # multi-model provider → must name the clean model
+voice:
+  stt:                           # language / vad_filter / hotwords / auto_send / timeouts STAY
+    provider: speaches
+    model: parakeet
+    fallbacks:
+      - provider: vault-whisper
+  tts:                           # format / timeouts STAY
+    provider: speaches
+    model: kokoro
+    fallbacks:
+      - provider: vault-alltalk
+embeddings:                      # enabled / timeout_s STAY
+  provider: openrouter
+  model: qwen-embed
+  fallbacks: []
+```
+
+**Module boundary** (the layering is normative — no consumer reads live `Settings`):
+
+- **`domain/provider.py`** — frozen value types only. `ResolvedTarget` (frozen): provider name +
+  connection (base_url, `api_key: SecretStr` with `repr=False`, api_mode, resolved `max_tokens_field`) +
+  wire model id + model metadata (context_window, extra_body, language / voice / speed / format / dim) +
+  `gate_identity` + the effective `max_concurrent_requests` (post min-wins) + the effective
+  `retry_attempts` (provider > global). Plus one frozen **`SectionPolicy`** snapshot per call-site (chat:
+  request_timeout_s / failover / global retry; stt: language / vad_filter / hotwords / timeouts; tts:
+  format / timeouts; embeddings: timeout_s) — captured at resolution, never live Settings.
+- **`core/provider_registry.py`** — strict/lenient policies, ref resolution, chain construction. Owns the
+  `(gate_identity, limit)` registry keying + generation-drain (extends `test_inference_gate_d40`) and the
+  SDK-client caches. **Adapters consume `tuple[ResolvedTarget, ...]` only**, never live Settings.
+- **Services** consume the SERVED target: `StreamReport.served_target` replaces `served_endpoint`, so
+  compaction prices against what actually served.
+- **`config.py`** keeps YAML parsing, the one quarantined `_migrate_legacy()` fold, and the
+  `ProviderCfg`/`ModelCfg` schema. It owns **no** runtime caches or gates.
+- **`core.failover`** stays the ONE async failover walker shared by chat/voice/embeddings — A11 changes
+  what feeds it (a resolved-target tuple), not the walker.
+
+**Generation publication** (replaces the current close-before-publish scalar swap): `runtime.py` builds ONE
+immutable registry generation per settings apply. A `providers` change rebuilds inference + voice +
+embeddings adapters **together** (today's per-section change detection gains the `providers_changed`
+trigger). Build all three new adapters first, **publish the generation atomically, retire the old one by
+DRAIN** — in-flight turns/streams finish on their captured generation; clients close only when the old
+generation's refcount empties. SDK-client caches key by provider name (chat) or by provider name + immutable
+transport options (voice timeout pair) and die with their generation; the D46 demotion cache keys
+`(provider, wire model id)` and clears on ANY `providers_changed` edit affecting
+api_mode/connection/credentials/model-resolution, in addition to today's inference/agent-edit clears.
+
+### Normative contracts (final — C1–C11 with all round-3 (A1–A7) and round-4 (F1–F6) amendments folded in)
+
+**C1. Rename, map mutation, secret handling.**
+- The settings PUT body gains `provider_renames: {old_name: new_name}` (optional) — **PUT transport
+  metadata**: a request-model field, stripped before `Settings` validation/persist; it never lands in YAML
+  (`Settings` `extra=allow` cannot retain it). Only **simple bijective** renames: old must exist, new must
+  not (except as its own old); no chains/swaps/cycles/duplicate destinations → **422**.
+- Applied ATOMICALLY, in this exact order: **(1)** rekey the stored provider entry, restoring its secret by
+  its OLD structural identity; **(2)** apply the `providers` replacement + the rest of the patch; **(3)**
+  cascade every config-held ref STILL equal to the old name in the FINAL MERGED doc; **(4)** an explicit
+  incoming change to a *third* provider is preserved untouched. A real (non-masked, non-blank) incoming
+  secret WINS over restoration. **Mask-matching is dead** — masks are not injective, so identity, not the
+  masked string, drives restore.
+- **Cascade list is explicit + closed**: section primaries/fallbacks (inference / stt / tts / embeddings) +
+  EVERY config-held `ModelRef` home — `agent.defaults.model`, `agent.defaults.compaction.summarizer`, the
+  **global `agent.compaction.summarizer`** (config.py:320), `agent.defaults.routing.lead`, plus any nested
+  `ModelRef` the domain adds later via one shared walk helper. The UI rename control ALSO rewrites the
+  visible draft selectors; the **backend ordering is authoritative**.
+- **`providers` uses REPLACEMENT semantics** in the PUT (the UI always submits the complete map;
+  `sync_mapping`-style replace, never `deep_merge`) so deletes and renames work and absent keys are removed.
+  All other subtrees keep documented-merge behavior.
+- **Secret handling is PATH-AWARE inside name-keyed maps**: map KEYS never trigger secret-leaf
+  masking/unmasking; only the schema `api_key` FIELD of a provider/model object does. As defense-in-depth
+  the PUT **rejects** provider/model names that collide with a secret sentinel key (`api_key`,
+  `ssh_password`, `password`, `token`, …). (Regression tests cover provider names `api_key`, `ssh_password`,
+  `env`, `headers`.) `providers.*.api_key` joins the SECURITY_MODEL secret-leaf list.
+- Dangling refs OUTSIDE `config.yaml` (`agents/*/agent.yaml`) stay graceful-degradation: warn + default
+  chain at load; the agents editor shows the dangling state. **No cross-file transactions.**
+
+**C2. Two explicit resolution policies + concurrency 409.** `core/provider_registry.py` exposes
+`resolve_strict(cfg) -> Registry | list[RegistryError]` (PUT: any error → **422** with the error list) and
+`resolve_lenient(cfg) -> (Registry, list[str])` (boot: warn + drop/promote per C5). Lenient warnings surface
+in logs AND on `GET /api/providers`. The PUT response envelope gains `warnings: string[]` for non-fatal
+notices (catalog-key-shadows-wire-id, provider-name-shadows-skill). **Concurrency safety**: the `providers`
+subtree carries a **base revision/fingerprint**; a PUT whose `providers` base does not match → **409** (a
+full-map replacement must not silently delete another client's addition). The existing agent-busy 409 stays;
+A7's drain covers the runtime side, so **no new blanket gate** is added.
+
+**C3. Migration** (full algorithm in the next subsection): a raw-YAML normalization BEFORE Pydantic
+validation, per-subtree idempotent, `new-wins` per destination field, deterministic. Write-back of consumed
+legacy keys is deferred to the ONE atomic materialization at the YAML-write chokepoint (C-b / F5) on the
+first successful write.
+
+**C4. Gate identity + generations.** `gate_identity` = the canonical full base_url (scheme+host lowercased,
+default ports elided, trailing slash stripped, **path preserved** — different paths = different gates by
+design). The D40 registry keeps its `(gate_identity, limit)` keying + generation-drain (pinned by
+`test_inference_gate_d40`): a live limit change mints a new draining generation, exactly as today. **None =
+unlimited.** All providers sharing a `gate_identity` must declare the same effective
+`max_concurrent_requests`, where `None ≠` any finite value: strict PUT **422**s a conflict; lenient boot
+warns and takes **min of the finite declared values** (`{None, 2} → 2`) onto every affected
+`ResolvedTarget`. A future explicit `concurrency_group` is the sanctioned escape hatch for aliased URLs of
+one physical server — **never inferred**.
+
+**C5. Resolution rules.** Duplicate-target identity = (canonical base_url, credential identity [compared,
+never logged], wire model id, api_mode); a PUT **422**s duplicates within one section's primary+fallbacks,
+boot dedups + warns (keeps D43 budgets + `endpoints_tried` honest). **Model omission** = the
+sole-catalog-model rule (0 or ≥2 models → strict error / lenient drop). **Blank/absent primary with
+configured fallbacks**: PUT **422**; lenient boot **PROMOTES the first valid fallback** (runtime-only, the
+persisted doc untouched — preserves today's voice "configured if any endpoint survives"). No valid targets
+at all → service unconfigured (mic hidden / embeddings off / chat 422s). An **UNCATALOGED raw model id**
+(ModelRef passthrough): `context_window=None` BUT still `/props`-probe-eligible iff the provider's
+`api_mode == llamacpp` (D42 intact: explicit > probe > threshold-fallback); the probe key and D46 demotion
+key are `(provider name, wire model id)`, **never provider alone**.
+
+**C6. `max_tokens_field` ladder.** model explicit > provider explicit > derived-from-`api_mode` (D46).
+`resolved_max_tokens_field` lives on `ResolvedTarget`; the wire boundary reads **only** that.
+
+**C7. Mode/verb plumbing.** Request models (`ChatRequest.mode`, resume `mode`) do **syntax-only** slug
+validation — they cannot see settings; resolution against the CAPTURED registry coerces unknown → None →
+default (logged). DB/suspended-turn parity is KEPT and **not extended**: per-call mode is in-memory
+(`TurnHandle`) and documented as not surviving cold reload (ACA-16 cross-reload persistence is not claimed
+today and A11 doesn't grow it). FE `ChatMode` → `string | null`; reattach preserves arbitrary snapshot
+strings. A new lightweight, non-secret **`GET /api/providers`** (names + per-section effective defaults +
+the backend-canonical reserved-verb list + live skill-collision warnings) is the composer's source for
+`/<provider>` verbs; the Conf-scoped settings query stays Conf-only. **Collisions**: a PUT rejects provider
+names equal to backend-canonical built-in verbs; a provider name shadowed by a LATER-created skill resolves
+**built-ins > skills > providers** with a warning surfaced in both editors (no hard rejection against the
+moving skill set — the collision function is ONE backend-canonical helper, recomputed live, never frozen at
+save time). `/⁠<provider>` selects **that provider's effective-chain model** (or its sole catalog model): the
+chosen target → the normal effective chain deduped (`failover=False → [chosen]`). A provider appearing
+multiple times in a section resolves to its **first configured occurrence's model**. A `ModelRef.model`
+clean name is provider-relative and never carried across providers; an explicit raw-id `ModelRef` still
+passes through. Providers **absent** from the inference chain are composer-routable only when their catalog
+has exactly one model; multi-model non-chain providers are not advertised as verbs and coerce to default
+(logged).
+
+**C7-b. Universal pointer rule (owner, 2026-07-22).** EVERY subsystem that selects an inference
+backend+model does so via the SAME `ModelRef {provider, model}` against the SAME registry — `AgentDef.model`
+(per-agent + `agent.defaults`), `CompactionCfg.summarizer` (the global `agent.compaction` home + the
+per-agent override, subagent-inherited), `RoutingCfg.lead` (D43) — one resolver, one `ResolvedTarget`
+path, **no subsystem-private backend-selection mechanism**. Correspondingly, every FE surface that renders
+a `ModelRef` selector — including `AgentsEditor`'s hardwired local/cloud backend `Seg` — becomes the shared
+provider → model picker pair fed by `GET /api/providers` (model picker scoped to the chosen provider's
+catalog, free-text raw-id escape kept for uncataloged models).
+
+**C8. Voice + embeddings semantics.** TTS voice precedence = **request > model voice > protocol fallback
+`"alloy"`** (no service-level voice field exists — parity); model `speed` is a TTS request param
+(`model.speed > 1.0` default), consumed at the wire like voice. STT language = model > service (no
+request-time language today — parity). **Format**: each failover attempt returns `(bytes,
+effective_format)`; the response media type is the WINNING hop's resolved format (model format > service
+format), never precomputed. **Embeddings**: strict validation requires all non-null `dim` in a chain to
+AGREE (PUT **422** / boot drop-mismatched + warn); failover is otherwise identical to voice.
+
+**C9. Effective-chain & warnings lifecycle.** Lenient promotions are runtime-only; the effective default is
+what `GET /api/providers` reports. `config_warnings` are response/runtime-only (never `Settings`/YAML): each
+settings apply atomically REPLACES the prior generation's warning set. `GET /api/settings` stays naked
+(unchanged FE contract); warnings ride the PUT-response envelope AND `GET /api/providers` (which the Conf
+page + composer already query).
+
+**C10. Adapter/service consumption.** Adapters receive `tuple[ResolvedTarget, ...]` + the per-call frozen
+`SectionPolicy`; they call `api_key.get_secret_value()` at the wire only. Services read
+`StreamReport.served_target`. No layer below `config.py` parses YAML or holds a live `Settings`.
+
+**C11. Test matrix (SYS-14 gate).** New tests: migration (shape conversion, order preservation,
+idempotency, legacy-key deletion, dedup + collision suffixes, per-destination fill, first-writer-wins delete
+whichever PUT lands) · rename atomicity + secret restore + replacement semantics + the cascade list incl.
+the global summarizer · **secret path-awareness regression** (provider names `api_key` / `ssh_password` /
+`env` / `headers`; sentinel-collision rejection) · gate (canonicalization, None-conflict, min-wins,
+generation drain — extends `test_inference_gate_d40`) · dynamic mode strings end-to-end (verb → request →
+resolve → breadcrumb) · voice winning-format + precedence · embeddings dim agreement · strict-vs-lenient
+policy pairs · uncataloged-model probe eligibility · duplicate-target rejection · the providers-base 409 ·
+generation-drain publication · and the B4 parity list asserted field-by-field in the Conf e2e (incl.
+inference timeout + both prompt controls, STT controls/timeouts, TTS auto-read/format/timeouts, embeddings
+dim/enabled).
+
+### Migration algorithm (`_migrate_legacy()`, raw-YAML, pre-Pydantic, per-subtree idempotent)
+
+1. **Chat** (runs iff `providers`/new-shape `inference` absent AND legacy keys present): the selected slot
+   (`default_mode`) → `inference.provider`; the OTHER slot → `fallbacks[0]`; legacy `fallbacks[i]` →
+   `fallbacks[i+1]` — preserving today's `[selected, other, *fallbacks]` chain **exactly**. Provider names
+   derived from `api_mode` (llamacpp / openrouter / openai / none; collision → `-2`, `-3`…). Models: a
+   catalog entry keyed by the old model string (name == id, lossless).
+2. **Voice / embeddings** (each iff its subtree is legacy-shaped): endpoints deduped by (canonical base_url,
+   api_key) — **against already-created providers too** (reuse, don't duplicate; this merges a speaches
+   STT-primary + TTS-primary into one provider); remaining unnamed = host-port slug. Old per-endpoint
+   voice/model fields land on the created model entries; service-level values are NOT copied to model
+   entries.
+3. **`new-wins` per DESTINATION FIELD** when both shapes are present; each missing new destination fills
+   independently from its legacy source (never overwriting an explicitly present new field). Blank endpoints
+   dropped. Boot normalization is deterministic + idempotent (re-running on the migrated doc is a no-op).
+4. **Write-back** of consumed legacy keys is a single explicit delete-list channel that fires on ANY
+   successful config write, materialized at the ONE atomic YAML-write chokepoint (F5): all materialized
+   new-shape destinations + the caller's mutation + all consumed-legacy deletions are written together, so
+   it covers ALL writers — including host/integration CRUD that bypass `apply_settings_patch`. A
+   409-rejected request triggers **neither** cleanup **nor** backup. One-line migration report logged.
+
+### Conf UI management spec (owner requirement: manage providers as clearly as today's Conf)
+
+- **B1 — new "Providers" ConfGroup** directly above Inference (group numbering is render order). One card
+  per provider (the D18 inline-fallbacks editor is the list-edit precedent, grown to cards): name (with an
+  explicit **Rename** control feeding `provider_renames` — never a bare text edit of the key), base_url,
+  api_key (masked display, blank-keeps), api_mode seg, max_concurrent_requests, retry_attempts,
+  max_tokens_field (advanced row), and a **Models** sub-list: rows of clean name + id (auto-hidden when ==
+  name, with an explicit **reveal/edit** affordance) + the typed per-role fields (context_window, language,
+  voice, speed, format, dim) + extra_body (JSON text row, existing pattern). Add/remove provider cards;
+  add/remove model rows.
+- **B2 — delete/rename guard**: removing a provider (or renaming/removing a model clean name) that any
+  section/agent-defaults references shows the referencing list inline and blocks the save — the same inline
+  reference-guard for providers AND models, pre-checked from the same draft (the strict PUT would 422
+  anyway; one source of truth).
+- **B3 — section editors** (Inference / Voice STT / Voice TTS / Embeddings): primary = provider select +
+  model select (scoped to the chosen provider's catalog; auto-hidden when the catalog has exactly one model
+  — the terse-config rule mirrored), labeled **"Default"**; fallbacks = ordered add/remove/reorder rows of
+  the same picker pair. Failover switch + every existing service knob (language / vad_filter / hotwords /
+  auto_send / format / timeouts / enabled) stays exactly where it is today.
+- **B4 — parity table** (nothing loses editability): `default_mode` → primary picker · local/cloud blocks →
+  provider cards · D18 fallbacks editor → fallback rows · voice primary/fallback → voice pickers · embeddings
+  endpoint fields → embeddings picker + its provider card. Draft / saveBar semantics unchanged (one draft,
+  whole-doc save; the `providers` subtree rides it with replacement semantics + the renames metadata).
+- **B5 — draft epoch + warnings**: the Conf draft gains an **epoch** — it NEVER reseeds a dirty draft, and
+  reconciles only the submitted snapshot on save success (F3). PUT-response warnings render inline in the
+  owning group (existing error-row pattern); boot/lenient warnings arrive via `GET /api/providers` and
+  render the same way on load.
+
+### Production rollout & rollback (owner requirement: a clean prod update)
+
+- **Upgrade path**: prod (`~/apps/ctrl-b` tag-pinned, config at `~/.ctrl-b/config.yaml`, old shape) boots
+  the A11 release → lenient in-memory migration → IDENTICAL runtime behavior (the chain order and
+  voice/embeddings semantics are preserved). No DB change.
+- **One-time pre-migration backup** (F5/C-b): the FIRST config write that will delete legacy keys writes
+  `config.yaml.bak-a11-<UTCstamp>` beside the config, **mode 0600, before replacement** (guarded by
+  legacy-keys-present; the Hermes backup convention). Logged prominently. A 409-rejected write makes no
+  backup.
+- **Rollback contract** (also in `deploy/linux/README §Release`): BEFORE the first write-back, rollback to a
+  pre-A11 tag is free (config untouched). AFTER it (F6 ordering): **stop prod → restore the `.bak-a11-*`
+  file (0600) → previous tag → start + health-check.** Old code cannot read `providers:` — by design there
+  are no forward-compat seams. Dev (`:5434`, `~/.ctrl-b-dev`) and prod are **separate `CTRLB_HOME` roots**;
+  no cross-race.
+- **Order**: the dev instance exercises the migration + a full Conf round-trip first (the runbook's
+  dev-first rule); the release gate runs e2e, so no stale selectors ship. `config.example.yaml` ships
+  **new-shape only**; README config section, SECURITY_MODEL (`providers.*.api_key`), and DEPLOY_EMMA update
+  in the SAME slice as the UI — no doc drift.
+
+### NO-LEGACY-SEAMS (owner directive, normative)
+
+Legacy awareness lives in exactly ONE quarantined place: the `_migrate_legacy()` raw-YAML fold at the
+config-load boundary (+ the same `mode:`→`provider:` fold for `agent.yaml` load). Everything downstream —
+schema, resolver, adapters, API, FE — knows ONLY the new shape. **Deleted outright**: the local/cloud slots,
+`endpoint_chain`, `VoiceEndpointCfg` + its primary/fallback fields, `EmbeddingsCfg`'s single-endpoint
+fields, the hardwired `local|cloud` literals in `_coerce_mode` / `ChatRequest` / the composer switch /
+`ChatMode`, and ConfTab's three endpoint blocks.
+
+### Research provenance
+
+Five web-research passes informed the shape: LiteLLM / Continue / LibreChat / Crush / OpenCode / Hermes /
+Codex-CLI / Home-Assistant conversation pipelines / Airflow / Grafana provider-and-connection surveys, plus
+the OpenAI / Speaches / AllTalk audio-parameter specs for the per-model voice/speed/format/language homing.
+Findings that hardened into rules: **no capability tags** — the referencing section determines usage
+(HA-pipeline rule); **first-in-chain is the default** — no separate default pointer (LibreChat/Continue);
+migration = dual-read + write-back on next save (Continue.dev precedent); the pre-migration backup follows
+the Hermes convention. The `api_mode` enum values (`openai | llamacpp | openrouter | none`) were
+**re-verified** as the wire-dialect convention with no canonical standard — the Crush/Goose/Cline
+discriminator — so **D45/D46 are KEPT unchanged**.
+
+### Review history
+
+Four foreign-review rounds (Codex gpt-5.6-sol): **NO-GO** (round 1 — structural: fields wrongly homed,
+rename-cascade and secret-round-trip holes) → **NO-GO** (round 2 — mask-matching not injective [HIGH-1],
+gate/probe keys keyed by provider alone, model-omission ambiguity) → **GO-with-changes** (round 3 — 7
+must-fix items, folded here as A1–A7: ResolvedTarget completeness, exact rename transaction,
+per-destination migration, gate None semantics, effective-chain construction, warnings lifecycle, generation
+publication) → **GO-with-changes, final** (round 4 — 6 must-fix items F1–F6: global-summarizer cascade +
+ordering, path-aware secret handling + sentinel rejection, draft epoch + providers-base 409, model-id
+reveal + model reference-guard + field-by-field parity assertions, one atomic write-back covering
+CRUD writers + 0600 backup, and the stop→restore→retag→health rollback ordering). All six are folded into
+C1–C11 above; the design is **CLOSED pending owner sign-off**.
+
+### Supersedes / preserves
+
+- **Supersedes** the local/cloud slots of D18's chain shape and `VoiceEndpointCfg`'s primary/fallback
+  fields (both DELETED per NO-LEGACY-SEAMS); the explicit `default_mode` pointer (first-in-chain replaces
+  it); and the single-endpoint `EmbeddingsCfg` (embeddings gains failover for free).
+- **Preserves** D17 (streaming decoupled per transport), D40 (the concurrency semaphore held for the whole
+  streamed response + `(gate_identity, limit)` generation-drain), D42 (context_window precedence explicit >
+  probe > None + ModelRef call config), D43 (failover generator + per-provider retry override + typed retry
+  visibility), and D45/D46 (`api_mode` wire-dialect enum + `max_tokens_field` derivation). `core.failover`
+  stays the ONE walker.

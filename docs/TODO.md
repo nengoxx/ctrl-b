@@ -1007,6 +1007,72 @@ stale numbering (D35–D37 went to the frontier theme track). The cross-slice co
       from `api/settings.py`; `always_eligible`) · `e080731` FE (the **always** bubble action + the
       `ApprovalsEditor` in `ToolCatalog` through the one `useSaveToolOverrides` write).
 
+## Phase 13 — Unified provider registry (A11) — **design LOCKED 2026-07-22 (owner sign-off pending) · spec = [`DECISIONS.md` D48](./DECISIONS.md) (build against it, NOT this list)**
+
+Retire the hardwired `inference.local`/`inference.cloud` pair + `VoiceEndpointCfg` slots + single-endpoint
+`EmbeddingsCfg`; replace with one top-level `providers:` registry (connections + name-keyed model catalog)
+and flat `provider` primary + ordered `fallbacks[]` per consumer section. **Config-only, no DB change.**
+**NO LEGACY SEAMS** (D48): legacy awareness lives ONLY in the quarantined `_migrate_legacy()` fold; the
+deleted classes go outright. Slice 1 = chat; Slice 2 = voice + embeddings. Both end with the full gate + a
+Codex review; each ends with an owner-review pause. Test the migration + write-back on a **temp**
+`CTRLB_CONFIG`/`CTRLB_DB`, never the real `config.yaml`.
+
+- [ ] **Slice 1 — chat: registry + resolver + Conf editors** · L — design review first (D48 is the spec).
+  - [ ] `config.py`: `ProviderCfg` + `ModelCfg` schema; top-level `providers:` map + flat
+        `inference.provider`/`fallbacks[]`; delete the local/cloud slots + `endpoint_chain` + the
+        `local|cloud` literals in `_coerce_mode`/`ChatRequest`/`ChatMode`.
+  - [ ] `_migrate_legacy()`: the ONE quarantined raw-YAML fold (chat subtree — `[selected, other, *fallbacks]`
+        order preserved; names derived from `api_mode`, collision-suffixed; catalog keyed by old model string) +
+        the `mode:`→`provider:` fold for `agent.yaml`; idempotent; the explicit delete-list write-back channel.
+  - [ ] `domain/provider.py`: `ResolvedTarget` + `SectionPolicy` (frozen; `api_key: SecretStr`, `repr=False`).
+  - [ ] `core/provider_registry.py`: `resolve_strict` (422 on any error) + `resolve_lenient` (warn +
+        drop/promote); `gate_identity` canonicalization + None-conflict min-wins; `(gate_identity, limit)`
+        keying preserved (extend `test_inference_gate_d40`); chat adapter re-keyed to consume
+        `tuple[ResolvedTarget, ...]`; `StreamReport.served_target` replaces `served_endpoint`.
+  - [ ] Rename transaction: `provider_renames` PUT transport metadata (bijective, stripped pre-persist);
+        atomic rekey → replacement → cascade (incl. the **global** `agent.compaction.summarizer`, config.py:320)
+        → third-provider preservation; path-aware secret handling + sentinel-key rejection; `providers`
+        replacement semantics + base-revision **409**.
+  - [ ] `ModelRef {mode,model}` → `{provider,model}` plumbing across EVERY consumer (D48 C7-b: agent
+        models + `agent.defaults` + compaction summarizer global/per-agent + routing lead) + `/⁠<provider>`
+        verb resolution (built-ins > skills > providers); `GET /api/providers` (names + effective defaults +
+        reserved verbs + live skill-collision warnings); `ChatMode` → `string | null` on the FE; **every FE
+        `ModelRef` selector → the shared provider→model picker** (incl. `AgentsEditor`'s local/cloud `Seg`,
+        raw-id escape kept).
+  - [ ] Conf UI: the **Providers** ConfGroup (provider cards + Rename control + Models sub-list, id
+        reveal/edit affordance) + the **Inference** section editor (provider/model pickers + fallback rows +
+        delete/rename reference-guard) + draft epoch (never reseed a dirty draft); warnings render inline.
+  - [ ] Tests (C11): migration shape/order/idempotency/legacy-delete/dedup+suffix · rename atomicity + secret
+        restore + cascade · secret path-awareness (names `api_key`/`ssh_password`/`env`/`headers` + sentinel
+        rejection) · gate canonicalization/None-conflict/generation-drain · dynamic mode strings end-to-end ·
+        uncataloged-model probe eligibility · duplicate-target rejection · providers-base 409 · updated Conf
+        e2e (no stale selectors).
+  - [ ] `python tools/check.py` (ruff · pyright · pytest · FE check-all) green → **Codex review** → owner-review pause.
+
+- [ ] **Slice 2 — voice + embeddings: resolver reuse + parity** · M — mechanical over Slice 1's registry.
+  - [ ] `config.py`: `voice.stt`/`voice.tts`/`embeddings` gain flat `provider`/`model?`/`fallbacks[]`; delete
+        `VoiceEndpointCfg` primary/fallback + `EmbeddingsCfg` single-endpoint fields (service knobs STAY);
+        `_migrate_legacy()` voice/embeddings folds (dedup by (canonical base_url, api_key) against
+        already-created providers; per-endpoint voice/model fields → catalog entries).
+  - [ ] Voice + embeddings adapters re-keyed to `resolve_lenient`/`resolve_strict`; **winning-format** media
+        type from the served hop (model format > service format); TTS voice precedence request > model >
+        `"alloy"`, `model.speed` at the wire; STT language model > service; embeddings **dim agreement** (422 /
+        drop-mismatched+warn) + failover free.
+  - [ ] Generation publication: `providers_changed` rebuilds inference + voice + embeddings together, atomic
+        publish + DRAIN; voice SDK-client cache keys include the immutable transport (timeout pair); D46
+        demotions clear on `providers_changed`.
+  - [ ] Conf UI: **Voice STT / Voice TTS / Embeddings** section editors (provider/model pickers + fallback
+        rows; every existing service knob stays put); the **B4 parity list asserted field-by-field** in the
+        Conf e2e (inference timeout + both prompt controls · STT controls/timeouts · TTS auto-read/format/
+        timeouts · embeddings dim/enabled).
+  - [ ] Prod rollout artifacts (D48 §rollout): `config.example.yaml` new-shape only; SECURITY_MODEL secret
+        list (`providers.*.api_key`), README config section, DEPLOY_EMMA updated same slice; the one-time
+        0600 `.bak-a11-<stamp>` backup at the first write-back; `deploy/linux/README §Release` rollback
+        ordering (stop → restore .bak → previous tag → start + health-check).
+  - [ ] Tests (C11): voice winning-format + precedence · embeddings dim agreement · generation-drain
+        publication · voice/embeddings migration dedup + collision · strict-vs-lenient policy pairs.
+  - [ ] `python tools/check.py` green (+ release gate e2e, which the tag release runs) → **Codex review** → owner-review pause.
+
 ---
 
 ## Design audit — 2026-06-14 (loose ends + doc drift)

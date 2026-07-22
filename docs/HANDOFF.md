@@ -343,6 +343,36 @@
 > Fable 5 = orchestrator + feature reviewer alongside Codex (`gpt-5.6-sol` high); ALL specified
 > implementation / mechanical work / research = Opus 4.8 subagents.**
 >
+> **▶▶ SESSION 2026-07-22 (later) — A11 DESIGN SESSION ✅ COMPLETE — [`DECISIONS.md` D48](./DECISIONS.md)
+> LOCKED + OWNER-SIGNED: THE UNIFIED PROVIDER REGISTRY. NEXT SESSION = BUILD (TODO Phase 13 Slice 1,
+> chat).** The owner-requested prose design session ran full-pipeline and CLOSED: top-level `providers:`
+> map (connection + name-keyed model catalog, clean name vs wire `id`) + flat `provider` primary +
+> `fallbacks[]` per consumer section — **voice (STT/TTS) + embeddings unified in** (owner-widened scope;
+> embeddings gains failover). Design evolved owner-led through: named endpoint list → per-section lists →
+> providers registry → provider-owned model catalog → flat Hermes-style primary/fallbacks; **5 Opus
+> web-research passes** (gateway configs · agent harnesses · voice configs · api_mode standards · registry
+> patterns; plus the owner's real `~/.hermes` fleet inventoried read-only) grounded every fork. **api_mode
+> enum KEPT** (openai|llamacpp|openrouter|none — re-verified: no canonical standard exists for the
+> reasoning-dialect layer; D45/D46 stand). **4 Codex rounds** (gpt-5.6-sol high: NO-GO → NO-GO →
+> GO-w/changes → GO-w/changes) — every finding verified + ruled + folded; headline catches: rename secret
+> wipe / deep-merge can't delete map keys / D40 gate (base_url,limit) generations / uncataloged-model
+> probe eligibility / atomic migration write-back at the common chokepoint / rollback ordering. **Owner
+> rulings now standing:** NEW VERBS — `/⁠<provider>` (e.g. /llamacpp /openrouter); `/local` `/cloud`
+> RETIRE with the slots · **C7-b universal pointer rule** — EVERY backend+model selection (agents,
+> defaults, compaction summarizer, routing lead) = the same `ModelRef {provider,model}`, every FE selector
+> becomes the shared provider→model picker (incl. AgentsEditor's hardwired Seg) · **NO-LEGACY-SEAMS is a
+> PERMANENT rule** (memory `no-legacy-seams-clean-final-code`): one quarantined `_migrate_legacy()` fold,
+> old classes DELETED · **build-brief exhaustiveness** (memory `orchestrate-with-opus-subagents`): Opus
+> briefs restate every governing contract + exact read-first file/line lists, citations re-verified.
+> Docs shipped this session: **D48** (the self-contained normative spec — contracts, module boundary
+> [`domain/provider.py` + `core/provider_registry.py` + `ResolvedTarget`, generation publish+drain],
+> migration, Conf UI parity spec, prod rollout/rollback incl. one-time 0600 `.bak-a11` backup) ·
+> **ROADMAP §A11** amended (design LOCKED → D48) · **TODO Phase 13** (Slice 1 chat · Slice 2
+> voice+embeddings; build against D48, NOT the checklist). Build notes for the next session: migration
+> tests on temp `CTRLB_CONFIG`/`CTRLB_DB` only; Codex reviews EVERY slice; prod is v1.2.1 (D3s3 still
+> unreleased) — A11 releases only via D48 §rollout. *(Design scaffolding briefs lived in the session
+> scratchpad [tmpfs — transient]; D48 is deliberately self-sufficient.)*
+>
 > **▶▶ SESSION 2026-07-22 — ROADMAP D3 SLICE 3 ("Discover from Tailscale") ✅ BUILT + DOUBLE-REVIEWED +
 > PUSHED (owner OK) — D3 (multi-homed addressing) IS NOW COMPLETE.** Commits: `cced768` backend ·
 > `ebca9eb` frontend · `542005b` review-fix wave · `edcc496` Codex-verify MED fix · docs. The full pipeline at small-slice
