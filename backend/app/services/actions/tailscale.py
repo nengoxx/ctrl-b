@@ -106,6 +106,64 @@ async def resolve_status(cfg: TailscaleCfg) -> dict:
     return out
 
 
+def _vpn_candidate(node: dict, suffix: str) -> dict | None:
+    """One provider-neutral VPN candidate from a status node (`Self` or a `Peer`), or None to skip it.
+    LENIENT — every field may be absent; never KeyError. Skips exit-node / Mullvad-location nodes and
+    foreign-tailnet nodes (DNSName not under `suffix`). `suffix` = the tailnet MagicDNS suffix, no dots,
+    casefolded, or "" when unknown (then no foreign-suffix filtering)."""
+    if node.get("ExitNodeOption") or node.get("Location") is not None:
+        return None  # exit node / Mullvad location — not a real fleet peer
+    dns_norm = (node.get("DNSName") or "").rstrip(".").casefold()  # DNSName carries a trailing dot
+    if suffix and dns_norm and not dns_norm.endswith("." + suffix):
+        return None  # foreign / shared-tailnet node
+    label = dns_norm.split(".", 1)[0] if dns_norm else ""
+    hostname = (node.get("HostName") or "").casefold()
+    if label:  # DNSName present → name + address are the short label
+        name, address = label, label
+    else:  # no DNSName → fall back to HostName + the 100.x IPv4
+        ips = node.get("TailscaleIPs") or []
+        name = hostname
+        address = ips[0] if ips else None
+    if not address:  # neither a DNS label nor an IP → nothing storable
+        return None
+    return {"name": name, "address": address, "hostname": hostname, "online": bool(node.get("Online"))}
+
+
+async def resolve_vpn_candidates(cfg: TailscaleCfg) -> dict:
+    """Read `tailscale status --json` and extract provider-neutral `vpn_host` candidates (D3 Slice 3).
+    Read-only. Iterates `Self` + every `Peer`, dropping exit-node/Mullvad pollution and foreign-tailnet
+    nodes, and proposes a stored `vpn_host` value (MagicDNS short label preferred, else the 100.x IPv4)
+    per surviving peer. Mirrors `resolve_status`'s error ladder. NEVER logs the raw blob (it carries
+    every peer's keys + IPs). On success: `{"ok": True, "candidates": [...]}`; on any failure:
+    `{"ok": False, "reason": <str>}`."""
+    binpath = await asyncio.to_thread(_bin)
+    if not binpath:
+        return {"ok": False, "reason": "tailscale CLI not found"}
+
+    try:
+        st = await run_capture([binpath, "status", "--json"], timeout_s=cfg.timeout_s)
+    except (OSError, ValueError) as exc:
+        return {"ok": False, "reason": f"tailscale status failed: {exc}"}
+    if st.timed_out:
+        return {"ok": False, "reason": "tailscale not responding"}
+    if st.code != 0:
+        return {"ok": False, "reason": st.output.strip()[:200] or f"tailscale status exit {st.code}"}
+    try:
+        status = json.loads(st.output)
+    except json.JSONDecodeError:
+        return {"ok": False, "reason": "could not parse tailscale status"}
+    state = status.get("BackendState")
+    if state != "Running":
+        return {"ok": False, "reason": f"tailscale backend is {state or 'unknown'} (logged out?)"}
+
+    suffix = ((status.get("CurrentTailnet") or {}).get("MagicDNSSuffix") or "").strip(".").casefold()
+    self_node = status.get("Self")
+    nodes: list[dict] = [self_node] if isinstance(self_node, dict) else []
+    nodes += [p for p in (status.get("Peer") or {}).values() if isinstance(p, dict)]
+    candidates = [c for node in nodes if (c := _vpn_candidate(node, suffix)) is not None]
+    return {"ok": True, "candidates": candidates}
+
+
 class _NoArgs(BaseModel):
     """No parameters — the port comes from `tailscale.target_port`, not the caller."""
 

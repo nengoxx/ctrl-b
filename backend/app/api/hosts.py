@@ -20,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 from app.config import ComputerCfg, edit_config_yaml, host_slug, load_settings, sync_mapping
 from app.domain.host import Host, HostStatus
 from app.runtime import reconfigure, settings_write_lock
+from app.services.actions.tailscale import resolve_vpn_candidates
 
 router = APIRouter(tags=["fleet"])
 
@@ -243,6 +244,51 @@ async def list_hosts(request: Request) -> list[dict[str, Any]]:
     by_id = {host_slug(name): cfg for name, cfg in cfgs.items()}
     statuses = {s.host_id: s for s in await fleet.status_all()}
     return [_host_dto(h, statuses.get(h.id), by_id.get(h.id)) for h in fleet.hosts()]
+
+
+@router.get("/hosts/vpn-discovery")
+async def vpn_discovery(request: Request) -> dict[str, Any]:
+    """D3 Slice 3 — propose a `vpn_host` per configured host from `tailscale status --json` (READ-ONLY;
+    never writes config). 403 when Tailscale control is disabled (mirrors `api/access.py`); a not-ok
+    resolve passes its error envelope straight through. Match key = casefolded host name against the
+    candidate's DNS label (primary), else a UNIQUE candidate HostName (fallback; HostName is non-unique,
+    so an ambiguous hostname yields no proposal). Response:
+    `{ok, results:[{id, name, current, proposed, online}], unmatched:[<name>...]}` (matched hosts only in
+    `results`; wave 2 applies values via the existing per-host PUT)."""
+    settings = request.app.state.settings
+    if not settings.tailscale.enabled:
+        raise HTTPException(status_code=403, detail="Tailscale control is disabled (tailscale.enabled)")
+    res = await resolve_vpn_candidates(settings.tailscale)
+    if not res.get("ok"):
+        return res  # error envelope passthrough (200, ok:false) — as api/access.py surfaces resolve_status
+
+    candidates = res.get("candidates") or []
+    by_name = {c["name"]: c for c in candidates}  # DNS label → candidate (last wins; labels are unique)
+    hostname_counts: dict[str, int] = {}
+    for c in candidates:
+        if c["hostname"]:
+            hostname_counts[c["hostname"]] = hostname_counts.get(c["hostname"], 0) + 1
+    # Only UNIQUE hostnames qualify for the fuzzy fallback (HostName is documented non-unique).
+    by_hostname = {c["hostname"]: c for c in candidates if hostname_counts.get(c["hostname"]) == 1}
+
+    results: list[dict[str, Any]] = []
+    unmatched: list[str] = []
+    for name, cfg in settings.computers.items():
+        key = name.casefold()
+        cand = by_name.get(key) or by_hostname.get(key)
+        if cand is None:
+            unmatched.append(name)
+            continue
+        results.append(
+            {
+                "id": host_slug(name),
+                "name": name,
+                "current": cfg.vpn_host,
+                "proposed": cand["address"],
+                "online": bool(cand["online"]),
+            }
+        )
+    return {"ok": True, "results": results, "unmatched": unmatched}
 
 
 @router.get("/hosts/{host_id}/status")
