@@ -343,9 +343,9 @@
 > Fable 5 = orchestrator + feature reviewer alongside Codex (`gpt-5.6-sol` high); ALL specified
 > implementation / mechanical work / research = Opus 4.8 subagents.**
 >
-> **▶▶ SESSION 2026-07-22 — ROADMAP D3 SLICE 3 ("Discover from Tailscale") ✅ BUILT + DOUBLE-REVIEWED —
-> D3 (multi-homed addressing) IS NOW COMPLETE. 3+1 commits LOCAL (`cced768` backend · `ebca9eb` frontend ·
-> `542005b` review-fix wave · docs), awaiting the owner's push OK.** The full pipeline at small-slice
+> **▶▶ SESSION 2026-07-22 — ROADMAP D3 SLICE 3 ("Discover from Tailscale") ✅ BUILT + DOUBLE-REVIEWED +
+> PUSHED (owner OK) — D3 (multi-homed addressing) IS NOW COMPLETE.** Commits: `cced768` backend ·
+> `ebca9eb` frontend · `542005b` review-fix wave · `edcc496` Codex-verify MED fix · docs. The full pipeline at small-slice
 > weight (owner-scoped: quick Codex, not the structural tri-review): 2-agent pre-flight (code-truth +
 > `tailscale status --json` field research — DNSName label = the unique match key, HostName documented
 > non-unique; CLI shell-out = the established on-node pattern; permissions already proven by the live
@@ -360,10 +360,19 @@
 > wrongly skipped; Location + foreign-suffix still kill Mullvad) + case-insensitive `differs` → Codex
 > fix-set verification. Gates green every wave (backend 20-test slice files; FE 552). Accepted residuals
 > (recorded in the ROADMAP D3 entry + hook doc): sub-second fetch→PUT last-writer-wins window ·
-> row-opened-mid-flight skip gap — both single-user-consistent. **NEXT: ① owner push OK (pre-push runs
-> the full gate) ② owner pokes the button on dev (Conf → Computers; corsair's vpn_host is still empty on
-> prod — discovery can now fill it after the next release) ③ next session = the A11 design conversation
-> (owner-stated intent this session: D3 first, THEN A11).**
+> row-opened-mid-flight skip gap — both single-user-consistent. Then the Codex fix-set verifier on
+> `542005b` ruled all four findings CLOSED and surfaced ONE new MED (fill eligibility read the discovery
+> snapshot, not the fresh DTO — a value set mid-discovery could be overwritten) → fixed + pin-tested
+> `edcc496`. Dev units STOPPED at close (on-demand ruling; start them to poke the button — Conf →
+> Computers; corsair's `vpn_host` is still empty on PROD, so after the next release the button is the
+> one-tap fill). **STANDING DIRECTIVE AMENDED (owner, 2026-07-22): launch a Codex review agent whenever
+> code review is warranted — small slices included, not just structural ones; the quick pass co-found the
+> HIGH here and then caught the MED in the fix itself.** **NEXT SESSION = the A11 DESIGN CONVERSATION**
+> (ROADMAP A11 — unified custom inference endpoints: retire local/cloud as schema positions → one
+> named-endpoint list + failover chain over names; owner wants prose design discussion FIRST, seams are
+> recorded in the ROADMAP entry; D3-then-A11 was the owner's stated order this session). Slices 1–8 +
+> the reasoning arc + D47 are on prod (v1.2.1); D3 slice 3 is UNRELEASED — release via
+> `deploy/linux/README.md` §Release when the owner wants it live.
 >
 > **▶▶ SESSION 2026-07-20 late → 21 — READ THIS FIRST (the thorough close-out). SESSION CLOSED
 > CLEAN: main == origin @ the v1.2.1 tag + this docs commit, CI green, BOTH releases live
