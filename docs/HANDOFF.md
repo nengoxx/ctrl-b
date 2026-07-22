@@ -343,6 +343,33 @@
 > Fable 5 = orchestrator + feature reviewer alongside Codex (`gpt-5.6-sol` high); ALL specified
 > implementation / mechanical work / research = Opus 4.8 subagents.**
 >
+> **▶▶ SESSION 2026-07-23 — A11 SLICE 1 (CHAT) ✅ BUILT + TRIPLE-REVIEWED + GATED — AWAITING OWNER
+> EYEBALL (the Phase-13 pause). NOT PUSHED; NOT RELEASED (prod = v1.2.1).** The unified provider
+> registry chat slice, built against D48 via the full orchestrated pipeline: 2-agent pre-flight
+> code-truth maps (backend+frontend, every seam file:line-verified) → 26 orchestrator rulings → 3 Opus
+> build waves (**B1** backend core: `providers:` schema · quarantined `_migrate_legacy()` + agent.yaml
+> fold · `domain/provider.py` · `core/provider_registry.py` [strict/lenient, canonical
+> `(gate_identity,limit)` gates, min-wins] · adapter on `ResolvedTarget` + refcount-drain `retire()` ·
+> **B2** backend API: C1 rename transaction [restore-by-old-identity secrets, cascade on the final
+> merged doc] · providers-base 409 under the write lock · typed 422s [+ fixed a latent 422→500
+> serialization bug] · `GET /api/providers` · write-back moved INTO the `edit_config_yaml` chokepoint
+> [hosts-CRUD triggers it] · **F1** frontend: Providers ConfGroup cards + shared ProviderModelPicker +
+> reorderable fallbacks + draft epoch + `/<provider>` verbs [built-ins > skills > providers] +
+> AgentsEditor picker) → **fresh-eyes Opus audit + Codex gpt-5.6-sol(high) review — Codex NO-GO, 3 HIGH
+> all code-verified real** (chain_for coercion bypassed `failover:false` · verb mode carried the routed
+> model across providers [C7 violation] · 409-retry stale-draft clobber) → **18-fix wave (FX1-FX18)** →
+> **Codex fix-set verification: 10/14 CLOSED + 1 new LOW, residual NO-GO on the base-binding skew** →
+> **fix round 2: the base now rides `GET /api/settings` as `X-Providers-Rev` (ETag-scoped pattern,
+> atomic doc+rev capture)** + skill-delete verb refresh + warning-staleness + picker raw-mode sync.
+> **Final gates: backend 839 pytest · FE 579 vitest + 109 Playwright e2e · full `check.py --e2e` 7/7.**
+> **OWNER-REVIEW ITEMS at this pause:** ① the strict-resolve gating interpretation + ② the Slice-2
+> deferral of voice-scoped model-field UI (both in the D48 AS-BUILT note) + ③ eyeball the net-new Conf
+> Providers UI live (cards/rename/model-rows/pickers at narrow width — dev units). Accepted residuals
+> recorded in D48 AS-BUILT. Orchestration scratch (briefs/maps/rulings/review outputs) lived in the
+> session scratchpad [tmpfs, transient]; the durable record = D48 AS-BUILT + this block + TODO Phase 13.
+> **NEXT = owner eyeball/ratify → Slice 2 (voice + embeddings), then release via runbook §Release when
+> the owner wants it live (prod boots the migration lenient — IDENTICAL runtime behavior until then).**
+>
 > **▶▶ SESSION 2026-07-22 (later) — A11 DESIGN SESSION ✅ COMPLETE — [`DECISIONS.md` D48](./DECISIONS.md)
 > LOCKED + OWNER-SIGNED: THE UNIFIED PROVIDER REGISTRY. NEXT SESSION = BUILD (TODO Phase 13 Slice 1,
 > chat).** The owner-requested prose design session ran full-pipeline and CLOSED: top-level `providers:`

@@ -1017,37 +1017,37 @@ deleted classes go outright. Slice 1 = chat; Slice 2 = voice + embeddings. Both 
 Codex review; each ends with an owner-review pause. Test the migration + write-back on a **temp**
 `CTRLB_CONFIG`/`CTRLB_DB`, never the real `config.yaml`.
 
-- [ ] **Slice 1 — chat: registry + resolver + Conf editors** · L — design review first (D48 is the spec).
-  - [ ] `config.py`: `ProviderCfg` + `ModelCfg` schema; top-level `providers:` map + flat
+- [x] **Slice 1 — chat: registry + resolver + Conf editors** · L ✅ **BUILT 2026-07-23** (uncommitted→committed same day; full pipeline: 2-agent pre-flight code-truth maps → 3 Opus build waves [backend core · backend API · frontend] → fresh-eyes Opus audit + Codex gpt-5.6-sol high review [NO-GO, 3 HIGH] → 18-fix wave → Codex fix-set verification [10/14 CLOSED, NO-GO residual] → fix round 2 [ETag-style `X-Providers-Rev` base binding] → full gate + e2e green. **Owner-review items: the strict-resolve gating interpretation + the Slice-2 deferral of voice-scoped model-field UI** — see the HANDOFF session block + D48 AS-BUILT note).
+  - [x] `config.py`: `ProviderCfg` + `ModelCfg` schema; top-level `providers:` map + flat
         `inference.provider`/`fallbacks[]`; delete the local/cloud slots + `endpoint_chain` + the
         `local|cloud` literals in `_coerce_mode`/`ChatRequest`/`ChatMode`.
-  - [ ] `_migrate_legacy()`: the ONE quarantined raw-YAML fold (chat subtree — `[selected, other, *fallbacks]`
+  - [x] `_migrate_legacy()`: the ONE quarantined raw-YAML fold (chat subtree — `[selected, other, *fallbacks]`
         order preserved; names derived from `api_mode`, collision-suffixed; catalog keyed by old model string) +
         the `mode:`→`provider:` fold for `agent.yaml`; idempotent; the explicit delete-list write-back channel.
-  - [ ] `domain/provider.py`: `ResolvedTarget` + `SectionPolicy` (frozen; `api_key: SecretStr`, `repr=False`).
-  - [ ] `core/provider_registry.py`: `resolve_strict` (422 on any error) + `resolve_lenient` (warn +
+  - [x] `domain/provider.py`: `ResolvedTarget` + `SectionPolicy` (frozen; `api_key: SecretStr`, `repr=False`).
+  - [x] `core/provider_registry.py`: `resolve_strict` (422 on any error) + `resolve_lenient` (warn +
         drop/promote); `gate_identity` canonicalization + None-conflict min-wins; `(gate_identity, limit)`
         keying preserved (extend `test_inference_gate_d40`); chat adapter re-keyed to consume
         `tuple[ResolvedTarget, ...]`; `StreamReport.served_target` replaces `served_endpoint`.
-  - [ ] Rename transaction: `provider_renames` PUT transport metadata (bijective, stripped pre-persist);
+  - [x] Rename transaction: `provider_renames` PUT transport metadata (bijective, stripped pre-persist);
         atomic rekey → replacement → cascade (incl. the **global** `agent.compaction.summarizer`, config.py:320)
         → third-provider preservation; path-aware secret handling + sentinel-key rejection; `providers`
         replacement semantics + base-revision **409**.
-  - [ ] `ModelRef {mode,model}` → `{provider,model}` plumbing across EVERY consumer (D48 C7-b: agent
+  - [x] `ModelRef {mode,model}` → `{provider,model}` plumbing across EVERY consumer (D48 C7-b: agent
         models + `agent.defaults` + compaction summarizer global/per-agent + routing lead) + `/⁠<provider>`
         verb resolution (built-ins > skills > providers); `GET /api/providers` (names + effective defaults +
         reserved verbs + live skill-collision warnings); `ChatMode` → `string | null` on the FE; **every FE
         `ModelRef` selector → the shared provider→model picker** (incl. `AgentsEditor`'s local/cloud `Seg`,
         raw-id escape kept).
-  - [ ] Conf UI: the **Providers** ConfGroup (provider cards + Rename control + Models sub-list, id
+  - [x] Conf UI: the **Providers** ConfGroup (provider cards + Rename control + Models sub-list, id
         reveal/edit affordance) + the **Inference** section editor (provider/model pickers + fallback rows +
         delete/rename reference-guard) + draft epoch (never reseed a dirty draft); warnings render inline.
-  - [ ] Tests (C11): migration shape/order/idempotency/legacy-delete/dedup+suffix · rename atomicity + secret
+  - [x] Tests (C11): migration shape/order/idempotency/legacy-delete/dedup+suffix · rename atomicity + secret
         restore + cascade · secret path-awareness (names `api_key`/`ssh_password`/`env`/`headers` + sentinel
         rejection) · gate canonicalization/None-conflict/generation-drain · dynamic mode strings end-to-end ·
         uncataloged-model probe eligibility · duplicate-target rejection · providers-base 409 · updated Conf
         e2e (no stale selectors).
-  - [ ] `python tools/check.py` (ruff · pyright · pytest · FE check-all) green → **Codex review** → owner-review pause.
+  - [x] `python tools/check.py` (ruff · pyright · pytest · FE check-all) green → **Codex review** → owner-review pause.
 
 - [ ] **Slice 2 — voice + embeddings: resolver reuse + parity** · M — mechanical over Slice 1's registry.
   - [ ] `config.py`: `voice.stt`/`voice.tts`/`embeddings` gain flat `provider`/`model?`/`fallbacks[]`; delete

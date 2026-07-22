@@ -279,7 +279,7 @@ back to the analysis.
 
 ---
 
-### A11. Unified provider registry — retire the local/cloud dichotomy (**design session DONE · design LOCKED 2026-07-22 → DECISIONS D48**)
+### A11. Unified provider registry — retire the local/cloud dichotomy (**design LOCKED 2026-07-22 → DECISIONS D48 · Slice 1 (chat) ✅ BUILT 2026-07-23, unreleased — see the D48 AS-BUILT note; Slice 2 (voice+embeddings) = TODO Phase 13**)
 *(numbered A11, skipping A10, so the heavily-cited "ACA §4 A10" reasoning-budget id stays unambiguous)*
 
 - **Status:** the dedicated design session ran 2026-07-22 and the design is **LOCKED (owner

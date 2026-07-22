@@ -3172,7 +3172,24 @@ corrected in the map below).
 
 ---
 
-## D48 — Unified provider registry (A11): `providers` + model catalog + flat primary/fallbacks ✏️ LOCKED 2026-07-22 (design session; owner sign-off pending)
+## D48 — Unified provider registry (A11): `providers` + model catalog + flat primary/fallbacks ✏️ LOCKED 2026-07-22 (owner-signed same day)
+
+> **AS-BUILT (Slice 1 — chat, 2026-07-23).** Built per spec through the full pipeline (3 build waves →
+> fresh-eyes audit + Codex NO-GO review [3 HIGH, all verified + fixed] → Codex fix-set verification →
+> fix round 2); full gate + e2e green. **Two recorded implementation interpretations pending owner
+> ratification:** ① *strict-resolve gating* — C2's "PUT: any error → 422" is enforced for patches
+> touching `providers`/`inference`/`agent`; other patches (appearance sync, server, voice…) run
+> lenient + surface warnings, so a hand-edited lenient-tolerated config can't brick unrelated saves.
+> ② *B1 model-row typed fields* — only chat-relevant fields (context_window, max_tokens_field, id,
+> extra_body) are editable in Slice 1; voice/speed/language/format/dim UI lands with Slice 2's
+> consumers (they round-trip unharmed meanwhile, test-pinned). **Concurrency addendum:** the
+> providers-base fingerprint rides `GET /api/settings` as the `X-Providers-Rev` response header
+> (ETag-scoped-to-subtree pattern) so the Conf draft's base binds atomically to the snapshot it seeded
+> from; the PUT envelope + `GET /api/providers` carry it too. **Accepted residuals (recorded):** the FE
+> reference-guard blocks a raw id equal to a former catalog key the draft removes (errs toward blocking
+> a still-resolvable save; no provenance state) · a hand-authored config holding BOTH `providers:` and
+> stale legacy keys never migrates (legacy keys ignored, not deleted) · comments inside deleted legacy
+> `inference.local/cloud` YAML blocks are lost at write-back by design.
 
 **Context — what this retires.** Today inference hardwires a `local` + `cloud` pair (`InferenceEndpointCfg`
 × 2) plus a third `fallbacks[]` shape; voice hardwires `primary`/`fallback` slots per role
