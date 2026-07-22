@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { del, getJSON, putJSON } from "../api/client";
+import { loadProviders, loadSkills } from "../lib/composer";
 import { pushToast } from "../store/toast";
 import { useScopedQuery } from "./useScopedQuery";
 
@@ -41,6 +42,14 @@ function useInvalidateSkills() {
   return () => {
     void qc.invalidateQueries({ queryKey: ["skills"] });
     void qc.invalidateQueries({ queryKey: ["actions"] }); // a skill's allowed_tools can affect routing
+    // FX18 (Codex#8): keep the composer's module-level skill set (the `/skill` verbs + the built-ins >
+    // skills > providers precedence) in step with a skill create/overwrite/delete — mirrors the way a
+    // settings save refreshes `loadProviders`. Best-effort; an unknown `/verb` still falls through.
+    void loadSkills();
+    // FR2-2 (Codex#8 residual): a skill create/delete also shifts PROVIDER-verb routing — deleting a skill
+    // that shadowed a provider name re-FREES that `/<provider>` verb (and creating one shadows it). Refresh
+    // the composer's provider set too so the freed/shadowed verb is live without a reload (best-effort).
+    void loadProviders();
   };
 }
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
-import { useSaveSettings } from "../hooks/useSettings";
+import { useProviders, useSaveSettings } from "../hooks/useSettings";
 import {
   DEFAULT_AGENT,
   pickFields,
@@ -16,6 +16,7 @@ import {
   type Privilege,
   type ReasoningEffort,
 } from "../hooks/useAgents";
+import { ProviderModelPicker, type PickerCatalog } from "./ProviderModelPicker";
 import { Seg } from "./Seg";
 import { SettingRow } from "./SettingRow";
 import { Switch } from "./Switch";
@@ -114,6 +115,13 @@ function AgentFieldsForm(props: {
   const setModel = (p: Partial<AgentDef["model"]>) =>
     onChange({ ...a, model: { ...a.model, ...p } });
 
+  // A11/D48 C7-b — the backend is the shared provider→model picker fed by GET /api/providers, replacing
+  // the hardwired local/cloud Seg + free-text model. Inherit (blank provider) + raw-id escape kept.
+  const { data: providersInfo } = useProviders();
+  const catalog: PickerCatalog = Object.fromEntries(
+    Object.entries(providersInfo?.providers ?? {}).map(([n, p]) => [n, { models: p.models }]),
+  );
+
   const toolsAll = a.tools === "*";
   const toolSet = new Set(toolsAll ? [] : (a.tools as string[]));
   const toggleTool = (n: string) => {
@@ -133,7 +141,6 @@ function AgentFieldsForm(props: {
     set({ skills: [...next] });
   };
 
-  const modeVal = (a.model.mode || "") as "" | "local" | "cloud";
   const label = a.title || a.name;
 
   // Where this agent's data lives — so it's unambiguous which file each field edits.
@@ -185,22 +192,13 @@ function AgentFieldsForm(props: {
       )}
 
       <label>Backend</label>
-      <Seg<"" | "local" | "cloud">
+      <ProviderModelPicker
         label="Backend"
-        current={modeVal}
-        onPick={(v) => setModel({ mode: v })}
-        options={[
-          { val: "", label: "Inherit" },
-          { val: "local", label: "Local" },
-          { val: "cloud", label: "Cloud" },
-        ]}
-      />
-      <label>Model</label>
-      <input
-        aria-label="Model"
-        value={a.model.model ?? ""}
-        placeholder="(inherit endpoint model)"
-        onChange={(e) => setModel({ model: e.target.value })}
+        value={{ provider: a.model.provider ?? null, model: a.model.model ?? null }}
+        onChange={(v) => setModel({ provider: v.provider, model: v.model })}
+        catalog={catalog}
+        allowInherit
+        allowRawId
       />
 
       {/* D42 (A10) — per-agent call config on the ModelRef. Blank numeric → null (inherit); the

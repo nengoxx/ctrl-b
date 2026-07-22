@@ -188,10 +188,11 @@ function seqGateDrop(id: string | undefined): boolean {
   return false;
 }
 
-// Sticky inference backend for this session, set by a bare `/local`//`/cloud` (4c). `null` → the
-// server's configured default. A `/cloud <msg>` form forces one message via sendMessage's `mode`
-// arg without touching this. Module-level (not reactive) — no UI reflects it yet.
-export type ChatMode = "local" | "cloud";
+// Sticky inference backend for this session, set by a bare `/<provider>` verb (A11/D48 C7). `null` →
+// the server's configured default. A `/<provider> <msg>` form forces one message via sendMessage's
+// `mode` arg without touching this. Module-level (not reactive). The mode string IS a provider name
+// end-to-end (syntax-only validated on the wire); the registry coerces an unknown one → default.
+export type ChatMode = string;
 let sessionMode: ChatMode | null = null;
 export function setSessionMode(mode: ChatMode | null): void {
   sessionMode = mode;
@@ -1137,8 +1138,9 @@ export async function reattachTurn(
     const parsed = parseFrameId(frameId);
     if (parsed) lastTurnId = parsed.turnId;
     lastSeq = typeof snap.seq === "number" ? snap.seq : (parsed?.seq ?? 0);
-    // Re-pin the turn's inference mode for any resume (re-attach bypasses sendMessage, D39).
-    const mode: ChatMode | null = snap.mode === "local" || snap.mode === "cloud" ? snap.mode : null;
+    // Re-pin the turn's inference mode for any resume (re-attach bypasses sendMessage, D39). The mode
+    // is an arbitrary provider slug (A11/D48) — preserve any string snapshot, coerce non-strings → null.
+    const mode: ChatMode | null = typeof snap.mode === "string" ? snap.mode : null;
     turnMode = mode;
     // (b) overlay with REPLACE semantics — the open message first, then each call — folded into ONE
     // `set()` (the helpers are pure: messages in → messages out), so a snapshot with N calls is a

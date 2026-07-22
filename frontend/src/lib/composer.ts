@@ -7,9 +7,10 @@
 //                       host and persists a tool_call + result pair into the thread, so it renders
 //                       as a command bubble and the agent sees it next turn. Handles disabled
 //                       (403), thread-busy (409) and queued-as-a-steer (202, D41).
-//   /<verb> [args]    → slash commands. /local //cloud force the inference backend (replacing the old
-//                       k:/o:); /clear starts a fresh thread; /help lists commands. A /verb that
-//                       matches a discovered skill invokes it for that message (4.5, user-invoked).
+//   /<verb> [args]    → slash commands. /<provider> forces the inference backend (A11/D48 — one verb
+//                       per configured provider, replacing the old /local //cloud); /clear starts a
+//                       fresh thread; /help lists commands. A /verb that matches a discovered skill
+//                       invokes it for that message (4.5, user-invoked).
 //   anything else     → natural-language agent chat.
 //
 // All paths jump to the Agent tab (the chat log lives there). The shell sigil is `!` by default and
@@ -69,19 +70,45 @@ export async function loadAgents(): Promise<void> {
 }
 void loadAgents();
 
-const HELP = [
-  "// commands",
-  `${SHELL_SIGIL}<cmd>      run a shell command on the backend host (guarded)`,
-  "/local [msg]   force the local inference backend",
-  "/cloud [msg]   force the cloud inference backend",
-  "/agent [name]  switch the active agent (bare = back to default)",
-  "/privilege [lvl] set the session privilege (read|confirm|auto_low|full; bare = agent default)",
-  "/compact [note] summarize older turns to free up context (note steers the summary)",
-  "/clear         start a new thread",
-  "/<skill> [task] run a task with a skill active",
-  "/help          show this list",
-  "// anything else is sent to the agent",
-].join("\n");
+/** Composer-routable provider names (A11/D48 C7), so `/<provider>` forces that inference backend.
+ *  Loaded from `GET /api/providers` (`verbs` — the backend already applies the in-chain / sole-model
+ *  and skill-shadow / reserved-name rules), refreshed on every settings save (useSaveSettings). The
+ *  set is best-effort; an unknown `/verb` still falls through to the unknown-command note. */
+const knownProviders = new Set<string>();
+
+export async function loadProviders(): Promise<void> {
+  try {
+    const res = await fetch("/api/providers");
+    if (!res.ok) return;
+    const data = (await res.json()) as { verbs?: string[] };
+    knownProviders.clear();
+    for (const v of data.verbs ?? []) knownProviders.add(v);
+  } catch {
+    /* best-effort — leave the set as-is */
+  }
+}
+void loadProviders();
+
+/** The `/help` listing — built live so the configured `/<provider>` verbs show by name (cheap: the
+ *  set is tiny). Falls back to a generic pointer when none are loaded yet. */
+function helpText(): string {
+  const provs = [...knownProviders];
+  const providerLine = provs.length
+    ? `/<provider>    force an inference backend — ${provs.map((p) => `/${p}`).join(" · ")}`
+    : "/<provider>    force an inference backend (see Conf → Providers)";
+  return [
+    "// commands",
+    `${SHELL_SIGIL}<cmd>      run a shell command on the backend host (guarded)`,
+    providerLine,
+    "/agent [name]  switch the active agent (bare = back to default)",
+    "/privilege [lvl] set the session privilege (read|confirm|auto_low|full; bare = agent default)",
+    "/compact [note] summarize older turns to free up context (note steers the summary)",
+    "/clear         start a new thread",
+    "/<skill> [task] run a task with a skill active",
+    "/help          show this list",
+    "// anything else is sent to the agent",
+  ].join("\n");
+}
 
 /** Drop a string into the shared composer for tweak-then-run (ports vapor's cmdInto/editCmd). The
  *  textareas are controlled off the draft store (F28) — write through `setDraft` so `send()`, which
@@ -128,17 +155,6 @@ function routeSlash(text: string): void {
   const raw = text;
 
   switch (verb) {
-    case "local":
-    case "cloud": {
-      const mode = verb; // narrowed to "local" | "cloud" by the switch cases
-      if (rest) {
-        void sendMessage(rest, { mode, raw }); // one-shot: this message only
-      } else {
-        setSessionMode(mode); // sticky: subsequent messages until changed
-        pushSystemNote(`// inference → ${mode}`);
-      }
-      break;
-    }
     case "agent": {
       // `/agent <name>` sets a sticky session agent; bare `/agent` resets to the default. The name
       // is validated against the configured set (best-effort) — an unknown one still routes, the
@@ -185,13 +201,23 @@ function routeSlash(text: string): void {
       void compactThread(rest || null);
       break;
     case "help":
-      pushSystemNote(HELP);
+      pushSystemNote(helpText());
       break;
     default:
+      // Precedence (D48 C7): built-ins (the cases above) > skills > providers. A skill and a provider
+      // sharing a name → the skill wins (the backend also drops the shadowed provider from `verbs`).
       if (knownSkills.has(verb)) {
         // /skill-name <task> → run the task with that skill explicitly active (user-invoked, 4.5).
         if (rest) void sendMessage(rest, { skills: [verb], raw });
         else pushSystemNote(`// /${verb} needs a task: /${verb} <what to do>`);
+      } else if (knownProviders.has(verb)) {
+        // /<provider> [msg] → force that inference backend. With args = one-shot; bare = sticky.
+        if (rest) {
+          void sendMessage(rest, { mode: verb, raw });
+        } else {
+          setSessionMode(verb);
+          pushSystemNote(`// inference → ${verb}`);
+        }
       } else {
         pushSystemNote(`// unknown command: /${verb} — try /help`);
       }

@@ -115,15 +115,29 @@ const voiceSvc = {
 
 const SETTINGS = {
   server: { host: "0.0.0.0", port: 5433, poll_seconds: 5, feature_cycle_seconds: 8, debug: false },
+  // A11/D48 — the unified provider registry (inference is new-shape; voice/embeddings stay legacy).
+  providers: {
+    llamacpp: {
+      base_url: "http://h/v1",
+      api_key: null,
+      api_mode: "llamacpp",
+      models: { "minig+": { context_window: 32768 } },
+    },
+    openrouter: {
+      base_url: "https://openrouter.ai/api/v1",
+      api_key: "sk…yz",
+      api_mode: "openrouter",
+      models: { "qwen3.5": { id: "qwen/qwen3.5", context_window: 262144 } },
+    },
+  },
   inference: {
-    default_mode: "local",
+    provider: "llamacpp",
+    model: null,
+    fallbacks: [{ provider: "openrouter", model: "qwen3.5" }],
     request_timeout_s: 120,
     system_prompt: "",
     system_prompt_append: "",
     failover: true,
-    local: endpoint({}),
-    cloud: endpoint({}),
-    fallbacks: [],
   },
   searxng: { base_url: "", enabled: false, language: null },
   embeddings: { base_url: "", api_key: null, model: "", enabled: false, dim: null },
@@ -183,6 +197,23 @@ const ROUTES: Record<string, unknown> = {
   "/api/actions": ACTIONS,
   "/api/tools": TOOLS,
   "/api/settings": SETTINGS,
+  "/api/providers": {
+    providers: {
+      llamacpp: { api_mode: "llamacpp", models: ["minig+"] },
+      openrouter: { api_mode: "openrouter", models: ["qwen3.5"] },
+    },
+    rev: "revA",
+    sections: {
+      inference: {
+        provider: "llamacpp",
+        model: null,
+        fallbacks: [{ provider: "openrouter", model: "qwen3.5" }],
+      },
+    },
+    reserved_verbs: ["agent", "privilege", "priv", "clear", "compact", "help"],
+    verbs: ["llamacpp", "openrouter"],
+    warnings: [],
+  },
   "/api/agents": { agents: [], default: "" },
   "/api/skills": [],
   "/api/integrations/status": { mcp: [], openapi: [], dirty: false },

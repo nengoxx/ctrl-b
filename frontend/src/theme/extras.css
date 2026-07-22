@@ -2612,5 +2612,188 @@ body {
   content: ""; /* open = "−": keep only the horizontal bar */
   background: linear-gradient(var(--magenta), var(--magenta)) center / 8px 1.5px no-repeat;
 }
+
+/* ── A11 / D48 — Providers registry + the shared provider→model picker ─────────────────────────────
+   Net-new pixels only; built from VAPOR_PATTERNS tokens (§5 radius, §8 inputs, §7 buttons). The
+   provider cards reuse the .mwrap/.mconf/.mform disclosure recipe (styled in vapor.css); these rules
+   add the picker, the reorder/remove affordances, the model-row separators, and the warn/block rows. */
+
+/* the provider→model picker: two selects (provider + scoped model), wrapping on a phone */
+.pmpicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+.pmpicker select,
+.pm-model,
+.pm-raw input {
+  all: unset;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--bg-3);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  border: 1px solid var(--line);
+  letter-spacing: 0.3px;
+  min-width: 96px;
+}
+.pmpicker select:focus,
+.pm-model:focus,
+.pm-raw input:focus {
+  border-color: var(--magenta);
+  box-shadow: 0 0 0 1px var(--magenta), 0 0 10px rgba(var(--accent-rgb), 0.25);
+}
+.pm-raw {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+/* a small secondary action pill (rename / list / set-a-wire-id) — outline, not the filled gradient */
+.pm-listbtn {
+  all: unset;
+  cursor: pointer;
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+}
+.pm-listbtn:active {
+  color: var(--magenta);
+  border-color: var(--magenta);
+}
+.provider-name {
+  font-size: 11px;
+  color: var(--ink);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* an inference fallback row: the label, the picker, then reorder + remove affordances */
+.fallback-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fallback-row .k {
+  flex: 0 0 auto;
+}
+.fallback-row .pmpicker {
+  flex: 1 1 auto;
+}
+.move-btns {
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.move-btns button {
+  all: unset;
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--ink-soft);
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  font-size: 12px;
+}
+.move-btns button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.move-btns button:not(:disabled):active {
+  color: var(--magenta);
+  border-color: var(--magenta);
+}
+.row-remove {
+  all: unset;
+  cursor: pointer;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--ink-faint);
+  border: 1px solid var(--line-2);
+}
+.row-remove:active {
+  color: rgb(var(--danger-rgb, 220 60 80));
+  border-color: rgb(var(--danger-rgb, 220 60 80));
+}
+
+/* a model catalog row inside a provider card — a .mform block + its own remove foot, with a divider */
+.model-row {
+  border-top: 1px solid var(--line);
+  padding-top: 4px;
+}
+.model-row .mfoot {
+  padding-top: 0;
+}
+
+/* the guarded extra_body JSON textarea (reuses .kv-text) + its inline parse error */
+.mform textarea.json-field {
+  min-height: 56px;
+}
+.mform textarea.json-field.invalid {
+  border-color: rgb(var(--danger-rgb, 220 60 80));
+}
+.mform input.num-field.invalid {
+  border-color: rgb(var(--danger-rgb, 220 60 80));
+}
+.json-err {
+  grid-column: 1 / -1;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: rgb(var(--danger-rgb, 220 60 80));
+  padding: 2px 0 4px;
+}
+
+/* inline warnings (D48 B5) — the .redisc-hint tone; block-reason list disables the save above it */
+.conf-warnrow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px 4px;
+}
+.conf-warn {
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--ink-soft);
+}
+/* FX18 — a dangling provider pointer in the shared ProviderModelPicker (agents editor / inference) */
+.pm-warn {
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: rgb(var(--danger-rgb, 220 60 80));
+  margin-top: 2px;
+}
+.conf-blockrow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 12px 2px;
+}
+.conf-block-title {
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgb(var(--danger-rgb, 220 60 80));
+}
+.conf-block-reason {
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--ink-soft);
+}
 }
 /* end @scope ([data-skin="vapor"]) */

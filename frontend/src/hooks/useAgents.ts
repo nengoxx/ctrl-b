@@ -16,12 +16,13 @@ export type { Privilege }; // re-export so existing `import { Privilege } from "
 /** The reasoning-effort ladder (D42 A10) — the universal field convention. `null`/absent = inherit. */
 export type ReasoningEffort = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
-/** A model pointer + per-call config (D42). `mode`/`model` select the endpoint + model; the three
- *  call-config fields are the A10 output/reasoning surfaces, threaded per-agent (setModel). Typed —
- *  no index signature (any extra server keys still round-trip verbatim through the spread merge). */
+/** A model pointer + per-call config (D42 + A11/D48 C7-b). `provider`/`model` select the backend +
+ *  model against the unified registry; the three call-config fields are the A10 output/reasoning
+ *  surfaces, threaded per-agent (setModel). Typed — no index signature (any extra server keys still
+ *  round-trip verbatim through the spread merge). */
 export interface ModelRef {
-  mode: string | null; // ""/null/local/cloud — blank inherits inference.default_mode
-  model: string | null; // blank inherits the endpoint's model
+  provider: string | null; // ""/null inherits the inference default; else a provider name
+  model: string | null; // blank inherits the provider's model (or its sole catalog model)
   max_tokens?: number | null; // output budget (kwargs into stream_chat/complete); null = uncapped/inherit
   reasoning_effort?: ReasoningEffort | null; // reasoning ladder; null = inherit / leave to the endpoint
   reasoning_tokens?: number | null; // D45: explicit budget — OVERRIDES the ladder on budget-speaking

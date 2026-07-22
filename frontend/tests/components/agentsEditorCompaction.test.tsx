@@ -24,7 +24,7 @@ const agentDetail = {
     prompt: "",
     prompt_append: "",
     inherit_append: true,
-    model: { mode: null, model: null }, // no call-config → the unset defaults render
+    model: { provider: null, model: null }, // no call-config → the unset defaults render
     tools: "*" as const,
     skills: "*" as const,
     privilege: "confirm" as const,
@@ -45,6 +45,8 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 vi.mock("../../src/hooks/useSettings", () => ({
   useSaveSettings: () => ({ mutate: h.saveSettings, isPending: false }),
+  // AgentsEditor's backend picker (A11/D48 C7-b) reads the registry catalog from GET /api/providers.
+  useProviders: () => ({ data: { providers: {}, verbs: [], warnings: [] } }),
 }));
 vi.mock("../../src/hooks/useDefaultPrompt", () => ({
   useDefaultPrompt: () => ({ data: "" }),

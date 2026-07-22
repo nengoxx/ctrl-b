@@ -20,7 +20,7 @@ vi.mock("../../src/store/chat", () => ({
 }));
 vi.mock("../../src/store/ui", () => ({ setUI: vi.fn() }));
 
-import { fillComposer, runComposer } from "../../src/lib/composer";
+import { fillComposer, loadProviders, loadSkills, runComposer } from "../../src/lib/composer";
 import * as chat from "../../src/store/chat";
 import { clearDraft, getDraft, setDraft, useDraft } from "../../src/store/composer";
 import { setUI } from "../../src/store/ui";
@@ -55,16 +55,58 @@ describe("runComposer routing", () => {
     expect(chat.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("`/local <msg>` sends one message on the local backend", () => {
-    runComposer("/local ping");
-    // D41 — the RAW `/local ping` line rides along (with its prefix) for a Stop-harvest restore.
-    expect(chat.sendMessage).toHaveBeenCalledWith("ping", { mode: "local", raw: "/local ping" });
+  // A11/D48 C7 — `/local` //`/cloud` are RETIRED; a verb per configured provider (from GET
+  // /api/providers `verbs`) forces the inference backend. `loadProviders` populates the known set.
+  const loadVerbs = async (verbs: string[]) => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
+      String(url).includes("/api/providers")
+        ? Promise.resolve({ ok: true, json: () => Promise.resolve({ verbs }) } as Response)
+        : Promise.resolve({ ok: false } as Response),
+    );
+    await loadProviders();
+  };
+
+  it("`/<provider> <msg>` forces that provider for one message", async () => {
+    await loadVerbs(["llamacpp", "openrouter"]);
+    runComposer("/llamacpp ping");
+    // D41 — the RAW `/llamacpp ping` line rides along (with its prefix) for a Stop-harvest restore.
+    expect(chat.sendMessage).toHaveBeenCalledWith("ping", {
+      mode: "llamacpp",
+      raw: "/llamacpp ping",
+    });
   });
 
-  it("bare `/cloud` sets the sticky session mode", () => {
-    runComposer("/cloud");
-    expect(chat.setSessionMode).toHaveBeenCalledWith("cloud");
+  it("bare `/<provider>` sets the sticky session mode", async () => {
+    await loadVerbs(["llamacpp", "openrouter"]);
+    runComposer("/openrouter");
+    expect(chat.setSessionMode).toHaveBeenCalledWith("openrouter");
     expect(chat.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("precedence: a skill shadows a provider of the same name (built-ins > skills > providers)", async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/api/skills"))
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([{ name: "deploy" }]),
+        } as Response);
+      if (u.includes("/api/providers"))
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ verbs: ["deploy"] }),
+        } as Response);
+      return Promise.resolve({ ok: false } as Response);
+    });
+    await loadSkills();
+    await loadProviders();
+    runComposer("/deploy do it");
+    // The skill wins → an explicit-skill send, NOT a provider mode switch.
+    expect(chat.sendMessage).toHaveBeenCalledWith("do it", {
+      skills: ["deploy"],
+      raw: "/deploy do it",
+    });
+    expect(chat.setSessionMode).not.toHaveBeenCalled();
   });
 
   it("`/clear` and `/compact` map to their thread actions", () => {

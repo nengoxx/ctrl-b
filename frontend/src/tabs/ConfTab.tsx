@@ -1,9 +1,17 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { AgentsEditor } from "../components/AgentsEditor";
 import { ConfGroup } from "../components/ConfGroup";
+import { JsonField } from "../components/JsonField";
 import { MachineEditor } from "../components/MachineEditor";
 import { MemoryEditor } from "../components/MemoryEditor";
+import { MoveButtons } from "../components/MoveButtons";
+import { NumField } from "../components/NumField";
+import {
+  ProviderModelPicker,
+  type PickerCatalog,
+  type PickerValue,
+} from "../components/ProviderModelPicker";
 import { Seg } from "../components/Seg";
 import { ServerListEditor } from "../components/ServerListEditor";
 import { SettingRow } from "../components/SettingRow";
@@ -16,13 +24,21 @@ import { useSections } from "../hooks/useSections";
 import { currentAppearancePatch, useSaveAppearance } from "../hooks/useAppearance";
 import { agentModeOf, useActionSpecs } from "../hooks/useActions";
 import { disclosureToggle } from "../lib/disclosure";
-import { numOrKeepNullable } from "../lib/num";
 import { useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
 import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
 import { type MemoryCfg } from "../hooks/useMemory";
-import { useSaveSettings, useSettings, type SettingsDoc } from "../hooks/useSettings";
+import {
+  useProviders,
+  useSaveSettings,
+  useSettings,
+  useSettingsProvidersRev,
+  type ModelDoc,
+  type ProviderDoc,
+  type SavePatch,
+  type SettingsDoc,
+} from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
 import { promptPreview } from "../lib/promptPreview";
 import { setCollapsed } from "../store/collapse";
@@ -181,16 +197,388 @@ function PromptRow(props: {
   );
 }
 
+// A11 / D48 — provider name slug + the small enum option lists for the Providers cards.
+const PROVIDER_SLUG = /^[a-z0-9][a-z0-9_+.-]{0,31}$/;
+const API_MODES = [
+  { val: "openai", label: "openai" },
+  { val: "llamacpp", label: "llamacpp" },
+  { val: "openrouter", label: "openrouter" },
+  { val: "none", label: "none" },
+];
+
+function emptyProvider(): ProviderDoc {
+  return { base_url: "", api_key: null, api_mode: "openai", models: {} };
+}
+
+// A stable per-instance id source for model rows (survives clean-name renames so a JSON block or the
+// local edit state never jumps rows). Module-level counter — ids are only compared, never persisted.
+let MODEL_ROW_SEQ = 0;
+
+/** A small inline warnings/notice list (D48 B5 / R22). Visual precedent: `.redisc-hint`. Rendered in
+ *  the owning ConfGroup; fed by PUT-response warnings (after save) + GET /api/providers boot warnings. */
+function WarnRow({ warnings }: { warnings: string[] }) {
+  if (!warnings.length) return null;
+  return (
+    <div className="conf-warnrow">
+      {warnings.map((w, i) => (
+        <div className="conf-warn" key={i}>
+          ⚠ {w}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One provider card (D48 B1) on the vapor `.mwrap` disclosure recipe: connection fields + a model
+ *  catalog sub-list. Rename is an explicit control (feeds `provider_renames`), never a bare key edit.
+ *  Model clean names are edited on a LOCAL row array so a transient duplicate never collapses the map;
+ *  a duplicate/blank name blocks the save (reported via `onValidity`). extra_body is a guarded JSON row. */
+function ProviderCard(props: {
+  name: string;
+  doc: ProviderDoc;
+  open: boolean;
+  onToggle: () => void;
+  referencedBy: string[];
+  existingNames: string[];
+  onChange: (doc: ProviderDoc) => void;
+  onRename: (next: string) => void;
+  onRemove: () => void;
+  onValidity: (id: string, valid: boolean) => void;
+}) {
+  const { name, doc, onValidity } = props;
+  const set = (p: Partial<ProviderDoc>) => props.onChange({ ...doc, ...p });
+  const prefix = `provider:${name}`;
+
+  const [renaming, setRenaming] = useState(false);
+  const [renameVal, setRenameVal] = useState(name);
+  const [revealed, setRevealed] = useState<Set<number>>(new Set());
+
+  const seedRows = () =>
+    Object.entries(doc.models ?? {}).map(([key, d]) => ({ id: MODEL_ROW_SEQ++, key, doc: d }));
+  const [rows, setRows] = useState(seedRows);
+
+  // Draft-epoch reseed guard: adopt an EXTERNAL change to the map (background refetch / save reconcile),
+  // never our own just-committed edit. `committedRef` holds the JSON we last emitted.
+  const committedRef = useRef(JSON.stringify(doc.models ?? {}));
+  const modelsJson = JSON.stringify(doc.models ?? {});
+  useEffect(() => {
+    if (modelsJson === committedRef.current) return;
+    committedRef.current = modelsJson;
+    setRows(seedRows());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelsJson]);
+
+  // Clear this card's block on unmount (removed / renamed → remount) so no stale save-block lingers.
+  const validityRef = useRef(props.onValidity);
+  validityRef.current = props.onValidity;
+  useEffect(() => () => validityRef.current(`${prefix}:models`, true), [prefix]);
+
+  const commit = (next: typeof rows) => {
+    setRows(next);
+    const map: Record<string, ModelDoc> = {};
+    let bad = false;
+    for (const r of next) {
+      const k = r.key.trim();
+      if (!k || k in map) {
+        bad = true;
+        continue;
+      }
+      map[k] = r.doc;
+    }
+    onValidity(`${prefix}:models`, !bad);
+    if (!bad) {
+      committedRef.current = JSON.stringify(map);
+      set({ models: map });
+    }
+  };
+  const setRowKey = (i: number, key: string) =>
+    commit(rows.map((r, j) => (j === i ? { ...r, key } : r)));
+  const setRowDoc = (i: number, p: Partial<ModelDoc>) =>
+    commit(rows.map((r, j) => (j === i ? { ...r, doc: { ...r.doc, ...p } } : r)));
+  const addModel = () => {
+    const base = "model";
+    let n = base;
+    let k = 2;
+    const taken = new Set(rows.map((r) => r.key));
+    while (taken.has(n)) n = `${base}-${k++}`;
+    commit([...rows, { id: MODEL_ROW_SEQ++, key: n, doc: {} }]);
+  };
+  const removeModel = (i: number) => commit(rows.filter((_, j) => j !== i));
+
+  const commitRename = () => {
+    const nn = renameVal.trim().toLowerCase();
+    setRenaming(false);
+    if (nn === name) return;
+    if (!PROVIDER_SLUG.test(nn)) {
+      pushToast("provider name: a–z 0–9 _ + . - (max 32)", "err");
+      setRenameVal(name);
+      return;
+    }
+    if (props.existingNames.includes(nn)) {
+      pushToast("a provider with that name exists", "err");
+      setRenameVal(name);
+      return;
+    }
+    props.onRename(nn);
+  };
+
+  return (
+    <div className={"mwrap" + (props.open ? " open" : "")}>
+      <div className="confrow" {...disclosureToggle(props.open, props.onToggle)}>
+        <div className="k">
+          <div className="label">{name}</div>
+          <div className="desc">
+            {doc.api_mode} · {Object.keys(doc.models ?? {}).length} model
+            {Object.keys(doc.models ?? {}).length === 1 ? "" : "s"}
+            {props.referencedBy.length ? ` · referenced by ${props.referencedBy.join(", ")}` : ""}
+          </div>
+        </div>
+        <span className="chev" aria-hidden>
+          ›
+        </span>
+      </div>
+      <div className="mconf">
+        {props.open && (
+          <>
+            <div className="mform">
+              <label>Name</label>
+              {renaming ? (
+                <div className="pm-raw">
+                  <input
+                    aria-label="New provider name"
+                    value={renameVal}
+                    autoFocus
+                    onChange={(e) => setRenameVal(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitRename();
+                      if (e.key === "Escape") {
+                        setRenaming(false);
+                        setRenameVal(name);
+                      }
+                    }}
+                  />
+                  <button type="button" className="pm-listbtn" onClick={commitRename}>
+                    ok
+                  </button>
+                </div>
+              ) : (
+                <div className="pm-raw">
+                  <span className="provider-name">{name}</span>
+                  <button
+                    type="button"
+                    className="pm-listbtn"
+                    onClick={() => {
+                      setRenameVal(name);
+                      setRenaming(true);
+                    }}
+                  >
+                    rename
+                  </button>
+                </div>
+              )}
+
+              <label>Base URL</label>
+              <input
+                aria-label="Base URL"
+                value={doc.base_url}
+                placeholder="http://host:port/v1"
+                onChange={(e) => set({ base_url: e.target.value })}
+              />
+
+              <label>API key</label>
+              <input
+                aria-label="API key"
+                type="password"
+                autoComplete="new-password"
+                value={doc.api_key ?? ""}
+                placeholder="optional — masked, blank keeps"
+                onChange={(e) => set({ api_key: e.target.value })}
+              />
+
+              <label>API mode</label>
+              <Seg
+                label="API mode"
+                current={doc.api_mode}
+                options={API_MODES}
+                onPick={(v) => set({ api_mode: v as ProviderDoc["api_mode"] })}
+              />
+
+              <label>Max concurrent</label>
+              <NumField
+                id={`${prefix}:max_concurrent`}
+                value={doc.max_concurrent_requests}
+                ariaLabel="Max concurrent requests"
+                placeholder="unlimited"
+                min={1}
+                onChange={(v) => set({ max_concurrent_requests: v })}
+                onValidity={onValidity}
+              />
+
+              <label>Retry attempts</label>
+              <NumField
+                id={`${prefix}:retry`}
+                value={doc.retry_attempts}
+                ariaLabel="Retry attempts"
+                placeholder="inherit global"
+                min={0}
+                onChange={(v) => set({ retry_attempts: v })}
+                onValidity={onValidity}
+              />
+
+              <label>Max-tokens field</label>
+              <select
+                aria-label="Max tokens field"
+                className="adv-select"
+                value={doc.max_tokens_field ?? ""}
+                onChange={(e) =>
+                  set({
+                    max_tokens_field:
+                      e.target.value === ""
+                        ? null
+                        : (e.target.value as ProviderDoc["max_tokens_field"]),
+                  })
+                }
+              >
+                <option value="">auto (from api mode)</option>
+                <option value="max_tokens">max_tokens</option>
+                <option value="max_completion_tokens">max_completion_tokens</option>
+              </select>
+            </div>
+
+            <div className="fallback-section">
+              <span className="label">Models</span>
+              <span className="desc">clean name · id · window · extra_body</span>
+            </div>
+            {rows.map((r, i) => {
+              const showId = revealed.has(r.id) || (r.doc.id != null && r.doc.id !== r.key);
+              return (
+                <div className="model-row" key={r.id}>
+                  <div className="mform">
+                    <label>Name</label>
+                    <input
+                      aria-label="Model name"
+                      value={r.key}
+                      placeholder="clean name"
+                      onChange={(e) => setRowKey(i, e.target.value)}
+                    />
+                    {showId ? (
+                      <>
+                        <label>Wire id</label>
+                        <input
+                          aria-label="Model id"
+                          value={r.doc.id ?? ""}
+                          placeholder="(defaults to the name)"
+                          onChange={(e) => setRowDoc(i, { id: e.target.value || null })}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <label>Wire id</label>
+                        <button
+                          type="button"
+                          className="pm-listbtn"
+                          onClick={() => setRevealed(new Set(revealed).add(r.id))}
+                        >
+                          set a wire id…
+                        </button>
+                      </>
+                    )}
+                    <label>Context window</label>
+                    <NumField
+                      id={`${prefix}:model:${r.id}:ctx`}
+                      value={r.doc.context_window}
+                      ariaLabel="Model context window"
+                      placeholder="auto"
+                      min={1}
+                      onChange={(v) => setRowDoc(i, { context_window: v })}
+                      onValidity={onValidity}
+                    />
+                    {/* FX17 (Codex#7, partial) — the model-level max_tokens_field override (chat-relevant,
+                        C6). Mirrors the provider-level advanced select; voice/speed/language/format/dim
+                        editors are DEFERRED to Slice 2 (their consumers arrive there), but round-trip
+                        unharmed via the draft (the schema is complete). */}
+                    <label>Max-tokens field</label>
+                    <select
+                      aria-label="Model max tokens field"
+                      className="adv-select"
+                      value={(r.doc.max_tokens_field as string | null | undefined) ?? ""}
+                      onChange={(e) =>
+                        setRowDoc(i, {
+                          max_tokens_field:
+                            e.target.value === ""
+                              ? null
+                              : (e.target.value as ModelDoc["max_tokens_field"]),
+                        })
+                      }
+                    >
+                      <option value="">inherit provider</option>
+                      <option value="max_tokens">max_tokens</option>
+                      <option value="max_completion_tokens">max_completion_tokens</option>
+                    </select>
+                    <label>Extra body</label>
+                    <JsonField
+                      id={`${prefix}:model:${r.id}:json`}
+                      value={r.doc.extra_body}
+                      ariaLabel="Model extra_body"
+                      onChange={(v) => setRowDoc(i, { extra_body: v })}
+                      onValidity={onValidity}
+                    />
+                  </div>
+                  <div className="mfoot">
+                    <button type="button" className="danger" onClick={() => removeModel(i)}>
+                      remove model
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            <div className="fallback-add">
+              <button type="button" className="svc-add" onClick={addModel}>
+                + add model
+              </button>
+            </div>
+
+            <div className="mfoot">
+              <button
+                type="button"
+                className="danger"
+                disabled={props.referencedBy.length > 0}
+                title={
+                  props.referencedBy.length
+                    ? `referenced by ${props.referencedBy.join(", ")}`
+                    : undefined
+                }
+                onClick={props.onRemove}
+              >
+                remove provider
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Just the slices the 7a form edits — kept verbatim from the loaded doc so a save round-trips the
-// masked api_key (the backend restores it) and leaves every other section untouched.
+// masked api_key (the backend restores it) and leaves every other section untouched. A11: `providers`
+// rides the same draft with replacement semantics + the rename metadata.
 type Draft = Pick<
   SettingsDoc,
-  "server" | "inference" | "searxng" | "embeddings" | "open_terminal" | "shell" | "voice"
+  | "server"
+  | "inference"
+  | "searxng"
+  | "embeddings"
+  | "open_terminal"
+  | "shell"
+  | "voice"
+  | "providers"
 >;
 
 function pickDraft(s: SettingsDoc): Draft {
   return {
     server: s.server,
+    providers: s.providers,
     inference: s.inference,
     searxng: s.searxng,
     embeddings: s.embeddings,
@@ -305,6 +693,8 @@ export function ConfTab({ active }: Props) {
   const { data: hosts = [] } = useHosts(server?.poll_seconds ?? 5);
 
   const { data: settings } = useSettings();
+  const providersBaseRev = useSettingsProvidersRev(); // FR2-1 — the base rev bound to the settings snapshot
+  const { data: providersInfo, dataUpdatedAt: providersUpdatedAt } = useProviders();
   const save = useSaveSettings();
   const { data: integrations } = useIntegrationsStatus();
   const rediscover = useRediscover();
@@ -312,7 +702,36 @@ export function ConfTab({ active }: Props) {
   const { data: skillList = [] } = useSkills();
   const { data: defaultPrompt = "" } = useDefaultPrompt();
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [openFallback, setOpenFallback] = useState<number | null>(null); // D18 — expanded fallback row
+  const [openProvider, setOpenProvider] = useState<string | null>(null); // A11 — expanded provider card
+  const [adding, setAdding] = useState(false); // A11 — the "add provider" affordance
+  const [newProvName, setNewProvName] = useState("");
+  // A11/D48 — queued provider renames (original stored name → final name), sent as PUT metadata and
+  // cleared on save success; the visible draft selectors are cascaded locally when a rename happens.
+  const [renames, setRenames] = useState<Record<string, string>>({});
+  // Field-level save blocks (invalid extra_body JSON, duplicate/blank model names) keyed by a stable id.
+  const [invalids, setInvalids] = useState<Record<string, boolean>>({});
+  const setValidity = (id: string, valid: boolean) =>
+    setInvalids((m) => {
+      if (valid && !(id in m)) return m;
+      if (valid) {
+        const { [id]: _drop, ...rest } = m;
+        return rest;
+      }
+      return m[id] ? m : { ...m, [id]: true };
+    });
+  // PUT-response warnings from the last save (D48 B5 / FX16 / FR2-3), stamped with the save moment. They
+  // render as a BRIDGE until the ["providers"] query next delivers FRESH data (its `dataUpdatedAt` passes
+  // the stamp) — the authoritative GET then supersedes them. Gating on freshness (not the rev) is what
+  // drops a now-stale warning that changed at an UNCHANGED rev (a skill collision resolved/appeared).
+  const [saveWarn, setSaveWarn] = useState<{ at: number | null; warnings: string[] }>({
+    at: null,
+    warnings: [],
+  });
+  // FR2-1 (was FX11) — the providers-base fingerprint bound to the DRAFT EPOCH, sourced from the settings
+  // snapshot the draft seeds from (`providersBaseRev`), NOT the separate ["providers"] query. Captured at
+  // seed time (first load / after a save) and NEVER advanced while the draft is dirty, so a 409 retry
+  // resubmits the OLD base (loud, no silent clobber) until a reload/navigate reseeds the draft.
+  const capturedBaseRef = useRef<string | null>(null);
 
   // Agents are folder-discovered (D14) — the list comes from /api/agents; the agent-section scalars
   // (default agent, default title, subagent limits) come off the settings doc.
@@ -365,13 +784,35 @@ export function ConfTab({ active }: Props) {
   const skillsEnabled =
     (agentSection as { skills_enabled?: boolean } | undefined)?.skills_enabled ?? true;
 
-  // Reseed the draft whenever the server doc changes (initial load + after a successful save, which
-  // replaces the cache with the masked echo → clears the dirty state).
+  // Draft epoch (D48 B5 / R18). The reseed adopts the server doc ONLY when the draft is null (first
+  // load) or CLEAN relative to the last seed — a background settings refetch while the user has unsaved
+  // edits must NOT clobber the draft. `seededRef` holds the JSON of the last-adopted snapshot; a save
+  // success adopts the PUT echo explicitly (onSave's per-call onSuccess), which also updates this ref.
+  const seededRef = useRef<string | null>(null);
   useEffect(() => {
-    if (settings) setDraft(pickDraft(settings));
-  }, [settings]);
+    if (!settings) return;
+    const picked = pickDraft(settings);
+    const pickedJson = JSON.stringify(picked);
+    setDraft((d) => {
+      if (d === null || JSON.stringify(d) === seededRef.current) {
+        seededRef.current = pickedJson; // first load, or the draft is clean → adopt the fresh doc
+        // FR2-1 — bind the providers base to the SAME settings snapshot we just seeded from (its rev rode
+        // in on GET /api/settings' X-Providers-Rev header). Captured only on adopt (null/clean draft), so a
+        // dirty draft keeps its epoch base frozen — no background read can advance it under an in-flight edit.
+        capturedBaseRef.current = providersBaseRev;
+        return picked;
+      }
+      return d; // dirty draft → protect the in-flight edits (the save reconciles later)
+    });
+  }, [settings, providersBaseRev]);
 
   const dirty = settings && draft && JSON.stringify(draft) !== JSON.stringify(pickDraft(settings));
+  // FX11 — is the providers SUBTREE specifically dirty (vs the whole draft)? Drives whether the save
+  // carries the `providers` map + its base at all. A queued rename also requires sending the map (the
+  // backend rekey/replacement needs it). The epoch base itself is captured at seed time (FR2-1, above).
+  const providersDirty =
+    !!settings && !!draft && JSON.stringify(draft.providers) !== JSON.stringify(settings.providers);
+  const sendProviders = providersDirty || Object.keys(renames).length > 0;
   // F19 — register with the cross-editor dirty registry so a refresh/close-tab while these
   // settings are unsaved triggers the browser's beforeunload prompt. Cleanup on unmount
   // auto-clears the registration (closing Conf doesn't leave the registry stuck).
@@ -383,42 +824,95 @@ export function ConfTab({ active }: Props) {
   function setInf<K extends keyof Draft["inference"]>(key: K, val: Draft["inference"][K]) {
     setDraft((d) => (d ? { ...d, inference: { ...d.inference, [key]: val } } : d));
   }
-  function setEndpoint(
-    which: "local" | "cloud",
-    key: "base_url" | "api_key" | "model" | "context_window",
-    val: string | null,
-  ) {
+  // A11/D48 — the inference primary + ordered fallbacks as flat provider→model refs.
+  function setPrimary(v: PickerValue) {
     setDraft((d) =>
-      d
-        ? { ...d, inference: { ...d.inference, [which]: { ...d.inference[which], [key]: val } } }
-        : d,
+      d ? { ...d, inference: { ...d.inference, provider: v.provider, model: v.model } } : d,
     );
   }
-  // D18 — the inference `fallbacks` list (edited inline; saved by the Inference saveBar like the other
-  // scalar fields). Edits operate on the draft array immutably.
   function setFallbacks(next: Draft["inference"]["fallbacks"]) {
     setDraft((d) => (d ? { ...d, inference: { ...d.inference, fallbacks: next } } : d));
   }
-  function setFallback(
-    idx: number,
-    key: "base_url" | "api_key" | "model" | "context_window",
-    val: string | null,
-  ) {
+  function setFallbackRef(idx: number, v: PickerValue) {
     setFallbacks(
-      (draft?.inference.fallbacks ?? []).map((fb, i) => (i === idx ? { ...fb, [key]: val } : fb)),
+      (draft?.inference.fallbacks ?? []).map((f, i) =>
+        i === idx ? { provider: v.provider ?? "", model: v.model } : f,
+      ),
     );
   }
-  function addFallback() {
-    const next = [
+  function addFallbackRef() {
+    const first = Object.keys(draft?.providers ?? {})[0] ?? "";
+    const models = first ? Object.keys(draft?.providers[first]?.models ?? {}) : [];
+    setFallbacks([
       ...(draft?.inference.fallbacks ?? []),
-      { base_url: "", api_key: null, model: "", context_window: null },
-    ];
-    setFallbacks(next);
-    setOpenFallback(next.length - 1); // open the new row so its fields are immediately editable
+      { provider: first, model: models.length >= 2 ? models[0] : null },
+    ]);
   }
-  function removeFallback(idx: number) {
+  function removeFallbackRef(idx: number) {
     setFallbacks((draft?.inference.fallbacks ?? []).filter((_, i) => i !== idx));
-    setOpenFallback(null);
+  }
+  function moveFallback(from: number, to: number) {
+    const arr = [...(draft?.inference.fallbacks ?? [])];
+    if (to < 0 || to >= arr.length) return;
+    const [x] = arr.splice(from, 1);
+    arr.splice(to, 0, x);
+    setFallbacks(arr);
+  }
+
+  // A11/D48 — provider map edits (replacement semantics). Rename is an explicit control that ALSO
+  // cascades the visible draft selectors (C1 UI cascade) + queues `provider_renames` (the backend
+  // ordering is authoritative). Delete/add are plain map mutations.
+  function setProvider(name: string, doc: ProviderDoc) {
+    setDraft((d) => (d ? { ...d, providers: { ...d.providers, [name]: doc } } : d));
+  }
+  function addProviderCard() {
+    const name = newProvName.trim().toLowerCase();
+    if (!PROVIDER_SLUG.test(name))
+      return pushToast("provider name: a–z 0–9 _ + . - (max 32)", "err");
+    if (draft?.providers[name]) return pushToast("a provider with that name exists", "err");
+    setDraft((d) => (d ? { ...d, providers: { ...d.providers, [name]: emptyProvider() } } : d));
+    setNewProvName("");
+    setAdding(false);
+    setOpenProvider(name);
+  }
+  function removeProvider(name: string) {
+    setDraft((d) => {
+      if (!d) return d;
+      const { [name]: _drop, ...rest } = d.providers;
+      return { ...d, providers: rest };
+    });
+    setRenames((r) => {
+      const next = { ...r };
+      for (const [k, v] of Object.entries(next)) if (v === name || k === name) delete next[k];
+      return next;
+    });
+    setOpenProvider((o) => (o === name ? null : o));
+  }
+  function renameProvider(from: string, to: string) {
+    setDraft((d) => {
+      if (!d) return d;
+      const provs: Record<string, ProviderDoc> = {};
+      for (const [k, v] of Object.entries(d.providers)) provs[k === from ? to : k] = v;
+      const i = d.inference;
+      return {
+        ...d,
+        providers: provs,
+        inference: {
+          ...i,
+          provider: i.provider === from ? to : i.provider,
+          fallbacks: i.fallbacks.map((f) => (f.provider === from ? { ...f, provider: to } : f)),
+        },
+      };
+    });
+    setRenames((r) => {
+      const next = { ...r };
+      const orig = Object.entries(next).find(([, cur]) => cur === from);
+      if (orig) next[orig[0]] = to;
+      else next[from] = to;
+      for (const [k, v] of Object.entries(next)) if (k === v) delete next[k];
+      return next;
+    });
+    setOpenProvider((o) => (o === from ? to : o));
   }
   function setSrv<K extends keyof Draft["server"]>(key: K, val: Draft["server"][K]) {
     setDraft((d) => (d ? { ...d, server: { ...d.server, [key]: val } } : d));
@@ -470,16 +964,95 @@ export function ConfTab({ active }: Props) {
   const vstt = draft?.voice.stt;
   const vtts = draft?.voice.tts;
 
+  // A11/D48 B2 + R19 — the reference-guard. Collect every config-held ModelRef (the draft's inference
+  // primary/fallbacks + the settings doc's agent.defaults.model / summarizer[s] / routing.lead), resolve
+  // its provider through the queued renames, and check it still points at a live provider + model in the
+  // draft. A dangling ref BLOCKS the save (the backend strict PUT 422s anyway — one source of truth). The
+  // per-provider reference set also disables that card's Remove (you can't delete a referenced provider).
+  const referenceReport = (() => {
+    const refs: { label: string; provider: string | null; model: string | null }[] = [];
+    if (draft) {
+      refs.push({
+        label: "inference default",
+        provider: draft.inference.provider,
+        model: draft.inference.model,
+      });
+      draft.inference.fallbacks.forEach((f, i) =>
+        refs.push({
+          label: `inference fallback #${i + 1}`,
+          provider: f.provider || null,
+          model: f.model,
+        }),
+      );
+    }
+    const agent = settings?.agent as Record<string, unknown> | undefined;
+    const defaults = agent?.defaults as Record<string, unknown> | undefined;
+    const asRef = (v: unknown) =>
+      v && typeof v === "object" ? (v as { provider?: unknown; model?: unknown }) : null;
+    const addAgent = (label: string, v: unknown) => {
+      const r = asRef(v);
+      if (r && typeof r.provider === "string")
+        refs.push({
+          label,
+          provider: r.provider,
+          model: typeof r.model === "string" ? r.model : null,
+        });
+    };
+    addAgent("agent default model", defaults?.model);
+    addAgent(
+      "agent summarizer",
+      (defaults?.compaction as Record<string, unknown> | undefined)?.summarizer,
+    );
+    addAgent(
+      "global summarizer",
+      (agent?.compaction as Record<string, unknown> | undefined)?.summarizer,
+    );
+    addAgent("routing lead", (defaults?.routing as Record<string, unknown> | undefined)?.lead);
+
+    // FX12 (H1/Codex#5): a MODEL is only "removed" if it was a clean CATALOG name in the CURRENT settings
+    // doc that the draft renamed/removed — never a raw-id passthrough the backend legitimately accepts.
+    // The settings catalog is keyed by the ref's ORIGINAL (pre-rename) provider name.
+    // ACCEPTED RESIDUAL (Codex#5, no provenance state): typing a raw id that happens to equal a FORMER
+    // catalog key the draft removes is still flagged here (it reads as a removed catalog model), even though
+    // the backend would resolve it as a raw passthrough. The guard deliberately errs toward blocking a
+    // still-resolvable save over allowing a silent break; distinguishing the two needs per-ref provenance we
+    // don't track — an acceptable false-positive, resolved by re-adding the catalog entry or renaming.
+    const invRename: Record<string, string> = {};
+    for (const [oldName, newName] of Object.entries(renames)) invRename[newName] = oldName;
+    const settingsProviders = settings?.providers ?? {};
+
+    const dangling: string[] = [];
+    const byProvider: Record<string, string[]> = {};
+    for (const r of refs) {
+      if (!r.provider) continue; // null/blank primary → the backend default; not a dangling ref
+      const rp = renames[r.provider] ?? r.provider;
+      (byProvider[rp] ??= []).push(r.label);
+      const pdoc = draft?.providers[rp];
+      if (!pdoc) {
+        dangling.push(`${r.label} → ${rp} (provider removed)`); // a DANGLING PROVIDER is always flagged
+        continue;
+      }
+      if (!r.model) continue;
+      const settingsProv = invRename[rp] ?? rp;
+      const wasCataloged = r.model in (settingsProviders[settingsProv]?.models ?? {});
+      if (wasCataloged && !(r.model in (pdoc.models ?? {}))) {
+        dangling.push(`${r.label} → ${rp}/${r.model} (model removed)`);
+      }
+    }
+    return { dangling, byProvider };
+  })();
+
+  const jsonBlocked = Object.keys(invalids).length > 0;
+  const blockReasons = [
+    ...referenceReport.dangling,
+    ...(jsonBlocked ? ["fix the invalid provider fields highlighted above"] : []),
+  ];
+  const saveDisabled = !dirty || save.isPending || blockReasons.length > 0;
+
   function onSave() {
-    if (!draft) return;
-    // Coerce numeric text fields; the backend validates and 422s on a bad value (surfaced as toast).
+    if (!draft || saveDisabled) return;
     const dimRaw = String(draft.embeddings.dim ?? "").trim();
-    // Per-endpoint context window (D42): a genuinely blank input → null (auto); a valid positive
-    // integer → that number; junk / non-finite / ≤0 KEEPS the prior stored value (Codex FIX A — a
-    // NaN→null coercion silently un-configured the window). `prior` = the last-saved server value.
-    const cw = (v: number | string | null | undefined, prior: number | null): number | null =>
-      numOrKeepNullable(String(v ?? "").trim(), prior);
-    const patch: Draft = {
+    const patch: SavePatch = {
       server: {
         ...draft.server,
         port: Number(draft.server.port),
@@ -489,27 +1062,6 @@ export function ConfTab({ active }: Props) {
       inference: {
         ...draft.inference,
         request_timeout_s: Number(draft.inference.request_timeout_s),
-        local: {
-          ...draft.inference.local,
-          context_window: cw(
-            draft.inference.local.context_window,
-            settings?.inference.local.context_window ?? null,
-          ),
-        },
-        cloud: {
-          ...draft.inference.cloud,
-          context_window: cw(
-            draft.inference.cloud.context_window,
-            settings?.inference.cloud.context_window ?? null,
-          ),
-        },
-        fallbacks: draft.inference.fallbacks.map((fb, i) => ({
-          ...fb,
-          context_window: cw(
-            fb.context_window,
-            settings?.inference.fallbacks[i]?.context_window ?? null,
-          ),
-        })),
       },
       searxng: draft.searxng,
       embeddings: { ...draft.embeddings, dim: dimRaw ? Number(dimRaw) : null },
@@ -533,23 +1085,68 @@ export function ConfTab({ active }: Props) {
         },
       },
     };
-    save.mutate(patch);
+    // FX11 — carry the providers map + its epoch-bound base ONLY when the subtree is dirty (or a rename is
+    // queued); a clean-providers save omits both (no needless 409 surface, and `providers_base` never rides
+    // without `providers`). The base is the DRAFT-EPOCH capture, never the live query rev.
+    if (sendProviders) {
+      patch.providers = draft.providers;
+      patch.providers_base = capturedBaseRef.current ?? undefined;
+    }
+    if (Object.keys(renames).length) patch.provider_renames = renames;
+    save.mutate(patch, {
+      onSuccess: (res) => {
+        // Draft epoch (R18): adopt the PUT echo as the new clean baseline + clear the rename queue, and
+        // advance the captured base to the post-write rev (the draft reseeds clean at the new epoch).
+        const echo = pickDraft(res.settings);
+        seededRef.current = JSON.stringify(echo);
+        setDraft(echo);
+        setRenames({});
+        capturedBaseRef.current = res.providers_rev;
+        setSaveWarn({ at: Date.now(), warnings: res.warnings ?? [] }); // FX16/FR2-3 — replace, stamped with the save moment
+      },
+    });
   }
 
-  // The five "scalar settings" groups below (Inference / Server / SearXNG / Embeddings /
-  // Open-terminal) all share a single global `dirty` flag and the same `onSave` patch,
-  // because their forms compose into one PUT /api/settings. Rather than parking one Save
-  // button at the bottom of just the last group (where users editing Inference can't find
-  // it), we render the same bar at the end of every saveable group so it's reachable from
-  // whichever section the user is actually in. Editor-managed groups (MCP, OpenAPI, Agents,
-  // Skills, Tool descriptions, Computers) have their own save flows; Appearance is UI-store
-  // only and needs no save button.
+  // The scalar-settings groups below (Providers / Inference / Server / …) share ONE global `dirty` flag
+  // and the same `onSave` patch — their forms compose into one PUT /api/settings. The bar renders at the
+  // end of every saveable group so it's reachable from whichever section the user is in. A block-reason
+  // row (dangling refs / invalid JSON) sits above it and disables the button. Editor-managed groups
+  // (MCP, OpenAPI, Agents, …) keep their own save flows; Appearance is UI-store only.
   const saveBar = (
-    <div className="conf-savebar">
-      <button className="conf-save" disabled={!dirty || save.isPending} onClick={onSave}>
-        {save.isPending ? "Saving…" : dirty ? "Save changes" : "Saved"}
-      </button>
-    </div>
+    <>
+      {blockReasons.length > 0 && (
+        <div className="conf-blockrow">
+          <div className="conf-block-title">can’t save — resolve first:</div>
+          {blockReasons.map((r, i) => (
+            <div className="conf-block-reason" key={i}>
+              · {r}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="conf-savebar">
+        <button className="conf-save" disabled={saveDisabled} onClick={onSave}>
+          {save.isPending ? "Saving…" : dirty ? "Save changes" : "Saved"}
+        </button>
+      </div>
+    </>
+  );
+
+  // Boot/lenient warnings (GET /api/providers) + the last PUT-response warnings, rendered inline in the
+  // Providers group (D48 B5 / R22). FX16/FR2-3: the retained PUT warnings are a BRIDGE — shown only until
+  // the ["providers"] query next delivers FRESH data (its `dataUpdatedAt` passes the save stamp), when the
+  // authoritative GET supersedes them. Gating on freshness (not the rev) drops a warning that changed at an
+  // UNCHANGED rev (a skill collision resolved/appeared). The merged list is DEDUPED by string identity so a
+  // PUT warning echoed by the following GET shows once, not twice.
+  const putWarnings =
+    saveWarn.at != null && (providersUpdatedAt ?? 0) <= saveWarn.at ? saveWarn.warnings : [];
+  const providerWarnings = [...new Set([...(providersInfo?.warnings ?? []), ...putWarnings])];
+  // The picker catalog is the DRAFT's providers (live, so unsaved additions/renames appear immediately).
+  const draftCatalog: PickerCatalog = Object.fromEntries(
+    Object.entries(draft?.providers ?? {}).map(([n, p]) => [
+      n,
+      { models: Object.keys(p.models ?? {}) },
+    ]),
   );
 
   return (
@@ -560,25 +1157,102 @@ export function ConfTab({ active }: Props) {
       role="tabpanel"
       aria-labelledby="tabbtn-conf"
     >
-      <ConfGroup id="inference" num="01" title="Inference" right="openai-compatible">
+      <ConfGroup
+        id="providers"
+        num="01"
+        title="Providers"
+        right={`${Object.keys(draft?.providers ?? {}).length} connection${
+          Object.keys(draft?.providers ?? {}).length === 1 ? "" : "s"
+        }`}
+      >
         <div className="conf-card">
-          <SettingRow
-            label="Default mode"
-            desc="local · cloud — /local //cloud override per message"
-          >
-            <Seg<string>
-              label="Default mode"
-              current={inf?.default_mode ?? "local"}
-              options={[
-                { val: "local", label: "Local" },
-                { val: "cloud", label: "Cloud" },
-              ]}
-              onPick={(v) => setInf("default_mode", v)}
+          <WarnRow warnings={providerWarnings} />
+          {Object.entries(draft?.providers ?? {}).map(([name, doc]) => (
+            <ProviderCard
+              key={name}
+              name={name}
+              doc={doc}
+              open={openProvider === name}
+              onToggle={() => setOpenProvider(openProvider === name ? null : name)}
+              referencedBy={referenceReport.byProvider[name] ?? []}
+              existingNames={Object.keys(draft?.providers ?? {}).filter((n) => n !== name)}
+              onChange={(d) => setProvider(name, d)}
+              onRename={(next) => renameProvider(name, next)}
+              onRemove={() => removeProvider(name)}
+              onValidity={setValidity}
             />
-          </SettingRow>
+          ))}
+          <div className={"mwrap add" + (adding ? " open" : "")}>
+            <div
+              className="confrow"
+              {...disclosureToggle(adding, () => {
+                setAdding(!adding);
+                setOpenProvider(null);
+              })}
+            >
+              <div className="k">
+                <div className="label">add provider</div>
+                <div className="desc">a new connection + model catalog</div>
+              </div>
+              <span className="chev" aria-hidden>
+                ›
+              </span>
+            </div>
+            <div className="mconf">
+              {adding && (
+                <>
+                  <div className="mform">
+                    <label>Name</label>
+                    <input
+                      aria-label="New provider name"
+                      value={newProvName}
+                      placeholder="llamacpp"
+                      onChange={(e) => setNewProvName(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && addProviderCard()}
+                    />
+                  </div>
+                  <div className="mfoot">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdding(false);
+                        setNewProvName("");
+                      }}
+                    >
+                      cancel
+                    </button>
+                    <button type="button" className="save" onClick={addProviderCard}>
+                      create
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+        {saveBar}
+      </ConfGroup>
+
+      <ConfGroup id="inference" num="02" title="Inference" right="chat backend">
+        <div className="conf-card">
+          <div className="confrow">
+            <div className="k">
+              <div className="label">Default</div>
+              <div className="desc">
+                primary provider · model — /&lt;provider&gt; overrides per message
+              </div>
+            </div>
+            <ProviderModelPicker
+              label="Default"
+              value={{ provider: inf?.provider ?? null, model: inf?.model ?? null }}
+              onChange={setPrimary}
+              catalog={draftCatalog}
+              allowRawId
+            />
+          </div>
           <SettingRow
             label="Failover"
-            desc="on failure, fall through local↔cloud (+ any configured fallbacks)"
+            desc="on failure, fall through the primary → fallbacks chain"
           >
             <Switch
               on={inf?.failover ?? true}
@@ -586,139 +1260,41 @@ export function ConfTab({ active }: Props) {
               onToggle={() => setInf("failover", !(inf?.failover ?? true))}
             />
           </SettingRow>
-          <Field
-            label="Local endpoint"
-            desc="llama.cpp · /v1 base url"
-            value={inf?.local.base_url ?? ""}
-            onChange={(v) => setEndpoint("local", "base_url", v)}
-            placeholder="http://host:port/v1"
-          />
-          <Field
-            label="Local model"
-            desc="model id the backend loads"
-            value={inf?.local.model ?? ""}
-            onChange={(v) => setEndpoint("local", "model", v)}
-          />
-          <Field
-            label="Local key"
-            desc="optional — most local servers ignore it"
-            type="password"
-            value={inf?.local.api_key ?? ""}
-            onChange={(v) => setEndpoint("local", "api_key", v)}
-          />
-          <Field
-            label="Local context window"
-            desc="tokens — blank = auto: probed from the server"
-            value={inf?.local.context_window == null ? "" : String(inf.local.context_window)}
-            onChange={(v) => setEndpoint("local", "context_window", v === "" ? null : v)}
-            placeholder="auto"
-          />
-          <Field
-            label="Cloud endpoint"
-            desc="openai-compatible base url"
-            value={inf?.cloud.base_url ?? ""}
-            onChange={(v) => setEndpoint("cloud", "base_url", v)}
-            placeholder="https://openrouter.ai/api/v1"
-          />
-          <Field
-            label="Cloud model"
-            desc="cloud model id"
-            value={inf?.cloud.model ?? ""}
-            onChange={(v) => setEndpoint("cloud", "model", v)}
-          />
-          <Field
-            label="Cloud key"
-            desc="bearer api key (stored masked)"
-            type="password"
-            value={inf?.cloud.api_key ?? ""}
-            onChange={(v) => setEndpoint("cloud", "api_key", v)}
-          />
-          <Field
-            label="Cloud context window"
-            desc="tokens — blank = auto: token-threshold fallback"
-            value={inf?.cloud.context_window == null ? "" : String(inf.cloud.context_window)}
-            onChange={(v) => setEndpoint("cloud", "context_window", v === "" ? null : v)}
-            placeholder="auto"
-          />
-          {/* D18 — fallback endpoints as collapsible rows, tried in order after local↔cloud (failover
-              on). Reuses the .mwrap/.mconf machine-row dropdown pattern so each row's fields are clearly
-              grouped. */}
           <div className="fallback-section">
             <span className="label">Fallbacks</span>
-            <span className="desc">tried in order after local↔cloud</span>
+            <span className="desc">tried in order after the default</span>
           </div>
           {(inf?.fallbacks ?? []).map((fb, i) => (
-            <div className={"mwrap" + (openFallback === i ? " open" : "")} key={i}>
-              <div
-                className="confrow"
-                {...disclosureToggle(openFallback === i, () =>
-                  setOpenFallback(openFallback === i ? null : i),
-                )}
+            <div className="confrow fallback-row" key={i}>
+              <div className="k">
+                <div className="label">#{i + 1}</div>
+              </div>
+              <ProviderModelPicker
+                label={`Fallback ${i + 1}`}
+                value={{ provider: fb.provider || null, model: fb.model }}
+                onChange={(v) => setFallbackRef(i, v)}
+                catalog={draftCatalog}
+                allowRawId
+              />
+              <MoveButtons
+                index={i}
+                count={inf?.fallbacks.length ?? 0}
+                onMove={moveFallback}
+                label={`fallback ${i + 1}`}
+              />
+              <button
+                type="button"
+                className="row-remove"
+                aria-label={`remove fallback ${i + 1}`}
+                title="remove"
+                onClick={() => removeFallbackRef(i)}
               >
-                <div className="k">
-                  <div className="label">Fallback #{i + 1}</div>
-                  <div className="desc">{fb.base_url || "tap to configure"}</div>
-                </div>
-                <span className="chev" aria-hidden>
-                  ›
-                </span>
-              </div>
-              <div className="mconf">
-                {openFallback === i && (
-                  <>
-                    <div className="mform">
-                      <label>Endpoint</label>
-                      <input
-                        aria-label="Fallback endpoint"
-                        type="text"
-                        value={fb.base_url}
-                        placeholder="https://host/v1"
-                        onChange={(e) => setFallback(i, "base_url", e.target.value)}
-                      />
-                      <label>Model</label>
-                      <input
-                        aria-label="Fallback model"
-                        type="text"
-                        value={fb.model}
-                        placeholder="model id"
-                        onChange={(e) => setFallback(i, "model", e.target.value)}
-                      />
-                      <label>Key</label>
-                      <input
-                        aria-label="Fallback API key"
-                        type="password"
-                        autoComplete="new-password"
-                        value={fb.api_key ?? ""}
-                        placeholder="optional — masked"
-                        onChange={(e) => setFallback(i, "api_key", e.target.value)}
-                      />
-                      <label>Context window</label>
-                      <input
-                        aria-label="Fallback context window"
-                        inputMode="numeric"
-                        value={fb.context_window == null ? "" : String(fb.context_window)}
-                        placeholder="auto"
-                        onChange={(e) =>
-                          setFallback(
-                            i,
-                            "context_window",
-                            e.target.value === "" ? null : e.target.value,
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="mfoot">
-                      <button type="button" className="danger" onClick={() => removeFallback(i)}>
-                        remove
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
+                ✕
+              </button>
             </div>
           ))}
           <div className="fallback-add">
-            <button type="button" className="svc-add" onClick={addFallback}>
+            <button type="button" className="svc-add" onClick={addFallbackRef}>
               + add fallback
             </button>
           </div>
@@ -761,7 +1337,7 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="server" num="02" title="Server" right="tailnet-only">
+      <ConfGroup id="server" num="03" title="Server" right="tailnet-only">
         <div className="conf-card">
           <Field
             label="Bind host"
@@ -799,7 +1375,7 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="searxng" num="03" title="SearXNG" right="web_search">
+      <ConfGroup id="searxng" num="04" title="SearXNG" right="web_search">
         <div className="conf-card">
           <Field
             label="Endpoint"
@@ -826,7 +1402,7 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="embeddings" num="04" title="Embeddings" right="vector memory">
+      <ConfGroup id="embeddings" num="05" title="Embeddings" right="vector memory">
         <div className="conf-card">
           <Field
             label="Endpoint"
@@ -867,7 +1443,7 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="openterminal" num="05" title="Open-terminal" right="remote shell tools">
+      <ConfGroup id="openterminal" num="06" title="Open-terminal" right="remote shell tools">
         <div className="conf-card">
           <Field
             label="Endpoint"
@@ -918,7 +1494,7 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="shell" num="06" title="Shell" right="! escape hatch">
+      <ConfGroup id="shell" num="07" title="Shell" right="! escape hatch">
         <div className="conf-card">
           <SettingRow label="User exec" desc="the !<cmd> composer escape hatch">
             <Switch
@@ -967,7 +1543,7 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="voice-stt" num="07" title="Voice · STT" right="speech-to-text">
+      <ConfGroup id="voice-stt" num="08" title="Voice · STT" right="speech-to-text">
         <div className="conf-card">
           <SettingRow label="Enabled" desc="master switch — disables STT and TTS">
             <Switch
@@ -1066,7 +1642,7 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="voice-tts" num="08" title="Voice · TTS" right="text-to-speech">
+      <ConfGroup id="voice-tts" num="09" title="Voice · TTS" right="text-to-speech">
         <div className="conf-card">
           {/* Auto read-aloud — a device-local UX toggle (the appbar's mirror, via the SAME useAppChrome
               controller; flips local `ui.ttsAuto`, independent of this group's draft/Save). Shown only when
@@ -1164,7 +1740,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="mcp"
-        num="09"
+        num="10"
         title="MCP servers"
         right={`${settings?.mcp_servers?.length ?? 0} server${(settings?.mcp_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
@@ -1177,7 +1753,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="openapi"
-        num="10"
+        num="11"
         title="OpenAPI tool servers"
         right={`${settings?.openapi_servers?.length ?? 0} server${(settings?.openapi_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
@@ -1202,7 +1778,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="agents"
-        num="11"
+        num="12"
         title="Agents"
         right={`${agentCount} agent${agentCount === 1 ? "" : "s"}`}
         defaultCollapsed
@@ -1217,7 +1793,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="skills"
-        num="12"
+        num="13"
         title="Skills"
         right={`${skillNames.length} discovered`}
         defaultCollapsed
@@ -1227,7 +1803,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="memory"
-        num="13"
+        num="14"
         title="Memory"
         right={memoryCfg.enabled ? "on" : "off"}
         defaultCollapsed
@@ -1237,7 +1813,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="computers"
-        num="14"
+        num="15"
         title="Computers"
         right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
       >
@@ -1246,16 +1822,16 @@ export function ConfTab({ active }: Props) {
 
       {/* Hosted Tools group (D35 §F0): when the active layout hosts utils in Conf (3-/2-tab), the Tools
           content renders here as the LAST functional group before Appearance — the group header replaces
-          utils's standalone `.sec`. Numbered 15 (slotting in before the terminal Appearance group, which
-          shifts to 16 while hosted); the standalone UtilsTab is unmounted in this layout, so its
+          utils's standalone `.sec`. Numbered 16 (slotting in before the terminal Appearance group, which
+          shifts to 17 while hosted); the standalone UtilsTab is unmounted in this layout, so its
           "agent-tools" child group has no duplicate DOM id. */}
       {hostsUtils && (
-        <ConfGroup id={HOSTED_UTILS_GROUP_ID} num="15" title="Tools" right="utility tools">
+        <ConfGroup id={HOSTED_UTILS_GROUP_ID} num="16" title="Tools" right="utility tools">
           <UtilsContent />
         </ConfGroup>
       )}
 
-      <ConfGroup id="appearance" num={hostsUtils ? "16" : "15"} title="Appearance">
+      <ConfGroup id="appearance" num={hostsUtils ? "17" : "16"} title="Appearance">
         {/* Every row uses the shared `SettingRow` (label + desc + trailing control) so the group has one
             consistent shape; the Palette axis uses the `Swatches` color-chip radiogroup. */}
         <div className="conf-card">

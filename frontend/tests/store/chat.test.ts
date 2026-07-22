@@ -662,6 +662,37 @@ describe("turn integrity — client (Slice 2)", () => {
     expect(resumeBody.mode).toBe("cloud");
   });
 
+  it("a resume carries an ARBITRARY provider mode string (A11/D48 — ChatMode is any string)", async () => {
+    // Post-A11 the mode is a provider slug end-to-end, not a "local"|"cloud" literal. A non-legacy
+    // string must survive sendMessage's stash → the resume payload (and the loosened snapshot coercion).
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "m1" } },
+      {
+        event: "part.added",
+        data: {
+          messageId: "m1",
+          part: { type: "tool_call", call_id: "c1", tool: "wake_host", args: {}, state: "pending" },
+        },
+      },
+      { event: "tool.permission", data: { callId: "c1", token: "tok-1" } },
+      { event: "done", data: { state: "suspended" } },
+    ]);
+    renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("wake", { mode: "openrouter" });
+    });
+    let resumeBody: Record<string, unknown> = {};
+    globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      resumeBody = JSON.parse(init!.body as string) as Record<string, unknown>;
+      return Promise.resolve(sseResponse([{ event: "done", data: { state: "completed" } }]));
+    });
+    await act(async () => {
+      await resumeCall("c1", "execute");
+    });
+    expect(resumeBody.mode).toBe("openrouter");
+  });
+
   it("a resume of a default (no /mode) turn carries mode: null", async () => {
     mockStream([
       { event: "thread", data: { threadId: "t1" } },

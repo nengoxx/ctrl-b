@@ -16,7 +16,7 @@ function defWith(routing: unknown): AgentDef {
     prompt: "persona",
     prompt_append: "",
     inherit_append: false,
-    model: { mode: null, model: null },
+    model: { provider: null, model: null },
     tools: "*",
     skills: "*",
     privilege: "confirm",

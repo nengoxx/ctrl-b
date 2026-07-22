@@ -1,16 +1,13 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { SettingsDoc } from "../../src/hooks/useSettings";
+// ConfTab · A11/D48 Providers + Inference (Slice 1). The Inference section is now the shared
+// provider→model picker (primary + reorderable fallback rows) over the top-level `providers` map; the
+// Providers group edits that map with rename/reference-guard/draft-epoch. We stub the sub-editors and
+// data hooks, then drive the REAL Providers + Inference groups through their DOM and assert the save
+// payload (replacement map + providers_base + queued renames), the draft epoch, and the reference-guard.
 
-// ConfTab · the D42 Inference context-window rows (scope A): Local/Cloud `context window` Fields +
-// a per-fallback-row `Context window` input, all reusing the Field + `dim`-style coercion (blank →
-// null = auto, string → number at save). We stub the sub-editors (each mounts its own tree) and the
-// data hooks, then drive the REAL Inference group through its DOM + assert the save payload coercion.
-
-const h = vi.hoisted(() => ({ save: vi.fn() }));
-
-const settings: SettingsDoc = {
+const makeSettings = () => ({
   server: {
     host: "127.0.0.1",
     port: 5433,
@@ -18,15 +15,31 @@ const settings: SettingsDoc = {
     feature_cycle_seconds: 30,
     debug: false,
   },
+  providers: {
+    llamacpp: {
+      base_url: "http://h/v1",
+      api_key: null,
+      api_mode: "llamacpp",
+      models: { "minig+": { context_window: 32768 } },
+    },
+    openrouter: {
+      base_url: "https://openrouter.ai/api/v1",
+      api_key: "sk…yz",
+      api_mode: "openrouter",
+      models: {
+        "qwen3.5": { id: "qwen/qwen3.5", context_window: 262144 },
+        "qwen-embed": { id: "qwen/qwen3-embedding", dim: 2560 },
+      },
+    },
+  },
   inference: {
-    default_mode: "local",
+    provider: "llamacpp" as string | null,
+    model: null as string | null,
+    fallbacks: [{ provider: "openrouter", model: "qwen3.5" as string | null }],
+    failover: true,
     request_timeout_s: 120,
     system_prompt: "",
     system_prompt_append: "",
-    failover: true,
-    local: { base_url: "http://h/v1", api_key: null, model: "m", context_window: 8192 },
-    cloud: { base_url: "", api_key: null, model: "", context_window: null },
-    fallbacks: [{ base_url: "http://fb/v1", api_key: null, model: "fm", context_window: null }],
   },
   searxng: { base_url: "", enabled: false, language: null },
   embeddings: { base_url: "", api_key: null, model: "", enabled: false, dim: null },
@@ -70,9 +83,30 @@ const settings: SettingsDoc = {
   },
   mcp_servers: [],
   openapi_servers: [],
-};
+  agent: { defaults: {} },
+});
 
-// Stub the sub-editors (each mounts its own hook tree) + UtilsTab so only the Inference group is live.
+const makeProvidersInfo = () => ({
+  providers: {
+    llamacpp: { api_mode: "llamacpp", models: ["minig+"] },
+    openrouter: { api_mode: "openrouter", models: ["qwen3.5", "qwen-embed"] },
+  },
+  rev: "revA",
+  sections: { inference: { provider: "llamacpp", model: null, fallbacks: [] } },
+  reserved_verbs: [] as string[],
+  verbs: [] as string[],
+  warnings: [] as string[],
+});
+
+const h = vi.hoisted(() => ({
+  save: vi.fn(),
+  settings: null as unknown as ReturnType<typeof makeSettings>,
+  providers: null as unknown as ReturnType<typeof makeProvidersInfo>,
+  settingsRev: "revA", // FR2-1 — the providers base rev bound to the settings snapshot
+  providersUpdatedAt: 0, // FR2-3 — the ["providers"] query's dataUpdatedAt (freshness gate)
+}));
+
+// Stub the sub-editors (each mounts its own hook tree) + UtilsTab so only Providers/Inference are live.
 vi.mock("../../src/components/AgentsEditor", () => ({ AgentsEditor: () => null }));
 vi.mock("../../src/components/MachineEditor", () => ({ MachineEditor: () => null }));
 vi.mock("../../src/components/MemoryEditor", () => ({ MemoryEditor: () => null }));
@@ -80,9 +114,10 @@ vi.mock("../../src/components/SkillsEditor", () => ({ SkillsEditor: () => null }
 vi.mock("../../src/components/ServerListEditor", () => ({ ServerListEditor: () => null }));
 vi.mock("../../src/tabs/UtilsTab", () => ({ UtilsContent: () => null }));
 
-// Data hooks → safe defaults (no react-query provider needed).
 vi.mock("../../src/hooks/useSettings", () => ({
-  useSettings: () => ({ data: settings }),
+  useSettings: () => ({ data: h.settings }),
+  useSettingsProvidersRev: () => h.settingsRev,
+  useProviders: () => ({ data: h.providers, dataUpdatedAt: h.providersUpdatedAt }),
   useSaveSettings: () => ({ mutate: h.save, isPending: false }),
 }));
 vi.mock("../../src/hooks/useFleet", () => ({
@@ -118,69 +153,233 @@ vi.mock("../../src/hooks/useSkills", () => ({ useSkills: () => ({ data: [] }) })
 
 import { ConfTab } from "../../src/tabs/ConfTab";
 
+beforeEach(() => {
+  h.settings = makeSettings();
+  h.providers = makeProvidersInfo();
+  h.settingsRev = "revA";
+  h.providersUpdatedAt = 0;
+  h.save.mockClear();
+});
 afterEach(cleanup);
 
-/** Open the (collapsed-by-default? no — Inference is expanded) group and grab the Save button. */
-function firstSaveButton() {
-  return screen.getAllByRole("button", { name: /Save changes|Saved/ })[0];
-}
+const sel = (label: string) => screen.getByLabelText<HTMLSelectElement>(label);
+const saveButton = () =>
+  screen.getAllByRole<HTMLButtonElement>("button", { name: /Save changes|Saved|Saving/ })[0];
 
-type SavedInf = {
-  inference: {
-    local: { context_window: number | null };
-    cloud: { context_window: number | null };
-    fallbacks: { context_window: number | null }[];
-  };
+type SavedPatch = {
+  providers?: Record<string, unknown>;
+  providers_base?: string;
+  provider_renames?: Record<string, string>;
+  inference: { provider: string | null; model: string | null; fallbacks: unknown[] };
 };
-const value = (label: string) => screen.getByLabelText<HTMLInputElement>(label).value;
+const lastPatch = () => h.save.mock.calls[0][0] as SavedPatch;
+const baseInput = (name: string) => screen.getByLabelText<HTMLInputElement>(name);
 
-describe("ConfTab · Inference context-window rows (D42)", () => {
-  it("renders the Local/Cloud/fallback context-window inputs with the loaded values", () => {
+describe("ConfTab · Inference picker (A11/D48)", () => {
+  it("renders the primary provider picker; the sole-model provider hides the model select", () => {
     render(<ConfTab active />);
-    expect(value("Local context window")).toBe("8192");
-    // null → blank (auto)
-    expect(value("Cloud context window")).toBe("");
-    // the fallback row's field is inside the collapsed row — expand it first
-    fireEvent.click(screen.getByText("Fallback #1"));
-    expect(value("Fallback context window")).toBe("");
+    expect(sel("Default provider").value).toBe("llamacpp");
+    // llamacpp has exactly one model → the model select is auto-hidden.
+    expect(screen.queryByLabelText("Default model")).toBeNull();
+    // the fallback row's provider (openrouter, 2 models) shows a model select.
+    expect(sel("Fallback 1 provider").value).toBe("openrouter");
+    expect(sel("Fallback 1 model").value).toBe("qwen3.5");
   });
 
-  it("coerces at save: blank → null (auto), string → number", () => {
+  it("changing ONLY the primary provider omits the providers map + base (FX11 — clean providers)", () => {
     render(<ConfTab active />);
-    // Cloud: set a numeric window; Local: clear it back to auto.
-    fireEvent.change(screen.getByLabelText("Cloud context window"), { target: { value: "16384" } });
-    fireEvent.change(screen.getByLabelText("Local context window"), { target: { value: "" } });
-    fireEvent.click(screen.getByText("Fallback #1"));
-    fireEvent.change(screen.getByLabelText("Fallback context window"), {
-      target: { value: "4096" },
+    fireEvent.change(sel("Default provider"), { target: { value: "openrouter" } });
+    fireEvent.click(saveButton());
+    expect(h.save).toHaveBeenCalledTimes(1);
+    const p = lastPatch();
+    expect(p.inference.provider).toBe("openrouter");
+    // the providers SUBTREE is untouched → no map + no base ride the save (no needless 409 surface)
+    expect(p.providers).toBeUndefined();
+    expect(p.providers_base).toBeUndefined();
+    expect(p.provider_renames).toBeUndefined();
+  });
+
+  it("a DIRTY providers save sends the SETTINGS-snapshot base, ignoring the skewed providers-query rev (FR2-1)", () => {
+    // The skew exists from the START (before the draft dirties): the settings snapshot the draft seeds
+    // from carries rev A (its X-Providers-Rev header), while the independently-fetched providers query
+    // sits at rev B the whole time. The base must bind to A — proving it is settings-sourced, not query-sourced.
+    h.settingsRev = "revA";
+    h.providers = { ...makeProvidersInfo(), rev: "revB" };
+    render(<ConfTab active />);
+    // dirty the providers subtree: open llamacpp + edit its Base URL.
+    fireEvent.click(screen.getByText("llamacpp", { selector: "div.label" }));
+    fireEvent.change(baseInput("Base URL"), { target: { value: "http://h2/v1" } });
+    fireEvent.click(saveButton());
+    const p = lastPatch();
+    expect(p.providers).toBeDefined(); // subtree dirty → map rides
+    expect(p.providers_base).toBe("revA"); // the settings-snapshot base, NOT the providers-query "revB"
+  });
+});
+
+describe("ConfTab · draft epoch (R18)", () => {
+  it("a background settings change does NOT clobber a dirty draft", () => {
+    const { rerender } = render(<ConfTab active />);
+    // Make the draft dirty via the primary picker.
+    fireEvent.change(sel("Default provider"), { target: { value: "openrouter" } });
+    expect(sel("Default provider").value).toBe("openrouter");
+    // Simulate a background refetch: a NEW settings object with different content.
+    const next = makeSettings();
+    next.inference.request_timeout_s = 999;
+    h.settings = next;
+    rerender(<ConfTab active />);
+    // The unsaved edit survives (epoch guard); the draft was NOT reseeded from the fresh doc.
+    expect(sel("Default provider").value).toBe("openrouter");
+  });
+
+  it("a clean draft DOES adopt a background settings change", () => {
+    const { rerender } = render(<ConfTab active />);
+    expect(sel("Default provider").value).toBe("llamacpp");
+    const next = makeSettings();
+    next.inference.provider = "openrouter";
+    next.inference.model = "qwen3.5";
+    h.settings = next;
+    rerender(<ConfTab active />);
+    expect(sel("Default provider").value).toBe("openrouter"); // clean → reseeded
+  });
+});
+
+describe("ConfTab · reference-guard (B2/R19)", () => {
+  it("removing a provider referenced by inference is blocked (Remove disabled + reason)", () => {
+    render(<ConfTab active />);
+    // openrouter is referenced by inference fallback #1 → its card's Remove is disabled.
+    fireEvent.click(screen.getByText("openrouter", { selector: "div.label" })); // open the card header
+    const removeBtn = screen.getByRole<HTMLButtonElement>("button", { name: "remove provider" });
+    expect(removeBtn.disabled).toBe(true);
+  });
+
+  it("a raw-id (uncataloged) agent default model does NOT block the save (FX12)", () => {
+    // an agent default pointing at an uncataloged raw wire id is legal passthrough (C5) — the guard must
+    // not treat it as a removed catalog model. Dirty the draft (primary pick) so the save is otherwise on.
+    h.settings = makeSettings();
+    h.settings.agent = {
+      defaults: { model: { provider: "openrouter", model: "vendor/raw-model" } },
+    };
+    render(<ConfTab active />);
+    fireEvent.change(sel("Default provider"), { target: { value: "openrouter" } });
+    expect(screen.queryByText(/can’t save/)).toBeNull();
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("removing a referenced CATALOG model still blocks the save (FX12)", () => {
+    render(<ConfTab active />);
+    // openrouter/qwen3.5 is referenced by inference fallback #1. Remove that catalog model from the card.
+    fireEvent.click(screen.getByText("openrouter", { selector: "div.label" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "remove model" })[0]); // qwen3.5 (first row)
+    expect(screen.getAllByText(/can’t save/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/model removed/).length).toBeGreaterThan(0);
+    expect(saveButton().disabled).toBe(true);
+  });
+});
+
+describe("ConfTab · numeric guard (FX13)", () => {
+  it("invalid numeric text blocks the save with a reason (never a silent null)", () => {
+    render(<ConfTab active />);
+    fireEvent.click(screen.getByText("llamacpp", { selector: "div.label" })); // open the card
+    fireEvent.change(baseInput("Max concurrent requests"), { target: { value: "abc" } });
+    expect(screen.getAllByText(/invalid provider fields/).length).toBeGreaterThan(0);
+    expect(saveButton().disabled).toBe(true);
+  });
+});
+
+describe("ConfTab · typed model fields round-trip (FX17)", () => {
+  it("voice/speed/language/format/dim survive the draft round-trip untouched (deferred editors)", () => {
+    h.settings = makeSettings();
+    (h.settings.providers.openrouter.models as Record<string, unknown>)["qwen-embed"] = {
+      id: "qwen/qwen3-embedding",
+      dim: 2560,
+      voice: "bf_isabella",
+      speed: 1.1,
+      language: "en",
+      format: "mp3",
+    };
+    render(<ConfTab active />);
+    // dirty the providers subtree (base_url edit) so the full map rides the save.
+    fireEvent.click(screen.getByText("openrouter", { selector: "div.label" }));
+    fireEvent.change(baseInput("Base URL"), { target: { value: "https://openrouter.ai/api/v2" } });
+    fireEvent.click(saveButton());
+    const providers = lastPatch().providers as Record<
+      string,
+      { models: Record<string, Record<string, unknown>> }
+    >;
+    expect(providers.openrouter.models["qwen-embed"]).toMatchObject({
+      dim: 2560,
+      voice: "bf_isabella",
+      speed: 1.1,
+      language: "en",
+      format: "mp3",
     });
+  });
+});
 
-    fireEvent.click(firstSaveButton());
-    expect(h.save).toHaveBeenCalledTimes(1);
-    const inf = (h.save.mock.calls[0][0] as SavedInf).inference;
-    expect(inf.local.context_window).toBeNull(); // blank → auto
-    expect(inf.cloud.context_window).toBe(16384); // string → number
-    expect(inf.fallbacks[0].context_window).toBe(4096);
+describe("ConfTab · warnings lifecycle (FX16)", () => {
+  it("a PUT warning echoed by the GET is shown once, not duplicated", () => {
+    h.providers = { ...makeProvidersInfo(), rev: "revA", warnings: ["shadow: foo spells bar"] };
+    const { rerender } = render(<ConfTab active />);
+    fireEvent.change(sel("Default provider"), { target: { value: "openrouter" } });
+    fireEvent.click(saveButton());
+    // invoke the save's onSuccess with the SAME warning + the current rev.
+    const onSuccess = (h.save.mock.calls[0][1] as { onSuccess: (r: unknown) => void }).onSuccess;
+    act(() =>
+      onSuccess({
+        settings: h.settings,
+        restart_required: [],
+        warnings: ["shadow: foo spells bar"],
+        providers_rev: "revA",
+      }),
+    );
+    rerender(<ConfTab active />);
+    expect(screen.getAllByText("shadow: foo spells bar", { exact: false })).toHaveLength(1);
   });
 
-  // Codex FIX A: junk / non-finite / ≤0 input must KEEP the prior stored window (the old
-  // `Number("abc") → NaN → null` silently un-configured the endpoint). Only a genuinely blank
-  // input means null (auto).
-  it("junk input keeps the prior stored window (never null/NaN); blank still → null", () => {
-    render(<ConfTab active />);
-    // Local had 8192 saved → a junk keystroke must not blow it away to auto.
-    fireEvent.change(screen.getByLabelText("Local context window"), { target: { value: "abc" } });
-    fireEvent.click(firstSaveButton());
-    expect(h.save).toHaveBeenCalledTimes(1);
-    const inf = (h.save.mock.calls[0][0] as SavedInf).inference;
-    expect(inf.local.context_window).toBe(8192); // junk → prior, not null/NaN
+  it("a retained PUT warning clears when the providers query refetches, even at an UNCHANGED rev (FR2-3)", () => {
+    h.providers = { ...makeProvidersInfo(), rev: "revA", warnings: [] };
+    h.providersUpdatedAt = 1; // an old fetch — < the save stamp, so the PUT warning shows
+    const { rerender } = render(<ConfTab active />);
+    fireEvent.change(sel("Default provider"), { target: { value: "openrouter" } });
+    fireEvent.click(saveButton());
+    const onSuccess = (h.save.mock.calls[0][1] as { onSuccess: (r: unknown) => void }).onSuccess;
+    act(() =>
+      onSuccess({
+        settings: h.settings,
+        restart_required: [],
+        warnings: ["shadow: freshly collided"],
+        providers_rev: "revA", // rev UNCHANGED by this save
+      }),
+    );
+    rerender(<ConfTab active />);
+    expect(
+      screen.getAllByText("shadow: freshly collided", { exact: false }).length,
+    ).toBeGreaterThan(0); // the bridge shows it immediately after save
+    // a background providers refetch delivers FRESH data (dataUpdatedAt passes the save stamp) at the SAME
+    // rev, with the collision now resolved (warnings empty) — the retained PUT warning must drop.
+    h.providers = { ...makeProvidersInfo(), rev: "revA", warnings: [] };
+    h.providersUpdatedAt = Date.now() + 1_000_000;
+    rerender(<ConfTab active />);
+    expect(screen.queryByText("shadow: freshly collided", { exact: false })).toBeNull();
   });
+});
 
-  it("a zero/negative window is not a budget → keeps the prior (never 0)", () => {
+describe("ConfTab · provider rename (C1 cascade)", () => {
+  it("renaming a provider cascades the inference selector and queues the rename on save", () => {
     render(<ConfTab active />);
-    fireEvent.change(screen.getByLabelText("Local context window"), { target: { value: "0" } });
-    fireEvent.click(firstSaveButton());
-    const inf = (h.save.mock.calls[0][0] as SavedInf).inference;
-    expect(inf.local.context_window).toBe(8192); // ≤0 → prior, not 0
+    fireEvent.click(screen.getByText("llamacpp", { selector: "div.label" })); // open the card
+    fireEvent.click(screen.getByRole("button", { name: "rename" }));
+    fireEvent.change(screen.getByLabelText("New provider name"), {
+      target: { value: "local-llm" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "ok" }));
+    // The visible inference primary selector cascaded to the new name.
+    expect(sel("Default provider").value).toBe("local-llm");
+    fireEvent.click(saveButton());
+    const p = lastPatch();
+    expect(p.provider_renames).toEqual({ llamacpp: "local-llm" });
+    expect(Object.keys(p.providers ?? {})).toContain("local-llm");
+    expect(Object.keys(p.providers ?? {})).not.toContain("llamacpp");
+    expect(p.inference.provider).toBe("local-llm");
   });
 });
