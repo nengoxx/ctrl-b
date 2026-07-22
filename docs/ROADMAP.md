@@ -510,9 +510,28 @@ user configure URLs manually + split `href`/`siteMonitor`; this design auto-reso
      + omit-preserves-regression) · `deviceRowVpn.test`. Frontier/Cosmos svc-row hrefs were retargeted through
      `rebaseServiceUrl`/`serviceBase` in the same-day follow-up (the VPN-vantage phone case is exactly the spatial
      themes' daily use), so ALL service links are vantage-aware.
-  3. **(Later improvement — still future) VPN discovery** — a backend `tailscale status --json` peer read (reuses
-     `actions/tailscale.py` CLI plumbing) → a Conf "Discover from Tailscale" button that auto-fills `vpn_host` by
-     **HostName** match (LAN-IP match is unreliable; browser can't enumerate the tailnet). Opt-in, not on every load.
+  3. **VPN discovery** ✅ **SHIPPED 2026-07-22 (D3 slice 3 — D3 IS NOW COMPLETE)** — backend
+     `resolve_vpn_candidates()` beside `resolve_status` in `services/actions/tailscale.py` (same
+     `_bin`/`run_capture`/error ladder; skips `Location` [Mullvad/geo] + foreign-suffix peers — NOT
+     `ExitNodeOption`, an own-fleet host may advertise it; MagicDNS short label preferred, `TailscaleIPs[0]`
+     fallback; lenient parse, never logs the raw blob) → provider-NEUTRAL candidates `{name, address,
+     hostname, online}`; `GET /api/hosts/vpn-discovery` (read-only, 403 when disabled, error-envelope
+     passthrough) joins by casefolded host name — DNS label primary, HostName fallback only when unique
+     (HostName is documented non-unique; the corsair/corsair-1 dedup case) → `{results:[{id, name, current,
+     proposed, online}], unmatched}`. Conf → Computers "Discover from Tailscale" button (`useDiscoverVpn`,
+     on-demand only): fills ONLY empty `vpn_host` via the existing per-host PUT with the **FULL host body**
+     (`hostToPayload` from a FRESH `/api/hosts` fetch — the PUT is NOT a PATCH: `_apply_fields`
+     omit-preserves only the two D47 fields, a partial body would wipe mac/os_type/services [audit HIGH-1]);
+     differing values NEVER overwritten (case-insensitive compare); open editor row skipped (draft seeds at
+     mount); per-host inline result lines + one summary toast; a failed individual PUT downgrades to a
+     per-host `failed` line, never poisons the batch. Provider seam: all Tailscale-shaped knowledge dies in
+     the tailscale module; a future VPN = one new source fn returning the same candidate shape + a UI label.
+     Accepted residual: concurrent edits in the sub-second fetch→PUT window are last-writer-wins (single-user,
+     same as the manual editor). Tests: `test_tailscale_d3s3` (parse/filter ladder) ·
+     `test_hosts_vpn_discovery_d3s3` (join/contract + the full-body preserve pin) ·
+     `machineEditorDiscoverVpn.test` (6 FE cases incl. the full-body assertion). Commits
+     `cced768`+`ebca9eb`+`542005b` (2 Opus waves + the orchestrator review-fix wave; fresh-eyes audit +
+     quick Codex both converged on HIGH-1).
 - **Stopgap now typeable (2026-07-20, `fb59c83`).** The interim workaround — put the MagicDNS *name* in `ip` — was
   reachable only by paste on Android: the Conf host editor's IP field carried `inputMode="decimal"`, which opens the
   number pad. `ComputerCfg.ip` is a plain `str` and a DNS name has always been valid there, so the numeric hint was
