@@ -178,7 +178,7 @@ def test_finalize_emits_control_events() -> None:
                     ChatDelta(text="final answer"),
                 ]
             )
-            events = [ev async for ev in session._finalize(thread, "local", ModelRef())]
+            events = [ev async for ev in session._finalize(thread, "local", None, ModelRef())]
             kinds = [e.event for e in events]
             assert "inference.retry" in kinds and "inference.failover" in kinds
             r = next(e for e in events if e.event == "inference.retry")

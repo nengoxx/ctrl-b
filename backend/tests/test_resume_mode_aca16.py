@@ -132,11 +132,21 @@ def test_resume_without_mode_leaves_drive_default_none() -> None:
         assert recorded["mode"] is None
 
 
-def test_resume_request_coerces_unknown_mode_to_none() -> None:
-    """A typo'd `/whatever` mode falls back to the configured default (None), never routes to cloud —
-    the same lenient coercion `ChatRequest.mode` uses (`_coerce_mode`)."""
+def test_resume_request_coerces_mode_syntax_only() -> None:
+    """A11/D48 C7/R14: `mode` is a PROVIDER NAME, validated SYNTAX-ONLY (the request model can't see
+    settings). Any valid slug — an arbitrary provider name — passes through unchanged and is resolved
+    LATER against the captured registry (an unknown provider → the default chain, logged). Only truly
+    junk (non-slug: uppercase / spaces / empty / non-string) coerces to None here. `/local` + `/cloud`
+    are now ordinary provider-name slugs (the retired-verb literals are gone), so they pass through too —
+    they resolve to a provider named that IF one exists, else the default chain."""
     from app.api.agent import ResumeRequest
 
-    assert ResumeRequest(thread_id="t", call_id="c", mode="bogus").mode is None
-    assert ResumeRequest(thread_id="t", call_id="c", mode="local").mode == "local"
-    assert ResumeRequest(thread_id="t", call_id="c", mode="cloud").mode == "cloud"
+    assert (
+        ResumeRequest(thread_id="t", call_id="c", mode="openrouter").mode == "openrouter"
+    )  # arbitrary provider
+    assert ResumeRequest(thread_id="t", call_id="c", mode="minig+").mode == "minig+"  # slug allows + . - _
+    assert ResumeRequest(thread_id="t", call_id="c", mode="local").mode == "local"  # ordinary slug now
+    assert (
+        ResumeRequest(thread_id="t", call_id="c", mode="Bad Name").mode is None
+    )  # space/upper → junk → None
+    assert ResumeRequest(thread_id="t", call_id="c", mode="").mode is None  # empty → None

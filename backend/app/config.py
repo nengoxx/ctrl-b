@@ -15,13 +15,17 @@ of the parsed YAML before validation.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
+import logging
 import os
 import re
-from datetime import datetime
+from dataclasses import dataclass
+from dataclasses import field as _dc_field
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, TypeGuard
 
 import yaml
 from dotenv import dotenv_values
@@ -49,7 +53,11 @@ __all__ = [
     "prune_unchanged",
     "edit_config_yaml",
     "sync_mapping",
+    "deep_set",
     "host_slug",
+    "is_provider_slug",
+    "is_secret_sentinel_name",
+    "providers_rev",
 ]
 
 # backend/app/config.py -> repo root (where config.yaml / ctrlb.db / skills / agents default)
@@ -78,6 +86,36 @@ _MAP_SECRET_HINTS = ("password", "secret", "token", "key", "auth", "bearer", "cr
 #: config field whose name matches one of these and fails unless it's classified (secret set, or the
 #: test's known-non-secret allowlist) — so a future `client_secret` can't silently go unmasked.
 SECRET_HINTS = ("password", "secret", "token", "key")
+
+#: Provider slug (A11/D48): the `providers` map key + the `/<provider>` composer verb.
+_PROVIDER_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_+.-]{0,31}$")
+#: Exact NAMES a provider/model key must NOT collide with (D48 C1 defense-in-depth): a name that equals a
+#: secret sentinel key would confuse the path-aware secret machinery, so the PUT/schema reject it. Built
+#: from the secret sets + the extra sentinels D48 names. Shared by the schema (here) and, in wave B2, the
+#: PUT-level rejection.
+_SECRET_SENTINEL_NAMES = _SECRET_LEAF_KEYS | _SECRET_MAP_KEYS | frozenset({"password", "token"})
+
+
+def is_secret_sentinel_name(name: object) -> bool:
+    """True if `name` collides with a secret-sentinel key (`api_key`/`ssh_password`/`password`/`token`/
+    `env`/`headers`) — the D48 C1 provider/model name guard. Case-insensitive, whitespace-stripped."""
+    return isinstance(name, str) and name.strip().lower() in _SECRET_SENTINEL_NAMES
+
+
+def is_provider_slug(v: object) -> bool:
+    """True if `v` is a string matching the provider slug (`^[a-z0-9][a-z0-9_+.-]{0,31}$`). The ONE
+    syntax check shared by the schema (provider map keys) and the SYNTAX-ONLY request-mode coercion
+    (`api/agent.py._coerce_mode`, D48 C7/R14 — a mode string is a provider name; request models can't
+    see settings, so resolution against the captured registry coerces an unknown-but-valid slug)."""
+    return isinstance(v, str) and bool(_PROVIDER_SLUG_RE.match(v))
+
+
+def _is_flat_scalar_map(v: object) -> TypeGuard[dict[Any, Any]]:
+    """True if `v` is a dict whose values are ALL scalars (no nested dict/list) — a genuine credential
+    map (`env`/`headers`: str→str). The path-aware discriminator (D48 C1): a provider/model OBJECT that
+    happens to be keyed by a sentinel name (`providers['env']`) carries nested structure (its `models`
+    map), so it fails this and recurses normally instead of being flat-masked as a credential map."""
+    return isinstance(v, dict) and all(not isinstance(mv, (dict, list)) for mv in v.values())
 
 
 def _env_file() -> Path:
@@ -118,150 +156,97 @@ class ServerCfg(BaseModel):
     debug: bool = False  # off by default — debug is an RCE surface (ARCHITECTURE §7)
 
 
-class InferenceEndpointCfg(BaseModel):
-    """One OpenAI-compatible chat backend (DESIGN §7). `api_key` is optional — local llama.cpp
-    needs none (the client sends a placeholder)."""
+class ModelCfg(BaseModel):
+    """One model in a provider's catalog (A11/D48). The map KEY is the clean display name; `id` is the
+    WIRE model id sent to the server (defaults to the key when absent — lossless). The typed per-role
+    fields are declared for every consumer section so adding the next per-model datum is one additive
+    field, never a sibling map: chat (`context_window`/`extra_body`/`max_tokens_field`), TTS
+    (`voice`/`speed`/`format`), STT (`language`), embeddings (`dim`). `extra="allow"` keeps a future
+    per-model field round-tripping. The voice/embeddings consumers arrive in Slice 2; the schema is
+    complete now (D48 Final config shape)."""
+
+    model_config = {"extra": "allow"}
+
+    id: str | None = None  # wire model id; None -> the catalog KEY (auto-hidden in UI when == key)
+    #: Manual context window in tokens (D42) - drives the fraction-of-window compaction trigger.
+    #: Precedence: this explicit value > the probed llama.cpp /props n_ctx > None (=> the absolute
+    #: threshold_tokens fallback). Config wins over the probe (upward overrides allowed).
+    context_window: int | None = Field(default=None, ge=1)
+    #: OpenAI-SDK passthrough merged into THIS model's chat call - MODEL-level, never provider-wide
+    #: (OpenAI 400s on unknown args). Canonical use: the llama.cpp prompt-cache pin {cache_prompt:true}
+    #: + streaming cache telemetry (return_progress / stream_options.include_usage).
+    extra_body: dict[str, Any] = Field(default_factory=dict)
+    #: Per-model override of the output-cap field spelling (D46/C6 ladder: model > provider > derived).
+    #: None inherits the provider's max_tokens_field, which itself derives from api_mode when unset.
+    max_tokens_field: Literal["max_tokens", "max_completion_tokens"] | None = None
+    dim: int | None = Field(default=None, ge=1)  # embeddings vector dimension (Slice 2)
+    voice: str | None = None  # TTS server voice id (Slice 2)
+    speed: float | None = Field(default=None, gt=0)  # TTS playback speed (Slice 2)
+    language: str | None = None  # STT forced language (Slice 2)
+    format: str | None = None  # TTS response container (Slice 2)
+
+
+class ProviderCfg(BaseModel):
+    """One CONNECTION (A11/D48): base_url + server behavior + a name-keyed model catalog. The top-level
+    `providers` map KEY is the provider slug (^[a-z0-9][a-z0-9_+.-]{0,31}$, validated on Settings) -
+    also the /<provider> composer verb. SERVER-capacity + wire-dialect knobs are provider-level
+    (api_mode / max_concurrent_requests / retry_attempts / max_tokens_field); per-model data live on
+    ModelCfg. Adding the next connection knob is one additive field here (the "shape data to extend"
+    rule). api_key optional (omitted = no-auth); masked in the API, blank-keeps on PUT."""
+
+    model_config = {"extra": "allow"}
 
     base_url: str = ""  # e.g. http://192.168.1.137:5001/v1
-    api_key: str | None = None
-    model: str = ""  # model id the backend loads, e.g. "minig+"
-    #: OpenAI-SDK passthrough merged into this endpoint's chat call — PER-ENDPOINT, never blanket
-    #: (OpenAI 400s on unknown args, so a global default would break the cloud chain — ACA-18). Mirrors
-    #: `VoiceServiceCfg.extra_body`. Canonical use: llama.cpp prompt-cache pin `{cache_prompt: true}`
-    #: (protective on older llama-server builds that defaulted it false) + streaming cache telemetry
-    #: (`return_progress: true` for llama.cpp `prompt_progress`; `stream_options: {include_usage: true}`
-    #: for a cloud backend's `usage.prompt_tokens_details.cached_tokens`). Declared explicitly because
-    #: `InferenceEndpointCfg` has no `extra="allow"`.
-    extra_body: dict[str, Any] = Field(default_factory=dict)
-    #: Per-endpoint app-side request gate (D40 rider) for a backend that does NOT queue concurrent
-    #: completions — the owner's llama.cpp serves one model with 1–2 request slots, so overlapping
-    #: turns/subagents/summarizer would error at the server. When set, an `asyncio.Semaphore` at the
-    #: inference-client chokepoint caps in-flight requests to this endpoint, held for the ENTIRE
-    #: streamed response (queuing app-side instead). `None` = unlimited (no gating, zero behavior
-    #: change). Per-endpoint on the unified endpoint object (the `extra_body` precedent — never a
-    #: sibling map, never global).
-    max_concurrent_requests: int | None = Field(default=None, ge=1)
-    #: Manual per-endpoint context window in tokens (D42) — the size of the model's usable context,
-    #: driving the fraction-of-window compaction trigger. Precedence: this explicit value **>** the
-    #: probed llama.cpp `/props` `n_ctx` **>** None (⇒ the `threshold_tokens` absolute fallback). Config
-    #: wins over the probe on purpose: the owner runs the server and knows the real `--ctx-size`, and
-    #: MAY set a value that EXCEEDS the probe (upward overrides allowed — the silent down-clamp is the
-    #: recorded anti-pattern). `None` = auto (probe for a local llama.cpp; fallback trigger for cloud).
-    context_window: int | None = Field(default=None, ge=1)
-    #: Which OpenAI field carries the output cap for THIS endpoint (D42/A10). `max_tokens` is the
-    #: classic name; reasoning models on some cloud APIs deprecate it for `max_completion_tokens`.
-    #: **DERIVED-WITH-OVERRIDE (D46):** `None` (the default) means "derive from `api_mode`" —
-    #: `openai` → `max_completion_tokens`, every other mode → `max_tokens`. An explicit value ALWAYS
-    #: wins; see `resolved_max_tokens_field`. This is the two-layer pattern (one wire-shape enum plus
-    #: retained per-capability escape hatches) rather than a second knob the operator must keep in sync.
-    #: It only ever mattered for OpenAI reasoning models: llama.cpp aliases BOTH spellings
-    #: (`tools/server/server-schema.cpp` `add_alias`), so either name works there.
-    max_tokens_field: Literal["max_tokens", "max_completion_tokens"] | None = None
-    #: Per-endpoint override of the CHAT-STREAM same-endpoint retry budget (D43/A7). `None` inherits the
-    #: global `InferenceCfg.retry_attempts`; `0` disables retries for this endpoint (straight next-hop).
-    #: Only genuinely-transient failures (429/503/Retry-After/llama.cpp busy — `categorize`) consume the
-    #: budget; a dead endpoint (connection-refused/timeout = `other`) never retries. Additive field on
-    #: the unified endpoint object (the global+override resolve pattern — never a sibling map).
-    retry_attempts: int | None = Field(default=None, ge=0)
-    #: Which API wire shape THIS server speaks (D45, renamed + widened by D46 — was `reasoning_dialect`).
-    #: ONE explicit enum consumed at the wire boundary; it drives the reasoning translation (so the single
-    #: `ModelRef.reasoning_effort` ladder means something on every backend) AND the derived
-    #: `max_tokens_field`. Named after the Hermes-Agent convention for exactly this concept (Codex's
-    #: `wire_api` is the runner-up); "kind"/"provider" were rejected — *provider* means IDENTITY, and the
-    #: same model behind llama-server vs behind OpenRouter needs opposite payloads:
-    #:   - `openai`     — `reasoning_effort` verbatim (our `"off"` → its `"none"`); no token budget
-    #:                    exists; output cap under `max_completion_tokens`. DEFAULT — which means an
-    #:                    existing llama.cpp install stays on it and the ladder is a NO-OP there, so
-    #:                    `warn_suspect_api_modes` logs a WARNING at config load for a
-    #:                    default-mode endpoint with a self-hosted `base_url`;
-    #:   - `llamacpp`   — NO `reasoning_effort` (llama-server never reads it — maintainer-confirmed);
-    #:                    the budget rides as `reasoning_budget_tokens` + the older `thinking_budget_tokens`;
-    #:   - `openrouter` — `reasoning.max_tokens` OR `reasoning_effort`, never both (mutually exclusive →
-    #:                    hard 400); our `"off"` maps to its `"none"`, every other rung rides verbatim;
-    #:   - `none`       — the server understands no reasoning control; both are dropped.
-    #: CONFIG, deliberately not a probe, not a model-name sniff and **not auto-detected from `base_url`**
-    #: (D46 field research: of 13 surveyed systems none infers the wire shape from the URL, and Hermes
-    #: shipped URL auto-detection then RETREATED to an explicit field). Only the person who pointed
-    #: `base_url` at a server knows the answer. Per-MODEL limits inside a mode are learned REACTIVELY
-    #: instead — see the D46 reasoning-param-rejection feedback in `adapters/inference.py`.
+    api_key: str | None = None  # optional; omitted = no-auth
+    #: Which API wire shape THIS server speaks (D45/D46). Drives BOTH the reasoning translation and the
+    #: derived max_tokens_field. openai (default) | llamacpp | openrouter | none. NOT auto-detected from
+    #: base_url (D46 field research) - only the operator knows.
     api_mode: Literal["openai", "llamacpp", "openrouter", "none"] = "openai"
+    #: App-side request gate (D40) - SERVER capacity, so PROVIDER-level: the D40 semaphore keys on this
+    #: provider's canonical base_url. None = unlimited. Providers sharing a gate identity must agree on
+    #: the cap (the resolver enforces min-wins / 422).
+    max_concurrent_requests: int | None = Field(default=None, ge=1)
+    #: Per-provider override of the global CHAT-STREAM same-endpoint retry budget (D43). None inherits
+    #: InferenceCfg.retry_attempts; 0 disables retries for this provider.
+    retry_attempts: int | None = Field(default=None, ge=0)
+    #: Provider default for the output-cap field spelling (D46). None -> derived from api_mode.
+    max_tokens_field: Literal["max_tokens", "max_completion_tokens"] | None = None
+    models: dict[str, ModelCfg] = Field(default_factory=dict)  # name-keyed catalog
 
-    @property
-    def resolved_max_tokens_field(self) -> Literal["max_tokens", "max_completion_tokens"]:
-        """The output-cap field name for THIS endpoint (D46): the explicit `max_tokens_field` when set,
-        else derived from `api_mode` — `openai` speaks the current `max_completion_tokens` spelling
-        (`max_tokens` is deprecated there for reasoning models), everything else the classic
-        `max_tokens`. The one home; the wire boundary must never read the raw field."""
-        if self.max_tokens_field is not None:
-            return self.max_tokens_field
-        return "max_completion_tokens" if self.api_mode == "openai" else "max_tokens"
+
+class SectionRef(BaseModel):
+    """A flat provider(+model) pointer used by a consumer section's fallbacks (and, in Slice 2, voice
+    reuses it - A11/D48). `model` is omittable iff the named provider's catalog has exactly one model;
+    a clean name is provider-relative, an uncataloged string passes through as a raw wire id
+    (probe-eligible only on a llamacpp provider)."""
+
+    provider: str
+    model: str | None = None
 
 
 class InferenceCfg(BaseModel):
-    """Chat inference (Phase 4). Two named backends — `local` + `cloud` — selected by
-    `default_mode`; the `/local`//`/cloud` composer prefixes (4c) switch per-message. One
-    `openai` client shape covers both (just a different base_url/key/model)."""
+    """Chat inference (A11/D48). The connection details live in the top-level `providers` map; this
+    section only POINTS at them: a flat `provider` primary (+ optional `model`) and an ordered
+    `fallbacks` list of SectionRef. Keeps the request-shaping knobs that were always section-level -
+    request_timeout_s / system_prompt* / failover / retry_attempts."""
 
-    default_mode: str = "local"  # "local" | "cloud"
-    request_timeout_s: float = 600.0  # thinking models load slowly + stream slowly — be generous
+    provider: str | None = None  # PRIMARY provider name; None -> unconfigured (chat 422s)
+    #: The primary's model - omittable iff the provider's catalog has exactly one model (terse-config
+    #: rule). A clean catalog name, or an uncataloged raw wire id (passthrough).
+    model: str | None = None
+    #: Ordered N-deep failover chain after the primary (D18). Each {provider, model?}.
+    fallbacks: list[SectionRef] = Field(default_factory=list)
+    request_timeout_s: float = 600.0  # thinking models load slowly + stream slowly - be generous
     system_prompt: str = ""  # optional override of the built-in default agent prompt (replace)
     #: Additive guidance appended to whichever base prompt is active (7e-a). Emitted as its own
-    #: `system` message after the base — mirrors how the roster + active skills are injected. The
-    #: per-agent equivalent is `AgentDef.prompt_append`; both apply unless the agent opts out
-    #: (`inherit_append=False`). Leaving this blank keeps today's behaviour.
+    #: `system` message after the base. The per-agent equivalent is AgentDef.prompt_append.
     system_prompt_append: str = ""
-    local: InferenceEndpointCfg = Field(default_factory=InferenceEndpointCfg)
-    cloud: InferenceEndpointCfg = Field(default_factory=InferenceEndpointCfg)
-    #: Failover (D18 follow-up). When on, a request whose selected endpoint fails walks a chain — the
-    #: selected one, then the *other* of local/cloud, then `fallbacks` — until one answers (any error →
-    #: next, "ensure functionality"). Configurable per the no-hardcoding rule; off → today's single-
-    #: endpoint behavior (just the selected one).
+    #: Failover (D18). On -> walk [primary, *fallbacks] until one answers; off -> strictly the primary.
+    #: Chain construction lives in core/provider_registry.py.
     failover: bool = True
-    #: Extra ordered fallback endpoints beyond the automatic local↔cloud pair (D18's N-deep chain). Each
-    #: is any OpenAI-compatible backend; appended after local/cloud in `endpoint_chain`. The model
-    #: override (an agent's `ModelRef.model`) applies only to the *selected* endpoint — fallbacks always
-    #: use their own configured model (a local model id won't exist on a cloud backend).
-    fallbacks: list[InferenceEndpointCfg] = Field(default_factory=list)
-    #: Global CHAT-STREAM same-endpoint retry budget (D43/A7) — the manage-once knob. On a genuinely-
-    #: transient stream-initiation failure (429/503/Retry-After/llama.cpp busy — `categorize`), the chat
-    #: stream retries the SAME endpoint up to this many times (fixed backoff curve) BEFORE hopping, so a
-    #: busy-but-alive server keeps the conversation on the same model instead of silently switching. A
-    #: per-endpoint `InferenceEndpointCfg.retry_attempts` overrides it (None inherits, 0 disables). `0`
-    #: here = today's instant next-hop everywhere. Chat stream only — `complete()`/voice keep next-hop.
+    #: Global CHAT-STREAM same-endpoint retry budget (D43/A7). A per-provider ProviderCfg.retry_attempts
+    #: overrides it. 0 = today's instant next-hop everywhere. Chat stream only.
     retry_attempts: int = Field(default=2, ge=0)
-
-    def endpoint(self, mode: str | None = None) -> InferenceEndpointCfg:
-        return self.local if (mode or self.default_mode) == "local" else self.cloud
-
-    def endpoint_chain(self, mode: str | None = None) -> list[tuple[str, InferenceEndpointCfg]]:
-        """The ordered failover chain for a request: `[selected, the-other-of-local/cloud, *fallbacks]`,
-        with blank (`base_url`-less) endpoints dropped and duplicates (same base_url+model) removed.
-        `failover=False` collapses it to just the selected endpoint. Returns `(name, endpoint)` pairs;
-        the name labels failover logs + the degradation breadcrumb."""
-        m = mode if mode in ("local", "cloud") else self.default_mode
-        selected = "local" if m == "local" else "cloud"
-        named = {"local": self.local, "cloud": self.cloud}
-        # Failover off → strictly the selected endpoint (a blank one errors downstream, exactly the
-        # pre-D18 behavior — don't silently route a disabled-failover request to the other endpoint).
-        if not self.failover:
-            return [(selected, named[selected])]
-        other = "cloud" if selected == "local" else "local"
-        ordered: list[tuple[str, InferenceEndpointCfg]] = [
-            (selected, named[selected]),
-            (other, named[other]),
-            *((f"fallback{i + 1}", ep) for i, ep in enumerate(self.fallbacks)),
-        ]
-        chain: list[tuple[str, InferenceEndpointCfg]] = []
-        seen: set[tuple[str, str]] = set()
-        for name, ep in ordered:
-            if not ep.base_url:
-                continue
-            key = (ep.base_url, ep.model)
-            if key in seen:
-                continue
-            seen.add(key)
-            chain.append((name, ep))
-        return chain
 
 
 class TurnsCfg(BaseModel):
@@ -326,8 +311,8 @@ class AgentCfg(BaseModel):
     #: Inheritance base for folder-discovered agents (D14/D15 #1). An `AgentDef`-shaped mapping
     #: (no `name`/`prompt`) whose fields a specialist's `agent.yaml` overrides via
     #: `deep_merge(defaults, agent_yaml)` at load. Absent → the `AgentDef` code defaults. May set
-    #: `model` (a per-agent `ModelRef` still wins; `inference.default_mode` is the floor when neither
-    #: sets it). The default agent (no `agent.yaml`) is built from this + globals.
+    #: `model` (a per-agent `ModelRef` still wins; the inference section's primary provider is the floor
+    #: when neither sets it). The default agent (no `agent.yaml`) is built from this + globals.
     defaults: dict[str, Any] = Field(default_factory=dict)
     global_subagent_limit: int = 6  # process-wide cap on concurrent subagents (tree-wide)
     #: Security rail: clamp a subagent's privilege so it can never exceed its parent's (§5.5).
@@ -449,8 +434,8 @@ class EmbeddingsCfg(BaseModel):
 class VoiceEndpointCfg(BaseModel):
     """One OpenAI-compatible STT *or* TTS backend (Phase 6). `voice` is a TTS-only server voice id
     (ignored by STT). `api_key` is optional — local servers ignore it (the client sends a
-    placeholder). Same shape spirit as `InferenceEndpointCfg`; the failover chain lives one level up
-    on `VoiceServiceCfg`."""
+    placeholder). The failover chain lives one level up on `VoiceServiceCfg`. (Legacy voice shape,
+    retained until Slice 2 migrates voice/embeddings onto the A11 provider registry.)"""
 
     model_config = {"extra": "allow"}
 
@@ -823,6 +808,11 @@ class Settings(BaseModel):
 
     server: ServerCfg = Field(default_factory=ServerCfg)
     appearance: AppearanceCfg = Field(default_factory=AppearanceCfg)
+    #: Top-level name-keyed CONNECTION map (A11/D48): each `ProviderCfg` carries base_url + server
+    #: behavior + a model catalog. Consumer sections (`inference`, and in Slice 2 voice/embeddings) point
+    #: at these via flat `provider` + `fallbacks`. The map KEY is the provider slug + the `/<provider>`
+    #: composer verb; keys are validated for slug shape + secret-sentinel collision below.
+    providers: dict[str, ProviderCfg] = Field(default_factory=dict)
     inference: InferenceCfg = Field(default_factory=InferenceCfg)
     agent: AgentCfg = Field(default_factory=AgentCfg)
     memory: MemoryCfg = Field(default_factory=MemoryCfg)
@@ -883,6 +873,26 @@ class Settings(BaseModel):
         data["tool_overrides"] = overrides
         data.pop("tool_descriptions", None)
         return data
+
+    @field_validator("providers")
+    @classmethod
+    def _validate_provider_and_model_names(cls, v: dict[str, ProviderCfg]) -> dict[str, ProviderCfg]:
+        """Enforce the A11/D48 provider+model naming rules at the schema boundary: provider keys are
+        slugs (`^[a-z0-9][a-z0-9_+.-]{0,31}$`), model clean names are non-empty (stripped), and NEITHER
+        may collide with a secret-sentinel key (C1 defense-in-depth). A bad name 422s the load/PUT."""
+        for pname, pcfg in v.items():
+            if not _PROVIDER_SLUG_RE.match(pname):
+                raise ValueError(
+                    f"provider name {pname!r} is not a valid slug (^[a-z0-9][a-z0-9_+.-]{{0,31}}$)"
+                )
+            if is_secret_sentinel_name(pname):
+                raise ValueError(f"provider name {pname!r} collides with a secret-sentinel key")
+            for mname in pcfg.models:
+                if not mname.strip():
+                    raise ValueError(f"provider {pname!r} has an empty model name")
+                if is_secret_sentinel_name(mname):
+                    raise ValueError(f"model name {mname!r} collides with a secret-sentinel key")
+        return v
 
     def hosts(self) -> list[Host]:
         """Project the `computers` map into typed domain `Host`s (stable slug id from name)."""
@@ -981,7 +991,23 @@ class Settings(BaseModel):
         `PUT /api/settings` uses; the folder name always wins for `name` (D15 #1/#3)."""
         defaults = dict(self.agent.defaults)
         defaults.pop("title", None)  # title is per-agent identity — never inherited from defaults
-        merged = deep_merge(defaults, dict(agent_yaml or {}))
+        override = dict(agent_yaml or {})
+        merged = deep_merge(defaults, override)
+        # D48 C7 (audit L2): a `ModelRef.model` clean name is PROVIDER-RELATIVE — never carried across
+        # providers. When the override points `model.provider` at a DIFFERENT provider than the default and
+        # does NOT set its own `model.model`, the inherited model would resolve as a raw wire id on the
+        # wrong provider — so drop it (merged model → provider-only). Post-deep_merge pointer-half fixup.
+        o_model, m_model = override.get("model"), merged.get("model")
+        if (
+            isinstance(o_model, dict)
+            and isinstance(m_model, dict)
+            and "provider" in o_model
+            and "model" not in o_model
+        ):
+            def_model = defaults.get("model")
+            def_prov = def_model.get("provider") if isinstance(def_model, dict) else None
+            if o_model.get("provider") != def_prov:
+                merged["model"] = {k: v for k, v in m_model.items() if k != "model"}
         merged["name"] = name
         merged.pop("prompt", None)  # persona is SOUL.md, never agent.yaml
         agent = AgentDef.model_validate(merged)
@@ -1009,7 +1035,7 @@ class Settings(BaseModel):
         if yaml_p.is_file():
             loaded = yaml.safe_load(yaml_p.read_text(encoding="utf-8")) or {}
             if isinstance(loaded, dict):
-                raw = loaded
+                raw = _fold_agent_yaml_modes(loaded)
         return self._agent_from(name, folder, raw)
 
     def load_agent(self, name: str) -> AgentDef | None:
@@ -1068,8 +1094,237 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
     return raw
 
 
+_MIGRATION_LOG = logging.getLogger("ctrlb.config.migration")
+
+#: Module-level channels for the quarantined A11 legacy fold. NOT persisted into Settings.
+#: The chat slot_map ("local"/"cloud" -> created provider name) from the most recent `_migrate_legacy`,
+#: read by the raw-YAML agent.yaml `mode:`->`provider:` fold (R11 — a module-level stash inside the
+#: quarantined fold; validation context is unusable because `_load_agent_folder` runs per-call, live,
+#: decoupled from the one config-load that computed the map).
+_SLOT_MAP: dict[str, str] = {}
+
+
+@dataclass(frozen=True)
+class PendingMigration:
+    """The write-back channel for a completed in-memory legacy->new inference fold (A11/D48 C3/step 4).
+    Set on the module-level `_PENDING_MIGRATION` by `load_settings` and consumed by the FIRST successful
+    write through the ONE YAML chokepoint (`edit_config_yaml`), so it fires for EVERY writer — the
+    settings PUT AND the host/integration CRUD that bypass `apply_settings_patch` (D48 Migration step 4:
+    "the channel lives at the chokepoint so ALL writers trigger it"). NEVER persisted into Settings.
+    `writeback` = the materialized new-shape subtrees to sync onto the on-disk doc; `delete_list` = the
+    dotted consumed-legacy keys to remove. Both fire together with the caller's mutation under ONE atomic
+    `edit_config_yaml` + a 0600 pre-write backup, guarded by legacy-keys-present (a non-empty file) so a
+    409/422-rejected request — which returns before reaching the chokepoint — triggers neither."""
+
+    writeback: dict[str, Any] = _dc_field(default_factory=dict)
+    delete_list: tuple[str, ...] = ()
+
+
+#: The pending legacy->new migration from the most recent `load_settings`, re-derived from disk on every
+#: load (a migrated doc yields None). Consumed + cleared by `edit_config_yaml` on the first successful
+#: write. Process-wide + serialized by `settings_write_lock` (held by every config writer), so the
+#: single-consumer guarantee holds. Dev/prod are separate processes + `CTRLB_HOME` roots — no cross-race.
+_PENDING_MIGRATION: PendingMigration | None = None
+
+
+def walk_model_refs(raw_doc: dict[str, Any], fn: Any) -> None:
+    """Visit every config-held `ModelRef` home in a raw config doc and call `fn(ref_dict)` to mutate it
+    in place (A11/D48 C1 — the closed list): `agent.defaults.model`, `agent.defaults.compaction.summarizer`,
+    the GLOBAL `agent.compaction.summarizer`, `agent.defaults.routing.lead`. ONE shared helper used by the
+    migration mode->provider rewrite now and by the rename cascade in wave B2. Skips absent/non-dict homes.
+    (Per-agent overrides live in `agents/*/agent.yaml` — separate files, folded at their own load.)"""
+    agent = raw_doc.get("agent")
+    if not isinstance(agent, dict):
+        return
+    homes: list[Any] = []
+    defaults = agent.get("defaults")
+    if isinstance(defaults, dict):
+        homes.append(defaults.get("model"))
+        comp = defaults.get("compaction")
+        if isinstance(comp, dict):
+            homes.append(comp.get("summarizer"))
+        routing = defaults.get("routing")
+        if isinstance(routing, dict):
+            homes.append(routing.get("lead"))
+    comp_g = agent.get("compaction")
+    if isinstance(comp_g, dict):
+        homes.append(comp_g.get("summarizer"))
+    for home in homes:
+        if isinstance(home, dict):
+            fn(home)
+
+
+def _canonical_base_url_key(url: str) -> str:
+    """Lowercased scheme+host, default ports elided, trailing slash stripped, path preserved — the
+    migration endpoint-dedup key (matches `core.provider_registry.canonical_base_url`; a tiny pure
+    duplicate here to avoid a config->core import cycle)."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url if "://" in url else f"http://{url}")
+    scheme = (parts.scheme or "http").lower()
+    host = (parts.hostname or "").lower()
+    port = parts.port
+    default = {"http": 80, "https": 443}.get(scheme)
+    netloc = host if (port is None or port == default) else f"{host}:{port}"
+    return f"{scheme}://{netloc}{parts.path.rstrip('/')}"
+
+
+def _provider_name_from_api_mode(api_mode: str, taken: set[str]) -> str:
+    """Derive a provider name from an endpoint's api_mode, suffixing -2,-3... on collision (D48 step 1)."""
+    base = api_mode if api_mode in ("llamacpp", "openrouter", "openai", "none") else "openai"
+    if base not in taken:
+        return base
+    i = 2
+    while f"{base}-{i}" in taken:
+        i += 1
+    return f"{base}-{i}"
+
+
+def _migrate_legacy(raw: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str], list[str]]:
+    """Quarantined raw-YAML fold (A11/D48 §Migration): the legacy local/cloud/fallbacks `inference` shape
+    -> the `providers` map + flat `inference.provider`+`fallbacks`. CHAT SUBTREE ONLY (Slice 1;
+    voice/embeddings stay legacy until Slice 2). Returns (migrated_raw, slot_map, delete_list).
+
+    Deterministic + idempotent: a no-op (returns `raw` unchanged, {}, []) unless `providers` is ABSENT,
+    new-shape `inference.provider` is ABSENT, and legacy endpoint keys are present — so re-running on a
+    migrated doc is byte-identical.
+
+    Mixed-config edge (audit L3): a HAND-AUTHORED config that has `providers:` (or new-shape
+    `inference.provider`) AND leftover legacy keys (`inference.local/cloud/default_mode`) is NOT migrated
+    — the trigger short-circuits on `providers` present. Those stale keys are simply IGNORED at load
+    (`Settings` drops unknown `inference` fields) and left untouched on disk; only a real legacy->new
+    migration (this fold firing) ever schedules their deletion. Acceptable: they are inert, and the owner
+    can remove them by hand.
+
+    Names derive from api_mode (collision -> -2,-3); endpoints dedup by
+    (canonical base_url, api_key) against already-created providers (a merged provider accretes both
+    models); chain order [selected, other, *fallbacks] is preserved exactly; config-held ModelRef homes
+    are rewritten mode->provider via the shared walk helper with the slot_map."""
+    inf = raw.get("inference")
+    if "providers" in raw or not isinstance(inf, dict) or "provider" in inf:
+        return raw, {}, []
+    if not any(k in inf for k in ("local", "cloud", "fallbacks")):
+        return raw, {}, []
+
+    def _ep(v: Any) -> dict[str, Any]:
+        return v if isinstance(v, dict) else {}
+
+    local, cloud = _ep(inf.get("local")), _ep(inf.get("cloud"))
+    fallbacks = [f for f in inf.get("fallbacks") or [] if isinstance(f, dict)]
+    _dm = inf.get("default_mode")
+    default_mode = str(_dm) if _dm in ("local", "cloud") else "local"
+
+    providers: dict[str, dict[str, Any]] = {}
+    by_identity: dict[tuple[str, str | None], str] = {}
+    slot_map: dict[str, str] = {}
+
+    def _add_endpoint(ep: dict[str, Any]) -> tuple[str, str] | None:
+        base_url = ep.get("base_url") or ""
+        if not base_url:
+            return None
+        api_key = ep.get("api_key")
+        identity = (_canonical_base_url_key(base_url), api_key)
+        name = by_identity.get(identity)
+        if name is None:
+            name = _provider_name_from_api_mode(str(ep.get("api_mode") or "openai"), set(providers))
+            prov: dict[str, Any] = {"base_url": base_url}
+            if api_key:
+                prov["api_key"] = api_key
+            if ep.get("api_mode") and ep["api_mode"] != "openai":
+                prov["api_mode"] = ep["api_mode"]
+            for k in ("max_concurrent_requests", "retry_attempts", "max_tokens_field"):
+                if ep.get(k) is not None:
+                    prov[k] = ep[k]
+            prov["models"] = {}
+            providers[name] = prov
+            by_identity[identity] = name
+        model = ep.get("model") or ""
+        if model:
+            entry: dict[str, Any] = {}
+            if ep.get("context_window") is not None:
+                entry["context_window"] = ep["context_window"]
+            if ep.get("extra_body"):
+                entry["extra_body"] = ep["extra_body"]
+            providers[name]["models"].setdefault(model, entry)  # name == id (lossless)
+        return name, model
+
+    named_slots = {"local": local, "cloud": cloud}
+    for slot in ("local", "cloud"):
+        res = _add_endpoint(named_slots[slot])
+        if res is not None:
+            slot_map[slot] = res[0]
+
+    selected = default_mode
+    other = "cloud" if selected == "local" else "local"
+    ordered_eps = [named_slots[selected], named_slots[other], *fallbacks]
+    refs: list[tuple[str, str]] = []
+    for ep in ordered_eps:
+        res = _add_endpoint(ep)
+        if res is not None:
+            refs.append(res)
+
+    new_inf = {k: v for k, v in inf.items() if k not in ("default_mode", "local", "cloud", "fallbacks")}
+    delete_list = ["inference.default_mode", "inference.local", "inference.cloud"]
+
+    if not refs:
+        migrated = {**raw, "inference": new_inf, "providers": {}}
+        return migrated, {}, delete_list
+
+    def _section_ref(pname: str, model: str) -> dict[str, Any]:
+        ref: dict[str, Any] = {"provider": pname}
+        if len(providers[pname]["models"]) != 1 and model:
+            ref["model"] = model
+        return ref
+
+    primary_name, primary_model = refs[0]
+    new_inf["provider"] = primary_name
+    if len(providers[primary_name]["models"]) != 1 and primary_model:
+        new_inf["model"] = primary_model
+    new_inf["fallbacks"] = [_section_ref(p, m) for p, m in refs[1:]]
+
+    migrated = {**raw, "inference": new_inf, "providers": providers}
+
+    def _rewrite(ref: dict[str, Any]) -> None:
+        if "mode" not in ref:
+            return
+        mode_val = ref.pop("mode")
+        if isinstance(mode_val, str):
+            ref["provider"] = slot_map.get(mode_val, mode_val)  # None mode -> provider absent (inherit)
+
+    walk_model_refs(migrated, _rewrite)
+    return migrated, slot_map, delete_list
+
+
+def _fold_agent_yaml_modes(raw: dict[str, Any]) -> dict[str, Any]:
+    """Raw-YAML `mode:`->`provider:` fold for a loaded `agent.yaml` (A11/D48 NO-LEGACY-SEAMS). Rewrites
+    the agent's ModelRef homes (`model`, `compaction.summarizer`, `routing.lead`) in place, mapping a
+    legacy `local`/`cloud` value through the module-level `_SLOT_MAP` from the last config-load migration;
+    any other string is kept (a possibly-dangling provider name -> graceful default-chain at resolve),
+    absent stays absent. No write-back (C1: no cross-file transactions; the agents editor writes the new
+    shape on its next save)."""
+
+    def rewrite(ref: Any) -> None:
+        if isinstance(ref, dict) and "mode" in ref:
+            mode_val = ref.pop("mode")
+            if isinstance(mode_val, str):
+                ref["provider"] = _SLOT_MAP.get(mode_val, mode_val)
+
+    rewrite(raw.get("model"))
+    comp = raw.get("compaction")
+    if isinstance(comp, dict):
+        rewrite(comp.get("summarizer"))
+    routing = raw.get("routing")
+    if isinstance(routing, dict):
+        rewrite(routing.get("lead"))
+    return raw
+
+
 def load_settings(path: Path | None = None) -> Settings:
-    """Load settings: `.env` → `os.environ`, then YAML, then env overrides (env wins)."""
+    """Load settings: `.env` → `os.environ`, then YAML, then env overrides (env wins), then the
+    quarantined A11 legacy->new inference fold (`_migrate_legacy`) BEFORE Pydantic validation. When the
+    fold fires, the `_PENDING_MIGRATION` write-back channel is armed for the first successful config write
+    (re-derived from disk on every load, so a migrated file leaves it cleared)."""
+    global _SLOT_MAP, _PENDING_MIGRATION
     load_dotenv()
     p = path or config_path()
     raw: Any = yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else {}
@@ -1077,7 +1332,27 @@ def load_settings(path: Path | None = None) -> Settings:
     if not isinstance(raw, dict):
         raise ValueError(f"{p} must contain a YAML mapping at the top level")
     raw = _apply_env_overrides(raw)
-    return Settings.model_validate(raw)
+    migrated, slot_map, delete_list = _migrate_legacy(raw)
+    if migrated is not raw:  # a fold fired
+        _SLOT_MAP = slot_map
+        writeback: dict[str, Any] = {
+            "providers": migrated.get("providers", {}),
+            "inference": migrated["inference"],
+        }
+        if isinstance(migrated.get("agent"), dict):
+            writeback["agent"] = migrated["agent"]
+        _PENDING_MIGRATION = PendingMigration(writeback=writeback, delete_list=tuple(delete_list))
+        _MIGRATION_LOG.warning(
+            "A11: migrated legacy inference config in memory -> %d provider(s), %d fallback(s); "
+            "legacy keys %s will be removed + a config.yaml.bak-a11-* backup written on the next save.",
+            len(migrated.get("providers", {})),
+            len(migrated["inference"].get("fallbacks", [])),
+            delete_list,
+        )
+    else:
+        _SLOT_MAP = {}
+        _PENDING_MIGRATION = None
+    return Settings.model_validate(migrated)
 
 
 def save_settings(settings: Settings, path: Path | None = None) -> None:
@@ -1097,6 +1372,17 @@ def save_settings(settings: Settings, path: Path | None = None) -> None:
     tmp = p.with_suffix(p.suffix + ".tmp")
     tmp.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
     os.replace(tmp, p)
+
+
+def providers_rev(settings: Settings) -> str:
+    """The `providers` subtree base revision/fingerprint (A11/D48 C2/R8): sha256 of the canonical JSON
+    of the RAW (unmasked) providers subtree, first 16 hex chars. One helper reused by `GET /api/providers`
+    (served as `rev`), the PUT concurrency guard (a `providers`-carrying PUT whose base != this → 409),
+    and the PUT response (`providers_rev`, the post-write value). Only the 16-char digest ever leaves the
+    process — the unmasked subtree is hashed but never emitted. `sort_keys` makes it order-independent."""
+    sub = {name: p.model_dump(mode="json") for name, p in settings.providers.items()}
+    canonical = json.dumps(sub, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 def deep_merge(base: Any, patch: Any) -> Any:
@@ -1144,17 +1430,18 @@ def _yaml_rt() -> YAML:
     return y
 
 
-def _deep_set(node: Any, patch: dict[str, Any]) -> None:
+def deep_set(node: Any, patch: dict[str, Any]) -> None:
     """Recursively write `patch`'s leaves into the ruamel `node`, descending into existing maps so
     sibling keys + their comments survive. A scalar/list value replaces in place; a dict value
-    descends (creating the intermediate map if the file didn't have it)."""
+    descends (creating the intermediate map if the file didn't have it). Public (A11/B2 handoff #4):
+    `runtime.apply_settings_patch` composes it with `sync_mapping` inside one `edit_config_yaml` mutate."""
     for k, v in patch.items():
         if isinstance(v, dict):
             child = node.get(k)
             if not hasattr(child, "get"):  # missing or not a mapping → create one
                 node[k] = {}
                 child = node[k]
-            _deep_set(child, v)
+            deep_set(child, v)
         else:
             node[k] = v
 
@@ -1175,23 +1462,90 @@ def sync_mapping(node: Any, target: dict[str, Any]) -> None:
         del node[k]
 
 
+def _delete_dotted(doc: Any, dotted: str) -> None:
+    """Delete a dotted key path from a ruamel doc if present (A11/D48 write-back). Missing intermediates
+    or a missing leaf are a no-op — idempotent, so a second write after the legacy keys are gone is clean."""
+    parts = dotted.split(".")
+    node: Any = doc
+    for part in parts[:-1]:
+        if not hasattr(node, "get"):
+            return
+        node = node.get(part)
+    if hasattr(node, "get") and parts[-1] in node:
+        del node[parts[-1]]
+
+
+def _materialize_migration(doc: Any) -> None:
+    """Fold the armed `_PENDING_MIGRATION` new-shape subtrees onto `doc` BEFORE the caller's mutate, so
+    the caller's own edit wins on any overlap (A11/D48 step 4). Dict subtrees `sync_mapping` (add/replace
+    + delete keys absent from the new shape — this is what drops the legacy `inference.local/cloud`);
+    a scalar replaces. The consumed-legacy `delete_list` is applied by the caller after `mutate`."""
+    pending = _PENDING_MIGRATION
+    if pending is None:
+        return
+    for key, sub in pending.writeback.items():
+        if isinstance(sub, dict):
+            node = doc.get(key)
+            if not hasattr(node, "get"):
+                doc[key] = {}
+                node = doc[key]
+            sync_mapping(node, sub)
+        else:
+            doc[key] = sub
+
+
 def edit_config_yaml(mutate: Any, path: Path | None = None) -> None:
     """Edit the config file in place with a comment/format-preserving round-trip: load the ruamel
     doc (or a fresh mapping), run `mutate(doc)` to apply changes (set/sync/delete keys), then write
     atomically while keeping the file's existing line ending. This is the single chokepoint for every
-    YAML write — `apply_patch_to_yaml` + the hosts CRUD endpoints all funnel through it, so a plain
-    `yaml.safe_dump` (which would strip comments, reorder, expand defaults, flip EOL) is never used
-    on the operator's file."""
+    YAML write — `apply_patch_to_yaml` + the hosts/integration CRUD endpoints all funnel through it, so a
+    plain `yaml.safe_dump` (which would strip comments, reorder, expand defaults, flip EOL) is never used
+    on the operator's file.
+
+    A11/D48 step 4 / F5 — the ONE atomic materialization of a legacy migration lives HERE, at the
+    chokepoint, so EVERY writer triggers it (the settings PUT and the host/integration CRUD alike). When
+    `_PENDING_MIGRATION` is armed (a fold fired at load + no config write has landed since): a one-time
+    `config.yaml.bak-a11-*` snapshot of the CURRENT file is written (mode 0600, same dir) BEFORE the
+    replacement; the migrated new-shape subtrees are folded on FIRST (caller's `mutate` still wins on
+    overlap); the consumed-legacy keys are deleted AFTER `mutate`; and the channel is cleared so it fires
+    exactly once. All of it rides this SINGLE atomic write, so a caller that aborts before reaching here
+    (a 409/422) makes neither backup nor delete. No fsync is added (R25/QH9 OS-branch allowlist is closed).
+    Every config writer holds `settings_write_lock`, so the single-consumer guarantee is race-free."""
+    global _PENDING_MIGRATION
+    pending = _PENDING_MIGRATION
     p = path or config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     raw_bytes = p.read_bytes() if p.exists() else b""
+    if pending is not None and raw_bytes:
+        # The Hermes pre-migration backup convention: copy the pre-write file 0600 before replacing it.
+        # Create the backup ATOMICALLY at 0600 (O_CREAT|O_EXCL|O_WRONLY, mode 0600) and write THROUGH the
+        # fd — never write_bytes-then-chmod, which would land the secret-bearing content at the umask
+        # default (0644) first and leave it world-readable if we crash before the chmod (Codex#9 / audit
+        # M1). O_EXCL: if that exact stamped name already exists, suffix `-2`,`-3`… — never overwrite an
+        # existing backup.
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        bak = p.parent / f"{p.name}.bak-a11-{stamp}"
+        n = 2
+        while True:
+            try:
+                fd = os.open(bak, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                break
+            except FileExistsError:
+                bak = p.parent / f"{p.name}.bak-a11-{stamp}-{n}"
+                n += 1
+        with os.fdopen(fd, "wb") as bf:
+            bf.write(raw_bytes)
+        _MIGRATION_LOG.warning("A11: wrote pre-migration config backup %s (0600)", bak)
     # Detect EOL from the raw bytes — `read_text` would universal-translate CRLF→LF and hide it.
     newline = "\r\n" if b"\r\n" in raw_bytes else "\n"
     y = _yaml_rt()
     doc = y.load(raw_bytes.decode("utf-8")) if raw_bytes else None
     if not hasattr(doc, "get"):  # empty/new file → start from a fresh mapping
         doc = {}
+    _materialize_migration(doc)  # new-shape subtrees first (caller's mutate wins on overlap)
     mutate(doc)
+    for dotted in pending.delete_list if pending is not None else ():
+        _delete_dotted(doc, dotted)
     buf = io.StringIO()
     y.dump(doc, buf)
     # Preserve the file's existing line ending (LF default for a new file) and write bytes directly,
@@ -1200,6 +1554,8 @@ def edit_config_yaml(mutate: Any, path: Path | None = None) -> None:
     tmp = p.with_suffix(p.suffix + ".tmp")
     tmp.write_bytes(out.encode("utf-8"))
     os.replace(tmp, p)
+    if pending is not None:
+        _PENDING_MIGRATION = None  # consumed only on a SUCCESSFUL write through the chokepoint
 
 
 def apply_patch_to_yaml(patch: dict[str, Any], path: Path | None = None) -> None:
@@ -1208,7 +1564,7 @@ def apply_patch_to_yaml(patch: dict[str, Any], path: Path | None = None) -> None
     `prune_unchanged`) with secrets unmasked (see `unmask_secrets`)."""
     if not patch:
         return
-    edit_config_yaml(lambda doc: _deep_set(doc, patch), path)
+    edit_config_yaml(lambda doc: deep_set(doc, patch), path)
 
 
 def _mask(value: object) -> str:  # stringifies internally → accepts any value (str/int/stored secret)
@@ -1240,9 +1596,13 @@ def mask_secrets(data: Any) -> Any:
     if isinstance(data, dict):
         out: dict[str, Any] = {}
         for k, v in data.items():
-            if k in _SECRET_LEAF_KEYS and v:
-                out[k] = _mask(v) if isinstance(v, (str, int)) else v
-            elif k in _SECRET_MAP_KEYS and isinstance(v, dict):
+            # Path-aware (D48 C1): the sentinel-leaf branch fires ONLY on a scalar value — a dict/list
+            # under a sentinel-named KEY (a provider literally named `api_key`) recurses so its nested
+            # real secrets still mask. The credential-map branch fires only on a genuine flat str->str
+            # map, so a provider named `env`/`headers` recurses instead of being flat-masked.
+            if k in _SECRET_LEAF_KEYS and isinstance(v, (str, int)) and v:
+                out[k] = _mask(v)
+            elif k in _SECRET_MAP_KEYS and _is_flat_scalar_map(v):
                 out[k] = {
                     mk: (_mask(mv) if _map_key_is_secret(mk) and mv and isinstance(mv, (str, int)) else mv)
                     for mk, mv in v.items()
@@ -1264,7 +1624,7 @@ def secret_values(data: Any) -> list[str]:
         for k, v in data.items():
             if k in _SECRET_LEAF_KEYS and isinstance(v, str) and v:
                 out.append(v)
-            elif k in _SECRET_MAP_KEYS and isinstance(v, dict):
+            elif k in _SECRET_MAP_KEYS and _is_flat_scalar_map(v):
                 out.extend(
                     mv for mk, mv in v.items() if _map_key_is_secret(mk) and isinstance(mv, str) and mv
                 )
@@ -1293,11 +1653,14 @@ def unmask_secrets(incoming: Any, stored: Any) -> Any:
         stored_d = stored if isinstance(stored, dict) else {}
         for k, v in incoming.items():
             sv = stored_d.get(k)
-            if k in _SECRET_LEAF_KEYS:
+            # Path-aware (D48 C1): only a SCALAR under a sentinel-named key is a secret leaf; a
+            # dict/list (a provider named `api_key`) recurses so its nested secrets round-trip. The
+            # map branch fires only on a genuine flat credential map.
+            if k in _SECRET_LEAF_KEYS and not isinstance(v, (dict, list)):
                 out[k] = (
                     sv if _is_unchanged_secret(v, sv) else v
                 )  # keep stored on masked/blank, else take new
-            elif k in _SECRET_MAP_KEYS and isinstance(v, dict):
+            elif k in _SECRET_MAP_KEYS and _is_flat_scalar_map(v):
                 sm = sv if isinstance(sv, dict) else {}
                 out[k] = {
                     mk: (

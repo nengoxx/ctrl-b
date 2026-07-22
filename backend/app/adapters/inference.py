@@ -6,8 +6,8 @@ typed `ChatDelta`s so the agent loop stays agnostic of the SDK: `text` is answer
 is a thinking model's chain-of-thought (llama.cpp exposes it as `reasoning_content`), streamed
 separately so the UI can render it dimmed without polluting the saved answer.
 
-Failover (D18): a request's selected endpoint delegates to an ordered chain (`config.endpoint_chain`)
-on **any** error — the selected endpoint, then the other of local/cloud, then `inference.fallbacks`.
+Failover (D18): a request's selected target delegates to an ordered chain of resolved targets (the A11
+registry's `chain_for(mode)` — the section primary then its ordered `fallbacks`) on **any** error.
 Streaming fails over at **initiation only** (the industry-standard "confirm the provider is alive with
 a first token before committing"): `stream_chat` opens the stream + pulls the first chunk per endpoint;
 once a chunk arrives we're committed (a mid-stream drop is a clean error, never a jarring restart). The
@@ -21,20 +21,18 @@ session boundary turns it into a clean SSE `error` event + an `ErrorPart`, never
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, cast
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 import anyio
 import httpx
 from openai import AsyncOpenAI
 
-from app.config import InferenceCfg, InferenceEndpointCfg
 from app.core.failover import (
     NEXT_HOP,
     RETRY_AFTER,
@@ -45,6 +43,8 @@ from app.core.failover import (
     failover,
     failover_collect,
 )
+from app.core.provider_registry import EndpointGates, Registry
+from app.domain.provider import ResolvedTarget, SectionPolicy
 
 if TYPE_CHECKING:  # SDK param type — only needed to satisfy the typed `.create()` overload
     from openai.types.chat import ChatCompletionMessageParam
@@ -477,12 +477,6 @@ def _retry_delay(attempt: int, retry_after: float | None) -> float:
     return min(max(curve, retry_after or 0.0), _RETRY_DELAY_CAP_S)
 
 
-def _resolve_retry_attempts(cfg: InferenceCfg, ep: InferenceEndpointCfg) -> int:
-    """The per-hop chat-stream retry budget (D43/A7): the endpoint override when set, else the global
-    (`None` inherits, `0` disables) — the compaction global+override resolve pattern, one home."""
-    return ep.retry_attempts if ep.retry_attempts is not None else cfg.retry_attempts
-
-
 #: The reasoning-effort LADDER → per-request token budget, for the dialects that accept a budget (D45).
 #: FIXED module constants, not config — the D43 precedent: a policy curve (like the retry backoff) is
 #: constants, and the per-agent `ModelRef.reasoning_tokens` override IS the configurability escape hatch.
@@ -539,64 +533,6 @@ _OPENROUTER_EFFORT: dict[str, str] = {"off": "none"}
 _EXTRA_BODY_DEEP_MERGE_KEYS = ("chat_template_kwargs", "reasoning")
 
 
-def _looks_self_hosted(base_url: str) -> bool:
-    """Cheap, PURELY LEXICAL "does this base_url point at a server on my own machine/LAN?" — no DNS, no
-    network probe (D45 audit FIX 5: a startup check must never touch the network). Loopback / private
-    range / `.local` / a bare dotless hostname (`emma:8080`) / any non-web port all say self-hosted;
-    `https://api.openai.com/v1` says cloud. Deliberately advisory-only: its single caller emits a
-    WARNING, so a false positive costs one log line and a false negative costs nothing new."""
-    try:
-        parts = urlsplit(base_url if "://" in base_url else f"http://{base_url}")
-        host = (parts.hostname or "").lower()
-        port = parts.port
-    except ValueError:
-        return False
-    if not host:
-        return False
-    if host == "localhost" or host.endswith(".local") or "." not in host.strip("[]"):
-        return True
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        pass
-    else:
-        if ip.is_loopback or ip.is_private:
-            return True
-    return port is not None and port not in (80, 443)
-
-
-def warn_suspect_api_modes(cfg: InferenceCfg) -> None:
-    """Log a WARNING for every configured endpoint that keeps the DEFAULT `api_mode: openai`
-    while its `base_url` looks self-hosted (D45 audit FIX 5).
-
-    Why this exists: D45's default is `openai` for byte-for-byte back-compat, but its whole premise is
-    that llama-server DISCARDS `reasoning_effort`. Every already-deployed `config.yaml` is gitignored
-    and untouched by the release, so the feature lands INERT — and silently — on exactly the install it
-    was built for. This is the feedback. Called from `runtime.set_inference`, i.e. once per config load
-    and once per settings PUT that rebuilds the client, which is the natural "the config just changed"
-    boundary. It is advisory: nothing branches on it, and a cloud endpoint on a custom port simply gets
-    one line telling it no action is needed — and NOTHING ever branches on it (D46: no wire shape is
-    ever inferred from a `base_url`; this heuristic exists only to tell a HUMAN to set the field)."""
-    named: list[tuple[str, InferenceEndpointCfg]] = [
-        ("inference.local", cfg.local),
-        ("inference.cloud", cfg.cloud),
-        *((f"inference.fallbacks[{i}]", ep) for i, ep in enumerate(cfg.fallbacks)),
-    ]
-    for path, ep in named:
-        if not ep.base_url or ep.api_mode != "openai" or not _looks_self_hosted(ep.base_url):
-            continue
-        log.warning(
-            "%s (base_url=%s) uses the default api_mode 'openai', but that base_url looks "
-            "self-hosted. llama-server IGNORES `reasoning_effort`, so every agent's reasoning_effort / "
-            "reasoning_tokens setting is a NO-OP on this endpoint. If it is llama.cpp, set "
-            "`%s.api_mode: llamacpp` in your config.yaml (D45/D46); vLLM/other → 'none' until a "
-            "mode exists; a real OpenAI-compatible cloud API on a custom port → no action needed.",
-            path,
-            ep.base_url,
-            path,
-        )
-
-
 @dataclass(frozen=True)
 class RetryNotice:
     """A wire item `stream_chat` interleaves BEFORE the first `ChatDelta` (D43/A6): the served endpoint
@@ -625,7 +561,7 @@ class FailoverNotice:
 @dataclass
 class StreamReport:
     """Optional out-param for `stream_chat`/`complete` so the session can surface failover degradation
-    (D18): `served` is the endpoint name that answered (e.g. "cloud"); `degraded` is True when a
+    (D18): `served` is the provider name that answered (e.g. "openrouter"); `degraded` is True when a
     fallback had to save us; `failures` carries each failed hop's error. Pass one to learn whether the
     request fell over — the failover primitive also logs it server-side regardless.
 
@@ -637,17 +573,17 @@ class StreamReport:
     cloud one without `stream_options: {include_usage: true}`) — NOT a cache miss. The session logs it
     next to its A8 estimate so prefix cost + hit rate read together.
 
-    `served_endpoint` (D42) is the endpoint OBJECT that actually answered (`chain[served_index][1]`) —
-    distinct from `served` (its name): the session prices iteration 2+'s window-aware compaction
-    trigger against the endpoint that served (its `context_window`/probe + the `prompt_tokens` anchor
-    come from the same serve). `None` until a call completes."""
+    `served_target` (D42/A11) is the `ResolvedTarget` that actually answered (`chain[served_index]`) —
+    distinct from `served` (its provider name): the session prices iteration 2+'s window-aware compaction
+    trigger against the target that served (its `context_window`/probe + the `prompt_tokens` anchor come
+    from the same serve). `None` until a call completes."""
 
     served: str = ""
     degraded: bool = False
     failures: list[str] = field(default_factory=list)
     prompt_tokens: int | None = None
     cached_tokens: int | None = None
-    served_endpoint: InferenceEndpointCfg | None = None
+    served_target: ResolvedTarget | None = None
 
 
 @dataclass
@@ -672,46 +608,22 @@ class ChatDelta:
     tool_calls: list[ToolCallRequest] = field(default_factory=list)
 
 
-#: A resolved chain entry: (name, endpoint, model-to-use). The model is the override for the selected
-#: endpoint, else the endpoint's own — precomputed so failover attempts don't re-derive it.
-_ChainEntry = tuple[str, InferenceEndpointCfg, str]
-
-
-class EndpointGates:
-    """The app-owned registry of per-endpoint request-gate semaphores (D40 rider; D42 Codex FIX 1).
-
-    Keyed by `(base_url, limit)`. Owned once on `app.state.endpoint_gates` and passed into EVERY
-    `InferenceClient` generation by `runtime.set_inference`, so a settings PUT that rebuilds the client
-    does NOT mint a second semaphore for the same endpoint: old-generation permit holders and
-    new-generation acquirers contend on the ONE object, and `max_concurrent_requests` is never split
-    across generations (the cap-doubling defect — limit 1 becoming 2 across a mid-turn reconfigure).
-    A CHANGED `limit` mints a fresh gate under the new key — the old key's semaphore keeps draining its
-    in-flight holders on the OLD cap (accepted drain semantics: a limit change is rare, and the requests
-    already in flight finish under the cap they started on). An `InferenceClient` built WITHOUT a
-    registry (tests / standalone construction) gets a private instance — behaviourally identical to the
-    old per-client dict."""
-
-    def __init__(self) -> None:
-        self._sems: dict[tuple[str, int], asyncio.Semaphore] = {}
-
-    def sem_for(self, base_url: str, limit: int) -> asyncio.Semaphore:
-        """The semaphore for `(base_url, limit)`, built lazily on first use INSIDE the running loop (so
-        the 3.14 `asyncio.Semaphore` binds to the right loop). Same key ⇒ the SAME object across every
-        client generation (the cap is shared); a new limit ⇒ a fresh object."""
-        key = (base_url, limit)
-        sem = self._sems.get(key)
-        if sem is None:
-            sem = asyncio.Semaphore(limit)
-            self._sems[key] = sem
-        return sem
+#: A resolved chain entry (A11): a fully-resolved `ResolvedTarget` — provider name, connection, wire
+#: model id + metadata, all computed at resolution. Failover walks a `tuple[ResolvedTarget, ...]`.
+_ChainEntry = ResolvedTarget
 
 
 class InferenceClient:
-    """Builds + caches one OpenAI client per base_url; streams chat completions as `ChatDelta`s, with
-    a primary→fallback chain (D18) applied at stream initiation."""
+    """Builds + caches one OpenAI client per provider; streams chat completions as `ChatDelta`s, with a
+    primary→fallback chain (D18/A11) applied at stream initiation. Consumes a `Registry` (resolution
+    output — `chain_for(mode, model)` yields `tuple[ResolvedTarget, ...]`) + the frozen chat
+    `SectionPolicy`; NEVER live `Settings` (D48 C10)."""
 
-    def __init__(self, cfg: InferenceCfg, gates: EndpointGates | None = None) -> None:
-        self._cfg = cfg
+    def __init__(self, registry: Registry, gates: EndpointGates | None = None) -> None:
+        self._registry = registry
+        self._policy: SectionPolicy = registry.inference_policy
+        #: SDK clients cached by PROVIDER NAME (D48 §Generation publication) — they die with this client
+        #: generation (a `providers_changed` rebuild replaces the whole client).
         self._clients: dict[str, AsyncOpenAI] = {}
         #: The per-endpoint request-gate registry (D40 rider; D42 Codex FIX 1). The semaphores that cap
         #: `max_concurrent_requests` live in this registry, NOT on the client — so a settings PUT that
@@ -720,12 +632,12 @@ class InferenceClient:
         #: (the cap can't be split across client generations). `None` (tests / standalone construction)
         #: → a private per-client registry, behaviourally identical to the old per-client dict.
         self._gates = gates if gates is not None else EndpointGates()
-        #: Memoized `/props` window probes, keyed by `(base_url, model)` (D42; per MODEL since
-        #: 2026-07-21 — a router-mode llama-server serves different windows per model behind one URL,
-        #: probed via `?model=`). Populated on first `probed_context_window` per key — including FAILED
-        #: probes (memoized as `_ProbedWindow(None, None)`), so a dead/cloud endpoint is hit at most
-        #: once. No invalidation bookkeeping: `runtime.set_inference` rebuilds the whole
-        #: `InferenceClient` on ANY inference-settings change, so a config edit re-probes for free.
+        #: Memoized `/props` window probes, keyed by `(provider name, wire model id)` (D42/A11/R5; per
+        #: MODEL since 2026-07-21 — a router-mode llama-server serves different windows per model behind
+        #: one URL, probed via `?model=`). Populated on first `probed_context_window` per key — including
+        #: FAILED probes (memoized as `_ProbedWindow(None, None)`), so a dead/cloud target is hit at most
+        #: once. No invalidation bookkeeping: a `providers_changed` rebuild replaces the whole
+        #: `InferenceClient`, so a config edit re-probes for free.
         self._window_memo: dict[tuple[str, str], _ProbedWindow] = {}
         #: Single-flight lock around the `/props` probe (D42 Codex FIX 6): concurrent first-use callers
         #: would otherwise each issue a GET before the memo is written, so probe+memoize runs under this
@@ -740,20 +652,56 @@ class InferenceClient:
         #: log that ONCE per client instance. `set_inference` rebuilds the whole client on any inference
         #: change, so a fresh instance re-evaluates after a config edit (return_progress/include_usage).
         self._anchoring_notice_emitted = False
-        #: D46 capability feedback: `(base_url, model)` pairs whose provider 400'd on our reasoning
-        #: controls. Once recorded, every later request to that pair is built WITHOUT them — so the
-        #: doomed attempt is paid exactly once, not once per turn. Client-instance state on purpose, with
-        #: TWO invalidation paths (final foreign review, F6 — the old comment's "for free on any agent
-        #: edit" was FALSE): an INFERENCE-section edit rebuilds the whole `InferenceClient` via
-        #: `runtime.set_inference`, minting a fresh empty set (the `_window_memo` precedent); an AGENT-FILE
-        #: edit (the folder-per-agent API) never rebuilds the client, so it clears explicitly through
-        #: `clear_reasoning_demotions()` below, driven by the `runtime.clear_reasoning_demotions` hook.
+        #: D46 capability feedback: `(provider name, wire model id)` pairs (A11/R5) whose provider 400'd
+        #: on our reasoning controls. Once recorded, every later request to that pair is built WITHOUT
+        #: them — so the doomed attempt is paid exactly once, not once per turn. Client-instance state, with
+        #: TWO invalidation paths (F6): a `providers_changed` rebuild replaces the whole `InferenceClient`
+        #: (fresh empty set — the `_window_memo` precedent); an AGENT-FILE edit (the folder-per-agent API)
+        #: never rebuilds the client, so it clears explicitly through `clear_reasoning_demotions()`.
         self._reasoning_demoted: set[tuple[str, str]] = set()
+        #: Generation-drain refcount (A11/R6, replaces the old never-close leak). Incremented on
+        #: `stream_chat`/`complete` entry, decremented in their `finally`. A `providers_changed` rebuild
+        #: publishes the NEW client then calls `retire()` on THIS one: its SDK clients close immediately if
+        #: idle, else on the last in-flight decrement — so an in-flight turn finishes on its captured
+        #: generation and clients are never leaked.
+        self._inflight = 0
+        self._retired = False
 
-    def _reasoning_is_demoted(self, ep: InferenceEndpointCfg, model: str) -> bool:
-        """Has `(endpoint, model)` already been demoted (D46)? ⇒ build the payload stripped from the
-        start; the provider already told us these controls are unusable there."""
-        return (ep.base_url, model) in self._reasoning_demoted
+    async def _close_clients(self) -> None:
+        """Close every cached SDK client + the probe http client (A11/R6). Best-effort — a close error
+        never propagates. Idempotent (the caches are cleared)."""
+        for client in list(self._clients.values()):
+            try:
+                await client.close()
+            except Exception:  # noqa: BLE001 — closing a client is best-effort
+                pass
+        self._clients.clear()
+        if self._probe_http is not None:
+            try:
+                await self._probe_http.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+            self._probe_http = None
+
+    async def _release_inflight(self) -> None:
+        """Decrement the in-flight refcount and, if this client was retired while draining, close its SDK
+        clients on the LAST in-flight completion (A11/R6)."""
+        self._inflight -= 1
+        if self._retired and self._inflight <= 0:
+            await self._close_clients()
+
+    async def retire(self) -> None:
+        """Retire this client generation (A11/R6): mark it retired and close its SDK clients immediately
+        if idle, else defer the close to the last in-flight turn's `_release_inflight`. Called by
+        `runtime` AFTER the new generation is published, so in-flight turns drain on the old clients."""
+        self._retired = True
+        if self._inflight <= 0:
+            await self._close_clients()
+
+    def _reasoning_is_demoted(self, ep: ResolvedTarget, model: str) -> bool:
+        """Has `(provider, wire model id)` already been demoted (D46/A11)? ⇒ build the payload stripped
+        from the start; the provider already told us these controls are unusable there."""
+        return (ep.provider, model) in self._reasoning_demoted
 
     def clear_reasoning_demotions(self) -> None:
         """Forget every learned reasoning demotion (D46/F6). The explicit invalidation hook for the
@@ -770,7 +718,7 @@ class InferenceClient:
         exc: BaseException,
         *,
         name: str,
-        ep: InferenceEndpointCfg,
+        ep: ResolvedTarget,
         model: str,
         reasoning_effort: str | None,
         reasoning_tokens: int | None,
@@ -802,7 +750,7 @@ class InferenceClient:
         )
         if not dropped:
             return False  # nothing to strip ⇒ not our 400 to fix
-        key = (ep.base_url, model)
+        key = (ep.provider, model)  # A11/R5: keyed by (provider, wire model id)
         if key in self._reasoning_demoted:
             # A concurrent request already recorded this exact demotion — retry stripped, but don't
             # re-warn (already emitted once, and the demotion set is the log guard).
@@ -830,24 +778,21 @@ class InferenceClient:
             self._probe_http = httpx.AsyncClient(timeout=_PROBE_TIMEOUT_S)
         return self._probe_http
 
-    async def probed_context_window(self, ep: InferenceEndpointCfg) -> int | None:
+    async def probed_context_window(self, ep: ResolvedTarget) -> int | None:
         """The effective context window for `ep` as reported by the llama.cpp `/props` probe, or `None`
         when unavailable (probe failed, non-200, malformed body, no `n_ctx`, or a blank base_url). Lazy +
-        memoized per `(base_url, model)` for the client's lifetime — per MODEL because a router-mode
-        llama-server serves different windows per model behind one URL (`?model=` — see `_props_url`);
-        NEVER raises (the `_capture_cache_telemetry` posture — a probe must not block or fail a turn).
-        Endpoint-agnostic: it probes whatever base_url it is given (only meaningful for a local
-        llama.cpp — cloud has no `/props` — but callers decide who to probe)."""
+        memoized per `(provider name, wire model id)` for the client's lifetime (A11/R5) — per MODEL
+        because a router-mode llama-server serves different windows per model behind one URL (`?model=` —
+        see `_props_url`); NEVER raises (a probe must not block or fail a turn)."""
         base_url = ep.base_url
         if not base_url:
             return None
-        key = (base_url, ep.model or "")
+        key = (ep.provider, ep.model or "")
         cached = self._window_memo.get(key)
         if cached is not None:
             return cached.n_ctx
         # Single-flight (D42 Codex FIX 6): serialize concurrent first-use probes so exactly ONE GET is
         # issued, double-checking the memo inside the lock (a racer that probed while we waited wins).
-        # The check-then-set of the lazy lock has no await between, so it's atomic in asyncio.
         if self._probe_lock is None:
             self._probe_lock = asyncio.Lock()
         async with self._probe_lock:
@@ -857,22 +802,17 @@ class InferenceClient:
                 self._window_memo[key] = cached
         return cached.n_ctx
 
-    def _is_probe_eligible(self, ep: InferenceEndpointCfg) -> bool:
-        """The ONE home for the D42 probe-eligibility rule: only the configured LOCAL llama.cpp
-        endpoint is probed — cloud/OpenAI has no `/props` (verified), and `fallbacks` rely on their
-        manual `context_window`. Matched by `base_url` against the live local endpoint, so it holds for
-        BOTH the selected-endpoint object (iteration 1) and the served-endpoint object off the failover
-        chain (iteration 2+) — they are the same configured endpoints. A blank local base_url makes
-        nothing eligible."""
-        local = self._cfg.local
-        return bool(ep.base_url) and ep.base_url == local.base_url
+    def _is_probe_eligible(self, ep: ResolvedTarget) -> bool:
+        """The ONE home for the D42/A11 probe-eligibility rule: a target is probed iff its provider's
+        `api_mode == "llamacpp"` (D48 C5) — only llama.cpp serves `/props`; cloud/OpenAI has none, and
+        other targets rely on their manual `context_window`. A blank base_url makes nothing eligible."""
+        return bool(ep.base_url) and ep.api_mode == "llamacpp"
 
-    async def effective_window(self, ep: InferenceEndpointCfg) -> int | None:
+    async def effective_window(self, ep: ResolvedTarget) -> int | None:
         """Resolve `ep`'s effective context window per the D42 ladder — **config > probe > None**:
-        the explicit `ep.context_window` wins (the owner runs the server and may set a value that
-        exceeds the probe — the silent down-clamp is the recorded anti-pattern); else the probed
-        `/props` `n_ctx` **only for the probe-eligible local llama.cpp** (`_is_probe_eligible` — one
-        rule, one place); else `None` ⇒ the caller's `threshold_tokens` absolute-fallback trigger.
+        the explicit `ep.context_window` wins (upward overrides allowed — the silent down-clamp is the
+        recorded anti-pattern); else the probed `/props` `n_ctx` **only for a probe-eligible llamacpp
+        target** (`_is_probe_eligible`); else `None` ⇒ the caller's `threshold_tokens` fallback trigger.
         Never raises (the probe swallows all failures to `None`)."""
         if ep.context_window is not None:
             return ep.context_window
@@ -880,12 +820,12 @@ class InferenceClient:
             return await self.probed_context_window(ep)
         return None
 
-    async def effective_window_for(self, mode: str | None = None) -> int | None:
-        """The effective context window for the endpoint SELECTED by `mode` (the D42 ladder via
-        `effective_window`) — the mode-shaped convenience mirroring `model_for(mode)`. Used by the
-        compaction summarizer's overflow guard (Wave 3) to read its OWN `ModelRef.mode` endpoint's
-        window without reaching into `_cfg`. `None` ⇒ no window resolvable (the caller decides)."""
-        return await self.effective_window(self._cfg.endpoint(mode))
+    async def effective_window_for(self, mode: str | None = None, model: str | None = None) -> int | None:
+        """The effective context window for the target SELECTED by a `{provider, model}` pointer (the D42
+        ladder via `effective_window`) — resolves the chain through the CAPTURED registry and prices the
+        FIRST target. Used by the compaction summarizer's overflow guard. `None` ⇒ no target resolvable."""
+        chain = self._registry.chain_for(mode, model)
+        return await self.effective_window(chain[0]) if chain else None
 
     async def _probe_props(self, base_url: str, model: str | None = None) -> _ProbedWindow:
         """GET `{root}/props` (with `?model=` when given — the router-mode lever, see `_props_url`)
@@ -920,50 +860,50 @@ class InferenceClient:
         except Exception:  # noqa: BLE001 — a window probe must NEVER fail or block a turn (D42)
             return _ProbedWindow(None, None)
 
-    def _sem_for(self, ep: InferenceEndpointCfg) -> asyncio.Semaphore | None:
-        """The request-gate semaphore for this endpoint, or `None` when unlimited. Delegates to the
-        shared `EndpointGates` registry (D42 Codex FIX 1), keyed by `(base_url, limit)` so the SAME
-        endpoint shares ONE semaphore across every client generation — a hot-reload that rebuilds the
-        client reuses the same gate (limit unchanged) instead of splitting the cap across generations.
-
-        LOW-1 caveat: the key is `(base_url, limit)`, so two DISTINCT endpoint entries that share a
-        base_url but declare DIFFERENT `max_concurrent_requests` mint independent semaphores — their
-        limits add, over-subscribing that backend. Unreachable in the shipped config (the chain is
-        local + `cloud=None`, one entry per base_url) and keyed this way deliberately: a hot-reload
-        that changes an endpoint's limit must NOT reuse the old-limit semaphore, so `limit` is part of
-        the key on purpose. Coalesce on `base_url` alone only if a future config lets two live entries
-        share one URL with different caps."""
+    def _sem_for(self, ep: ResolvedTarget) -> asyncio.Semaphore | None:
+        """The request-gate semaphore for this target, or `None` when unlimited. Delegates to the shared
+        `EndpointGates` registry, keyed by `(gate_identity, limit)` (D48 C4) so every target sharing a
+        canonical base_url shares ONE semaphore across every client generation — a rebuild reuses the
+        same gate (limit unchanged) instead of splitting the cap. The effective, min-wins cap was resolved
+        onto `ep.max_concurrent_requests`, so aliased URLs of one server now coalesce (the old LOW-1
+        over-subscription is closed)."""
         limit = ep.max_concurrent_requests
         if limit is None:
             return None
-        return self._gates.sem_for(ep.base_url, limit)
+        return self._gates.sem_for(ep.gate_identity, limit)
 
-    def _client(self, ep: InferenceEndpointCfg) -> AsyncOpenAI:
+    def _client(self, ep: ResolvedTarget) -> AsyncOpenAI:
         if not ep.base_url:
             raise InferenceError("no inference base_url configured")
-        if ep.base_url not in self._clients:
-            self._clients[ep.base_url] = AsyncOpenAI(
+        # Cached by PROVIDER NAME (D48 §Generation publication): one connection per provider per client
+        # generation; the whole cache dies with the generation on a providers_changed rebuild.
+        if ep.provider not in self._clients:
+            self._clients[ep.provider] = AsyncOpenAI(
                 base_url=ep.base_url,
-                api_key=ep.api_key or _PLACEHOLDER_KEY,
-                timeout=self._cfg.request_timeout_s,
+                api_key=(ep.api_key.get_secret_value() if ep.api_key else None) or _PLACEHOLDER_KEY,
+                timeout=self._policy.request_timeout_s,
                 max_retries=0,  # a 10-minute thinking call must not be silently retried
             )
-        return self._clients[ep.base_url]
+        return self._clients[ep.provider]
 
-    def model_for(self, mode: str | None = None) -> str:
-        return self._cfg.endpoint(mode).model
+    def model_for(self, mode: str | None = None, model: str | None = None) -> str:
+        """The wire model id of the target SELECTED by a `{provider, model}` pointer, off the CAPTURED
+        registry generation. `""` when nothing resolves."""
+        chain = self._registry.chain_for(mode, model)
+        return chain[0].model if chain else ""
 
-    def endpoint(self, mode: str | None = None) -> InferenceEndpointCfg:
-        """The endpoint SELECTED by `mode` off THIS client's CAPTURED config generation (D42 Codex FIX
-        3) — the mode-shaped accessor mirroring `model_for`/`effective_window_for`. The session prices
-        the compaction trigger through this, so a settings PUT that mutates the shared `Settings` in
-        place mid-turn cannot swing the pricing to a different endpoint than the CAPTURED client is
-        streaming through (the D42 hot-at-NEXT-turn pin — the client is rebuilt only between turns)."""
-        return self._cfg.endpoint(mode)
+    def target_for(self, mode: str | None = None, model: str | None = None) -> ResolvedTarget | None:
+        """The `ResolvedTarget` SELECTED by a `{provider, model}` pointer off THIS client's CAPTURED
+        registry generation (A11 successor to `endpoint(mode)`) — the session prices the compaction
+        trigger through this, so a settings PUT mid-turn cannot swing pricing to a different target than
+        the CAPTURED client is streaming through (the D42 hot-at-NEXT-turn pin). `None` if nothing
+        resolves."""
+        chain = self._registry.chain_for(mode, model)
+        return chain[0] if chain else None
 
     @staticmethod
     def _call_config(
-        ep: InferenceEndpointCfg,
+        ep: ResolvedTarget,
         *,
         max_tokens: int | None,
         reasoning_effort: str | None,
@@ -1146,12 +1086,10 @@ class InferenceClient:
         return out
 
     def _resolve_chain(self, mode: str | None, model_override: str | None) -> list[_ChainEntry]:
-        """The failover chain with the per-entry model resolved: the override applies to the *selected*
-        (index 0) endpoint only; every fallback uses its own configured model."""
-        return [
-            (name, ep, (model_override if idx == 0 else None) or ep.model)
-            for idx, (name, ep) in enumerate(self._cfg.endpoint_chain(mode))
-        ]
+        """The failover chain for this request off the CAPTURED registry (A11) — a `{provider, model}`
+        pointer resolved to `tuple[ResolvedTarget, ...]` via `Registry.chain_for`. Each target already
+        carries its wire model + resolved knobs, so failover attempts never re-derive them."""
+        return list(self._registry.chain_for(mode, model_override))
 
     @staticmethod
     def _chunk_deltas(chunk: Any, pending: dict[int, dict[str, str]]) -> list[ChatDelta]:
@@ -1244,10 +1182,10 @@ class InferenceClient:
     def _record(self, report: StreamReport | None, chain: list[_ChainEntry], result: Any) -> None:
         if report is not None:
             served = chain[result.served_index]
-            report.served = served[0]
-            # D42: stamp the endpoint OBJECT that actually answered — the session prices iteration 2+'s
-            # window trigger against it (window + anchor from the same serve). One-line chokepoint add.
-            report.served_endpoint = served[1]
+            report.served = served.provider
+            # D42/A11: stamp the ResolvedTarget that actually answered — the session prices iteration 2+'s
+            # window trigger against it (window + anchor from the same serve).
+            report.served_target = served
             report.degraded = result.degraded
             report.failures = result.failures
 
@@ -1268,92 +1206,97 @@ class InferenceClient:
         (D42/A10) threaded as first-class kwargs via `_call_config` — so the summarizer finally runs
         output-capped when its `ModelRef.max_tokens` is set. Walks the failover chain (buffered: each
         attempt returns the text). Raises `InferenceError` if every endpoint fails / none configured."""
-        chain = self._resolve_chain(mode, model)
-        if not chain:
-            raise InferenceError("no inference endpoint configured")
-        last_error: InferenceError | None = None
+        self._inflight += 1
+        try:
+            chain = self._resolve_chain(mode, model)
+            if not chain:
+                raise InferenceError("no inference endpoint configured")
+            last_error: InferenceError | None = None
 
-        async def attempt(entry: _ChainEntry) -> str:
-            nonlocal last_error
-            name, ep, use_model = entry
-            if not use_model:
-                raise InferenceError(f"no model configured for '{name}'")
-            # D40 rider: gate this endpoint per-attempt (the endpoint actually being called, inside the
-            # failover chain — never around it). Buffered call: hold the permit for the whole request
-            # and release in `finally`. The summarizer runs here AFTER the parent turn's stream closed
-            # (its permit already released), so it never deadlocks against the parent at limit 1.
-            sem = self._sem_for(ep)
-            if sem is not None:
-                await sem.acquire()
+            async def attempt(entry: _ChainEntry) -> str:
+                nonlocal last_error
+                ep = entry
+                name, use_model = ep.provider, ep.model
+                if not use_model:
+                    raise InferenceError(f"no model configured for '{name}'")
+                # D40 rider: gate this endpoint per-attempt (the endpoint actually being called, inside the
+                # failover chain — never around it). Buffered call: hold the permit for the whole request
+                # and release in `finally`. The summarizer runs here AFTER the parent turn's stream closed
+                # (its permit already released), so it never deadlocks against the parent at limit 1.
+                sem = self._sem_for(ep)
+                if sem is not None:
+                    await sem.acquire()
 
-            async def _once(strip: bool) -> str:
-                # We carry messages as our own `list[dict]` (OpenAI wire shape, built across the
-                # loop); cast to the SDK's param type at this boundary rather than retyping the whole
-                # loop. `_call_config` supplies the per-endpoint modeled params (max_tokens field
-                # name, reasoning_effort) + the merged `extra_body` (ACA-18 cache pin + the "off"
-                # chat_template_kwargs), so the pin/config never leaks across the failover chain.
-                resp = await self._client(ep).chat.completions.create(
-                    model=use_model,
-                    messages=cast("list[ChatCompletionMessageParam]", messages),
-                    stream=False,
-                    **self._call_config(
-                        ep,
-                        max_tokens=max_tokens,
-                        reasoning_effort=reasoning_effort,
-                        reasoning_tokens=reasoning_tokens,
-                        strip_reasoning=strip,
-                    ),
-                )
-                if not resp.choices:
-                    raise InferenceError("inference returned no choices")
-                return resp.choices[0].message.content or ""
-
-            try:
-                try:
-                    # D46: exactly ONE stripped re-attempt, INSIDE this hop — see `stream_chat.attempt`
-                    # for the full rationale (no failover hop, no transient-retry attempt, same permit).
-                    stripped = self._reasoning_is_demoted(ep, use_model)
-                    try:
-                        return await _once(stripped)
-                    except BaseException as exc:
-                        if stripped or not self._note_reasoning_demotion(
-                            exc,
-                            name=name,
-                            ep=ep,
-                            model=use_model,
+                async def _once(strip: bool) -> str:
+                    # We carry messages as our own `list[dict]` (OpenAI wire shape, built across the
+                    # loop); cast to the SDK's param type at this boundary rather than retyping the whole
+                    # loop. `_call_config` supplies the per-endpoint modeled params (max_tokens field
+                    # name, reasoning_effort) + the merged `extra_body` (ACA-18 cache pin + the "off"
+                    # chat_template_kwargs), so the pin/config never leaks across the failover chain.
+                    resp = await self._client(ep).chat.completions.create(
+                        model=use_model,
+                        messages=cast("list[ChatCompletionMessageParam]", messages),
+                        stream=False,
+                        **self._call_config(
+                            ep,
+                            max_tokens=max_tokens,
                             reasoning_effort=reasoning_effort,
                             reasoning_tokens=reasoning_tokens,
-                        ):
-                            raise
-                    return await _once(True)
-                except BaseException as exc:
-                    # D42: capture the OpenAI-SDK code/status pre-flattening (see `_as_inference_error`).
-                    converted = _as_inference_error(exc)
-                    if converted is not None:
-                        last_error = converted
-                        raise converted from exc
-                    raise
-            finally:
-                if sem is not None:
-                    sem.release()
+                            strip_reasoning=strip,
+                        ),
+                    )
+                    if not resp.choices:
+                        raise InferenceError("inference returned no choices")
+                    return resp.choices[0].message.content or ""
 
-        try:
-            # Buffered path: no retry policy (D43 — the retry tier is CHAT-STREAM only; the summarizer
-            # is latency-bound + has its own fallback semantics). `failover_collect` drains the generator
-            # and returns the result, reducing byte-for-byte to today's straight next-hop walk.
-            result = await failover_collect(chain, attempt, label=lambda e: e[0])
-        except FailoverError as exc:
-            raise InferenceError(
-                str(exc),
-                code=last_error.code if last_error is not None else None,
-                status=last_error.status if last_error is not None else None,
-                # D43/A4: how many endpoints the chain walked-and-failed — the routing machine's
-                # single-endpoint-vs-total-outage discriminator (one failed hop = countable worker
-                # failure; >1 = infra outage, excluded). Post-flattening this is the only survivor.
-                endpoints_tried=len(exc.failures),
-            ) from exc
-        self._record(report, chain, result)
-        return result.value
+                try:
+                    try:
+                        # D46: exactly ONE stripped re-attempt, INSIDE this hop — see `stream_chat.attempt`
+                        # for the full rationale (no failover hop, no transient-retry attempt, same permit).
+                        stripped = self._reasoning_is_demoted(ep, use_model)
+                        try:
+                            return await _once(stripped)
+                        except BaseException as exc:
+                            if stripped or not self._note_reasoning_demotion(
+                                exc,
+                                name=name,
+                                ep=ep,
+                                model=use_model,
+                                reasoning_effort=reasoning_effort,
+                                reasoning_tokens=reasoning_tokens,
+                            ):
+                                raise
+                        return await _once(True)
+                    except BaseException as exc:
+                        # D42: capture the OpenAI-SDK code/status pre-flattening (see `_as_inference_error`).
+                        converted = _as_inference_error(exc)
+                        if converted is not None:
+                            last_error = converted
+                            raise converted from exc
+                        raise
+                finally:
+                    if sem is not None:
+                        sem.release()
+
+            try:
+                # Buffered path: no retry policy (D43 — the retry tier is CHAT-STREAM only; the summarizer
+                # is latency-bound + has its own fallback semantics). `failover_collect` drains the generator
+                # and returns the result, reducing byte-for-byte to today's straight next-hop walk.
+                result = await failover_collect(chain, attempt, label=lambda e: e.provider)
+            except FailoverError as exc:
+                raise InferenceError(
+                    str(exc),
+                    code=last_error.code if last_error is not None else None,
+                    status=last_error.status if last_error is not None else None,
+                    # D43/A4: how many endpoints the chain walked-and-failed — the routing machine's
+                    # single-endpoint-vs-total-outage discriminator (one failed hop = countable worker
+                    # failure; >1 = infra outage, excluded). Post-flattening this is the only survivor.
+                    endpoints_tried=len(exc.failures),
+                ) from exc
+            self._record(report, chain, result)
+            return result.value
+        finally:
+            await self._release_inflight()
 
     async def stream_chat(
         self,
@@ -1388,201 +1331,206 @@ class InferenceClient:
         failover generator; the D42 first-chunk/permit-release scoping below is unchanged. Raises
         `InferenceError` if every endpoint fails / none configured.
         """
-        chain = self._resolve_chain(mode, model)
-        if not chain:
-            raise InferenceError("no inference endpoint configured")
-        kwargs: dict[str, Any] = {"messages": messages, "stream": True}
-        if tools:
-            kwargs["tools"] = tools
-            kwargs["tool_choice"] = tool_choice or "auto"
-        last_error: InferenceError | None = None
-        #: The hop the retry policy is deciding on (set by `attempt`, read by `_retry_policy` — the
-        #: policy gets `(exc, attempt)` but not the endpoint, so `attempt` stashes it here) + the last
-        #: classifier verdict (set in the policy, read when re-yielding a notice so it carries the tier).
-        last_entry: _ChainEntry | None = None
-        last_category: ErrorCategory = "other"
+        self._inflight += 1
+        try:
+            chain = self._resolve_chain(mode, model)
+            if not chain:
+                raise InferenceError("no inference endpoint configured")
+            kwargs: dict[str, Any] = {"messages": messages, "stream": True}
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = tool_choice or "auto"
+            last_error: InferenceError | None = None
+            #: The hop the retry policy is deciding on (set by `attempt`, read by `_retry_policy` — the
+            #: policy gets `(exc, attempt)` but not the endpoint, so `attempt` stashes it here) + the last
+            #: classifier verdict (set in the policy, read when re-yielding a notice so it carries the tier).
+            last_entry: _ChainEntry | None = None
+            last_category: ErrorCategory = "other"
 
-        def _retry_policy(exc: BaseException, done: int) -> FailAction:
-            """D43/A7 — the CHAT-STREAM retry policy handed to `failover()`: `transient` errors retry the
-            SAME endpoint (`base×2ⁿ`, `Retry-After`-floored, capped) while the hop's `retry_attempts`
-            budget lasts; `fatal_for_endpoint`/`overflow`/`other` → straight next-hop (today's walk)."""
-            nonlocal last_category
-            last_category = categorize(exc)
-            if last_entry is None or last_category != "transient":
-                return NEXT_HOP
-            budget = _resolve_retry_attempts(self._cfg, last_entry[1])
-            if done >= budget:
-                return NEXT_HOP
-            return RETRY_AFTER(_retry_delay(done, getattr(exc, "retry_after", None)), budget)
+            def _retry_policy(exc: BaseException, done: int) -> FailAction:
+                """D43/A7 — the CHAT-STREAM retry policy handed to `failover()`: `transient` errors retry the
+                SAME endpoint (`base×2ⁿ`, `Retry-After`-floored, capped) while the hop's `retry_attempts`
+                budget lasts; `fatal_for_endpoint`/`overflow`/`other` → straight next-hop (today's walk)."""
+                nonlocal last_category
+                last_category = categorize(exc)
+                if last_entry is None or last_category != "transient":
+                    return NEXT_HOP
+                budget = last_entry.retry_attempts or 0
+                if done >= budget:
+                    return NEXT_HOP
+                return RETRY_AFTER(_retry_delay(done, getattr(exc, "retry_after", None)), budget)
 
-        async def attempt(entry: _ChainEntry) -> tuple[Any, Any, asyncio.Semaphore | None]:
-            nonlocal last_error, last_entry
-            last_entry = entry  # for `_retry_policy`'s per-endpoint budget resolution
-            name, ep, use_model = entry
-            if not use_model:
-                raise InferenceError(f"no model configured for '{name}'")
-            # D40 rider: gate this endpoint per-attempt (the endpoint actually called, INSIDE the chain
-            # — never around it). A streamed response holds its slot for the ENTIRE stream lifetime, so
-            # the permit is HANDED to the consumer (returned as the 3rd tuple element) and released in
-            # the outer generator's `finally` when the stream closes — NOT here. A failed attempt
-            # (create error / dead first chunk / cancel during the probe) releases before failing over.
-            sem = self._sem_for(ep)
-            if sem is not None:
-                await sem.acquire()
+            async def attempt(entry: _ChainEntry) -> tuple[Any, Any, asyncio.Semaphore | None]:
+                nonlocal last_error, last_entry
+                last_entry = entry  # for `_retry_policy`'s per-endpoint budget resolution
+                ep = entry
+                name, use_model = ep.provider, ep.model
+                if not use_model:
+                    raise InferenceError(f"no model configured for '{name}'")
+                # D40 rider: gate this endpoint per-attempt (the endpoint actually called, INSIDE the chain
+                # — never around it). A streamed response holds its slot for the ENTIRE stream lifetime, so
+                # the permit is HANDED to the consumer (returned as the 3rd tuple element) and released in
+                # the outer generator's `finally` when the stream closes — NOT here. A failed attempt
+                # (create error / dead first chunk / cancel during the probe) releases before failing over.
+                sem = self._sem_for(ep)
+                if sem is not None:
+                    await sem.acquire()
 
-            async def _open(strip: bool) -> tuple[Any, Any]:
-                # `_call_config` merges this endpoint's modeled params (max_tokens field name,
-                # reasoning_effort) + its `extra_body` PER-ENDPOINT, never into the shared `kwargs` — an
-                # OpenAI backend 400s on unknown args, so the local endpoint's `cache_prompt`/`return_progress`
-                # must not leak onto the cloud hop (ACA-18; same discipline as voice.py's extra_body).
-                call_kwargs = {
-                    **kwargs,
-                    **self._call_config(
-                        ep,
-                        max_tokens=max_tokens,
-                        reasoning_effort=reasoning_effort,
-                        reasoning_tokens=reasoning_tokens,
-                        strip_reasoning=strip,
-                    ),
-                }
-                stream = await self._client(ep).chat.completions.create(model=use_model, **call_kwargs)
-                try:
-                    first = await stream.__anext__()  # confirm the provider is alive + producing tokens
-                except BaseException as exc:
-                    # ANY first-read failure closes the backend stream BEFORE the permit is released
-                    # by the outer handler below — incl. `CancelledError` (a BaseException; the old
-                    # `except Exception` close let a cancel-during-probe leak the live generation) and
-                    # the empty-stream case (Codex HIGH: close-before-release, see the finally below).
-                    await _shielded_close(stream)
-                    if isinstance(exc, StopAsyncIteration):
-                        raise InferenceError("inference returned an empty stream") from exc
-                    raise
-                return first, stream
-
-            try:
-                # D46 — the reasoning-capability re-attempt lives HERE, inside one hop, and that placement
-                # IS the design: `failover()` never sees the rejected attempt, so it is not a failover hop
-                # (`FailoverError.failures`/`endpoints_tried` unchanged, no `FailoverNotice`) and never
-                # reaches `_retry_policy`, so it cannot consume a transient `retry_attempts` budget meant
-                # for a busy backend. The permit is untouched: it was acquired above and is released by the
-                # single handler below (failure) or handed to the consumer (success) — a stripped
-                # re-attempt is just a second `create()` under the SAME permit, exactly like the first.
-                # Bounded to ONE PER HOP by construction: the second call passes `strip=True` and can
-                # never re-enter (`_note_reasoning_demotion` is skipped when `stripped`). Per-hop, not
-                # per-request, is the honest description (audit LOW-1): a chain whose endpoints ALL
-                # reject reasoning pays one extra call per endpoint on the FIRST request, then zero —
-                # each hop must learn its own `(endpoint, model)` capability, and a demotion learned on
-                # the local endpoint says nothing about the cloud one.
-                stripped = self._reasoning_is_demoted(ep, use_model)
-                try:
-                    first, stream = await _open(stripped)
-                except BaseException as exc:
-                    if stripped or not self._note_reasoning_demotion(
-                        exc,
-                        name=name,
-                        ep=ep,
-                        model=use_model,
-                        reasoning_effort=reasoning_effort,
-                        reasoning_tokens=reasoning_tokens,
-                    ):
+                async def _open(strip: bool) -> tuple[Any, Any]:
+                    # `_call_config` merges this endpoint's modeled params (max_tokens field name,
+                    # reasoning_effort) + its `extra_body` PER-ENDPOINT, never into the shared `kwargs` — an
+                    # OpenAI backend 400s on unknown args, so the local endpoint's `cache_prompt`/`return_progress`
+                    # must not leak onto the cloud hop (ACA-18; same discipline as voice.py's extra_body).
+                    call_kwargs = {
+                        **kwargs,
+                        **self._call_config(
+                            ep,
+                            max_tokens=max_tokens,
+                            reasoning_effort=reasoning_effort,
+                            reasoning_tokens=reasoning_tokens,
+                            strip_reasoning=strip,
+                        ),
+                    }
+                    stream = await self._client(ep).chat.completions.create(model=use_model, **call_kwargs)
+                    try:
+                        first = await stream.__anext__()  # confirm the provider is alive + producing tokens
+                    except BaseException as exc:
+                        # ANY first-read failure closes the backend stream BEFORE the permit is released
+                        # by the outer handler below — incl. `CancelledError` (a BaseException; the old
+                        # `except Exception` close let a cancel-during-probe leak the live generation) and
+                        # the empty-stream case (Codex HIGH: close-before-release, see the finally below).
+                        await _shielded_close(stream)
+                        if isinstance(exc, StopAsyncIteration):
+                            raise InferenceError("inference returned an empty stream") from exc
                         raise
-                    first, stream = await _open(True)
-            except BaseException as exc:
-                if sem is not None:
-                    sem.release()  # permit not handed off → release before the next endpoint / raise
-                # D42: capture the OpenAI-SDK code/status pre-flattening (a context-overflow 400 surfaces
-                # here — at `create()`/first-chunk, before any token — so the reactive backstop can see
-                # it once failover collapses the chain). `_as_inference_error` passes a cancellation /
-                # existing InferenceError through unchanged.
-                converted = _as_inference_error(exc)
-                if converted is not None:
-                    last_error = converted
-                    raise converted from exc
-                raise
-            return first, stream, sem
+                    return first, stream
 
-        # Drive the failover GENERATOR (D43/A6): re-yield its control items as typed wire notices
-        # BEFORE the first ChatDelta, capture the winning `FailoverResult` (the generator's last item).
-        # The retry backoff/sleep lives INSIDE the generator (permit-free — see failover.py); this loop
-        # only forwards the narration. `_retry_policy` drives the transient-retry tier.
-        result: FailoverResult[tuple[Any, Any, asyncio.Semaphore | None]] | None = None
-        try:
-            async for item in failover(chain, attempt, label=lambda e: e[0], policy=_retry_policy):
-                if isinstance(item, FailoverResult):
-                    result = item  # the terminal item — the generator returns right after
-                elif isinstance(item, HopRetry):
-                    yield RetryNotice(
-                        endpoint=chain[item.index][0],
-                        attempt=item.attempt,
-                        max_attempts=item.max_attempts,
-                        delay_s=item.delay_s,
-                        category=last_category,
-                    )
-                else:  # HopFailover
-                    yield FailoverNotice(
-                        from_endpoint=chain[item.from_index][0],
-                        to_endpoint=chain[item.to_index][0],
-                        category=last_category,
-                    )
-        except FailoverError as exc:
-            raise InferenceError(
-                str(exc),
-                code=last_error.code if last_error is not None else None,
-                status=last_error.status if last_error is not None else None,
-                # D43/A4: how many endpoints the chain walked-and-failed — the routing machine's
-                # single-endpoint-vs-total-outage discriminator (one failed hop = countable worker
-                # failure; >1 = infra outage, excluded). Post-flattening this is the only survivor.
-                endpoints_tried=len(exc.failures),
-            ) from exc
-        assert result is not None, "failover() drained without a FailoverResult and without raising"
-        self._record(report, chain, result)
+                try:
+                    # D46 — the reasoning-capability re-attempt lives HERE, inside one hop, and that placement
+                    # IS the design: `failover()` never sees the rejected attempt, so it is not a failover hop
+                    # (`FailoverError.failures`/`endpoints_tried` unchanged, no `FailoverNotice`) and never
+                    # reaches `_retry_policy`, so it cannot consume a transient `retry_attempts` budget meant
+                    # for a busy backend. The permit is untouched: it was acquired above and is released by the
+                    # single handler below (failure) or handed to the consumer (success) — a stripped
+                    # re-attempt is just a second `create()` under the SAME permit, exactly like the first.
+                    # Bounded to ONE PER HOP by construction: the second call passes `strip=True` and can
+                    # never re-enter (`_note_reasoning_demotion` is skipped when `stripped`). Per-hop, not
+                    # per-request, is the honest description (audit LOW-1): a chain whose endpoints ALL
+                    # reject reasoning pays one extra call per endpoint on the FIRST request, then zero —
+                    # each hop must learn its own `(endpoint, model)` capability, and a demotion learned on
+                    # the local endpoint says nothing about the cloud one.
+                    stripped = self._reasoning_is_demoted(ep, use_model)
+                    try:
+                        first, stream = await _open(stripped)
+                    except BaseException as exc:
+                        if stripped or not self._note_reasoning_demotion(
+                            exc,
+                            name=name,
+                            ep=ep,
+                            model=use_model,
+                            reasoning_effort=reasoning_effort,
+                            reasoning_tokens=reasoning_tokens,
+                        ):
+                            raise
+                        first, stream = await _open(True)
+                except BaseException as exc:
+                    if sem is not None:
+                        sem.release()  # permit not handed off → release before the next endpoint / raise
+                    # D42: capture the OpenAI-SDK code/status pre-flattening (a context-overflow 400 surfaces
+                    # here — at `create()`/first-chunk, before any token — so the reactive backstop can see
+                    # it once failover collapses the chain). `_as_inference_error` passes a cancellation /
+                    # existing InferenceError through unchanged.
+                    converted = _as_inference_error(exc)
+                    if converted is not None:
+                        last_error = converted
+                        raise converted from exc
+                    raise
+                return first, stream, sem
 
-        first, stream, sem = result.value
-        pending: dict[int, dict[str, str]] = {}
-        try:
-            self._capture_cache_telemetry(first, report)
-            for delta in self._chunk_deltas(first, pending):
-                yield delta
-            async for chunk in stream:
-                self._capture_cache_telemetry(chunk, report)
-                for delta in self._chunk_deltas(chunk, pending):
-                    yield delta
-            if pending:
-                yield ChatDelta(
-                    tool_calls=[
-                        ToolCallRequest(id=s["id"], name=s["name"], arguments=s["arguments"])
-                        for _, s in sorted(pending.items())
-                    ]
-                )
-            # The stream drained cleanly: telemetry capture has concluded, so this is the honest point
-            # to notice a backend that never reported a prompt-token total (R4 — anchoring inactive).
-            self._maybe_notice_anchoring_inactive(report)
-        except InferenceError:
-            raise
-        except Exception as exc:  # noqa: BLE001 — a mid-stream error: normalize, no failover
-            # Normalize + capture any SDK code/status (D42); a mid-stream drop can't overflow, but the
-            # structured wrap is free and keeps ONE construction discipline.
-            raise (_as_inference_error(exc) or InferenceError(str(exc))) from exc
-        finally:
-            # D40 rider — the crux: release the request slot when the STREAM closes, riding this
-            # generator's own lifetime, NOT the opener's return. The stream is consumed here (yielded
-            # upward), so the permit is held across the whole response and freed on exhaustion, on a
-            # mid-stream error, or on consumer `aclose()`/GC. Callers (`session._drive`) fully drain
-            # this `async for` BEFORE running any tool / subagent fan-out, so the permit is provably
-            # released before tool execution — no completion ever holds a slot across tools (no
-            # hold-and-wait → no deadlock at limit 1, pinned by `test_inference_gate_d40`).
-            #
-            # CLOSE-BEFORE-RELEASE (Codex HIGH, 2026-07-19): on `aclose()`/cancel the backend is still
-            # GENERATING — an abandoned stream occupies the real llama.cpp slot, so releasing the
-            # permit first would admit a second request while the backend is busy, defeating
-            # `max_concurrent_requests` exactly where it matters. Close to completion (shielded, so a
-            # cancel can't interrupt the close and free the permit early), THEN release — the nested
-            # finally guarantees the release even if the close path re-raises the in-flight cancel.
+            # Drive the failover GENERATOR (D43/A6): re-yield its control items as typed wire notices
+            # BEFORE the first ChatDelta, capture the winning `FailoverResult` (the generator's last item).
+            # The retry backoff/sleep lives INSIDE the generator (permit-free — see failover.py); this loop
+            # only forwards the narration. `_retry_policy` drives the transient-retry tier.
+            result: FailoverResult[tuple[Any, Any, asyncio.Semaphore | None]] | None = None
             try:
-                await _shielded_close(stream)
+                async for item in failover(chain, attempt, label=lambda e: e.provider, policy=_retry_policy):
+                    if isinstance(item, FailoverResult):
+                        result = item  # the terminal item — the generator returns right after
+                    elif isinstance(item, HopRetry):
+                        yield RetryNotice(
+                            endpoint=chain[item.index].provider,
+                            attempt=item.attempt,
+                            max_attempts=item.max_attempts,
+                            delay_s=item.delay_s,
+                            category=last_category,
+                        )
+                    else:  # HopFailover
+                        yield FailoverNotice(
+                            from_endpoint=chain[item.from_index].provider,
+                            to_endpoint=chain[item.to_index].provider,
+                            category=last_category,
+                        )
+            except FailoverError as exc:
+                raise InferenceError(
+                    str(exc),
+                    code=last_error.code if last_error is not None else None,
+                    status=last_error.status if last_error is not None else None,
+                    # D43/A4: how many endpoints the chain walked-and-failed — the routing machine's
+                    # single-endpoint-vs-total-outage discriminator (one failed hop = countable worker
+                    # failure; >1 = infra outage, excluded). Post-flattening this is the only survivor.
+                    endpoints_tried=len(exc.failures),
+                ) from exc
+            assert result is not None, "failover() drained without a FailoverResult and without raising"
+            self._record(report, chain, result)
+
+            first, stream, sem = result.value
+            pending: dict[int, dict[str, str]] = {}
+            try:
+                self._capture_cache_telemetry(first, report)
+                for delta in self._chunk_deltas(first, pending):
+                    yield delta
+                async for chunk in stream:
+                    self._capture_cache_telemetry(chunk, report)
+                    for delta in self._chunk_deltas(chunk, pending):
+                        yield delta
+                if pending:
+                    yield ChatDelta(
+                        tool_calls=[
+                            ToolCallRequest(id=s["id"], name=s["name"], arguments=s["arguments"])
+                            for _, s in sorted(pending.items())
+                        ]
+                    )
+                # The stream drained cleanly: telemetry capture has concluded, so this is the honest point
+                # to notice a backend that never reported a prompt-token total (R4 — anchoring inactive).
+                self._maybe_notice_anchoring_inactive(report)
+            except InferenceError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — a mid-stream error: normalize, no failover
+                # Normalize + capture any SDK code/status (D42); a mid-stream drop can't overflow, but the
+                # structured wrap is free and keeps ONE construction discipline.
+                raise (_as_inference_error(exc) or InferenceError(str(exc))) from exc
             finally:
-                if sem is not None:
-                    sem.release()
+                # D40 rider — the crux: release the request slot when the STREAM closes, riding this
+                # generator's own lifetime, NOT the opener's return. The stream is consumed here (yielded
+                # upward), so the permit is held across the whole response and freed on exhaustion, on a
+                # mid-stream error, or on consumer `aclose()`/GC. Callers (`session._drive`) fully drain
+                # this `async for` BEFORE running any tool / subagent fan-out, so the permit is provably
+                # released before tool execution — no completion ever holds a slot across tools (no
+                # hold-and-wait → no deadlock at limit 1, pinned by `test_inference_gate_d40`).
+                #
+                # CLOSE-BEFORE-RELEASE (Codex HIGH, 2026-07-19): on `aclose()`/cancel the backend is still
+                # GENERATING — an abandoned stream occupies the real llama.cpp slot, so releasing the
+                # permit first would admit a second request while the backend is busy, defeating
+                # `max_concurrent_requests` exactly where it matters. Close to completion (shielded, so a
+                # cancel can't interrupt the close and free the permit early), THEN release — the nested
+                # finally guarantees the release even if the close path re-raises the in-flight cancel.
+                try:
+                    await _shielded_close(stream)
+                finally:
+                    if sem is not None:
+                        sem.release()
+        finally:
+            await self._release_inflight()
 
 
 async def _safe_close(stream: Any) -> None:

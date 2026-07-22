@@ -125,9 +125,15 @@ before it becomes a `ToolResult` / `Event` / log line / SSE frame. Secret values
 
 Secrets are identified by **two explicit rules** (not name-substring guessing, which collided with
 non-secret fields like `threshold_tokens`): (1) an **exact-name allowlist** of declared secret fields
-(`api_key`, `ssh_password`) — so a non-secret field is *never* masked; (2) the arbitrary user-keyed
-credential maps (`env`/`headers`) mask only entries whose own key looks secret (`Authorization`,
-`X-API-Key`, `*_token`…) while routine ones (`Content-Type`) stay visible. A **drift-guard test**
+(`api_key`, `ssh_password`) — so a non-secret field is *never* masked; this covers the A11/D48 unified
+provider map, where each connection's credential is the `providers.*.api_key` field (same leaf rule as the
+retired `inference.local.api_key`). (2) the arbitrary user-keyed credential maps (`env`/`headers`) mask
+only entries whose own key looks secret (`Authorization`, `X-API-Key`, `*_token`…) while routine ones
+(`Content-Type`) stay visible. Masking is **path-aware** (A11/D48 C1): the leaf/map rules fire only on a
+scalar / a flat credential map, so a provider or model literally *named* `api_key`/`env`/`headers` is a
+structured object that recurses (its own nested secret still masks) rather than being mis-masked; a
+provider/model name colliding with a secret-sentinel key is additionally rejected at schema validation. A
+**drift-guard test**
 introspects the whole `Settings` model and fails if a future secret-looking field is left unclassified,
 so the classification can't silently rot. (Tests: `backend/tests/test_secret_hygiene.py`.)
 

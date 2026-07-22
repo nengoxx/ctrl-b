@@ -160,6 +160,48 @@ def test_no_secret_looking_field_is_unclassified() -> None:
     )
 
 
+# ── A11/D48 C1: path-aware secrets on the `providers` map ─────────────────────────────────────
+def test_providers_api_key_masks_unmasks_like_before() -> None:
+    """`providers.*.api_key` is a secret leaf (SECURITY_MODEL list): masked on read, blank/masked-keeps
+    on write — exactly like the old `inference.local.api_key` did."""
+    data = {"providers": {"llamacpp": {"base_url": "u", "api_key": "sk-REAL", "models": {"m": {}}}}}
+    m = mask_secrets(data)
+    assert m["providers"]["llamacpp"]["api_key"] != "sk-REAL"
+    assert "sk-REAL" in secret_values(data)
+    restored = unmask_secrets(m, data)  # masked echo → keep stored
+    assert restored["providers"]["llamacpp"]["api_key"] == "sk-REAL"
+    fresh = unmask_secrets({"providers": {"llamacpp": {"api_key": "sk-NEW"}}}, data)
+    assert fresh["providers"]["llamacpp"]["api_key"] == "sk-NEW"  # a real new value is taken
+
+
+def test_provider_named_like_a_sentinel_does_not_trigger_leaf_or_map_masking() -> None:
+    """C1 path-awareness: a provider whose KEY collides with a secret sentinel (`api_key`/`env`/
+    `headers`/`ssh_password`) is a structured object, NOT a secret leaf/map — it recurses so its OWN
+    nested `api_key` string still masks, and its non-secret fields stay visible."""
+    for name in ("api_key", "env", "headers", "ssh_password"):
+        data = {"providers": {name: {"base_url": "u", "api_key": "sk-NESTED", "models": {"m": {}}}}}
+        m = mask_secrets(data)
+        prov = m["providers"][name]
+        assert prov["base_url"] == "u"  # non-secret field stays visible (not flat-masked as a leaf/map)
+        assert prov["api_key"] != "sk-NESTED"  # the nested REAL secret still masks
+        assert "sk-NESTED" in secret_values(data)
+        restored = unmask_secrets(m, data)
+        assert restored["providers"][name]["api_key"] == "sk-NESTED"  # round-trips
+
+
+def test_sentinel_collision_rejected_at_schema_level() -> None:
+    """C1 defense-in-depth: a provider OR model name equal to a secret sentinel key 422s at validation."""
+    from pydantic import ValidationError
+
+    from app.config import ModelCfg, ProviderCfg
+
+    for bad in ("api_key", "ssh_password", "password", "token", "env", "headers"):
+        with __import__("pytest").raises(ValidationError):
+            Settings(providers={bad: ProviderCfg(base_url="u", models={"m": ModelCfg()})})
+    with __import__("pytest").raises(ValidationError):
+        Settings(providers={"ok": ProviderCfg(base_url="u", models={"api_key": ModelCfg()})})
+
+
 # ── L2: the permission gate can't silently drift ─────────────────────────────────────────────
 def test_destructive_actions_keep_their_declared_gate() -> None:
     """Pin the risk/confirm of the dangerous actions so a lowered risk (or dropped confirm) fails."""

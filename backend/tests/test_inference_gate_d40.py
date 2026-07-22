@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import asyncio
 
-from app.adapters.inference import ChatDelta, EndpointGates, InferenceClient
-from app.config import InferenceCfg, InferenceEndpointCfg
+from _reg import registry, target
+
+from app.adapters.inference import ChatDelta, InferenceClient
+from app.core.provider_registry import EndpointGates, canonical_base_url
 
 
 class _Delta:
@@ -76,19 +78,16 @@ class _Client:
         self.chat = type("Chat", (), {"completions": _Completions(behavior)})()
 
 
-def _build(cfg: InferenceCfg, behaviors: dict[str, object], gates: EndpointGates | None = None):
-    client = InferenceClient(cfg, gates=gates)
+def _build(reg, behaviors: dict[str, object], gates: EndpointGates | None = None):
+    client = InferenceClient(reg, gates=gates)
     fakes = {url: _Client(b) for url, b in behaviors.items()}
     client._client = lambda ep: fakes[ep.base_url]  # type: ignore[assignment]
     return client, fakes
 
 
-def _cfg(limit: int | None) -> InferenceCfg:
-    return InferenceCfg(
-        default_mode="local",
-        failover=False,  # one endpoint — the gate, not the chain, is under test
-        local=InferenceEndpointCfg(base_url="http://local/v1", model="m", max_concurrent_requests=limit),
-    )
+def _cfg(limit: int | None):
+    # one target — the gate, not the chain, is under test
+    return registry([target("local", "http://local/v1", "m", max_concurrent_requests=limit)], failover=False)
 
 
 async def _collect(client):
@@ -202,16 +201,68 @@ def test_shared_gates_cap_not_split_across_generations():
 
 
 def test_changed_limit_mints_fresh_gate():
-    """A CHANGED limit mints a NEW semaphore under the new `(base_url, limit)` key (old holders drain on
-    the old one); an unchanged key returns the SAME object across generations."""
+    """A CHANGED limit mints a NEW semaphore under the new `(gate_identity, limit)` key (old holders drain
+    on the old one); an unchanged key returns the SAME object across generations. Keys are the CANONICAL
+    base_url now (D48 C4), so aliased URLs of one server coalesce onto ONE gate."""
 
     async def scenario():
         gates = EndpointGates()
-        s1 = gates.sem_for("http://local/v1", 1)
-        s1_again = gates.sem_for("http://local/v1", 1)
-        s2 = gates.sem_for("http://local/v1", 2)
-        assert s1 is s1_again  # same base_url + limit ⇒ the SAME semaphore (shared across generations)
+        gid = canonical_base_url("http://local/v1")
+        s1 = gates.sem_for(gid, 1)
+        s1_again = gates.sem_for(gid, 1)
+        s2 = gates.sem_for(gid, 2)
+        assert s1 is s1_again  # same gate_identity + limit ⇒ the SAME semaphore (shared across generations)
         assert s2 is not s1  # a changed limit ⇒ a fresh gate
+        # Canonicalization equivalence: default port elided + host lowercased + trailing slash stripped.
+        assert canonical_base_url("http://LOCAL:80/v1") == canonical_base_url("http://local/v1/")
+        assert gates.sem_for(canonical_base_url("http://LOCAL:80/v1"), 1) is s1
+
+    asyncio.run(scenario())
+
+
+def test_min_wins_cap_on_resolved_target():
+    """D48 C4: providers sharing a gate identity with conflicting caps ({None, 2}) resolve to min-of-finite
+    (2) onto every affected `ResolvedTarget` (lenient boot)."""
+    from app.config import InferenceCfg, ModelCfg, ProviderCfg, SectionRef, Settings
+    from app.core.provider_registry import resolve_lenient
+
+    s = Settings(
+        providers={
+            "a": ProviderCfg(
+                base_url="http://box/v1", max_concurrent_requests=None, models={"m": ModelCfg()}
+            ),
+            "b": ProviderCfg(
+                base_url="http://BOX:80/v1", max_concurrent_requests=2, models={"n": ModelCfg()}
+            ),
+        },
+        inference=InferenceCfg(provider="a", fallbacks=[SectionRef(provider="b", model="n")]),
+    )
+    reg, warns = resolve_lenient(s)
+    assert all(t.max_concurrent_requests == 2 for t in reg.inference_chain)  # min of {None, 2}
+    assert any("conflicting max_concurrent_requests" in w for w in warns)
+
+
+def test_generation_drain_retire_closes_clients():
+    """A11/R6: an idle client's `retire()` closes its SDK clients immediately; a client with an in-flight
+    turn defers the close until the last decrement (the generation-drain)."""
+
+    async def scenario():
+        gate = asyncio.Event()
+        client, _ = _build(_cfg(None), {"http://local/v1": lambda _kw: _Stream([_Chunk(_Delta("hi"))], gate)})
+        closed = {"n": 0}
+
+        class _FakeSDK:
+            async def close(self):
+                closed["n"] += 1
+
+        client._clients["local"] = _FakeSDK()  # type: ignore[assignment]
+        t = asyncio.create_task(_collect(client))
+        await asyncio.sleep(0.05)  # a turn is in flight (refcount 1)
+        await client.retire()  # retire while draining → close DEFERRED
+        assert closed["n"] == 0
+        gate.set()
+        await asyncio.wait_for(t, timeout=2.0)  # the turn drains → the deferred close fires
+        assert closed["n"] == 1
 
     asyncio.run(scenario())
 
@@ -238,13 +289,14 @@ class _RaisingStream:
         self.closed = True
 
 
-def _cfg2(limit: int | None) -> InferenceCfg:
+def _cfg2(limit: int | None):
     """A two-endpoint failover chain (local → cloud), each gated at `limit`."""
-    return InferenceCfg(
-        default_mode="local",
+    return registry(
+        [
+            target("local", "http://local/v1", "m", max_concurrent_requests=limit),
+            target("cloud", "http://cloud/v1", "m", max_concurrent_requests=limit),
+        ],
         failover=True,
-        local=InferenceEndpointCfg(base_url="http://local/v1", model="m", max_concurrent_requests=limit),
-        cloud=InferenceEndpointCfg(base_url="http://cloud/v1", model="m", max_concurrent_requests=limit),
     )
 
 

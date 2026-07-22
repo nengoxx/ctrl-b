@@ -42,14 +42,17 @@ def test_save_roundtrips_config() -> None:
         s = Settings.model_validate(
             {
                 "agent": {"default_agent": "ops", "defaults": {"privilege": "full"}},
-                "inference": {"local": {"base_url": "http://x/v1", "api_key": "supersecret", "model": "m"}},
+                "providers": {
+                    "local": {"base_url": "http://x/v1", "api_key": "supersecret", "models": {"m": {}}}
+                },
+                "inference": {"provider": "local"},
             }
         )
         save_settings(s, p)  # must not raise
         reloaded = load_settings(p)
         assert reloaded.agent.default_agent == "ops"
         assert reloaded.agent.defaults["privilege"] == "full"
-        assert reloaded.inference.local.api_key == "supersecret"
+        assert reloaded.providers["local"].api_key == "supersecret"
 
 
 def test_integration_risk_coerces_at_the_config_boundary() -> None:
@@ -197,7 +200,8 @@ def test_api_get_put_roundtrip() -> None:
     cfg.write_text(
         "# my homelab config\n"
         "server:\n  port: 5433\n  poll_seconds: 5\n"
-        "inference:\n  local:\n    base_url: http://x/v1\n    api_key: REALKEY-123\n    model: m\n",
+        "providers:\n  local:\n    base_url: http://x/v1\n    api_key: REALKEY-123\n    models:\n      m: {}\n"
+        "inference:\n  provider: local\n",
         encoding="utf-8",
     )
     os.environ["CTRLB_CONFIG"] = str(cfg)
@@ -205,14 +209,23 @@ def test_api_get_put_roundtrip() -> None:
     try:
         with _client() as c:
             got = c.get("/api/settings").json()
-            assert got["inference"]["local"]["api_key"] == _mask("REALKEY-123")  # masked on read
+            assert got["providers"]["local"]["api_key"] == _mask("REALKEY-123")  # masked on read
+            rev = c.get("/api/providers").json()["rev"]  # A11/D48 C2: the providers base fingerprint
 
-            # change poll_seconds + echo the masked key back unchanged
+            # change poll_seconds + echo the masked providers map back unchanged (replacement semantics).
+            # A `providers`-carrying PUT must present the current base fingerprint (concurrency 409 guard).
             r = c.put(
                 "/api/settings",
                 json={
                     "server": {"poll_seconds": 9},
-                    "inference": {"local": {"api_key": got["inference"]["local"]["api_key"]}},
+                    "providers_base": rev,
+                    "providers": {
+                        "local": {
+                            "base_url": "http://x/v1",
+                            "api_key": got["providers"]["local"]["api_key"],
+                            "models": {"m": {}},
+                        }
+                    },
                 },
             )
             assert r.status_code == 200, r.text
@@ -221,7 +234,7 @@ def test_api_get_put_roundtrip() -> None:
             assert body["restart_required"] == []  # poll_seconds applies live
 
             # the real secret survived on disk (not overwritten with the mask)
-            assert load_settings(cfg).inference.local.api_key == "REALKEY-123"
+            assert load_settings(cfg).providers["local"].api_key == "REALKEY-123"
             # the comment + the untouched secret line survived the save (C1)
             disk = cfg.read_text(encoding="utf-8")
             assert "# my homelab config" in disk

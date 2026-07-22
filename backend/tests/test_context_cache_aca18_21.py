@@ -21,9 +21,9 @@ import logging
 from types import SimpleNamespace
 
 from _async import run_async
+from _reg import registry, target
 
 from app.adapters.inference import ChatDelta, InferenceClient, StreamReport
-from app.config import InferenceCfg, InferenceEndpointCfg
 from app.domain.agent import ModelRef
 
 
@@ -77,8 +77,8 @@ class _Client:
         self.chat = type("Chat", (), {"completions": _Completions(behavior)})()
 
 
-def _build(cfg: InferenceCfg, behaviors: dict[str, object]):
-    client = InferenceClient(cfg)
+def _build(reg, behaviors: dict[str, object]):
+    client = InferenceClient(reg)
     fakes = {url: _Client(b) for url, b in behaviors.items()}
     client._client = lambda ep: fakes[ep.base_url]  # type: ignore[assignment]
     return client, fakes
@@ -99,11 +99,12 @@ def _collect(client, **kw):
     return run_async(go())
 
 
-def _cfg(local_extra=None, cloud_extra=None) -> InferenceCfg:
-    return InferenceCfg(
-        default_mode="local",
-        local=InferenceEndpointCfg(base_url="http://local/v1", model="minig", extra_body=local_extra or {}),
-        cloud=InferenceEndpointCfg(base_url="http://cloud/v1", model="gemma", extra_body=cloud_extra or {}),
+def _cfg(local_extra=None, cloud_extra=None):
+    return registry(
+        [
+            target("local", "http://local/v1", "minig", extra_body=local_extra or {}),
+            target("cloud", "http://cloud/v1", "gemma", extra_body=cloud_extra or {}),
+        ]
     )
 
 
@@ -330,7 +331,7 @@ def test_finalize_retains_toolset_with_tool_choice_none():
     thread = SimpleNamespace(id="t1")
 
     async def drain():
-        return [ev async for ev in s._finalize(thread, None, ModelRef())]
+        return [ev async for ev in s._finalize(thread, None, None, ModelRef())]
 
     events = run_async(drain())
     # The wrap-up call keeps the SAME cached toolset (prefix stays cached) but forbids calls.

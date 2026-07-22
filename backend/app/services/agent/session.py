@@ -51,7 +51,7 @@ from app.adapters.inference import (
     StreamReport,
     is_context_overflow,
 )
-from app.config import InferenceEndpointCfg, Settings
+from app.config import Settings
 from app.core.memory import MemoryProvider
 from app.core.permissions import Decision, decide
 from app.core.skills import SkillProvider, SkillSelector
@@ -68,6 +68,7 @@ from app.domain.conversation import (
     ToolResultPart,
 )
 from app.domain.enums import Actor, RunState
+from app.domain.provider import ResolvedTarget
 from app.domain.result import ToolResult
 from app.runtime import grant_approval
 from app.services.action_service import ActionService, InvokeOutcome
@@ -713,12 +714,12 @@ class AgentSession:
         D43/A4: this keeps `self._agent.model` (NOT a routed ref) — the manual `/compact` path is a
         sync-holder that never enters a routed turn, so pricing against the worker's window is correct
         + benign (noted, not a bug)."""
-        eff_mode = self._agent.model.mode
-        # D42 Codex FIX 3: price through the CAPTURED client's own config generation, not the live
-        # shared Settings (which a settings PUT can mutate in place) — the window/endpoint pin.
-        price_ep = self._inference.endpoint(eff_mode)
-        window = await self._inference.effective_window(price_ep)
-        est = await self._estimate_context(thread, price_ep.base_url or None)
+        ref = self._agent.model
+        # D42 Codex FIX 3: price through the CAPTURED registry generation, not the live shared Settings
+        # (which a settings PUT can mutate in place) — the window/target pin (A11: {provider, model}).
+        price_ep = self._inference.target_for(ref.provider, ref.model)
+        window = await self._inference.effective_window(price_ep) if price_ep is not None else None
+        est = await self._estimate_context(thread, price_ep.base_url if price_ep is not None else None)
         clearing = await self._plan_clearing(thread)
         history = await self._messages.list(thread.id, include_compacted=False)
         return self._compactor._over_threshold(
@@ -770,9 +771,9 @@ class AgentSession:
         mode: str | None = None,
         skills: list[str] | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        """Persist the user message, then drive the loop. Yields SSE events. `mode` (`local`/`cloud`,
-        from the `/local`//`/cloud` composer prefixes, 4c) forces the inference backend for this turn;
-        `None` uses the configured `default_mode`. `skills` are explicit `/skill-name` invocations
+        """Persist the user message, then drive the loop. Yields SSE events. `mode` (a provider name,
+        from the `/<provider>` composer verb, A11/D48) forces the inference backend for this turn;
+        `None` uses the section default chain. `skills` are explicit `/skill-name` invocations
         (4.5); the selector adds model-invoked picks on top."""
         self._activate_skills(user_text, skills)
         user_msg = Message(
@@ -842,8 +843,8 @@ class AgentSession:
         a question), and `answer` (a `question` — inject the owner's `answer` as the call's result, A2).
         Fail-closed (A1/C1-H1): an unknown decision is rejected with an error, NOT treated as execute,
         and `answer` is only honoured against an AWAITING_ANSWER call (never used to silently OK a
-        confirm). `mode` (`/local`//`/cloud`, ACA-16) is carried across the round-trip and threaded to
-        `_drive` so a `/local` turn resumes local; `None` → the configured default. `app` is passed only
+        confirm). `mode` (a `/<provider>` verb, ACA-16) is carried across the round-trip and threaded to
+        `_drive` so a `/<provider>` turn resumes on that provider; `None` → the section default. `app` is passed only
         by the API endpoint (the `execute_always` grant reuses the settings write machinery via
         `runtime.grant_approval`); the write never blocks the run.
 
@@ -961,8 +962,8 @@ class AgentSession:
         """The loop state machine (DESIGN §5.2). On resume, first finish the suspended step; then
         run model iterations until text-only / suspended / capped. `mode` forces the inference
         backend for this turn (4c); resume now carries the turn's `mode` across the confirm
-        round-trip (ACA-16 — the PWA re-sends it), so a `/local` turn resumes local. `None` (no
-        override) → the agent's own `model.mode`, else the configured default."""
+        round-trip (ACA-16 — the PWA re-sends it), so a `/<provider>` turn resumes on that provider. `None`
+        (no override) → the agent's own `model.provider`, else the section default."""
         # One loop-discipline guard per turn (C1): tracks repeated calls + stall across iterations.
         guard = _LoopGuard(
             max_repeat=self._agent.max_repeat_calls,
@@ -974,9 +975,9 @@ class AgentSession:
         # returns the LEAD ModelRef during a fallback episode, else the agent's own (WORKER) model. ALL
         # FOUR derived locals below read from `routed` (review F4/H2: the draft's two-RHS form silently
         # left reasoning/max_tokens/compaction-reserve on the worker), and `_finalize` takes `routed`
-        # too. The `/local`//`/cloud` prefix (`mode`) WINS and BYPASSES the router entirely (the 4c
-        # lock): the prefix selects the ENDPOINT and runs the WORKER ModelRef on it — the owner's hand
-        # chooses infrastructure, not persona. No routing state is read/written on the prefix path (or
+        # too. The `/<provider>` verb (`mode`) WINS and BYPASSES the router entirely (the 4c
+        # lock): the verb selects the ENDPOINT and runs the WORKER ModelRef on it — the owner's hand
+        # chooses infrastructure, not persona. No routing state is read/written on the verb path (or
         # when routing is off / this is a subagent/non-thread session).
         rs, rcfg = self._routing_state, self._routing_cfg
         routed = self._agent.model
@@ -1059,8 +1060,13 @@ class AgentSession:
 
         # Effective inference target from the ROUTED ref: the per-message `mode` override (4c) still
         # wins for the ENDPOINT; the model id / reasoning / output reserve all price the routed ref.
-        eff_mode = mode or routed.mode
-        eff_model = routed.model
+        eff_mode = mode or routed.provider
+        # C7 (Codex#2): a `ModelRef.model` clean name is PROVIDER-RELATIVE. When the per-message `mode`
+        # override names a DIFFERENT provider than the routed ref, the routed model must NOT ride along —
+        # the registry would treat it as a raw wire id and send it to the wrong backend. So carry the model
+        # ONLY when `mode` is unset or equals the routed provider; otherwise resolve `mode`'s own default
+        # (an explicit raw-id ModelRef still passes through in the mode-unset / same-provider cases).
+        eff_model = routed.model if (mode is None or mode == routed.provider) else None
         #: Modeled per-call config threaded to `stream_chat` as first-class kwargs (D42/A10). The routed
         #: `ModelRef.max_tokens` doubles as BOTH the wire output cap AND the window trigger's output
         #: reserve (below); `reasoning_effort` is model-level (no per-message override). `reasoning_
@@ -1074,7 +1080,7 @@ class AgentSession:
         #: The endpoint that ACTUALLY served the PREVIOUS iteration (D42 §C). Iteration 2+ prices the
         #: window trigger (and the anchor's served-endpoint consistency) against it; `None` on iteration
         #: 1 ⇒ price against the selected endpoint.
-        served: InferenceEndpointCfg | None = None
+        served: ResolvedTarget | None = None
 
         stall = 0  # consecutive no-progress iterations (C1b) → forced wrap-up at the agent's cap
         #: D42 per-turn compaction backoff: set True after a failed (didn't-shrink) fold so AUTO-
@@ -1107,9 +1113,9 @@ class AgentSession:
             # (`self._inference.endpoint`), NOT the live shared Settings — a settings PUT mutating them
             # mid-turn must not swing pricing to a different endpoint than the captured client streams
             # through (the hot-at-NEXT-turn pin). Iteration 2+ uses `served` (also off the captured chain).
-            price_ep = served or self._inference.endpoint(eff_mode)
-            window = await self._inference.effective_window(price_ep)
-            est = await self._estimate_context(thread, price_ep.base_url or None)
+            price_ep = served or self._inference.target_for(eff_mode, eff_model)
+            window = await self._inference.effective_window(price_ep) if price_ep is not None else None
+            est = await self._estimate_context(thread, price_ep.base_url if price_ep is not None else None)
             cs = self._compaction_state
             # D42 thrash machine: AUTO-compaction skips ENTIRELY while the breaker is latched OR after a
             # didn't-shrink attempt earlier THIS turn (per-turn backoff). Clearing (above) still applies.
@@ -1286,9 +1292,9 @@ class AgentSession:
             # (`report.prompt_tokens`: llama.cpp `prompt_progress.total`, else cloud `usage.prompt_tokens`)
             # and remember who served, so the NEXT iteration prices against the endpoint that answered.
             # No usable total (a backend without return_progress/include_usage) ⇒ `record` invalidates
-            # ⇒ heuristic+overhead next iteration. `served_endpoint` is None only if the report was never
+            # ⇒ heuristic+overhead next iteration. `served_target` is None only if the report was never
             # stamped (shouldn't happen on a completed stream) — then heuristic mode too.
-            served = report.served_endpoint
+            served = report.served_target
             self._estimator.record(
                 total=report.prompt_tokens,
                 served_key=served.base_url if served is not None else None,
@@ -1375,6 +1381,7 @@ class AgentSession:
                     async for ev in self._finalize_then_conclude(
                         thread,
                         eff_mode,
+                        eff_model,
                         routed,
                         route=route,
                         had_failure=had_failure,
@@ -1393,6 +1400,7 @@ class AgentSession:
         async for ev in self._finalize_then_conclude(
             thread,
             eff_mode,
+            eff_model,
             routed,
             route=route,
             had_failure=had_failure,
@@ -1421,6 +1429,7 @@ class AgentSession:
         self,
         thread: Thread,
         eff_mode: str | None,
+        eff_model: str | None,
         routed: ModelRef,
         *,
         route: Literal["lead", "worker"],
@@ -1436,7 +1445,7 @@ class AgentSession:
         and arms no episode (the per-turn flags are turn-locals, so there is nothing to clean up). It
         also fixes the premature close notice — `// back to the worker model` now fires only after the
         final lead call actually finished."""
-        async for ev in self._finalize(thread, eff_mode, routed, backstop_fired=backstop_fired):
+        async for ev in self._finalize(thread, eff_mode, eff_model, routed, backstop_fired=backstop_fired):
             if ev.event == "done":
                 async for cev in self._conclude_routing(route=route, had_failure=had_failure):
                     yield cev
@@ -1614,6 +1623,7 @@ class AgentSession:
         self,
         thread: Thread,
         eff_mode: str | None,
+        eff_model: str | None,
         routed: ModelRef,
         *,
         backstop_fired: bool = False,
@@ -1626,7 +1636,9 @@ class AgentSession:
         D43/A4: the wrap-up consumes the turn's ROUTED `ModelRef` — model id + `max_tokens` +
         `reasoning_effort` all come from `routed` (a lead turn wraps up on the lead), not a re-read of
         `self._agent.model` (review F4/H2: that asymmetry left the wrap-up on the worker's call-config).
-        `eff_mode` still carries the `/local`//`/cloud` endpoint override.
+        `eff_mode`/`eff_model` carry the per-message `/<provider>` verb override (A11/D48) — the SAME
+        effective pair the main loop uses, so a mode that names a different provider does not carry the
+        routed model across providers (Codex#2).
 
         D42 Codex FIX 2: the wrap-up now (a) assembles under the iteration's Tier-1 `plan_clearing` —
         the `clear_keep_steps` recent-step protection keeps the just-run results an honest wrap-up
@@ -1695,7 +1707,7 @@ class AgentSession:
                     async for delta in self._inference.stream_chat(
                         messages,
                         mode=eff_mode,
-                        model=routed.model,
+                        model=eff_model,
                         max_tokens=routed.max_tokens,
                         reasoning_effort=routed.reasoning_effort,
                         reasoning_tokens=routed.reasoning_tokens,

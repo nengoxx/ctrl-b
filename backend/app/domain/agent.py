@@ -20,25 +20,32 @@ from app.domain.enums import Privilege
 
 
 class ModelRef(BaseModel):
-    """A pointer to an inference backend + model name **plus its per-call config** (DESIGN §5.1, D42).
-    `mode`/`model` are the pointer half — both optional so a consumer can inherit the chat backend
-    (`mode=None` → `InferenceCfg.default_mode`) and/or its model (`model=None` → the endpoint's
-    configured model). Set one or both to override. The `max_tokens`/`reasoning_*` fields are the
-    call-config half (D42/A10): modeled call params threaded as first-class kwargs into
-    `stream_chat`/`complete` (the codebase rule — modeled params are kwargs, `extra_body` is unmodeled
-    passthrough only). Used by each `AgentDef.model` (the agent's own calls) and by the selectable
-    compaction summarizer (which today runs uncapped — a `max_tokens` here caps it for free).
+    """A pointer to an inference backend + model name **plus its per-call config** (DESIGN §5.1, D42;
+    A11/D48). `provider`/`model` are the pointer half — both optional so a consumer can inherit the chat
+    section's primary provider (`provider=None` → the section default chain) and/or its model
+    (`model=None` → the provider's sole catalog model). Set one or both to override. The
+    `max_tokens`/`reasoning_*` fields are the call-config half (D42/A10): modeled call params threaded as
+    first-class kwargs into `stream_chat`/`complete` (the codebase rule — modeled params are kwargs,
+    `extra_body` is unmodeled passthrough only). Used by each `AgentDef.model` (the agent's own calls)
+    and by the selectable compaction summarizer.
 
-    Fields are DECLARED (no `extra="allow"`): an unknown key is a typo, not a silent passthrough."""
+    `provider` is a top-level `providers` map name (the A11 unified registry — D48 C7-b: every subsystem
+    that selects a backend+model does so via this SAME `{provider, model}` pointer against the SAME
+    registry). `None` → inherit the consumer section's default. Fields are DECLARED and `extra="forbid"`
+    (Codex#10): an unknown key is a HARD error, not a silent drop — so a stale legacy `mode:` reaching
+    normal validation (outside the quarantined config/agent.yaml migration folds) fails loudly instead of
+    silently becoming `provider=None` + a mis-routed raw model id."""
 
-    mode: str | None = None  # "local" | "cloud" | None → InferenceCfg.default_mode
-    model: str | None = None  # None → the endpoint's configured model id
+    model_config = {"extra": "forbid"}
+
+    provider: str | None = None  # a `providers` map name; None → the section default chain
+    model: str | None = None  # None → the provider's sole catalog model
     #: Output-token budget (D42/A10). `None`/blank → no cap (today's behaviour, "inherit"). `ge=1`: a
     #: 0 is never a meaningful budget (a 0-token cap would ask the backend for an empty reply), so it is
     #: rejected at the boundary — use `None` to inherit, not 0. Flows as first-class kwargs into the chat
     #: call; the per-endpoint field NAME (`max_tokens` vs `max_completion_tokens`) is chosen by
-    #: `InferenceEndpointCfg.resolved_max_tokens_field` at the wire boundary (Wave 4; derived from
-    #: `api_mode` unless the endpoint sets `max_tokens_field` explicitly — D46).
+    #: `ResolvedTarget.resolved_max_tokens_field` at the wire boundary (A11/D48 C6; derived from
+    #: `api_mode` unless the provider/model sets `max_tokens_field` explicitly — D46).
     max_tokens: int | None = Field(default=None, ge=1)
     #: Reasoning-effort ladder (D42/A10 — the universal field convention) and, since D45, the ONE primary
     #: reasoning knob: it is TRANSLATED per backend at the wire by the serving endpoint's

@@ -25,19 +25,29 @@ from typing import TYPE_CHECKING, Any
 from pydantic import ValidationError
 
 from app.adapters.embeddings import EmbeddingsClient
-from app.adapters.inference import EndpointGates, InferenceClient, warn_suspect_api_modes
+from app.adapters.inference import InferenceClient
 from app.adapters.openterminal import OpenTerminalClient
 from app.adapters.searxng import SearxngClient
 from app.adapters.voice import VoiceClient
 from app.config import (
     ApprovalRule,
     Settings,
-    apply_patch_to_yaml,
     deep_merge,
+    deep_set,
+    edit_config_yaml,
     prune_unchanged,
+    sync_mapping,
     unmask_secrets,
+    walk_model_refs,
 )
 from app.core.permissions import exact_arg_pins
+from app.core.provider_registry import (
+    EndpointGates,
+    ProviderResolveError,
+    provider_skill_collision_warnings,
+    resolve_lenient,
+    resolve_strict,
+)
 from app.core.tool import UnknownTool
 
 if TYPE_CHECKING:
@@ -46,30 +56,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def set_inference(app: "FastAPI", settings: Settings) -> None:
-    """Build + wire the inference client from `settings.inference`. The single construction site for
-    inference, called by both lifespan and `reconfigure`. Assigns `app.state.inference` (read per
-    turn by `api/agent._session`) and mirrors it onto `app.state.deps.inference` so subagents use the
-    same client. Cheap + lazy — the SDK client is only opened on first use.
+def set_inference(app: "FastAPI", settings: Settings) -> InferenceClient | None:
+    """Build + wire the inference client from the RESOLVED provider registry (A11). The single
+    construction site for inference, called by both lifespan and `reconfigure`. Resolves the config
+    LENIENTLY (boot policy: warn + drop/promote), builds the client from the resulting `Registry` +
+    the app-owned `EndpointGates`, PUBLISHES it (setattr on `app.state.inference` + the deps mirror),
+    and RETURNS the previous client so the async caller can `retire()` it (R6 drain: publish new,
+    then drain old — in-flight turns finish on their captured generation).
 
-    D42 Codex FIX 1: the per-endpoint request-gate semaphores live in the app-owned `EndpointGates`
-    registry (created once, memoized on `app.state.endpoint_gates`), NOT on the client — so a config
-    change that rebuilds the client here keeps the SAME semaphores. Old-generation permit holders and
-    the new client's acquirers then contend on ONE object per `(base_url, limit)`, so
-    `max_concurrent_requests` is never split across client generations.
-
-    Also the config-load boundary where `warn_suspect_api_modes` flags an endpoint left on the
-    default `api_mode: openai` with a self-hosted `base_url` (D45 audit FIX 5) — advisory only,
-    it never changes what gets built."""
-    warn_suspect_api_modes(settings.inference)
+    The `EndpointGates` registry (created once, memoized on `app.state.endpoint_gates`) is passed into
+    every generation so a rebuild keeps the SAME `(gate_identity, limit)` semaphores — the cap is never
+    split across generations (D48 C4). Lenient warnings (missing provider / gate conflict / self-hosted
+    default api_mode) are logged here."""
     gates = getattr(app.state, "endpoint_gates", None)
     if gates is None:
         gates = EndpointGates()
         app.state.endpoint_gates = gates
-    app.state.inference = InferenceClient(settings.inference, gates=gates)
+    registry, warnings = resolve_lenient(settings)
+    for w in warnings:
+        logger.warning("provider config: %s", w)
+    old = getattr(app.state, "inference", None)
+    new_client = InferenceClient(registry, gates=gates)
+    app.state.inference = new_client
     deps = getattr(app.state, "deps", None)
     if deps is not None:
-        deps.inference = app.state.inference
+        deps.inference = new_client
+    return old if isinstance(old, InferenceClient) else None
 
 
 def clear_reasoning_demotions(app: "FastAPI") -> None:
@@ -265,7 +277,8 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
     shared-settings update. The one entry point `PUT /api/settings` calls — later slices extend this
     body, not the caller."""
     old: Settings = app.state.settings
-    inference_changed = _changed(old, new, "inference")
+    # R7: rebuild inference on any change to the `providers` subtree OR the inference section refs.
+    inference_changed = _changed(old, new, "inference") or _changed(old, new, "providers")
     searxng_changed = _changed(old, new, "searxng")
     embeddings_changed = _changed(old, new, "embeddings")
     open_terminal_changed = _changed(old, new, "open_terminal")
@@ -276,7 +289,10 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
 
     apply_settings_inplace(app, new)
     if inference_changed:
-        set_inference(app, new)
+        # R6: publish the new generation, THEN drain the old one (in-flight turns finish on it).
+        retired = set_inference(app, new)
+        if retired is not None:
+            await retired.retire()
     elif agent_changed:
         # `agent.defaults` can carry reasoning settings (D15 #1 / D42 ModelRef rider); a settings-PUT
         # edit there does NOT rebuild the client, so learned demotions clear explicitly — the same
@@ -308,23 +324,151 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
 settings_write_lock = asyncio.Lock()
 
 
-async def apply_settings_patch(app: "FastAPI", patch: dict[str, Any]) -> Settings:
-    """The atomic merge→validate→persist→hot-apply core shared by `PUT /api/settings` and the D44
-    grant path. MUST be called while holding `settings_write_lock`. Deep-merges `patch` onto the live
-    config, restores unchanged secrets, validates (raises `ValidationError` — the caller maps it),
-    persists comment/format-preserving, and hot-applies via `reconfigure`. Returns the new validated
-    `Settings`. Factored so the two write paths share ONE sequence rather than copy-pasting it."""
+#: The config-held provider-name reference homes NOT covered by `walk_model_refs` — the inference
+#: section primary + fallbacks (D48 C1 cascade list). Voice/embeddings section refs don't exist yet;
+#: Slice 2 extends the cascade by adding their subtrees to this walk, nothing else.
+def _cascade_provider_renames(merged: dict[str, Any], renames: dict[str, str]) -> None:
+    """(3) of the C1 rename transaction: rewrite every config-held provider REFERENCE still equal to an
+    old name in the FINAL MERGED doc to its new name. The closed home list = the inference section
+    primary/fallbacks + every `ModelRef` home (`walk_model_refs`). A ref the UI already rewrote in its
+    draft is a no-op (the backend ordering is authoritative — C1). Only the `provider` field is renamed;
+    a `model` clean name is provider-relative and never carried across providers."""
+    if not renames:
+        return
+    inf = merged.get("inference")
+    if isinstance(inf, dict):
+        if inf.get("provider") in renames:
+            inf["provider"] = renames[inf["provider"]]
+        for fb in inf.get("fallbacks") or []:
+            if isinstance(fb, dict) and fb.get("provider") in renames:
+                fb["provider"] = renames[fb["provider"]]
+
+    def _rw(ref: dict[str, Any]) -> None:
+        if ref.get("provider") in renames:
+            ref["provider"] = renames[ref["provider"]]
+
+    walk_model_refs(merged, _rw)
+
+
+def provider_rename_error(
+    renames: dict[str, str], stored_names: "set[str]", *, providers_in_patch: bool
+) -> str | None:
+    """Validate `provider_renames` as a SIMPLE BIJECTIVE map (D48 C1) — returns a precise error string
+    (→ 422 in the handler) or None. Rules: every old exists; each new does not already exist as a
+    provider (except a no-op `new == old`); no duplicate destinations; no chains/swaps/cycles (a
+    destination that is itself a renamed source). A rename is meaningless without the full providers map
+    (the rekey/replacement need it), so a rename without `providers` in the patch is rejected too."""
+    if not renames:
+        return None
+    if not providers_in_patch:
+        return "provider_renames requires the full 'providers' map in the same PUT"
+    news = list(renames.values())
+    if len(set(news)) != len(news):
+        return "provider_renames has duplicate destination names"
+    for old, new in renames.items():
+        if old not in stored_names:
+            return f"provider_renames: source provider {old!r} does not exist"
+        if new == old:
+            continue
+        if new in stored_names:
+            return f"provider_renames: destination {new!r} already exists"
+        if new in renames:  # new is itself a renamed source ⇒ a chain/swap/cycle
+            return f"provider_renames: {old!r}->{new!r} forms a chain/swap (not simple bijective)"
+    return None
+
+
+def _skill_names(app: "FastAPI") -> list[str]:
+    """Live skill names for the provider-name-shadowed-by-skill collision warning (recomputed per PUT /
+    per GET, never frozen — C7/R9). Empty when the skills subsystem is absent."""
+    provider = getattr(app.state, "skills", None)
+    return [s.name for s in provider.list()] if provider is not None else []
+
+
+async def apply_settings_patch(
+    app: "FastAPI", patch: dict[str, Any], *, renames: dict[str, str] | None = None
+) -> tuple[Settings, list[str]]:
+    """The atomic merge→validate→persist→hot-apply core shared by `PUT /api/settings` and the D44 grant
+    path. MUST be called while holding `settings_write_lock`. Applies the C1 rename transaction (in exact
+    order), deep-merges the rest of `patch` onto the live config with `providers` REPLACEMENT semantics,
+    restores unchanged/renamed secrets, strict-resolves (raises `ProviderResolveError` — the caller maps
+    it to 422), persists comment/format-preserving, and hot-applies via `reconfigure`. Returns
+    `(new_settings, warnings)` where warnings are the strict non-fatal notices + the live skill-collision
+    set (C9 envelope). Factored so the two write paths share ONE sequence rather than copy-pasting it."""
+    renames = renames or {}
     current: Settings = app.state.settings
     current_raw = current.model_dump(mode="json")  # real (unmasked) secrets
-    merged = unmask_secrets(deep_merge(current_raw, patch), current_raw)
+    stored_providers = current_raw.get("providers") or {}
+    patch_providers = patch.get("providers") if isinstance(patch.get("providers"), dict) else None
+    rest_patch = {k: v for k, v in patch.items() if k != "providers"}
+
+    # (1) Rekey the STORED providers view so an unmask restores each renamed provider's secret by its OLD
+    # structural identity: the new name inherits the old entry's stored secret (masks are not injective —
+    # identity, not the masked string, drives restore; D48 C1). A THIRD provider is untouched, so its own
+    # incoming secret round-trips against its own stored entry.
+    rekeyed_stored = dict(stored_providers)
+    for old, new in renames.items():
+        if old in stored_providers:
+            rekeyed_stored[new] = stored_providers[old]
+    stored_for_unmask = {**current_raw, "providers": rekeyed_stored}
+
+    # (2) Apply the providers REPLACEMENT (the UI submits the complete map — never deep_merge, so deletes +
+    # renames survive) + deep_merge the rest, then unmask against the rekeyed stored view. A real
+    # (non-masked, non-blank) incoming secret WINS over restoration (via `_is_unchanged_secret`).
+    merged = deep_merge(current_raw, rest_patch)
+    if patch_providers is not None:
+        merged["providers"] = patch_providers
+    merged = unmask_secrets(merged, stored_for_unmask)
+
+    # (3) Cascade every config-held ref STILL equal to an old name in the FINAL MERGED doc (authoritative
+    # over the UI's own draft rewrite). (4) A third provider's explicit incoming change is already in the
+    # replacement map, untouched by the rekey/cascade.
+    _cascade_provider_renames(merged, renames)
+
     new = Settings.model_validate(merged)
-    # Persist only the changed leaves, comment/format-preserving (a masked secret echoed back prunes
-    # away → its original line is untouched). The grant patch carries the FULL replacement approvals
-    # list, so `deep_merge`/`_deep_set` replace it wholesale (no list-through-merge — D44 H2).
-    to_write = prune_unchanged(unmask_secrets(patch, current_raw), current_raw)
-    apply_patch_to_yaml(to_write)
+    # R26 + FX7 (audit M2): strict-resolve ENFORCEMENT (422) applies only when the patch touches a
+    # RESOLUTION-RELEVANT subtree (`providers` / `inference` / `agent` — the homes the registry reads).
+    # A patch that touches none of them (appearance sync from the phone, server, voice, memory, …) must
+    # NOT be bricked by a PRE-EXISTING lenient-tolerated conflict (a min-wins gate clash, a duplicate
+    # target, a blank-primary-with-fallbacks) sitting in a hand-edited config — those saves resolve
+    # LENIENTLY and surface the same notices as warnings instead of blocking. The three relevant subtrees
+    # stay strict-always so a provider/model/gate/chain problem they introduce is a typed 422.
+    touches_resolution = any(k in patch for k in ("providers", "inference", "agent"))
+    if touches_resolution:
+        resolved = resolve_strict(new)
+        if isinstance(resolved, list):
+            raise ProviderResolveError(resolved)
+        reg_warnings = list(resolved.warnings)
+    else:
+        _reg, reg_warnings = resolve_lenient(new)
+    warnings = reg_warnings + provider_skill_collision_warnings(new.providers.keys(), _skill_names(app))
+
+    # Persist only the changed leaves, comment/format-preserving. `providers` writes via `sync_mapping`
+    # (replacement — deletes/renames survive); the non-providers subtrees write via `deep_set`. When a
+    # rename cascaded, the affected homes (inference/agent) are re-derived from the FINAL merged doc so a
+    # cascade the caller's patch did NOT carry still lands on disk. The A11 migration write-back + backup
+    # ride the SAME single atomic edit at the chokepoint (config._PENDING_MIGRATION).
+    to_write = prune_unchanged(unmask_secrets(rest_patch, current_raw), current_raw)
+    if renames:
+        for sect in ("inference", "agent"):
+            delta = prune_unchanged(merged.get(sect, {}), current_raw.get(sect))
+            if delta:
+                to_write[sect] = delta
+            else:
+                to_write.pop(sect, None)
+    providers_write = merged.get("providers") if patch_providers is not None else None
+
+    def _mutate(doc: Any) -> None:
+        deep_set(doc, to_write)
+        if providers_write is not None:  # replacement semantics on the YAML side (add/replace + delete)
+            node = doc.get("providers")
+            if not hasattr(node, "get"):
+                doc["providers"] = {}
+                node = doc["providers"]
+            sync_mapping(node, providers_write)
+
+    edit_config_yaml(_mutate)
     await reconfigure(app, new)
-    return new
+    return new, warnings
 
 
 #: The W2 counterpart to `action_service._APPROVAL_MARKER` — breadcrumbs appended to the run's summary

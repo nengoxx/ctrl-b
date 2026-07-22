@@ -448,7 +448,7 @@ def test_b8_finalize_retries_with_tools_none() -> None:
 
             session._inference.stream_chat = fake_stream
 
-            events = [ev async for ev in session._finalize(thread, None, ModelRef())]
+            events = [ev async for ev in session._finalize(thread, None, None, ModelRef())]
             kinds = [e.event for e in events]
             done = next(e for e in events if e.event == "done")
             text = "".join(e.data["delta"] for e in events if e.event == "text.delta")

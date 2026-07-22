@@ -23,64 +23,56 @@ server:
 # Chat inference (Phase 4). Two OpenAI-compatible backends; `default_mode` picks one (the
 # /local //cloud composer prefixes switch per-message, 4c). `local` needs no api_key (llama.cpp).
 # Thinking models cold-load slowly — keep request_timeout_s generous.
-inference:
-  default_mode: local
+# Providers (A11/D48) — the top-level name-keyed CONNECTION map. Each entry is one OpenAI-compatible
+# server (base_url + api_mode + optional api_key + server-capacity knobs) carrying a name-keyed model
+# catalog. Consumer sections (inference below; voice/embeddings in a later slice) POINT at a provider by
+# name via a flat `provider` primary + ordered `fallbacks`. The map KEY is the provider slug and the
+# `/<provider>` composer verb.
+providers:
+  local:                            # slug ^[a-z0-9][a-z0-9_+.-]{0,31}$; the /local verb
+    base_url: http://192.168.1.137:5001/v1
+    # D45/D46: which API wire shape THIS server speaks — one explicit field (never auto-detected from
+    # base_url) that drives BOTH the reasoning translation and the derived max_tokens_field. llama-server
+    # IGNORES reasoning_effort but DOES honour a per-request token budget, so `llamacpp` makes the ladder
+    # translate to reasoning_budget_tokens. Options: openai (default — effort only) | llamacpp |
+    # openrouter (effort OR reasoning.max_tokens, never both) | none.
+    api_mode: llamacpp
+    # max_concurrent_requests: 1    # D40: app-side gate for a backend without request slots to spare
+    # retry_attempts: 0             # D43: per-provider override of the global inference.retry_attempts
+    models:                         # name-keyed catalog; KEY = clean display name, id defaults to the key
+      minig+:
+        # extra_body: per-MODEL OpenAI-SDK passthrough (ACA-18) — merged only into THIS model's call,
+        # never blanket (OpenAI 400s on unknown args). The llama.cpp prompt-cache pin + telemetry:
+        #   cache_prompt: true       # protective on older llama-server builds (recent builds default true)
+        #   return_progress: true    # emit streaming prompt_progress so cache-hit telemetry shows up
+        extra_body: { cache_prompt: true, return_progress: true }
+        # context_window: 16384      # D42: manual per-model window; unset = auto-probed from llama.cpp
+        #                            # /props (config always wins over the probe; cloud has no probe)
+  cloud:                            # the /cloud verb
+    base_url: https://openrouter.ai/api/v1
+    api_key: sk-or-v1-...           # optional; omitted = no-auth. Masked in the API; blank-keeps on PUT
+    api_mode: openrouter            # D45: reasoning.max_tokens when an agent sets an explicit
+    #                               # reasoning_tokens, else reasoning_effort (our "off" → its "none");
+    #                               # the two are MUTUALLY EXCLUSIVE upstream — sending both is a 400.
+    models:
+      gemini:
+        id: google/gemini-2.0-flash-exp:free   # wire model id sent to the server (hidden in UI when == key)
+        # extra_body: { stream_options: { include_usage: true } }  # cached_tokens telemetry (cloud)
+        # context_window: 1000000    # D42: cloud windows are never probed — set manually or compaction
+        #                            # falls back to the threshold_tokens trigger
+
+inference:                          # request_timeout_s / system_prompt* / failover / retry_attempts STAY
+  provider: local                   # PRIMARY (flat); model omittable iff the catalog has exactly one model
   request_timeout_s: 600
   system_prompt: ""      # optional; blank = the built-in ctrl-b assistant prompt
+  failover: true
   retry_attempts: 2      # D43/Slice 7: CHAT-STREAM same-endpoint retry budget for TRANSIENT failures
                          # only (429 / 503 / Retry-After / llama.cpp busy-slot) — a busy-but-alive server
-                         # is retried in place (visible // retrying… note, backoff 2s×2ⁿ capped 30s, a
-                         # larger Retry-After wins) BEFORE hopping to a fallback. A dead endpoint
-                         # (connection-refused/timeout) never matches → straight next-hop as before.
-                         # 0 = today's instant next-hop everywhere. A per-endpoint override lives on the
-                         # endpoint object (see `retry_attempts` under `local`). complete()/voice keep next-hop.
-  local:
-    base_url: http://192.168.1.137:5001/v1
-    model: minig+
-    # extra_body: per-endpoint OpenAI-SDK passthrough (ACA-18) — merged only into THIS endpoint's
-    # call, never blanket (OpenAI 400s on unknown args). Live on the local endpoint so a fresh install
-    # keeps the llama.cpp prompt-cache pin + telemetry (a commented-out pin silently regresses ACA-18;
-    # return_progress also feeds the D42 context-anchoring estimator — without it compaction falls
-    # back to the chars/4 heuristic):
-    #   cache_prompt: true       # protective on older llama-server builds (recent builds default true)
-    #   return_progress: true    # emit streaming `prompt_progress` so cache-hit telemetry shows up
-    extra_body: { cache_prompt: true, return_progress: true }
-    # context_window: 16384      # D42: manual per-endpoint window; unset = auto-probed from llama.cpp
-    #                            # /props (config always wins over the probe; cloud has no probe)
-    # max_concurrent_requests: 1 # D40: app-side gate for a backend without request slots to spare
-    # retry_attempts: 0          # D43: per-endpoint override of the global inference.retry_attempts
-    #                            # (unset = inherit; 0 = disable retries for this endpoint = straight next-hop)
-    # D45/D46: which API wire shape THIS server speaks — one explicit field (never auto-detected from
-    # base_url) that drives BOTH the reasoning translation and the derived max_tokens_field. It is the
-    # knob that makes an agent's `reasoning_effort` ladder mean something here: llama-server IGNORES
-    # `reasoning_effort` entirely but DOES honour a per-request token budget, so set `llamacpp` on a
-    # llama.cpp endpoint and the ladder is translated to `reasoning_budget_tokens` (0 = think-not-at-all
-    # … -1 = unrestricted), which also overrides the server's own `--reasoning-budget` launch flag.
-    # Options: openai (default — effort only) | llamacpp | openrouter (effort OR reasoning.max_tokens,
-    # never both) | none.
-    # NOTE this file is the EXAMPLE, not your LIVE config — `config.yaml` is gitignored and an upgrade
-    # never touches it, so an existing install keeps the back-compat `openai` default and the whole
-    # ladder stays a NO-OP until you add this line yourself. The server logs a WARNING at startup when
-    # it spots a default-mode endpoint with a self-hosted base_url; that warning is the reminder.
-    api_mode: llamacpp
-  cloud:
-    base_url: https://openrouter.ai/api/v1
-    api_key: sk-or-v1-...
-    model: google/gemini-2.0-flash-exp:free
-    # For a cloud backend, request usage on the final stream chunk to surface cached_tokens telemetry
-    # (cached_tokens reads 0 below 1024 prompt tokens — the documented floor, not a cache miss).
-    # It also feeds the D42 context-anchoring estimator (same role as return_progress locally):
-    # extra_body: { stream_options: { include_usage: true } }
-    # context_window: 1000000    # D42: cloud windows are never probed — set manually or compaction
-    #                            # falls back to the threshold_tokens trigger
-    # max_tokens_field: max_tokens  # D42/D46: unset = DERIVED from api_mode (openai →
-    #                               # max_completion_tokens, else max_tokens). Set it only to override.
-    api_mode: openrouter   # D45: `reasoning.max_tokens` when an agent sets an explicit
-    #                               # reasoning_tokens, else `reasoning_effort` (our "off" → its "none";
-    #                               # every other rung, "max" included, rides verbatim). The two are
-    #                               # MUTUALLY EXCLUSIVE upstream — sending both is a 400. Support is
-    #                               # PER-MODEL: if a model rejects the effort you asked for, the server
-    #                               # logs a WARNING, retries once without it and remembers (D46).
+                         # is retried in place BEFORE hopping. A per-provider override lives on the
+                         # provider (see `retry_attempts` under `local`). 0 = today's instant next-hop.
+  fallbacks:             # ordered, N-deep; each {provider, model?}
+    - provider: cloud
+      model: gemini
 
 # Agent runtime (Phase 4e+, compaction v2 = D42). `compaction` first clears old bulky tool outputs
 # at assembly time (free — the DB keeps them verbatim), then folds the oldest complete turns into a
@@ -109,8 +101,8 @@ agent:
     max_consecutive_failures: 3   # D42: failed (non-shrinking) folds before auto-compaction latches off
     reserve_output: true     # D42: subtract the agent's model.max_tokens from the trigger line
     summarizer:
-      mode: ""               # ""/local/cloud — blank inherits inference.default_mode
-      model: ""              # blank inherits the endpoint's model
+      provider: ""           # a providers-map name; blank inherits the inference primary (D48)
+      model: ""              # blank inherits the provider's model
       # max_tokens: 1024     # D42: optional output cap for the summary call (ModelRef call config)
   # defaults:                # D43/Slice 7 — the AgentDef inheritance base (deep-merged into every agent).
   #                          # Failure-fallback model routing lives HERE as agent.defaults.routing (the
@@ -118,7 +110,7 @@ agent:
   #                          # agent.yaml `routing:` block overrides it). OFF by default (omit the block).
   #   routing:               # escalate to a designated SMARTER model after the worker crash-and-burns
   #                          # several turns in a row, for a few turns, then drop back to the worker.
-  #     lead: { mode: cloud, model: "anthropic/claude-sonnet-4.5" }  # REQUIRED — the escalation target
+  #     lead: { provider: cloud, model: "anthropic/claude-sonnet-4.5" }  # REQUIRED — the escalation target
   #     failure_threshold: 2 # consecutive HARD worker failures (chain-level inference error / iteration-
   #                          # exhaustion / stall guard — NOT wrong answers) that OPEN a fallback episode
   #     fallback_turns: 2    # how many logical turns ONE episode routes to `lead` before returning to the
@@ -144,7 +136,7 @@ agent:
 #   and picks for itself (the Claude-Code approach). The selector itself is swappable (D11).
 # agents:
 #   - name: local              # weak local model — let intent skills auto-narrow the toolset
-#     model: { mode: local, model: "minig+" }
+#     model: { provider: local, model: "minig+" }
 #     tools: "*"               # full registry; skills narrow per-turn by intent
 #     skills: "*"              # all discovered skills may auto-activate (fleet, web-research, ...)
 #     privilege: confirm       # readonly | confirm | auto_low | full — gates med/high-risk tools
@@ -154,9 +146,9 @@ agent:
 #     max_calls_per_tool: 6        # total calls to any one tool per turn before refusal
 #     max_stall_iterations: 2      # consecutive no-progress iterations before a forced final answer
 #   - name: capable            # strong model — OPT OUT of auto-narrowing; full toolset, own judgment
-#     model: { mode: cloud, model: "anthropic/claude-sonnet-4.5" }
+#     model: { provider: cloud, model: "anthropic/claude-sonnet-4.5" }
 #     # ModelRef call config (D42) — optional per-agent output/reasoning knobs (also in the Conf UI):
-#     #   model: { mode: cloud, model: "...", max_tokens: 4096, reasoning_effort: high }
+#     #   model: { provider: cloud, model: "...", max_tokens: 4096, reasoning_effort: high }
 #     #   reasoning_effort ladder: off|minimal|low|medium|high|xhigh|max ("off" disables local
 #     #   thinking via chat_template_kwargs; unknown values are ignored by llama.cpp)
 #     tools: "*"

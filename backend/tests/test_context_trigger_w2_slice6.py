@@ -22,10 +22,10 @@ from typing import cast
 
 import httpx
 import pytest
+from _reg import registry, target
 
 import app.services.agent.compaction as compaction_mod
 from app.adapters.inference import InferenceClient, StreamReport
-from app.config import InferenceCfg, InferenceEndpointCfg
 from app.domain.agent import CompactionCfg
 from app.domain.conversation import Message, TextPart
 from app.domain.enums import Actor
@@ -167,10 +167,10 @@ def test_clearing_credit_is_delta_when_anchored() -> None:
 # ── 2. The window ladder (`effective_window`) + probe-eligibility ─────────────────────────────────
 
 
-def _client_with_handler(handler, **kw) -> InferenceClient:
+def _client_with_handler(handler, **targets) -> InferenceClient:
     """An `InferenceClient` whose probe GETs are served by `handler` (an httpx MockTransport)."""
-    cfg = InferenceCfg(**kw)
-    client = InferenceClient(cfg)
+    tlist = list(targets.values()) or [target("local", "http://local/v1", "m", api_mode="llamacpp")]
+    client = InferenceClient(registry(tlist))
     client._probe_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))  # type: ignore[assignment]
     return client
 
@@ -183,7 +183,7 @@ def test_config_window_wins_over_probe() -> None:
         hits["n"] += 1
         return httpx.Response(200, json={"default_generation_settings": {"n_ctx": 4096}})
 
-    local = InferenceEndpointCfg(base_url="http://local/v1", model="m", context_window=32768)
+    local = target("local", "http://local/v1", "m", api_mode="llamacpp", context_window=32768)
 
     async def scenario() -> None:
         client = _client_with_handler(handler, local=local)
@@ -195,7 +195,7 @@ def test_config_window_wins_over_probe() -> None:
 
 def test_probe_used_when_config_unset() -> None:
     """No config window on the LOCAL endpoint ⇒ the `/props` probe supplies `n_ctx`."""
-    local = InferenceEndpointCfg(base_url="http://local/v1", model="m")  # context_window=None
+    local = target("local", "http://local/v1", "m", api_mode="llamacpp")  # context_window=None
 
     def handler(_r: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"default_generation_settings": {"n_ctx": 8192}})
@@ -213,7 +213,7 @@ def test_probe_zero_n_ctx_is_no_window() -> None:
     instance behind it — confirmed on vault b10069). Accepting 0 as the window made the D42
     trigger degenerate (constant overflow → destructive truncation), so a non-positive probe
     value now means "no usable probe" → the ladder falls through to config/threshold fallback."""
-    local = InferenceEndpointCfg(base_url="http://local/v1", model="m")
+    local = target("local", "http://local/v1", "m", api_mode="llamacpp")
 
     def handler(_r: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"default_generation_settings": {"params": None, "n_ctx": 0}})
@@ -231,8 +231,8 @@ def test_probe_sends_the_model_param_and_memoizes_per_model() -> None:
     bare → 0, `?model=gemma4` → 16384). The probe now sends the endpoint's model and memoizes per
     `(base_url, model)`, so two models behind one router URL each get their own window; a plain
     single-model llama-server ignores the unknown param."""
-    a = InferenceEndpointCfg(base_url="http://local/v1", model="alpha")
-    b = InferenceEndpointCfg(base_url="http://local/v1", model="beta")
+    a = target("local", "http://local/v1", "alpha", api_mode="llamacpp")
+    b = target("local", "http://local/v1", "beta", api_mode="llamacpp")
     seen: list[str] = []
 
     def handler(r: httpx.Request) -> httpx.Response:
@@ -252,7 +252,7 @@ def test_probe_sends_the_model_param_and_memoizes_per_model() -> None:
 
 def test_neither_config_nor_probe_is_none() -> None:
     """Config unset AND the probe fails ⇒ None (⇒ the caller's `threshold_tokens` fallback)."""
-    local = InferenceEndpointCfg(base_url="http://local/v1", model="m")
+    local = target("local", "http://local/v1", "m", api_mode="llamacpp")
 
     def handler(_r: httpx.Request) -> httpx.Response:
         return httpx.Response(404, text="nope")
@@ -273,15 +273,15 @@ def test_cloud_endpoint_not_probed_only_manual() -> None:
         hits["n"] += 1
         return httpx.Response(200, json={"default_generation_settings": {"n_ctx": 4096}})
 
-    local = InferenceEndpointCfg(base_url="http://local/v1", model="m")
-    cloud = InferenceEndpointCfg(base_url="http://cloud/v1", model="c")  # not the local endpoint
+    local = target("local", "http://local/v1", "m", api_mode="llamacpp")
+    cloud = target("cloud", "http://cloud/v1", "c")  # not the local endpoint
 
     async def scenario() -> None:
         client = _client_with_handler(handler, local=local, cloud=cloud)
         assert await client.effective_window(cloud) is None
         assert hits["n"] == 0  # cloud is never probed
         # …but a MANUAL context_window on cloud is honoured (config path, no probe).
-        cloud2 = InferenceEndpointCfg(base_url="http://cloud/v1", model="c", context_window=200000)
+        cloud2 = target("cloud", "http://cloud/v1", "c", context_window=200000)
         assert await client.effective_window(cloud2) == 200000
         assert hits["n"] == 0
 
@@ -294,10 +294,10 @@ def test_cloud_endpoint_not_probed_only_manual() -> None:
 def test_record_stamps_served_endpoint_object() -> None:
     """After a failover serve, `_record` stamps the endpoint OBJECT that answered (`chain[served_index]
     [1]`) alongside its name — the session prices iteration 2+ against it."""
-    local = InferenceEndpointCfg(base_url="http://local/v1", model="m")
-    cloud = InferenceEndpointCfg(base_url="http://cloud/v1", model="c")
-    chain = [("local", local, "m"), ("cloud", cloud, "c")]  # _ChainEntry shape: (name, ep, model)
-    client = InferenceClient(InferenceCfg(local=local, cloud=cloud))
+    local = target("local", "http://local/v1", "m", api_mode="llamacpp")
+    cloud = target("cloud", "http://cloud/v1", "c")
+    chain = [local, cloud]  # _ChainEntry is now a ResolvedTarget
+    client = InferenceClient(registry([local, cloud]))
 
     report = StreamReport()
     # served_index=1 → the cloud fallback answered after local failed.
@@ -305,19 +305,19 @@ def test_record_stamps_served_endpoint_object() -> None:
     client._record(report, chain, result)  # type: ignore[arg-type]
 
     assert report.served == "cloud"
-    assert report.served_endpoint is cloud  # the OBJECT, by identity
+    assert report.served_target is cloud  # the ResolvedTarget, by identity
     assert report.degraded is True and report.failures == ["local: boom"]
 
 
 def test_record_iteration_one_names_selected_endpoint() -> None:
     """No failover (served_index=0) → the stamp names the selected endpoint (iteration-1 pricing)."""
-    local = InferenceEndpointCfg(base_url="http://local/v1", model="m")
-    chain = [("local", local, "m")]
-    client = InferenceClient(InferenceCfg(local=local))
+    local = target("local", "http://local/v1", "m", api_mode="llamacpp")
+    chain = [local]
+    client = InferenceClient(registry([local]))
 
     report = StreamReport()
     client._record(report, chain, SimpleNamespace(served_index=0, degraded=False, failures=[]))  # type: ignore[arg-type]
-    assert report.served_endpoint is local and report.degraded is False
+    assert report.served_target is local and report.degraded is False
 
 
 # ── 4. The anchored estimator (`ContextEstimator`) ────────────────────────────────────────────────

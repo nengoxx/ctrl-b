@@ -300,7 +300,7 @@ class _FakeInfer:
         self._reply = reply
         self.payloads: list[list[dict]] = []
 
-    async def effective_window_for(self, mode: str | None = None) -> int | None:
+    async def effective_window_for(self, mode: str | None = None, model: str | None = None) -> int | None:
         return self._window
 
     async def complete(self, payload, *, mode=None, model=None, **_kw) -> str:
@@ -366,7 +366,7 @@ async def _fresh_repos():
 class _InflateInfer:
     """Summarizer that returns a HUGE body (bigger than any small head) → the fold would inflate."""
 
-    async def effective_window_for(self, mode: str | None = None) -> int | None:
+    async def effective_window_for(self, mode: str | None = None, model: str | None = None) -> int | None:
         return None  # no overflow guard → the (inflating) summarizer actually runs
 
     async def complete(self, payload, *, mode=None, model=None, **_kw) -> str:
@@ -403,7 +403,7 @@ class _FixedInfer:
     def __init__(self, body: str) -> None:
         self._body = body
 
-    async def effective_window_for(self, mode: str | None = None) -> int | None:
+    async def effective_window_for(self, mode: str | None = None, model: str | None = None) -> int | None:
         return None  # no overflow guard
 
     async def complete(self, payload, *, mode=None, model=None, **_kw) -> str:
@@ -523,7 +523,13 @@ def _client():
 def _workspace():
     tmp = Path(tempfile.mkdtemp())
     cfg = tmp / "config.yaml"
-    cfg.write_text("computers: {}\n", encoding="utf-8")
+    # A11: a minimal `local` provider so `target_for` resolves a target (the pricing/compaction path
+    # guards on a non-None target; the thrash tests then govern the window via a monkeypatch).
+    cfg.write_text(
+        "providers:\n  local:\n    base_url: http://x/v1\n    models:\n      m: {}\n"
+        "inference:\n  provider: local\ncomputers: {}\n",
+        encoding="utf-8",
+    )
     os.environ["CTRLB_HOME"] = str(tmp)
     os.environ["CTRLB_CONFIG"] = str(cfg)
     os.environ["CTRLB_DB"] = str(tmp / "t.db")
@@ -549,7 +555,9 @@ def _thrash_session(state, thread, *, max_failures: int = 3):
     async def over_window(ep):  # a tiny window keeps the estimate over threshold every iteration
         return 50
 
-    async def no_guard(mode=None):  # let the inflating summarizer actually run (no overflow guard)
+    async def no_guard(
+        mode=None, model=None
+    ):  # let the inflating summarizer actually run (no overflow guard)
         return None
 
     async def inflate(payload, *, mode=None, model=None, **_kw):
@@ -721,11 +729,16 @@ def test_settings_written_compaction_applies_at_next_session() -> None:
         assert base._compaction_cfg.threshold_frac == 0.85  # the D42 default
 
         # PUT global compaction knobs + a local context window through the real settings endpoint.
+        # A11/D48 C2: a `providers`-carrying PUT must present the current base fingerprint (409 guard).
         r = c.put(
             "/api/settings",
             json={
                 "agent": {"compaction": {"threshold_frac": 0.6, "keep_recent_tokens": 2048}},
-                "inference": {"local": {"context_window": 40000}},
+                "providers_base": c.get("/api/providers").json()["rev"],
+                "providers": {
+                    "local": {"base_url": "http://x/v1", "models": {"m": {"context_window": 40000}}}
+                },
+                "inference": {"provider": "local"},
             },
         )
         assert r.status_code == 200, r.text
@@ -736,15 +749,23 @@ def test_settings_written_compaction_applies_at_next_session() -> None:
         assert after._compaction_cfg.keep_recent_tokens == 2048
 
         async def go() -> None:
-            local_ep = state.settings.inference.endpoint("local")
+            local_ep = state.inference.target_for("local")
             window = await state.inference.effective_window(local_ep)
             assert window == 40000  # config context_window wins the ladder
             # the trigger line moved: window(40000) × frac(0.6) = 24000 (was None → threshold_tokens).
             assert after._compactor._trigger_limit(window, None) == 40000 * 0.6
             # a DIFFERENT context window moves it again (proves the line tracks the live config).
-            r2 = c.put("/api/settings", json={"inference": {"local": {"context_window": 8192}}})
+            r2 = c.put(
+                "/api/settings",
+                json={
+                    "providers_base": c.get("/api/providers").json()["rev"],
+                    "providers": {
+                        "local": {"base_url": "http://x/v1", "models": {"m": {"context_window": 8192}}}
+                    },
+                },
+            )
             assert r2.status_code == 200, r2.text
-            ep2 = state.settings.inference.endpoint("local")
+            ep2 = state.inference.target_for("local")
             assert await state.inference.effective_window(ep2) == 8192
             newer = _build_session(state)
             assert newer._compactor._trigger_limit(8192, None) == 8192 * 0.6
@@ -794,7 +815,7 @@ def test_finalize_assembles_with_clearing_placeholder() -> None:
 
             session._inference.stream_chat = recording  # type: ignore[assignment]
 
-            events = [ev async for ev in session._finalize(thread, None, ModelRef())]
+            events = [ev async for ev in session._finalize(thread, None, None, ModelRef())]
             assert any(e.event == "done" and e.data.get("state") == "completed" for e in events)
             payload = "\n".join(str(m.get("content") or "") for m in seen["messages"])
             assert OUTPUT_CLEARED_PLACEHOLDER in payload  # the old bulky output was trimmed
@@ -835,7 +856,7 @@ def test_finalize_overflow_one_fold_then_reattempt() -> None:
 
             session._inference.stream_chat = overflow_then_ok  # type: ignore[assignment]
 
-            events = [ev async for ev in session._finalize(thread, None, ModelRef())]
+            events = [ev async for ev in session._finalize(thread, None, None, ModelRef())]
             assert folds["n"] == 1  # exactly ONE forced compaction
             assert any(e.event == "compaction" for e in events)
             assert (
@@ -875,7 +896,7 @@ def test_finalize_second_overflow_is_normal_error() -> None:
 
             session._inference.stream_chat = always_overflow  # type: ignore[assignment]
 
-            events = [ev async for ev in session._finalize(thread, None, ModelRef())]
+            events = [ev async for ev in session._finalize(thread, None, None, ModelRef())]
             assert folds["n"] == 1  # one-shot: folded once despite repeated overflow
             assert any(e.event == "error" for e in events)
             assert any(e.event == "done" and e.data.get("state") == "capped" for e in events)
@@ -958,19 +979,28 @@ def test_pricing_uses_captured_endpoint_after_inplace_settings_mutation() -> Non
             from app.domain.conversation import Thread
 
             thread = await state.threads.create(Thread())
+            # Establish a `local` provider (rebuilds the inference client / captured registry).
+            c.put(
+                "/api/settings",
+                json={
+                    "providers": {"local": {"base_url": "http://orig/v1", "models": {"m": {}}}},
+                    "inference": {"provider": "local"},
+                },
+            )
             session = _build_session(state, thread)
-            orig = session._inference.endpoint("local").base_url
+            orig = session._inference.target_for("local").base_url
 
             # Mutate the shared Settings IN PLACE the way `PUT /api/settings` does — WITHOUT rebuilding
             # the inference client (mid-turn: the client is only rebuilt between turns).
             new = state.settings.model_copy(deep=True)
-            new.inference.local.base_url = "http://MUTATED-mid-turn/v1"
+            new.providers["local"].base_url = "http://MUTATED-mid-turn/v1"
             apply_settings_inplace(c.app, new)
 
-            # The live shared Settings now reads the mutated endpoint...
-            assert session._settings.inference.endpoint("local").base_url == "http://MUTATED-mid-turn/v1"
-            # ...but the captured client (what the turn prices + streams through) is UNCHANGED.
-            assert session._inference.endpoint("local").base_url == orig
+            # The live shared Settings now reads the mutated connection...
+            assert session._settings.providers["local"].base_url == "http://MUTATED-mid-turn/v1"
+            # ...but the captured client (what the turn prices + streams through) is UNCHANGED (A11:
+            # target_for resolves against the CAPTURED registry generation).
+            assert session._inference.target_for("local").base_url == orig
 
         _run(go())
 

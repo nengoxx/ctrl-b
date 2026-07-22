@@ -45,10 +45,10 @@ def _run(coro):
 
 
 # Distinct refs so a captured call is unambiguously worker vs lead across ALL FOUR locals.
-_WORKER = ModelRef(mode="local", model="WORKER", max_tokens=111, reasoning_effort="low")
-_LEAD = ModelRef(mode="cloud", model="LEAD", max_tokens=999, reasoning_effort="high")
+_WORKER = ModelRef(provider="local", model="WORKER", max_tokens=111, reasoning_effort="low")
+_LEAD = ModelRef(provider="cloud", model="LEAD", max_tokens=999, reasoning_effort="high")
 # A DIFFERENT lead — a mid-suspend owner edit swaps `rcfg.lead` to this; the frozen snapshot must win.
-_LEAD2 = ModelRef(mode="cloud", model="LEAD2", max_tokens=888, reasoning_effort="high")
+_LEAD2 = ModelRef(provider="cloud", model="LEAD2", max_tokens=888, reasoning_effort="high")
 
 
 # ── A. schema ──────────────────────────────────────────────────────────────────────────────────────

@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import asyncio
 
+from _reg import registry, target
+
 from app.adapters.inference import ChatDelta, InferenceClient, InferenceError, StreamReport
-from app.config import InferenceCfg, InferenceEndpointCfg
 
 
 def _text(items) -> str:
@@ -75,22 +76,23 @@ class _Client:
         self.chat = type("Chat", (), {"completions": _Completions(behavior)})()
 
 
-def _build(cfg: InferenceCfg, behaviors: dict[str, object]):
+def _build(reg, behaviors: dict[str, object]):
     """An InferenceClient whose `_client(ep)` returns the fake bound to ep.base_url."""
-    client = InferenceClient(cfg)
+    client = InferenceClient(reg)
     fakes = {url: _Client(b) for url, b in behaviors.items()}
     client._client = lambda ep: fakes[ep.base_url]  # type: ignore[assignment]
     return client, fakes
 
 
-def _cfg(**kw) -> InferenceCfg:
-    base = dict(
-        default_mode="local",
-        local=InferenceEndpointCfg(base_url="http://local/v1", model="minig"),
-        cloud=InferenceEndpointCfg(base_url="http://cloud/v1", model="gemma"),
+def _cfg(*, failover=True, fallbacks=None):
+    return registry(
+        [
+            target("local", "http://local/v1", "minig"),
+            target("cloud", "http://cloud/v1", "gemma"),
+            *(fallbacks or []),
+        ],
+        failover=failover,
     )
-    base.update(kw)
-    return InferenceCfg(**base)
 
 
 def _down(_kw):
@@ -111,24 +113,21 @@ def _run(coro):
 
 # ── tests ──
 def test_chain_order():
-    c = _cfg(fallbacks=[InferenceEndpointCfg(base_url="http://x/v1", model="x")])
-    assert [n for n, _ in c.endpoint_chain("local")] == ["local", "cloud", "fallback1"]
-    assert [n for n, _ in c.endpoint_chain("cloud")] == ["cloud", "local", "fallback1"]
-    assert [n for n, _ in _cfg(failover=False).endpoint_chain("local")] == ["local"]
+    # A11: chain construction moved to Registry.chain_for (provider names end-to-end). Default (no verb)
+    # is [primary, *fallbacks]; a /verb hoists that provider to the front, dropping its later slot.
+    c = _cfg(fallbacks=[target("x", "http://x/v1", "x")])
+    assert [t.provider for t in c.chain_for(None)] == ["local", "cloud", "x"]
+    assert [t.provider for t in c.chain_for("cloud")] == ["cloud", "local", "x"]
+    assert [t.provider for t in _cfg(failover=False).chain_for(None)] == ["local"]
 
 
-def test_failover_off_blank_selected_errors_not_routes():
-    # Audit fix: failover off + a blank selected endpoint must stay the (blank) selected one — not
-    # silently route to the configured other (which the pre-D18 path would never do).
-    c = InferenceCfg(
-        default_mode="local",
-        failover=False,
-        local=InferenceEndpointCfg(base_url="", model=""),
-        cloud=InferenceEndpointCfg(base_url="http://cloud/v1", model="g"),
-    )
-    chain = c.endpoint_chain("local")
-    assert [n for n, _ in chain] == ["local"]
-    assert chain[0][1].base_url == ""  # blank → errors downstream, as before
+def test_failover_off_stays_on_the_primary():
+    # Failover off + a blank primary must stay the (blank) primary — never silently route to a fallback
+    # (the pre-D18 behavior preserved through the registry: chain_for truncates to [primary]).
+    reg = registry([target("local", "", ""), target("cloud", "http://cloud/v1", "g")], failover=False)
+    chain = reg.chain_for(None)
+    assert [t.provider for t in chain] == ["local"]
+    assert chain[0].base_url == ""  # blank → errors downstream, as before
 
 
 def test_stream_failover_at_create():
@@ -207,26 +206,25 @@ def test_failover_off_does_not_try_fallback():
     assert fakes["http://cloud/v1"].chat.completions.calls == []  # off → only the selected endpoint
 
 
-def test_fallbacks_secret_survives_remove():
-    # Audit fix: removing a non-last fallback must NOT clobber the remaining ones' real api_keys (the
-    # form re-sends them masked; unmask matches by base_url identity, not the now-shifted index).
+def test_provider_secret_survives_remove():
+    # A11 (repointed from the deleted secret-bearing inference.fallbacks): secrets now live on the
+    # `providers` MAP (path-aware, keyed). Removing one provider must NOT clobber the others' real
+    # api_keys — the form re-sends them masked and unmask restores by KEY, not position.
     from app.config import mask_secrets, unmask_secrets
 
     stored = {
-        "inference": {
-            "fallbacks": [
-                {"base_url": "http://a/v1", "api_key": "key-a", "model": "ma"},
-                {"base_url": "http://b/v1", "api_key": "key-b", "model": "mb"},
-            ]
+        "providers": {
+            "a": {"base_url": "http://a/v1", "api_key": "key-a"},
+            "b": {"base_url": "http://b/v1", "api_key": "key-b"},
         }
     }
     masked = mask_secrets(stored)
-    incoming = {"inference": {"fallbacks": [masked["inference"]["fallbacks"][1]]}}  # A removed, B masked
+    incoming = {"providers": {"b": masked["providers"]["b"]}}  # A removed, B masked
     result = unmask_secrets(incoming, stored)
-    assert result["inference"]["fallbacks"][0]["api_key"] == "key-b"  # preserved by identity
-    # a brand-new fallback's freshly typed key is taken as-is
-    new = {"inference": {"fallbacks": [{"base_url": "http://c/v1", "api_key": "fresh", "model": "mc"}]}}
-    assert unmask_secrets(new, stored)["inference"]["fallbacks"][0]["api_key"] == "fresh"
+    assert result["providers"]["b"]["api_key"] == "key-b"  # preserved by key
+    # a brand-new provider's freshly typed key is taken as-is
+    new = {"providers": {"c": {"base_url": "http://c/v1", "api_key": "fresh"}}}
+    assert unmask_secrets(new, stored)["providers"]["c"]["api_key"] == "fresh"
 
 
 if __name__ == "__main__":

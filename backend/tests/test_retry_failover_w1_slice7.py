@@ -27,6 +27,7 @@ from types import SimpleNamespace
 
 import pytest
 from _async import run_async
+from _reg import registry, target
 
 # import the D42 backstop harness verbatim (F: prove the control item leaves streamed_any honest)
 from test_modelref_wire_w4_slice6 import (
@@ -44,11 +45,10 @@ from app.adapters.inference import (
     InferenceError,
     RetryNotice,
     _parse_retry_after,
-    _resolve_retry_attempts,
     _retry_delay,
     categorize,
 )
-from app.config import InferenceCfg, InferenceEndpointCfg
+from app.config import InferenceCfg, ModelCfg, ProviderCfg, Settings
 from app.core.failover import (
     NEXT_HOP,
     RETRY_AFTER,
@@ -59,6 +59,7 @@ from app.core.failover import (
     failover,
     failover_collect,
 )
+from app.core.provider_registry import resolve_lenient
 
 
 def _run(coro):
@@ -231,10 +232,21 @@ def test_retry_delay_curve_and_cap() -> None:
 
 
 def test_resolve_retry_attempts_global_override_disable() -> None:
-    cfg = InferenceCfg(retry_attempts=2)
-    assert _resolve_retry_attempts(cfg, InferenceEndpointCfg()) == 2  # None inherits the global
-    assert _resolve_retry_attempts(cfg, InferenceEndpointCfg(retry_attempts=5)) == 5  # override wins
-    assert _resolve_retry_attempts(cfg, InferenceEndpointCfg(retry_attempts=0)) == 0  # 0 disables
+    """A11: the per-hop budget is resolved onto ResolvedTarget.retry_attempts (provider override > global)."""
+
+    def _build_reg(retry):
+        s = Settings(
+            providers={
+                "a": ProviderCfg(base_url="http://a/v1", retry_attempts=retry, models={"m": ModelCfg()})
+            },
+            inference=InferenceCfg(provider="a", retry_attempts=2),
+        )
+        reg, _ = resolve_lenient(s)
+        return reg.inference_chain[0].retry_attempts
+
+    assert _build_reg(None) == 2  # None inherits the global
+    assert _build_reg(5) == 5  # override wins
+    assert _build_reg(0) == 0  # 0 disables
 
 
 # ══ D. the retry tier over stream_chat (fake SDK) ════════════════════════════════════════════════════
@@ -284,8 +296,8 @@ class _Client:
         self.chat = type("Chat", (), {"completions": _Completions(behavior)})()
 
 
-def _build(cfg: InferenceCfg, behaviors: dict[str, object], gates=None):
-    client = InferenceClient(cfg, gates=gates)
+def _build(reg, behaviors: dict[str, object], gates=None):
+    client = InferenceClient(reg, gates=gates)
     fakes = {url: _Client(b) for url, b in behaviors.items()}
     client._client = lambda ep: fakes[ep.base_url]  # type: ignore[assignment]
     return client, fakes
@@ -307,14 +319,10 @@ def _text(items) -> str:
     return "".join(d.text for d in items if isinstance(d, ChatDelta))
 
 
-def _cfg(**kw) -> InferenceCfg:
-    base = dict(
-        default_mode="local",
-        local=InferenceEndpointCfg(base_url="http://local/v1", model="minig"),
-        cloud=InferenceEndpointCfg(base_url="http://cloud/v1", model="gemma"),
-    )
-    base.update(kw)
-    return InferenceCfg(**base)
+def _cfg(*, failover=True, local=None, cloud=None):
+    local = local if local is not None else target("local", "http://local/v1", "minig")
+    cloud = cloud if cloud is not None else target("cloud", "http://cloud/v1", "gemma")
+    return registry([local, cloud], failover=failover)
 
 
 def _instant_backoff(monkeypatch) -> None:
@@ -348,14 +356,14 @@ def test_transient_retries_same_endpoint_then_hops(monkeypatch) -> None:
 def test_per_endpoint_override_and_zero_disables(monkeypatch) -> None:
     _instant_backoff(monkeypatch)
     # override=1 → exactly ONE retry on local before the hop
-    cfg1 = _cfg(local=InferenceEndpointCfg(base_url="http://local/v1", model="m", retry_attempts=1))
+    cfg1 = _cfg(local=target("local", "http://local/v1", "m", retry_attempts=1))
     c1, f1 = _build(cfg1, {"http://local/v1": _busy, "http://cloud/v1": _ok_stream("x")})
     items1 = _run(_collect(c1))
     assert len(f1["http://local/v1"].chat.completions.calls) == 2  # init + 1 retry
     assert len([x for x in items1 if isinstance(x, RetryNotice)]) == 1
 
     # override=0 → NO retry, straight next-hop (today's behaviour for this endpoint)
-    cfg0 = _cfg(local=InferenceEndpointCfg(base_url="http://local/v1", model="m", retry_attempts=0))
+    cfg0 = _cfg(local=target("local", "http://local/v1", "m", retry_attempts=0))
     c0, f0 = _build(cfg0, {"http://local/v1": _busy, "http://cloud/v1": _ok_stream("x")})
     items0 = _run(_collect(c0))
     assert len(f0["http://local/v1"].chat.completions.calls) == 1  # init only, no retry
@@ -389,7 +397,7 @@ def test_retry_after_header_floors_the_backoff(monkeypatch) -> None:
     def _busy_retry_after(_kw):
         raise InferenceError("slow down", status=503, retry_after=9.0)  # header floor 9s > curve 2s
 
-    cfg = _cfg(local=InferenceEndpointCfg(base_url="http://local/v1", model="m", retry_attempts=1))
+    cfg = _cfg(local=target("local", "http://local/v1", "m", retry_attempts=1))
     c, _f = _build(cfg, {"http://local/v1": _busy_retry_after, "http://cloud/v1": _ok_stream("z")})
     _run(_collect(c))
     assert slept == [9.0]  # the one retry slept the Retry-After value, not the 2s curve
@@ -422,15 +430,12 @@ def test_no_retry_after_first_streamed_token(monkeypatch) -> None:
 # ══ E. permit-free backoff + cancel-during-backoff ═══════════════════════════════════════════════════
 
 
-def _slot_cfg() -> InferenceCfg:
+def _slot_cfg():
     """A SINGLE local endpoint, limit 1, failover off — so a retry re-attempts the SAME slot and the
     backoff's permit behaviour is observable in isolation."""
-    return InferenceCfg(
-        default_mode="local",
+    return registry(
+        [target("local", "http://local/v1", "m", max_concurrent_requests=1, retry_attempts=1)],
         failover=False,
-        local=InferenceEndpointCfg(
-            base_url="http://local/v1", model="m", max_concurrent_requests=1, retry_attempts=1
-        ),
     )
 
 

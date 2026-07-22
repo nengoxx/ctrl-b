@@ -35,6 +35,7 @@ from typing import cast
 import httpx
 import pytest
 from _async import run_async
+from _reg import registry, target
 from openai import BadRequestError
 from pydantic import ValidationError
 
@@ -46,13 +47,12 @@ from app.adapters.inference import (
     InferenceError,
     RetryNotice,
     StreamReport,
-    _looks_self_hosted,
     _resolve_reasoning_budget,
     is_context_overflow,
     is_reasoning_param_rejection,
-    warn_suspect_api_modes,
 )
-from app.config import InferenceCfg, InferenceEndpointCfg
+from app.config import InferenceCfg, ModelCfg, ProviderCfg, SectionRef, Settings
+from app.core.provider_registry import _looks_self_hosted, resolve_lenient
 from app.domain.agent import CompactionCfg, ModelRef
 from app.domain.conversation import Message, TextPart
 from app.domain.enums import Actor
@@ -67,10 +67,10 @@ def _run(coro):
 # ── A. `_call_config` (the pure per-endpoint wire builder) ─────────────────────────────────────────
 
 
-def _ep(**kw) -> InferenceEndpointCfg:
-    base = dict(base_url="http://local/v1", model="m")
-    base.update(kw)
-    return InferenceEndpointCfg(**base)
+def _ep(**kw):
+    return target(
+        kw.pop("provider", "local"), kw.pop("base_url", "http://local/v1"), kw.pop("model", "m"), **kw
+    )
 
 
 def test_call_config_max_tokens_uses_endpoint_field_name() -> None:
@@ -443,7 +443,7 @@ def test_call_config_dialect_branches_keep_extra_body_merge_and_no_mutation() ->
 
 def test_endpoint_api_mode_literal_rejects_junk() -> None:
     with pytest.raises(ValidationError):
-        InferenceEndpointCfg(api_mode="llama")
+        ProviderCfg(api_mode="llama")
 
 
 # ── A3. the "your dialect is probably wrong" startup warning (D45 audit FIX 5) ─────────────────────
@@ -467,32 +467,38 @@ def test_self_hosted_base_url_heuristic() -> None:
         assert not _looks_self_hosted(url), url
 
 
-def test_warn_fires_for_default_dialect_on_a_self_hosted_endpoint(caplog) -> None:
-    """The feature ships INERT on every existing install (config.yaml is gitignored and keeps the
-    back-compat default) — this warning is the only feedback the owner gets, so pin that it names the
-    endpoint AND the exact key to set."""
-    cfg = InferenceCfg(
-        local=InferenceEndpointCfg(base_url="http://127.0.0.1:8080/v1", model="m"),
-        cloud=InferenceEndpointCfg(base_url="https://api.openai.com/v1", model="gpt"),
-        fallbacks=[InferenceEndpointCfg(base_url="http://emma:8081/v1", model="m")],
+def test_warn_fires_for_default_dialect_on_a_self_hosted_provider() -> None:
+    """A11/D48: the self-hosted-default-api_mode advisory moved into `resolve_lenient` warnings — it
+    names the PROVIDER and the exact key to set. A real cloud provider on 443 stays quiet."""
+    s = Settings(
+        providers={
+            "local": ProviderCfg(base_url="http://127.0.0.1:8080/v1", models={"m": ModelCfg()}),
+            "cloud": ProviderCfg(base_url="https://api.openai.com/v1", models={"gpt": ModelCfg()}),
+            "fb": ProviderCfg(base_url="http://emma:8081/v1", models={"m": ModelCfg()}),
+        },
+        inference=InferenceCfg(
+            provider="local",
+            fallbacks=[SectionRef(provider="cloud", model="gpt"), SectionRef(provider="fb", model="m")],
+        ),
     )
-    with caplog.at_level(logging.WARNING, logger="ctrlb.inference"):
-        warn_suspect_api_modes(cfg)
-    msgs = [r.getMessage() for r in caplog.records]
-    assert len(msgs) == 2, msgs  # local + the fallback; the real cloud endpoint stays quiet
-    assert "inference.local.api_mode: llamacpp" in msgs[0]
-    assert "http://127.0.0.1:8080/v1" in msgs[0]
-    assert "inference.fallbacks[0].api_mode: llamacpp" in msgs[1]
+    _, warns = resolve_lenient(s)
+    self_hosted = [w for w in warns if "self-hosted" in w]
+    assert len(self_hosted) == 2, self_hosted  # local + fb; the real cloud provider stays quiet
+    assert any("'local'" in w and "api_mode: llamacpp" in w for w in self_hosted)
+    assert any("'fb'" in w for w in self_hosted)
 
 
-def test_warn_silent_once_the_dialect_is_set_or_the_endpoint_is_blank(caplog) -> None:
-    cfg = InferenceCfg(
-        local=InferenceEndpointCfg(base_url="http://127.0.0.1:8080/v1", model="m", api_mode="llamacpp"),
-        cloud=InferenceEndpointCfg(base_url="", model=""),
+def test_warn_silent_once_the_dialect_is_set() -> None:
+    s = Settings(
+        providers={
+            "local": ProviderCfg(
+                base_url="http://127.0.0.1:8080/v1", api_mode="llamacpp", models={"m": ModelCfg()}
+            )
+        },
+        inference=InferenceCfg(provider="local"),
     )
-    with caplog.at_level(logging.WARNING, logger="ctrlb.inference"):
-        warn_suspect_api_modes(cfg)
-    assert caplog.records == []
+    _, warns = resolve_lenient(s)
+    assert not any("self-hosted" in w for w in warns)
 
 
 # ── B. InferenceError code/status + `is_context_overflow` ──────────────────────────────────────────
@@ -606,21 +612,17 @@ class _Client:
         self.chat = type("Chat", (), {"completions": _Completions(behavior)})()
 
 
-def _build(cfg: InferenceCfg, behaviors: dict[str, object]):
-    client = InferenceClient(cfg)
+def _build(reg, behaviors: dict[str, object]):
+    client = InferenceClient(reg)
     fakes = {url: _Client(b) for url, b in behaviors.items()}
     client._client = lambda ep: fakes[ep.base_url]  # type: ignore[assignment]
     return client, fakes
 
 
-def _cfg(**kw) -> InferenceCfg:
-    base = dict(
-        default_mode="local",
-        local=InferenceEndpointCfg(base_url="http://local/v1", model="minig"),
-        cloud=InferenceEndpointCfg(base_url="http://cloud/v1", model="gemma"),
-    )
-    base.update(kw)
-    return InferenceCfg(**base)
+def _cfg(*, failover=True, retry_attempts=2, local=None, cloud=None):
+    local = local if local is not None else target("local", "http://local/v1", "minig")
+    cloud = cloud if cloud is not None else target("cloud", "http://cloud/v1", "gemma")
+    return registry([local, cloud], failover=failover, retry_attempts=retry_attempts)
 
 
 def _stream_ok(*texts):
@@ -642,7 +644,7 @@ def test_stream_chat_threads_modeled_kwargs_to_create() -> None:
 def test_stream_chat_off_sends_chat_template_kwargs() -> None:
     """End-to-end through `stream_chat`: the template lever reaches the wire on a llamacpp endpoint —
     and (D45 audit FIX 4) does NOT on the default dialect, which sends the `none` enum value instead."""
-    llama = _cfg(local=InferenceEndpointCfg(base_url="http://local/v1", model="m", api_mode="llamacpp"))
+    llama = _cfg(local=target("local", "http://local/v1", "m", api_mode="llamacpp"))
     client, fakes = _build(llama, {"http://local/v1": _stream_ok("hi")})
     _run(_collect(client, reasoning_effort="off"))
     call = fakes["http://local/v1"].chat.completions.calls[0]
@@ -672,10 +674,8 @@ def test_params_ride_to_fallback_with_its_own_field_name() -> None:
         raise RuntimeError("local down")
 
     cfg = _cfg(
-        local=InferenceEndpointCfg(base_url="http://local/v1", model="minig", api_mode="llamacpp"),
-        cloud=InferenceEndpointCfg(
-            base_url="http://cloud/v1", model="gemma", max_tokens_field="max_completion_tokens"
-        ),
+        local=target("local", "http://local/v1", "minig", api_mode="llamacpp"),
+        cloud=target("cloud", "http://cloud/v1", "gemma", max_tokens_field="max_completion_tokens"),
     )
     client, fakes = _build(cfg, {"http://local/v1": _down, "http://cloud/v1": _stream_ok("x")})
     _run(_collect(client, max_tokens=64))
@@ -766,7 +766,7 @@ class _FakeInfer:
         self._reply = reply
         self.kwargs: list[dict] = []
 
-    async def effective_window_for(self, mode: str | None = None) -> int | None:
+    async def effective_window_for(self, mode: str | None = None, model: str | None = None) -> int | None:
         return self._window
 
     async def complete(
@@ -882,7 +882,7 @@ def _backstop_session(state, thread, *, summary: str | None = "tiny summary"):
     async def big_window(ep):
         return 10_000_000  # pre-stream trigger never fires; the backstop's force-fold ignores it anyway
 
-    async def no_guard(mode=None):
+    async def no_guard(mode=None, model=None):
         return None  # no summarizer overflow guard → the summarizer actually runs
 
     async def reply(payload, *, mode=None, model=None, max_tokens=None, reasoning_effort=None, **_kw):
@@ -1036,7 +1036,7 @@ def test_backstop_shares_single_slot_endpoint_without_deadlock() -> None:
 
         # A REAL client over a single-slot local endpoint + fake SDK transport (no failover chain).
         cfg = _cfg(
-            local=InferenceEndpointCfg(base_url="http://local/v1", model="minig", max_concurrent_requests=1),
+            local=target("local", "http://local/v1", "minig", max_concurrent_requests=1),
             failover=False,
         )
         seen = {"stream": 0, "complete": 0}
@@ -1057,7 +1057,7 @@ def test_backstop_shares_single_slot_endpoint_without_deadlock() -> None:
         async def big_window(ep):
             return 10_000_000
 
-        async def no_guard(mode=None):
+        async def no_guard(mode=None, model=None):
             return None
 
         client.effective_window = big_window  # type: ignore[assignment]
@@ -1324,7 +1324,7 @@ def test_complete_degrades_the_same_way() -> None:
             raise _sdk_error(400, None, "Unrecognized request argument supplied: reasoning_budget_tokens")
         return _Resp("summary")
 
-    cfg = _cfg(local=InferenceEndpointCfg(base_url="http://local/v1", model="m", api_mode="llamacpp"))
+    cfg = _cfg(local=target("local", "http://local/v1", "m", api_mode="llamacpp"))
     client, _fakes = _build(cfg, {"http://local/v1": _behavior})
     out = _run(client.complete([{"role": "user", "content": "hi"}], reasoning_effort="high"))
     assert out == "summary"
@@ -1338,7 +1338,7 @@ def test_demotion_cache_serves_a_concurrent_racing_request(caplog) -> None:
     already present, but its 400 is genuinely a reasoning rejection — so `_note` must still return True
     (retry stripped), just without a SECOND warning. The old code returned False and failed the hop."""
     client = InferenceClient(_cfg())
-    ep = client._cfg.local
+    ep = client._registry.inference_chain[0]
     err = _sdk_error(400, None, f"reasoning_effort: {_ENUM_REJECT}")
     note = lambda: client._note_reasoning_demotion(  # noqa: E731 — terse test-local
         err, name="local", ep=ep, model="minig", reasoning_effort="high", reasoning_tokens=None
@@ -1368,7 +1368,7 @@ def test_runtime_hook_clears_reasoning_demotions_on_an_agent_edit() -> None:
     from app.runtime import clear_reasoning_demotions
 
     client = InferenceClient(_cfg())
-    client._reasoning_demoted.add(("http://local/v1", "minig"))
+    client._reasoning_demoted.add(("local", "minig"))
     app = SimpleNamespace(state=SimpleNamespace(inference=client))
     clear_reasoning_demotions(app)
     assert client._reasoning_demoted == set()
@@ -1388,7 +1388,7 @@ def test_reconfigure_clears_demotions_on_an_agent_section_edit() -> None:
     from app.runtime import reconfigure
 
     client = InferenceClient(_cfg())
-    client._reasoning_demoted.add(("http://local/v1", "minig"))
+    client._reasoning_demoted.add(("local", "minig"))
     old = Settings()
     new = Settings(agent={"defaults": {"model": {"reasoning_effort": "high"}}})
     app = SimpleNamespace(state=SimpleNamespace(settings=old, inference=client))

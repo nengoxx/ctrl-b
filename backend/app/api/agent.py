@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from sse_starlette.sse import EventSourceResponse
 from starlette.responses import Response
 
-from app.config import Settings, deep_merge
+from app.config import Settings, deep_merge, is_provider_slug, providers_rev
 from app.core.fsutil import write_text_eol
 from app.core.memory import StoreScope, StoreSpec, store_by_key
 from app.domain.agent import AgentDef
@@ -89,17 +89,19 @@ def _coerce_privilege(v: object) -> object:
 
 
 def _coerce_mode(v: object) -> object:
-    """Coerce a raw `/local`//`/cloud` mode to "local"/"cloud" or None — lenient like
-    `_coerce_privilege`. `InferenceCfg.endpoint()` treats any non-"local" string as "cloud", so reject
-    junk here → a typo'd mode falls back to the configured default instead of silently routing to
-    cloud. Shared by `ChatRequest` + `ResumeRequest` so a `/local` turn resumes local (ACA-16)."""
-    return v if v in ("local", "cloud") else None
+    """Coerce a raw request `mode` to a valid PROVIDER-NAME slug or None (A11/D48 C7/R14). SYNTAX-ONLY:
+    a request model can't see settings, so we only check the slug shape (the ONE `is_provider_slug`
+    pattern); an unknown-but-valid slug survives here and is resolved LATER against the captured registry
+    (`Registry.chain_for` coerces an unknown/non-routable provider → None → the default chain, logged).
+    Junk (non-string / bad slug) becomes None = "no override" instead of 422-ing the turn. Shared by
+    `ChatRequest` + `ResumeRequest` so a `/<provider>` turn resumes on the same provider (ACA-16)."""
+    return v if is_provider_slug(v) else None
 
 
 class ChatRequest(BaseModel):
     text: str = Field(min_length=1)
     thread_id: str | None = None
-    mode: str | None = None  # "local" | "cloud"; None → configured default (4c switches per-msg)
+    mode: str | None = None  # a `/<provider>` name (A11 D48 C7); None → the configured default chain
     skills: list[str] = Field(default_factory=list)  # explicit /skill-name invocations (4.5)
     agent: str | None = None  # `/agent <name>` switch (7d); None → the thread's / configured default
     #: `/privilege <level>` session override (A1/D16). None → the resolved agent's own privilege (its
@@ -165,10 +167,10 @@ class ResumeRequest(BaseModel):
     confirm_token: str | None = None
     answer: str | None = None  # the owner's reply when decision == "answer" (A2)
     privilege: Privilege | None = None
-    #: `/local`//`/cloud` inference mode carried across the confirm round-trip (ACA-16/S2-D). None →
-    #: the configured default. Unlike `privilege` (a security stance, always re-sent), the PWA stashes
-    #: the turn's mode and re-sends it here so a `/local` turn *resumes* local — same per-message
-    #: semantics as `ChatRequest.mode`, threaded endpoint → `session.resume` → `_drive`.
+    #: `/<provider>` inference mode carried across the confirm round-trip (ACA-16/S2-D; A11 D48 C7). None →
+    #: the configured default chain. Unlike `privilege` (a security stance, always re-sent), the PWA stashes
+    #: the turn's mode and re-sends it here so a `/<provider>` turn *resumes* on that provider — same
+    #: per-message semantics as `ChatRequest.mode`, threaded endpoint → `session.resume` → `_drive`.
     mode: str | None = None
     #: The turn's active skills (C5-M1), carried across the confirm round-trip so the resumed half
     #: runs under the SAME narrowed toolset + injected instructions the owner confirmed against (same
@@ -1132,6 +1134,77 @@ async def list_skills(request: Request) -> list[dict[str, Any]]:
         {"name": s.name, "description": s.description, "allowed_tools": s.allowed_tools}
         for s in provider.list()
     ]
+
+
+def _clean_model_name(settings: Settings, provider: str, wire_id: str) -> str | None:
+    """Map a resolved WIRE model id back to its clean catalog name for `GET /api/providers` (so the FE
+    picker can correlate the effective section with the per-provider `models` clean-name list). An
+    uncataloged raw-id passthrough has no clean name → the raw id is returned as-is."""
+    if not wire_id:
+        return None
+    pc = settings.providers.get(provider)
+    if pc is not None:
+        for clean, m in pc.models.items():
+            if (m.id or clean) == wire_id:
+                return clean
+    return wire_id  # uncataloged passthrough
+
+
+@router.get("/providers")
+async def get_providers(request: Request) -> dict[str, Any]:
+    """The composer + Conf provider directory (A11/D48 C7/R9) — a lightweight NAKED, NON-SECRET read
+    (no api_key, no base_url; names + catalogs + the effective default chain only), modeled on
+    `GET /api/appearance`. The composer consumes `verbs` directly for `/<provider>` completion; Conf
+    reads the full `providers` map + `sections`. Resolved LENIENTLY (boot policy) so `sections` reports
+    the EFFECTIVE chain (post-lenient promotion, what the registry actually resolved — C9), and
+    `warnings` are the current generation's lenient/boot notices + the LIVE skill-collision set.
+
+    `verbs` = composer-routable providers only (C7): a provider in the inference chain, OR a non-chain
+    provider whose catalog has exactly ONE model (multi-model non-chain providers coerce to the default
+    and are NOT advertised); a provider shadowed by a skill or a reserved built-in verb is excluded from
+    `verbs` (precedence built-ins > skills > providers) but kept in the `providers` map for Conf."""
+    from app.core.provider_registry import (
+        RESERVED_VERBS,
+        is_reserved_verb,
+        provider_skill_collision_warnings,
+        resolve_lenient,
+    )
+
+    settings: Settings = request.app.state.settings
+    registry, warnings = resolve_lenient(settings)
+    chain = registry.inference_chain
+
+    def _ref(t: Any) -> dict[str, Any]:
+        return {"provider": t.provider, "model": _clean_model_name(settings, t.provider, t.model)}
+
+    skill_names = (
+        [s.name for s in request.app.state.skills.list()]
+        if getattr(request.app.state, "skills", None) is not None
+        else []
+    )
+    verbs = [
+        name
+        for name, rp in registry.providers.items()
+        if rp.verb_target is not None and name not in set(skill_names) and not is_reserved_verb(name)
+    ]
+    return {
+        "providers": {
+            name: {"api_mode": p.api_mode, "models": list(p.models.keys())}
+            for name, p in settings.providers.items()
+        },
+        "rev": providers_rev(settings),
+        "sections": {
+            "inference": {
+                "provider": chain[0].provider if chain else None,
+                "model": _clean_model_name(settings, chain[0].provider, chain[0].model) if chain else None,
+                "fallbacks": [_ref(t) for t in chain[1:]],
+            }
+        },
+        "reserved_verbs": list(RESERVED_VERBS),
+        "verbs": verbs,
+        "warnings": list(warnings)
+        + provider_skill_collision_warnings(settings.providers.keys(), skill_names),
+    }
 
 
 @router.get("/agent/default-prompt")

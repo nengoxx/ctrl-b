@@ -109,6 +109,9 @@ async def _memory_sweep(backup: GitMemoryBackup, settings) -> None:
 async def lifespan(app: FastAPI):
     load_dotenv()  # .env → os.environ first, so CTRLB_CONFIG/CTRLB_DB are seen below
     app.state.settings = load_settings()
+    # A11/D48 C3/step 4: a legacy->new inference fold at load arms `config._PENDING_MIGRATION`; the FIRST
+    # successful write through the YAML chokepoint (`edit_config_yaml`) materializes the new shape + deletes
+    # the legacy keys + writes a 0600 backup — for EVERY writer (settings PUT or host/integration CRUD).
     app.state.fleet = FleetService(app.state.settings)
     app.state.services = ServiceService(app.state.settings, app.state.fleet)
     app.state.db = Database()

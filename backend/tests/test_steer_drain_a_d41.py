@@ -79,10 +79,10 @@ class _Fake:
     async def effective_window(self, _ep):  # D42 Wave 2 — the trigger resolves the window here; a
         return None  # scripted fake has no window → the `threshold_tokens` fallback (tiny histories)
 
-    def endpoint(self, _mode=None):  # D42 Codex FIX 3 — `_drive` prices the endpoint off the client
-        from app.config import InferenceEndpointCfg
+    def target_for(self, _mode=None, _model=None):  # A11 — `_drive` prices the target off the client
+        from app.domain.provider import ResolvedTarget
 
-        return InferenceEndpointCfg(base_url="http://fake/v1", model="m")
+        return ResolvedTarget(provider="fake", base_url="http://fake/v1", model="m")
 
 
 def _text(s: str):

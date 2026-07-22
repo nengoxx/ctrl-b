@@ -695,7 +695,7 @@ class Compactor:
         # for it — but never LESS than the `_SUMMARIZER_MARGIN_FRAC` floor (a tiny cap must not loosen
         # the guard below today's safety margin; a large cap tightens it honestly). Input (system +
         # transcript) is already in `payload`, so the reserve covers only the generated summary.
-        window = await self._inference.effective_window_for(s.mode)
+        window = await self._inference.effective_window_for(s.provider, s.model)
         if window is not None:
             reserve = max(s.max_tokens or 0, int(window * _SUMMARIZER_MARGIN_FRAC))
             if estimate_payload_tokens(payload) > window - reserve:
@@ -703,7 +703,7 @@ class Compactor:
         try:
             body = await self._inference.complete(
                 payload,
-                mode=s.mode,
+                mode=s.provider,
                 model=s.model,
                 max_tokens=s.max_tokens,
                 reasoning_effort=s.reasoning_effort,

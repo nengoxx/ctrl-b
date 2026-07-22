@@ -17,16 +17,19 @@ from pathlib import Path
 
 import httpx
 import pytest
+from _reg import registry, target
 from pydantic import ValidationError
 
 from app.adapters.inference import InferenceClient, _props_url
 from app.config import (
     InferenceCfg,
-    InferenceEndpointCfg,
+    ModelCfg,
+    ProviderCfg,
     Settings,
     load_settings,
     save_settings,
 )
+from app.core.provider_registry import resolve_lenient
 from app.domain.agent import CompactionCfg, ModelRef
 
 # ── CompactionCfg knobs (D42) ─────────────────────────────────────────────────────────────────────
@@ -83,8 +86,8 @@ def test_modelref_new_fields_default_none() -> None:
     assert m.max_tokens is None
     assert m.reasoning_effort is None
     assert m.reasoning_tokens is None
-    # the pointer half is unchanged
-    assert m.mode is None and m.model is None
+    # the pointer half is unchanged (A11: mode -> provider)
+    assert m.provider is None and m.model is None
 
 
 @pytest.mark.parametrize("effort", ["off", "minimal", "low", "medium", "high", "xhigh", "max"])
@@ -110,64 +113,82 @@ def test_modelref_budget_fields_reject_zero_and_negative(field: str) -> None:
 
 
 def test_modelref_no_extra_allow() -> None:
-    """Declared fields, no `extra='allow'` — an unknown key is dropped (pydantic default `ignore`),
-    NOT retained as a passthrough on `model_extra`."""
-    m = ModelRef(max_toknes=100)  # typo → ignored, not stored
-    assert m.model_extra in (None, {})
-    assert not hasattr(m, "max_toknes")
-
-
-# ── InferenceEndpointCfg windows (D42) ──────────────────────────────────────────────────────────
-
-
-def test_endpoint_context_window_defaults_none_and_floor() -> None:
-    assert InferenceEndpointCfg().context_window is None
-    assert InferenceEndpointCfg(context_window=8192).context_window == 8192
+    """Declared fields with `extra='forbid'` (FX6/Codex#10) — an unknown key is a HARD error, not a silent
+    drop, so a stale legacy `mode:` reaching normal validation fails loudly instead of becoming
+    `provider=None` + a mis-routed raw model id."""
     with pytest.raises(ValidationError):
-        InferenceEndpointCfg(context_window=0)
+        ModelRef(max_toknes=100)  # typo → forbidden
+    with pytest.raises(ValidationError):
+        ModelRef(mode="local")  # the retired legacy key → forbidden outside the quarantined migration fold
 
 
-def test_endpoint_max_tokens_field_literal_and_derivation() -> None:
-    """D46: the raw field is now `None`-by-default and DERIVED from `api_mode`
-    (`openai` → `max_completion_tokens`, everything else → `max_tokens`); an explicit value always wins.
-    Only `resolved_max_tokens_field` may be read at the wire."""
-    assert InferenceEndpointCfg().max_tokens_field is None
-    assert InferenceEndpointCfg().resolved_max_tokens_field == "max_completion_tokens"  # default api_mode
+# ── model windows (D42) — now on ModelCfg, resolved onto ResolvedTarget ─────────────────────────
+
+
+def test_model_context_window_defaults_none_and_floor() -> None:
+    assert ModelCfg().context_window is None
+    assert ModelCfg(context_window=8192).context_window == 8192
+    with pytest.raises(ValidationError):
+        ModelCfg(context_window=0)
+
+
+def _resolved_mtf(*, api_mode="openai", provider_mtf=None, model_mtf=None):
+    s = Settings(
+        providers={
+            "p": ProviderCfg(
+                base_url="http://x/v1",
+                api_mode=api_mode,
+                max_tokens_field=provider_mtf,
+                models={"m": ModelCfg(max_tokens_field=model_mtf)},
+            )
+        },
+        inference=InferenceCfg(provider="p"),
+    )
+    reg, _ = resolve_lenient(s)
+    return reg.inference_chain[0].resolved_max_tokens_field
+
+
+def test_max_tokens_field_ladder_model_gt_provider_gt_derived() -> None:
+    """D46/C6 ladder (now resolved onto ResolvedTarget): model explicit > provider explicit >
+    api_mode-derived (openai → max_completion_tokens, else max_tokens). Only `resolved_max_tokens_field`
+    is read at the wire."""
+    assert _resolved_mtf() == "max_completion_tokens"  # default api_mode openai derives the new spelling
     for mode in ("llamacpp", "openrouter", "none"):
-        assert InferenceEndpointCfg(api_mode=mode).resolved_max_tokens_field == "max_tokens"
-    override = InferenceEndpointCfg(api_mode="llamacpp", max_tokens_field="max_completion_tokens")
-    assert override.resolved_max_tokens_field == "max_completion_tokens"  # explicit always wins
-    assert InferenceEndpointCfg(max_tokens_field="max_tokens").resolved_max_tokens_field == "max_tokens"
+        assert _resolved_mtf(api_mode=mode) == "max_tokens"
+    assert _resolved_mtf(api_mode="llamacpp", provider_mtf="max_completion_tokens") == "max_completion_tokens"
+    assert _resolved_mtf(api_mode="openai", model_mtf="max_tokens") == "max_tokens"  # model wins over derived
+    # model explicit beats provider explicit
+    assert (
+        _resolved_mtf(provider_mtf="max_tokens", model_mtf="max_completion_tokens") == "max_completion_tokens"
+    )
     with pytest.raises(ValidationError):
-        InferenceEndpointCfg(max_tokens_field="tokens")
+        ProviderCfg(max_tokens_field="tokens")
 
 
-def test_fallback_endpoints_carry_new_fields_through_roundtrip() -> None:
-    """Fallbacks are full `InferenceEndpointCfg` objects → `context_window`/`max_tokens_field` ride
-    them with zero schema work (the unified-object payoff), and round-trip clean (only api_key is
-    secret-carried; these non-secret fields survive save+reload verbatim)."""
+def test_catalog_models_carry_new_fields_through_roundtrip() -> None:
+    """Per-model context_window/max_tokens_field ride the providers catalog with zero schema work (the
+    unified-object payoff), round-tripping clean through save+reload."""
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "config.yaml"
         s = Settings.model_validate(
             {
-                "inference": {
-                    "local": {"base_url": "http://x/v1", "model": "m", "context_window": 32768},
-                    "fallbacks": [
-                        {
-                            "base_url": "http://fb/v1",
-                            "model": "fb",
-                            "context_window": 8192,
-                            "max_tokens_field": "max_completion_tokens",
-                        }
-                    ],
-                }
+                "providers": {
+                    "local": {"base_url": "http://x/v1", "models": {"m": {"context_window": 32768}}},
+                    "fb": {
+                        "base_url": "http://fb/v1",
+                        "models": {
+                            "fb": {"context_window": 8192, "max_tokens_field": "max_completion_tokens"}
+                        },
+                    },
+                },
+                "inference": {"provider": "local", "fallbacks": [{"provider": "fb"}]},
             }
         )
         save_settings(s, p)
         r = load_settings(p)
-        assert r.inference.local.context_window == 32768
-        assert r.inference.fallbacks[0].context_window == 8192
-        assert r.inference.fallbacks[0].max_tokens_field == "max_completion_tokens"
+        assert r.providers["local"].models["m"].context_window == 32768
+        assert r.providers["fb"].models["fb"].context_window == 8192
+        assert r.providers["fb"].models["fb"].max_tokens_field == "max_completion_tokens"
 
 
 # ── The `/props` window probe (D42) ─────────────────────────────────────────────────────────────
@@ -180,14 +201,11 @@ def test_props_url_strips_v1() -> None:
     assert _props_url("http://host:5001/") == "http://host:5001/props"
 
 
-def _client_with_handler(
-    handler, *, base_url: str = "http://local/v1"
-) -> tuple[InferenceClient, InferenceEndpointCfg]:
+def _client_with_handler(handler, *, base_url: str = "http://local/v1"):
     """An `InferenceClient` whose probe GETs are served by `handler` (an httpx MockTransport handler),
-    with a matching local endpoint to probe."""
-    ep = InferenceEndpointCfg(base_url=base_url, model="m")
-    cfg = InferenceCfg(local=ep)
-    client = InferenceClient(cfg)
+    with a matching llamacpp target to probe (probe eligibility is now api_mode=='llamacpp')."""
+    ep = target("local", base_url, "m", api_mode="llamacpp")
+    client = InferenceClient(registry([ep]))
     client._probe_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))  # type: ignore[assignment]
     return client, ep
 
@@ -288,9 +306,9 @@ def test_probe_never_raises_on_bad_responses() -> None:
 
 def test_probe_blank_base_url_is_none() -> None:
     async def scenario() -> None:
-        cfg = InferenceCfg(local=InferenceEndpointCfg(base_url="", model="m"))
-        client = InferenceClient(cfg)
-        assert await client.probed_context_window(cfg.local) is None
+        blank = target("local", "", "m", api_mode="llamacpp")
+        client = InferenceClient(registry([blank]))
+        assert await client.probed_context_window(blank) is None
 
     asyncio.run(scenario())
 

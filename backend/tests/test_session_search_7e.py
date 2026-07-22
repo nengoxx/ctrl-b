@@ -185,7 +185,11 @@ def test_tool_redacts_secret_in_snippet() -> None:
 
     with _workspace():
         with _client() as c:
-            c.app.state.settings.inference.local.api_key = "SUPERSECRETKEY"
+            from app.config import ModelCfg, ProviderCfg
+
+            c.app.state.settings.providers["local"] = ProviderCfg(
+                base_url="http://x/v1", api_key="SUPERSECRETKEY", models={"m": ModelCfg()}
+            )
             t = _thread(c)
             _msg(c, t.id, "assistant", _text("the password is SUPERSECRETKEY for now"))
             out = _invoke(c, {"query": "password"})
