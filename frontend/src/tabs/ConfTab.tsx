@@ -575,7 +575,7 @@ function ProviderCard(props: {
                   </div>
                   {/* remove-idiom rule (P13): a card ENTITY (a model / a provider) removes via the `.mfoot`
                       text-danger button; a compact INLINE list row (an inference fallback) removes via its
-                      `.row-actions` dropdown. Follow this split for future editors. */}
+                      leading ✕ `.fb-remove` glyph. Follow this split for future editors. */}
                   <div className="mfoot">
                     <button type="button" className="danger" onClick={() => removeModel(i)}>
                       remove model
@@ -874,8 +874,8 @@ export function ConfTab({ active }: Props) {
 
   const inf = draft?.inference;
   const srv = draft?.server;
-  // P11 — pointer drag reorder for the fallback chain; the row-actions dropdown (Move up/down/Remove)
-  // is the keyboard/AT path. Both commit through the same moveFallback (a hoisted declaration below).
+  // P11 — drag reorder for the fallback chain: the ⠿ handle is both the pointer drag and the keyboard
+  // (Arrow) reorder path, both committing through moveFallback (a hoisted declaration below).
   const fbDrag = useDragReorder(inf?.fallbacks.length ?? 0, moveFallback);
 
   function setInf<K extends keyof Draft["inference"]>(key: K, val: Draft["inference"][K]) {
@@ -1320,6 +1320,16 @@ export function ConfTab({ active }: Props) {
           </div>
           {(inf?.fallbacks ?? []).map((fb, i) => (
             <div className="confrow fallback-row" key={i} {...fbDrag.rowProps(i)}>
+              {/* remove ✕ on the left beside the index; the row stays on ONE line (owner layout). */}
+              <button
+                type="button"
+                className="fb-remove"
+                aria-label={`remove fallback ${i + 1}`}
+                title="remove"
+                onClick={() => removeFallbackRef(i)}
+              >
+                ✕
+              </button>
               <div className="k">
                 <div className="label">#{i + 1}</div>
               </div>
@@ -1330,40 +1340,18 @@ export function ConfTab({ active }: Props) {
                 catalog={draftCatalog}
                 allowRawId
               />
-              {/* reorder + remove controls as ONE right-aligned unit so they stay together and never
-                  scatter/overflow at phone width. Drag handle (P11) = pointer reorder (touch-action:none
-                  on the ⠿ handle); the compact dropdown (owner request) collapses Move up/down/Remove into
-                  one control and is the keyboard/AT path — a native select that resets to ⋯ after each pick. */}
-              <div className="fb-actions">
-                <button
-                  type="button"
-                  className="drag-handle"
-                  aria-label={`reorder fallback ${i + 1} — drag, or use the actions menu`}
-                  title="drag to reorder"
-                  {...fbDrag.handleProps(i)}
-                >
-                  ⠿
-                </button>
-                <select
-                  className="row-actions"
-                  aria-label={`fallback ${i + 1} actions`}
-                  value=""
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    e.currentTarget.value = "";
-                    if (v === "up") moveFallback(i, i - 1);
-                    else if (v === "down") moveFallback(i, i + 1);
-                    else if (v === "remove") removeFallbackRef(i);
-                  }}
-                >
-                  <option value="" disabled hidden>
-                    ⋯
-                  </option>
-                  {i > 0 && <option value="up">Move up</option>}
-                  {i < (inf?.fallbacks.length ?? 0) - 1 && <option value="down">Move down</option>}
-                  <option value="remove">Remove</option>
-                </select>
-              </div>
+              {/* drag handle on the right (owner layout) — pointer drag reorder (P11; touch-action:none on
+                  the ⠿ handle) AND ArrowUp/ArrowDown keyboard reorder (the accessible path), both via
+                  fbDrag. */}
+              <button
+                type="button"
+                className="drag-handle"
+                aria-label={`reorder fallback ${i + 1} — drag, or press the up/down arrow keys`}
+                title="drag to reorder (or arrow keys)"
+                {...fbDrag.handleProps(i)}
+              >
+                ⠿
+              </button>
             </div>
           ))}
           {/* debounced drag position announcements for AT (visually hidden) */}

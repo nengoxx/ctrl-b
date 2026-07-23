@@ -1,8 +1,15 @@
-import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 // A11 / D48 P11 — pointer-driven drag reorder for a short ordered list (the Inference fallback chain),
-// LAYERED OVER the row-actions dropdown's Move up/down items (Primer/NN-g rule: drag is a layer, the
-// menu stays the keyboard/AT path). Hand-rolled Pointer Events, no library:
+// The handle is BOTH the pointer drag AND the keyboard reorder control (ArrowUp/Down via handleProps) —
+// the Primer/NN-g rule (a keyboard/AT reorder path always exists) satisfied on one control. Hand-rolled
+// Pointer Events, no library:
 //   - pointerdown on a drag HANDLE starts a press; a 6px movement tolerance must be crossed before it
 //     becomes a drag (so a tap/scroll on the handle isn't hijacked);
 //   - DOCUMENT-level pointermove/pointerup track the gesture (NO setPointerCapture — it misbehaves on
@@ -139,12 +146,20 @@ export function useDragReorder(count: number, onReorder: (from: number, to: numb
   return {
     drag,
     announce,
-    /** props for a row's drag handle button */
+    /** props for a row's drag handle button. Pointer = drag; ArrowUp/ArrowDown = the keyboard/AT reorder
+     *  path (so the handle is a full reorder control, not pointer-only). onReorder bounds-checks the target. */
     handleProps: (index: number) => ({
       onPointerDown: (e: ReactPointerEvent) => {
         if (e.button !== 0 && e.pointerType === "mouse") return; // primary button / touch / pen only
         if (active.current) return; // a gesture already owns the interaction — ignore a second press
         beginDrag(index, e.clientY, e.pointerId);
+      },
+      onKeyDown: (e: ReactKeyboardEvent) => {
+        const to = e.key === "ArrowUp" ? index - 1 : e.key === "ArrowDown" ? index + 1 : null;
+        if (to === null || to < 0 || to >= count) return;
+        e.preventDefault();
+        onReorderRef.current(index, to);
+        setAnnounce(`moved to position ${to + 1} of ${count}`);
       },
     }),
     /** ref + lift style for a row; spread onto the row element */

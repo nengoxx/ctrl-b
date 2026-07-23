@@ -3559,45 +3559,42 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   min-width: 0;
 }
 
-/* an inference fallback row: the label, the picker, then reorder + remove affordances */
+/* an inference fallback row, all on ONE line (owner layout): ✕ remove · #index · picker · ⠿ drag handle */
 .kit .fallback-row {
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 10px;
 }
-.kit .fallback-row .k {
+/* #index sizes to its content (override the base label column's flex + min-width) so the picker takes
+ * the row's free width */
+.kit .confrow.fallback-row .k {
   flex: 0 0 auto;
-}
-.kit .fallback-row .pmpicker {
-  flex: 0 1 auto;
   min-width: 0;
 }
-/* reorder handle + actions dropdown as one right-aligned unit (stays together, never scatters) */
-.kit .fb-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-  margin-left: auto;
+/* the picker takes the middle and SHRINKS (its selects truncate) so the row never wraps or overflows */
+.kit .fallback-row .pmpicker {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
 }
-/* the fallback row-actions dropdown (Move up/down/Remove) — one compact control replacing the arrow+✕
- * cluster so the row fits at phone width; native OS picker on touch. Reuses the kit input surface. */
-.kit .row-actions {
-  appearance: none;
-  -webkit-appearance: none;
-  box-sizing: border-box;
-  flex: 0 0 auto;
-  width: 34px;
-  min-height: 40px;
-  padding: 0;
-  text-align: center;
-  text-align-last: center;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--text-2);
-  font: inherit;
-  font-size: 16px;
+.kit .fallback-row .pmpicker select {
+  min-width: 0;
+  flex: 1 1 0;
+}
+/* remove ✕ — a bare danger glyph on the left, balancing the bare drag glyph on the right */
+.kit .fb-remove {
+  all: unset;
   cursor: pointer;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  min-height: 40px;
+  color: color-mix(in oklch, var(--danger) 80%, transparent);
+  font-size: 13px;
+  line-height: 1;
+}
+.kit .fb-remove:active {
+  color: var(--danger);
 }
 /* drag reorder handle (P11) — touch-action:none ON THE HANDLE only so a drag doesn't scroll the page;
  * ≥40px touch target; grip glyph. Keyboard focus comes from the global `.kit :focus-visible` ring. */
@@ -3624,7 +3621,7 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
  * Restore the keyboard ring with an equal-or-higher-specificity `:focus-visible` rule (outline-based, so it
  * survives forced-colors, matching the kit ring design at the top of this file). */
 .kit .pm-listbtn:focus-visible,
-.kit .row-actions:focus-visible,
+.kit .fb-remove:focus-visible,
 .kit .drag-handle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

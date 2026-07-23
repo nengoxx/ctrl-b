@@ -2685,45 +2685,42 @@ body {
   min-width: 0;
 }
 
-/* an inference fallback row: the label, the picker, then reorder + remove affordances */
+/* an inference fallback row, all on ONE line (owner layout): ✕ remove · #index · picker · ⠿ drag handle */
 .fallback-row {
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 10px;
 }
-.fallback-row .k {
+/* #index sizes to its content (override the base label column's `flex: 1` + `min-width: min(140px,45%)`)
+ * so the picker, not the index, takes the row's free width */
+.confrow.fallback-row .k {
   flex: 0 0 auto;
-}
-.fallback-row .pmpicker {
-  flex: 0 1 auto;
   min-width: 0;
 }
-/* reorder handle + actions dropdown as one right-aligned unit (stays together, never scatters) */
-.fb-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-  margin-left: auto;
+/* the picker takes the middle and SHRINKS (its selects truncate) so the row never wraps or overflows */
+.fallback-row .pmpicker {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
 }
-/* the fallback row-actions dropdown (Move up/down/Remove) — one compact control replacing the arrow+✕
- * cluster so the row fits at phone width; native OS picker on touch. Reuses the input surface tokens. */
-.row-actions {
-  appearance: none;
-  -webkit-appearance: none;
-  box-sizing: border-box;
-  flex: 0 0 auto;
-  width: 34px;
-  min-height: 40px;
-  padding: 0;
-  text-align: center;
-  text-align-last: center;
-  border: 1px solid var(--line-2);
-  border-radius: 8px;
-  background: var(--bg-3);
-  color: var(--ink-soft);
-  font: inherit;
-  font-size: 16px;
+.fallback-row .pmpicker select {
+  min-width: 0;
+  flex: 1 1 0;
+}
+/* remove ✕ — a bare danger glyph on the left, balancing the bare drag glyph on the right */
+.fb-remove {
+  all: unset;
   cursor: pointer;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  min-height: 40px;
+  color: rgba(var(--danger-rgb), 0.8);
+  font-size: 13px;
+  line-height: 1;
+}
+.fb-remove:active {
+  color: var(--red);
 }
 /* drag reorder handle (P11) — touch-action:none ON THE HANDLE only so a drag doesn't scroll the page;
  * ≥40px touch target; grip glyph. Keyboard focus comes from the global :focus-visible ring. */
@@ -2749,7 +2746,7 @@ body {
  * `outline` via `all: unset`, so restore the keyboard ring explicitly with the box-shadow idiom the picker
  * inputs use. Higher specificity than the bare-`:focus-visible` global, so it wins. */
 .pm-listbtn:focus-visible,
-.row-actions:focus-visible,
+.fb-remove:focus-visible,
 .drag-handle:focus-visible {
   outline: none;
   box-shadow: 0 0 0 1px var(--magenta);
@@ -2759,7 +2756,7 @@ body {
  * outline-based, so it needs no equivalent). */
 @media (forced-colors: active) {
   .pm-listbtn:focus-visible,
-  .row-actions:focus-visible,
+  .fb-remove:focus-visible,
   .drag-handle:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: 1px;

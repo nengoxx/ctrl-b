@@ -139,3 +139,20 @@ describe("useDragReorder (synthetic pointer sequence)", () => {
     expect(onReorder).not.toHaveBeenCalled();
   });
 });
+
+describe("useDragReorder (keyboard reorder on the handle)", () => {
+  it("ArrowUp/ArrowDown reorder; the ends are bounds-checked", () => {
+    const onReorder = vi.fn();
+    const { container } = render(<Harness onReorder={onReorder} />);
+    const handle = (i: number) => container.querySelector<HTMLElement>(`[data-handle="${i}"]`)!;
+    fireEvent.keyDown(handle(1), { key: "ArrowUp" });
+    expect(onReorder).toHaveBeenLastCalledWith(1, 0);
+    fireEvent.keyDown(handle(1), { key: "ArrowDown" });
+    expect(onReorder).toHaveBeenLastCalledWith(1, 2);
+    // at the ends there is nowhere to go — no call
+    onReorder.mockClear();
+    fireEvent.keyDown(handle(0), { key: "ArrowUp" });
+    fireEvent.keyDown(handle(2), { key: "ArrowDown" });
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+});
