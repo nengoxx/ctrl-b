@@ -1,6 +1,9 @@
 # Handoff — start here for a fresh session
 
-> ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21 — the seg stadium-trick patch on top of v1.2.0 same night: ACA Slices 1–8 + the D45/D46 reasoning arc + D47 multi-homed s1–2 + UI polish; both released via runbook §Release by the agent — v1.2.0 gate 29801506922, v1.2.1 gate 29802230245, both green incl. e2e; **the prod config riders are LIVE: `api_mode: llamacpp` + `max_concurrent_requests: 1` on local, `api_mode: openrouter` on cloud**; snapshots `ctrlb-20260721-063649` + `-065258.db.gz`). Prior: v1.1.1 2026-07-16 · v1.1.0 2026-07-10 · v1.0.0 same day.
+> ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21). **On main, UNRELEASED: A11 Slice 1 (unified
+> provider registry — chat) + its owner UI/UX polish [pushed `cfedad7`, 2026-07-23] and D3 slice 3.
+> NEXT = the 2026-07-23 CLOSE-OUT block below (owner-ratify the 2 D48 interpretation calls → build Slice 2
+> voice+embeddings → release A11 via D48 §rollout).** — v1.2.1 = the seg stadium-trick patch on top of v1.2.0 same night: ACA Slices 1–8 + the D45/D46 reasoning arc + D47 multi-homed s1–2 + UI polish; both released via runbook §Release by the agent — v1.2.0 gate 29801506922, v1.2.1 gate 29802230245, both green incl. e2e; **the prod config riders are LIVE: `api_mode: llamacpp` + `max_concurrent_requests: 1` on local, `api_mode: openrouter` on cloud**; snapshots `ctrlb-20260721-063649` + `-065258.db.gz`. Prior: v1.1.1 2026-07-16 · v1.1.0 2026-07-10 · v1.0.0 same day.
 > **✅ ctrl-b v1.0.0 (tag `v1.0.0` = `8fa8404`) deployed to emma per the D32-amended plan — first try,
 > release gate green on its maiden tag run (full gate + Playwright e2e on ubuntu).** As-executed record:
 > the PRE-FLIGHT block atop [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md); living runbook: `deploy/linux/README.md`.
@@ -343,8 +346,72 @@
 > Fable 5 = orchestrator + feature reviewer alongside Codex (`gpt-5.6-sol` high); ALL specified
 > implementation / mechanical work / research = Opus 4.8 subagents.**
 >
-> **▶▶ SESSION 2026-07-23 — A11 SLICE 1 (CHAT) ✅ BUILT + TRIPLE-REVIEWED + GATED — AWAITING OWNER
-> EYEBALL (the Phase-13 pause). NOT PUSHED; NOT RELEASED (prod = v1.2.1).** The unified provider
+> **▶▶ SESSION 2026-07-23 CLOSE-OUT (READ FIRST) — A11 SLICE 1 (chat) + the owner UI/UX polish are
+> COMPLETE, PUSHED to origin/main @ `cfedad7` (CI running; push CI skips e2e — full `check.py --e2e` was
+> 7/7 green locally before the push), dev units STOPPED. PROD UNCHANGED = v1.2.1; A11 Slice 1 + D3 slice
+> 3 are on main but UNRELEASED.** Session closed clean: main == origin, gate green, nothing in flight.
+>
+> **WHAT SHIPPED THIS SESSION (7 commits `81dbbd5`→`cfedad7`, atop last session's D48 docs `0fb21e0`
+> which was also unpushed and went out now):** ① A11 Slice 1 backend `81dbbd5` + frontend `63f6538` +
+> as-built docs `56a11ab` (full build+review pipeline — detail in the block just below). ② The
+> owner-requested visual/UX polish in FOUR commits: `796207d` the P1 wave (**kit-tree port** — the HIGH:
+> the A11 controls were vapor-only CSS, unstyled under minimal/cosmos/frontier [the boot theme] — +
+> wrapping/focus/aria/typography/token fixes + drag-reorder + per-row Advanced fold; Codex GO-w/changes
+> → 5 fixes) · `3f4ac95` docs · `8186141` clean field naming (research-backed: **"Wire id"→"Model ID"**,
+> **"Max-tokens field"→"Output-limit param"** + a one-line clarifier [it selects which API field carries
+> the OUTPUT cap, NOT the context], `auto (from api mode)`→`auto`) + Models-section spacing + the Agents
+> compaction number-grid 14px inset · `cfedad7` the FINAL fallback layout the owner signed off:
+> **one line `✕ · #N · picker · ⠿`** (✕ remove left of the index, drag handle right, picker fills the
+> middle showing the full provider name; the ⠿ handle carries BOTH pointer drag AND ArrowUp/Down keyboard
+> reorder — the interim ⋯ dropdown removed). **Final gate: backend 839 pytest · FE 592 vitest · e2e 109 ·
+> `check.py --e2e` 7/7.**
+>
+> **▶ NEXT SESSION — "more stuff to do" (owner-stated), in order:**
+> 1. **Owner-ratify 2 D48-interpretation calls** still open (the owner eyeballed + approved the UI, but
+>    these two backend/scope decisions were made under agent judgment and flagged, not explicitly
+>    signed): **① strict-resolve gating** (FX7 — the strict-resolve 422 fires only for PUTs touching
+>    `providers`/`inference`/`agent`; other saves [appearance sync…] run lenient+warn, so a hand-edited
+>    lenient-tolerated config can't brick unrelated saves — a reading of D48 C2/R26) · **② voice-scoped
+>    per-model UI deferral** (FX17 — only chat-relevant model fields [context_window, output-limit param,
+>    id, extra_body] are editable in Slice 1; voice/speed/language/format/dim editors land with Slice 2's
+>    consumers; they round-trip unharmed meanwhile, test-pinned). Both in **DECISIONS D48 AS-BUILT**.
+> 2. **Build Slice 2 — voice + embeddings** (TODO Phase 13 Slice 2 + D48 §Migration steps 2–3 + C8):
+>    mechanical over Slice 1's registry. Flat `provider`/`model?`/`fallbacks[]` on `voice.stt`/`voice.tts`/
+>    `embeddings`; delete `VoiceEndpointCfg`/`EmbeddingsCfg` legacy fields (service knobs STAY);
+>    `_migrate_legacy()` voice/embeddings folds (dedup by (canonical base_url, api_key) against
+>    already-created providers); winning-format from the served hop; TTS voice precedence
+>    request>model>"alloy" + model.speed at the wire; STT language model>service; embeddings dim-agreement
+>    (422/drop+warn); the Voice STT/TTS/Embeddings section editors (REUSE the Slice-1 picker/fallback/
+>    Advanced-fold components) + the deferred per-model voice fields; the **B4 parity list asserted
+>    field-by-field** in the Conf e2e. Same pipeline: Opus waves → Codex review → owner pause.
+> 3. **Release** (owner's call on timing/bundling): A11 (Slice 1 alone, or wait for Slice 2) AND the
+>    still-unreleased **D3 slice 3** ride main. A11 releases ONLY via **D48 §rollout** (prod boots the
+>    migration lenient = IDENTICAL runtime behavior; the FIRST config write materialises the new shape +
+>    writes the one-time 0600 `config.yaml.bak-a11-<stamp>` backup; rollback = stop→restore .bak→prev
+>    tag→start+health, per `deploy/linux/README §Release`). Bundle the `config.example.yaml`/README/
+>    SECURITY_MODEL/DEPLOY_EMMA new-shape doc updates Slice 2 finishes.
+>
+> **DURABLE LESSONS (this session):** styling a SHARED Conf component needs rules in BOTH
+> `theme/extras.css` (vapor) AND `theme-engine/kit/kit.css` under `.kit` (THEME_ENGINE §14.4.1) — a
+> vapor-only add is invisible under the kit themes; the F1 brief's "net-new pixels ONLY in extras.css"
+> line caused exactly this, caught only by the rendered+Codex visual audit, not by gates. · Optimistic
+> concurrency for a full-map-replacement subtree = **ETag-scoped-to-subtree**: ride the fingerprint on
+> the resource GET (`X-Providers-Rev` on `GET /api/settings`) so the draft's base binds atomically to
+> the snapshot it seeded from. · The Conf `.confrow .k` label column carries `flex:1` +
+> `min-width: min(140px,45%)`; a content-width label row must override BOTH (bump specificity
+> `.confrow.fallback-row .k`). · Codex gpt-5.6-sol(high) earned its keep: the 3 real HIGHs (failover-off
+> bypass via chain_for coercion, cross-provider model carry on the /verb, 409-retry stale-draft clobber)
+> were code-verified, not noise. · **Dependabot:** the push surfaced 1 high alert (#38) — per the memory
+> `dependabot-archive-lockfiles` these have been dev-only vite/esbuild in archive lockfiles; glance to
+> confirm #38 is the same class before ignoring.
+>
+> **ACCEPTED RESIDUALS (recorded, not bugs):** the FE reference-guard blocks a raw id equal to a FORMER
+> catalog key the draft removes (errs toward blocking a still-resolvable save; no provenance state) · a
+> hand-authored config with BOTH `providers:` and stale legacy keys never migrates (legacy ignored, not
+> deleted) · single-user 409 is loud-not-silent (dirty draft keeps its map; reload to rebase).
+>
+> **▶▶ SESSION 2026-07-23 — A11 SLICE 1 (CHAT) ✅ BUILT + TRIPLE-REVIEWED + GATED (build detail; the
+> close-out above is the current truth — PUSHED, not the "NOT PUSHED" this block first recorded).** The unified provider
 > registry chat slice, built against D48 via the full orchestrated pipeline: 2-agent pre-flight
 > code-truth maps (backend+frontend, every seam file:line-verified) → 26 orchestrator rulings → 3 Opus
 > build waves (**B1** backend core: `providers:` schema · quarantined `_migrate_legacy()` + agent.yaml
