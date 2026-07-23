@@ -370,6 +370,22 @@
 > **NEXT = owner eyeball/ratify → Slice 2 (voice + embeddings), then release via runbook §Release when
 > the owner wants it live (prod boots the migration lenient — IDENTICAL runtime behavior until then).**
 >
+> **▶ SAME DAY (2026-07-23, later) — the owner-requested VISUAL/UX POLISH WAVE ✅ SHIPPED** (owner
+> ratified the 3 design calls: drag-over-arrows · per-row Advanced disclosure · dual remove idioms
+> documented). Triple audit first: a rendered Playwright pass (computed-style color diff, 360px,
+> frontier+vapor) + a Codex visual audit — **CONVERGED HIGH: the entire A11 control family was
+> vapor-only CSS, unstyled under minimal/cosmos/frontier** (root cause = the F1 brief's
+> "extras.css-only" line; kit rule = BOTH trees, THEME_ENGINE §14.4.1) — + cited UX research (drag =
+> LAYER over retained arrows per Primer/NN-g; progressive disclosure). The P1 wave (13 items) ported
+> the family into `kit.css`, fixed wrapping/focus-visible/disabled/recipe-dedup/aria/notice-typography/
+> danger-token hygiene, added `useDragReorder` (pointer events, 6px tolerance, pointerId-gated,
+> pointercancel+blur+Escape+count-change cancel, NO pointer capture on touch [Fennec lore], aria-live)
+> + the closable auto-open Advanced fold. Codex code review GO-w/changes → 5 fixes (incl. the
+> forced-colors Highlight outline + the kit `.kv-text.json-field` specificity tie). FE 591 vitest +
+> 109 e2e green. **Known cosmetic residual:** the frontier fallback row wraps its handle/arrows/✕ to a
+> 2nd line at 360px (functional; vapor/cosmos fit) — owner may want a squeeze pass. **Screenshots =
+> session scratchpad `shots-p1/` (tmpfs, transient). Device eyeball still owed: drag feel on Fennec.**
+>
 > **▶▶ SESSION 2026-07-22 (later) — A11 DESIGN SESSION ✅ COMPLETE — [`DECISIONS.md` D48](./DECISIONS.md)
 > LOCKED + OWNER-SIGNED: THE UNIFIED PROVIDER REGISTRY. NEXT SESSION = BUILD (TODO Phase 13 Slice 1,
 > chat).** The owner-requested prose design session ran full-pipeline and CLOSED: top-level `providers:`
