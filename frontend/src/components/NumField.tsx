@@ -15,7 +15,9 @@ export function NumField(props: {
   onValidity: (id: string, valid: boolean) => void;
   ariaLabel: string;
   placeholder?: string;
-  min?: number; // inclusive lower bound (e.g. 1 for max_concurrent, 0 for retry_attempts)
+  min?: number; // lower bound (e.g. 1 for max_concurrent, 0 for retry_attempts) — inclusive by default
+  integer?: boolean; // default true — set false to accept a decimal (e.g. TTS speed, gt 0)
+  exclusiveMin?: boolean; // default false — set true for a strict `> min` bound (e.g. speed > 0)
 }) {
   const seed = () => (props.value == null ? "" : String(props.value));
   const [text, setText] = useState(seed);
@@ -41,11 +43,14 @@ export function NumField(props: {
   const { id } = props;
   useEffect(() => () => validityRef.current(id, true), [id]);
 
+  const integer = props.integer ?? true;
   const parse = (t: string): number | null | undefined => {
     if (t.trim() === "") return null; // blank → null (inherit / unlimited)
     const n = Number(t);
-    if (!Number.isFinite(n) || !Number.isInteger(n)) return undefined; // NaN / Infinity / non-integer
-    if (props.min != null && n < props.min) return undefined;
+    if (!Number.isFinite(n)) return undefined; // NaN / Infinity
+    if (integer && !Number.isInteger(n)) return undefined; // non-integer where a whole number is required
+    if (props.min != null && (props.exclusiveMin ? n <= props.min : n < props.min))
+      return undefined;
     return n;
   };
 
@@ -68,7 +73,7 @@ export function NumField(props: {
     <>
       <input
         aria-label={props.ariaLabel}
-        inputMode="numeric"
+        inputMode={integer ? "numeric" : "decimal"}
         className={"num-field" + (showErr ? " invalid" : "")}
         aria-invalid={showErr || undefined}
         aria-describedby={showErr ? errId : undefined}
@@ -79,7 +84,8 @@ export function NumField(props: {
       />
       {showErr && (
         <div className="json-err" id={errId} role="alert">
-          must be a whole number{props.min != null ? ` ≥ ${props.min}` : ""}
+          must be a {integer ? "whole number" : "number"}
+          {props.min != null ? ` ${props.exclusiveMin ? ">" : "≥"} ${props.min}` : ""}
         </div>
       )}
     </>

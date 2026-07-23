@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ConfTab · A11/D48 Providers + Inference (Slice 1). The Inference section is now the shared
@@ -42,7 +42,13 @@ const makeSettings = () => ({
     system_prompt_append: "",
   },
   searxng: { base_url: "", enabled: false, language: null },
-  embeddings: { base_url: "", api_key: null, model: "", enabled: false, dim: null },
+  embeddings: {
+    provider: null as string | null,
+    model: null as string | null,
+    fallbacks: [] as { provider: string; model: string | null }[],
+    enabled: false,
+    timeout_s: 60,
+  },
   open_terminal: {
     base_url: "",
     api_key: null,
@@ -62,6 +68,9 @@ const makeSettings = () => ({
   voice: {
     enabled: false,
     stt: {
+      provider: null as string | null,
+      model: null as string | null,
+      fallbacks: [] as { provider: string; model: string | null }[],
       language: "",
       vad_filter: false,
       hotwords: "",
@@ -69,16 +78,15 @@ const makeSettings = () => ({
       connect_timeout_s: 3,
       timeout_s: 30,
       extra_body: {},
-      primary: { base_url: "", api_key: null, model: "" },
-      fallback: { base_url: "", api_key: null, model: "" },
     },
     tts: {
+      provider: null as string | null,
+      model: null as string | null,
+      fallbacks: [] as { provider: string; model: string | null }[],
       format: "mp3",
       connect_timeout_s: 3,
       timeout_s: 30,
       extra_body: {},
-      primary: { base_url: "", api_key: null, model: "", voice: "" },
-      fallback: { base_url: "", api_key: null, model: "", voice: "" },
     },
   },
   mcp_servers: [],
@@ -92,7 +100,12 @@ const makeProvidersInfo = () => ({
     openrouter: { api_mode: "openrouter", models: ["qwen3.5", "qwen-embed"] },
   },
   rev: "revA",
-  sections: { inference: { provider: "llamacpp", model: null, fallbacks: [] } },
+  sections: {
+    inference: { provider: "llamacpp", model: null, fallbacks: [] },
+    stt: { provider: null, model: null, fallbacks: [] },
+    tts: { provider: null, model: null, fallbacks: [] },
+    embeddings: { provider: null, model: null, fallbacks: [] },
+  },
   reserved_verbs: [] as string[],
   verbs: [] as string[],
   warnings: [] as string[],
@@ -166,11 +179,14 @@ const sel = (label: string) => screen.getByLabelText<HTMLSelectElement>(label);
 const saveButton = () =>
   screen.getAllByRole<HTMLButtonElement>("button", { name: /Save changes|Saved|Saving/ })[0];
 
+type SectionRefPatch = { provider: string | null; model: string | null; fallbacks: unknown[] };
 type SavedPatch = {
-  providers?: Record<string, unknown>;
+  providers?: Record<string, { models: Record<string, Record<string, unknown>> }>;
   providers_base?: string;
   provider_renames?: Record<string, string>;
-  inference: { provider: string | null; model: string | null; fallbacks: unknown[] };
+  inference: SectionRefPatch;
+  embeddings: SectionRefPatch & { enabled: boolean; timeout_s: number };
+  voice: { enabled: boolean; stt: SectionRefPatch; tts: SectionRefPatch };
 };
 const lastPatch = () => h.save.mock.calls[0][0] as SavedPatch;
 const baseInput = (name: string) => screen.getByLabelText<HTMLInputElement>(name);
@@ -391,6 +407,145 @@ describe("ConfTab · model Advanced disclosure (P12 override)", () => {
     // editing an unrelated field keeps the row all-default; the override must keep it open.
     fireEvent.change(screen.getByLabelText("Model name"), { target: { value: "minig2" } });
     expect(advHead().getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
+describe("ConfTab · Slice 2 section editors (Voice STT / TTS / Embeddings)", () => {
+  it("Embeddings: primary picker renders; switching provider resets the model + omits the providers map", () => {
+    h.settings = makeSettings();
+    h.settings.embeddings.provider = "openrouter";
+    h.settings.embeddings.model = "qwen3.5";
+    render(<ConfTab active />);
+    // openrouter has 2 models → the model select shows; the section's accessible names are distinct.
+    expect(sel("Embeddings default provider").value).toBe("openrouter");
+    expect(sel("Embeddings default model").value).toBe("qwen3.5");
+    // switch to the sole-model provider → the model select auto-hides.
+    fireEvent.change(sel("Embeddings default provider"), { target: { value: "llamacpp" } });
+    expect(screen.queryByLabelText("Embeddings default model")).toBeNull();
+    fireEvent.click(saveButton());
+    const p = lastPatch();
+    expect(p.embeddings.provider).toBe("llamacpp");
+    // only a section REF changed (not the providers map) → the map + base do not ride the save.
+    expect(p.providers).toBeUndefined();
+    expect(p.embeddings.timeout_s).toBe(60); // the numeric knob is coerced through
+  });
+
+  it("Embeddings: add / remove / reorder fallbacks (drag-handle keyboard path)", () => {
+    h.settings = makeSettings();
+    h.settings.embeddings.provider = "openrouter";
+    h.settings.embeddings.model = "qwen3.5";
+    render(<ConfTab active />);
+    const grp = () => within(document.getElementById("embeddings")!);
+    // add two fallbacks (each seeds to providerNames[0] = "llamacpp", the sole-model provider).
+    fireEvent.click(grp().getByRole("button", { name: "+ add fallback" }));
+    fireEvent.click(grp().getByRole("button", { name: "+ add fallback" }));
+    expect(sel("Embeddings fallback 1 provider").value).toBe("llamacpp");
+    expect(sel("Embeddings fallback 2 provider").value).toBe("llamacpp");
+    // distinguish the two, then reorder via the handle's ArrowDown (the accessible reorder path).
+    fireEvent.change(sel("Embeddings fallback 1 provider"), { target: { value: "openrouter" } });
+    expect(sel("Embeddings fallback 1 provider").value).toBe("openrouter");
+    fireEvent.keyDown(
+      grp().getByRole("button", {
+        name: "reorder Embeddings fallback 1 — drag, or press the up/down arrow keys",
+      }),
+      { key: "ArrowDown" },
+    );
+    expect(sel("Embeddings fallback 1 provider").value).toBe("llamacpp"); // swapped down
+    expect(sel("Embeddings fallback 2 provider").value).toBe("openrouter");
+    // remove the (now-second) openrouter fallback.
+    fireEvent.click(grp().getByRole("button", { name: "remove Embeddings fallback 2" }));
+    expect(screen.queryByLabelText("Embeddings fallback 2 provider")).toBeNull();
+    expect(sel("Embeddings fallback 1 provider").value).toBe("llamacpp");
+  });
+
+  it("Voice STT: primary picker + a service knob round-trip (no failover switch rendered)", () => {
+    h.settings = makeSettings();
+    h.settings.voice.stt.provider = "openrouter";
+    h.settings.voice.stt.model = "qwen3.5";
+    render(<ConfTab active />);
+    expect(sel("Voice STT default provider").value).toBe("openrouter");
+    // the STT chain always walks — there is deliberately no Failover switch in this section.
+    expect(
+      within(document.getElementById("voice-stt")!).queryByLabelText("STT VAD filter"),
+    ).not.toBeNull();
+    expect(within(document.getElementById("voice-stt")!).queryByText("Failover")).toBeNull();
+    fireEvent.change(sel("Voice STT default provider"), { target: { value: "llamacpp" } });
+    fireEvent.click(saveButton());
+    expect(lastPatch().voice.stt.provider).toBe("llamacpp");
+  });
+
+  it("Voice TTS: primary picker present + the format Seg knob stays (C8 service fallback)", () => {
+    h.settings = makeSettings();
+    h.settings.voice.tts.provider = "openrouter";
+    h.settings.voice.tts.model = "qwen3.5";
+    render(<ConfTab active />);
+    expect(sel("Voice TTS default provider").value).toBe("openrouter");
+    // the service-level Format control stays (model format > service format — the C8 fallback).
+    expect(within(document.getElementById("voice-tts")!).queryByLabelText("Format")).not.toBeNull();
+    fireEvent.change(sel("Voice TTS default provider"), { target: { value: "llamacpp" } });
+    fireEvent.click(saveButton());
+    expect(lastPatch().voice.tts.provider).toBe("llamacpp");
+  });
+});
+
+describe("ConfTab · Slice 2 reference-guard (voice/embeddings)", () => {
+  it("a provider referenced ONLY by a voice/embeddings section can't be removed", () => {
+    h.settings = makeSettings();
+    h.settings.inference.fallbacks = []; // drop the inference reference to openrouter
+    h.settings.voice.tts.provider = "openrouter"; // now referenced only by TTS
+    h.settings.voice.tts.model = "qwen3.5";
+    render(<ConfTab active />);
+    fireEvent.click(screen.getByText("openrouter", { selector: "div.label" }));
+    const removeBtn = screen.getByRole<HTMLButtonElement>("button", { name: "remove provider" });
+    expect(removeBtn.disabled).toBe(true);
+  });
+
+  it("removing a catalog model referenced by embeddings blocks the save", () => {
+    h.settings = makeSettings();
+    h.settings.inference.fallbacks = [];
+    h.settings.embeddings.provider = "openrouter";
+    h.settings.embeddings.model = "qwen3.5";
+    render(<ConfTab active />);
+    fireEvent.click(screen.getByText("openrouter", { selector: "div.label" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "remove model" })[0]); // qwen3.5
+    expect(screen.getAllByText(/can’t save/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/model removed/).length).toBeGreaterThan(0);
+    expect(saveButton().disabled).toBe(true);
+  });
+});
+
+describe("ConfTab · per-model voice fields (Slice 2 editors)", () => {
+  it("voice/speed/language/format/dim edit on a model row and round-trip through the save", () => {
+    render(<ConfTab active />);
+    fireEvent.click(screen.getByText("openrouter", { selector: "div.label" }));
+    // qwen3.5's Advanced fold auto-opens (its wire id differs from the clean name).
+    fireEvent.change(screen.getAllByLabelText("Model voice")[0], {
+      target: { value: "bf_isabella" },
+    });
+    fireEvent.change(screen.getAllByLabelText("Model speed")[0], { target: { value: "1.15" } });
+    fireEvent.change(screen.getAllByLabelText("Model language")[0], { target: { value: "en" } });
+    fireEvent.change(screen.getAllByLabelText("Model audio format")[0], {
+      target: { value: "opus" },
+    });
+    fireEvent.change(screen.getAllByLabelText("Model embedding dim")[0], {
+      target: { value: "1024" },
+    });
+    fireEvent.click(saveButton());
+    expect(lastPatch().providers!.openrouter.models["qwen3.5"]).toMatchObject({
+      voice: "bf_isabella",
+      speed: 1.15,
+      language: "en",
+      format: "opus",
+      dim: 1024,
+    });
+  });
+
+  it("a non-numeric speed blocks the save (guarded float field)", () => {
+    render(<ConfTab active />);
+    fireEvent.click(screen.getByText("openrouter", { selector: "div.label" }));
+    fireEvent.change(screen.getAllByLabelText("Model speed")[0], { target: { value: "fast" } });
+    expect(screen.getAllByText(/invalid provider fields/).length).toBeGreaterThan(0);
+    expect(saveButton().disabled).toBe(true);
   });
 });
 

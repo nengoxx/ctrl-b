@@ -104,18 +104,20 @@ const ACTIONS = [
   ...TOOLS,
 ];
 
-const endpoint = (b: Record<string, unknown>) => ({ base_url: "", api_key: null, model: "", ...b });
+// A11/D48 Slice 2 — a voice/embeddings service is now a registry ref (flat primary + fallbacks) plus
+// its section knobs; the legacy primary/fallback endpoint slots are retired.
 const voiceSvc = {
+  provider: null as string | null,
+  model: null as string | null,
+  fallbacks: [] as { provider: string; model: string | null }[],
   connect_timeout_s: 3,
   timeout_s: 30,
   extra_body: {},
-  primary: endpoint({}),
-  fallback: endpoint({}),
 };
 
 const SETTINGS = {
   server: { host: "0.0.0.0", port: 5433, poll_seconds: 5, feature_cycle_seconds: 8, debug: false },
-  // A11/D48 — the unified provider registry (inference is new-shape; voice/embeddings stay legacy).
+  // A11/D48 — the unified provider registry; inference, voice, and embeddings all point at it.
   providers: {
     llamacpp: {
       base_url: "http://h/v1",
@@ -127,7 +129,12 @@ const SETTINGS = {
       base_url: "https://openrouter.ai/api/v1",
       api_key: "sk…yz",
       api_mode: "openrouter",
-      models: { "qwen3.5": { id: "qwen/qwen3.5", context_window: 262144 } },
+      models: {
+        "qwen3.5": { id: "qwen/qwen3.5", context_window: 262144 },
+        "qwen-embed": { id: "qwen/qwen3-embedding", dim: 2560 },
+        whisper: { id: "whisper-1" },
+        kokoro: { id: "kokoro", voice: "bf_isabella", speed: 1, format: "mp3" },
+      },
     },
   },
   inference: {
@@ -140,7 +147,13 @@ const SETTINGS = {
     failover: true,
   },
   searxng: { base_url: "", enabled: false, language: null },
-  embeddings: { base_url: "", api_key: null, model: "", enabled: false, dim: null },
+  embeddings: {
+    provider: "openrouter",
+    model: "qwen-embed",
+    fallbacks: [] as { provider: string; model: string | null }[],
+    enabled: false,
+    timeout_s: 60,
+  },
   open_terminal: {
     base_url: "",
     api_key: null,
@@ -159,8 +172,16 @@ const SETTINGS = {
   },
   voice: {
     enabled: false,
-    stt: { ...voiceSvc, language: "en", vad_filter: true, hotwords: "", auto_send: false },
-    tts: { ...voiceSvc, format: "mp3" },
+    stt: {
+      ...voiceSvc,
+      provider: "openrouter",
+      model: "whisper",
+      language: "en",
+      vad_filter: true,
+      hotwords: "",
+      auto_send: false,
+    },
+    tts: { ...voiceSvc, provider: "openrouter", model: "kokoro", format: "mp3" },
   },
   mcp_servers: [],
   openapi_servers: [],
@@ -200,7 +221,10 @@ const ROUTES: Record<string, unknown> = {
   "/api/providers": {
     providers: {
       llamacpp: { api_mode: "llamacpp", models: ["minig+"] },
-      openrouter: { api_mode: "openrouter", models: ["qwen3.5"] },
+      openrouter: {
+        api_mode: "openrouter",
+        models: ["qwen3.5", "qwen-embed", "whisper", "kokoro"],
+      },
     },
     rev: "revA",
     sections: {
@@ -209,7 +233,12 @@ const ROUTES: Record<string, unknown> = {
         model: null,
         fallbacks: [{ provider: "openrouter", model: "qwen3.5" }],
       },
+      stt: { provider: "openrouter", model: "whisper", fallbacks: [] },
+      tts: { provider: "openrouter", model: "kokoro", fallbacks: [] },
+      embeddings: { provider: "openrouter", model: "qwen-embed", fallbacks: [] },
     },
+    // openrouter appears in the inference chain, so it's a chat verb; the voice-only whisper/kokoro
+    // models don't add verbs (R9 — a voice-only provider isn't a chat verb).
     reserved_verbs: ["agent", "privilege", "priv", "clear", "compact", "help"],
     verbs: ["llamacpp", "openrouter"],
     warnings: [],

@@ -49,19 +49,25 @@ export interface SectionRef {
   model: string | null;
 }
 
-// Voice (Phase 6) — one STT + one TTS service, each a primary→fallback failover chain (D18).
-export interface VoiceEndpoint {
-  base_url: string;
-  api_key: string | null; // masked on read
-  model: string;
-  voice?: string; // TTS only — server voice id
+/** A consumer section's resolved primary + fallbacks, as reported by `GET /api/providers`. */
+export interface EffectiveChain {
+  provider: string | null;
+  model: string | null;
+  fallbacks: { provider: string; model: string | null }[];
 }
+
+// Voice (Phase 6; A11/D48 Slice 2) — one STT + one TTS service, each pointing at the top-level
+// `providers` registry via a flat `provider` primary (+ optional `model`) and an ordered `fallbacks`
+// list of `SectionRef` (voice chains always walk — there is deliberately no failover toggle). The
+// legacy `primary`/`fallback` endpoint slots (base_url/api_key/model on the section) are RETIRED —
+// connection details + the voice/language/format live on the referenced provider/model.
 interface VoiceServiceCommon {
+  provider: string | null; // primary provider name; null → that service unconfigured
+  model: string | null; // omittable iff the provider's catalog has exactly one model
+  fallbacks: SectionRef[]; // ordered N-deep failover chain after the primary
   connect_timeout_s: number; // fail-fast on an unreachable endpoint → fall over
   timeout_s: number; // read window for the transcription/synthesis
   extra_body: Record<string, unknown>; // advanced passthrough (round-trips even without a UI control)
-  primary: VoiceEndpoint;
-  fallback: VoiceEndpoint;
 }
 export interface VoiceStt extends VoiceServiceCommon {
   language: string; // "" → auto-detect
@@ -97,12 +103,14 @@ export interface SettingsDoc {
   };
   // Integration endpoints (Phase 7c-a) — scalar configs edited through this same settings PUT.
   searxng: { base_url: string; enabled: boolean; language: string | null };
+  // A11/D48 Slice 2 — embeddings points at the `providers` registry (flat primary + ordered fallbacks)
+  // and gains failover for free. The connection + the vector `dim` (per-model) are RETIRED from here.
   embeddings: {
-    base_url: string;
-    api_key: string | null; // masked on read
-    model: string;
+    provider: string | null;
+    model: string | null;
+    fallbacks: SectionRef[];
     enabled: boolean;
-    dim: number | null;
+    timeout_s: number; // section-level SDK read window
   };
   open_terminal: {
     base_url: string;
@@ -148,12 +156,13 @@ export interface SavePatch {
 export interface ProvidersInfo {
   providers: Record<string, { api_mode: string; models: string[] }>;
   rev: string; // providers fingerprint (informational here; the Conf PUT base rides GET /api/settings — FR2-1)
+  // A11/D48 — the effective (resolved) chain per consumer section. Slice 2 adds stt/tts/embeddings
+  // beside inference; the Conf editors drive the DRAFT settings, so these are informational here.
   sections: {
-    inference: {
-      provider: string | null;
-      model: string | null;
-      fallbacks: { provider: string; model: string | null }[];
-    };
+    inference: EffectiveChain;
+    stt: EffectiveChain;
+    tts: EffectiveChain;
+    embeddings: EffectiveChain;
   };
   reserved_verbs: string[];
   verbs: string[]; // composer-routable provider names

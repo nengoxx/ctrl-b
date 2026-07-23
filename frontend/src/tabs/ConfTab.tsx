@@ -6,12 +6,8 @@ import { JsonField } from "../components/JsonField";
 import { MachineEditor } from "../components/MachineEditor";
 import { MemoryEditor } from "../components/MemoryEditor";
 import { NumField } from "../components/NumField";
-import { useDragReorder } from "../components/useDragReorder";
-import {
-  ProviderModelPicker,
-  type PickerCatalog,
-  type PickerValue,
-} from "../components/ProviderModelPicker";
+import { type PickerCatalog, type PickerValue } from "../components/ProviderModelPicker";
+import { SectionRefEditor } from "../components/SectionRefEditor";
 import { Seg } from "../components/Seg";
 import { ServerListEditor } from "../components/ServerListEditor";
 import { SettingRow } from "../components/SettingRow";
@@ -37,6 +33,7 @@ import {
   type ModelDoc,
   type ProviderDoc,
   type SavePatch,
+  type SectionRef,
   type SettingsDoc,
 } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
@@ -328,7 +325,13 @@ function ProviderCard(props: {
   const advNonDefault = (r: (typeof rows)[number]) =>
     (r.doc.id != null && r.doc.id !== r.key) ||
     r.doc.max_tokens_field != null ||
-    (r.doc.extra_body != null && Object.keys(r.doc.extra_body).length > 0);
+    (r.doc.extra_body != null && Object.keys(r.doc.extra_body).length > 0) ||
+    // A11/D48 Slice 2 — a set per-role voice/embeddings field also reveals the fold.
+    r.doc.voice != null ||
+    r.doc.speed != null ||
+    r.doc.language != null ||
+    r.doc.format != null ||
+    r.doc.dim != null;
 
   const commitRename = () => {
     const nn = renameVal.trim().toLowerCase();
@@ -511,10 +514,10 @@ function ProviderCard(props: {
                       onValidity={onValidity}
                     />
                   </div>
-                  {/* Advanced fold — wire id + max-tokens field + extra_body, on the shared `.svc-edit`
-                      disclosure idiom. Auto-opens when any is non-default (preserves the old wire-id
-                      auto-reveal). FX17 (C6): the model-level max_tokens_field override is chat-relevant;
-                      voice/speed/language/format/dim editors land in Slice 2 (schema already round-trips). */}
+                  {/* Advanced fold — wire id + max-tokens field + extra_body + the per-role voice/embeddings
+                      fields (voice/speed/language/format/dim), on the shared `.svc-edit` disclosure idiom.
+                      Auto-opens when any is non-default (preserves the old wire-id auto-reveal). The voice
+                      fields feed the STT/TTS/embeddings resolvers (D48 C8; FX17 deferral closed in Slice 2). */}
                   <div className={"svc-edit" + (advIsOpen ? " open" : "")}>
                     <div
                       className="svc-edit-head"
@@ -569,6 +572,67 @@ function ProviderCard(props: {
                             onChange={(v) => setRowDoc(i, { extra_body: v })}
                             onValidity={onValidity}
                           />
+                          {/* A11/D48 Slice 2 (FX17 closes) — the per-role voice/embeddings model fields.
+                              Each is optional and inherits the section/protocol default when blank; they
+                              feed the STT/TTS/embeddings resolvers via ModelDoc.voice/speed/language/format/dim. */}
+                          <label>Voice</label>
+                          <input
+                            aria-label="Model voice"
+                            value={r.doc.voice ?? ""}
+                            placeholder="model default"
+                            onChange={(e) => setRowDoc(i, { voice: e.target.value || null })}
+                          />
+                          <p className="mform-note">
+                            TTS server voice id · blank uses the protocol default
+                          </p>
+                          <label>Speed</label>
+                          <NumField
+                            id={`${prefix}:model:${r.id}:speed`}
+                            value={r.doc.speed}
+                            ariaLabel="Model speed"
+                            placeholder="server default"
+                            integer={false}
+                            min={0}
+                            exclusiveMin
+                            onChange={(v) => setRowDoc(i, { speed: v })}
+                            onValidity={onValidity}
+                          />
+                          <p className="mform-note">
+                            TTS playback rate · blank uses the server default
+                          </p>
+                          <label>Language</label>
+                          <input
+                            aria-label="Model language"
+                            value={r.doc.language ?? ""}
+                            placeholder="service setting"
+                            onChange={(e) => setRowDoc(i, { language: e.target.value || null })}
+                          />
+                          <p className="mform-note">
+                            STT transcription language · blank uses the section setting
+                          </p>
+                          <label>Audio format</label>
+                          <input
+                            aria-label="Model audio format"
+                            value={r.doc.format ?? ""}
+                            placeholder="service setting"
+                            onChange={(e) => setRowDoc(i, { format: e.target.value || null })}
+                          />
+                          <p className="mform-note">
+                            TTS response container (mp3/opus/wav) · blank uses the section setting
+                          </p>
+                          <label>Embedding dim</label>
+                          <NumField
+                            id={`${prefix}:model:${r.id}:dim`}
+                            value={r.doc.dim}
+                            ariaLabel="Model embedding dim"
+                            placeholder="unset"
+                            min={1}
+                            onChange={(v) => setRowDoc(i, { dim: v })}
+                            onValidity={onValidity}
+                          />
+                          <p className="mform-note">
+                            embedding vector size · blank leaves it unset
+                          </p>
                         </div>
                       </div>
                     )}
@@ -874,14 +938,14 @@ export function ConfTab({ active }: Props) {
 
   const inf = draft?.inference;
   const srv = draft?.server;
-  // P11 — drag reorder for the fallback chain: the ⠿ handle is both the pointer drag and the keyboard
-  // (Arrow) reorder path, both committing through moveFallback (a hoisted declaration below).
-  const fbDrag = useDragReorder(inf?.fallbacks.length ?? 0, moveFallback);
+  // The draft provider order — seeds a newly-added fallback's provider in each SectionRefEditor.
+  const providerNames = Object.keys(draft?.providers ?? {});
 
   function setInf<K extends keyof Draft["inference"]>(key: K, val: Draft["inference"][K]) {
     setDraft((d) => (d ? { ...d, inference: { ...d.inference, [key]: val } } : d));
   }
-  // A11/D48 — the inference primary + ordered fallbacks as flat provider→model refs.
+  // A11/D48 — the inference primary + ordered fallbacks as flat provider→model refs. The fallback
+  // add/remove/reorder + row DOM live in the shared `SectionRefEditor`; here we just own the draft slice.
   function setPrimary(v: PickerValue) {
     setDraft((d) =>
       d ? { ...d, inference: { ...d.inference, provider: v.provider, model: v.model } } : d,
@@ -889,31 +953,6 @@ export function ConfTab({ active }: Props) {
   }
   function setFallbacks(next: Draft["inference"]["fallbacks"]) {
     setDraft((d) => (d ? { ...d, inference: { ...d.inference, fallbacks: next } } : d));
-  }
-  function setFallbackRef(idx: number, v: PickerValue) {
-    setFallbacks(
-      (draft?.inference.fallbacks ?? []).map((f, i) =>
-        i === idx ? { provider: v.provider ?? "", model: v.model } : f,
-      ),
-    );
-  }
-  function addFallbackRef() {
-    const first = Object.keys(draft?.providers ?? {})[0] ?? "";
-    const models = first ? Object.keys(draft?.providers[first]?.models ?? {}) : [];
-    setFallbacks([
-      ...(draft?.inference.fallbacks ?? []),
-      { provider: first, model: models.length >= 2 ? models[0] : null },
-    ]);
-  }
-  function removeFallbackRef(idx: number) {
-    setFallbacks((draft?.inference.fallbacks ?? []).filter((_, i) => i !== idx));
-  }
-  function moveFallback(from: number, to: number) {
-    const arr = [...(draft?.inference.fallbacks ?? [])];
-    if (to < 0 || to >= arr.length) return;
-    const [x] = arr.splice(from, 1);
-    arr.splice(to, 0, x);
-    setFallbacks(arr);
   }
 
   // A11/D48 — provider map edits (replacement semantics). Rename is an explicit control that ALSO
@@ -995,22 +1034,32 @@ export function ConfTab({ active }: Props) {
   function setTts<K extends keyof Draft["voice"]["tts"]>(key: K, val: Draft["voice"]["tts"][K]) {
     setDraft((d) => (d ? { ...d, voice: { ...d.voice, tts: { ...d.voice.tts, [key]: val } } } : d));
   }
-  function setVoiceEp(
-    svc: "stt" | "tts",
-    tier: "primary" | "fallback",
-    key: "base_url" | "api_key" | "model" | "voice",
-    val: string,
-  ) {
+  // A11/D48 Slice 2 — the primary provider+model refs for each consumer section (set together so a
+  // provider switch resets the model in one draft update). Fallbacks flow through the section's own
+  // `fallbacks` key via the setters above; the SectionRefEditor owns the row add/remove/reorder.
+  function setSttPrimary(v: PickerValue) {
     setDraft((d) =>
       d
         ? {
             ...d,
-            voice: {
-              ...d.voice,
-              [svc]: { ...d.voice[svc], [tier]: { ...d.voice[svc][tier], [key]: val } },
-            },
+            voice: { ...d.voice, stt: { ...d.voice.stt, provider: v.provider, model: v.model } },
           }
         : d,
+    );
+  }
+  function setTtsPrimary(v: PickerValue) {
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            voice: { ...d.voice, tts: { ...d.voice.tts, provider: v.provider, model: v.model } },
+          }
+        : d,
+    );
+  }
+  function setEmbPrimary(v: PickerValue) {
+    setDraft((d) =>
+      d ? { ...d, embeddings: { ...d.embeddings, provider: v.provider, model: v.model } } : d,
     );
   }
 
@@ -1041,6 +1090,26 @@ export function ConfTab({ active }: Props) {
           model: f.model,
         }),
       );
+      // A11/D48 Slice 2 — voice + embeddings sections are ModelRefs too: a provider/model used ONLY by
+      // STT/TTS/embeddings still blocks its own removal/rename (the strict PUT would 422 anyway — R19).
+      const sectionRefs: [
+        string,
+        { provider: string | null; model: string | null; fallbacks: SectionRef[] },
+      ][] = [
+        ["Voice STT", draft.voice.stt],
+        ["Voice TTS", draft.voice.tts],
+        ["Embeddings", draft.embeddings],
+      ];
+      for (const [name, sec] of sectionRefs) {
+        refs.push({ label: `${name} default`, provider: sec.provider, model: sec.model });
+        sec.fallbacks.forEach((f, i) =>
+          refs.push({
+            label: `${name} fallback #${i + 1}`,
+            provider: f.provider || null,
+            model: f.model,
+          }),
+        );
+      }
     }
     const agent = settings?.agent as Record<string, unknown> | undefined;
     const defaults = agent?.defaults as Record<string, unknown> | undefined;
@@ -1108,7 +1177,6 @@ export function ConfTab({ active }: Props) {
 
   function onSave() {
     if (!draft || saveDisabled) return;
-    const dimRaw = String(draft.embeddings.dim ?? "").trim();
     const patch: SavePatch = {
       server: {
         ...draft.server,
@@ -1121,7 +1189,8 @@ export function ConfTab({ active }: Props) {
         request_timeout_s: Number(draft.inference.request_timeout_s),
       },
       searxng: draft.searxng,
-      embeddings: { ...draft.embeddings, dim: dimRaw ? Number(dimRaw) : null },
+      // A11/D48 Slice 2 — embeddings is a registry ref (provider/model/fallbacks) + enabled + timeout.
+      embeddings: { ...draft.embeddings, timeout_s: Number(draft.embeddings.timeout_s) },
       open_terminal: draft.open_terminal,
       shell: {
         ...draft.shell,
@@ -1292,90 +1361,31 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup id="inference" num="02" title="Inference" right="chat backend">
         <div className="conf-card">
-          <SettingRow
-            label="Default"
-            desc="primary provider · model — /<provider> overrides per message"
-          >
-            <ProviderModelPicker
-              label="Default"
-              value={{ provider: inf?.provider ?? null, model: inf?.model ?? null }}
-              onChange={setPrimary}
-              catalog={draftCatalog}
-              allowRawId
-            />
-          </SettingRow>
-          <SettingRow
-            label="Failover"
-            desc="on failure, fall through the primary → fallbacks chain"
-          >
-            <Switch
-              on={inf?.failover ?? true}
-              label="Inference failover"
-              onToggle={() => setInf("failover", !(inf?.failover ?? true))}
-            />
-          </SettingRow>
-          <div className="fallback-section">
-            <span className="label">Fallbacks</span>
-            <span className="desc">tried in order after the default</span>
-          </div>
-          {(inf?.fallbacks ?? []).map((fb, i) => (
-            <div className="confrow fallback-row" key={i} {...fbDrag.rowProps(i)}>
-              {/* remove ✕ on the left beside the index; the row stays on ONE line (owner layout). */}
-              <button
-                type="button"
-                className="fb-remove"
-                aria-label={`remove fallback ${i + 1}`}
-                title="remove"
-                onClick={() => removeFallbackRef(i)}
-              >
-                ✕
-              </button>
-              <div className="k">
-                <div className="label">#{i + 1}</div>
-              </div>
-              <ProviderModelPicker
-                label={`Fallback ${i + 1}`}
-                value={{ provider: fb.provider || null, model: fb.model }}
-                onChange={(v) => setFallbackRef(i, v)}
-                catalog={draftCatalog}
-                allowRawId
-              />
-              {/* drag handle on the right (owner layout) — pointer drag reorder (P11; touch-action:none on
-                  the ⠿ handle) AND ArrowUp/ArrowDown keyboard reorder (the accessible path), both via
-                  fbDrag. */}
-              <button
-                type="button"
-                className="drag-handle"
-                aria-label={`reorder fallback ${i + 1} — drag, or press the up/down arrow keys`}
-                title="drag to reorder (or arrow keys)"
-                {...fbDrag.handleProps(i)}
-              >
-                ⠿
-              </button>
-            </div>
-          ))}
-          {/* debounced drag position announcements for AT (visually hidden) */}
-          <div
-            aria-live="polite"
-            style={{
-              position: "absolute",
-              width: 1,
-              height: 1,
-              margin: -1,
-              padding: 0,
-              overflow: "hidden",
-              clip: "rect(0 0 0 0)",
-              whiteSpace: "nowrap",
-              border: 0,
+          <SectionRefEditor
+            primaryDesc="primary provider · model — /<provider> overrides per message"
+            value={{
+              provider: inf?.provider ?? null,
+              model: inf?.model ?? null,
+              fallbacks: inf?.fallbacks ?? [],
             }}
+            onChangePrimary={setPrimary}
+            onChangeFallbacks={setFallbacks}
+            catalog={draftCatalog}
+            providerNames={providerNames}
           >
-            {fbDrag.announce}
-          </div>
-          <div className="fallback-add">
-            <button type="button" className="svc-add" onClick={addFallbackRef}>
-              + add fallback
-            </button>
-          </div>
+            {/* Inference is the only section with a failover toggle — it slots between Default and
+                Fallbacks. Voice/embeddings chains always walk (no toggle rendered). */}
+            <SettingRow
+              label="Failover"
+              desc="on failure, fall through the primary → fallbacks chain"
+            >
+              <Switch
+                on={inf?.failover ?? true}
+                label="Inference failover"
+                onToggle={() => setInf("failover", !(inf?.failover ?? true))}
+              />
+            </SettingRow>
+          </SectionRefEditor>
           <Field
             label="Request timeout"
             desc="seconds — thinking models load slowly"
@@ -1482,33 +1492,27 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup id="embeddings" num="05" title="Embeddings" right="vector memory">
         <div className="conf-card">
-          <Field
-            label="Endpoint"
-            desc="openai-compatible /v1 base url"
-            value={emb?.base_url ?? ""}
-            onChange={(v) => setEmb("base_url", v)}
-            placeholder="https://openrouter.ai/api/v1"
+          {/* A11/D48 Slice 2 — the embeddings backend is a registry ref (provider + model, scoped to the
+              chosen provider's catalog) with its own ordered fallback chain. The vector `dim` is now a
+              per-model field (edited on the provider card's model row). */}
+          <SectionRefEditor
+            primaryDesc="embedding provider · model — all fallbacks must share the vector dim"
+            value={{
+              provider: emb?.provider ?? null,
+              model: emb?.model ?? null,
+              fallbacks: emb?.fallbacks ?? [],
+            }}
+            onChangePrimary={setEmbPrimary}
+            onChangeFallbacks={(next) => setEmb("fallbacks", next)}
+            catalog={draftCatalog}
+            providerNames={providerNames}
+            sectionLabel="Embeddings"
           />
           <Field
-            label="Model"
-            desc="embedding model id"
-            value={emb?.model ?? ""}
-            onChange={(v) => setEmb("model", v)}
-            placeholder="qwen/qwen3-embedding-4b"
-          />
-          <Field
-            label="API key"
-            desc="bearer key (stored masked)"
-            type="password"
-            value={emb?.api_key ?? ""}
-            onChange={(v) => setEmb("api_key", v)}
-          />
-          <Field
-            label="Dimension"
-            desc="optional — vector size hint"
-            value={emb?.dim == null ? "" : String(emb.dim)}
-            onChange={(v) => setEmb("dim", (v === "" ? null : v) as unknown as number)}
-            placeholder="2560"
+            label="Read timeout"
+            desc="seconds — embedding request window"
+            value={String(emb?.timeout_s ?? "")}
+            onChange={(v) => setEmb("timeout_s", v as unknown as number)}
           />
           <SettingRow label="Enabled" desc="semantic recall (Phase 7e)">
             <Switch
@@ -1664,45 +1668,20 @@ export function ConfTab({ active }: Props) {
               label="STT auto-send"
             />
           </SettingRow>
-          <Field
-            label="Primary endpoint"
-            desc="vault · /v1 base url"
-            value={vstt?.primary.base_url ?? ""}
-            onChange={(v) => setVoiceEp("stt", "primary", "base_url", v)}
-            placeholder="http://host:9000/v1"
-          />
-          <Field
-            label="Primary model"
-            desc="whisper model id"
-            value={vstt?.primary.model ?? ""}
-            onChange={(v) => setVoiceEp("stt", "primary", "model", v)}
-          />
-          <Field
-            label="Primary key"
-            desc="optional — local servers ignore it"
-            type="password"
-            value={vstt?.primary.api_key ?? ""}
-            onChange={(v) => setVoiceEp("stt", "primary", "api_key", v)}
-          />
-          <Field
-            label="Fallback endpoint"
-            desc="emma · tried only if primary fails"
-            value={vstt?.fallback.base_url ?? ""}
-            onChange={(v) => setVoiceEp("stt", "fallback", "base_url", v)}
-            placeholder="http://host:9000/v1 (blank → no fallback)"
-          />
-          <Field
-            label="Fallback model"
-            desc="whisper model id"
-            value={vstt?.fallback.model ?? ""}
-            onChange={(v) => setVoiceEp("stt", "fallback", "model", v)}
-          />
-          <Field
-            label="Fallback key"
-            desc="optional"
-            type="password"
-            value={vstt?.fallback.api_key ?? ""}
-            onChange={(v) => setVoiceEp("stt", "fallback", "api_key", v)}
+          {/* A11/D48 Slice 2 — the STT primary + ordered fallbacks point at the registry (provider + model
+              scoped to its catalog); the whisper endpoint/key/model now live on the provider card. */}
+          <SectionRefEditor
+            primaryDesc="STT provider · model — the whisper backend"
+            value={{
+              provider: vstt?.provider ?? null,
+              model: vstt?.model ?? null,
+              fallbacks: vstt?.fallbacks ?? [],
+            }}
+            onChangePrimary={setSttPrimary}
+            onChangeFallbacks={(next) => setStt("fallbacks", next)}
+            catalog={draftCatalog}
+            providerNames={providerNames}
+            sectionLabel="Voice STT"
           />
           <Field
             label="Connect timeout"
@@ -1746,59 +1725,20 @@ export function ConfTab({ active }: Props) {
               onPick={(v) => setTts("format", v)}
             />
           </SettingRow>
-          <Field
-            label="Primary endpoint"
-            desc="vault · /v1 base url"
-            value={vtts?.primary.base_url ?? ""}
-            onChange={(v) => setVoiceEp("tts", "primary", "base_url", v)}
-            placeholder="http://host:7851/v1"
-          />
-          <Field
-            label="Primary model"
-            desc="tts model id"
-            value={vtts?.primary.model ?? ""}
-            onChange={(v) => setVoiceEp("tts", "primary", "model", v)}
-          />
-          <Field
-            label="Primary voice"
-            desc="server voice id"
-            value={vtts?.primary.voice ?? ""}
-            onChange={(v) => setVoiceEp("tts", "primary", "voice", v)}
-            placeholder="echo"
-          />
-          <Field
-            label="Primary key"
-            desc="optional"
-            type="password"
-            value={vtts?.primary.api_key ?? ""}
-            onChange={(v) => setVoiceEp("tts", "primary", "api_key", v)}
-          />
-          <Field
-            label="Fallback endpoint"
-            desc="emma · tried only if primary fails"
-            value={vtts?.fallback.base_url ?? ""}
-            onChange={(v) => setVoiceEp("tts", "fallback", "base_url", v)}
-            placeholder="http://host:7851/v1 (blank → no fallback)"
-          />
-          <Field
-            label="Fallback model"
-            desc="tts model id"
-            value={vtts?.fallback.model ?? ""}
-            onChange={(v) => setVoiceEp("tts", "fallback", "model", v)}
-          />
-          <Field
-            label="Fallback voice"
-            desc="server voice id"
-            value={vtts?.fallback.voice ?? ""}
-            onChange={(v) => setVoiceEp("tts", "fallback", "voice", v)}
-            placeholder="echo"
-          />
-          <Field
-            label="Fallback key"
-            desc="optional"
-            type="password"
-            value={vtts?.fallback.api_key ?? ""}
-            onChange={(v) => setVoiceEp("tts", "fallback", "api_key", v)}
+          {/* A11/D48 Slice 2 — the TTS primary + ordered fallbacks point at the registry; the server
+              voice id + playback speed are per-model fields (edited on the provider card's model row). */}
+          <SectionRefEditor
+            primaryDesc="TTS provider · model — the synthesis backend"
+            value={{
+              provider: vtts?.provider ?? null,
+              model: vtts?.model ?? null,
+              fallbacks: vtts?.fallbacks ?? [],
+            }}
+            onChangePrimary={setTtsPrimary}
+            onChangeFallbacks={(next) => setTts("fallbacks", next)}
+            catalog={draftCatalog}
+            providerNames={providerNames}
+            sectionLabel="Voice TTS"
           />
           <Field
             label="Connect timeout"
