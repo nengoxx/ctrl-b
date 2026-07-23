@@ -15,6 +15,7 @@ of the parsed YAML before validation.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import io
 import json
@@ -26,6 +27,7 @@ from dataclasses import field as _dc_field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar, Literal, TypeGuard
+from urllib.parse import urlsplit
 
 import yaml
 from dotenv import dotenv_values
@@ -415,59 +417,49 @@ class MemoryCfg(BaseModel):
 
 
 class EmbeddingsCfg(BaseModel):
-    """OpenAI-compatible embeddings backend (Phase 4f, D9). One `/v1/embeddings` endpoint — local
-    llama.cpp or a cloud provider (e.g. OpenRouter `qwen/qwen3-embedding-4b`) — powering the vector
-    `MemoryProvider` + future semantic search (Phase 7). `enabled=False`/empty `base_url`/`model`
-    makes `EmbeddingsClient.configured` false so consumers degrade gracefully. `dim` is optional
-    metadata (the model's vector size) for store setup; left `None`, the first embed reveals it."""
+    """OpenAI-compatible embeddings backend (Phase 4f, D9; A11/D48 Slice 2). Points at the top-level
+    `providers` map — a flat `provider` primary (+ optional `model`) and an ordered `fallbacks` list of
+    `SectionRef` (embeddings gains failover for free). The connection details + the vector dimension
+    (`ModelCfg.dim`) live on the referenced provider/model, not here. `enabled=False` (or an empty
+    chain) makes `EmbeddingsClient.configured` false so consumers degrade gracefully. `timeout_s` is the
+    section-level SDK read window (the `EmbeddingsPolicy`)."""
 
     model_config = {"extra": "allow"}
 
-    base_url: str = ""  # e.g. https://openrouter.ai/api/v1 or http://192.168.1.137:5002/v1
-    api_key: str | None = None
-    model: str = ""  # e.g. qwen/qwen3-embedding-4b
+    provider: str | None = None  # PRIMARY provider name; None -> unconfigured (embeddings off)
+    #: The primary's model — omittable iff the provider's catalog has exactly one model (terse-config
+    #: rule). A clean catalog name, or an uncataloged raw wire id (passthrough).
+    model: str | None = None
+    #: Ordered N-deep failover chain after the primary (D48). Each {provider, model?}. All non-null
+    #: `dim`s across the chain must AGREE (C8) — the resolver 422s (strict) / drops-mismatched+warns.
+    fallbacks: list[SectionRef] = Field(default_factory=list)
     enabled: bool = True
     timeout_s: float = 60.0
-    dim: int | None = None  # optional: known embedding dimension
-
-
-class VoiceEndpointCfg(BaseModel):
-    """One OpenAI-compatible STT *or* TTS backend (Phase 6). `voice` is a TTS-only server voice id
-    (ignored by STT). `api_key` is optional — local servers ignore it (the client sends a
-    placeholder). The failover chain lives one level up on `VoiceServiceCfg`. (Legacy voice shape,
-    retained until Slice 2 migrates voice/embeddings onto the A11 provider registry.)"""
-
-    model_config = {"extra": "allow"}
-
-    base_url: str = ""  # e.g. http://vault:8001/v1
-    api_key: str | None = None
-    model: str = ""  # e.g. "whisper-large-v3" (STT) or "tts-1"/a voice model (TTS)
-    voice: str = ""  # TTS only — server voice id; STT ignores it
 
 
 class VoiceServiceCfg(BaseModel):
-    """Base for a voice service (STT or TTS): the ordered **primary → fallback** chain (D-failover)
-    + the shared transport knobs. The active endpoint is `primary`; on **any** failure the request
-    falls through to `fallback` (Phase 6 Q2 — ensure functionality, surface the degradation). Split
-    timeouts make the failover snappy: `connect_timeout_s` is how fast we give up *reaching* a dead
-    endpoint before falling over; `timeout_s` is the (generous) read window for the actual
+    """Base for a voice service (STT or TTS): points at the top-level `providers` map — a flat
+    `provider` primary (+ optional `model`) and an ordered `fallbacks` list of `SectionRef` (D48
+    Slice 2). On **any** failure the chain walks to the next hop (Phase 6 Q2 — ensure functionality,
+    surface the degradation; voice chains always walk, there is deliberately no failover toggle).
+    Split timeouts make the failover snappy: `connect_timeout_s` is how fast we give up *reaching* a
+    dead endpoint before falling over; `timeout_s` is the (generous) read window for the actual
     transcription/synthesis. `extra_body` is the OpenAI-SDK escape hatch — arbitrary fields passed
     straight to the server for params we don't model as typed fields (rarely needed; usually empty)."""
 
     model_config = {"extra": "allow"}
 
+    provider: str | None = None  # PRIMARY provider name; None -> that service unconfigured (control hidden)
+    #: The primary's model — omittable iff the provider's catalog has exactly one model (terse-config
+    #: rule). A clean catalog name, or an uncataloged raw wire id (passthrough).
+    model: str | None = None
+    #: Ordered N-deep failover chain after the primary (D48). Each {provider, model?}.
+    fallbacks: list[SectionRef] = Field(default_factory=list)
     # Floored >0 so a blanked Conf field (→ 0) can't silently wedge voice (a 0s timeout fails every
     # call instantly); the PUT 422s instead, surfacing the bad value — mirrors the memory-cap floors.
     connect_timeout_s: float = Field(default=3.0, gt=0)  # fail-fast on an unreachable endpoint → fall over
     timeout_s: float = Field(default=30.0, gt=0)  # read window for the transcription/synthesis itself
     extra_body: dict[str, Any] = Field(default_factory=dict)  # advanced: passthrough to the server
-    primary: VoiceEndpointCfg = Field(default_factory=VoiceEndpointCfg)
-    fallback: VoiceEndpointCfg = Field(default_factory=VoiceEndpointCfg)
-
-    def endpoints(self) -> list[VoiceEndpointCfg]:
-        """The ordered failover chain — primary then fallback — dropping any with a blank `base_url`
-        (so a half-configured fallback doesn't add a guaranteed-failing hop). Fed to `core.failover`."""
-        return [e for e in (self.primary, self.fallback) if e.base_url]
 
 
 class SttServiceCfg(VoiceServiceCfg):
@@ -1158,8 +1150,6 @@ def _canonical_base_url_key(url: str) -> str:
     """Lowercased scheme+host, default ports elided, trailing slash stripped, path preserved — the
     migration endpoint-dedup key (matches `core.provider_registry.canonical_base_url`; a tiny pure
     duplicate here to avoid a config->core import cycle)."""
-    from urllib.parse import urlsplit
-
     parts = urlsplit(url if "://" in url else f"http://{url}")
     scheme = (parts.scheme or "http").lower()
     host = (parts.hostname or "").lower()
@@ -1180,53 +1170,109 @@ def _provider_name_from_api_mode(api_mode: str, taken: set[str]) -> str:
     return f"{base}-{i}"
 
 
+def _provider_name_from_host_port(base_url: str, taken: set[str]) -> str:
+    """Derive a provider name for a MIGRATED voice/embeddings endpoint from its base_url (D48 step 2): a
+    host-port slug (lowercased host with dots kept, `-<port>` only when the port is explicit; scheme/path
+    stripped), sanitized to the provider slug charset (`^[a-z0-9][a-z0-9_+.-]{0,31}$`), suffixed -2,-3…
+    on collision. Chat endpoints use `_provider_name_from_api_mode`; voice/embeddings have no api_mode
+    identity, so the host is the natural name (e.g. `http://emma:9000/v1` → `emma-9000`)."""
+    parts = urlsplit(base_url if "://" in base_url else f"http://{base_url}")
+    host = (parts.hostname or "").lower()
+    slug = f"{host}-{parts.port}" if parts.port is not None else host
+    slug = re.sub(r"[^a-z0-9_+.\-]", "-", slug)  # replace out-of-charset chars
+    slug = re.sub(r"^[^a-z0-9]+", "", slug)[:32] or "provider"  # must start with [a-z0-9], cap 32
+    if slug not in taken:
+        return slug
+    i = 2
+    while f"{slug}-{i}" in taken:
+        i += 1
+    return f"{slug}-{i}"
+
+
+def _voice_service_is_legacy(svc: Any) -> bool:
+    """A `voice.stt`/`voice.tts` subtree is legacy-shaped iff it carries a `primary`/`fallback` slot
+    AND has no new-shape `provider` pointer (D48 migration step 2 trigger). The `provider` guard is the
+    subtree-level new-wins rule the chat + embeddings triggers already apply: a hand-authored doc holding
+    BOTH shapes keeps the new pointer untouched (legacy ignored, not deleted — the recorded residual)."""
+    return isinstance(svc, dict) and "provider" not in svc and ("primary" in svc or "fallback" in svc)
+
+
+def _embeddings_is_legacy(emb: Any) -> bool:
+    """The `embeddings` subtree is legacy-shaped iff it carries any single-endpoint field
+    (`base_url`/`api_key`/`model`/`dim`) AND has no new-shape `provider` pointer (D48 step 2 trigger)."""
+    return (
+        isinstance(emb, dict)
+        and "provider" not in emb
+        and any(k in emb for k in ("base_url", "api_key", "model", "dim"))
+    )
+
+
 def _migrate_legacy(raw: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str], list[str]]:
-    """Quarantined raw-YAML fold (A11/D48 §Migration): the legacy local/cloud/fallbacks `inference` shape
-    -> the `providers` map + flat `inference.provider`+`fallbacks`. CHAT SUBTREE ONLY (Slice 1;
-    voice/embeddings stay legacy until Slice 2). Returns (migrated_raw, slot_map, delete_list).
+    """Quarantined raw-YAML fold (A11/D48 §Migration): the legacy local/cloud/fallbacks `inference` shape,
+    the `voice.stt`/`voice.tts` primary/fallback slots, and the single-endpoint `embeddings` block -> the
+    top-level `providers` map + each section's flat `provider`+`fallbacks`. Returns
+    (migrated_raw, slot_map, delete_list).
 
-    Deterministic + idempotent: a no-op (returns `raw` unchanged, {}, []) unless `providers` is ABSENT,
-    new-shape `inference.provider` is ABSENT, and legacy endpoint keys are present — so re-running on a
-    migrated doc is byte-identical.
+    PER-SUBTREE idempotent + independent: each of the four folds (chat / stt / tts / embeddings) fires iff
+    ITS OWN subtree is legacy-shaped, regardless of the others — so a Slice-1-migrated config (chat already
+    on `providers:`) with legacy voice MERGES the voice endpoints into the EXISTING providers map (dedup by
+    canonical base_url + api_key, against pre-existing AND freshly-created providers). Nothing legacy ->
+    the input `raw` is returned unchanged (identity), {}, []; re-running on a migrated doc is a no-op.
 
-    Mixed-config edge (audit L3): a HAND-AUTHORED config that has `providers:` (or new-shape
-    `inference.provider`) AND leftover legacy keys (`inference.local/cloud/default_mode`) is NOT migrated
-    — the trigger short-circuits on `providers` present. Those stale keys are simply IGNORED at load
-    (`Settings` drops unknown `inference` fields) and left untouched on disk; only a real legacy->new
-    migration (this fold firing) ever schedules their deletion. Acceptable: they are inert, and the owner
-    can remove them by hand.
-
-    Names derive from api_mode (collision -> -2,-3); endpoints dedup by
-    (canonical base_url, api_key) against already-created providers (a merged provider accretes both
-    models); chain order [selected, other, *fallbacks] is preserved exactly; config-held ModelRef homes
-    are rewritten mode->provider via the shared walk helper with the slot_map."""
+    Two phases: (1) fold every legacy endpoint into `providers` (dedup + accrete models), recording each
+    section's ordered `(provider, model)` ref list; (2) once the catalog is FINAL, materialize each
+    section's `provider`/`model`/`fallbacks` — the model is omitted iff the (possibly merged) provider ends
+    with exactly one model. Chat names derive from api_mode; voice/embeddings names are host-port slugs.
+    Chat-held ModelRef homes are rewritten mode->provider via the shared walk helper + slot_map."""
     inf = raw.get("inference")
-    if "providers" in raw or not isinstance(inf, dict) or "provider" in inf:
+    chat_legacy = (
+        "providers" not in raw
+        and isinstance(inf, dict)
+        and "provider" not in inf
+        and any(k in inf for k in ("local", "cloud", "fallbacks"))
+    )
+    raw_voice = raw.get("voice")
+    if not isinstance(raw_voice, dict):
+        raw_voice = {}
+    stt_legacy = _voice_service_is_legacy(raw_voice.get("stt"))
+    tts_legacy = _voice_service_is_legacy(raw_voice.get("tts"))
+    raw_emb = raw.get("embeddings")
+    if not isinstance(raw_emb, dict):
+        raw_emb = {}
+    emb_legacy = _embeddings_is_legacy(raw_emb)
+    if not (chat_legacy or stt_legacy or tts_legacy or emb_legacy):
         return raw, {}, []
-    if not any(k in inf for k in ("local", "cloud", "fallbacks")):
-        return raw, {}, []
 
-    def _ep(v: Any) -> dict[str, Any]:
-        return v if isinstance(v, dict) else {}
-
-    local, cloud = _ep(inf.get("local")), _ep(inf.get("cloud"))
-    fallbacks = [f for f in inf.get("fallbacks") or [] if isinstance(f, dict)]
-    _dm = inf.get("default_mode")
-    default_mode = str(_dm) if _dm in ("local", "cloud") else "local"
-
-    providers: dict[str, dict[str, Any]] = {}
+    # Seed the providers map + identity index from any EXISTING providers (a Slice-1-migrated doc), so a
+    # voice/embeddings endpoint sharing a base_url+key with an existing provider REUSES it (never dups).
+    providers: dict[str, dict[str, Any]] = copy.deepcopy(raw.get("providers") or {})
     by_identity: dict[tuple[str, str | None], str] = {}
-    slot_map: dict[str, str] = {}
+    for pname, pcfg in providers.items():
+        if isinstance(pcfg, dict) and pcfg.get("base_url"):
+            by_identity.setdefault((_canonical_base_url_key(pcfg["base_url"]), pcfg.get("api_key")), pname)
 
-    def _add_endpoint(ep: dict[str, Any]) -> tuple[str, str] | None:
+    slot_map: dict[str, str] = {}
+    delete_list: list[str] = []
+
+    def _add_endpoint(
+        ep: dict[str, Any],
+        *,
+        name_for: Any,
+        model_entry: Any,
+        default_model: str = "",
+        require_model: bool = False,
+    ) -> tuple[str, str] | None:
         base_url = ep.get("base_url") or ""
         if not base_url:
+            return None
+        model = ep.get("model") or default_model or ""
+        if require_model and not model:  # embeddings: a blank model = never configured -> drop
             return None
         api_key = ep.get("api_key")
         identity = (_canonical_base_url_key(base_url), api_key)
         name = by_identity.get(identity)
         if name is None:
-            name = _provider_name_from_api_mode(str(ep.get("api_mode") or "openai"), set(providers))
+            name = name_for(ep, base_url, set(providers))
             prov: dict[str, Any] = {"base_url": base_url}
             if api_key:
                 prov["api_key"] = api_key
@@ -1238,60 +1284,135 @@ def _migrate_legacy(raw: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]
             prov["models"] = {}
             providers[name] = prov
             by_identity[identity] = name
-        model = ep.get("model") or ""
         if model:
-            entry: dict[str, Any] = {}
-            if ep.get("context_window") is not None:
-                entry["context_window"] = ep["context_window"]
-            if ep.get("extra_body"):
-                entry["extra_body"] = ep["extra_body"]
-            providers[name]["models"].setdefault(model, entry)  # name == id (lossless)
+            providers[name].setdefault("models", {}).setdefault(model, model_entry(ep))  # name == id
         return name, model
 
-    named_slots = {"local": local, "cloud": cloud}
-    for slot in ("local", "cloud"):
-        res = _add_endpoint(named_slots[slot])
-        if res is not None:
-            slot_map[slot] = res[0]
+    def _chat_name(ep: dict[str, Any], _url: str, taken: set[str]) -> str:
+        return _provider_name_from_api_mode(str(ep.get("api_mode") or "openai"), taken)
 
-    selected = default_mode
-    other = "cloud" if selected == "local" else "local"
-    ordered_eps = [named_slots[selected], named_slots[other], *fallbacks]
-    refs: list[tuple[str, str]] = []
-    for ep in ordered_eps:
-        res = _add_endpoint(ep)
-        if res is not None:
-            refs.append(res)
+    def _hostport_name(_ep: dict[str, Any], url: str, taken: set[str]) -> str:
+        return _provider_name_from_host_port(url, taken)
 
-    new_inf = {k: v for k, v in inf.items() if k not in ("default_mode", "local", "cloud", "fallbacks")}
-    delete_list = ["inference.default_mode", "inference.local", "inference.cloud"]
+    def _chat_model(ep: dict[str, Any]) -> dict[str, Any]:
+        entry: dict[str, Any] = {}
+        if ep.get("context_window") is not None:
+            entry["context_window"] = ep["context_window"]
+        if ep.get("extra_body"):
+            entry["extra_body"] = ep["extra_body"]
+        return entry
 
-    if not refs:
-        migrated = {**raw, "inference": new_inf, "providers": {}}
-        return migrated, {}, delete_list
+    migrated: dict[str, Any] = dict(raw)
+    # (section-dict, ordered refs) pairs, materialized in phase 2 once the catalog is final.
+    to_materialize: list[tuple[dict[str, Any], list[tuple[str, str]]]] = []
 
+    # ── chat fold ──
+    if chat_legacy:
+        assert isinstance(inf, dict)
+
+        def _ep(v: Any) -> dict[str, Any]:
+            return v if isinstance(v, dict) else {}
+
+        named_slots = {"local": _ep(inf.get("local")), "cloud": _ep(inf.get("cloud"))}
+        fallbacks = [f for f in inf.get("fallbacks") or [] if isinstance(f, dict)]
+        _dm = inf.get("default_mode")
+        default_mode = str(_dm) if _dm in ("local", "cloud") else "local"
+        for slot in ("local", "cloud"):
+            res = _add_endpoint(named_slots[slot], name_for=_chat_name, model_entry=_chat_model)
+            if res is not None:
+                slot_map[slot] = res[0]
+        other = "cloud" if default_mode == "local" else "local"
+        chat_refs: list[tuple[str, str]] = []
+        for ep in [named_slots[default_mode], named_slots[other], *fallbacks]:
+            res = _add_endpoint(ep, name_for=_chat_name, model_entry=_chat_model)
+            if res is not None:
+                chat_refs.append(res)
+        new_inf = {k: v for k, v in inf.items() if k not in ("default_mode", "local", "cloud", "fallbacks")}
+        migrated["inference"] = new_inf
+        to_materialize.append((new_inf, chat_refs))
+        delete_list += ["inference.default_mode", "inference.local", "inference.cloud"]
+
+    # ── voice folds (stt / tts, each independent) ──
+    if stt_legacy or tts_legacy:
+        new_voice = copy.deepcopy(raw_voice)
+        migrated["voice"] = new_voice
+        for svc_name, is_legacy, default_model in (
+            ("stt", stt_legacy, "whisper-1"),
+            ("tts", tts_legacy, "tts-1"),
+        ):
+            if not is_legacy:
+                continue
+            svc = raw_voice.get(svc_name)
+            svc = svc if isinstance(svc, dict) else {}
+            primary = svc.get("primary")
+            primary = primary if isinstance(primary, dict) else {}
+            fallback = svc.get("fallback")
+            fallback = fallback if isinstance(fallback, dict) else {}
+
+            def _voice_model(ep: dict[str, Any], *, _svc: str = svc_name) -> dict[str, Any]:
+                # TTS: the endpoint's `voice` id lands on the model entry (voice ids are model-specific).
+                # STT: no per-model field (language is service-level, stays on the section knobs).
+                entry: dict[str, Any] = {}
+                if _svc == "tts" and ep.get("voice"):
+                    entry["voice"] = ep["voice"]
+                return entry
+
+            svc_refs: list[tuple[str, str]] = []
+            for ep in (primary, fallback):
+                res = _add_endpoint(
+                    ep, name_for=_hostport_name, model_entry=_voice_model, default_model=default_model
+                )
+                if res is not None:
+                    svc_refs.append(res)
+            new_svc = {k: v for k, v in svc.items() if k not in ("primary", "fallback")}
+            new_voice[svc_name] = new_svc
+            to_materialize.append((new_svc, svc_refs))
+            delete_list += [f"voice.{svc_name}.{k}" for k in ("primary", "fallback") if k in svc]
+
+    # ── embeddings fold (the block itself is the single endpoint; its `dim` -> the model entry) ──
+    if emb_legacy:
+        emb_dim = raw_emb.get("dim")
+
+        def _emb_model(_ep: dict[str, Any]) -> dict[str, Any]:
+            return {"dim": emb_dim} if emb_dim is not None else {}
+
+        res = _add_endpoint(raw_emb, name_for=_hostport_name, model_entry=_emb_model, require_model=True)
+        emb_refs = [res] if res is not None else []
+        new_emb = {k: v for k, v in raw_emb.items() if k not in ("base_url", "api_key", "model", "dim")}
+        migrated["embeddings"] = new_emb
+        to_materialize.append((new_emb, emb_refs))
+        delete_list += [f"embeddings.{k}" for k in ("base_url", "api_key", "model", "dim") if k in raw_emb]
+
+    migrated["providers"] = providers
+
+    # ── phase 2: materialize each section's provider/model/fallbacks against the FINAL catalog ──
     def _section_ref(pname: str, model: str) -> dict[str, Any]:
         ref: dict[str, Any] = {"provider": pname}
-        if len(providers[pname]["models"]) != 1 and model:
-            ref["model"] = model
+        if len(providers[pname].get("models") or {}) != 1 and model:
+            ref["model"] = model  # a merged multi-model provider must name its model
         return ref
 
-    primary_name, primary_model = refs[0]
-    new_inf["provider"] = primary_name
-    if len(providers[primary_name]["models"]) != 1 and primary_model:
-        new_inf["model"] = primary_model
-    new_inf["fallbacks"] = [_section_ref(p, m) for p, m in refs[1:]]
+    for sect, refs in to_materialize:
+        if not refs:
+            continue
+        pname, model = refs[0]
+        sect["provider"] = pname
+        if len(providers[pname].get("models") or {}) != 1 and model:
+            sect["model"] = model
+        sect["fallbacks"] = [_section_ref(p, m) for p, m in refs[1:]]
 
-    migrated = {**raw, "inference": new_inf, "providers": providers}
+    # ── chat-held ModelRef homes: mode->provider via the slot_map (only when the chat fold ran) ──
+    if chat_legacy:
 
-    def _rewrite(ref: dict[str, Any]) -> None:
-        if "mode" not in ref:
-            return
-        mode_val = ref.pop("mode")
-        if isinstance(mode_val, str):
-            ref["provider"] = slot_map.get(mode_val, mode_val)  # None mode -> provider absent (inherit)
+        def _rewrite(ref: dict[str, Any]) -> None:
+            if "mode" not in ref:
+                return
+            mode_val = ref.pop("mode")
+            if isinstance(mode_val, str):
+                ref["provider"] = slot_map.get(mode_val, mode_val)  # None mode -> provider absent (inherit)
 
-    walk_model_refs(migrated, _rewrite)
+        walk_model_refs(migrated, _rewrite)
+
     return migrated, slot_map, delete_list
 
 
@@ -1333,20 +1454,21 @@ def load_settings(path: Path | None = None) -> Settings:
         raise ValueError(f"{p} must contain a YAML mapping at the top level")
     raw = _apply_env_overrides(raw)
     migrated, slot_map, delete_list = _migrate_legacy(raw)
-    if migrated is not raw:  # a fold fired
+    if migrated is not raw:  # a fold fired (chat / voice / embeddings, in any combination)
         _SLOT_MAP = slot_map
-        writeback: dict[str, Any] = {
-            "providers": migrated.get("providers", {}),
-            "inference": migrated["inference"],
-        }
-        if isinstance(migrated.get("agent"), dict):
-            writeback["agent"] = migrated["agent"]
+        # Carry every folded new-shape subtree onto the write-back channel. `providers` is always
+        # present; the section subtrees ride when present (`sync_mapping` makes an unchanged one a no-op,
+        # so over-inclusion is safe — the migration writeback materializes on the first successful write).
+        writeback: dict[str, Any] = {"providers": migrated.get("providers", {})}
+        for sect in ("inference", "voice", "embeddings", "agent"):
+            val = migrated.get(sect)
+            if isinstance(val, dict):
+                writeback[sect] = val
         _PENDING_MIGRATION = PendingMigration(writeback=writeback, delete_list=tuple(delete_list))
         _MIGRATION_LOG.warning(
-            "A11: migrated legacy inference config in memory -> %d provider(s), %d fallback(s); "
-            "legacy keys %s will be removed + a config.yaml.bak-a11-* backup written on the next save.",
+            "A11: migrated legacy provider config in memory -> %d provider(s); legacy keys %s will be "
+            "removed + a config.yaml.bak-a11-* backup written on the next save.",
             len(migrated.get("providers", {})),
-            len(migrated["inference"].get("fallbacks", [])),
             delete_list,
         )
     else:

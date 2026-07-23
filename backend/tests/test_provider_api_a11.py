@@ -547,3 +547,166 @@ def test_hosts_crud_write_triggers_migration_writeback_exactly_once() -> None:
         r2 = c.post("/api/hosts", json={"name": "box2", "ip": "10.0.0.10"})
         assert r2.status_code == 201, r2.text
         assert len(list(cfg.parent.glob("config.yaml.bak-a11-*"))) == 1
+
+
+# ══════════════════════ Slice 2 — voice + embeddings on the provider API ══════════════════════
+_VOICE_BASE = (
+    "# homelab\n"
+    "server:\n  port: 5433\n  poll_seconds: 5\n"
+    "providers:\n"
+    "  llamacpp:\n    base_url: http://l/v1\n    api_mode: llamacpp\n    models:\n      minig+: {}\n"
+    "  speaches:\n    base_url: http://emma:9000/v1\n"
+    "    models:\n      parakeet: {}\n      kokoro:\n        voice: bf_isabella\n"
+    "  vault-whisper:\n    base_url: http://vault:9000/v1\n    models:\n      whisper: {}\n"
+    "  openrouter:\n    base_url: https://openrouter.ai/api/v1\n    api_key: sk-REAL\n    api_mode: openrouter\n"
+    "    models:\n      emb:\n        id: qwen/embed\n        dim: 2560\n"
+    "inference:\n  provider: llamacpp\n"
+    "voice:\n"
+    "  stt:\n    provider: speaches\n    model: parakeet\n    fallbacks:\n      - provider: vault-whisper\n"
+    "  tts:\n    provider: speaches\n    model: kokoro\n"
+    "embeddings:\n  provider: openrouter\n  model: emb\n"
+)
+
+
+def test_rename_cascades_voice_and_embeddings_section_refs() -> None:
+    with _client(_VOICE_BASE) as (c, cfg):
+        masked = c.get("/api/settings").json()["providers"]["openrouter"]["api_key"]
+        r = c.put(
+            "/api/settings",
+            json={
+                "provider_renames": {"speaches": "speaches2", "openrouter": "openrouter2"},
+                "providers_base": _rev(c),
+                "providers": {  # complete map keyed by the NEW names (inference/voice/embeddings NOT sent)
+                    "llamacpp": {"base_url": "http://l/v1", "api_mode": "llamacpp", "models": {"minig+": {}}},
+                    "speaches2": {
+                        "base_url": "http://emma:9000/v1",
+                        "models": {"parakeet": {}, "kokoro": {"voice": "bf_isabella"}},
+                    },
+                    "vault-whisper": {"base_url": "http://vault:9000/v1", "models": {"whisper": {}}},
+                    "openrouter2": {
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "api_key": masked,
+                        "api_mode": "openrouter",
+                        "models": {"emb": {"id": "qwen/embed", "dim": 2560}},
+                    },
+                },
+            },
+        )
+        assert r.status_code == 200, r.text
+        s = load_settings(cfg)
+        # the backend cascade rewrote every config-held section ref still equal to the old names
+        assert s.voice.stt.provider == "speaches2" and s.voice.tts.provider == "speaches2"
+        assert s.voice.stt.fallbacks[0].provider == "vault-whisper"  # a third provider untouched
+        assert s.embeddings.provider == "openrouter2"
+        assert s.providers["openrouter2"].api_key == "sk-REAL"  # secret restored by old identity
+
+
+def test_strict_422_on_voice_ref_break_but_lenient_on_unrelated_put() -> None:
+    # a voice PUT that breaks a voice ref (missing provider) strict-422s; an appearance-only PUT with the
+    # SAME broken state resolves LENIENTLY (200) — voice/embeddings joined the strict-always trigger set (R7)
+    # but only when the patch touches them.
+    with _client(_VOICE_BASE) as (c, _cfg):
+        bad = c.put("/api/settings", json={"voice": {"stt": {"provider": "ghost-whisper"}}})
+        assert bad.status_code == 422, bad.text
+        assert "ghost-whisper" in bad.text
+        # the config on disk is still valid; an appearance PUT must not be bricked
+        ok = c.put("/api/settings", json={"appearance": {"mode": "light"}})
+        assert ok.status_code == 200, ok.text
+
+
+def test_embeddings_dim_mismatch_put_422s() -> None:
+    with _client(_VOICE_BASE) as (c, _cfg):
+        r = c.put(
+            "/api/settings",
+            json={
+                "providers_base": _rev(c),
+                "providers": {  # add a second embed provider with a mismatched dim, point embeddings at both
+                    "llamacpp": {"base_url": "http://l/v1", "api_mode": "llamacpp", "models": {"minig+": {}}},
+                    "speaches": {
+                        "base_url": "http://emma:9000/v1",
+                        "models": {"parakeet": {}, "kokoro": {"voice": "bf_isabella"}},
+                    },
+                    "vault-whisper": {"base_url": "http://vault:9000/v1", "models": {"whisper": {}}},
+                    "openrouter": {
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "api_mode": "openrouter",
+                        "models": {"emb": {"id": "qwen/embed", "dim": 2560}},
+                    },
+                    "emb2": {"base_url": "http://emb2/v1", "models": {"e": {"dim": 1024}}},
+                },
+                "embeddings": {
+                    "provider": "openrouter",
+                    "model": "emb",
+                    "fallbacks": [{"provider": "emb2", "model": "e"}],
+                },
+            },
+        )
+        assert r.status_code == 422, r.text
+        assert "dim" in r.text.lower()
+
+
+def test_get_providers_voice_sections_and_verb_exclusion() -> None:
+    with _client(_VOICE_BASE) as (c, _cfg):
+        body = c.get("/api/providers").json()
+        assert set(body["sections"]) == {"inference", "stt", "tts", "embeddings"}
+        assert body["sections"]["stt"] == {
+            "provider": "speaches",
+            "model": "parakeet",
+            "fallbacks": [{"provider": "vault-whisper", "model": "whisper"}],
+        }
+        assert (
+            body["sections"]["tts"]["provider"] == "speaches" and body["sections"]["tts"]["model"] == "kokoro"
+        )
+        assert body["sections"]["embeddings"] == {"provider": "openrouter", "model": "emb", "fallbacks": []}
+        verbs = set(body["verbs"])
+        assert "llamacpp" in verbs  # the chat provider is a verb
+        # providers referenced ONLY by voice/embeddings are NOT chat verbs (R9) even when sole-model routable
+        assert "vault-whisper" not in verbs  # sole-model, but voice-only → excluded
+        assert "openrouter" not in verbs  # sole-model, but embeddings-only → excluded
+        assert "speaches" not in verbs  # multi-model non-chain → excluded anyway
+
+
+def test_voice_status_endpoint_keeps_auto_send() -> None:
+    with _client(_VOICE_BASE) as (c, _cfg):
+        assert c.get("/api/voice/status").json() == {"stt": True, "tts": True, "stt_auto_send": False}
+        # flip auto_send via a voice PUT and re-read (composed live from settings at the API layer)
+        r = c.put("/api/settings", json={"voice": {"stt": {"auto_send": True}}})
+        assert r.status_code == 200, r.text
+        assert c.get("/api/voice/status").json()["stt_auto_send"] is True
+
+
+def test_providers_change_rebuilds_inference_voice_embeddings_together() -> None:
+    # R5: a providers PUT rebuilds all three adapters from ONE registry generation (new instances).
+    with _client(_VOICE_BASE) as (c, _cfg):
+        old_inf, old_voice, old_emb = c.app.state.inference, c.app.state.voice, c.app.state.embeddings
+        masked = c.get("/api/settings").json()["providers"]["openrouter"]["api_key"]
+        r = c.put(
+            "/api/settings",
+            json={
+                "providers_base": _rev(c),
+                "providers": {
+                    "llamacpp": {
+                        "base_url": "http://l2/v1",
+                        "api_mode": "llamacpp",
+                        "models": {"minig+": {}},
+                    },
+                    "speaches": {
+                        "base_url": "http://emma:9000/v1",
+                        "models": {"parakeet": {}, "kokoro": {"voice": "bf_isabella"}},
+                    },
+                    "vault-whisper": {"base_url": "http://vault:9000/v1", "models": {"whisper": {}}},
+                    "openrouter": {
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "api_key": masked,
+                        "api_mode": "openrouter",
+                        "models": {"emb": {"id": "qwen/embed", "dim": 2560}},
+                    },
+                },
+            },
+        )
+        assert r.status_code == 200, r.text
+        assert c.app.state.inference is not old_inf  # all three rebuilt together
+        assert c.app.state.voice is not old_voice
+        assert c.app.state.embeddings is not old_emb
+        assert c.app.state.deps.embeddings is c.app.state.embeddings  # deps mirror repointed
+        assert c.app.state.inference._registry.inference_chain[0].base_url == "http://l2/v1"

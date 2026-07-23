@@ -24,6 +24,11 @@ def target(
     context_window: int | None = None,
     extra_body: dict[str, Any] | None = None,
     max_tokens_field: str | None = None,
+    language: str | None = None,
+    voice: str | None = None,
+    speed: float | None = None,
+    fmt: str | None = None,
+    dim: int | None = None,
 ) -> ResolvedTarget:
     mtf = max_tokens_field or ("max_completion_tokens" if api_mode == "openai" else "max_tokens")
     return ResolvedTarget(
@@ -35,6 +40,11 @@ def target(
         model=model,
         context_window=context_window,
         extra_body=extra_body or {},
+        language=language,
+        voice=voice,
+        speed=speed,
+        format=fmt,
+        dim=dim,
         gate_identity=canonical_base_url(base_url),
         max_concurrent_requests=max_concurrent_requests,
         retry_attempts=retry_attempts,

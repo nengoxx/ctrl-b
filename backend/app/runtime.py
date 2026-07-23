@@ -53,21 +53,19 @@ from app.core.tool import UnknownTool
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
+    from app.core.provider_registry import Registry
+
 logger = logging.getLogger(__name__)
 
 
-def set_inference(app: "FastAPI", settings: Settings) -> InferenceClient | None:
-    """Build + wire the inference client from the RESOLVED provider registry (A11). The single
-    construction site for inference, called by both lifespan and `reconfigure`. Resolves the config
-    LENIENTLY (boot policy: warn + drop/promote), builds the client from the resulting `Registry` +
-    the app-owned `EndpointGates`, PUBLISHES it (setattr on `app.state.inference` + the deps mirror),
-    and RETURNS the previous client so the async caller can `retire()` it (R6 drain: publish new,
-    then drain old — in-flight turns finish on their captured generation).
-
-    The `EndpointGates` registry (created once, memoized on `app.state.endpoint_gates`) is passed into
-    every generation so a rebuild keeps the SAME `(gate_identity, limit)` semaphores — the cap is never
-    split across generations (D48 C4). Lenient warnings (missing provider / gate conflict / self-hosted
-    default api_mode) are logged here."""
+def resolve_generation(app: "FastAPI", settings: Settings) -> "Registry":
+    """Resolve ONE immutable provider registry generation for a settings apply (A11/D48 R5). The single
+    resolution site — `reconfigure` calls it ONCE per apply and hands the result to every `set_*` below,
+    so inference + voice + embeddings rebuild from the SAME generation (no per-section re-resolve). Boot
+    (main.py) calls it the same way. Memoizes the app-owned `EndpointGates` (created once on
+    `app.state.endpoint_gates`) so a rebuild keeps the SAME `(gate_identity, limit)` semaphores — the cap
+    is never split across generations (C4). Resolves LENIENTLY (boot policy: warn + drop/promote) and logs
+    the lenient warnings (missing provider / gate conflict / dim mismatch / self-hosted default api_mode)."""
     gates = getattr(app.state, "endpoint_gates", None)
     if gates is None:
         gates = EndpointGates()
@@ -75,6 +73,16 @@ def set_inference(app: "FastAPI", settings: Settings) -> InferenceClient | None:
     registry, warnings = resolve_lenient(settings)
     for w in warnings:
         logger.warning("provider config: %s", w)
+    return registry
+
+
+def set_inference(app: "FastAPI", registry: "Registry") -> InferenceClient | None:
+    """Build + wire the inference client from a RESOLVED `Registry` generation (A11). The single
+    construction site for inference, called by both lifespan and `reconfigure`. Builds the client from the
+    registry + the app-owned `EndpointGates`, PUBLISHES it (setattr on `app.state.inference` + the deps
+    mirror), and RETURNS the previous client so the async caller can `retire()` it (R6 drain: publish new,
+    then drain old — in-flight turns finish on their captured generation)."""
+    gates = app.state.endpoint_gates
     old = getattr(app.state, "inference", None)
     new_client = InferenceClient(registry, gates=gates)
     app.state.inference = new_client
@@ -114,19 +122,46 @@ async def set_searxng(app: "FastAPI", settings: Settings) -> None:
     await _swap_client(app, "searxng", SearxngClient(settings.searxng))
 
 
-async def set_embeddings(app: "FastAPI", settings: Settings) -> None:
-    await _swap_client(app, "embeddings", EmbeddingsClient(settings.embeddings))
-
-
 async def set_open_terminal(app: "FastAPI", settings: Settings) -> None:
     await _swap_client(app, "open_terminal", OpenTerminalClient(settings.open_terminal))
 
 
-async def set_voice(app: "FastAPI", settings: Settings) -> None:
-    """Build + wire the voice client from `settings.voice` (Phase 6). Voice isn't consumed by the
-    agent loop/subagents, so it lives on `app.state.voice` only (the `_swap_client` deps mirror is
-    harmless); the STT/TTS endpoints read it per request, so a Conf edit hot-applies."""
-    await _swap_client(app, "voice", VoiceClient(settings.voice))
+def set_voice(app: "FastAPI", registry: "Registry") -> VoiceClient | None:
+    """Build + wire the voice client from a RESOLVED `Registry` generation (A11/R5). Consumes the
+    stt/tts chains + frozen policies + the app-owned `EndpointGates`; publishes onto `app.state.voice`
+    (voice isn't consumed by the agent loop, so no deps mirror). Returns the previous client so the caller
+    can `retire()` it (publish new, then drain old — in-flight STT/TTS finishes on its captured
+    generation). `enabled` rides live settings, frozen into the client per generation."""
+    old = getattr(app.state, "voice", None)
+    new_client = VoiceClient(
+        registry.stt_chain,
+        registry.stt_policy,
+        registry.tts_chain,
+        registry.tts_policy,
+        app.state.endpoint_gates,
+        enabled=app.state.settings.voice.enabled,
+    )
+    app.state.voice = new_client
+    return old if isinstance(old, VoiceClient) else None
+
+
+def set_embeddings(app: "FastAPI", registry: "Registry") -> EmbeddingsClient | None:
+    """Build + wire the embeddings client from a RESOLVED `Registry` generation (A11/R5). Consumes the
+    embeddings chain + policy + the app-owned `EndpointGates`; `enabled` is passed in from live settings
+    (frozen per generation, R11). Publishes onto `app.state.embeddings` + the deps mirror (Phase-7 memory
+    reads `deps.embeddings`). Returns the previous client for `retire()`."""
+    old = getattr(app.state, "embeddings", None)
+    new_client = EmbeddingsClient(
+        registry.embeddings_chain,
+        registry.embeddings_policy,
+        app.state.endpoint_gates,
+        enabled=app.state.settings.embeddings.enabled,
+    )
+    app.state.embeddings = new_client
+    deps = getattr(app.state, "deps", None)
+    if deps is not None:
+        deps.embeddings = new_client
+    return old if isinstance(old, EmbeddingsClient) else None
 
 
 #: agent_mode → (agent_exposed, core) overlay (D22). The inverse of `agent_mode_of`. A `None` mode
@@ -277,36 +312,45 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
     shared-settings update. The one entry point `PUT /api/settings` calls — later slices extend this
     body, not the caller."""
     old: Settings = app.state.settings
-    # R7: rebuild inference on any change to the `providers` subtree OR the inference section refs.
-    inference_changed = _changed(old, new, "inference") or _changed(old, new, "providers")
+    # R5/R7: a `providers` change rebuilds inference + voice + embeddings TOGETHER (they all resolve
+    # against the same registry); a section-only edit rebuilds just that section (but still re-resolves,
+    # since its policies now come from the registry). The ONE resolve below covers both.
+    providers_changed = _changed(old, new, "providers")
+    inference_changed = _changed(old, new, "inference") or providers_changed
+    embeddings_changed = _changed(old, new, "embeddings") or providers_changed
+    voice_changed = _changed(old, new, "voice") or providers_changed
     searxng_changed = _changed(old, new, "searxng")
-    embeddings_changed = _changed(old, new, "embeddings")
     open_terminal_changed = _changed(old, new, "open_terminal")
-    voice_changed = _changed(old, new, "voice")
     tool_overrides_changed = _changed(old, new, "tool_overrides")
     agent_changed = _changed(old, new, "agent")
     caches_stale = _changed(old, new, "server") or _changed(old, new, "computers")
 
     apply_settings_inplace(app, new)
-    if inference_changed:
-        # R6: publish the new generation, THEN drain the old one (in-flight turns finish on it).
-        retired = set_inference(app, new)
-        if retired is not None:
-            await retired.retire()
-    elif agent_changed:
+    # R5: resolve the registry ONCE per apply, build ALL new clients, publish, THEN drain the old ones
+    # (in-flight turns/streams/voice ops finish on their captured generation).
+    if inference_changed or voice_changed or embeddings_changed:
+        registry = resolve_generation(app, new)
+        retired: list[Any] = []
+        if inference_changed:
+            retired.append(set_inference(app, registry))
+        if voice_changed:
+            retired.append(set_voice(app, registry))
+        if embeddings_changed:
+            retired.append(set_embeddings(app, registry))
+        for old_client in retired:
+            if old_client is not None:
+                await old_client.retire()
+    if agent_changed and not inference_changed:
         # `agent.defaults` can carry reasoning settings (D15 #1 / D42 ModelRef rider); a settings-PUT
-        # edit there does NOT rebuild the client, so learned demotions clear explicitly — the same
-        # D46/F6 blanket-on-mutation rule the file-per-agent handlers follow. `elif`: a rebuild above
-        # already minted an empty set.
+        # edit there does NOT rebuild the INFERENCE client, so learned demotions clear explicitly — the
+        # same D46/F6 blanket-on-mutation rule the file-per-agent handlers follow. Gated on
+        # `not inference_changed`: a rebuild already minted an empty set (a voice/embeddings-only rebuild
+        # leaves the inference client — and its demotions — untouched, so the clear must still run).
         clear_reasoning_demotions(app)
     if searxng_changed:
         await set_searxng(app, new)
-    if embeddings_changed:
-        await set_embeddings(app, new)
     if open_terminal_changed:
         await set_open_terminal(app, new)
-    if voice_changed:
-        await set_voice(app, new)
     if tool_overrides_changed and getattr(app.state, "actions", None) is not None:
         apply_tool_overrides(app, new)
     if caches_stale:
@@ -324,28 +368,42 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
 settings_write_lock = asyncio.Lock()
 
 
-#: The config-held provider-name reference homes NOT covered by `walk_model_refs` — the inference
-#: section primary + fallbacks (D48 C1 cascade list). Voice/embeddings section refs don't exist yet;
-#: Slice 2 extends the cascade by adding their subtrees to this walk, nothing else.
+#: The config-held provider-name reference homes NOT covered by `walk_model_refs` — the flat
+#: section primaries + fallbacks: `inference`, `voice.stt`, `voice.tts`, `embeddings` (D48 C1 cascade
+#: list, extended to voice/embeddings in Slice 2).
 def _cascade_provider_renames(merged: dict[str, Any], renames: dict[str, str]) -> None:
     """(3) of the C1 rename transaction: rewrite every config-held provider REFERENCE still equal to an
-    old name in the FINAL MERGED doc to its new name. The closed home list = the inference section
-    primary/fallbacks + every `ModelRef` home (`walk_model_refs`). A ref the UI already rewrote in its
-    draft is a no-op (the backend ordering is authoritative — C1). Only the `provider` field is renamed;
-    a `model` clean name is provider-relative and never carried across providers."""
+    old name in the FINAL MERGED doc to its new name. The closed home list = the flat section
+    primaries/fallbacks (inference + voice.stt + voice.tts + embeddings) + every `ModelRef` home
+    (`walk_model_refs`). A ref the UI already rewrote in its draft is a no-op (the backend ordering is
+    authoritative — C1). Only the `provider` field is renamed; a `model` clean name is provider-relative
+    and never carried across providers."""
     if not renames:
         return
-    inf = merged.get("inference")
-    if isinstance(inf, dict):
-        if inf.get("provider") in renames:
-            inf["provider"] = renames[inf["provider"]]
-        for fb in inf.get("fallbacks") or []:
-            if isinstance(fb, dict) and fb.get("provider") in renames:
-                fb["provider"] = renames[fb["provider"]]
 
     def _rw(ref: dict[str, Any]) -> None:
         if ref.get("provider") in renames:
             ref["provider"] = renames[ref["provider"]]
+
+    # Flat section homes: inference, voice.stt, voice.tts, embeddings (primary + each fallback ref).
+    sections: list[dict[str, Any]] = []
+    inf = merged.get("inference")
+    if isinstance(inf, dict):
+        sections.append(inf)
+    voice = merged.get("voice")
+    if isinstance(voice, dict):
+        for svc in ("stt", "tts"):
+            sub = voice.get(svc)
+            if isinstance(sub, dict):
+                sections.append(sub)
+    emb = merged.get("embeddings")
+    if isinstance(emb, dict):
+        sections.append(emb)
+    for sect in sections:
+        _rw(sect)  # primary `provider`
+        for fb in sect.get("fallbacks") or []:
+            if isinstance(fb, dict):
+                _rw(fb)
 
     walk_model_refs(merged, _rw)
 
@@ -425,14 +483,15 @@ async def apply_settings_patch(
     _cascade_provider_renames(merged, renames)
 
     new = Settings.model_validate(merged)
-    # R26 + FX7 (audit M2): strict-resolve ENFORCEMENT (422) applies only when the patch touches a
-    # RESOLUTION-RELEVANT subtree (`providers` / `inference` / `agent` — the homes the registry reads).
-    # A patch that touches none of them (appearance sync from the phone, server, voice, memory, …) must
-    # NOT be bricked by a PRE-EXISTING lenient-tolerated conflict (a min-wins gate clash, a duplicate
-    # target, a blank-primary-with-fallbacks) sitting in a hand-edited config — those saves resolve
-    # LENIENTLY and surface the same notices as warnings instead of blocking. The three relevant subtrees
-    # stay strict-always so a provider/model/gate/chain problem they introduce is a typed 422.
-    touches_resolution = any(k in patch for k in ("providers", "inference", "agent"))
+    # R26 + FX7 (audit M2) + R7: strict-resolve ENFORCEMENT (422) applies only when the patch touches a
+    # RESOLUTION-RELEVANT subtree (`providers` / `inference` / `agent` / `voice` / `embeddings` — every
+    # home the registry now reads). A patch that touches none of them (appearance sync from the phone,
+    # server, memory, …) must NOT be bricked by a PRE-EXISTING lenient-tolerated conflict (a min-wins gate
+    # clash, a duplicate target, a blank-primary-with-fallbacks, a voice/embeddings dim mismatch) sitting
+    # in a hand-edited config — those saves resolve LENIENTLY and surface the same notices as warnings
+    # instead of blocking. The resolution-relevant subtrees stay strict-always so a provider/model/gate/
+    # chain problem they introduce is a typed 422.
+    touches_resolution = any(k in patch for k in ("providers", "inference", "agent", "voice", "embeddings"))
     if touches_resolution:
         resolved = resolve_strict(new)
         if isinstance(resolved, list):
@@ -444,12 +503,13 @@ async def apply_settings_patch(
 
     # Persist only the changed leaves, comment/format-preserving. `providers` writes via `sync_mapping`
     # (replacement — deletes/renames survive); the non-providers subtrees write via `deep_set`. When a
-    # rename cascaded, the affected homes (inference/agent) are re-derived from the FINAL merged doc so a
-    # cascade the caller's patch did NOT carry still lands on disk. The A11 migration write-back + backup
-    # ride the SAME single atomic edit at the chokepoint (config._PENDING_MIGRATION).
+    # rename cascaded, the affected section homes (inference/voice/embeddings/agent — the closed cascade
+    # list, C1/R8) are re-derived from the FINAL merged doc so a cascade the caller's patch did NOT carry
+    # still lands on disk. The A11 migration write-back + backup ride the SAME single atomic edit at the
+    # chokepoint (config._PENDING_MIGRATION).
     to_write = prune_unchanged(unmask_secrets(rest_patch, current_raw), current_raw)
     if renames:
-        for sect in ("inference", "agent"):
+        for sect in ("inference", "voice", "embeddings", "agent"):
             delta = prune_unchanged(merged.get(sect, {}), current_raw.get(sect))
             if delta:
                 to_write[sect] = delta

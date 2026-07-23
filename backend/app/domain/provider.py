@@ -75,10 +75,53 @@ class SectionPolicy(BaseModel):
 
     Chat scope now: `request_timeout_s` (the SDK client timeout), `failover` (walk the chain vs the sole
     selected target), `retry_attempts` (the GLOBAL same-endpoint budget — a target's own override lives
-    on `ResolvedTarget.retry_attempts`). The stt/tts/embeddings policies arrive in Slice 2."""
+    on `ResolvedTarget.retry_attempts`)."""
 
     model_config = {"frozen": True}
 
     request_timeout_s: float = 600.0
     failover: bool = True
     retry_attempts: int = 2
+
+
+class SttPolicy(BaseModel):
+    """The per-call frozen snapshot of the STT service's own knobs (A11 / D48 §Module boundary / C8).
+    Captured at resolution alongside the STT chain; the voice adapter reads it at the wire and never
+    touches live Settings. `language` is the SERVICE fallback (a target's own `language` wins — C8
+    model > service precedence); `vad_filter`/`hotwords` ride the SDK `extra_body` escape hatch (Speaches
+    extras); `extra_body` is the service-level passthrough. The transport pair (`connect_timeout_s` /
+    `timeout_s`) also keys the adapter's SDK-client cache (immutable per generation, C4/R10)."""
+
+    model_config = {"frozen": True}
+
+    language: str = ""  # SERVICE fallback (blank → omit → server auto-detects); model language wins
+    vad_filter: bool = True
+    hotwords: str = ""
+    connect_timeout_s: float = 3.0
+    timeout_s: float = 30.0
+    extra_body: dict[str, Any] = Field(default_factory=dict)
+
+
+class TtsPolicy(BaseModel):
+    """The per-call frozen snapshot of the TTS service's own knobs (A11 / D48 §Module boundary / C8).
+    `format` is the SERVICE fallback container (a target's own `format` wins — C8 model > service; the
+    WINNING failover hop's effective format sets the response media type, never precomputed). The
+    transport pair also keys the adapter's SDK-client cache. Voice id + speed are NOT here — they are
+    request/model-level (C8: request > model voice > "alloy"; model speed)."""
+
+    model_config = {"frozen": True}
+
+    format: str = "mp3"  # SERVICE fallback; model format wins (C8)
+    connect_timeout_s: float = 3.0
+    timeout_s: float = 30.0
+    extra_body: dict[str, Any] = Field(default_factory=dict)
+
+
+class EmbeddingsPolicy(BaseModel):
+    """The per-call frozen snapshot of the embeddings service's own knobs (A11 / D48 §Module boundary).
+    Only `timeout_s` is section-level (the SDK client read window); `enabled` is passed into the client
+    at construction (frozen per generation) and the chain's agreed `dim` (C8) rides the resolved targets."""
+
+    model_config = {"frozen": True}
+
+    timeout_s: float = 60.0

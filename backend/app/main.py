@@ -56,6 +56,7 @@ from app.core.events import EventBus
 from app.db import Database
 from app.runtime import (
     apply_tool_overrides,
+    resolve_generation,
     set_embeddings,
     set_inference,
     set_open_terminal,
@@ -126,10 +127,15 @@ async def lifespan(app: FastAPI):
     # rebuilds them the same way — Phase 7c-a). `deps` isn't built yet, so these set app.state.* only.
     await set_searxng(app, app.state.settings)
     await set_open_terminal(app, app.state.settings)
-    await set_embeddings(app, app.state.settings)
+    # A11/D48: the app-owned per-endpoint request-gate registry (created ONCE) + the ONE resolved
+    # provider registry generation feeding inference + voice + embeddings (same construction as
+    # `reconfigure`, so boot and hot-apply can't drift). Gates must exist before any `set_*` below.
+    app.state.endpoint_gates = EndpointGates()
+    boot_registry = resolve_generation(app, app.state.settings)
+    set_embeddings(app, boot_registry)
     # Voice (Phase 6): STT/TTS proxy with failover. App-state only (not consumed by the agent loop);
     # the /api/voice endpoints read it per request, so a Conf edit hot-applies via `reconfigure`.
-    await set_voice(app, app.state.settings)
+    set_voice(app, boot_registry)
     deps = Deps(
         settings=app.state.settings,
         fleet=app.state.fleet,
@@ -212,13 +218,10 @@ async def lifespan(app: FastAPI):
 
     # Chat stack (Phase 4a): one OpenAI-compatible client + the thread/message repos. The
     # AgentSession is built per turn in the API from these (stateless across turns). Inference is
-    # built via the shared `set_inference` helper (the same one `reconfigure` calls) so the two
-    # paths can't drift (audit B1).
-    # D42 Codex FIX 1: the app-owned per-endpoint request-gate registry, created ONCE here so a
-    # settings PUT that rebuilds the inference client (via `set_inference`) keeps the SAME semaphores
-    # (the cap can't be split across client generations). `set_inference` reads it off app.state.
-    app.state.endpoint_gates = EndpointGates()
-    set_inference(app, app.state.settings)
+    # built via the shared `set_inference` helper (the same one `reconfigure` calls) from the SAME
+    # boot registry that fed voice/embeddings above, so the three can't drift and share the ONE
+    # `app.state.endpoint_gates` (D42 Codex FIX 1: the cap is never split across generations).
+    set_inference(app, boot_registry)
     app.state.threads = ThreadRepo(app.state.db)
     app.state.messages = MessageRepo(app.state.db)
     # Skills (Phase 4.5): file-discovered SKILL.md bundles + the default selection strategy. Built

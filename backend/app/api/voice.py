@@ -29,8 +29,13 @@ def _client(request: Request) -> VoiceClient:
 
 @router.get("/status")
 async def voice_status(request: Request) -> dict[str, bool]:
-    """Capability probe: which voice services are configured + enabled (`{stt, tts}`)."""
-    return _client(request).status()
+    """Capability probe: which voice services are configured + enabled, plus the STT auto-send flag
+    (`{stt, tts, stt_auto_send}`). The FE `useVoiceStatus` contract is unchanged. `stt_auto_send` is a
+    client-behavior flag (not a wire capability), so it is composed HERE from live settings (A11/R2) —
+    the frozen resolved chain the `VoiceClient` holds deliberately doesn't carry it."""
+    status = _client(request).status()
+    status["stt_auto_send"] = request.app.state.settings.voice.stt.auto_send
+    return status
 
 
 @router.post("/stt")

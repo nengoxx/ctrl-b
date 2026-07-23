@@ -260,3 +260,174 @@ def test_resolve_strict_returns_registry_on_success() -> None:
 def test_registry_error_is_structured() -> None:
     errs = resolve_strict(_settings({}, InferenceCfg(provider="missing")))
     assert isinstance(errs, list) and all(isinstance(e, RegistryError) and e.path and e.message for e in errs)
+
+
+# ══════════════════════════ Slice 2 — voice + embeddings section resolution ══════════════════════════
+_VOICE_PROVIDERS = {
+    "speaches": ProviderCfg(
+        base_url="http://emma:9000/v1",
+        models={"parakeet": ModelCfg(language="sv"), "kokoro": ModelCfg(voice="bf_isabella", speed=1.25)},
+    ),
+    "vault-whisper": ProviderCfg(base_url="http://vault:9000/v1", models={"whisper": ModelCfg()}),
+    "vault-tts": ProviderCfg(base_url="http://vault:7851/v1", models={"tts-1": ModelCfg(format="wav")}),
+    "openrouter": ProviderCfg(
+        base_url="https://openrouter.ai/api/v1",
+        api_mode="openrouter",
+        models={"emb": ModelCfg(id="qwen/embed", dim=2560)},
+    ),
+    "llamacpp": ProviderCfg(base_url="http://l/v1", api_mode="llamacpp", models={"minig": ModelCfg()}),
+}
+
+
+def _voice_settings(**kw) -> Settings:
+    return Settings(providers=_VOICE_PROVIDERS, inference=InferenceCfg(provider="llamacpp"), **kw)
+
+
+def test_per_section_chains_resolve_independently() -> None:
+    s = _voice_settings(
+        voice={
+            "stt": {
+                "provider": "speaches",
+                "model": "parakeet",
+                "fallbacks": [{"provider": "vault-whisper"}],
+            },
+            "tts": {
+                "provider": "speaches",
+                "model": "kokoro",
+                "fallbacks": [{"provider": "vault-tts", "model": "tts-1"}],
+            },
+        },
+        embeddings={"provider": "openrouter", "model": "emb"},
+    )
+    reg, _ = resolve_lenient(s)
+    assert [t.provider for t in reg.stt_chain] == ["speaches", "vault-whisper"]
+    assert [(t.provider, t.model) for t in reg.tts_chain] == [("speaches", "kokoro"), ("vault-tts", "tts-1")]
+    assert [(t.provider, t.model, t.dim) for t in reg.embeddings_chain] == [
+        ("openrouter", "qwen/embed", 2560)
+    ]
+    assert [t.provider for t in reg.inference_chain] == ["llamacpp"]  # inference unaffected
+
+
+def test_section_policy_snapshots_carry_service_knobs() -> None:
+    s = _voice_settings(
+        voice={
+            "enabled": True,
+            "stt": {
+                "provider": "speaches",
+                "model": "parakeet",
+                "language": "en",
+                "vad_filter": False,
+                "hotwords": "minig vault",
+                "connect_timeout_s": 2.0,
+                "timeout_s": 45.0,
+                "extra_body": {"temperature": 0.1},
+            },
+            "tts": {"provider": "vault-tts", "model": "tts-1", "format": "opus", "timeout_s": 20.0},
+        },
+        embeddings={"provider": "openrouter", "model": "emb", "timeout_s": 12.5},
+    )
+    reg, _ = resolve_lenient(s)
+    assert reg.stt_policy.language == "en" and reg.stt_policy.vad_filter is False
+    assert reg.stt_policy.hotwords == "minig vault" and reg.stt_policy.extra_body == {"temperature": 0.1}
+    assert reg.stt_policy.connect_timeout_s == 2.0 and reg.stt_policy.timeout_s == 45.0
+    assert reg.tts_policy.format == "opus" and reg.tts_policy.timeout_s == 20.0
+    assert reg.embeddings_policy.timeout_s == 12.5
+
+
+def test_language_format_model_over_service_lands_on_target_and_policy() -> None:
+    # the SERVICE language/format ride the policy (fallback); the MODEL language/format ride the target
+    # (which wins at the wire per C8). The resolver keeps both homes so the adapter can layer them.
+    s = _voice_settings(
+        voice={
+            "stt": {
+                "provider": "speaches",
+                "model": "parakeet",
+                "language": "en",
+            },  # model parakeet.language="sv"
+            "tts": {"provider": "vault-tts", "model": "tts-1", "format": "mp3"},  # model tts-1.format="wav"
+        },
+    )
+    reg, _ = resolve_lenient(s)
+    assert reg.stt_policy.language == "en" and reg.stt_chain[0].language == "sv"  # model wins downstream
+    assert reg.tts_policy.format == "mp3" and reg.tts_chain[0].format == "wav"
+    assert reg.tts_chain[0].voice is None  # tts-1 has no voice; the adapter falls to request>alloy
+
+
+def test_embeddings_dim_agreement_strict_error_lenient_drop() -> None:
+    providers = {
+        "a": ProviderCfg(base_url="http://a/v1", models={"e1": ModelCfg(dim=2560)}),
+        "b": ProviderCfg(base_url="http://b/v1", models={"e2": ModelCfg(dim=1024)}),  # mismatched dim
+        "llamacpp": ProviderCfg(base_url="http://l/v1", api_mode="llamacpp", models={"m": ModelCfg()}),
+    }
+    s = Settings(
+        providers=providers,
+        inference=InferenceCfg(provider="llamacpp"),
+        embeddings={"provider": "a", "model": "e1", "fallbacks": [{"provider": "b", "model": "e2"}]},
+    )
+    errs = resolve_strict(s)
+    assert isinstance(errs, list) and any("conflicting vector dims" in e.message for e in errs)
+    reg, warns = resolve_lenient(s)
+    # lenient: keep the first non-null dim (2560), drop the mismatched fallback
+    assert [t.provider for t in reg.embeddings_chain] == ["a"]
+    assert any("conflicting vector dims" in w for w in warns)
+
+
+def test_duplicate_target_is_per_section_stt_and_tts_legal() -> None:
+    # the SAME target in stt AND tts is LEGAL (dedup is WITHIN a section); a duplicate WITHIN one section 422s.
+    s = _voice_settings(
+        voice={
+            "stt": {"provider": "vault-whisper"},
+            "tts": {"provider": "vault-whisper"},  # same target, different section → fine
+        },
+    )
+    assert not isinstance(resolve_strict(s), list)  # a Registry, no error
+    dup = _voice_settings(
+        voice={"stt": {"provider": "vault-whisper", "fallbacks": [{"provider": "vault-whisper"}]}},
+    )
+    errs = resolve_strict(dup)
+    assert isinstance(errs, list) and any(
+        "duplicate target" in e.message and "voice.stt" in e.message for e in errs
+    )
+
+
+def test_blank_primary_promotion_per_voice_section() -> None:
+    s = _voice_settings(
+        voice={"stt": {"provider": None, "fallbacks": [{"provider": "vault-whisper"}]}},
+    )
+    errs = resolve_strict(s)
+    assert isinstance(errs, list) and any("voice.stt.provider" in e.path for e in errs)
+    reg, warns = resolve_lenient(s)
+    assert [t.provider for t in reg.stt_chain] == ["vault-whisper"]  # promoted
+    assert any("voice.stt primary blank/invalid" in w for w in warns)
+
+
+def test_unconfigured_voice_section_does_not_fail_strict() -> None:
+    # no provider set anywhere in voice/embeddings → empty chains, NOT an error (legal unconfigured).
+    s = _voice_settings()  # default VoiceCfg/EmbeddingsCfg (all provider=None)
+    reg = resolve_strict(s)
+    from app.core.provider_registry import Registry
+
+    assert isinstance(reg, Registry)
+    assert reg.stt_chain == () and reg.tts_chain == () and reg.embeddings_chain == ()
+
+
+def test_gate_caps_computed_for_voice_only_providers() -> None:
+    # a provider referenced ONLY by a voice section still participates in the C4 gate min-wins computation
+    # (the cap iterates ALL providers, not just chain members).
+    providers = {
+        "llamacpp": ProviderCfg(base_url="http://l/v1", api_mode="llamacpp", models={"m": ModelCfg()}),
+        "whisper-a": ProviderCfg(
+            base_url="http://box:9000/v1", max_concurrent_requests=None, models={"w": ModelCfg()}
+        ),
+        "whisper-b": ProviderCfg(
+            base_url="http://BOX:9000/v1", max_concurrent_requests=1, models={"w2": ModelCfg()}
+        ),
+    }
+    s = Settings(
+        providers=providers,
+        inference=InferenceCfg(provider="llamacpp"),
+        voice={"stt": {"provider": "whisper-a", "fallbacks": [{"provider": "whisper-b"}]}},
+    )
+    reg, warns = resolve_lenient(s)
+    assert all(t.max_concurrent_requests == 1 for t in reg.stt_chain)  # min of {None, 1} on the voice targets
+    assert any("conflicting max_concurrent_requests" in w for w in warns)

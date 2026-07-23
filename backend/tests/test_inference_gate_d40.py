@@ -356,6 +356,64 @@ def test_midstream_error_releases_permit_no_deadlock():
     asyncio.run(scenario())
 
 
+# ── (A11/R4/R5) voice + embeddings share the chat gate registry and drain on retire ──────────────
+def test_voice_and_chat_share_the_same_gate_semaphore():
+    """R4: a voice/embeddings attempt acquires the SAME `(gate_identity, limit)` semaphore chat uses on
+    that server — so a whisper call and a chat call on one box contend on ONE cap. None → no semaphore."""
+    from app.adapters.embeddings import EmbeddingsClient
+    from app.adapters.voice import VoiceClient
+    from app.domain.provider import EmbeddingsPolicy, SttPolicy, TtsPolicy
+
+    gates = EndpointGates()
+    t = target("box", "http://box:9000/v1", "w", max_concurrent_requests=1)
+    vc = VoiceClient((t,), SttPolicy(), (), TtsPolicy(), gates)
+    ic = InferenceClient(registry([t], failover=False), gates=gates)
+    ec = EmbeddingsClient((t,), EmbeddingsPolicy(), gates)
+    sem = gates.sem_for(t.gate_identity, 1)
+    assert vc._sem_for(t) is sem and ic._sem_for(t) is sem and ec._sem_for(t) is sem  # ONE shared cap
+    unlimited = target("free", "http://free/v1", "w", max_concurrent_requests=None)
+    assert vc._sem_for(unlimited) is None  # None cap → zero overhead
+
+
+def test_voice_retire_drains_inflight_before_close():
+    """R5: a VoiceClient with an in-flight transcribe defers its SDK-client close until the op completes
+    (the InferenceClient generation-drain pattern)."""
+
+    async def scenario():
+        from types import SimpleNamespace
+
+        from app.adapters.voice import VoiceClient
+        from app.domain.provider import SttPolicy, TtsPolicy
+
+        gate = asyncio.Event()
+        closed = {"n": 0}
+
+        async def t_create(*, model, file, **kw):
+            await gate.wait()
+            return SimpleNamespace(text="hi")
+
+        async def close():
+            closed["n"] += 1
+
+        fake = SimpleNamespace(
+            audio=SimpleNamespace(transcriptions=SimpleNamespace(create=t_create)), close=close
+        )
+        t = target("s", "http://s/v1", "w")
+        vc = VoiceClient((t,), SttPolicy(), (), TtsPolicy())
+        vc._client = lambda tt, ct, to: fake  # type: ignore[assignment]
+        vc._clients[("s", 3.0, 30.0)] = fake  # so the drain closes it
+        task = asyncio.create_task(vc.transcribe(content=b"x", filename="a", content_type=None))
+        await asyncio.sleep(0.05)  # in flight (refcount 1)
+        await vc.retire()  # retire while draining → close DEFERRED
+        assert closed["n"] == 0
+        gate.set()
+        text, served = await asyncio.wait_for(task, timeout=2.0)
+        assert text == "hi" and served.served == "s"
+        assert closed["n"] == 1  # the deferred close fired on the last in-flight completion
+
+    asyncio.run(scenario())
+
+
 if __name__ == "__main__":
     passed = 0
     for name, fn in list(globals().items()):

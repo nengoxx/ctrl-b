@@ -10,16 +10,25 @@ from pathlib import Path
 
 _SEED = """\
 # fleet config
-inference:
+providers:
   local:
     base_url: http://x/v1
-    model: m
+    api_mode: llamacpp
+    models:
+      m: {}
+  emb-provider:
+    base_url: http://old-emb/v1
+    api_key: EMB-SECRET
+    models:
+      e: {}
+inference:
+  provider: local
 searxng:
   base_url: http://old-searx:8888
 embeddings:
-  base_url: http://old-emb/v1
-  api_key: EMB-SECRET
+  provider: emb-provider
   model: e
+  timeout_s: 60
 open_terminal:
   base_url: http://old-term:9999
   api_key: TERM-SECRET
@@ -46,11 +55,12 @@ def test_scalar_integrations_hot_apply() -> None:
         client, cfg = _client(tmp)
         with client as c:
             old_searx = c.app.state.searxng
+            old_emb = c.app.state.embeddings
             r = c.put(
                 "/api/settings",
                 json={
                     "searxng": {"base_url": "http://new-searx:9"},
-                    "embeddings": {"base_url": "http://new-emb/v1"},
+                    "embeddings": {"timeout_s": 99},  # a section edit rebuilds the embeddings client (A11)
                     "open_terminal": {"base_url": "http://new-term:1"},
                 },
             )
@@ -59,13 +69,19 @@ def test_scalar_integrations_hot_apply() -> None:
             assert c.app.state.searxng is not old_searx
             assert c.app.state.searxng._cfg.base_url == "http://new-searx:9"
             assert c.app.state.deps.searxng is c.app.state.searxng
-            assert c.app.state.embeddings._cfg.base_url == "http://new-emb/v1"
+            # embeddings re-keyed onto the resolved chain (A11): a new generation with the new policy,
+            # repointed on the deps mirror; the primary target still resolves to the emb-provider.
+            assert c.app.state.embeddings is not old_emb
+            assert c.app.state.embeddings._policy.timeout_s == 99
+            assert c.app.state.embeddings._chain[0].base_url == "http://old-emb/v1"
+            assert c.app.state.deps.embeddings is c.app.state.embeddings
             assert c.app.state.open_terminal._cfg.base_url == "http://new-term:1"
-            # secrets not wiped on disk (we didn't send them; deep-merge leaves them)
+            # secrets not wiped on disk (we didn't send them; deep-merge leaves them). The embeddings
+            # key now lives on its provider (providers.*.api_key), not the section.
             from app.config import load_settings
 
             s = load_settings(cfg)
-            assert s.embeddings.api_key == "EMB-SECRET"
+            assert s.providers["emb-provider"].api_key == "EMB-SECRET"
             assert s.open_terminal.api_key == "TERM-SECRET"
             assert "# fleet config" in cfg.read_text(encoding="utf-8")  # comment preserved
     finally:

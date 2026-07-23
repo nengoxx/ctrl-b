@@ -19,18 +19,26 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from pydantic import SecretStr
 
-from app.domain.provider import ApiMode, MaxTokensField, ResolvedTarget, SectionPolicy
+from app.domain.provider import (
+    ApiMode,
+    EmbeddingsPolicy,
+    MaxTokensField,
+    ResolvedTarget,
+    SectionPolicy,
+    SttPolicy,
+    TtsPolicy,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from app.config import ProviderCfg, Settings
+    from app.config import ProviderCfg, SectionRef, Settings
 
 log = logging.getLogger("ctrlb.provider_registry")
 
@@ -172,14 +180,24 @@ class ResolvedProvider:
 @dataclass(frozen=True)
 class Registry:
     """The immutable resolution output for a settings generation (A11/D48). Holds the resolved providers
-    (for GET /api/providers + verb routing), the inference section's default failover chain (post-lenient),
-    the frozen chat `SectionPolicy`, and the lenient warning set. Adapters hold this (it is resolution
-    output, not Settings) and call `chain_for(mode)`."""
+    (for GET /api/providers + verb routing), each consumer section's default failover chain (post-lenient)
+    + its frozen policy snapshot, and the lenient warning set. Adapters hold this (it is resolution
+    output, not Settings): chat calls `chain_for(mode)`; voice/embeddings read their section chain+policy.
+    The stt/tts/embeddings sections have NO failover toggle (D48 — voice chains always walk)."""
 
     providers: dict[str, ResolvedProvider]
     inference_chain: tuple[ResolvedTarget, ...]
     inference_policy: SectionPolicy
     warnings: tuple[str, ...] = ()
+    #: Voice/embeddings section chains + their frozen policy snapshots (Slice 2). Empty chain =
+    #: section unconfigured (mic hidden / embeddings off). Defaults keep `_reg.py`-style construction
+    #: (inference-only test registries) valid.
+    stt_chain: tuple[ResolvedTarget, ...] = ()
+    stt_policy: SttPolicy = field(default_factory=SttPolicy)
+    tts_chain: tuple[ResolvedTarget, ...] = ()
+    tts_policy: TtsPolicy = field(default_factory=TtsPolicy)
+    embeddings_chain: tuple[ResolvedTarget, ...] = ()
+    embeddings_policy: EmbeddingsPolicy = field(default_factory=EmbeddingsPolicy)
 
     def chain_for(self, mode: str | None, model: str | None = None) -> tuple[ResolvedTarget, ...]:
         """The failover chain for a request (D48 C7/R10). `mode` is a PROVIDER NAME end-to-end; `model`
@@ -383,6 +401,122 @@ def _validate_config_refs(
             )
 
 
+def _build_section_chain(
+    section: str,
+    providers: "dict[str, ProviderCfg]",
+    primary_provider: str | None,
+    primary_model: str | None,
+    fallbacks: "list[SectionRef]",
+    global_retry: int,
+    gate_cap: dict[str, int | None],
+    *,
+    errors: list[RegistryError],
+    warnings: list[str],
+    strict: bool,
+) -> tuple[ResolvedTarget, ...]:
+    """Build ONE consumer section's failover chain (A11/D48 R3): the ONE primitive shared by inference,
+    voice.stt, voice.tts, embeddings. Steps, all per-section: primary (`_build_target`), fallbacks,
+    blank-primary-with-fallbacks (strict 422 / lenient promote fb[0], runtime-only), the sole-catalog-model
+    rule + uncataloged passthrough (inside `_build_target`), and duplicate-target dedup by identity WITHIN
+    the section (C5 — the same target may legally appear in stt AND tts). An EMPTY chain (no configured
+    provider) is legal: the section is simply unconfigured. Only BROKEN refs (a named provider missing / no
+    base_url, an unresolvable model, a duplicate, a blank primary with fallbacks) fail strict."""
+
+    def _cfg(ref_provider: str) -> "ProviderCfg | None":
+        pcfg = providers.get(ref_provider)
+        return pcfg if (pcfg is not None and pcfg.base_url) else None
+
+    primary: ResolvedTarget | None = None
+    if primary_provider:
+        pcfg = _cfg(primary_provider)
+        if pcfg is None:
+            msg = f"{section} primary provider {primary_provider!r} not found or has no base_url"
+            (errors.append(RegistryError(f"{section}.provider", msg)) if strict else warnings.append(msg))
+        else:
+            primary = _build_target(
+                primary_provider,
+                pcfg,
+                primary_model,
+                global_retry,
+                gate_cap,
+                path=section,
+                errors=errors,
+                warnings=warnings,
+                strict=strict,
+            )
+
+    fb: list[ResolvedTarget] = []
+    for i, ref in enumerate(fallbacks):
+        pcfg = _cfg(ref.provider)
+        if pcfg is None:
+            msg = f"{section} fallback provider {ref.provider!r} not found or has no base_url"
+            (
+                errors.append(RegistryError(f"{section}.fallbacks[{i}]", msg))
+                if strict
+                else warnings.append(msg)
+            )
+            continue
+        t = _build_target(
+            ref.provider,
+            pcfg,
+            ref.model,
+            global_retry,
+            gate_cap,
+            path=f"{section}.fallbacks[{i}]",
+            errors=errors,
+            warnings=warnings,
+            strict=strict,
+        )
+        if t is not None:
+            fb.append(t)
+
+    # blank/absent primary with configured fallbacks (C5): strict 422 / lenient promote first
+    if primary is None and fb:
+        if strict:
+            errors.append(
+                RegistryError(
+                    f"{section}.provider",
+                    "primary provider is blank/invalid but fallbacks are configured",
+                )
+            )
+        else:
+            warnings.append(
+                f"{section} primary blank/invalid — promoted the first valid fallback (runtime-only)"
+            )
+            primary, fb = fb[0], fb[1:]
+
+    chain: list[ResolvedTarget] = []
+    seen: set[tuple[str, str | None, str, str]] = set()
+    for t in ([primary] if primary else []) + fb:
+        ident = _target_identity(t)
+        if ident in seen:
+            msg = f"duplicate target {t.provider}/{t.model} in the {section} chain"
+            (errors.append(RegistryError(section, msg)) if strict else warnings.append(msg))
+            continue
+        seen.add(ident)
+        chain.append(t)
+    return tuple(chain)
+
+
+def _enforce_dim_agreement(
+    chain: tuple[ResolvedTarget, ...], errors: list[RegistryError], warnings: list[str], *, strict: bool
+) -> tuple[ResolvedTarget, ...]:
+    """Embeddings dim agreement (D48 C8): among the chain's targets carrying a non-null `dim`, all must
+    AGREE — a mixed-dimension chain would corrupt a vector store on failover. Strict: a `RegistryError`.
+    Lenient: keep the FIRST non-null dim, DROP the mismatched targets, and warn. Targets with no declared
+    dim ride through either way (the dim is revealed at first embed)."""
+    dims = [t.dim for t in chain if t.dim is not None]
+    if len(dims) <= 1 or all(d == dims[0] for d in dims):
+        return chain
+    first = dims[0]
+    msg = f"embeddings chain declares conflicting vector dims {sorted(set(dims))} — keeping {first}"
+    if strict:
+        errors.append(RegistryError("embeddings", msg))
+        return chain  # best-effort; the strict error already blocks the PUT
+    warnings.append(msg + " (dropped mismatched targets)")
+    return tuple(t for t in chain if t.dim is None or t.dim == first)
+
+
 def _resolve(settings: "Settings", *, strict: bool) -> tuple[Registry, list[RegistryError], list[str]]:
     """The shared resolver. Builds a best-effort `Registry`, collecting `errors` (strict) / `warnings`
     (lenient). `resolve_strict`/`resolve_lenient` wrap it."""
@@ -423,81 +557,63 @@ def _resolve(settings: "Settings", *, strict: bool) -> tuple[Registry, list[Regi
                 f"NO-OP there. If it is llama.cpp, set api_mode: llamacpp (D45/D46)."
             )
 
-    def _missing(ref_provider: str) -> "ProviderCfg | None":
-        pcfg = settings.providers.get(ref_provider)
-        return pcfg if (pcfg is not None and pcfg.base_url) else None
-
-    # ── primary ──
-    primary: ResolvedTarget | None = None
-    if inf.provider:
-        pcfg = _missing(inf.provider)
-        if pcfg is None:
-            msg = f"inference primary provider {inf.provider!r} not found or has no base_url"
-            (errors.append(RegistryError("inference.provider", msg)) if strict else warnings.append(msg))
-        else:
-            primary = _build_target(
-                inf.provider,
-                pcfg,
-                inf.model,
-                inf.retry_attempts,
-                gate_cap,
-                path="inference",
-                errors=errors,
-                warnings=warnings,
-                strict=strict,
-            )
-
-    # ── fallbacks ──
-    fb: list[ResolvedTarget] = []
-    for i, ref in enumerate(inf.fallbacks):
-        pcfg = _missing(ref.provider)
-        if pcfg is None:
-            msg = f"inference fallback provider {ref.provider!r} not found or has no base_url"
-            (
-                errors.append(RegistryError(f"inference.fallbacks[{i}]", msg))
-                if strict
-                else warnings.append(msg)
-            )
-            continue
-        t = _build_target(
-            ref.provider,
-            pcfg,
-            ref.model,
+    # ── inference chain (the shared section-chain primitive; R3) ──
+    chain = list(
+        _build_section_chain(
+            "inference",
+            settings.providers,
+            inf.provider,
+            inf.model,
+            inf.fallbacks,
             inf.retry_attempts,
             gate_cap,
-            path=f"inference.fallbacks[{i}]",
             errors=errors,
             warnings=warnings,
             strict=strict,
         )
-        if t is not None:
-            fb.append(t)
+    )
 
-    # ── blank/absent primary with configured fallbacks (C5): strict 422 / lenient promote first ──
-    if primary is None and fb:
-        if strict:
-            errors.append(
-                RegistryError(
-                    "inference.provider", "primary provider is blank/invalid but fallbacks are configured"
-                )
-            )
-        else:
-            warnings.append(
-                "inference primary blank/invalid — promoted the first valid fallback (runtime-only)"
-            )
-            primary, fb = fb[0], fb[1:]
-
-    # ── dedup by target identity (C5) ──
-    chain: list[ResolvedTarget] = []
-    seen: set[tuple[str, str | None, str, str]] = set()
-    for t in ([primary] if primary else []) + fb:
-        ident = _target_identity(t)
-        if ident in seen:
-            msg = f"duplicate target {t.provider}/{t.model} in the inference chain"
-            (errors.append(RegistryError("inference", msg)) if strict else warnings.append(msg))
-            continue
-        seen.add(ident)
-        chain.append(t)
+    # ── voice + embeddings section chains (R3). No section-level failover toggle (voice always walks);
+    #    they carry NO global retry (failover_collect walks, it does not same-endpoint retry). ──
+    stt, tts = settings.voice.stt, settings.voice.tts
+    stt_chain = _build_section_chain(
+        "voice.stt",
+        settings.providers,
+        stt.provider,
+        stt.model,
+        stt.fallbacks,
+        0,
+        gate_cap,
+        errors=errors,
+        warnings=warnings,
+        strict=strict,
+    )
+    tts_chain = _build_section_chain(
+        "voice.tts",
+        settings.providers,
+        tts.provider,
+        tts.model,
+        tts.fallbacks,
+        0,
+        gate_cap,
+        errors=errors,
+        warnings=warnings,
+        strict=strict,
+    )
+    emb = settings.embeddings
+    embeddings_chain = _build_section_chain(
+        "embeddings",
+        settings.providers,
+        emb.provider,
+        emb.model,
+        emb.fallbacks,
+        0,
+        gate_cap,
+        errors=errors,
+        warnings=warnings,
+        strict=strict,
+    )
+    embeddings_chain = _enforce_dim_agreement(embeddings_chain, errors, warnings, strict=strict)
 
     # ── resolved providers (GET /api/providers + verb routing) ──
     chain_by_provider: dict[str, ResolvedTarget] = {}
@@ -538,11 +654,32 @@ def _resolve(settings: "Settings", *, strict: bool) -> tuple[Registry, list[Regi
     policy = SectionPolicy(
         request_timeout_s=inf.request_timeout_s, failover=inf.failover, retry_attempts=inf.retry_attempts
     )
+    stt_policy = SttPolicy(
+        language=stt.language,
+        vad_filter=stt.vad_filter,
+        hotwords=stt.hotwords,
+        connect_timeout_s=stt.connect_timeout_s,
+        timeout_s=stt.timeout_s,
+        extra_body=dict(stt.extra_body),
+    )
+    tts_policy = TtsPolicy(
+        format=tts.format,
+        connect_timeout_s=tts.connect_timeout_s,
+        timeout_s=tts.timeout_s,
+        extra_body=dict(tts.extra_body),
+    )
+    embeddings_policy = EmbeddingsPolicy(timeout_s=emb.timeout_s)
     registry = Registry(
         providers=resolved_providers,
         inference_chain=tuple(chain),
         inference_policy=policy,
         warnings=tuple(warnings),
+        stt_chain=stt_chain,
+        stt_policy=stt_policy,
+        tts_chain=tts_chain,
+        tts_policy=tts_policy,
+        embeddings_chain=embeddings_chain,
+        embeddings_policy=embeddings_policy,
     )
     return registry, errors, warnings
 

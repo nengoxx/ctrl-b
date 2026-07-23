@@ -1159,10 +1159,13 @@ async def get_providers(request: Request) -> dict[str, Any]:
     the EFFECTIVE chain (post-lenient promotion, what the registry actually resolved — C9), and
     `warnings` are the current generation's lenient/boot notices + the LIVE skill-collision set.
 
-    `verbs` = composer-routable providers only (C7): a provider in the inference chain, OR a non-chain
-    provider whose catalog has exactly ONE model (multi-model non-chain providers coerce to the default
-    and are NOT advertised); a provider shadowed by a skill or a reserved built-in verb is excluded from
-    `verbs` (precedence built-ins > skills > providers) but kept in the `providers` map for Conf."""
+    `verbs` = composer-routable CHAT providers only (C7/R9): a provider in the inference chain, OR a
+    non-chain provider whose catalog has exactly ONE model (multi-model non-chain providers coerce to the
+    default and are NOT advertised). A provider shadowed by a skill or a reserved built-in verb is excluded
+    (precedence built-ins > skills > providers). A provider referenced ONLY by a voice/embeddings section
+    (not in the inference chain) is ALSO excluded — the referencing section determines usage, so a whisper
+    server must not surface as a chat `/verb` (no-capability-tags principle; typed-verb ROUTABILITY via
+    `chain_for` is unchanged, C7). All such providers stay in the `providers` map for Conf."""
     from app.core.provider_registry import (
         RESERVED_VERBS,
         is_reserved_verb,
@@ -1177,15 +1180,31 @@ async def get_providers(request: Request) -> dict[str, Any]:
     def _ref(t: Any) -> dict[str, Any]:
         return {"provider": t.provider, "model": _clean_model_name(settings, t.provider, t.model)}
 
+    def _section(ch: tuple[Any, ...]) -> dict[str, Any]:
+        return {
+            "provider": ch[0].provider if ch else None,
+            "model": _clean_model_name(settings, ch[0].provider, ch[0].model) if ch else None,
+            "fallbacks": [_ref(t) for t in ch[1:]],
+        }
+
     skill_names = (
         [s.name for s in request.app.state.skills.list()]
         if getattr(request.app.state, "skills", None) is not None
         else []
     )
+    # A provider used ONLY by a voice/embeddings section (absent from the inference chain) is not a chat
+    # verb (R9): the referencing section determines usage.
+    inference_providers = {t.provider for t in chain}
+    voice_emb_providers = {
+        t.provider for t in (*registry.stt_chain, *registry.tts_chain, *registry.embeddings_chain)
+    }
     verbs = [
         name
         for name, rp in registry.providers.items()
-        if rp.verb_target is not None and name not in set(skill_names) and not is_reserved_verb(name)
+        if rp.verb_target is not None
+        and name not in set(skill_names)
+        and not is_reserved_verb(name)
+        and not (name in voice_emb_providers and name not in inference_providers)
     ]
     return {
         "providers": {
@@ -1194,11 +1213,10 @@ async def get_providers(request: Request) -> dict[str, Any]:
         },
         "rev": providers_rev(settings),
         "sections": {
-            "inference": {
-                "provider": chain[0].provider if chain else None,
-                "model": _clean_model_name(settings, chain[0].provider, chain[0].model) if chain else None,
-                "fallbacks": [_ref(t) for t in chain[1:]],
-            }
+            "inference": _section(chain),
+            "stt": _section(registry.stt_chain),
+            "tts": _section(registry.tts_chain),
+            "embeddings": _section(registry.embeddings_chain),
         },
         "reserved_verbs": list(RESERVED_VERBS),
         "verbs": verbs,
