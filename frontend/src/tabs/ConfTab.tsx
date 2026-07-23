@@ -989,15 +989,21 @@ export function ConfTab({ active }: Props) {
       if (!d) return d;
       const provs: Record<string, ProviderDoc> = {};
       for (const [k, v] of Object.entries(d.providers)) provs[k === from ? to : k] = v;
-      const i = d.inference;
+      // D48 C1 — the rename control rewrites every VISIBLE draft selector that pointed at the old name:
+      // the inference section AND the three Slice-2 section editors (voice.stt / voice.tts / embeddings),
+      // each a primary `provider` + ordered `fallbacks[].provider`. Model names are provider-relative and
+      // carry unchanged. (The reference-guard cascade + the queued `provider_renames` handle the rest.)
+      const reref = <T extends { provider: string | null; fallbacks: SectionRef[] }>(s: T): T => ({
+        ...s,
+        provider: s.provider === from ? to : s.provider,
+        fallbacks: s.fallbacks.map((f) => (f.provider === from ? { ...f, provider: to } : f)),
+      });
       return {
         ...d,
         providers: provs,
-        inference: {
-          ...i,
-          provider: i.provider === from ? to : i.provider,
-          fallbacks: i.fallbacks.map((f) => (f.provider === from ? { ...f, provider: to } : f)),
-        },
+        inference: reref(d.inference),
+        embeddings: reref(d.embeddings),
+        voice: { ...d.voice, stt: reref(d.voice.stt), tts: reref(d.voice.tts) },
       };
     });
     setRenames((r) => {
@@ -1163,6 +1169,49 @@ export function ConfTab({ active }: Props) {
       const wasCataloged = r.model in (settingsProviders[settingsProv]?.models ?? {});
       if (wasCataloged && !(r.model in (pdoc.models ?? {}))) {
         dangling.push(`${r.label} → ${rp}/${r.model} (model removed)`);
+      }
+    }
+    // FX-G — two more strict-resolve 422s reachable from the section editors that the provider-removed /
+    // model-removed passes above skip (`if (!r.provider) continue` / `if (!r.model) continue`). Mirror the
+    // backend `_build_section_chain` + `_build_target` strict errors for all four EDITABLE sections (agent
+    // ModelRefs only warn on model-omission — not blocked here, matching `resolve_strict`).
+    if (draft) {
+      const guarded: [
+        string,
+        { provider: string | null; model: string | null; fallbacks: SectionRef[] },
+      ][] = [
+        ["inference", draft.inference],
+        ["Voice STT", draft.voice.stt],
+        ["Voice TTS", draft.voice.tts],
+        ["Embeddings", draft.embeddings],
+      ];
+      const liveProvider = (name: string) => draft.providers[renames[name] ?? name];
+      for (const [name, sec] of guarded) {
+        // (1) a blank/absent primary WITH a configured (live) fallback → strict 422
+        const hasLiveFallback = sec.fallbacks.some((f) => f.provider && liveProvider(f.provider));
+        if (!sec.provider && hasLiveFallback) {
+          dangling.push(`${name} default → has fallbacks but no default provider`);
+        }
+        // (2) a model OMITTED against a provider whose catalog isn't exactly one model → strict 422
+        const rows: [string, string | null][] = [
+          [`${name} default`, sec.model],
+          ...sec.fallbacks.map(
+            (f, i) => [`${name} fallback #${i + 1}`, f.model] as [string, string | null],
+          ),
+        ];
+        const provs: (string | null)[] = [
+          sec.provider,
+          ...sec.fallbacks.map((f) => f.provider || null),
+        ];
+        rows.forEach(([label, model], i) => {
+          const prov = provs[i];
+          if (!prov || model) return; // blank primary handled above; a named model is fine
+          const pdoc = liveProvider(prov);
+          if (!pdoc) return; // provider-removed already flagged in the pass above
+          const n = Object.keys(pdoc.models ?? {}).length;
+          if (n !== 1)
+            dangling.push(`${label} → needs a model — ${renames[prov] ?? prov} has ${n} models`);
+        });
       }
     }
     return { dangling, byProvider };

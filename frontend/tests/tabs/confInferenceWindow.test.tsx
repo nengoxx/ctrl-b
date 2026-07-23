@@ -567,4 +567,72 @@ describe("ConfTab · provider rename (C1 cascade)", () => {
     expect(Object.keys(p.providers ?? {})).not.toContain("llamacpp");
     expect(p.inference.provider).toBe("local-llm");
   });
+
+  it("rename ALSO rewrites the voice/embeddings draft selectors + save payload (FX-F / D48 C1)", () => {
+    h.settings = makeSettings();
+    h.settings.inference.fallbacks = []; // drop inference's ref → the rename is exercised via the sections
+    h.settings.voice.stt.provider = "openrouter"; // STT primary references openrouter
+    h.settings.voice.stt.model = "qwen3.5";
+    h.settings.embeddings.provider = "llamacpp"; // a valid sole-model primary (no FX-G block)
+    h.settings.embeddings.model = null;
+    h.settings.embeddings.fallbacks = [{ provider: "openrouter", model: "qwen-embed" }]; // embeddings fb ref
+    render(<ConfTab active />);
+    fireEvent.click(screen.getByText("openrouter", { selector: "div.label" }));
+    fireEvent.click(screen.getByRole("button", { name: "rename" }));
+    fireEvent.change(screen.getByLabelText("New provider name"), { target: { value: "cloud-x" } });
+    fireEvent.click(screen.getByRole("button", { name: "ok" }));
+    // both visible section selectors cascaded to the new name
+    expect(sel("Voice STT default provider").value).toBe("cloud-x");
+    expect(sel("Embeddings fallback 1 provider").value).toBe("cloud-x");
+    fireEvent.click(saveButton());
+    const p = lastPatch();
+    expect(p.voice.stt.provider).toBe("cloud-x");
+    expect((p.embeddings.fallbacks as { provider: string }[])[0].provider).toBe("cloud-x");
+    expect(p.provider_renames).toEqual({ openrouter: "cloud-x" });
+  });
+});
+
+describe("ConfTab · Slice 2 reference-guard — strict-resolve mirrors (FX-G)", () => {
+  it("a blank primary WITH a configured fallback blocks the save; clearing the fallback unblocks", () => {
+    h.settings = makeSettings();
+    h.settings.inference.fallbacks = [];
+    h.settings.voice.tts.provider = null; // blank primary…
+    h.settings.voice.tts.model = null;
+    h.settings.voice.tts.fallbacks = [{ provider: "openrouter", model: "qwen3.5" }]; // …but a fallback set
+    render(<ConfTab active />);
+    expect(screen.getAllByText(/can’t save/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/has fallbacks but no default provider/).length).toBeGreaterThan(0);
+    expect(saveButton().disabled).toBe(true);
+    // clear the fallback → the strict-422 mirror resolves
+    fireEvent.click(
+      within(document.getElementById("voice-tts")!).getByRole("button", {
+        name: "remove Voice TTS fallback 1",
+      }),
+    );
+    expect(screen.queryByText(/has fallbacks but no default provider/)).toBeNull();
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("a model OMITTED against a multi-model provider blocks the save; picking a model unblocks", () => {
+    h.settings = makeSettings();
+    h.settings.inference.fallbacks = [];
+    h.settings.embeddings.provider = "openrouter"; // 2 models…
+    h.settings.embeddings.model = null; // …with the model omitted → ambiguous (strict 422)
+    render(<ConfTab active />);
+    expect(screen.getAllByText(/can’t save/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/needs a model/).length).toBeGreaterThan(0);
+    expect(saveButton().disabled).toBe(true);
+    // pick a model → the strict-422 mirror resolves
+    fireEvent.change(sel("Embeddings default model"), { target: { value: "qwen3.5" } });
+    expect(screen.queryByText(/needs a model/)).toBeNull();
+  });
+
+  it("the SOLE-model case stays legal (model omitted is fine with a one-model catalog)", () => {
+    h.settings = makeSettings();
+    h.settings.inference.fallbacks = [];
+    h.settings.embeddings.provider = "llamacpp"; // exactly one model → omitting the model is legal
+    h.settings.embeddings.model = null;
+    render(<ConfTab active />);
+    expect(screen.queryByText(/needs a model/)).toBeNull();
+  });
 });

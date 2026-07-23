@@ -5,9 +5,10 @@ it to the configured OpenAI-compatible endpoint(s) with failover, and returns th
 `GET /voice/status` is the capability probe the PWA uses to decide whether to show the mic + auto-TTS
 (without exposing whether keys exist). Thin by design (AGENTS conventions): validate + delegate.
 
-HTTP contract: success-via-fallback still returns 200 with `X-Voice-Served-By: fallback`; every
-endpoint failing → 502 (the aggregated upstream error); voice/service unconfigured → 503; STT with no
-file → 422.
+HTTP contract: a success always returns 200 with `X-Voice-Served-By: <provider>` — the NAME of the
+registry provider that actually served (A11/D48; a fallback serve carries that fallback's provider name,
+a single-user diagnostic surface); every endpoint failing → 502 (the aggregated upstream error);
+voice/service unconfigured → 503; STT with no file → 422.
 """
 
 from __future__ import annotations

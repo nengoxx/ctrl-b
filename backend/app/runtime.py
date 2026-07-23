@@ -11,9 +11,12 @@ call the same `set_*(app, settings)` helper here, so there is exactly one constr
 subsystem and the two paths cannot drift. This is also the future home of `build_runtime`: promoting
 the light seam to a full rebuild-and-swap is "call every `set_*` + swap", not a rewrite.
 
-Currently 7a only hot-applies `inference` + the live-read scalars (`server.poll_seconds`, host
-edits). Later slices add `set_searxng`/`set_embeddings`/`set_open_terminal`/`rediscover_tools` here,
-call them from lifespan too, and extend `reconfigure` — never a parallel reload path.
+Under the A11/D48 registry-generation model, `reconfigure` resolves ONE immutable provider
+`Registry` generation per apply (`resolve_generation`) and hands it to every `set_*` here —
+`set_inference`/`set_voice`/`set_embeddings` rebuild from the SAME generation, while the scalar
+integrations (`set_searxng`/`set_open_terminal`) and `rediscover_integrations` swap their own clients
+through the same helpers. Lifespan walks the identical construction sites, so the boot and hot-apply can
+never drift into a parallel reload path.
 """
 
 from __future__ import annotations

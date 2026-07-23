@@ -378,6 +378,7 @@ def test_writeback_materializes_new_shape_and_writes_0600_backup() -> None:
             baks = list(tmp.glob("config.yaml.bak-a11-*"))
             assert len(baks) == 1
             assert stat.S_IMODE(baks[0].stat().st_mode) == 0o600  # 0600 pre-migration backup
+            assert stat.S_IMODE(cfg.stat().st_mode) == 0o600  # FX-A: the REPLACED config is 0600 too
             assert "default_mode: local" in baks[0].read_text(encoding="utf-8")  # backup is the OLD file
             # the running app reloaded the new shape
             assert c.app.state.settings.inference.provider == "llamacpp"
@@ -385,3 +386,101 @@ def test_writeback_materializes_new_shape_and_writes_0600_backup() -> None:
     finally:
         for k in ("CTRLB_HOME", "CTRLB_CONFIG", "CTRLB_DB"):
             os.environ.pop(k, None)
+
+
+# ══════════════════════════ Slice-2 review fixes (FX-A..FX-D) ══════════════════════════
+def test_fx_a_config_write_lands_0600_via_patch_and_selfheals() -> None:
+    # FX-A: a plain patch write (no migration) must leave config.yaml at 0600, self-healing a file a
+    # past umask-affected write left at 0664 — the secret-bearing file's deployment contract.
+    config._PENDING_MIGRATION = None  # ensure no stale write-back leaks from a prior test
+    tmp = Path(tempfile.mkdtemp())
+    cfg = tmp / "config.yaml"
+    cfg.write_text("server:\n  poll_seconds: 5\n", encoding="utf-8")
+    os.chmod(cfg, 0o664)  # degrade it, as a `write_bytes`-at-umask write would
+    config.apply_patch_to_yaml({"server": {"poll_seconds": 7}}, path=cfg)
+    assert stat.S_IMODE(cfg.stat().st_mode) == 0o600
+    assert "poll_seconds: 7" in cfg.read_text(encoding="utf-8")
+
+
+def test_fx_a_save_settings_lands_0600() -> None:
+    from app.config import Settings, save_settings
+
+    tmp = Path(tempfile.mkdtemp())
+    cfg = tmp / "config.yaml"
+    save_settings(Settings(), path=cfg)  # the temp+replace writer must also land 0600
+    assert stat.S_IMODE(cfg.stat().st_mode) == 0o600
+
+
+def test_fx_b_env_only_embeddings_secret_is_not_materialized(caplog) -> None:  # noqa: ANN001
+    # FX-B: an env-only secret (CTRLB_EMBEDDINGS__API_KEY) sits on a legacy path the fold consumes. It is
+    # used THIS boot but must NOT be written into config.yaml on the first save (the write-back is built
+    # from the DISK-truth fold). A warning fires naming the env var + the provider home.
+    config._PENDING_MIGRATION = None
+    tmp = Path(tempfile.mkdtemp())
+    cfg = tmp / "config.yaml"
+    cfg.write_text(
+        "embeddings:\n  base_url: https://openrouter.ai/api/v1\n  model: qwen/embed\n",  # NO api_key on disk
+        encoding="utf-8",
+    )
+    os.environ["CTRLB_HOME"] = str(tmp)
+    os.environ["CTRLB_CONFIG"] = str(cfg)
+    os.environ["CTRLB_DB"] = str(tmp / "t.db")
+    os.environ["CTRLB_EMBEDDINGS__API_KEY"] = "sk-envonly"
+    try:
+        with caplog.at_level("WARNING", logger="ctrlb.config.migration"):
+            s = config.load_settings(cfg)
+        # the running Settings carries the env value this boot
+        assert s.embeddings.provider == "openrouter.ai"
+        assert s.providers["openrouter.ai"].api_key == "sk-envonly"
+        # the FX-B warning fired, naming the env var + the provider home
+        assert any(
+            "CTRLB_EMBEDDINGS__API_KEY" in r.getMessage() and "FX-B" in r.getMessage() for r in caplog.records
+        )
+        # materialize the write-back onto disk (first write, identity mutate) — the env secret stays OUT
+        config.edit_config_yaml(lambda doc: doc, path=cfg)
+        disk = cfg.read_text(encoding="utf-8")
+        assert "sk-envonly" not in disk
+        assert "api_key" not in disk  # the disk-truth fold materialized the provider WITHOUT a key
+    finally:
+        for k in ("CTRLB_HOME", "CTRLB_CONFIG", "CTRLB_DB", "CTRLB_EMBEDDINGS__API_KEY"):
+            os.environ.pop(k, None)
+        config._PENDING_MIGRATION = None
+
+
+def test_fx_c_accretes_dim_into_existing_model_entry() -> None:
+    # FX-C: the legacy embeddings endpoint dedups onto a Slice-1 chat provider (same base_url+key) whose
+    # model KEY already exists — its `dim` must accrete into the EXISTING entry, not be dropped.
+    raw = {
+        "providers": {"p": {"base_url": "http://e/v1", "api_key": "k", "models": {"m": {}}}},
+        "inference": {"provider": "p"},
+        "embeddings": {"base_url": "http://e/v1", "api_key": "k", "model": "m", "dim": 2560},
+    }
+    migrated, _slot, _dl = _migrate_legacy(raw)
+    assert migrated["providers"]["p"]["models"]["m"] == {"dim": 2560}
+
+
+def test_fx_c_does_not_overwrite_an_existing_field() -> None:
+    raw = {
+        "providers": {"p": {"base_url": "http://e/v1", "api_key": "k", "models": {"m": {"dim": 999}}}},
+        "inference": {"provider": "p"},
+        "embeddings": {"base_url": "http://e/v1", "api_key": "k", "model": "m", "dim": 2560},
+    }
+    migrated, _slot, _dl = _migrate_legacy(raw)
+    assert migrated["providers"]["p"]["models"]["m"]["dim"] == 999  # existing field kept (new-value ignored)
+
+
+def test_fx_d_collision_suffix_fits_the_32_char_slug_cap() -> None:
+    from app.config import _provider_name_from_host_port, is_provider_slug
+
+    host = "a" * 32  # a maximal 32-char host slug already taken
+    name = _provider_name_from_host_port(f"http://{host}/v1", {host})
+    assert name != host and len(name) <= 32 and is_provider_slug(name)  # suffixed, still ≤32 + valid
+
+
+def test_fx_d_suffix_fits_as_the_counter_grows_digits() -> None:
+    from app.config import _provider_name_from_host_port
+
+    host = "a" * 32
+    taken = {host} | {f"{host[: 32 - len(f'-{i}')]}-{i}" for i in range(2, 12)}  # -2..-11 taken
+    name = _provider_name_from_host_port(f"http://{host}/v1", taken)
+    assert len(name) <= 32 and name not in taken

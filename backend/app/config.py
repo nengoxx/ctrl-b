@@ -15,6 +15,7 @@ of the parsed YAML before validation.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import hashlib
 import io
@@ -1086,6 +1087,22 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
     return raw
 
 
+def _env_override_paths() -> set[str]:
+    """The dotted `section.key` paths currently set by a `CTRLB_<SECTION>__<KEY>` env override — the
+    mirror of `_apply_env_overrides`' write targets. Used by the migration to tell when a consumed
+    legacy secret leaf came ONLY from the environment (so it must not be materialized to disk; FX-B)."""
+    paths: set[str] = set()
+    for full in os.environ:
+        if not full.startswith(ENV_PREFIX):
+            continue
+        body = full[len(ENV_PREFIX) :]
+        if body in _BOOTSTRAP_KEYS or "__" not in body:
+            continue
+        section, _, key = body.partition("__")
+        paths.add(f"{section.lower()}.{key.lower()}")
+    return paths
+
+
 _MIGRATION_LOG = logging.getLogger("ctrlb.config.migration")
 
 #: Module-level channels for the quarantined A11 legacy fold. NOT persisted into Settings.
@@ -1183,10 +1200,15 @@ def _provider_name_from_host_port(base_url: str, taken: set[str]) -> str:
     slug = re.sub(r"^[^a-z0-9]+", "", slug)[:32] or "provider"  # must start with [a-z0-9], cap 32
     if slug not in taken:
         return slug
+    # Suffix `-N` on collision, but keep the WHOLE name ≤ 32 (the provider-slug cap the model validates):
+    # truncate the BASE so `base + "-N"` fits, re-truncating as N grows to more digits (FX-D).
     i = 2
-    while f"{slug}-{i}" in taken:
+    while True:
+        suffix = f"-{i}"
+        candidate = f"{slug[: 32 - len(suffix)]}{suffix}"
+        if candidate not in taken:
+            return candidate
         i += 1
-    return f"{slug}-{i}"
 
 
 def _voice_service_is_legacy(svc: Any) -> bool:
@@ -1285,7 +1307,13 @@ def _migrate_legacy(raw: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]
             providers[name] = prov
             by_identity[identity] = name
         if model:
-            providers[name].setdefault("models", {}).setdefault(model, model_entry(ep))  # name == id
+            # Accrete per-field into an EXISTING model entry (FX-C): a Slice-1 chat fold (or an earlier
+            # voice fold) may already hold this model KEY, so `setdefault(model, …)` would drop THIS
+            # endpoint's migrated fields (e.g. the embeddings `dim` for a model the chat fold created).
+            # Per-field `setdefault` merges each new field in without overwriting a field already present.
+            entry = providers[name].setdefault("models", {}).setdefault(model, {})  # name == id
+            for k, v in model_entry(ep).items():
+                entry.setdefault(k, v)
         return name, model
 
     def _chat_name(ep: dict[str, Any], _url: str, taken: set[str]) -> str:
@@ -1444,7 +1472,16 @@ def load_settings(path: Path | None = None) -> Settings:
     """Load settings: `.env` → `os.environ`, then YAML, then env overrides (env wins), then the
     quarantined A11 legacy->new inference fold (`_migrate_legacy`) BEFORE Pydantic validation. When the
     fold fires, the `_PENDING_MIGRATION` write-back channel is armed for the first successful config write
-    (re-derived from disk on every load, so a migrated file leaves it cleared)."""
+    (re-derived from disk on every load, so a migrated file leaves it cleared).
+
+    FX-B — the fold runs TWICE, over two inputs: the RUNTIME doc (env overrides applied) feeds
+    `Settings.model_validate` + the `_SLOT_MAP` (unchanged behavior, env still wins THIS boot), while the
+    DISK-TRUTH doc (pre-env) builds the write-back + delete-list. This keeps an env-only secret (e.g.
+    `CTRLB_EMBEDDINGS__API_KEY`, which sits on a legacy path the fold consumes) OUT of the materialized
+    config.yaml — otherwise the first save would persist the environment secret into the file. The fold is
+    pure dict work, so the second run is cheap. When the two runs disagree on a consumed legacy secret leaf
+    (an env override sat on a folded legacy path with no on-disk value), we warn ONCE naming the env var
+    and the `providers.<name>.api_key` home it should move to."""
     global _SLOT_MAP, _PENDING_MIGRATION
     load_dotenv()
     p = path or config_path()
@@ -1452,29 +1489,71 @@ def load_settings(path: Path | None = None) -> Settings:
     raw = raw or {}
     if not isinstance(raw, dict):
         raise ValueError(f"{p} must contain a YAML mapping at the top level")
-    raw = _apply_env_overrides(raw)
-    migrated, slot_map, delete_list = _migrate_legacy(raw)
-    if migrated is not raw:  # a fold fired (chat / voice / embeddings, in any combination)
-        _SLOT_MAP = slot_map
+    disk_raw = copy.deepcopy(raw)  # DISK-TRUTH snapshot for the write-back (taken BEFORE env overrides)
+    env_raw = _apply_env_overrides(raw)  # RUNTIME doc (mutates `raw` in place; env wins this boot)
+
+    # Runtime run → what the app resolves this boot (+ the slot_map for the per-call agent.yaml fold).
+    migrated_rt, slot_map_rt, delete_list_rt = _migrate_legacy(env_raw)
+    _SLOT_MAP = slot_map_rt if migrated_rt is not env_raw else {}
+
+    # Disk-truth run → the ONE-time write-back materialized on the first successful config write.
+    migrated_disk, _slot_disk, delete_list_disk = _migrate_legacy(disk_raw)
+    if migrated_disk is not disk_raw:  # a fold fired on the ON-DISK doc → arm the write-back
         # Carry every folded new-shape subtree onto the write-back channel. `providers` is always
         # present; the section subtrees ride when present (`sync_mapping` makes an unchanged one a no-op,
         # so over-inclusion is safe — the migration writeback materializes on the first successful write).
-        writeback: dict[str, Any] = {"providers": migrated.get("providers", {})}
+        writeback: dict[str, Any] = {"providers": migrated_disk.get("providers", {})}
         for sect in ("inference", "voice", "embeddings", "agent"):
-            val = migrated.get(sect)
+            val = migrated_disk.get(sect)
             if isinstance(val, dict):
                 writeback[sect] = val
-        _PENDING_MIGRATION = PendingMigration(writeback=writeback, delete_list=tuple(delete_list))
+        _PENDING_MIGRATION = PendingMigration(writeback=writeback, delete_list=tuple(delete_list_disk))
         _MIGRATION_LOG.warning(
             "A11: migrated legacy provider config in memory -> %d provider(s); legacy keys %s will be "
             "removed + a config.yaml.bak-a11-* backup written on the next save.",
-            len(migrated.get("providers", {})),
-            delete_list,
+            len(migrated_disk.get("providers", {})),
+            delete_list_disk,
         )
     else:
-        _SLOT_MAP = {}
         _PENDING_MIGRATION = None
-    return Settings.model_validate(migrated)
+
+    # FX-B — a consumed legacy secret leaf that exists ONLY via an env override is used this boot but must
+    # NOT be written to disk. Warn (once per such leaf) pointing at the new provider home.
+    env_paths = _env_override_paths()
+    disk_consumed = set(delete_list_disk)
+    for dotted in delete_list_rt:
+        if not dotted.endswith(".api_key") or dotted in disk_consumed or dotted not in env_paths:
+            continue
+        section = dotted.split(".", 1)[0]
+        sect_doc = migrated_rt.get(section)
+        home = sect_doc.get("provider") if isinstance(sect_doc, dict) else None
+        env_var = ENV_PREFIX + dotted.upper().replace(".", "__")
+        _MIGRATION_LOG.warning(
+            "A11/FX-B: env override %s sits on a legacy path the migration consumed; its value is used "
+            "THIS boot but is NOT written to config.yaml. Move it to providers.%s.api_key to persist it.",
+            env_var,
+            home or "<provider>",
+        )
+    return Settings.model_validate(migrated_rt)
+
+
+def _write_replace_0600(p: Path, data: bytes) -> None:
+    """Atomically replace `p` with `data`, guaranteeing the result is mode 0600 (the deployment
+    contract for the secret-bearing config). Write THROUGH an fd opened at 0600 and `os.replace`
+    it in — never `Path.write_bytes` (which lands at the process umask, e.g. 0664 on emma, and
+    `os.replace` would then transfer that onto the config, stripping 0600). This is the same idiom
+    as the `.bak-a11` backup a chokepoint away, and it self-heals a config a past writer already
+    degraded to 0664 (the replaced inode is always the fresh 0600 tmp). A stale `.tmp` from a prior
+    crash is removed first so `O_EXCL` can guarantee THIS process created the file at 0600 (an
+    `O_TRUNC` reuse would keep the stale file's old mode). Windows: the `os.open` mode arg is a
+    no-op there — the code stays OS-agnostic (no os-branch)."""
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    with contextlib.suppress(FileNotFoundError):
+        os.unlink(tmp)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    os.replace(tmp, p)
 
 
 def save_settings(settings: Settings, path: Path | None = None) -> None:
@@ -1491,9 +1570,7 @@ def save_settings(settings: Settings, path: Path | None = None) -> None:
     p = path or config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     data = settings.model_dump(mode="json", exclude_none=False)
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    os.replace(tmp, p)
+    _write_replace_0600(p, yaml.safe_dump(data, sort_keys=False, allow_unicode=True).encode("utf-8"))
 
 
 def providers_rev(settings: Settings) -> str:
@@ -1673,9 +1750,7 @@ def edit_config_yaml(mutate: Any, path: Path | None = None) -> None:
     # Preserve the file's existing line ending (LF default for a new file) and write bytes directly,
     # so a Windows host doesn't silently rewrite an LF config to CRLF (which would churn every line).
     out = buf.getvalue().replace("\r\n", "\n").replace("\n", newline)
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_bytes(out.encode("utf-8"))
-    os.replace(tmp, p)
+    _write_replace_0600(p, out.encode("utf-8"))  # 0600 contract on the secret-bearing config (FX-A)
     if pending is not None:
         _PENDING_MIGRATION = None  # consumed only on a SUCCESSFUL write through the chokepoint
 
