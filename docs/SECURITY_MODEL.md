@@ -112,7 +112,8 @@ When `decide()` returns `CONFIRM`, `services/action_service.py` mints a **single
   pending action, every outstanding token for that same `(action, args)` is consumed first — exactly one
   live token per pending action, so a stale Allow from a second device fails cleanly instead of firing a
   second redemption window.
-- **Known accepted:** per-endpoint `extra_body` passthroughs (`InferenceEndpointCfg`, `VoiceServiceCfg`)
+- **Known accepted:** the `extra_body` passthroughs (per-model `ModelCfg.extra_body`, per-service
+  `VoiceServiceCfg.extra_body` — A11/D48 homes)
   are NOT secret-masked by the settings read (only the two secret-leaf rules are) — their canonical values
   (`cache_prompt`, `return_progress`, `stream_options`) carry no secrets; auth belongs in the masked
   `api_key` field, never inside `extra_body`.

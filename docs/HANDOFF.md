@@ -1,9 +1,9 @@
 # Handoff — start here for a fresh session
 
-> ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21). **On main, UNRELEASED: A11 Slice 1 (unified
-> provider registry — chat) + its owner UI/UX polish [pushed `cfedad7`, 2026-07-23] and D3 slice 3.
-> NEXT = the 2026-07-23 CLOSE-OUT block below (owner-ratify the 2 D48 interpretation calls → build Slice 2
-> voice+embeddings → release A11 via D48 §rollout).** — v1.2.1 = the seg stadium-trick patch on top of v1.2.0 same night: ACA Slices 1–8 + the D45/D46 reasoning arc + D47 multi-homed s1–2 + UI polish; both released via runbook §Release by the agent — v1.2.0 gate 29801506922, v1.2.1 gate 29802230245, both green incl. e2e; **the prod config riders are LIVE: `api_mode: llamacpp` + `max_concurrent_requests: 1` on local, `api_mode: openrouter` on cloud**; snapshots `ctrlb-20260721-063649` + `-065258.db.gz`. Prior: v1.1.1 2026-07-16 · v1.1.0 2026-07-10 · v1.0.0 same day.
+> ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21). **On main, UNRELEASED: A11 COMPLETE
+> (Slice 1 chat + Slice 2 voice/embeddings, built 2026-07-23 — the Slice-1 D48 calls RATIFIED same day)
+> + D3 slice 3. NEXT = the 2026-07-23 SLICE-2 CLOSE-OUT block below (owner: eyeball the new Conf
+> sections + ratify the 3 Slice-2 interpretation calls → release A11 via D48 §rollout).** — v1.2.1 = the seg stadium-trick patch on top of v1.2.0 same night: ACA Slices 1–8 + the D45/D46 reasoning arc + D47 multi-homed s1–2 + UI polish; both released via runbook §Release by the agent — v1.2.0 gate 29801506922, v1.2.1 gate 29802230245, both green incl. e2e; **the prod config riders are LIVE: `api_mode: llamacpp` + `max_concurrent_requests: 1` on local, `api_mode: openrouter` on cloud**; snapshots `ctrlb-20260721-063649` + `-065258.db.gz`. Prior: v1.1.1 2026-07-16 · v1.1.0 2026-07-10 · v1.0.0 same day.
 > **✅ ctrl-b v1.0.0 (tag `v1.0.0` = `8fa8404`) deployed to emma per the D32-amended plan — first try,
 > release gate green on its maiden tag run (full gate + Playwright e2e on ubuntu).** As-executed record:
 > the PRE-FLIGHT block atop [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md); living runbook: `deploy/linux/README.md`.
@@ -346,7 +346,39 @@
 > Fable 5 = orchestrator + feature reviewer alongside Codex (`gpt-5.6-sol` high); ALL specified
 > implementation / mechanical work / research = Opus 4.8 subagents.**
 >
-> **▶▶ SESSION 2026-07-23 CLOSE-OUT (READ FIRST) — A11 SLICE 1 (chat) + the owner UI/UX polish are
+> **▶▶ SESSION 2026-07-23 (later) — A11 SLICE 2 (voice + embeddings) ✅ BUILT + TRIPLE-REVIEWED + GATED
+> — A11 IS FEATURE-COMPLETE. The 2 Slice-1 D48 calls were OWNER-RATIFIED at session start (recorded in
+> D48 AS-BUILT); Slice 2 then ran the full pipeline: 2-agent code-truth maps → 11 orchestrator rulings →
+> Opus build waves `e7e60bb` (backend) + `29a3712` (frontend) → docs wave (config.example new-shape ·
+> README · runbook §Rollback A11 CONFIG block; SECURITY_MODEL was already right) → fresh-eyes Opus audit
+> [0 HIGH · 2 MED] + Codex gpt-5.6-sol high review [NO-GO: 1 HIGH + 5 MED + 2 LOW, every finding
+> code-verified + ruled] → 7-fix wave `a62faa6` → Codex fix-set verification [**GO-with-changes**:
+> 1/3/5/7 + FE guard CLOSED, rulings internally consistent, no new defects] → full `check.py --e2e`
+> **7/7 GREEN** (backend 876 pytest · FE 604 vitest · e2e green · pyright 0). LOCAL COMMITS, NOT PUSHED.**
+> Headline review catches (both now fixed + regression-pinned): the config-write chokepoint had a
+> PRE-EXISTING umask bug stripping `config.yaml` to 0664 on every write — every writer now goes through
+> an fd-opened 0600 tmp + `os.replace` (self-heals) · the migration write-back would have materialized
+> env-only secrets into YAML — the fold now runs twice (disk-truth for the write-back, env-truth for
+> runtime). Shipped shape: ONE shared `_build_section_chain` (inference refolded, behavior-identical) +
+> frozen per-section policies · rebuild-together generation publish + refcount drain on Voice/Embeddings
+> clients · voice/embeddings migration folds (dedup against existing providers, host-port slugs,
+> per-field accretion, 32-char-safe suffixes) · shared FE `SectionRefEditor` (Inference refolded
+> DOM-identically) · per-model voice/speed/language/format/dim editors (FX17 closed) · reference-guard +
+> rename cascade extended to all sections + two new strict-422 mirrors · B4 parity e2e (`conf.spec.ts`) ·
+> npm audit fix (Dependabot #38 closed — it was in the LIVE FE lockfile, dev-tooling-only class).
+> **OWNER-REVIEW ITEMS: ① the 3 interpretation calls in the D48 AS-BUILT Slice-2 note** (voice-only
+> providers excluded from advertised composer verbs [Codex reads C7's letter differently — my ruling:
+> no-capability-tags governs] · `X-Voice-Served-By` = served provider name · voice/embeddings acquire
+> finite D40 gates) **· ② the accepted env-only-legacy-secret transition residual** (same note) **· ③
+> eyeball the new Conf Voice STT/TTS/Embeddings editors + per-model fields live at narrow width.**
+> **NEXT = owner ratify/eyeball → push → release A11 + D3s3 via D48 §rollout + runbook §Release**
+> (prod boots the migration lenient — IDENTICAL runtime behavior; first config write materializes +
+> writes the one-time 0600 `.bak-a11-*` backup; rollback = §Rollback CONFIG block).
+> **Durable lesson:** `Path.write_bytes`/`write_text` + `os.replace` inherits the process umask — any
+> secret-bearing file replaced that way silently loses 0600; write through an fd opened `0o600` (the
+> `.bak-a11` idiom). The bug predated A11 and had already degraded dev+prod configs to 0664.
+>
+> **▶▶ SESSION 2026-07-23 CLOSE-OUT — A11 SLICE 1 (chat) + the owner UI/UX polish are
 > COMPLETE, PUSHED to origin/main @ `cfedad7` (CI running; push CI skips e2e — full `check.py --e2e` was
 > 7/7 green locally before the push), dev units STOPPED. PROD UNCHANGED = v1.2.1; A11 Slice 1 + D3 slice
 > 3 are on main but UNRELEASED.** Session closed clean: main == origin, gate green, nothing in flight.

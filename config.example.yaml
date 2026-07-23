@@ -20,14 +20,12 @@ server:
 #   enabled: true
 #   target_port: 5433
 
-# Chat inference (Phase 4). Two OpenAI-compatible backends; `default_mode` picks one (the
-# /local //cloud composer prefixes switch per-message, 4c). `local` needs no api_key (llama.cpp).
-# Thinking models cold-load slowly — keep request_timeout_s generous.
 # Providers (A11/D48) — the top-level name-keyed CONNECTION map. Each entry is one OpenAI-compatible
 # server (base_url + api_mode + optional api_key + server-capacity knobs) carrying a name-keyed model
-# catalog. Consumer sections (inference below; voice/embeddings in a later slice) POINT at a provider by
+# catalog. EVERY consumer section (inference, voice.stt, voice.tts, embeddings) POINTS at a provider by
 # name via a flat `provider` primary + ordered `fallbacks`. The map KEY is the provider slug and the
-# `/<provider>` composer verb.
+# `/<provider>` composer verb (e.g. /local //cloud switch chat backend per-message, 4c/C7).
+# `local` needs no api_key (llama.cpp). Thinking models cold-load slowly — keep request_timeout_s generous.
 providers:
   local:                            # slug ^[a-z0-9][a-z0-9_+.-]{0,31}$; the /local verb
     base_url: http://192.168.1.137:5001/v1
@@ -60,6 +58,20 @@ providers:
         # extra_body: { stream_options: { include_usage: true } }  # cached_tokens telemetry (cloud)
         # context_window: 1000000    # D42: cloud windows are never probed — set manually or compaction
         #                            # falls back to the threshold_tokens trigger
+      embed:                            # an embeddings model on the same cloud server (Slice 2)
+        id: qwen/qwen3-embedding-4b     # OpenRouter serves qwen3-embedding-4b on /v1/embeddings
+        dim: 2560                       # embeddings vector dimension (qwen3-embedding-4b = 2560)
+  voice:                            # an OpenAI-compatible STT+TTS server (e.g. Speaches); the /voice verb
+    base_url: http://192.168.1.137:9000/v1
+    models:                         # STT + TTS models share one provider (one server = one base_url)
+      whisper:                      # an STT model
+        id: Systran/faster-whisper-large-v3   # wire model id; the catalog KEY is the clean display name
+        language: en                # STT: force transcription language ("" → auto-detect)
+      kokoro:                       # a TTS model
+        id: speaches-ai/Kokoro-82M-v1.0-ONNX
+        voice: bf_isabella          # TTS: server voice id (voice ids are model-specific)
+        format: mp3                 # TTS: response container (mp3|opus|aac|flac|wav|pcm)
+        # speed: 1.0                # TTS: playback-speed multiplier (>0; a per-request param)
 
 inference:                          # request_timeout_s / system_prompt* / failover / retry_attempts STAY
   provider: local                   # PRIMARY (flat); model omittable iff the catalog has exactly one model
@@ -191,15 +203,42 @@ agent:
 #     # 3) a whole-action grant — this MED-risk action never asks again, whatever the args.
 #     approvals: [{}]
 
-# Embeddings backend (Phase 4f, D9) — one OpenAI-compatible `/v1/embeddings` endpoint, local
-# (llama.cpp) or cloud (e.g. OpenRouter `qwen/qwen3-embedding-4b`, which does serve embeddings).
-# Powers the vector MemoryProvider + semantic search when Phase 7 lands; no consumer before then.
-embeddings:
-  base_url: https://openrouter.ai/api/v1   # or http://192.168.1.137:5002/v1 for a local server
-  api_key: changeme                        # provider key (local servers ignore it)
-  model: qwen/qwen3-embedding-4b
+# Voice subsystem (Phase 6; A11/D48 Slice 2) — push-to-talk STT + read-aloud TTS. Each service POINTS at
+# the `providers` map above: a flat `provider` primary (+ `model`, omittable iff the catalog has exactly
+# one model) and an ordered `fallbacks` chain that ALWAYS walks on any failure (a down endpoint degrades;
+# there is deliberately no failover toggle). The per-service knobs stay here. The mic needs a secure
+# context: front the app with HTTPS (`tailscale serve --bg --https=443 5433`).
+voice:
   enabled: true
-  dim: 2560                # optional: known vector size (qwen3-embedding-4b = 2560)
+  stt:
+    provider: voice        # see providers.voice above; `whisper` is the STT model
+    model: whisper         # named because the `voice` catalog has >1 model
+    fallbacks: []          # ordered {provider, model?}; walks on any failure
+    language: en           # force transcription language; "" → auto-detect (model.language wins if set)
+    vad_filter: true       # voice-activity detection: drop silence (avoids whisper silence-hallucinations)
+    hotwords: ""           # space-separated recognition bias (fleet names, jargon)
+    auto_send: false       # true → mic sends the transcript; false → fills the composer for review
+    connect_timeout_s: 3   # fail-fast on an unreachable endpoint → fall over
+    timeout_s: 30          # read window for the transcription itself
+  tts:
+    provider: voice        # `kokoro` is the TTS model (voice + format live on the model)
+    model: kokoro
+    fallbacks: []
+    format: mp3            # response container (mp3|opus|aac|flac|wav|pcm); the model's format wins if set
+    connect_timeout_s: 3
+    timeout_s: 30
+
+# Embeddings backend (Phase 4f, D9; A11/D48 Slice 2). POINTS at the `providers` map — a flat `provider`
+# primary (+ `model`, omittable iff the catalog has exactly one model) and an ordered `fallbacks` chain of
+# {provider, model?} (embeddings gains failover for free). The connection + the vector size (`dim` on the
+# model) live on the referenced provider; only `enabled` + the SDK read window `timeout_s` are here. Powers
+# the vector MemoryProvider + semantic search when Phase 7 lands; no consumer before then.
+embeddings:
+  provider: cloud          # the connection; the `embed` model carries `dim` (see providers.cloud above)
+  model: embed             # named because the `cloud` catalog has >1 model
+  fallbacks: []            # ordered {provider, model?}; all non-null `dim`s in the chain must AGREE
+  enabled: true
+  timeout_s: 60            # SDK read window for the embeddings call
 
 # SearXNG metasearch → the agent's `web_search` tool (Phase 4f, D9). Point base_url at your
 # instance (no trailing /search). The instance must enable the JSON format in its settings.yml

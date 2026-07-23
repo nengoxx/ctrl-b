@@ -3176,8 +3176,8 @@ corrected in the map below).
 
 > **AS-BUILT (Slice 1 — chat, 2026-07-23).** Built per spec through the full pipeline (3 build waves →
 > fresh-eyes audit + Codex NO-GO review [3 HIGH, all verified + fixed] → Codex fix-set verification →
-> fix round 2); full gate + e2e green. **Two recorded implementation interpretations pending owner
-> ratification:** ① *strict-resolve gating* — C2's "PUT: any error → 422" is enforced for patches
+> fix round 2); full gate + e2e green. **Two recorded implementation interpretations — BOTH
+> OWNER-RATIFIED 2026-07-23:** ① *strict-resolve gating* — C2's "PUT: any error → 422" is enforced for patches
 > touching `providers`/`inference`/`agent`; other patches (appearance sync, server, voice…) run
 > lenient + surface warnings, so a hand-edited lenient-tolerated config can't brick unrelated saves.
 > ② *B1 model-row typed fields* — only chat-relevant fields (context_window, max_tokens_field, id,
@@ -3190,6 +3190,42 @@ corrected in the map below).
 > a still-resolvable save; no provenance state) · a hand-authored config holding BOTH `providers:` and
 > stale legacy keys never migrates (legacy keys ignored, not deleted) · comments inside deleted legacy
 > `inference.local/cloud` YAML blocks are lost at write-back by design.
+
+> **AS-BUILT (Slice 2 — voice + embeddings, 2026-07-23).** Built per spec through the same pipeline
+> (2-agent code-truth maps → ruled briefs → backend `e7e60bb` + frontend `29a3712` Opus waves →
+> fresh-eyes audit + Codex gpt-5.6-sol high review [NO-GO: 1 HIGH + 5 MED, all verified + ruled] →
+> 7-fix wave `a62faa6` → Codex fix-set verification). ONE shared `_build_section_chain` primitive
+> (inference refolded, behavior-identical) + frozen `SttPolicy`/`TtsPolicy`/`EmbeddingsPolicy`; one
+> registry generation per apply, rebuild-together + publish-then-drain (refcount `retire()` on
+> Voice/Embeddings clients); shared FE `SectionRefEditor` (Inference refolded DOM-identically).
+> **Three orchestrator interpretations pending owner ratification:** ① providers referenced ONLY by
+> voice/embeddings sections are EXCLUDED from advertised composer verbs (the no-capability-tags
+> principle — the referencing section determines usage — read as overriding C7's sole-model-advertising
+> letter; typed routability unchanged) · ② `X-Voice-Served-By` now carries the SERVED PROVIDER NAME
+> (was `primary`/`fallback`; richer for the single-user surface, no programmatic consumer; docstring
+> updated) · ③ voice/embeddings attempts ACQUIRE the shared D40 gates when the target's effective cap
+> is finite (read as implied by C4/C10 — the cap rides every `ResolvedTarget`; None = no acquisition).
+> **Hardening shipped with the slice (review catches):** `config.yaml` is now guaranteed **0600 through
+> EVERY writer** (fd-open 0600 tmp + `os.replace`; a pre-existing umask bug had been degrading it to
+> 0664 — self-heals) · the migration write-back derives from **DISK-TRUTH** (the fold runs twice; an
+> env-override secret is used at runtime but never materialized into YAML — one warning names the new
+> `providers.*.api_key` home) · migrated model fields accrete per-field into existing catalog entries ·
+> collision suffixes respect the 32-char slug cap · the FE rename cascades to voice/embeddings draft
+> selectors (C1) · the FE reference-guard also mirrors the blank-primary-with-fallbacks and
+> model-omitted-on-multi-model strict 422s inline.
+> **Accepted residuals (extending Slice 1's):** mixed-shape hand-authored docs are subtree-level
+> new-wins for voice/embeddings too (a subtree holding BOTH `provider:` and `primary:`/`fallback:`
+> never folds — legacy ignored, not deleted) · a blank legacy voice endpoint `model` migrates to the
+> role's effective wire default (`whisper-1`/`tts-1` — what the adapter actually sent; lossless parity)
+> · `VoiceReply.degraded` was dead before this slice and stays (field kept, unconsumed) · voice
+> sections have deliberately NO failover toggle (chains always walk — today's semantics preserved) ·
+> **env-only LEGACY secret, transition window** (Codex verify residual, ruled accepted): the write-back
+> itself is disk-truth-clean, but a provider-dirty Conf save DURING the migration window round-trips the
+> runtime (env-carrying) provider map through mask→unmask and persists it — needs legacy config + env-only
+> legacy key + a providers edit before migration settles; post-migration env can't address
+> `providers.*.api_key` at all (one-level env paths), and the FX-B boot warning names the move; a
+> provenance-tagged fix was judged disproportionate. **Codex fix-set verification: GO-with-changes**
+> (1/3/5/7 + the FE guard CLOSED; 2/6/8 assessed internally consistent with the rulings; no new defects).
 
 **Context — what this retires.** Today inference hardwires a `local` + `cloud` pair (`InferenceEndpointCfg`
 × 2) plus a third `fallbacks[]` shape; voice hardwires `primary`/`fallback` slots per role

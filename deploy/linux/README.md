@@ -226,6 +226,10 @@ curl -s -m5 localhost:5433/api/health                 # {"status":"ok",...} — 
                                                       # must equal X.Y.Z; the describe line cross-checks the tree
 # then spot-check https://emma.<tailnet>.ts.net on a device. Anything wrong → Rollback (below).
 ```
+**A11/D48 upgrade note:** the first release carrying the `providers:` config migration rewrites
+`~/.ctrl-b/config.yaml` on its first config write, dropping a one-time 0600 `config.yaml.bak-a11-*` backup
+first. Rolling back across that release needs the config restore in **§Rollback → CONFIG** (a plain tag
+revert is not enough — old code can't read `providers:`).
 **Tags are immutable** — never re-point one; a bad release gets `vX.Y.Z+1` (or roll back). The
 workspace is untouched throughout (no checkout, no merge — promotion is a push of a tag).
 
@@ -252,6 +256,17 @@ rm -f ~/.ctrl-b/ctrlb.db-wal ~/.ctrl-b/ctrlb.db-shm        # stale sidecars MUST
 gunzip -c ~/.ctrl-b/backups/ctrlb-<ts>.db.gz > ~/.ctrl-b/ctrlb.db
 sqlite3 ~/.ctrl-b/ctrlb.db 'PRAGMA integrity_check;'        # must print: ok
 systemctl --user start ctrl-b-dashboard
+```
+**CONFIG — only when rolling back ACROSS the A11/D48 provider-map release** (old code cannot read
+`providers:` — there are no forward-compat seams). The FIRST config write after the upgrade drops a
+one-time `config.yaml.bak-a11-<UTCstamp>` (mode 0600) beside the config, logged `A11: wrote pre-migration
+config backup …`. **Before** that first write, rollback is free — the config is untouched. **After** it,
+restore the pre-A11 config (D48 F6 order: stop → restore → previous tag → start):
+```bash
+systemctl --user stop ctrl-b-dashboard                       # stop first so live A11 code can't re-migrate
+cp -p "$(ls -t ~/.ctrl-b/config.yaml.bak-a11-* | head -1)" ~/.ctrl-b/config.yaml   # restore (stays 0600)
+cd ~/apps/ctrl-b && git checkout v(prev) && bash deploy/linux/install.sh prod      # previous tag (restarts)
+curl -s -m5 localhost:5433/api/health                        # health-check: {"status":"ok",...}
 ```
 Schema compatibility across a rollback is guaranteed by the **expand/contract policy** (D32 amendment):
 destructive migrations land at the earliest one release after the code stopped using the old shape.

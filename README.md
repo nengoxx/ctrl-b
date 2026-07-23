@@ -271,16 +271,20 @@ configured" message instead of an error.
 
 ### Chat, voice & embeddings endpoints
 
-All model traffic speaks the **OpenAI-compatible** API, so anything that serves it works:
+All model traffic speaks the **OpenAI-compatible** API, so anything that serves it works. Connections
+live once in the top-level **`providers`** map (A11/D48) — each entry is one server (`base_url` /
+`api_mode` / optional `api_key` / capacity knobs) with a name-keyed model catalog; the map key is also the
+`/<provider>` composer verb. Every consumer section then just **points** at a provider by name (a flat
+`provider` primary + ordered `fallbacks` of `{provider, model?}`). See [`config.example.yaml`](./config.example.yaml):
 
-- **`inference`** — two chat backends, `local` (e.g. llama.cpp — needs no `api_key`) and `cloud`
-  (e.g. OpenRouter); `default_mode` picks which one new messages use, and the composer prefixes
-  `/local` / `//cloud` switch per-message. Keep `request_timeout_s` generous — thinking models
+- **`inference`** — the chat chain: `provider` primary + `fallbacks`; `/local` / `//cloud` (any
+  `/<provider>`) switch backend per-message. Keep `request_timeout_s` generous — thinking models
   cold-load slowly.
-- **`voice`** — `stt` and `tts` blocks, each with a `primary` + `fallback` endpoint
-  (`base_url` / `api_key` / `model`, plus `voice` for TTS). The mic needs a secure context:
-  front the app with HTTPS (`tailscale serve --bg --https=443 5433`).
-- **`embeddings`** — one `/v1/embeddings` endpoint; powers vector memory / semantic search.
+- **`voice`** — `stt` and `tts` blocks, each pointing at a provider + model (the TTS `voice` lives on the
+  model) with a `fallbacks` chain that always walks on failure. The mic needs a secure context: front the
+  app with HTTPS (`tailscale serve --bg --https=443 5433`).
+- **`embeddings`** — points at a provider + model (its `dim` lives on the model); powers vector memory /
+  semantic search.
 
 ### Connecting MCP servers
 

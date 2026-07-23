@@ -1007,7 +1007,7 @@ stale numbering (D35–D37 went to the frontier theme track). The cross-slice co
       from `api/settings.py`; `always_eligible`) · `e080731` FE (the **always** bubble action + the
       `ApprovalsEditor` in `ToolCatalog` through the one `useSaveToolOverrides` write).
 
-## Phase 13 — Unified provider registry (A11) — **design LOCKED 2026-07-22 (owner sign-off pending) · spec = [`DECISIONS.md` D48](./DECISIONS.md) (build against it, NOT this list)**
+## Phase 13 — Unified provider registry (A11) — **design LOCKED 2026-07-22 (owner-signed same day; the 2 Slice-1 interpretation calls ratified 2026-07-23) · spec = [`DECISIONS.md` D48](./DECISIONS.md) (build against it, NOT this list)**
 
 Retire the hardwired `inference.local`/`inference.cloud` pair + `VoiceEndpointCfg` slots + single-endpoint
 `EmbeddingsCfg`; replace with one top-level `providers:` registry (connections + name-keyed model catalog)
@@ -1049,29 +1049,36 @@ Codex review; each ends with an owner-review pause. Test the migration + write-b
         e2e (no stale selectors).
   - [x] `python tools/check.py` (ruff · pyright · pytest · FE check-all) green → **Codex review** → owner-review pause.
 
-- [ ] **Slice 2 — voice + embeddings: resolver reuse + parity** · M — mechanical over Slice 1's registry.
-  - [ ] `config.py`: `voice.stt`/`voice.tts`/`embeddings` gain flat `provider`/`model?`/`fallbacks[]`; delete
+- [x] **Slice 2 — voice + embeddings: resolver reuse + parity** · M ✅ **BUILT 2026-07-23** (commits
+      `e7e60bb` backend · `29a3712` frontend · `a62faa6` review-fix wave; same pipeline as Slice 1:
+      2-agent code-truth maps → ruled Opus briefs → build waves → fresh-eyes audit + Codex gpt-5.6-sol
+      high [NO-GO: 1 HIGH (0600 loss at the config-write chokepoint — pre-existing, fixed+self-healing)
+      + 5 MED] → 7-fix wave → Codex fix-set verification → full gate. Backend 876 pytest · FE 604
+      vitest · pyright 0. **Owner-review items: the 3 interpretation calls in the D48 AS-BUILT Slice-2
+      note** (voice-only providers not advertised as verbs · X-Voice-Served-By = provider name ·
+      voice/embeddings acquire finite D40 gates).)
+  - [x] `config.py`: `voice.stt`/`voice.tts`/`embeddings` gain flat `provider`/`model?`/`fallbacks[]`; delete
         `VoiceEndpointCfg` primary/fallback + `EmbeddingsCfg` single-endpoint fields (service knobs STAY);
         `_migrate_legacy()` voice/embeddings folds (dedup by (canonical base_url, api_key) against
         already-created providers; per-endpoint voice/model fields → catalog entries).
-  - [ ] Voice + embeddings adapters re-keyed to `resolve_lenient`/`resolve_strict`; **winning-format** media
+  - [x] Voice + embeddings adapters re-keyed to `resolve_lenient`/`resolve_strict`; **winning-format** media
         type from the served hop (model format > service format); TTS voice precedence request > model >
         `"alloy"`, `model.speed` at the wire; STT language model > service; embeddings **dim agreement** (422 /
         drop-mismatched+warn) + failover free.
-  - [ ] Generation publication: `providers_changed` rebuilds inference + voice + embeddings together, atomic
+  - [x] Generation publication: `providers_changed` rebuilds inference + voice + embeddings together, atomic
         publish + DRAIN; voice SDK-client cache keys include the immutable transport (timeout pair); D46
         demotions clear on `providers_changed`.
-  - [ ] Conf UI: **Voice STT / Voice TTS / Embeddings** section editors (provider/model pickers + fallback
+  - [x] Conf UI: **Voice STT / Voice TTS / Embeddings** section editors (provider/model pickers + fallback
         rows; every existing service knob stays put); the **B4 parity list asserted field-by-field** in the
         Conf e2e (inference timeout + both prompt controls · STT controls/timeouts · TTS auto-read/format/
         timeouts · embeddings dim/enabled).
-  - [ ] Prod rollout artifacts (D48 §rollout): `config.example.yaml` new-shape only; SECURITY_MODEL secret
+  - [x] Prod rollout artifacts (D48 §rollout): `config.example.yaml` new-shape only; SECURITY_MODEL secret
         list (`providers.*.api_key`), README config section, DEPLOY_EMMA updated same slice; the one-time
         0600 `.bak-a11-<stamp>` backup at the first write-back; `deploy/linux/README §Release` rollback
         ordering (stop → restore .bak → previous tag → start + health-check).
-  - [ ] Tests (C11): voice winning-format + precedence · embeddings dim agreement · generation-drain
+  - [x] Tests (C11): voice winning-format + precedence · embeddings dim agreement · generation-drain
         publication · voice/embeddings migration dedup + collision · strict-vs-lenient policy pairs.
-  - [ ] `python tools/check.py` green (+ release gate e2e, which the tag release runs) → **Codex review** → owner-review pause.
+  - [x] `python tools/check.py` green (+ release gate e2e, which the tag release runs) → **Codex review** → owner-review pause.
 
 ---
 
