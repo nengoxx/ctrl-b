@@ -5,7 +5,6 @@ import { ConfGroup } from "../components/ConfGroup";
 import { JsonField } from "../components/JsonField";
 import { MachineEditor } from "../components/MachineEditor";
 import { MemoryEditor } from "../components/MemoryEditor";
-import { MoveButtons } from "../components/MoveButtons";
 import { NumField } from "../components/NumField";
 import { useDragReorder } from "../components/useDragReorder";
 import {
@@ -451,9 +450,9 @@ function ProviderCard(props: {
                 onValidity={onValidity}
               />
 
-              <label>Max-tokens field</label>
+              <label>Output-limit param</label>
               <select
-                aria-label="Max tokens field"
+                aria-label="Output-limit parameter"
                 value={doc.max_tokens_field ?? ""}
                 onChange={(e) =>
                   set({
@@ -464,15 +463,19 @@ function ProviderCard(props: {
                   })
                 }
               >
-                <option value="">auto (from api mode)</option>
+                <option value="">auto</option>
                 <option value="max_tokens">max_tokens</option>
                 <option value="max_completion_tokens">max_completion_tokens</option>
               </select>
+              <p className="mform-note">
+                which API field carries the output-token cap · auto picks it from the API mode
+                (reasoning models need max_completion_tokens)
+              </p>
             </div>
 
             <div className="fallback-section">
               <span className="label">Models</span>
-              <span className="desc">clean name · id · window · extra_body</span>
+              <span className="desc">one row per model</span>
             </div>
             {rows.map((r, i) => {
               const nameErr = nameErrors[i];
@@ -534,16 +537,16 @@ function ProviderCard(props: {
                     {advIsOpen && (
                       <div className="svc-body">
                         <div className="mform">
-                          <label>Wire id</label>
+                          <label>Model ID</label>
                           <input
-                            aria-label="Model id"
+                            aria-label="Model ID"
                             value={r.doc.id ?? ""}
-                            placeholder="(defaults to the name)"
+                            placeholder="defaults to the name"
                             onChange={(e) => setRowDoc(i, { id: e.target.value || null })}
                           />
-                          <label>Max-tokens field</label>
+                          <label>Output-limit param</label>
                           <select
-                            aria-label="Model max tokens field"
+                            aria-label="Model output-limit parameter"
                             value={(r.doc.max_tokens_field as string | null | undefined) ?? ""}
                             onChange={(e) =>
                               setRowDoc(i, {
@@ -571,8 +574,8 @@ function ProviderCard(props: {
                     )}
                   </div>
                   {/* remove-idiom rule (P13): a card ENTITY (a model / a provider) removes via the `.mfoot`
-                      text-danger button; a compact INLINE list row (an inference fallback) removes via the
-                      square ✕ `.row-remove`. Follow this split for future editors. */}
+                      text-danger button; a compact INLINE list row (an inference fallback) removes via its
+                      `.row-actions` dropdown. Follow this split for future editors. */}
                   <div className="mfoot">
                     <button type="button" className="danger" onClick={() => removeModel(i)}>
                       remove model
@@ -871,8 +874,8 @@ export function ConfTab({ active }: Props) {
 
   const inf = draft?.inference;
   const srv = draft?.server;
-  // P11 — pointer drag reorder for the fallback chain, layered over the retained MoveButtons. Commits
-  // through the same moveFallback the arrows use. (moveFallback is a hoisted declaration below.)
+  // P11 — pointer drag reorder for the fallback chain; the row-actions dropdown (Move up/down/Remove)
+  // is the keyboard/AT path. Both commit through the same moveFallback (a hoisted declaration below).
   const fbDrag = useDragReorder(inf?.fallbacks.length ?? 0, moveFallback);
 
   function setInf<K extends keyof Draft["inference"]>(key: K, val: Draft["inference"][K]) {
@@ -1327,32 +1330,40 @@ export function ConfTab({ active }: Props) {
                 catalog={draftCatalog}
                 allowRawId
               />
-              {/* drag reorder (P11) — a layer over the arrows; the ⠿ handle carries touch-action:none. */}
-              <button
-                type="button"
-                className="drag-handle"
-                aria-label={`reorder fallback ${i + 1} — drag, or use the arrow buttons`}
-                title="drag to reorder"
-                {...fbDrag.handleProps(i)}
-              >
-                ⠿
-              </button>
-              <MoveButtons
-                index={i}
-                count={inf?.fallbacks.length ?? 0}
-                onMove={moveFallback}
-                label={`fallback ${i + 1}`}
-              />
-              {/* remove-idiom (P13): a fallback is a compact INLINE list row → the square ✕ `.row-remove`. */}
-              <button
-                type="button"
-                className="row-remove"
-                aria-label={`remove fallback ${i + 1}`}
-                title="remove"
-                onClick={() => removeFallbackRef(i)}
-              >
-                ✕
-              </button>
+              {/* reorder + remove controls as ONE right-aligned unit so they stay together and never
+                  scatter/overflow at phone width. Drag handle (P11) = pointer reorder (touch-action:none
+                  on the ⠿ handle); the compact dropdown (owner request) collapses Move up/down/Remove into
+                  one control and is the keyboard/AT path — a native select that resets to ⋯ after each pick. */}
+              <div className="fb-actions">
+                <button
+                  type="button"
+                  className="drag-handle"
+                  aria-label={`reorder fallback ${i + 1} — drag, or use the actions menu`}
+                  title="drag to reorder"
+                  {...fbDrag.handleProps(i)}
+                >
+                  ⠿
+                </button>
+                <select
+                  className="row-actions"
+                  aria-label={`fallback ${i + 1} actions`}
+                  value=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    e.currentTarget.value = "";
+                    if (v === "up") moveFallback(i, i - 1);
+                    else if (v === "down") moveFallback(i, i + 1);
+                    else if (v === "remove") removeFallbackRef(i);
+                  }}
+                >
+                  <option value="" disabled hidden>
+                    ⋯
+                  </option>
+                  {i > 0 && <option value="up">Move up</option>}
+                  {i < (inf?.fallbacks.length ?? 0) - 1 && <option value="down">Move down</option>}
+                  <option value="remove">Remove</option>
+                </select>
+              </div>
             </div>
           ))}
           {/* debounced drag position announcements for AT (visually hidden) */}

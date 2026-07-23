@@ -3366,13 +3366,11 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   color: var(--text-3);
   padding: 2px 0 8px;
 }
-/* The ONE compact outline-action recipe (P5 — was 5 near-dup button recipes). Neutral variant covers the
- * service "+ add", the provider→model picker's list/rename/set-id pills (.pm-listbtn), and the fallback
- * reorder arrows (.move-btns button); the destructive variant (.svc-rm/.row-remove, below) swaps to the
- * danger ladder. Square icon-only buttons add the .move-btns/.row-remove sizing override in the A11 block. */
+/* The ONE compact outline-action recipe (P5 — was near-dup button recipes). Neutral variant covers the
+ * service "+ add" and the provider→model picker's list/rename/set-id pills (.pm-listbtn); the destructive
+ * variant (.svc-rm, below) swaps to the danger ladder. */
 .kit .svc-add,
-.kit .pm-listbtn,
-.kit .move-btns button {
+.kit .pm-listbtn {
   all: unset;
   cursor: pointer;
   padding: 6px 10px;
@@ -3385,8 +3383,7 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   border: 1px solid var(--line-2);
 }
 .kit .svc-add:active,
-.kit .pm-listbtn:active,
-.kit .move-btns button:not(:disabled):active {
+.kit .pm-listbtn:active {
   background: var(--surface-2);
   color: var(--accent);
   border-color: var(--accent);
@@ -3458,8 +3455,7 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
 .kit .svc-auto .switch.on .knob::after {
   transform: translateX(17px);
 }
-.kit .svc-rm,
-.kit .row-remove {
+.kit .svc-rm {
   all: unset;
   cursor: pointer;
   padding: 6px 10px;
@@ -3471,10 +3467,18 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   color: color-mix(in oklch, var(--danger) 85%, transparent);
   border: 1px solid var(--danger-soft);
 }
-.kit .svc-rm:active,
-.kit .row-remove:active {
+.kit .svc-rm:active {
   background: var(--danger-soft);
   color: var(--danger);
+}
+
+/* full-width hint under a single .mform field that needs a clarifier (e.g. the output-limit param) */
+.kit .mform-note {
+  grid-column: 1 / -1;
+  margin: -2px 0 2px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-3);
 }
 
 /* ── Inference · fallbacks list (.fallback-*) ── */
@@ -3482,7 +3486,7 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 13px 14px 5px;
+  padding: 18px 14px 6px;
   border-top: 1px solid var(--line);
 }
 .kit .fallback-section .label {
@@ -3564,27 +3568,36 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   flex: 0 0 auto;
 }
 .kit .fallback-row .pmpicker {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+  min-width: 0;
 }
-.kit .move-btns {
-  display: inline-flex;
-  gap: 4px;
+/* reorder handle + actions dropdown as one right-aligned unit (stays together, never scatters) */
+.kit .fb-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 0 0 auto;
+  margin-left: auto;
 }
-/* square icon-only override on the compact-action recipe (P5): the reorder arrows + the ✕ remove */
-.kit .move-btns button,
-.kit .row-remove {
-  width: 26px;
-  height: 26px;
+/* the fallback row-actions dropdown (Move up/down/Remove) — one compact control replacing the arrow+✕
+ * cluster so the row fits at phone width; native OS picker on touch. Reuses the kit input surface. */
+.kit .row-actions {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: 34px;
+  min-height: 40px;
   padding: 0;
-  display: grid;
-  place-items: center;
-  font-size: 14px;
-  flex: 0 0 auto;
-}
-.kit .move-btns button:disabled {
-  opacity: 0.35;
-  cursor: default;
+  text-align: center;
+  text-align-last: center;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
 }
 /* drag reorder handle (P11) — touch-action:none ON THE HANDLE only so a drag doesn't scroll the page;
  * ≥40px touch target; grip glyph. Keyboard focus comes from the global `.kit :focus-visible` ring. */
@@ -3611,8 +3624,7 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
  * Restore the keyboard ring with an equal-or-higher-specificity `:focus-visible` rule (outline-based, so it
  * survives forced-colors, matching the kit ring design at the top of this file). */
 .kit .pm-listbtn:focus-visible,
-.kit .move-btns button:focus-visible,
-.kit .row-remove:focus-visible,
+.kit .row-actions:focus-visible,
 .kit .drag-handle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -3904,6 +3916,11 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
+}
+/* the global-compaction thresholds grid sits directly in the settings column (not inside a padded
+ * .mform), so give it the .confrow 14px inset so its number fields align with the rows around it. */
+.kit .agent-lim-inset {
+  padding: 0 14px 12px;
 }
 .kit .agent-lim-cell {
   display: flex;

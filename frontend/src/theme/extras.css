@@ -347,8 +347,16 @@ body[data-perf="lite"] .composer {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 13px 14px 5px; /* match the .confrow 14px horizontal inset */
+  padding: 18px 14px 6px; /* match the .confrow 14px inset; extra top gap separates it from the form above */
   border-top: 1px solid var(--line);
+}
+/* a full-width hint under a single .mform field that needs a clarifier (e.g. the output-limit param) */
+.mform-note {
+  grid-column: 1 / -1;
+  margin: -2px 0 2px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--ink-faint);
 }
 .fallback-section .label {
   font-size: 11px;
@@ -1515,13 +1523,11 @@ body {
   letter-spacing: 0.5px;
   padding: 2px 0 8px;
 }
-/* The ONE compact outline-action recipe (§7 footer-choice, compact) — P5 unified 5 near-dup recipes onto
- * this. Neutral variant: the service "+ add", the provider→model picker's list/rename/set-id pills
- * (.pm-listbtn), and the fallback reorder arrows (.move-btns button). Destructive variant = .svc-rm /
- * .row-remove (below). Square icon-only buttons add the sizing override in the A11 block. */
+/* The ONE compact outline-action recipe (§7 footer-choice, compact) — P5 unified near-dup recipes onto
+ * this. Neutral variant: the service "+ add" and the provider→model picker's list/rename/set-id pills
+ * (.pm-listbtn). Destructive variant = .svc-rm (below). */
 .svc-add,
-.pm-listbtn,
-.move-btns button {
+.pm-listbtn {
   all: unset;
   cursor: pointer;
   padding: 5px 9px;
@@ -1534,8 +1540,7 @@ body {
   border: 1px solid var(--line-2);
 }
 .svc-add:active,
-.pm-listbtn:active,
-.move-btns button:not(:disabled):active {
+.pm-listbtn:active {
   background: var(--bg-3);
   color: var(--magenta);
   border-color: var(--magenta);
@@ -1610,8 +1615,7 @@ body {
   left: 19px;
 }
 /* remove = outline danger (§7) — red in vapor/ember, purple in aqua via --danger-rgb (§10) */
-.svc-rm,
-.row-remove {
+.svc-rm {
   all: unset;
   cursor: pointer;
   padding: 6px 10px;
@@ -1623,8 +1627,7 @@ body {
   color: rgba(var(--danger-rgb), 0.85);
   border: 1px solid rgba(var(--danger-rgb), 0.3);
 }
-.svc-rm:active,
-.row-remove:active {
+.svc-rm:active {
   color: var(--red);
   border-color: var(--red);
   background: rgba(var(--danger-rgb), 0.08);
@@ -1829,6 +1832,11 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
+}
+/* the global-compaction thresholds grid sits directly in the settings column (not inside a padded
+ * .mform), so give it the .confrow 14px inset so its number fields align with the rows around it. */
+.agent-lim-inset {
+  padding: 0 14px 12px;
 }
 .agent-lim-cell {
   display: flex;
@@ -2686,27 +2694,36 @@ body {
   flex: 0 0 auto;
 }
 .fallback-row .pmpicker {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+  min-width: 0;
 }
-.move-btns {
-  display: inline-flex;
-  gap: 4px;
+/* reorder handle + actions dropdown as one right-aligned unit (stays together, never scatters) */
+.fb-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 0 0 auto;
+  margin-left: auto;
 }
-/* square icon-only override on the compact-action recipe (P5): the reorder arrows + the ✕ remove */
-.move-btns button,
-.row-remove {
-  width: 26px;
-  height: 26px;
+/* the fallback row-actions dropdown (Move up/down/Remove) — one compact control replacing the arrow+✕
+ * cluster so the row fits at phone width; native OS picker on touch. Reuses the input surface tokens. */
+.row-actions {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: 34px;
+  min-height: 40px;
   padding: 0;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  flex: 0 0 auto;
-}
-.move-btns button:disabled {
-  opacity: 0.35;
-  cursor: default;
+  text-align: center;
+  text-align-last: center;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-3);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
 }
 /* drag reorder handle (P11) — touch-action:none ON THE HANDLE only so a drag doesn't scroll the page;
  * ≥40px touch target; grip glyph. Keyboard focus comes from the global :focus-visible ring. */
@@ -2732,8 +2749,7 @@ body {
  * `outline` via `all: unset`, so restore the keyboard ring explicitly with the box-shadow idiom the picker
  * inputs use. Higher specificity than the bare-`:focus-visible` global, so it wins. */
 .pm-listbtn:focus-visible,
-.move-btns button:focus-visible,
-.row-remove:focus-visible,
+.row-actions:focus-visible,
 .drag-handle:focus-visible {
   outline: none;
   box-shadow: 0 0 0 1px var(--magenta);
@@ -2743,8 +2759,7 @@ body {
  * outline-based, so it needs no equivalent). */
 @media (forced-colors: active) {
   .pm-listbtn:focus-visible,
-  .move-btns button:focus-visible,
-  .row-remove:focus-visible,
+  .row-actions:focus-visible,
   .drag-handle:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: 1px;

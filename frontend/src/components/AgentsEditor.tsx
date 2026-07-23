@@ -766,7 +766,7 @@ export function AgentsEditor(props: {
           </div>
         </div>
       </div>
-      <div className="agent-lim">
+      <div className="agent-lim agent-lim-inset">
         <div className="agent-lim-cell">
           <span>compact at %</span>
           <input

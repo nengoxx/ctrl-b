@@ -1,8 +1,8 @@
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 
 // A11 / D48 P11 — pointer-driven drag reorder for a short ordered list (the Inference fallback chain),
-// LAYERED OVER the retained MoveButtons (Primer/NN-g rule: drag is a layer, arrows stay the keyboard/AT
-// path + test hook). Hand-rolled Pointer Events, no library:
+// LAYERED OVER the row-actions dropdown's Move up/down items (Primer/NN-g rule: drag is a layer, the
+// menu stays the keyboard/AT path). Hand-rolled Pointer Events, no library:
 //   - pointerdown on a drag HANDLE starts a press; a 6px movement tolerance must be crossed before it
 //     becomes a drag (so a tap/scroll on the handle isn't hijacked);
 //   - DOCUMENT-level pointermove/pointerup track the gesture (NO setPointerCapture — it misbehaves on
