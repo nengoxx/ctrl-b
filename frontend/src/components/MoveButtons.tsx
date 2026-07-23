@@ -1,6 +1,8 @@
 // A11 / D48 B3 — a small up/down reorder affordance for ordered list rows (fallback chains now;
-// voice/embeddings fallbacks in Slice 2). Buttons, not drag-and-drop: kit-consistent + keyboard-
-// and screen-reader-friendly (R21). Disabled at the ends. Vapor tokens only (styled in extras.css).
+// voice/embeddings fallbacks in Slice 2). Kit-consistent + keyboard- and screen-reader-friendly (R21);
+// disabled at the ends. P11 layers a pointer DRAG handle (useDragReorder) OVER these — the arrows STAY as
+// the keyboard/AT path + the reorder test hook (drag is a layer, never a replacement). Styled in both
+// trees on the shared compact-action recipe (`.svc-add` neutral) + a square-icon override.
 export function MoveButtons(props: {
   index: number;
   count: number;

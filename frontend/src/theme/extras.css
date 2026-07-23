@@ -1515,8 +1515,13 @@ body {
   letter-spacing: 0.5px;
   padding: 2px 0 8px;
 }
-/* small outline "+ service" button — the §7 footer-choice recipe, compact */
-.svc-add {
+/* The ONE compact outline-action recipe (§7 footer-choice, compact) — P5 unified 5 near-dup recipes onto
+ * this. Neutral variant: the service "+ add", the provider→model picker's list/rename/set-id pills
+ * (.pm-listbtn), and the fallback reorder arrows (.move-btns button). Destructive variant = .svc-rm /
+ * .row-remove (below). Square icon-only buttons add the sizing override in the A11 block. */
+.svc-add,
+.pm-listbtn,
+.move-btns button {
   all: unset;
   cursor: pointer;
   padding: 5px 9px;
@@ -1528,7 +1533,9 @@ body {
   color: var(--ink-soft);
   border: 1px solid var(--line-2);
 }
-.svc-add:active {
+.svc-add:active,
+.pm-listbtn:active,
+.move-btns button:not(:disabled):active {
   background: var(--bg-3);
   color: var(--magenta);
   border-color: var(--magenta);
@@ -1603,7 +1610,8 @@ body {
   left: 19px;
 }
 /* remove = outline danger (§7) — red in vapor/ember, purple in aqua via --danger-rgb (§10) */
-.svc-rm {
+.svc-rm,
+.row-remove {
   all: unset;
   cursor: pointer;
   padding: 6px 10px;
@@ -1615,7 +1623,8 @@ body {
   color: rgba(var(--danger-rgb), 0.85);
   border: 1px solid rgba(var(--danger-rgb), 0.3);
 }
-.svc-rm:active {
+.svc-rm:active,
+.row-remove:active {
   color: var(--red);
   border-color: var(--red);
   background: rgba(var(--danger-rgb), 0.08);
@@ -2625,6 +2634,7 @@ body {
   gap: 6px;
   align-items: center;
   min-width: 0;
+  max-width: 100%;
 }
 .pmpicker select,
 .pm-model,
@@ -2641,6 +2651,7 @@ body {
   border: 1px solid var(--line);
   letter-spacing: 0.3px;
   min-width: 96px;
+  max-width: 100%;
 }
 .pmpicker select:focus,
 .pm-model:focus,
@@ -2648,34 +2659,22 @@ body {
   border-color: var(--magenta);
   box-shadow: 0 0 0 1px var(--magenta), 0 0 10px rgba(var(--accent-rgb), 0.25);
 }
+/* dangling provider pointer — a removed/renamed provider still referenced (FX18) */
+.pm-provider.invalid {
+  border-color: var(--red);
+}
 .pm-raw {
   display: flex;
   gap: 6px;
   align-items: center;
   min-width: 0;
 }
-/* a small secondary action pill (rename / list / set-a-wire-id) — outline, not the filled gradient */
-.pm-listbtn {
-  all: unset;
-  cursor: pointer;
-  flex: 0 0 auto;
-  padding: 6px 10px;
-  border-radius: 8px;
-  font-size: 9px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  background: var(--bg-3);
-  border: 1px solid var(--line-2);
-}
-.pm-listbtn:active {
-  color: var(--magenta);
-  border-color: var(--magenta);
-}
 .provider-name {
   font-size: 11px;
   color: var(--ink);
   font-family: "JetBrains Mono", ui-monospace, monospace;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 /* an inference fallback row: the label, the picker, then reorder + remove affordances */
@@ -2694,88 +2693,128 @@ body {
   gap: 4px;
   flex: 0 0 auto;
 }
-.move-btns button {
-  all: unset;
-  cursor: pointer;
+/* square icon-only override on the compact-action recipe (P5): the reorder arrows + the ✕ remove */
+.move-btns button,
+.row-remove {
   width: 26px;
   height: 26px;
+  padding: 0;
   display: grid;
   place-items: center;
-  border-radius: 8px;
-  color: var(--ink-soft);
-  background: var(--bg-3);
-  border: 1px solid var(--line-2);
-  font-size: 12px;
+  font-size: 13px;
+  flex: 0 0 auto;
 }
 .move-btns button:disabled {
   opacity: 0.35;
   cursor: default;
 }
-.move-btns button:not(:disabled):active {
-  color: var(--magenta);
-  border-color: var(--magenta);
-}
-.row-remove {
+/* drag reorder handle (P11) — touch-action:none ON THE HANDLE only so a drag doesn't scroll the page;
+ * ≥40px touch target; grip glyph. Keyboard focus comes from the global :focus-visible ring. */
+.drag-handle {
   all: unset;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
   flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
   display: grid;
   place-items: center;
-  border-radius: 8px;
+  width: 30px;
+  min-height: 40px;
   color: var(--ink-faint);
-  border: 1px solid var(--line-2);
+  font-size: 15px;
+  line-height: 1;
+  user-select: none;
 }
-.row-remove:active {
-  color: rgb(var(--danger-rgb, 220 60 80));
-  border-color: rgb(var(--danger-rgb, 220 60 80));
+.drag-handle:active {
+  cursor: grabbing;
+  color: var(--magenta);
+}
+/* P3 — these `all: unset` buttons TIE the global vapor `:focus-visible` ring and (later in source) reset
+ * `outline` via `all: unset`, so restore the keyboard ring explicitly with the box-shadow idiom the picker
+ * inputs use. Higher specificity than the bare-`:focus-visible` global, so it wins. */
+.pm-listbtn:focus-visible,
+.move-btns button:focus-visible,
+.row-remove:focus-visible,
+.drag-handle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--magenta);
+}
+/* forced-colors / Windows High-Contrast strips box-shadow, so the ring above vanishes and `outline: none`
+ * leaves no focus indicator. Restore a system-colored outline in that mode (the kit ring is already
+ * outline-based, so it needs no equivalent). */
+@media (forced-colors: active) {
+  .pm-listbtn:focus-visible,
+  .move-btns button:focus-visible,
+  .row-remove:focus-visible,
+  .drag-handle:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 1px;
+  }
 }
 
 /* a model catalog row inside a provider card — a .mform block + its own remove foot, with a divider */
 .model-row {
   border-top: 1px solid var(--line);
-  padding-top: 4px;
+  padding-top: 8px;
 }
+/* restore a compact top gap on the model-row's remove foot (P7 — the base .mfoot's 12px is too tall here) */
 .model-row .mfoot {
-  padding-top: 0;
+  margin-top: 8px;
+  padding-top: 8px;
 }
 
 /* the guarded extra_body JSON textarea (reuses .kv-text) + its inline parse error */
 .mform textarea.json-field {
   min-height: 56px;
 }
-.mform textarea.json-field.invalid {
-  border-color: rgb(var(--danger-rgb, 220 60 80));
-}
+.mform textarea.json-field.invalid,
 .mform input.num-field.invalid {
-  border-color: rgb(var(--danger-rgb, 220 60 80));
+  border-color: rgb(var(--danger-rgb));
 }
 .json-err {
   grid-column: 1 / -1;
-  font-size: 9px;
-  letter-spacing: 0.5px;
-  color: rgb(var(--danger-rgb, 220 60 80));
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(var(--danger-rgb), 0.85);
+  overflow-wrap: anywhere;
+  min-width: 0;
   padding: 2px 0 4px;
 }
 
-/* inline warnings (D48 B5) — the .redisc-hint tone; block-reason list disables the save above it */
+/* referenced-but-can't-delete helper text beside a provider card's disabled Remove (P4) */
+.mfoot-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+  padding: 6px 0 2px;
+}
+/* a disabled footer button reads as muted, not danger (P4) */
+.mconf .mfoot button:disabled,
+.mconf .mfoot button.danger:disabled {
+  cursor: default;
+  color: var(--ink-faint);
+  border-color: var(--line-2);
+  background: none;
+}
+
+/* inline warnings + block-reason lists (D48 B5) — danger notice typography (P7) */
 .conf-warnrow {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 10px 14px 4px;
+  padding: 13px 14px 5px;
 }
-.conf-warn {
-  font-size: 10px;
-  letter-spacing: 0.4px;
-  color: var(--ink-soft);
+.conf-warn,
+.pm-warn,
+.conf-block-reason {
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(var(--danger-rgb), 0.85);
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 /* FX18 — a dangling provider pointer in the shared ProviderModelPicker (agents editor / inference) */
 .pm-warn {
-  font-size: 10px;
-  letter-spacing: 0.4px;
-  color: rgb(var(--danger-rgb, 220 60 80));
   margin-top: 2px;
 }
 .conf-blockrow {
@@ -2785,15 +2824,11 @@ body {
   padding: 8px 12px 2px;
 }
 .conf-block-title {
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 1px;
   text-transform: uppercase;
-  color: rgb(var(--danger-rgb, 220 60 80));
-}
-.conf-block-reason {
-  font-size: 10px;
-  letter-spacing: 0.4px;
-  color: var(--ink-soft);
+  font-weight: 600;
+  color: rgba(var(--danger-rgb), 0.85);
 }
 }
 /* end @scope ([data-skin="vapor"]) */

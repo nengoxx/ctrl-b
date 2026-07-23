@@ -364,6 +364,36 @@ describe("ConfTab · warnings lifecycle (FX16)", () => {
   });
 });
 
+describe("ConfTab · model Advanced disclosure (P12 override)", () => {
+  const advHead = (row = 0) =>
+    screen.getAllByText("Advanced")[row].closest('[role="button"]') as HTMLElement;
+
+  it("an auto-opened non-default fold can be CLOSED and stays closed through a field edit", () => {
+    render(<ConfTab active />);
+    // openrouter/qwen3.5 carries a wire id that differs from its clean name → its Advanced fold auto-reveals.
+    fireEvent.click(screen.getByText("openrouter", { selector: "div.label" }));
+    expect(advHead(0).getAttribute("aria-expanded")).toBe("true");
+    // the user closes it — the explicit override must win over the auto-reveal.
+    fireEvent.click(advHead(0));
+    expect(advHead(0).getAttribute("aria-expanded")).toBe("false");
+    // an unrelated field edit (the id override is still present) must NOT snap it back open.
+    fireEvent.change(screen.getAllByLabelText("Model name")[0], { target: { value: "qwen3.5x" } });
+    expect(advHead(0).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("a user-opened default fold SURVIVES a field edit (no snap-shut)", () => {
+    render(<ConfTab active />);
+    // llamacpp/minig+ has no advanced overrides → its fold starts closed.
+    fireEvent.click(screen.getByText("llamacpp", { selector: "div.label" }));
+    expect(advHead().getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(advHead()); // user opens it
+    expect(advHead().getAttribute("aria-expanded")).toBe("true");
+    // editing an unrelated field keeps the row all-default; the override must keep it open.
+    fireEvent.change(screen.getByLabelText("Model name"), { target: { value: "minig2" } });
+    expect(advHead().getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
 describe("ConfTab · provider rename (C1 cascade)", () => {
   it("renaming a provider cascades the inference selector and queues the rename on save", () => {
     render(<ConfTab active />);

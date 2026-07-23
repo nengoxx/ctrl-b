@@ -19,6 +19,9 @@ export function JsonField(props: {
     props.value && Object.keys(props.value).length ? JSON.stringify(props.value, null, 2) : "";
   const [text, setText] = useState(seed);
   const [err, setErr] = useState<string | null>(null);
+  // Baymard inline-validation timing (P10): show the parse error on BLUR, then live-clear as it becomes
+  // valid. The save-block (onValidity) still fires on the offending keystroke.
+  const [touched, setTouched] = useState(false);
   // Reseed only when the external value genuinely changes identity while the field is clean-ish (no
   // parse error and the current text already round-trips to it) — mirrors the draft-epoch guard so a
   // background settings refetch can't clobber an in-progress edit.
@@ -68,16 +71,25 @@ export function JsonField(props: {
     }
   };
 
+  const showErr = err != null && touched;
+  const errId = `${id}-err`;
   return (
     <>
       <textarea
         aria-label={props.ariaLabel}
-        className={"kv-text json-field" + (err ? " invalid" : "")}
+        className={"kv-text json-field" + (showErr ? " invalid" : "")}
+        aria-invalid={showErr || undefined}
+        aria-describedby={showErr ? errId : undefined}
         placeholder={props.placeholder ?? '{ "cache_prompt": true }'}
         value={text}
         onChange={(e) => onText(e.target.value)}
+        onBlur={() => setTouched(true)}
       />
-      {err && <div className="json-err">invalid JSON — {err}</div>}
+      {showErr && (
+        <div className="json-err" id={errId} role="alert">
+          invalid JSON — {err}
+        </div>
+      )}
     </>
   );
 }

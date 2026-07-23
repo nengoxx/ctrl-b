@@ -7,6 +7,7 @@ import { MachineEditor } from "../components/MachineEditor";
 import { MemoryEditor } from "../components/MemoryEditor";
 import { MoveButtons } from "../components/MoveButtons";
 import { NumField } from "../components/NumField";
+import { useDragReorder } from "../components/useDragReorder";
 import {
   ProviderModelPicker,
   type PickerCatalog,
@@ -251,7 +252,12 @@ function ProviderCard(props: {
 
   const [renaming, setRenaming] = useState(false);
   const [renameVal, setRenameVal] = useState(name);
-  const [revealed, setRevealed] = useState<Set<number>>(new Set());
+  // P12 — per-model "Advanced" disclosure (wire id + max-tokens field + extra_body). A row auto-reveals
+  // when any advanced field is non-default (preserving the old wire-id auto-reveal), but the user can still
+  // override that in EITHER direction: the map holds an explicit per-row open/closed override keyed by the
+  // row's stable id; when absent, the auto-reveal (`advNonDefault`) decides. A plain toggled Set couldn't
+  // close an auto-opened row, and snapped rows shut when the last non-default field reset mid-edit.
+  const [advOpen, setAdvOpen] = useState<Map<number, boolean>>(new Map());
 
   const seedRows = () =>
     Object.entries(doc.models ?? {}).map(([key, d]) => ({ id: MODEL_ROW_SEQ++, key, doc: d }));
@@ -304,6 +310,26 @@ function ProviderCard(props: {
     commit([...rows, { id: MODEL_ROW_SEQ++, key: n, doc: {} }]);
   };
   const removeModel = (i: number) => commit(rows.filter((_, j) => j !== i));
+
+  // P6 — per-row name validity, surfaced inline at the offending field (the save-block is set in commit()
+  // via onValidity; this mirrors the same rule for the visible ⚠). First occurrence wins; blanks + later
+  // duplicates are flagged.
+  const nameErrors = (() => {
+    const seen = new Set<string>();
+    return rows.map((r) => {
+      const k = r.key.trim();
+      if (!k) return "name can’t be blank";
+      if (seen.has(k)) return "duplicate model name";
+      seen.add(k);
+      return null;
+    });
+  })();
+  // P12 — a row's Advanced fold auto-opens when any advanced field is non-default (id set + differs from the
+  // clean name, an explicit max-tokens override, or a non-empty extra_body).
+  const advNonDefault = (r: (typeof rows)[number]) =>
+    (r.doc.id != null && r.doc.id !== r.key) ||
+    r.doc.max_tokens_field != null ||
+    (r.doc.extra_body != null && Object.keys(r.doc.extra_body).length > 0);
 
   const commitRename = () => {
     const nn = renameVal.trim().toLowerCase();
@@ -391,7 +417,7 @@ function ProviderCard(props: {
                 type="password"
                 autoComplete="new-password"
                 value={doc.api_key ?? ""}
-                placeholder="optional — masked, blank keeps"
+                placeholder="optional — leave blank to keep the saved key"
                 onChange={(e) => set({ api_key: e.target.value })}
               />
 
@@ -428,7 +454,6 @@ function ProviderCard(props: {
               <label>Max-tokens field</label>
               <select
                 aria-label="Max tokens field"
-                className="adv-select"
                 value={doc.max_tokens_field ?? ""}
                 onChange={(e) =>
                   set({
@@ -450,38 +475,27 @@ function ProviderCard(props: {
               <span className="desc">clean name · id · window · extra_body</span>
             </div>
             {rows.map((r, i) => {
-              const showId = revealed.has(r.id) || (r.doc.id != null && r.doc.id !== r.key);
+              const nameErr = nameErrors[i];
+              const nameErrId = `${prefix}:model:${r.id}:name-err`;
+              const advIsOpen = advOpen.get(r.id) ?? advNonDefault(r);
+              const toggleAdv = () => setAdvOpen((s) => new Map(s).set(r.id, !advIsOpen));
               return (
                 <div className="model-row" key={r.id}>
+                  {/* the clean essentials — a default model row shows only name + context window (P12) */}
                   <div className="mform">
                     <label>Name</label>
                     <input
                       aria-label="Model name"
                       value={r.key}
                       placeholder="clean name"
+                      aria-invalid={nameErr ? true : undefined}
+                      aria-describedby={nameErr ? nameErrId : undefined}
                       onChange={(e) => setRowKey(i, e.target.value)}
                     />
-                    {showId ? (
-                      <>
-                        <label>Wire id</label>
-                        <input
-                          aria-label="Model id"
-                          value={r.doc.id ?? ""}
-                          placeholder="(defaults to the name)"
-                          onChange={(e) => setRowDoc(i, { id: e.target.value || null })}
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <label>Wire id</label>
-                        <button
-                          type="button"
-                          className="pm-listbtn"
-                          onClick={() => setRevealed(new Set(revealed).add(r.id))}
-                        >
-                          set a wire id…
-                        </button>
-                      </>
+                    {nameErr && (
+                      <div className="json-err" id={nameErrId} role="alert">
+                        ⚠ {nameErr}
+                      </div>
                     )}
                     <label>Context window</label>
                     <NumField
@@ -493,37 +507,72 @@ function ProviderCard(props: {
                       onChange={(v) => setRowDoc(i, { context_window: v })}
                       onValidity={onValidity}
                     />
-                    {/* FX17 (Codex#7, partial) — the model-level max_tokens_field override (chat-relevant,
-                        C6). Mirrors the provider-level advanced select; voice/speed/language/format/dim
-                        editors are DEFERRED to Slice 2 (their consumers arrive there), but round-trip
-                        unharmed via the draft (the schema is complete). */}
-                    <label>Max-tokens field</label>
-                    <select
-                      aria-label="Model max tokens field"
-                      className="adv-select"
-                      value={(r.doc.max_tokens_field as string | null | undefined) ?? ""}
-                      onChange={(e) =>
-                        setRowDoc(i, {
-                          max_tokens_field:
-                            e.target.value === ""
-                              ? null
-                              : (e.target.value as ModelDoc["max_tokens_field"]),
-                        })
-                      }
-                    >
-                      <option value="">inherit provider</option>
-                      <option value="max_tokens">max_tokens</option>
-                      <option value="max_completion_tokens">max_completion_tokens</option>
-                    </select>
-                    <label>Extra body</label>
-                    <JsonField
-                      id={`${prefix}:model:${r.id}:json`}
-                      value={r.doc.extra_body}
-                      ariaLabel="Model extra_body"
-                      onChange={(v) => setRowDoc(i, { extra_body: v })}
-                      onValidity={onValidity}
-                    />
                   </div>
+                  {/* Advanced fold — wire id + max-tokens field + extra_body, on the shared `.svc-edit`
+                      disclosure idiom. Auto-opens when any is non-default (preserves the old wire-id
+                      auto-reveal). FX17 (C6): the model-level max_tokens_field override is chat-relevant;
+                      voice/speed/language/format/dim editors land in Slice 2 (schema already round-trips). */}
+                  <div className={"svc-edit" + (advIsOpen ? " open" : "")}>
+                    <div
+                      className="svc-edit-head"
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={advIsOpen}
+                      onClick={toggleAdv}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleAdv();
+                        }
+                      }}
+                    >
+                      <span>Advanced</span>
+                      <span className="svc-chev" aria-hidden>
+                        ›
+                      </span>
+                    </div>
+                    {advIsOpen && (
+                      <div className="svc-body">
+                        <div className="mform">
+                          <label>Wire id</label>
+                          <input
+                            aria-label="Model id"
+                            value={r.doc.id ?? ""}
+                            placeholder="(defaults to the name)"
+                            onChange={(e) => setRowDoc(i, { id: e.target.value || null })}
+                          />
+                          <label>Max-tokens field</label>
+                          <select
+                            aria-label="Model max tokens field"
+                            value={(r.doc.max_tokens_field as string | null | undefined) ?? ""}
+                            onChange={(e) =>
+                              setRowDoc(i, {
+                                max_tokens_field:
+                                  e.target.value === ""
+                                    ? null
+                                    : (e.target.value as ModelDoc["max_tokens_field"]),
+                              })
+                            }
+                          >
+                            <option value="">inherit provider</option>
+                            <option value="max_tokens">max_tokens</option>
+                            <option value="max_completion_tokens">max_completion_tokens</option>
+                          </select>
+                          <label>Extra body</label>
+                          <JsonField
+                            id={`${prefix}:model:${r.id}:json`}
+                            value={r.doc.extra_body}
+                            ariaLabel="Model extra_body"
+                            onChange={(v) => setRowDoc(i, { extra_body: v })}
+                            onValidity={onValidity}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {/* remove-idiom rule (P13): a card ENTITY (a model / a provider) removes via the `.mfoot`
+                      text-danger button; a compact INLINE list row (an inference fallback) removes via the
+                      square ✕ `.row-remove`. Follow this split for future editors. */}
                   <div className="mfoot">
                     <button type="button" className="danger" onClick={() => removeModel(i)}>
                       remove model
@@ -538,16 +587,18 @@ function ProviderCard(props: {
               </button>
             </div>
 
+            {/* P4 — a referenced provider can't be removed; say so in visible text (not just a tooltip). */}
+            {props.referencedBy.length > 0 && (
+              <div className="mfoot-note">
+                referenced by {props.referencedBy.join(", ")} — remove those references first
+              </div>
+            )}
+            {/* remove-idiom (P13): a provider is a card ENTITY → `.mfoot` text-danger button. */}
             <div className="mfoot">
               <button
                 type="button"
                 className="danger"
                 disabled={props.referencedBy.length > 0}
-                title={
-                  props.referencedBy.length
-                    ? `referenced by ${props.referencedBy.join(", ")}`
-                    : undefined
-                }
                 onClick={props.onRemove}
               >
                 remove provider
@@ -820,6 +871,9 @@ export function ConfTab({ active }: Props) {
 
   const inf = draft?.inference;
   const srv = draft?.server;
+  // P11 — pointer drag reorder for the fallback chain, layered over the retained MoveButtons. Commits
+  // through the same moveFallback the arrows use. (moveFallback is a hoisted declaration below.)
+  const fbDrag = useDragReorder(inf?.fallbacks.length ?? 0, moveFallback);
 
   function setInf<K extends keyof Draft["inference"]>(key: K, val: Draft["inference"][K]) {
     setDraft((d) => (d ? { ...d, inference: { ...d.inference, [key]: val } } : d));
@@ -1235,13 +1289,10 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup id="inference" num="02" title="Inference" right="chat backend">
         <div className="conf-card">
-          <div className="confrow">
-            <div className="k">
-              <div className="label">Default</div>
-              <div className="desc">
-                primary provider · model — /&lt;provider&gt; overrides per message
-              </div>
-            </div>
+          <SettingRow
+            label="Default"
+            desc="primary provider · model — /<provider> overrides per message"
+          >
             <ProviderModelPicker
               label="Default"
               value={{ provider: inf?.provider ?? null, model: inf?.model ?? null }}
@@ -1249,7 +1300,7 @@ export function ConfTab({ active }: Props) {
               catalog={draftCatalog}
               allowRawId
             />
-          </div>
+          </SettingRow>
           <SettingRow
             label="Failover"
             desc="on failure, fall through the primary → fallbacks chain"
@@ -1265,7 +1316,7 @@ export function ConfTab({ active }: Props) {
             <span className="desc">tried in order after the default</span>
           </div>
           {(inf?.fallbacks ?? []).map((fb, i) => (
-            <div className="confrow fallback-row" key={i}>
+            <div className="confrow fallback-row" key={i} {...fbDrag.rowProps(i)}>
               <div className="k">
                 <div className="label">#{i + 1}</div>
               </div>
@@ -1276,12 +1327,23 @@ export function ConfTab({ active }: Props) {
                 catalog={draftCatalog}
                 allowRawId
               />
+              {/* drag reorder (P11) — a layer over the arrows; the ⠿ handle carries touch-action:none. */}
+              <button
+                type="button"
+                className="drag-handle"
+                aria-label={`reorder fallback ${i + 1} — drag, or use the arrow buttons`}
+                title="drag to reorder"
+                {...fbDrag.handleProps(i)}
+              >
+                ⠿
+              </button>
               <MoveButtons
                 index={i}
                 count={inf?.fallbacks.length ?? 0}
                 onMove={moveFallback}
                 label={`fallback ${i + 1}`}
               />
+              {/* remove-idiom (P13): a fallback is a compact INLINE list row → the square ✕ `.row-remove`. */}
               <button
                 type="button"
                 className="row-remove"
@@ -1293,6 +1355,23 @@ export function ConfTab({ active }: Props) {
               </button>
             </div>
           ))}
+          {/* debounced drag position announcements for AT (visually hidden) */}
+          <div
+            aria-live="polite"
+            style={{
+              position: "absolute",
+              width: 1,
+              height: 1,
+              margin: -1,
+              padding: 0,
+              overflow: "hidden",
+              clip: "rect(0 0 0 0)",
+              whiteSpace: "nowrap",
+              border: 0,
+            }}
+          >
+            {fbDrag.announce}
+          </div>
           <div className="fallback-add">
             <button type="button" className="svc-add" onClick={addFallbackRef}>
               + add fallback

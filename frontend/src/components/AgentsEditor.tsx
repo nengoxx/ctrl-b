@@ -198,6 +198,7 @@ function AgentFieldsForm(props: {
         onChange={(v) => setModel({ provider: v.provider, model: v.model })}
         catalog={catalog}
         allowInherit
+        inheritLabel="— default —"
         allowRawId
       />
 

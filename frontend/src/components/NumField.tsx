@@ -20,6 +20,10 @@ export function NumField(props: {
   const seed = () => (props.value == null ? "" : String(props.value));
   const [text, setText] = useState(seed);
   const [err, setErr] = useState(false);
+  // Baymard inline-validation timing (P10): surface the visible message on BLUR, then live-clear it as the
+  // value becomes valid. The save-block (onValidity) still fires on the offending keystroke — only the
+  // in-field message waits for blur, so a mid-typing "3" isn't flagged before the field is left.
+  const [touched, setTouched] = useState(false);
 
   // Adopt an external change only when the current text still equals the last seed (clean); keep the
   // user's in-progress text otherwise. `lastSeed` advances to the new incoming value either way.
@@ -58,18 +62,23 @@ export function NumField(props: {
     props.onChange(v);
   };
 
+  const showErr = err && touched;
+  const errId = `${id}-err`;
   return (
     <>
       <input
         aria-label={props.ariaLabel}
         inputMode="numeric"
-        className={"num-field" + (err ? " invalid" : "")}
+        className={"num-field" + (showErr ? " invalid" : "")}
+        aria-invalid={showErr || undefined}
+        aria-describedby={showErr ? errId : undefined}
         placeholder={props.placeholder}
         value={text}
         onChange={(e) => onText(e.target.value)}
+        onBlur={() => setTouched(true)}
       />
-      {err && (
-        <div className="json-err">
+      {showErr && (
+        <div className="json-err" id={errId} role="alert">
           must be a whole number{props.min != null ? ` ≥ ${props.min}` : ""}
         </div>
       )}

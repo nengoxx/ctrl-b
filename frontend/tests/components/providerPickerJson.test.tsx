@@ -3,6 +3,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { JsonField } from "../../src/components/JsonField";
+import { NumField } from "../../src/components/NumField";
 import {
   ProviderModelPicker,
   type PickerCatalog,
@@ -142,14 +143,25 @@ describe("JsonField", () => {
     expect(onValidity).toHaveBeenLastCalledWith("x", true);
   });
 
-  it("reports INVALID (blocks save) on malformed JSON and shows an error", () => {
+  it("reports INVALID (blocks save) on malformed JSON; shows the error on BLUR then live-clears (P10)", () => {
     const onValidity = vi.fn();
     render(
       <JsonField id="x" value={null} onChange={vi.fn()} onValidity={onValidity} ariaLabel="body" />,
     );
-    fireEvent.change(screen.getByLabelText("body"), { target: { value: "{ not json" } });
+    const ta = screen.getByLabelText("body");
+    fireEvent.change(ta, { target: { value: "{ not json" } });
+    // the save-block fires on the offending keystroke (Baymard) …
     expect(onValidity).toHaveBeenLastCalledWith("x", false);
-    expect(screen.getByText(/invalid JSON/)).toBeTruthy();
+    // … but the in-field message waits for blur (not flagged mid-typing).
+    expect(screen.queryByText(/invalid JSON/)).toBeNull();
+    fireEvent.blur(ta);
+    const err = screen.getByText(/invalid JSON/);
+    expect(err).toBeTruthy();
+    expect(err.getAttribute("role")).toBe("alert");
+    // once shown, it live-clears as the value becomes valid.
+    fireEvent.change(ta, { target: { value: '{ "a": 1 }' } });
+    expect(screen.queryByText(/invalid JSON/)).toBeNull();
+    expect(onValidity).toHaveBeenLastCalledWith("x", true);
   });
 
   it("blank clears to null and is valid", () => {
@@ -199,5 +211,31 @@ describe("JsonField", () => {
     expect(JSON.parse(ta.value)).toEqual({ a: 9 });
     rerender(field({ a: 1 })); // DISCARD: parent restores the original → clean field adopts it
     expect(JSON.parse(ta.value)).toEqual({ a: 1 });
+  });
+});
+
+describe("NumField", () => {
+  it("blocks the save immediately on invalid input but shows the message on BLUR, then live-clears (P10)", () => {
+    const onValidity = vi.fn();
+    render(
+      <NumField
+        id="n"
+        value={null}
+        onChange={vi.fn()}
+        onValidity={onValidity}
+        ariaLabel="concurrent"
+        min={1}
+      />,
+    );
+    const input = screen.getByLabelText("concurrent");
+    fireEvent.change(input, { target: { value: "abc" } });
+    expect(onValidity).toHaveBeenLastCalledWith("n", false); // save-block is immediate
+    expect(screen.queryByText(/whole number/)).toBeNull(); // message waits for blur
+    fireEvent.blur(input);
+    expect(screen.getByText(/whole number/).getAttribute("role")).toBe("alert");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    fireEvent.change(input, { target: { value: "4" } }); // becomes valid → live-clear
+    expect(screen.queryByText(/whole number/)).toBeNull();
+    expect(onValidity).toHaveBeenLastCalledWith("n", true);
   });
 });

@@ -5,10 +5,15 @@
 // has exactly one model (the terse-config / sole-model rule). Native `<select>`s (the AgentsEditor
 // reasoning-effort precedent) — the option counts are open-ended, so a Seg would wrap on a phone.
 //
-//  - `allowInherit`  → a leading empty "Inherit" provider option (agent defaults; blank = inherit the
-//                      inference default). Off for the Inference primary (a provider is required).
+//  - `allowInherit`  → a leading empty "inherit" provider option (agent defaults; blank = inherit the
+//                      inference default). Off for the Inference primary (a provider is required). The
+//                      option's visible label is `inheritLabel` ("— inherit —" default; callers pass
+//                      "— default —" etc. for the right words in context) so the empty pick reads as a
+//                      deliberate choice, not a blank (P10).
 //  - `allowRawId`    → a "custom id…" affordance that swaps the model select for a free-text input,
 //                      keeping uncataloged-model passthrough (C7-b raw-id escape).
+
+import { useId } from "react";
 
 const CUSTOM = "__custom__"; // sentinel option value → switch the model field to raw-id text entry
 
@@ -22,8 +27,13 @@ export function ProviderModelPicker(props: {
   allowInherit?: boolean;
   allowRawId?: boolean;
   label?: string;
+  inheritLabel?: string;
 }) {
   const { value, onChange, catalog, allowInherit, allowRawId, label } = props;
+  const inheritLabel = props.inheritLabel ?? "— inherit —";
+  // A stable per-instance id so the dangling-provider warning can be wired to its select via
+  // aria-describedby (P6) — announced when the select takes focus, not just seen (recognition).
+  const warnId = useId();
   const providerNames = Object.keys(catalog);
   // FX18 (Codex#8): a `value.provider` set but ABSENT from the catalog is a DANGLING pointer (e.g. an
   // agent still references a removed provider). Surface it as an explicit "(missing)" option + a warn row
@@ -70,10 +80,12 @@ export function ProviderModelPicker(props: {
       <select
         aria-label={label ? `${label} provider` : "Provider"}
         className={"pm-provider" + (providerMissing ? " invalid" : "")}
+        aria-invalid={providerMissing || undefined}
+        aria-describedby={providerMissing ? warnId : undefined}
         value={value.provider ?? ""}
         onChange={(e) => pickProvider(e.target.value)}
       >
-        {allowInherit && <option value="">inherit</option>}
+        {allowInherit && <option value="">{inheritLabel}</option>}
         {!allowInherit && value.provider == null && <option value="">— select —</option>}
         {providerMissing && (
           <option value={value.provider as string}>{value.provider} (missing)</option>
@@ -85,7 +97,9 @@ export function ProviderModelPicker(props: {
         ))}
       </select>
       {providerMissing && (
-        <div className="pm-warn">⚠ provider “{value.provider}” is not configured</div>
+        <div className="pm-warn" id={warnId} role="alert">
+          ⚠ provider “{value.provider}” is not configured
+        </div>
       )}
 
       {showModel &&
