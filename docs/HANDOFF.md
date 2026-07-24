@@ -378,6 +378,18 @@
 > secret-bearing file replaced that way silently loses 0600; write through an fd opened `0o600` (the
 > `.bak-a11` idiom). The bug predated A11 and had already degraded dev+prod configs to 0664.
 >
+> **▷ LIVE MACHINE STATE AT HANDOFF (2026-07-24):** main is **4 commits ahead of origin, UNPUSHED**
+> (`e7e60bb`→`0949cab`), **working tree CLEAN**, no background tasks in flight (gate + both Codex passes
+> finished). **The on-demand dev units are UP** — `ctrl-b-dashboard-dev` (:5434) + `-dev-web` (Vite
+> :5173), left running for the owner's Conf eyeball; `systemctl --user stop ctrl-b-dashboard-dev{,-web}`
+> when done. **Prod + dev `config.yaml` are still `0664`** (`~/.ctrl-b/` + `~/.ctrl-b-dev/`): the
+> `a62faa6` fix HEALS to 0600 on the next config write (prod: the first write after the A11 release), so
+> they self-correct on rollout — but if you want them tight *now*, `chmod 600 ~/.ctrl-b/config.yaml
+> ~/.ctrl-b-dev/config.yaml` (they hold SSH passwords + API keys; single-user tailnet-only, so low-risk
+> but real). Orchestration scratch (maps/briefs/review outputs) lived in the session scratchpad (tmpfs —
+> already gone/going); the durable record is the D48 AS-BUILT Slice-2 note + this block. **Nothing was
+> pushed, ratified, or released — that is the owner's call (below).**
+>
 > **▶▶ SESSION 2026-07-23 CLOSE-OUT — A11 SLICE 1 (chat) + the owner UI/UX polish are
 > COMPLETE, PUSHED to origin/main @ `cfedad7` (CI running; push CI skips e2e — full `check.py --e2e` was
 > 7/7 green locally before the push), dev units STOPPED. PROD UNCHANGED = v1.2.1; A11 Slice 1 + D3 slice
