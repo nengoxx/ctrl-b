@@ -628,7 +628,9 @@
 > Slice-7 retry tier remains NOT-TRIGGERED live (never forced; will show under real slot
 > contention) · grants pin tool args only, so SSH failover can never break an approval.
 >
-> **▶ Standing session rules (unchanged):** /model check at start (fable-5 HIGH) · Fable =
+> **▶ Standing session rules (unchanged)** *(▲ MODEL LAYER SUPERSEDED 2026-07-24 — main is Opus 5
+> HIGH, subagents Opus 5 high, Fable 5 = on-request second opinion; see the ACTIVE block up top.
+> Everything else below still stands):* /model check at start (fable-5 HIGH) · Fable =
 > orchestrator/reviewer alongside Codex (`gpt-5.6-sol` high, the standing foreign reviewer — it
 > caught real HIGHs again tonight, THREE rounds on D47); ALL mechanical/specified work = Opus 4.8
 > subagents (incl. runbook releases — two more executed flawlessly tonight) · commit autonomously,
@@ -1020,6 +1022,9 @@
 >    (dependabot/archive-prune · dev-over-HTTPS for mic).
 > **Methodology + session-start model check: memory [[orchestrate-with-opus-subagents]]** (Fable 5 HIGH
 > orchestrates + hand-reviews; Opus 4.8 high subagents; VERIFY /model = fable-5 + high effort first).
+> *(▲ MODEL LAYER SUPERSEDED 2026-07-24: main = Opus 5 HIGH, subagents = Opus 5 high, Fable 5 = an
+> on-request second opinion. The methodology itself — pinned briefs, per-item review, Codex
+> `gpt-5.6-sol` co-review — is unchanged.)*
 >
 > **▶ NEXT (the standing post-deploy order — pick with the owner):**
 > 1. **~~Theme-engine Hardening slice v2~~ ✅ SHIPPED 2026-07-10** (all 10 items + riders a/b/c; as-built
