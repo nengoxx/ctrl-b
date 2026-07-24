@@ -40,8 +40,8 @@ deploy/
 │       ├── ctrl-b-dashboard-dev.service      # DEV backend (:5434 --reload, ~/.ctrl-b-dev) — on-demand
 │       ├── ctrl-b-dashboard-dev-web.service  # DEV Vite (:5173 → :5434) — on-demand
 │       └── ctrl-b-agent@.service             # TEMPLATE: the ALWAYS-ON Claude agents — instances
-│                                             #   @fable → tmux ctrl-b-fable (claude-fable-5, high)
-│                                             #   @opus  → tmux ctrl-b-opus  (claude-opus-4-8, high)
+│                                             #   @opus  → tmux ctrl-b-opus  (opus alias = latest Opus, high) ← main
+│                                             #   @fable → tmux ctrl-b-fable (claude-fable-5, high)  ← 2nd opinion
 └── windows/                  # the double-click Windows kit (setup/start/autostart)
 
 ../tools/                     # dev launchers (NOT deploy): start-claude.sh (Linux), claude-{fable,opus}.{ps1,cmd} (Windows), add-dev-worktree.sh
@@ -164,8 +164,9 @@ required for a working install, but each fixes a real degradation on this box:
 ## The Claude agent services (development continues ON the box)
 The agents are first-class always-on services (owner decisions 2026-07-09 + 2026-07-10): the TEMPLATE
 unit **`ctrl-b-agent@.service`** is enabled by `install.sh dev` as **two boot instances** —
-`ctrl-b-agent@fable` (tmux **`ctrl-b-fable`**, `claude-fable-5`, effort high) and `ctrl-b-agent@opus`
-(tmux **`ctrl-b-opus`**, `claude-opus-4-8`, effort high). Each ensures its tmux session exists, running
+`ctrl-b-agent@opus` (tmux **`ctrl-b-opus`**, the `opus` alias = latest Opus, effort high — **the main
+model since 2026-07-24**) and `ctrl-b-agent@fable` (tmux **`ctrl-b-fable`**, `claude-fable-5`, effort
+high — kept available for on-request second opinions). Each ensures its tmux session exists, running
 `claude --remote-control` in the **workspace** — attach over SSH or drive from claude.ai/code. On boot
 the launcher **waits (≤60s) for network connectivity before starting claude** — the remote-control
 channel registers at claude startup and does NOT retry, so an early start would come up invisible to
@@ -175,7 +176,7 @@ the claude app (post-reboot finding 2026-07-10). Skipped gracefully if the `clau
 - **Effort/permission overrides (no edits to tracked files; the model is fixed per instance):**
   `~/.config/ctrl-b/agent.env` (shared, e.g. `EFFORT=medium`) or `agent-fable.env`/`agent-opus.env`
   (per-instance, wins) — then `systemctl --user restart ctrl-b-agent@<i>`.
-- Manual/extra sessions: `tools/start-claude.sh [session] [dir] [fable|opus|<model-id>]`.
+- Manual/extra sessions: `tools/start-claude.sh [session] [dir] [opus|fable|<model-id>]` (default `opus`).
 - Crash-recovery of `claude` is the `while true` loop inside tmux; `systemctl --user restart
   ctrl-b-agent@<i>` recreates that instance's session from scratch (the other instance is untouched —
   KillMode=process + a targeted per-session ExecStop).

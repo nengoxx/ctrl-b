@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectPath = "C:\Users\rovax\Documents\github\ctrl-b"
 $SessionName = "ctrl-b (opus)"
-$Model = "claude-opus-4-8"
+$Model = "opus"   # the bare alias tracks Claude Code's latest Opus (Opus 5 — the main model)
 $Effort = "high"
 $PermissionMode = "bypassPermissions"
 

@@ -26,14 +26,15 @@ set -euo pipefail
 
 SESSION="${1:-ctrl-b}"                              # tmux session + --remote-control channel name
 PROJECT="${2:-$HOME/github/ctrl-b}"                 # a workspace-side tree (default: the workspace); never prod
-MODEL="${3:-${MODEL:-fable}}"                       # positional > env > default; alias or full model id
+MODEL="${3:-${MODEL:-opus}}"                        # positional > env > default; alias or full model id
 EFFORT="${EFFORT:-high}"
 PERM="${PERM:-bypassPermissions}"
 
-# Friendly aliases (owner decision 2026-07-09: fable 5 or opus 4.8, both on high). Full ids pass through.
+# Friendly aliases. Opus (the DEFAULT + main model, owner 2026-07-24) tracks Claude Code's latest Opus
+# alias; Fable remains pinned and available as an on-request second opinion. Full ids pass through.
 case "$MODEL" in
   fable) MODEL="claude-fable-5" ;;
-  opus)  MODEL="claude-opus-4-8" ;;
+  opus)  MODEL="opus" ;;
 esac
 
 command -v tmux  >/dev/null || { echo "tmux not found — sudo apt install -y tmux"; exit 1; }

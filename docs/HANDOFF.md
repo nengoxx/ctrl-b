@@ -18,7 +18,10 @@
 >   iterating, stop when done.
 > - **Agents (D32 AMENDED-2):** TWO boot instances of the template `ctrl-b-agent@.service` **in the
 >   workspace** — `@fable` → tmux **`ctrl-b-fable`** (`claude-fable-5`, high) and `@opus` → tmux
->   **`ctrl-b-opus`** (`claude-opus-4-8`, high); attach: `tmux attach -t ctrl-b-fable`. The launcher
+>   **`ctrl-b-opus`** (the `opus` alias = latest Opus, **Opus 5**, high); attach: `tmux attach -t
+>   ctrl-b-opus`. **Opus 5 on high is the MAIN model (owner, 2026-07-24)** — Fable 5 is now an
+>   on-request second opinion (like Codex), reached by attaching its own session, and both units
+>   stay enabled. Match the model to the session: `tmux display-message -p '#S'`. The launcher
 >   waits (≤60s) for network before starting claude — RC registers at startup and doesn't retry
 >   (post-reboot finding). One writer per tree at a time (simultaneous second writer → worktree).
 >   Effort/perm overrides via `~/.config/ctrl-b/agent[-<i>].env`. The one-time first-clone *trust prompt*

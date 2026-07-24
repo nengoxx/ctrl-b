@@ -194,12 +194,12 @@ snapshots the prod DB before cutover, and renders the systemd user units. Full r
 (`-Tailscale` re-applies HTTPS at logon too).
 
 **On-box Claude Code agents (tmux):** `install.sh dev` also boots two always-on agent services in the
-workspace — `ctrl-b-agent@fable` (Fable 5) and `ctrl-b-agent@opus` (Opus 4.8), each in its own tmux
-session. Connect to them:
+workspace — `ctrl-b-agent@opus` (latest Opus — **the main model**) and `ctrl-b-agent@fable` (Fable 5,
+kept for on-request second opinions), each in its own tmux session. Connect to them:
 
 ```bash
-ssh emma -t 'tmux attach -t ctrl-b-fable'   # the Fable 5 agent   (Ctrl-b d to detach)
-ssh emma -t 'tmux attach -t ctrl-b-opus'    # the Opus 4.8 agent
+ssh emma -t 'tmux attach -t ctrl-b-opus'    # the Opus agent — the default   (Ctrl-b d to detach)
+ssh emma -t 'tmux attach -t ctrl-b-fable'   # the Fable 5 agent
 tmux ls                                     # on the box: list sessions
 systemctl --user restart ctrl-b-agent@fable # recreate a session from scratch
 ```

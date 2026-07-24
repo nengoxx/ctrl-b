@@ -1,10 +1,10 @@
 # ctrl-b — the Claude Code DEV AGENTS as always-on user services (D32 amendment 2026-07-09; amended
-# 2026-07-10, owner decision: TWO boot instances — fable 5 AND opus 4.8, both effort high — replacing
+# 2026-07-10, owner decision: TWO boot instances — pinned Fable 5 and latest Opus, both effort high — replacing
 # the single agent.env-switched unit).
 #
 # This is a systemd TEMPLATE unit: %i is the model alias, enabled as
 #     ctrl-b-agent@fable.service   → tmux session "ctrl-b-fable"  → claude-fable-5, effort high
-#     ctrl-b-agent@opus.service    → tmux session "ctrl-b-opus"   → claude-opus-4-8, effort high
+#     ctrl-b-agent@opus.service    → tmux session "ctrl-b-opus"   → opus alias (latest Opus), effort high
 # (names simplified from "ctrl-b (fable)" — owner, 2026-07-10: easy to type, no quoting needed)
 # Each instance only wraps tools/start-claude.sh: a tmux session running `claude --remote-control`
 # in the WORKSPACE (__REPO__ — never the prod tree). tmux is required because claude needs a TTY (it

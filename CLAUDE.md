@@ -141,8 +141,10 @@ seam; if the seam is missing, propose one in `DECISIONS.md` (new D-entry) before
 End commit messages crediting the model that authored the change, e.g.:
 
 ```
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 ```
 
-(or `Claude Opus 4.8 <noreply@anthropic.com>` when running as Opus — emma boots BOTH agents:
-`ctrl-b-agent@fable` and `ctrl-b-agent@opus`, tmux `ctrl-b-fable` / `ctrl-b-opus`.)
+(or `Claude Fable 5 <noreply@anthropic.com>` when running in the Fable session — emma boots BOTH
+agents: `ctrl-b-agent@fable` and `ctrl-b-agent@opus`, tmux `ctrl-b-fable` / `ctrl-b-opus`. **Opus 5
+on high is the main model as of 2026-07-24** (owner); Fable 5 stays available as an on-request second
+opinion. Match the model to the session you're in: `tmux display-message -p '#S'`.)

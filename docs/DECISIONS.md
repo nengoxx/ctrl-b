@@ -1649,6 +1649,12 @@ So the four cases fall out with no special-casing: base = `<DefaultRoot/>`; base
 > to the claude app); **PROD binds `0.0.0.0`** (owner waiver — direct `http://emma:5433` on LAN+tailnet;
 > Serve HTTPS stays for mic; SECURITY_MODEL §2.1) — shipped as **v1.0.1** (unit changes reach the
 > tag-pinned prod only via a release).
+>
+> *Addendum 2026-07-24 (owner — model layer only; the two-instance topology is UNCHANGED):* **Opus 5 on
+> high is the main model.** The `@opus` instance resolves the bare `opus` alias (latest Opus) rather than
+> a pinned `claude-opus-4-8`, and `start-claude.sh`'s default model is now `opus`. **Fable 5 is no longer
+> the driver** — it stays enabled as `@fable` for on-request second opinions (the Codex role). Sessions
+> must match their instance's model: `tmux display-message -p '#S'` → `ctrl-b-opus` ⇒ Opus 5 high.
 
 > ⚠️ **AMENDED 2026-07-09 (before first deploy — read the amendment at the end of this entry):** the
 > **`dev` branch is dropped (trunk-based: `main` + immutable release tags)** and the **prod runtime moves to
