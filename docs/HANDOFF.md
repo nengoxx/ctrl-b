@@ -1,9 +1,13 @@
 # Handoff — start here for a fresh session
 
-> ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21). **On main, UNRELEASED: A11 COMPLETE
+> ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21). **On main (all PUSHED 2026-07-25 @
+> `e158519`), UNRELEASED: A11 COMPLETE
 > (Slice 1 chat + Slice 2 voice/embeddings, built 2026-07-23 — the Slice-1 D48 calls RATIFIED same day)
 > + D3 slice 3. NEXT = the 2026-07-23 SLICE-2 CLOSE-OUT block below (owner: eyeball the new Conf
-> sections + ratify the 3 Slice-2 interpretation calls → release A11 via D48 §rollout).** — v1.2.1 = the seg stadium-trick patch on top of v1.2.0 same night: ACA Slices 1–8 + the D45/D46 reasoning arc + D47 multi-homed s1–2 + UI polish; both released via runbook §Release by the agent — v1.2.0 gate 29801506922, v1.2.1 gate 29802230245, both green incl. e2e; **the prod config riders are LIVE: `api_mode: llamacpp` + `max_concurrent_requests: 1` on local, `api_mode: openrouter` on cloud**; snapshots `ctrlb-20260721-063649` + `-065258.db.gz`. Prior: v1.1.1 2026-07-16 · v1.1.0 2026-07-10 · v1.0.0 same day.
+> sections + ratify the 3 Slice-2 interpretation calls → release A11 via D48 §rollout).**
+> **▲ WORKFLOW (owner, 2026-07-24): the main model is now Opus 5 on HIGH** (subagents Opus 5 high ·
+> Codex `gpt-5.6-sol` high co-reviewer · Fable 5 = on-request second opinion via its own session).
+> Match the model to your tmux session at session start: `tmux display-message -p '#S'`. — v1.2.1 = the seg stadium-trick patch on top of v1.2.0 same night: ACA Slices 1–8 + the D45/D46 reasoning arc + D47 multi-homed s1–2 + UI polish; both released via runbook §Release by the agent — v1.2.0 gate 29801506922, v1.2.1 gate 29802230245, both green incl. e2e; **the prod config riders are LIVE: `api_mode: llamacpp` + `max_concurrent_requests: 1` on local, `api_mode: openrouter` on cloud**; snapshots `ctrlb-20260721-063649` + `-065258.db.gz`. Prior: v1.1.1 2026-07-16 · v1.1.0 2026-07-10 · v1.0.0 same day.
 > **✅ ctrl-b v1.0.0 (tag `v1.0.0` = `8fa8404`) deployed to emma per the D32-amended plan — first try,
 > release gate green on its maiden tag run (full gate + Playwright e2e on ubuntu).** As-executed record:
 > the PRE-FLIGHT block atop [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md); living runbook: `deploy/linux/README.md`.
@@ -381,8 +385,10 @@
 > secret-bearing file replaced that way silently loses 0600; write through an fd opened `0o600` (the
 > `.bak-a11` idiom). The bug predated A11 and had already degraded dev+prod configs to 0664.
 >
-> **▷ LIVE MACHINE STATE AT HANDOFF (2026-07-24):** main is **4 commits ahead of origin, UNPUSHED**
-> (`e7e60bb`→`0949cab`), **working tree CLEAN**, no background tasks in flight (gate + both Codex passes
+> **▷ LIVE MACHINE STATE AT HANDOFF (2026-07-24; ▲ UPDATED 2026-07-25 — everything is now PUSHED):**
+> main == **origin/main @ `e158519`** (the A11 Slice-2 stack `e7e60bb`→`0949cab` + the handoff line
+> `8431122` + the Opus-5 workflow sweep `e158519` all went out 2026-07-25; pre-push gate 6/6 green),
+> **working tree CLEAN**, no background tasks in flight (gate + both Codex passes
 > finished). **The on-demand dev units are UP** — `ctrl-b-dashboard-dev` (:5434) + `-dev-web` (Vite
 > :5173), left running for the owner's Conf eyeball; `systemctl --user stop ctrl-b-dashboard-dev{,-web}`
 > when done. **Prod + dev `config.yaml` are still `0664`** (`~/.ctrl-b/` + `~/.ctrl-b-dev/`): the
@@ -391,7 +397,8 @@
 > ~/.ctrl-b-dev/config.yaml` (they hold SSH passwords + API keys; single-user tailnet-only, so low-risk
 > but real). Orchestration scratch (maps/briefs/review outputs) lived in the session scratchpad (tmpfs —
 > already gone/going); the durable record is the D48 AS-BUILT Slice-2 note + this block. **Nothing was
-> pushed, ratified, or released — that is the owner's call (below).**
+> ratified or released — that is still the owner's call (below); the code is now on origin/main but
+> UNRELEASED (prod remains v1.2.1), so the ratify → release step is untouched by the push.**
 >
 > **▶▶ SESSION 2026-07-23 CLOSE-OUT — A11 SLICE 1 (chat) + the owner UI/UX polish are
 > COMPLETE, PUSHED to origin/main @ `cfedad7` (CI running; push CI skips e2e — full `check.py --e2e` was
