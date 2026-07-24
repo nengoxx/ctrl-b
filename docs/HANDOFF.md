@@ -389,7 +389,8 @@
 > main == **origin/main @ `e158519`** (the A11 Slice-2 stack `e7e60bb`→`0949cab` + the handoff line
 > `8431122` + the Opus-5 workflow sweep `e158519` all went out 2026-07-25; pre-push gate 6/6 green),
 > **working tree CLEAN**, no background tasks in flight (gate + both Codex passes
-> finished). **The on-demand dev units are UP** — `ctrl-b-dashboard-dev` (:5434) + `-dev-web` (Vite
+> finished). **The on-demand dev units are UP** *(they had gone DOWN in the interim — verified inactive
+> and RESTARTED 2026-07-25; :5434 health ok + Vite :5173 → 200)* — `ctrl-b-dashboard-dev` (:5434) + `-dev-web` (Vite
 > :5173), left running for the owner's Conf eyeball; `systemctl --user stop ctrl-b-dashboard-dev{,-web}`
 > when done. **Prod + dev `config.yaml` are still `0664`** (`~/.ctrl-b/` + `~/.ctrl-b-dev/`): the
 > `a62faa6` fix HEALS to 0600 on the next config write (prod: the first write after the A11 release), so
