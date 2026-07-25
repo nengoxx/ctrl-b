@@ -386,11 +386,13 @@
 > secret-bearing file replaced that way silently loses 0600; write through an fd opened `0o600` (the
 > `.bak-a11` idiom). The bug predated A11 and had already degraded dev+prod configs to 0664.
 >
-> **▷ LIVE MACHINE STATE AT HANDOFF (2026-07-24; ▲ UPDATED 2026-07-25 — everything is now PUSHED):**
-> main == **origin/main @ `e158519`** (the A11 Slice-2 stack `e7e60bb`→`0949cab` + the handoff line
-> `8431122` + the Opus-5 workflow sweep `e158519` all went out 2026-07-25; pre-push gate 6/6 green),
-> **working tree CLEAN**, no background tasks in flight (gate + both Codex passes
-> finished). **The on-demand dev units are UP** *(they had gone DOWN in the interim — verified inactive
+> **▷ LIVE MACHINE STATE (▲ UPDATED at the 2026-07-25 close — SESSION CLOSED CLEAN, ALL PUSHED):**
+> the close-out session's **5 commits** (research database R1–R3 · the two owner rulings · the
+> chat-scoped advisory fix + its 2 regression tests · the reference correction) went out on top of
+> `e158519`; pre-push gate green. Prior tip was `e158519` (the A11 Slice-2 stack `e7e60bb`→`0949cab` +
+> `8431122` + the Opus-5 workflow sweep). **Working tree CLEAN**, no background tasks in flight, dev
+> units STOPPED at close. **PROD REMAINS v1.2.1 — A11 is still UNRELEASED** (the fix wave + the deep
+> audit come first; see the close-out block above for the ordered list). **The on-demand dev units are UP** *(they had gone DOWN in the interim — verified inactive
 > and RESTARTED 2026-07-25; :5434 health ok + Vite :5173 → 200)* — `ctrl-b-dashboard-dev` (:5434) + `-dev-web` (Vite
 > :5173), left running for the owner's Conf eyeball; `systemctl --user stop ctrl-b-dashboard-dev{,-web}`
 > when done. **Prod + dev `config.yaml` are still `0664`** (`~/.ctrl-b/` + `~/.ctrl-b-dev/`): the
