@@ -419,7 +419,9 @@
 > two sections shares one cap (correct — the box is one queue). `None` = unlimited costs nothing.
 > ③ Per-message model choice = **ROADMAP, not now** (owner: "future feature"). ④ **Research is now
 > persisted** — new **[`docs/research/`](./research/)** database (owner directive: stop re-buying
-> findings). R1 + R2 written; the api_mode/naming dossier is the one thread still owed.
+> findings). **R1 + R2 + R3 written.** R3 is PARTIAL: it settles warning-scoping + capability-vs-dialect,
+> but **provider auto-naming was never bought** (that pass was stopped on budget) — one tight bounded
+> pass still owed there, and it gates fix-list item 3.
 >
 > **THE FIX LIST (next session — nothing here is built yet):**
 > 1. **BUG (verified live, R2 §7): comment orphaning on delete.** `sync_mapping` (~`config.py:1660`)
@@ -433,10 +435,18 @@
 >    ignore `reasoning_effort`. Scope it to chat-referenced providers — note the advisory runs BEFORE
 >    the chain is built (:560), so derive the set from config refs (`inf.provider` + `inf.fallbacks` +
 >    the agent ModelRef homes), **reusing the `_validate_config_refs` walk at :527, not a second walker**.
->    ⚠ Do **NOT** solve this with a compound `openai/tts` api_mode — `api_mode` is the WIRE DIALECT
->    axis; role already comes from the section. Fusing them duplicates a modelled dimension (the
->    2026-06-24 extend-don't-migrate directive). Where the field models capability explicitly it is a
->    separate DECLARED field beside the dialect (LiteLLM), never fused.
+>    **Research [R3](./research/R3-warning-scoping-and-capability-fields.md) settles the WHERE:** warn
+>    at the **reference site**, never at declaration — *"warn only on proven inertness, never on
+>    suspected inertness"* (k8s/systemd/nginx/Terraform/OTel all refuse the declaration-site warning;
+>    firing a chat advisory at a speaches box is an *effective false positive* per Sadowski et al., the
+>    seed of the trust death-spiral per Bessey et al.). Message shape = systemd's: name the setting AND
+>    the discriminant. Dedupe to one warning per provider. ⚠ Do **NOT** solve this with a compound
+>    `openai/tts` api_mode — `api_mode` is the WIRE DIALECT axis; role already comes from the section.
+>    A declared capability field is legitimate *later* (LiteLLM `model_info.mode`, k8s `spec.type`,
+>    systemd `Type=`) but in EVERY precedent it sits **beside** the dialect, never fused into it — and
+>    it must be REQUIRED/defaulted, at which point the precedent says provable ⇒ **error, not warning**.
+>    That's a breaking change ⇒ its own D-entry, not this fix. Also adopt R3's asymmetry: a section
+>    referencing an UNDECLARED provider = hard error; a provider referenced by NOBODY = silent.
 > 3. **Provider auto-naming is bad** (owner). `_provider_name_from_host_port` (`config.py:1190`) yields
 >    `192.168.1.137-7851` from legacy IP-literal URLs. **Timing leverage: NOTHING IS ON DISK YET** —
 >    both prod + dev `config.yaml` are still legacy-shaped, zero `.bak-a11-*`, re-migrating in memory

@@ -48,3 +48,4 @@ These passes are token-expensive. The rules that make them worth it:
 |---|---|---|---|
 | [R1](./R1-model-selection-and-capability.md) | Model/provider selection from the chat surface · endpoint capability discovery · per-message attribution | 2026-07-25 | D48 call ① (verb scoping); the ROADMAP model-picker entry |
 | [R2](./R2-config-migration-and-legacy-retirement.md) | Config-file shape migration · how legacy readers actually get deleted · atomic secret-file writes · pydantic/ruamel mechanics | 2026-07-25 | The A11/D48 no-legacy-seams review (open) — incl. a verified live comment-orphaning bug |
+| [R3](./R3-warning-scoping-and-capability-fields.md) | Where a role-specific warning belongs (declaration vs reference site) · declared capability vs wire dialect · warning-fatigue literature | 2026-07-25 | The api_mode advisory fix (open) + the `openai/tts` question. **Partial — provider auto-naming not bought** |
