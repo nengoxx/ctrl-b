@@ -3,8 +3,9 @@
 > ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21). **On main (all PUSHED 2026-07-25 @
 > `e158519`), UNRELEASED: A11 COMPLETE
 > (Slice 1 chat + Slice 2 voice/embeddings, built 2026-07-23 — the Slice-1 D48 calls RATIFIED same day)
-> + D3 slice 3. NEXT = the 2026-07-23 SLICE-2 CLOSE-OUT block below (owner: eyeball the new Conf
-> sections + ratify the 3 Slice-2 interpretation calls → release A11 via D48 §rollout).**
+> + D3 slice 3. NEXT = the **2026-07-25 A11 CLOSE-OUT REVIEW** block below — call ① RATIFIED, call ③
+> re-framed + standing, a fix list found (incl. TWO verified bugs), the deep audit PARKED to next
+> session by the owner (usage limits). Release A11 via D48 §rollout only after that fix wave.**
 > **▲ WORKFLOW (owner, 2026-07-24): the main model is now Opus 5 on HIGH** (subagents Opus 5 high ·
 > Codex `gpt-5.6-sol` high co-reviewer · Fable 5 = on-request second opinion via its own session).
 > Match the model to your tmux session at session start: `tmux display-message -p '#S'`. — v1.2.1 = the seg stadium-trick patch on top of v1.2.0 same night: ACA Slices 1–8 + the D45/D46 reasoning arc + D47 multi-homed s1–2 + UI polish; both released via runbook §Release by the agent — v1.2.0 gate 29801506922, v1.2.1 gate 29802230245, both green incl. e2e; **the prod config riders are LIVE: `api_mode: llamacpp` + `max_concurrent_requests: 1` on local, `api_mode: openrouter` on cloud**; snapshots `ctrlb-20260721-063649` + `-065258.db.gz`. Prior: v1.1.1 2026-07-16 · v1.1.0 2026-07-10 · v1.0.0 same day.
@@ -400,6 +401,82 @@
 > already gone/going); the durable record is the D48 AS-BUILT Slice-2 note + this block. **Nothing was
 > ratified or released — that is still the owner's call (below); the code is now on origin/main but
 > UNRELEASED (prod remains v1.2.1), so the ratify → release step is untouched by the push.**
+>
+> **▶▶ SESSION 2026-07-25 — A11 CLOSE-OUT REVIEW (design + research only; NO code changed, tree
+> CLEAN at `f7d02da`). The owner PARKED the deep audit + the fix wave to next session at ~80% usage.**
+> Model check ✓ (session `ctrl-b-opus`, `claude-opus-5`, settings pin `opus[1m]` + high). CI green
+> through `f7d02da`; dev units UP.
+>
+> **OWNER RULINGS THIS SESSION:** ① **call ① RATIFIED — composer verbs stay TEXT-ONLY** (a provider
+> referenced only by voice/embeddings is not advertised as a chat `/verb`). Field evidence is
+> overwhelming (research **[R1](./research/R1-model-selection-and-capability.md)**): capability is
+> declared by the config SECTION everywhere (Continue `roles`, open-webui's four tabs, LibreChat's
+> `speech` block, LiteLLM `model_info.mode`), and **no probe can do better** — a live probe of our OWN
+> `:5001` chat endpoint returns an embedder + a reranker with `architecture` fields byte-identical to
+> the chat models. Codex's dissent is not supported by the field. ② **call ③ RE-FRAMED and standing:**
+> the D40 gate is keyed `(canonical_base_url, effective_limit)` — a **SERVER** identity, not a provider
+> name. Two different providers at different base_urls never block each other; one server referenced by
+> two sections shares one cap (correct — the box is one queue). `None` = unlimited costs nothing.
+> ③ Per-message model choice = **ROADMAP, not now** (owner: "future feature"). ④ **Research is now
+> persisted** — new **[`docs/research/`](./research/)** database (owner directive: stop re-buying
+> findings). R1 + R2 written; the api_mode/naming dossier is the one thread still owed.
+>
+> **THE FIX LIST (next session — nothing here is built yet):**
+> 1. **BUG (verified live, R2 §7): comment orphaning on delete.** `sync_mapping` (~`config.py:1660`)
+>    and `_delete_dotted` (~:1673) use a bare `del node[k]`. ruamel stores a key's trailing comment on
+>    the *preceding* key — so dropping legacy `inference.local` **silently destroys the operator's
+>    comment documenting `inference.max_steps`**, a live key the migration never touched. Fix =
+>    re-attach the trailing blob to the preceding key before deleting (explicit index-0 branch) + a
+>    test that a neighbouring comment survives a key removal. **On the live A11 path.**
+> 2. **BUG: the api_mode advisory is chat-only but fires for EVERY provider**
+>    (`provider_registry.py:551`). The owner sees 3 warnings telling him his speaches/AllTalk boxes
+>    ignore `reasoning_effort`. Scope it to chat-referenced providers — note the advisory runs BEFORE
+>    the chain is built (:560), so derive the set from config refs (`inf.provider` + `inf.fallbacks` +
+>    the agent ModelRef homes), **reusing the `_validate_config_refs` walk at :527, not a second walker**.
+>    ⚠ Do **NOT** solve this with a compound `openai/tts` api_mode — `api_mode` is the WIRE DIALECT
+>    axis; role already comes from the section. Fusing them duplicates a modelled dimension (the
+>    2026-06-24 extend-don't-migrate directive). Where the field models capability explicitly it is a
+>    separate DECLARED field beside the dialect (LiteLLM), never fused.
+> 3. **Provider auto-naming is bad** (owner). `_provider_name_from_host_port` (`config.py:1190`) yields
+>    `192.168.1.137-7851` from legacy IP-literal URLs. **Timing leverage: NOTHING IS ON DISK YET** —
+>    both prod + dev `config.yaml` are still legacy-shaped, zero `.bak-a11-*`, re-migrating in memory
+>    every boot. Whatever we choose is what gets written, once. Material available: the fleet
+>    `computers:` registry already maps `192.168.1.137` → a named host; rename-with-cascade shipped in
+>    Slice 1. ⚠ Role-based names (`tts`/`stt`) can NOT be a general rule — dedup-by-identity merges one
+>    server into ONE provider, and the `127.0.0.1:9000` speaches box serves BOTH roles.
+> 4. **Doc drift on D40** — `DECISIONS.md:2205`, `DESIGN.md:841`, `SPEC.md:414` all still describe an
+>    *inference-only* gate on `InferenceEndpointCfg.max_concurrent_requests` keyed by raw
+>    `(base_url, limit)`. It is provider-level, canonical-URL-keyed, with three chokepoints.
+> 5. **Test gap** — voice/embeddings gate acquisition is pinned only by *semaphore identity*; deleting
+>    `await sem.acquire()` from `voice.attempt` passes the suite. Chat has serialization/deadlock/leak
+>    tests; give voice+embeddings the same.
+> 6. **Migration defects beyond the recorded residual** (code-truth pass): the env-only-legacy-secret
+>    window is **wider than D48 says** (it closes on process restart / a `load_settings()` writer, NOT
+>    on "migration settling" — the settings PUT path never re-reads disk) · **silent post-migration
+>    credential loss** (once the disk is new-shape, one-level env paths can't address
+>    `providers.*.api_key`, so `CTRLB_EMBEDDINGS__API_KEY` lands on an ignored extra and embeddings
+>    runs unauthenticated) · the chat trigger blocks on the mere PRESENCE of a `providers:` key, so
+>    `providers: {}` permanently disables chat migration silently · a stale `mode:` in a config-held
+>    ModelRef is a **hard boot ValidationError** (`extra="forbid"`), while `agents/*/agent.yaml`
+>    degrades gracefully — mixed-shape handling is not uniform.
+> 7. **Two OWNER DESIGN QUESTIONS raised by R2** (both about *deletability*, per the standing
+>    no-legacy-seams rule): **(a) add a persisted version marker, or accept the fold is permanent.**
+>    Syncthing is the ONLY surveyed project that actually deleted migration code, and the only one with
+>    a version int + a declared floor; shape-sniffing produces zero evidence licensing deletion, which
+>    is why Authelia (43 folds since 2019) and Gitea (8 releases past their own deadline) can never
+>    remove theirs. Marker likely belongs in `ctrlb.db` (we already have `schema_version`) since the
+>    YAML is hand-edited. **(b) reconsider LAZY write-back** — "persist on the next save" is a minority
+>    position and is *live for us*: a config the user never saves never settles, so the fold can never
+>    be retired. Also cheap + recommended: surface deprecations in the UI, not the log.
+>
+> **NEXT SESSION, in order:** ① model check ② the fix wave above in small slices (design confirmed
+> first — items 3 + 7 need owner rulings BEFORE coding) ③ **THEN the deep audit the owner asked for**
+> (fresh-eyes Opus + Codex `gpt-5.6-sol` high over the full A11 diff) ④ push ⑤ release A11 + D3s3 via
+> D48 §rollout + runbook §Release. **AGENT DISCIPLINE (owner directive, 2026-07-25 — this session
+> burned ~80% of the limit): plan BEFORE spawning · max 5 concurrent · ONE bounded question per agent ·
+> briefs must FORBID nested subagents (the `general-purpose` type can spawn its own, and did — a
+> 5-agent launch became a ~55-task tree) · use `Explore` for read-only searches · write findings into
+> `docs/research/` the same session they land.**
 >
 > **▶▶ SESSION 2026-07-23 CLOSE-OUT — A11 SLICE 1 (chat) + the owner UI/UX polish are
 > COMPLETE, PUSHED to origin/main @ `cfedad7` (CI running; push CI skips e2e — full `check.py --e2e` was

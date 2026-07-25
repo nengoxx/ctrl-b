@@ -50,6 +50,7 @@ backend/                FastAPI + Uvicorn service (port 5433). Layered:
   pyproject.toml        editable install (pip install -e .)
 frontend/               React 19 + TS + Vite 7 PWA. store/ hooks/ components/ tabs/ lib/ theme-engine/ themes/
 docs/                   HANDOFF (start here) · DECISIONS · ARCHITECTURE · DESIGN · SPEC · ROADMAP · TODO · THEME_ENGINE · audits (UI_AUDIT · SYSTEM_AUDIT · AGENT_CHAT_AUDIT) · …
+docs/research/          field-research dossiers (how OTHER projects solve a problem) — READ BEFORE re-running a deep research pass; RESEARCH.md is our own library-pin rationale, a different thing
 deploy/                 bootstrap.py (Win→Linux SSH orchestrator) + linux/ (systemd) + windows/ (double-click)
 tools/                  dev launchers (NOT deploy): start-claude.sh (Linux), claude-{fable,opus}.{ps1,cmd} (Windows), add-dev-worktree.sh
 design/                 source design prototypes + the Vapor visual spec (design/prototypes/variations/vapor.html)
