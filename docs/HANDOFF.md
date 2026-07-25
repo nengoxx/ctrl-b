@@ -430,7 +430,7 @@
 >    comment documenting `inference.max_steps`**, a live key the migration never touched. Fix =
 >    re-attach the trailing blob to the preceding key before deleting (explicit index-0 branch) + a
 >    test that a neighbouring comment survives a key removal. **On the live A11 path.**
-> 2. **✅ FIXED 2026-07-25 (`e5c54da`; backend 878 green, live 3 warnings → 0) — BUG: the api_mode
+> 2. **✅ FIXED 2026-07-25 (`4d839d1`; backend 878 green, live 3 warnings → 0) — BUG: the api_mode
 >    advisory is chat-only but fired for EVERY provider**
 >    (`provider_registry.py:551`). The owner sees 3 warnings telling him his speaches/AllTalk boxes
 >    ignore `reasoning_effort`. Scope it to chat-referenced providers — note the advisory runs BEFORE
