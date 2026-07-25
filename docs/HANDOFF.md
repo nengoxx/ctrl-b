@@ -469,7 +469,19 @@
 >    `providers: {}` permanently disables chat migration silently · a stale `mode:` in a config-held
 >    ModelRef is a **hard boot ValidationError** (`extra="forbid"`), while `agents/*/agent.yaml`
 >    degrades gracefully — mixed-shape handling is not uniform.
-> 7. **Two OWNER DESIGN QUESTIONS raised by R2** (both about *deletability*, per the standing
+> 7. **✅ OWNER RULED 2026-07-25 — THE MIGRATION IS ONE-SHOT AND THE CODE DIES WITH IT.** *"I want the
+>    migration to occur once, and then we don't have to use that extra code… the extra code should be
+>    [there] just for the migration itself, and then we are using the new values, the new systems, the
+>    new configuration."* So: **converge at BOOT (not lazy-on-next-save), then DELETE the fold** — no
+>    permanent legacy readers, no version-marker-forever machinery. This closes R2's two open questions
+>    in the strictest direction and is the standing `no-legacy-seams-clean-final-code` rule applied to
+>    its end state. **Owner also required heavy guardrails**: *"this needs heavy testing… make sure
+>    that everything [is] defined when you're doing the migration coding."* Design implications to work
+>    out BEFORE coding — boot-time write-back must survive a read-only/unwritable config dir, must not
+>    fire on a fresh install (Alembic's `stamp` case), must back up first (`.bak-a11-*`, 0600), and the
+>    deletion step needs a stated trigger (after the owner's config is confirmed converged, since this
+>    is a single-user product with exactly two configs: prod + dev). The prior R2 framing of these as
+>    open questions is SUPERSEDED. (both about *deletability*, per the standing
 >    no-legacy-seams rule): **(a) add a persisted version marker, or accept the fold is permanent.**
 >    Syncthing is the ONLY surveyed project that actually deleted migration code, and the only one with
 >    a version int + a declared floor; shape-sniffing produces zero evidence licensing deletion, which

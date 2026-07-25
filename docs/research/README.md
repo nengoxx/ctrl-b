@@ -31,6 +31,20 @@ back from the dossier's header.
 - **Keep the implications section short and separate** from the evidence. Evidence ages slowly;
   our reading of it ages fast.
 
+## Reference class — WHO to research (owner, 2026-07-25)
+
+**Research peer projects in THIS domain first.** ctrl-b is a self-hosted agent-chat app, so the
+reference class is: **opencode · Claude Code · Codex CLI · Kilo Code · Hermes agent · open-webui ·
+AnythingLLM · LibreChat · Continue.dev · aider · goose · LiteLLM**. *(open-claw: general reference
+only — the owner does not want its decisions leaned on.)*
+
+Generic infrastructure tooling (Kubernetes, nginx, systemd, Terraform, Home Assistant, Syncthing…)
+is **out of the reference class unless the question is genuinely generic**, and even then it's a
+supplement, not the body of the pass. R2/R3 over-reached into it — the findings are sound but were
+not what was asked for, and they cost far more than a focused pass would have.
+
+When a question is "how do apps like ours do X", say so in the brief and name the projects.
+
 ## Cost discipline
 
 These passes are token-expensive. The rules that make them worth it:
