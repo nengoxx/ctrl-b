@@ -430,7 +430,8 @@
 >    comment documenting `inference.max_steps`**, a live key the migration never touched. Fix =
 >    re-attach the trailing blob to the preceding key before deleting (explicit index-0 branch) + a
 >    test that a neighbouring comment survives a key removal. **On the live A11 path.**
-> 2. **BUG: the api_mode advisory is chat-only but fires for EVERY provider**
+> 2. **✅ FIXED 2026-07-25 (`e5c54da`; backend 878 green, live 3 warnings → 0) — BUG: the api_mode
+>    advisory is chat-only but fired for EVERY provider**
 >    (`provider_registry.py:551`). The owner sees 3 warnings telling him his speaches/AllTalk boxes
 >    ignore `reasoning_effort`. Scope it to chat-referenced providers — note the advisory runs BEFORE
 >    the chain is built (:560), so derive the set from config refs (`inf.provider` + `inf.fallbacks` +
@@ -447,13 +448,17 @@
 >    it must be REQUIRED/defaulted, at which point the precedent says provable ⇒ **error, not warning**.
 >    That's a breaking change ⇒ its own D-entry, not this fix. Also adopt R3's asymmetry: a section
 >    referencing an UNDECLARED provider = hard error; a provider referenced by NOBODY = silent.
-> 3. **Provider auto-naming is bad** (owner). `_provider_name_from_host_port` (`config.py:1190`) yields
->    `192.168.1.137-7851` from legacy IP-literal URLs. **Timing leverage: NOTHING IS ON DISK YET** —
->    both prod + dev `config.yaml` are still legacy-shaped, zero `.bak-a11-*`, re-migrating in memory
->    every boot. Whatever we choose is what gets written, once. Material available: the fleet
->    `computers:` registry already maps `192.168.1.137` → a named host; rename-with-cascade shipped in
->    Slice 1. ⚠ Role-based names (`tts`/`stt`) can NOT be a general rule — dedup-by-identity merges one
->    server into ONE provider, and the `127.0.0.1:9000` speaches box serves BOTH roles.
+> 3. **Provider naming — ✅ OWNER RULED 2026-07-25. Convention = `<host>-<service>`, and NO DERIVATION
+>    LOGIC.** The owner's reasoning: *"that's gonna be something that the user is gonna name itself"* —
+>    so we do NOT build a heuristic that guesses a service name from a URL. The three names he wants
+>    for **the current config specifically**: **`emma-speaches`** (`127.0.0.1:9000` — emma = the local
+>    box) · **`vault-speaches`** (`192.168.1.137:9000`) · **`vault-alltalk`** (`192.168.1.137:7851`).
+>    *(AllTalk is running on vault but is not otherwise configured in this project.)* These land as part
+>    of the migration work (item 7) since nothing is on disk yet — the generic fallback slug stays
+>    whatever it is; the user renames in Conf (rename-with-cascade shipped in Slice 1). ⚠ Role-based
+>    names (`tts`/`stt`) can NOT be a general rule anyway — dedup-by-identity merges one server into ONE
+>    provider, and the `:9000` speaches box serves BOTH roles, which is exactly why `<host>-<service>`
+>    is the right shape.
 > 4. **Doc drift on D40** — `DECISIONS.md:2205`, `DESIGN.md:841`, `SPEC.md:414` all still describe an
 >    *inference-only* gate on `InferenceEndpointCfg.max_concurrent_requests` keyed by raw
 >    `(base_url, limit)`. It is provider-level, canonical-URL-keyed, with three chokepoints.
@@ -469,7 +474,16 @@
 >    `providers: {}` permanently disables chat migration silently · a stale `mode:` in a config-held
 >    ModelRef is a **hard boot ValidationError** (`extra="forbid"`), while `agents/*/agent.yaml`
 >    degrades gracefully — mixed-shape handling is not uniform.
-> 7. **✅ OWNER RULED 2026-07-25 — THE MIGRATION IS ONE-SHOT AND THE CODE DIES WITH IT.** *"I want the
+> 7. **THE MIGRATION GETS ITS OWN DESIGN PASS + PEER RESEARCH — NEXT SESSION, NOT A SIDE-FIX (owner,
+>    2026-07-25).** *"That needs its own design path, because half-migrated configurations is exactly
+>    what's giving us a headache right now — that's a potential issue machine."* The research brief is
+>    **peer-class ONLY** (see [`docs/research/README.md`](./research/README.md) §Reference class):
+>    **open-webui** (it announces *"migrating database"* at boot — find how), AnythingLLM, LibreChat,
+>    opencode, Codex CLI, Kilo Code. The question: **is boot-time the right moment for the whole thing,
+>    and how is the cleanup of the old config made part of the system rather than a leftover?** The
+>    owner explicitly left the *when* open: *"I don't know if it should be done all at boot time or
+>    not — that's what I want you to research."* ⚠ Do NOT re-buy the generic-infra survey (R2 already
+>    covers it and was off-class). **✅ OWNER RULED — THE MIGRATION IS ONE-SHOT AND THE CODE DIES WITH IT.** *"I want the
 >    migration to occur once, and then we don't have to use that extra code… the extra code should be
 >    [there] just for the migration itself, and then we are using the new values, the new systems, the
 >    new configuration."* So: **converge at BOOT (not lazy-on-next-save), then DELETE the fold** — no

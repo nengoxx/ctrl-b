@@ -368,7 +368,7 @@ def _compute_gate_caps(
 
 def _validate_config_refs(
     settings: "Settings", errors: list[RegistryError], warnings: list[str], *, strict: bool
-) -> None:
+) -> set[str]:
     """Validate every CONFIG-HELD `ModelRef` home against the providers map (D48 C7-b / Codex#4). The
     closed home list is the SAME `walk_model_refs` cascade the rename uses — `agent.defaults.model`, the
     global + per-agent-defaults `compaction.summarizer`, `agent.defaults.routing.lead` — so a provider a
@@ -376,15 +376,22 @@ def _validate_config_refs(
     a dangling reference. A ref whose `provider` is set but NOT in `providers` (or with no base_url) is an
     ERROR; a set-provider + omitted-model on a multi-model provider is a WARNING only (chain_for coerces
     to the default at call time); a set model is always legal (cataloged OR uncataloged raw-id — C5).
-    agent.yaml FILES stay graceful-degradation (C1) — this walks only the config.yaml `agent` subtree."""
+    agent.yaml FILES stay graceful-degradation (C1) — this walks only the config.yaml `agent` subtree.
+
+    RETURNS the set of provider names these CHAT ModelRefs name (blank/None skipped). The caller unions
+    it with the `inference` section's own refs to get the chat-referenced set — the scope for
+    chat-specific advisories. Returned from here rather than re-walked so `walk_model_refs`' closed home
+    cascade stays the ONE source of truth for "which providers serve chat"."""
     from app.config import walk_model_refs  # runtime import (config imports no core → no cycle)
 
+    named: set[str] = set()
     refs: list[dict] = []
     walk_model_refs(settings.model_dump(mode="python"), refs.append)
     for ref in refs:
         provider = ref.get("provider")
         if not isinstance(provider, str) or not provider:
             continue  # None/blank → inherit the section default; not a dangling ref
+        named.add(provider)
         pcfg = settings.providers.get(provider)
         if pcfg is None or not pcfg.base_url:
             msg = f"agent ModelRef references provider {provider!r} which is not defined or has no base_url"
@@ -399,6 +406,7 @@ def _validate_config_refs(
                 f"agent ModelRef for provider {provider!r} omits the model but the provider has "
                 f"{len(pcfg.models)} models — resolves to the default chain at call time"
             )
+    return named
 
 
 def _build_section_chain(
@@ -524,7 +532,10 @@ def _resolve(settings: "Settings", *, strict: bool) -> tuple[Registry, list[Regi
     warnings: list[str] = []
     inf = settings.inference
     gate_cap = _compute_gate_caps(settings, errors, warnings, strict=strict)
-    _validate_config_refs(settings, errors, warnings, strict=strict)
+    modelref_providers = _validate_config_refs(settings, errors, warnings, strict=strict)
+    # The CHAT-referenced set: the `inference` section's own refs + every config-held ModelRef home.
+    # Chat-specific advisories are scoped to this (see the api_mode advisory below).
+    chat_referenced = ({inf.provider} | {f.provider for f in inf.fallbacks} | modelref_providers) - {None, ""}
 
     # ── reserved-verb collision (C7): a provider named like a built-in composer verb is a hard error on
     #    a PUT (strict) / a boot warning (lenient). The skill-shadow collision is SOFT + computed live in
@@ -549,7 +560,14 @@ def _resolve(settings: "Settings", *, strict: bool) -> tuple[Registry, list[Regi
                 )
 
     # ── the api_mode-default self-hosted advisory (moved from warn_suspect_api_modes) ──
+    #    SCOPED TO CHAT-REFERENCED PROVIDERS ONLY (research R3): the advice is about `reasoning_effort`,
+    #    which only a chat consumer ever sends — firing it at a voice/embeddings-only endpoint (a whisper
+    #    or TTS box is legitimately `api_mode: openai`) warns about SUSPECTED, not PROVEN, inertness. The
+    #    field-wide rule is to warn at the REFERENCE site, never at declaration; a declaration referenced
+    #    by no chat consumer is silent. `api_mode` is the wire DIALECT — role comes from the section.
     for pname, pcfg in settings.providers.items():
+        if pname not in chat_referenced:
+            continue
         if pcfg.base_url and pcfg.api_mode == "openai" and _looks_self_hosted(pcfg.base_url):
             warnings.append(
                 f"provider {pname!r} (base_url={pcfg.base_url}) uses the default api_mode 'openai' but "

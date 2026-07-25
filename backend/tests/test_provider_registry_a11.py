@@ -31,6 +31,42 @@ def test_canonical_base_url() -> None:
     assert canonical_base_url("host:9000/v1") == "http://host:9000/v1"  # scheme defaulted
 
 
+# ── the api_mode self-hosted advisory is CHAT-SCOPED (research R3) ───────────────────────────────
+def test_api_mode_advisory_only_fires_for_chat_referenced_providers() -> None:
+    """The advisory is about `reasoning_effort`, which only a chat consumer sends. A self-hosted
+    `api_mode: openai` box referenced ONLY by voice/embeddings is legitimately configured — warning
+    there is suspected, not proven, inertness (warn at the reference site, never at declaration)."""
+    providers = {
+        "chatbox": ProviderCfg(base_url="http://192.168.1.50:5001/v1", api_mode="openai"),
+        "emma-speaches": ProviderCfg(base_url="http://127.0.0.1:9000/v1", api_mode="openai"),
+    }
+    settings = Settings(
+        providers=providers,
+        inference=InferenceCfg(provider="chatbox"),
+        voice={"stt": {"provider": "emma-speaches"}},
+    )
+    _, warnings = resolve_lenient(settings)
+    advisories = [w for w in warnings if "reasoning ladder is a NO-OP" in w]
+    assert len(advisories) == 1, advisories
+    assert "chatbox" in advisories[0]
+    assert "emma-speaches" not in advisories[0]
+
+
+def test_api_mode_advisory_fires_for_a_fallback_and_a_modelref_home() -> None:
+    """Chat-referenced means the whole chat surface — the inference fallback list and the config-held
+    ModelRef homes (summarizer/routing/defaults), not just `inference.provider`."""
+    providers = {
+        "primary": ProviderCfg(base_url="https://api.openai.com/v1", api_mode="openai"),
+        "fb": ProviderCfg(base_url="http://10.0.0.9:5001/v1", api_mode="openai"),
+    }
+    settings = Settings(
+        providers=providers,
+        inference=InferenceCfg(provider="primary", fallbacks=[SectionRef(provider="fb")]),
+    )
+    _, warnings = resolve_lenient(settings)
+    assert [w for w in warnings if "reasoning ladder is a NO-OP" in w and "'fb'" in w]
+
+
 # ── the max_tokens_field ladder (C6) ─────────────────────────────────────────────────────────────
 def _mtf(*, api_mode="openai", provider_mtf=None, model_mtf=None):
     s = _settings(
