@@ -2209,6 +2209,15 @@ crash hole we're closing), recovery at assembly time (already ours), step-serial
   deadlock test); failover acquires per-attempt on the endpoint actually called. Concurrent
   turns/subagents/summarizer queue app-side instead of erroring at llama-server. (Slice 4's tool
   prefix itself adds ZERO model calls — all prefix-eligible builtins are non-LLM.)
+  > ✏️ **AMENDED by D48 C4 (A11, 2026-07-23) — the gate is no longer inference-only and no longer
+  > keyed by a raw URL.** The knob moved from `InferenceEndpointCfg` to **`ProviderCfg.
+  > max_concurrent_requests`**, and the key is `(gate_identity, limit)` where `gate_identity =
+  > canonical_base_url(...)` — a **SERVER** identity, not a provider name, so aliased URLs of one box
+  > share ONE gate and two providers at different base_urls never block each other. It is acquired at
+  > **three** chokepoints now (chat · voice · embeddings), all through the app-owned `EndpointGates`.
+  > Providers sharing a gate identity must declare the same cap (`None ≠` finite): strict 422s,
+  > lenient takes min-of-finite + warns. Everything else above (hold-for-the-stream, release before
+  > tools, per-attempt on failover, generation-drain on a limit change) is unchanged. See D48 §C4.
 - **ACA-11:** `notice` "compacting…" emitted ONLY when compaction will actually summarize (no
   no-op-iteration spam); `collect_turn` gains `notices`; accumulator does NOT fold notices (D18
   precedent, live-only breadcrumb — accepted).

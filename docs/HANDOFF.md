@@ -426,12 +426,33 @@
 > pass still owed there, and it gates fix-list item 3.
 >
 > **THE FIX LIST (next session — nothing here is built yet):**
-> 1. **BUG (verified live, R2 §7): comment orphaning on delete.** `sync_mapping` (~`config.py:1660`)
->    and `_delete_dotted` (~:1673) use a bare `del node[k]`. ruamel stores a key's trailing comment on
->    the *preceding* key — so dropping legacy `inference.local` **silently destroys the operator's
->    comment documenting `inference.max_steps`**, a live key the migration never touched. Fix =
->    re-attach the trailing blob to the preceding key before deleting (explicit index-0 branch) + a
->    test that a neighbouring comment survives a key removal. **On the live A11 path.**
+> 1. **✅ FIXED 2026-07-26 — BUG (verified live, R2 §7): comment orphaning on delete.** `sync_mapping`
+>    and `_delete_dotted` used a bare `del node[k]`. ruamel stores a key's trailing comment on the
+>    *preceding* entry, so the delete carried away the prose for whatever came AFTER the deleted region.
+>    **The live blast radius was bigger than recorded here:** reproduced against copies of the real prod
+>    AND dev `config.yaml` — the migration's `inference.cloud` delete (last key, subtree value) destroyed
+>    the whole four-line `# Voice (Phase 6, D18 failover)…` **section header**, not just the `max_steps`
+>    line. Fix = a comment-preserving `_delete_key` shared by BOTH deleters (so the hosts/integrations
+>    service-removal CRUD is covered too): rescue the block parked on the deleted region's deepest-last
+>    leaf, drop only the deleted line's own end-of-line comment, and re-home it verbatim — after the
+>    preceding entry, above the new first key at index 0, or bubbled one level up when the delete empties
+>    a mapping (an emptied map renders inline `{}`, and a comment on its entry would land between key and
+>    value and **no longer parse** — that case was caught by a test and would have been a corrupting fix).
+>    Sequences park trailing comments at `ca.items` slot 0 instead of 2 (also caught by test). No library
+>    API exists for any of this ([ruamel #377](https://sourceforge.net/p/ruamel-yaml/tickets/377/)); this
+>    is the sanctioned rescue-and-reattach recipe. **OWNER RULING 2026-07-26 — the rule is SYMMETRIC:
+>    the block ABOVE a key documents that key and DIES WITH IT** (*"we should drop the comment too in
+>    order to not confuse anybody that's reading the config"*), while the block TRAILING the deleted
+>    region documents what comes next and is re-homed verbatim. Note this staleness is **not** an
+>    index-0 corner as first reported — a key's leading comment lives on the *preceding* entry's token,
+>    so it applies at every position; the leading block of a first key is a list shared with the parent
+>    slot, so clearing it in place needs no parent plumbing. ⚠ Documented caveat: deleting a top-level
+>    key that is FIRST in the file would take the file's header banner with it (unreachable today — every
+>    deleter addresses keys inside a section). Verified against prod + dev `config.yaml`: the full legacy
+>    `delete_list` round-trips with the `# Voice …` and `# SearXNG …` section headers intact, the
+>    end-of-line comments on the deleted keys gone, and the file re-parsing clean — the ruling changes
+>    nothing on the owner's own configs (they carry no full-line comment directly above a deleted key).
+>    13 new tests; full backend suite green.
 > 2. **✅ FIXED 2026-07-25 (`4d839d1`; backend 878 green, live 3 warnings → 0) — BUG: the api_mode
 >    advisory is chat-only but fired for EVERY provider**
 >    (`provider_registry.py:551`). The owner sees 3 warnings telling him his speaches/AllTalk boxes
@@ -461,12 +482,28 @@
 >    names (`tts`/`stt`) can NOT be a general rule anyway — dedup-by-identity merges one server into ONE
 >    provider, and the `:9000` speaches box serves BOTH roles, which is exactly why `<host>-<service>`
 >    is the right shape.
-> 4. **Doc drift on D40** — `DECISIONS.md:2205`, `DESIGN.md:841`, `SPEC.md:414` all still describe an
+> 4. **✅ FIXED 2026-07-26 — doc drift on D40.** `DECISIONS.md`, `DESIGN.md`, `SPEC.md` all described an
 >    *inference-only* gate on `InferenceEndpointCfg.max_concurrent_requests` keyed by raw
->    `(base_url, limit)`. It is provider-level, canonical-URL-keyed, with three chokepoints.
-> 5. **Test gap** — voice/embeddings gate acquisition is pinned only by *semaphore identity*; deleting
->    `await sem.acquire()` from `voice.attempt` passes the suite. Chat has serialization/deadlock/leak
->    tests; give voice+embeddings the same.
+>    `(base_url, limit)`. Code truth (verified): `ProviderCfg.max_concurrent_requests`, keyed
+>    `(gate_identity, limit)` with `gate_identity = canonical_base_url(...)` — a SERVER identity —
+>    acquired at THREE chokepoints (chat · voice · embeddings) through the app-owned `EndpointGates`.
+>    D48 §C4 already had this right; the drift was that the older entries never got the forward pointer.
+>    Fixed per house convention: D40 keeps its historical text + a `✏️ AMENDED by D48 C4` block; the
+>    live-guidance sites in `DESIGN.md` (four of them, not one — §3 turn loop, the gate bullet, the
+>    tunables list) were corrected in place; `SPEC.md` §6.3 had **no `providers{}` row at all** and its
+>    `inference` row still read "local/cloud endpoints" — both rewritten to the D48 shape.
+>    ⊕ Found en route and fixed (same A11 re-homing, verified against `config.py`): `DESIGN.md` still
+>    sourced the compaction context window from `InferenceEndpointCfg.context_window`; it is
+>    `ModelCfg.context_window` (per-model) since D48.
+> 5. **✅ FIXED 2026-07-26 — test gap on the voice/embeddings gate.** Acquisition was pinned only by
+>    *semaphore identity*, so deleting `await sem.acquire()` left the suite green. Added 6 tests to
+>    `test_inference_gate_d40.py` (its existing A11/R4/R5 section — no new file): serialize-at-limit-1
+>    for voice STT and embeddings · unlimited-when-None · failed-attempt-releases-the-permit for both ·
+>    and the cross-adapter one that proves the shared registry earns its keep — **an in-flight voice
+>    call parks a chat call on the same server**. **Both mutants verified**: deleting `sem.acquire()`
+>    fails 3 of them (and the pre-existing identity test still passes — the gap was exactly as
+>    reported); deleting `sem.release()` fails 5, the two release tests by deadlock-timeout, so they are
+>    not vacuous. Adapters restored byte-identical to HEAD after the mutation runs.
 > 6. **Migration defects beyond the recorded residual** (code-truth pass): the env-only-legacy-secret
 >    window is **wider than D48 says** (it closes on process restart / a `load_settings()` writer, NOT
 >    on "migration settling" — the settings PUT path never re-reads disk) · **silent post-migration

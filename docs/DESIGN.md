@@ -430,7 +430,7 @@ Loop responsibilities, in order, per iteration:
 >    **only** when compaction will actually summarize), then `compact` runs and may emit `compaction`.
 >    The reactive context-overflow backstop (§5.4) wraps the model call one iteration lower.
 > 3. **Assemble + call model** — the cached static head + non-compacted history stream through the
->    per-endpoint **request gate** (`InferenceEndpointCfg.max_concurrent_requests`, held for the whole
+>    per-server **request gate** (`ProviderCfg.max_concurrent_requests`, held for the whole
 >    streamed response, released before any tool runs — no hold-and-wait).
 > 4. **`_run_calls` is an ASYNC GENERATOR** (not an end-of-step buffer). `_classify_batch` splits the
 >    batch into a **parallel read-only prefix** — the maximal *leading* run of builtin-authored
@@ -521,8 +521,9 @@ class Compactor:                          # services/agent/compaction.py — sta
 > single `_over_threshold` predicate serves *both* `compact()` and the `should_compact()` ACA-11
 > pre-check, so the trigger math lives in exactly one place.
 >
-> - **Context windows & the trigger.** A per-endpoint window resolves on the `InferenceClient` via
->   the ladder **`InferenceEndpointCfg.context_window` (config) > llama.cpp `/props` probe > `None`**
+> - **Context windows & the trigger.** A per-target window resolves on the `InferenceClient` via
+>   the ladder **`ModelCfg.context_window` (config, per-model since D48/A11) > llama.cpp `/props`
+>   probe > `None`**
 >   (`effective_window`). The **probe** (`probed_context_window`) is a raw `GET {base_url}/props` →
 >   `default_generation_settings.n_ctx` (with `meta.n_ctx_train` kept as a sanity ceiling; an upward
 >   override is honoured + logged), on a lazily-built httpx client (no new dep), **lazy + memoized
@@ -799,8 +800,8 @@ class Settings(BaseSettings):
 > Path resolution is rooted at **`$CTRLB_HOME`** (D15 #2). The hybrid secrets model below is
 > accurate and shipped (7a).
 > **New tunables (Slices 4/5):** `AgentDef.max_parallel_tools` (default 4; `1` = off — the D40
-> parallel read-only tool prefix) · `InferenceEndpointCfg.max_concurrent_requests` (`None` =
-> unlimited — the per-endpoint request gate for a non-queuing llama.cpp, D40 rider) ·
+> parallel read-only tool prefix) · `ProviderCfg.max_concurrent_requests` (`None` = unlimited — the
+> per-server request gate for a non-queuing llama.cpp, D40 rider as re-homed by D48 §C4) ·
 > `TurnsCfg.steer_queue_max` (default 8 — per-thread steer-queue depth, D41) · `ToolSpec.suspending`
 > (marks a confirm/question tool prefix-**ineligible**, D40).
 - **Secrets model = hybrid (decided Phase 0).** `config.yaml` is the **single UI-managed source
@@ -838,14 +839,20 @@ class Settings(BaseSettings):
   `asyncio.Semaphore(AgentDef.max_parallel_tools)` (default 4; `1` = off); the rest run serially. No
   **mutating** call ever runs before a prior call completes — invariant across every privilege incl.
   `FULL`. MCP/OpenAPI tools are prefix-ineligible (derived, advisory annotations).
-- **Per-endpoint inference request gate (shipped, D40 rider).** `InferenceEndpointCfg.
-  max_concurrent_requests` (`None` = unlimited) caps in-flight completions to a backend that doesn't
-  queue (the owner's llama.cpp has 1–2 slots); a per-`(base_url, limit)` semaphore at the inference
-  chokepoint holds the permit for the whole streamed response and releases it **before** any tool /
-  subagent runs (no hold-and-wait → no deadlock at limit 1). The gates live in an **app-owned
-  `EndpointGates` registry** shared across `set_inference` client rebuilds, so a mid-turn settings
-  PUT can't split the cap across generations (same `(base_url, limit)` → the same semaphore; a
-  changed limit mints a fresh gate and old holders drain on the old one).
+- **Per-server request gate (shipped, D40 rider; re-homed by D48 §C4).** `ProviderCfg.
+  max_concurrent_requests` (`None` = unlimited) caps in-flight requests to a backend that doesn't
+  queue (the owner's llama.cpp has 1–2 slots). The gate identity is a **server**, not a provider:
+  the key is `(gate_identity, limit)` where `gate_identity = canonical_base_url(...)` (scheme+host
+  lowercased, default ports elided, trailing slash stripped, **path preserved**), so aliased URLs of
+  one box share ONE gate while two providers at different base_urls never contend. Providers sharing
+  a gate identity must declare the same cap (`None ≠` any finite value): a strict PUT 422s the
+  conflict, lenient boot warns and takes min-of-finite. It is acquired at **three** chokepoints —
+  chat, voice (`voice.attempt`) and embeddings — each holding the permit for the whole streamed
+  response and releasing it **before** any tool / subagent runs (no hold-and-wait → no deadlock at
+  limit 1). The gates live in an **app-owned `EndpointGates` registry** shared across `set_inference`
+  client rebuilds, so a mid-turn settings PUT can't split the cap across generations (same
+  `(gate_identity, limit)` → the same semaphore; a changed limit mints a fresh gate and old holders
+  drain on the old one).
 - **Subagent concurrency**: parent fans out children inside one `asyncio.TaskGroup` (structured
   concurrency) under a per-agent cap **and** a process-wide `global_subagent_limit` semaphore;
   children run on distinct ephemeral thread ids (so the parent's per-thread turn marker — ▹ Slice 2
