@@ -155,8 +155,20 @@ class Step(NamedTuple):
     apply: Callable[[Context], Plan]
 
 
-#: The ordered migration steps. Empty until slice 2 lands `steps.py` with the A11 provider fold.
-STEPS: tuple[Step, ...] = ()
+def _load_steps() -> tuple[Step, ...]:
+    """The ordered migration steps.
+
+    Imported inside a function because `steps.py` imports the types defined ABOVE it in this module —
+    a plain top-level import would be circular. That is the price of keeping the runner and the legacy
+    knowledge in one package while letting the legacy half be deleted wholesale; the alternative
+    (types in a third module) buys nothing but a file.
+    """
+    from app.config_migration.steps import A11
+
+    return (A11,)
+
+
+STEPS: tuple[Step, ...] = _load_steps()
 
 
 @dataclass(frozen=True)
@@ -441,11 +453,41 @@ def _refuse_downgrade(version: int) -> None:
 # ── planning ─────────────────────────────────────────────────────────────────────────────────────
 
 
+def _call_step(fn: Callable[[Context], Any], ctx: Context, step: Step, what: str) -> Any:
+    """Run one half of a step, converting any unexpected exception into a sanitised refusal.
+
+    A step reads operator-authored YAML at whatever nodes it cares about, and every review round of
+    this migration found the same class of defect: an input shape the step did not anticipate at one
+    of those nodes (`providers: "nonsense"`, `base_url: 7`, a port that will not parse). Guarding each
+    node one at a time is a losing game and would grow the very legacy-schema machinery R5 warned
+    about; catching here closes the class — present and future — in one place.
+
+    The exception TYPE is reported and the message withheld, because these messages quote their input:
+    `urlsplit` on a bad port raises *"Port could not be cast to integer value as '…'"*, and on a
+    secret-bearing file that is a value we must never print. Deliberately not catching
+    `MigrationRefused`: that is a step's own considered verdict and passes straight through.
+    """
+    try:
+        return fn(ctx)
+    except MigrationRefused:
+        raise
+    except Exception as exc:  # noqa: BLE001 — being unexpected is the whole point
+        raise MigrationRefused(
+            f"step {step.version} crashed in {what}: {type(exc).__name__} — details withheld, they "
+            "may quote your config",
+            remedy=(
+                "check config.yaml for a value of the wrong type (a number or list where a string or "
+                f"mapping belongs); nothing was written, and {backups_dir()} is untouched"
+            ),
+        ) from None
+
+
 def pending_steps(ctx: Context, steps: Sequence[Step] = STEPS) -> tuple[Step, ...]:
     """The steps whose `applies()` is True **right now**, in version order — evaluated for every step
     regardless of the file's stamp (§3.1), and looking at config *and* side files, so an agent file
     still holding a legacy key can never be stamped "verified"."""
-    return tuple(s for s in sorted(steps, key=lambda s: s.version) if s.applies(ctx))
+    ordered = sorted(steps, key=lambda s: s.version)
+    return tuple(s for s in ordered if _call_step(s.applies, ctx, s, "applies()"))
 
 
 def needs_migration(ctx: Context, steps: Sequence[Step] = STEPS) -> bool:
@@ -463,9 +505,9 @@ def build_plan(ctx: Context, steps: Sequence[Step] = STEPS) -> Plan | None:
     consumes: list[str | Sequence[str]] = []
     agent_files: dict[Path, dict[str, Any]] = {}
     for step in sorted(steps, key=lambda s: s.version):
-        if not step.applies(cur):
+        if not _call_step(step.applies, cur, step, "applies()"):
             continue
-        plan = step.apply(cur)
+        plan = _call_step(step.apply, cur, step, "apply()")
         ran = True
         consumes += [d for d in plan.consumes if d not in consumes]
         agent_files |= plan.agent_files
@@ -499,56 +541,67 @@ def detect(ctx: Context, steps: Sequence[Step] = STEPS) -> Status:
 # ── validation ───────────────────────────────────────────────────────────────────────────────────
 
 
-def _sanitise_validation_error(exc: ValidationError, origin: str) -> str:
+def _sanitise_validation_error(exc: ValidationError, origin: str, stage: str) -> str:
     """Render a pydantic `ValidationError` as locations + messages only.
 
     `str(exc)` appends `input_value=…` for every failing field — for a provider that is the whole
     provider dict **including its `api_key`** (§3.5). Only `loc` and the type-derived `msg` are kept;
     `input` is dropped entirely.
     """
-    lines = [f"{origin}: {len(exc.errors())} validation error(s) after migration"]
+    lines = [f"{origin}: {len(exc.errors())} validation error(s) {stage}"]
     for err in exc.errors()[:10]:
         loc = ".".join(str(x) for x in err["loc"]) or "<root>"
         lines.append(f"  {loc}: {err['msg']} [{err['type']}]")
     return "\n".join(lines)
 
 
-def validate(ctx: Context, plan: Plan) -> Settings:
-    """Validate EVERYTHING the plan produced, before a single byte is written (§3.4 step 2).
+def validate(ctx: Context, plan: Plan | None) -> Settings:
+    """Validate what will be on disk after this run, before a single byte is written (§3.4 step 2).
 
-    The migrated config goes through `Settings.model_validate`; every rewritten `agent.yaml` is then
-    merged against it exactly as a live load would (`agent.defaults` + the file's overrides), so an
-    agent the migration rewrote into an invalid shape is caught here rather than at the next boot; and
-    every key the plan would remove must have been declared by the step that removed it. All three run
-    in `--check` too, so a step bug surfaces while prod is still serving — and before any backup is
-    taken, so a refused run leaves nothing behind at all.
+    With a plan: the migrated config goes through `Settings.model_validate`; every rewritten
+    `agent.yaml` is merged against it exactly as a live load would (`agent.defaults` + the file's
+    overrides), so an agent the migration rewrote into an invalid shape is caught here rather than at
+    the next boot; and every key the plan would remove must have been declared by the step that removed
+    it. All of it runs in `--check` too, so a step bug surfaces while prod is still serving — and
+    before any backup is taken, so a refused run leaves nothing behind.
+
+    **Without a plan the config is still validated**, and that is not belt-and-braces. A config that is
+    merely BROKEN rather than legacy — `inference: nonsense`, `voice: nonsense` — is invisible to every
+    step, since they all require mappings. It would sail through `--check`, be stamped "verified", and
+    then fail at `Settings.model_validate` on the next boot. During an update that sequence reads:
+    preflight says go, the service is stopped, the new tree goes in, and the restart fails on a file we
+    just certified. Malformed NEW-shape config is not any step's business, so the check lives here.
     """
-    stray = [p for p in plan.agent_files if p not in ctx.agents]
-    if stray:
-        raise MigrationRefused(
-            "step bug: agent file(s) the runner never parsed: "
-            + ", ".join(str(p) for p in sorted(stray))
-            + " — a step may only rewrite files `context_from_env` discovered, so every write has had "
-            "the refusal preflight and has a backup"
-        )
-    undeclared = _undeclared_removals(_diff(ctx.config, plan.config)[1], plan.consumes)
-    if undeclared:
-        raise MigrationRefused(
-            "step bug: these keys would be removed but were not declared in the step's "
-            f"consumes: {', '.join('.'.join(r) for r in undeclared)}"
-        )
+    if plan is not None:
+        stray = [p for p in plan.agent_files if p not in ctx.agents]
+        if stray:
+            raise MigrationRefused(
+                "step bug: agent file(s) the runner never parsed: "
+                + ", ".join(str(p) for p in sorted(stray))
+                + " — a step may only rewrite files `context_from_env` discovered, so every write has "
+                "had the refusal preflight and has a backup"
+            )
+        undeclared = _undeclared_removals(_diff(ctx.config, plan.config)[1], plan.consumes)
+        if undeclared:
+            raise MigrationRefused(
+                "step bug: these keys would be removed but were not declared in the step's "
+                f"consumes: {', '.join('.'.join(r) for r in undeclared)}"
+            )
     try:
-        settings = Settings.model_validate(plan.config)
+        settings = Settings.model_validate(plan.config if plan is not None else ctx.config)
     except ValidationError as exc:
-        raise MigrationRefused(_sanitise_validation_error(exc, "config.yaml")) from None
-    for path, doc in plan.agent_files.items():
+        stage = "after migration" if plan is not None else "as written — nothing to migrate"
+        raise MigrationRefused(_sanitise_validation_error(exc, "config.yaml", stage)) from None
+    for path, doc in (plan.agent_files if plan is not None else {}).items():
         name = path.parent.name
         try:
             # Intra-app reuse of the same merge the live loader runs (`Settings._load_agent_folder`);
             # duplicating the inheritance rules here would be a second source of truth.
             settings.agent_from(name, path.parent, doc)
         except ValidationError as exc:
-            raise MigrationRefused(_sanitise_validation_error(exc, f"agents/{name}/agent.yaml")) from None
+            raise MigrationRefused(
+                _sanitise_validation_error(exc, f"agents/{name}/agent.yaml", "after migration")
+            ) from None
     return settings
 
 
@@ -620,7 +673,7 @@ def _diff(
 
     Removals are key-segment **tuples**, not dotted strings: model and provider keys legitimately
     contain dots (`qwen/qwen3.5-72b` is in the live config, and the provider slug charset allows `.`),
-    so a dotted path could not address them — `delete_dotted` would split the name in half, walk into
+    so a dotted path could not address them — a dotted path would split the name in half, walk into
     nothing and silently leave the key behind. Dots appear only where a human reads them.
     """
     changes: dict[str, Any] = {}
@@ -801,8 +854,7 @@ def check(ctx: Context, steps: Sequence[Step] = STEPS) -> Status:
     if not status.exists or not ctx.config:
         return status
     plan = build_plan(ctx, steps)
-    if plan is not None:
-        validate(ctx, plan)
+    validate(ctx, plan)  # with a plan or without one — see `validate`
     if plan is not None or not is_stamped(ctx.config):
         _probe_writable(ctx.config_path.parent)
         _probe_writable(backups_dir())
@@ -838,8 +890,7 @@ def apply(ctx: Context, steps: Sequence[Step] = STEPS) -> Applied:
     if plan is None and is_stamped(ctx.config):
         _assert_postcondition(steps, None)
         return Applied(status=status)  # already verified at this level → do not touch the file
-    if plan is not None:
-        validate(ctx, plan)
+    validate(ctx, plan)  # never stamp a config the app cannot load, plan or no plan
     _probe_writable(ctx.config_path.parent)
     # Every file we are about to touch, checked together BEFORE the first backup: a digest failure
     # discovered later would be raised after side writes had already happened, and the message would

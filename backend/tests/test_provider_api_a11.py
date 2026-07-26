@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import stat
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -229,7 +228,6 @@ def test_providers_base_stale_409_and_fresh_200_with_new_rev() -> None:
         )
         assert r.status_code == 409, r.text
         assert cfg.read_text(encoding="utf-8") == before  # untouched
-        assert not list(cfg.parent.glob("config.yaml.bak-a11-*"))
         # a providers PUT with NO base is likewise 409
         r_nobase = c.put("/api/settings", json={"providers": {"llamacpp": {"base_url": "http://x/v1"}}})
         assert r_nobase.status_code == 409, r_nobase.text
@@ -517,38 +515,6 @@ def test_coerce_mode_syntax_only_slug() -> None:
 
 
 # ────────────────────────── write-back through a hosts-CRUD write (D48 step 4) ──────────────────────────
-_LEGACY = (
-    "# homelab\n"
-    "server:\n  port: 5433\n  poll_seconds: 5\n"
-    "inference:\n"
-    "  default_mode: local\n"
-    "  local:\n    base_url: http://l/v1\n    model: minig+\n    api_mode: llamacpp\n"
-    "  cloud:\n    base_url: http://o/v1\n    api_key: sk-REAL\n    model: qwen\n    api_mode: openrouter\n"
-)
-
-
-def test_hosts_crud_write_triggers_migration_writeback_exactly_once() -> None:
-    with _client(_LEGACY) as (c, cfg):
-        # a hosts-CRUD write BYPASSES apply_settings_patch but funnels through edit_config_yaml, so it
-        # materializes the pending migration + writes the ONE 0600 backup + deletes the legacy keys.
-        r = c.post("/api/hosts", json={"name": "box", "ip": "10.0.0.9"})
-        assert r.status_code == 201, r.text
-        disk = cfg.read_text(encoding="utf-8")
-        assert "providers:" in disk and "provider: llamacpp" in disk  # new shape materialized
-        assert "default_mode" not in disk and "\n  local:" not in disk  # legacy keys deleted
-        assert "sk-REAL" in disk  # secret carried onto the provider
-        assert "box" in disk  # the host CRUD edit landed too
-        baks = list(cfg.parent.glob("config.yaml.bak-a11-*"))
-        assert len(baks) == 1
-        assert stat.S_IMODE(baks[0].stat().st_mode) == 0o600
-        assert "default_mode: local" in baks[0].read_text(encoding="utf-8")  # backup is the OLD file
-        assert load_settings(cfg).providers["openrouter"].api_key == "sk-REAL"
-        # a SECOND CRUD write does NOT re-backup (consumed exactly once)
-        r2 = c.post("/api/hosts", json={"name": "box2", "ip": "10.0.0.10"})
-        assert r2.status_code == 201, r2.text
-        assert len(list(cfg.parent.glob("config.yaml.bak-a11-*"))) == 1
-
-
 # ══════════════════════ Slice 2 — voice + embeddings on the provider API ══════════════════════
 _VOICE_BASE = (
     "# homelab\n"

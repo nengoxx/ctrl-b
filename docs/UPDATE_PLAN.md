@@ -1,8 +1,9 @@
 # UPDATE_PLAN v3 — the update/migration architecture
 
-> **Status: DESIGN v3 — owner-ratified rulings folded in. ▶ SLICE 1 BUILT 2026-07-26** (the runner +
-> 55 tests; as-built record + the six deltas from §3 in **[§11](#11-slice-1--as-built-2026-07-26)**).
-> Next: slice 2 (move the fold in).
+> **Status: DESIGN v3 — owner-ratified rulings folded in. ▶ SLICES 1 + 2 BUILT 2026-07-26** — the
+> runner (**[§11](#11-slice-1--as-built-2026-07-26)**) and the fold's move out of the config load path
+> (**[§12](#12-slice-2--as-built-2026-07-26)**), 96 migration tests, gate 6/6, both live configs
+> rehearsed on copies. Next: slice 3 (env overrides).
 > **Owner requirements:** after an update prod holds **zero** legacy keys · a **human with no coding
 > agent** updates prod · a failed update is recoverable · **no leftover code, config or artifacts** ·
 > **lean — no machinery we must maintain long-term.**
@@ -433,3 +434,59 @@ extra is the refusal preflight, the diff writer and the sanitised output — not
 
 **Rehearsal (the §10 bar):** both live configs, on copies — the only diff is the added marker line;
 comments, key order and 0600 intact; re-parse clean; `load_settings` still loads; re-apply a true no-op.
+
+---
+
+## 12. Slice 2 — AS BUILT (2026-07-26)
+
+The fold left the config load path. `app/config_migration/steps.py` (the deletable file) + the split
+test suites; **488 lines removed from `config.py`**. `VERSION` → 1, `STEPS = (A11,)`.
+
+**Gone from `config.py`:** `_migrate_legacy` and its five helpers · `_fold_agent_yaml_modes` ·
+`_SLOT_MAP` · `PendingMigration`/`_PENDING_MIGRATION` · `_materialize_migration` · the `.bak-a11-*`
+backup block and delete-list loop inside `edit_config_yaml` · the double fold and FX-B warning inside
+`load_settings` (now four lines) · the per-load agent fold in `_load_agent_folder` · `_MIGRATION_LOG` ·
+`delete_dotted` (superseded by `delete_path`) · `_env_override_paths` (dead once FX-B went).
+**Kept:** `walk_model_refs`, reimplemented over a new exported `MODEL_REF_HOMES` constant so the step
+can walk the same closed list *with paths* — it must name the exact `…mode` keys it removes.
+
+**Deliberate behaviour changes.** The `"providers" not in raw` chat guard is gone (item-6 defect: a
+`providers: {}`, or a bare `providers:` parsing to `None`, blocked the chat fold **forever**, silently)
+· `agent.yaml` `mode:` → `provider:` is a persisted rewrite, not a per-load in-memory fold · a stale
+`mode:` in a config ref and in an agent file now behave identically (item-6 defect: the first was a
+hard boot `ValidationError`, the second degraded silently) · the migration reads **disk truth only**,
+so the runtime/disk double fold and its FX-B warning disappear.
+
+**Council: three rounds, and each one found something real.**
+
+| Sev | Found by | Defect | Fix |
+|---|---|---|---|
+| HIGH | Codex | `_chat_is_legacy` being true does **not** prove the named slot is reconstructible. `inference: {fallbacks: []}` is legacy-shaped, yields an EMPTY slot map, and an agent on `mode: local` became `provider: local` — syntactically valid, so validation AND the postcondition passed. The mirror image was also wrong: `mode: null`/`3`/`openrouter` were refused beside a migrated `inference`. | Stop using a proxy. Fold first, then refuse only `local`/`cloud` values **absent from the actual slot map**. The ModelRef rewrite became unconditional, and the fold's early return now also considers a stray `mode:`. |
+| HIGH | Codex | A config that is merely **broken** rather than legacy (`inference: nonsense`) is invisible to every step, so it passed `--check`, was stamped "verified", and would fail at the next `Settings.model_validate`. During an update: preflight says go, service stopped, restart fails on a file we just certified. | `validate(ctx, plan \| None)` validates `plan.config` **or** `ctx.config`; `check()` and `apply()` both call it. Fable's framing: the runner issues the stamp, and a certifier must not certify what it has not checked. |
+| HIGH | Codex (round 3) | A non-mapping `providers:` crashed the fold with an `AttributeError` that escaped `MigrationRefused` — so the runner's validation never ran — and a falsey one was coerced to `{}` and written over the operator's data. | The step refuses a `providers:` that is present, non-null and not a mapping. It cannot be hoisted into the runner's validation: a *legacy* config legitimately fails `Settings.model_validate` (`ModelRef` forbids `mode:`), which is why the fold ran before validation in the first place. |
+| MED | Fable | `inference: {default_mode: local}` alone did not trigger `applies`, so the runner would stamp a config that still held a legacy key — invisible to the postcondition, because **the postcondition *is* `applies`**. | `default_mode` added to the chat trigger. The fold also stopped introducing an empty `providers:` key into a file that never had one. |
+| MED | Codex (round 3) | The now-unconditional rewrite let a ref carrying **both** `provider:` and `mode:` have the legacy field silently win. | Pop `mode`, declare it, then keep the existing `provider` — D48 new-wins, at ref granularity, on both sides. |
+| MED | me (self-audit) | The §3.9 refusal keyed on *any* legacy subtree, but only the **chat** fold produces a slot map — a legacy-voice config with migrated chat would map a stranded `mode:` to a provider named `local`. | Superseded by Codex's HIGH above (the slot-map test is strictly more precise). |
+| LOW | Fable | `api_key: ""` and an absent key were different identities, splitting one endpoint into two byte-identical providers. | `or None` at both the endpoint fold and the existing-provider identity seed (round 3 caught the second half). |
+| LOW | Codex | My new parametrised test had an early return that made four rows assert nothing; several ported tests still claimed identity after the fold became pure. | Explicit `expect_applies` per row; tests and docstring reworded to semantic equality. |
+| MED | Fable (round 3) | `_refuse_unmappable` lacked the new-wins exemption the rewrite had just gained, so a both-shapes ref beside a migrated `inference` was refused — with a remedy telling the operator to "set `provider:` explicitly" on a ref where it already was. | The same exemption in the refusal. |
+| — | **both, converging** | Codex: `base_url: 7` raises `TypeError` inside `_canonical_base_url_key`, a malformed port raises `ValueError` **whose message quotes the value**, a list `api_key` makes the identity tuple unhashable — all escaping `MigrationRefused`. Fable named the class: *the fold trusts input shape at exactly the nodes it reads, and every round found an unanticipated shape at one node.* | **The structural fix, in the runner, not the step:** `_call_step` wraps both halves of every step so any non-`MigrationRefused` exception becomes a sanitised refusal naming only the exception TYPE (the messages quote config values). Node-by-node guards would have grown the legacy-schema machinery R5 warned about. Closed empirically too, by an 11-case malformed-config corpus test asserting **refused or converged, never raised**. |
+
+**Tests:** `test_config_migration_steps_a11.py` (55) — the ported fold assertions plus the trigger fix,
+the slot-map refusal lattice, purity, an end-to-end run through the runner against a real workspace, and
+a fixture pinning the env-only-secret hole for slice 3 to close. `test_config_yaml_writer.py` keeps what
+stayed in `config.py`. `test_hosts_crud_write_triggers_migration_writeback_exactly_once` was **deleted**:
+it pinned machinery, not a property, and the property survives in the runner's tests.
+
+**Rehearsal:** both live configs, on copies, four times across the fix waves. Strict resolve passes,
+five providers, all API keys carried, chat/stt/tts/embeddings resolve, marker at 1, re-run a no-op.
+
+**Carried into later slices.** ① Provider names come out as `127.0.0.1-9000`, `192.168.1.137-9000`,
+`192.168.1.137-7851`; per the owner's ruling (`<host>-<service>`, **no derivation logic**) he renames
+them in Conf after migrating — verified in source that `runtime._cascade_provider_renames` rewrites the
+flat section pointers (`inference`/`voice.stt`/`voice.tts`/`embeddings`, primary + fallbacks) as well as
+the ModelRef homes, so the renames will not strand `voice.stt.provider`. ② Three operator comments sat
+on consumed keys and die with them (the owner's symmetric ruling) — including one whose endpoint MOVED
+rather than died; **slice 7's runbook gets a line**: skim the backup against the new file and re-add any
+comment worth keeping, and never restore an agent file from a pre-migration backup without re-saving it.
+③ The env-only-secret hole is pinned by a test asserting today's behaviour; slice 3 closes it.

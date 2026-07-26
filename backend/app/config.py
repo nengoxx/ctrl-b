@@ -16,7 +16,6 @@ of the parsed YAML before validation.
 from __future__ import annotations
 
 import contextlib
-import copy
 import hashlib
 import io
 import json
@@ -24,12 +23,9 @@ import logging
 import os
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
-from dataclasses import field as _dc_field
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, Literal, TypeGuard
-from urllib.parse import urlsplit
 
 import yaml
 from dotenv import dotenv_values
@@ -66,7 +62,6 @@ __all__ = [
     "providers_rev",
     "CONFIG_VERSION_KEY",
     "yaml_rt",
-    "delete_dotted",
     "delete_path",
 ]
 
@@ -1046,7 +1041,7 @@ class Settings(BaseModel):
         if yaml_p.is_file():
             loaded = yaml.safe_load(yaml_p.read_text(encoding="utf-8")) or {}
             if isinstance(loaded, dict):
-                raw = _fold_agent_yaml_modes(loaded)
+                raw = loaded
         return self.agent_from(name, folder, raw)
 
     def load_agent(self, name: str) -> AgentDef | None:
@@ -1105,456 +1100,55 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
     return raw
 
 
-def _env_override_paths() -> set[str]:
-    """The dotted `section.key` paths currently set by a `CTRLB_<SECTION>__<KEY>` env override — the
-    mirror of `_apply_env_overrides`' write targets. Used by the migration to tell when a consumed
-    legacy secret leaf came ONLY from the environment (so it must not be materialized to disk; FX-B)."""
-    paths: set[str] = set()
-    for full in os.environ:
-        if not full.startswith(ENV_PREFIX):
-            continue
-        body = full[len(ENV_PREFIX) :]
-        if body in _BOOTSTRAP_KEYS or "__" not in body:
-            continue
-        section, _, key = body.partition("__")
-        paths.add(f"{section.lower()}.{key.lower()}")
-    return paths
-
-
 _LOG = logging.getLogger("ctrlb.config")
-_MIGRATION_LOG = logging.getLogger("ctrlb.config.migration")
 
-#: Module-level channels for the quarantined A11 legacy fold. NOT persisted into Settings.
-#: The chat slot_map ("local"/"cloud" -> created provider name) from the most recent `_migrate_legacy`,
-#: read by the raw-YAML agent.yaml `mode:`->`provider:` fold (R11 — a module-level stash inside the
-#: quarantined fold; validation context is unusable because `_load_agent_folder` runs per-call, live,
-#: decoupled from the one config-load that computed the map).
-_SLOT_MAP: dict[str, str] = {}
-
-
-@dataclass(frozen=True)
-class PendingMigration:
-    """The write-back channel for a completed in-memory legacy->new inference fold (A11/D48 C3/step 4).
-    Set on the module-level `_PENDING_MIGRATION` by `load_settings` and consumed by the FIRST successful
-    write through the ONE YAML chokepoint (`edit_config_yaml`), so it fires for EVERY writer — the
-    settings PUT AND the host/integration CRUD that bypass `apply_settings_patch` (D48 Migration step 4:
-    "the channel lives at the chokepoint so ALL writers trigger it"). NEVER persisted into Settings.
-    `writeback` = the materialized new-shape subtrees to sync onto the on-disk doc; `delete_list` = the
-    dotted consumed-legacy keys to remove. Both fire together with the caller's mutation under ONE atomic
-    `edit_config_yaml` + a 0600 pre-write backup, guarded by legacy-keys-present (a non-empty file) so a
-    409/422-rejected request — which returns before reaching the chokepoint — triggers neither."""
-
-    writeback: dict[str, Any] = _dc_field(default_factory=dict)
-    delete_list: tuple[str, ...] = ()
+#: Every config-held `ModelRef` home, as key paths — the closed list (A11/D48 C1). Declared as data
+#: rather than buried in a walker because two callers need the paths themselves: the rename cascade
+#: walks the refs, and the config migration must name the exact `…mode` keys it consumed.
+#: (Per-agent overrides live in `agents/<name>/agent.yaml` — separate files with their own homes.)
+MODEL_REF_HOMES: tuple[tuple[str, ...], ...] = (
+    ("agent", "defaults", "model"),
+    ("agent", "defaults", "compaction", "summarizer"),
+    ("agent", "defaults", "routing", "lead"),
+    ("agent", "compaction", "summarizer"),  # the GLOBAL summarizer, not the per-agent default
+)
 
 
-#: The pending legacy->new migration from the most recent `load_settings`, re-derived from disk on every
-#: load (a migrated doc yields None). Consumed + cleared by `edit_config_yaml` on the first successful
-#: write. Process-wide + serialized by `settings_write_lock` (held by every config writer), so the
-#: single-consumer guarantee holds. Dev/prod are separate processes + `CTRLB_HOME` roots — no cross-race.
-_PENDING_MIGRATION: PendingMigration | None = None
+def model_ref_at(raw_doc: dict[str, Any], home: Sequence[str]) -> dict[str, Any] | None:
+    """The `ModelRef` dict at one `MODEL_REF_HOMES` path, or `None` if absent or not a mapping."""
+    node: Any = raw_doc
+    for part in home:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(part)
+    return node if isinstance(node, dict) else None
 
 
 def walk_model_refs(raw_doc: dict[str, Any], fn: Any) -> None:
-    """Visit every config-held `ModelRef` home in a raw config doc and call `fn(ref_dict)` to mutate it
-    in place (A11/D48 C1 — the closed list): `agent.defaults.model`, `agent.defaults.compaction.summarizer`,
-    the GLOBAL `agent.compaction.summarizer`, `agent.defaults.routing.lead`. ONE shared helper used by the
-    migration mode->provider rewrite now and by the rename cascade in wave B2. Skips absent/non-dict homes.
-    (Per-agent overrides live in `agents/*/agent.yaml` — separate files, folded at their own load.)"""
-    agent = raw_doc.get("agent")
-    if not isinstance(agent, dict):
-        return
-    homes: list[Any] = []
-    defaults = agent.get("defaults")
-    if isinstance(defaults, dict):
-        homes.append(defaults.get("model"))
-        comp = defaults.get("compaction")
-        if isinstance(comp, dict):
-            homes.append(comp.get("summarizer"))
-        routing = defaults.get("routing")
-        if isinstance(routing, dict):
-            homes.append(routing.get("lead"))
-    comp_g = agent.get("compaction")
-    if isinstance(comp_g, dict):
-        homes.append(comp_g.get("summarizer"))
-    for home in homes:
-        if isinstance(home, dict):
-            fn(home)
-
-
-def _canonical_base_url_key(url: str) -> str:
-    """Lowercased scheme+host, default ports elided, trailing slash stripped, path preserved — the
-    migration endpoint-dedup key (matches `core.provider_registry.canonical_base_url`; a tiny pure
-    duplicate here to avoid a config->core import cycle)."""
-    parts = urlsplit(url if "://" in url else f"http://{url}")
-    scheme = (parts.scheme or "http").lower()
-    host = (parts.hostname or "").lower()
-    port = parts.port
-    default = {"http": 80, "https": 443}.get(scheme)
-    netloc = host if (port is None or port == default) else f"{host}:{port}"
-    return f"{scheme}://{netloc}{parts.path.rstrip('/')}"
-
-
-def _provider_name_from_api_mode(api_mode: str, taken: set[str]) -> str:
-    """Derive a provider name from an endpoint's api_mode, suffixing -2,-3... on collision (D48 step 1)."""
-    base = api_mode if api_mode in ("llamacpp", "openrouter", "openai", "none") else "openai"
-    if base not in taken:
-        return base
-    i = 2
-    while f"{base}-{i}" in taken:
-        i += 1
-    return f"{base}-{i}"
-
-
-def _provider_name_from_host_port(base_url: str, taken: set[str]) -> str:
-    """Derive a provider name for a MIGRATED voice/embeddings endpoint from its base_url (D48 step 2): a
-    host-port slug (lowercased host with dots kept, `-<port>` only when the port is explicit; scheme/path
-    stripped), sanitized to the provider slug charset (`^[a-z0-9][a-z0-9_+.-]{0,31}$`), suffixed -2,-3…
-    on collision. Chat endpoints use `_provider_name_from_api_mode`; voice/embeddings have no api_mode
-    identity, so the host is the natural name (e.g. `http://emma:9000/v1` → `emma-9000`)."""
-    parts = urlsplit(base_url if "://" in base_url else f"http://{base_url}")
-    host = (parts.hostname or "").lower()
-    slug = f"{host}-{parts.port}" if parts.port is not None else host
-    slug = re.sub(r"[^a-z0-9_+.\-]", "-", slug)  # replace out-of-charset chars
-    slug = re.sub(r"^[^a-z0-9]+", "", slug)[:32] or "provider"  # must start with [a-z0-9], cap 32
-    if slug not in taken:
-        return slug
-    # Suffix `-N` on collision, but keep the WHOLE name ≤ 32 (the provider-slug cap the model validates):
-    # truncate the BASE so `base + "-N"` fits, re-truncating as N grows to more digits (FX-D).
-    i = 2
-    while True:
-        suffix = f"-{i}"
-        candidate = f"{slug[: 32 - len(suffix)]}{suffix}"
-        if candidate not in taken:
-            return candidate
-        i += 1
-
-
-def _voice_service_is_legacy(svc: Any) -> bool:
-    """A `voice.stt`/`voice.tts` subtree is legacy-shaped iff it carries a `primary`/`fallback` slot
-    AND has no new-shape `provider` pointer (D48 migration step 2 trigger). The `provider` guard is the
-    subtree-level new-wins rule the chat + embeddings triggers already apply: a hand-authored doc holding
-    BOTH shapes keeps the new pointer untouched (legacy ignored, not deleted — the recorded residual)."""
-    return isinstance(svc, dict) and "provider" not in svc and ("primary" in svc or "fallback" in svc)
-
-
-def _embeddings_is_legacy(emb: Any) -> bool:
-    """The `embeddings` subtree is legacy-shaped iff it carries any single-endpoint field
-    (`base_url`/`api_key`/`model`/`dim`) AND has no new-shape `provider` pointer (D48 step 2 trigger)."""
-    return (
-        isinstance(emb, dict)
-        and "provider" not in emb
-        and any(k in emb for k in ("base_url", "api_key", "model", "dim"))
-    )
-
-
-def _migrate_legacy(raw: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str], list[str]]:
-    """Quarantined raw-YAML fold (A11/D48 §Migration): the legacy local/cloud/fallbacks `inference` shape,
-    the `voice.stt`/`voice.tts` primary/fallback slots, and the single-endpoint `embeddings` block -> the
-    top-level `providers` map + each section's flat `provider`+`fallbacks`. Returns
-    (migrated_raw, slot_map, delete_list).
-
-    PER-SUBTREE idempotent + independent: each of the four folds (chat / stt / tts / embeddings) fires iff
-    ITS OWN subtree is legacy-shaped, regardless of the others — so a Slice-1-migrated config (chat already
-    on `providers:`) with legacy voice MERGES the voice endpoints into the EXISTING providers map (dedup by
-    canonical base_url + api_key, against pre-existing AND freshly-created providers). Nothing legacy ->
-    the input `raw` is returned unchanged (identity), {}, []; re-running on a migrated doc is a no-op.
-
-    Two phases: (1) fold every legacy endpoint into `providers` (dedup + accrete models), recording each
-    section's ordered `(provider, model)` ref list; (2) once the catalog is FINAL, materialize each
-    section's `provider`/`model`/`fallbacks` — the model is omitted iff the (possibly merged) provider ends
-    with exactly one model. Chat names derive from api_mode; voice/embeddings names are host-port slugs.
-    Chat-held ModelRef homes are rewritten mode->provider via the shared walk helper + slot_map."""
-    inf = raw.get("inference")
-    chat_legacy = (
-        "providers" not in raw
-        and isinstance(inf, dict)
-        and "provider" not in inf
-        and any(k in inf for k in ("local", "cloud", "fallbacks"))
-    )
-    raw_voice = raw.get("voice")
-    if not isinstance(raw_voice, dict):
-        raw_voice = {}
-    stt_legacy = _voice_service_is_legacy(raw_voice.get("stt"))
-    tts_legacy = _voice_service_is_legacy(raw_voice.get("tts"))
-    raw_emb = raw.get("embeddings")
-    if not isinstance(raw_emb, dict):
-        raw_emb = {}
-    emb_legacy = _embeddings_is_legacy(raw_emb)
-    if not (chat_legacy or stt_legacy or tts_legacy or emb_legacy):
-        return raw, {}, []
-
-    # Seed the providers map + identity index from any EXISTING providers (a Slice-1-migrated doc), so a
-    # voice/embeddings endpoint sharing a base_url+key with an existing provider REUSES it (never dups).
-    providers: dict[str, dict[str, Any]] = copy.deepcopy(raw.get("providers") or {})
-    by_identity: dict[tuple[str, str | None], str] = {}
-    for pname, pcfg in providers.items():
-        if isinstance(pcfg, dict) and pcfg.get("base_url"):
-            by_identity.setdefault((_canonical_base_url_key(pcfg["base_url"]), pcfg.get("api_key")), pname)
-
-    slot_map: dict[str, str] = {}
-    delete_list: list[str] = []
-
-    def _add_endpoint(
-        ep: dict[str, Any],
-        *,
-        name_for: Any,
-        model_entry: Any,
-        default_model: str = "",
-        require_model: bool = False,
-    ) -> tuple[str, str] | None:
-        base_url = ep.get("base_url") or ""
-        if not base_url:
-            return None
-        model = ep.get("model") or default_model or ""
-        if require_model and not model:  # embeddings: a blank model = never configured -> drop
-            return None
-        api_key = ep.get("api_key")
-        identity = (_canonical_base_url_key(base_url), api_key)
-        name = by_identity.get(identity)
-        if name is None:
-            name = name_for(ep, base_url, set(providers))
-            prov: dict[str, Any] = {"base_url": base_url}
-            if api_key:
-                prov["api_key"] = api_key
-            if ep.get("api_mode") and ep["api_mode"] != "openai":
-                prov["api_mode"] = ep["api_mode"]
-            for k in ("max_concurrent_requests", "retry_attempts", "max_tokens_field"):
-                if ep.get(k) is not None:
-                    prov[k] = ep[k]
-            prov["models"] = {}
-            providers[name] = prov
-            by_identity[identity] = name
-        if model:
-            # Accrete per-field into an EXISTING model entry (FX-C): a Slice-1 chat fold (or an earlier
-            # voice fold) may already hold this model KEY, so `setdefault(model, …)` would drop THIS
-            # endpoint's migrated fields (e.g. the embeddings `dim` for a model the chat fold created).
-            # Per-field `setdefault` merges each new field in without overwriting a field already present.
-            entry = providers[name].setdefault("models", {}).setdefault(model, {})  # name == id
-            for k, v in model_entry(ep).items():
-                entry.setdefault(k, v)
-        return name, model
-
-    def _chat_name(ep: dict[str, Any], _url: str, taken: set[str]) -> str:
-        return _provider_name_from_api_mode(str(ep.get("api_mode") or "openai"), taken)
-
-    def _hostport_name(_ep: dict[str, Any], url: str, taken: set[str]) -> str:
-        return _provider_name_from_host_port(url, taken)
-
-    def _chat_model(ep: dict[str, Any]) -> dict[str, Any]:
-        entry: dict[str, Any] = {}
-        if ep.get("context_window") is not None:
-            entry["context_window"] = ep["context_window"]
-        if ep.get("extra_body"):
-            entry["extra_body"] = ep["extra_body"]
-        return entry
-
-    migrated: dict[str, Any] = dict(raw)
-    # (section-dict, ordered refs) pairs, materialized in phase 2 once the catalog is final.
-    to_materialize: list[tuple[dict[str, Any], list[tuple[str, str]]]] = []
-
-    # ── chat fold ──
-    if chat_legacy:
-        assert isinstance(inf, dict)
-
-        def _ep(v: Any) -> dict[str, Any]:
-            return v if isinstance(v, dict) else {}
-
-        named_slots = {"local": _ep(inf.get("local")), "cloud": _ep(inf.get("cloud"))}
-        fallbacks = [f for f in inf.get("fallbacks") or [] if isinstance(f, dict)]
-        _dm = inf.get("default_mode")
-        default_mode = str(_dm) if _dm in ("local", "cloud") else "local"
-        for slot in ("local", "cloud"):
-            res = _add_endpoint(named_slots[slot], name_for=_chat_name, model_entry=_chat_model)
-            if res is not None:
-                slot_map[slot] = res[0]
-        other = "cloud" if default_mode == "local" else "local"
-        chat_refs: list[tuple[str, str]] = []
-        for ep in [named_slots[default_mode], named_slots[other], *fallbacks]:
-            res = _add_endpoint(ep, name_for=_chat_name, model_entry=_chat_model)
-            if res is not None:
-                chat_refs.append(res)
-        new_inf = {k: v for k, v in inf.items() if k not in ("default_mode", "local", "cloud", "fallbacks")}
-        migrated["inference"] = new_inf
-        to_materialize.append((new_inf, chat_refs))
-        delete_list += ["inference.default_mode", "inference.local", "inference.cloud"]
-
-    # ── voice folds (stt / tts, each independent) ──
-    if stt_legacy or tts_legacy:
-        new_voice = copy.deepcopy(raw_voice)
-        migrated["voice"] = new_voice
-        for svc_name, is_legacy, default_model in (
-            ("stt", stt_legacy, "whisper-1"),
-            ("tts", tts_legacy, "tts-1"),
-        ):
-            if not is_legacy:
-                continue
-            svc = raw_voice.get(svc_name)
-            svc = svc if isinstance(svc, dict) else {}
-            primary = svc.get("primary")
-            primary = primary if isinstance(primary, dict) else {}
-            fallback = svc.get("fallback")
-            fallback = fallback if isinstance(fallback, dict) else {}
-
-            def _voice_model(ep: dict[str, Any], *, _svc: str = svc_name) -> dict[str, Any]:
-                # TTS: the endpoint's `voice` id lands on the model entry (voice ids are model-specific).
-                # STT: no per-model field (language is service-level, stays on the section knobs).
-                entry: dict[str, Any] = {}
-                if _svc == "tts" and ep.get("voice"):
-                    entry["voice"] = ep["voice"]
-                return entry
-
-            svc_refs: list[tuple[str, str]] = []
-            for ep in (primary, fallback):
-                res = _add_endpoint(
-                    ep, name_for=_hostport_name, model_entry=_voice_model, default_model=default_model
-                )
-                if res is not None:
-                    svc_refs.append(res)
-            new_svc = {k: v for k, v in svc.items() if k not in ("primary", "fallback")}
-            new_voice[svc_name] = new_svc
-            to_materialize.append((new_svc, svc_refs))
-            delete_list += [f"voice.{svc_name}.{k}" for k in ("primary", "fallback") if k in svc]
-
-    # ── embeddings fold (the block itself is the single endpoint; its `dim` -> the model entry) ──
-    if emb_legacy:
-        emb_dim = raw_emb.get("dim")
-
-        def _emb_model(_ep: dict[str, Any]) -> dict[str, Any]:
-            return {"dim": emb_dim} if emb_dim is not None else {}
-
-        res = _add_endpoint(raw_emb, name_for=_hostport_name, model_entry=_emb_model, require_model=True)
-        emb_refs = [res] if res is not None else []
-        new_emb = {k: v for k, v in raw_emb.items() if k not in ("base_url", "api_key", "model", "dim")}
-        migrated["embeddings"] = new_emb
-        to_materialize.append((new_emb, emb_refs))
-        delete_list += [f"embeddings.{k}" for k in ("base_url", "api_key", "model", "dim") if k in raw_emb]
-
-    migrated["providers"] = providers
-
-    # ── phase 2: materialize each section's provider/model/fallbacks against the FINAL catalog ──
-    def _section_ref(pname: str, model: str) -> dict[str, Any]:
-        ref: dict[str, Any] = {"provider": pname}
-        if len(providers[pname].get("models") or {}) != 1 and model:
-            ref["model"] = model  # a merged multi-model provider must name its model
-        return ref
-
-    for sect, refs in to_materialize:
-        if not refs:
-            continue
-        pname, model = refs[0]
-        sect["provider"] = pname
-        if len(providers[pname].get("models") or {}) != 1 and model:
-            sect["model"] = model
-        sect["fallbacks"] = [_section_ref(p, m) for p, m in refs[1:]]
-
-    # ── chat-held ModelRef homes: mode->provider via the slot_map (only when the chat fold ran) ──
-    if chat_legacy:
-
-        def _rewrite(ref: dict[str, Any]) -> None:
-            if "mode" not in ref:
-                return
-            mode_val = ref.pop("mode")
-            if isinstance(mode_val, str):
-                ref["provider"] = slot_map.get(mode_val, mode_val)  # None mode -> provider absent (inherit)
-
-        walk_model_refs(migrated, _rewrite)
-
-    return migrated, slot_map, delete_list
-
-
-def _fold_agent_yaml_modes(raw: dict[str, Any]) -> dict[str, Any]:
-    """Raw-YAML `mode:`->`provider:` fold for a loaded `agent.yaml` (A11/D48 NO-LEGACY-SEAMS). Rewrites
-    the agent's ModelRef homes (`model`, `compaction.summarizer`, `routing.lead`) in place, mapping a
-    legacy `local`/`cloud` value through the module-level `_SLOT_MAP` from the last config-load migration;
-    any other string is kept (a possibly-dangling provider name -> graceful default-chain at resolve),
-    absent stays absent. No write-back (C1: no cross-file transactions; the agents editor writes the new
-    shape on its next save)."""
-
-    def rewrite(ref: Any) -> None:
-        if isinstance(ref, dict) and "mode" in ref:
-            mode_val = ref.pop("mode")
-            if isinstance(mode_val, str):
-                ref["provider"] = _SLOT_MAP.get(mode_val, mode_val)
-
-    rewrite(raw.get("model"))
-    comp = raw.get("compaction")
-    if isinstance(comp, dict):
-        rewrite(comp.get("summarizer"))
-    routing = raw.get("routing")
-    if isinstance(routing, dict):
-        rewrite(routing.get("lead"))
-    return raw
+    """Call `fn(ref_dict)` on every present config-held `ModelRef` home, to mutate it in place.
+    Shared by the rename cascade (`runtime`) and the resolve-advisory walk (`core.provider_registry`)."""
+    for home in MODEL_REF_HOMES:
+        ref = model_ref_at(raw_doc, home)
+        if ref is not None:
+            fn(ref)
 
 
 def load_settings(path: Path | None = None) -> Settings:
-    """Load settings: `.env` → `os.environ`, then YAML, then env overrides (env wins), then the
-    quarantined A11 legacy->new inference fold (`_migrate_legacy`) BEFORE Pydantic validation. When the
-    fold fires, the `_PENDING_MIGRATION` write-back channel is armed for the first successful config write
-    (re-derived from disk on every load, so a migrated file leaves it cleared).
+    """Load settings: `.env` → `os.environ`, then YAML, then env overrides (env wins), then validate.
 
-    FX-B — the fold runs TWICE, over two inputs: the RUNTIME doc (env overrides applied) feeds
-    `Settings.model_validate` + the `_SLOT_MAP` (unchanged behavior, env still wins THIS boot), while the
-    DISK-TRUTH doc (pre-env) builds the write-back + delete-list. This keeps an env-only secret (e.g.
-    `CTRLB_EMBEDDINGS__API_KEY`, which sits on a legacy path the fold consumes) OUT of the materialized
-    config.yaml — otherwise the first save would persist the environment secret into the file. The fold is
-    pure dict work, so the second run is cheap. When the two runs disagree on a consumed legacy secret leaf
-    (an env override sat on a folded legacy path with no on-disk value), we warn ONCE naming the env var
-    and the `providers.<name>.api_key` home it should move to."""
-    global _SLOT_MAP, _PENDING_MIGRATION
+    There is no migration here, by design (UPDATE_PLAN G5). The config on disk is already the shape
+    this build understands, because `app.config_migration` — the one place that knows anything about
+    older shapes — converged it before the app was allowed to start. That is what lets the legacy
+    knowledge be deleted in one piece later, and it is why this function is four lines of work.
+    """
     load_dotenv()
     p = path or config_path()
     raw: Any = yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else {}
     raw = raw or {}
     if not isinstance(raw, dict):
         raise ValueError(f"{p} must contain a YAML mapping at the top level")
-    raw.pop(CONFIG_VERSION_KEY, None)  # file-shape metadata, never settings (§3.8) — popped before both
-    disk_raw = copy.deepcopy(raw)  # DISK-TRUTH snapshot for the write-back (taken BEFORE env overrides)
-    env_raw = _apply_env_overrides(raw)  # RUNTIME doc (mutates `raw` in place; env wins this boot)
-
-    # Runtime run → what the app resolves this boot (+ the slot_map for the per-call agent.yaml fold).
-    migrated_rt, slot_map_rt, delete_list_rt = _migrate_legacy(env_raw)
-    _SLOT_MAP = slot_map_rt if migrated_rt is not env_raw else {}
-
-    # Disk-truth run → the ONE-time write-back materialized on the first successful config write.
-    migrated_disk, _slot_disk, delete_list_disk = _migrate_legacy(disk_raw)
-    if migrated_disk is not disk_raw:  # a fold fired on the ON-DISK doc → arm the write-back
-        # Carry every folded new-shape subtree onto the write-back channel. `providers` is always
-        # present; the section subtrees ride when present (`sync_mapping` makes an unchanged one a no-op,
-        # so over-inclusion is safe — the migration writeback materializes on the first successful write).
-        writeback: dict[str, Any] = {"providers": migrated_disk.get("providers", {})}
-        for sect in ("inference", "voice", "embeddings", "agent"):
-            val = migrated_disk.get(sect)
-            if isinstance(val, dict):
-                writeback[sect] = val
-        _PENDING_MIGRATION = PendingMigration(writeback=writeback, delete_list=tuple(delete_list_disk))
-        _MIGRATION_LOG.warning(
-            "A11: migrated legacy provider config in memory -> %d provider(s); legacy keys %s will be "
-            "removed + a config.yaml.bak-a11-* backup written on the next save.",
-            len(migrated_disk.get("providers", {})),
-            delete_list_disk,
-        )
-    else:
-        _PENDING_MIGRATION = None
-
-    # FX-B — a consumed legacy secret leaf that exists ONLY via an env override is used this boot but must
-    # NOT be written to disk. Warn (once per such leaf) pointing at the new provider home.
-    env_paths = _env_override_paths()
-    disk_consumed = set(delete_list_disk)
-    for dotted in delete_list_rt:
-        if not dotted.endswith(".api_key") or dotted in disk_consumed or dotted not in env_paths:
-            continue
-        section = dotted.split(".", 1)[0]
-        sect_doc = migrated_rt.get(section)
-        home = sect_doc.get("provider") if isinstance(sect_doc, dict) else None
-        env_var = ENV_PREFIX + dotted.upper().replace(".", "__")
-        _MIGRATION_LOG.warning(
-            "A11/FX-B: env override %s sits on a legacy path the migration consumed; its value is used "
-            "THIS boot but is NOT written to config.yaml. Move it to providers.%s.api_key to persist it.",
-            env_var,
-            home or "<provider>",
-        )
-    return Settings.model_validate(migrated_rt)
+    raw.pop(CONFIG_VERSION_KEY, None)  # file-shape metadata, never settings (UPDATE_PLAN §3.8)
+    return Settings.model_validate(_apply_env_overrides(raw))
 
 
 def _write_replace_0600(p: Path, data: bytes) -> None:
@@ -1863,17 +1457,11 @@ def _sync_mapping(node: Any, target: dict[str, Any]) -> str:
     return unplaced
 
 
-def delete_dotted(doc: Any, dotted: str) -> None:
-    """Delete a dotted key path from a ruamel doc if present (A11/D48 write-back). Missing intermediates
-    or a missing leaf are a no-op — idempotent, so a second write after the legacy keys are gone is clean.
-
-    Dotted notation cannot address a key whose own NAME contains a dot (`models["gpt-4.1"]`); callers
-    holding real key segments — the migration runner does — use `delete_path` instead."""
-    delete_path(doc, dotted.split("."))
-
-
 def delete_path(doc: Any, parts: Sequence[Any]) -> None:
-    """`delete_dotted` over pre-split key segments, so a key whose name contains a dot is addressable."""
+    """Delete a key path from a ruamel doc if present, rescuing the comment block the removal would
+    orphan (see `_delete_key`). Missing intermediates or a missing leaf are a no-op — idempotent, so
+    re-running a migration whose keys are already gone is clean. Takes pre-split SEGMENTS: dotted
+    notation cannot address a key whose own name contains a dot (`models["gpt-4.1"]`)."""
     node: Any = doc
     ancestors: list[tuple[Any, Any]] = []  # walked (parent, key) pairs, to re-home an orphan upward
     for part in parts[:-1]:
@@ -1893,85 +1481,33 @@ def delete_path(doc: Any, parts: Sequence[Any]) -> None:
         )
 
 
-def _materialize_migration(doc: Any) -> None:
-    """Fold the armed `_PENDING_MIGRATION` new-shape subtrees onto `doc` BEFORE the caller's mutate, so
-    the caller's own edit wins on any overlap (A11/D48 step 4). Dict subtrees `sync_mapping` (add/replace
-    + delete keys absent from the new shape — this is what drops the legacy `inference.local/cloud`);
-    a scalar replaces. The consumed-legacy `delete_list` is applied by the caller after `mutate`."""
-    pending = _PENDING_MIGRATION
-    if pending is None:
-        return
-    for key, sub in pending.writeback.items():
-        if isinstance(sub, dict):
-            node = doc.get(key)
-            if not hasattr(node, "get"):
-                doc[key] = {}
-                node = doc[key]
-            sync_mapping(node, sub)
-        else:
-            doc[key] = sub
-
-
 def edit_config_yaml(mutate: Any, path: Path | None = None) -> None:
-    """Edit the config file in place with a comment/format-preserving round-trip: load the ruamel
-    doc (or a fresh mapping), run `mutate(doc)` to apply changes (set/sync/delete keys), then write
-    atomically while keeping the file's existing line ending. This is the single chokepoint for every
-    YAML write — `apply_patch_to_yaml` + the hosts/integration CRUD endpoints all funnel through it, so a
-    plain `yaml.safe_dump` (which would strip comments, reorder, expand defaults, flip EOL) is never used
-    on the operator's file.
+    """Edit a config file in place with a comment/format-preserving round-trip: load the ruamel doc (or
+    a fresh mapping), run `mutate(doc)` to apply changes (set/sync/delete keys), then write atomically
+    at 0600 while keeping the file's existing line ending.
 
-    A11/D48 step 4 / F5 — the ONE atomic materialization of a legacy migration lives HERE, at the
-    chokepoint, so EVERY writer triggers it (the settings PUT and the host/integration CRUD alike). When
-    `_PENDING_MIGRATION` is armed (a fold fired at load + no config write has landed since): a one-time
-    `config.yaml.bak-a11-*` snapshot of the CURRENT file is written (mode 0600, same dir) BEFORE the
-    replacement; the migrated new-shape subtrees are folded on FIRST (caller's `mutate` still wins on
-    overlap); the consumed-legacy keys are deleted AFTER `mutate`; and the channel is cleared so it fires
-    exactly once. All of it rides this SINGLE atomic write, so a caller that aborts before reaching here
-    (a 409/422) makes neither backup nor delete. No fsync is added (R25/QH9 OS-branch allowlist is closed).
-    Every config writer holds `settings_write_lock`, so the single-consumer guarantee is race-free."""
-    global _PENDING_MIGRATION
-    pending = _PENDING_MIGRATION
+    This is the single chokepoint for every YAML write — `apply_patch_to_yaml`, the hosts/integration
+    CRUD endpoints and the config migration all funnel through it, so a plain `yaml.safe_dump` (which
+    would strip comments, reorder, expand defaults and flip EOL) is never used on an operator's file.
+    Path-agnostic: the migration runner uses it for `agents/<name>/agent.yaml` too, which is why a
+    hand-written agent file keeps its comments through a migration.
+    """
     p = path or config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     raw_bytes = p.read_bytes() if p.exists() else b""
-    if pending is not None and raw_bytes:
-        # The Hermes pre-migration backup convention: copy the pre-write file 0600 before replacing it.
-        # Create the backup ATOMICALLY at 0600 (O_CREAT|O_EXCL|O_WRONLY, mode 0600) and write THROUGH the
-        # fd — never write_bytes-then-chmod, which would land the secret-bearing content at the umask
-        # default (0644) first and leave it world-readable if we crash before the chmod (Codex#9 / audit
-        # M1). O_EXCL: if that exact stamped name already exists, suffix `-2`,`-3`… — never overwrite an
-        # existing backup.
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        bak = p.parent / f"{p.name}.bak-a11-{stamp}"
-        n = 2
-        while True:
-            try:
-                fd = os.open(bak, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                break
-            except FileExistsError:
-                bak = p.parent / f"{p.name}.bak-a11-{stamp}-{n}"
-                n += 1
-        with os.fdopen(fd, "wb") as bf:
-            bf.write(raw_bytes)
-        _MIGRATION_LOG.warning("A11: wrote pre-migration config backup %s (0600)", bak)
     # Detect EOL from the raw bytes — `read_text` would universal-translate CRLF→LF and hide it.
     newline = "\r\n" if b"\r\n" in raw_bytes else "\n"
     y = yaml_rt()
     doc = y.load(raw_bytes.decode("utf-8")) if raw_bytes else None
     if not hasattr(doc, "get"):  # empty/new file → start from a fresh mapping
         doc = {}
-    _materialize_migration(doc)  # new-shape subtrees first (caller's mutate wins on overlap)
     mutate(doc)
-    for dotted in pending.delete_list if pending is not None else ():
-        delete_dotted(doc, dotted)
     buf = io.StringIO()
     y.dump(doc, buf)
     # Preserve the file's existing line ending (LF default for a new file) and write bytes directly,
     # so a Windows host doesn't silently rewrite an LF config to CRLF (which would churn every line).
     out = buf.getvalue().replace("\r\n", "\n").replace("\n", newline)
     _write_replace_0600(p, out.encode("utf-8"))  # 0600 contract on the secret-bearing config (FX-A)
-    if pending is not None:
-        _PENDING_MIGRATION = None  # consumed only on a SUCCESSFUL write through the chokepoint
 
 
 def apply_patch_to_yaml(patch: dict[str, Any], path: Path | None = None) -> None:

@@ -2,9 +2,10 @@
 
 > ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21). **On main, UNRELEASED: A11 COMPLETE
 > (chat + voice/embeddings) + D3 slice 3 + the 2026-07-26 fix wave.
-> ▶ **[`UPDATE_PLAN.md`](./UPDATE_PLAN.md) SLICE 1 ✅ BUILT 2026-07-26** (the runner + 55 tests, gate 6/6,
-> council-reviewed; as-built = its **§11**). **NEXT = SLICE 2** — move the A11 fold into `steps.py`
-> (§11's carried-forward notes first). §10 is the slice list, §8 the owner rulings, §9 the council
+> ▶ **[`UPDATE_PLAN.md`](./UPDATE_PLAN.md) SLICES 1 + 2 ✅ BUILT 2026-07-26** — the runner (**§11**) and
+> the fold's move out of the config load path (**§12**); 96 migration tests, gate 6/6, three council
+> rounds. **NEXT = SLICE 3** (env overrides). ⚠ Two owner decisions are pending in the session block
+> below (converge the dev config; rename three providers after migrating). §10 is the slice list, §8 the owner rulings, §9 the council
 > record. Then the **A11 PRE-RELEASE FIX LIST** in the 2026-07-26 session
 > block (the parked deep audit is DONE — one MUST-FIX: a masked secret can be persisted as the real API
 > key). Release A11 via D48 §rollout only after both, and only once the owner ratifies the three pending
@@ -408,6 +409,55 @@
 > migrated, so the UPDATE_PLAN work has real inputs to rehearse against. Rehearse on **copies**, never in
 > place. Session scratch (Codex prompts/reviews, prototypes) lived in the tmpfs scratchpad and is gone by
 > design; everything durable is in the repo.
+
+> **▶▶ SESSION 2026-07-26 (PM) — UPDATE_PLAN SLICE 2 BUILT: the fold LEAVES the config load path.**
+> Gate **6/6**; backend **998** (was 952). As-built + every defect the council found:
+> **[`UPDATE_PLAN.md` §12](./UPDATE_PLAN.md#12-slice-2--as-built-2026-07-26)**. NOT PUSHED.
+>
+> `app/config_migration/steps.py` now owns every piece of legacy-shape knowledge — **488 lines left
+> `config.py`**: the fold, `_SLOT_MAP`, the `_PENDING_MIGRATION` write-back channel, the `.bak-a11-*`
+> block inside `edit_config_yaml`, the per-load `agent.yaml` fold, `delete_dotted`, `_env_override_paths`.
+> `load_settings` is four lines and knows nothing about old shapes; `VERSION` → 1.
+>
+> **The council ran THREE rounds and every round found something real** — the review process is what
+> made this slice safe, not the first draft:
+> - **Codex HIGH:** "legacy chat exists" does not prove the named slot is reconstructible.
+>   `inference: {fallbacks: []}` yields an empty slot map, so an agent on `mode: local` became
+>   `provider: local` — valid enough that validation AND the postcondition passed. Fixed by refusing
+>   against the **actual slot map** instead of a proxy for it.
+> - **Codex HIGH:** a config merely BROKEN rather than legacy (`inference: nonsense`) was invisible to
+>   every step, so `--check` passed it and it got stamped — during an update that reads: preflight says
+>   go, service stopped, restart fails on a file we just certified. The runner now validates any
+>   non-empty config, plan or no plan.
+> - **Fable MED:** `inference: {default_mode: local}` alone did not trigger `applies`, so a legacy key
+>   could survive under a "verified" stamp — invisible to the postcondition, *because the postcondition
+>   IS `applies`*.
+> - **Both, converging on the CLASS:** the fold trusts input shape at the nodes it reads
+>   (`base_url: 7` → `TypeError`; a bad port → a `ValueError` **that quotes the value**). Fixed
+>   structurally in the RUNNER — `_call_step` turns any non-`MigrationRefused` exception into a
+>   sanitised refusal naming only the exception type — plus an 11-case malformed-config corpus test
+>   asserting *refused or converged, never raised*. Node-by-node guards were rejected: that is how R5's
+>   1229-line peer converter happened.
+>
+> **Owner directive this session:** *"fable can also check correctness, it's also a smart model for
+> that"* — folded into `.claude/skills/second-opinion/SKILL.md` (use both reviewers for defects, on
+> DIFFERENT lenses so they don't re-tread; the cheap correctness pass is a `SendMessage` follow-up to a
+> Fable agent that already has the context).
+>
+> **Rehearsed on copies of both live configs after every fix wave** (six times total): five providers,
+> strict resolve OK, all API keys carried, chat/stt/tts/embeddings resolve, marker at 1, re-run a no-op.
+>
+> **▶ TWO THINGS WAITING ON THE OWNER:** ① **the dev config** — with the fold gone, a legacy config
+> boots into ZERO providers (chat + voice silently dead) until slice 4's import-time refusal lands, and
+> `~/.ctrl-b-dev/config.yaml` is still legacy-shape. Fable independently recommends converging it now
+> with the CLI (prod is untouched — it runs old code that still owns the fold until slice 8).
+> **Do not start the dev units until that is decided.** ② after migrating, three providers want
+> renaming in Conf: `127.0.0.1-9000` → `emma-speaches`, `192.168.1.137-9000` → `vault-speaches`,
+> `192.168.1.137-7851` → `vault-alltalk` (the owner's ruled convention; the rename cascade covers the
+> section pointers — verified in source).
+>
+> **▶ NEXT: slice 3** — env overrides (`CTRLB_PROVIDERS__…`), which closes the env-only-secret hole
+> that slice 2 pins with a test asserting today's behaviour.
 
 > **▶▶ SESSION 2026-07-26 (PM) — UPDATE_PLAN SLICE 1 BUILT: the config-migration runner.** Model check ✓
 > (`ctrl-b-opus`, Opus 5 high). Full gate **6/6 GREEN**; backend **952** (was 897, +55). Working tree has

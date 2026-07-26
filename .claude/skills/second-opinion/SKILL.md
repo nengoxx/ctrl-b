@@ -47,11 +47,16 @@ Fable is *"very smart"* but **expensive**. Rules:
 - **Reasoning effort HIGH — state it in the first line of the brief.** The `Agent` tool exposes `model`
   but **no effort parameter**, so effort is set by writing `Reasoning effort: HIGH.` into the prompt
   (same convention as Opus subagents). An audit at default effort is not worth its cost.
-- **Its axis is design, not defects**: architecture, layer fit, systems integration, right-sizedness
+- **Its home axis is design**: architecture, layer fit, systems integration, right-sizedness
   (over/under-engineering), consistency with existing patterns, how the design will age, naming/API
   quality, whether the whole thing hangs together as a system.
-- **Do not duplicate Codex.** Tell it Codex is independently covering correctness/edge cases and that
-  it should note a correctness bug in one line and move on.
+- **But it is also a correctness reviewer (owner, 2026-07-26): *"fable can also check correctness,
+  it's also a smart model for that."*** Use it for defect hunting too — it is not design-only. What
+  stays true is that two reviewers must not re-tread the same ground: give Fable and Codex
+  **different lenses or different artifacts**, and say in each brief what the other is covering.
+  The cheapest correctness pass is a **follow-up to a Fable agent that already audited the design**
+  (`SendMessage`, context intact — ~60s and a fraction of the tokens of a fresh agent), telling it
+  what Codex already found so it hunts for what Codex missed rather than re-deriving it.
 - **Bound the reading.** Name the exact files and the order to read them; state *"do NOT crawl the
   repository — you are an expensive model being used for judgement, not breadth."*
 - **Give it the context it cannot infer** — deployment shape, the standing owner rules, what is already
