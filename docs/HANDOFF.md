@@ -392,23 +392,24 @@
 > secret-bearing file replaced that way silently loses 0600; write through an fd opened `0o600` (the
 > `.bak-a11` idiom). The bug predated A11 and had already degraded dev+prod configs to 0664.
 >
-> **▷ LIVE MACHINE STATE (▲ UPDATED at the 2026-07-26 close — SESSION CLOSED CLEAN):**
-> tip = the 2026-07-26 wave (`09ac884` comment-preserving delete · `2613f54` gate tests · `dcafa95` doc
-> drift · + the design/research/skill commit) on top of `ad7711d`. **Backend suite 897 green** (was 878;
-> +19 tests). **Working tree CLEAN. NOT PUSHED — `git push` is the first act of the next session** (the
-> owner's standing rule: commits may be autonomous, pushes need confirmation). No background tasks in
-> flight; all review agents completed and their outputs are banked in `docs/research/` + `UPDATE_PLAN.md`.
-> **Dev units STOPPED** — start them with `systemctl --user start ctrl-b-dashboard-dev{,-web}` when
-> iterating (:5434 + Vite :5173).
-> **PROD REMAINS v1.2.1 — A11 still UNRELEASED**, now gated on: the UPDATE_PLAN build, the A11
-> pre-release fix list, and the three owner ratifications.
-> **Prod + dev `config.yaml` are still `0664`** (`~/.ctrl-b/`, `~/.ctrl-b-dev/`) — the `a62faa6` fix heals
-> them to 0600 on the next config write; `chmod 600` both now if you want them tight sooner (they hold SSH
-> passwords + API keys).
-> ⚠ **Both live configs are still LEGACY-SHAPE** (`inference.local`/`cloud` present) — they have not been
-> migrated, so the UPDATE_PLAN work has real inputs to rehearse against. Rehearse on **copies**, never in
-> place. Session scratch (Codex prompts/reviews, prototypes) lived in the tmpfs scratchpad and is gone by
-> design; everything durable is in the repo.
+> **▷ LIVE MACHINE STATE (▲ UPDATED at the 2026-07-26 PM close — SESSION CLOSED CLEAN, ALL PUSHED):**
+> tip = **UPDATE_PLAN slices 1 + 2** (`4761483` the runner · `4523374` the fold's move) on top of the
+> 2026-07-26 AM wave. **Backend suite 998 green** (was 897; +101). **Working tree CLEAN, main == origin
+> — everything through slice 2 is PUSHED** (the AM wave went out with it after sitting unpushed).
+> Full gate `check.py` **6/6** on the tip. No background tasks in flight; all review agents completed
+> (Codex ×5, Fable ×5 across the two slices) and their findings are banked in `UPDATE_PLAN.md` §11/§12.
+> **Dev units STOPPED** — `systemctl --user start ctrl-b-dashboard-dev{,-web}` when iterating
+> (:5434 + Vite :5173).
+> **PROD REMAINS v1.2.1 — A11 still UNRELEASED**, gated on: slices 3–8, the A11 pre-release fix list,
+> and the three owner ratifications.
+> **▲ THE DEV CONFIG IS NOW MIGRATED + RENAMED (new shape, `config_version: 1`, 0600).** Its providers
+> are `llamacpp · openrouter · emma-speaches · vault-speaches · vault-alltalk`; backup at
+> `~/.ctrl-b-dev/backups/config.yaml.20260726T175344Z`. So **dev is no longer a legacy-shape test
+> input** — rehearse future slices against a copy of **PROD's** config (`~/.ctrl-b/config.yaml`), which
+> is **still LEGACY-SHAPE and still 0664**, or against the dev backup. Never rehearse in place.
+> ⚠ **Do not start dev on a tree older than slice 2** — that code expects the legacy shape.
+> Session scratch (Codex prompts/reviews) lived in the tmpfs scratchpad and is gone by design;
+> everything durable is in the repo.
 
 > **▶▶ SESSION 2026-07-26 (PM) — UPDATE_PLAN SLICE 2 BUILT: the fold LEAVES the config load path.**
 > Gate **6/6**; backend **998** (was 952). As-built + every defect the council found:
@@ -447,17 +448,41 @@
 > **Rehearsed on copies of both live configs after every fix wave** (six times total): five providers,
 > strict resolve OK, all API keys carried, chat/stt/tts/embeddings resolve, marker at 1, re-run a no-op.
 >
-> **▶ TWO THINGS WAITING ON THE OWNER:** ① **the dev config** — with the fold gone, a legacy config
-> boots into ZERO providers (chat + voice silently dead) until slice 4's import-time refusal lands, and
-> `~/.ctrl-b-dev/config.yaml` is still legacy-shape. Fable independently recommends converging it now
-> with the CLI (prod is untouched — it runs old code that still owns the fold until slice 8).
-> **Do not start the dev units until that is decided.** ② after migrating, three providers want
-> renaming in Conf: `127.0.0.1-9000` → `emma-speaches`, `192.168.1.137-9000` → `vault-speaches`,
-> `192.168.1.137-7851` → `vault-alltalk` (the owner's ruled convention; the rename cascade covers the
-> section pointers — verified in source).
+> **▶ ✅ BOTH OWNER DECISIONS EXECUTED (owner: "lets do that", 2026-07-26).**
+> ① **THE DEV CONFIG IS MIGRATED FOR REAL** — the first live use of the tool, not a rehearsal.
+> `CTRLB_HOME=~/.ctrl-b-dev python -m app.config_migration --apply` → backup
+> `~/.ctrl-b-dev/backups/config.yaml.20260726T175344Z` (0600, byte-identical to the pre-flight copy),
+> marker at 1, `--check` clean, and the file **healed 0664 → 0600** (an outstanding item from the
+> 2026-07-25 close). Dev then BOOTED on it (`/api/health` ok) and strict-resolved.
+> ② **THE THREE RENAMES ARE DONE**, through the sanctioned cascade (`PUT /api/settings` with
+> `provider_renames` + the full `providers` map + `providers_base` — a rename-only PUT is refused by
+> design: *"provider_renames requires the full 'providers' map in the same PUT"*). Result on disk:
+> `voice.stt.provider: emma-speaches` → fallback `vault-speaches`; `voice.tts` → `emma-speaches` →
+> `vault-alltalk`; chat `llamacpp` → `openrouter`; embeddings `openrouter`. **All four secrets survived
+> byte-exact** (verified with `config.secret_values()` over both documents — a first regex-based check
+> reported a false loss; the YAML-aware comparison is the trustworthy one) and **no mask leaked into
+> the file**. Dev unit STOPPED afterwards.
+> ⚠ **PROD IS UNTOUCHED and still legacy-shape** — it runs old code that owns the fold until slice 8.
+> The same two steps (migrate, then rename the same three) are part of the RELEASE, not done yet.
 >
-> **▶ NEXT: slice 3** — env overrides (`CTRLB_PROVIDERS__…`), which closes the env-only-secret hole
-> that slice 2 pins with a test asserting today's behaviour.
+> **▶ NEXT SESSION — slice 3, then 4–8.** In order:
+> 1. **Model check** (`tmux display-message -p '#S'` → `ctrl-b-opus` = Opus 5 high).
+> 2. **Slice 3 — env overrides.** `CTRLB_PROVIDERS__<encoded-name>__<field>` per §7: scalar-field
+>    allowlist, name normalisation (`-`/`.`/`+` → `_`) resolved against the names already in the YAML,
+>    every normalised collision rejected, unknown provider/field rejected, and a `CTRLB_*` landing on a
+>    RETIRED path **hard-fails at boot** (a warning would ship a service running without its
+>    credential). It also closes the env-only-secret hole that `test_an_env_only_legacy_secret_is_not_carried_across`
+>    currently pins as today's behaviour — flip that test when you close it. The FX-B `--check`
+>    hard-fail (§3.5) belongs here too.
+> 3. **Slice 4** — the `main.py` import-time check + `RestartPreventExitStatus=78`, and **verify the
+>    terminal `failed` status 78 on the dev unit** plus the `--reload` worker path (a reload worker exits
+>    through uvicorn's `ChangeReload` parent, not systemd — behaviour unverified). The exit taxonomy it
+>    consumes is already settled (§11 delta 5).
+> 4. **Slices 5–8** — `install.sh`, Windows parity, `update.sh` + runbook (with the two comment/backup
+>    lines §12 carries forward), then the D48 amendment + release.
+>
+> **Two things the RELEASE owes** (not done, prod is untouched): migrate prod's config with the same
+> CLI, then re-apply the same three renames there — dev's rename does not carry over.
 
 > **▶▶ SESSION 2026-07-26 (PM) — UPDATE_PLAN SLICE 1 BUILT: the config-migration runner.** Model check ✓
 > (`ctrl-b-opus`, Opus 5 high). Full gate **6/6 GREEN**; backend **952** (was 897, +55). Working tree has
