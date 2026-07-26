@@ -484,3 +484,189 @@ def test_fx_d_suffix_fits_as_the_counter_grows_digits() -> None:
     taken = {host} | {f"{host[: 32 - len(f'-{i}')]}-{i}" for i in range(2, 12)}  # -2..-11 taken
     name = _provider_name_from_host_port(f"http://{host}/v1", taken)
     assert len(name) <= 32 and name not in taken
+
+
+# ── comment-preserving key removal (the orphaned-comment bug) ─────────────────────────────────────
+# ruamel parks a key's trailing comment on the PRECEDING entry, so a bare `del` destroys the
+# operator's prose for whatever came after the deleted region. Verified live before the fix: the
+# migration's `inference.cloud` delete took the whole `# Voice …` section header with it.
+
+
+def _rewrite(src: str, mutate) -> str:
+    """Round-trip `src` through the real write chokepoint (`edit_config_yaml`) and return the file."""
+    tmp = Path(tempfile.mkdtemp())
+    cfg = tmp / "config.yaml"
+    cfg.write_text(src, encoding="utf-8")
+    config.edit_config_yaml(mutate, path=cfg)
+    return cfg.read_text(encoding="utf-8")
+
+
+def _delete(*dotted: str):
+    return lambda doc: [config._delete_dotted(doc, d) for d in dotted]
+
+
+def test_delete_keeps_the_following_sections_comment() -> None:
+    """The live regression: the deleted key is LAST in its map and its value is a subtree, so the
+    next section's header is parked on the deepest-last leaf inside the region being removed."""
+    out = _rewrite(
+        "inference:\n"
+        "  request_timeout_s: 600\n"
+        "  cloud:\n    base_url: https://x/v1\n    api_mode: openrouter\n"
+        "# Voice (Phase 6, D18 failover). STT on VAULT.\n"
+        "# A blank fallback is dropped from the chain.\n"
+        "voice:\n  enabled: true\n",
+        _delete("inference.cloud"),
+    )
+    assert "# Voice (Phase 6, D18 failover). STT on VAULT." in out
+    assert "# A blank fallback is dropped from the chain." in out
+    assert "cloud:" not in out
+    # re-homed at its original position: still directly above `voice:`, still at column 0
+    assert out.index("# Voice") < out.index("voice:") < out.index("enabled")
+
+
+def test_delete_takes_the_deleted_keys_own_comments_with_it() -> None:
+    """The symmetric rule: the block ABOVE the key documents that key and dies with it (owner ruling),
+    as does its end-of-line comment; only the block trailing the region is re-homed."""
+    out = _rewrite(
+        "inference:\n"
+        "  keep: 1   # eol on keep\n"
+        "  # doc for legacy\n"
+        "  legacy: 2   # eol on legacy\n"
+        "  # doc for max_steps\n"
+        "  max_steps: 3\n",
+        _delete("inference.legacy"),
+    )
+    assert "# eol on legacy" not in out  # dies with the line it annotated
+    assert "# doc for legacy" not in out  # dies with the key it documented
+    assert "# eol on keep" in out  # the surviving neighbour keeps its own
+    assert "  # doc for max_steps\n  max_steps: 3\n" in out  # re-homed, indentation intact
+
+
+def test_delete_of_the_first_key_drops_its_leading_block_and_rehomes_the_trailing_one() -> None:
+    out = _rewrite(
+        "inference:\n  # doc for legacy\n  legacy: 1\n  # doc for max_steps\n  max_steps: 12\n",
+        _delete("inference.legacy"),
+    )
+    assert out == "inference:\n  # doc for max_steps\n  max_steps: 12\n"
+
+
+def test_delete_of_the_first_root_key_drops_its_leading_block() -> None:
+    """At the document root the leading block lives on the doc itself, not on a parent entry."""
+    out = _rewrite(
+        "# doc for legacy\nlegacy: 1\n# doc for server\nserver:\n  poll_seconds: 5\n",
+        _delete("legacy"),
+    )
+    assert out == "# doc for server\nserver:\n  poll_seconds: 5\n"
+
+
+def test_consecutive_deletes_each_drop_their_own_block() -> None:
+    """Deleting a run of documented keys leaves only the surviving key's own documentation — the block
+    re-homed by one delete is recognised as the next key's and dropped when that key goes too."""
+    out = _rewrite(
+        "inference:\n"
+        "  # doc for default_mode\n"
+        "  default_mode: local\n"
+        "  # doc for local\n"
+        "  local:\n    base_url: http://l/v1\n"
+        "  # doc for max_steps\n"
+        "  max_steps: 12\n",
+        _delete("inference.default_mode", "inference.local"),
+    )
+    assert out == "inference:\n  # doc for max_steps\n  max_steps: 12\n"
+
+
+def test_delete_preserves_blank_lines_and_nonstandard_comment_spacing() -> None:
+    out = _rewrite(
+        "inference:\n  keep: 0\n  legacy: 1\n\n  # line one\n  #no-space line\n  #   aligned    trailer\n  max_steps: 12\n",
+        _delete("inference.legacy"),
+    )
+    assert (
+        out
+        == "inference:\n  keep: 0\n\n  # line one\n  #no-space line\n  #   aligned    trailer\n  max_steps: 12\n"
+    )
+
+
+def test_delete_that_empties_a_map_rehomes_one_level_up_and_stays_valid_yaml() -> None:
+    """An emptied mapping renders as `{}` and has no entry left to hang a comment on — attaching to it
+    anyway would emit the comment BETWEEN the key and its `{}`, which no longer parses."""
+    out = _rewrite(
+        "voice:\n  stt:\n    primary: a\n# trailing doc\nother: 1\n",
+        _delete("voice.stt.primary"),
+    )
+    assert "# trailing doc" in out
+    assert config._yaml_rt().load(out)["other"] == 1  # still parses, and the comment didn't move inside
+    assert out.index("stt: {}") < out.index("# trailing doc") < out.index("other: 1")
+
+
+def test_repeated_deletes_are_idempotent_and_keep_rescuing() -> None:
+    """The migration deletes several keys from one map; each delete re-runs the rescue, so the block
+    hops along the survivors regardless of order — and a second pass over gone keys is a no-op."""
+    src = (
+        "inference:\n"
+        "  request_timeout_s: 600\n"
+        "  default_mode: local\n"
+        "  local:\n    base_url: http://l/v1\n"
+        "  cloud:\n    base_url: http://c/v1\n"
+        "# next section\n"
+        "voice:\n  enabled: true\n"
+    )
+    dotted = ("inference.default_mode", "inference.local", "inference.cloud")
+    once = _rewrite(src, _delete(*dotted))
+    assert once == "inference:\n  request_timeout_s: 600\n# next section\nvoice:\n  enabled: true\n"
+    assert _rewrite(once, _delete(*dotted)) == once  # idempotent
+    assert _rewrite(src, _delete(*reversed(dotted))) == once  # order-independent
+
+
+def test_sync_mapping_rescues_comments_when_it_removes_keys() -> None:
+    """The same deleter serves the hosts/integrations CRUD, where a removed service really disappears."""
+    out = _rewrite(
+        "computers:\n"
+        "  corsair:\n"
+        "    services:\n      web: {port: 80}\n      old: {port: 99}\n"
+        "# fleet-wide notes\n"
+        "server:\n  poll_seconds: 5\n",
+        lambda doc: config.sync_mapping(doc["computers"]["corsair"]["services"], {"web": {"port": 80}}),
+    )
+    assert "# fleet-wide notes" in out and "old:" not in out and "web:" in out
+
+
+def test_sync_mapping_emptying_a_child_rehomes_the_comment() -> None:
+    out = _rewrite(
+        "computers:\n"
+        "  corsair:\n"
+        "    services:\n      old: {port: 99}\n"
+        "# fleet-wide notes\n"
+        "server:\n  poll_seconds: 5\n",
+        lambda doc: config.sync_mapping(doc["computers"]["corsair"], {"services": {}}),
+    )
+    assert "# fleet-wide notes" in out and "old:" not in out
+    assert config._yaml_rt().load(out)["server"]["poll_seconds"] == 5
+
+
+def test_delete_on_a_plain_dict_config_is_a_no_op_not_a_crash() -> None:
+    """A fresh/empty config file yields plain dicts, which carry no ruamel comment structure."""
+    doc = {"inference": {"legacy": 1, "max_steps": 2}}
+    config._delete_dotted(doc, "inference.legacy")
+    assert doc == {"inference": {"max_steps": 2}}
+
+
+def test_delete_rehomes_across_a_sequence_valued_sibling() -> None:
+    """The anchor search walks into lists too (`inference.fallbacks` is one), where entries are
+    addressed positionally rather than by key."""
+    out = _rewrite(
+        "inference:\n  fallbacks:\n    - a\n    - b\n  legacy: 1\n  # doc for max_steps\n  max_steps: 2\n",
+        _delete("inference.legacy"),
+    )
+    assert "# doc for max_steps" in out and "legacy" not in out
+    assert config._yaml_rt().load(out)["inference"]["fallbacks"] == ["a", "b"]
+    assert out.index("- b") < out.index("# doc for max_steps") < out.index("max_steps: 2")
+
+
+def test_delete_rehomes_when_the_sequence_ends_in_an_empty_entry() -> None:
+    out = _rewrite(
+        "inference:\n  fallbacks:\n    - {}\n  legacy: 1\n  # doc for max_steps\n  max_steps: 2\n",
+        _delete("inference.legacy"),
+    )
+    assert "# doc for max_steps" in out
+    assert config._yaml_rt().load(out)["inference"]["max_steps"] == 2
+    assert out.index("# doc for max_steps") < out.index("max_steps: 2")

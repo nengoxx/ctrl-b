@@ -34,6 +34,8 @@ import yaml
 from dotenv import dotenv_values
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from ruamel.yaml import YAML
+from ruamel.yaml.error import CommentMark
+from ruamel.yaml.tokens import CommentToken
 
 from app.domain.agent import AgentDef, CompactionCfg, ModelRef
 from app.domain.enums import OSType, Risk
@@ -1103,6 +1105,7 @@ def _env_override_paths() -> set[str]:
     return paths
 
 
+_LOG = logging.getLogger("ctrlb.config")
 _MIGRATION_LOG = logging.getLogger("ctrlb.config.migration")
 
 #: Module-level channels for the quarantined A11 legacy fold. NOT persisted into Settings.
@@ -1645,20 +1648,202 @@ def deep_set(node: Any, patch: dict[str, Any]) -> None:
             node[k] = v
 
 
+# ── Comment-preserving key removal ───────────────────────────────────────────────────────────────
+# ruamel parks a key's trailing comment on the *preceding* entry: `ca.items[key][2]` is ONE token
+# holding that key's own end-of-line comment PLUS every full-line comment that follows it, up to the
+# next key. So a bare `del node[key]` silently destroys the operator's prose for whatever came AFTER
+# the deleted region — verified live: the A11 migration's `inference.cloud` delete took the four-line
+# `# Voice (Phase 6, D18 failover)…` section header with it. There is no library API for this (ruamel
+# ticket #377); the sanctioned recipe is to rescue the block and re-attach it to the surviving entry
+# that now precedes it, which is what `_delete_key` does. The rule it implements is symmetric: the
+# block ABOVE the key documents that key and dies WITH it (owner ruling, 2026-07-26 — a stale comment
+# describing config that no longer exists misleads whoever reads the file next), while the block
+# TRAILING the deleted region documents whatever comes after it and is re-homed verbatim.
+
+
+def _entry_keys(node: Any) -> list[Any]:
+    """The node's entry keys in file order — mapping keys, or positional indices for a sequence."""
+    return list(node.keys()) if hasattr(node, "keys") else list(range(len(node)))
+
+
+def _trailing_slot(node: Any) -> int:
+    """Which `ca.items` slot holds an entry's trailing comment: mappings park it at 2 (after the
+    value), sequences at 0."""
+    return 2 if hasattr(node, "keys") else 0
+
+
+def _last_comment_slot(node: Any, key: Any) -> tuple[Any, Any]:
+    """Return the `(owner, owner_key)` whose comment slot is positionally LAST inside the region that
+    `node[key]` occupies in the file — i.e. descend to the deepest-last leaf. Only that slot can hold
+    text belonging to what follows the region; comments parked anywhere else inside it genuinely
+    describe the content being removed."""
+    value = node[key]
+    if getattr(value, "ca", None) is not None and len(value):
+        return _last_comment_slot(value, _entry_keys(value)[-1])
+    return node, key
+
+
+def _take_trailing_comment(node: Any, key: Any) -> str:
+    """Return the comment text that must SURVIVE the removal of `node[key]`, verbatim (indentation,
+    blank lines and non-standard spacing included); `""` when there is none.
+
+    That is the tail of the deleted region's deepest-last slot, split at the first newline: the head is
+    the deleted line's own end-of-line comment and dies with it, while the remainder documents whatever
+    comes NEXT and is re-homed. A slot shaped unexpectedly (a future ruamel change) degrades to `""` —
+    the comment is lost exactly as it is today, never a crash."""
+    owner, owner_key = _last_comment_slot(node, key)
+    slot = owner.ca.items.get(owner_key)
+    value = getattr(slot[_trailing_slot(owner)] if slot else None, "value", None)
+    if not isinstance(value, str):
+        return ""
+    _own_eol, newline, tail = value.partition("\n")
+    return tail if newline else ""
+
+
+def _drop_comment_above(node: Any, key: Any, keys: list[Any], index: int) -> None:
+    """Remove the comment block sitting directly ABOVE `node[key]`: it documents the key being deleted,
+    and leaving it behind would describe config that no longer exists — a reader cannot tell a stale
+    block from a live one (owner ruling, 2026-07-26).
+
+    Where that block lives depends on position. For the FIRST key it is the mapping's leading comment,
+    one list shared with the parent's slot, so clearing it in place clears both. Otherwise it is the
+    tail of the PRECEDING entry's trailing token, which keeps only its own end-of-line comment. A block
+    a previous delete re-homed above this key (slot 1) documents this key too, so it goes as well.
+
+    One caveat if a caller ever deletes a TOP-LEVEL key that is first in the file: what reads as the
+    file's header banner is, to ruamel, that key's leading block, and it would go too. Not reachable
+    today — every deleter addresses keys inside a section, never a bare root key."""
+    slot = node.ca.items.get(key)
+    if slot and slot[1]:
+        slot[1] = []
+    if not index:
+        leading = getattr(node.ca, "comment", None)
+        if leading and leading[1]:
+            leading[1].clear()
+        return
+    owner, owner_key = _last_comment_slot(node, keys[index - 1])
+    preceding = owner.ca.items.get(owner_key)
+    position = _trailing_slot(owner)
+    token = preceding[position] if preceding else None
+    value = getattr(token, "value", None)
+    if not isinstance(value, str):
+        return
+    own_eol, newline, _above = value.partition("\n")
+    if own_eol.strip():
+        token.value = own_eol + newline
+    else:
+        preceding[position] = None
+
+
+def _attach_comment_after(node: Any, key: Any, text: str) -> None:
+    """Render `text` on the lines directly BELOW the entry `node[key]`. Appends to that entry's
+    existing comment token when it has one, otherwise creates one (a leading newline marks "no
+    end-of-line comment of my own"). Assumes the entry ends its own line — see `_place_comment_after`."""
+    if getattr(node, "ca", None) is None:  # a plain dict (fresh file) holds no comments at all
+        return
+    slot = node.ca.items.setdefault(key, [None, None, None, None])
+    index = _trailing_slot(node)
+    token = slot[index]
+    if token is None:
+        slot[index] = CommentToken("\n" + text, CommentMark(0))
+        return
+    if not token.value.endswith("\n"):
+        token.value += "\n"
+    token.value += text
+
+
+def _attach_comment_before(node: Any, key: Any, text: str) -> None:
+    """Render `text` on the lines directly ABOVE the entry `node[key]`. The block's own indentation is
+    already baked into it, so only the first line is dedented onto the token's column mark."""
+    if getattr(node, "ca", None) is None:  # a plain dict (fresh file) holds no comments at all
+        return
+    first, newline, rest = text.partition("\n")
+    column = len(first) - len(first.lstrip(" "))
+    slot = node.ca.items.setdefault(key, [None, None, None, None])
+    slot[1] = [CommentToken(first.lstrip(" ") + newline + rest, CommentMark(column))] + (slot[1] or [])
+
+
+def _place_comment_after(node: Any, key: Any, text: str) -> str:
+    """Render `text` immediately after the region `node[key]` occupies. Returns `""` once placed, or
+    `text` when nothing at this level can anchor it, so the caller re-homes it one level up.
+
+    The anchor is the region's LAST line, which for a container means its deepest-last leaf — hence
+    the recursion. An EMPTY container renders inline (`stt: {}`), so nothing inside it can carry a
+    comment and a token on its own entry would land between the key and its value, which no longer
+    parses; those hang above the FOLLOWING entry instead, which is the same file position."""
+    value = node[key]
+    if getattr(value, "ca", None) is None:  # a scalar leaf owns the last line of its region
+        _attach_comment_after(node, key, text)
+        return ""
+    if len(value):
+        text = _place_comment_after(value, _entry_keys(value)[-1], text)
+        if not text:
+            return ""
+    keys = _entry_keys(node)
+    index = keys.index(key)
+    # Nothing follows at this level either — bubble up. A sequence is only ever entered at its last
+    # item (see the recursion above), so it always lands here rather than on the "before" path.
+    if index == len(keys) - 1:
+        return text
+    _attach_comment_before(node, keys[index + 1], text)
+    return ""
+
+
+def _delete_key(node: Any, key: Any) -> str:
+    """Delete `key` from the ruamel mapping `node`, re-homing the comment block that trailed it.
+
+    Returns the orphan text the caller must re-home ONE LEVEL UP — that happens when the delete leaves
+    `node` with no entry able to anchor the block (see `_place_comment_after`), typically because the
+    mapping is now empty. Normally returns `""`. Missing keys are a no-op, so repeated deletes stay
+    idempotent."""
+    if key not in node:
+        return ""
+    if getattr(node, "ca", None) is None:  # a plain dict (fresh file) holds no comments to rescue
+        del node[key]
+        return ""
+    keys = _entry_keys(node)
+    index = keys.index(key)
+    orphan = _take_trailing_comment(node, key)
+    _drop_comment_above(node, key, keys, index)
+    del node[key]
+    if not orphan:
+        return ""
+    if not len(node):  # nothing left here to anchor it to
+        return orphan
+    if index:
+        return _place_comment_after(node, keys[index - 1], orphan)
+    _attach_comment_before(node, keys[1], orphan)  # no preceding entry — above the new first key
+    return ""
+
+
 def sync_mapping(node: Any, target: dict[str, Any]) -> None:
     """Make the ruamel mapping `node` match `target` while preserving the file as much as possible:
     set only the leaves that differ (so unchanged lines keep their comments/quoting), recurse into
     nested mappings, **add** keys new to `target`, and **delete** keys absent from `target`. Unlike
     `_deep_set` this also removes keys — so it's the right tool for replacing a host entry / its
     `services` map where the submission is the source of truth (a removed service really disappears)."""
+    orphan = _sync_mapping(node, target)
+    if orphan:
+        # Only reachable when the OUTERMOST mapping was synced empty; there is no enclosing entry to
+        # re-home into, so the block is dropped (today's behaviour — never a malformed file).
+        _LOG.warning("dropped a comment orphaned by emptying the outermost synced mapping")
+
+
+def _sync_mapping(node: Any, target: dict[str, Any]) -> str:
+    """`sync_mapping`'s recursion, returning the comment orphan this level could not place (see
+    `_delete_key`). Each frame is the parent of the next, so it re-homes what its child hands back."""
+    unplaced = ""
     for k, v in target.items():
         cur = node.get(k)
         if isinstance(v, dict) and hasattr(cur, "get"):
-            sync_mapping(cur, v)
+            orphan = _sync_mapping(cur, v)
+            if orphan:
+                unplaced += _place_comment_after(node, k, orphan)
         elif cur != v or k not in node:
             node[k] = v
     for k in [k for k in node if k not in target]:
-        del node[k]
+        unplaced += _delete_key(node, k)
+    return unplaced
 
 
 def _delete_dotted(doc: Any, dotted: str) -> None:
@@ -1666,12 +1851,19 @@ def _delete_dotted(doc: Any, dotted: str) -> None:
     or a missing leaf are a no-op — idempotent, so a second write after the legacy keys are gone is clean."""
     parts = dotted.split(".")
     node: Any = doc
+    ancestors: list[tuple[Any, Any]] = []  # walked (parent, key) pairs, to re-home an orphan upward
     for part in parts[:-1]:
         if not hasattr(node, "get"):
             return
+        ancestors.append((node, part))
         node = node.get(part)
-    if hasattr(node, "get") and parts[-1] in node:
-        del node[parts[-1]]
+    if not hasattr(node, "get"):
+        return
+    orphan = _delete_key(node, parts[-1])
+    while orphan and ancestors:  # the delete emptied `node` — climb until a level can anchor the block
+        orphan = _place_comment_after(*ancestors.pop(), orphan)
+    if orphan:
+        _LOG.warning("dropped a comment orphaned by deleting %s — no entry left to anchor it", dotted)
 
 
 def _materialize_migration(doc: Any) -> None:
