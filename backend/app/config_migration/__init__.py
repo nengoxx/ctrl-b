@@ -63,6 +63,7 @@ from app.config import (
     deep_set,
     delete_path,
     edit_config_yaml,
+    env_override_vars,
     home_path,
     load_dotenv,
     yaml_rt,
@@ -148,11 +149,18 @@ class Step(NamedTuple):
     `applies(ctx)` and `apply(ctx)` are both **pure**: they read `ctx.config` / `ctx.agents` and return
     a bool / a `Plan`. Neither writes. `version` orders the steps and sets the stamp written after the
     last one; it is never the trigger.
+
+    `retires` declares the `(section, key)` paths this step's shape leaves dead to the one-level env
+    overlay (`CTRLB_<SECTION>__<KEY>`). It is a **declaration, not a derivation**: `Plan.consumes` is
+    computed from what was removed from *this* config, so it both misses a path that only ever existed
+    in the environment and includes paths whose spelling stays live after the fold. Empty for a step
+    that retires nothing.
     """
 
     version: int
     applies: Callable[[Context], bool]
     apply: Callable[[Context], Plan]
+    retires: tuple[tuple[str, str], ...] = ()
 
 
 def _load_steps() -> tuple[Step, ...]:
@@ -794,6 +802,57 @@ def _write_agent(ctx: Context, path: Path, doc: dict[str, Any]) -> None:
     edit_config_yaml(mutate, path)
 
 
+# ── retired environment overrides ────────────────────────────────────────────────────────────────
+
+
+def retired_env_overrides(
+    steps: Sequence[Step] = STEPS, environ: Mapping[str, str] | None = None
+) -> list[tuple[str, str]]:
+    """The `CTRLB_*` overrides addressing a path a step retired, as `(variable, "section.key")`.
+
+    Pure and cheap — no filesystem, no config, no parse. The grammar is not re-implemented here: it
+    comes from `config.env_override_vars`, the same parser the overlay itself uses, so a variable the
+    overlay would apply (`CTRLB_Embeddings__Api_Key`, lower-cased on the way in) is a variable this
+    finds.
+
+    Callers differ on purpose. `check()`/`apply()` **refuse** on a non-empty result: they run attended,
+    at the update gate, with prod still serving, and that is the one moment the fix is cheap. Slice 4's
+    boot check will call this same function and **log** — an old line in `.env` must not take down the
+    only UI there is to fix it with, and by then the migration gate has already forced the value onto
+    disk. The two callers also see different environments: the CLI sees the operator's shell and
+    `.env`, while the service additionally sees the systemd user manager's `Environment=`, so neither
+    check subsumes the other.
+    """
+    retired = {p for s in steps for p in s.retires}
+    return [
+        (var, f"{section}.{key}")
+        for var, section, key in env_override_vars(environ)
+        if (section, key) in retired
+    ]
+
+
+def _refuse_retired_env(steps: Sequence[Step]) -> None:
+    """Refuse while the environment still carries an override this build retired (§7).
+
+    Names only — the variable and the dead path it addresses, never a value. The remedy covers both
+    sides of the migration because this runs on either side of it: before, the legacy key the variable
+    names is still the right home and the fold will carry it into the generated provider; after, that
+    key is gone and the credential belongs on the provider the section points at.
+    """
+    found = retired_env_overrides(steps)
+    if not found:
+        return
+    listing = "\n  ".join(f"{var} -> {path}" for var, path in found)
+    raise MigrationRefused(
+        "environment override(s) address config paths this build retired:\n  " + listing,
+        remedy=(
+            "unset them and re-run. A value one of them supplied has to live in config.yaml instead: "
+            "before migrating, under the legacy key the variable names (the migration carries it into "
+            "the provider it creates); after migrating, on the provider that section points at"
+        ),
+    )
+
+
 # ── check / apply ────────────────────────────────────────────────────────────────────────────────
 
 
@@ -850,6 +909,7 @@ def _assert_postcondition(steps: Sequence[Step], plan: Plan | None) -> None:
 def check(ctx: Context, steps: Sequence[Step] = STEPS) -> Status:
     """`--check`: parse, plan, validate, probe writability. Writes nothing. Raises `MigrationRefused`
     for anything that would fail, so a caller (`install.sh`) can abort while prod is still serving."""
+    _refuse_retired_env(steps)
     status = detect(ctx, steps)
     if not status.exists or not ctx.config:
         return status
@@ -883,6 +943,7 @@ def apply(ctx: Context, steps: Sequence[Step] = STEPS) -> Applied:
     fail, which is a worse failure than the one it prevents. A failure *after* the commit is reported
     as its own state, naming the backup to restore.
     """
+    _refuse_retired_env(steps)
     status = detect(ctx, steps)
     if not status.exists or not ctx.config:
         return Applied(status=status)  # absent or empty → never created, never stamped (§3.2)
@@ -1000,4 +1061,5 @@ __all__ = [
     "main",
     "needs_migration",
     "read_marker",
+    "retired_env_overrides",
 ]

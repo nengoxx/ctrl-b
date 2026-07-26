@@ -810,8 +810,14 @@ class Settings(BaseSettings):
   which a flat `.env` can't do. A `.env` file adds a **bootstrap + override** layer:
   - **Bootstrap knobs** the UI never edits: `CTRLB_CONFIG`, `CTRLB_DB`, `CTRLB_ENV` (paths).
   - **Optional scalar overrides** `CTRLB_<SECTION>__<KEY>` that **win over** `config.yaml`
-    (e.g. `CTRLB_INFERENCE__CLOUD_KEY`) — so a key *can* be kept out of the YAML without breaking
-    the UI. `.env` is operator-owned; the app **never rewrites it** (only `config.yaml`).
+    (e.g. `CTRLB_SERVER__PORT`, `CTRLB_TAILSCALE__TARGET_PORT`). **One level only, declared fields
+    only** — it cannot reach a provider credential (`providers.<name>.api_key`), and an undeclared
+    path is warned about at startup rather than silently ignored (UPDATE_PLAN slice 3). Keeping a
+    credential out of the YAML is therefore **not** supported: secrets live in `config.yaml` (0600,
+    gitignored, UI-managed). The designed seam if that ever changes is an explicit `api_key_env:`
+    field on the provider, resolved at the registry — [`ROADMAP.md`](./ROADMAP.md) §I2, evidence in
+    [`research/R6`](./research/R6-env-overrides-and-secret-provenance.md). `.env` is operator-owned;
+    the app **never rewrites it** (only `config.yaml`).
   Real environment variables take precedence over `.env`. Templates: `config.example.yaml` +
   `.env.example` (both committed, commented, no real secrets).
 - Secrets are `SecretStr`; `GET /api/settings` returns them **masked** (`"sk…34"`); a `PUT`

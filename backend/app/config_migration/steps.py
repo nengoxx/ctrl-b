@@ -487,5 +487,27 @@ def _refuse_unmappable(ctx: Context, slot_map: Mapping[str, str]) -> None:
     )
 
 
+#: One-level env-override paths (`CTRLB_<SECTION>__<KEY>`) this fold leaves DEAD — legacy knowledge,
+#: so it lives here and is deleted with the step. A variable naming one of these used to reach a real
+#: field and now reaches nothing; `--check`/`--apply` refuse rather than let an operator update a box
+#: while believing a credential is still being supplied.
+#:
+#: Two rules decide membership, and both matter:
+#:  1. **Only what the one-level grammar can address.** The voice slots (`voice.stt.primary.api_key`)
+#:     sit two levels down and were never reachable by an env var, so retiring them would be theatre.
+#:  2. **Only what the NEW schema no longer declares.** `embeddings.model` and `inference.fallbacks`
+#:     are consumed by this fold *and still exist* — same spelling, new meaning (a provider-relative
+#:     model selector; a structured ref list). Listing them would refuse a valid
+#:     `CTRLB_EMBEDDINGS__MODEL`. `test_no_retired_path_names_a_live_field` pins the rule against the
+#:     live models so the next step cannot get this wrong.
+A11_RETIRED_ENV_PATHS: tuple[tuple[str, str], ...] = (
+    ("inference", "default_mode"),
+    ("inference", "local"),
+    ("inference", "cloud"),
+    ("embeddings", "base_url"),
+    ("embeddings", "api_key"),  # the only one that ever carried a credential
+    ("embeddings", "dim"),
+)
+
 #: The one migration step. `applies` is checked on every run regardless of the file's stamp (§3.1).
-A11 = Step(version=1, applies=a11_applies, apply=a11_apply)
+A11 = Step(version=1, applies=a11_applies, apply=a11_apply, retires=A11_RETIRED_ENV_PATHS)

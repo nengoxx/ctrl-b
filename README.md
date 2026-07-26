@@ -216,11 +216,13 @@ and fill in; every section is optional, built-in defaults apply). Two ways to ed
   your hand-written comments preserved and secrets masked on read.
 - **By hand** — edit the YAML directly; the backend reads it at startup, so restart after.
 
-Any scalar can also be overridden from `.env` as `CTRLB_<SECTION>__<KEY>=value` — note the
-**double** underscore; env always wins over the file. Use it to keep a specific secret out of
-`config.yaml` (e.g. `CTRLB_INFERENCE__CLOUD_KEY=sk-...`) — structured values (host lists, server
-lists) can't be set this way. Data location: `CTRLB_HOME` (default: the repo root; servers use
-`~/.ctrl-b`).
+A **declared scalar** can also be overridden from `.env` as `CTRLB_<SECTION>__<KEY>=value` — note the
+**double** underscore; env always wins over the file. It reaches one level only (`CTRLB_SERVER__PORT`,
+`CTRLB_TAILSCALE__TARGET_PORT`), so structured values — host lists, MCP servers, and **every provider
+credential**, which lives at `providers.<name>.api_key` — can't be set this way; a variable naming a
+path the schema doesn't declare is logged as ineffective at startup rather than silently ignored.
+**Secrets live in `config.yaml`**, which is `0600`, gitignored and UI-managed. Data location:
+`CTRLB_HOME` (default: the repo root; servers use `~/.ctrl-b`).
 
 **One risk model everywhere.** Tools and integrations declare a `risk` of `low | med | high`:
 `low` runs immediately; `med`/`high` suspend into a confirm bubble (in both the Fleet UI and agent

@@ -1,9 +1,11 @@
 # UPDATE_PLAN v3 — the update/migration architecture
 
-> **Status: DESIGN v3 — owner-ratified rulings folded in. ▶ SLICES 1 + 2 BUILT 2026-07-26** — the
-> runner (**[§11](#11-slice-1--as-built-2026-07-26)**) and the fold's move out of the config load path
-> (**[§12](#12-slice-2--as-built-2026-07-26)**), 96 migration tests, gate 6/6, both live configs
-> rehearsed on copies. Next: slice 3 (env overrides).
+> **Status: DESIGN v3 — owner-ratified rulings folded in. ▶ SLICES 1 + 2 + 3 BUILT 2026-07-26** — the
+> runner (**[§11](#11-slice-1--as-built-2026-07-26)**), the fold's move out of the config load path
+> (**[§12](#12-slice-2--as-built-2026-07-26)**), and env overrides
+> (**[§13](#13-slice-3--as-built-2026-07-26-the-env-override-capability-retracted-the-retired-path-guarded)**
+> — **§7 was overturned**: the provider-form overlay was ruled against and the capability RETRACTED).
+> Gate 6/6, both live configs rehearsed on copies. Next: slice 4 (the import-time boot check).
 > **Owner requirements:** after an update prod holds **zero** legacy keys · a **human with no coding
 > agent** updates prod · a failed update is recoverable · **no leftover code, config or artifacts** ·
 > **lean — no machinery we must maintain long-term.**
@@ -145,10 +147,17 @@ would have spilled provider keys, SSH passwords and MCP headers into scrollback.
 dict *including `api_key`*. The CLI never prints `ValidationError` or a raw exception — only sanitised
 locations and messages.
 
-**`--check` hard-fails** when a consumed legacy secret exists only in the environment with no
-new-form replacement. It prints the exact replacement variable and says: **add the new-form variable
-now; remove the legacy one after the update completes** — the still-running old code may need it if
-anything restarts before cutover (Fable N3).
+**`--check` and `--apply` hard-fail** while the environment carries an override naming a path a
+migration step **retired** (§13). Names only — the variable and the dead path — with the remedy: put
+the value under the legacy key in `config.yaml` (the fold carries it into the provider it creates) and
+unset the variable.
+
+*(Rewritten in slice 3. The original wording — "add the new-form variable now; remove the legacy one
+after the update completes" — described a `CTRLB_PROVIDERS__…` replacement form that slice 3 ruled
+against building, and was self-contradictory even on its own terms: §7 hard-failed on the retired
+variable, so keeping it through cutover was a state the runner refused. Codex found the contradiction;
+the corrected remedy has no such state, because the value moves to disk rather than to another
+variable.)*
 
 **Path resolution** is explicit: `.env` → `CTRLB_CONFIG`/`CTRLB_HOME` → default, identical to
 `load_settings`. The CLI **pins its `.env` discovery** rather than inheriting the caller's cwd, and
@@ -286,14 +295,15 @@ idempotent + postcondition · agents dir missing → no-op · **unparseable `age
 REFUSE** (skipping would leave a `mode:` the new reader rejects) · agent write fails midway → no
 restore, by design (§3.4) · stray `mode:` added later → hard `ValidationError` naming the field.
 
-**Environment overrides.** Keep the existing one-level mechanism **untouched**; add only
-`CTRLB_PROVIDERS__<encoded-name>__<field>` with: an explicit **scalar-field allowlist**, documented
-case rules, resolution by **normalising the provider names already present in the YAML** (`-`, `.`, `+`
-→ `_`), **rejection of every normalised collision**, rejection of unknown providers and unknown fields,
-and never replacing a non-mapping intermediate. A `CTRLB_*` variable landing on a **retired** path
-**hard-fails at boot** rather than warning — a warning ships a service running without its credential.
-*(Capability gain: provider API keys become fully separable into `.env`. Structured secrets stay in
-`config.yaml` by design. The app never writes `.env`.)*
+**Environment overrides. ▲ SUPERSEDED by slice 3 — see §13 for what was built and why.** This
+paragraph specified a `CTRLB_PROVIDERS__<encoded-name>__<field>` overlay (scalar-field allowlist, name
+normalisation, collision rejection, unknown-provider rejection) plus a **boot hard-fail** on any
+retired path. Both halves were overturned by the slice-3 round table: the overlay cannot deliver its
+own capability without provenance (a providers-carrying save materialises the env secret into the
+YAML) and makes an env-addressed provider un-renameable; and the boot hard-fail is the wrong severity
+for residue. What ships instead: the existing one-level mechanism kept, a **warning** on any
+undeclared path, and a **refusal in `--check`/`--apply`** for a retired one. Evidence:
+[`research/R6`](./research/R6-env-overrides-and-secret-provenance.md).
 
 **Operator experience.** Every remediation message uses the **venv-qualified interpreter path** (plain
 `python` cannot import the app) · on post-cutover failure `update.sh` states **"prod is currently
@@ -364,8 +374,9 @@ deleting code rather than adding it.**
 2. **Move the fold in.** `steps.py`; strip `config.py` + `edit_config_yaml`; the A11 tests move; the
    mixed-shape test is **updated** (behaviour change); §3.9's unmigratable-state refusal; fixtures pin
    the four item-6 defects.
-3. **Env overrides.** The provider form only, allowlist + normalisation + collision rejection, the
-   retired-path hard-fail, the FX-B check with corrected wording.
+3. **Env overrides.** ✅ BUILT — **§13**. Not what this line said: the provider form was ruled against
+   (§13), and what shipped is the retired-path refusal in the CLI + an undeclared-path warning + the
+   docs retraction.
 4. **`main.py` import-time check + `RestartPreventExitStatus=78`** — and **verify the terminal
    `failed` status 78 on the dev unit**, plus the `--reload` worker path (a reload worker exits through
    uvicorn's `ChangeReload` parent, not systemd — behaviour unverified).
@@ -490,3 +501,88 @@ on consumed keys and die with them (the owner's symmetric ruling) — including 
 rather than died; **slice 7's runbook gets a line**: skim the backup against the new file and re-add any
 comment worth keeping, and never restore an agent file from a pre-migration backup without re-saving it.
 ③ The env-only-secret hole is pinned by a test asserting today's behaviour; slice 3 closes it.
+
+---
+
+## 13. Slice 3 — AS BUILT (2026-07-26): the env-override capability RETRACTED, the retired path guarded
+
+**The slice was specified as an implementation and shipped as a retraction.** §7 asked for a
+`CTRLB_PROVIDERS__<encoded-name>__<field>` overlay so provider keys could live in `.env`. A field pass
+([R6](./research/R6-env-overrides-and-secret-provenance.md), 11 projects) plus a Codex + Fable round
+table killed it, and the owner ruled: **Design C — retract the promise, guard the retired path.**
+
+### Why the overlay died (each finding independently sufficient)
+
+| Sev | Found by | Finding |
+|---|---|---|
+| HIGH | Codex | **It cannot deliver its own capability without provenance.** The PUT baseline is env-overlaid (`runtime.py:460-481`), so a providers-carrying save writes the env secret into `config.yaml` — for all six allowlisted fields, not just `api_key`. LiteLLM hit this exact bug and names the second-order harm: the materialised copy then *shadows the env source on every restart*. |
+| HIGH | Codex | **An env-addressed provider cannot be renamed or deleted.** Rename in Conf → the old variable targets an unknown provider (boot fails); adding the new variable first also fails, since the new name isn't in the YAML yet. No valid two-phase state. Fixing it needs aliases — "which largely turns A into B". |
+| HIGH | Fable | **Wrong shape regardless:** a permanent public env grammar (normalisation, collisions, allowlist, the `dash` portability caveat) in *permanent* code, serving a capability with **zero users** — no `.env` exists on either box. |
+| — | R6 | Six of eight peers have **no** env→named-entry addressing; the field uses file-side references instead. The only two that do (Gitea, Grafana) needed a hex escape / shipped lossy with no collision handling, and **every** implementation examined creates unknown entries silently. |
+
+**The file-side reference (Design B) was also declined — but only on cost, and its shape is now ruled.**
+Codex confirmed `ProviderCfg.api_key` has exactly two consumers (`provider_registry.py:252-269`,
+`272-337`), but B additionally needs centralized resolution, provider invalidation on a missing
+variable, `_target_identity` comparing resolved credentials — and a fix to `Settings.secret_values()`,
+which feeds shell-output redaction: a model holding `env:KEY` stops redacting the *real* key from tool
+output. **Fable's ruling, recorded for the seam: never a magic string.** An explicit `api_key_env:`
+sibling field says a different thing (where to find it vs what it is), needs **zero** changes to the
+secret machinery (it isn't in `_SECRET_LEAF_KEYS`), and costs one line in the drift-guard allowlist
+(`tests/test_secret_hygiene.py:142`). Recorded as [ROADMAP I2](./ROADMAP.md#i2).
+
+### Two defects the round table found in THIS document
+
+1. **`embeddings.model` and `inference.fallbacks` are NOT retired** (Codex, HIGH). Building `retires`
+   from what the fold *consumes* was wrong: both are consumed **and still declared** by the new schema
+   — same spelling, new meaning. Listing them would refuse a valid `CTRLB_EMBEDDINGS__MODEL`. The rule
+   is now pinned mechanically against the live models
+   (`test_no_retired_path_names_a_live_field`), so the next step cannot repeat it.
+2. **§3.5's cutover contract contradicted §7** (Codex, HIGH): "add the new-form variable, keep the old
+   until cutover" against "any retired variable hard-fails" — there was no successful state. Rewritten
+   above; the value now moves to **disk**, not to another variable.
+
+### The severity ruling — refuse in the CLI, warn at boot
+
+Fable and Codex split on this (Fable: warn; Codex: keep exit 78). **Ruled with Fable, on a reason
+neither gave:** the 78 taxonomy is defined over *the config file* ("a config this build cannot
+migrate"), and stretching it to cover the operator's environment weakens a contract slices 4–7 branch
+on. Codex's worry is answered by an asymmetry that also settles the split: **the CLI and the service
+see different environments** — the CLI sees the shell + `.env`, the service additionally sees the
+systemd user manager's `Environment=` — so neither check subsumes the other. Therefore: **refuse
+(78) in `--check`/`--apply`**, the attended gate where prod still serves and the fix is cheap;
+**log at boot** (slice 4), because an old `.env` line must not take down the only UI there is to fix it
+with. `_refuse_retired_env` is deliberately **not** in `detect()`, which slice 4's boot path calls.
+
+### Overruled: the four phantom variables
+
+Both reviewers wanted `CTRLB_INFERENCE__CLOUD_KEY` / `CTRLB_STT__KEY` / `CTRLB_TTS__KEY` /
+`CTRLB_EMBEDDINGS__KEY` (shipped in `.env.example`, naming fields that **never existed**) added to
+`retires`. Overruled in favour of Fable's other proposal — a **generic warning** whenever an override
+addresses a path `Settings` does not declare. It closes the whole class including future typos, lives
+with the live mechanism rather than with legacy knowledge, and keeps `retires` honestly meaning "paths
+the A11 fold killed", which must die with the step.
+
+### As built
+
+- **`config.env_override_vars()`** — the ONE parser for the grammar, returning `(var, section, key)`
+  and **never values**. `_apply_env_overrides` applies what it returns; the migration matches against
+  it, so a retired-path check cannot drift from the overlay it guards (it catches
+  `CTRLB_Embeddings__Api_Key`, which the overlay lower-cases and applies). *(`_env_override_paths` was
+  deleted as dead in slice 2 and returns here with a real consumer.)*
+- **`config._env_path_is_declared()`** + the warning — derived from `Settings.model_fields`, so it
+  stays true as sections gain fields. Behaviour of the overlay itself is **unchanged**.
+- **`Step.retires`** (4th field, default `()`) + `steps.py::A11_RETIRED_ENV_PATHS` — six paths:
+  `inference.{default_mode,local,cloud}` + `embeddings.{base_url,api_key,dim}`. Two membership rules,
+  both tested: only what the one-level grammar can address (the voice slots sit two levels down and
+  were never reachable), and only what the new schema no longer declares.
+- **`retired_env_overrides()`** (pure, shared) + `_refuse_retired_env()` in `check`/`apply` only.
+- **Docs retracted**: `README.md` §Configuration · `DESIGN.md` §9 · `.env.example` · `SECURITY_MODEL.md`
+  §Storage · `config.py`'s module docstring. The `.env.example` entry names the four phantom variables
+  explicitly and says they never worked, so an operator who copied them can find out why.
+- **Tests**: `tests/test_config_env_overrides.py` (15) — **the overlay's first-ever coverage**, the
+  warning by name-not-value, the refusal + exit 78 + nothing written, case-insensitive matching, the
+  live-path regression, `detect()` staying quiet, and the two invariants. The slice-2 pin
+  (`test_an_env_only_legacy_secret_is_not_carried_across`) is flipped: it now asserts the refusal and
+  then walks the operator's remedy through to a migrated config carrying the key.
+- Backend suite **1013** (was 998). `tests/conftest.py` also drops inherited `CTRLB_*__*` variables —
+  without it, a developer with one exported fails tests that have nothing to do with it.

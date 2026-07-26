@@ -2,11 +2,14 @@
 
 > ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21). **On main, UNRELEASED: A11 COMPLETE
 > (chat + voice/embeddings) + D3 slice 3 + the 2026-07-26 fix wave.
-> ▶ **[`UPDATE_PLAN.md`](./UPDATE_PLAN.md) SLICES 1 + 2 ✅ BUILT 2026-07-26** — the runner (**§11**) and
-> the fold's move out of the config load path (**§12**); 96 migration tests, gate 6/6, three council
-> rounds. **NEXT = SLICE 3** (env overrides). ⚠ Two owner decisions are pending in the session block
-> below (converge the dev config; rename three providers after migrating). §10 is the slice list, §8 the owner rulings, §9 the council
-> record. Then the **A11 PRE-RELEASE FIX LIST** in the 2026-07-26 session
+> ▶ **[`UPDATE_PLAN.md`](./UPDATE_PLAN.md) SLICES 1 + 2 + 3 ✅ BUILT 2026-07-26** — the runner (**§11**),
+> the fold's move out of the config load path (**§12**), and env overrides (**§13**); gate 6/6, backend
+> 1013. **Slice 3 overturned its own spec (§7):** the `CTRLB_PROVIDERS__…` overlay was ruled against by
+> a Codex + Fable round table on [R6](./research/R6-env-overrides-and-secret-provenance.md) evidence,
+> and the owner ruled **retract** — `.env` cannot carry a secret and the docs no longer say it can.
+> **NEXT = SLICE 4** (the `main.py` import-time check + `RestartPreventExitStatus=78`; it inherits the
+> retired-env detector as a **log**, not an exit — §13). §10 is the slice list, §8 the owner rulings,
+> §9 the council record. Then the **A11 PRE-RELEASE FIX LIST** in the 2026-07-26 session
 > block (the parked deep audit is DONE — one MUST-FIX: a masked secret can be persisted as the real API
 > key). Release A11 via D48 §rollout only after both, and only once the owner ratifies the three pending
 > D48 Slice-2 calls (a precondition D48 sets for itself, open since 2026-07-23).**
@@ -410,6 +413,53 @@
 > ⚠ **Do not start dev on a tree older than slice 2** — that code expects the legacy shape.
 > Session scratch (Codex prompts/reviews) lived in the tmpfs scratchpad and is gone by design;
 > everything durable is in the repo.
+
+> **▶▶ SESSION 2026-07-26 (PM/2) — UPDATE_PLAN SLICE 3 BUILT: the env-secret capability RETRACTED,
+> the retired path GUARDED.** Gate **6/6**; backend **1013** (was 998). Full as-built + every ruling:
+> **[`UPDATE_PLAN.md` §13](./UPDATE_PLAN.md#13-slice-3--as-built-2026-07-26-the-env-override-capability-retracted-the-retired-path-guarded)**.
+> Owner ruled Design **C** ("its ok if both reviewers have thought the same lets go with that").
+>
+> **The slice was specified as an implementation and shipped as a retraction.** §7 asked for
+> `CTRLB_PROVIDERS__<encoded-name>__<field>` so provider keys could live in `.env`. Field research
+> ([R6](./research/R6-env-overrides-and-secret-provenance.md), 11 projects, NEW dossier) found the peer
+> class **abandoned** env→named-entry addressing (6 of 8 use a file-side reference instead; the only two
+> that do it needed a hex escape or shipped lossy collisions). Then Codex and Fable, on different
+> lenses, independently returned the same verdict:
+> - **Codex HIGH ×2 (the overlay is unbuildable as specified):** the PUT baseline is env-overlaid, so a
+>   providers-carrying save **materialises the env secret into `config.yaml`** — for all six allowlisted
+>   fields, not just `api_key` (LiteLLM's own bug report: the copy then *shadows the env source on every
+>   restart*) · and an env-addressed provider **cannot be renamed or deleted** — there is no valid
+>   two-phase state.
+> - **Fable HIGH:** a permanent public env grammar in permanent code for a capability with **zero users**
+>   (no `.env` exists on either box; all four secrets are inline in `config.yaml`).
+>
+> **Two defects the round table found in the PLAN ITSELF, both Codex HIGH, both fixed:** ① my retires
+> list was derived from what the fold *consumes*, but `embeddings.model` and `inference.fallbacks` are
+> consumed **and still declared** — same spelling, new meaning — so the guard would have refused a valid
+> `CTRLB_EMBEDDINGS__MODEL`; now pinned mechanically against the live models. ② §3.5's cutover contract
+> contradicted §7 (keep the old variable through cutover vs any retired variable hard-fails = no
+> successful state); rewritten so the value moves to **disk**, not to another variable.
+>
+> **Reviewers split once, and I ruled with Fable** (Codex wanted exit 78 at boot): the 78 taxonomy is
+> defined over *the config file*, and the CLI and the service see **different environments** (the CLI
+> sees the shell + `.env`; the service also sees systemd `Environment=`), so neither subsumes the other.
+> → **refuse (78) in `--check`/`--apply`** (attended, prod still serving), **log at boot** (slice 4 —
+> and `_refuse_retired_env` is deliberately NOT in `detect()`, which the boot path calls). **I overruled
+> both** on the four phantom `.env.example` variables: instead of listing names that never existed as
+> "retired", an override onto any path `Settings` doesn't declare now **warns** — closing the class,
+> typos included, without growing legacy knowledge.
+>
+> **Shipped:** one shared grammar parser (`config.env_override_vars`, names never values) used by both
+> the overlay and the guard so they cannot drift · `Step.retires` + six declared paths in the deletable
+> `steps.py` · the refusal · the undeclared-path warning · the docs retraction across **five** documents
+> (README · DESIGN §9 · `.env.example` · SECURITY_MODEL §Storage · `config.py`'s module docstring) ·
+> **the overlay's first-ever tests** (15) + the flipped slice-2 pin · the conftest `CTRLB_*__*` strip ·
+> **[ROADMAP I2](./ROADMAP.md#i2)** recording the ruled seam if the capability is ever wanted (explicit
+> `api_key_env:` field, resolved at the registry through one helper, **never** a magic string, and
+> `secret_values()` must return the resolved value or shell-output redaction stops protecting the key).
+> **Rehearsed on copies of both live configs:** clean check on each, refusal + exit 78 with a retired
+> var and no value leaked, no refusal on a live one, prod copy migrates → idempotent → 0600 → all four
+> roles resolve.
 
 > **▶▶ SESSION 2026-07-26 (PM) — UPDATE_PLAN SLICE 2 BUILT: the fold LEAVES the config load path.**
 > Gate **6/6**; backend **998** (was 952). As-built + every defect the council found:

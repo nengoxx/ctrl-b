@@ -539,12 +539,15 @@ def test_the_migrated_workspace_is_idempotent(tmp_path, monkeypatch) -> None:
     assert (home / "config.yaml").read_bytes() == before
 
 
-def test_an_env_only_legacy_secret_is_not_carried_across(tmp_path, monkeypatch) -> None:
-    """Item-6 defect, PINNED AS-IS for slice 3 to close: the migration reads DISK TRUTH (§3.1), so an
-    api_key that lives only in `CTRLB_EMBEDDINGS__API_KEY` is not folded into the provider — and once
-    the disk is new-shape, that one-level env override can no longer address `providers.*.api_key`
-    either, so the credential silently stops being applied. Slice 3 adds the `CTRLB_PROVIDERS__…`
-    form and makes `--check` hard-fail on exactly this."""
+def test_an_env_only_legacy_secret_is_refused_rather_than_silently_dropped(tmp_path, monkeypatch) -> None:
+    """Item-6 defect, CLOSED by slice 3 (this test was its pin, and asserted the hole).
+
+    The migration reads DISK TRUTH (§3.1), so an api_key living only in `CTRLB_EMBEDDINGS__API_KEY` was
+    never folded into the provider — and once the disk is new-shape that one-level override cannot
+    address `providers.*.api_key` either, so the credential silently stopped being applied. Slice 3
+    refuses at the gate instead, while the legacy key is still the right place to put the value. The
+    fold itself is unchanged: it still carries only what is on disk (see the assertions after the fix).
+    """
     home = tmp_path / "home"
     home.mkdir()
     (home / "config.yaml").write_text(
@@ -553,11 +556,17 @@ def test_an_env_only_legacy_secret_is_not_carried_across(tmp_path, monkeypatch) 
     monkeypatch.setenv("CTRLB_HOME", str(home))
     monkeypatch.delenv("CTRLB_CONFIG", raising=False)
     monkeypatch.setenv("CTRLB_EMBEDDINGS__API_KEY", "sk-env-only")
+    with pytest.raises(cm.MigrationRefused, match="CTRLB_EMBEDDINGS__API_KEY") as exc:
+        cm.apply(cm.context_from_env())
+    assert "sk-env-only" not in str(exc.value) + exc.value.remedy
+
+    # The operator follows the remedy: the value goes under the legacy key, the variable goes away.
+    (home / "config.yaml").write_text(
+        "embeddings:\n  base_url: http://e/v1\n  model: emb\n  api_key: sk-env-only\n", encoding="utf-8"
+    )
+    monkeypatch.delenv("CTRLB_EMBEDDINGS__API_KEY")
     cm.apply(cm.context_from_env())
-    migrated = cm.context_from_env().config
-    provider = migrated["providers"]["e"]
-    assert "api_key" not in provider  # today: the env-only secret is simply absent
-    assert load_settings(home / "config.yaml").providers["e"].api_key is None
+    assert load_settings(home / "config.yaml").providers["e"].api_key == "sk-env-only"
 
 
 def test_legacy_voice_does_not_license_a_stranded_chat_mode(tmp_path) -> None:

@@ -41,6 +41,12 @@ os.environ["CTRLB_HOME"] = _SUITE_HOME
 os.environ["CTRLB_ENV"] = os.path.join(_SUITE_HOME, ".env-absent")
 os.environ.pop("CTRLB_CONFIG", None)
 os.environ.pop("CTRLB_DB", None)
+# Section overrides (`CTRLB_<SECTION>__<KEY>`) inherited from the invoking shell are dropped too: they
+# silently overlay every `load_settings` in the suite, and since slice 3 one class of them (a path a
+# migration retired) makes `check`/`apply` refuse — so a developer with one exported would fail tests
+# that have nothing to do with their variable. The suite's own tests set theirs via `monkeypatch`.
+for _k in [k for k in os.environ if k.startswith("CTRLB_") and "__" in k]:
+    os.environ.pop(_k, None)
 
 
 @pytest.fixture(autouse=True)

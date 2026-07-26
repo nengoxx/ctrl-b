@@ -811,3 +811,48 @@ that must never break.
 (keep last N) · a careful one-time migration of the existing prod install to the new layout ·
 `deploy/linux/README.md` §Release/§Rollback/§Hotfix · rollback testing on dev first. Comparable in
 size to the migration work itself — its own plan, not a rider.
+
+### I2. Provider credentials from the environment — the ruled seam (**declined 2026-07-26; see [`UPDATE_PLAN.md`](./UPDATE_PLAN.md) §13**)
+
+**Not built, and the shape is already decided** — so if the need ever appears this is an additive
+slice, not a design round.
+
+**The need it would serve.** Today every credential lives in `config.yaml` (0600, gitignored,
+UI-managed), which is correct for one operator on one box. It stops being enough with an immutable or
+read-only config deployment, container secret injection, an external secret manager, automated
+credential rotation, or a wish to distribute the config independently of its secrets. **None of those
+exists here** — there is no `.env` on either box — which is why this is declined rather than built.
+
+**The shape, ruled by Fable in the slice-3 round table.** An **explicit optional field** on the
+provider:
+
+```yaml
+providers:
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_KEY     # names WHERE the key is; `api_key:` names WHAT it is
+```
+
+- **Never a magic string** (`api_key: env:NAME`). A value-encoded union inside the one field the secret
+  machinery owns forces carve-outs into audited code: `mask_secrets` must learn not to mask a *name*,
+  `secret_values` would redact the name while missing the real key, and the Conf tab's password input
+  becomes sometimes-a-name. A sibling field says a different thing and needs **none** of that — it
+  isn't in `_SECRET_LEAF_KEYS`, so it displays, round-trips and PUTs as ordinary data, and
+  `providers_rev` picks it up for free. Cost: one line in the drift-guard allowlist
+  (`tests/test_secret_hygiene.py:142`, since the name matches a secret hint).
+- **Resolved at the registry, never in `load_settings`.** Resolving at the config layer puts the secret
+  into `model_dump`, which the PUT chokepoint writes — materialising the env value into the very file
+  it was meant to stay out of, and (LiteLLM's own bug report) the copy then *shadows the env source on
+  every restart*. `ProviderCfg.api_key` has exactly two consumers today
+  (`core/provider_registry.py:252-269` and `272-337`); the seam ships as **one
+  `resolve_api_key(pcfg)` helper** so a third consumer cannot bypass it.
+- **A missing variable must invalidate the provider's targets**, not degrade to no-auth: a strict 422
+  on a resolution-relevant PUT and a names-only lenient warning at boot, through the channel that
+  already exists.
+- **`Settings.secret_values()` must return the resolved value**, or shell-output and session-search
+  redaction stops protecting the real key (`services/actions/shell.py:72`,
+  `agent/session_search.py:68-70`).
+
+**Explicitly NOT the shape:** `CTRLB_PROVIDERS__<name>__<field>` env→path addressing. It cannot deliver
+its own capability without per-field provenance, it makes an env-addressed provider un-renameable, and
+6 of 8 peer projects abandoned the pattern ([R6](./research/R6-env-overrides-and-secret-provenance.md)).

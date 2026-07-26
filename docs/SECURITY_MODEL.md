@@ -245,9 +245,10 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 
 **The invariant:** a secret value never appears in a tool result, API response, log, SSE frame, commit, or
 code. Upheld by:
-- **Storage:** SSH creds + API keys live in `config.yaml` (gitignored, masked on API read); scalar overrides
-  in `.env` (gitignored). `config.yaml`, `.env`, `clients/`, `*_prompt.*` are all gitignored — never commit
-  or echo them.
+- **Storage:** SSH creds + API keys live in `config.yaml` — the **only** home for a secret (gitignored,
+  0600, masked on API read). `.env` carries bootstrap paths + **declared one-level scalars** and cannot
+  address a credential by design (UPDATE_PLAN slice 3). `config.yaml`, `.env`, `clients/`, `*_prompt.*`
+  are all gitignored — never commit or echo them.
 - **Output:** anything that captures command output passes it through `redact()` before it leaves the process
   (§2.4). New execution paths **must** route captured output through `redact()`.
 - **Display:** the config API read masks secret-keyed values (`mask_secrets`); a masked value round-trips back

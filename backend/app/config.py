@@ -6,8 +6,10 @@ Secrets model — **hybrid** (DECISIONS §config-secrets):
   masked on API read, written atomically — the Conf tab round-trips it. Structured, repeating
   secrets don't fit a flat `.env`, and the UI can't rewrite `.env`, so they stay here.
 - `.env` is the **bootstrap + override** layer: deploy knobs (`CTRLB_CONFIG`, `CTRLB_DB`) and
-  optional scalar secret overrides (`CTRLB_<SECTION>__<KEY>`) that **win over** `config.yaml`.
-  This lets you keep a key out of the YAML if you prefer, without breaking the UI.
+  overrides for **declared, one-level scalars** (`CTRLB_<SECTION>__<KEY>`) that **win over**
+  `config.yaml`. It deliberately cannot carry a secret: every credential lives two levels down
+  (`providers.<name>.api_key`, `computers[].ssh_password`), so `config.yaml` is the only home for
+  one. An override naming an undeclared path is warned about at load (UPDATE_PLAN slice 3).
 
 `.env` populates `os.environ` (real env always wins); the override layer is then applied on top
 of the parsed YAML before validation.
@@ -22,7 +24,7 @@ import json
 import logging
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, Literal, TypeGuard
@@ -63,6 +65,7 @@ __all__ = [
     "CONFIG_VERSION_KEY",
     "yaml_rt",
     "delete_path",
+    "env_override_vars",
 ]
 
 # backend/app/config.py -> repo root (where config.yaml / ctrlb.db / skills / agents default)
@@ -1078,25 +1081,76 @@ class Settings(BaseModel):
         return self.default_agent_def()
 
 
-def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
-    """Overlay `CTRLB_<SECTION>__<KEY>=value` env vars onto the parsed YAML (env wins).
+def env_override_vars(environ: Mapping[str, str] | None = None) -> list[tuple[str, str, str]]:
+    """Every `CTRLB_<SECTION>__<KEY>` override present in the environment, as `(var, section, key)`.
 
-    Scalar, one-level overrides only — structured config (host lists, MCP servers) is edited
-    in `config.yaml`/the UI, by design. Values stay strings; Pydantic coerces them on validate.
+    The ONE parser for the override grammar. `_apply_env_overrides` applies what it returns, and
+    `app.config_migration` reads the same list to spot a variable addressing a path a migration step
+    retired. Spelled twice, the two would drift on their first disagreement: a retired-path check that
+    matched upper-case variable names would miss `CTRLB_Embeddings__Api_Key`, which this overlay
+    lower-cases and applies.
+
+    Values are deliberately **not** returned — a `(var, value)` list is a secret-bearing structure that
+    ends up logged sooner or later, and the one caller that needs a value reads it itself.
     """
-    for full, value in os.environ.items():
+    env = os.environ if environ is None else environ
+    out: list[tuple[str, str, str]] = []
+    for full in env:
         if not full.startswith(ENV_PREFIX):
             continue
         body = full[len(ENV_PREFIX) :]
         if body in _BOOTSTRAP_KEYS or "__" not in body:
             continue
         section, _, key = body.partition("__")
-        section, key = section.lower(), key.lower()
+        out.append((full, section.lower(), key.lower()))
+    return out
+
+
+def _env_path_is_declared(section: str, key: str) -> bool:
+    """True if `<section>.<key>` names a declared field of a declared `Settings` section.
+
+    The check the one-level overlay never had. Sections are `extra="allow"`, so an override onto a key
+    nobody declares is accepted, ignored, and indistinguishable from one that works — which is exactly
+    how `.env.example` shipped four secret overrides (`CTRLB_STT__KEY`, …) naming fields that never
+    existed. Derived from the model rather than from a list, so it stays true as sections gain fields.
+
+    A section whose value is not a nested model (`providers`, `computers`, the list sections) is
+    undeclared here too: this grammar is one level deep and cannot address inside them, and the
+    overlay's string assignment then fails validation loudly instead of vanishing.
+    """
+    field = Settings.model_fields.get(section)
+    ann = field.annotation if field is not None else None
+    return isinstance(ann, type) and issubclass(ann, BaseModel) and key in ann.model_fields
+
+
+def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
+    """Overlay `CTRLB_<SECTION>__<KEY>=value` env vars onto the parsed YAML (env wins).
+
+    Scalar, one-level overrides only — structured config (host lists, MCP servers) is edited
+    in `config.yaml`/the UI, by design. Values stay strings; Pydantic coerces them on validate.
+
+    An override onto an undeclared path is applied exactly as before and **warned about**: it cannot
+    take effect, and the operator who set it believes it did. Warned rather than refused, deliberately
+    — every peer project ignores an unrecognised prefixed variable outright (R6 §3), and a boot that
+    dies over a stale line in `.env` takes down the only UI there is to fix it with. The one class that
+    IS refused lives in `app.config_migration`: a variable addressing a path a migration retired, at
+    the attended `--check`/`--apply` gate.
+    """
+    for full, section, key in env_override_vars():
+        if not _env_path_is_declared(section, key):
+            _LOG.warning(
+                "%s targets `%s.%s`, which this build does not define, so it cannot take effect. "
+                "Config overrides are one level deep (CTRLB_<SECTION>__<KEY>) and cannot address "
+                "provider credentials; those live in config.yaml.",
+                full,
+                section,
+                key,
+            )
         bucket = raw.get(section)
         if not isinstance(bucket, dict):
             bucket = {}
             raw[section] = bucket
-        bucket[key] = value
+        bucket[key] = os.environ[full]
     return raw
 
 
