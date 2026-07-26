@@ -460,6 +460,25 @@
 > **Rehearsed on copies of both live configs:** clean check on each, refusal + exit 78 with a retired
 > var and no value leaked, no refusal on a live one, prod copy migrates → idempotent → 0600 → all four
 > roles resolve.
+>
+> **▷ BOTH REVIEWERS THEN CONFIRMED THE BUILT RESULT (commits `757781c` + the fix wave `ab8b307`).**
+> **Fable: "Sound. Ship it."** — seam placement ratified, `Step.retires` acceptable *because* the
+> invariant test pins it, §13 does not misrepresent the ruling, and the phantom-var overrule leaves no
+> real gap. **Codex: all four original findings CLOSED**, plus five new — three taken, one taken lean,
+> one ruled against (§13.1): `detect()` now precedes the env refusal (a downgrade must out-rank a stale
+> variable) · `_apply_env_overrides` takes ONE `dict(os.environ)` snapshot (collect-then-re-read is a
+> torn read) · **the completeness gap was real and the fix earned itself immediately** — the retired
+> list is now DERIVED (2-segment consumed paths the schema no longer declares) and failed on its first
+> run because the fixture omitted `inference.cloud` · conftest's guard pinned by its rule.
+> **Codex's HIGH was ruled against, and re-placed:** a credential living only in the unit's
+> `Environment=` is invisible to the CLI, so the provider boots unauthenticated with a journal line —
+> real, but an unauthenticated provider fails VISIBLY at call time while a refusing unit takes down the
+> only UI there is to diagnose it from. **→ slice 5 requirement (recorded in §10): `install.sh` scans
+> the rendered unit's `Environment=` lines for `CTRLB_*__*` and fails the attended gate.**
+> ⚠ **Standing split for slice 4:** Codex and Fable have now disagreed twice on the same axis
+> (fail-closed vs fail-visible for environment residue). The ruling is **fail-visible**, refusals live
+> at the attended gates, and slice 4 logs at **ERROR** naming the variable and the role it no longer
+> feeds. Backend **1014**, gate 6/6 on the tip; ordering fix re-verified against a real config.
 
 > **▶▶ SESSION 2026-07-26 (PM) — UPDATE_PLAN SLICE 2 BUILT: the fold LEAVES the config load path.**
 > Gate **6/6**; backend **998** (was 952). As-built + every defect the council found:
