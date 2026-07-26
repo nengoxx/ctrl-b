@@ -465,6 +465,30 @@
 > ⚠ **PROD IS UNTOUCHED and still legacy-shape** — it runs old code that owns the fold until slice 8.
 > The same two steps (migrate, then rename the same three) are part of the RELEASE, not done yet.
 >
+> **▷ THE MIGRATION WAS THEN REVIEWED AGAINST THE REAL RESULT (owner: "review the migration before
+> closing off"), four ways — all pass:**
+> 1. **Behaviour-preserving, proven not assumed.** The pre-slice-2 code (`d7466e0`, in a throwaway
+>    worktree) was run against the PRE-migration config and its resolved endpoint chains compared with
+>    today's code on the MIGRATED config: **byte-identical for all four roles** — same base_urls,
+>    models, api_key fingerprints, `api_mode`, `max_concurrent_requests`, `voice`, `dim`,
+>    `context_window`, `extra_body`. `inference` 2 endpoints, `stt` 2, `tts` 2, `embeddings` 1.
+>    *(Re-runnable: resolve `*_chain` off `provider_registry.resolve_lenient` under both trees.)*
+> 2. **Nothing outside the migration's remit moved:** `appearance`, `computers`, `mcp_servers`,
+>    `memory`, `open_terminal`, `searxng`, `server`, `tool_overrides` all byte-equal; only
+>    `config_version` + `providers` added, nothing removed at top level.
+> 3. **Service-level knobs survived the fold** (they are NOT endpoint fields and had to stay put):
+>    `inference.request_timeout_s`, `embeddings.enabled`, `voice.stt.language`/`vad_filter`/`hotwords`,
+>    `voice.tts.format`/`timeout_s`.
+> 4. **Secrets:** 4 distinct values before, 4 after, set-equal, no mask written into the file.
+>
+> **The exact prose the migration dropped — the SAME three will go on prod, so decide there:**
+> `# EMMA (same ports as VAULT); may be stopped — see note above` (×2, on the `voice.stt.fallback` and
+> `voice.tts.fallback` keys) and `# qwen3-embedding-4b vector size (verified live)` (on `embeddings.dim`).
+> All three sat ON consumed keys, so they died with them per the owner's symmetric ruling — but the two
+> `# EMMA` notes documented endpoints that **moved rather than died** (now `vault-speaches` /
+> `vault-alltalk`). Re-add by hand onto those provider entries if wanted; the dev backup holds the
+> originals.
+>
 > **▶ NEXT SESSION — slice 3, then 4–8.** In order:
 > 1. **Model check** (`tmux display-message -p '#S'` → `ctrl-b-opus` = Opus 5 high).
 > 2. **Slice 3 — env overrides.** `CTRLB_PROVIDERS__<encoded-name>__<field>` per §7: scalar-field
