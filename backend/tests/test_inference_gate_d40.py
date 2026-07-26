@@ -1,11 +1,11 @@
-"""D40 rider — the per-endpoint inference request gate (`InferenceEndpointCfg.max_concurrent_requests`).
+"""D40 rider — the per-server request gate (`ProviderCfg.max_concurrent_requests`, re-homed by D48 §C4).
 
-A lazily-built per-endpoint `asyncio.Semaphore` at the inference-client chokepoint caps in-flight
-requests to a non-queuing backend (the owner's llama.cpp: 1–2 slots). It is held for the ENTIRE
-streamed response and released in `finally`, and NEVER held across tool execution / subagent
+A lazily-built `asyncio.Semaphore`, keyed `(gate_identity, limit)` on the canonical base_url, caps
+in-flight requests to a non-queuing backend (the owner's llama.cpp: 1–2 slots). It is held for the
+ENTIRE streamed response and released in `finally`, and NEVER held across tool execution / subagent
 fan-out (the completion stream closes — releasing the permit — before the loop runs tools). These
 pins prove the three properties that matter: serialize, no-hold-across-tools (no deadlock at 1),
-and unlimited-when-None.
+and unlimited-when-None — for ALL THREE chokepoints: chat, voice and embeddings.
 
 Fakes mirror `test_inference_failover_d18.py`: a fake AsyncOpenAI whose `create()` returns a
 `_Stream`/`_Resp` and records each call, so overlap is observable without a real backend.
@@ -488,5 +488,178 @@ def test_cancel_during_probe_closes_stream_and_releases():
         fakes["http://local/v1"].chat.completions._behavior = lambda _kw: _Stream([_Chunk(_Delta("ok"))])
         out = await asyncio.wait_for(_collect(client), timeout=2.0)
         assert "".join(d.text for d in out) == "ok"
+
+    asyncio.run(scenario())
+
+
+# ── (A11/R4) voice + embeddings actually ACQUIRE the gate — not just resolve the same object ──────
+# `test_voice_and_chat_share_the_same_gate_semaphore` pins identity only: deleting `await sem.acquire()`
+# from `voice.attempt` / `embed.attempt` left the whole suite green. These give the two adapters the
+# same three properties chat has — serialize at limit 1, release on failure, and share one cap with chat.
+class _Tracker:
+    """Records how many calls are inside the backend at once; each waits for `release` before returning."""
+
+    def __init__(self) -> None:
+        self.release = asyncio.Event()
+        self.active = 0
+        self.peak = 0
+        self.entered = 0
+
+    async def run(self, result):
+        self.active += 1
+        self.entered += 1
+        self.peak = max(self.peak, self.active)
+        try:
+            await self.release.wait()
+            return result
+        finally:
+            self.active -= 1
+
+
+def _voice_client(tracker: _Tracker | None, gates, targets, *, fail_first: bool = False):
+    from types import SimpleNamespace
+
+    from app.adapters.voice import VoiceClient
+    from app.domain.provider import SttPolicy, TtsPolicy
+
+    calls = {"n": 0}
+
+    async def create(*, model, file, **kw):
+        calls["n"] += 1
+        if fail_first and calls["n"] == 1:
+            raise RuntimeError("backend blew up")
+        if tracker is None:
+            return SimpleNamespace(text="hi")
+        return await tracker.run(SimpleNamespace(text="hi"))
+
+    client = VoiceClient(targets, SttPolicy(), (), TtsPolicy(), gates)
+    fake = SimpleNamespace(audio=SimpleNamespace(transcriptions=SimpleNamespace(create=create)))
+    client._client = lambda t, c, s: fake  # type: ignore[assignment]
+    return client, calls
+
+
+def _embeddings_client(tracker: _Tracker | None, gates, targets, *, fail_first: bool = False):
+    from types import SimpleNamespace
+
+    from app.adapters.embeddings import EmbeddingsClient
+    from app.domain.provider import EmbeddingsPolicy
+
+    calls = {"n": 0}
+    vector = SimpleNamespace(data=[SimpleNamespace(index=0, embedding=[0.5])])
+
+    async def create(*, model, input):  # noqa: A002 — mirrors the SDK signature
+        calls["n"] += 1
+        if fail_first and calls["n"] == 1:
+            raise RuntimeError("backend blew up")
+        if tracker is None:
+            return vector
+        return await tracker.run(vector)
+
+    client = EmbeddingsClient(targets, EmbeddingsPolicy(), gates)
+    fake = SimpleNamespace(embeddings=SimpleNamespace(create=create))
+    client._client = lambda t: fake  # type: ignore[assignment]
+    return client, calls
+
+
+def _gated_target(limit: int | None = 1):
+    return target("box", "http://box:9000/v1", "w", max_concurrent_requests=limit)
+
+
+def test_voice_limit1_serializes_two_concurrent_transcribes():
+    async def scenario():
+        tracker, gates, t = _Tracker(), EndpointGates(), _gated_target()
+        client, _calls = _voice_client(tracker, gates, (t,))
+        clip = {"content": b"x", "filename": "a.wav", "content_type": "audio/wav"}
+        first = asyncio.create_task(client.transcribe(**clip))
+        second = asyncio.create_task(client.transcribe(**clip))
+        await asyncio.sleep(0.05)
+        assert tracker.entered == 1  # the second is parked on the gate, not at the backend
+        tracker.release.set()
+        await asyncio.wait_for(asyncio.gather(first, second), timeout=2.0)
+        assert tracker.peak == 1 and tracker.entered == 2
+
+    asyncio.run(scenario())
+
+
+def test_embeddings_limit1_serializes_two_concurrent_embeds():
+    async def scenario():
+        tracker, gates, t = _Tracker(), EndpointGates(), _gated_target()
+        client, _calls = _embeddings_client(tracker, gates, (t,))
+        first = asyncio.create_task(client.embed("a"))
+        second = asyncio.create_task(client.embed("b"))
+        await asyncio.sleep(0.05)
+        assert tracker.entered == 1
+        tracker.release.set()
+        await asyncio.wait_for(asyncio.gather(first, second), timeout=2.0)
+        assert tracker.peak == 1 and tracker.entered == 2
+
+    asyncio.run(scenario())
+
+
+def test_voice_none_limit_does_not_gate():
+    async def scenario():
+        tracker, gates = _Tracker(), EndpointGates()
+        client, _calls = _voice_client(tracker, gates, (_gated_target(None),))
+        clip = {"content": b"x", "filename": "a.wav", "content_type": "audio/wav"}
+        pair = asyncio.gather(client.transcribe(**clip), client.transcribe(**clip))
+        await asyncio.sleep(0.05)
+        assert tracker.entered == 2 and tracker.peak == 2  # unlimited → both in flight
+        tracker.release.set()
+        await asyncio.wait_for(pair, timeout=2.0)
+
+    asyncio.run(scenario())
+
+
+def test_voice_failed_attempt_releases_the_permit():
+    """A raising attempt must free the slot in `finally` — otherwise limit 1 deadlocks the next call."""
+
+    async def scenario():
+        gates, t = EndpointGates(), _gated_target()
+        client, calls = _voice_client(None, gates, (t,), fail_first=True)
+        clip = {"content": b"x", "filename": "a.wav", "content_type": "audio/wav"}
+        raised = False
+        try:
+            await client.transcribe(**clip)
+        except Exception:  # noqa: BLE001 — the normalized VoiceError is expected
+            raised = True
+        assert raised
+        transcript, _served = await asyncio.wait_for(client.transcribe(**clip), timeout=2.0)
+        assert transcript == "hi" and calls["n"] == 2
+
+    asyncio.run(scenario())
+
+
+def test_embeddings_failed_attempt_releases_the_permit():
+    async def scenario():
+        gates, t = EndpointGates(), _gated_target()
+        client, calls = _embeddings_client(None, gates, (t,), fail_first=True)
+        raised = False
+        try:
+            await client.embed("a")
+        except Exception:  # noqa: BLE001 — the normalized EmbeddingsError is expected
+            raised = True
+        assert raised
+        vectors = await asyncio.wait_for(client.embed("a"), timeout=2.0)
+        assert vectors == [[0.5]] and calls["n"] == 2
+
+    asyncio.run(scenario())
+
+
+def test_voice_in_flight_blocks_a_chat_call_on_the_same_server():
+    """The point of one shared registry: a whisper call and a chat call on ONE box contend on ONE cap."""
+
+    async def scenario():
+        tracker, gates, t = _Tracker(), EndpointGates(), _gated_target()
+        voice, _vcalls = _voice_client(tracker, gates, (t,))
+        chat, fakes = _build(registry([t], failover=False), {t.base_url: lambda kw: _Resp("ok")}, gates)
+        clip = {"content": b"x", "filename": "a.wav", "content_type": "audio/wav"}
+        speaking = asyncio.create_task(voice.transcribe(**clip))
+        await asyncio.sleep(0.05)
+        chatting = asyncio.create_task(chat.complete([{"role": "user", "content": "hi"}]))
+        await asyncio.sleep(0.05)
+        assert not _calls(fakes[t.base_url])  # chat is parked behind the voice permit
+        tracker.release.set()
+        await asyncio.wait_for(speaking, timeout=2.0)
+        assert await asyncio.wait_for(chatting, timeout=2.0) == "ok"
 
     asyncio.run(scenario())
