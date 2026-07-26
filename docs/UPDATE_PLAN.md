@@ -1,6 +1,8 @@
 # UPDATE_PLAN v3 — the update/migration architecture
 
-> **Status: DESIGN v3 — owner-ratified rulings folded in; ready to build.** Nothing built yet.
+> **Status: DESIGN v3 — owner-ratified rulings folded in. ▶ SLICE 1 BUILT 2026-07-26** (the runner +
+> 55 tests; as-built record + the six deltas from §3 in **[§11](#11-slice-1--as-built-2026-07-26)**).
+> Next: slice 2 (move the fold in).
 > **Owner requirements:** after an update prod holds **zero** legacy keys · a **human with no coding
 > agent** updates prod · a failed update is recoverable · **no leftover code, config or artifacts** ·
 > **lean — no machinery we must maintain long-term.**
@@ -374,3 +376,60 @@ deleting code rather than adding it.**
 **Verification bar per slice:** `check.py` green, plus the real-config rehearsal — prod and dev config
 **copies** through the full migration, asserting zero comment loss, clean re-parse, and the
 postcondition — before any release.
+
+---
+
+## 11. Slice 1 — AS BUILT (2026-07-26)
+
+`app/config_migration/{__init__.py, __main__.py, VERSION}` + `tests/test_config_migration_slice1.py`
+(55 tests). `STEPS` is empty and `VERSION` is **0** until slice 2 lands the fold; the §3.6 assertion
+reads `CONFIG_VERSION == (STEPS[-1].version if STEPS else 0)`, and no operator ever sees 0 because
+slice 8 releases at 1. Council: Codex `gpt-5.6-sol` on the design *before* the build and on the code
+*after* it; Fable on design/integration. Six deltas from §3, each with its reason:
+
+| # | As built | Why |
+|---|---|---|
+| 1 | **The runner writes a DIFF, not the document.** `_diff(ctx.config, plan.config)` → `deep_set` for changes + `delete_path` for removals. | Two failures, both found by Codex. A whole-document `sync_mapping` deletes every key absent from its target, so a step returning only the sections it transformed would silently delete `hosts`/credentials — and validation (sections default, extras allowed) and the postcondition (legacy keys gone) would both pass. And `edit_config_yaml` parses **YAML 1.2** while the plan is built from `safe_load`'s **1.1**, so a whole-document sync rewrites `debug: no` → `false` and `012` → `10` in lines the migration never touched. Diffing two documents parsed by the same parser cancels the dialect out. |
+| 2 | `Plan.delete_list` → **`Plan.consumes`**, and it **authorises** rather than executes: every removal the diff finds must be covered by it, or the run is refused inside `validate` (so `--check` catches it, before any backup exists). | Removal now happens via the diff, so the old name lied — and the declaration turns a step bug into a refusal instead of a silent deletion. |
+| 3 | Removals travel as **key-segment tuples**, not dotted strings (`consumes` accepts either). | Model and provider keys legitimately contain dots — `qwen/qwen3.5-72b` is in the live config — and a dotted path splits the name, walks into nothing, and silently leaves the key behind. |
+| 4 | **`Context` carries the parsed documents** (`config`, `agents`, `digests`), not just two paths. | With paths only, every step re-reads and re-implements the refusal preflight — the very thing `Context` exists to prevent. Steps are now pure functions of parsed data. `digests` + `_assert_unchanged` refuse to write a file that changed since it was parsed (the human running `--apply` by hand has no flock). |
+| 5 | **Exit taxonomy settled: 78 is the DEFAULT for `MigrationRefused`** — a config this build cannot migrate (downgrade, unparseable, anchors, symlink, broken `agent.yaml`, step bug). 1 is reserved for environmental failures a retry might clear (unwritable dir, `OSError`, file changed underneath). | Fable: slice 4 wires `RestartPreventExitStatus=78` and slices 5/7 branch on codes; reclassifying afterwards is a behavioural change across three callers. Everything in the 78 set is restart-unfixable, and the unit has no `StartLimitBurst`, so the alternative is crash-looping forever at `RestartSec=5`. |
+| 6 | `is_stamped()` is key-**presence** plus equality; agent files are rewritten through `edit_config_yaml` (comments in a hand-written `agent.yaml` survive; the file lands at 0600). | "Absent" and "0" are otherwise indistinguishable and the marker would never be written. Reusing the chokepoint means no second YAML writer exists. |
+
+**What the code review then caught** (Codex, on the built code — verdict DO-NOT-SHIP until fixed; each
+now has a test):
+
+| Sev | Defect | Fix |
+|---|---|---|
+| HIGH | An empty declaration (`consumes=[()]` or `[""]`) is a **prefix of every path**, so one malformed entry authorised every removal in the document — defeating the guard that exists to catch bad steps. | `as_path` refuses zero-length paths and empty segments. |
+| HIGH | `_diff` compared with `!=`, and in Python `True == 1 == 1.0` and `[True] == [1]`. A step normalising a type produced **no diff**: the rest of its plan would be written, the postcondition would pass, and the stamp would go on a document the step never computed. | A type-strict `_same` comparator, recursive through lists and dicts. |
+| MED | The digest check ran inside `_write_config`, i.e. **after** backups and agent writes, and its message claimed "nothing written". | All digests asserted together before the first backup; the per-file check stays for the narrower race; the false claim is gone. |
+| MED | `plan.agent_files` accepted **any** path — a step could write a file that had no symlink/parse preflight, no digest and no backup, anywhere on disk. | Keys must be exact keys of `ctx.agents`. Creating new agent files is deliberately unsupported. |
+| MED | `config_version:` (present, `null`) normalised to 0 and read as *verified*, so the malformed marker was never corrected. Same for a negative. | `read_marker` refuses a present non-int; `is_stamped` reads the raw value. |
+| LOW | `exc.problem` is input-derived for a constructor error — `api_key: !sk-SECRET value` printed the tag verbatim, breaking the "no secret in output" claim. | Constructor errors render as category + location, like duplicate-key errors already did. |
+| LOW | A **FIFO** named `config.yaml` blocks `read_bytes` forever — and slice 4 runs this at import time inside the unit, so the service would hang rather than fail. | Non-regular files refused (hard links deliberately still allowed). |
+
+**Ruled against a reviewer:** Fable proposed `--check` exit **2** for "migration needed". Overruled — §3.5
+locks `--check` 0 for ok/no-op, `install.sh` uses `--check || exit 1`, and a third code would make that
+line wrong; the needed/not-needed distinction is in the printed status.
+
+**Carried into slice 2 (Codex):** `_migrate_legacy` makes only a shallow top-level copy and then
+`walk_model_refs` mutates nested refs shared with its input; `_fold_agent_yaml_modes` mutates its
+argument outright. A step calling either directly would mutate its own `Context` and hide the change
+from `_diff` — so slice 2 **deep-copies** the config and each agent doc before folding. The fold's
+current delete-list also omits four paths the new invariant will (correctly) reject as undeclared:
+`agent.defaults.model.mode`, `agent.defaults.compaction.summarizer.mode`, `agent.compaction.summarizer.mode`,
+`agent.defaults.routing.lead.mode`.
+
+**Also shipped here, out of scope but on the path:** `config.py` gained `CONFIG_VERSION_KEY` + the
+`load_settings` pop and the PUT strip (§3.8 — the marker is introduced by this slice, so it must never
+reach the API from this slice); `_yaml_rt`/`_delete_dotted`/`Settings._agent_from` promoted to public
+(`yaml_rt`/`delete_dotted`+`delete_path`/`agent_from`) rather than reached into as privates from the
+new package; `tests/conftest.py` gained the module-level guard (§3.7). One **pre-existing** pyright
+error from `09ac884` (unpushed, so the full gate had never run on it) fixed in passing.
+
+**Estimate correction:** §3's "~90 lines" for the runner is as-built ~840 including docstrings. The
+extra is the refusal preflight, the diff writer and the sanitised output — not framework.
+
+**Rehearsal (the §10 bar):** both live configs, on copies — the only diff is the added marker line;
+comments, key order and 0600 intact; re-parse clean; `load_settings` still loads; re-apply a true no-op.

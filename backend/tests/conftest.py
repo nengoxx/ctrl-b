@@ -12,11 +12,35 @@ per-file `_client()` helpers still win (they set the env vars inside the test, a
 
 A test that genuinely needs the repo-root fallback behavior (none exists today) must
 `monkeypatch.delenv("CTRLB_HOME")` itself — deliberately loud, not accidental.
+
+**The module-level guard below runs BEFORE the fixture, and before any test module is imported**
+(UPDATE_PLAN §3.7). It exists because the import-time config check in `main.py` (slice 4) executes
+while a test module is being *imported* — that is before any fixture, autouse or not, has run, so the
+fixture above cannot protect it. `setdefault` would be insufficient: the danger is precisely an
+*inherited* `CTRLB_CONFIG`/`CTRLB_DB`/`CTRLB_ENV` from the invoking shell (the dev systemd unit
+exports some of these), so the values are overwritten outright. `CTRLB_ENV` is pointed at a
+nonexistent path inside the suite temp rather than deleted — deleting it would let `_env_file()` fall
+back to the repo-root `.env`, i.e. the operator's real secrets.
 """
 
 from __future__ import annotations
 
+import atexit
+import os
+import shutil
+import tempfile
+
 import pytest
+
+#: Suite-private workspace root, created once per pytest process. Not `tmp_path` — that is a fixture,
+#: and this must exist before the first test module is imported. Removed at exit rather than left to
+#: the OS: on emma `/tmp` is a RAM-backed tmpfs on a 30G box, so per-run litter is memory, not disk.
+_SUITE_HOME = tempfile.mkdtemp(prefix="ctrlb-suite-")
+atexit.register(shutil.rmtree, _SUITE_HOME, True)
+os.environ["CTRLB_HOME"] = _SUITE_HOME
+os.environ["CTRLB_ENV"] = os.path.join(_SUITE_HOME, ".env-absent")
+os.environ.pop("CTRLB_CONFIG", None)
+os.environ.pop("CTRLB_DB", None)
 
 
 @pytest.fixture(autouse=True)

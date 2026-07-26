@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import ValidationError
 
-from app.config import Settings, mask_secrets, providers_rev
+from app.config import CONFIG_VERSION_KEY, Settings, mask_secrets, providers_rev
 from app.core.provider_registry import ProviderResolveError
 from app.runtime import apply_settings_patch, provider_rename_error, settings_write_lock
 
@@ -99,6 +99,12 @@ async def put_settings(patch: dict[str, Any], request: Request) -> dict[str, Any
     # A11/D48 C1: pop the PUT transport metadata (rename map + providers base fingerprint) before anything
     # else, so neither can flow into the merge / `Settings` (extra=allow would otherwise retain them).
     renames, providers_base = _pop_provider_metadata(patch)
+
+    # The config-shape marker is owned by `app.config_migration` and is file metadata, not settings
+    # (UPDATE_PLAN §3.8). `load_settings` pops it on read, so a client never legitimately sends it; a
+    # stale client echoing an old value back would otherwise pass `prune_unchanged` and write the stale
+    # marker down, silently weakening downgrade detection. Dropped silently — it is not a client error.
+    patch.pop(CONFIG_VERSION_KEY, None)
 
     # SYS-3 / ACA-17: a `tool_overrides` patch reaches `apply_tool_overrides`, which mutates the LIVE
     # registered `ToolSpec` objects (description/agent_exposed/core) — mutating the registry under an

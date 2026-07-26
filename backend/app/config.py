@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field as _dc_field
 from datetime import datetime, timezone
@@ -63,6 +64,10 @@ __all__ = [
     "is_provider_slug",
     "is_secret_sentinel_name",
     "providers_rev",
+    "CONFIG_VERSION_KEY",
+    "yaml_rt",
+    "delete_dotted",
+    "delete_path",
 ]
 
 # backend/app/config.py -> repo root (where config.yaml / ctrlb.db / skills / agents default)
@@ -144,6 +149,17 @@ def home_path() -> Path:
     corsair checkout keeps working unchanged. emma / new installs set `CTRLB_HOME=~/.ctrl-b`."""
     override = os.environ.get("CTRLB_HOME")
     return Path(override).expanduser().resolve() if override else _PROJECT_ROOT
+
+
+#: The config-shape marker key written by `app.config_migration` (UPDATE_PLAN §3.2). Declared HERE,
+#: not in the migration package, because `config.py` must never import that package (G5 — the legacy
+#: knowledge stays in one deletable place) while both ends need the one name: the migration writes it,
+#: `load_settings` pops it, and `PUT /api/settings` strips it. It is file-shape metadata, never
+#: settings — `Settings` sections are `extra="allow"`, so left in place it would ride `model_dump` out
+#: through `GET /api/settings` and back in through a PUT, where a stale client echoing an old value
+#: would pass `prune_unchanged` and write the stale marker down, silently weakening downgrade
+#: detection (§3.8).
+CONFIG_VERSION_KEY = "config_version"
 
 
 def config_path() -> Path:
@@ -980,7 +996,7 @@ class Settings(BaseModel):
             return ""
         return p.read_text(encoding="utf-8").strip()
 
-    def _agent_from(self, name: str, folder: Path, agent_yaml: dict[str, Any] | None) -> AgentDef:
+    def agent_from(self, name: str, folder: Path, agent_yaml: dict[str, Any] | None) -> AgentDef:
         """Build an `AgentDef` from `agent.defaults` (inheritance base) + `agent_yaml` (overrides) +
         the folder name + its `SOUL.md`. `deep_merge(defaults, overrides)` is the same merge
         `PUT /api/settings` uses; the folder name always wins for `name` (D15 #1/#3)."""
@@ -1015,7 +1031,7 @@ class Settings(BaseModel):
         """The default/generalist agent — the workspace root (D14). Built from `agent.defaults` +
         globals; persona = root `SOUL.md`; display name = `agent.default_title`. Always available so
         the loop has an `AgentDef` to run."""
-        agent = self._agent_from(self.DEFAULT_AGENT_NAME, self.home_dir(), None)
+        agent = self.agent_from(self.DEFAULT_AGENT_NAME, self.home_dir(), None)
         agent.title = self.agent.default_title
         return agent
 
@@ -1031,7 +1047,7 @@ class Settings(BaseModel):
             loaded = yaml.safe_load(yaml_p.read_text(encoding="utf-8")) or {}
             if isinstance(loaded, dict):
                 raw = _fold_agent_yaml_modes(loaded)
-        return self._agent_from(name, folder, raw)
+        return self.agent_from(name, folder, raw)
 
     def load_agent(self, name: str) -> AgentDef | None:
         """Public resolver for the file-per-agent API: the default/root agent for `DEFAULT_AGENT_NAME`,
@@ -1492,6 +1508,7 @@ def load_settings(path: Path | None = None) -> Settings:
     raw = raw or {}
     if not isinstance(raw, dict):
         raise ValueError(f"{p} must contain a YAML mapping at the top level")
+    raw.pop(CONFIG_VERSION_KEY, None)  # file-shape metadata, never settings (§3.8) — popped before both
     disk_raw = copy.deepcopy(raw)  # DISK-TRUTH snapshot for the write-back (taken BEFORE env overrides)
     env_raw = _apply_env_overrides(raw)  # RUNTIME doc (mutates `raw` in place; env wins this boot)
 
@@ -1623,7 +1640,7 @@ def prune_unchanged(patch: Any, current: Any) -> Any:
     return patch
 
 
-def _yaml_rt() -> YAML:
+def yaml_rt() -> YAML:
     """A round-trip YAML configured to preserve the operator's file as faithfully as possible."""
     y = YAML()  # round-trip mode (keeps comments, key order, anchors)
     y.preserve_quotes = True
@@ -1726,7 +1743,7 @@ def _drop_comment_above(node: Any, key: Any, keys: list[Any], index: int) -> Non
     position = _trailing_slot(owner)
     token = preceding[position] if preceding else None
     value = getattr(token, "value", None)
-    if not isinstance(value, str):
+    if token is None or not isinstance(value, str):  # `token is None` narrows for the assignment below
         return
     own_eol, newline, _above = value.partition("\n")
     if own_eol.strip():
@@ -1846,10 +1863,17 @@ def _sync_mapping(node: Any, target: dict[str, Any]) -> str:
     return unplaced
 
 
-def _delete_dotted(doc: Any, dotted: str) -> None:
+def delete_dotted(doc: Any, dotted: str) -> None:
     """Delete a dotted key path from a ruamel doc if present (A11/D48 write-back). Missing intermediates
-    or a missing leaf are a no-op — idempotent, so a second write after the legacy keys are gone is clean."""
-    parts = dotted.split(".")
+    or a missing leaf are a no-op — idempotent, so a second write after the legacy keys are gone is clean.
+
+    Dotted notation cannot address a key whose own NAME contains a dot (`models["gpt-4.1"]`); callers
+    holding real key segments — the migration runner does — use `delete_path` instead."""
+    delete_path(doc, dotted.split("."))
+
+
+def delete_path(doc: Any, parts: Sequence[Any]) -> None:
+    """`delete_dotted` over pre-split key segments, so a key whose name contains a dot is addressable."""
     node: Any = doc
     ancestors: list[tuple[Any, Any]] = []  # walked (parent, key) pairs, to re-home an orphan upward
     for part in parts[:-1]:
@@ -1863,7 +1887,10 @@ def _delete_dotted(doc: Any, dotted: str) -> None:
     while orphan and ancestors:  # the delete emptied `node` — climb until a level can anchor the block
         orphan = _place_comment_after(*ancestors.pop(), orphan)
     if orphan:
-        _LOG.warning("dropped a comment orphaned by deleting %s — no entry left to anchor it", dotted)
+        _LOG.warning(
+            "dropped a comment orphaned by deleting %s — no entry left to anchor it",
+            ".".join(map(str, parts)),
+        )
 
 
 def _materialize_migration(doc: Any) -> None:
@@ -1929,14 +1956,14 @@ def edit_config_yaml(mutate: Any, path: Path | None = None) -> None:
         _MIGRATION_LOG.warning("A11: wrote pre-migration config backup %s (0600)", bak)
     # Detect EOL from the raw bytes — `read_text` would universal-translate CRLF→LF and hide it.
     newline = "\r\n" if b"\r\n" in raw_bytes else "\n"
-    y = _yaml_rt()
+    y = yaml_rt()
     doc = y.load(raw_bytes.decode("utf-8")) if raw_bytes else None
     if not hasattr(doc, "get"):  # empty/new file → start from a fresh mapping
         doc = {}
     _materialize_migration(doc)  # new-shape subtrees first (caller's mutate wins on overlap)
     mutate(doc)
     for dotted in pending.delete_list if pending is not None else ():
-        _delete_dotted(doc, dotted)
+        delete_dotted(doc, dotted)
     buf = io.StringIO()
     y.dump(doc, buf)
     # Preserve the file's existing line ending (LF default for a new file) and write bytes directly,

@@ -163,11 +163,11 @@ def test_agent_from_pointer_half_atomic_merge() -> None:
 
     s = Settings(agent={"defaults": {"model": {"provider": "a", "model": "m1"}}})
     folder = Path(tempfile.mkdtemp())
-    diff = s._agent_from("x", folder, {"model": {"provider": "b"}})
+    diff = s.agent_from("x", folder, {"model": {"provider": "b"}})
     assert diff.model.provider == "b" and diff.model.model is None  # inherited m1 dropped
-    same = s._agent_from("x", folder, {"model": {"reasoning_effort": "high"}})
+    same = s.agent_from("x", folder, {"model": {"reasoning_effort": "high"}})
     assert same.model.provider == "a" and same.model.model == "m1"  # provider unchanged → keep
-    own = s._agent_from("x", folder, {"model": {"provider": "b", "model": "m2"}})
+    own = s.agent_from("x", folder, {"model": {"provider": "b", "model": "m2"}})
     assert own.model.provider == "b" and own.model.model == "m2"  # override sets its own → keep
 
 
@@ -502,7 +502,7 @@ def _rewrite(src: str, mutate) -> str:
 
 
 def _delete(*dotted: str):
-    return lambda doc: [config._delete_dotted(doc, d) for d in dotted]
+    return lambda doc: [config.delete_dotted(doc, d) for d in dotted]
 
 
 def test_delete_keeps_the_following_sections_comment() -> None:
@@ -594,7 +594,7 @@ def test_delete_that_empties_a_map_rehomes_one_level_up_and_stays_valid_yaml() -
         _delete("voice.stt.primary"),
     )
     assert "# trailing doc" in out
-    assert config._yaml_rt().load(out)["other"] == 1  # still parses, and the comment didn't move inside
+    assert config.yaml_rt().load(out)["other"] == 1  # still parses, and the comment didn't move inside
     assert out.index("stt: {}") < out.index("# trailing doc") < out.index("other: 1")
 
 
@@ -640,13 +640,13 @@ def test_sync_mapping_emptying_a_child_rehomes_the_comment() -> None:
         lambda doc: config.sync_mapping(doc["computers"]["corsair"], {"services": {}}),
     )
     assert "# fleet-wide notes" in out and "old:" not in out
-    assert config._yaml_rt().load(out)["server"]["poll_seconds"] == 5
+    assert config.yaml_rt().load(out)["server"]["poll_seconds"] == 5
 
 
 def test_delete_on_a_plain_dict_config_is_a_no_op_not_a_crash() -> None:
     """A fresh/empty config file yields plain dicts, which carry no ruamel comment structure."""
     doc = {"inference": {"legacy": 1, "max_steps": 2}}
-    config._delete_dotted(doc, "inference.legacy")
+    config.delete_dotted(doc, "inference.legacy")
     assert doc == {"inference": {"max_steps": 2}}
 
 
@@ -658,7 +658,7 @@ def test_delete_rehomes_across_a_sequence_valued_sibling() -> None:
         _delete("inference.legacy"),
     )
     assert "# doc for max_steps" in out and "legacy" not in out
-    assert config._yaml_rt().load(out)["inference"]["fallbacks"] == ["a", "b"]
+    assert config.yaml_rt().load(out)["inference"]["fallbacks"] == ["a", "b"]
     assert out.index("- b") < out.index("# doc for max_steps") < out.index("max_steps: 2")
 
 
@@ -668,5 +668,5 @@ def test_delete_rehomes_when_the_sequence_ends_in_an_empty_entry() -> None:
         _delete("inference.legacy"),
     )
     assert "# doc for max_steps" in out
-    assert config._yaml_rt().load(out)["inference"]["max_steps"] == 2
+    assert config.yaml_rt().load(out)["inference"]["max_steps"] == 2
     assert out.index("# doc for max_steps") < out.index("max_steps: 2")

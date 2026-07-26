@@ -2,9 +2,10 @@
 
 > ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21). **On main, UNRELEASED: A11 COMPLETE
 > (chat + voice/embeddings) + D3 slice 3 + the 2026-07-26 fix wave.
-> ▶ **NEXT = BUILD [`UPDATE_PLAN.md`](./UPDATE_PLAN.md) SLICE 1** — the update/migration architecture,
-> **design v3, council-reviewed and owner-ratified, ready to build**; its §10 is the slice list, §8 the
-> owner rulings, §9 the council record. Then the **A11 PRE-RELEASE FIX LIST** in the 2026-07-26 session
+> ▶ **[`UPDATE_PLAN.md`](./UPDATE_PLAN.md) SLICE 1 ✅ BUILT 2026-07-26** (the runner + 55 tests, gate 6/6,
+> council-reviewed; as-built = its **§11**). **NEXT = SLICE 2** — move the A11 fold into `steps.py`
+> (§11's carried-forward notes first). §10 is the slice list, §8 the owner rulings, §9 the council
+> record. Then the **A11 PRE-RELEASE FIX LIST** in the 2026-07-26 session
 > block (the parked deep audit is DONE — one MUST-FIX: a masked secret can be persisted as the real API
 > key). Release A11 via D48 §rollout only after both, and only once the owner ratifies the three pending
 > D48 Slice-2 calls (a precondition D48 sets for itself, open since 2026-07-23).**
@@ -407,6 +408,54 @@
 > migrated, so the UPDATE_PLAN work has real inputs to rehearse against. Rehearse on **copies**, never in
 > place. Session scratch (Codex prompts/reviews, prototypes) lived in the tmpfs scratchpad and is gone by
 > design; everything durable is in the repo.
+
+> **▶▶ SESSION 2026-07-26 (PM) — UPDATE_PLAN SLICE 1 BUILT: the config-migration runner.** Model check ✓
+> (`ctrl-b-opus`, Opus 5 high). Full gate **6/6 GREEN**; backend **952** (was 897, +55). Working tree has
+> the slice; **NOT PUSHED.** As-built record + every delta and defect: **[`UPDATE_PLAN.md` §11](./UPDATE_PLAN.md#11-slice-1--as-built-2026-07-26)**.
+>
+> New: `backend/app/config_migration/{__init__.py, __main__.py, VERSION}` + `tests/test_config_migration_slice1.py`.
+> `STEPS` is empty and `VERSION` is **0** by design — the fold moves in at slice 2; no operator sees 0
+> because slice 8 releases at 1. Touched outside the package: `CONFIG_VERSION_KEY` + the `load_settings`
+> pop + the PUT strip (§3.8), `conftest.py`'s module-level guard (§3.7), and three `config.py` privates
+> promoted (`yaml_rt` · `delete_dotted`/**new** `delete_path` · `Settings.agent_from`) rather than reached
+> into from the new package.
+>
+> **The design changed twice under review, both times for a real defect:**
+> - **The runner writes a DIFF, not the document.** A whole-document `sync_mapping` would let a buggy step
+>   silently delete `hosts`/SSH credentials with validation AND the postcondition still passing — and
+>   `edit_config_yaml` parses **YAML 1.2** while plans are built from `safe_load`'s **1.1**, so it would
+>   also rewrite `debug: no` → `false` and `012` → `10` in lines nobody asked it to touch. Removals are
+>   authorised one-by-one via `Plan.consumes` (renamed from `delete_list`, which now lied).
+> - **Removals travel as key-segment tuples**, not dotted strings: `qwen/qwen3.5-72b` is a *live* model
+>   key, and a dotted path splits the name and silently no-ops. Found in self-audit; Fable's confirmation
+>   pass called it "a latent slice-2 silent-no-op waiting to ship".
+>
+> **Council** (owner-requested): Codex `gpt-5.6-sol` high on the design *before* building (BUILD WITH
+> CHANGES — the two above), Fable 5 high on design/integration and Codex again on the built code, in
+> parallel. Codex returned **DO NOT SHIP** with 2 HIGH + 5 lesser, all fixed with a test each (top: an
+> empty `consumes` entry authorised *every* removal, since `()` prefixes everything; `_diff` used `!=`,
+> and Python says `True == 1 == 1.0`, so a step's type normalisation produced no diff at all). Fable
+> returned SHIP WITH CHANGES → after the fix wave, **SHIP AS BUILT**. One Fable finding **overruled**
+> (`--check` exit 2 — §3.5 locks 0, and `install.sh`'s `--check || exit 1` would silently be wrong);
+> Fable accepted the overrule. Its best find was an ageing bug: a future correction step legitimately
+> restoring a path an earlier step consumed would have tripped the post-commit assertion.
+>
+> **Settled here so slice 4 doesn't have to:** the exit taxonomy. **78 is now the DEFAULT** for
+> `MigrationRefused` — a config this build cannot migrate, which no restart fixes — and **1** is reserved
+> for environmental failures a retry might clear. The unit has no `StartLimitBurst`, so the alternative
+> was crash-looping forever at `RestartSec=5`.
+>
+> **Real-config rehearsal (the §10 bar), twice — before and after the fix wave:** copies of BOTH live
+> configs through `--check`/`--apply`; the only diff is the added `config_version: 0` line; comments, key
+> order and 0600 intact; `load_settings` still loads; the marker never reaches `model_dump`; re-apply a
+> true no-op. **Found in passing: the gate was already RED at HEAD** — `09ac884` introduced a pyright
+> error that only pre-push runs, and that wave was never pushed. Fixed (one-line narrowing).
+>
+> **▶ NEXT: slice 2** — move the fold into `steps.py`. Two things Codex found that slice 2 must do:
+> deep-copy the config and each agent doc before folding (`_migrate_legacy` shallow-copies, then
+> `walk_model_refs` mutates nested refs shared with its input — a step doing that would mutate its own
+> `Context` and hide the change from `_diff`), and declare the four `…mode` paths the current fold's
+> delete-list omits, which the new invariant will (correctly) reject.
 
 > **▶▶ SESSION 2026-07-26 — fix wave 1/4/5 SHIPPED · the migration DESIGNED (UPDATE_PLAN v3) · the
 > parked A11 deep audit DONE.** 3 commits (`09ac884` fix · `2613f54` tests · `dcafa95` docs) + the
