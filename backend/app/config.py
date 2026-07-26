@@ -1136,7 +1136,11 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
     IS refused lives in `app.config_migration`: a variable addressing a path a migration retired, at
     the attended `--check`/`--apply` gate.
     """
-    for full, section, key in env_override_vars():
+    # ONE snapshot, parsed and read from: `os.environ` is process-global mutable state, so collecting
+    # names and then re-reading each by name is a torn read — a concurrent `del` raises `KeyError` and a
+    # concurrent write applies a value that was never the one we decided to apply.
+    env = dict(os.environ)
+    for full, section, key in env_override_vars(env):
         if not _env_path_is_declared(section, key):
             _LOG.warning(
                 "%s targets `%s.%s`, which this build does not define, so it cannot take effect. "
@@ -1150,7 +1154,7 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(bucket, dict):
             bucket = {}
             raw[section] = bucket
-        bucket[key] = os.environ[full]
+        bucket[key] = env[full]
     return raw
 
 

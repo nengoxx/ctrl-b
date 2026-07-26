@@ -908,9 +908,15 @@ def _assert_postcondition(steps: Sequence[Step], plan: Plan | None) -> None:
 
 def check(ctx: Context, steps: Sequence[Step] = STEPS) -> Status:
     """`--check`: parse, plan, validate, probe writability. Writes nothing. Raises `MigrationRefused`
-    for anything that would fail, so a caller (`install.sh`) can abort while prod is still serving."""
-    _refuse_retired_env(steps)
+    for anything that would fail, so a caller (`install.sh`) can abort while prod is still serving.
+
+    `detect()` runs FIRST so a **downgrade** is reported before anything else (Codex): on a config
+    written by a newer build, this build's remediation for a retired variable is advice about a shape
+    it no longer knows to be true, and the operator needs "restore the config" long before "unset that
+    variable".
+    """
     status = detect(ctx, steps)
+    _refuse_retired_env(steps)
     if not status.exists or not ctx.config:
         return status
     plan = build_plan(ctx, steps)
@@ -943,8 +949,8 @@ def apply(ctx: Context, steps: Sequence[Step] = STEPS) -> Applied:
     fail, which is a worse failure than the one it prevents. A failure *after* the commit is reported
     as its own state, naming the backup to restore.
     """
+    status = detect(ctx, steps)  # downgrade first — see `check()`
     _refuse_retired_env(steps)
-    status = detect(ctx, steps)
     if not status.exists or not ctx.config:
         return Applied(status=status)  # absent or empty → never created, never stamped (§3.2)
     plan = build_plan(ctx, steps)

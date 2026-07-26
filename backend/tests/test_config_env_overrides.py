@@ -16,15 +16,27 @@ Two mechanisms meet here, and the split is the design (UPDATE_PLAN §7, R6):
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 
+import conftest
 import pytest
 from pydantic import BaseModel
 
 from app import config_migration as cm
 from app.config import Settings, _apply_env_overrides, env_override_vars, load_settings
-from app.config_migration.steps import A11_RETIRED_ENV_PATHS
+from app.config_migration.steps import A11_RETIRED_ENV_PATHS, a11_apply
 
 _LOGGER = "ctrlb.config"
+
+
+def _declared(section: str, key: str) -> bool:
+    """Whether `<section>.<key>` is a field the LIVE schema still declares. Spelled out here rather
+    than imported from `config`, so the invariants below check the models rather than re-run the
+    implementation they are supposed to police."""
+    field = Settings.model_fields.get(section)
+    model = field.annotation if field is not None else None
+    return isinstance(model, type) and issubclass(model, BaseModel) and key in model.model_fields
 
 
 # ── the parser ───────────────────────────────────────────────────────────────────────────────────
@@ -69,6 +81,16 @@ def test_a_bootstrap_variable_is_never_applied_as_a_section() -> None:
     raw: dict = {}
     _apply_env_overrides(raw)  # CTRLB_HOME/CTRLB_ENV are set by conftest for the whole suite
     assert "home" not in raw and "env" not in raw
+
+
+def test_the_suite_strips_inherited_overrides() -> None:
+    """Pins conftest's guard by its RULE, not by its effect: the stripping runs at import time, before
+    any test exists, so asserting on `os.environ` here would pass in a clean shell whether or not the
+    guard was there — which is exactly what it did before this test."""
+    assert conftest.inherited_override_names(
+        {"CTRLB_HOME": "/x", "CTRLB_SERVER__PORT": "1", "CTRLB_Embeddings__Api_Key": "k", "PATH": "/b"}
+    ) == ["CTRLB_SERVER__PORT", "CTRLB_Embeddings__Api_Key"]
+    assert conftest.inherited_override_names(os.environ) == []  # …and it actually ran
 
 
 @pytest.mark.parametrize(
@@ -167,17 +189,51 @@ def test_no_retired_path_names_a_live_field() -> None:
     derivation (`retires` = what the step consumed) produces a guard that refuses valid overrides.
     """
     for section, key in A11_RETIRED_ENV_PATHS:
-        field = Settings.model_fields.get(section)
-        assert field is not None, f"`{section}` is not a config section at all"
-        model = field.annotation
-        assert isinstance(model, type) and issubclass(model, BaseModel)
-        assert key not in model.model_fields, f"`{section}.{key}` is still a declared field"
+        assert Settings.model_fields.get(section) is not None, f"`{section}` is not a config section"
+        assert not _declared(section, key), f"`{section}.{key}` is still a declared field"
 
 
-def test_every_retired_path_is_addressable_by_the_one_level_grammar() -> None:
-    """Retiring a path the grammar cannot reach would be theatre — the voice slots
-    (`voice.stt.primary.api_key`) sit two levels down and were never reachable by an env var."""
+def test_the_retired_list_is_exactly_what_the_fold_kills_and_the_schema_forgot() -> None:
+    """COMPLETENESS, derived — the soundness test above passes for an empty list, so it cannot catch a
+    path that is missing.
+
+    The membership rule is mechanical, so assert it mechanically instead of pinning six hand-written
+    tuples: a path is retired iff the fold **consumes** it, the one-level grammar can **address** it
+    (two segments — the voice slots are three and were never reachable by an env var), and the new
+    schema no longer **declares** it. Add a fold that eats a two-segment key without listing it here
+    and this fails; list one the schema still declares and the soundness test fails.
+    """
+    plan = a11_apply(
+        cm.Context(
+            config_path=Path("/nonexistent/config.yaml"),
+            agents_dir=Path("/nonexistent/agents"),
+            # MAXIMAL by necessity: the fold only declares what it actually found, so a fixture
+            # missing one legacy key silently shrinks the derived set. (It caught exactly that on the
+            # first run — `inference.cloud` was absent here and therefore never consumed.)
+            config={
+                "inference": {
+                    "default_mode": "local",
+                    "local": {"base_url": "http://l/v1", "model": "m"},
+                    "cloud": {"base_url": "http://c/v1", "model": "m2", "api_key": "sk-c"},
+                    "fallbacks": [{"base_url": "http://fb/v1", "model": "fbm"}],
+                },
+                "voice": {
+                    "stt": {
+                        "primary": {"base_url": "http://s/v1", "model": "w"},
+                        "fallback": {"base_url": "http://s2/v1", "model": "w2"},
+                    },
+                    "tts": {
+                        "primary": {"base_url": "http://t/v1", "model": "t"},
+                        "fallback": {"base_url": "http://t2/v1", "model": "t2"},
+                    },
+                },
+                "embeddings": {"base_url": "http://e/v1", "model": "emb", "dim": 8, "api_key": "sk-x"},
+            },
+        )
+    )
+    consumed = {tuple(cm.as_path(c)) for c in plan.consumes}
+    assert {p for p in consumed if len(p) == 2 and not _declared(*p)} == set(A11_RETIRED_ENV_PATHS)
+    # …and every one of them is genuinely addressable by the grammar it guards.
     for path in A11_RETIRED_ENV_PATHS:
-        assert len(path) == 2
         var = "CTRLB_" + "__".join(p.upper() for p in path)
         assert env_override_vars({var: "x"}) == [(var, *path)]

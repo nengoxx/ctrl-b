@@ -380,7 +380,9 @@ deleting code rather than adding it.**
 4. **`main.py` import-time check + `RestartPreventExitStatus=78`** — and **verify the terminal
    `failed` status 78 on the dev unit**, plus the `--reload` worker path (a reload worker exits through
    uvicorn's `ChangeReload` parent, not systemd — behaviour unverified).
-5. **`install.sh`**: hook + fatal stop + health gate + flock.
+5. **`install.sh`**: hook + fatal stop + health gate + flock, **+ scan the rendered unit's
+   `Environment=` lines for `CTRLB_*__*` and fail the gate** (§13.1 — a service-only override is
+   invisible to the CLI, so this is the only attended place it can be caught).
 6. **Windows parity.**
 7. **`update.sh`** + runbook rewrite + `config_version: 1` in `config.example.yaml`.
 8. **D48 amendment**, full gate, release.
@@ -586,3 +588,37 @@ the A11 fold killed", which must die with the step.
   then walks the operator's remedy through to a migrated config carrying the key.
 - Backend suite **1013** (was 998). `tests/conftest.py` also drops inherited `CTRLB_*__*` variables —
   without it, a developer with one exported fails tests that have nothing to do with it.
+
+### 13.1 Fix-set verification (Codex, on the built code) + the ruling on its HIGH
+
+All four original findings verified **CLOSED**. Five new; three taken, one taken in lean form, one
+ruled against:
+
+| Sev | Finding | Disposition |
+|---|---|---|
+| LOW | `_refuse_retired_env` ran **before** `detect()`, so a config from a newer build got A11 remediation instead of the downgrade refusal | **TAKEN** — `detect()` first in both `check()` and `apply()` |
+| LOW | `_apply_env_overrides` collected names then re-read `os.environ[name]` — a torn read of process-global mutable state (`KeyError`, or applying a value we never decided to apply) | **TAKEN** — one `dict(os.environ)` snapshot, parsed and read from |
+| MED | the two invariants prove **soundness, not completeness** — both pass for an empty `retires` list | **TAKEN, and strengthened**: completeness is now *derived* — `{consumed paths that are 2 segments and no longer declared} == A11_RETIRED_ENV_PATHS`. It earned itself immediately, failing on its own first run because the fixture omitted `inference.cloud`, so the fold never consumed it |
+| LOW | the conftest guard was not actually pinned (the test passes without it in a clean shell); no boot-warning test | **TAKEN in lean form** — the rule is extracted as `inherited_override_names()` and tested directly, since the stripping runs before any test exists. The boot-warning half belongs to **slice 4**, where the caller will exist |
+| HIGH | warning-only at boot can still strand a credential | **diagnosis accepted, prescription declined — ruled below** |
+
+**The HIGH, and why the fix goes to `install.sh` rather than to boot.** The scenario is real: a
+credential in the unit's `Environment=` is invisible to the CLI (which sees the shell + `.env`), so the
+migration passes, and the service then treats it as a dead path — the provider comes up unauthenticated
+with only a journal line. That is the asymmetry used to justify the split in the first place, turned
+around.
+
+Codex's fix is to make it a blocking boot error. **Declined**, for the reason the split exists: an
+unauthenticated provider **fails visibly at call time** — a 401 surfaced in the chat bubble or the
+voice control — while a refusing unit takes down the only UI there is to diagnose it from, on a
+headless box. Trading a visible per-role failure for a total outage is the wrong direction.
+
+**Taken instead, and better placed: `install.sh` (slice 5) scans the rendered unit's `Environment=`
+lines for `CTRLB_*__*` and fails the gate.** The unit file is the one place a service-only override can
+come from, `install.sh` is the code that renders it, and this closes the exact blind spot at the
+**attended** gate — where prod is still serving and the remedy is one edit — rather than at the
+unattended boot. Recorded as a slice-5 requirement in §10.
+
+**Standing note for slice 4:** Codex and Fable have now split twice on this same axis (fail-closed vs
+fail-visible for environment residue). The ruling is fail-visible, with the attended gates carrying the
+refusals. Slice 4 logs at **ERROR** level, naming the variable and the role it no longer feeds.

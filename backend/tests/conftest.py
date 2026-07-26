@@ -41,11 +41,23 @@ os.environ["CTRLB_HOME"] = _SUITE_HOME
 os.environ["CTRLB_ENV"] = os.path.join(_SUITE_HOME, ".env-absent")
 os.environ.pop("CTRLB_CONFIG", None)
 os.environ.pop("CTRLB_DB", None)
-# Section overrides (`CTRLB_<SECTION>__<KEY>`) inherited from the invoking shell are dropped too: they
-# silently overlay every `load_settings` in the suite, and since slice 3 one class of them (a path a
-# migration retired) makes `check`/`apply` refuse — so a developer with one exported would fail tests
-# that have nothing to do with their variable. The suite's own tests set theirs via `monkeypatch`.
-for _k in [k for k in os.environ if k.startswith("CTRLB_") and "__" in k]:
+
+
+def inherited_override_names(environ) -> list[str]:
+    """The `CTRLB_<SECTION>__<KEY>` names in `environ` — everything the suite must NOT inherit.
+
+    A predicate rather than an inline comprehension so it can be tested directly
+    (`test_config_env_overrides.py`): the stripping below runs at import, before any test exists, so
+    the only thing a test can pin is this rule.
+    """
+    return [k for k in environ if k.startswith("CTRLB_") and "__" in k]
+
+
+# Section overrides inherited from the invoking shell are dropped: they silently overlay every
+# `load_settings` in the suite, and since slice 3 one class of them (a path a migration retired) makes
+# `check`/`apply` refuse — so a developer with one exported would fail tests that have nothing to do
+# with their variable. The suite's own tests set theirs via `monkeypatch`.
+for _k in inherited_override_names(os.environ):
     os.environ.pop(_k, None)
 
 
