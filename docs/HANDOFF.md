@@ -1,11 +1,15 @@
 # Handoff — start here for a fresh session
 
-> ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21). **On main (all PUSHED 2026-07-25 @
-> `e158519`), UNRELEASED: A11 COMPLETE
-> (Slice 1 chat + Slice 2 voice/embeddings, built 2026-07-23 — the Slice-1 D48 calls RATIFIED same day)
-> + D3 slice 3. NEXT = the **2026-07-25 A11 CLOSE-OUT REVIEW** block below — call ① RATIFIED, call ③
-> re-framed + standing, a fix list found (incl. TWO verified bugs), the deep audit PARKED to next
-> session by the owner (usage limits). Release A11 via D48 §rollout only after that fix wave.**
+> ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21). **On main, UNRELEASED: A11 COMPLETE
+> (chat + voice/embeddings) + D3 slice 3 + the 2026-07-26 fix wave.
+> ▶ **NEXT = BUILD [`UPDATE_PLAN.md`](./UPDATE_PLAN.md) SLICE 1** — the update/migration architecture,
+> **design v3, council-reviewed and owner-ratified, ready to build**; its §10 is the slice list, §8 the
+> owner rulings, §9 the council record. Then the **A11 PRE-RELEASE FIX LIST** in the 2026-07-26 session
+> block (the parked deep audit is DONE — one MUST-FIX: a masked secret can be persisted as the real API
+> key). Release A11 via D48 §rollout only after both, and only once the owner ratifies the three pending
+> D48 Slice-2 calls (a precondition D48 sets for itself, open since 2026-07-23).**
+> **Agent discipline now lives in [`.claude/skills/second-opinion/SKILL.md`](../.claude/skills/second-opinion/SKILL.md)** —
+> read before spawning Codex or subagents.
 > **▲ WORKFLOW (owner, 2026-07-24): the main model is now Opus 5 on HIGH** (subagents Opus 5 high ·
 > Codex `gpt-5.6-sol` high co-reviewer · Fable 5 = on-request second opinion via its own session).
 > Match the model to your tmux session at session start: `tmux display-message -p '#S'`. — v1.2.1 = the seg stadium-trick patch on top of v1.2.0 same night: ACA Slices 1–8 + the D45/D46 reasoning arc + D47 multi-homed s1–2 + UI polish; both released via runbook §Release by the agent — v1.2.0 gate 29801506922, v1.2.1 gate 29802230245, both green incl. e2e; **the prod config riders are LIVE: `api_mode: llamacpp` + `max_concurrent_requests: 1` on local, `api_mode: openrouter` on cloud**; snapshots `ctrlb-20260721-063649` + `-065258.db.gz`. Prior: v1.1.1 2026-07-16 · v1.1.0 2026-07-10 · v1.0.0 same day.
@@ -386,6 +390,307 @@
 > secret-bearing file replaced that way silently loses 0600; write through an fd opened `0o600` (the
 > `.bak-a11` idiom). The bug predated A11 and had already degraded dev+prod configs to 0664.
 >
+> **▷ LIVE MACHINE STATE (▲ UPDATED at the 2026-07-26 close — SESSION CLOSED CLEAN):**
+> tip = the 2026-07-26 wave (`09ac884` comment-preserving delete · `2613f54` gate tests · `dcafa95` doc
+> drift · + the design/research/skill commit) on top of `ad7711d`. **Backend suite 897 green** (was 878;
+> +19 tests). **Working tree CLEAN. NOT PUSHED — `git push` is the first act of the next session** (the
+> owner's standing rule: commits may be autonomous, pushes need confirmation). No background tasks in
+> flight; all review agents completed and their outputs are banked in `docs/research/` + `UPDATE_PLAN.md`.
+> **Dev units STOPPED** — start them with `systemctl --user start ctrl-b-dashboard-dev{,-web}` when
+> iterating (:5434 + Vite :5173).
+> **PROD REMAINS v1.2.1 — A11 still UNRELEASED**, now gated on: the UPDATE_PLAN build, the A11
+> pre-release fix list, and the three owner ratifications.
+> **Prod + dev `config.yaml` are still `0664`** (`~/.ctrl-b/`, `~/.ctrl-b-dev/`) — the `a62faa6` fix heals
+> them to 0600 on the next config write; `chmod 600` both now if you want them tight sooner (they hold SSH
+> passwords + API keys).
+> ⚠ **Both live configs are still LEGACY-SHAPE** (`inference.local`/`cloud` present) — they have not been
+> migrated, so the UPDATE_PLAN work has real inputs to rehearse against. Rehearse on **copies**, never in
+> place. Session scratch (Codex prompts/reviews, prototypes) lived in the tmpfs scratchpad and is gone by
+> design; everything durable is in the repo.
+
+> **▶▶ SESSION 2026-07-26 — fix wave 1/4/5 SHIPPED · the migration DESIGNED (UPDATE_PLAN v3) · the
+> parked A11 deep audit DONE.** 3 commits (`09ac884` fix · `2613f54` tests · `dcafa95` docs) + the
+> design/research/skill commit. Backend **897 green** (was 878). Model check ✓ (`ctrl-b-opus`, Opus 5 high).
+>
+> **① Fix-list items 1, 4, 5 CLOSED** (details in the list below). Item 1's blast radius was bigger than
+> recorded — reproduced against copies of the real prod AND dev configs, the migration destroyed the whole
+> four-line `# Voice (Phase 6, D18 failover)…` section header. Items 6+7 are **superseded** by UPDATE_PLAN.
+>
+> **② [`UPDATE_PLAN.md`](./UPDATE_PLAN.md) v3 — the update/migration architecture, ready to build.**
+> Three layers (`update.sh` → `install.sh` → `python -m app.config_migration`), a quarantined migration
+> module, `config_version`, an import-time boot refusal exiting `EX_CONFIG=78`, and Windows parity.
+> **v1 was judged "not safe to build as written" (11 HIGH across three reviews); v3 is SMALLER than v1** —
+> applying the owner's lean directive answered **three of Codex's HIGH findings by deleting code**
+> (the cutover trap, multi-file restore, cross-platform service detection). §8 = owner rulings,
+> §9 = the full council record incl. every reversal.
+>
+> **③ Research banked:** [R4](./research/R4-peer-config-migration.md) (8 peer projects: when a migration
+> runs, whether the user's file is ever rewritten, how the legacy reader dies) +
+> [R5](./research/R5-migration-code-structure.md) (how migration code is structured; **a production
+> engine is 46–105 lines** — ours is ~90; the real cost is frozen legacy schemas, which we avoid by
+> operating on raw dicts). **Two R2/owner premises corrected — see fix-list item 7.**
+>
+> **④ THE A11 PRE-RELEASE FIX LIST (from the parked deep audit — Fable 5, full `v1.2.1..HEAD` backend
+> diff). Verdict: SHIP WITH THESE FIXES.** The implementation is otherwise unusually faithful to D48.
+> - **MUST FIX — a masked secret can be persisted as the real API key.** `_is_unchanged_secret` ends
+>   `and bool(stored)`, so an incoming display mask (`sk…yz`) with **no** stored counterpart (delete-then-
+>   recreate, a rename missing `provider_renames`, a hand-crafted PUT) is written to disk verbatim as the
+>   credential. Not a leak; silent auth breakage that presents as a provider outage. ~5-line guard + test.
+>   *(Verified in source by the main session.)*
+> - **The migration fires within MINUTES of boot, unattended** — the phone's appearance sync is a
+>   `PUT /api/settings`, which is the write chokepoint. The owner does not get to choose the moment.
+>   UPDATE_PLAN removes this by migrating from the updater.
+> - **A cloud-pinned agent silently runs local after the first restart** — `agent.yaml` `mode:` maps via
+>   the live `_SLOT_MAP` on boot 1; boot 2+ has an empty map, so `cloud` becomes a dangling provider and
+>   falls to the default chain. Release-note it until UPDATE_PLAN slice 2 rewrites those files once.
+> - **MED — voice/embeddings gate acquire is unbounded**: a capped provider serving chat + STT can park a
+>   mic transcription behind a 10-minute stream, and failover cannot advance (the wait is inside the
+>   attempt). Bound it with `connect_timeout_s`; treat timeout as a failed hop. Not triggering today
+>   (speaches is uncapped).
+> - **LOW — `providers_rev` hashes raw secrets**; with the first-2/last-2 mask it is an offline
+>   verification oracle. Hash the masked dump instead — free.
+> - **Doc drift:** strict-resolve was extended to `voice`/`embeddings` (correct) but the ruling record
+>   still says the Slice-1 list; a dangling voice fallback now 422s any voice save.
+> - **5 named test gaps**, incl. mask-as-new-key and `chain_for(mode=None, model=X)`.
+>
+> **⑤ Tooling:** [`.claude/skills/second-opinion/SKILL.md`](../.claude/skills/second-opinion/SKILL.md) —
+> the first project skill. Codex invocation (**`< /dev/null` is mandatory**: `codex exec` blocks forever
+> on a piped-but-unclosed stdin — this cost two full runs and was twice misdiagnosed as "high effort is
+> slow"), the log-growth health check (CPU time proves nothing — it is I/O-bound), kill-by-PID not
+> pattern, the **Fable 5 tier** (senior-engineer axis: architecture + systems integration + blind spots;
+> on request only, one agent per scope, HIGH effort stated in the brief), the **council rule** (main +
+> Fable + Codex must agree before building), and **known reviewer biases — Codex over-engineers: take the
+> finding, re-derive the leanest fix**.
+>
+> **⑥ ROADMAP I1 added** — release-worktree deploy (rollback as a symlink flip in seconds vs today's full
+> npm+pip rebuild), deferred with the owner's ruling recorded; deferring now costs **zero** rework.
+
+> **▶▶ SESSION 2026-07-25 — A11 CLOSE-OUT REVIEW (design + research only; NO code changed, tree
+> CLEAN at `f7d02da`). The owner PARKED the deep audit + the fix wave to next session at ~80% usage.**
+> Model check ✓ (session `ctrl-b-opus`, `claude-opus-5`, settings pin `opus[1m]` + high). CI green
+> through `f7d02da`; dev units UP.
+>
+> **OWNER RULINGS THIS SESSION:** ① **call ① RATIFIED — composer verbs stay TEXT-ONLY** (a provider
+> referenced only by voice/embeddings is not advertised as a chat `/verb`). Field evidence is
+> overwhelming (research **[R1](./research/R1-model-selection-and-capability.md)**): capability is
+> declared by the config SECTION everywhere (Continue `roles`, open-webui's four tabs, LibreChat's
+> `speech` block, LiteLLM `model_info.mode`), and **no probe can do better** — a live probe of our OWN
+> `:5001` chat endpoint returns an embedder + a reranker with `architecture` fields byte-identical to
+> the chat models. Codex's dissent is not supported by the field. ② **call ③ RE-FRAMED and standing:**
+> the D40 gate is keyed `(canonical_base_url, effective_limit)` — a **SERVER** identity, not a provider
+> name. Two different providers at different base_urls never block each other; one server referenced by
+> two sections shares one cap (correct — the box is one queue). `None` = unlimited costs nothing.
+> ③ Per-message model choice = **ROADMAP, not now** (owner: "future feature"). ④ **Research is now
+> persisted** — new **[`docs/research/`](./research/)** database (owner directive: stop re-buying
+> findings). **R1 + R2 + R3 written.** R3 is PARTIAL: it settles warning-scoping + capability-vs-dialect,
+> but **provider auto-naming was never bought** (that pass was stopped on budget) — one tight bounded
+> pass still owed there, and it gates fix-list item 3.
+>
+> **THE FIX LIST (next session — nothing here is built yet):**
+> 1. **✅ FIXED 2026-07-26 — BUG (verified live, R2 §7): comment orphaning on delete.** `sync_mapping`
+>    and `_delete_dotted` used a bare `del node[k]`. ruamel stores a key's trailing comment on the
+>    *preceding* entry, so the delete carried away the prose for whatever came AFTER the deleted region.
+>    **The live blast radius was bigger than recorded here:** reproduced against copies of the real prod
+>    AND dev `config.yaml` — the migration's `inference.cloud` delete (last key, subtree value) destroyed
+>    the whole four-line `# Voice (Phase 6, D18 failover)…` **section header**, not just the `max_steps`
+>    line. Fix = a comment-preserving `_delete_key` shared by BOTH deleters (so the hosts/integrations
+>    service-removal CRUD is covered too): rescue the block parked on the deleted region's deepest-last
+>    leaf, drop only the deleted line's own end-of-line comment, and re-home it verbatim — after the
+>    preceding entry, above the new first key at index 0, or bubbled one level up when the delete empties
+>    a mapping (an emptied map renders inline `{}`, and a comment on its entry would land between key and
+>    value and **no longer parse** — that case was caught by a test and would have been a corrupting fix).
+>    Sequences park trailing comments at `ca.items` slot 0 instead of 2 (also caught by test). No library
+>    API exists for any of this ([ruamel #377](https://sourceforge.net/p/ruamel-yaml/tickets/377/)); this
+>    is the sanctioned rescue-and-reattach recipe. **OWNER RULING 2026-07-26 — the rule is SYMMETRIC:
+>    the block ABOVE a key documents that key and DIES WITH IT** (*"we should drop the comment too in
+>    order to not confuse anybody that's reading the config"*), while the block TRAILING the deleted
+>    region documents what comes next and is re-homed verbatim. Note this staleness is **not** an
+>    index-0 corner as first reported — a key's leading comment lives on the *preceding* entry's token,
+>    so it applies at every position; the leading block of a first key is a list shared with the parent
+>    slot, so clearing it in place needs no parent plumbing. ⚠ Documented caveat: deleting a top-level
+>    key that is FIRST in the file would take the file's header banner with it (unreachable today — every
+>    deleter addresses keys inside a section). Verified against prod + dev `config.yaml`: the full legacy
+>    `delete_list` round-trips with the `# Voice …` and `# SearXNG …` section headers intact, the
+>    end-of-line comments on the deleted keys gone, and the file re-parsing clean — the ruling changes
+>    nothing on the owner's own configs (they carry no full-line comment directly above a deleted key).
+>    13 new tests; full backend suite green.
+> 2. **✅ FIXED 2026-07-25 (`4d839d1`; backend 878 green, live 3 warnings → 0) — BUG: the api_mode
+>    advisory is chat-only but fired for EVERY provider**
+>    (`provider_registry.py:551`). The owner sees 3 warnings telling him his speaches/AllTalk boxes
+>    ignore `reasoning_effort`. Scope it to chat-referenced providers — note the advisory runs BEFORE
+>    the chain is built (:560), so derive the set from config refs (`inf.provider` + `inf.fallbacks` +
+>    the agent ModelRef homes), **reusing the `_validate_config_refs` walk at :527, not a second walker**.
+>    **Research [R3](./research/R3-warning-scoping-and-capability-fields.md) settles the WHERE:** warn
+>    at the **reference site**, never at declaration — *"warn only on proven inertness, never on
+>    suspected inertness"* (k8s/systemd/nginx/Terraform/OTel all refuse the declaration-site warning;
+>    firing a chat advisory at a speaches box is an *effective false positive* per Sadowski et al., the
+>    seed of the trust death-spiral per Bessey et al.). Message shape = systemd's: name the setting AND
+>    the discriminant. Dedupe to one warning per provider. ⚠ Do **NOT** solve this with a compound
+>    `openai/tts` api_mode — `api_mode` is the WIRE DIALECT axis; role already comes from the section.
+>    A declared capability field is legitimate *later* (LiteLLM `model_info.mode`, k8s `spec.type`,
+>    systemd `Type=`) but in EVERY precedent it sits **beside** the dialect, never fused into it — and
+>    it must be REQUIRED/defaulted, at which point the precedent says provable ⇒ **error, not warning**.
+>    That's a breaking change ⇒ its own D-entry, not this fix. Also adopt R3's asymmetry: a section
+>    referencing an UNDECLARED provider = hard error; a provider referenced by NOBODY = silent.
+> 3. **Provider naming — ✅ OWNER RULED 2026-07-25. Convention = `<host>-<service>`, and NO DERIVATION
+>    LOGIC.** The owner's reasoning: *"that's gonna be something that the user is gonna name itself"* —
+>    so we do NOT build a heuristic that guesses a service name from a URL. The three names he wants
+>    for **the current config specifically**: **`emma-speaches`** (`127.0.0.1:9000` — emma = the local
+>    box) · **`vault-speaches`** (`192.168.1.137:9000`) · **`vault-alltalk`** (`192.168.1.137:7851`).
+>    *(AllTalk is running on vault but is not otherwise configured in this project.)* These land as part
+>    of the migration work (item 7) since nothing is on disk yet — the generic fallback slug stays
+>    whatever it is; the user renames in Conf (rename-with-cascade shipped in Slice 1). ⚠ Role-based
+>    names (`tts`/`stt`) can NOT be a general rule anyway — dedup-by-identity merges one server into ONE
+>    provider, and the `:9000` speaches box serves BOTH roles, which is exactly why `<host>-<service>`
+>    is the right shape.
+> 4. **✅ FIXED 2026-07-26 — doc drift on D40.** `DECISIONS.md`, `DESIGN.md`, `SPEC.md` all described an
+>    *inference-only* gate on `InferenceEndpointCfg.max_concurrent_requests` keyed by raw
+>    `(base_url, limit)`. Code truth (verified): `ProviderCfg.max_concurrent_requests`, keyed
+>    `(gate_identity, limit)` with `gate_identity = canonical_base_url(...)` — a SERVER identity —
+>    acquired at THREE chokepoints (chat · voice · embeddings) through the app-owned `EndpointGates`.
+>    D48 §C4 already had this right; the drift was that the older entries never got the forward pointer.
+>    Fixed per house convention: D40 keeps its historical text + a `✏️ AMENDED by D48 C4` block; the
+>    live-guidance sites in `DESIGN.md` (four of them, not one — §3 turn loop, the gate bullet, the
+>    tunables list) were corrected in place; `SPEC.md` §6.3 had **no `providers{}` row at all** and its
+>    `inference` row still read "local/cloud endpoints" — both rewritten to the D48 shape.
+>    ⊕ Found en route and fixed (same A11 re-homing, verified against `config.py`): `DESIGN.md` still
+>    sourced the compaction context window from `InferenceEndpointCfg.context_window`; it is
+>    `ModelCfg.context_window` (per-model) since D48.
+> 5. **✅ FIXED 2026-07-26 — test gap on the voice/embeddings gate.** Acquisition was pinned only by
+>    *semaphore identity*, so deleting `await sem.acquire()` left the suite green. Added 6 tests to
+>    `test_inference_gate_d40.py` (its existing A11/R4/R5 section — no new file): serialize-at-limit-1
+>    for voice STT and embeddings · unlimited-when-None · failed-attempt-releases-the-permit for both ·
+>    and the cross-adapter one that proves the shared registry earns its keep — **an in-flight voice
+>    call parks a chat call on the same server**. **Both mutants verified**: deleting `sem.acquire()`
+>    fails 3 of them (and the pre-existing identity test still passes — the gap was exactly as
+>    reported); deleting `sem.release()` fails 5, the two release tests by deadlock-timeout, so they are
+>    not vacuous. Adapters restored byte-identical to HEAD after the mutation runs.
+> 6. **➡ SUPERSEDED 2026-07-26 — folded into [`UPDATE_PLAN.md`](./UPDATE_PLAN.md).** All four defects
+>    were re-verified in source this session (two are sharper than recorded: the FX-B warning advises a
+>    move that **hard-crashes the app** — `CTRLB_PROVIDERS__X__API_KEY` creates a junk string entry and
+>    `Settings.model_validate` raises; and the `providers:` trigger fires on a **bare `providers:` line**
+>    that YAML parses to `None`, not just `{}`). They close as consequences of the redesign, not as
+>    separate patches — see UPDATE_PLAN §7 (env overrides) and §7 (config-file edge cases).
+> 7. **➡ SUPERSEDED 2026-07-26 — the design pass is DONE: [`UPDATE_PLAN.md`](./UPDATE_PLAN.md) v3,
+>    ready to build.** Peer research bought and banked as **[R4](./research/R4-peer-config-migration.md)**
+>    (when a migration runs) + **[R5](./research/R5-migration-code-structure.md)** (how the code is
+>    shaped). ⚠ **Two premises in the block below turned out FALSE and are corrected in R4/R5:**
+>    open-webui does **not** announce "migrating database" in any UI — that memory is the pre-0.9.6
+>    peewee log path (R4 §2); and R2's "essentially nobody deletes migration code" is wrong in the peer
+>    class — open-webui (−1673 lines, floor-version rule), LibreChat (−817) and Kilo all did (R5 §5②).
+>    The owner's one-shot ruling stands, but the *mechanism* changed: **migrate from the UPDATER
+>    (`install.sh`), not at boot** — boot-rewrite has the field's worst track record (R4 §4). The
+>    original block is kept below as the provenance of the ruling.
+
+> **NEXT SESSION, in order:** ① /model check (fable-5 HIGH) ② confirm CI green @ `f80c1d9` ③
+> owner reads SLICE6_PLAN → **LOCK D42** into DECISIONS.md → ~6 Opus build waves (schema/config
+> +probe → estimator/trigger → clearing+summarizer+thrash → reactive+ModelRef wire → Conf UI →
+> the DESIGN/SPEC docs sweep) + mid/post-build audits + the Codex tri-review — the standing
+> pipeline. ④ **Dev units LEFT RUNNING** (owner intends to poke Slice-5 steering on :5173 —
+> ⚠ dev drives the REAL fleet; stop the units after). ⑤ Owner config reminders:
+> `max_concurrent_requests: 1` on the local endpoint (Slice 4) · `context_window` per endpoint
+> once Slice 6 ships. **OWNER DIRECTIVE REITERATED at close (standing, memory
+> `orchestrate-with-opus-subagents`): Fable 5 = ORCHESTRATOR + FEATURE REVIEWER ONLY, alongside
+> Codex (`gpt-5.6-sol` high) as the standing co-reviewer; ALL specified implementation /
+> mechanical work / research = Opus 4.8 subagents — never burn Fable on menial tasks.**
+>
+> **▶ SAME WEEKEND (2026-07-19, the next session): D42 LOCKED (owner go) → ACA SLICE 6 (compaction
+> v2) ✅ EXECUTED end-to-end — 12 commits LOCAL (`d8c6744..2e4dac9` + this close-out), awaiting the
+> owner's push OK. Final tree gate 6/6; backend 617 / FE 507 tests.** The full standing pipeline:
+> D42 transcribed into DECISIONS (`d8c6744`) → SIX Opus waves (schema/config+probe `681310f` →
+> window ladder + fraction trigger + served-endpoint pricing + the anchored estimator `76b4a85` →
+> clearing tier + 5-section summarizer + `/compact <instructions>` + thrash machine `f9c43bb` →
+> the `_call_config` ModelRef wire + the reactive overflow backstop `7313155` → the Conf UI
+> surface `c3d1dec` → the DESIGN/SPEC/deploy/config-example docs sweep `c04e1f4`+`08ade3e`) →
+> MID-BUILD audit (1 HIGH: anchored clearing double-credit → the exact-delta fix `483dc6a`) →
+> POST-BUILD audit (GO; polish `2acd592`) → **Codex tri-review: 2 HIGH/6 MED/2 LOW NOT-READY →
+> two gated fix waves (`2e4dac9` backend: the app-owned EndpointGates [a settings PUT split the
+> D40 cap across client generations] + `_finalize` joins clearing/backstop; `b1d0262` FE)** → a
+> fix-set verifier: **all 9 CLOSED, no drift, no regressions** (1 MED deferred with reason: the
+> pre-existing ConfTab draft lifecycle). D42 carries the AMENDED-as-built list; the full record =
+> the ACA §5 Slice 6 heading. **You can now: set per-endpoint context windows in the Conf UI (or
+> let the local one auto-probe /props) · watch old tool outputs trim for free before any paid
+> summary · `/compact focus on X` · cap any agent's output + reasoning effort per agent · survive
+> a context overflow via the one-shot fold+retry.** **NEXT SESSION, in order:** ① owner push OK
+> (12+1 commits; pre-push runs the full gate) ② owner config when it reaches prod: the deploy
+> README §"Inference tuning" — `context_window` per endpoint (cloud manual), the anchoring
+> telemetry flags (local already pinned via `return_progress`; cloud wants
+> `stream_options.include_usage`), consider disabling llama.cpp context-shift so overflows
+> surface ③ live pokes per `testing-parked-wing-it` (the ACA §5 Slice 6 LIVE-VERIFY list) ④
+> next: ACA Slice 7 (model routing & retry visibility — design review first) or Slice 8
+> (approvals) or the owner's pick (ROADMAP D3 Slice 1 · 6c-1/6c-2 flags · vapor ladder).**
+>
+> **▶ NEXT DAY (2026-07-19→20, same session): SLICE 6 PUSHED (owner OK; `f2aed3f..0ed9d80`, main
+> CI GREEN @ `0ed9d80`) → ACA SLICE 7 (model routing & retry visibility, D43) ✅ EXECUTED
+> end-to-end — and ✅ PUSHED same day (owner OK; `0ed9d80..0977e91`, main CI GREEN @ `0977e91`).
+> Final tree gate 6/6; backend 668 / FE 514 tests.** The full pipeline: 2 code-truth + 1 sourced
+> field pass (Goose's lead/worker retreat; pi's classifier; the retry-consensus table) → my D43
+> draft → 2-lens adversarial review (7H/13M/4L — **`lead_turns` DROPPED**, both lenses converged)
+> → TWO owner discussion rounds (the fallback-chain-vs-routing clarification landed on: "like a
+> fallback, but escalating to the designated smarter model after crash-and-burn turns"; retry
+> reshaped to the GLOBAL `inference.retry_attempts: 2` + per-endpoint override) → **D43 LOCKED**
+> (`8c4a7b2`) → 5 Opus waves (`de88a54` failover-async-generator + classifier + visible
+> transient retry tier → `c748b58` typed events + `retry_status` snapshot + degraded-notice
+> deletion → `fa50a09` the failure-fallback routing machine → `4a62857` FE → `77ea3a9` docs) →
+> post-build audit (GO; 1 MED + 2 LOW → `0b46f19`) → **Codex tri-review: 3 HIGH NO-GO (the
+> routing lifecycle — thread-global route lock vs D41 fresh-during-suspend; live-config re-deref
+> on resume; conclude-before-finalize counting a cancelled turn) → ONE unified fix
+> (`c00a640`): per-suspended-call ModelRef SNAPSHOTS + turn-local flags + conclude-after-finalize
+> — closed all three and DELETED two state fields** → verifier: all 6 CLOSED, no drift. **You
+> now get: visible in-place retries on busy servers (`// retrying local in 2s…`) instead of
+> silent model switches · live `// failover → cloud` narration · a retry line on phone re-attach
+> instead of a dead spinner · and optional two-tier routing (set `agent.defaults.routing:` in
+> YAML — after N crash-and-burn worker turns the designated lead model takes over for M turns,
+> announced both ways).** As-built = the ACA §5 Slice 7 heading; D43 AMENDED-as-built.
+>
+> **▶ SESSION CLOSED 2026-07-20 (clean handoff; both slices pushed, main CI green @ `0977e91`).
+> Dev units LEFT RUNNING** (:5434 + Vite :5173 — the Slice 5/6/7 LIVE-VERIFY pokes are all still
+> outstanding per `testing-parked-wing-it`; ⚠ dev drives the REAL fleet — stop the units after:
+> `systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`). **NEXT SESSION, in
+> order:** ① /model check (fable-5 HIGH — the app selector may default low) ② owner config when
+> desired: `agent.defaults.routing:` (config.example has the block) — retry needs NOTHING
+> (global default 2 shipped per the owner's ruling); the Slice-6 reminders stand (deploy README
+> §Inference tuning: per-endpoint `context_window`, the cloud `include_usage` anchoring flag,
+> the ctx-shift note) ③ live pokes when desired (the ACA §5 Slice 6 + Slice 7 LIVE-VERIFY
+> lists) ④ **prod is still v1.1.1** — release via `deploy/linux/README.md` §Release when the
+> owner wants Slices 4–7 live on :5433 ⑤ next: ACA Slice 8 (approvals evolution — design review
+> first, aligns with ROADMAP privilege levels/D16) or the owner's pick (ROADMAP D3 Slice 1 ·
+> 6c-1/6c-2 flags · vapor ladder · the parked Composer Surface). **The standing directives hold:
+> Fable 5 = orchestrator + feature reviewer alongside Codex (`gpt-5.6-sol` high); ALL specified
+> implementation / mechanical work / research = Opus 4.8 subagents.**
+>
+> **▶▶ SESSION 2026-07-23 (later) — A11 SLICE 2 (voice + embeddings) ✅ BUILT + TRIPLE-REVIEWED + GATED
+> — A11 IS FEATURE-COMPLETE. The 2 Slice-1 D48 calls were OWNER-RATIFIED at session start (recorded in
+> D48 AS-BUILT); Slice 2 then ran the full pipeline: 2-agent code-truth maps → 11 orchestrator rulings →
+> Opus build waves `e7e60bb` (backend) + `29a3712` (frontend) → docs wave (config.example new-shape ·
+> README · runbook §Rollback A11 CONFIG block; SECURITY_MODEL was already right) → fresh-eyes Opus audit
+> [0 HIGH · 2 MED] + Codex gpt-5.6-sol high review [NO-GO: 1 HIGH + 5 MED + 2 LOW, every finding
+> code-verified + ruled] → 7-fix wave `a62faa6` → Codex fix-set verification [**GO-with-changes**:
+> 1/3/5/7 + FE guard CLOSED, rulings internally consistent, no new defects] → full `check.py --e2e`
+> **7/7 GREEN** (backend 876 pytest · FE 604 vitest · e2e green · pyright 0). LOCAL COMMITS, NOT PUSHED.**
+> Headline review catches (both now fixed + regression-pinned): the config-write chokepoint had a
+> PRE-EXISTING umask bug stripping `config.yaml` to 0664 on every write — every writer now goes through
+> an fd-opened 0600 tmp + `os.replace` (self-heals) · the migration write-back would have materialized
+> env-only secrets into YAML — the fold now runs twice (disk-truth for the write-back, env-truth for
+> runtime). Shipped shape: ONE shared `_build_section_chain` (inference refolded, behavior-identical) +
+> frozen per-section policies · rebuild-together generation publish + refcount drain on Voice/Embeddings
+> clients · voice/embeddings migration folds (dedup against existing providers, host-port slugs,
+> per-field accretion, 32-char-safe suffixes) · shared FE `SectionRefEditor` (Inference refolded
+> DOM-identically) · per-model voice/speed/language/format/dim editors (FX17 closed) · reference-guard +
+> rename cascade extended to all sections + two new strict-422 mirrors · B4 parity e2e (`conf.spec.ts`) ·
+> npm audit fix (Dependabot #38 closed — it was in the LIVE FE lockfile, dev-tooling-only class).
+> **OWNER-REVIEW ITEMS: ① the 3 interpretation calls in the D48 AS-BUILT Slice-2 note** (voice-only
+> providers excluded from advertised composer verbs [Codex reads C7's letter differently — my ruling:
+> no-capability-tags governs] · `X-Voice-Served-By` = served provider name · voice/embeddings acquire
+> finite D40 gates) **· ② the accepted env-only-legacy-secret transition residual** (same note) **· ③
+> eyeball the new Conf Voice STT/TTS/Embeddings editors + per-model fields live at narrow width.**
+> **NEXT = owner ratify/eyeball → push → release A11 + D3s3 via D48 §rollout + runbook §Release**
+> (prod boots the migration lenient — IDENTICAL runtime behavior; first config write materializes +
+> writes the one-time 0600 `.bak-a11-*` backup; rollback = §Rollback CONFIG block).
+> **Durable lesson:** `Path.write_bytes`/`write_text` + `os.replace` inherits the process umask — any
+> secret-bearing file replaced that way silently loses 0600; write through an fd opened `0o600` (the
+> `.bak-a11` idiom). The bug predated A11 and had already degraded dev+prod configs to 0664.
+>
 > **▷ LIVE MACHINE STATE (▲ UPDATED at the 2026-07-25 close — SESSION CLOSED CLEAN, ALL PUSHED):**
 > the close-out session's **5 commits** (research database R1–R3 · the two owner rulings · the
 > chat-scoped advisory fix + its 2 regression tests · the reference correction) went out on top of
@@ -544,15 +849,16 @@
 >    position and is *live for us*: a config the user never saves never settles, so the fold can never
 >    be retired. Also cheap + recommended: surface deprecations in the UI, not the log.
 >
-> **NEXT SESSION, in order:** ① model check ② the fix wave above in small slices (design confirmed
-> first — items 3 + 7 need owner rulings BEFORE coding) ③ **THEN the deep audit the owner asked for**
-> (fresh-eyes Opus + Codex `gpt-5.6-sol` high over the full A11 diff) ④ push ⑤ release A11 + D3s3 via
-> D48 §rollout + runbook §Release. **AGENT DISCIPLINE (owner directive, 2026-07-25 — this session
-> burned ~80% of the limit): plan BEFORE spawning · max 5 concurrent · ONE bounded question per agent ·
-> briefs must FORBID nested subagents (the `general-purpose` type can spawn its own, and did — a
-> 5-agent launch became a ~55-task tree) · use `Explore` for read-only searches · write findings into
-> `docs/research/` the same session they land.**
->
+> **NEXT SESSION, in order:** ① model check (`tmux display-message -p '#S'`) ② **build
+> [`UPDATE_PLAN.md`](./UPDATE_PLAN.md) slice 1** (the migration runner + tests; nothing moved yet) —
+> the plan is v3, council-reviewed, owner-ratified, and its §10 is the slice list ③ then slices 2–8 in
+> order, auditing each ④ the A11 pre-release fix list (below) ⑤ owner ratifies the three D48 Slice-2
+> calls ⑥ push ⑦ release. **Read `UPDATE_PLAN.md` §8 (owner rulings) and §9 (council record) before
+> touching anything — six design decisions were reversed by review and the reasoning is recorded there.**
+> **AGENT DISCIPLINE:** [`.claude/skills/second-opinion/SKILL.md`](../.claude/skills/second-opinion/SKILL.md)
+> is now the canonical how-to for Codex + subagents (invocation, the stdin trap that cost two full runs,
+> scoping, the Fable tier, the council rule). Read it before spawning anything.
+
 > **▶▶ SESSION 2026-07-23 CLOSE-OUT — A11 SLICE 1 (chat) + the owner UI/UX polish are
 > COMPLETE, PUSHED to origin/main @ `cfedad7` (CI running; push CI skips e2e — full `check.py --e2e` was
 > 7/7 green locally before the push), dev units STOPPED. PROD UNCHANGED = v1.2.1; A11 Slice 1 + D3 slice

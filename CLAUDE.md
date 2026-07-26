@@ -34,6 +34,8 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | [`docs/THEME_ENGINE.md`](./docs/THEME_ENGINE.md) | The theme engine (Swappable Surfaces, D31) — read before themeable UI. |
   | [`docs/VAPOR_PATTERNS.md`](./docs/VAPOR_PATTERNS.md) | Vapor design tokens/components — read **before** styling any net-new UI. |
   | [`docs/RESEARCH.md`](./docs/RESEARCH.md) | Library/version pins + sourced rationale (incl. the mic secure-context analysis). |
+  | [`docs/research/`](./docs/research/) | **Field-research dossiers** — how OTHER projects solve a problem (peer class: opencode/Claude Code/Codex/open-webui/LibreChat/…). **Buy a finding once**: read here before re-commissioning a pass. Index + conventions in its README. |
+  | [`docs/UPDATE_PLAN.md`](./docs/UPDATE_PLAN.md) | The update/migration architecture (config-shape migration + `update.sh`) — **DESIGN v3, ready to build**. Read before touching `app/config_migration`, `install.sh` or the release path. |
   | [`docs/UI_AUDIT.md`](./docs/UI_AUDIT.md) | Two-pass frontend audit (perf F1–F13 + a11y/resilience F14–F29). |
   | [`docs/SYSTEM_AUDIT.md`](./docs/SYSTEM_AUDIT.md) | Code-verified architecture audit (SYS-# findings; excludes the chat loop). |
   | [`docs/AGENT_CHAT_AUDIT.md`](./docs/AGENT_CHAT_AUDIT.md) | Agent-chat audit + 8-agent comparative analysis + the ACA improvement plan (Slices 0–8). |

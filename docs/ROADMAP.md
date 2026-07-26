@@ -777,3 +777,37 @@ homes later:
 - **Integrations** (D9) — **MCP servers** manager (add/edit/enable; stdio `command+args+env` or
   Streamable-HTTP `url+headers`; tool discovery per server); **SearXNG** endpoint (powers
   `web_search`); custom slash commands; Discord/Telegram bots (E1).
+
+---
+
+## I. Deployment & operations
+
+### I1. Release-worktree deploy — rollback as a symlink flip (**deferred 2026-07-26, owner-ruled; see [`UPDATE_PLAN.md`](./UPDATE_PLAN.md) §8②**)
+
+**The pain today.** `§Rollback` is `git checkout v(prev) && install.sh prod` — an in-place checkout
+plus a **full rebuild** (npm + pip). It needs the network reachable, takes minutes, and rebuilds
+artifacts that already existed at the previous tag. For a "seamless updates" goal, rollback is the
+weakest link.
+
+**The shape.** The classic releases-plus-symlink layout: `~/apps/ctrl-b/releases/<tag>/` as a fresh
+git worktree per release, each with its own venv and built `dist`; `current` → symlink to the active
+release; the unit's `ExecStart`/`WorkingDirectory` resolve through `current`. Cutover = build the new
+release **completely**, verify it, flip the symlink, restart. **Rollback = flip the symlink back and
+restart — seconds, offline, no rebuild.**
+
+**Secondary benefit** (Codex, 2026-07-26): it closes a real if narrow window. `pip install -e` today
+mutates the tree the *running* process points at, so a failed install can crash the old process via a
+lazy import of an upgraded dependency, and restarting cannot restore the former backend. Accepted and
+documented rather than fixed, because the consequence is downtime starting minutes earlier during an
+update already in progress — not corruption.
+
+**Why deferred.** Deferring costs **one line** of rework (the keep-old-`dist` scaffolding, which
+`UPDATE_PLAN.md` §4 therefore does not build). Nothing in the config-migration design changes under
+either layout — the migration operates on `$CTRLB_HOME`, outside the tree. Doing both at once would
+change the config path *and* the update path in a single release, i.e. two risky changes to the thing
+that must never break.
+
+**What it touches when built.** `install.sh` build/cutover · the systemd unit paths · release pruning
+(keep last N) · a careful one-time migration of the existing prod install to the new layout ·
+`deploy/linux/README.md` §Release/§Rollback/§Hotfix · rollback testing on dev first. Comparable in
+size to the migration work itself — its own plan, not a rider.
