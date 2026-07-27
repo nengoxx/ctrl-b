@@ -252,7 +252,12 @@ code. Upheld by:
 - **Output:** anything that captures command output passes it through `redact()` before it leaves the process
   (§2.4). New execution paths **must** route captured output through `redact()`.
 - **Display:** the config API read masks secret-keyed values (`mask_secrets`); a masked value round-trips back
-  to the stored real secret on save, so editing config in the UI never blanks a secret.
+  to the stored real secret on save, so editing config in the UI never blanks a secret. A mask with
+  **nothing** to restore (a recreated/renamed provider, a hand-built PUT) is **dropped**, never written
+  as the credential — `looks_masked()` judges the shape alone (D48 amendment 2026-07-27).
+- **Fingerprints:** anything published *beside* masked values must be computed **from** the masked values.
+  `providers_rev` hashes the masked providers subtree for exactly this reason: a digest over the raw
+  secrets, served next to their `ab…yz` masks, is an offline verification oracle for a guessed key.
 
 *(Enforced by `backend/tests/test_secret_hygiene.py` — PRE_DEPLOY step 3 ✓.)*
 

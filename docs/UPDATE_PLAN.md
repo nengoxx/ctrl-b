@@ -1045,10 +1045,27 @@ that moment the tree is still the old tag and may not contain the runner at all.
    *(Original wording: run it from a plain SSH shell, not an agent session.)* Expect a no-op migration on the already-stamped dev config, no unit churn, and unchanged
    agent PIDs. This exercises the lock, the preflight, the apply path, render + `daemon-reload` and the
    env scan — most of the shared spine — leaving only the prod-only cutover block unexercised.
-2. The two fixes above, plus confirming the slice-6 §16 corrections landed.
-3. **The three D48 Slice-2 owner ratifications** — decisions, so they precede code freeze.
-4. The A11 pre-release fix list, explicitly including the `_is_unchanged_secret` guard.
-5. The D48 amendment + doc sync.
+2. ✅ **DONE** — the two §17.1 fixes are in `update.sh` (the four-step restore sequence; "no run found"
+   refuses and prints the `gh run watch` line), and the slice-6 §16 corrections are all in the tree
+   (`start.ps1` `exit $LASTEXITCODE` · `start.cmd` `setlocal`/`RC`/`endlocal & exit /b` · the `setup.ps1`
+   mutex + the `--check`→guard→`--apply` block before the build · the Windows README recovery line).
+3. ✅ **DONE 2026-07-27** — **the three D48 Slice-2 ratifications** ("all good"), ③ conditional on the
+   bounded-wait fix below.
+4. ✅ **DONE 2026-07-27** — the A11 pre-release fix list, in two commits. `8841386`: the MUST-FIX
+   (`looks_masked()`; a mask with nothing to restore is dropped, not written as the credential).
+   `4a056aa`: the MED (`EndpointGates.hold(target, wait_s=…)` — voice bounded by `connect_timeout_s`,
+   embeddings by `timeout_s`, a timeout is a failed hop, chat deliberately unbounded), the LOW
+   (`providers_rev` hashes the MASKED subtree — it is published beside the masks, so a raw digest was an
+   offline verification oracle), and the test gaps. **Two gaps were recorded by name** (mask-as-new-key ·
+   `chain_for(mode=None, model=X)`); the audit's other three were not, so the rest were reconstructed by
+   pinning the untested A11 paths — the masked-rev properties, the bounded wait failing over, and the
+   shared-gate claim re-pinned where voice/embeddings now acquire. The two items the list flagged as
+   **release notes rather than code** stand: the migration no longer fires unattended (the updater runs
+   it), and an `agent.yaml` `mode:` pinned to `cloud` is rewritten once by the slice-2 fold.
+5. ✅ **DONE 2026-07-27** — the **D48 amendment** (a pre-release block on the decision: the shape-only
+   mask predicate · the masked fingerprint · the bounded C4 acquire · interpretation ① corrected to the
+   five-subtree strict trigger set) + doc sync (`DESIGN.md` gate paragraph · `SECURITY_MODEL.md` display
+   + a new fingerprint rule).
 6. Full gate **plus §10's real-config rehearsal bar one final time on the release sha**.
 7. Tag → CI release gate green → `update.sh vX.Y.0`, which is prod's first run of the chain.
 

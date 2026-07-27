@@ -855,7 +855,11 @@ class Settings(BaseSettings):
   conflict, lenient boot warns and takes min-of-finite. It is acquired at **three** chokepoints —
   chat, voice (`voice.attempt`) and embeddings — each holding the permit for the whole streamed
   response and releasing it **before** any tool / subagent runs (no hold-and-wait → no deadlock at
-  limit 1). The gates live in an **app-owned `EndpointGates` registry** shared across `set_inference`
+  limit 1). **The WAIT is bounded for the two buffered sections** (D48 amendment 2026-07-27): the
+  acquire happens *inside* the failover attempt, so an unbounded one cannot fail over — voice waits
+  `connect_timeout_s`, embeddings `timeout_s`, and a timeout is a failed hop the chain moves past
+  (`EndpointGates.hold(target, wait_s=…)`, raising `GateWaitTimeout`). Chat waits unbounded on
+  purpose: queueing behind the previous turn on the same box is the correct behaviour there. The gates live in an **app-owned `EndpointGates` registry** shared across `set_inference`
   client rebuilds, so a mid-turn settings PUT can't split the cap across generations (same
   `(gate_identity, limit)` → the same semaphore; a changed limit mints a fresh gate and old holders
   drain on the old one).

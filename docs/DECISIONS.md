@@ -3193,7 +3193,8 @@ corrected in the map below).
 > fresh-eyes audit + Codex NO-GO review [3 HIGH, all verified + fixed] → Codex fix-set verification →
 > fix round 2); full gate + e2e green. **Two recorded implementation interpretations — BOTH
 > OWNER-RATIFIED 2026-07-23:** ① *strict-resolve gating* — C2's "PUT: any error → 422" is enforced for patches
-> touching `providers`/`inference`/`agent`; other patches (appearance sync, server, voice…) run
+> touching `providers`/`inference`/`agent` — **the Slice-1 set; Slice 2 extended it to `voice` +
+> `embeddings`, see the 2026-07-27 amendment below** — while other patches (appearance sync, server, …) run
 > lenient + surface warnings, so a hand-edited lenient-tolerated config can't brick unrelated saves.
 > ② *B1 model-row typed fields* — only chat-relevant fields (context_window, max_tokens_field, id,
 > extra_body) are editable in Slice 1; voice/speed/language/format/dim UI lands with Slice 2's
@@ -3245,6 +3246,32 @@ corrected in the map below).
 > `providers.*.api_key` at all (one-level env paths), and the FX-B boot warning names the move; a
 > provenance-tagged fix was judged disproportionate. **Codex fix-set verification: GO-with-changes**
 > (1/3/5/7 + the FE guard CLOSED; 2/6/8 assessed internally consistent with the rulings; no new defects).
+
+> **✏️ AMENDED (pre-release, 2026-07-27) — the A11 fix list, and the two clauses it changes.** The
+> parked deep audit (Fable 5, the full `v1.2.1..HEAD` backend diff) returned **SHIP WITH THESE FIXES**;
+> they are built (`8841386` + `4a056aa`) and this is what they change in the letter of D48. The release
+> is UPDATE_PLAN slice 8.
+> - **The secret write path gains a shape-only predicate.** `_is_unchanged_secret` can recognise a mask
+>   only by rebuilding it from the stored value, so a mask with **no** stored counterpart was taken as a
+>   new value and written to disk **as the credential** (delete-then-recreate · a rename submitted
+>   without `provider_renames` · any hand-built PUT). New `looks_masked()` judges the shape alone and the
+>   write path **drops** such a key — the field's answer too (R6: AnythingLLM filters `"******"`). A mask
+>   means "unchanged"; with nothing to keep unchanged, the honest result is no value.
+> - **C2/R8 fingerprint — `providers_rev` now hashes the MASKED subtree**, not the raw one. It is
+>   published beside the masked values (`X-Providers-Rev`, `GET /api/providers`, the PUT envelope), so
+>   hashing raw secrets made the pair an offline verification oracle. The only sensitivity lost is a
+>   rotation to a same-mask value, which cannot be clobbered by the draft that missed it (a stale mask
+>   restores whatever is currently stored).
+> - **C4 gate — the acquire is BOUNDED for the buffered sections.** Ratification ③ was conditional on
+>   this: the wait sits *inside* the failover attempt, so an unbounded one cannot fail over. `voice`
+>   waits `connect_timeout_s`, `embeddings` waits `timeout_s` (no connect budget there), and a timeout is
+>   a **failed hop** — the chain advances. Chat keeps the unbounded wait by design (queueing behind the
+>   previous turn on the same box is correct). One seam: `EndpointGates.hold(target, wait_s=…)`.
+> - **Interpretation ① is recorded one subtree-set out of date.** Slice 1 ratified strict-resolve
+>   enforcement for patches touching `providers`/`inference`/`agent`; Slice 2 correctly extended the
+>   trigger set to **`voice` and `embeddings`** (every home the registry reads) — pinned by
+>   `test_strict_422_on_voice_ref_break_but_lenient_on_unrelated_put`. The consequence, worth knowing
+>   before the first voice edit on prod: a dangling voice fallback now 422s **any** voice save.
 
 **Context — what this retires.** Today inference hardwires a `local` + `cloud` pair (`InferenceEndpointCfg`
 × 2) plus a third `fallbacks[]` shape; voice hardwires `primary`/`fallback` slots per role
