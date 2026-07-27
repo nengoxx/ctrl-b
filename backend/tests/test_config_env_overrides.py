@@ -21,7 +21,7 @@ from pathlib import Path
 
 import conftest
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app import config as cm_config
 from app import config_migration as cm
@@ -190,7 +190,7 @@ def test_apply_touches_nothing_at_all_when_it_refuses(tmp_path, monkeypatch) -> 
 
     for name in ("_backup", "_write_config", "_write_agent", "edit_config_yaml", "_probe_writable"):
         monkeypatch.setattr(cm, name, boom)
-    with pytest.raises(cm.MigrationRefused):
+    with pytest.raises(cm.MigrationRefused, match="retired"):  # the INTENDED refusal, not any refusal
         cm.apply(cm.context_from_env())
 
 
@@ -244,6 +244,26 @@ def test_load_settings_never_echoes_a_rejected_value(tmp_path, monkeypatch) -> N
     rendered = f"{exc.value}{exc.value.__cause__ or ''}{exc.value.__context__ or ''}"
     assert "sk-SYNTHETIC-CANARY" not in rendered
     assert "providers" in str(exc.value) and str(cfg) in str(exc.value)  # location, not value
+    tb = exc.tb
+    assert tb is not None and "raw" not in (tb.tb_frame.f_locals if tb.tb_next is None else {})
+
+
+@pytest.mark.parametrize(
+    "doc",
+    [
+        {"providers": {"p": {"base_url": "http://x", "api_key": ["sk-VALUE-CANARY"]}}},  # wrong type
+        {"providers": {"p": {"base_url": "http://x", "models": {"m": {"dim": "sk-VALUE-CANARY"}}}}},
+        {"inference": {"request_timeout_s": "sk-VALUE-CANARY"}},
+    ],
+)
+def test_no_rejected_VALUE_survives_sanitising(doc) -> None:
+    """The property, across error shapes rather than one canary: pydantic's `msg` and `loc` may name a
+    field or a mapping KEY, never the rejected VALUE. A key is public in this system (masking is
+    value-side; provider names are `/<provider>` composer verbs), a value may be a credential."""
+    with pytest.raises(ValidationError) as exc:
+        Settings.model_validate(doc)
+    assert "sk-VALUE-CANARY" in str(exc.value)  # pydantic itself leaks it…
+    assert "sk-VALUE-CANARY" not in cm_config.sanitise_validation_error(exc.value, "config.yaml")
 
 
 def test_a_hostile_variable_name_cannot_forge_a_log_line(monkeypatch, caplog) -> None:

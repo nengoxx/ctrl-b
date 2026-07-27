@@ -550,14 +550,6 @@ def detect(ctx: Context, steps: Sequence[Step] = STEPS) -> Status:
 # ── validation ───────────────────────────────────────────────────────────────────────────────────
 
 
-def _sanitise_validation_error(exc: ValidationError, origin: str, stage: str) -> str:
-    """The §3.5 sanitised rendering — now `config.sanitise_validation_error`, which the live boot path
-    needs for the same reason this did (Codex, slice-3 code review: an invalid value reached the
-    journal through an uncaught `ValidationError` at `main.py`). Kept as a one-line alias so the raise
-    sites below still read as migration-local."""
-    return sanitise_validation_error(exc, origin, stage)
-
-
 def validate(ctx: Context, plan: Plan | None) -> Settings:
     """Validate what will be on disk after this run, before a single byte is written (§3.4 step 2).
 
@@ -594,7 +586,7 @@ def validate(ctx: Context, plan: Plan | None) -> Settings:
         settings = Settings.model_validate(plan.config if plan is not None else ctx.config)
     except ValidationError as exc:
         stage = "after migration" if plan is not None else "as written — nothing to migrate"
-        raise MigrationRefused(_sanitise_validation_error(exc, "config.yaml", stage)) from None
+        raise MigrationRefused(sanitise_validation_error(exc, "config.yaml", stage)) from None
     for path, doc in (plan.agent_files if plan is not None else {}).items():
         name = path.parent.name
         try:
@@ -603,7 +595,7 @@ def validate(ctx: Context, plan: Plan | None) -> Settings:
             settings.agent_from(name, path.parent, doc)
         except ValidationError as exc:
             raise MigrationRefused(
-                _sanitise_validation_error(exc, f"agents/{name}/agent.yaml", "after migration")
+                sanitise_validation_error(exc, f"agents/{name}/agent.yaml", "after migration")
             ) from None
     return settings
 

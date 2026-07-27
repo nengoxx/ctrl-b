@@ -1215,6 +1215,13 @@ def sanitise_validation_error(exc: ValidationError, origin: str, stage: str = ""
 
     Shared by `load_settings` (the live boot path) and `app.config_migration` (which found the hazard
     first): both validate operator-authored, secret-bearing documents, and neither may echo a value.
+
+    **What `loc` can still contain, deliberately: a KEY.** A provider named `sk-…` appears here, because
+    a location is a path of field names and mapping keys. That is not a leak in this system — keys are
+    public identity: `mask_secrets` masks *values* under secret-named keys and passes every key through,
+    provider names ride `GET /api/settings` unmasked, and they are advertised to the model as
+    `/<provider>` composer verbs. Suppressing dynamic locations would reduce this to "something in
+    `providers` is wrong" while protecting nothing that is not already on the chat surface.
     """
     stage = f" {stage}" if stage else ""
     lines = [f"{origin}: {len(exc.errors())} validation error(s){stage}"]
@@ -1247,6 +1254,11 @@ def load_settings(path: Path | None = None) -> Settings:
     # chained exception — the object still reaches through `__context__` to a `ValidationError` whose
     # `str()` carries `input_value=…`, i.e. the rejected secret, one attribute away from any logger.
     # Once the handler has exited there is no active exception, so the new error carries no reference.
+    # `del raw` for the same reason one level down: the raising frame is captured in the traceback, and
+    # `raw` is the whole config. Nothing renders frame locals today (no `exc_info=True` in this app, no
+    # locals-aware formatter), so this is defence in depth against a future logging change, not a live
+    # leak — but it costs one line and the "no secret in a log" rule admits no exceptions.
+    del raw
     raise ConfigValidationError(message)
 
 

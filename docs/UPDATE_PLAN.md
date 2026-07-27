@@ -654,3 +654,20 @@ real. Both reviewers' findings are fixed in the wave recorded below.
 variable name that tries to forge a log line, malformed `retires` declarations, the remedy differing on
 each side of the migration, and a refusal test that replaces **every** writing primitive with a bomb so
 "nothing was written" is pinned rather than inferred from a missing backups directory.
+
+**Round 2 of the code review (both reviewers, on the fix wave).** **Fable: CONFIRMED** — all four of
+its items applied as asked; the slice-5 rider is "strong enough to brief against"; and it ratified the
+sanitiser's new home on ownership grounds rather than just direction: sanitising a `ValidationError` so
+`input_value=` cannot reach a journal **is secret-hygiene machinery**, and `config.py` already owns that
+family (`mask_secrets`, `secret_values`, `_SECRET_LEAF_KEYS`). Its one LOW — the forwarding shim left in
+the migration package was dead code — is **taken** (both sites call the shared function; the shim is
+gone). **Codex: HIGH re-raised, and split on inspection.**
+
+| Claim | Verdict |
+|---|---|
+| The original HIGH (a rejected VALUE in the message) | **CLOSED**, and now pinned as a *property* across three error shapes rather than one canary: pydantic leaks the value in `str(exc)`, the sanitised rendering never does. |
+| `loc` can still contain a **KEY** — e.g. a provider named `sk-…` | **DECLINED, on evidence.** A key is not a secret in this system: `mask_secrets` masks *values* under secret-named keys and passes every key through, provider names ride `GET /api/settings` unmasked, and they are advertised to the model as `/<provider>` composer verbs — a name is public identity everywhere. Our own validators interpolate provider names deliberately. Suppressing dynamic locations would reduce the message to "something in `providers` is wrong" while protecting nothing that is not already on the chat surface. Recorded in the function's docstring so the next reader does not re-open it. |
+| The raising frame retains `raw` (the whole config); a locals-aware formatter would expose it | **TAKEN** — `del raw` before the raise. Verified first that this is *not* a live leak (nothing in the app logs `exc_info=True`, no locals-rendering formatter is installed), so it is defence in depth against a future logging change, and it costs one line. |
+| The bomb test should pin the *intended* refusal | **TAKEN** — `match="retired"`. |
+
+**Backend 1026, gate 6/6.** Slice 3 is closed from both lenses.
