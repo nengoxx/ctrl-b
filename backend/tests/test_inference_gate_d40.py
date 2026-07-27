@@ -375,7 +375,7 @@ def test_voice_and_chat_share_the_same_gate_semaphore():
         ec = EmbeddingsClient((t,), EmbeddingsPolicy(), gates)
         sem = gates.sem_for(t.gate_identity, 1)
         assert ic._sem_for(t) is sem  # chat: the raw semaphore, held across the stream
-        async with vc._gate(t, SttPolicy()):  # voice holds the ONE permit …
+        async with vc._gate(t, SttPolicy(), (t,)):  # voice holds the ONE permit …
             assert sem.locked()
             # … so an embed on the same box cannot get in (bounded wait → a failed hop, not a park).
             with pytest.raises(GateWaitTimeout):
@@ -384,7 +384,7 @@ def test_voice_and_chat_share_the_same_gate_semaphore():
         assert not sem.locked()  # released on the way out
 
         unlimited = target("free", "http://free/v1", "w", max_concurrent_requests=None)
-        async with vc._gate(unlimited, SttPolicy()):  # None cap → no gate, zero overhead
+        async with vc._gate(unlimited, SttPolicy(), (unlimited,)):  # None cap → no gate, no overhead
             assert not gates._sems.get((unlimited.gate_identity, 1))
 
     asyncio.run(scenario())
@@ -394,7 +394,10 @@ def test_a_bounded_gate_wait_fails_the_hop_so_failover_advances():
     """A11 pre-release audit MED (the condition on D48 Slice-2 ratification ③): the gate wait happens
     INSIDE the failover attempt, so an unbounded one cannot fail over — a capped provider serving chat
     + STT parks a mic clip behind a long stream while a healthy fallback sits idle. Bounded, the
-    saturated hop fails and the chain advances; a timed-out waiter consumes no permit."""
+    saturated hop fails and the chain advances; a timed-out waiter consumes no permit.
+
+    The whole call is wrapped in `wait_for`: reverting the fix makes the first hop park forever, and
+    without this the suite would WEDGE rather than fail (no pytest-timeout here) — Codex."""
     from types import SimpleNamespace
 
     from app.adapters.voice import VoiceClient
@@ -404,7 +407,7 @@ def test_a_bounded_gate_wait_fails_the_hop_so_failover_advances():
         gates = EndpointGates()
         busy = target("busy", "http://busy:9000/v1", "w", max_concurrent_requests=1)
         spare = target("spare", "http://spare:9000/v1", "w")  # uncapped fallback
-        policy = SttPolicy(connect_timeout_s=0.05)
+        policy = SttPolicy(connect_timeout_s=0.05, timeout_s=0.05)
         vc = VoiceClient((busy, spare), policy, (), TtsPolicy(), gates)
 
         async def t_create(*, model, file, **kw):
@@ -415,11 +418,53 @@ def test_a_bounded_gate_wait_fails_the_hop_so_failover_advances():
         )
         sem = gates.sem_for(busy.gate_identity, 1)
         await sem.acquire()  # somebody else (a chat stream) holds the only slot
-        text, reply = await vc.transcribe(content=b"x", filename="a.wav", content_type=None)
+        text, reply = await asyncio.wait_for(
+            vc.transcribe(content=b"x", filename="a.wav", content_type=None), timeout=5
+        )
         assert text == "from the fallback"
         assert reply.served == "spare" and reply.degraded
         assert sem.locked()  # the timed-out waiter took nothing; the original holder still has it
         sem.release()
+
+    asyncio.run(scenario())
+
+
+def test_the_last_hop_waits_the_full_budget_because_it_has_nowhere_to_advance_to():
+    """The ruling on the one point the reviewers split on. Codex: a 3s connect budget makes a
+    single-provider capped chain fail just before it would have succeeded. Fable: `connect_timeout_s`
+    is the semantically right budget for "cannot reach a slot". Both hold, for DIFFERENT hops — the
+    bound exists so the CHAIN can advance, so it is short only while there IS a next hop. Here the
+    permit frees after the short budget would have expired, and the sole hop still succeeds."""
+    from types import SimpleNamespace
+
+    from app.adapters.voice import VoiceClient
+    from app.domain.provider import SttPolicy, TtsPolicy
+
+    async def scenario():
+        gates = EndpointGates()
+        solo = target("solo", "http://solo:9000/v1", "w", max_concurrent_requests=1)
+        policy = SttPolicy(connect_timeout_s=0.02, timeout_s=5)  # snappy fail-over vs generous wait
+        vc = VoiceClient((solo,), policy, (), TtsPolicy(), gates)
+
+        async def t_create(*, model, file, **kw):
+            return SimpleNamespace(text="served after the queue cleared")
+
+        vc._client = lambda tt, ct, to: SimpleNamespace(  # type: ignore[assignment]
+            audio=SimpleNamespace(transcriptions=SimpleNamespace(create=t_create))
+        )
+        sem = gates.sem_for(solo.gate_identity, 1)
+        await sem.acquire()
+
+        async def free_it() -> None:
+            await asyncio.sleep(0.15)  # 7.5x the connect budget, well inside timeout_s
+            sem.release()
+
+        asyncio.create_task(free_it())
+        text, reply = await asyncio.wait_for(
+            vc.transcribe(content=b"x", filename="a.wav", content_type=None), timeout=5
+        )
+        assert text == "served after the queue cleared"  # NOT a GateWaitTimeout at 0.02s
+        assert reply.served == "solo" and not reply.degraded
 
     asyncio.run(scenario())
 

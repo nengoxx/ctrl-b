@@ -83,10 +83,14 @@ class EmbeddingsClient:
 
     def _gate(self, target: "ResolvedTarget") -> "AbstractAsyncContextManager[None]":
         """The shared D40 request gate for this target (`EndpointGates.hold`), so an embed contends on
-        the same cap as chat/voice on that server. The wait is bounded by `timeout_s` — the section has
-        no separate connect budget, and `timeout_s` is the whole-request window, so waiting longer than
-        one entire request for a *slot* means this hop is saturated and the chain should fall over (A11
-        pre-release audit MED). Unlimited targets cost nothing."""
+        the same cap as chat/voice on that server. The wait is bounded by `timeout_s`: waiting longer
+        than one entire request for a *slot* means this hop is saturated and the chain should fall over
+        (A11 pre-release audit MED). Unlimited targets cost nothing.
+
+        Voice picks its budget per hop (snappy while a fallback exists, generous on the last one);
+        here that rule COLLAPSES — the section has no separate connect budget to be snappy with, so
+        every hop waits `timeout_s`. Adding one purely to differentiate would be a knob nobody tunes.
+        The gate wait and the SDK timeout are sequential; neither is a total wall-clock budget."""
         return self._gates.hold(target, wait_s=self._policy.timeout_s)
 
     async def embed(self, texts: list[str] | str, *, model: str | None = None) -> list[list[float]]:

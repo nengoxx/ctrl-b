@@ -3254,19 +3254,33 @@ corrected in the map below).
 > - **The secret write path gains a shape-only predicate.** `_is_unchanged_secret` can recognise a mask
 >   only by rebuilding it from the stored value, so a mask with **no** stored counterpart was taken as a
 >   new value and written to disk **as the credential** (delete-then-recreate · a rename submitted
->   without `provider_renames` · any hand-built PUT). New `looks_masked()` judges the shape alone and the
->   write path **drops** such a key — the field's answer too (R6: AnythingLLM filters `"******"`). A mask
->   means "unchanged"; with nothing to keep unchanged, the honest result is no value.
+>   without `provider_renames` · any hand-built PUT). New `looks_masked()` judges the shape alone — a
+>   five-codepoint value with `…` in the middle, or `••••` — and the write path **drops** such a key; the
+>   field's answer too (R6: AnythingLLM filters `"******"`). A mask means "unchanged"; with nothing to
+>   keep unchanged, the honest result is no value. *(The first implementation used
+>   `re.fullmatch(r".{2}….{2}")`, where `.` excludes newline, so a credential with a trailing newline
+>   still round-tripped its mask onto disk — the MUST-FIX with a hole in it, found by Codex pre-release.)*
+>   **Blank-keeps remains a SECRET affordance:** the credential-map branch restores a stored value only
+>   for `_map_key_is_secret` entries, matching the leaf branch's `_SECRET_LEAF_KEYS` gate — a non-secret
+>   `env`/`headers` entry, which is displayed raw, takes an explicit blank and stays clearable.
 > - **C2/R8 fingerprint — `providers_rev` now hashes the MASKED subtree**, not the raw one. It is
 >   published beside the masked values (`X-Providers-Rev`, `GET /api/providers`, the PUT envelope), so
 >   hashing raw secrets made the pair an offline verification oracle. The only sensitivity lost is a
 >   rotation to a same-mask value, which cannot be clobbered by the draft that missed it (a stale mask
 >   restores whatever is currently stored).
 > - **C4 gate — the acquire is BOUNDED for the buffered sections.** Ratification ③ was conditional on
->   this: the wait sits *inside* the failover attempt, so an unbounded one cannot fail over. `voice`
->   waits `connect_timeout_s`, `embeddings` waits `timeout_s` (no connect budget there), and a timeout is
->   a **failed hop** — the chain advances. Chat keeps the unbounded wait by design (queueing behind the
->   previous turn on the same box is correct). One seam: `EndpointGates.hold(target, wait_s=…)`.
+>   this: the wait sits *inside* the failover attempt, so an unbounded one cannot fail over. A timeout is
+>   a **failed hop** — the chain advances. One seam: `EndpointGates.hold(target, wait_s=…)`. **The budget
+>   is short only while there is somewhere to advance to** (the ruling on the one point the two
+>   pre-release reviewers split on — Codex: a 3s connect budget makes a single-provider capped chain fail
+>   just before it would have succeeded; Fable: `connect_timeout_s` is the semantically right budget for
+>   "cannot reach a slot". Both hold, for **different hops**): voice waits `connect_timeout_s` while a
+>   next hop exists and `timeout_s` on the last one; embeddings has no connect budget, so the rule
+>   collapses to `timeout_s`. Chat keeps the unbounded wait by design (queueing behind the previous turn
+>   on the same box is correct) — the honest boundary is **lexical vs stream-lifetime permit scope**, not
+>   voice-vs-chat: the streaming permit crosses a generator boundary and releases after a shielded close,
+>   which no context manager can express. The buffered chat site is a third hand-rolled copy that
+>   `hold(ep)` would replace exactly; deliberately NOT touched in a release-day commit (Fable).
 > - **Interpretation ① is recorded one subtree-set out of date.** Slice 1 ratified strict-resolve
 >   enforcement for patches touching `providers`/`inference`/`agent`; Slice 2 correctly extended the
 >   trigger set to **`voice` and `embeddings`** (every home the registry reads) — pinned by

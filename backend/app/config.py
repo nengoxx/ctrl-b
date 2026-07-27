@@ -1682,11 +1682,15 @@ def looks_masked(value: Any) -> bool:
     a rename submitted without `provider_renames`, and on any hand-built PUT: not a leak, but silent
     auth breakage that presents as a provider outage (A11 pre-release audit, MUST-FIX).
 
-    The two forms `_mask` can emit are `••••` (≤4 chars) and `ab…yz`. A real credential containing `…`
-    is not representable through the masked round-trip in any case — that is inherent to masking, not
-    introduced here.
+    The two forms `_mask` can emit are `••••` (≤4 chars) and `ab…yz` — always exactly five codepoints
+    with `…` in the middle, which is what this tests. It deliberately does NOT use `re.fullmatch` with a
+    `.`-based pattern: `.` excludes newline, so a credential with a trailing newline (`"ab-token\n"` →
+    `"ab…n\n"`) failed the shape test and the literal mask was persisted as the credential — the exact
+    bug this predicate exists to close (Codex, pre-release review). A real credential containing `…` is
+    not representable through the masked round-trip in any case — inherent to masking, not introduced
+    here.
     """
-    return isinstance(value, str) and (value == "••••" or bool(re.fullmatch(r".{2}….{2}", value)))
+    return isinstance(value, str) and (value == "••••" or (len(value) == 5 and value[2] == "…"))
 
 
 def mask_secrets(data: Any) -> Any:
@@ -1767,7 +1771,14 @@ def unmask_secrets(incoming: Any, stored: Any) -> Any:
             elif k in _SECRET_MAP_KEYS and _is_flat_scalar_map(v):
                 sm = sv if isinstance(sv, dict) else {}
                 out[k] = {
-                    mk: (sm.get(mk) if _is_unchanged_secret(mv, sm.get(mk)) else mv)
+                    # `_map_key_is_secret` gates the RESTORE too: blank-keeps is a *secret* affordance
+                    # (the leaf branch fires only on `_SECRET_LEAF_KEYS`), so a non-secret `env`/`headers`
+                    # entry — displayed raw, never masked — must take an explicit blank rather than
+                    # silently keeping the stored value. Dropping this guard here would have made a
+                    # visible entry unclearable through the UI (Fable, pre-release review).
+                    mk: (
+                        sm.get(mk) if _map_key_is_secret(mk) and _is_unchanged_secret(mv, sm.get(mk)) else mv
+                    )
                     for mk, mv in v.items()
                     # Same rule inside a credential map, and the same drop: a masked entry with nothing
                     # stored is omitted rather than persisted as the literal mask.

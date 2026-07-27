@@ -255,9 +255,12 @@ code. Upheld by:
   to the stored real secret on save, so editing config in the UI never blanks a secret. A mask with
   **nothing** to restore (a recreated/renamed provider, a hand-built PUT) is **dropped**, never written
   as the credential — `looks_masked()` judges the shape alone (D48 amendment 2026-07-27).
-- **Fingerprints:** anything published *beside* masked values must be computed **from** the masked values.
-  `providers_rev` hashes the masked providers subtree for exactly this reason: a digest over the raw
-  secrets, served next to their `ab…yz` masks, is an offline verification oracle for a guessed key.
+- **Fingerprints:** anything published *beside* masked values must not function as an **offline
+  verification oracle** for the raw secret — compute it from the masked values, or key it. A digest over
+  the raw secrets served next to their `ab…yz` masks lets a guess be confirmed offline, with the mask
+  cutting the search space. `providers_rev` takes the first option (it hashes the masked providers
+  subtree); an HMAC under a server-held key would also satisfy the rule and would additionally stay
+  sensitive to a same-mask rotation, at the cost of key lifecycle we do not need here.
 
 *(Enforced by `backend/tests/test_secret_hygiene.py` — PRE_DEPLOY step 3 ✓.)*
 

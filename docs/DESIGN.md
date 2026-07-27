@@ -856,10 +856,15 @@ class Settings(BaseSettings):
   chat, voice (`voice.attempt`) and embeddings — each holding the permit for the whole streamed
   response and releasing it **before** any tool / subagent runs (no hold-and-wait → no deadlock at
   limit 1). **The WAIT is bounded for the two buffered sections** (D48 amendment 2026-07-27): the
-  acquire happens *inside* the failover attempt, so an unbounded one cannot fail over — voice waits
-  `connect_timeout_s`, embeddings `timeout_s`, and a timeout is a failed hop the chain moves past
-  (`EndpointGates.hold(target, wait_s=…)`, raising `GateWaitTimeout`). Chat waits unbounded on
-  purpose: queueing behind the previous turn on the same box is the correct behaviour there. The gates live in an **app-owned `EndpointGates` registry** shared across `set_inference`
+  acquire happens *inside* the failover attempt, so an unbounded one cannot fail over
+  (`EndpointGates.hold(target, wait_s=…)`, raising `GateWaitTimeout`, which the chain treats as a failed
+  hop). **The budget is short only while there is somewhere to advance to** — voice waits
+  `connect_timeout_s` on a hop that has a next hop and `timeout_s` on the last one, where failing fast
+  converts a slow success into a failure and buys nothing; embeddings has no connect budget, so the rule
+  collapses to `timeout_s` everywhere. Chat waits unbounded on purpose: queueing behind the previous
+  turn on the same box is the correct behaviour there. Two consequences worth knowing: the gate wait and
+  the SDK timeout are **sequential** (neither is a total wall-clock budget), and raising a voice
+  `connect_timeout_s` to tolerate a slow server now also lengthens how long it will queue. The gates live in an **app-owned `EndpointGates` registry** shared across `set_inference`
   client rebuilds, so a mid-turn settings PUT can't split the cap across generations (same
   `(gate_identity, limit)` → the same semaphore; a changed limit mints a fresh gate and old holders
   drain on the old one).

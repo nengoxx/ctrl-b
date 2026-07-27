@@ -19,6 +19,7 @@ Pure/dict-level — no live config, no DB (the identification functions take pla
 from __future__ import annotations
 
 import hashlib
+import json
 import typing
 
 from pydantic import BaseModel
@@ -260,6 +261,20 @@ def test_a_mask_with_nothing_to_restore_is_dropped_not_written() -> None:
     out = unmask_secrets(incoming, {"providers": {}})  # nothing stored under that name
     assert "api_key" not in out["providers"]["recreated"]
 
+    # A mask whose stored value ended in a NEWLINE (`"ab-token\n"` → `"ab…n\n"`) must still read as a
+    # mask: the first implementation used `re.fullmatch(r".{2}….{2}")`, and `.` excludes newline — so
+    # the literal mask was persisted as the credential, i.e. the MUST-FIX with a hole in it (Codex).
+    assert _mask("ab-token\n") == "ab…n\n"
+    nl = {"providers": {"recreated": {"api_key": _mask("ab-token\n")}}}
+    assert "api_key" not in unmask_secrets(nl, {"providers": {}})["providers"]["recreated"]
+
+    # A genuinely NEW key with nothing stored is still TAKEN — dropping it would be the opposite bug,
+    # and this suite would otherwise pass an implementation that drops every unstored secret (Codex).
+    brand_new = {"providers": {"fresh": {"api_key": "sk-BRAND-NEW-VALUE"}}}
+    assert unmask_secrets(brand_new, {"providers": {}})["providers"]["fresh"]["api_key"] == (
+        "sk-BRAND-NEW-VALUE"
+    )
+
     # …while the two neighbouring behaviours are unchanged:
     assert unmask_secrets({"api_key": _mask("sk-REAL-KEY")}, {"api_key": "sk-REAL-KEY"}) == {
         "api_key": "sk-REAL-KEY"
@@ -289,8 +304,17 @@ def test_providers_rev_is_computed_over_masked_values_only() -> None:
         )
 
     base = _s("sk-AAAAAAAAAAAA-zz")
-    # the raw secret is not an input: nothing in the digest lets a guess be verified …
-    assert providers_rev(base) != hashlib.sha256(b"sk-AAAAAAAAAAAA-zz").hexdigest()[:16]
+    # The digest is EXACTLY sha256 over the canonical JSON of the MASKED subtree — recomputed here, so
+    # reverting to the raw dump fails this line (a bare sha256 of the secret alone would not have: the
+    # real digest hashes provider JSON, not the credential — Codex).
+    expected = hashlib.sha256(
+        json.dumps(
+            {"p": mask_secrets(base.providers["p"].model_dump(mode="json"))},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()[:16]
+    assert providers_rev(base) == expected
     assert providers_rev(base) == providers_rev(_s("sk-BBBBBBBB-zz"))  # same mask ⇒ same rev
     assert providers_rev(base) != providers_rev(_s("xk-AAAAAAAAAAAA-zy"))  # a visible change moves it
     # … and a non-secret edit still moves it, which is what the 409 guard actually protects.
@@ -314,3 +338,14 @@ def test_the_same_rule_holds_inside_a_credential_map() -> None:
     )
     assert "Authorization" not in out["headers"]
     assert out["headers"]["Content-Type"] == "application/json"  # non-secret entries are untouched
+
+    # …and blank-keeps stays a SECRET affordance. The MUST-FIX rewrite dropped `_map_key_is_secret`
+    # from the RESTORE branch (it kept it only in the drop filter), which made a non-secret map entry
+    # — displayed raw, never masked — unclearable: submitting "" silently restored the stored value
+    # (Fable, pre-release review). The leaf branch fires only on `_SECRET_LEAF_KEYS`, so the two
+    # branches would have disagreed with each other.
+    stored = {"headers": {"Authorization": "sk-REAL", "X-Note": "keepme"}}
+    assert unmask_secrets({"headers": {"X-Note": ""}}, stored)["headers"]["X-Note"] == ""
+    assert unmask_secrets({"headers": {"Authorization": ""}}, stored)["headers"] == {
+        "Authorization": "sk-REAL"  # blank on a SECRET entry still keeps what is stored
+    }

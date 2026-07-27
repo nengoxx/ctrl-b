@@ -13,8 +13,9 @@ Both ops run through `core.failover`: the primary is tried first, and on **any**
 to the next hop (Phase 6 Q2 — ensure functionality), returning which provider served so the API can
 surface `X-Voice-Served-By`. Per attempt the served target's D40 request gate is acquired iff its
 effective `max_concurrent_requests` is finite (R4), held for that one attempt and **waited for only up
-to the service's `connect_timeout_s`** — a saturated server fails the hop so the chain can fall over,
-instead of parking a mic clip behind another section's long call. TTS buffers the **whole
+to `connect_timeout_s` while a next hop exists** (`timeout_s` on the last one, where failing fast buys
+nothing) — a saturated server fails the hop so the chain can fall over, instead of parking a mic clip
+behind another section's long call. TTS buffers the **whole
 clip** (full-clip playback → a seekable blob), so failover wraps the entire synth atomically.
 All-endpoints-failed → `VoiceError`.
 
@@ -126,18 +127,29 @@ class VoiceClient:
         return self._clients[key]
 
     def _gate(
-        self, target: "ResolvedTarget", policy: "SttPolicy | TtsPolicy"
+        self,
+        target: "ResolvedTarget",
+        policy: "SttPolicy | TtsPolicy",
+        chain: "tuple[ResolvedTarget, ...]",
     ) -> "AbstractAsyncContextManager[None]":
         """The shared request gate for this target — `EndpointGates.hold`, keyed `(gate_identity, limit)`
         in the app-owned registry so voice shares the D40 cap with chat on the same server (R4/C4).
         Unlimited targets (the common speaches case) cost nothing.
 
-        The wait is bounded by the service's `connect_timeout_s`: a saturated server is a hop we cannot
-        *reach* in time, and that budget is exactly "how fast we give up reaching an endpoint before
-        falling over". A timeout raises `GateWaitTimeout` inside the attempt, so the chain fails over to
-        the fallback instead of parking a mic clip behind someone else's long stream (A11 pre-release
-        audit MED — the condition on D48 Slice-2 ratification ③)."""
-        return self._gates.hold(target, wait_s=policy.connect_timeout_s)
+        **The wait budget depends on whether there is anywhere to fail over to** (the ruling on the one
+        point the two pre-release reviewers split on). The bound exists so the CHAIN can advance, so:
+
+        * a hop with a next hop waits `connect_timeout_s` — the "give up reaching this endpoint and fall
+          over" budget. Queueing behind a ten-minute stream while a healthy fallback sits idle is the
+          exact failure this fix exists to kill (A11 pre-release audit MED — the condition on D48
+          Slice-2 ratification ③);
+        * the LAST hop waits `timeout_s`, because there is nothing to advance to. A short bound there
+          converts a slow success into a failure and buys nothing — the single-provider regression Codex
+          named. It stays bounded (no indefinite park, no wedged `_inflight`), just generously.
+
+        Note the gate wait and the SDK timeout are SEQUENTIAL: neither is a total wall-clock budget."""
+        wait_s = policy.timeout_s if chain and target is chain[-1] else policy.connect_timeout_s
+        return self._gates.hold(target, wait_s=wait_s)
 
     async def transcribe(
         self, *, content: bytes, filename: str, content_type: str | None
@@ -165,7 +177,7 @@ class VoiceClient:
                 language = (target.language or policy.language or "").strip()
                 if language:  # blank → omit so the server auto-detects
                     kwargs["language"] = language
-                async with self._gate(target, policy):
+                async with self._gate(target, policy, self._stt):
                     resp = await self._client(
                         target, policy.connect_timeout_s, policy.timeout_s
                     ).audio.transcriptions.create(
@@ -201,7 +213,7 @@ class VoiceClient:
                 kwargs: dict = dict(base_extra)
                 if target.speed is not None:
                     kwargs["speed"] = target.speed
-                async with self._gate(target, policy):
+                async with self._gate(target, policy, self._tts):
                     resp = await self._client(
                         target, policy.connect_timeout_s, policy.timeout_s
                     ).audio.speech.create(
