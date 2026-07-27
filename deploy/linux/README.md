@@ -227,10 +227,22 @@ curl -s -m5 localhost:5433/api/health                 # {"status":"ok",...} — 
                                                       # must equal X.Y.Z; the describe line cross-checks the tree
 # then spot-check https://emma.<tailnet>.ts.net on a device. Anything wrong → Rollback (below).
 ```
-**A11/D48 upgrade note:** the first release carrying the `providers:` config migration rewrites
-`~/.ctrl-b/config.yaml` on its first config write, dropping a one-time 0600 `config.yaml.bak-a11-*` backup
-first. Rolling back across that release needs the config restore in **§Rollback → CONFIG** (a plain tag
-revert is not enough — old code can't read `providers:`).
+**Config-shape migration (UPDATE_PLAN).** From the release that carries `providers:`, the config is
+migrated **by `install.sh` at the cutover** — with the service verifiably stopped — not lazily on some
+later write. It writes a timestamped 0600 copy to `~/.ctrl-b/backups/config.yaml.<UTCstamp>` first, and
+prints the path. The new build also **refuses to start** on a config it cannot migrate or load (exit 78,
+terminal — the unit will not retry), naming the one command that fixes it in the journal.
+**Rolling back across that release REQUIRES the config restore in §Rollback → CONFIG** — a tag revert
+alone leaves the older build reading a config whose `providers:` it does not understand, and because its
+sections tolerate unknown keys it boots "healthy" with **zero providers**: chat and voice silently dead.
+
+**Steps 5–6 in one command.** `update.sh` does the tag checks, the CI gate, the downgrade precheck and
+the verification around `install.sh`, and tells you exactly what state prod is in if anything fails:
+```bash
+bash ~/apps/ctrl-b/deploy/linux/update.sh vX.Y.Z          # add --force only to deploy a red CI run
+bash ~/apps/ctrl-b/deploy/linux/update.sh v(prev)         # …and this is the rollback
+```
+The manual sequence below remains the explicit fallback and is what `update.sh` orchestrates.
 **Tags are immutable** — never re-point one; a bad release gets `vX.Y.Z+1` (or roll back). The
 workspace is untouched throughout (no checkout, no merge — promotion is a push of a tag).
 
@@ -258,24 +270,26 @@ gunzip -c ~/.ctrl-b/backups/ctrlb-<ts>.db.gz > ~/.ctrl-b/ctrlb.db
 sqlite3 ~/.ctrl-b/ctrlb.db 'PRAGMA integrity_check;'        # must print: ok
 systemctl --user start ctrl-b-dashboard
 ```
-> ⚠ **STALE — being rewritten in UPDATE_PLAN slice 7.** The `config.yaml.bak-a11-*` backup and the
-> `A11: wrote…` log line below describe the lazy write-back **deleted in slice 2**; that file will never
-> appear. Pre-migration backups now land in `$CTRLB_HOME/backups/config.yaml.<stamp>`, written by
-> `python -m app.config_migration --apply` at the install cutover. **And across the migration release a
-> CONFIG restore is MANDATORY, not optional**: the previous tag has no preflight and its `extra="allow"`
-> sections swallow `providers:`, so old code + migrated config boots "healthy" with zero providers.
+**CONFIG — MANDATORY when rolling back ACROSS the config-migration release.** Not conditional: the
+older build has no preflight, and its config sections tolerate unknown keys, so a migrated config makes
+it boot **"healthy" with zero providers** — chat and voice silently dead, which is the exact failure the
+migration exists to prevent. `update.sh` refuses this rollback outright (it compares the target tag's
+`config_migration/VERSION` against your `config_version:` before checking anything out) and points here.
 
-**CONFIG — only when rolling back ACROSS the A11/D48 provider-map release** (old code cannot read
-`providers:` — there are no forward-compat seams). The FIRST config write after the upgrade drops a
-one-time `config.yaml.bak-a11-<UTCstamp>` (mode 0600) beside the config, logged `A11: wrote pre-migration
-config backup …`. **Before** that first write, rollback is free — the config is untouched. **After** it,
-restore the pre-A11 config (D48 F6 order: stop → restore → previous tag → start):
+The pre-migration copy was written by `install.sh` at the cutover, 0600, into `~/.ctrl-b/backups/`:
+
 ```bash
-systemctl --user stop ctrl-b-dashboard                       # stop first so live A11 code can't re-migrate
-cp -p "$(ls -t ~/.ctrl-b/config.yaml.bak-a11-* | head -1)" ~/.ctrl-b/config.yaml   # restore (stays 0600)
-cd ~/apps/ctrl-b && git checkout v(prev) && bash deploy/linux/install.sh prod      # previous tag (restarts)
-curl -s -m5 localhost:5433/api/health                        # health-check: {"status":"ok",...}
+systemctl --user stop ctrl-b-dashboard                   # stop FIRST — nothing may write config.yaml
+ls -t ~/.ctrl-b/backups/config.yaml.*                    # newest = the copy from the update you are undoing
+cp -p ~/.ctrl-b/backups/config.yaml.<UTCstamp> ~/.ctrl-b/config.yaml   # keeps 0600
+cd ~/apps/ctrl-b && git checkout v(prev) && bash deploy/linux/install.sh prod   # previous tag (restarts)
+curl -s -m5 localhost:5433/api/health                    # {"status":"ok",...}
 ```
+
+Restore the config **before** re-pinning the tag: the older `install.sh` has no migration step, so once
+it starts the service the boot either fails or — worse — succeeds emptily. If you are unsure whether the
+update migrated anything, `update.sh`'s own failure message names the exact backup file it created.
+
 Schema compatibility across a rollback is guaranteed by the **expand/contract policy** (D32 amendment):
 destructive migrations land at the earliest one release after the code stopped using the old shape.
 **First release (v1.0.0) has no previous tag** — rollback there is simply

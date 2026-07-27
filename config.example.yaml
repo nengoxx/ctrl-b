@@ -2,9 +2,12 @@
 # Phase 0 reads only `server`; later phases add inference/voice/agents/hosts/mcp/... blocks
 # (see docs/DESIGN.md §9 and docs/SPEC.md §6.3). Unknown keys round-trip losslessly.
 #
-# This file is the UI-managed source of truth, INCLUDING nested secrets (per-host SSH creds,
-# per-endpoint API keys). To keep a specific key out of here, override it from .env with
-# CTRLB_<SECTION>__<KEY> (env wins) — see .env.example.
+# This file is the UI-managed source of truth and the ONLY home for secrets (per-host SSH creds,
+# per-provider API keys). `.env`'s CTRLB_<SECTION>__<KEY> overrides reach DECLARED, ONE-LEVEL scalars
+# only (e.g. CTRLB_SERVER__PORT) — they cannot address a credential, which lives two levels down at
+# providers.<name>.api_key. See .env.example.
+
+config_version: 1  # config shape version — managed by `python -m app.config_migration`
 
 server:
   host: 127.0.0.1        # tailnet-only; front with Tailscale Serve for HTTPS (mic needs it)

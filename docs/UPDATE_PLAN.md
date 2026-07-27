@@ -382,22 +382,7 @@ deleting code rather than adding it.**
    `--reload` question is **answered: it propagates 78** (measured end-to-end under systemd).
 5. **`install.sh`**: ✅ BUILT — **§15**.
 6. **Windows parity.** ✅ BUILT — **§16**.
-7. **`update.sh`** + `config_version: 1` in `config.example.yaml` + the **runbook rewrite, now
-   RELEASE-BLOCKING with named content** (Fable, slice-5 review — verified against the file):
-   `deploy/linux/README.md` §Rollback → CONFIG and §Release still describe the **lazy write-back deleted
-   in slice 2** — a `config.yaml.bak-a11-<UTCstamp>` "dropped on the first config write" and an
-   `A11: wrote…` log line (lines 231/263/268). That file will never exist; the runner's backups land in
-   `$CTRLB_HOME/backups/config.yaml.<stamp>` at `--apply` time. Worse, the **code-only rollback path is
-   silently insufficient across this release**: previous tag + already-migrated config = old code, no
-   preflight, `extra="allow"` swallowing `providers:`, booting "healthy" with zero providers — the exact
-   failure this plan exists to kill. §Rollback must state that across the migration release a CONFIG
-   restore is **mandatory**, not conditional. `update.sh` itself shrinks to orchestration (tag resolve →
-   pre-checkout VERSION downgrade guard → lock + `CTRLB_DEPLOY_LOCK_HELD=1` → checkout → `install.sh
-   prod` → failure message), since the lock, check, apply, stop-verify and health gate all live in
-   slice 5 now and must not be reimplemented. **Two riders from the slice-5 second round:** `update.sh`
-   must compute `LOCK` from the **identical `$CTRLB_HOME` default chain** before exporting
-   `CTRLB_DEPLOY_LOCK_HELD="$LOCK"`, or the new path-equality bypass never matches and the child blocks
-   on its parent; and the **STALE marker on `README.md` §Rollback must not outlive this slice**.
+7. **`update.sh`** + runbook rewrite + `config.example.yaml`. ✅ BUILT — **§17**.
 8. **D48 amendment**, full gate, release.
 
 **Verification bar per slice:** `check.py` green, plus the real-config rehearsal — prod and dev config
@@ -969,3 +954,53 @@ config and confirm: the console stays open, the message names
 path specifically**: enable the Scheduled Task, leave a config the build refuses, and observe what the
 task does with exit 78 — how many retries actually run, and whether the refusal lands anywhere an
 operator would ever see.
+
+---
+
+## 17. Slice 7 — AS BUILT (2026-07-27): `update.sh` + the runbook
+
+**`deploy/linux/update.sh` is orchestration only.** Everything that makes an update safe — the config
+preflight, the migration, the verified stop, the dist swap, the health/identity gate — lives in
+`install.sh` (§15) and is deliberately not repeated. `update.sh` adds exactly what `install.sh` cannot
+know: which tag, whether CI is green on it, whether rolling back would strand a config, and what to tell
+the operator when something fails.
+
+- **`main() { … }; main "$@"`** — bash reads a script incrementally, and step 6 checks out a different
+  version of *this very file*; without the wrapper the shell could resume inside the new one.
+- **Refusals before anything moves:** not the prod tree (resolved with `pwd -P`, so a symlink cannot
+  smuggle the workspace past it) · a dirty tree · a tag absent from origin · CI not green (`--force`
+  overrides; `gh` missing or no run found → warn and proceed, because *"cannot check" is not "knowingly
+  deploying red"*).
+- **The lock is taken here and handed down**: `CTRLB_DEPLOY_LOCK_HELD="$lock"`, with `$lock` computed
+  from the **identical `$CTRLB_HOME` default chain** `install.sh` uses — the path-equality bypass
+  (§15.1) only matches if both spell it the same way, and a mismatch would deadlock the child on its
+  parent (Fable's rider).
+- **The downgrade precheck (G4), before the checkout.** The refusal that matters would have to live in
+  the code you roll back *to*, and every tag before this release has no checker at all — so it happens
+  here, from the newer tree, while it still exists: `git show <tag>:…/VERSION` (absent ⇒ 0) against the
+  `config_version:` on disk. **Verified against the real artifacts**: `v1.2.1` has no VERSION file → 0,
+  the migrated dev config reads 1, so that rollback refuses with exit 78 — while a legacy (unstamped)
+  config correctly proceeds, since it strands nothing.
+- **The failure message names the state, not a category:** it queries `is-active` to say whether prod is
+  *running* (pre-cutover failure — the old version is still serving) or *STOPPED*, prints the exact
+  go-back command, and — because it snapshots `backups/` before the run — if the config was migrated it
+  names **the exact backup file** to restore rather than describing one. No automatic revert: rolling
+  back is a decision, and doing it silently would hide which of those two states you are in.
+
+**The runbook rewrite — the release-blocking half.** `deploy/linux/README.md` §Rollback → CONFIG
+described the lazy write-back **deleted in slice 2**, telling the operator to restore a
+`config.yaml.bak-a11-*` that will never exist (verified: zero references remain). It now describes the
+truth — `install.sh` migrates at the cutover with the service stopped, writing
+`~/.ctrl-b/backups/config.yaml.<UTCstamp>` first — and states plainly that across this release a CONFIG
+restore is **MANDATORY, not conditional**: the older build has no preflight and its sections tolerate
+unknown keys, so a migrated config makes it boot **"healthy" with zero providers**. §Release now leads
+with `update.sh` and keeps the manual sequence as the fallback it orchestrates.
+
+**Also found and fixed here:** `config.example.yaml` still carried the **retracted env-secret promise**
+("to keep a specific key out of here, override it from `.env`") — a sixth document slice 3 missed. It
+gains `config_version: 1`, and the example config now reports *"migration: not needed"* against the
+real CLI.
+
+**NOT verified:** `update.sh` has never been run to completion — doing so is a production release.
+Its refusal paths were exercised (wrong tree, missing argument) and its two parsers were run against the
+real tags and configs, but the success path is exercised for the first time by the slice-8 release.
