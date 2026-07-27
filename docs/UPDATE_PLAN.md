@@ -863,3 +863,25 @@ lifeline is still the right call. Two warnings for whoever does run it: do **not
 run via `REPO=`/`CTRLB_HOME=` overrides — the unit **names** are fixed, so it would overwrite the real
 user units with scratch paths; and `install.sh prod` genuinely cannot be rehearsed before the release,
 since the current prod tree has no migration module at all.)*
+
+### 15.1 Code review of slice 5 (both reviewers) — three fail-open gates
+
+**Fable (chain lens): SHIP WITH CHANGES** — the ordering error and the release-blocking runbook finding,
+both above. **Codex (shell lens): DO NOT SHIP** — *"the stop gate, environment scan, and health identity
+gate all fail open in realistic production conditions."* All three reproduced or confirmed on the box
+before fixing.
+
+| Sev | Defect | Fix |
+|---|---|---|
+| HIGH | **The stop was still not fatal.** `stop … \|\| true` swallowed a failed stop; a failed state *query* (user bus gone) produced an empty string that read as "not active" and proceeded; and `deactivating` — **the exact race this gate exists to close** — is not the literal string `active`. `$(seq 20)` failing would also have run zero iterations without tripping `set -e`. | Stop failure is fatal (with the never-installed first-install case distinguished by `is-active`, which prints `inactive` even for an unknown unit); only an **explicit terminal state** (`inactive`/`failed`) satisfies the poll; an empty query answer is fatal, never a licence to write; arithmetic loop. |
+| HIGH | **The environment scan could both miss and invent.** `systemctl show --value` prints each entry **shell-quoted** and joins them with spaces, so `tr ' ' '\n'` destroys the boundaries. Demonstrated on this box with `"OTHER=x CTRLB_FAKE__TOKEN=y"` + `"CTRLB_REAL__KEY=a b"`: the old parse reported the **FAKE** (a false positive out of another variable's value) and **MISSED the real one**. `show \|\| true` also turned a bus failure into a clean scan. | `xargs -n1`, which honours the same quoting systemd emits (verified: the new parse returns `CTRLB_REAL__KEY` and only that). A failed `show` is fatal. `--output=json` is **not** supported for `show` on systemd 259, so structured parsing was not available. `EnvironmentFile=` remains out of scope — systemd never exposes its contents as a property — and that is now stated in the code. |
+| HIGH | **The health gate could approve the wrong process.** Any non-empty 2xx body ended the poll, and nothing checked that the responder *was this unit* — a stale or hand-started process on the port satisfied the gate while the new unit failed to bind. | Require `"status":"ok"` in the body, then assert `ActiveState=active` **and a non-zero `MainPID`** before accepting. Verified against the live prod unit (`active`, MainPID 1161). |
+| MED | The `CTRLB_DEPLOY_LOCK_HELD=1` bypass disabled locking on an accidental export, proving nothing about an inherited descriptor. | The bypass now carries **the lock path** and is honoured only when it equals this instance's. `flock`'s availability is checked *before* acquisition, so a missing `flock` reports "install util-linux" rather than "another install is running". |
+| MED | Post-stop failures left several distinct outage states, unnamed. | `dist.next` is validated **before** the snapshot and the stop (a missing build must not cause an outage), and every post-stop step names the state it leaves prod in. |
+| MED | The "30-second" gate could take ~120s (3s curl + 1s sleep, 30×). | A wall-clock deadline. The 78 branch also queries `ActiveState` before claiming the unit is stopped, and the `journalctl \| sed` pipeline is best-effort so `pipefail` cannot suppress the rollback hint. |
+| MED | **Dev could migrate underneath its own running backend** — the digest guard catches competing *writes*, not an old process with old in-memory settings writing afterwards. | `install.sh dev` refuses while `ctrl-b-dashboard-dev` is active, naming the stop command. §7 declined general service-active detection as unreliable machinery, but the prod stop gate already depends on `is-active` on this same box, so this is consistent rather than new. |
+
+**Confirmed clean by the review:** the deliberately unquoted `printf '    %s\n' $bad` (its contents are
+`[A-Za-z0-9_]` names, so nothing can word-split or glob) · fd 9 is retained by the parent and inherited
+correctly by the `migration()` and `npm` subshells · `migration()` propagates a failing `cd` or Python
+through `||` · `bash -n` passes.
