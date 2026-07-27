@@ -333,6 +333,11 @@ def _preflight_config() -> None:
     (`--check`/`--apply`, and slice 5's `install.sh`), because an unauthenticated provider fails
     visibly at call time while a refusing unit takes down the only UI there is to diagnose it from.
 
+    **The stop-line, stated so it is not merely currently true** (Fable): this gate **decides, and
+    never constructs or repairs**. No writes, no auto-apply, no caching of settings for the app to
+    reuse — the lifespan loads independently, and the moment something here starts *fixing* what it
+    finds, the responsibility has stopped being coherent.
+
     There is deliberately **no skip flag**. An escape hatch for a boot-blocking safety check is exactly
     the kind of environment variable that silently does something, which is what slice 3 spent itself
     removing; the remedy is always the one command the message prints.

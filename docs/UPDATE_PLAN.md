@@ -757,7 +757,7 @@ SHIP**, two HIGHs, **both reproduced before fixing**.
 
 | Sev | Defect | Fix |
 |---|---|---|
-| HIGH | **A YAML *constructor* failure escapes as a bare `ValueError` whose message quotes the input.** `api_key: 2026-01-99` → *"day 99 must be in range 1..31 for month 1 in year 2026"* (verified, **both** parsers); a 4300+ digit integer trips Python's int-conversion limit the same way. `ValueError` is not a YAML error class, so `_parse`'s handler never saw it — the traceback carried a config value into the journal **and** exited 1, i.e. crash-looped. | `_parse` catches `(ValueError, OverflowError)` and refuses with the category only. The remedy tells the operator to quote the value. |
+| HIGH | **A YAML *constructor* failure escapes as a bare `ValueError` whose message quotes the input.** `api_key: 2026-01-99` → *"day 99 must be in range 1..31 for month 1 in year 2026"* (verified, **both** parsers); a 4300+ digit integer trips Python's int-conversion limit the same way. `ValueError` is not a YAML error class, so `_parse`'s handler never saw it — the traceback carried a config value into the journal **and** exited 1, i.e. crash-looped. **Provenance (Fable): this predates slice 4.** `_parse`'s narrow `except (yaml.YAMLError, RuamelYAMLError)` shipped in **slice 1**, so the same unsanitised escape was reachable through the CLI's own stderr — the exact channel §3.5 advertises as *names, never values* — for two days (verified against `4761483`). Slice 4's in-unit parse exposed it at boot; it did not introduce it. | `_parse` catches `(ValueError, OverflowError)` and refuses with the category only. The remedy tells the operator to quote the value. |
 | HIGH | **Migrating is not loading.** `detect()` reads the marker and asks each step whether it applies; it never validates. A stamped `server: {port: not-a-number}` — or a live `CTRLB_SERVER__PORT=not-a-number` that only the *service's* environment carries — sailed through the preflight and died in the lifespan, which uvicorn renders as **exit 3**. `RestartPreventExitStatus=78` does not cover 3, so the unit crash-looped (measured: exit 3 confirmed). | The preflight now calls **`load_settings()`** after the migration verdict. Not a re-implementation of validation — the real loader, so the check has the effective semantics including the env overlay. `ConfigValidationError` (slice 3) already renders locations without values. |
 | MED | A `MigrationRefused` from `retired_env_overrides()` was raised **outside** the try, so a malformed future `retires` declaration — classified 78, terminal — escaped as exit 1 and would retry forever. | One boundary: everything from `load_dotenv()` to `load_settings()` is inside it. |
 | MED | The boundary started too late in another way: the migration package is imported at module scope, and `CONFIG_VERSION` is read **from a file** at import, so a corrupt `VERSION` is a raw traceback and exit 1 before any handler exists. Bootstrap variables raise types nobody anticipated (`CTRLB_HOME=~nosuchuser` → `RuntimeError`). | The package import moved **inside** the function with its own "this build is damaged" message, and the boundary gained a catch-all that names the exception **type** only and exits 78 — the same structural answer as the runner's `_call_step` (§12), applied one layer up. |
@@ -771,3 +771,26 @@ which is the actual property.
 
 **Re-verified after the wave:** copies of both live configs — prod (still legacy) refuses with 78 and
 names the command; dev (migrated) reaches "Application startup complete". Backend **1038**, gate 6/6.
+
+**Round 2 on the fix wave (both reviewers).** **Codex: 6 of 7 CLOSED**, one LOW only partly — I had
+escaped `status.config_path` but not the origin flowing into `ConfigValidationError`, so a
+newline-bearing `CTRLB_CONFIG` could still forge a journal line (fixed: `loggable` there too). It also
+named three tests that asserted less than they claimed, all now stronger: the subprocess test's fixture
+**carries a credential** so "sanitised stderr" is asserted rather than claimed; the step-bug test proves
+the refusal went through `report_refusal`, not merely that the code was 78; and the warn-once test
+proves a **second, different** variable still warns. Confirmed clean: loading twice adds only idempotent
+work, the catch-all does not swallow `KeyboardInterrupt`/`SystemExit`, and the local import costs
+nothing after the first.
+
+**Fable: SHIP WITH CHANGES**, and its Q4 finding is the one that mattered — recorded in the row above.
+It ruled on the three shape questions: **keep the double load** (the preflight is a pure *gate* that
+owns no product state; stashing `Settings` would make import-time global state authoritative and hide
+the irreducible TOCTOU rather than fix it — the lifespan's read visibly winning is the honest
+semantics, and this is the same verification-by-re-derivation the deploy chain already uses); the
+**warn-once set stays in `config.py`** (it is observability state, the idiom Python's own `warnings`
+module uses, and `_LOG` is process-global in the same file); and the preflight is **not accreting** —
+its real responsibility is *"turn every config-shaped failure into a classified exit code with a
+sanitised message before systemd is told the service is viable"*, observed at three stages. Its
+requested stop-line is now in the docstring: **this gate decides, and never constructs or repairs.**
+Its LOW is fixed too — the warn-once registry is reset by an **autouse fixture**, because one test
+resetting it meant any *other* test that warned poisoned later assertions.

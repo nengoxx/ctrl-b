@@ -32,6 +32,8 @@ import tempfile
 
 import pytest
 
+from app import config
+
 #: Suite-private workspace root, created once per pytest process. Not `tmp_path` — that is a fixture,
 #: and this must exist before the first test module is imported. Removed at exit rather than left to
 #: the OS: on emma `/tmp` is a RAM-backed tmpfs on a 30G box, so per-run litter is memory, not disk.
@@ -59,6 +61,14 @@ def inherited_override_names(environ) -> list[str]:
 # with their variable. The suite's own tests set theirs via `monkeypatch`.
 for _k in inherited_override_names(os.environ):
     os.environ.pop(_k, None)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_env_warning_registry(monkeypatch):
+    """`config._WARNED_ENV_PATHS` is a process-global warn-once registry, so ANY test that triggers an
+    undeclared-override warning silences it for every later test that asserts on one. Reset per test
+    rather than in the one test that noticed (Fable)."""
+    monkeypatch.setattr(config, "_WARNED_ENV_PATHS", set())
 
 
 @pytest.fixture(autouse=True)

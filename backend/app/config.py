@@ -1260,7 +1260,9 @@ def load_settings(path: Path | None = None) -> Settings:
     try:
         return Settings.model_validate(_apply_env_overrides(raw))
     except ValidationError as exc:
-        message = sanitise_validation_error(exc, str(p))
+        # `loggable` here too: the origin is the CTRLB_CONFIG path, i.e. operator-supplied text on
+        # its way to the journal — the same forged-log-line class the override warning closes.
+        message = sanitise_validation_error(exc, loggable(str(p)))
     # Raised OUTSIDE the handler on purpose. `raise … from None` only suppresses *display* of the
     # chained exception — the object still reaches through `__context__` to a `ValidationError` whose
     # `str()` carries `input_value=…`, i.e. the rejected secret, one attribute away from any logger.

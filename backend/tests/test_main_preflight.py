@@ -25,7 +25,10 @@ import pytest
 from app import config_migration as cm
 from app import main
 
-_LEGACY = "inference:\n  default_mode: local\n  local:\n    base_url: http://l/v1\n    model: m\n"
+_LEGACY = (
+    "inference:\n  default_mode: local\n  local:\n"
+    "    base_url: http://l/v1\n    model: m\n    api_key: sk-LEGACY-CANARY\n"
+)
 
 
 def _home(tmp_path, monkeypatch, text: str | None) -> Path:
@@ -82,6 +85,9 @@ def test_a_genuine_import_of_app_main_exits_78(tmp_path) -> None:
     assert done.returncode == cm.EXIT_REFUSE
     assert "config migration required" in done.stderr
     assert "-m app.config_migration --apply" in done.stderr
+    # "sanitised" asserted, not claimed (Codex): the fixture carries a credential, and a real import
+    # is the only place a stray traceback would surface it.
+    assert "sk-LEGACY-CANARY" not in done.stderr + done.stdout
 
 
 @pytest.mark.parametrize(
@@ -107,7 +113,7 @@ def test_an_unloadable_config_is_terminal_and_quiet(name, config, tmp_path, monk
     assert "2026" not in err
 
 
-def test_a_step_bug_at_boot_is_terminal_not_retryable(tmp_path, monkeypatch) -> None:
+def test_a_step_bug_at_boot_is_terminal_not_retryable(tmp_path, monkeypatch, capsys) -> None:
     """A malformed `retires` declaration raises `MigrationRefused` (78). It is reported through the
     boundary, not left to escape as a bare exception — which would have become exit 1 and retried
     forever at RestartSec=5 (Codex)."""
@@ -124,6 +130,7 @@ def test_a_step_bug_at_boot_is_terminal_not_retryable(tmp_path, monkeypatch) -> 
     with pytest.raises(SystemExit) as exc:
         main._preflight_config()
     assert exc.value.code == cm.EXIT_REFUSE  # its own code — NOT an escaped exception's exit 1
+    assert "config migration:" in capsys.readouterr().err  # …and routed through the shared reporter
 
 
 def test_a_broken_bootstrap_variable_is_terminal_and_sanitised(tmp_path, monkeypatch, capsys) -> None:
