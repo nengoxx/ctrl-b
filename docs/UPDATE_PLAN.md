@@ -1029,11 +1029,20 @@ that moment the tree is still the old tag and may not contain the runner at all.
 
 ### 17.2 Preconditions for slice 8, in order (Fable)
 
-0. **A manual belt, outside the tooling** — `cp -p ~/.ctrl-b/config.yaml ~/.ctrl-b/backups/config.yaml.manual-prerelease`
+0. ✅ **DONE 2026-07-27** — `config.yaml.manual-prerelease-<stamp>` (chmod 600: `cp -p` had inherited
+   prod's **0664**, which the migration heals at the cutover) + a `.backup`-API DB snapshot,
+   integrity-checked, both in `~/.ctrl-b/backups/`. **A manual belt, outside the tooling** — `cp -p ~/.ctrl-b/config.yaml ~/.ctrl-b/backups/config.yaml.manual-prerelease`
    plus a manual DB snapshot, so recovery does not depend on the tooling's own backups working on their
    **first ever run**.
-1. **Close the §15 gap:** `bash deploy/linux/install.sh dev` from a **plain SSH shell** (not an agent
-   session). Expect a no-op migration on the already-stamped dev config, no unit churn, and unchanged
+1. ✅ **DONE 2026-07-27 — the §15 gap is CLOSED.** `install.sh dev` ran to completion, launched
+   **detached via `setsid`** so the script (and its log) would survive the case both reviewers warned
+   about. Result: **tmux session identities unchanged** — the agent units were not restarted, as Fable
+   predicted — dev's config **byte-identical, 0600, no new backup** (a true no-op apply), on-demand
+   units still not boot-enabled, agents still enabled, and prod untouched throughout. That run
+   exercised the lock, the config preflight, the new dev active-guard, the apply path, unit render +
+   `daemon-reload`, the env scan and the on-demand disable — the whole shared spine. What remains
+   unexercised is only the **prod-only cutover block**, which the release itself is the first run of.
+   *(Original wording: run it from a plain SSH shell, not an agent session.)* Expect a no-op migration on the already-stamped dev config, no unit churn, and unchanged
    agent PIDs. This exercises the lock, the preflight, the apply path, render + `daemon-reload` and the
    env scan — most of the shared spine — leaving only the prod-only cutover block unexercised.
 2. The two fixes above, plus confirming the slice-6 §16 corrections landed.
