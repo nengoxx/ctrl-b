@@ -50,12 +50,28 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR}/bus}"
 
 echo "== ctrl-b dashboard install [$ROLE]  (repo=$REPO, CTRLB_HOME=$CTRLB_HOME) =="
+# 0.5) The deployment lock + the migration CLI. Both live here, before ANY work: a second install must
+#      not start building on top of the first, and every migration call must carry $CTRLB_HOME
+#      EXPLICITLY — it is an ordinary shell variable in this script (not exported), so a bare
+#      `python -m app.config_migration` would resolve to the REPO ROOT and, from `install.sh dev`,
+#      would inspect PROD's config while the prod service was live (UPDATE_PLAN §4).
+mkdir -p "$CTRLB_HOME"
+LOCK="$CTRLB_HOME/.deploy.lock"
+if [ "${CTRLB_DEPLOY_LOCK_HELD:-}" != 1 ]; then
+  exec 9>"$LOCK"
+  flock -n 9 || { echo "✗ another install/update is already running for this instance ($LOCK)"; exit 1; }
+fi
+# update.sh (slice 7) holds the same lock and exports CTRLB_DEPLOY_LOCK_HELD=1 so this child does not
+# block on its parent.
+migration() { ( cd "$APP/backend" && CTRLB_HOME="$CTRLB_HOME" "$VENV/bin/python" -m app.config_migration "$@" ); }
+
 [ -d "$APP" ] || { echo "ERROR: $APP not found — is the $ROLE tree cloned? (see bootstrap.py / README)"; exit 1; }
 
 # 1) Prerequisites. HARD-require the build tools — clear error + install hint if missing, so a CLEAN machine
 #    fails loudly HERE rather than cryptically mid-build. tmux + linger are soft (needed later / for persistence).
 miss=0
 req() { command -v "$1" >/dev/null || { echo "  ✗ missing: $1 — $2"; miss=1; }; }
+req flock "sudo apt install -y util-linux  (the deployment lock)"
 req git     "sudo apt install -y git"
 req python3 "sudo apt install -y python3 python3-venv   (need 3.14+)"
 req node    "install Node 20+ (nodesource.com / nodejs.org)"
@@ -128,6 +144,23 @@ if [ ! -f "$CTRLB_HOME/config.yaml" ]; then
   fi
 fi
 
+# 4.4) CONFIG PREFLIGHT (UPDATE_PLAN §4). Deliberately BEFORE the build and long before the cutover:
+#      if this build cannot migrate or load the config, the run must abort while the old service is
+#      still serving. `--check` writes nothing; it parses, plans, validates and probes writability.
+#      Exit 78 = unmigratable (no restart fixes it), 1 = environmental. Either way we stop here.
+echo "-- config preflight ($CTRLB_HOME/config.yaml)"
+migration --check || { echo "→ aborted BEFORE any change; the $ROLE instance is untouched and still serving."; exit 1; }
+# `--check` exits 0 for "needed" as well as "not needed" (§3.5 locks that, so the `|| exit 1` above means
+# "would FAIL", not "would change something"). PROD therefore applies at the cutover, where the service is
+# verifiably stopped. DEV has no cutover — its units are on-demand — so it applies HERE: otherwise this
+# script would report success and leave a config the dev units refuse to boot on. A dev unit that happens
+# to be running is not a hazard the flock covers (§7 accepts this): the running process re-reads config
+# only on a PUT or a restart, and a PUT mid-apply trips the runner's digest guard, which refuses rather
+# than clobbers.
+if [ "$ROLE" = dev ]; then
+  migration --apply || { echo "→ dev config migration failed; nothing else was changed."; exit 1; }
+fi
+
 # 4.5) Git-hook quality gate (D33). Point git at the tracked .githooks/ so a bad commit (fast: ruff +
 #      prettier) / push (full: tools/check.py) is blocked at the source. Essential for the dev tree where
 #      agents commit. Idempotent; the exec bit is tracked in git but re-ensured here in case a checkout
@@ -170,6 +203,26 @@ if [ "$ROLE" = dev ]; then
 fi
 systemctl --user daemon-reload
 
+# 5.2) RETIRED ENV OVERRIDES IN THE UNIT'S OWN ENVIRONMENT (UPDATE_PLAN §13.1/§14.1). The CLI above sees
+#      this shell and `.env`; the SERVICE additionally sees whatever systemd merges into it. Asked of
+#      the MANAGER, never of the rendered file: `systemctl --user edit` writes a drop-in
+#      (<unit>.d/override.conf), which is exactly where an operator adds a variable without touching the
+#      file this script renders. Runs after daemon-reload so the freshly written unit is what is read,
+#      and still before the cutover, so an abort here leaves the old instance serving.
+for u in "${RENDER_UNITS[@]}"; do
+  case "$u" in *dashboard*) ;; *) continue ;; esac   # dashboards only: the agent units carry no config
+  envline="$(systemctl --user show "$u" -p Environment --value 2>/dev/null || true)"
+  bad="$(printf '%s\n' "$envline" | tr ' ' '\n' | sed -n 's/^\(CTRLB_[A-Za-z0-9_]*__[A-Za-z0-9_]*\)=.*/\1/p' || true)"
+  if [ -n "$bad" ]; then
+    echo "✗ $u carries config override(s) in its unit environment:"
+    printf '    %s\n' $bad
+    echo "  These are invisible to the migration CLI (it sees this shell + .env, not the unit), and one"
+    echo "  naming a RETIRED path supplies nothing while looking like it works. Remove them from the unit"
+    echo "  or its drop-in (systemctl --user edit $u), then re-run. Inspect: systemctl --user show $u -p Environment"
+    exit 1
+  fi
+done
+
 # 5.5) PROD cutover — the only moment the running instance is touched, kept sub-second:
 #      (a) snapshot the DB via SQLite's Online Backup API (WAL-safe on a LIVE db — plain `cp` is NOT:
 #          committed data sits in the -wal sidecar; see docs/DECISIONS.md D32 amendment) + verify it,
@@ -189,7 +242,23 @@ if [ "$ROLE" = prod ]; then
     ls -1t "$BKD"/ctrlb-*.db.gz 2>/dev/null | tail -n +"$((BACKUP_KEEP + 1))" | xargs -r rm -f
     echo "-- DB snapshot: $SNAP.gz (keeping last $BACKUP_KEEP; CTRLB_BACKUP_KEEP overrides)"
   fi
+  # STOP IS FATAL, and verified by STATE rather than by exit code — `stop` on a not-yet-installed unit
+  # is an error on a first install, while a stop that "succeeded" against a unit still shutting down is
+  # the real hazard: the migration would rewrite config.yaml under a process still writing it.
   systemctl --user stop ctrl-b-dashboard.service 2>/dev/null || true
+  for _ in $(seq 20); do
+    [ "$(systemctl --user is-active ctrl-b-dashboard.service 2>/dev/null || true)" = active ] || break
+    sleep 0.5
+  done
+  if [ "$(systemctl --user is-active ctrl-b-dashboard.service 2>/dev/null || true)" = active ]; then
+    echo "✗ ctrl-b-dashboard.service is still active after 10s — refusing to migrate config under a live"
+    echo "  writer. Investigate: systemctl --user status ctrl-b-dashboard"
+    exit 1
+  fi
+  # THE MIGRATION, at the one moment nothing is writing the file. --check already validated this exact
+  # config above; a failure here is therefore a genuine surprise (disk, permissions, a file changed
+  # underneath) and leaves the old dist in place — the config write is the only thing that happened.
+  migration --apply || { echo "✗ config migration failed at cutover — service stopped, dist NOT swapped."; exit 1; }
   rm -rf "$APP/frontend/dist"
   mv "$APP/frontend/dist.next" "$APP/frontend/dist"
 fi
@@ -208,9 +277,50 @@ if [ "${#ONDEMAND_UNITS[@]}" -gt 0 ]; then
 fi
 echo "-- [$ROLE] units rendered: ${RENDER_UNITS[*]}  |  boot-enabled: ${BOOT_UNITS[*]:-'(none)'}"
 
+# 6) HEALTH GATE (prod). `systemctl start` succeeds the moment the process is EXECUTED — it says nothing
+#    about whether the app came up. Without this, a cutover that left the service dead reports success and
+#    the operator finds out from the phone. The port is read from the rendered unit rather than repeated
+#    here, so the two cannot drift.
+if [ "$ROLE" = prod ]; then
+  UNIT="$HOME/.config/systemd/user/ctrl-b-dashboard.service"
+  PORT="$(sed -n 's/.*--port \([0-9][0-9]*\).*/\1/p' "$UNIT" | head -1)"
+  PORT="${PORT:-5433}"
+  echo "-- health gate (http://127.0.0.1:$PORT/api/health)"
+  body=""
+  for _ in $(seq 30); do
+    body="$(curl -fsS --max-time 3 "http://127.0.0.1:$PORT/api/health" 2>/dev/null || true)"
+    [ -n "$body" ] && break
+    sleep 1
+  done
+  if [ -z "$body" ]; then
+    # The 78 branch (UPDATE_PLAN §14.1): the import-time preflight refused, so this is a CONFIG failure
+    # with an actionable message already in the journal — say so instead of reporting a generic timeout.
+    st="$(systemctl --user show ctrl-b-dashboard.service -p ExecMainStatus --value 2>/dev/null || true)"
+    if [ "$st" = 78 ]; then
+      echo "✗ the service REFUSED to start: its config is not one this build can migrate or load."
+      echo "  It is stopped and will NOT retry (RestartPreventExitStatus=78). The fix is in the journal:"
+      journalctl --user -u ctrl-b-dashboard -n 20 --no-pager -o cat 2>/dev/null | sed 's/^/    /'
+    else
+      echo "✗ health gate FAILED after 30s (ExecMainStatus=${st:-?}). The new dist is live but the app is not."
+      echo "  Inspect:  systemctl --user status ctrl-b-dashboard  |  journalctl --user -u ctrl-b-dashboard -n 50"
+    fi
+    echo "  Roll back: deploy/linux/README.md §Rollback (previous tag + the DB snapshot taken above)."
+    exit 1
+  fi
+  HVER="$(printf '%s' "$body" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  TAG="$(git -C "$APP" describe --exact-match --tags 2>/dev/null || true)"
+  if [ -n "$TAG" ] && [ "${TAG#v}" != "$HVER" ]; then
+    echo "✗ health gate: serving version '$HVER' but the tree is at '$TAG'. The venv was not rebuilt from"
+    echo "  this checkout (the version comes from the tag at pip-install time), so the running code is NOT"
+    echo "  what you just deployed. Re-run this script; if it persists, rebuild: rm -rf $VENV && bash \$0 prod"
+    exit 1
+  fi
+  echo "-- health OK (version ${HVER:-unknown}${TAG:+, tag $TAG})"
+fi
+
 echo ""
 if [ "$ROLE" = prod ]; then
-  echo "✓ PROD install done. Verify:  systemctl --user status ctrl-b-dashboard  |  curl -s localhost:5433/api/health"
+  echo "✓ PROD install done. Verify:  systemctl --user status ctrl-b-dashboard  |  curl -s localhost:$PORT/api/health"
   echo "Next:"
   echo "  • HTTPS on the tailnet:   bash $SCRIPTS/serve-https.sh"
   echo "  • Set up the DEV sandbox: from the workspace (~/github/ctrl-b, main)  bash deploy/linux/install.sh dev"

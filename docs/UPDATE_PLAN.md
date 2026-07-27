@@ -380,17 +380,7 @@ deleting code rather than adding it.**
    docs retraction.
 4. **`main.py` import-time check + `RestartPreventExitStatus=78`.** ✅ BUILT — **§14**. The
    `--reload` question is **answered: it propagates 78** (measured end-to-end under systemd).
-5. **`install.sh`**: hook + fatal stop + health gate + flock, **+ two riders from the slice-4 review
-   (Fable):** on a failed start, branch on `ExecMainStatus` — **78 means config**, so print the journal
-   tail (which already carries the fix command) and say so, rather than reporting a generic timeout;
-   and note in the spec that the merged-environment scan *overlaps* the CLI refusal for shell/`.env`
-   variables (both fire on the same one) — its unique value is the unit/drop-in delta, so
-   double-reporting is acceptable and de-duplicating it is not worth code. **+ scan the unit's MERGED environment
-   for `CTRLB_*__*` and fail the gate** — `systemctl --user show <unit> -p Environment`, **not** the
-   rendered unit file: `systemctl --user edit` writes a drop-in (`<unit>.d/override.conf`), which is
-   exactly where an operator adds a variable without touching the file `install.sh` renders (Fable,
-   §13.1). A service-only override is invisible to the CLI, so this is the only attended place it can
-   be caught.
+5. **`install.sh`**: ✅ BUILT — **§15**.
 6. **Windows parity** (brief settled by the slice-4 review): Windows runs uvicorn from a one-shot
    script with no service manager, so the preflight already does the right thing — slice 6 only needs
    `start.cmd`/`start.ps1` to **propagate the exit code** (`exit /b %ERRORLEVEL%` / `exit $LASTEXITCODE`)
@@ -794,3 +784,53 @@ sanitised message before systemd is told the service is viable"*, observed at th
 requested stop-line is now in the docstring: **this gate decides, and never constructs or repairs.**
 Its LOW is fixed too — the warn-once registry is reset by an **autouse fixture**, because one test
 resetting it meant any *other* test that warned poisoned later assertions.
+
+---
+
+## 15. Slice 5 — AS BUILT (2026-07-27): `install.sh`
+
+The four §4 mechanisms plus the two riders the slice-4 review added. Nothing else — `install.sh` gained
+no new responsibilities, only the gates that make its existing ones honest.
+
+| Mechanism | Where | The failure it closes |
+|---|---|---|
+| **`flock`** on `$CTRLB_HOME/.deploy.lock`, taken before any work; skipped when `CTRLB_DEPLOY_LOCK_HELD=1` | step 0.5 | two installs racing; slice 7's `update.sh` holds the same lock and passes the flag so the child does not block on its parent |
+| **`migration --check`** early, `\|\| exit 1` | step 4.4 | a config this build cannot migrate or load aborts the run **before the build**, with the old instance still serving |
+| **merged-environment scan** — `systemctl --user show <unit> -p Environment` | step 5.2 | a `CTRLB_*__*` override living only in the unit or a **drop-in**, invisible to the CLI. Asked of the *manager*, never of the rendered file (Fable) |
+| **stop is FATAL and verified by STATE** (`is-active` poll, ≤10s) | step 5.5 | today's `\|\| true`: the migration could rewrite `config.yaml` under a process still writing it |
+| **`migration --apply` at the cutover** | step 5.5 | the migration runs at the one moment nothing is writing the file |
+| **health gate** — poll `/api/health`, then compare its version to `git describe --exact-match` | step 6 | `systemctl start` succeeding while the app is dead; and a stale venv serving code that is **not** what was deployed |
+| **`ExecMainStatus=78` branch** in the gate's failure path | step 6 | a config refusal reported as a generic timeout. On 78 it prints the journal tail, which already carries the fix command |
+
+**`CTRLB_HOME` is passed explicitly** at both call sites through one `migration()` helper: it is an
+ordinary (unexported) shell variable here, so a bare `python -m app.config_migration` would resolve to
+the **repo root** — and from `install.sh dev` would inspect PROD's config while the prod service was live.
+
+**Three calls, and one correction that testing forced:**
+- **`--apply` runs in BOTH roles**, not just prod — the correction. `--check` exits **0** for "needed"
+  as well as "not needed" (§3.5 locks that so `|| exit 1` means *would fail*), so the first draft, which
+  applied at the prod cutover only, would have let `install.sh dev` report success and leave a config
+  the dev units then refuse to boot on. Dev has no cutover (its units are on-demand), so it applies
+  right after the check. A running dev unit is not a hazard the flock covers, and §7 already accepts
+  that: the process re-reads config only on a PUT or a restart, and a PUT mid-apply trips the runner's
+  digest guard, which refuses rather than clobbers.
+- **The lock is per-instance**, keyed on `$CTRLB_HOME` — each role has its own, and the hazard worth
+  excluding is two runs against the *same* instance.
+- **The health gate fails on a version mismatch**, not just a dead port: the version comes from the tag
+  at `pip install` time, so serving a different one means the venv was not rebuilt and the running code
+  is not what was just deployed. Only asserted when the tree is at an exact tag, so a dev tree is unaffected.
+
+**Verified, against real inputs rather than by inspection:** port extraction from the **real rendered
+prod unit** (5433) · version extraction from the **live prod `/api/health`** (1.2.1) · the env scan
+against a real unit **plus a real drop-in**, which it catches while correctly ignoring `CTRLB_HOME`
+(one underscore) and printing **names only** · the lock excluding a second run and passing through for
+`CTRLB_DEPLOY_LOCK_HELD=1` · the `migration()` call shape end-to-end on a copy of the prod config
+(legacy → applied → stamped → `uvicorn` reaches "startup complete", zero errors) · `bash -n`.
+
+**NOT verified, deliberately — the gap to close before the release.** `install.sh` has **never been run
+end-to-end** by this session. `install.sh prod` is a release action, not a slice-5 action. `install.sh
+dev` would be safe in principle, but it runs `systemctl --user enable --now ctrl-b-agent@{fable,opus}` —
+and this session *is* one of those agent instances, so a restart would kill the run that is testing it.
+It should be exercised from a plain SSH shell (or by the owner) before slice 8's release: `bash
+deploy/linux/install.sh dev` on the workspace, expecting a no-op migration on the already-stamped dev
+config and no unit churn. `shellcheck` is not installed on the box; only `bash -n` was run.
