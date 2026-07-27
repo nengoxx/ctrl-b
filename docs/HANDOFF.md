@@ -2,14 +2,21 @@
 
 > ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21). **On main, UNRELEASED: A11 COMPLETE
 > (chat + voice/embeddings) + D3 slice 3 + the 2026-07-26 fix wave.
-> ▶ **[`UPDATE_PLAN.md`](./UPDATE_PLAN.md) SLICES 1 + 2 + 3 ✅ BUILT 2026-07-26** — the runner (**§11**),
-> the fold's move out of the config load path (**§12**), and env overrides (**§13**); gate 6/6, backend
-> 1013. **Slice 3 overturned its own spec (§7):** the `CTRLB_PROVIDERS__…` overlay was ruled against by
-> a Codex + Fable round table on [R6](./research/R6-env-overrides-and-secret-provenance.md) evidence,
-> and the owner ruled **retract** — `.env` cannot carry a secret and the docs no longer say it can.
-> **NEXT = SLICE 4** (the `main.py` import-time check + `RestartPreventExitStatus=78`; it inherits the
-> retired-env detector as a **log**, not an exit — §13). §10 is the slice list, §8 the owner rulings,
-> §9 the council record. Then the **A11 PRE-RELEASE FIX LIST** in the 2026-07-26 session
+> ▶ **[`UPDATE_PLAN.md`](./UPDATE_PLAN.md) SLICES 1–7 ✅ ALL BUILT + REVIEWED (2026-07-26/27).** The
+> runner (**§11**) · the fold's move out of the config load path (**§12**) · env overrides (**§13**, which
+> **overturned its own spec** — the `CTRLB_PROVIDERS__…` overlay was ruled against and the env-secret
+> promise RETRACTED, on [R6](./research/R6-env-overrides-and-secret-provenance.md) evidence) · the
+> import-time boot refusal (**§14**, measured under systemd) · `install.sh` (**§15**) · Windows parity
+> (**§16**) · `update.sh` + the runbook rewrite (**§17**). Gate **6/6**, backend **1039**, tree clean,
+> **25 commits UNPUSHED**.
+> **▶ NEXT = SLICE 8, THE RELEASE**, and its preconditions are §17.2 — **0 and 1 are DONE**
+> (manual belt-and-braces backups outside the tooling; `install.sh dev` run end-to-end, closing the §15
+> gap), **the owner ratified all three D48 Slice-2 interpretations 2026-07-27**, and the A11 pre-release
+> MUST-FIX is fixed. **What remains: the rest of the A11 fix list** (the bounded voice/embeddings gate
+> wait that ratification ③ is conditional on · `providers_rev` hashing raw secrets · the strict-resolve
+> doc drift · the named test gaps), the D48 amendment, a final gate + real-config rehearsal on the
+> release sha, then tag → CI → `update.sh`. §10 is the slice list, §8 the owner rulings, §9 the council
+> record. Then the **A11 PRE-RELEASE FIX LIST** in the 2026-07-26 session
 > block (the parked deep audit is DONE — one MUST-FIX: a masked secret can be persisted as the real API
 > key). Release A11 via D48 §rollout only after both, and only once the owner ratifies the three pending
 > D48 Slice-2 calls (a precondition D48 sets for itself, open since 2026-07-23).**
@@ -395,6 +402,69 @@
 > secret-bearing file replaced that way silently loses 0600; write through an fd opened `0o600` (the
 > `.bak-a11` idiom). The bug predated A11 and had already degraded dev+prod configs to 0664.
 >
+> **▶▶ SESSION 2026-07-26/27 — UPDATE_PLAN SLICES 3–7 BUILT AND REVIEWED; the release is next.**
+> 25 commits, gate 6/6 throughout, backend 897 → **1039**, tree clean, **NOTHING PUSHED**. Every slice
+> went design → build → **both reviewers** (Codex `gpt-5.6-sol` high on defects, Fable 5 high on
+> architecture/systems) → fix wave → verification round. **The reviews found more than the builds did**,
+> and several findings corrected things this session had already reported as verified.
+>
+> **What shipped:** §13 slice 3 (retire the env-secret promise; guard the retired path) · §14 slice 4
+> (import-time boot refusal + `RestartPreventExitStatus=78`) · §15 slice 5 (`install.sh` gates the
+> migration) · §16 slice 6 (Windows parity) · §17 slice 7 (`update.sh` + the runbook rewrite). Full
+> as-built records + every finding are in those sections; **§13.1 §14.1 §15.1 §17.1 §17.3 are the review
+> records** and are the most valuable reading for the next session.
+>
+> **The five findings that changed real behaviour** (all reproduced before fixing):
+> ① **A rejected config value reached the systemd journal** — `str(ValidationError)` renders
+> `input_value=…`, uncaught at `main.py`. The sanitiser already existed *inside* the migration package
+> for that exact reason; it moved to `config.py`. Its provenance matters: the hole shipped in **slice 1**
+> and was reachable via the CLI's own stderr for two days. ② **Migrating ≠ loading** — `detect()` never
+> validates, so a stamped-but-invalid config died in the lifespan as **exit 3**, which
+> `RestartPreventExitStatus=78` does not cover, i.e. a crash-loop. The preflight now calls
+> `load_settings()` itself. ③ **A YAML *constructor* failure escapes as a bare `ValueError` quoting the
+> input** (`api_key: 2026-01-99` → "day 99 must be in range…", both parsers) — not a YAML error class,
+> so `_parse` never caught it. ④ **`install.sh`'s three gates all failed open** — the stop swallowed
+> failures and read `deactivating` as stopped; the env scan **both missed and invented** overrides
+> (systemd shell-quotes each entry, so `tr ' '` reported a FAKE and missed the REAL one); the health gate
+> accepted **any** 2xx, so a stale hand-started process could pass it (`/api/health` now reports `pid`
+> and the gate requires it to equal systemd's `MainPID`). ⑤ **A11 MUST-FIX** — a display mask with no
+> stored counterpart was written to disk **as the credential**; it is now dropped.
+>
+> **Three corrections to claims this session made** — the pattern worth internalising: ⓐ I reported the
+> `update.sh` downgrade guard as "verified, G4 functioning". **It never ran**: under the script's own
+> `set -euo pipefail`, the absent `v1.2.1:…/VERSION` makes `git show` exit 128 → `pipefail` fails the
+> assignment → `errexit` kills the script *before* the `:-0` default. **A shell fragment must be
+> exercised under the options of the script that will run it.** ⓑ I claimed the config preflight ran
+> before the frontend build in **three documents**; it ran after it. Fixed by moving the steps, not the
+> prose. ⓒ I recorded "nothing on Windows restarts it" — `autostart-enable.ps1` registers a Scheduled
+> Task with `-RestartCount 3 -WindowStyle Hidden`, which makes the autostart path the WORST case, not the
+> safe one.
+>
+> **Two findings were about the RECOVERY TEXT rather than the code**, and both would have produced the
+> failure the plan exists to prevent: `update.sh` printed the go-back command *before* the "your config
+> was migrated, restore it first" warning (a cold operator runs the tag revert alone → old build boots
+> "healthy" with zero providers), and **§Rollback in the runbook had the same defect** — code first, then
+> "config must precede it" — in the file that had just been rewritten to fix exactly that.
+>
+> **▷ LIVE MACHINE STATE.** Tree clean, `main` is **25 commits ahead of origin — NOTHING PUSHED**. Gate
+> `check.py` 6/6 on the tip; backend 1039. **PROD is UNCHANGED: v1.2.1, still LEGACY-SHAPE, config still
+> 0664** (the migration heals it to 0600 at the cutover, as it did for dev). Dev units STOPPED; the two
+> agent units untouched (verified by tmux session identity across the `install.sh dev` run). **Manual
+> pre-release backups exist OUTSIDE the tooling**: `~/.ctrl-b/backups/config.yaml.manual-prerelease-*`
+> and `ctrlb-manual-prerelease-*.db.gz`, both 0600, DB integrity-checked.
+>
+> **▶ NEXT SESSION — finish precondition 4, then release.** In order: ① model check
+> (`tmux display-message -p '#S'` → `ctrl-b-opus` = Opus 5 high). ② **The rest of the A11 pre-release fix
+> list** — the MED that ratification ③ is *conditional* on (bound the voice/embeddings gate acquire with
+> `connect_timeout_s`, treat a timeout as a failed hop) · `providers_rev` hashes RAW secrets, so hash the
+> masked dump · the strict-resolve doc drift (it was extended to voice/embeddings; the ruling record still
+> says the Slice-1 list) · the named test gaps. ③ The **D48 amendment** + doc sync. ④ Full gate **plus
+> §10's real-config rehearsal on the release sha**. ⑤ Push, then tag → **wait for the CI release gate** →
+> release. **⚠ The first release MUST use the bootstrap form** — `update.sh` ships *in* this release and
+> does not exist on v1.2.1: `git -C ~/apps/ctrl-b show <tag>:deploy/linux/update.sh | bash -s -- <tag>`
+> (README §Release). **The prod cutover block has never executed** — the release is its first run, which
+> is what §17.2 step 0's manual backups exist to cover.
+
 > **▷ LIVE MACHINE STATE (▲ UPDATED at the 2026-07-26 PM close — SESSION CLOSED CLEAN, ALL PUSHED):**
 > tip = **UPDATE_PLAN slices 1 + 2** (`4761483` the runner · `4523374` the fold's move) on top of the
 > 2026-07-26 AM wave. **Backend suite 998 green** (was 897; +101). **Working tree CLEAN, main == origin
