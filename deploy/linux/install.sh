@@ -163,10 +163,17 @@ if [ "$ROLE" = dev ]; then
   # stop gate above already relies on `is-active` on this same box, so refusing here is consistent and
   # closes the one case the digest guard cannot: an OLD process with OLD in-memory settings writing
   # after the migration has landed.
-  [ "$(systemctl --user is-active ctrl-b-dashboard-dev.service 2>/dev/null || true)" = active ] && {
-    echo "✗ ctrl-b-dashboard-dev is running. Stop it before migrating its config:"
-    echo "    systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web"
-    exit 1; }
+  # Only `inactive`/`failed` licenses the migration. `activating`/`deactivating` are not `active` but are
+  # not stopped either, and an EMPTY answer means the query failed — neither is a licence to write
+  # (the same fail-open class as the prod stop gate). A never-installed unit prints `inactive`.
+  devst="$(systemctl --user is-active ctrl-b-dashboard-dev.service 2>/dev/null || true)"
+  case "$devst" in
+    inactive|failed) ;;
+    "") echo "✗ cannot query ctrl-b-dashboard-dev state (user bus?). Refusing to migrate its config."; exit 1 ;;
+    *)  echo "✗ ctrl-b-dashboard-dev is '$devst'. Stop it before migrating its config:"
+        echo "    systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web"
+        exit 1 ;;
+  esac
   migration --apply || { echo "→ dev config migration failed; nothing else was changed."; exit 1; }
 fi
 
@@ -241,7 +248,11 @@ for u in "${RENDER_UNITS[@]}"; do
   # `"OTHER=x CTRLB_FAKE__TOKEN=y"` and `"CTRLB_REAL__KEY=a b"`, the old parse reported the FAKE (a
   # false positive out of another variable's value) and MISSED the real one. `xargs` honours the same
   # quoting systemd emits.
-  bad="$(printf '%s\n' "$envline" | xargs -n1 2>/dev/null | sed -n 's/^\(CTRLB_[A-Za-z0-9_]*__[A-Za-z0-9_]*\)=.*/\1/p' || true)"
+  if ! bad="$(printf '%s\n' "$envline" | xargs -n1 | sed -n 's/^\(CTRLB_[A-Za-z0-9_]*__[A-Za-z0-9_]*\)=.*/\1/p')"; then
+    echo "✗ could not parse $u's environment (xargs failed on the quoting systemd emitted)."
+    echo "  An unparsed scan is not a clean scan — refusing. Inspect: systemctl --user show $u -p Environment"
+    exit 1
+  fi
   if [ -n "$bad" ]; then
     echo "✗ $u carries config override(s) in its unit environment:"
     printf '    %s\n' $bad
@@ -305,11 +316,12 @@ if [ "$ROLE" = prod ]; then
   migration --apply || { echo "✗ config migration failed at cutover — service stopped, dist NOT swapped."; exit 1; }
   # Post-stop, prod is DOWN until the start below, so each step names the state it leaves behind
   # (no auto-rollback, by design — §4 "no cutover trap").
-  rm -rf "$APP/frontend/dist" || { echo "✗ could not remove the old dist. PROD IS STOPPED; config migrated, old dist still present."; exit 1; }
+  rm -rf "$APP/frontend/dist" || { echo "✗ could not remove the old dist. PROD IS STOPPED; config migrated, dist possibly PARTIALLY removed."; exit 1; }
   mv "$APP/frontend/dist.next" "$APP/frontend/dist" || { echo "✗ could not install the new dist. PROD IS STOPPED with NO dist — restore with: git checkout v(prev) && bash $0 prod"; exit 1; }
 fi
 
 if [ "${#BOOT_UNITS[@]}" -gt 0 ] && ! systemctl --user enable --now "${BOOT_UNITS[@]}"; then
+  [ "$ROLE" = prod ] && echo "✗ PROD IS STOPPED with the new dist and a migrated config — it did not start."
   echo "✗ systemctl --user enable failed. Common causes: user bus not reachable over SSH (need linger:"
   echo "    sudo loginctl enable-linger $(id -un)), or a unit error → inspect:  systemctl --user status ${BOOT_UNITS[0]}"
   exit 1
@@ -338,8 +350,18 @@ if [ "$ROLE" = prod ]; then
   body=""
   while [ "$SECONDS" -lt "$deadline" ]; do
     body="$(curl -fsS --max-time 3 "http://127.0.0.1:$PORT/api/health" 2>/dev/null || true)"
-    # Any non-empty 2xx body used to end the poll — including one from something that is not this app.
-    case "$body" in *'"status"'*'"ok"'*) break ;; *) body="" ;; esac
+    # Parsed, not pattern-matched: `*'"status"'*'"ok"'*` also accepts {"status":"degraded","db":"ok"}.
+    # The venv python is guaranteed present by step 2, so use it rather than a fragile shell predicate.
+    hstatus=""; HVER=""; HPID=""
+    if [ -n "$body" ]; then
+      read -r hstatus HVER HPID <<<"$(printf '%s' "$body" | "$VENV/bin/python" -c \
+        'import json,sys
+try: d = json.load(sys.stdin)
+except Exception: sys.exit(0)
+print(d.get("status",""), d.get("version",""), d.get("pid",""))' 2>/dev/null || true)"
+    fi
+    [ "$hstatus" = ok ] && break
+    body=""
     sleep 1
   done
   if [ -z "$body" ]; then
@@ -362,13 +384,30 @@ if [ "$ROLE" = prod ]; then
   # otherwise satisfy the gate while the new unit failed to bind (review: "approve the wrong process").
   as="$(systemctl --user show ctrl-b-dashboard.service -p ActiveState --value 2>/dev/null || true)"
   mp="$(systemctl --user show ctrl-b-dashboard.service -p MainPID --value 2>/dev/null || true)"
-  if [ "$as" != active ] || [ -z "$mp" ] || [ "$mp" = 0 ]; then
-    echo "✗ something is serving /api/health on $PORT, but it is NOT this unit (ActiveState=${as:-?}, MainPID=${mp:-?})."
+  # The PID in the RESPONSE must be systemd's MainPID. `active` + non-zero MainPID does not prove the
+  # unit served the request: a stale hand-started process can hold the port while the real unit fails
+  # to bind and is momentarily `active` on its way to a restart (review, residual HIGH).
+  #
+  # This equality holds because the PROD unit is `Type=simple`, one uvicorn process, NO `--reload` —
+  # under `--reload` the reloader PARENT is MainPID while a WORKER serves, so the check would always
+  # fail. One more reason the health gate is prod-only.
+  if [ -n "$HPID" ] && [ "$as" = active ] && [ "$mp" != 0 ] && [ "$HPID" != "$mp" ]; then
+    echo "✗ /api/health on $PORT was served by pid $HPID, but this unit's MainPID is $mp."
     echo "  A stale or hand-started process is holding the port; this deploy cannot be trusted. Find it:"
     echo "    ss -lptn 'sport = :$PORT'   then  systemctl --user status ctrl-b-dashboard"
     exit 1
   fi
-  HVER="$(printf '%s' "$body" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  if [ -z "$HPID" ]; then
+    # An older build than this gate (the `pid` field arrived with slice 5). Identity then rests on
+    # ActiveState + MainPID alone, which is weaker — say so rather than implying it was proven.
+    echo "   ! response carries no pid: this build predates the identity check (liveness + unit state only)"
+  fi
+  if [ "$as" != active ] || [ -z "$mp" ] || [ "$mp" = 0 ]; then
+    echo "✗ /api/health answered on $PORT, but this unit is ActiveState=${as:-?} MainPID=${mp:-?} — not it."
+    echo "  A stale or hand-started process is holding the port; this deploy cannot be trusted. Find it:"
+    echo "    ss -lptn 'sport = :$PORT'   then  systemctl --user status ctrl-b-dashboard"
+    exit 1
+  fi
   TAG="$(git -C "$APP" describe --exact-match --tags 2>/dev/null || true)"
   if [ -n "$TAG" ] && [ "${TAG#v}" != "$HVER" ]; then
     echo "✗ health gate: serving version '$HVER' but the tree is at '$TAG'. The venv was not rebuilt from"

@@ -905,3 +905,18 @@ residual — a hand-started `uvicorn` outside systemd — stays with the digest 
 `[A-Za-z0-9_]` names, so nothing can word-split or glob) · fd 9 is retained by the parent and inherited
 correctly by the `migration()` and `npm` subshells · `migration()` propagates a failing `cd` or Python
 through `||` · `bash -n` passes.
+
+**Round 2 on the fix wave (Codex).** 3 of 7 closed outright (stop gate · lock bypass · deadline and 78
+diagnostics — `SECONDS` confirmed safe under `set -u`, the arithmetic loop exempt from `set -e`); four
+were **not fully** closed, and it was right each time:
+
+| Sev | Still open after the first wave | Fix |
+|---|---|---|
+| **HIGH (residual)** | **`ActiveState=active` + non-zero `MainPID` does not prove that PID served the response.** With `Type=simple` + `Restart=on-failure`, the new process can be briefly `active` before failing its bind while a **stale hand-started process answers the curl** — a state this session created repeatedly by running `uvicorn` by hand. | `/api/health` now reports **`pid`**, and the gate requires it to equal systemd's `MainPID`. The equality holds only for a single-process, non-`--reload` unit — under `--reload` the reloader *parent* is MainPID while a *worker* serves — which is stated in the code and is one more reason the gate is prod-only. A build predating the field says so instead of implying identity was proven. |
+| MED | The env parser **failed open**: `xargs 2>/dev/null … \|\| true` turned a parse failure into a clean scan — the same class as the query failure fixed in round 1. | The whole assignment is now `if ! bad="$(…)"; then exit 1; fi`. An unparsed scan is not a clean scan. |
+| MED | The body predicate `*'"status"'*'"ok"'*` also accepts `{"status":"degraded","db":"ok"}`. | Parsed with the venv python (guaranteed present by step 2) — `status`, `version` and `pid` in one call, replacing three fragile shell parses. |
+| MED | **The dev guard failed open** exactly as the stop gate had: an empty query answer or `activating`/`deactivating` read as "not active" and permitted the migration. | Only `inactive`/`failed` licenses it; empty is fatal; anything transitional names itself. |
+| MED | `enable --now` failure and a partial `rm -rf` did not name the outage they leave. | Both do now. |
+
+*(The `pid` field is not a secret: `/api/health` already reports version and schema_version, and it is
+tailnet-only.)*
