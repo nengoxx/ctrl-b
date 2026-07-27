@@ -478,7 +478,31 @@
 > ⚠ **Standing split for slice 4:** Codex and Fable have now disagreed twice on the same axis
 > (fail-closed vs fail-visible for environment residue). The ruling is **fail-visible**, refusals live
 > at the attended gates, and slice 4 logs at **ERROR** naming the variable and the role it no longer
-> feeds. Backend **1014**, gate 6/6 on the tip; ordering fix re-verified against a real config.
+> feeds.
+>
+> **▷ THEN A FULL CODE REVIEW OF THE IMPLEMENTATION, owner-requested, both reviewers, two rounds
+> (`d9151bd` + `dcc5458`; §13.2). Fable SHIP AS BUILT → CONFIRMED. Codex DO NOT SHIP → one real HIGH:**
+> **a rejected value was reaching the systemd journal.** `str(ValidationError)` renders `input_value=…`
+> per failing field and `load_settings` let it escape uncaught to `main.py` — so the very thing this
+> slice forbids (`CTRLB_PROVIDERS__X__API_KEY=<secret>`) was warned about, applied, failed validation,
+> and put the secret in a traceback. Reproduced, then fixed: `ConfigValidationError` carrying the
+> **sanitised** rendering — and the sanitiser already existed inside the migration package for this
+> exact reason, so it moved to `config.py` (Fable: it *is* secret-hygiene machinery, the family
+> `config.py` already owns) and the package imports it. **Two of my own fixes were caught by my own
+> tests:** `raise … from None` suppresses only the *display* of the chained exception — the object still
+> reaches the `ValidationError` via `__context__` (fixed by raising outside the handler; the test
+> asserts on both `__cause__` and `__context__`) — and escaping only the variable NAME left
+> `section`/`key`, slices of the same text, raw. Also fixed: a malformed `Step.retires` declaration
+> silently disabled the guard (refused as a step bug, like slice 1's empty `consumes`); the earlier
+> ordering fix over-corrected so every step failure preempted the env guard (now **marker/downgrade →
+> environment → plan**); the dead forwarding shim deleted. **Two DECLINED, both recorded with evidence
+> in §13.2:** a lock around `os.environ` mutation (nothing mutates it after startup) and suppressing
+> dynamic `loc`s because a KEY can be secret-shaped — **keys are not secrets here**: masking is
+> value-side, provider names ride `GET /api/settings` unmasked and are advertised to the model as
+> `/<provider>` verbs. **⚠ Slice-5 rider CORRECTED by Fable:** scan `systemctl --user show <unit> -p
+> Environment` (the MERGED view), **not** the rendered unit file — `systemctl --user edit` writes a
+> drop-in, which is exactly where a service-only variable would live. Backend **1026**, gate 6/6, tree
+> clean, re-rehearsed on copies of both live configs.
 
 > **▶▶ SESSION 2026-07-26 (PM) — UPDATE_PLAN SLICE 2 BUILT: the fold LEAVES the config load path.**
 > Gate **6/6**; backend **998** (was 952). As-built + every defect the council found:
