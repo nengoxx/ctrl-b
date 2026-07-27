@@ -1072,8 +1072,12 @@ that moment the tree is still the old tag and may not contain the runner at all.
    set-equal, and the only comment loss is the three documented inline ones on consumed keys. *(The
    rehearsal script's own comment check was blind to inline comments and reported zero loss; a
    `diff <(grep -o '#.*' …)` per input is what actually proved it.)*
-6b. **PROPOSED, owner's call — rehearse the RECOVERY path once before tagging (Fable, pre-release
-   review).** §17.2 correctly names the first-run `install.sh prod` cutover as the highest-risk step and
+6b. ✅ **DONE 2026-07-27 — and it earned itself on the first run.** Executed exactly as specified below.
+   **Result: the printed §Rollback sequence is correct and executable verbatim — and rehearsing it
+   surfaced a HIGH in `install.sh` that no review had caught.** Full record: §17.4.
+
+   *(Original brief, kept — it is the reusable spec.)* **Rehearse the RECOVERY path once before tagging
+   (Fable, pre-release review).** §17.2 correctly names the first-run `install.sh prod` cutover as the highest-risk step and
    covers it with step 0 — but the path *out* of that failure has never run either. `update.sh`
    deliberately refuses to drive v1.2.1 (§17.3), so recovery is the runbook's manual sequence, which has
    been **reviewed twice, found wrong twice** (§17.1 and §17.3 each caught an ordering defect in it) and
@@ -1120,3 +1124,63 @@ reproduced before fixing.
 **The lesson worth keeping:** every parser in this script was *tested and reported working* — in an
 interactive shell that did not have `set -euo pipefail`. **A shell fragment must be exercised under the
 options of the script that will run it**, or the test is measuring a different program.
+
+---
+
+### 17.4 Step 6b — the recovery rehearsal, AS EXECUTED (2026-07-27)
+
+Run against a scratch **sparse, tag-pinned** clone under `~/.cache/tmp/rb-rehearsal` with a scratch
+`CTRLB_HOME` staged as *post-release prod* (the migrated config + the real step-0 backups), executing
+§Rollback **literally, command by command, in printed order**. **Prod was verified untouched throughout
+and after: `NRestarts=0`, `MainPID` unchanged (1161, active since 2026-07-24), `/api/health` = 1.2.1.**
+
+**▶ FINDING R1 — HIGH, and it is in the installer we are about to SHIP, not just in v1.2.1.**
+**`install.sh prod` cannot be rehearsed off-prod: `REPO` and `CTRLB_HOME` isolate the tree and the data
+but NOT the systemd unit.** The render is an unconditional
+`sed … > "$HOME/.config/systemd/user/$u"` with a **fixed unit name**, so running the installer from any
+other tree **silently rewrites the LIVE prod unit** — `WorkingDirectory`, `Environment=CTRLB_HOME` and
+`ExecStart` all repointed at the scratch paths. Verified by inspecting the file afterwards; the running
+service survived **only** because this rehearsal had stubbed `systemctl` (so no `daemon-reload` picked
+the file up). Unstubbed, the damage is latent: the service keeps running correctly until the next
+`daemon-reload` or reboot, then starts prod from a scratch tree that may no longer exist.
+*Restored immediately by re-rendering the unit from the prod tree with the canonical values, then
+`daemon-reload` + verification of the file, systemd's loaded `ExecStart`, `is-active`, `NRestarts` and
+`/api/health`.*
+**Leanest fix (one line, PROPOSED — not applied, it touches slice 5 on release day):**
+`SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-$HOME/.config/systemd/user}"` and render into that, so a
+rehearsal can point the units somewhere harmless. The alternative — refusing `prod` when `REPO` is not
+the canonical path — is more machinery for the same guarantee. **Note this is exactly the class the
+plan already legislates against elsewhere:** `update.sh` grew a hard prod-tree identity check (§17.3)
+precisely because paths that *look* canonical are not, while the installer underneath it still writes
+one hardcoded path regardless of where it is invoked from.
+
+**▶ FINDING R2 — the documented silent failure is REAL, and now proven rather than reasoned.** Booting
+v1.2.1 against the **migrated** config (i.e. skipping §Rollback step 2, the case the whole ordering
+exists to prevent) returns `{"status":"ok","version":"1.2.1"}` with **every endpoint blank** —
+`inference.local`/`cloud` base_urls empty, `voice.stt.primary` empty, embeddings empty — and
+`/api/voice/status` `{"stt":false,"tts":false}`. **Nothing is logged.** Chat and voice are silently
+dead behind a healthy-looking service. The warning text in §Rollback and in `update.sh` is not
+theoretical; keep it prominent.
+
+**▶ What PASSED, verbatim** (this is the part that had never been executed anywhere):
+* `ls -t …/backups/config.yaml.*` listed the migration's own backup first, and `cp -p` restored it
+  **keeping 0600**; the legacy shape came back (`providers:` gone, marker gone).
+* The DATA step's sidecar removal + `gunzip` + `PRAGMA integrity_check` → `ok`.
+* **`git checkout v1.2.1` backwards through a sparse, tag-pinned tree** — the cone survived intact
+  (`backend deploy frontend`), `git describe --exact-match` = `v1.2.1`. This was Fable's named
+  "mechanics risk distinct from the installer"; it is clean.
+* **v1.2.1's own pre-protocol `install.sh` completed today, exit 0** — Python 3.14 venv, `pip install
+  -e`, `npm ci` and the Vite build all still work at that tag with today's toolchain, and it took its
+  own DB snapshot before the (stubbed) cutover.
+* **The old build BOOTS on the restored config with all four roles intact**: chat local
+  `192.168.1.137:5001` + cloud OpenRouter, STT `127.0.0.1:9000` → `192.168.1.137:9000`, TTS
+  `127.0.0.1:9000` → `192.168.1.137:7851`, embeddings OpenRouter — and `/api/voice/status`
+  `{"stt":true,"tts":true}`. That is the question the rollback exists to answer, answered.
+
+**Adaptations, recorded as findings rather than fixed silently** (per the brief): `systemctl` was
+replaced by a logging no-op stub on `PATH` — **required**, see R1 — and the scratch instance was booted
+by hand on `127.0.0.1:5499` instead of `0.0.0.0:5433`, since a rehearsal must not bind the tailnet. One
+cosmetic note: v1.2.1's success banner prints `curl -s localhost:5433/api/health`, which during a
+rehearsal points at the *real* prod instance; and `/api/health`'s `server.port` reports the **configured**
+port (5433), not the port actually bound, so an operator verifying a hand-started instance by that field
+alone would be looking at the wrong number.

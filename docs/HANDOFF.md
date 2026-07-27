@@ -477,10 +477,25 @@
 >   stream-lifetime permit scope**, not voice-vs-chat: the streaming permit crosses a generator boundary
 >   and releases after a shielded close, which no context manager can express. Not touching the chat hot
 >   path in a release-day commit; the end-state is recorded in the D48 amendment.
-> - **▶ ONE OPEN ITEM — §17.2 step 6b, PROPOSED, owner's call:** rehearse the RECOVERY path once before
->   tagging. The list covers the first-run cutover with backups, but the path *out* of that failure has
->   never run either, and it is the one artifact here reviewed twice, found wrong twice, executed never.
->   Fable specified the cheapest sufficient rehearsal (~20 min, prod untouched) — see §17.2 6b.
+> - **▶ §17.2 STEP 6b — THE RECOVERY REHEARSAL: owner said run it, and it EARNED ITSELF ON THE FIRST
+>   RUN (as-executed record = [UPDATE_PLAN §17.4](./UPDATE_PLAN.md#174-step-6b--the-recovery-rehearsal-as-executed-2026-07-27)).**
+>   The printed §Rollback sequence is correct and executable verbatim — `ls -t`/`cp -p` (0600 kept) ·
+>   sidecars + `gunzip` + `integrity_check` ok · **`git checkout v1.2.1` backwards through a sparse
+>   tag-pinned tree, cone intact** · **v1.2.1's own pre-protocol `install.sh` still completes today**
+>   (3.14 venv, `npm ci`, Vite build) · **the old build BOOTS on the restored config with all four roles
+>   back** (chat local+cloud, STT/TTS primary+fallback, embeddings; `voice/status` `{stt:true,tts:true}`).
+>   **But rehearsing it found a HIGH that no review had caught — R1, and it is in the installer we are
+>   about to SHIP:** `install.sh prod` cannot be rehearsed off-prod, because `REPO`/`CTRLB_HOME` isolate
+>   the tree and the data but **NOT the systemd unit** — the render is an unconditional
+>   `sed … > "$HOME/.config/systemd/user/<fixed name>"`, so running it from any other tree **silently
+>   repoints the LIVE prod unit** at the scratch paths. The running service survived only because the
+>   rehearsal had stubbed `systemctl`; unstubbed, the damage is **latent until the next `daemon-reload`
+>   or reboot**. Restored immediately and verified (file · systemd's loaded `ExecStart` · `is-active` ·
+>   **`NRestarts=0`, `MainPID` unchanged** · health 1.2.1). **Proposed one-line fix, NOT applied —
+>   owner's call, it touches slice 5 on release day:** `SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-$HOME/.config/systemd/user}"`.
+>   **R2, proven not reasoned:** booting the old build on a *migrated* config (skipping the config
+>   restore) really does return `{"status":"ok"}` with every endpoint blank and voice dead, **logging
+>   nothing** — the silent failure the whole ordering exists to prevent, now evidence.
 >
 > **Doc drift closed:** interpretation ① was recorded with the Slice-1 strict trigger set; Slice 2
 > correctly extended it to `voice` + `embeddings`. Consequence worth knowing before the first voice edit
