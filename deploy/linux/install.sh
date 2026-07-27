@@ -21,7 +21,8 @@
 set -euo pipefail
 
 ROLE="${1:-prod}"
-# RENDER_UNITS = unit FILES rendered to ~/.config/systemd/user (the agent file is a systemd TEMPLATE,
+# RENDER_UNITS = unit FILES rendered to $SYSTEMD_USER_DIR (default ~/.config/systemd/user; step 5 explains
+# why that is overridable). The agent file is a systemd TEMPLATE,
 # ctrl-b-agent@.service). BOOT_UNITS = enabled --now (boot + start). ONDEMAND_UNITS = installed but NOT
 # enabled — the dev dashboards are on-demand (owner amendment 2026-07-10, revises the earlier "BOTH
 # always-on"): start them only when iterating. The agents ARE boot services: two template instances,
@@ -204,7 +205,18 @@ fi
 
 # 5) Render + install + enable the systemd USER units. The units are TEMPLATES — render __REPO__/__CTRLB_HOME__/
 #    __NPM__ to this machine's real paths so they work for ANY user/host, not just emma.
-mkdir -p "$HOME/.config/systemd/user"
+#
+#    SYSTEMD_USER_DIR exists so the RECOVERY PATH CAN BE REHEARSED. `REPO` and `CTRLB_HOME` isolate the
+#    tree and the data, but the unit NAME is fixed — so an installer run from a scratch tree used to
+#    rewrite the LIVE unit's WorkingDirectory/CTRLB_HOME/ExecStart to the scratch paths, and the damage
+#    was INVISIBLE until the next daemon-reload or reboot, when prod would start from a tree that may no
+#    longer exist. Found by actually doing it: UPDATE_PLAN §17.4 R1.
+#    RESIDUAL, deliberately not papered over: the `daemon-reload` / `enable --now` below still address
+#    the REAL user manager (a manager has ONE unit namespace per user; a client cannot redirect it). A
+#    rehearsal must therefore ALSO neutralise `systemctl` — §17.4 stubs it on PATH — and this variable
+#    only closes the part that fails silently.
+SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-$HOME/.config/systemd/user}"
+mkdir -p "$SYSTEMD_USER_DIR"
 # The agent units' EnvironmentFile home (effort/perm overrides: agent.env shared, agent-<i>.env
 # per-instance) — ensure the dir so the documented one-liners can't fail with "No such file or directory".
 if [ "$ROLE" = dev ]; then mkdir -p "$HOME/.config/ctrl-b"; fi
@@ -214,16 +226,16 @@ TMUX_BIN="$(command -v tmux || echo /usr/bin/tmux)"   # agent unit's ExecStop (a
 for u in "${RENDER_UNITS[@]}"; do
   sed -e "s#__REPO__#$REPO#g" -e "s#__CTRLB_HOME__#$CTRLB_HOME#g" -e "s#__NPM__#$NPM#g" \
       -e "s#__NODEBIN__#$NODEBIN#g" -e "s#__HOME__#$HOME#g" -e "s#__TMUX__#$TMUX_BIN#g" \
-      "$UNIT_DIR/$u" > "$HOME/.config/systemd/user/$u"
+      "$UNIT_DIR/$u" > "$SYSTEMD_USER_DIR/$u"
 done
 # LEGACY migration (pre-2026-07-10 layouts): (a) the single agent.env-switched ctrl-b-agent.service is
 # superseded by the two template instances — retire it (its ExecStop kills the old 'ctrl-b' session);
 # (b) the short-lived parenthesized session names ("ctrl-b (fable)") were simplified to ctrl-b-<i> —
 # kill any lingering old-format sessions so the renamed instances recreate them cleanly.
 if [ "$ROLE" = dev ]; then
-  if [ -f "$HOME/.config/systemd/user/ctrl-b-agent.service" ]; then
+  if [ -f "$SYSTEMD_USER_DIR/ctrl-b-agent.service" ]; then
     systemctl --user disable --now ctrl-b-agent.service 2>/dev/null || true
-    rm -f "$HOME/.config/systemd/user/ctrl-b-agent.service"
+    rm -f "$SYSTEMD_USER_DIR/ctrl-b-agent.service"
     tmux kill-session -t '=ctrl-b' 2>/dev/null || true
     echo "-- retired the legacy ctrl-b-agent.service (+ old 'ctrl-b' tmux session) → replaced by ctrl-b-agent@{fable,opus}"
   fi
@@ -340,7 +352,7 @@ echo "-- [$ROLE] units rendered: ${RENDER_UNITS[*]}  |  boot-enabled: ${BOOT_UNI
 #    the operator finds out from the phone. The port is read from the rendered unit rather than repeated
 #    here, so the two cannot drift.
 if [ "$ROLE" = prod ]; then
-  UNIT="$HOME/.config/systemd/user/ctrl-b-dashboard.service"
+  UNIT="$SYSTEMD_USER_DIR/ctrl-b-dashboard.service"
   PORT="$(sed -n 's/.*--port \([0-9][0-9]*\).*/\1/p' "$UNIT" | head -1)"
   PORT="${PORT:-5433}"
   echo "-- health gate (http://127.0.0.1:$PORT/api/health)"

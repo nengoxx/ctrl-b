@@ -1146,10 +1146,20 @@ the file up). Unstubbed, the damage is latent: the service keeps running correct
 *Restored immediately by re-rendering the unit from the prod tree with the canonical values, then
 `daemon-reload` + verification of the file, systemd's loaded `ExecStart`, `is-active`, `NRestarts` and
 `/api/health`.*
-**Leanest fix (one line, PROPOSED — not applied, it touches slice 5 on release day):**
-`SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-$HOME/.config/systemd/user}"` and render into that, so a
-rehearsal can point the units somewhere harmless. The alternative — refusing `prod` when `REPO` is not
-the canonical path — is more machinery for the same guarantee. **Note this is exactly the class the
+**✅ FIXED (owner: "yes"), one line + its uses:** `SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-$HOME/.config/systemd/user}"`,
+and every render/probe goes through it, so a rehearsal can point the units somewhere harmless. The
+alternative — refusing `prod` when `REPO` is not the canonical path — is more machinery for the same
+guarantee. **Residual, deliberately not papered over and stated in the script:** `daemon-reload` and
+`enable --now` still address the REAL user manager (one unit namespace per user; a client cannot
+redirect it), so a rehearsal must ALSO neutralise `systemctl` as this one did. The variable closes the
+half that fails *silently*.
+**Verified against a real criterion, not by reading:** `install.sh dev` re-run with
+`SYSTEMD_USER_DIR` redirected → all three dev units rendered into the scratch dir, the real
+`~/.config/systemd/user` **byte-identical by md5 across every unit**, tmux session identities
+unchanged (agents not restarted), prod still active and healthy. Before the fix, that same run
+rewrote three real unit files. Pinned by
+`test_installer_writes_units_only_through_systemd_user_dir` (in `test_arch_invariants_qh9.py`, with
+the other drift guards), which fails on any new literal write to the hardcoded path. **Note this is exactly the class the
 plan already legislates against elsewhere:** `update.sh` grew a hard prod-tree identity check (§17.3)
 precisely because paths that *look* canonical are not, while the installer underneath it still writes
 one hardcoded path regardless of where it is invoked from.

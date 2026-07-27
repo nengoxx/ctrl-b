@@ -101,3 +101,38 @@ def test_core_never_imports_services_at_runtime():
         f"app/core/ imports app/services/ at runtime (layering breach): {violations} — "
         "core is the dependency floor; use TYPE_CHECKING for annotation-only imports"
     )
+
+
+# --- 3. the installer's unit destination stays redirectable ------------------------------------
+
+
+def test_installer_writes_units_only_through_systemd_user_dir():
+    """UPDATE_PLAN §17.4 R1 — found by rehearsing the rollback, not by reading the script.
+
+    `install.sh` accepts `REPO` and `CTRLB_HOME` overrides, which isolate the tree and the data — so
+    running it from a scratch tree LOOKS isolated. It is not: the systemd unit NAME is fixed, and the
+    render used to write straight into `$HOME/.config/systemd/user/<name>`, silently repointing the
+    LIVE unit's WorkingDirectory/CTRLB_HOME/ExecStart at the scratch paths. Nothing fails at the time;
+    the box keeps serving until the next `daemon-reload` or reboot, and then production starts from a
+    directory that may no longer exist.
+
+    So the destination must stay behind ONE overridable variable. Any new literal write to the
+    hardcoded path re-opens it — which is exactly the kind of edit that looks harmless in review.
+    """
+    script = (BACKEND.parent / "deploy" / "linux" / "install.sh").read_text(encoding="utf-8")
+    default_line = 'SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-$HOME/.config/systemd/user}"'
+    assert default_line in script, (
+        "install.sh must resolve its unit destination through SYSTEMD_USER_DIR (with the real path as "
+        "the default) so the recovery path can be rehearsed off-prod — see UPDATE_PLAN §17.4 R1"
+    )
+    offenders = [
+        f"line {n}: {ln.strip()}"
+        for n, ln in enumerate(script.splitlines(), 1)
+        if "$HOME/.config/systemd/user" in ln
+        and ln.strip() != default_line
+        and not ln.lstrip().startswith("#")
+    ]
+    assert not offenders, (
+        "install.sh writes/reads a systemd unit path directly instead of via $SYSTEMD_USER_DIR "
+        f"(UPDATE_PLAN §17.4 R1): {offenders}"
+    )
