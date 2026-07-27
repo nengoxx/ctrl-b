@@ -270,6 +270,17 @@ def _parse(path: Path, *, origin: str) -> tuple[dict[str, Any], str]:
         raw = yaml.safe_load(text)  # strict gate: unknown/`!!python` tags (ruamel round-trips them)
     except (yaml.YAMLError, RuamelYAMLError) as exc:
         raise MigrationRefused(_yaml_message(exc, origin)) from None
+    except ValueError, OverflowError:
+        # NOT a YAML error class — both parsers let a CONSTRUCTOR failure escape as a bare `ValueError`,
+        # and its message quotes the input: `api_key: 2026-01-99` raises *"day 99 must be in range 1..31
+        # for month 1 in year 2026"* (verified, both parsers), and a 4300+ digit integer raises Python's
+        # int-conversion limit error. Uncaught, that traceback is a config value in the journal — and at
+        # the slice-4 boot check it is also an exit 1, i.e. a crash-loop instead of a terminal stop.
+        raise MigrationRefused(
+            f"{origin}: a scalar could not be constructed (an impossible date, a number out of range) "
+            "— text withheld, it would quote your config",
+            remedy="quote the offending value so it stays a string, then re-run",
+        ) from None
     digest = hashlib.sha256(data).hexdigest()
     if raw is None:
         return {}, digest

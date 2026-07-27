@@ -66,6 +66,7 @@ __all__ = [
     "yaml_rt",
     "delete_path",
     "env_override_vars",
+    "loggable",
 ]
 
 # backend/app/config.py -> repo root (where config.yaml / ctrlb.db / skills / agents default)
@@ -1123,7 +1124,7 @@ def _env_path_is_declared(section: str, key: str) -> bool:
     return isinstance(ann, type) and issubclass(ann, BaseModel) and key in ann.model_fields
 
 
-def _loggable(s: str) -> str:
+def loggable(s: str) -> str:
     """Escape operator-supplied text on its way to a log line — **including the path derived from it**.
 
     A variable name is not a secret, but it is untrusted text: `env(1)` and `execve` accept a newline
@@ -1157,7 +1158,7 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
                 "%s targets `%s.%s`, which this build does not define, so it cannot take effect. "
                 "Config overrides are one level deep (CTRLB_<SECTION>__<KEY>) and cannot address "
                 "provider credentials; those live in config.yaml.",
-                *(_loggable(s) for s in (full, section, key)),
+                *(loggable(s) for s in (full, section, key)),
             )
         bucket = raw.get(section)
         if not isinstance(bucket, dict):

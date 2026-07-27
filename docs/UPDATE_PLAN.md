@@ -748,3 +748,26 @@ through the shared reporter · a migrated config boots silently · an absent con
 nothing · **a retired override LOGS and does not exit**, naming the variable but never its value, and
 pointing at `systemctl --user show <unit> -p Environment` where a service-only variable hides · both
 units carry the directive, because the code half is useless without it.
+
+### 14.1 Code review of slice 4 (both reviewers) — two HIGHs, both real
+
+**Fable (systems lens): SHIP WITH CHANGES** — code as built; its finding was the `--reload` overclaim
+above, plus the two slice-5 riders and the slice-6 brief now in §10. **Codex (defect lens): DO NOT
+SHIP**, two HIGHs, **both reproduced before fixing**.
+
+| Sev | Defect | Fix |
+|---|---|---|
+| HIGH | **A YAML *constructor* failure escapes as a bare `ValueError` whose message quotes the input.** `api_key: 2026-01-99` → *"day 99 must be in range 1..31 for month 1 in year 2026"* (verified, **both** parsers); a 4300+ digit integer trips Python's int-conversion limit the same way. `ValueError` is not a YAML error class, so `_parse`'s handler never saw it — the traceback carried a config value into the journal **and** exited 1, i.e. crash-looped. | `_parse` catches `(ValueError, OverflowError)` and refuses with the category only. The remedy tells the operator to quote the value. |
+| HIGH | **Migrating is not loading.** `detect()` reads the marker and asks each step whether it applies; it never validates. A stamped `server: {port: not-a-number}` — or a live `CTRLB_SERVER__PORT=not-a-number` that only the *service's* environment carries — sailed through the preflight and died in the lifespan, which uvicorn renders as **exit 3**. `RestartPreventExitStatus=78` does not cover 3, so the unit crash-looped (measured: exit 3 confirmed). | The preflight now calls **`load_settings()`** after the migration verdict. Not a re-implementation of validation — the real loader, so the check has the effective semantics including the env overlay. `ConfigValidationError` (slice 3) already renders locations without values. |
+| MED | A `MigrationRefused` from `retired_env_overrides()` was raised **outside** the try, so a malformed future `retires` declaration — classified 78, terminal — escaped as exit 1 and would retry forever. | One boundary: everything from `load_dotenv()` to `load_settings()` is inside it. |
+| MED | The boundary started too late in another way: the migration package is imported at module scope, and `CONFIG_VERSION` is read **from a file** at import, so a corrupt `VERSION` is a raw traceback and exit 1 before any handler exists. Bootstrap variables raise types nobody anticipated (`CTRLB_HOME=~nosuchuser` → `RuntimeError`). | The package import moved **inside** the function with its own "this build is damaged" message, and the boundary gained a catch-all that names the exception **type** only and exits 78 — the same structural answer as the runner's `_call_step` (§12), applied one layer up. |
+| MED | **The import-wiring test was theatre**: a source-substring assertion passes with the call under `if False:`. | Asserted over the **AST** (a top-level call, before the top-level `app` binding) **plus** a subprocess test that genuinely `import app.main` against a legacy config and asserts process exit 78 and sanitised stderr. |
+| LOW | `status.config_path`, `OSError.filename` and `sys.executable` reach stderr unescaped — a path can carry a newline and forge a journal line. | Routed through `config.loggable()`, promoted to public for its second consumer. |
+
+**Found while fixing, worth keeping:** the first version of the step-bug test patched `cm.STEPS` — which
+does nothing, because `retired_env_overrides(steps=STEPS)` binds `STEPS` as a **default argument** at
+import. The test passed while exercising nothing. It now injects at the call and pins the *boundary*,
+which is the actual property.
+
+**Re-verified after the wave:** copies of both live configs — prod (still legacy) refuses with 78 and
+names the command; dev (migrated) reaches "Application startup complete". Backend **1038**, gate 6/6.

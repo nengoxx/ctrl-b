@@ -28,7 +28,6 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app import config_migration as cm
 from app.adapters.inference import EndpointGates
 from app.adapters.mcp_client import McpClient
 from app.adapters.openapi_tools import OpenApiToolProvider
@@ -53,7 +52,7 @@ from app.api import (
 from app.api import (
     voice as voice_api,
 )
-from app.config import load_dotenv, load_settings
+from app.config import ConfigValidationError, load_dotenv, load_settings, loggable
 from app.core.events import EventBus
 from app.db import Database
 from app.runtime import (
@@ -317,8 +316,13 @@ def _preflight_config() -> None:
     becomes **3**. The unit pairs this with `RestartPreventExitStatus=78`, so an unmigratable config
     stops the service with one actionable message instead of crash-looping at `RestartSec=5` forever
     (measured 2026-07-27: 5 restarts in 8s without the directive, `NRestarts=0` with it — and a
-    `--reload` worker propagates 78 through uvicorn's reloader parent too, which the plan had flagged
-    as unverified).
+    `--reload` worker propagates 78 at START-UP too — though a MID-SESSION reload re-import does not
+    reach systemd at all; see §14).
+
+    It checks two different things, and the second is not implied by the first: that no migration step
+    applies (the shape), and that `load_settings()` actually succeeds (the values, env overlay
+    included). A stamped config with an invalid value would otherwise die in the lifespan as exit 3,
+    which `RestartPreventExitStatus=78` does not cover.
 
     **Why it must run FIRST**, before `load_settings`: since slice 2 nothing in the load path knows the
     legacy shape, and sections are `extra="allow"` — so a legacy config validates *silently* into zero
@@ -333,30 +337,69 @@ def _preflight_config() -> None:
     the kind of environment variable that silently does something, which is what slice 3 spent itself
     removing; the remedy is always the one command the message prints.
     """
-    load_dotenv()  # `.env` → os.environ first: CTRLB_CONFIG/CTRLB_HOME steer everything below
     try:
-        status = cm.detect(cm.context_from_env())  # the cheap read-only verdict — no writes, no probe
-    except cm.MigrationRefused as exc:
-        sys.exit(cm.report_refusal(exc))  # downgrade, unparseable, symlink, anchors, broken agent.yaml
-    except OSError as exc:  # unreadable dir, vanished mount — environmental, a retry may clear it
-        print(f"config preflight: {exc.strerror or type(exc).__name__}: {exc.filename}", file=sys.stderr)
-        sys.exit(cm.EXIT_FAIL)
-    for var, path in cm.retired_env_overrides():
-        logger.error(
-            "%s targets `%s`, a config path this build retired — it supplies NOTHING. If it carried a "
-            "credential, that role is running without it; move the value into config.yaml and unset the "
-            "variable. (Set in the service's own environment? `systemctl --user show <unit> -p Environment`.)",
-            var,
-            path,
-        )
-    if status.needs_migration:
+        # Imported HERE, not at module scope, so a damaged install is a message rather than a traceback:
+        # `CONFIG_VERSION` is read from a file at import, so a corrupt `VERSION` raises `ValueError`
+        # before any handler exists — exit 1, i.e. the crash-loop this whole slice exists to prevent.
+        from app import config_migration as cm
+    except Exception as exc:  # noqa: BLE001 — a broken package import is a broken deployment
         print(
-            f"config migration required: {status.config_path}\n"
-            f"  legacy key(s): {', '.join(status.legacy_keys) or 'in an agent file'}\n"
-            f"  → {sys.executable} -m app.config_migration --apply",
+            f"config preflight: the migration package failed to import ({type(exc).__name__}) — this "
+            "build is damaged; re-run install.sh or roll back to the previous tag",
             file=sys.stderr,
         )
-        sys.exit(cm.EXIT_REFUSE)
+        raise SystemExit(78) from None
+
+    try:
+        load_dotenv()  # `.env` → os.environ first: CTRLB_CONFIG/CTRLB_HOME steer everything below
+        status = cm.detect(cm.context_from_env())  # the cheap read-only verdict — no writes, no probe
+        for var, path in cm.retired_env_overrides():
+            logger.error(
+                "%s targets `%s`, a config path this build retired — it supplies NOTHING. If it carried "
+                "a credential, that role is running without it; move the value into config.yaml and "
+                "unset the variable. (Set in the service's own environment? `systemctl --user show "
+                "<unit> -p Environment`.)",
+                loggable(var),
+                path,
+            )
+        if status.needs_migration:
+            print(
+                f"config migration required: {loggable(str(status.config_path))}\n"
+                f"  legacy key(s): {', '.join(status.legacy_keys) or 'in an agent file'}\n"
+                f"  → {loggable(sys.executable)} -m app.config_migration --apply",
+                file=sys.stderr,
+            )
+            raise SystemExit(cm.EXIT_REFUSE)
+        # Proving it MIGRATES is not proving it LOADS. `detect()` reads the marker and asks each step
+        # whether it applies; it never validates. A stamped config with `port: not-a-number` — or a live
+        # `CTRLB_SERVER__PORT=not-a-number`, which only the service's own environment has — sails past
+        # it and dies in the lifespan instead, where uvicorn turns the failure into **exit 3**: not
+        # covered by `RestartPreventExitStatus=78`, so the unit crash-loops (measured). Loading through
+        # the real `load_settings` is the only check with the effective semantics, env overlay included.
+        load_settings()
+    except SystemExit:
+        raise
+    except cm.MigrationRefused as exc:  # downgrade · unparseable · symlink · anchors · broken agent.yaml
+        raise SystemExit(cm.report_refusal(exc)) from None
+    except ConfigValidationError as exc:  # already sanitised: locations, never values
+        print(f"config preflight: {exc}", file=sys.stderr)
+        raise SystemExit(cm.EXIT_REFUSE) from None
+    except OSError as exc:  # a vanished mount, a revoked permission — a retry may clear it
+        print(
+            f"config preflight: {exc.strerror or type(exc).__name__}: {loggable(str(exc.filename))}",
+            file=sys.stderr,
+        )
+        raise SystemExit(cm.EXIT_FAIL) from None
+    except Exception as exc:  # noqa: BLE001 — same structural answer as the runner's `_call_step`
+        # A bootstrap variable can raise things no handler above anticipates (`CTRLB_HOME=~nosuchuser`
+        # → `RuntimeError`). Naming only the TYPE keeps a message that quotes config out of the journal,
+        # and 78 is right because no restart repairs an environment variable.
+        print(
+            f"config preflight: {type(exc).__name__} while resolving the config location — details "
+            "withheld, they may quote your environment. Check CTRLB_HOME / CTRLB_CONFIG / CTRLB_ENV.",
+            file=sys.stderr,
+        )
+        raise SystemExit(cm.EXIT_REFUSE) from None
 
 
 def create_app() -> FastAPI:
