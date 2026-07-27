@@ -52,7 +52,7 @@ if ($Dev) {
 & $VPY -m uvicorn app.main:app --host 127.0.0.1 --port 5433
 # PROPAGATE the exit code (UPDATE_PLAN slice 6). Without this the script always returns 0, so
 # `start.cmd`'s `if errorlevel 1 pause` never fires — and the app's import-time config refusal (exit 78,
-# §14) would print its fix instruction into a console window that then vanishes. There is no
+# §14) would print its fix instruction into a console window that then vanishes.
 # There is no restart-prevention analogue available: the autostart Scheduled Task
 # (autostart-enable.ps1) DOES restart this, with -RestartCount 3, and Task Scheduler's policy cannot be
 # told to stop on a particular exit code. In the CONSOLE path these two lines are the whole parity
