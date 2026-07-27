@@ -1004,3 +1004,48 @@ real CLI.
 **NOT verified:** `update.sh` has never been run to completion — doing so is a production release.
 Its refusal paths were exercised (wrong tree, missing argument) and its two parsers were run against the
 real tags and configs, but the success path is exercised for the first time by the slice-8 release.
+
+### 17.1 Pre-release audit of slice 7 (Fable) — the recovery text was the defect
+
+**SHIP WITH CHANGES**, and the first finding is the sharpest of the plan so far: **`update.sh`'s own
+failure message produced the wrong action.**
+
+| Sev | Finding | Fix |
+|---|---|---|
+| MED-HIGH | The failure path printed **"go back: `checkout && install.sh prod`" first**, and the ⚠ "your config was migrated, restore it first" block *after*. A cold operator executes top to bottom — so they run the tag revert alone, and the OLD `install.sh` (no preflight, no health gate) reports success over a config it cannot read: **booting "healthy" with zero providers.** The exact silent failure this whole plan exists to kill, delivered by our own recovery text. | When a backup was created, **one numbered four-step sequence** — stop → `cp -p <exact file>` → checkout → install — and the bare go-back line is **not printed at all**. It appears only when no migration happened, where it is sufficient and says so. |
+| MED | The CI gate treated **"no run found" as "cannot check, proceed"**. With `gh` working, that almost always means the tag was pushed seconds ago and Actions has not registered the release gate yet — i.e. **pending**, which §Release explicitly forbids re-pinning on, and which is precisely the owner's tag-then-update flow. | "No run found" now **refuses**, printing the `gh run watch` line to wait with. Warn-and-proceed is reserved for `gh` being **absent**, which is what the original argument actually covered. |
+
+**Checked, and NOT a defect** (Codex had also asked): the `new_backup` detection uses
+`grep -vxF "$backups_before"`, and I suspected an empty "before" list would invert to match everything
+and silently report *no* migration — the very state the fix above exists to warn about. Tested: `-x`
+anchors the match to the whole line, so an empty pattern matches only empty lines and real filenames
+survive; a multi-line "before" is handled correctly too, since `-F` treats each line as its own pattern.
+Correct as written.
+
+**Ruled sound:** the layering (`update.sh` adds only what `install.sh` cannot know and reimplements
+none of it), the `main()` self-checkout wrapper, the lock-path hand-off, and — explicitly — the
+downgrade precheck's raw `sed` parse of `config_version`, which is *justified* duplication because at
+that moment the tree is still the old tag and may not contain the runner at all.
+
+### 17.2 Preconditions for slice 8, in order (Fable)
+
+0. **A manual belt, outside the tooling** — `cp -p ~/.ctrl-b/config.yaml ~/.ctrl-b/backups/config.yaml.manual-prerelease`
+   plus a manual DB snapshot, so recovery does not depend on the tooling's own backups working on their
+   **first ever run**.
+1. **Close the §15 gap:** `bash deploy/linux/install.sh dev` from a **plain SSH shell** (not an agent
+   session). Expect a no-op migration on the already-stamped dev config, no unit churn, and unchanged
+   agent PIDs. This exercises the lock, the preflight, the apply path, render + `daemon-reload` and the
+   env scan — most of the shared spine — leaving only the prod-only cutover block unexercised.
+2. The two fixes above, plus confirming the slice-6 §16 corrections landed.
+3. **The three D48 Slice-2 owner ratifications** — decisions, so they precede code freeze.
+4. The A11 pre-release fix list, explicitly including the `_is_unchanged_secret` guard.
+5. The D48 amendment + doc sync.
+6. Full gate **plus §10's real-config rehearsal bar one final time on the release sha**.
+7. Tag → CI release gate green → `update.sh vX.Y.0`, which is prod's first run of the chain.
+
+**The highest-risk step, named:** not the migration (rehearsed many times on copies of both real
+configs) but the **first end-to-end execution of `install.sh prod`'s cutover block** — snapshot →
+verified stop → apply → swap → start under `set -euo pipefail` — happening on production, during the
+release, through a failure-messaging path that has never run. `update.sh`'s hard `~/apps/ctrl-b`
+identity check makes its success path structurally unrehearsable off-prod; accepted, but it concentrates
+first-run risk, which is what step 0 exists to cover.

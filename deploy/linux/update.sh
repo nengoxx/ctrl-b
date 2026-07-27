@@ -58,7 +58,16 @@ main() {
       --jq "[.[]|select(.headBranch==\"$tag\")][0] | (.conclusion // .status)" 2>/dev/null || true)"
     case "$concl" in
       success) echo "-- CI release gate: green" ;;
-      "" | null) echo "   ! no CI run found for $tag — cannot verify the release gate; proceeding" ;;
+      "" | null)
+         # NOT "cannot check, proceed": with `gh` working, no run for a tag almost always means the tag
+         # was pushed seconds ago and Actions has not registered the release gate yet — and the release
+         # procedure forbids re-pinning on red OR PENDING. Warn-and-proceed stays for `gh` ABSENT only.
+         echo "✗ no CI run found for $tag. If you have just pushed the tag, the release gate has not"
+         echo "  started yet — wait for it:"
+         echo "      gh run watch \$(gh run list --limit 5 --json databaseId,headBranch \\"
+         echo "        --jq '[.[]|select(.headBranch==\"$tag\")][0].databaseId') --exit-status"
+         echo "  Then re-run this command. (--force skips this check.)"
+         [ "$force" = --force ] || exit 1 ;;
       *) if [ "$force" = --force ]; then
            echo "   ! CI for $tag is '$concl' — proceeding because --force was given"
          else
@@ -114,14 +123,22 @@ main() {
     local new_backup
     new_backup="$(ls -1 "$ctrlb_home/backups/"config.yaml.* 2>/dev/null | grep -vxF "$backups_before" | tail -1 || true)"
     echo ""
-    echo "go back:"
-    echo "    cd $repo && git checkout $from && bash deploy/linux/install.sh prod"
     if [ -n "$new_backup" ]; then
-      echo ""
-      echo "⚠ YOUR CONFIG WAS MIGRATED during this run, so the tag revert alone is NOT enough — $from"
-      echo "  cannot read the new shape. Restore it first, with the service stopped:"
-      echo "    systemctl --user stop ctrl-b-dashboard"
-      echo "    cp -p $new_backup $ctrlb_home/config.yaml"
+      # ONE sequence, restore first, and deliberately NO bare go-back line above it. Printing the tag
+      # revert first invites exactly the wrong action: a cold operator runs it top-to-bottom, and the
+      # OLD install.sh — no preflight, no health gate — reports success over a config it cannot read,
+      # booting "healthy" with zero providers. That is the silent failure this plan exists to kill, and
+      # our own recovery text would have delivered it (Fable).
+      echo "⚠ YOUR CONFIG WAS MIGRATED during this run, so a tag revert ALONE would leave $from reading"
+      echo "  a shape it does not understand — it would start and report healthy with NO providers."
+      echo "  Go back in this order, all four steps:"
+      echo "    1. systemctl --user stop ctrl-b-dashboard"
+      echo "    2. cp -p $new_backup $ctrlb_home/config.yaml"
+      echo "    3. cd $repo && git checkout $from"
+      echo "    4. bash deploy/linux/install.sh prod"
+    else
+      echo "go back (the config was NOT migrated during this run, so the tag revert is sufficient):"
+      echo "    cd $repo && git checkout $from && bash deploy/linux/install.sh prod"
     fi
     echo ""
     echo "No automatic revert was attempted: rolling back is a decision, and doing it silently would"
