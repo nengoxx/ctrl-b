@@ -3213,7 +3213,11 @@ corrected in the map below).
 > (inference refolded, behavior-identical) + frozen `SttPolicy`/`TtsPolicy`/`EmbeddingsPolicy`; one
 > registry generation per apply, rebuild-together + publish-then-drain (refcount `retire()` on
 > Voice/Embeddings clients); shared FE `SectionRefEditor` (Inference refolded DOM-identically).
-> **Three orchestrator interpretations pending owner ratification:** ① providers referenced ONLY by
+> **✅ ALL THREE RATIFIED BY THE OWNER 2026-07-27** ("all good"), which clears the release precondition
+> D48 set for itself on 2026-07-23. ③ was ratified **conditionally on the bounded-wait fix** — the A11
+> pre-release list's MED, where a capped provider serving chat + STT can park a mic transcription behind
+> a long stream and failover cannot advance because the wait happens *inside* the attempt; ratifying the
+> principle without bounding it would have locked in that edge. The three, as ratified: ① providers referenced ONLY by
 > voice/embeddings sections are EXCLUDED from advertised composer verbs (the no-capability-tags
 > principle — the referencing section determines usage — read as overriding C7's sole-model-advertising
 > letter; typed routability unchanged) · ② `X-Voice-Served-By` now carries the SERVED PROVIDER NAME

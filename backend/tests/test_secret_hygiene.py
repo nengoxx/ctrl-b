@@ -27,6 +27,7 @@ from app.config import (
     _SECRET_MAP_KEYS,
     SECRET_HINTS,
     Settings,
+    _mask,
     mask_secrets,
     secret_values,
     unmask_secrets,
@@ -241,3 +242,39 @@ def test_decide_outcomes_for_the_gate() -> None:
 
     ping = reg.get("ping_host").spec
     assert decide(ping, Privilege.READONLY) is Decision.ALLOW  # LOW-risk always allowed
+
+
+def test_a_mask_with_nothing_to_restore_is_dropped_not_written() -> None:
+    """A11 pre-release MUST-FIX. `_is_unchanged_secret` ends `and bool(stored)`, so a display mask with
+    NO stored counterpart failed the "unchanged" test and was taken as a genuinely new value — writing
+    the literal `sk…yz` to disk AS THE CREDENTIAL. Not a leak: silent auth breakage that presents as a
+    provider outage. Reachable by delete-then-recreate, by a rename submitted without
+    `provider_renames`, and by any hand-built PUT.
+
+    The fix drops the key instead, which is also what the field does (R6: AnythingLLM filters
+    `!newENVs[key].includes("******")`) — a mask means "unchanged", and when there is nothing to keep
+    unchanged the honest result is no value, not a bogus one.
+    """
+    incoming = {"providers": {"recreated": {"base_url": "http://x/v1", "api_key": "sk…yz"}}}
+    out = unmask_secrets(incoming, {"providers": {}})  # nothing stored under that name
+    assert "api_key" not in out["providers"]["recreated"]
+
+    # …while the two neighbouring behaviours are unchanged:
+    assert unmask_secrets({"api_key": _mask("sk-REAL-KEY")}, {"api_key": "sk-REAL-KEY"}) == {
+        "api_key": "sk-REAL-KEY"
+    }
+    assert unmask_secrets({"api_key": "sk-BRAND-NEW"}, {"api_key": "sk-REAL-KEY"}) == {
+        "api_key": "sk-BRAND-NEW"
+    }
+
+
+def test_the_same_rule_holds_inside_a_credential_map() -> None:
+    """`env`/`headers` carry user-keyed credentials through the identical predicate, so they had the
+    identical hazard: a masked `Authorization` for a server that has no stored one was persisted as the
+    mask."""
+    out = unmask_secrets(
+        {"headers": {"Authorization": "Be…er", "Content-Type": "application/json"}},
+        {"headers": {}},
+    )
+    assert "Authorization" not in out["headers"]
+    assert out["headers"]["Content-Type"] == "application/json"  # non-secret entries are untouched

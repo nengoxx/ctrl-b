@@ -61,6 +61,7 @@ __all__ = [
     "host_slug",
     "is_provider_slug",
     "is_secret_sentinel_name",
+    "looks_masked",
     "providers_rev",
     "CONFIG_VERSION_KEY",
     "yaml_rt",
@@ -1664,6 +1665,22 @@ def _is_unchanged_secret(incoming: Any, stored: Any) -> bool:
     ) and bool(stored)
 
 
+def looks_masked(value: Any) -> bool:
+    """True if `value` has the SHAPE of a display mask, judged without reference to any stored secret.
+
+    `_is_unchanged_secret` can only recognise a mask by rebuilding it from `stored`, so when there is
+    **no** stored counterpart it returns False and the write path takes the incoming value "as new" —
+    writing the literal `sk…yz` to disk **as the credential**. That happens on delete-then-recreate, on
+    a rename submitted without `provider_renames`, and on any hand-built PUT: not a leak, but silent
+    auth breakage that presents as a provider outage (A11 pre-release audit, MUST-FIX).
+
+    The two forms `_mask` can emit are `••••` (≤4 chars) and `ab…yz`. A real credential containing `…`
+    is not representable through the masked round-trip in any case — that is inherent to masking, not
+    introduced here.
+    """
+    return isinstance(value, str) and (value == "••••" or bool(re.fullmatch(r".{2}….{2}", value)))
+
+
 def mask_secrets(data: Any) -> Any:
     """Recursively mask secret values for a settings response/log line. A DECLARED secret leaf
     (`_SECRET_LEAF_KEYS`) is masked; an arbitrary credential map (`_SECRET_MAP_KEYS`) has only its
@@ -1733,16 +1750,24 @@ def unmask_secrets(incoming: Any, stored: Any) -> Any:
             # dict/list (a provider named `api_key`) recurses so its nested secrets round-trip. The
             # map branch fires only on a genuine flat credential map.
             if k in _SECRET_LEAF_KEYS and not isinstance(v, (dict, list)):
-                out[k] = (
-                    sv if _is_unchanged_secret(v, sv) else v
-                )  # keep stored on masked/blank, else take new
+                if _is_unchanged_secret(v, sv):
+                    out[k] = sv  # masked/blank + a real stored value → keep what is on disk
+                elif looks_masked(v):
+                    continue  # a mask with NOTHING to restore: drop the key rather than write `sk…yz`
+                else:
+                    out[k] = v  # a genuinely new value
             elif k in _SECRET_MAP_KEYS and _is_flat_scalar_map(v):
                 sm = sv if isinstance(sv, dict) else {}
                 out[k] = {
-                    mk: (
-                        sm.get(mk) if _map_key_is_secret(mk) and _is_unchanged_secret(mv, sm.get(mk)) else mv
-                    )
+                    mk: (sm.get(mk) if _is_unchanged_secret(mv, sm.get(mk)) else mv)
                     for mk, mv in v.items()
+                    # Same rule inside a credential map, and the same drop: a masked entry with nothing
+                    # stored is omitted rather than persisted as the literal mask.
+                    if not (
+                        _map_key_is_secret(mk)
+                        and looks_masked(mv)
+                        and not _is_unchanged_secret(mv, sm.get(mk))
+                    )
                 }
             else:
                 out[k] = unmask_secrets(v, sv)
