@@ -7,19 +7,27 @@
 > **overturned its own spec** — the `CTRLB_PROVIDERS__…` overlay was ruled against and the env-secret
 > promise RETRACTED, on [R6](./research/R6-env-overrides-and-secret-provenance.md) evidence) · the
 > import-time boot refusal (**§14**, measured under systemd) · `install.sh` (**§15**) · Windows parity
-> (**§16**) · `update.sh` + the runbook rewrite (**§17**). Gate **6/6**, backend **1039**, tree clean,
-> **25 commits UNPUSHED**.
-> **▶ NEXT = SLICE 8, THE RELEASE**, and its preconditions are §17.2 — **0 and 1 are DONE**
-> (manual belt-and-braces backups outside the tooling; `install.sh dev` run end-to-end, closing the §15
-> gap), **the owner ratified all three D48 Slice-2 interpretations 2026-07-27**, and the A11 pre-release
-> MUST-FIX is fixed. **What remains: the rest of the A11 fix list** (the bounded voice/embeddings gate
-> wait that ratification ③ is conditional on · `providers_rev` hashing raw secrets · the strict-resolve
-> doc drift · the named test gaps), the D48 amendment, a final gate + real-config rehearsal on the
-> release sha, then tag → CI → `update.sh`. §10 is the slice list, §8 the owner rulings, §9 the council
-> record. Then the **A11 PRE-RELEASE FIX LIST** in the 2026-07-26 session
-> block (the parked deep audit is DONE — one MUST-FIX: a masked secret can be persisted as the real API
-> key). Release A11 via D48 §rollout only after both, and only once the owner ratifies the three pending
-> D48 Slice-2 calls (a precondition D48 sets for itself, open since 2026-07-23).**
+> (**§16**) · `update.sh` + the runbook rewrite (**§17**). Gate **7/7 incl. e2e**, backend **1042**, tree
+> clean, **28 commits UNPUSHED**.
+> **▶ SLICE 8 IS THE RELEASE, AND EVERY PRECONDITION IS NOW CLOSED (§17.2 steps 0–6, 2026-07-27).**
+> 0+1 manual belt-and-braces backups + `install.sh dev` end-to-end · 2 the two §17.1 `update.sh` fixes +
+> all four slice-6 §16 corrections verified in the tree · 3 **the owner ratified all three D48 Slice-2
+> interpretations** · 4 **the A11 pre-release fix list is BUILT** (`8841386` the MUST-FIX: a mask with
+> nothing to restore is dropped, not written as the credential · `4a056aa` the MED bounded gate wait
+> [ratification ③'s condition], the LOW masked `providers_rev`, and the test gaps) · 5 **the D48
+> amendment + doc sync** (`73a7637`) · 6 **full gate 7/7 on the release sha + the §10 real-config
+> rehearsal on THREE inputs** (prod-legacy, the dev legacy backup, the already-migrated dev config):
+> clean check/apply, idempotent re-apply, 0600, marker 1, four roles resolve, secrets set-equal, and the
+> **only** comment loss is the three documented inline ones on consumed keys.
+> **▶ WHAT REMAINS IS STEP 7 ONLY — the release itself, and it needs the owner: push, pick the version,
+> tag, wait for the CI release gate, then `update.sh`.** ⚠ The first release MUST use the **bootstrap
+> form** — `update.sh` ships *in* this release and does not exist on v1.2.1:
+> `git -C ~/apps/ctrl-b show <tag>:deploy/linux/update.sh | bash -s -- <tag>` (README §Release). Two
+> things the release still OWES prod after the cutover: prod's config migrates to **host-port slug**
+> provider names (`127.0.0.1-9000`, `192.168.1.137-9000`, `192.168.1.137-7851`), so re-apply the same
+> three renames dev got (`emma-speaches` / `vault-speaches` / `vault-alltalk`), and re-add by hand the
+> three inline comments the fold drops if they are wanted. §10 is the slice list, §8 the owner rulings,
+> §9 the council record.
 > **Agent discipline now lives in [`.claude/skills/second-opinion/SKILL.md`](../.claude/skills/second-opinion/SKILL.md)** —
 > read before spawning Codex or subagents.
 > **▲ WORKFLOW (owner, 2026-07-24): the main model is now Opus 5 on HIGH** (subagents Opus 5 high ·
@@ -402,6 +410,42 @@
 > secret-bearing file replaced that way silently loses 0600; write through an fd opened `0o600` (the
 > `.bak-a11` idiom). The bug predated A11 and had already degraded dev+prod configs to 0664.
 >
+> **▶▶ SESSION 2026-07-27 (PM) — EVERY SLICE-8 PRECONDITION CLOSED; only the release itself is left.**
+> 3 commits (`8841386` the MUST-FIX, from the session start · `4a056aa` the rest of the fix list ·
+> `73a7637` the D48 amendment + doc sync). Gate **7/7 including e2e** on the release sha; backend
+> **1042** (was 1039). Tree clean, **28 commits unpushed**, prod untouched.
+>
+> **The two code fixes, and why each one is shaped the way it is:**
+> - **The bounded gate wait (the MED; ratification ③ was conditional on it).** The acquire sits *inside*
+>   the failover attempt, so an unbounded one **cannot fail over** — nothing has failed yet. A provider
+>   serving chat + STT at cap 1 parks a mic clip behind a ten-minute stream with a healthy fallback idle.
+>   Shipped as ONE seam, not three copies of a wait: `EndpointGates.hold(target, wait_s=…)` — no-op on an
+>   unlimited target, releases on any exit, and on timeout raises **`GateWaitTimeout`**, a *message-bearing*
+>   `TimeoutError` (`str(TimeoutError())` is empty and `failover()` renders a hop as `f"{label}: {exc}"`,
+>   so a bare one would have logged `speaches: `). `wait_for` cancels the pending acquire, so a timed-out
+>   waiter consumes no permit — asserted. **Budgets are the existing transport ones, no new config:** voice
+>   waits `connect_timeout_s` (a saturated server is a hop we cannot reach in time), embeddings waits
+>   `timeout_s` (its section has no connect budget — waiting longer than one whole request for a *slot*
+>   means the hop is saturated). **Chat keeps the unbounded wait deliberately.** Zero behaviour change on
+>   today's config: speaches is uncapped.
+> - **`providers_rev` hashes the MASKED subtree** (the LOW). The digest is published *beside* the masks,
+>   so a raw-secret digest made the pair an offline verification oracle. The only sensitivity lost is a
+>   rotation to a same-mask value, which is safe *because* a stale draft echoing the mask restores whatever
+>   is currently stored — it cannot clobber the rotation it missed.
+>
+> **Recorded honestly, twice:** the audit named **5** test gaps but only **2** survive by name in this
+> file, so the other three are a **reconstruction** (the untested A11 paths), not a recovery. And my own
+> rehearsal script's comment check was **blind to inline comments** — it reported zero loss; a `grep -o
+> '#.*'` diff against each source is what actually proved the loss is exactly the three documented inline
+> comments on consumed keys. Same lesson as the earlier regex-vs-YAML secret comparison: **the cheap
+> checker agreed with me, and it was the checker that was wrong.**
+>
+> **Doc drift closed:** interpretation ① was recorded with the Slice-1 strict trigger set; Slice 2
+> correctly extended it to `voice` + `embeddings`. Consequence worth knowing before the first voice edit
+> on prod: **a dangling voice fallback now 422s any voice save.** Two release-note items from the fix list
+> stand (they are notes, not code): the migration no longer fires unattended, and an `agent.yaml` `mode:`
+> pinned to `cloud` is rewritten once by the slice-2 fold.
+>
 > **▶▶ SESSION 2026-07-26/27 — UPDATE_PLAN SLICES 3–7 BUILT AND REVIEWED; the release is next.**
 > 25 commits, gate 6/6 throughout, backend 897 → **1039**, tree clean, **NOTHING PUSHED**. Every slice
 > went design → build → **both reviewers** (Codex `gpt-5.6-sol` high on defects, Fable 5 high on
@@ -446,7 +490,8 @@
 > "healthy" with zero providers), and **§Rollback in the runbook had the same defect** — code first, then
 > "config must precede it" — in the file that had just been rewritten to fix exactly that.
 >
-> **▷ LIVE MACHINE STATE.** Tree clean, `main` is **25 commits ahead of origin — NOTHING PUSHED**. Gate
+> **▷ LIVE MACHINE STATE.** *(▲ superseded by the 2026-07-27 PM block above: 28 commits ahead, gate 7/7,
+> backend 1042.)* Tree clean, `main` is **25 commits ahead of origin — NOTHING PUSHED**. Gate
 > `check.py` 6/6 on the tip; backend 1039. **PROD is UNCHANGED: v1.2.1, still LEGACY-SHAPE, config still
 > 0664** (the migration heals it to 0600 at the cutover, as it did for dev). Dev units STOPPED; the two
 > agent units untouched (verified by tmux session identity across the `install.sh dev` run). **Manual
