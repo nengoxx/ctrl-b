@@ -10,6 +10,16 @@ $ROOT = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path   # the app root (
 $VENV = Join-Path $ROOT "backend\.venv"
 $VPY  = Join-Path $VENV "Scripts\python.exe"
 
+# MUTUAL EXCLUSION — the Windows counterpart of install.sh's flock, which this path had none of: two
+# double-clicks of setup.cmd could both pass `--check` and the port guard and then both enter `--apply`,
+# and the runner's digest check narrows that race without closing it (it says so itself; external
+# locking is the real mechanism). A named mutex leaves no file behind, and Windows releases it when the
+# process dies — an abandoned one is handed to the next waiter, which is an acquisition, not a failure.
+$mutexName = "Local\ctrl-b-setup-" + ((Join-Path $PSScriptRoot "..\..") -replace '[\\:/ ]', '_')
+$setupMutex = New-Object System.Threading.Mutex($false, $mutexName)
+try { $held = $setupMutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $held = $true }
+if (-not $held) { throw "another setup is already running for this checkout - wait for it to finish, then re-run." }
+
 Write-Host "== ctrl-b dashboard (v2) - Windows setup ==" -ForegroundColor Cyan
 Write-Host "app root: $ROOT"
 

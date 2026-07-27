@@ -926,20 +926,25 @@ Three edits, exactly the brief the slice-4 review settled.
 `RestartPreventExitStatus` analogue is needed: nothing on Windows restarts it." **That is false** —
 `deploy/windows/autostart-enable.ps1` registers a Scheduled Task at logon with `-RestartCount 3
 -RestartInterval (New-TimeSpan -Minutes 1)` and `-WindowStyle Hidden`. So Windows *does* have a
-restarter, and the autostart path is the **worst** case for this slice: with no console, the pause and
-the exit-code propagation do nothing, the task re-runs a guaranteed exit-78 three times, and then the
-operator simply finds the dashboard absent — the silent failure this whole plan exists to kill.
+restarter, and the autostart path is the **worst** case for this slice: with no console the **pause**
+has nothing to hold open, Task Scheduler will *attempt* up to three restarts of a guaranteed exit-78,
+and the operator simply finds the dashboard absent — the silent failure this whole plan exists to kill.
+*(Precisely, per Codex: the exit-code propagation is not useless there — it is what marks the run failed,
+activating `RestartOnFailure` and recording the task result. Only the pause is inert. And `RestartCount
+3` specifies three **attempts**, not three observed retries.)*
 
-No analogue can be built: Task Scheduler's restart policy is unconditional on failure and cannot be
-told to stop on a particular exit code. The honest ceiling is therefore **documentation**, and
+**Task Scheduler exposes no native `RestartPreventExitStatus` equivalent** — its restart policy is
+unconditional on failure. A wrapper could special-case 78 and write an event, but that is new
+unverifiable machinery on a path nobody runs; the honest ceiling here is **documentation**, and
 `deploy/windows/README.md` now carries the recovery line ("if the dashboard vanishes after an update,
 run `start.cmd` manually — the console will show the fix"). The console path keeps the full benefit of
 the two exit-code edits.
 
 | File | Change | Why |
 |---|---|---|
-| `start.ps1` | `exit $LASTEXITCODE` after uvicorn | The script previously always returned **0**. So `start.cmd`'s existing `if errorlevel 1 pause` **never fired**, and the app's import-time config refusal (exit 78, §14) would print its fix instruction into a console window that then vanished. This one line is the entire parity requirement for the boot refusal. |
-| `start.cmd` | capture `RC` **before** the pause, then `exit /b %RC%` | `pause` succeeds, so it overwrites `ERRORLEVEL` with 0 — capturing afterwards would have propagated "fine" out of every failure. The pause still holds the window open to read the message. |
+| `start.ps1` | `exit $LASTEXITCODE` after uvicorn | A **normally completed** script discarded uvicorn's native exit code and returned 0, so `start.cmd`'s existing `if errorlevel 1 pause` never fired for the case that matters — the app's import-time config refusal (exit 78, §14) printed its fix instruction into a console window that then vanished. *(Corrected from "previously always returned 0": the port guard's own `exit 1`, and any unhandled `throw` under `-File`, already returned 1 — Codex.)* |
+| `start.cmd` | `setlocal` + clear `ERRORLEVEL`, capture `RC`, `endlocal & exit /b %RC%` | Two distinct hazards. **Shadowing:** cmd resolves a *real environment variable* named `ERRORLEVEL` in preference to its own internal one, so a caller exporting `ERRORLEVEL=0` would make every failure read as success (documented behaviour — Codex). **Ordering:** later commands are not required to preserve the error level, so it is captured immediately. *(The earlier claim that `pause` specifically overwrites it with 0 is not documented by Microsoft and has been withdrawn.)* |
+| `setup.ps1` | a named **mutex** around the whole setup | Windows had **no mutual exclusion at all** where Linux has `flock`: two double-clicks of `setup.cmd` could both pass `--check` and the port guard and then both enter `--apply`, and the runner's digest check narrows that race without closing it. A mutex leaves no file behind, and Windows releases it on process death — an abandoned one is handed to the next waiter, which is an acquisition rather than a failure. |
 | `setup.ps1` | `--check` → port guard → `--apply`, **before the frontend build** | The Windows half of §4. Placed before the build for the same reason as `install.sh` step 2.6 (the slice-5 ordering lesson): the build is the slowest thing there. `$ErrorActionPreference = "Stop"` does **not** trip on a native non-zero exit in PowerShell 5.1, so every code is checked explicitly. |
 
 **The port guard is the Windows dev guard.** With no service manager, "is it running?" is "is :5433
@@ -947,6 +952,12 @@ held?" — probed with the same `Get-NetTCPConnection` idiom `start.ps1` already
 mechanism. It closes the same hole as `install.sh`'s dev refusal: migrating under a live instance lets
 that process write its **old in-memory settings** back afterwards, resurrecting legacy keys into a
 stamped config.
+
+**One cross-platform truth the review surfaced:** `0o600` is a **POSIX** guarantee. On Windows the mode
+argument to `os.open` is largely a no-op and the config and its backups inherit NTFS ACLs instead — so
+every "lands at 0600" comment in the migration package should be read as POSIX-only. The primitives
+themselves are fine there (`os.replace`, `os.lstat` on reparse points, `os.fsync` → `_commit()`), and
+`home_path()` correctly falls back to the repo root.
 
 **⚠ UNVERIFIED, and unverifiable from here.** There is no Windows machine in this deployment — the
 corsair checkout is a **frozen plain clone** (D32; reference only, and corsair is now just a managed

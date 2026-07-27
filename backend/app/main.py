@@ -308,6 +308,11 @@ async def lifespan(app: FastAPI):
         await app.state.db.close()
 
 
+def _quoted(path: str) -> str:
+    """Quote a path for a shell only when it contains a space — the remedy we print must be pasteable."""
+    return f'"{path}"' if " " in path else path
+
+
 def _preflight_config() -> None:
     """Refuse to start on a config this build cannot load — at **import time**, before `create_app()`.
 
@@ -371,7 +376,9 @@ def _preflight_config() -> None:
             print(
                 f"config migration required: {loggable(str(status.config_path))}\n"
                 f"  legacy key(s): {', '.join(status.legacy_keys) or 'in an agent file'}\n"
-                f"  → {loggable(sys.executable)} -m app.config_migration --apply",
+                # Quoted when it needs to be: on `C:\Users\Jane Doe\ctrl-b` an unquoted interpreter path
+                # splits at the space when pasted, so the "exact command" would not be one.
+                f"  → {_quoted(loggable(sys.executable))} -m app.config_migration --apply",
                 file=sys.stderr,
             )
             raise SystemExit(cm.EXIT_REFUSE)
