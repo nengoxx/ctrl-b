@@ -381,12 +381,7 @@ deleting code rather than adding it.**
 4. **`main.py` import-time check + `RestartPreventExitStatus=78`.** ✅ BUILT — **§14**. The
    `--reload` question is **answered: it propagates 78** (measured end-to-end under systemd).
 5. **`install.sh`**: ✅ BUILT — **§15**.
-6. **Windows parity** (brief settled by the slice-4 review): Windows runs uvicorn from a one-shot
-   script with no service manager, so the preflight already does the right thing — slice 6 only needs
-   `start.cmd`/`start.ps1` to **propagate the exit code** (`exit /b %ERRORLEVEL%` / `exit $LASTEXITCODE`)
-   and **pause on non-zero**, so a double-clicked console does not vanish taking the message with it,
-   plus the same `--check`-before / `--apply`-at-update hook. No restart-prevention analogue is needed:
-   nothing on that platform restarts it.
+6. **Windows parity.** ✅ BUILT — **§16**.
 7. **`update.sh`** + `config_version: 1` in `config.example.yaml` + the **runbook rewrite, now
    RELEASE-BLOCKING with named content** (Fable, slice-5 review — verified against the file):
    `deploy/linux/README.md` §Rollback → CONFIG and §Release still describe the **lazy write-back deleted
@@ -920,3 +915,31 @@ were **not fully** closed, and it was right each time:
 
 *(The `pid` field is not a secret: `/api/health` already reports version and schema_version, and it is
 tailnet-only.)*
+
+---
+
+## 16. Slice 6 — AS BUILT (2026-07-27): Windows parity
+
+Three edits, exactly the brief the slice-4 review settled. Windows has **no service manager** — the app
+runs in a console window the operator started — so there is no `RestartPreventExitStatus` analogue to
+add and none is needed: nothing there restarts it.
+
+| File | Change | Why |
+|---|---|---|
+| `start.ps1` | `exit $LASTEXITCODE` after uvicorn | The script previously always returned **0**. So `start.cmd`'s existing `if errorlevel 1 pause` **never fired**, and the app's import-time config refusal (exit 78, §14) would print its fix instruction into a console window that then vanished. This one line is the entire parity requirement for the boot refusal. |
+| `start.cmd` | capture `RC` **before** the pause, then `exit /b %RC%` | `pause` succeeds, so it overwrites `ERRORLEVEL` with 0 — capturing afterwards would have propagated "fine" out of every failure. The pause still holds the window open to read the message. |
+| `setup.ps1` | `--check` → port guard → `--apply`, **before the frontend build** | The Windows half of §4. Placed before the build for the same reason as `install.sh` step 2.6 (the slice-5 ordering lesson): the build is the slowest thing there. `$ErrorActionPreference = "Stop"` does **not** trip on a native non-zero exit in PowerShell 5.1, so every code is checked explicitly. |
+
+**The port guard is the Windows dev guard.** With no service manager, "is it running?" is "is :5433
+held?" — probed with the same `Get-NetTCPConnection` idiom `start.ps1` already uses, rather than a new
+mechanism. It closes the same hole as `install.sh`'s dev refusal: migrating under a live instance lets
+that process write its **old in-memory settings** back afterwards, resurrecting legacy keys into a
+stamped config.
+
+**⚠ UNVERIFIED, and unverifiable from here.** There is no Windows machine in this deployment — the
+corsair checkout is a **frozen plain clone** (D32; reference only, and corsair is now just a managed
+fleet host) — and `pwsh` is not installed on emma, so not even a parse check was possible. These three
+edits are small, idiomatic and follow patterns already in the same files, but **they have not been
+executed**. Anyone reviving the Windows path should run `setup.cmd` then `start.cmd` against a legacy
+config and confirm: the console stays open, the message names
+`python -m app.config_migration --apply`, and `echo %ERRORLEVEL%` prints 78.

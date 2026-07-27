@@ -47,6 +47,25 @@ Write-Host "-- installing backend deps (pip install -e backend[dev])"
 & $VPY -m pip install --upgrade pip --quiet
 & $VPY -m pip install -e "$(Join-Path $ROOT 'backend')[dev]" --quiet
 
+# Config preflight + migration (UPDATE_PLAN slice 6 — the Windows half of §4). Placed BEFORE the frontend
+# build for the same reason as install.sh step 2.6: the build is the slowest thing here, and a config this
+# build cannot take should cost seconds, not minutes. `$ErrorActionPreference = "Stop"` does NOT trip on a
+# native non-zero exit in PowerShell 5.1, so every code is checked explicitly.
+Push-Location (Join-Path $ROOT "backend")
+try {
+  Write-Host "-- config preflight (python -m app.config_migration --check)"
+  & $VPY -m app.config_migration --check
+  if ($LASTEXITCODE -ne 0) { throw "config preflight failed (exit $LASTEXITCODE) - nothing has been changed." }
+  # The Windows analogue of install.sh's dev guard: there is no service manager here, so "is it running?"
+  # is "is the port held?" — the same probe start.ps1 already uses. Migrating under a live instance would
+  # let that process write its OLD in-memory settings back afterwards, resurrecting legacy keys.
+  if (Get-NetTCPConnection -LocalPort 5433 -State Listen -ErrorAction SilentlyContinue) {
+    throw "the dashboard is running on :5433 - close that window before migrating its config, then re-run."
+  }
+  & $VPY -m app.config_migration --apply
+  if ($LASTEXITCODE -ne 0) { throw "config migration failed (exit $LASTEXITCODE)." }
+} finally { Pop-Location }
+
 # Frontend deps + production build (the start script serves this dist).
 Push-Location (Join-Path $ROOT "frontend")
 try {

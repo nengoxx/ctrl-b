@@ -50,3 +50,9 @@ if ($Dev) {
   Write-Host "-- PROD: serving on http://127.0.0.1:5433  (alongside the Flask app on :5432; Ctrl-C to stop)" -ForegroundColor Green
 }
 & $VPY -m uvicorn app.main:app --host 127.0.0.1 --port 5433
+# PROPAGATE the exit code (UPDATE_PLAN slice 6). Without this the script always returns 0, so
+# `start.cmd`'s `if errorlevel 1 pause` never fires — and the app's import-time config refusal (exit 78,
+# §14) would print its fix instruction into a console window that then vanishes. There is no
+# restart-prevention analogue to add here: nothing on Windows restarts this, so propagating the code and
+# holding the window open IS the whole parity requirement.
+exit $LASTEXITCODE
