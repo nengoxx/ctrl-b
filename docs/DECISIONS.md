@@ -3276,7 +3276,10 @@ corrected in the map below).
 >   just before it would have succeeded; Fable: `connect_timeout_s` is the semantically right budget for
 >   "cannot reach a slot". Both hold, for **different hops**): voice waits `connect_timeout_s` while a
 >   next hop exists and `timeout_s` on the last one; embeddings has no connect budget, so the rule
->   collapses to `timeout_s`. Chat keeps the unbounded wait by design (queueing behind the previous turn
+>   collapses to `timeout_s`. **The budgets reject `inf`/`nan`** (`allow_inf_nan=False`): `timeout_s:
+>   .inf` is valid YAML and passes `gt=0`, and would have restored the indefinite park the bound exists
+>   to remove — a bound is only a bound if no config value disarms it. Chat keeps the unbounded wait by
+>   design (queueing behind the previous turn
 >   on the same box is correct) — the honest boundary is **lexical vs stream-lifetime permit scope**, not
 >   voice-vs-chat: the streaming permit crosses a generator boundary and releases after a shielded close,
 >   which no context manager can express. The buffered chat site is a third hand-rolled copy that

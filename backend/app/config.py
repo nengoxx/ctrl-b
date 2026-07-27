@@ -453,7 +453,9 @@ class EmbeddingsCfg(BaseModel):
     #: `dim`s across the chain must AGREE (C8) — the resolver 422s (strict) / drops-mismatched+warns.
     fallbacks: list[SectionRef] = Field(default_factory=list)
     enabled: bool = True
-    timeout_s: float = 60.0
+    #: Also the gate-wait bound (D48 amendment) — `allow_inf_nan=False` so `timeout_s: .inf`, which YAML
+    #: parses happily and `gt=0` accepts, cannot turn a saturated hop back into an indefinite park.
+    timeout_s: float = Field(default=60.0, gt=0, allow_inf_nan=False)
 
 
 class VoiceServiceCfg(BaseModel):
@@ -476,8 +478,11 @@ class VoiceServiceCfg(BaseModel):
     fallbacks: list[SectionRef] = Field(default_factory=list)
     # Floored >0 so a blanked Conf field (→ 0) can't silently wedge voice (a 0s timeout fails every
     # call instantly); the PUT 422s instead, surfacing the bad value — mirrors the memory-cap floors.
-    connect_timeout_s: float = Field(default=3.0, gt=0)  # fail-fast on an unreachable endpoint → fall over
-    timeout_s: float = Field(default=30.0, gt=0)  # read window for the transcription/synthesis itself
+    # `allow_inf_nan=False` on both: since the D48 amendment these also bound the request-gate WAIT
+    # (connect on a hop with a fallback, timeout on the last one), and YAML's `.inf` passes `gt=0`
+    # happily — which would restore the indefinite park the bound exists to remove (Codex).
+    connect_timeout_s: float = Field(default=3.0, gt=0, allow_inf_nan=False)  # unreachable → fall over
+    timeout_s: float = Field(default=30.0, gt=0, allow_inf_nan=False)  # read window for the op itself
     extra_body: dict[str, Any] = Field(default_factory=dict)  # advanced: passthrough to the server
 
 

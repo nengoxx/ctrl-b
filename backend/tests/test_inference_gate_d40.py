@@ -429,6 +429,26 @@ def test_a_bounded_gate_wait_fails_the_hop_so_failover_advances():
     asyncio.run(scenario())
 
 
+def test_a_gate_wait_budget_cannot_be_set_to_infinity():
+    """The bound is only a bound if no config value disarms it. `timeout_s: .inf` is valid YAML and
+    passes `gt=0`, and since these budgets started bounding the gate WAIT it would have restored the
+    indefinite park — holding `_inflight` and blocking the generation drain (Codex, fix-set pass)."""
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    from app.config import EmbeddingsCfg, VoiceServiceCfg
+
+    for cls, field in (
+        (VoiceServiceCfg, "timeout_s"),
+        (VoiceServiceCfg, "connect_timeout_s"),
+        (EmbeddingsCfg, "timeout_s"),
+    ):
+        for bad in (float("inf"), float("nan")):
+            with _pytest.raises(ValidationError):
+                cls(**{field: bad})
+    assert VoiceServiceCfg(timeout_s=45).timeout_s == 45  # a finite value is untouched
+
+
 def test_the_last_hop_waits_the_full_budget_because_it_has_nowhere_to_advance_to():
     """The ruling on the one point the reviewers split on. Codex: a 3s connect budget makes a
     single-provider capped chain fail just before it would have succeeded. Fable: `connect_timeout_s`
