@@ -24,8 +24,13 @@ WorkingDirectory=__REPO__/backend
 Environment=CTRLB_HOME=__CTRLB_HOME__
 # PROD: serve the built dist, no --reload. Bind all interfaces (owner waiver above); Serve adds HTTPS.
 ExecStart=__REPO__/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 5433
+# UPDATE_PLAN slice 4: `app.main` refuses at IMPORT time on a config this build cannot load and
+# exits 78 (EX_CONFIG). No restart can fix that, and this unit has no StartLimitBurst — without the
+# directive below systemd retries forever at RestartSec=5 (measured: 5 restarts in 8s). With it the
+# unit stops in `failed` with one actionable message. Verified to propagate through `--reload` too.
 Restart=on-failure
 RestartSec=5
+RestartPreventExitStatus=78
 
 [Install]
 WantedBy=default.target

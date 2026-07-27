@@ -1033,7 +1033,11 @@ def _print_status(status: Status, *, applied: Applied | None = None) -> None:
     print("\n".join(out))
 
 
-def _report(exc: MigrationRefused) -> int:
+def report_refusal(exc: MigrationRefused) -> int:
+    """Print a refusal (already sanitised at its raise site) and return its exit code.
+
+    Public because `main.py`'s import-time preflight reports the same refusals this CLI does, and two
+    spellings of "how a refusal reaches the operator" would drift on the first message change."""
     print(f"config migration: {exc}", file=sys.stderr)
     if exc.remedy:
         print(f"  → {exc.remedy}", file=sys.stderr)
@@ -1057,7 +1061,7 @@ def main(argv: Sequence[str] | None = None, steps: Sequence[Step] = STEPS) -> in
             applied = apply(ctx, steps)
             _print_status(applied.status, applied=applied)
     except MigrationRefused as exc:
-        return _report(exc)
+        return report_refusal(exc)
     except OSError as exc:
         # Disk full, a revoked permission, a vanished directory — real conditions on a box that runs
         # this during a deploy. Reported as errno + path (never content, never a traceback), and only
@@ -1083,5 +1087,6 @@ __all__ = [
     "main",
     "needs_migration",
     "read_marker",
+    "report_refusal",
     "retired_env_overrides",
 ]

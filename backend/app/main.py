@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import sys
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -27,6 +28,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app import config_migration as cm
 from app.adapters.inference import EndpointGates
 from app.adapters.mcp_client import McpClient
 from app.adapters.openapi_tools import OpenApiToolProvider
@@ -110,9 +112,9 @@ async def _memory_sweep(backup: GitMemoryBackup, settings) -> None:
 async def lifespan(app: FastAPI):
     load_dotenv()  # .env → os.environ first, so CTRLB_CONFIG/CTRLB_DB are seen below
     app.state.settings = load_settings()
-    # A11/D48 C3/step 4: a legacy->new inference fold at load arms `config._PENDING_MIGRATION`; the FIRST
-    # successful write through the YAML chokepoint (`edit_config_yaml`) materializes the new shape + deletes
-    # the legacy keys + writes a 0600 backup — for EVERY writer (settings PUT or host/integration CRUD).
+    # The config is already the shape this build understands: `_preflight_config()` refused at import
+    # otherwise (UPDATE_PLAN §3.7). There is no fold here and no lazy write-back — that machinery left
+    # `config.py` in slice 2, and this comment used to describe it.
     app.state.fleet = FleetService(app.state.settings)
     app.state.services = ServiceService(app.state.settings, app.state.fleet)
     app.state.db = Database()
@@ -307,6 +309,56 @@ async def lifespan(app: FastAPI):
         await app.state.db.close()
 
 
+def _preflight_config() -> None:
+    """Refuse to start on a config this build cannot load — at **import time**, before `create_app()`.
+
+    Placement is measured, not stylistic (UPDATE_PLAN §3.7): `sys.exit(78)` here propagates as **78**,
+    while the same call inside the FastAPI lifespan is swallowed by uvicorn's `except BaseException` and
+    becomes **3**. The unit pairs this with `RestartPreventExitStatus=78`, so an unmigratable config
+    stops the service with one actionable message instead of crash-looping at `RestartSec=5` forever
+    (measured 2026-07-27: 5 restarts in 8s without the directive, `NRestarts=0` with it — and a
+    `--reload` worker propagates 78 through uvicorn's reloader parent too, which the plan had flagged
+    as unverified).
+
+    **Why it must run FIRST**, before `load_settings`: since slice 2 nothing in the load path knows the
+    legacy shape, and sections are `extra="allow"` — so a legacy config validates *silently* into zero
+    providers and the app boots "healthy" with chat and voice dead. This is the check that makes that
+    impossible.
+
+    **Retired env overrides are LOGGED, never fatal** (§13.1): refusals live at the attended gates
+    (`--check`/`--apply`, and slice 5's `install.sh`), because an unauthenticated provider fails
+    visibly at call time while a refusing unit takes down the only UI there is to diagnose it from.
+
+    There is deliberately **no skip flag**. An escape hatch for a boot-blocking safety check is exactly
+    the kind of environment variable that silently does something, which is what slice 3 spent itself
+    removing; the remedy is always the one command the message prints.
+    """
+    load_dotenv()  # `.env` → os.environ first: CTRLB_CONFIG/CTRLB_HOME steer everything below
+    try:
+        status = cm.detect(cm.context_from_env())  # the cheap read-only verdict — no writes, no probe
+    except cm.MigrationRefused as exc:
+        sys.exit(cm.report_refusal(exc))  # downgrade, unparseable, symlink, anchors, broken agent.yaml
+    except OSError as exc:  # unreadable dir, vanished mount — environmental, a retry may clear it
+        print(f"config preflight: {exc.strerror or type(exc).__name__}: {exc.filename}", file=sys.stderr)
+        sys.exit(cm.EXIT_FAIL)
+    for var, path in cm.retired_env_overrides():
+        logger.error(
+            "%s targets `%s`, a config path this build retired — it supplies NOTHING. If it carried a "
+            "credential, that role is running without it; move the value into config.yaml and unset the "
+            "variable. (Set in the service's own environment? `systemctl --user show <unit> -p Environment`.)",
+            var,
+            path,
+        )
+    if status.needs_migration:
+        print(
+            f"config migration required: {status.config_path}\n"
+            f"  legacy key(s): {', '.join(status.legacy_keys) or 'in an agent file'}\n"
+            f"  → {sys.executable} -m app.config_migration --apply",
+            file=sys.stderr,
+        )
+        sys.exit(cm.EXIT_REFUSE)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="ctrl-b dashboard", version=__version__, lifespan=lifespan)
 
@@ -337,4 +389,5 @@ def create_app() -> FastAPI:
     return app
 
 
+_preflight_config()  # ← before the app object exists; see the docstring
 app = create_app()

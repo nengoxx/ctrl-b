@@ -5,7 +5,8 @@
 > (**[§12](#12-slice-2--as-built-2026-07-26)**), and env overrides
 > (**[§13](#13-slice-3--as-built-2026-07-26-the-env-override-capability-retracted-the-retired-path-guarded)**
 > — **§7 was overturned**: the provider-form overlay was ruled against and the capability RETRACTED).
-> Gate 6/6, both live configs rehearsed on copies. Next: slice 4 (the import-time boot check).
+> Gate 6/6, both live configs rehearsed on copies. **Slice 4 ✅ BUILT (§14) — the boot refusal is live
+> and measured under systemd.** Next: slice 5 (`install.sh`).
 > **Owner requirements:** after an update prod holds **zero** legacy keys · a **human with no coding
 > agent** updates prod · a failed update is recoverable · **no leftover code, config or artifacts** ·
 > **lean — no machinery we must maintain long-term.**
@@ -377,9 +378,8 @@ deleting code rather than adding it.**
 3. **Env overrides.** ✅ BUILT — **§13**. Not what this line said: the provider form was ruled against
    (§13), and what shipped is the retired-path refusal in the CLI + an undeclared-path warning + the
    docs retraction.
-4. **`main.py` import-time check + `RestartPreventExitStatus=78`** — and **verify the terminal
-   `failed` status 78 on the dev unit**, plus the `--reload` worker path (a reload worker exits through
-   uvicorn's `ChangeReload` parent, not systemd — behaviour unverified).
+4. **`main.py` import-time check + `RestartPreventExitStatus=78`.** ✅ BUILT — **§14**. The
+   `--reload` question is **answered: it propagates 78** (measured end-to-end under systemd).
 5. **`install.sh`**: hook + fatal stop + health gate + flock, **+ scan the unit's MERGED environment
    for `CTRLB_*__*` and fail the gate** — `systemctl --user show <unit> -p Environment`, **not** the
    rendered unit file: `systemctl --user edit` writes a drop-in (`<unit>.d/override.conf`), which is
@@ -671,3 +671,50 @@ gone). **Codex: HIGH re-raised, and split on inspection.**
 | The bomb test should pin the *intended* refusal | **TAKEN** — `match="retired"`. |
 
 **Backend 1026, gate 6/6.** Slice 3 is closed from both lenses.
+
+---
+
+## 14. Slice 4 — AS BUILT (2026-07-27): the boot refusal
+
+`main.py` gained `_preflight_config()`, called at **module scope immediately before `create_app()`**;
+both systemd units gained `RestartPreventExitStatus=78`. Backend **1033**, gate 6/6.
+
+**The plan's one open question is answered — and in our favour.** §10 flagged the `--reload` path as
+unverified ("a reload worker exits through uvicorn's `ChangeReload` parent, not systemd"). Measured on
+emma, 2026-07-27:
+
+| Measurement | Result |
+|---|---|
+| `sys.exit(78)` at import, plain uvicorn | exit **78** |
+| same, `uvicorn --reload` | exit **78** — the reloader parent propagates it |
+| unit with `RestartPreventExitStatus=78` | `failed`, **`NRestarts=0`**, `ExecMainStatus=78` |
+| the same unit **without** the directive | **5 restarts in 8 seconds** — the crash-loop the memory predicted (`Restart=on-failure`, `RestartSec=5`, no `StartLimitBurst`) |
+| **end-to-end: the real app, `--reload`, a legacy config, under systemd** | `failed`, `NRestarts=0`, `status=78/CONFIG`, and the journal carries the venv-qualified `python -m app.config_migration --apply` |
+
+Both probes ran under **scratch units against a temp `$CTRLB_HOME`**, never the real dev or prod units,
+and were removed afterwards.
+
+**What it does, in order:** `load_dotenv()` → `detect(context_from_env())` — the cheap read-only verdict
+(§3.7), no writes, no writability probe → **log** any retired env override (§13.1: refusals live at the
+attended gates) → exit **78** if any step applies, printing the legacy key names and the exact
+venv-qualified command. `MigrationRefused` (downgrade, unparseable, symlink, anchors, broken
+`agent.yaml`) reports through the CLI's own reporter and carries its own exit code; `OSError` exits 1.
+
+**Decisions taken here:**
+- **No skip flag.** An escape hatch for a boot-blocking safety check is precisely the kind of
+  environment variable that silently does something — the class slice 3 spent itself removing. The
+  remedy is always the one command the message prints, run by the interpreter that printed it.
+- **`_report` → `report_refusal`, public.** The preflight reports the same refusals the CLI does; two
+  spellings of "how a refusal reaches the operator" would drift on the first message change.
+- The check runs on **every import of `app.main`**, tests included — which is what `conftest.py`'s
+  module-level guard was built for in slice 1 (§3.7), and why it had to exist before this slice.
+
+**Also fixed here:** `main.py`'s lifespan comment still described `config._PENDING_MIGRATION` — the lazy
+write-back deleted in slice 2. (`runtime.py` carries the same stale reference; corrected with it.)
+
+**Tests** (`tests/test_main_preflight.py`, 7): the wiring asserted by source order (the check must
+precede `create_app()`) · legacy → 78 + the venv command + the legacy key names · downgrade routed
+through the shared reporter · a migrated config boots silently · an absent config is a no-op and creates
+nothing · **a retired override LOGS and does not exit**, naming the variable but never its value, and
+pointing at `systemctl --user show <unit> -p Environment` where a service-only variable hides · both
+units carry the directive, because the code half is useless without it.
