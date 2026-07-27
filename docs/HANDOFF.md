@@ -8,7 +8,7 @@
 > promise RETRACTED, on [R6](./research/R6-env-overrides-and-secret-provenance.md) evidence) · the
 > import-time boot refusal (**§14**, measured under systemd) · `install.sh` (**§15**) · Windows parity
 > (**§16**) · `update.sh` + the runbook rewrite (**§17**). Gate **7/7 incl. e2e**, backend **1042**, tree
-> clean, **28 commits UNPUSHED**.
+> clean, **31 commits UNPUSHED**.
 > **▶ SLICE 8 IS THE RELEASE, AND EVERY PRECONDITION IS NOW CLOSED (§17.2 steps 0–6, 2026-07-27).**
 > 0+1 manual belt-and-braces backups + `install.sh dev` end-to-end · 2 the two §17.1 `update.sh` fixes +
 > all four slice-6 §16 corrections verified in the tree · 3 **the owner ratified all three D48 Slice-2
@@ -439,6 +439,48 @@
 > '#.*'` diff against each source is what actually proved the loss is exactly the three documented inline
 > comments on consumed keys. Same lesson as the earlier regex-vs-YAML secret comparison: **the cheap
 > checker agreed with me, and it was the checker that was wrong.**
+>
+> **▷ THEN BOTH REVIEWERS RAN ON THE FIX WAVE (owner-requested), on different lenses — and each found
+> a defect IN THE MUST-FIX ITSELF.** Codex `gpt-5.6-sol` high on correctness, Fable 5 high on
+> design/systems; fixes in `1e2aa46` + `1b01402`; **both then verified their own fix-set: Codex all five
+> items CLOSED, Fable "SHIP" once 6b passes.** Gate 6/6, backend **1044**.
+> - **Codex MED — the MUST-FIX had a hole.** `looks_masked` used `re.fullmatch(r".{2}….{2}")`, and `.`
+>   **excludes newline**, so a credential with a trailing newline (`"ab-token\n"` → `"ab…n\n"`) failed
+>   the shape test and the literal mask was *still* persisted as the credential. Replaced with the truer
+>   shape test: five codepoints with `…` in the middle, or `••••`.
+> - **Fable MED — the MUST-FIX had CAUSED a regression.** Its rewrite dropped `_map_key_is_secret` from
+>   the RESTORE arm of the credential-map branch (keeping it only in the new drop filter), so a
+>   **non-secret** `env`/`headers` entry — displayed raw, never masked — could no longer be cleared: an
+>   explicit `""` silently restored the stored value. Blank-keeps was always a *secret* affordance and
+>   the leaf branch still gates on `_SECRET_LEAF_KEYS`, so the two branches had come to disagree.
+> - **THE ONE SPLIT, RULED — and the ruling is the interesting part.** Codex: voice's 3s
+>   `connect_timeout_s` is a realistic single-provider regression (a capped chain fails just before it
+>   would have succeeded); use `timeout_s`. Fable: `connect_timeout_s` is the semantically right budget
+>   for "cannot reach a slot". **Both hold, for DIFFERENT hops** — the bound exists so the CHAIN can
+>   advance, so it is short only while there IS somewhere to advance to. Voice now waits
+>   `connect_timeout_s` while a next hop exists and `timeout_s` on the last one. Fable ratified it as a
+>   **derived** rule rather than a split-the-difference compromise, and confirmed the layering (chain
+>   position lives in the caller that owns the chain; `hold` stays a dumb one-parameter seam — teaching
+>   `EndpointGates` about chain position would have been the real smell).
+> - **Codex LOW ×3:** the bounded-failover test would have **wedged** the suite rather than failed on
+>   revert (no pytest-timeout) · two assertions could pass a reverted implementation · and, on the
+>   verification pass, **`timeout_s: .inf` is valid YAML that passes `gt=0`** and would have restored the
+>   indefinite park — `allow_inf_nan=False` on the three floats that bound a gate wait. *A bound is only
+>   a bound if no config value can disarm it.*
+> - **Verified positively, worth keeping:** `hold` is leak-free across 2,000 timeout/grant races plus
+>   cancellation and body-error cases · `GateWaitTimeout` gets no special downstream treatment anywhere ·
+>   no backend or frontend consumer needs `providers_rev` to change on a secret rotation ·
+>   `target is chain[-1]` is safe (failover passes the chain's exact objects) and its degradation
+>   direction is safe anyway (a broken identity test yields the SHORTER budget, never a park).
+> - **Deferred with reason (Fable):** the *buffered* chat gate site is a third hand-rolled copy of the
+>   acquire idiom that `hold(ep)` would replace exactly. The honest boundary is **lexical vs
+>   stream-lifetime permit scope**, not voice-vs-chat: the streaming permit crosses a generator boundary
+>   and releases after a shielded close, which no context manager can express. Not touching the chat hot
+>   path in a release-day commit; the end-state is recorded in the D48 amendment.
+> - **▶ ONE OPEN ITEM — §17.2 step 6b, PROPOSED, owner's call:** rehearse the RECOVERY path once before
+>   tagging. The list covers the first-run cutover with backups, but the path *out* of that failure has
+>   never run either, and it is the one artifact here reviewed twice, found wrong twice, executed never.
+>   Fable specified the cheapest sufficient rehearsal (~20 min, prod untouched) — see §17.2 6b.
 >
 > **Doc drift closed:** interpretation ① was recorded with the Slice-1 strict trigger set; Slice 2
 > correctly extended it to `voice` + `embeddings`. Consequence worth knowing before the first voice edit

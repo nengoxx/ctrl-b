@@ -1066,7 +1066,30 @@ that moment the tree is still the old tag and may not contain the runner at all.
    mask predicate · the masked fingerprint · the bounded C4 acquire · interpretation ① corrected to the
    five-subtree strict trigger set) + doc sync (`DESIGN.md` gate paragraph · `SECURITY_MODEL.md` display
    + a new fingerprint rule).
-6. Full gate **plus §10's real-config rehearsal bar one final time on the release sha**.
+6. ✅ **DONE 2026-07-27** — full gate **7/7 including e2e** on the release sha, plus the §10 real-config
+   rehearsal on THREE inputs (prod-legacy · the dev legacy backup · the already-migrated dev config):
+   clean `--check`/`--apply`, idempotent re-apply, 0600, marker 1, all four roles resolve, secrets
+   set-equal, and the only comment loss is the three documented inline ones on consumed keys. *(The
+   rehearsal script's own comment check was blind to inline comments and reported zero loss; a
+   `diff <(grep -o '#.*' …)` per input is what actually proved it.)*
+6b. **PROPOSED, owner's call — rehearse the RECOVERY path once before tagging (Fable, pre-release
+   review).** §17.2 correctly names the first-run `install.sh prod` cutover as the highest-risk step and
+   covers it with step 0 — but the path *out* of that failure has never run either. `update.sh`
+   deliberately refuses to drive v1.2.1 (§17.3), so recovery is the runbook's manual sequence, which has
+   been **reviewed twice, found wrong twice** (§17.1 and §17.3 each caught an ordering defect in it) and
+   **executed never**. This chapter's own lesson — a fragment tested outside the environment that will
+   run it is measuring a different program — applies verbatim to a runbook tested only as prose.
+   **The minimum that discharges it** (Fable, asked for the cheapest sufficient subset): skip steps 1–2
+   (`systemctl --user stop` is exercised constantly and is the least likely part to be wrong) and
+   rehearse the part that has never run anywhere — **v1.2.1's own pre-protocol `install.sh`, run against
+   a restored pre-migration config, in a tree shaped like prod's**: a scratch **sparse, tag-pinned**
+   clone (checking out backwards through a sparse pinned tree is its own mechanics risk, distinct from
+   the installer), the **real step-0 backup copies** (not synthetic files) restored into a scratch
+   `CTRLB_HOME` on an odd port, verified with the runbook's own verification commands. **Execute the
+   document literally, command by command, in printed order** — the defect class found twice here was
+   ordering and prose, so the rehearsal must run the document, not the operator's mental model of it;
+   any adaptation a command needs is a **finding to record, not a silent fix**. ~20 minutes, prod
+   untouched.
 7. Tag → CI release gate green → `update.sh vX.Y.0`, which is prod's first run of the chain.
 
 **The highest-risk step, named:** not the migration (rehearsed many times on copies of both real
