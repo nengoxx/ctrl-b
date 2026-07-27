@@ -114,21 +114,7 @@ EXTRA=""; [ "$ROLE" = dev ] && EXTRA="[dev]"
 echo "-- ensuring backend deps (pip install -e .$EXTRA)"
 "$VENV/bin/pip" install -e "$APP/backend$EXTRA" --quiet
 
-# 3) Frontend deps — both roles need node_modules. PROD also builds the dist (uvicorn serves it); DEV does
-#    NOT build (Vite serves live with hot-reload). PROD builds ASIDE (dist.next) while the old dist keeps
-#    serving — it's swapped in at cutover (step 5.5) so a mid-build page load never sees a half-built tree.
-echo "-- frontend deps"
-if [ "$ROLE" = prod ]; then
-  # ALWAYS npm ci on prod: a new tag may change package-lock.json, and `[ -d node_modules ]` would build
-  # against stale deps. npm ci is deterministic-per-deploy (that's its job); dev keeps the fast path.
-  ( cd "$APP/frontend" && npm ci )
-  echo "-- frontend build (PROD dist → dist.next, swapped at cutover)"
-  ( cd "$APP/frontend" && npm run build -- --outDir dist.next --emptyOutDir )
-else
-  ( cd "$APP/frontend" && { [ -d node_modules ] || npm ci; } )
-fi
-
-# 4) Config presence. PROD requires the real secret already transferred (bootstrap.py / scp). DEV seeds its
+# 2.5) Config presence. PROD requires the real secret already transferred (bootstrap.py / scp). DEV seeds its
 #    OWN config from prod's the first time, then is independent (its own db/chat under ~/.ctrl-b-dev).
 mkdir -p "$CTRLB_HOME"
 if [ ! -f "$CTRLB_HOME/config.yaml" ]; then
@@ -144,9 +130,12 @@ if [ ! -f "$CTRLB_HOME/config.yaml" ]; then
   fi
 fi
 
-# 4.4) CONFIG PREFLIGHT (UPDATE_PLAN §4). Deliberately BEFORE the build and long before the cutover:
+# 2.6) CONFIG PREFLIGHT (UPDATE_PLAN §4). Deliberately BEFORE the build and long before the cutover:
 #      if this build cannot migrate or load the config, the run must abort while the old service is
-#      still serving. `--check` writes nothing; it parses, plans, validates and probes writability.
+#      still serving — and BEFORE the frontend build, which is the slowest step in the run, so a
+#      config this build cannot take aborts in seconds rather than after minutes of npm. (It sat
+#      after the build until the slice-5 review; three documents claimed this ordering before the
+#      script had it — Fable.) `--check` writes nothing; it parses, plans, validates and probes writability.
 #      Exit 78 = unmigratable (no restart fixes it), 1 = environmental. Either way we stop here.
 echo "-- config preflight ($CTRLB_HOME/config.yaml)"
 migration --check || { echo "→ aborted BEFORE any change; the $ROLE instance is untouched and still serving."; exit 1; }
@@ -157,11 +146,28 @@ migration --check || { echo "→ aborted BEFORE any change; the $ROLE instance i
 # to be running is not a hazard the flock covers (§7 accepts this): the running process re-reads config
 # only on a PUT or a restart, and a PUT mid-apply trips the runner's digest guard, which refuses rather
 # than clobbers.
+# Role asymmetry, accepted: for PROD the unit-environment scan (5.2) runs BEFORE the apply (5.5); for
+# DEV the apply is here, so a `CTRLB_*__*` hiding in a dev unit drop-in is caught only afterwards. The
+# run still fails with the same actionable message and the remedy is unchanged — only the order differs.
 if [ "$ROLE" = dev ]; then
   migration --apply || { echo "→ dev config migration failed; nothing else was changed."; exit 1; }
 fi
 
-# 4.5) Git-hook quality gate (D33). Point git at the tracked .githooks/ so a bad commit (fast: ruff +
+# 3) Frontend deps — both roles need node_modules. PROD also builds the dist (uvicorn serves it); DEV does
+#    NOT build (Vite serves live with hot-reload). PROD builds ASIDE (dist.next) while the old dist keeps
+#    serving — it's swapped in at cutover (step 5.5) so a mid-build page load never sees a half-built tree.
+echo "-- frontend deps"
+if [ "$ROLE" = prod ]; then
+  # ALWAYS npm ci on prod: a new tag may change package-lock.json, and `[ -d node_modules ]` would build
+  # against stale deps. npm ci is deterministic-per-deploy (that's its job); dev keeps the fast path.
+  ( cd "$APP/frontend" && npm ci )
+  echo "-- frontend build (PROD dist → dist.next, swapped at cutover)"
+  ( cd "$APP/frontend" && npm run build -- --outDir dist.next --emptyOutDir )
+else
+  ( cd "$APP/frontend" && { [ -d node_modules ] || npm ci; } )
+fi
+
+# 4) Git-hook quality gate (D33). Point git at the tracked .githooks/ so a bad commit (fast: ruff +
 #      prettier) / push (full: tools/check.py) is blocked at the source. Essential for the dev tree where
 #      agents commit. Idempotent; the exec bit is tracked in git but re-ensured here in case a checkout
 #      dropped it. The sparse PROD tree never materializes .githooks/ (cone mode: root FILES only) and

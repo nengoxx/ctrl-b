@@ -258,6 +258,13 @@ gunzip -c ~/.ctrl-b/backups/ctrlb-<ts>.db.gz > ~/.ctrl-b/ctrlb.db
 sqlite3 ~/.ctrl-b/ctrlb.db 'PRAGMA integrity_check;'        # must print: ok
 systemctl --user start ctrl-b-dashboard
 ```
+> ⚠ **STALE — being rewritten in UPDATE_PLAN slice 7.** The `config.yaml.bak-a11-*` backup and the
+> `A11: wrote…` log line below describe the lazy write-back **deleted in slice 2**; that file will never
+> appear. Pre-migration backups now land in `$CTRLB_HOME/backups/config.yaml.<stamp>`, written by
+> `python -m app.config_migration --apply` at the install cutover. **And across the migration release a
+> CONFIG restore is MANDATORY, not optional**: the previous tag has no preflight and its `extra="allow"`
+> sections swallow `providers:`, so old code + migrated config boots "healthy" with zero providers.
+
 **CONFIG — only when rolling back ACROSS the A11/D48 provider-map release** (old code cannot read
 `providers:` — there are no forward-compat seams). The FIRST config write after the upgrade drops a
 one-time `config.yaml.bak-a11-<UTCstamp>` (mode 0600) beside the config, logged `A11: wrote pre-migration

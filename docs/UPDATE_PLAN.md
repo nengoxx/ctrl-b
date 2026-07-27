@@ -387,7 +387,19 @@ deleting code rather than adding it.**
    and **pause on non-zero**, so a double-clicked console does not vanish taking the message with it,
    plus the same `--check`-before / `--apply`-at-update hook. No restart-prevention analogue is needed:
    nothing on that platform restarts it.
-7. **`update.sh`** + runbook rewrite + `config_version: 1` in `config.example.yaml`.
+7. **`update.sh`** + `config_version: 1` in `config.example.yaml` + the **runbook rewrite, now
+   RELEASE-BLOCKING with named content** (Fable, slice-5 review — verified against the file):
+   `deploy/linux/README.md` §Rollback → CONFIG and §Release still describe the **lazy write-back deleted
+   in slice 2** — a `config.yaml.bak-a11-<UTCstamp>` "dropped on the first config write" and an
+   `A11: wrote…` log line (lines 231/263/268). That file will never exist; the runner's backups land in
+   `$CTRLB_HOME/backups/config.yaml.<stamp>` at `--apply` time. Worse, the **code-only rollback path is
+   silently insufficient across this release**: previous tag + already-migrated config = old code, no
+   preflight, `extra="allow"` swallowing `providers:`, booting "healthy" with zero providers — the exact
+   failure this plan exists to kill. §Rollback must state that across the migration release a CONFIG
+   restore is **mandatory**, not conditional. `update.sh` itself shrinks to orchestration (tag resolve →
+   pre-checkout VERSION downgrade guard → lock + `CTRLB_DEPLOY_LOCK_HELD=1` → checkout → `install.sh
+   prod` → failure message), since the lock, check, apply, stop-verify and health gate all live in
+   slice 5 now and must not be reimplemented.
 8. **D48 amendment**, full gate, release.
 
 **Verification bar per slice:** `check.py` green, plus the real-config rehearsal — prod and dev config
@@ -806,6 +818,13 @@ no new responsibilities, only the gates that make its existing ones honest.
 ordinary (unexported) shell variable here, so a bare `python -m app.config_migration` would resolve to
 the **repo root** — and from `install.sh dev` would inspect PROD's config while the prod service was live.
 
+**A claim that was false until the review (Fable, MED).** §15, the script's own comment and my report to
+the owner all said the check ran *before the frontend build*. It did not — it sat after it, so an
+unmigratable config would have aborted only after minutes of `npm ci` + the prod build. Fixed **by
+moving the steps, not the prose**: config-presence and the preflight are now 2.5/2.6, above the
+frontend step. Prod kept serving either way, so this was time and honesty rather than safety — but
+three documents asserting an ordering the script did not have is exactly the drift this plan polices.
+
 **Three calls, and one correction that testing forced:**
 - **`--apply` runs in BOTH roles**, not just prod — the correction. `--check` exits **0** for "needed"
   as well as "not needed" (§3.5 locks that so `|| exit 1` means *would fail*), so the first draft, which
@@ -833,4 +852,14 @@ dev` would be safe in principle, but it runs `systemctl --user enable --now ctrl
 and this session *is* one of those agent instances, so a restart would kill the run that is testing it.
 It should be exercised from a plain SSH shell (or by the owner) before slice 8's release: `bash
 deploy/linux/install.sh dev` on the workspace, expecting a no-op migration on the already-stamped dev
-config and no unit churn. `shellcheck` is not installed on the box; only `bash -n` was run.
+config and no unit churn — then confirm the agent sessions' PIDs are unchanged. `shellcheck` is not
+installed on the box; only `bash -n` was run.
+
+*(Correction, Fable: the stated **reason** was wrong even though the conclusion holds. `systemctl
+enable --now` on an already-**active** unit does not restart it — `start` on a running service is a
+no-op — and the legacy tmux-kill block matches only the old parenthesised session names, not
+`ctrl-b-opus`. So the run would very likely be harmless; not testing that theory with the session's own
+lifeline is still the right call. Two warnings for whoever does run it: do **not** improvise a "scratch"
+run via `REPO=`/`CTRLB_HOME=` overrides — the unit **names** are fixed, so it would overwrite the real
+user units with scratch paths; and `install.sh prod` genuinely cannot be rehearsed before the release,
+since the current prod tree has no migration module at all.)*
