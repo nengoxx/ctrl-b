@@ -16,6 +16,11 @@ Type=simple
 WorkingDirectory=__REPO__/backend
 Environment=CTRLB_HOME=__CTRLB_HOME__
 # DEV: own data root, own port, --reload picks up backend edits live.
+# ⚠ RESTART THIS UNIT after a `git pull` that changes config shape. Measured (UPDATE_PLAN §14): if the
+# reload worker re-imports and the new build REFUSES the current config, uvicorn's reloader parent is a
+# watcher loop, not a supervisor — it stays alive, so the unit reports `active (running)` with a DEAD
+# port and the refusal only in the journal. Start-time refusals are terminal-78 as intended; this is the
+# mid-session reload path only, and it does not exist in prod (no --reload there).
 ExecStart=__REPO__/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 5434 --reload
 # UPDATE_PLAN slice 4: `app.main` refuses at IMPORT time on a config this build cannot load and
 # exits 78 (EX_CONFIG). No restart can fix that, and this unit has no StartLimitBurst — without the

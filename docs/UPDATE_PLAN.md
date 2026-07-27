@@ -380,13 +380,23 @@ deleting code rather than adding it.**
    docs retraction.
 4. **`main.py` import-time check + `RestartPreventExitStatus=78`.** ✅ BUILT — **§14**. The
    `--reload` question is **answered: it propagates 78** (measured end-to-end under systemd).
-5. **`install.sh`**: hook + fatal stop + health gate + flock, **+ scan the unit's MERGED environment
+5. **`install.sh`**: hook + fatal stop + health gate + flock, **+ two riders from the slice-4 review
+   (Fable):** on a failed start, branch on `ExecMainStatus` — **78 means config**, so print the journal
+   tail (which already carries the fix command) and say so, rather than reporting a generic timeout;
+   and note in the spec that the merged-environment scan *overlaps* the CLI refusal for shell/`.env`
+   variables (both fire on the same one) — its unique value is the unit/drop-in delta, so
+   double-reporting is acceptable and de-duplicating it is not worth code. **+ scan the unit's MERGED environment
    for `CTRLB_*__*` and fail the gate** — `systemctl --user show <unit> -p Environment`, **not** the
    rendered unit file: `systemctl --user edit` writes a drop-in (`<unit>.d/override.conf`), which is
    exactly where an operator adds a variable without touching the file `install.sh` renders (Fable,
    §13.1). A service-only override is invisible to the CLI, so this is the only attended place it can
    be caught.
-6. **Windows parity.**
+6. **Windows parity** (brief settled by the slice-4 review): Windows runs uvicorn from a one-shot
+   script with no service manager, so the preflight already does the right thing — slice 6 only needs
+   `start.cmd`/`start.ps1` to **propagate the exit code** (`exit /b %ERRORLEVEL%` / `exit $LASTEXITCODE`)
+   and **pause on non-zero**, so a double-clicked console does not vanish taking the message with it,
+   plus the same `--check`-before / `--apply`-at-update hook. No restart-prevention analogue is needed:
+   nothing on that platform restarts it.
 7. **`update.sh`** + runbook rewrite + `config_version: 1` in `config.example.yaml`.
 8. **D48 amendment**, full gate, release.
 
@@ -679,9 +689,10 @@ gone). **Codex: HIGH re-raised, and split on inspection.**
 `main.py` gained `_preflight_config()`, called at **module scope immediately before `create_app()`**;
 both systemd units gained `RestartPreventExitStatus=78`. Backend **1033**, gate 6/6.
 
-**The plan's one open question is answered — and in our favour.** §10 flagged the `--reload` path as
-unverified ("a reload worker exits through uvicorn's `ChangeReload` parent, not systemd"). Measured on
-emma, 2026-07-27:
+**The plan's open question is answered for the case it asked about — and a SECOND case, which it did
+not ask about, turns out to be the one that bites.** §10 flagged the `--reload` path as unverified ("a
+reload worker exits through uvicorn's `ChangeReload` parent, not systemd"). Measured on emma,
+2026-07-27, **uvicorn 0.48.0** (reloader semantics are version-specific — re-verify on a bump):
 
 | Measurement | Result |
 |---|---|
@@ -690,6 +701,25 @@ emma, 2026-07-27:
 | unit with `RestartPreventExitStatus=78` | `failed`, **`NRestarts=0`**, `ExecMainStatus=78` |
 | the same unit **without** the directive | **5 restarts in 8 seconds** — the crash-loop the memory predicted (`Restart=on-failure`, `RestartSec=5`, no `StartLimitBurst`) |
 | **end-to-end: the real app, `--reload`, a legacy config, under systemd** | `failed`, `NRestarts=0`, `status=78/CONFIG`, and the journal carries the venv-qualified `python -m app.config_migration --apply` |
+
+**⚠ The mid-session reload path is a ZOMBIE, and it was found by review, not by me** (Fable: *"the
+`ChangeReload` parent is a file-watcher loop, not a supervisor"*). My first draft of this section
+claimed the `--reload` question was settled outright; it was settled only for **start-time** import.
+The routine dev path is different — units already **running**, then a `git pull` brings code that
+refuses the current config — and measuring it (start healthy → make a step apply → touch a `.py`)
+gives:
+
+| | |
+|---|---|
+| unit | `active (running)`, `NRestarts=0`, `ExecMainStatus=0` |
+| the port | **DEAD** (`curl` → no response) |
+| the journal | the refusal message, printed once |
+
+So `systemctl status` reports health while the app is gone. **Dev-only** (prod runs without `--reload`,
+where the measured terminal-78 behaviour holds), and **not fixed in code**: uvicorn's reloader offers no
+"exit on worker failure" option, and the honest fix is the workflow — **restart the dev unit after a
+pull that changes config shape**, which the on-demand start/stop-around-iteration habit already mostly
+enforces. Noted in the dev unit's own header, where someone iterating will actually meet it.
 
 Both probes ran under **scratch units against a temp `$CTRLB_HOME`**, never the real dev or prod units,
 and were removed afterwards.
