@@ -18,6 +18,7 @@ Pure/dict-level — no live config, no DB (the identification functions take pla
 
 from __future__ import annotations
 
+import hashlib
 import typing
 
 from pydantic import BaseModel
@@ -266,6 +267,41 @@ def test_a_mask_with_nothing_to_restore_is_dropped_not_written() -> None:
     assert unmask_secrets({"api_key": "sk-BRAND-NEW"}, {"api_key": "sk-REAL-KEY"}) == {
         "api_key": "sk-BRAND-NEW"
     }
+
+
+def test_providers_rev_is_computed_over_masked_values_only() -> None:
+    """A11 pre-release audit LOW. `providers_rev` is published *next to* the masked values (the
+    `X-Providers-Rev` header, `GET /api/providers`, the PUT envelope), so hashing the RAW subtree made
+    the pair an offline verification oracle: guess a key, recompute the digest, confirm — with the
+    `ab…yz` mask cutting the search space. It now hashes the masked dump, which no longer identifies
+    the secret.
+
+    The cost is the change the client cannot see either — a rotation to a same-mask value leaves the
+    fingerprint equal — and that is safe, because a stale draft echoing the mask restores whatever is
+    CURRENTLY stored (`unmask_secrets`), so it cannot clobber the rotation it missed. A *visible*
+    change (a different mask, an added/removed provider, any non-secret field) still moves the rev.
+    """
+    from app.config import ModelCfg, ProviderCfg, providers_rev
+
+    def _s(key: str) -> Settings:
+        return Settings(
+            providers={"p": ProviderCfg(base_url="http://p/v1", api_key=key, models={"m": ModelCfg()})}
+        )
+
+    base = _s("sk-AAAAAAAAAAAA-zz")
+    # the raw secret is not an input: nothing in the digest lets a guess be verified …
+    assert providers_rev(base) != hashlib.sha256(b"sk-AAAAAAAAAAAA-zz").hexdigest()[:16]
+    assert providers_rev(base) == providers_rev(_s("sk-BBBBBBBB-zz"))  # same mask ⇒ same rev
+    assert providers_rev(base) != providers_rev(_s("xk-AAAAAAAAAAAA-zy"))  # a visible change moves it
+    # … and a non-secret edit still moves it, which is what the 409 guard actually protects.
+    other = Settings(
+        providers={
+            "p": ProviderCfg(
+                base_url="http://p/v1", api_key="sk-AAAAAAAAAAAA-zz", models={"m": ModelCfg(dim=512)}
+            )
+        }
+    )
+    assert providers_rev(base) != providers_rev(other)
 
 
 def test_the_same_rule_holds_inside_a_credential_map() -> None:

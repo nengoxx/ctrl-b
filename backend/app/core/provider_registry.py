@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
@@ -36,7 +37,7 @@ from app.domain.provider import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import AsyncIterator, Iterable
 
     from app.config import ProviderCfg, SectionRef, Settings
 
@@ -129,6 +130,13 @@ class ProviderResolveError(Exception):
         self.errors = errors
 
 
+class GateWaitTimeout(TimeoutError):
+    """A bounded gate acquire gave up waiting for a permit (`EndpointGates.hold(wait_s=…)`). A
+    `TimeoutError` subclass so anything already treating a timeout as a transport failure keeps working;
+    carries its own message because `str(TimeoutError())` is empty and `failover()` renders the hop
+    failure as `f"{label}: {exc}"`."""
+
+
 class EndpointGates:
     """The app-owned registry of per-target request-gate semaphores (D40 rider; A11 moved this here from
     the adapter). Keyed by `(gate_identity, limit)` now (D48 C4) — the canonicalized base_url, so two
@@ -152,6 +160,44 @@ class EndpointGates:
             sem = asyncio.Semaphore(limit)
             self._sems[key] = sem
         return sem
+
+    @asynccontextmanager
+    async def hold(self, target: ResolvedTarget, *, wait_s: float | None = None) -> "AsyncIterator[None]":
+        """Hold `target`'s gate permit for the duration of the block — the ONE bounded-acquire seam for
+        the buffered callers (voice + embeddings).
+
+        An unlimited target (`max_concurrent_requests is None`, the common speaches/openrouter case)
+        yields immediately with zero overhead. A finite cap acquires the shared `(gate_identity, limit)`
+        semaphore and releases it on the way out, exception or not.
+
+        `wait_s` bounds the WAIT for a permit (A11 pre-release audit MED; the condition the owner
+        attached to ratifying D48 Slice-2 call ③). The wait happens *inside* the failover attempt, so an
+        unbounded one cannot fail over: a provider serving chat + STT at cap 1 can park a mic
+        transcription behind a ten-minute stream with a healthy fallback sitting idle. On timeout this
+        raises `GateWaitTimeout`, which `failover()` treats as any other attempt failure — the chain
+        advances to the next hop. `None` = wait forever (the streaming chat path, where queueing behind
+        the previous turn on the same box IS the correct behaviour)."""
+        limit = target.max_concurrent_requests
+        if limit is None:
+            yield
+            return
+        sem = self.sem_for(target.gate_identity, limit)
+        if wait_s is None:
+            await sem.acquire()
+        else:
+            try:
+                await asyncio.wait_for(sem.acquire(), wait_s)
+            except TimeoutError as exc:
+                # `wait_for` cancels the pending `acquire()`, which releases its waiter cleanly (no
+                # permit is consumed) — so a timed-out hop leaves the cap exactly as it found it.
+                raise GateWaitTimeout(
+                    f"no free request slot after {wait_s:g}s "
+                    f"(server at cap {limit}; shared with every provider on {target.gate_identity})"
+                ) from exc
+        try:
+            yield
+        finally:
+            sem.release()
 
 
 def _target_identity(t: ResolvedTarget) -> tuple[str, str | None, str, str]:

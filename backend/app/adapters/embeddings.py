@@ -21,7 +21,7 @@ from app.core.failover import FailoverError, failover_collect
 from app.core.provider_registry import EndpointGates
 
 if TYPE_CHECKING:
-    import asyncio
+    from contextlib import AbstractAsyncContextManager
 
     from app.domain.provider import EmbeddingsPolicy, ResolvedTarget
 
@@ -81,11 +81,13 @@ class EmbeddingsClient:
             )
         return self._clients[target.provider]
 
-    def _sem_for(self, target: "ResolvedTarget") -> "asyncio.Semaphore | None":
-        limit = target.max_concurrent_requests
-        if limit is None:
-            return None
-        return self._gates.sem_for(target.gate_identity, limit)
+    def _gate(self, target: "ResolvedTarget") -> "AbstractAsyncContextManager[None]":
+        """The shared D40 request gate for this target (`EndpointGates.hold`), so an embed contends on
+        the same cap as chat/voice on that server. The wait is bounded by `timeout_s` — the section has
+        no separate connect budget, and `timeout_s` is the whole-request window, so waiting longer than
+        one entire request for a *slot* means this hop is saturated and the chain should fall over (A11
+        pre-release audit MED). Unlimited targets cost nothing."""
+        return self._gates.hold(target, wait_s=self._policy.timeout_s)
 
     async def embed(self, texts: list[str] | str, *, model: str | None = None) -> list[list[float]]:
         """Embed one or more texts → one vector each (input order preserved). Walks the chain on any
@@ -99,16 +101,10 @@ class EmbeddingsClient:
         try:
 
             async def attempt(target: "ResolvedTarget") -> list[list[float]]:
-                sem = self._sem_for(target)
-                if sem is not None:
-                    await sem.acquire()
-                try:
+                async with self._gate(target):
                     resp = await self._client(target).embeddings.create(
                         model=model or target.model, input=items
                     )
-                finally:
-                    if sem is not None:
-                        sem.release()
                 # The API may return items out of order; sort by `index` to match input order.
                 ordered = sorted(resp.data, key=lambda d: getattr(d, "index", 0))
                 return [list(d.embedding) for d in ordered]

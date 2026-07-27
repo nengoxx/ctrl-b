@@ -1314,11 +1314,19 @@ def save_settings(settings: Settings, path: Path | None = None) -> None:
 
 def providers_rev(settings: Settings) -> str:
     """The `providers` subtree base revision/fingerprint (A11/D48 C2/R8): sha256 of the canonical JSON
-    of the RAW (unmasked) providers subtree, first 16 hex chars. One helper reused by `GET /api/providers`
+    of the **masked** providers subtree, first 16 hex chars. One helper reused by `GET /api/providers`
     (served as `rev`), the PUT concurrency guard (a `providers`-carrying PUT whose base != this → 409),
-    and the PUT response (`providers_rev`, the post-write value). Only the 16-char digest ever leaves the
-    process — the unmasked subtree is hashed but never emitted. `sort_keys` makes it order-independent."""
-    sub = {name: p.model_dump(mode="json") for name, p in settings.providers.items()}
+    and the PUT response (`providers_rev`, the post-write value). `sort_keys` makes it order-independent.
+
+    It hashes the MASKED dump, not the raw one (A11 pre-release audit, LOW). The digest is published
+    next to the masked values, so hashing raw secrets turns the pair into an offline verification
+    oracle: a guess can be confirmed by recomputing the digest, with the mask cutting the search space.
+    The cost is exactly the change the client cannot see either — a secret rotated to one with the same
+    `ab…yz` mask leaves the fingerprint equal — and that is harmless here, because a stale draft
+    submitting the mask restores whatever is CURRENTLY on disk (`unmask_secrets`), so it cannot clobber
+    the rotation it failed to notice.
+    """
+    sub = {name: mask_secrets(p.model_dump(mode="json")) for name, p in settings.providers.items()}
     canonical = json.dumps(sub, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 

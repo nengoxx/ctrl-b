@@ -12,7 +12,9 @@ transcription/synthesis gets a generous read window.
 Both ops run through `core.failover`: the primary is tried first, and on **any** error we fall through
 to the next hop (Phase 6 Q2 — ensure functionality), returning which provider served so the API can
 surface `X-Voice-Served-By`. Per attempt the served target's D40 request gate is acquired iff its
-effective `max_concurrent_requests` is finite (R4), held for that one attempt. TTS buffers the **whole
+effective `max_concurrent_requests` is finite (R4), held for that one attempt and **waited for only up
+to the service's `connect_timeout_s`** — a saturated server fails the hop so the chain can fall over,
+instead of parking a mic clip behind another section's long call. TTS buffers the **whole
 clip** (full-clip playback → a seekable blob), so failover wraps the entire synth atomically.
 All-endpoints-failed → `VoiceError`.
 
@@ -33,7 +35,7 @@ from app.core.failover import FailoverError, FailoverResult, failover_collect
 from app.core.provider_registry import EndpointGates
 
 if TYPE_CHECKING:
-    import asyncio
+    from contextlib import AbstractAsyncContextManager
 
     from app.domain.provider import ResolvedTarget, SttPolicy, TtsPolicy
 
@@ -123,14 +125,19 @@ class VoiceClient:
             )
         return self._clients[key]
 
-    def _sem_for(self, target: "ResolvedTarget") -> "asyncio.Semaphore | None":
-        """The shared request-gate semaphore for this target, or None when unlimited (the common
-        speaches/openrouter case — zero overhead). Keyed `(gate_identity, limit)` in the app-owned
-        registry so voice shares the D40 cap with chat on the same server (R4/C4)."""
-        limit = target.max_concurrent_requests
-        if limit is None:
-            return None
-        return self._gates.sem_for(target.gate_identity, limit)
+    def _gate(
+        self, target: "ResolvedTarget", policy: "SttPolicy | TtsPolicy"
+    ) -> "AbstractAsyncContextManager[None]":
+        """The shared request gate for this target — `EndpointGates.hold`, keyed `(gate_identity, limit)`
+        in the app-owned registry so voice shares the D40 cap with chat on the same server (R4/C4).
+        Unlimited targets (the common speaches case) cost nothing.
+
+        The wait is bounded by the service's `connect_timeout_s`: a saturated server is a hop we cannot
+        *reach* in time, and that budget is exactly "how fast we give up reaching an endpoint before
+        falling over". A timeout raises `GateWaitTimeout` inside the attempt, so the chain fails over to
+        the fallback instead of parking a mic clip behind someone else's long stream (A11 pre-release
+        audit MED — the condition on D48 Slice-2 ratification ③)."""
+        return self._gates.hold(target, wait_s=policy.connect_timeout_s)
 
     async def transcribe(
         self, *, content: bytes, filename: str, content_type: str | None
@@ -158,10 +165,7 @@ class VoiceClient:
                 language = (target.language or policy.language or "").strip()
                 if language:  # blank → omit so the server auto-detects
                     kwargs["language"] = language
-                sem = self._sem_for(target)
-                if sem is not None:
-                    await sem.acquire()
-                try:
+                async with self._gate(target, policy):
                     resp = await self._client(
                         target, policy.connect_timeout_s, policy.timeout_s
                     ).audio.transcriptions.create(
@@ -169,9 +173,6 @@ class VoiceClient:
                         file=(filename, content, content_type or "application/octet-stream"),
                         **kwargs,
                     )
-                finally:
-                    if sem is not None:
-                        sem.release()
                 return getattr(resp, "text", "") or ""
 
             try:
@@ -200,10 +201,7 @@ class VoiceClient:
                 kwargs: dict = dict(base_extra)
                 if target.speed is not None:
                     kwargs["speed"] = target.speed
-                sem = self._sem_for(target)
-                if sem is not None:
-                    await sem.acquire()
-                try:
+                async with self._gate(target, policy):
                     resp = await self._client(
                         target, policy.connect_timeout_s, policy.timeout_s
                     ).audio.speech.create(
@@ -214,9 +212,6 @@ class VoiceClient:
                         **kwargs,
                     )
                     data = await resp.aread()
-                finally:
-                    if sem is not None:
-                        sem.release()
                 return data, effective_format
 
             try:

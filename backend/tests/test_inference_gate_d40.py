@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 from _reg import registry, target
 
 from app.adapters.inference import ChatDelta, InferenceClient
-from app.core.provider_registry import EndpointGates, canonical_base_url
+from app.core.provider_registry import EndpointGates, GateWaitTimeout, canonical_base_url
 
 
 class _Delta:
@@ -359,20 +360,68 @@ def test_midstream_error_releases_permit_no_deadlock():
 # ── (A11/R4/R5) voice + embeddings share the chat gate registry and drain on retire ──────────────
 def test_voice_and_chat_share_the_same_gate_semaphore():
     """R4: a voice/embeddings attempt acquires the SAME `(gate_identity, limit)` semaphore chat uses on
-    that server — so a whisper call and a chat call on one box contend on ONE cap. None → no semaphore."""
+    that server — so a whisper call and a chat call on one box contend on ONE cap. None → no gate.
+    Chat reaches it as a raw semaphore (it holds across a whole stream); voice/embeddings go through
+    `EndpointGates.hold`, so the shared-cap claim is checked where each one actually acquires."""
     from app.adapters.embeddings import EmbeddingsClient
     from app.adapters.voice import VoiceClient
     from app.domain.provider import EmbeddingsPolicy, SttPolicy, TtsPolicy
 
-    gates = EndpointGates()
-    t = target("box", "http://box:9000/v1", "w", max_concurrent_requests=1)
-    vc = VoiceClient((t,), SttPolicy(), (), TtsPolicy(), gates)
-    ic = InferenceClient(registry([t], failover=False), gates=gates)
-    ec = EmbeddingsClient((t,), EmbeddingsPolicy(), gates)
-    sem = gates.sem_for(t.gate_identity, 1)
-    assert vc._sem_for(t) is sem and ic._sem_for(t) is sem and ec._sem_for(t) is sem  # ONE shared cap
-    unlimited = target("free", "http://free/v1", "w", max_concurrent_requests=None)
-    assert vc._sem_for(unlimited) is None  # None cap → zero overhead
+    async def scenario():
+        gates = EndpointGates()
+        t = target("box", "http://box:9000/v1", "w", max_concurrent_requests=1)
+        vc = VoiceClient((t,), SttPolicy(), (), TtsPolicy(), gates)
+        ic = InferenceClient(registry([t], failover=False), gates=gates)
+        ec = EmbeddingsClient((t,), EmbeddingsPolicy(), gates)
+        sem = gates.sem_for(t.gate_identity, 1)
+        assert ic._sem_for(t) is sem  # chat: the raw semaphore, held across the stream
+        async with vc._gate(t, SttPolicy()):  # voice holds the ONE permit …
+            assert sem.locked()
+            # … so an embed on the same box cannot get in (bounded wait → a failed hop, not a park).
+            with pytest.raises(GateWaitTimeout):
+                async with ec._gates.hold(t, wait_s=0.05):
+                    pass
+        assert not sem.locked()  # released on the way out
+
+        unlimited = target("free", "http://free/v1", "w", max_concurrent_requests=None)
+        async with vc._gate(unlimited, SttPolicy()):  # None cap → no gate, zero overhead
+            assert not gates._sems.get((unlimited.gate_identity, 1))
+
+    asyncio.run(scenario())
+
+
+def test_a_bounded_gate_wait_fails_the_hop_so_failover_advances():
+    """A11 pre-release audit MED (the condition on D48 Slice-2 ratification ③): the gate wait happens
+    INSIDE the failover attempt, so an unbounded one cannot fail over — a capped provider serving chat
+    + STT parks a mic clip behind a long stream while a healthy fallback sits idle. Bounded, the
+    saturated hop fails and the chain advances; a timed-out waiter consumes no permit."""
+    from types import SimpleNamespace
+
+    from app.adapters.voice import VoiceClient
+    from app.domain.provider import SttPolicy, TtsPolicy
+
+    async def scenario():
+        gates = EndpointGates()
+        busy = target("busy", "http://busy:9000/v1", "w", max_concurrent_requests=1)
+        spare = target("spare", "http://spare:9000/v1", "w")  # uncapped fallback
+        policy = SttPolicy(connect_timeout_s=0.05)
+        vc = VoiceClient((busy, spare), policy, (), TtsPolicy(), gates)
+
+        async def t_create(*, model, file, **kw):
+            return SimpleNamespace(text="from the fallback")
+
+        vc._client = lambda tt, ct, to: SimpleNamespace(  # type: ignore[assignment]
+            audio=SimpleNamespace(transcriptions=SimpleNamespace(create=t_create))
+        )
+        sem = gates.sem_for(busy.gate_identity, 1)
+        await sem.acquire()  # somebody else (a chat stream) holds the only slot
+        text, reply = await vc.transcribe(content=b"x", filename="a.wav", content_type=None)
+        assert text == "from the fallback"
+        assert reply.served == "spare" and reply.degraded
+        assert sem.locked()  # the timed-out waiter took nothing; the original holder still has it
+        sem.release()
+
+    asyncio.run(scenario())
 
 
 def test_voice_retire_drains_inflight_before_close():

@@ -217,6 +217,30 @@ def test_chain_for_verb_semantics() -> None:
     assert [t.provider for t in off.chain_for("openrouter")] == ["openrouter"]
 
 
+def test_chain_for_model_only_override_rides_the_primary_provider() -> None:
+    # A11 pre-release audit test gap: the `mode=None, model=X` branch — a per-message model with no
+    # `/verb` — was the one `chain_for` path with no pin. The model rides the PRIMARY provider and
+    # REPLACES its slot in place, so the rest of the chain (and its order) survives.
+    reg = _two_provider_reg()
+    chosen = reg.chain_for(None, "minig")
+    assert [t.provider for t in chosen] == ["llamacpp", "openrouter"]  # primary kept, not hoisted
+    assert chosen[0].model == "minig"
+    # an uncataloged raw id on the primary passes through (bare target), same chain shape
+    raw = reg.chain_for(None, "raw/wire-id")
+    assert [t.provider for t in raw] == ["llamacpp", "openrouter"]
+    assert raw[0].model == "raw/wire-id" and raw[0].context_window is None
+    # a model the primary cannot resolve at all coerces to the default chain, unmodified
+    multi = _settings(
+        {"m": ProviderCfg(base_url="http://m/v1", models={"x": ModelCfg(), "y": ModelCfg()})},
+        InferenceCfg(provider="m", model="x"),
+    )
+    reg2, _ = resolve_lenient(multi)
+    assert [t.model for t in reg2.chain_for(None, "y")] == ["y"]  # a second catalog entry resolves
+    # failover off ⇒ strictly the one overridden target
+    off = _two_provider_reg(failover=False)
+    assert [(t.provider, t.model) for t in off.chain_for(None, "minig")] == [("llamacpp", "minig")]
+
+
 def test_chain_for_coercion_honors_failover_off() -> None:
     # FX1 (Codex#1): an unknown / non-routable mode COERCES to the section default — but the coercion must
     # NOT re-enable failover the operator turned off. With failover=False every coercion → [primary] only.
