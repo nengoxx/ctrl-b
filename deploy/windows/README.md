@@ -33,6 +33,12 @@ emma's systemd service):
 | **`autostart-disable.cmd`** (double-click) | remove the task (stops auto-starting). Doesn't stop an already-running instance. |
 
 Notes: the task stores `start.ps1`'s absolute path — **re-run `autostart-enable` after moving the repo**.
+
+> **If the dashboard silently stops appearing after an update, run `start.cmd` by hand.** The autostart
+> task runs *hidden* with `-RestartCount 3`, so a config the new build refuses to load (it exits 78 and
+> prints the one command that fixes it) retries three times and then simply never appears — with the
+> message nowhere you can see it. The console that `start.cmd` opens is where that message lands, and it
+> stays open on failure.
 `tailscale serve` persists across reboots on its own once set, so plain auto-start is reachable on the tailnet
 if you've ever run `start.cmd -Tailscale`. Inspect/trigger it in **Task Scheduler → `ctrl-b-dashboard`**
 (or `Start-ScheduledTask -TaskName ctrl-b-dashboard`).

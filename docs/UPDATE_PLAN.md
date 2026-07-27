@@ -920,9 +920,21 @@ tailnet-only.)*
 
 ## 16. Slice 6 — AS BUILT (2026-07-27): Windows parity
 
-Three edits, exactly the brief the slice-4 review settled. Windows has **no service manager** — the app
-runs in a console window the operator started — so there is no `RestartPreventExitStatus` analogue to
-add and none is needed: nothing there restarts it.
+Three edits, exactly the brief the slice-4 review settled.
+
+**⚠ Correction to the brief itself (Fable, verified in the repo).** I recorded "no
+`RestartPreventExitStatus` analogue is needed: nothing on Windows restarts it." **That is false** —
+`deploy/windows/autostart-enable.ps1` registers a Scheduled Task at logon with `-RestartCount 3
+-RestartInterval (New-TimeSpan -Minutes 1)` and `-WindowStyle Hidden`. So Windows *does* have a
+restarter, and the autostart path is the **worst** case for this slice: with no console, the pause and
+the exit-code propagation do nothing, the task re-runs a guaranteed exit-78 three times, and then the
+operator simply finds the dashboard absent — the silent failure this whole plan exists to kill.
+
+No analogue can be built: Task Scheduler's restart policy is unconditional on failure and cannot be
+told to stop on a particular exit code. The honest ceiling is therefore **documentation**, and
+`deploy/windows/README.md` now carries the recovery line ("if the dashboard vanishes after an update,
+run `start.cmd` manually — the console will show the fix"). The console path keeps the full benefit of
+the two exit-code edits.
 
 | File | Change | Why |
 |---|---|---|
@@ -942,4 +954,7 @@ fleet host) — and `pwsh` is not installed on emma, so not even a parse check w
 edits are small, idiomatic and follow patterns already in the same files, but **they have not been
 executed**. Anyone reviving the Windows path should run `setup.cmd` then `start.cmd` against a legacy
 config and confirm: the console stays open, the message names
-`python -m app.config_migration --apply`, and `echo %ERRORLEVEL%` prints 78.
+`python -m app.config_migration --apply`, and `echo %ERRORLEVEL%` prints 78. **Then check the autostart
+path specifically**: enable the Scheduled Task, leave a config the build refuses, and observe what the
+task does with exit 78 — how many retries actually run, and whether the refusal lands anywhere an
+operator would ever see.

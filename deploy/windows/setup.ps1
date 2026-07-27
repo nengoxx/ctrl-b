@@ -59,6 +59,9 @@ try {
   # The Windows analogue of install.sh's dev guard: there is no service manager here, so "is it running?"
   # is "is the port held?" — the same probe start.ps1 already uses. Migrating under a live instance would
   # let that process write its OLD in-memory settings back afterwards, resurrecting legacy keys.
+  # It proves the PORT IS HELD, not that we are holding it — the same honesty the Linux identity gate
+  # states. A stranger on 5433 refuses the migration, but `start.ps1` would refuse the start for the
+  # same reason, so the two agree; a hand-started instance elsewhere is the residual Linux accepts too.
   if (Get-NetTCPConnection -LocalPort 5433 -State Listen -ErrorAction SilentlyContinue) {
     throw "the dashboard is running on :5433 - close that window before migrating its config, then re-run."
   }

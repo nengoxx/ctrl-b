@@ -53,6 +53,8 @@ if ($Dev) {
 # PROPAGATE the exit code (UPDATE_PLAN slice 6). Without this the script always returns 0, so
 # `start.cmd`'s `if errorlevel 1 pause` never fires — and the app's import-time config refusal (exit 78,
 # §14) would print its fix instruction into a console window that then vanishes. There is no
-# restart-prevention analogue to add here: nothing on Windows restarts this, so propagating the code and
-# holding the window open IS the whole parity requirement.
+# There is no restart-prevention analogue available: the autostart Scheduled Task
+# (autostart-enable.ps1) DOES restart this, with -RestartCount 3, and Task Scheduler's policy cannot be
+# told to stop on a particular exit code. In the CONSOLE path these two lines are the whole parity
+# requirement; in the hidden autostart path the refusal is invisible, which README.md warns about.
 exit $LASTEXITCODE
