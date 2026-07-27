@@ -144,10 +144,17 @@ migration --check || { echo "→ aborted before the frontend build and the cutov
 # `--check` exits 0 for "needed" as well as "not needed" (§3.5 locks that, so the `|| exit 1` above means
 # "would FAIL", not "would change something"). PROD therefore applies at the cutover, where the service is
 # verifiably stopped. DEV has no cutover — its units are on-demand — so it applies HERE: otherwise this
-# script would report success and leave a config the dev units refuse to boot on. A dev unit that happens
-# to be running is not a hazard the flock covers (§7 accepts this): the running process re-reads config
-# only on a PUT or a restart, and a PUT mid-apply trips the runner's digest guard, which refuses rather
-# than clobbers.
+# script would report success and leave a config the dev units refuse to boot on.
+#
+# A RUNNING dev backend is refused, not tolerated. The digest guard protects the apply itself against a
+# competing write, but the hazard is the write AFTER it: an old process outlives the migration holding
+# OLD-SHAPE settings in memory, and its next Conf PUT dumps them back — resurrecting legacy keys into a
+# stamped config, the exact state the postcondition exists to make impossible (Fable). §7 declined
+# *cross-platform* service-active detection as unreliable machinery; this is a Linux-only script that is
+# already wall-to-wall systemctl and whose prod path already bets on `is-active`, so this narrows §7
+# rather than breaching it. Refusing beats stopping the unit ourselves: never kill a dev session
+# silently. Residual, accepted: a hand-started uvicorn outside systemd is invisible here, and the digest
+# guard remains the only net for it.
 # Role asymmetry, accepted: for PROD the unit-environment scan (5.2) runs BEFORE the apply (5.5); for
 # DEV the apply is here, so a `CTRLB_*__*` hiding in a dev unit drop-in is caught only afterwards. The
 # run still fails with the same actionable message and the remedy is unchanged — only the order differs.

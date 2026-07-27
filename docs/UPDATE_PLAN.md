@@ -399,7 +399,10 @@ deleting code rather than adding it.**
    restore is **mandatory**, not conditional. `update.sh` itself shrinks to orchestration (tag resolve →
    pre-checkout VERSION downgrade guard → lock + `CTRLB_DEPLOY_LOCK_HELD=1` → checkout → `install.sh
    prod` → failure message), since the lock, check, apply, stop-verify and health gate all live in
-   slice 5 now and must not be reimplemented.
+   slice 5 now and must not be reimplemented. **Two riders from the slice-5 second round:** `update.sh`
+   must compute `LOCK` from the **identical `$CTRLB_HOME` default chain** before exporting
+   `CTRLB_DEPLOY_LOCK_HELD="$LOCK"`, or the new path-equality bypass never matches and the child blocks
+   on its parent; and the **STALE marker on `README.md` §Rollback must not outlive this slice**.
 8. **D48 amendment**, full gate, release.
 
 **Verification bar per slice:** `check.py` green, plus the real-config rehearsal — prod and dev config
@@ -880,6 +883,23 @@ before fixing.
 | MED | Post-stop failures left several distinct outage states, unnamed. | `dist.next` is validated **before** the snapshot and the stop (a missing build must not cause an outage), and every post-stop step names the state it leaves prod in. |
 | MED | The "30-second" gate could take ~120s (3s curl + 1s sleep, 30×). | A wall-clock deadline. The 78 branch also queries `ActiveState` before claiming the unit is stopped, and the `journalctl \| sed` pipeline is best-effort so `pipefail` cannot suppress the rollback hint. |
 | MED | **Dev could migrate underneath its own running backend** — the digest guard catches competing *writes*, not an old process with old in-memory settings writing afterwards. | `install.sh dev` refuses while `ctrl-b-dashboard-dev` is active, naming the stop command. §7 declined general service-active detection as unreliable machinery, but the prod stop gate already depends on `is-active` on this same box, so this is consistent rather than new. |
+
+**The principle that keeps future gate additions honest** (Fable, second round): **pre-cutover gates are
+free aborts — post-cutover gates are refusals to lie.** Everything before the stop (lock · preflight ·
+env scan · `dist.next` · snapshot integrity) aborts with the old service still serving, so those stops
+cost nothing and more of them is strictly better. Everything after it cannot meaningfully "warn":
+proceeding past a failed stop or apply corrupts, and by the health gate the outage already exists — the
+abort is only refusing to report success while naming the state left behind. The one legitimate degrade,
+untagged prod skipping version identity, already says so out loud.
+
+**The dev guard NARROWS §7 rather than breaching it** (ruled, second round). §7 declined *cross-platform*
+service-active detection as unreliable machinery; `install.sh` is Linux-only, already wall-to-wall
+`systemctl`, and its prod path already bets correctness on `is-active`. The hole it closes is the worst
+class this plan has: the digest guard protects the apply against a competing write, but an old dev
+process that outlives the migration holds **old-shape settings in memory**, and its next Conf PUT dumps
+them back — resurrecting legacy keys into a stamped config, precisely what the postcondition exists to
+prevent. It refuses rather than stopping the unit itself (never kill a dev session silently), and the
+residual — a hand-started `uvicorn` outside systemd — stays with the digest guard as its only net.
 
 **Confirmed clean by the review:** the deliberately unquoted `printf '    %s\n' $bad` (its contents are
 `[A-Za-z0-9_]` names, so nothing can word-split or glob) · fd 9 is retained by the parent and inherited
