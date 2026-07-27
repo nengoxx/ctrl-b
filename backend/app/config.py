@@ -1153,7 +1153,13 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
     # concurrent write applies a value that was never the one we decided to apply.
     env = dict(os.environ)
     for full, section, key in env_override_vars(env):
-        if not _env_path_is_declared(section, key):
+        # Warned ONCE per process. `load_settings` runs at least twice on a normal boot since slice 4
+        # (the import-time preflight proves the config loads, then the lifespan loads it for real) and
+        # again on every config write, so an un-deduplicated warning repeats an identical line at the
+        # operator on the one channel they have. Keyed by the variable, so a DIFFERENT bad variable
+        # still speaks up.
+        if not _env_path_is_declared(section, key) and full not in _WARNED_ENV_PATHS:
+            _WARNED_ENV_PATHS.add(full)
             _LOG.warning(
                 "%s targets `%s.%s`, which this build does not define, so it cannot take effect. "
                 "Config overrides are one level deep (CTRLB_<SECTION>__<KEY>) and cannot address "
@@ -1169,6 +1175,10 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 _LOG = logging.getLogger("ctrlb.config")
+
+#: Variables already warned about this process (see `_apply_env_overrides`). Deliberately unbounded:
+#: it is keyed by env-var name, so its size is bounded by the environment itself.
+_WARNED_ENV_PATHS: set[str] = set()
 
 #: Every config-held `ModelRef` home, as key paths — the closed list (A11/D48 C1). Declared as data
 #: rather than buried in a walker because two callers need the paths themselves: the rename cascade

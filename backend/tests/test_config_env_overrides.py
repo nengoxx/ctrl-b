@@ -103,6 +103,7 @@ def test_the_suite_strips_inherited_overrides() -> None:
     ],
 )
 def test_an_undeclared_override_warns_by_name_and_never_by_value(var, path, monkeypatch, caplog) -> None:
+    monkeypatch.setattr(cm_config, "_WARNED_ENV_PATHS", set())  # the warn-once set, fresh per test
     monkeypatch.setenv(var, "sk-SECRET")
     with caplog.at_level(logging.WARNING, logger=_LOGGER):
         _apply_env_overrides({})
@@ -110,6 +111,10 @@ def test_an_undeclared_override_warns_by_name_and_never_by_value(var, path, monk
     message = caplog.records[0].getMessage()
     assert var in message and path in message
     assert "sk-SECRET" not in message
+
+    caplog.clear()  # …and NOT again: load_settings runs twice on a boot since slice 4 (preflight +
+    _apply_env_overrides({})  # lifespan) and on every config write, so a repeat is pure noise.
+    assert caplog.records == []
 
 
 # ── the retired-path guard ───────────────────────────────────────────────────────────────────────
