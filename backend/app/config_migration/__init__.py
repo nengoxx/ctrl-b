@@ -66,6 +66,7 @@ from app.config import (
     env_override_vars,
     home_path,
     load_dotenv,
+    sanitise_validation_error,
     yaml_rt,
 )
 
@@ -550,17 +551,11 @@ def detect(ctx: Context, steps: Sequence[Step] = STEPS) -> Status:
 
 
 def _sanitise_validation_error(exc: ValidationError, origin: str, stage: str) -> str:
-    """Render a pydantic `ValidationError` as locations + messages only.
-
-    `str(exc)` appends `input_value=…` for every failing field — for a provider that is the whole
-    provider dict **including its `api_key`** (§3.5). Only `loc` and the type-derived `msg` are kept;
-    `input` is dropped entirely.
-    """
-    lines = [f"{origin}: {len(exc.errors())} validation error(s) {stage}"]
-    for err in exc.errors()[:10]:
-        loc = ".".join(str(x) for x in err["loc"]) or "<root>"
-        lines.append(f"  {loc}: {err['msg']} [{err['type']}]")
-    return "\n".join(lines)
+    """The §3.5 sanitised rendering — now `config.sanitise_validation_error`, which the live boot path
+    needs for the same reason this did (Codex, slice-3 code review: an invalid value reached the
+    journal through an uncaught `ValidationError` at `main.py`). Kept as a one-line alias so the raise
+    sites below still read as migration-local."""
+    return sanitise_validation_error(exc, origin, stage)
 
 
 def validate(ctx: Context, plan: Plan | None) -> Settings:
@@ -805,6 +800,28 @@ def _write_agent(ctx: Context, path: Path, doc: dict[str, Any]) -> None:
 # ── retired environment overrides ────────────────────────────────────────────────────────────────
 
 
+def _retired_path(entry: Any, step: Step) -> tuple[str, str]:
+    """Validate one `retires` declaration, refusing a step bug instead of silently never matching.
+
+    The parser always yields exactly `(section, key)`, lower-cased, so a one- or three-segment
+    declaration — or `("Embeddings", "API_KEY")`, or the dotted `("embeddings.api_key",)` — can never
+    match anything. Left unchecked, that reads as "no retired variable is set" and the protection is
+    silently off for a path a step believed it had retired. This is the same class as slice 1's empty
+    `consumes` entry (§11): a declaration that cannot mean what it says is a step bug, not a no-op.
+    """
+    ok = (
+        isinstance(entry, tuple)
+        and len(entry) == 2
+        and all(isinstance(s, str) and s and s == s.lower() for s in entry)
+    )
+    if not ok:
+        raise MigrationRefused(
+            f"step {step.version} bug: `retires` entry {entry!r} is not a lower-case "
+            "(section, key) pair — the one-level env grammar can only address exactly two segments"
+        )
+    return (entry[0], entry[1])
+
+
 def retired_env_overrides(
     steps: Sequence[Step] = STEPS, environ: Mapping[str, str] | None = None
 ) -> list[tuple[str, str]]:
@@ -818,12 +835,13 @@ def retired_env_overrides(
     Callers differ on purpose. `check()`/`apply()` **refuse** on a non-empty result: they run attended,
     at the update gate, with prod still serving, and that is the one moment the fix is cheap. Slice 4's
     boot check will call this same function and **log** — an old line in `.env` must not take down the
-    only UI there is to fix it with, and by then the migration gate has already forced the value onto
-    disk. The two callers also see different environments: the CLI sees the operator's shell and
-    `.env`, while the service additionally sees the systemd user manager's `Environment=`, so neither
-    check subsumes the other.
+    only UI there is to fix it with, and by then the migration gate has forced onto disk any value the
+    CLI could see. That caveat is the point: the two callers see **different environments** — the CLI
+    sees the operator's shell and `.env`, the service additionally sees the systemd user manager's
+    merged `Environment=` (unit file *and* drop-ins) — so neither check subsumes the other, and a
+    credential supplied only to the service is exactly what slice 5's `install.sh` scan has to catch.
     """
-    retired = {p for s in steps for p in s.retires}
+    retired = {_retired_path(p, s) for s in steps for p in s.retires}
     return [
         (var, f"{section}.{key}")
         for var, section, key in env_override_vars(environ)
@@ -831,25 +849,27 @@ def retired_env_overrides(
     ]
 
 
-def _refuse_retired_env(steps: Sequence[Step]) -> None:
+def _refuse_retired_env(ctx: Context, steps: Sequence[Step]) -> None:
     """Refuse while the environment still carries an override this build retired (§7).
 
-    Names only — the variable and the dead path it addresses, never a value. The remedy covers both
-    sides of the migration because this runs on either side of it: before, the legacy key the variable
-    names is still the right home and the fold will carry it into the generated provider; after, that
-    key is gone and the credential belongs on the provider the section points at.
+    Names only — the variable and the dead path it addresses, never a value.
+
+    The remedy differs on the two sides of the migration, chosen by the **stamp** rather than by
+    running the steps: `is_stamped` is a dict lookup, while `needs_migration` executes every step —
+    and this refusal deliberately precedes planning, so that a config error cannot mask the variable.
     """
     found = retired_env_overrides(steps)
     if not found:
         return
     listing = "\n  ".join(f"{var} -> {path}" for var, path in found)
+    where = (
+        "on the provider that section now points at"
+        if is_stamped(ctx.config)
+        else "under the legacy key the variable names — the migration carries it into the provider it creates"
+    )
     raise MigrationRefused(
         "environment override(s) address config paths this build retired:\n  " + listing,
-        remedy=(
-            "unset them and re-run. A value one of them supplied has to live in config.yaml instead: "
-            "before migrating, under the legacy key the variable names (the migration carries it into "
-            "the provider it creates); after migrating, on the provider that section points at"
-        ),
+        remedy=f"unset them and re-run. A value one of them supplied has to live in config.yaml, {where}",
     )
 
 
@@ -910,13 +930,16 @@ def check(ctx: Context, steps: Sequence[Step] = STEPS) -> Status:
     """`--check`: parse, plan, validate, probe writability. Writes nothing. Raises `MigrationRefused`
     for anything that would fail, so a caller (`install.sh`) can abort while prod is still serving.
 
-    `detect()` runs FIRST so a **downgrade** is reported before anything else (Codex): on a config
-    written by a newer build, this build's remediation for a retired variable is advice about a shape
-    it no longer knows to be true, and the operator needs "restore the config" long before "unset that
-    variable".
+    **Precedence, in three steps rather than two** (Codex, twice): the *marker* is read first, so a
+    config written by a newer build is refused before anything else — this build's remediation for a
+    retired variable would be advice about a shape it no longer knows to be true. Then the environment,
+    then planning. Ordering `detect()` first instead would have given **every** step failure precedence
+    over the environment: a config with `providers: nonsense` AND a retired variable would report the
+    config error, and the operator would fix it, re-run, and only then learn about the variable.
     """
+    _refuse_downgrade(read_marker(ctx.config))
+    _refuse_retired_env(ctx, steps)
     status = detect(ctx, steps)
-    _refuse_retired_env(steps)
     if not status.exists or not ctx.config:
         return status
     plan = build_plan(ctx, steps)
@@ -949,8 +972,9 @@ def apply(ctx: Context, steps: Sequence[Step] = STEPS) -> Applied:
     fail, which is a worse failure than the one it prevents. A failure *after* the commit is reported
     as its own state, naming the backup to restore.
     """
-    status = detect(ctx, steps)  # downgrade first — see `check()`
-    _refuse_retired_env(steps)
+    _refuse_downgrade(read_marker(ctx.config))  # marker → environment → plan; see `check()`
+    _refuse_retired_env(ctx, steps)
+    status = detect(ctx, steps)
     if not status.exists or not ctx.config:
         return Applied(status=status)  # absent or empty → never created, never stamped (§3.2)
     plan = build_plan(ctx, steps)

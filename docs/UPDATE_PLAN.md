@@ -380,9 +380,12 @@ deleting code rather than adding it.**
 4. **`main.py` import-time check + `RestartPreventExitStatus=78`** — and **verify the terminal
    `failed` status 78 on the dev unit**, plus the `--reload` worker path (a reload worker exits through
    uvicorn's `ChangeReload` parent, not systemd — behaviour unverified).
-5. **`install.sh`**: hook + fatal stop + health gate + flock, **+ scan the rendered unit's
-   `Environment=` lines for `CTRLB_*__*` and fail the gate** (§13.1 — a service-only override is
-   invisible to the CLI, so this is the only attended place it can be caught).
+5. **`install.sh`**: hook + fatal stop + health gate + flock, **+ scan the unit's MERGED environment
+   for `CTRLB_*__*` and fail the gate** — `systemctl --user show <unit> -p Environment`, **not** the
+   rendered unit file: `systemctl --user edit` writes a drop-in (`<unit>.d/override.conf`), which is
+   exactly where an operator adds a variable without touching the file `install.sh` renders (Fable,
+   §13.1). A service-only override is invisible to the CLI, so this is the only attended place it can
+   be caught.
 6. **Windows parity.**
 7. **`update.sh`** + runbook rewrite + `config_version: 1` in `config.example.yaml`.
 8. **D48 amendment**, full gate, release.
@@ -622,3 +625,32 @@ unattended boot. Recorded as a slice-5 requirement in §10.
 **Standing note for slice 4:** Codex and Fable have now split twice on this same axis (fail-closed vs
 fail-visible for environment residue). The ruling is fail-visible, with the attended gates carrying the
 refusals. Slice 4 logs at **ERROR** level, naming the variable and the role it no longer feeds.
+
+### 13.2 Code review of the implemented slice (both reviewers, 2026-07-27)
+
+Owner-requested review of the code rather than the design. **Fable: SHIP AS BUILT** — the code matches
+the ruling rather than the prose flattering it, the dependency direction is right (permanent `config.py`
+owns the parser; the deletable package borrows it), and **nothing is orphaned** when `steps.py` is
+deleted: `Step.retires`/`retired_env_overrides`/`_refuse_retired_env` stay as generic mechanism, the six
+paths die with the step. It verified the five retracted documents are mutually consistent and that no
+live text anywhere still promises env-supplied secrets. **Codex: DO NOT SHIP**, with a HIGH that was
+real. Both reviewers' findings are fixed in the wave recorded below.
+
+| Sev | Found by | Defect | Fix |
+|---|---|---|---|
+| HIGH | Codex | **A rejected value reaches the journal.** `str(ValidationError)` renders `input_value=…` for every failing field; `load_settings` let it escape uncaught to `main.py`, so `CTRLB_PROVIDERS__X__API_KEY=<secret>` (warned about, still applied, then invalid) put that secret in a systemd traceback. Reproduced. | `load_settings` raises `ConfigValidationError` carrying the **sanitised** rendering. The sanitiser was already written — in the migration package, for this exact reason — so it moved to `config.py` and the package imports it: one implementation, correct layer. |
+| — | me (fixing it) | `raise … from None` suppresses the *display* of the chained exception but the object still reaches the `ValidationError` through `__context__` — one attribute away from any logger. Caught by writing the test strictly. | The message is built inside the handler and **raised outside it**, so no active exception exists to chain and the reference is gone. |
+| MED | Codex | **A malformed `retires` declaration silently disables the guard.** A future step writing `("embeddings.api_key",)`, three segments, or upper case can never match a parsed `(section, key)` — which reads exactly like "no retired variable is set". | `_retired_path` refuses it as a step bug. Same class, and the same answer, as slice 1's empty `consumes` entry (§11). |
+| LOW | Codex | **The ordering fix over-corrected.** Putting `detect()` first gave *every* step failure precedence, so `providers: nonsense` + a retired variable meant fixing the config, re-running, and only then learning about the variable. | Three-step precedence: **marker/downgrade → environment → plan**. That is what the intent was; `detect()`-first was a blunt version of it. |
+| LOW | Codex | Undeclared variable **names** were logged unescaped — `env(1)`/`execve` accept a newline in a name, forging a journal line at an attacker-chosen severity. | `_loggable()` escapes them. My first fix escaped only the name; a test caught that `section`/`key` are slices of that same text and were still raw. |
+| MED | Fable | **The slice-5 fix as specified misses systemd drop-ins** — `systemctl --user edit` writes `<unit>.d/override.conf`, precisely where an operator adds a variable without touching the rendered file. | §10 slice 5 now says `systemctl --user show <unit> -p Environment` (the merged view). Corrected before slice 5 is briefed against the weaker wording. |
+| LOW | Fable | `retired_env_overrides`'s docstring claimed the gate "has already forced the value onto disk" — untrue for exactly the blind spot §13.1 documents. | Tempered to "any value the CLI could see", and it now names the drop-in case. |
+| LOW | Fable | The remedy's two-sided sentence is noise on an already-stamped config. | Chosen by `is_stamped` — a dict lookup, so the refusal still precedes planning. |
+| LOW | Fable | `A11_RETIRED_ENV_PATHS`'s comment cited only the soundness test. | Names both, and says why it takes both. |
+| — | Codex | `dict(os.environ)` is not atomic — a concurrent mutator can still raise `KeyError`; proposed a module-level lock around all environment mutation. | **DECLINED.** Nothing in this app mutates `os.environ` after `load_dotenv()` at startup, and the snapshot already strictly narrows the window the previous code had. A lock over process-global state to guard a mutator that does not exist is machinery we would maintain forever. Recorded, not built. |
+
+**Tests added with the wave** (24 in the module now): the canary test for the boot path — asserting on
+`__cause__` **and** `__context__`, which is what caught the reference-still-reachable bug — a hostile
+variable name that tries to forge a log line, malformed `retires` declarations, the remedy differing on
+each side of the migration, and a refusal test that replaces **every** writing primitive with a bomb so
+"nothing was written" is pinned rather than inferred from a missing backups directory.

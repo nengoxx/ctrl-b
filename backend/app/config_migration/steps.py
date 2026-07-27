@@ -498,8 +498,12 @@ def _refuse_unmappable(ctx: Context, slot_map: Mapping[str, str]) -> None:
 #:  2. **Only what the NEW schema no longer declares.** `embeddings.model` and `inference.fallbacks`
 #:     are consumed by this fold *and still exist* — same spelling, new meaning (a provider-relative
 #:     model selector; a structured ref list). Listing them would refuse a valid
-#:     `CTRLB_EMBEDDINGS__MODEL`. `test_no_retired_path_names_a_live_field` pins the rule against the
-#:     live models so the next step cannot get this wrong.
+#:     `CTRLB_EMBEDDINGS__MODEL`.
+#:
+#: Both rules are pinned mechanically, and it takes both tests:
+#: `test_no_retired_path_names_a_live_field` is SOUNDNESS (nothing listed here is still declared) and
+#: passes for an empty list, so `test_the_retired_list_is_exactly_what_the_fold_kills_and_the_schema_forgot`
+#: supplies COMPLETENESS by deriving this set from the fold's own `consumes`.
 A11_RETIRED_ENV_PATHS: tuple[tuple[str, str], ...] = (
     ("inference", "default_mode"),
     ("inference", "local"),

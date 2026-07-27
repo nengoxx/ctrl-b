@@ -31,7 +31,7 @@ from typing import Any, ClassVar, Literal, TypeGuard
 
 import yaml
 from dotenv import dotenv_values
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator, model_validator
 from ruamel.yaml import YAML
 from ruamel.yaml.error import CommentMark
 from ruamel.yaml.tokens import CommentToken
@@ -1123,6 +1123,17 @@ def _env_path_is_declared(section: str, key: str) -> bool:
     return isinstance(ann, type) and issubclass(ann, BaseModel) and key in ann.model_fields
 
 
+def _loggable(s: str) -> str:
+    """Escape operator-supplied text on its way to a log line — **including the path derived from it**.
+
+    A variable name is not a secret, but it is untrusted text: `env(1)` and `execve` accept a newline
+    inside a variable name even though no shell can produce one, and an unescaped one forges a second
+    journal entry with an attacker's severity. Escaping only the name is not enough, which a test
+    caught — `section`/`key` are slices of that same name. Ordinary ASCII passes through unchanged.
+    """
+    return s.encode("unicode_escape").decode("ascii")
+
+
 def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
     """Overlay `CTRLB_<SECTION>__<KEY>=value` env vars onto the parsed YAML (env wins).
 
@@ -1146,9 +1157,7 @@ def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
                 "%s targets `%s.%s`, which this build does not define, so it cannot take effect. "
                 "Config overrides are one level deep (CTRLB_<SECTION>__<KEY>) and cannot address "
                 "provider credentials; those live in config.yaml.",
-                full,
-                section,
-                key,
+                *(_loggable(s) for s in (full, section, key)),
             )
         bucket = raw.get(section)
         if not isinstance(bucket, dict):
@@ -1191,6 +1200,30 @@ def walk_model_refs(raw_doc: dict[str, Any], fn: Any) -> None:
             fn(ref)
 
 
+class ConfigValidationError(ValueError):
+    """A config this build cannot load — carrying a **sanitised** message (locations only).
+
+    Its whole reason to exist is that the pydantic error it replaces must never escape: `str()` of a
+    `ValidationError` appends `input_value=…` for every failing field, which for a provider is the
+    whole provider dict **including its `api_key`**. Uncaught at `main.py`, that traceback lands in the
+    systemd journal — a secret in a log, which the security model forbids outright.
+    """
+
+
+def sanitise_validation_error(exc: ValidationError, origin: str, stage: str = "") -> str:
+    """Render a pydantic `ValidationError` as locations + messages only, never `input`.
+
+    Shared by `load_settings` (the live boot path) and `app.config_migration` (which found the hazard
+    first): both validate operator-authored, secret-bearing documents, and neither may echo a value.
+    """
+    stage = f" {stage}" if stage else ""
+    lines = [f"{origin}: {len(exc.errors())} validation error(s){stage}"]
+    for err in exc.errors()[:10]:
+        loc = ".".join(str(x) for x in err["loc"]) or "<root>"
+        lines.append(f"  {loc}: {err['msg']} [{err['type']}]")
+    return "\n".join(lines)
+
+
 def load_settings(path: Path | None = None) -> Settings:
     """Load settings: `.env` → `os.environ`, then YAML, then env overrides (env wins), then validate.
 
@@ -1206,7 +1239,15 @@ def load_settings(path: Path | None = None) -> Settings:
     if not isinstance(raw, dict):
         raise ValueError(f"{p} must contain a YAML mapping at the top level")
     raw.pop(CONFIG_VERSION_KEY, None)  # file-shape metadata, never settings (UPDATE_PLAN §3.8)
-    return Settings.model_validate(_apply_env_overrides(raw))
+    try:
+        return Settings.model_validate(_apply_env_overrides(raw))
+    except ValidationError as exc:
+        message = sanitise_validation_error(exc, str(p))
+    # Raised OUTSIDE the handler on purpose. `raise … from None` only suppresses *display* of the
+    # chained exception — the object still reaches through `__context__` to a `ValidationError` whose
+    # `str()` carries `input_value=…`, i.e. the rejected secret, one attribute away from any logger.
+    # Once the handler has exited there is no active exception, so the new error carries no reference.
+    raise ConfigValidationError(message)
 
 
 def _write_replace_0600(p: Path, data: bytes) -> None:

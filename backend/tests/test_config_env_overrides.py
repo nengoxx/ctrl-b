@@ -23,6 +23,7 @@ import conftest
 import pytest
 from pydantic import BaseModel
 
+from app import config as cm_config
 from app import config_migration as cm
 from app.config import Settings, _apply_env_overrides, env_override_vars, load_settings
 from app.config_migration.steps import A11_RETIRED_ENV_PATHS, a11_apply
@@ -176,6 +177,83 @@ def test_detect_does_not_refuse_so_the_boot_check_can_warn(tmp_path, monkeypatch
 
 def test_nothing_is_reported_when_no_override_is_set() -> None:
     assert cm.retired_env_overrides(environ={}) == []
+
+
+def test_apply_touches_nothing_at_all_when_it_refuses(tmp_path, monkeypatch) -> None:
+    """Stronger than "the file is unchanged": every writing primitive is replaced by a bomb, so the
+    claim "nothing was written" is pinned rather than inferred from the absence of a backups dir."""
+    _legacy_workspace(tmp_path, monkeypatch)
+    monkeypatch.setenv("CTRLB_EMBEDDINGS__API_KEY", "sk-SECRET")
+
+    def boom(*_a, **_k):  # pragma: no cover — the point is that it is never reached
+        raise AssertionError("the refusal path wrote something")
+
+    for name in ("_backup", "_write_config", "_write_agent", "edit_config_yaml", "_probe_writable"):
+        monkeypatch.setattr(cm, name, boom)
+    with pytest.raises(cm.MigrationRefused):
+        cm.apply(cm.context_from_env())
+
+
+def test_the_remedy_names_the_right_home_on_each_side_of_the_migration(tmp_path, monkeypatch) -> None:
+    home = _legacy_workspace(tmp_path, monkeypatch)
+    monkeypatch.setenv("CTRLB_EMBEDDINGS__API_KEY", "sk-SECRET")
+    with pytest.raises(cm.MigrationRefused) as legacy:
+        cm.check(cm.context_from_env())
+    assert "legacy key" in legacy.value.remedy  # not migrated yet → the fold will carry it across
+
+    monkeypatch.delenv("CTRLB_EMBEDDINGS__API_KEY")
+    cm.apply(cm.context_from_env())  # migrate, then the variable comes back
+    monkeypatch.setenv("CTRLB_EMBEDDINGS__API_KEY", "sk-SECRET")
+    with pytest.raises(cm.MigrationRefused) as migrated:
+        cm.check(cm.context_from_env())
+    assert "provider that section now points at" in migrated.value.remedy
+    assert (home / "config.yaml").exists()
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        ("embeddings.api_key",),  # dotted, one segment — never matches a parsed (section, key)
+        ("voice", "stt", "primary"),  # three segments — the grammar cannot address it
+        ("Embeddings", "API_KEY"),  # upper case — the parser lower-cases, so this is unreachable
+        ("embeddings", ""),  # empty segment
+    ],
+)
+def test_a_malformed_retires_declaration_is_a_step_bug_not_a_silent_no_op(bad) -> None:
+    """A declaration that cannot match reads exactly like "no retired variable is set" — the
+    protection would be off for a path the step believed it had retired. Same class as slice 1's empty
+    `consumes` entry, and refused the same way."""
+    step = cm.Step(version=1, applies=lambda _c: False, apply=lambda _c: cm.Plan(config={}), retires=(bad,))
+    with pytest.raises(cm.MigrationRefused, match="step 1 bug"):
+        cm.retired_env_overrides([step], {"CTRLB_EMBEDDINGS__API_KEY": "x"})
+
+
+# ── the boot path must not print what it validated ───────────────────────────────────────────────
+
+
+def test_load_settings_never_echoes_a_rejected_value(tmp_path, monkeypatch) -> None:
+    """A pydantic `ValidationError` renders `input_value=…` for every failing field — for a provider,
+    the whole dict including its `api_key`. Uncaught at `main.py` that traceback lands in the systemd
+    journal, which the security model forbids. The env path reaches it easily: an override onto an
+    undeclared provider key is warned about and still applied, and then fails validation."""
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("server:\n  port: 5433\n", encoding="utf-8")
+    monkeypatch.setenv("CTRLB_PROVIDERS__OPENROUTER__API_KEY", "sk-SYNTHETIC-CANARY")
+    with pytest.raises(cm_config.ConfigValidationError) as exc:
+        load_settings(cfg)
+    rendered = f"{exc.value}{exc.value.__cause__ or ''}{exc.value.__context__ or ''}"
+    assert "sk-SYNTHETIC-CANARY" not in rendered
+    assert "providers" in str(exc.value) and str(cfg) in str(exc.value)  # location, not value
+
+
+def test_a_hostile_variable_name_cannot_forge_a_log_line(monkeypatch, caplog) -> None:
+    """Variable NAMES are operator-supplied text on their way to the journal, and `env(1)`/`execve`
+    accept a newline in one even though no shell can produce it."""
+    monkeypatch.setenv("CTRLB_EVIL\n2026-01-01 CRITICAL forged__KEY", "x")
+    with caplog.at_level(logging.WARNING, logger=_LOGGER):
+        _apply_env_overrides({})
+    assert "\n" not in caplog.records[0].getMessage()
+    assert "\\n" in caplog.records[0].getMessage()
 
 
 # ── the invariant that keeps the next step honest ────────────────────────────────────────────────
