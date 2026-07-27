@@ -236,12 +236,25 @@ terminal — the unit will not retry), naming the one command that fixes it in t
 alone leaves the older build reading a config whose `providers:` it does not understand, and because its
 sections tolerate unknown keys it boots "healthy" with **zero providers**: chat and voice silently dead.
 
-**Steps 5–6 in one command.** `update.sh` does the tag checks, the CI gate, the downgrade precheck and
-the verification around `install.sh`, and tells you exactly what state prod is in if anything fails:
+**Steps 5–6 in one command** — `update.sh` does the tag checks, the CI gate, the compatibility
+precheck and its own health verification around `install.sh`, and reports exactly what state prod is in
+if anything fails:
 ```bash
-bash ~/apps/ctrl-b/deploy/linux/update.sh vX.Y.Z          # add --force only to deploy a red CI run
-bash ~/apps/ctrl-b/deploy/linux/update.sh v(prev)         # …and this is the rollback
+bash ~/apps/ctrl-b/deploy/linux/update.sh vX.Y.Z          # --force only for an unverifiable CI state
 ```
+> **THE FIRST TIME, IT IS NOT THERE YET.** `update.sh` ships *in* the release that introduces it, so the
+> currently-deployed tag has no copy of it. For that one release, run the updater straight out of the
+> tag being deployed:
+> ```bash
+> git -C ~/apps/ctrl-b fetch --tags
+> git -C ~/apps/ctrl-b show vX.Y.Z:deploy/linux/update.sh | bash -s -- vX.Y.Z
+> ```
+> From the next release onward the plain command above works, because the file is then on disk.
+
+**Rolling back is NOT `update.sh v(prev)`** when the previous tag predates this release: that build's
+`install.sh` swallows a failed stop and has no health gate, so the updater refuses to drive it and
+prints the manual sequence instead. Use **§Rollback** below.
+
 The manual sequence below remains the explicit fallback and is what `update.sh` orchestrates.
 **Tags are immutable** — never re-point one; a bad release gets `vX.Y.Z+1` (or roll back). The
 workspace is untouched throughout (no checkout, no merge — promotion is a push of a tag).
@@ -260,35 +273,41 @@ git worktree remove ~/github/ctrl-b-hotfix && git push origin --delete fix/vX.Y.
 ```
 
 ## Rollback
+**Execute top to bottom.** The order is the safety property: an earlier draft of this section listed the
+code revert first and only afterwards said the config restore had to precede it — a cold operator
+following it starts the old build on a config it cannot read, which boots "healthy" with **zero
+providers** (chat and voice silently dead). Skip a step only when the decision line says it does not
+apply to you.
+
 ```bash
-# CODE: pin prod back to the previous tag (rebuilds — needs npm/pip reachable):
-cd ~/apps/ctrl-b && git checkout v(prev) && bash deploy/linux/install.sh prod
-# DATA (only if the bad release's migrations mangled the DB) — restore the pre-cutover snapshot:
+# 1. STOP, and confirm it actually stopped. Nothing below may run against a live writer.
 systemctl --user stop ctrl-b-dashboard
-rm -f ~/.ctrl-b/ctrlb.db-wal ~/.ctrl-b/ctrlb.db-shm        # stale sidecars MUST go (WAL mismatch = corruption)
+systemctl --user is-active ctrl-b-dashboard        # must print: inactive  (or: failed)
+
+# 2. CONFIG — MANDATORY when the release you are leaving migrated the config shape.
+#    Decide: does ~/.ctrl-b/config.yaml contain a `config_version:` line that the older tag predates?
+#    (`update.sh` refuses this rollback outright and tells you; so does its failure message, by name.)
+ls -t ~/.ctrl-b/backups/config.yaml.*              # newest = the copy taken by the update you are undoing
+cp -p ~/.ctrl-b/backups/config.yaml.<UTCstamp> ~/.ctrl-b/config.yaml     # keeps 0600
+#    Not sure which file? The update's own failure message named it. Otherwise match the timestamp to
+#    the update you are undoing — do NOT assume "newest" if other runs happened since.
+
+# 3. DATA — only if the bad release's DB migrations mangled the database:
+rm -f ~/.ctrl-b/ctrlb.db-wal ~/.ctrl-b/ctrlb.db-shm     # stale sidecars MUST go (WAL mismatch = corruption)
 gunzip -c ~/.ctrl-b/backups/ctrlb-<ts>.db.gz > ~/.ctrl-b/ctrlb.db
-sqlite3 ~/.ctrl-b/ctrlb.db 'PRAGMA integrity_check;'        # must print: ok
-systemctl --user start ctrl-b-dashboard
-```
-**CONFIG — MANDATORY when rolling back ACROSS the config-migration release.** Not conditional: the
-older build has no preflight, and its config sections tolerate unknown keys, so a migrated config makes
-it boot **"healthy" with zero providers** — chat and voice silently dead, which is the exact failure the
-migration exists to prevent. `update.sh` refuses this rollback outright (it compares the target tag's
-`config_migration/VERSION` against your `config_version:` before checking anything out) and points here.
+sqlite3 ~/.ctrl-b/ctrlb.db 'PRAGMA integrity_check;'    # must print: ok
 
-The pre-migration copy was written by `install.sh` at the cutover, 0600, into `~/.ctrl-b/backups/`:
+# 4. CODE — one checkout, one install, now that config and data are what the old build expects:
+cd ~/apps/ctrl-b && git checkout v(prev) && bash deploy/linux/install.sh prod
 
-```bash
-systemctl --user stop ctrl-b-dashboard                   # stop FIRST — nothing may write config.yaml
-ls -t ~/.ctrl-b/backups/config.yaml.*                    # newest = the copy from the update you are undoing
-cp -p ~/.ctrl-b/backups/config.yaml.<UTCstamp> ~/.ctrl-b/config.yaml   # keeps 0600
-cd ~/apps/ctrl-b && git checkout v(prev) && bash deploy/linux/install.sh prod   # previous tag (restarts)
-curl -s -m5 localhost:5433/api/health                    # {"status":"ok",...}
+# 5. VERIFY BY HAND — a tag predating this release cannot self-verify (no health gate in its installer):
+curl -s -m5 localhost:5433/api/health                   # {"status":"ok","version":"(prev)",...}
+systemctl --user is-active ctrl-b-dashboard             # active
+# then open the dashboard on a device before calling it done.
 ```
 
-Restore the config **before** re-pinning the tag: the older `install.sh` has no migration step, so once
-it starts the service the boot either fails or — worse — succeeds emptily. If you are unsure whether the
-update migrated anything, `update.sh`'s own failure message names the exact backup file it created.
+**First release (v1.0.0) has no previous tag** — rollback there is
+`systemctl --user disable --now ctrl-b-dashboard` (or fix forward with v1.0.1).
 
 Schema compatibility across a rollback is guaranteed by the **expand/contract policy** (D32 amendment):
 destructive migrations land at the earliest one release after the code stopped using the old shape.

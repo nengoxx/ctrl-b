@@ -1049,3 +1049,25 @@ verified stop → apply → swap → start under `set -euo pipefail` — happeni
 release, through a failure-messaging path that has never run. `update.sh`'s hard `~/apps/ctrl-b`
 identity check makes its success path structurally unrehearsable off-prod; accepted, but it concentrates
 first-run risk, which is what step 0 exists to cover.
+
+### 17.3 Pre-release audit of slice 7 (Codex) — DO NOT SHIP, and it was right
+
+Ten findings. **The first two invalidate claims I made in §17 and to the owner**, and both were
+reproduced before fixing.
+
+| Sev | Finding | Fix |
+|---|---|---|
+| **CRITICAL** | **Slice 8 cannot invoke `update.sh` at all.** `update.sh` ships *in* the release that introduces it, and prod is pinned to `v1.2.1`, which has no copy — verified: `git cat-file -e v1.2.1:deploy/linux/update.sh` → 128. The runbook now led with a command that cannot exist on the tree it is run from. | §Release documents the one-time bootstrap: `git show vX.Y.Z:deploy/linux/update.sh \| bash -s -- vX.Y.Z`. From the next release the plain command works. |
+| **HIGH** | **My "verified" downgrade guard never runs.** I tested the parsers interactively and reported the refusal working; the script sets `-euo pipefail`, under which the *absent* `v1.2.1:…/VERSION` makes `git show` exit 128, `pipefail` fails the assignment and `errexit` kills the script — **before** the `:-0` default, so the refusal and its message never happen. Reproduced. Same class for a missing `config.yaml` (`sed \| head`). | `parse_version()` — no pipeline, explicit `if raw="$(git show …)"` so absence is a *branch*, and strict `^0*[0-9]{1,9}$` validation (`tr -dc` had turned `v1.2` into 12 and `abc` into 0). Every fix re-verified under `bash -euo pipefail`. |
+| HIGH | **Rollback delegated safety to an installer that does not have it.** `update.sh v1.2.1` would check out v1.2.1 and run *its* `install.sh` — swallowed stop, no health gate — then print `✓` having checked only `git describe`, while the script's own comment claimed "install.sh already gated health + identity". | The updater **refuses to drive** any tag with no `config_migration/` (i.e. predating the protocol) and prints the manual sequence instead, plus it now runs its **own** `/api/health` + version verification for the tags it does drive. |
+| HIGH | **The check could inspect a config the app never loads** — the loader resolves `.env` → `CTRLB_CONFIG`/`CTRLB_HOME`; the updater always read `$CTRLB_HOME/config.yaml`. | `CTRLB_CONFIG` set, or a `.env` in the prod tree, is now a **refusal** — guessing wrong permits a rollback that strands the real config. |
+| HIGH | **An unstamped new-shape config defeated the gate**: `providers:` with no marker reads as 0 and sails into an old build that tolerates the key and boots empty. | At the version-0 boundary the marker is trusted only if the *shape* agrees: a `providers:`-carrying unstamped config is refused. |
+| HIGH | **Provenance and CI failed open**: a local `rev-parse` is satisfied by a stale local-only tag; `gh` errors were masked into "no run found"; missing `gh` proceeded; the run was matched on `headBranch` alone. | `git ls-remote --exit-code` proves the tag is on **origin**; the run must match tag **and** `headSha` **and** a `push` event; and every unverifiable state now requires `--force`. |
+| HIGH | **§Rollback told the operator to revert the code first**, then said afterwards that the config restore must precede it — the *same* defect Fable found in the script's message, in the file I had just rewritten. | §Rollback is now a numbered execution-order sequence: stop → verify stopped → config → data → one checkout+install → verify by hand. |
+| HIGH | **The failure report could state the opposite of reality**: a post-cutover health failure can leave the unit *active*, which was reported as "pre-cutover, the previous version is still serving"; transitional states and failed queries were both called "STOPPED". | The phase is never inferred: the raw state is reported (`active` + what it serves · `inactive/failed` = down · transitional · *query failed — do not assume stopped*). |
+| MED | Backup presence did not prove a migration committed — the backup is written *before* the writes, and a concurrent standalone run could add one. | The **on-disk marker** is compared before and after; the "was migrated" branch fires on shape change, not on a file appearing. |
+| MED | Prod-tree identity had two holes: a `REPO=/nonexistent` that is itself a checkout could match the sentinel, and a symlinked `~/apps/ctrl-b` admitted whatever it pointed at. | Both sides resolved explicitly with no sentinel. |
+
+**The lesson worth keeping:** every parser in this script was *tested and reported working* — in an
+interactive shell that did not have `set -euo pipefail`. **A shell fragment must be exercised under the
+options of the script that will run it**, or the test is measuring a different program.
