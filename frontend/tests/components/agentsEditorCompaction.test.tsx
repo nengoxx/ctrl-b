@@ -10,6 +10,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   saveSettings: vi.fn(),
   saveAgent: vi.fn(),
+  // v1.3.1 — when true, `useAgent` hands back a FRESH object with identical values on every render
+  // (what a refetch without TanStack's structural sharing looks like), so the row's detail-seed
+  // value-guard is exercised rather than the cache's reference stability.
+  cloneDetail: false,
 }));
 
 // The default agent's resolved def + persona (returned for the open row, regardless of name/arg).
@@ -56,7 +60,10 @@ vi.mock("../../src/hooks/useAgents", async (importActual) => {
   return {
     ...actual,
     useAgentList: () => ({ data: { agents: [], default: "default" } }),
-    useAgent: () => ({ data: agentDetail, isLoading: false }),
+    useAgent: () => ({
+      data: h.cloneDetail ? structuredClone(agentDetail) : agentDetail,
+      isLoading: false,
+    }),
     useSaveAgent: () => ({ mutate: h.saveAgent, isPending: false }),
     useDeleteAgent: () => ({ mutate: vi.fn(), isPending: false }),
     useSaveAgentSoul: () => ({ mutate: vi.fn() }),
@@ -89,6 +96,7 @@ function renderEditor(cfg: AgentSectionCfg = baseCfg) {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  h.cloneDetail = false;
 });
 
 // The agent-globals PUT payload shape (the two branches this suite asserts on).
@@ -192,6 +200,33 @@ describe("AgentsEditor · draft reseed value-guard (Codex FIX B)", () => {
     fireEvent.change(screen.getByLabelText("Compact at % of context"), { target: { value: "70" } });
     rerender(propsFor({ ...baseCfg, compaction: { ...baseCfg.compaction, threshold_frac: 0.6 } }));
     expect(value("Compact at % of context")).toBe("60"); // reseeded to the new server value
+  });
+
+  // v1.3.1 draft-loss slice — this card mixes the savebar draft with IMMEDIATE-SAVE controls
+  // (auto-route + its min-overlap; default_title lives in the default row). Their echo is a real
+  // change to `props.cfg`, so the value-guard above still fired and wiped unsaved draft edits — the
+  // user-visible "edit A, save B, A vanishes". Only the draft-managed projection may reseed.
+  it("an immediate-save echo (auto-route) does NOT clobber unsaved draft edits", () => {
+    const { rerender } = render(propsFor(baseCfg));
+    fireEvent.change(screen.getByLabelText("Compact at % of context"), { target: { value: "70" } });
+    fireEvent.click(screen.getByLabelText("Auto-route to specialists")); // saves immediately
+    expect(h.saveSettings).toHaveBeenCalledWith({ agent: { auto_rotate: true } });
+    h.saveSettings.mockClear(); // so `lastAgentPayload` reads the GLOBALS save below
+    // …the PUT echo lands: a changed cfg, but the change is confined to the immediate-save keys.
+    rerender(propsFor({ ...baseCfg, auto_rotate: true, compaction: { ...baseCfg.compaction } }));
+    expect(value("Compact at % of context")).toBe("70"); // the unsaved edit survives
+    // …and it is still submittable (the dirty projection is unchanged by the echo).
+    fireEvent.click(screen.getByRole("button", { name: "Save agent settings" }));
+    expect(lastAgentPayload().agent.compaction.threshold_frac).toBe(0.7);
+  });
+
+  it("an identical-value detail refresh does not reset a dirty agent draft", () => {
+    h.cloneDetail = true; // every render yields a new (value-identical) detail object
+    const { rerender } = render(propsFor(baseCfg));
+    fireEvent.click(screen.getByText(/workspace root/)); // open the default agent's row
+    fireEvent.change(screen.getByLabelText("Max output tokens"), { target: { value: "2048" } });
+    rerender(propsFor(baseCfg));
+    expect(value("Max output tokens")).toBe("2048");
   });
 });
 

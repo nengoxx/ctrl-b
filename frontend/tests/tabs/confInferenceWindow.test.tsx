@@ -285,6 +285,23 @@ describe("ConfTab · draft epoch (R18)", () => {
     rerender(<ConfTab active />);
     expect(sel("Default provider").value).toBe("openrouter"); // clean → reseeded
   });
+
+  // v1.3.1 — the other half of the epoch guard: the SAVE DIFF must use the same epoch snapshot the
+  // guard froze the draft against. Diffing the frozen draft against the MOVED live doc reported an
+  // untouched section as changed, so the patch carried it and reverted the concurrent write (LWW).
+  it("a save after a background settings move patches ONLY the section the user edited", () => {
+    const { rerender } = render(<ConfTab active />);
+    fireEvent.change(baseInput("Poll cadence"), { target: { value: "9" } }); // dirty: server only
+    // …meanwhile the settings query moves on a DIFFERENT section (another writer / a refetch).
+    const next = makeSettings();
+    next.inference.request_timeout_s = 999;
+    h.settings = next;
+    rerender(<ConfTab active />);
+    fireEvent.click(saveButton());
+    const p = lastPatch() as unknown as Record<string, unknown>;
+    expect((p.server as { poll_seconds: number }).poll_seconds).toBe(9);
+    expect(p.inference).toBeUndefined(); // the moved section is NOT dragged back to the stale value
+  });
 });
 
 describe("ConfTab · reference-guard (B2/R19)", () => {

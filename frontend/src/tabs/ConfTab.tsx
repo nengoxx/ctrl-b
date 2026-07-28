@@ -968,7 +968,13 @@ export function ConfTab({ active }: Props) {
     });
   }, [settings, providersBaseRev]);
 
-  const dirty = settings && draft && JSON.stringify(draft) !== JSON.stringify(pickDraft(settings));
+  // v1.3.1 — unsaved-ness is measured against the draft's OWN epoch snapshot, never the live query
+  // data. While the guard above freezes a dirty draft, a background refetch moves `settings`
+  // underneath it, so a live-doc comparison reports sections the user never touched as changed (and
+  // `onSave` would then patch them back to the stale values — the LWW race). `seededRef` is exactly
+  // the doc this draft was seeded from; the fallback covers the first render before the seed lands.
+  const seededJson = settings ? (seededRef.current ?? JSON.stringify(pickDraft(settings))) : null;
+  const dirty = settings && draft && JSON.stringify(draft) !== seededJson;
   // FX11 — is the providers SUBTREE specifically dirty (vs the whole draft)? Drives whether the save
   // carries the `providers` map + its base at all. A queued rename also requires sending the map (the
   // backend rekey/replacement needs it). The epoch base itself is captured at seed time (FR2-1, above).
@@ -1382,7 +1388,18 @@ export function ConfTab({ active }: Props) {
     // not save anything at all (A11 pre-release FE audit, MED). That is precisely the case FX7's
     // strict-gating was built to keep working, defeated from this side. Comparing the COERCED section
     // (what we would send) against the seeded doc, so a "5" typed over 5 is not a change.
-    const seeded: Record<string, unknown> = pickDraft(settings);
+    //
+    // v1.3.1 — "the seeded doc" is the DRAFT EPOCH snapshot (`seededRef`), not the live query data.
+    // The two diverge exactly when it matters: a background refetch (or a concurrent writer) moves
+    // `settings` while the epoch guard holds the dirty draft still, and diffing against the moved doc
+    // marks UNEDITED sections as changed — so the save silently reverted whatever the other write had
+    // just landed. Against the epoch snapshot an untouched section diffs equal and stays out of the
+    // patch, which is what makes "send only what changed" a genuine per-section guarantee. (The
+    // `providers` subtree keeps its stronger, server-checked protection: the epoch-bound
+    // `providers_base` 409s instead of merging.) The fallback is first-load safety only.
+    const seeded: Record<string, unknown> = seededRef.current
+      ? (JSON.parse(seededRef.current) as Record<string, unknown>)
+      : pickDraft(settings);
     const patch: SavePatch = {};
     for (const [key, value] of Object.entries(coerced)) {
       if (JSON.stringify(value) !== JSON.stringify(seeded[key])) patch[key] = value;

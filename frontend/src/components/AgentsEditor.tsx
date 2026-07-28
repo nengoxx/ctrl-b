@@ -39,6 +39,23 @@ import { pushToast } from "../store/toast";
 
 const SLUG = /^[a-z0-9][a-z0-9_-]*$/;
 
+/** The DRAFT-MANAGED slice of the agent section — the fields the globals save bar owns. The rest of
+ *  `AgentSectionCfg` belongs to IMMEDIATE-SAVE controls that read and write the server doc directly
+ *  (`auto_rotate` + `auto_rotate_min_overlap` here, `default_title` inside the default agent's row),
+ *  so their echoes are not evidence that "the server moved" for this draft. v1.3.1: without that
+ *  split, flipping auto-route echoed a changed `cfg` and the reseed below threw away unsaved
+ *  globals/compaction edits. One projection feeds BOTH the reseed guard and `globalsDirty`, so the
+ *  two can't drift apart — and it is exactly the field set `saveGlobals` submits. */
+function pickGlobals(c: AgentSectionCfg) {
+  return {
+    default_agent: c.default_agent,
+    global_subagent_limit: c.global_subagent_limit,
+    subagent_clamp_privilege: c.subagent_clamp_privilege,
+    streaming: c.streaming,
+    compaction: c.compaction,
+  };
+}
+
 // Garbage-safe numeric coercion (D42 post-build audit) now lives in one place — `../lib/num` (shared
 // with ConfTab's context-window coercion). `numOrNull` = nullable `ge=1` budget fields; `numOrKeep` =
 // the non-nullable `ge=0` compaction knobs.
@@ -364,8 +381,17 @@ function AgentRow(props: {
   const delAgent = useDeleteAgent();
   const [draft, setDraft] = useState<AgentDef | null>(null);
 
+  // Same value-guard idiom as the globals draft below: seed from the fetched def only when its VALUE
+  // actually changed. Unguarded, this reset the row's unsaved edits on any new `detail` object — it
+  // survived only because TanStack's structural sharing usually hands back the same reference, which
+  // is a property of the cache, not a guarantee this component should lean on (v1.3.1).
+  const seededDetailRef = useRef<string | null>(null);
   useEffect(() => {
-    if (detail) setDraft(detail.agent);
+    if (!detail) return;
+    const next = JSON.stringify(detail.agent);
+    if (next === seededDetailRef.current) return;
+    seededDetailRef.current = next;
+    setDraft(detail.agent);
   }, [detail]);
 
   const dirty = !!(
@@ -487,9 +513,13 @@ export function AgentsEditor(props: {
   // (any unrelated parent re-render) must NOT clobber unsaved global/compaction edits. Reseed only
   // when the incoming cfg VALUE genuinely differs from the last-seeded one (JSON compare is cheap at
   // this size). This is the minimal guard; the wider ConfTab draft-lifecycle refactor is deferred.
-  const seededRef = useRef(JSON.stringify(props.cfg));
+  // v1.3.1 — the compare is over the DRAFT-MANAGED projection only (see `pickGlobals`): the
+  // immediate-save controls in this same card write straight to the server, and their echo arrives as
+  // a genuinely changed `props.cfg`, which reseeded the draft and dropped whatever was unsaved
+  // ("edit compaction, flip auto-route, the compaction edit vanishes").
+  const seededRef = useRef(JSON.stringify(pickGlobals(props.cfg)));
   useEffect(() => {
-    const next = JSON.stringify(props.cfg);
+    const next = JSON.stringify(pickGlobals(props.cfg));
     if (next === seededRef.current) return;
     seededRef.current = next;
     setCfg(props.cfg);
@@ -512,12 +542,7 @@ export function AgentsEditor(props: {
 
   // Globals (default-agent picker + subagent limits) — config.yaml, saved via PUT /api/settings.
   // `default_title` is edited inside the default agent's row, so it's excluded from this draft.
-  const globalsDirty =
-    cfg.default_agent !== props.cfg.default_agent ||
-    cfg.global_subagent_limit !== props.cfg.global_subagent_limit ||
-    cfg.subagent_clamp_privilege !== props.cfg.subagent_clamp_privilege ||
-    cfg.streaming !== props.cfg.streaming ||
-    JSON.stringify(cfg.compaction) !== JSON.stringify(props.cfg.compaction);
+  const globalsDirty = JSON.stringify(pickGlobals(cfg)) !== JSON.stringify(pickGlobals(props.cfg));
   useRegisterDirty("agents-globals", globalsDirty);
 
   const setCompaction = (p: Partial<AgentSectionCfg["compaction"]>) =>
