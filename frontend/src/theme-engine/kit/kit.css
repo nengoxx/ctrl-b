@@ -252,6 +252,11 @@ body[data-perf="lite"] .kit-appbar.transparent {
   box-shadow: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+  /* SLIMMER than the painted bar (owner, v1.3.1 device round): with no surface to fill, the full
+   * 16/12 pads read as dead air — halve them so the in-flow offset the clear bar reserves is thinner.
+   * The 34px squared icon buttons below set the row's real height, so this only trims the margins. */
+  padding-top: calc(8px * var(--density-pad));
+  padding-bottom: calc(6px * var(--density-pad));
 }
 /* SQUARED icon buttons in this mode ONLY (prototype `.iconbtn`: 34px, 9px radius, 1px `--line-2` border) — the
  * round base pill fights the borderless-bar look. Applies to the TTS toggle + the docked NavMenu launcher
