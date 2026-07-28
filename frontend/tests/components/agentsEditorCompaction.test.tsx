@@ -9,6 +9,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   saveSettings: vi.fn(),
+  // v1.3.1 Codex verify round — each useSaveSettings() CALL is a distinct mutation instance; a second
+  // mutate() on a SHARED instance detaches the first call's observer (its per-call onSuccess never
+  // runs). The mock tags every instance so tests can pin that the globals save and the immediate-save
+  // controls ride DIFFERENT instances (the structural fix; the detach semantics themselves are
+  // TanStack's, verified upstream).
+  instSeq: { n: 0 },
+  taggedCalls: [] as { inst: number; patch: unknown }[],
   saveAgent: vi.fn(),
   // v1.3.1 — when true, `useAgent` hands back a FRESH object with identical values on every render
   // (what a refetch without TanStack's structural sharing looks like), so the row's detail-seed
@@ -48,7 +55,16 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: vi.fn(),
 }));
 vi.mock("../../src/hooks/useSettings", () => ({
-  useSaveSettings: () => ({ mutate: h.saveSettings, isPending: false }),
+  useSaveSettings: () => {
+    const inst = h.instSeq.n++;
+    return {
+      mutate: (...args: [unknown, unknown?]) => {
+        h.taggedCalls.push({ inst, patch: args[0] });
+        (h.saveSettings as (...a: unknown[]) => void)(...args);
+      },
+      isPending: false,
+    };
+  },
   // AgentsEditor's backend picker (A11/D48 C7-b) reads the registry catalog from GET /api/providers.
   useProviders: () => ({ data: { providers: {}, verbs: [], warnings: [] } }),
 }));
@@ -97,6 +113,8 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   h.cloneDetail = false;
+  h.taggedCalls.length = 0;
+  h.instSeq.n = 0;
 });
 
 // The agent-globals PUT payload shape (the two branches this suite asserts on).
@@ -220,15 +238,19 @@ describe("AgentsEditor · draft reseed value-guard (Codex FIX B)", () => {
     fireEvent.change(screen.getByLabelText("Keep recent (tokens)"), { target: { value: "2000" } });
     // …then the PUT echo for what WAS submitted arrives (mutation onSuccess → cache → prop).
     const echoCfg = { ...baseCfg, compaction: { ...baseCfg.compaction, threshold_frac: 0.7 } };
-    const onSuccess = h.saveSettings.mock.calls[0][1].onSuccess as (r: unknown) => void;
-    act(() =>
-      onSuccess({
+    const opts = h.saveSettings.mock.calls[0][1] as {
+      onSuccess: (r: unknown) => void;
+      onSettled?: () => void;
+    };
+    act(() => {
+      opts.onSuccess({
         settings: { agent: echoCfg },
         providers_rev: "revB",
         warnings: [],
         restart_required: [],
-      }),
-    );
+      });
+      opts.onSettled?.(); // reality: TanStack settles after success — releases the re-entry ref
+    });
     rerender(propsFor(echoCfg)); // the echo lands as the prop one render later
     expect(value("Compact at % of context")).toBe("70"); // the saved value round-tripped
     expect(value("Keep recent (tokens)")).toBe("2000"); // …and the in-flight edit survived
@@ -245,6 +267,29 @@ describe("AgentsEditor · draft reseed value-guard (Codex FIX B)", () => {
   // (auto-route + its min-overlap; default_title lives in the default row). Their echo is a real
   // change to `props.cfg`, so the value-guard above still fired and wiped unsaved draft edits — the
   // user-visible "edit A, save B, A vanishes". Only the draft-managed projection may reseed.
+  it("the globals save rides its OWN mutation instance and blocks re-entry while pending", () => {
+    // v1.3.1 Codex verify round: a second mutate() on a SHARED instance detaches the first call's
+    // observer, so an immediate-save toggle during a pending globals save killed the epoch reconcile.
+    // The structural fix: separate instances (this pin), plus a call-time re-entry ref for
+    // globals-on-globals (TanStack's detach semantics themselves were verified upstream).
+    render(propsFor(baseCfg));
+    fireEvent.change(screen.getByLabelText("Compact at % of context"), { target: { value: "70" } });
+    fireEvent.click(screen.getByLabelText("Auto-route to specialists")); // immediate-save control
+    fireEvent.click(screen.getByRole("button", { name: "Save agent settings" }));
+    const isGlobals = (p: unknown) =>
+      (p as { agent?: { compaction?: unknown } }).agent?.compaction !== undefined;
+    const isAutoRoute = (p: unknown) =>
+      (p as { agent?: { auto_rotate?: unknown } }).agent?.auto_rotate !== undefined;
+    const autoRoute = h.taggedCalls.find((c) => isAutoRoute(c.patch));
+    const globals = h.taggedCalls.find((c) => isGlobals(c.patch));
+    expect(autoRoute).toBeTruthy();
+    expect(globals).toBeTruthy();
+    expect(autoRoute!.inst).not.toBe(globals!.inst); // different useSaveSettings() instances
+    // A second click while the first save is unsettled is a no-op (the call-time ref guard).
+    fireEvent.click(screen.getByRole("button", { name: "Save agent settings" }));
+    expect(h.taggedCalls.filter((c) => isGlobals(c.patch))).toHaveLength(1);
+  });
+
   it("an immediate-save echo (auto-route) does NOT clobber unsaved draft edits", () => {
     const { rerender } = render(propsFor(baseCfg));
     fireEvent.change(screen.getByLabelText("Compact at % of context"), { target: { value: "70" } });

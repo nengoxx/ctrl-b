@@ -499,6 +499,14 @@ export function AgentsEditor(props: {
 }) {
   const { data: list } = useAgentList();
   const saveSettings = useSaveSettings();
+  // v1.3.1 Codex verify round — the globals save gets its OWN mutation instance: a second `mutate()`
+  // on a shared instance DETACHES the first call's observer (TanStack mutationObserver semantics — the
+  // same class as ConfTab's I1 savingRef lesson), so an immediate-save toggle (auto-route, min-overlap)
+  // fired during a pending globals save silently killed the per-call epoch reconcile below. A separate
+  // instance keeps the two concerns' observers independent; the ref guards globals-on-globals re-entry
+  // at call time (isPending is a rendered value — stale in the same tick, the I1 lesson verbatim).
+  const saveGlobalsMut = useSaveSettings();
+  const savingGlobalsRef = useRef(false);
   const saveAgent = useSaveAgent();
   const specialists = list?.agents ?? [];
   const resolvedDefault = list?.default ?? DEFAULT_AGENT;
@@ -578,11 +586,12 @@ export function AgentsEditor(props: {
   };
 
   const saveGlobals = () => {
-    if (!globalsDirty) return;
+    if (!globalsDirty || savingGlobalsRef.current) return;
+    savingGlobalsRef.current = true;
     // What we are actually submitting — the reconcile below compares against THIS, not against whatever
     // the draft looks like when the response lands (ConfTab's onSave pattern / D48 B5).
     const submittedGlobalsJson = JSON.stringify(pickGlobals(cfg));
-    saveSettings.mutate(
+    saveGlobalsMut.mutate(
       {
         agent: {
           default_agent: cfg.default_agent,
@@ -613,6 +622,9 @@ export function AgentsEditor(props: {
           // edits away. Keeping them leaves the draft dirty against the new epoch — the bar says
           // "Save agent settings" again, which is the truth.
           setCfg((c) => (JSON.stringify(pickGlobals(c)) === submittedGlobalsJson ? echo : c));
+        },
+        onSettled: () => {
+          savingGlobalsRef.current = false;
         },
       },
     );
@@ -864,10 +876,10 @@ export function AgentsEditor(props: {
       <div className="conf-savebar">
         <button
           className="conf-save"
-          disabled={!globalsDirty || saveSettings.isPending}
+          disabled={!globalsDirty || saveGlobalsMut.isPending}
           onClick={saveGlobals}
         >
-          {saveSettings.isPending ? "Saving…" : globalsDirty ? "Save agent settings" : "Saved"}
+          {saveGlobalsMut.isPending ? "Saving…" : globalsDirty ? "Save agent settings" : "Saved"}
         </button>
       </div>
     </div>
