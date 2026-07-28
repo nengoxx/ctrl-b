@@ -27,7 +27,7 @@ from app.config import (
     ProviderCfg,
     Settings,
     load_settings,
-    save_settings,
+    save_settings_comment_stripping_for_tests,
 )
 from app.core.provider_registry import resolve_lenient
 from app.domain.agent import CompactionCfg, ModelRef
@@ -184,7 +184,7 @@ def test_catalog_models_carry_new_fields_through_roundtrip() -> None:
                 "inference": {"provider": "local", "fallbacks": [{"provider": "fb"}]},
             }
         )
-        save_settings(s, p)
+        save_settings_comment_stripping_for_tests(s, p)
         r = load_settings(p)
         assert r.providers["local"].models["m"].context_window == 32768
         assert r.providers["fb"].models["fb"].context_window == 8192

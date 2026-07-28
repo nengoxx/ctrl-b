@@ -48,7 +48,6 @@ __all__ = [
     "CompactionCfg",
     "TurnsCfg",
     "load_settings",
-    "save_settings",
     "mask_secrets",
     "secret_values",
     "unmask_secrets",
@@ -1337,8 +1336,16 @@ def _write_replace_0600(p: Path, data: bytes) -> None:
     os.replace(tmp, p)
 
 
-def save_settings(settings: Settings, path: Path | None = None) -> None:
-    """Persist settings atomically (write temp + `os.replace`) so a crash can't truncate config.
+def save_settings_comment_stripping_for_tests(settings: Settings, path: Path | None = None) -> None:
+    """TESTS ONLY — persist a whole `Settings` via `yaml.safe_dump`, which STRIPS comments/key order.
+
+    The real write path is `edit_config_yaml` (the comment-preserving ruamel chokepoint every UI/PUT/
+    migration write routes through); this whole-document dump is a fixture convenience for seeding a
+    temp config from a `Settings` object. Named explicitly and kept OUT of `__all__` so it can never be
+    mistaken for the production writer sitting a chokepoint away (SYS-6). Do not call it on the live
+    `config.yaml`.
+
+    Persists atomically (write temp + `os.replace`) so a crash can't truncate config.
 
     Note: only `config.yaml` is ever rewritten by the app — `.env` is owned by the operator.
 

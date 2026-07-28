@@ -28,7 +28,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.adapters.voice import VoiceClient, VoiceError
-from app.config import Settings, _mask, load_settings, mask_secrets, save_settings, unmask_secrets
+from app.config import (
+    Settings,
+    _mask,
+    load_settings,
+    mask_secrets,
+    save_settings_comment_stripping_for_tests,
+    unmask_secrets,
+)
 from app.core.failover import FailoverError, failover_collect
 from app.domain.provider import SttPolicy, TtsPolicy
 
@@ -306,7 +313,7 @@ def test_voice_provider_secret_roundtrip() -> None:
     assert restored["providers"]["vault-tts"]["api_key"] == "supersecret"
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "config.yaml"
-        save_settings(s, p)
+        save_settings_comment_stripping_for_tests(s, p)
         reloaded = load_settings(p)
         assert reloaded.providers["vault-tts"].api_key == "supersecret"
 

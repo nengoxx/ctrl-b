@@ -17,7 +17,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from app.config import Settings, load_settings, save_settings
+from app.config import Settings, load_settings, save_settings_comment_stripping_for_tests
 
 
 def test_appearance_defaults_config_layer() -> None:
@@ -49,7 +49,7 @@ def test_computer_appearance_field_roundtrips() -> None:
                 }
             }
         )
-        save_settings(s, p)
+        save_settings_comment_stripping_for_tests(s, p)
         reloaded = load_settings(p)
         appearance = reloaded.computers["corsair"].appearance
         assert appearance["frontier"]["image"] == "rig2.png"

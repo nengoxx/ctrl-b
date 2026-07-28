@@ -63,11 +63,13 @@ def test_fx_a_config_write_lands_0600_via_patch_and_selfheals() -> None:
 
 
 def test_fx_a_save_settings_lands_0600() -> None:
-    from app.config import Settings, save_settings
+    from app.config import Settings, save_settings_comment_stripping_for_tests
 
     tmp = Path(tempfile.mkdtemp())
     cfg = tmp / "config.yaml"
-    save_settings(Settings(), path=cfg)  # the temp+replace writer must also land 0600
+    save_settings_comment_stripping_for_tests(
+        Settings(), path=cfg
+    )  # the temp+replace writer must also land 0600
     assert stat.S_IMODE(cfg.stat().st_mode) == 0o600
 
 

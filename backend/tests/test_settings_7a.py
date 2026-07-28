@@ -5,7 +5,7 @@ run two ways: `python tests/test_settings_7a.py` (plain `assert`s + a `__main__`
 `backend/` dir, or under pytest if one is ever added (the `test_*` functions are collected as-is).
 
 Covers the audit fixes (see docs/AUDIT_settings.md):
-- A1: `save_settings` round-trips a config carrying a `StrEnum` (an `agents[]` privilege) — the bug
+- A1: `save_settings_comment_stripping_for_tests` round-trips a config carrying a `StrEnum` (an `agents[]` privilege) — the bug
   that would `RepresenterError` once agents are configured.
 - A2: `unmask_secrets` preserves a real secret when the masked value is echoed back, and accepts a
   genuinely new one.
@@ -28,7 +28,7 @@ from app.config import (
     load_settings,
     mask_secrets,
     prune_unchanged,
-    save_settings,
+    save_settings_comment_stripping_for_tests,
     unmask_secrets,
 )
 
@@ -48,7 +48,7 @@ def test_save_roundtrips_config() -> None:
                 "inference": {"provider": "local"},
             }
         )
-        save_settings(s, p)  # must not raise
+        save_settings_comment_stripping_for_tests(s, p)  # must not raise
         reloaded = load_settings(p)
         assert reloaded.agent.default_agent == "ops"
         assert reloaded.agent.defaults["privilege"] == "full"
@@ -99,7 +99,7 @@ def test_risk_roundtrips_to_string_in_yaml() -> None:
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "config.yaml"
         s = Settings.model_validate({"open_terminal": {"base_url": "http://x", "exec_risk": "med"}})
-        save_settings(s, p)
+        save_settings_comment_stripping_for_tests(s, p)
         assert "exec_risk: med" in p.read_text(encoding="utf-8")  # the string, not "Risk.MED"
         assert load_settings(p).open_terminal.exec_risk is Risk.MED  # re-coerced on reload
 
