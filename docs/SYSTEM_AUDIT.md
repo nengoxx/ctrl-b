@@ -392,12 +392,12 @@ Unlike ACA, nothing here warrants a multi-slice program. Map:
 
 | Item | Size | When |
 |---|---|---|
-| **SYS-13 fix `fillComposer` → `setDraft`+focus, + the jsdom regression test** | **XS–S** | **Now — it's a live user-facing bug on every theme** (confirm-bubble edit sends stale text). |
-| SYS-1 `Database.transaction()` + adopt in compaction/plan/exec/apply (+ docstring fix) | S–M | Standalone slice, promptly. Also a rider candidate for ACA Slice 2 (same integrity theme). |
-| **SYS-14 CI workflow running `tools/check.py` on ubuntu-latest** | **S** | **Pre-emma-deploy** — the only way the code runs on Linux before Linux is production. |
+| ~~**SYS-13** fix `fillComposer` → `setDraft`+focus, + the jsdom regression test~~ | **XS–S** | **✅ DONE 2026-07-07.** |
+| ~~SYS-1 `Database.transaction()` + adopt in compaction/plan/exec/apply (+ docstring fix)~~ | S–M | **✅ DONE** — shipped as the rider it was flagged as, in ACA Slice 2 (`afb5e22`). |
+| ~~**SYS-14** CI workflow running `tools/check.py` on ubuntu-latest~~ | **S** | **✅ DONE 2026-07-07 — green on run #2** (run #1 caught undeclared ruff/pytest, now pinned in the dev extra). |
 | ~~SYS-16 pull the ruff `ASYNC`+`B` ratchet (+ fix wave)~~ | S–M | **✅ DONE.** Ratchet pulled 2026-07-16 (`f5c8e05`); the deferred blind-spot list closed 2026-07-20 by the deep pass + the two-invariant AST guard (`1b47e50`+`f550a2d`) — see the SYS-16 addendum. Pyright `strict` = still its own post-emma slice. |
-| SYS-15 coverage reporting (measure-only) + Compactor & fleet/svc characterization tests | M | Coverage + pure-function tests promptly; Compactor tests **must precede ACA Slice 6**; adapter tests ride ACA Slice 1; subagent tests ride ACA Slice 3. |
-| SYS-4 SECURITY_MODEL dev-exposure paragraph + `target_port` default decision | S | Doc-only + one default; pre-emma-deploy sensible. |
+| SYS-15 coverage reporting (measure-only) + fleet/svc characterization tests | M | **PARTLY DONE** — the Compactor/adapter/subagent halves rode ACA Slices 6/1/3 (all shipped). What remains is coverage measurement (it adds deps) + the fleet/svc characterization tests. |
+| ~~SYS-4 SECURITY_MODEL dev-exposure paragraph + `target_port` default decision~~ | S | **✅ DONE** — both halves closed by the QH pass: the §2.1 paragraph (QH-6, `4c30c70`) and the `target_port` flip 5173→5433 (QH-11). |
 | SYS-17 voice caps (tts text / stt upload) | XS | Opportunistic robustness posture. |
 | SYS-5 `/api` 404 guard in SPA fallback | XS | Opportunistic. |
 | SYS-6 fence `save_settings` | XS | Opportunistic. |

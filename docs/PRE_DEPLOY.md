@@ -260,12 +260,13 @@ Three distinct fixes — each is its own pre-flight/scope/review. Do NOT bundle 
 - **Why:** no QR endpoint exists; small, good first-run UX over the mic-requires-HTTPS path.
 - **Pre-flight reads:** the Access/HTTPS settings panel (6c-2 core, already built), how the Serve URL is
   known server-side, existing SVG-render endpoints. Prefer a dep-free SVG QR if cheap; else assess a tiny dep.
-- [ ] Done
+- [x] **DROPPED from this gate by the owner** — the FEATURE stays open (TODO 6c-2), still waiting on a
+  ruling about adding the `segno` dependency. Dropped here means "not a deploy blocker", not "declined".
 
 ### 7. Phase 8b tri-state access UI — eyeball @390px  ·  *TODO 8b (pending visual check)*
 - **Goal:** confirm the built tri-state tool-access + descriptions UI reads correctly at phone width (D7).
 - **Why:** code shipped; only the 390px visual QA is outstanding. Pure verification, no code expected.
-- [ ] Done
+- [x] **DONE** — the inline tri-switch + the 390px eyeball, per this doc's own banner.
 
 ---
 

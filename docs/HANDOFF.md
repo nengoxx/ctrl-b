@@ -90,8 +90,10 @@
 > Gate D §0 walk, 18/18 PASS; a 3-lens adversarial review [TS/CSS/docs] + full e2e 109/109 preceded
 > the close).** *(Slice record below kept as the as-built history; authoritative record =
 > the `FRONTIER_PLAN.md` banner; the axis architecture = **D37 + THEME_ENGINE §14.16**.)*
-> Still parked from the F5 re-scope: per-host art override UI + asset format/size pass [hero.png 1.9MB]
-> (owner call, now eligible). **Slice A ✅ SHIPPED 2026-07-13 (`5193f4c`, owner-eyeballed live + ratified, FE gate 422):**
+> *(The F5 re-scope's parked pair is RESOLVED — the asset pass SHIPPED 2026-07-16 `6e7a29a`
+> [hero.png 1.9MB→551KB] and the art-override UI was DROPPED by the owner, the backend
+> `host.appearance.frontier.image` field being sufficient. Only the FINAL hero ART remains, on the
+> owner.)* **Slice A ✅ SHIPPED 2026-07-13 (`5193f4c`, owner-eyeballed live + ratified, FE gate 422):**
 > chat no-outlines promoted to the kit-wide `outlines` axis — `kit/axes.ts` factory+resolver
 > (undeclared themes→ON) · `kit/axes.css` in the NEW `@layer base, theme, axes, reset` position
 > (strips-only, NEVER fills, `.kit`-scoped) · `body[data-outlines]` stamped by an AppEngines

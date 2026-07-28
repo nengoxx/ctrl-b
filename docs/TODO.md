@@ -44,9 +44,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 > SHIPPED 2026-07-15 `6c78d17`+`a433c8f`** · next = the F5 perf/a11y/e2e/§0 gates. **Approved 2026-07-07 (owner):** the **ACA chat-hardening plan** = **Phase 12**
 > (`AGENT_CHAT_AUDIT.md` §5 is the spec; Slice 0 landed; Slices 1–2 pre-deploy candidates, 3+
 > post-deploy) and the `SYSTEM_AUDIT.md` **SYS** riders — **SYS-13** (live `fillComposer` bug) +
-> **SYS-14** (Linux CI) are Phase-9 pre-deploy items below. **Still open (low / deferred):**
-> QR-to-phone (`segno` dep, pending owner OK); vector memory recall; ROADMAP E2 OpenAI facade; D19
-> voice streaming transports; UI_AUDIT F9/F13 (perf, until measured pressure).
+> **SYS-14** (Linux CI) are Phase-9 pre-deploy items below — **both ✅ DONE 2026-07-07.**
+> **Still open (low / deferred), as of 2026-07-28:** QR-to-phone (`segno` dep, pending owner OK);
+> vector memory recall; ROADMAP E2 OpenAI facade; D19 voice streaming transports; UI_AUDIT F9/F13
+> (perf, both now gated on the 2026-07-20 measured trigger). *(This list is a snapshot — date it when
+> you touch it; an undated "still open" line is how stale rows are born.)*
 >
 > **⭐ GLOBAL ORDER OF WORK (cross-track, reviewed + pinned 2026-07-07 — each track's internal
 > order lives in its own doc; this is the interleave):**
@@ -1115,7 +1117,11 @@ FTS5); the C1/A2 doc "day-one" overclaims are corrected (flagged as future, not 
 
 Not v1 scope, but the owner wants these; v1 must leave room. Detail + design notes in `ROADMAP.md`.
 
-- [ ] **v1 seams (do these *during* v1 so the backlog slots in cheaply):** pluggable
+- [x] **v1 seams (do these *during* v1 so the backlog slots in cheaply)** — ✅ **essentially DONE**:
+      typed chat kinds (A2 `question`), streaming AND buffered (D17), action `risk` levels + the policy
+      layer (`core/permissions.decide()`), grouped Conf (7a–7e) all shipped. The one genuinely
+      outstanding half is the **vector `MemoryProvider`** (the interface exists; the vector backend is
+      ROADMAP B1). Original text: pluggable
       `MemoryProvider` interface; action `risk` levels on every action; **typed chat-message kinds**
       (`text`/`action`/`question`) + turn-based agent loop; chat endpoint supports **streaming AND
       buffered**; a settings/policy layer; Conf tab in **functional groups**.

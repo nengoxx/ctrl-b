@@ -907,7 +907,7 @@ log). Design sketch (confirmed refinements in **bold**):
   idempotent; snapshot after ring eviction renders a pending confirm; Playwright mobile smoke for
   Stop.
 
-### Slice 4 — Interaction speed (ACA-4, 5-notice, 11 + A2) · M
+### Slice 4 — Interaction speed (ACA-4, 5-notice, 11 + A2) · M  ·  ✅ **BUILT + RELEASED** (Phase 12 slices 0–8 all shipped; live in prod since v1.2.0, 2026-07-21)
 
 > **▶ DESIGN LOCKED 2026-07-19 = D40** (full pipeline: code-truth pass [7 sketch contradictions
 > pinned] + 7-agent×3-topic source-level field research + 3-lens adversarial design review
@@ -982,7 +982,7 @@ log). Design sketch (confirmed refinements in **bold**):
   [ping, ping, question] runs the pings in parallel and suspends exactly once on the question;
   repeat-suppression still trips inside one parallel batch; compaction notice within 100 ms.
 
-### Slice 5 — Steering queue (A1; upgrades the Slice-2 409 for messages) · M — after Slice 3
+### Slice 5 — Steering queue (A1; upgrades the Slice-2 409 for messages) · M — after Slice 3  ·  ✅ **BUILT + RELEASED** (Phase 12 slices 0–8 all shipped; live in prod since v1.2.0, 2026-07-21)
 
 > **▶ DESIGN LOCKED 2026-07-19 = D41** (code-truth + 6-system field pass + 2-lens adversarial
 > review [5H resolved into the decision] + owner go). **The sketch below is superseded where it
@@ -1057,7 +1057,7 @@ for *messages* only.
   auto-run); complete-with-queue → new turn fires FIFO; suspend-with-queue → confirm bubble +
   queued turn coexist coherently; queue order preserved.
 
-### Slice 6 — Compaction v2 (A3, absorbs ACA-5 riders) · M–L — design review first
+### Slice 6 — Compaction v2 (A3, absorbs ACA-5 riders) · M–L — design review first  ·  ✅ **BUILT + RELEASED** (Phase 12 slices 0–8 all shipped; live in prod since v1.2.0, 2026-07-21)
 
 > **▶ DESIGN LOCKED 2026-07-19 = D42** (2 code-truth + 3 field passes [compaction ×6 agents ·
 > knob/window ×8 incl. llama.cpp source-verified · reasoning surfaces] + a 2-lens adversarial
@@ -1157,7 +1157,7 @@ already do, keep it).
   fallback, clearing placeholders present in the assembled payload but absent from
   `GET /threads/{id}/messages`, never-prune survival, thrash stop); live long session on `minig+`.
 
-### Slice 7 — Model routing & retry visibility (A4, A6, A7-classifier) · M — design review first (new D-entry)
+### Slice 7 — Model routing & retry visibility (A4, A6, A7-classifier) · M — design review first (new D-entry)  ·  ✅ **BUILT + RELEASED** (Phase 12 slices 0–8 all shipped; live in prod since v1.2.0, 2026-07-21)
 
 > **▶ DESIGN LOCKED 2026-07-19 = D43** (2 code-truth + 1 sourced field pass [×8 systems] + a 2-lens
 > adversarial review [7H/13M/4L resolved in] + two owner rounds; full draft = `docs/SLICE7_PLAN.md`, frozen).
@@ -1245,7 +1245,7 @@ owns *what next*).
   triggers on consecutive worker failures; cache-hit telemetry confirms no per-iteration
   endpoint churn.
 
-### Slice 8 — Approvals evolution (A5) · M — aligns with ROADMAP privilege levels (D16/A1)
+### Slice 8 — Approvals evolution (A5) · M — aligns with ROADMAP privilege levels (D16/A1)  ·  ✅ **BUILT + RELEASED** (Phase 12 slices 0–8 all shipped; live in prod since v1.2.0, 2026-07-21)
 
 > **▶ DESIGN LOCKED 2026-07-20 = D44** (1 code-truth pass + 3 sourced field passes [CLI tools · agent
 > frameworks/SDKs · mature policy systems: XACML, OPA, polkit, sudoers, browser/mobile grants] + five

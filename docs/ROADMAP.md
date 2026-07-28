@@ -16,9 +16,9 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
 > for a pure futures list): **A1** privilege levels (as the `decide()` gate + AgentDef privilege) ·
 > **A2** `question` kind · **C1** streaming `auto|on|off` (D17) · **D1** Tailscale Serve HTTPS ·
 > **D2** access panel/QR core · the **theme engine** (D28–D34; vapor/minimal/cosmos) · **ROADMAP D3
-> Slice 1** multi-homed addressing (backend, D47). Still future: the rest — notably **ROADMAP D3
-> Slices 2–3** (frontend vantage-aware links + Conf editor + VPN discovery), A3 automations,
-> B-series memory backends.
+> Slice 1** multi-homed addressing (backend, D47) — and **D3 is now COMPLETE**: slice 2 (frontend
+> vantage-aware links + Conf editor) shipped 2026-07-21, slice 3 (VPN discovery) 2026-07-22. Still
+> future: A3 automations, B-series memory backends.
 
 ---
 
@@ -279,11 +279,11 @@ back to the analysis.
 
 ---
 
-### A11. Unified provider registry — retire the local/cloud dichotomy (**design LOCKED 2026-07-22 → DECISIONS D48 · Slice 1 (chat) ✅ BUILT 2026-07-23, unreleased — see the D48 AS-BUILT note; Slice 2 (voice+embeddings) = TODO Phase 13**)
+### A11. Unified provider registry — retire the local/cloud dichotomy (**design LOCKED 2026-07-22 → DECISIONS D48 · BOTH SLICES ✅ BUILT 2026-07-23 — chat, and voice+embeddings — plus the 2026-07-27 pre-release fix wave; still UNRELEASED, it ships with UPDATE_PLAN slice 8**)
 *(numbered A11, skipping A10, so the heavily-cited "ACA §4 A10" reasoning-budget id stays unambiguous)*
 
-- **Status:** the dedicated design session ran 2026-07-22 and the design is **LOCKED (owner
-  sign-off pending)**. The **full normative spec is [`DECISIONS.md` D48](./DECISIONS.md)** — config
+- **Status:** the design session ran 2026-07-22 and the design is **LOCKED — owner-signed the same
+  day**; both slices are built and every interpretation call was ratified 2026-07-27. The **full normative spec is [`DECISIONS.md` D48](./DECISIONS.md)** — config
   shape, contracts C1–C11, module boundary, Conf UI spec, migration, and the prod rollout/rollback.
   Build plan = **[`TODO.md`](./TODO.md) Phase 13** (Slice 1 chat, Slice 2 voice+embeddings).
 - **Evolution (why the scope grew):** the session started at "one list of named custom endpoints +
@@ -533,8 +533,8 @@ user configure URLs manually + split `href`/`siteMonitor`; this design auto-reso
   number pad. `ComputerCfg.ip` is a plain `str` and a DNS name has always been valid there, so the numeric hint was
   simply wrong; it's dropped, and the label/placeholder now say a hostname is accepted. **This changes nothing about
   the design above** — one overloaded field is still one overloaded field, and D3 remains the proper LAN-vs-VPN split.
-- **Open:** ship slice 1 as its own near-term backend slice (it affects the daily driver — you can't shut Windows
-  hosts down from emma until it lands)? Full diagnosis:
+- **Resolved:** slice 1 did ship as its own backend slice (2026-07-20), and D3 completed 2026-07-22.
+  Original framing, kept for the diagnosis it points at: Full diagnosis:
   [`external_audit/CTRL-B Corsair Shutdown Audit 2026-06-29.md`](./external_audit/CTRL-B%20Corsair%20Shutdown%20Audit%202026-06-29.md) · routing in [`external_audit/TRIAGE-3.md`](./external_audit/TRIAGE-3.md).
 
 ---

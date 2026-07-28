@@ -1,9 +1,9 @@
 # Theme Engine — design record + the live authoring contract (D28–D34)
 
 **Status: BUILT + SHIPPED through cosmos (2026-06-28) — vapor · minimal · cosmos live; the
-engine (§14: controllers + Root + Kit + Surfaces) is the as-built architecture.** **Hardening slice v2 ✅ SHIPPED 2026-07-10 (§14.15.1-A)**; parked next
-step: **the Composer Surface (§14.15, D34)**; next theme:
-**frontier** (T5). *(Header updated 2026-07-07, doc-consistency pass — the old "DESIGN OPEN" status
+engine (§14: controllers + Root + Kit + Surfaces) is the as-built architecture.** **Hardening slice v2 ✅ SHIPPED 2026-07-10 (§14.15.1-A)**; the **Composer Surface ✅ SHIPPED
+2026-07-11** (§14.15, D34) and **frontier (T5) ✅ CLOSED 2026-07-15** on the owner's Gate D sign-off —
+the theme population is CLOSED (owner): no new themes; existing themes formalize onto the kit. *(Header updated 2026-07-07, doc-consistency pass — the old "DESIGN OPEN" status
 predated the build.)*
 
 > **The ask (owner, 2026-06-26):** keep **vapor** with its palettes, and add the prototyped themes
