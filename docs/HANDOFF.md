@@ -13,9 +13,9 @@
 > failure mode.)*
 >
 > ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-28, clean tree, gate 6/6)
-> **45 commits unpushed on `main`. Backend 1051 · FE 634 · `check.py` 6/6 green on the tip
-> (`80499ad`). PROD IS UNTOUCHED at v1.2.1 and still legacy-shape.** Everything below is built and
-> reviewed; nothing is half-done.
+> **PUSHED 2026-07-28 + TAGGED `v1.3.0` (= `d386099`); the release cutover is in motion. Backend
+> 1051 · FE 629 passed/631 (an earlier note here said 634 — miscounted) · `check.py` 7/7 incl. e2e
+> green on the tag.** Everything below is built and reviewed; nothing is half-done.
 > - **▶ 2026-07-28, Fable main seat: the recommended pre-tag Codex pass RAN — and earned its keep
 >   again.** Verdict FIX FIRST: 4 confirmed defects in the previous fix wave, all closed in
 >   `edba2b9` (HIGH: provider identity ops now FREEZE on `savingRef` mid-save — delete/recreate
