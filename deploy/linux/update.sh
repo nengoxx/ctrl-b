@@ -31,6 +31,18 @@ parse_version() {
   printf '%s' "$((10#$raw))"
 }
 
+#: The VALUE of a `config_version:` line AS THE MIGRATOR WRITES IT — ruamel stamps an end-of-line
+#: comment (`config_version: 1  # config shape version — managed by …`), so the value must be cut at
+#: the first `#` before `parse_version` sees it. parse_version itself stays strict: it also guards the
+#: VERSION file, where a stray `#` IS damage. The v1.3.1 release was refused by exactly this — the
+#: v1.3.0 bootstrap run passed only because the config was still unstamped, so the first stamp broke
+#: the first shipped-script run (caught 2026-07-28; the precheck now has a test that stamps a config
+#: with the real migrator and runs these functions on it).
+marker_value() {
+  local v="${1#config_version:}"
+  printf '%s' "${v%%#*}"
+}
+
 #: `/api/health` for a unit, as `status version pid`, or empty. Used for the updater's OWN verification —
 #: `install.sh` gates this too, but ONLY the version of install.sh that shipped with the safety protocol.
 probe_health() {
@@ -143,7 +155,7 @@ print((m[0].get("conclusion") or m[0].get("status") or "") if m else "none")' "$
   if [ -f "$cfg" ]; then
     marker_line="$(grep -m1 '^config_version:' "$cfg" 2>/dev/null || true)"
     if [ -n "$marker_line" ]; then
-      disk_ver="$(parse_version "${marker_line#config_version:}")" || {
+      disk_ver="$(parse_version "$(marker_value "$marker_line")")" || {
         echo "✗ $cfg has a malformed config_version line. Fix or remove it, then re-run."; exit 78; }
     fi
   fi
@@ -207,7 +219,7 @@ print((m[0].get("conclusion") or m[0].get("status") or "") if m else "none")' "$
       from_ver="$(parse_version "$fraw" || echo 0)"
     fi
     cur_line="$(grep -m1 '^config_version:' "$cfg" 2>/dev/null || true)"
-    [ -z "$cur_line" ] || cur_ver="$(parse_version "${cur_line#config_version:}" || echo 0)"
+    [ -z "$cur_line" ] || cur_ver="$(parse_version "$(marker_value "$cur_line")" || echo 0)"
     if [ "$from_ver" -ge "$cur_ver" ]; then
       echo "  roll back with:     bash $repo/deploy/linux/update.sh $from"
     else
