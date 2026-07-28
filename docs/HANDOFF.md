@@ -21,11 +21,48 @@
 > (`emma-speaches` / `vault-speaches` / `vault-alltalk`, refs cascaded server-side, secrets followed
 > their providers, voice stt+tts live). Post-tag on main: the postcss/sharp dev-dep bumps
 > (`8f482e2`) + doc syncs. Backend 1051 · FE 629 passed/631 · `check.py` 7/7 incl. e2e on the tag.
-> **New LOW (recorded, unfixed): `update.sh`'s success-path rollback hint prints
-> `update.sh v(prev)`, which for a cross-shape rollback is wrong as a one-liner — it is
-> SAFE-BY-REFUSAL (step 5 refuses shape 1 > v1.2.1's 0 and prints the restore sequence), but the
-> hint should be version-aware. A device spot-check of https://emma.lobster-vector.ts.net remains
-> for the owner.**
+> ~~New LOW: update.sh's success-path rollback hint~~ **FIXED `f1b267d`** — the hint is now
+> version-aware ($from's runner VERSION vs the on-disk marker; one-liner only when $from can read
+> today's shape; fragment-tested under `bash -euo pipefail`). The owner's device spot-check is DONE
+> — findings below.
+>
+> ## ▶ NEXT SESSION (locked by the owner, 2026-07-28): the v1.3.1 STABILIZATION PATCH
+> **The owner's charter, in his words: "I want to fix every single small piece that isn't working
+> as intended… check every older system that has been implemented by now, and every issue, every
+> improvement, and everything that we left behind… let's make this release completely stable and
+> functional."** No new roadmap features until this ships. Two work sources:
+>
+> **A. The owner's v1.3.0 device findings (fix all):**
+> 1. **Chat STOP button is off-theme** — outline-styled and larger than its siblings; make it
+>    consistent with the sliding button family, per theme. (Find the stop control in the shared
+>    chat tree — D36 class hooks — and style it through each theme's existing button recipe, not a
+>    bespoke rule.)
+> 2. **minimal theme: the app bar has no spacing below and paints OVER content** — section titles
+>    in the Agent, Tools, and Conf tabs sit under it. Related but distinct: **frontier's app bar
+>    sits on top of the "N LIVE" hint** in the fleet header art. Audit the app-bar/content spacing
+>    contract across ALL four themes rather than patching per-tab paddings twice.
+> 3. **frontier fleet: host-card images grow far too large on wide screens** — the 2-column grid is
+>    wrong at desktop widths. Cap the card/art size or add columns at a breakpoint; owner likes the
+>    current behavior at narrow (2-col) widths.
+> 4. **Inference (chat backend) provider picker offers the voice providers**
+>    (`emma-speaches`/`vault-speaches`/`vault-alltalk`) with nothing saying what KIND of endpoint a
+>    provider is. Owner: "that should be more clear". DESIGN FIRST (Fable): providers deliberately
+>    have no `kind` field (D48 — any provider may serve any role); the fix is likely picker-side
+>    disclosure (api_mode + which sections reference it) or capability hints, NOT a hard type
+>    system. Check D48 + the R1 dossier (capability discovery) before choosing.
+> 5. **Embeddings model picker offers chat models** (e.g. gemma on openrouter) for the embeddings
+>    role. Owner is unsure it's even feasible to filter an external catalog by embedding
+>    capability — investigate (R1 §capability discovery covers what peers do); if infeasible,
+>    disclosure over filtering. Same design pass as #4.
+>
+> **B. The left-behind sweep (inventory, then triage into the patch):** the recorded residuals
+> (this file: the two steps.py LOWs, the theme mode/accent-during-cold-load residual, the
+> never-settling-PUT wedge note, the reserved-verb fail-open, empty `fallbacks: []` cosmetics) ·
+> `docs/SYSTEM_AUDIT.md` addendum (the ASYNC240 lexical blind-spot list) · `docs/UI_AUDIT.md`
+> deferred F-items (incl. F13, the 27-warning eslint Compiler-prep backlog) · any ROADMAP "v1 seam"
+> notes marked cheap-now. Method: one Opus inventory agent sweeps the docs for every recorded
+> residual/deferral; Fable triages what makes the patch; Codex reviews the fixes; ship as v1.3.1
+> via `update.sh` (its first NON-bootstrap run — the shipped script drives it end-to-end).
 > - **▶ 2026-07-28, Fable main seat: the recommended pre-tag Codex pass RAN — and earned its keep
 >   again.** Verdict FIX FIRST: 4 confirmed defects in the previous fix wave, all closed in
 >   `edba2b9` (HIGH: provider identity ops now FREEZE on `savingRef` mid-save — delete/recreate
