@@ -116,6 +116,7 @@ const h = vi.hoisted(() => ({
   settings: null as unknown as ReturnType<typeof makeSettings>,
   providers: null as unknown as ReturnType<typeof makeProvidersInfo>,
   settingsRev: "revA", // FR2-1 — the providers base rev bound to the settings snapshot
+  saveAppearance: vi.fn(), // the persisted side effect of pickTheme — the theme-block test asserts on it
   providersUpdatedAt: 0, // FR2-3 — the ["providers"] query's dataUpdatedAt (freshness gate)
 }));
 
@@ -146,7 +147,7 @@ vi.mock("../../src/hooks/useAppChrome", () => ({
 }));
 vi.mock("../../src/hooks/useSections", () => ({ useSections: () => ({ hosted: {} }) }));
 vi.mock("../../src/hooks/useAppearance", () => ({
-  useSaveAppearance: () => ({ mutate: vi.fn() }),
+  useSaveAppearance: () => ({ mutate: h.saveAppearance }),
   currentAppearancePatch: () => ({}),
 }));
 vi.mock("../../src/hooks/useActions", () => ({
@@ -172,6 +173,7 @@ beforeEach(() => {
   h.settingsRev = "revA";
   h.providersUpdatedAt = 0;
   h.save.mockClear();
+  h.saveAppearance.mockClear();
 });
 afterEach(cleanup);
 
@@ -634,5 +636,103 @@ describe("ConfTab · Slice 2 reference-guard — strict-resolve mirrors (FX-G)",
     h.settings.embeddings.model = null;
     render(<ConfTab active />);
     expect(screen.queryByText(/needs a model/)).toBeNull();
+  });
+});
+
+// ── A11 pre-release FE audit — the four HIGHs and the guard gaps it found ────────────────────────
+describe("ConfTab · pre-release audit regressions", () => {
+  it("sends ONLY the sections that changed, so an unrelated edit is not strict-resolved", () => {
+    // MED: the payload always carried inference + voice + embeddings, which makes EVERY scalar save a
+    // resolution-relevant patch. On a config with a pre-existing lenient-tolerated conflict that 422s —
+    // so editing a poll interval became impossible. This is the exact case FX7's gating exists for.
+    render(<ConfTab active />);
+    fireEvent.change(baseInput("Poll cadence"), { target: { value: "9" } });
+    fireEvent.click(saveButton());
+    const p = lastPatch() as unknown as Record<string, unknown>;
+    expect((p.server as { poll_seconds: number }).poll_seconds).toBe(9);
+    for (const untouched of ["inference", "voice", "embeddings", "providers", "shell", "searxng"]) {
+      expect(p[untouched]).toBeUndefined();
+    }
+  });
+
+  it("keeps edits made while the save was in flight instead of adopting the echo over them", () => {
+    // HIGH: success replaced the whole draft unconditionally, so anything typed during the round trip
+    // vanished (D48 B5 says reconcile only the SUBMITTED snapshot).
+    render(<ConfTab active />);
+    fireEvent.change(baseInput("Poll cadence"), { target: { value: "9" } });
+    fireEvent.click(saveButton());
+    // …the owner keeps typing before the response lands…
+    fireEvent.change(baseInput("Poll cadence"), { target: { value: "11" } });
+    const onSuccess = h.save.mock.calls[0][1].onSuccess as (r: unknown) => void;
+    const echo = makeSettings(); // the server echo for what WAS submitted (poll_seconds 9)
+    echo.server.poll_seconds = 9;
+    act(() =>
+      onSuccess({ settings: echo, providers_rev: "revB", warnings: [], restart_required: [] }),
+    );
+    expect(baseInput("Poll cadence").value).toBe("11"); // the later edit survived
+    expect(saveButton().textContent).toMatch(/Save changes/); // …and is correctly still unsaved
+  });
+
+  it("refuses a theme switch while Conf is dirty (the switch unmounts the tab and its draft)", () => {
+    render(<ConfTab active />);
+    fireEvent.change(baseInput("Poll cadence"), { target: { value: "9" } });
+    const themeBtn = screen.queryByRole("button", { name: /^cosmos$/i });
+    expect(themeBtn).toBeTruthy();
+    fireEvent.click(themeBtn!);
+    // The switch is refused, so the tab is still mounted with the edit intact. (`switchTheme` is async
+    // and would remount the theme root in the real app — here the observable is that nothing changed.)
+    expect(h.saveAppearance).not.toHaveBeenCalled(); // refused before switchTheme/persist
+    expect(baseInput("Poll cadence").value).toBe("9"); // …and the draft is still here
+  });
+
+  it("does not queue a rename for a provider that exists only in the draft", () => {
+    // The server resolves `provider_renames` against ITS state, so renaming a not-yet-saved provider
+    // earned a 422 for what is just a new entry under a different key.
+    render(<ConfTab active />);
+    fireEvent.click(screen.getByText("add provider", { selector: "div.label" }));
+    fireEvent.change(screen.getByLabelText("New provider name"), { target: { value: "fresh" } });
+    fireEvent.click(screen.getByRole("button", { name: "create" }));
+    fireEvent.click(screen.getByRole("button", { name: "rename" }));
+    fireEvent.change(screen.getByLabelText("New provider name"), { target: { value: "fresher" } });
+    fireEvent.click(screen.getByRole("button", { name: "ok" }));
+    fireEvent.click(saveButton());
+    expect(lastPatch().provider_renames).toBeUndefined(); // rekeyed locally, nothing queued
+    expect(Object.keys(lastPatch().providers ?? {})).toContain("fresher");
+  });
+
+  it("refuses to reuse a name that still exists on the server", () => {
+    render(<ConfTab active />);
+    fireEvent.click(screen.getByText("add provider", { selector: "div.label" }));
+    fireEvent.change(screen.getByLabelText("New provider name"), {
+      target: { value: "openrouter" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "create" }));
+    // refused → still exactly ONE card by that name, and nothing became unsaved
+    expect(screen.getAllByText("openrouter", { selector: "div.label" }).length).toBe(1);
+    expect(saveButton().textContent).toMatch(/Saved/);
+  });
+
+  it("blocks the save on names the server rejects and on a blank referenced base URL", () => {
+    h.settings = makeSettings();
+    // `token` is a secret sentinel — the backend 422s the name (D48 C1); the guard now says so inline.
+    (h.settings.providers as Record<string, unknown>).token = {
+      base_url: "http://x/v1",
+      api_key: null,
+      api_mode: "openai",
+      models: { m: {} },
+    };
+    h.providers = makeProvidersInfo();
+    h.providers.reserved_verbs = ["agent", "clear", "compact", "help", "priv", "privilege"];
+    render(<ConfTab active />);
+    expect(screen.getAllByText(/collides with a secret field/).length).toBeGreaterThan(0);
+    expect(saveButton().disabled).toBe(true);
+  });
+
+  it("blocks the save when a referenced provider has no base URL", () => {
+    h.settings = makeSettings();
+    h.settings.providers.llamacpp.base_url = "";
+    render(<ConfTab active />);
+    expect(screen.getAllByText(/has no base URL/).length).toBeGreaterThan(0);
+    expect(saveButton().disabled).toBe(true);
   });
 });

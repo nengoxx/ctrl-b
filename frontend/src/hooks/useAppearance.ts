@@ -16,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getJSON, putJSON } from "../api/client";
 import { stableStringify } from "../lib/stableStringify";
+import { isAnyDirty } from "../store/dirty";
 import {
   getUI,
   setUI,
@@ -149,6 +150,15 @@ export function useAppearanceSync(): void {
     // this module already pulls it transitively via `switchTheme`.
     const next = reconcileAppearance(data, local, (id) => registry[id as ThemeId] != null);
     if (!next) return;
+    if (next.theme !== local.theme && isAnyDirty()) {
+      // A SKIN change remounts the keyed theme root, unmounting every editor with it — and their drafts
+      // are component state (A11 pre-release FE audit, HIGH). The user-initiated switch is refused in
+      // ConfTab with a message; this one arrives from ANOTHER DEVICE, so there is nobody to tell. Defer
+      // it instead: the reconcile is level-triggered, so the next run after the editor goes clean (a
+      // save, a discard, closing the tab — all of which clear the registry) applies it. `isAnyDirty` is a
+      // direct read, not a subscription, so this does not re-render on every keystroke.
+      return;
+    }
     if (next.theme !== local.theme) {
       // The double-switch this branch can trigger is LIVE (minimal + cosmos are registered, so a SKIN
       // mismatch really occurs): a self-initiated `pickTheme` optimistically writes the appearance cache,

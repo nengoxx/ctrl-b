@@ -31,6 +31,40 @@ export async function getJSONWithHeader<T>(
   return { data: (await res.json()) as T, header: res.headers.get(header) };
 }
 
+/** Render FastAPI's `detail` for display — from a WHITELIST of fields, never the raw object.
+ *
+ *  A 422 `detail` is a list of error objects, and a pydantic one used to carry `input`: the value that
+ *  failed validation, i.e. the whole submitted document. `JSON.stringify(detail)` therefore printed the
+ *  real `api_key` into a toast (A11 pre-release audit, HIGH — canary-confirmed). The backend now
+ *  renders `{loc, msg, type}` only, and this is the other half of that fix: even if a body ever carries
+ *  a value again, nothing outside these fields is displayed.
+ *
+ *  Two shapes are understood — the strict-resolve envelope `{path, message}` and pydantic's
+ *  `{loc, msg}` — and anything unrecognised degrades to the status line rather than being stringified.
+ *  Returns `null` when there is nothing renderable, so the caller keeps its own fallback. */
+export function formatDetail(detail: unknown): string | null {
+  if (typeof detail === "string") return detail.trim() || null;
+  if (!Array.isArray(detail)) return null;
+  const lines = detail
+    .map((item): string | null => {
+      if (typeof item === "string") return item.trim() || null;
+      if (!item || typeof item !== "object") return null;
+      const o = item as Record<string, unknown>;
+      const what =
+        typeof o.message === "string" ? o.message : typeof o.msg === "string" ? o.msg : "";
+      if (!what) return null;
+      const where =
+        typeof o.path === "string"
+          ? o.path
+          : Array.isArray(o.loc)
+            ? o.loc.filter((p) => typeof p === "string" || typeof p === "number").join(".")
+            : "";
+      return where ? `${where}: ${what}` : what;
+    })
+    .filter((l): l is string => l !== null);
+  return lines.length ? lines.join(" · ") : null;
+}
+
 /** Send JSON with `method`, surfacing FastAPI's `detail` (string or validation list) on error. */
 async function sendJSON<T>(method: string, path: string, body: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -42,7 +76,7 @@ async function sendJSON<T>(method: string, path: string, body: unknown): Promise
     let detail = `${res.status} ${res.statusText}`;
     try {
       const j = (await res.json()) as { detail?: unknown };
-      if (j?.detail) detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+      detail = formatDetail(j?.detail) ?? detail;
     } catch {
       /* non-JSON error body — keep the status line */
     }
@@ -68,7 +102,7 @@ export async function del(path: string): Promise<void> {
     let detail = `${res.status} ${res.statusText}`;
     try {
       const j = (await res.json()) as { detail?: unknown };
-      if (j?.detail) detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+      detail = formatDetail(j?.detail) ?? detail;
     } catch {
       /* 204 / non-JSON — keep the status line */
     }

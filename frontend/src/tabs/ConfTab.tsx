@@ -196,6 +196,11 @@ function PromptRow(props: {
 
 // A11 / D48 — provider name slug + the small enum option lists for the Providers cards.
 const PROVIDER_SLUG = /^[a-z0-9][a-z0-9_+.-]{0,31}$/;
+/** Provider/model names the backend rejects because they collide with a secret field (D48 C1 —
+ *  `config.is_secret_sentinel_name`, the source of truth). Mirrored here ONLY because it is a fixed
+ *  schema rule with no wire representation; the RESERVED VERBS, which do have one, are read from
+ *  `GET /api/providers` instead of being copied. */
+const SECRET_SENTINEL_NAMES = ["api_key", "ssh_password", "password", "token", "env", "headers"];
 const API_MODES = [
   { val: "openai", label: "openai" },
   { val: "llamacpp", label: "llamacpp" },
@@ -769,6 +774,14 @@ export function ConfTab({ active }: Props) {
   // unsupported); within-theme accent/mode/settings changes stay instant `setUI`.
   const pickTheme = (id: ThemeId) => {
     if (id === theme) return;
+    // A theme switch remounts the whole keyed theme root, which UNMOUNTS this tab — and the draft is
+    // component state, so it goes with it. No navigation warning fires, because this is not navigation
+    // (A11 pre-release FE audit, HIGH: edit providers, change theme, edits gone). Ordinary tab switching
+    // is safe — the tabs stay mounted — so the block is scoped to the one action that destroys state.
+    if (effectiveDirty) {
+      pushToast("Save or discard your Conf changes before switching theme", "err");
+      return;
+    }
     // The target theme's default mode/accent — the single source of truth is `defaultSwitchTarget`
     // (resolve.ts), shared with `coerceBootTheme`'s fallback (item ⑥) so the `?? "dark"` derivation lives
     // in one place.
@@ -931,10 +944,15 @@ export function ConfTab({ active }: Props) {
   const providersDirty =
     !!settings && !!draft && JSON.stringify(draft.providers) !== JSON.stringify(settings.providers);
   const sendProviders = providersDirty || Object.keys(renames).length > 0;
+  // Unsaved-ness as the USER sees it. A number/JSON field holding text that does not parse keeps that
+  // text OUT of the draft (by design — the draft stays valid), so `dirty` alone stayed false while
+  // visible input was at risk: the bar said "Saved" and nothing warned on unload (A11 pre-release FE
+  // audit, MED). Everything that protects unsaved work reads THIS, not `dirty`.
+  const effectiveDirty = !!dirty || Object.keys(invalids).length > 0;
   // F19 — register with the cross-editor dirty registry so a refresh/close-tab while these
   // settings are unsaved triggers the browser's beforeunload prompt. Cleanup on unmount
   // auto-clears the registration (closing Conf doesn't leave the registry stuck).
-  useRegisterDirty("conf", !!dirty);
+  useRegisterDirty("conf", effectiveDirty);
 
   const inf = draft?.inference;
   const srv = draft?.server;
@@ -966,6 +984,13 @@ export function ConfTab({ active }: Props) {
     if (!PROVIDER_SLUG.test(name))
       return pushToast("provider name: a–z 0–9 _ + . - (max 32)", "err");
     if (draft?.providers[name]) return pushToast("a provider with that name exists", "err");
+    // Reusing a name this draft has renamed away (or deleted) is refused until that change is saved.
+    // The two live in one PUT, and the server resolves the rename against its OWN state, where the
+    // name is still taken — the backend now refuses to let the fresh entry inherit the old secret
+    // (that was a credential-crossing HIGH), but the save would still be rejected or confusing. One
+    // save first, then the name is genuinely free (A11 pre-release FE audit).
+    if (settings && name in settings.providers)
+      return pushToast(`"${name}" is still in use on the server — save your changes first`, "err");
     setDraft((d) => (d ? { ...d, providers: { ...d.providers, [name]: emptyProvider() } } : d));
     setNewProvName("");
     setAdding(false);
@@ -1010,7 +1035,11 @@ export function ConfTab({ active }: Props) {
       const next = { ...r };
       const orig = Object.entries(next).find(([, cur]) => cur === from);
       if (orig) next[orig[0]] = to;
-      else next[from] = to;
+      // A provider created in THIS draft has no server-side identity to rename — queueing one would
+      // send `provider_renames: {draftOnlyName: …}` and earn a 422 ("source provider does not exist")
+      // for what is, from the server's point of view, simply a new entry under a different key
+      // (A11 pre-release FE audit). Rekeying the draft, which happened above, is the whole job.
+      else if (settings && from in settings.providers) next[from] = to;
       for (const [k, v] of Object.entries(next)) if (k === v) delete next[k];
       return next;
     });
@@ -1212,6 +1241,41 @@ export function ConfTab({ active }: Props) {
           if (n !== 1)
             dangling.push(`${label} → needs a model — ${renames[prov] ?? prov} has ${n} models`);
         });
+        // (3) a referenced provider with a BLANK base_url, and a fallback row with no provider at all.
+        // Both are strict 422s the guard used to let through, so the owner met a server error where an
+        // inline reason was available for free (A11 pre-release FE audit, MED).
+        if (
+          sec.provider &&
+          liveProvider(sec.provider) &&
+          !liveProvider(sec.provider).base_url?.trim()
+        ) {
+          dangling.push(
+            `${name} default → ${renames[sec.provider] ?? sec.provider} has no base URL`,
+          );
+        }
+        sec.fallbacks.forEach((f, i) => {
+          if (!f.provider)
+            dangling.push(`${name} fallback #${i + 1} → pick a provider or remove the row`);
+          else if (liveProvider(f.provider) && !liveProvider(f.provider).base_url?.trim())
+            dangling.push(`${name} fallback #${i + 1} → ${f.provider} has no base URL`);
+        });
+      }
+      // (4) names the SERVER rejects outright. The reserved verbs come from the BACKEND
+      // (`GET /api/providers` → `reserved_verbs`) rather than a second copy of the list over here — it
+      // is already on the wire for exactly this kind of check, and a hardcoded mirror would drift the
+      // first time a verb is added. The secret sentinels are a fixed schema-level rule (D48 C1), so
+      // those are named locally with a pointer to their source of truth.
+      const reserved = providersInfo?.reserved_verbs ?? [];
+      const sentinel = (n: string) => SECRET_SENTINEL_NAMES.includes(n.trim().toLowerCase());
+      for (const pname of Object.keys(draft.providers)) {
+        if (reserved.includes(pname))
+          dangling.push(`provider "${pname}" → that name is a built-in composer verb`);
+        else if (sentinel(pname))
+          dangling.push(`provider "${pname}" → that name collides with a secret field`);
+        for (const mname of Object.keys(draft.providers[pname].models ?? {})) {
+          if (sentinel(mname))
+            dangling.push(`${pname} model "${mname}" → that name collides with a secret field`);
+        }
       }
     }
     return { dangling, byProvider };
@@ -1226,7 +1290,7 @@ export function ConfTab({ active }: Props) {
 
   function onSave() {
     if (!draft || saveDisabled) return;
-    const patch: SavePatch = {
+    const coerced: SavePatch = {
       server: {
         ...draft.server,
         port: Number(draft.server.port),
@@ -1260,6 +1324,18 @@ export function ConfTab({ active }: Props) {
         },
       },
     };
+    // Send ONLY the sections that actually changed. Sending everything made every scalar save a
+    // resolution-relevant patch (the backend strict-resolves any patch touching providers / inference /
+    // agent / voice / embeddings), so on a config carrying a pre-existing lenient-tolerated conflict —
+    // a min-wins gate clash, a dim mismatch — editing `server.poll_seconds` 422'd and the owner could
+    // not save anything at all (A11 pre-release FE audit, MED). That is precisely the case FX7's
+    // strict-gating was built to keep working, defeated from this side. Comparing the COERCED section
+    // (what we would send) against the seeded doc, so a "5" typed over 5 is not a change.
+    const seeded: Record<string, unknown> = pickDraft(settings);
+    const patch: SavePatch = {};
+    for (const [key, value] of Object.entries(coerced)) {
+      if (JSON.stringify(value) !== JSON.stringify(seeded[key])) patch[key] = value;
+    }
     // FX11 — carry the providers map + its epoch-bound base ONLY when the subtree is dirty (or a rename is
     // queued); a clean-providers save omits both (no needless 409 surface, and `providers_base` never rides
     // without `providers`). The base is the DRAFT-EPOCH capture, never the live query rev.
@@ -1267,16 +1343,28 @@ export function ConfTab({ active }: Props) {
       patch.providers = draft.providers;
       patch.providers_base = capturedBaseRef.current ?? undefined;
     }
-    if (Object.keys(renames).length) patch.provider_renames = renames;
+    const sentRenames = Object.keys(renames);
+    if (sentRenames.length) patch.provider_renames = renames;
+    // What we are actually submitting — the reconcile below compares against THIS, not against whatever
+    // the draft looks like when the response lands (D48 B5: reconcile only the submitted snapshot).
+    const submittedJson = JSON.stringify(draft);
     save.mutate(patch, {
       onSuccess: (res) => {
-        // Draft epoch (R18): adopt the PUT echo as the new clean baseline + clear the rename queue, and
-        // advance the captured base to the post-write rev (the draft reseeds clean at the new epoch).
+        // Draft epoch (R18): the PUT echo becomes the new clean baseline and the captured base advances
+        // to the post-write rev, so the next save works from the fresh epoch.
         const echo = pickDraft(res.settings);
         seededRef.current = JSON.stringify(echo);
-        setDraft(echo);
-        setRenames({});
         capturedBaseRef.current = res.providers_rev;
+        // …but the draft is only REPLACED when it is still what we sent. On a slow link the owner can
+        // keep typing while the save is in flight, and unconditionally adopting the echo silently threw
+        // those edits away (A11 pre-release FE audit, HIGH). Keeping them leaves the draft dirty against
+        // the new baseline — the save bar says "Save changes" again, which is the truth.
+        setDraft((d) => (JSON.stringify(d) === submittedJson ? echo : d));
+        // Clear only the renames that were SENT. One queued after the submit still refers to a name that
+        // exists server-side (the sent ones already applied), so it stays valid for the next save.
+        setRenames((prev) =>
+          Object.fromEntries(Object.entries(prev).filter(([old]) => !sentRenames.includes(old))),
+        );
         setSaveWarn({ at: Date.now(), warnings: res.warnings ?? [] }); // FX16/FR2-3 — replace, stamped with the save moment
       },
     });
