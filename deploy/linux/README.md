@@ -250,6 +250,12 @@ bash ~/apps/ctrl-b/deploy/linux/update.sh vX.Y.Z          # --force only for an 
 > git -C ~/apps/ctrl-b show vX.Y.Z:deploy/linux/update.sh | bash -s -- vX.Y.Z
 > ```
 > From the next release onward the plain command above works, because the file is then on disk.
+> **The same form is the RECOVERY PATH whenever the deployed updater itself is broken** — proven
+> 2026-07-28: v1.3.0's on-disk `update.sh` refused every stamped config (the marker-comment bug,
+> fixed in `0f87652`), so v1.3.2 was cut over by running the FIXED script straight out of the new
+> tag. "The file is on disk" only helps when the on-disk copy works; when it doesn't, deploy the
+> fix-carrying tag with the bootstrap form and prod lands a working updater again. (v1.3.1 is
+> tagged but was never deployed — it carries the bug; don't roll back onto it.)
 
 **Rolling back is NOT `update.sh v(prev)`** when the previous tag predates this release: that build's
 `install.sh` swallows a failed stop and has no health gate, so the updater refuses to drive it and

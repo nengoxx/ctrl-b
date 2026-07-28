@@ -12,10 +12,20 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-28 evening — the v1.3.1 PATCH IS BUILT, gate 6/6, UNPUSHED)
-> **The v1.3.1 stabilization patch is COMPLETE on main: 14 unpushed commits (`bac7da1..859bdd2` + this
-> docs commit), full gate 6/6 (ruff·pyright·pytest 1064·FE check-all 640·prettier), backend + FE suites
-> green, dev units RUNNING for owner eyeball (:5173/:5434).**
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-28 night — ✅ **v1.3.2 IS LIVE ON EMMA**)
+> **The stabilization patch SHIPPED as `v1.3.2` (= `92241a4`; `v1.3.1` = `983f7dc` stays tagged but
+> was NEVER DEPLOYED — it carries the updater bug below; not a rollback target).** CI release gate
+> green (run 30386540373, 4m12s, e2e ✓) · cutover via the **bootstrap form of the FIXED
+> `update.sh`** (supervisor ruling — the on-disk v1.3.0 copy was the broken one; runbook §Release now
+> documents the bootstrap form as the broken-updater recovery path) · migration correctly "not
+> needed" (marker stays 1) · DB snapshot `ctrlb-20260728-201917.db.gz` · health ok/**1.3.2**, pid ==
+> MainPID (81309), config 0600, HTTPS ingress serving 1.3.2 · rollback one-liner names v1.3.0
+> correctly (the fixed soft read, verified in the field) · dev units stopped (on-demand) · everything
+> pushed through `92241a4` + tag; post-release: this handoff amendment + the runbook note
+> (commit-only, push with the next batch). **Remaining owner-facing item: a device spot-check of the
+> UI at https://emma.lobster-vector.ts.net.** Next session: whatever the owner picks — the patch
+> charter is DONE (all 5 device findings · the triaged sweep · the draft-loss fixes · two Codex
+> rounds + a verify round · the release-blocker fix `0f87652` with its real-writer/real-reader test).
 > **▶ THE RELEASE STORY (owner gave the go 2026-07-28 evening):** the push + annotated tag `v1.3.1`
 > (@ `983f7dc`) + CI release gate (run 30385055513, green incl. e2e) all succeeded — **and the cutover
 > was REFUSED pre-flight (exit 78, prod untouched at v1.3.0): the shipped `update.sh` could not parse
