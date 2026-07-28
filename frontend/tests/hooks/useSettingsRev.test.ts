@@ -66,7 +66,73 @@ describe("useSettings · the providers rev rides the settings response", () => {
   });
 });
 
-describe("useSaveSettings · a stale in-flight GET cannot overwrite the echo", () => {
+describe("useSaveSettings · a cancelled in-flight GET cannot write its stale rev header", () => {
+  it("aborts the deferred GET so its late resolution does NOT clobber the fresh post-save rev (Fix 4)", async () => {
+    // The regression Codex found: `useSettings`'s queryFn writes the rev header as a SIDE EFFECT. A save's
+    // `cancelQueries(["settings"])` stops TanStack adopting the stale DOCUMENT, but the underlying fetch
+    // carried no AbortSignal — so a GET that started before the save still resolves afterwards and its
+    // `setQueryData(providers-rev, staleRev)` overwrites the fresh post-save rev. The next save then sends
+    // a stale base and falsely 409s. The fix threads TanStack's `signal` into the fetch: an aborted read
+    // rejects BEFORE the setQueryData line. This models a browser fetch that honours the signal.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: qc }, children);
+
+    let resolveGet!: (r: Response) => void;
+    const getReady = new Promise<Response>((res) => {
+      resolveGet = res;
+    });
+    let getCount = 0;
+    globalThis.fetch = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "PUT") {
+        // the PUT echo — the server is now at rev B
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              settings: { server: { port: 5433 } },
+              providers_rev: "revB",
+              warnings: [],
+              restart_required: [],
+            }),
+            { status: 200, headers: {} },
+          ),
+        );
+      }
+      getCount += 1;
+      if (getCount > 1) return new Promise<Response>(() => {}); // any refetch stays pending — no spurious write
+      // the first GET is deferred AND honours abort exactly like a real fetch (rejects on abort)
+      const signal = init?.signal;
+      return new Promise<Response>((resolve, reject) => {
+        if (signal) {
+          if (signal.aborted) return reject(new DOMException("Aborted", "AbortError"));
+          signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+        }
+        void getReady.then(resolve); // resolves (with the STALE rev A) only when the test lets it
+      });
+    });
+
+    const { result } = renderHook(
+      () => ({ s: useSettings(), save: useSaveSettings(), rev: useSettingsProvidersRev() }),
+      { wrapper },
+    );
+    // wait until the deferred settings GET is actually in flight (its fetch has been invoked)…
+    await waitFor(() => expect(getCount).toBe(1));
+    // …then fire the save — onMutate cancels ["settings"], aborting that in-flight read.
+    result.current.save.mutate({ server: { port: 5433 } });
+    // the PUT echo lands → rev B is the fresh, authoritative base.
+    await waitFor(() => expect(qc.getQueryData(["settings", "providers-rev"])).toBe("revB"));
+    // NOW the stale GET resolves (rev A) — but with the signal wired the queryFn already rejected on abort,
+    // so its setQueryData never runs. Flush microtasks and confirm the rev is STILL B.
+    resolveGet(
+      new Response(JSON.stringify({ server: { port: 5433 } }), {
+        status: 200,
+        headers: { "X-Providers-Rev": "revA" },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(qc.getQueryData(["settings", "providers-rev"])).toBe("revB");
+  });
+
   it("cancels the settings query before adopting the PUT echo", async () => {
     // A read that STARTED before the save can land after `setQueryData` and restore the pre-save doc
     // and its old rev; a draft that just went clean then reseeds from that stale snapshot and shows old

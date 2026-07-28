@@ -27,8 +27,14 @@ export async function getJSON<T>(path: string): Promise<T> {
 export async function getJSONWithHeader<T>(
   path: string,
   header: string,
+  init?: { signal?: AbortSignal },
 ): Promise<{ data: T; header: string | null }> {
-  const res = await fetch(path, { headers: { Accept: "application/json" } });
+  // Thread TanStack's per-query AbortSignal into the fetch so a cancelled query (e.g. a save's
+  // `cancelQueries(["settings"])`) actually ABORTS the in-flight read. Without it the fetch runs to
+  // completion and the queryFn's side effect (`setQueryData(providers-rev)`) still fires — overwriting
+  // a fresh post-save rev with the stale one (Codex, review of the fix wave). An abort rejects with a
+  // DOMException AbortError, which TanStack treats as a cancelled fetch — do NOT catch it here.
+  const res = await fetch(path, { headers: { Accept: "application/json" }, signal: init?.signal });
   if (!res.ok) throw new ApiError(`${path} → ${res.status} ${res.statusText}`, res.status);
   return { data: (await res.json()) as T, header: res.headers.get(header) };
 }

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ConfTab · A11/D48 Providers + Inference (Slice 1). The Inference section is now the shared
@@ -118,7 +118,29 @@ const h = vi.hoisted(() => ({
   settingsRev: "revA", // FR2-1 — the providers base rev bound to the settings snapshot
   saveAppearance: vi.fn(), // the persisted side effect of pickTheme — the theme-block test asserts on it
   providersUpdatedAt: 0, // FR2-3 — the ["providers"] query's dataUpdatedAt (freshness gate)
+  toast: vi.fn(), // Fix 1 — the freeze guards push a toast; assert on it
+  switchTheme: vi.fn(), // Fix 3 — stubbed so pickTheme's persist gate is driven by a controlled OUTCOME
+  switchOutcome: "applied",
 }));
+
+// Fix 1 — the identity-op freeze guards toast; capture pushToast (keep the rest of the module real).
+vi.mock("../../src/store/toast", async (importActual) => {
+  const actual = await importActual<typeof import("../../src/store/toast")>();
+  return { ...actual, pushToast: h.toast };
+});
+// Fix 3 — stub switchTheme so pickTheme's "persist only on applied" gate is tested against a controlled
+// outcome (the switch INTERNALS are covered in switchThemeDirty.test.ts). Records its calls; resolves to
+// h.switchOutcome. Without the stub the real async bundle load would make the persist non-deterministic.
+vi.mock("../../src/theme-engine/switchTheme", async (importActual) => {
+  const actual = await importActual<typeof import("../../src/theme-engine/switchTheme")>();
+  return {
+    ...actual,
+    switchTheme: (...args: unknown[]) => {
+      h.switchTheme(...args);
+      return Promise.resolve(h.switchOutcome);
+    },
+  };
+});
 
 // Stub the sub-editors (each mounts its own hook tree) + UtilsTab so only Providers/Inference are live.
 vi.mock("../../src/components/AgentsEditor", () => ({ AgentsEditor: () => null }));
@@ -175,6 +197,9 @@ beforeEach(() => {
   h.providersUpdatedAt = 0;
   h.save.mockClear();
   h.saveAppearance.mockClear();
+  h.toast.mockClear();
+  h.switchTheme.mockClear();
+  h.switchOutcome = "applied";
 });
 afterEach(cleanup);
 
@@ -674,7 +699,7 @@ describe("ConfTab · pre-release audit regressions", () => {
     expect(saveButton().textContent).toMatch(/Save changes/); // …and is correctly still unsaved
   });
 
-  it("refuses a theme switch while ANOTHER editor is dirty, not just this tab", () => {
+  it("refuses a theme switch while ANOTHER editor is dirty, not just this tab", async () => {
     // The remount kills every mounted editor's draft, and tabs stay mounted — so a dirty skill or agent
     // draft is sitting there while the owner is on Conf. Guarding only Conf's own draft left the same
     // class open through the other five registrants.
@@ -686,7 +711,8 @@ describe("ConfTab · pre-release audit regressions", () => {
     expect(h.saveAppearance).not.toHaveBeenCalled();
     setDirty("skill:deploy", false); // …and once it is clean the switch goes through
     fireEvent.click(themeBtn!);
-    expect(h.saveAppearance).toHaveBeenCalledTimes(1);
+    // Fix 3 — the persist now rides `switchTheme(...).then(applied)`, so it lands a microtask later.
+    await waitFor(() => expect(h.saveAppearance).toHaveBeenCalledTimes(1));
   });
 
   it("refuses a theme switch while Conf is dirty (the switch unmounts the tab and its draft)", () => {
@@ -701,11 +727,11 @@ describe("ConfTab · pre-release audit regressions", () => {
     expect(baseInput("Poll cadence").value).toBe("9"); // …and the draft is still here
   });
 
-  it("rebases a rename chained during an in-flight save instead of dropping it", () => {
-    // Rename A→B, save, then rename B→C before the response lands: the control re-points the existing
-    // entry, so the queue is {A: C}. Clearing the sent SOURCE key threw the whole rename away — the
-    // draft said C, the server said B, and the next PUT looked like a brand-new provider whose masked
-    // key has nothing stored, so the credential was dropped by the mask guard. It rebases now.
+  it("freezes a rename chained during an in-flight save (Fix 1 supersedes the old mid-flight rebase)", () => {
+    // Rename A→B, save, then TRY to rename B→C before the response lands. Fix 1 now FREEZES identity ops
+    // while a save is in flight, so the chain is refused — Codex chose freezing over rebasing the queued
+    // rename precisely because rebasing a post-submit chain was subtle and credential-crossing. The queue
+    // the first PUT carried is unchanged (A→B); the draft stays at B.
     render(<ConfTab active />);
     fireEvent.click(screen.getByText("llamacpp", { selector: "div.label" }));
     fireEvent.click(screen.getByRole("button", { name: "rename" }));
@@ -713,29 +739,14 @@ describe("ConfTab · pre-release audit regressions", () => {
     fireEvent.click(screen.getByRole("button", { name: "ok" }));
     fireEvent.click(saveButton());
     expect(lastPatch().provider_renames).toEqual({ llamacpp: "step-b" });
-    // …the response has NOT landed, and the owner renames again…
+    // …the response has NOT landed, and the owner tries to rename again → REFUSED (frozen).
+    h.toast.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "rename" }));
     fireEvent.change(screen.getByLabelText("New provider name"), { target: { value: "step-c" } });
     fireEvent.click(screen.getByRole("button", { name: "ok" }));
-    const opts = h.save.mock.calls[0][1] as {
-      onSuccess: (r: unknown) => void;
-      onSettled: () => void;
-    };
-    const echo = makeSettings();
-    const echoProviders = echo.providers as Record<string, unknown>;
-    echoProviders["step-b"] = echoProviders.llamacpp; // the server applied A→B
-    delete echoProviders.llamacpp;
-    echo.inference.provider = "step-b";
-    act(() => {
-      // the real callback order, including the release of the same-tick save lock
-      opts.onSuccess({ settings: echo, providers_rev: "revB", warnings: [], restart_required: [] });
-      opts.onSettled();
-    });
-    fireEvent.click(saveButton());
-    // the second save must tell the server about B→C, NOT drop it and not re-send the applied A→B
-    expect((h.save.mock.calls[1][0] as SavedPatch).provider_renames).toEqual({
-      "step-b": "step-c",
-    });
+    expect(h.toast).toHaveBeenCalledWith(expect.stringMatching(/in flight/i), "err");
+    expect(screen.getByText("step-b", { selector: "div.label" })).toBeTruthy(); // stayed at B
+    expect(screen.queryByText("step-c", { selector: "div.label" })).toBeNull();
   });
 
   it("does not queue a rename for a provider that exists only in the draft", () => {
@@ -791,5 +802,105 @@ describe("ConfTab · pre-release audit regressions", () => {
     fireEvent.change(baseInput("Poll cadence"), { target: { value: "9" } }); // …a real edit, as above
     expect(screen.getAllByText(/has no base URL/).length).toBeGreaterThan(0);
     expect(saveButton().disabled).toBe(true);
+  });
+});
+
+// ── The four confirmed pre-tag-v1.3.0 Codex findings ─────────────────────────────────────────────
+describe("ConfTab · provider identity freeze while a save is in flight (Fix 1)", () => {
+  it("refuses add / remove / rename mid-save (toast) and leaves the draft + queue untouched", () => {
+    h.settings = makeSettings();
+    h.settings.inference.fallbacks = []; // drop openrouter's inference ref → its card's Remove is enabled
+    render(<ConfTab active />);
+    // Dirty the draft and start a save. The mocked `mutate` never settles, and `isPending` is a constant
+    // false, so `savingRef` — set true in onSave — stays true: a save is "in flight" exactly as in prod.
+    fireEvent.change(baseInput("Poll cadence"), { target: { value: "9" } });
+    fireEvent.click(saveButton());
+    expect(h.save).toHaveBeenCalledTimes(1);
+
+    // REMOVE is refused: openrouter is removable (unreferenced) but the save is in flight.
+    h.toast.mockClear();
+    fireEvent.click(screen.getByText("openrouter", { selector: "div.label" })); // open its card
+    fireEvent.click(screen.getByRole("button", { name: "remove provider" }));
+    expect(screen.getByText("openrouter", { selector: "div.label" })).toBeTruthy(); // card survived
+    expect(h.toast).toHaveBeenCalledWith(expect.stringMatching(/in flight/i), "err");
+
+    // RENAME is refused at the parent chokepoint: the label does not change and the selector does not cascade.
+    h.toast.mockClear();
+    fireEvent.click(screen.getByText("llamacpp", { selector: "div.label" })); // open llamacpp
+    fireEvent.click(screen.getByRole("button", { name: "rename" }));
+    fireEvent.change(screen.getByLabelText("New provider name"), { target: { value: "renamed" } });
+    fireEvent.click(screen.getByRole("button", { name: "ok" }));
+    expect(screen.getByText("llamacpp", { selector: "div.label" })).toBeTruthy();
+    expect(screen.queryByText("renamed", { selector: "div.label" })).toBeNull();
+    expect(sel("Default provider").value).toBe("llamacpp"); // the inference selector did NOT cascade
+    expect(h.toast).toHaveBeenCalledWith(expect.stringMatching(/in flight/i), "err");
+
+    // ADD is refused: no new card appears (done last — a frozen add leaves its disclosure open).
+    h.toast.mockClear();
+    fireEvent.click(screen.getByText("add provider", { selector: "div.label" }));
+    fireEvent.change(screen.getByLabelText("New provider name"), { target: { value: "brandnew" } });
+    fireEvent.click(screen.getByRole("button", { name: "create" }));
+    expect(screen.queryByText("brandnew", { selector: "div.label" })).toBeNull();
+    expect(h.toast).toHaveBeenCalledWith(expect.stringMatching(/in flight/i), "err");
+  });
+});
+
+describe("ConfTab · undo a queued rename (Fix 2)", () => {
+  it("renaming a card back to its own queued source cancels the queue and re-cleans the draft", () => {
+    render(<ConfTab active />); // no save in flight → Fix 1 does not interfere
+    // queue llamacpp → step-b (no save); the card + inference selector cascade, the draft goes dirty.
+    fireEvent.click(screen.getByText("llamacpp", { selector: "div.label" }));
+    fireEvent.click(screen.getByRole("button", { name: "rename" }));
+    fireEvent.change(screen.getByLabelText("New provider name"), { target: { value: "step-b" } });
+    fireEvent.click(screen.getByRole("button", { name: "ok" }));
+    expect(screen.getByText("step-b", { selector: "div.label" })).toBeTruthy();
+    expect(sel("Default provider").value).toBe("step-b");
+    expect(saveButton().textContent).toMatch(/Save changes/); // dirty: a rename is queued
+
+    // rename step-b → llamacpp: llamacpp is THIS card's own queued SOURCE (renames[llamacpp] === "step-b"),
+    // so Fix 2 exempts it and the operation cancels the queued rename instead of 422-blocking.
+    fireEvent.click(screen.getByRole("button", { name: "rename" }));
+    fireEvent.change(screen.getByLabelText("New provider name"), { target: { value: "llamacpp" } });
+    fireEvent.click(screen.getByRole("button", { name: "ok" }));
+    expect(screen.getByText("llamacpp", { selector: "div.label" })).toBeTruthy();
+    expect(screen.queryByText("step-b", { selector: "div.label" })).toBeNull();
+    expect(sel("Default provider").value).toBe("llamacpp");
+    // the draft is byte-identical to the seed and the queue is empty → the bar reads "Saved" (clean).
+    expect(saveButton().textContent).toMatch(/Saved/);
+  });
+
+  it("still refuses renaming onto a name queued from ANOTHER card (no over-broadening)", () => {
+    render(<ConfTab active />);
+    // queue llamacpp → step-b …
+    fireEvent.click(screen.getByText("llamacpp", { selector: "div.label" }));
+    fireEvent.click(screen.getByRole("button", { name: "rename" }));
+    fireEvent.change(screen.getByLabelText("New provider name"), { target: { value: "step-b" } });
+    fireEvent.click(screen.getByRole("button", { name: "ok" }));
+    // … then on the OPENROUTER card, try to grab "llamacpp": it is another card's queued source, still a
+    // live server name that would collide on save → refused (the exemption is scoped to THIS card's source).
+    fireEvent.click(screen.getByText("openrouter", { selector: "div.label" }));
+    fireEvent.click(screen.getByRole("button", { name: "rename" }));
+    fireEvent.change(screen.getByLabelText("New provider name"), { target: { value: "llamacpp" } });
+    fireEvent.click(screen.getByRole("button", { name: "ok" }));
+    expect(screen.getByText("openrouter", { selector: "div.label" })).toBeTruthy(); // unchanged
+    expect(screen.queryByText("llamacpp", { selector: "div.label" })).toBeNull(); // not grabbed
+    expect(h.toast).toHaveBeenCalledWith(expect.stringMatching(/exists/i), "err");
+  });
+});
+
+describe("ConfTab · a refused theme switch is not persisted (Fix 3)", () => {
+  it("does NOT persist when switchTheme refuses at its supersede-point dirty check", async () => {
+    // pickTheme was clean at click time (its own top guard passed) but switchTheme refused later — the
+    // owner began editing during a cold bundle load. Persisting regardless would write the new theme to the
+    // server + query cache while the local UI stayed on the old one; the reconcile then re-applies it and
+    // other devices adopt it. The persist is now gated on the "applied" outcome.
+    h.switchOutcome = "refused-dirty";
+    render(<ConfTab active />); // clean draft → pickTheme's top guard passes and calls switchTheme
+    fireEvent.click(screen.getByRole("button", { name: /^cosmos$/i }));
+    await waitFor(() => expect(h.switchTheme).toHaveBeenCalled()); // the caller DID attempt the switch …
+    await act(async () => {
+      await Promise.resolve(); // flush the .then microtask
+    });
+    expect(h.saveAppearance).not.toHaveBeenCalled(); // … but the refusal blocked the persist
   });
 });

@@ -797,9 +797,16 @@ export function ConfTab({ active }: Props) {
     // (resolve.ts), shared with `coerceBootTheme`'s fallback (item ⑥) so the `?? "dark"` derivation lives
     // in one place.
     const target = defaultSwitchTarget(id);
-    void switchTheme(id, target); // async (loads the bundle first) → DON'T read the store for theme below
-    // The skin/mode/accent are the explicit target; motion/perf/themeSettings ride along unchanged.
-    saveAppearance.mutate({ ...currentAppearancePatch(), theme: id, ...target });
+    // Persist ONLY when the switch actually APPLIED. `switchTheme` can refuse at its supersede-point dirty
+    // check (the owner started editing during a cold bundle load) or fail the bundle load; persisting
+    // regardless wrote the new theme to the server + query cache while the local UI stayed on the old one,
+    // so `useAppearance`'s reconcile re-applied the "refused" switch and other devices adopted it (Codex,
+    // review of the fix wave). Build the patch INSIDE the callback so it reads post-switch store state; the
+    // skin/mode/accent are the explicit target and motion/perf/themeSettings ride along unchanged.
+    void switchTheme(id, target).then((outcome) => {
+      if (outcome === "applied")
+        saveAppearance.mutate({ ...currentAppearancePatch(), theme: id, ...target });
+    });
   };
   const pickMode = (m: Mode) => {
     setUI({ mode: m });
@@ -838,6 +845,19 @@ export function ConfTab({ active }: Props) {
   const providersBaseRev = useSettingsProvidersRev(); // FR2-1 — the base rev bound to the settings snapshot
   const { data: providersInfo, dataUpdatedAt: providersUpdatedAt } = useProviders();
   const save = useSaveSettings();
+  // `save.isPending` is a RENDERED value: two `mutate` calls in the same tick both see `false`, and the
+  // second detaches TanStack's observer from the first, so the first call's per-call `onSuccess` — which
+  // is where the epoch, the captured base and the rename queue are reconciled — never runs (Codex,
+  // review of the fix wave). A ref is the only guard that is true at call time. Declared HERE (before the
+  // provider identity ops) so the freeze guard (add/remove/rename) can read it. Released TWO ways: the
+  // per-call `onSettled` in onSave is the normal path; this effect is the backstop, because the whole
+  // reason the lock exists is that a per-call callback can fail to run when a second `mutate` detaches the
+  // observer — and a lock nobody clears wedges the tab entirely. `isPending` going false covers every
+  // terminal case.
+  const savingRef = useRef(false);
+  useEffect(() => {
+    if (!save.isPending) savingRef.current = false;
+  }, [save.isPending]);
   const { data: integrations } = useIntegrationsStatus();
   const rediscover = useRediscover();
   const { data: actionSpecs = [] } = useActionSpecs();
@@ -991,6 +1011,12 @@ export function ConfTab({ active }: Props) {
     setDraft((d) => (d ? { ...d, providers: { ...d.providers, [name]: doc } } : d));
   }
   function addProviderCard() {
+    // Freeze provider IDENTITY ops (add/remove/rename) while a save is in flight — the rename queue and
+    // the credential blank-keep both resolve against the SUBMITTED snapshot, so mutating identity mid-flight
+    // crosses credentials onto the wrong endpoint (Codex, review of the fix wave). `savingRef` is the
+    // call-time truth (`save.isPending` is a rendered value, stale within a tick). Ordinary field edits stay
+    // unguarded (reconcile-not-freeze); only identity ops freeze.
+    if (savingRef.current) return pushToast("a save is in flight — try again in a moment", "err");
     const name = newProvName.trim().toLowerCase();
     if (!PROVIDER_SLUG.test(name))
       return pushToast("provider name: a–z 0–9 _ + . - (max 32)", "err");
@@ -1008,6 +1034,12 @@ export function ConfTab({ active }: Props) {
     setOpenProvider(name);
   }
   function removeProvider(name: string) {
+    // Freeze identity ops while a save is in flight (see addProviderCard) — removing a provider mid-flight
+    // erases a queued rename's provenance and can strand its credential on the wrong endpoint.
+    if (savingRef.current) {
+      pushToast("a save is in flight — try again in a moment", "err");
+      return;
+    }
     setDraft((d) => {
       if (!d) return d;
       const { [name]: _drop, ...rest } = d.providers;
@@ -1021,6 +1053,13 @@ export function ConfTab({ active }: Props) {
     setOpenProvider((o) => (o === name ? null : o));
   }
   function renameProvider(from: string, to: string) {
+    // Freeze identity ops while a save is in flight (see addProviderCard). Guarded HERE (the parent
+    // chokepoint), NOT in the card — the card's local `setRenaming(false)` still runs, so the edit UI
+    // closes and the toast explains why the name did not change.
+    if (savingRef.current) {
+      pushToast("a save is in flight — try again in a moment", "err");
+      return;
+    }
     setDraft((d) => {
       if (!d) return d;
       const provs: Record<string, ProviderDoc> = {};
@@ -1298,18 +1337,6 @@ export function ConfTab({ active }: Props) {
     ...(jsonBlocked ? ["fix the invalid provider fields highlighted above"] : []),
   ];
   const saveDisabled = !dirty || save.isPending || blockReasons.length > 0;
-  // `save.isPending` is a RENDERED value: two `mutate` calls in the same tick both see `false`, and the
-  // second detaches TanStack's observer from the first, so the first call's per-call `onSuccess` — which
-  // is where the epoch, the captured base and the rename queue are reconciled — never runs (Codex,
-  // review of the fix wave). A ref is the only guard that is true at call time.
-  const savingRef = useRef(false);
-  // Released TWO ways, deliberately. The per-call `onSettled` below is the normal path; this effect is
-  // the backstop, because the whole reason the lock exists is that a per-call callback can fail to run
-  // when a second `mutate` detaches the observer — and a lock nobody clears wedges the tab entirely,
-  // which is worse than the race it guards. `isPending` going false covers every terminal case.
-  useEffect(() => {
-    if (!save.isPending) savingRef.current = false;
-  }, [save.isPending]);
 
   function onSave() {
     if (!draft || saveDisabled || savingRef.current) return;
@@ -1482,7 +1509,9 @@ export function ConfTab({ active }: Props) {
               referencedBy={referenceReport.byProvider[name] ?? []}
               existingNames={Object.keys(draft?.providers ?? {}).filter((n) => n !== name)}
               onChange={(d) => setProvider(name, d)}
-              serverNames={Object.keys(settings?.providers ?? {}).filter((n) => n !== name)}
+              serverNames={Object.keys(settings?.providers ?? {}).filter(
+                (n) => n !== name && renames[n] !== name,
+              )}
               onRename={(next) => renameProvider(name, next)}
               onRemove={() => removeProvider(name)}
               onValidity={setValidity}

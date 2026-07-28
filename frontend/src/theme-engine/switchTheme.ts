@@ -107,6 +107,13 @@ export interface SwitchTarget {
   themeSettings?: ThemeSettingsMap;
 }
 
+/** The outcome of a switch attempt, so a caller can persist the choice ONLY when it actually applied.
+ *  A refused switch (dirty-at-supersede-point, load failure) must NOT be written to the server + query
+ *  cache, or `useAppearance`'s reconcile re-applies it and other devices adopt it (Codex, review of the
+ *  fix wave). `"superseded"` = a newer differing call took over — that winning call's own caller owns the
+ *  persist, so a superseded loser persists nothing either. */
+export type SwitchOutcome = "applied" | "refused-dirty" | "load-failed" | "superseded";
+
 // In-flight guard state (§14.15.1 ⑤ — one chokepoint, replaces the planned `useIsMutating` gate).
 //  • `latest` — a per-call identity token. The last call to arrive wins (last-write-wins): after its
 //    await, an older call whose token has been superseded BAILS, so at most one transition applies. Left
@@ -115,12 +122,16 @@ export interface SwitchTarget {
 //  • `inFlight` — the currently-running switch, keyed by the FULL target (§14.15.1 ⑤: not just the id, so
 //    the winning call applies the right mode/accent). A call with the SAME key joins it (one load, one VT).
 let latest: object | null = null;
-let inFlight: { key: string; done: Promise<void> } | null = null;
+let inFlight: { key: string; done: Promise<SwitchOutcome> } | null = null;
 
 /** The actual switch: load the bundle, bail if superseded, else commit inside a View Transition. Never
  *  rejects — a load failure toasts + returns (so the `finally` in `switchTheme` always clears `inFlight`,
  *  keeping a failed target retryable; pairs with ③'s cache eviction — the two are one mechanism). */
-async function runSwitch(next: ThemeId, target: SwitchTarget, token: object): Promise<void> {
+async function runSwitch(
+  next: ThemeId,
+  target: SwitchTarget,
+  token: object,
+): Promise<SwitchOutcome> {
   try {
     await ensureThemeLoaded(next); // SLOW WORK FIRST — never inside the transition callback
   } catch {
@@ -129,13 +140,13 @@ async function runSwitch(next: ThemeId, target: SwitchTarget, token: object): Pr
     // gate the user gets two identical error toasts (the exact double-signal ④+ forbids). The single
     // signal belongs to the latest intent; superseded losers stay silent.
     if (latest === token) pushToast("theme failed to load", "err");
-    return; // stay on the current theme
+    return "load-failed"; // stay on the current theme
   }
   // Superseded while the bundle loaded? A newer `switchTheme` (a DIFFERENT target) has taken over → bail so
   // only the WINNING call applies its full target. This supersede — not the same-key dedupe below — is what
   // collapses the reconcile double-VT (pick + reconcile targets differ in the motion trio), out-of-order
   // cold loads, and StrictMode double-effects into ONE applied transition.
-  if (latest !== token) return;
+  if (latest !== token) return "superseded";
   // LAST LINE against destroying unsaved work, checked HERE because this is the moment the theme root
   // remounts and every mounted editor's draft dies with it. The callers check too, but they check
   // BEFORE the bundle load: with a cold bundle that window is long enough to start typing in, and the
@@ -144,7 +155,7 @@ async function runSwitch(next: ThemeId, target: SwitchTarget, token: object): Pr
   // structural: a theme switch never eats an unsaved draft, whoever asked for it.
   if (isAnyDirty()) {
     pushToast("Save or discard your unsaved changes before switching theme", "err");
-    return;
+    return "refused-dirty";
   }
 
   const apply = () =>
@@ -163,10 +174,11 @@ async function runSwitch(next: ThemeId, target: SwitchTarget, token: object): Pr
   const start = doc.startViewTransition?.bind(doc);
   if (getUI().motion === "reduced" || !start) {
     apply(); // reduced-motion or unsupported → instant swap
-    return;
+    return "applied";
   }
   const t = start(apply);
   t.ready.catch(() => {}); // swallow the skip/TimeoutError (the DOM is already applied)
+  return "applied";
 }
 
 /** Switch the active SKIN with a cross-fade. Loads the theme bundle first, then commits the `ui` change
@@ -176,7 +188,7 @@ async function runSwitch(next: ThemeId, target: SwitchTarget, token: object): Pr
  *  the loser bails after its await so at most ONE transition applies. `inFlight` clears in a `finally`
  *  (success AND failure) so a failed target is immediately retryable — the retry re-invokes ③'s evicted
  *  loader. */
-export function switchTheme(next: ThemeId, target: SwitchTarget): Promise<void> {
+export function switchTheme(next: ThemeId, target: SwitchTarget): Promise<SwitchOutcome> {
   // Dedupe key: theme id + the full normalized target. `stableStringify` makes the `themeSettings` part
   // key-order-insensitive (top-level field order is irrelevant — it sorts keys), so two calls carrying the
   // same target produce the same key and share one load + one View Transition.

@@ -27,23 +27,30 @@ afterEach(() => {
 const target = { mode: "dark" as const, accent: "blue" };
 
 describe("switchTheme · unsaved-work guard", () => {
-  it("applies the switch when nothing is dirty", async () => {
-    await switchTheme("minimal", target);
+  it("applies the switch — and reports 'applied' — when nothing is dirty", async () => {
+    const outcome = await switchTheme("minimal", target);
     expect(h.setUI).toHaveBeenCalled();
+    // The outcome is what lets a caller (pickTheme) persist ONLY on a real apply (Fix 3). Before the
+    // fix `switchTheme` returned void, so this assertion would read `undefined` and fail.
+    expect(outcome).toBe("applied");
   });
 
-  it("refuses to apply — and says so — when ANY editor is dirty", async () => {
+  it("refuses to apply — reports 'refused-dirty' and says so — when ANY editor is dirty", async () => {
     h.dirty = true;
-    await switchTheme("cosmos", target);
+    const outcome = await switchTheme("cosmos", target);
     expect(h.setUI).not.toHaveBeenCalled();
     expect(h.toast).toHaveBeenCalledWith(expect.stringMatching(/unsaved changes/i), "err");
+    // The refusal must be REPORTED, not swallowed — the caller uses it to skip the persist that would
+    // otherwise cross-device-apply a theme the local UI refused. Pre-fix: `undefined` → this fails.
+    expect(outcome).toBe("refused-dirty");
   });
 
-  it("catches work that became dirty DURING the bundle load (the TOCTOU)", async () => {
+  it("catches work that became dirty DURING the bundle load (the TOCTOU) and reports 'refused-dirty'", async () => {
     // clean at call time — the caller's own check would have passed …
     const done = switchTheme("frontier", target);
     h.dirty = true; // … and the owner starts typing while the bundle loads
-    await done;
+    const outcome = await done;
     expect(h.setUI).not.toHaveBeenCalled();
+    expect(outcome).toBe("refused-dirty");
   });
 });

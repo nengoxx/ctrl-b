@@ -176,13 +176,18 @@ export function useSettings() {
   const qc = useQueryClient();
   return useScopedQuery<SettingsDoc>("conf", {
     queryKey: ["settings"],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       // FR2-1 — read the providers fingerprint off the SAME response (the `X-Providers-Rev` header) and
       // stash it under ["settings","providers-rev"] so the Conf draft can bind its concurrency base to the
       // exact settings snapshot it seeds from. ONE request; the doc body stays the query data (C9 naked).
+      // Pass TanStack's `signal` so a save's `cancelQueries(["settings"])` aborts this read BEFORE the
+      // setQueryData below — otherwise a slow read landing after the PUT echo overwrites the fresh
+      // post-save rev with its stale one (Codex). The rejection on abort guarantees the ordering; no
+      // manual `signal.aborted` check is needed.
       const { data, header } = await getJSONWithHeader<SettingsDoc>(
         "/api/settings",
         "X-Providers-Rev",
+        { signal },
       );
       qc.setQueryData(["settings", "providers-rev"], header);
       return data;
