@@ -10,20 +10,35 @@ judge the result rather than adopting it.**
 
 ## Which mechanism
 
+> **▶ MODEL LAYER INVERTED (owner, 2026-07-28).** The MAIN seat is now **Fable 5 on high** — it
+> designs, supervises, rules and audits. **Opus 5 (high) subagents carry the heavy token work**:
+> implementation, research, mechanical and operational tasks. The table below is written for that
+> arrangement. *(Until 2026-07-28 it was the other way round — Opus main, Fable an on-request
+> reviewer. The mechanics in this file did not change; only who sits where.)*
+
 | Situation | Use | Cost posture |
 |---|---|---|
 | Review of code/design **we wrote** — correctness, edge cases, failure modes | **Codex** (`gpt-5.6-sol`, high) | cheap — use freely |
 | Reading many files to answer a question | **`Explore`** subagent | cheap |
-| Bounded research on external projects / the field | **`general-purpose`** subagent (Opus 5 high) | cheap |
-| Well-specified implementation from a pinned brief | **`general-purpose`** subagent (Opus 5 high) | cheap |
-| **Deep audit of DESIGN / ARCHITECTURE / consistency / long-term maintainability** | **ONE Fable 5 subagent** — see below | **expensive — on request only** |
-| A judgement call, a ruling, a design decision | **do it yourself** — never delegate | — |
+| Bounded research on external projects / the field | **`general-purpose`** subagent (Opus 5 high) | the workforce — use freely |
+| Well-specified implementation from a pinned brief | **`general-purpose`** subagent (Opus 5 high) | the workforce — use freely |
+| Mechanical / operational work, runbook procedures, releases | **`general-purpose`** subagent (Opus 5 high) | the workforce — use freely |
+| An independent CLAUDE lens on the main seat's own design | **ONE Opus 5 subagent** briefed adversarially | occasional — the mirror of the old Fable tier |
+| **Design, architecture, supervision, audits, a judgement call, a ruling** | **the MAIN SEAT (Fable 5) — never delegate** | — |
 
 **Standing owner directive (2026-07-22, reaffirmed 2026-07-26):** launch a Codex review **whenever
 warranted, small slices included** — a quick pass is the minimum. It co-found the D3s3 HIGH and caught
 a MED in the fix.
 
-### The Fable 5 tier — "the senior software engineer" (owner directive, 2026-07-26)
+### The senior-engineer lens — now the MAIN SEAT's own job (2026-07-28)
+
+> **This section described hiring Fable as a subagent. Fable now holds the main seat, so its content
+> is what the MAIN SESSION is for** — read it as the job description of the chair you are sitting in,
+> not as a delegation recipe. The parts that still describe delegation (brief discipline, "tell it
+> what is already known", bounded reading, an explicit verdict) transfer verbatim to briefing an
+> **Opus 5** subagent for an adversarial review of your own design.
+
+#### Historical form — "the senior software engineer" (owner directive, 2026-07-26)
 
 **The role, in the owner's framing:** Fable is the senior engineer you ask *"is this a good design?"* —
 the second opinion for technical questions of **broader scope**: how the app integrates with the
@@ -33,8 +48,8 @@ the main session is deep in the slice and structurally cannot see across the who
 
 Fable is *"very smart"* but **expensive**. Rules:
 
-- **NEVER automatic.** Codex and Opus subagents may be launched on judgement; a Fable audit runs only
-  when the owner asks, or when explicitly proposed and approved.
+- ~~**NEVER automatic.**~~ **(Obsolete since 2026-07-28 — Fable is the main seat, so its judgement is
+  always "on".)** Codex and Opus subagents are launched on judgement, freely.
 - **No self-spawning, and ONE agent per audit scope.** The brief must say *"Do NOT spawn subagents…
   a fan-out is a process failure."* Two Fable agents in parallel are fine **only** when they audit
   genuinely different artifacts or genuinely different lenses — and the brief of each must say what the

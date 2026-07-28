@@ -1,5 +1,44 @@
 # Handoff — start here for a fresh session
 
+> ## ▲▲ READ FIRST — WHO YOU ARE (owner, 2026-07-28)
+> **The MAIN model is now FABLE 5 on high.** It supervises: designs the work and the project itself,
+> rules, and audits. **Opus 5 (high) subagents carry all the heavy token work** — implementation from
+> pinned briefs, research, mechanical + operational tasks including runbook releases. **Codex
+> `gpt-5.6-sol` high** remains the standing co-reviewer, launched whenever review is warranted.
+> *(This inverts the 2026-07-24 arrangement. The METHOD is unchanged — judgement in the main seat,
+> execution in subagents — only the occupants swapped. Mechanics:
+> [`second-opinion`](../.claude/skills/second-opinion/SKILL.md); rationale + the build-brief bar: the
+> `orchestrate-with-opus-subagents` memory. Match the model to your tmux session at session start:
+> `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
+> failure mode.)*
+>
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-28, clean tree, gate 6/6)
+> **41 commits unpushed on `main`. Backend 1051 · FE 629 · `check.py` 6/6 green on the tip
+> (`a05b3d0`). PROD IS UNTOUCHED at v1.2.1 and still legacy-shape.** Everything below is built and
+> reviewed; nothing is half-done.
+> - **The release (UPDATE_PLAN slice 8) is the ONLY remaining work**, and §17.2's preconditions
+>   **0–6 are all closed**, including **6b — the recovery rehearsal**, which found and fixed a HIGH in
+>   the installer (`install.sh prod` silently repointed the LIVE systemd unit when run from any other
+>   tree; `SYSTEMD_USER_DIR` + a drift test).
+> - **Then two audits landed on A11 and changed the shape of the day.** The parked backend deep audit
+>   (SHIP WITH FIXES) and a first-ever **frontend** audit (**DO NOT SHIP**, four HIGHs, two of them
+>   credential-handling) were both worked to completion, then **re-reviewed twice more** — and each
+>   re-review found HIGHs *in the fixes*, including fixes to fixes. All closed.
+> - **The credential defects are worth knowing about even after the fact** (they shape the invariants
+>   now guarding them): a display mask with nothing stored was written to disk AS the credential; a
+>   rename could hand an old provider's key to a NEW connection pointing at a different host; and
+>   rejected requests echoed the submitted document — including `api_key` and `ssh_password` — back to
+>   the client, **through two doors** (our own handlers, and FastAPI's automatic request validation,
+>   which opens first). Each is closed at a CHOKEPOINT with a drift test, not at the call site.
+> - **▶ THE ONE OPEN QUESTION, for the owner:** the previous session recommended **one more narrow
+>   Codex verification pass** over the final fix wave (`c4feb54` + `a05b3d0`) before tagging, on the
+>   evidence that two rounds running found HIGHs in same-day fixes. Cheap; the owner had not yet
+>   answered when the session handed off. After that (or instead of it, if the owner says go):
+>   docs → push → **v1.3.0** → tag → wait for the CI release gate → the **bootstrap-form**
+>   `update.sh` → prod's three provider renames.
+> - **What this session did NOT do:** update D48 / UPDATE_PLAN with the fix-wave record (the commit
+>   messages carry it in full), and it did not push anything.
+
 > ## ▶ ACTIVE — develop ON emma. PROD = v1.2.1 (2026-07-21). **On main, UNRELEASED: A11 COMPLETE
 > (chat + voice/embeddings) + D3 slice 3 + the 2026-07-26 fix wave.
 > ▶ **[`UPDATE_PLAN.md`](./UPDATE_PLAN.md) SLICES 1–7 ✅ ALL BUILT + REVIEWED (2026-07-26/27).** The

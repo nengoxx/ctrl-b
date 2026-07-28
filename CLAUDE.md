@@ -143,10 +143,22 @@ seam; if the seam is missing, propose one in `DECISIONS.md` (new D-entry) before
 End commit messages crediting the model that authored the change, e.g.:
 
 ```
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 ```
 
-(or `Claude Fable 5 <noreply@anthropic.com>` when running in the Fable session — emma boots BOTH
-agents: `ctrl-b-agent@fable` and `ctrl-b-agent@opus`, tmux `ctrl-b-fable` / `ctrl-b-opus`. **Opus 5
-on high is the main model as of 2026-07-24** (owner); Fable 5 stays available as an on-request second
-opinion. Match the model to the session you're in: `tmux display-message -p '#S'`.)
+(or `Claude Opus 5 <noreply@anthropic.com>` when running in the Opus session — emma boots BOTH
+agents: `ctrl-b-agent@fable` and `ctrl-b-agent@opus`, tmux `ctrl-b-fable` / `ctrl-b-opus`.
+**Match the model to the session you're in: `tmux display-message -p '#S'`.**)
+
+## Who does what (owner, 2026-07-28)
+
+**Fable 5 on high is the MAIN model** — it *supervises*: designs the work and the project itself,
+rules on conflicts, and audits. **Opus 5 (high) subagents carry the heavy token work** —
+implementation from pinned briefs, research, mechanical and operational tasks (including
+runbook-driven releases). **Codex `gpt-5.6-sol` high** stays the standing co-reviewer: launch it
+whenever a review is warranted, small slices included.
+
+*(This inverts the 2026-07-24 arrangement, where Opus held the main seat and Fable was an on-request
+second opinion. The METHOD is unchanged — judgement in the main seat, execution in subagents; only
+the occupants swapped. Full mechanics: the [`second-opinion`](.claude/skills/second-opinion/SKILL.md)
+skill; the standing rationale + build-brief bar: the `orchestrate-with-opus-subagents` memory.)*
