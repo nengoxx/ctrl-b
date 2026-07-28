@@ -244,6 +244,7 @@ function ProviderCard(props: {
   existingNames: string[];
   onChange: (doc: ProviderDoc) => void;
   onRename: (next: string) => void;
+  serverNames: string[]; // names still live on the SERVER — a rename onto one of those 422s
   onRemove: () => void;
   onValidity: (id: string, valid: boolean) => void;
 }) {
@@ -347,7 +348,10 @@ function ProviderCard(props: {
       setRenameVal(name);
       return;
     }
-    if (props.existingNames.includes(nn)) {
+    if (props.existingNames.includes(nn) || props.serverNames.includes(nn)) {
+      // `serverNames` too: renaming ONTO a name the draft has deleted but the server still has passes
+      // the draft check and then 422s ("destination already exists"), because the server resolves the
+      // rename against its own state (Codex, review of the fix wave).
       pushToast("a provider with that name exists", "err");
       setRenameVal(name);
       return;
@@ -1478,6 +1482,7 @@ export function ConfTab({ active }: Props) {
               referencedBy={referenceReport.byProvider[name] ?? []}
               existingNames={Object.keys(draft?.providers ?? {}).filter((n) => n !== name)}
               onChange={(d) => setProvider(name, d)}
+              serverNames={Object.keys(settings?.providers ?? {}).filter((n) => n !== name)}
               onRename={(next) => renameProvider(name, next)}
               onRemove={() => removeProvider(name)}
               onValidity={setValidity}

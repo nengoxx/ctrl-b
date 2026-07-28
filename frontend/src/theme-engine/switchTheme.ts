@@ -19,6 +19,7 @@ import { flushSync } from "react-dom";
 
 import { stableStringify } from "../lib/stableStringify";
 import { getUI, setUI, type Motion, type Perf, type ThemeSettingsMap } from "../store/ui";
+import { isAnyDirty } from "../store/dirty";
 import { pushToast } from "../store/toast";
 import { registry } from "./registry";
 import type { Mode, ThemeId } from "./types";
@@ -135,6 +136,16 @@ async function runSwitch(next: ThemeId, target: SwitchTarget, token: object): Pr
   // collapses the reconcile double-VT (pick + reconcile targets differ in the motion trio), out-of-order
   // cold loads, and StrictMode double-effects into ONE applied transition.
   if (latest !== token) return;
+  // LAST LINE against destroying unsaved work, checked HERE because this is the moment the theme root
+  // remounts and every mounted editor's draft dies with it. The callers check too, but they check
+  // BEFORE the bundle load: with a cold bundle that window is long enough to start typing in, and the
+  // edits begun inside it were destroyed (Codex, review of the fix wave — the TOCTOU its predecessors'
+  // fixes left open). Guarding the action itself rather than each call site makes the invariant
+  // structural: a theme switch never eats an unsaved draft, whoever asked for it.
+  if (isAnyDirty()) {
+    pushToast("Save or discard your unsaved changes before switching theme", "err");
+    return;
+  }
 
   const apply = () =>
     flushSync(() =>
