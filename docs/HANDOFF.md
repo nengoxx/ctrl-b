@@ -89,7 +89,28 @@
 > today's shape; fragment-tested under `bash -euo pipefail`). The owner's device spot-check is DONE
 > — findings below.
 >
-> ## ▶ NEXT SESSION (locked by the owner, 2026-07-28): the v1.3.1 STABILIZATION PATCH
+> ## ▶ NEXT SESSION (locked by the owner, 2026-07-28 night): the QUICK QoL CLUSTER
+> **One small session of daily-use wins — all four have recorded seams in ROADMAP; read each entry
+> BEFORE designing (the canonical flow: this file → ROADMAP → DECISIONS → DESIGN → TODO):**
+> 1. **A2 — composer autocomplete** (ROADMAP §A: "viable + cheap, FE-only"). The composer's verb
+>    sets (skills/agents/providers, `lib/composer.ts`) are the data; they now refresh on CRUD +
+>    settings saves and carry response-generation guards (v1.3.1), so the source is trustworthy.
+> 2. **A6 — composer tools/skills menu** (ROADMAP §A: "layout seam already exists, zero contract
+>    change").
+> 3. **F1 — foreground notifications** (ROADMAP §F: "v1-trivial") **+ D2-B PWA-connect wake**
+>    (ROADMAP §D2: "trivial, no new deps").
+> 4. *(Room permitting, cosmetic seams already wired:* the gradient-accent two-channel fills ·
+>    the `sendIcon` composer setting.*)*
+> **Method:** design-first per item (each is small but net-new UI → VAPOR_PATTERNS/THEME_ENGINE
+> before styling; D36/D37 hooks for anything in the chat/composer tree) · Opus builds from pinned
+> briefs · ONE Codex round over the wave (small slices included — the standing rule) · start the
+> dev units for the owner's eyeball · pause per slice for the owner. **Release when the owner says
+> so — and that release is the shipped `update.sh`'s FIRST plain-form (non-bootstrap) run:**
+> `bash ~/apps/ctrl-b/deploy/linux/update.sh vX.Y.Z` — the fixed updater is on the prod tree now.
+> **A3 automations is the agreed NEXT DESIGN CONVERSATION after this cluster** (the biggest
+> unlocked capability; needs the full design-first treatment).
+>
+> ## ▶ DONE (2026-07-28, shipped as v1.3.2): the v1.3.1 STABILIZATION PATCH charter
 > **The owner's charter, in his words: "I want to fix every single small piece that isn't working
 > as intended… check every older system that has been implemented by now, and every issue, every
 > improvement, and everything that we left behind… let's make this release completely stable and
