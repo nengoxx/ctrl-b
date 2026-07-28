@@ -16,10 +16,18 @@
 > **The v1.3.1 stabilization patch is COMPLETE on main: 14 unpushed commits (`bac7da1..859bdd2` + this
 > docs commit), full gate 6/6 (ruff·pyright·pytest 1064·FE check-all 640·prettier), backend + FE suites
 > green, dev units RUNNING for owner eyeball (:5173/:5434).**
-> **▶ WHAT REMAINS = the RELEASE ONLY, and it needs the owner:** ① push OK → `git push` (pre-push runs
-> the full gate) ② pick/confirm **v1.3.1** → tag → **wait for the CI release gate green** (only the tag
-> gate runs e2e) ③ `update.sh` — **the shipped script's FIRST non-bootstrap run** (runbook §Release;
-> prod is at v1.3.0 so the script exists on the deployed tree now) ④ verify health/describe.
+> **▶ THE RELEASE STORY (owner gave the go 2026-07-28 evening):** the push + annotated tag `v1.3.1`
+> (@ `983f7dc`) + CI release gate (run 30385055513, green incl. e2e) all succeeded — **and the cutover
+> was REFUSED pre-flight (exit 78, prod untouched at v1.3.0): the shipped `update.sh` could not parse
+> the marker line its OWN migrator writes** (`config_version: 1  # …` — the ruamel end-of-line comment;
+> `parse_version` rightly rejects it; the v1.3.0 bootstrap run passed only because the config was then
+> UNSTAMPED — the first stamp broke the first shipped-script run). The ops agent stopped per its brief,
+> prod verified byte-untouched. **FIXED `0f87652`** — `marker_value()` cuts at the first `#` at both
+> call sites; new `test_update_sh_marker.py` stamps a config with the REAL migrator and runs the REAL
+> script's functions under `bash -euo pipefail` (3 tests). **Ruling: release proceeds as `v1.3.2`
+> (v1.3.1 stays tagged, never deployed) via the BOOTSTRAP form of the FIXED script** — the runbook's
+> manual fallback was rejected because it would leave prod holding a broken updater; this way prod
+> lands a working update chain and the NEXT release finally exercises the shipped-script path.
 > **What shipped in the patch (all owner device findings + triaged sweep + two review rounds):**
 > - **The 5 device findings:** stop glyph = stroked square, family box, stroke 2.4, vapor-ratio sizes,
 >   nudge-exempt centering (owner-iterated on device) · app-bar contract — visible bar 85%+blur14
