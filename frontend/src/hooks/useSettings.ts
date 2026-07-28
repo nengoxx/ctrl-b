@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, getJSON, getJSONWithHeader, putJSON } from "../api/client";
-import { loadProviders } from "../lib/composer";
+import { loadAgents, loadProviders } from "../lib/composer";
 import { pushToast } from "../store/toast";
 import type { McpServer, OpenApiServer } from "./useIntegrations";
 import { useScopedQuery } from "./useScopedQuery";
@@ -243,6 +243,7 @@ export function useSaveSettings() {
       void qc.invalidateQueries({ queryKey: ["voice-status"] }); // a Voice edit flips mic/TTS availability (6b)
       void qc.invalidateQueries({ queryKey: ["providers"] }); // D48 — a save may add/rename/drop providers (fresh names/warnings)
       void loadProviders(); // refresh the composer's module-level `/<provider>` verb set (best-effort)
+      void loadAgents(); // SYS-9.2 — a save may change the default-agent selection; keep the composer's `/agent` set + resolved default fresh (best-effort)
       if (res.restart_required.length) {
         pushToast(`Saved · restart to apply: ${res.restart_required.join(", ")}`, "info");
       } else {

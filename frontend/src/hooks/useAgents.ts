@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { del, getJSON, putJSON } from "../api/client";
+import { loadAgents } from "../lib/composer";
 import type { Privilege } from "../lib/privilege";
 import { pushToast } from "../store/toast";
 import { useScopedQuery } from "./useScopedQuery";
@@ -131,6 +132,11 @@ function invalidateAgents(qc: ReturnType<typeof useQueryClient>, name?: string) 
   if (name) void qc.invalidateQueries({ queryKey: ["agent", name] });
   void qc.invalidateQueries({ queryKey: ["actions"] }); // a toolset/agent change
   void qc.invalidateQueries({ queryKey: ["agents"] }); // the composer's /agent reference list
+  // SYS-9.2: also refresh the composer's MODULE-LEVEL `/agent` set (loaded once at import), the way a
+  // settings save refreshes `loadProviders` and a skill CRUD refreshes `loadSkills`. Without this an
+  // agent added/renamed/removed here isn't seen by the verb router (the `/agent <name>` "configured?"
+  // check + the resolved default) until a full page reload. Best-effort; a cheap GET.
+  void loadAgents();
 }
 
 /** Create or update a specialist's agent.yaml. */
