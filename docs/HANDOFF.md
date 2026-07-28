@@ -13,9 +13,30 @@
 > failure mode.)*
 >
 > ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-28, clean tree, gate 6/6)
-> **41 commits unpushed on `main`. Backend 1051 · FE 629 · `check.py` 6/6 green on the tip
-> (`a05b3d0`). PROD IS UNTOUCHED at v1.2.1 and still legacy-shape.** Everything below is built and
+> **45 commits unpushed on `main`. Backend 1051 · FE 634 · `check.py` 6/6 green on the tip
+> (`80499ad`). PROD IS UNTOUCHED at v1.2.1 and still legacy-shape.** Everything below is built and
 > reviewed; nothing is half-done.
+> - **▶ 2026-07-28, Fable main seat: the recommended pre-tag Codex pass RAN — and earned its keep
+>   again.** Verdict FIX FIRST: 4 confirmed defects in the previous fix wave, all closed in
+>   `edba2b9` (HIGH: provider identity ops now FREEZE on `savingRef` mid-save — delete/recreate
+>   during an in-flight rename crossed the old credential onto a NEW endpoint; MED: `switchTheme`
+>   returns a `SwitchOutcome` and pickTheme persists only on `"applied"` — a refused switch was
+>   persisted, deferred, and auto-applied; MED: the settings queryFn now threads TanStack's
+>   AbortSignal so a cancelled GET can't overwrite the fresh providers-rev with its stale header —
+>   false 409s; LOW: a card's own queued rename source is exempt from the serverNames guard so
+>   undo works, safe only WITH the freeze). A fifth finding (validator msg echoes the submitted
+>   provider name) was **OVERRULED**: names are documented public identity (they ride `loc`,
+>   `GET /api/settings`, composer verbs) and the echo returns the single user's own typed input.
+>   The fix set got its own Codex verification round; its two findings were **ruled residuals**:
+>   M1 (a mode/accent pick during a cold theme load loses to the incoming theme's defaults) is
+>   pre-existing local semantics that the fix made server-CONSISTENT (pre-fix was strictly worse —
+>   the interleaving could un-persist the switch), and L1 (a never-settling PUT freezes identity
+>   ops) requires a fetch the browser's own timeouts don't bound, and the same ref has gated
+>   `onSave` since the previous wave — reload recovers. The main session also audited the whole
+>   update workflow hands-on (runner · steps · install.sh · update.sh · boot preflight ·
+>   chokepoints · README bootstrap form): sound; two recorded LOW residuals (identical legacy
+>   local/cloud endpoints → self-fallback; bare `models:` on a hand-migrated provider → generic
+>   sanitised refusal).
 > - **The release (UPDATE_PLAN slice 8) is the ONLY remaining work**, and §17.2's preconditions
 >   **0–6 are all closed**, including **6b — the recovery rehearsal**, which found and fixed a HIGH in
 >   the installer (`install.sh prod` silently repointed the LIVE systemd unit when run from any other
@@ -30,11 +51,10 @@
 >   rejected requests echoed the submitted document — including `api_key` and `ssh_password` — back to
 >   the client, **through two doors** (our own handlers, and FastAPI's automatic request validation,
 >   which opens first). Each is closed at a CHOKEPOINT with a drift test, not at the call site.
-> - **▶ THE ONE OPEN QUESTION, for the owner:** the previous session recommended **one more narrow
->   Codex verification pass** over the final fix wave (`c4feb54` + `a05b3d0`) before tagging, on the
->   evidence that two rounds running found HIGHs in same-day fixes. Cheap; the owner had not yet
->   answered when the session handed off. After that (or instead of it, if the owner says go):
->   docs → push → **v1.3.0** → tag → wait for the CI release gate → the **bootstrap-form**
+> - **▶ THE ONE OPEN QUESTION — RESOLVED 2026-07-28:** the owner said yes; the pass ran, found 4
+>   real defects (see above), the fixes shipped in `edba2b9` and were verified in their own round.
+>   **What remains is the release itself, awaiting the owner's push confirmation:**
+>   push → **v1.3.0** → tag → wait for the CI release gate → the **bootstrap-form**
 >   `update.sh` → prod's three provider renames.
 > - **What this session did NOT do:** update D48 / UPDATE_PLAN with the fix-wave record (the commit
 >   messages carry it in full), and it did not push anything.
