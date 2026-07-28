@@ -349,3 +349,36 @@ def test_the_same_rule_holds_inside_a_credential_map() -> None:
     assert unmask_secrets({"headers": {"Authorization": ""}}, stored)["headers"] == {
         "Authorization": "sk-REAL"  # blank on a SECRET entry still keeps what is stored
     }
+
+
+def test_no_422_body_ever_echoes_the_rejected_value() -> None:
+    """A11 pre-release FE audit, HIGH — canary-confirmed before fixing.
+
+    `exc.errors()` includes `input`: the value that failed validation. Every endpoint that validates a
+    submitted document therefore echoed that document back on rejection, so a settings PUT carrying a
+    real `api_key` returned it in `detail[0].input` and the UI rendered it into a toast. The class is
+    closed at one chokepoint (`validation_detail`), so this test asserts the PROPERTY at the boundary
+    rather than the call shape at six sites — and a seventh endpoint added tomorrow is covered by the
+    companion drift guard in `test_arch_invariants_qh9.py`.
+    """
+    from pydantic import BaseModel, ValidationError
+
+    from app.config import ComputerCfg, ProviderCfg, validation_detail
+
+    class _Patch(BaseModel):  # a stand-in for any submitted document with a secret in it
+        providers: dict[str, ProviderCfg]
+        computers: dict[str, ComputerCfg] = {}
+
+    for payload in (
+        {"providers": {"p": {"base_url": "http://p/v1", "api_key": "sk-CANARY", "models": "not-a-map"}}},
+        {"providers": {}, "computers": {"h": {"host": "x", "ssh_password": "pw-CANARY", "port": "nope"}}},
+    ):
+        try:
+            _Patch.model_validate(payload)
+        except ValidationError as exc:
+            rendered = str(validation_detail(exc))
+            assert "CANARY" not in rendered, f"a rejected value reached the 422 body: {rendered}"
+            assert "input" not in {k for e in validation_detail(exc) for k in e}
+            assert all(set(e) == {"loc", "msg", "type"} for e in validation_detail(exc))
+        else:  # pragma: no cover - the payloads above are invalid by construction
+            raise AssertionError("payload validated unexpectedly — the canary test proves nothing")

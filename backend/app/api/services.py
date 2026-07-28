@@ -15,6 +15,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ValidationError
 
+from app.config import validation_detail
 from app.core.tool import UnknownTool
 from app.domain.host import Host
 from app.domain.service import Service, ServiceStatus
@@ -85,7 +86,7 @@ async def invoke_service_action(
     except UnknownTool:
         raise HTTPException(status_code=404, detail=f"unknown action '{name}'") from None
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from None
+        raise HTTPException(status_code=422, detail=validation_detail(exc)) from None
 
     if outcome.needs_confirm:
         return {

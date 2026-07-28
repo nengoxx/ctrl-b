@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import ValidationError
 
-from app.config import CONFIG_VERSION_KEY, Settings, mask_secrets, providers_rev
+from app.config import CONFIG_VERSION_KEY, Settings, mask_secrets, providers_rev, validation_detail
 from app.core.provider_registry import ProviderResolveError
 from app.runtime import apply_settings_patch, provider_rename_error, settings_write_lock
 
@@ -157,12 +157,11 @@ async def put_settings(patch: dict[str, Any], request: Request) -> dict[str, Any
         try:
             new, warnings = await apply_settings_patch(request.app, patch, renames=renames)
         except ValidationError as exc:
-            # `include_context=False` drops the raw `ValueError`/`ctx` objects a custom field_validator
-            # (e.g. the A11 provider-name guard) puts in the error — they are not JSON-serializable, so a
-            # bare `exc.errors()` would 500 while trying to render the 422. `include_url=False` trims noise.
-            raise HTTPException(
-                status_code=422, detail=exc.errors(include_url=False, include_context=False)
-            ) from exc
+            # `validation_detail` renders {loc, msg, type} ONLY. Three reasons, one call: `ctx` holds raw
+            # `ValueError` objects from custom field_validators (not JSON-serializable → a 500 while
+            # rendering the 422), `url` is noise, and **`input` is the rejected value** — for a providers
+            # patch, the whole map including the real `api_key` (A11 pre-release FE audit, canary-confirmed).
+            raise HTTPException(status_code=422, detail=validation_detail(exc)) from exc
         except ProviderResolveError as exc:
             # A11/D48 C2/R26: strict provider resolution failed → the typed 422 envelope (structured
             # error list in `detail`, so the Conf UI can render per-path notices).

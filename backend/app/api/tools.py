@@ -18,6 +18,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
+from app.config import validation_detail
 from app.core.tool import UnknownTool
 from app.domain.enums import Actor, Privilege
 from app.runtime import spec_dto
@@ -56,7 +57,7 @@ async def invoke_tool(name: str, body: ToolInvokeRequest, request: Request) -> d
     try:
         outcome = await svc.invoke(name, body.args, actor=Actor.USER, privilege=Privilege.CONFIRM)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from None
+        raise HTTPException(status_code=422, detail=validation_detail(exc)) from None
     return {
         "result": outcome.result.model_dump(mode="json") if outcome.result else None,
         "event": outcome.event.model_dump(mode="json") if outcome.event else None,

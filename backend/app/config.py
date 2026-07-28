@@ -63,6 +63,7 @@ __all__ = [
     "is_secret_sentinel_name",
     "looks_masked",
     "providers_rev",
+    "validation_detail",
     "CONFIG_VERSION_KEY",
     "yaml_rt",
     "delete_path",
@@ -1246,6 +1247,27 @@ def sanitise_validation_error(exc: ValidationError, origin: str, stage: str = ""
         loc = ".".join(str(x) for x in err["loc"]) or "<root>"
         lines.append(f"  {loc}: {err['msg']} [{err['type']}]")
     return "\n".join(lines)
+
+
+def validation_detail(exc: ValidationError) -> list[dict[str, Any]]:
+    """The API-safe rendering of a `ValidationError` — `{loc, msg, type}` and nothing else.
+
+    The structured sibling of `sanitise_validation_error` (which renders the same facts as a log line),
+    for the 422 bodies. `exc.errors()` includes **`input`: the rejected value**, and every endpoint that
+    validates a submitted document therefore echoed that document back over the wire on rejection —
+    `providers.*.api_key` from a settings PUT, `ssh_password` from a host PUT, an MCP server's
+    `env`/`headers` from an integrations PUT. Confirmed with a canary during the A11 pre-release
+    frontend audit: a rejected settings save returned the real key in `detail[0].input`, and the UI
+    rendered it into a toast.
+
+    Rebuilt field-by-field rather than trusting `include_input=False` alone, so a future pydantic field
+    that echoes the input has to be added here consciously. `loc` is kept — see
+    `sanitise_validation_error` for why a location is not a secret in this system.
+    """
+    return [
+        {"loc": list(e.get("loc", ())), "msg": e.get("msg", ""), "type": e.get("type", "")}
+        for e in exc.errors(include_url=False, include_context=False, include_input=False)
+    ]
 
 
 def load_settings(path: Path | None = None) -> Settings:

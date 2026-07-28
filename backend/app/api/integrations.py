@@ -22,6 +22,7 @@ from app.config import (
     mask_secrets,
     sync_mapping,
     unmask_secrets,
+    validation_detail,
 )
 from app.runtime import (
     apply_settings_inplace,
@@ -61,7 +62,7 @@ def _validate(model_cls: type[BaseModel], data: dict[str, Any]) -> BaseModel:
     try:
         return model_cls.model_validate(data)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from None
+        raise HTTPException(status_code=422, detail=validation_detail(exc)) from None
 
 
 def _seq(doc: Any, key: str) -> Any:

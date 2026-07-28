@@ -676,3 +676,67 @@ def test_providers_change_rebuilds_inference_voice_embeddings_together() -> None
         assert c.app.state.embeddings is not old_emb
         assert c.app.state.deps.embeddings is c.app.state.embeddings  # deps mirror repointed
         assert c.app.state.inference._registry.inference_chain[0].base_url == "http://l2/v1"
+
+
+def test_a_recreated_name_does_not_inherit_the_renamed_provider_secret() -> None:
+    """A11 pre-release FE audit, HIGH — credential CROSSING, confirmed with a canary before fixing.
+
+    The rename rekeys the stored view so the new name inherits the old entry's secret by structural
+    identity. It used to do that by COPYING, leaving the old name still bound to the real key — so
+    renaming `openrouter`→`openrouter2` and creating a FRESH provider that reuses the freed name in the
+    same save handed the fresh connection the old credential, and it would have sent it to whatever
+    host that new provider points at. The rekey now MOVES the identity.
+    """
+    with _client(_VOICE_BASE) as (c, cfg):
+        masked = c.get("/api/settings").json()["providers"]["openrouter"]["api_key"]
+        r = c.put(
+            "/api/settings",
+            json={
+                "provider_renames": {"openrouter": "openrouter2"},
+                "providers_base": _rev(c),
+                "providers": {
+                    "llamacpp": {"base_url": "http://l/v1", "api_mode": "llamacpp", "models": {"minig+": {}}},
+                    "speaches": {
+                        "base_url": "http://emma:9000/v1",
+                        "models": {"parakeet": {}, "kokoro": {"voice": "bf_isabella"}},
+                    },
+                    "vault-whisper": {"base_url": "http://vault:9000/v1", "models": {"whisper": {}}},
+                    # the renamed provider, echoing its mask → keeps the real key
+                    "openrouter2": {
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "api_key": masked,
+                        "api_mode": "openrouter",
+                        "models": {"emb": {"id": "qwen/embed", "dim": 2560}},
+                    },
+                    # a BRAND-NEW provider reusing the freed name, pointing somewhere else entirely
+                    "openrouter": {"base_url": "http://someone-elses-box:1234/v1", "models": {"m": {}}},
+                },
+            },
+        )
+        assert r.status_code == 200, r.text
+        s = load_settings(cfg)
+        assert s.providers["openrouter2"].api_key == "sk-REAL"  # moved, not lost
+        assert s.providers["openrouter"].api_key is None  # and NOT resurrected onto the new connection
+        assert cfg.read_text(encoding="utf-8").count("sk-REAL") == 1  # exactly one copy on disk
+
+
+def test_a_swap_rename_is_refused_upstream_so_the_rekey_never_sees_one() -> None:
+    """Why the rekey drops old names in a SEPARATE phase instead of `pop`ping inside the loop.
+
+    A swap (`{a: b, b: a}`) would make `pop`-as-you-go delete an entry the other rename still needs.
+    It cannot arrive today — `provider_rename_error` rejects chains/swaps/cycles with a 422, pinned
+    here — but that rule lives two layers away from the rekey, so the rekey is written to be correct
+    without depending on it. This test is the pin that says WHY that shape was chosen; if the rename
+    validator is ever loosened, it fails and points at the code that assumed it.
+    """
+    with _client(_VOICE_BASE) as (c, _cfg):
+        r = c.put(
+            "/api/settings",
+            json={
+                "provider_renames": {"openrouter": "vault-whisper", "vault-whisper": "openrouter"},
+                "providers_base": _rev(c),
+                "providers": {"llamacpp": {"base_url": "http://l/v1", "models": {"minig+": {}}}},
+            },
+        )
+        assert r.status_code == 422
+        assert "already exists" in r.text or "chain/swap" in r.text

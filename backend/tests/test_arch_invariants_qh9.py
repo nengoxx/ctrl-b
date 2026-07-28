@@ -136,3 +136,30 @@ def test_installer_writes_units_only_through_systemd_user_dir():
         "install.sh writes/reads a systemd unit path directly instead of via $SYSTEMD_USER_DIR "
         f"(UPDATE_PLAN §17.4 R1): {offenders}"
     )
+
+
+# --- 4. no endpoint renders a raw pydantic error ------------------------------------------------
+
+
+def test_api_422s_go_through_the_safe_validation_renderer():
+    """A11 pre-release FE audit, HIGH. `exc.errors()` includes `input` — the rejected value — so any
+    endpoint rendering it directly echoes the submitted document back: `providers.*.api_key` from a
+    settings PUT, `ssh_password` from a host PUT, an MCP server's `env`/`headers` from integrations.
+
+    Six endpoints did. The fix is one chokepoint (`config.validation_detail`), and this guard is what
+    keeps the seventh from reintroducing the class: inside `app/api/`, a pydantic error may not be
+    rendered into a response any way other than through it.
+    """
+    offenders: list[str] = []
+    for py in (BACKEND / "app" / "api").rglob("*.py"):
+        for n, line in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
+            if ".errors(" not in line or line.lstrip().startswith("#"):
+                continue
+            # `e.errors()[0]["msg"]` pulls ONE message and no value — allowed, and used deliberately.
+            if '["msg"]' in line or "['msg']" in line:
+                continue
+            offenders.append(f"{py.relative_to(BACKEND).as_posix()}:{n}: {line.strip()}")
+    assert not offenders, (
+        "an API module renders a pydantic ValidationError directly; use `config.validation_detail(exc)` "
+        f"— `.errors()` includes the rejected `input` value: {offenders}"
+    )

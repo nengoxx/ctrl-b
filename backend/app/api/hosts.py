@@ -17,7 +17,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ValidationError
 
-from app.config import ComputerCfg, edit_config_yaml, host_slug, load_settings, sync_mapping
+from app.config import (
+    ComputerCfg,
+    edit_config_yaml,
+    host_slug,
+    load_settings,
+    sync_mapping,
+    validation_detail,
+)
 from app.domain.host import Host, HostStatus
 from app.runtime import reconfigure, settings_write_lock
 from app.services.actions.tailscale import resolve_vpn_candidates
@@ -150,7 +157,7 @@ def _validate(entry: dict[str, Any]) -> None:
     try:
         ComputerCfg.model_validate(entry)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from None
+        raise HTTPException(status_code=422, detail=validation_detail(exc)) from None
 
 
 def _check_basics(body: HostIn) -> None:

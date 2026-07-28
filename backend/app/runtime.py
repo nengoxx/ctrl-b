@@ -466,7 +466,16 @@ async def apply_settings_patch(
     # structural identity: the new name inherits the old entry's stored secret (masks are not injective —
     # identity, not the masked string, drives restore; D48 C1). A THIRD provider is untouched, so its own
     # incoming secret round-trips against its own stored entry.
-    rekeyed_stored = dict(stored_providers)
+    #
+    # The rename MOVES the identity — the old name is dropped first, and only then are the new names
+    # bound. Copying was a credential-crossing bug (A11 pre-release FE audit, HIGH, canary-confirmed):
+    # rename `openrouter`→`cloud` and create a FRESH `openrouter` pointing at a different host in the same
+    # save, and the fresh entry — carrying no key of its own — inherited the old provider's real secret
+    # and would have sent it to that host. Delete-then-recreate under one name had the same shape.
+    # Dropped in a SEPARATE phase rather than `pop`ped inside the loop: `pop` is only safe while
+    # `provider_rename_error` keeps rejecting chains/swaps/cycles upstream, and this function should not
+    # silently depend on a rule enforced two layers away. The two-phase form is correct either way.
+    rekeyed_stored = {name: cfg for name, cfg in stored_providers.items() if name not in renames}
     for old, new in renames.items():
         if old in stored_providers:
             rekeyed_stored[new] = stored_providers[old]
