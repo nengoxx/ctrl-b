@@ -382,3 +382,44 @@ def test_no_422_body_ever_echoes_the_rejected_value() -> None:
             assert all(set(e) == {"loc", "msg", "type"} for e in validation_detail(exc))
         else:  # pragma: no cover - the payloads above are invalid by construction
             raise AssertionError("payload validated unexpectedly — the canary test proves nothing")
+
+
+def test_fastapis_own_422_is_sanitised_too() -> None:
+    """The bigger half of the same leak, and the one the drift guard could not see.
+
+    Routing the six explicit `except ValidationError` sites through `validation_detail` left the door
+    that opens FIRST: a body that fails validation never reaches a handler, and FastAPI's default
+    renderer includes `input`. Two shapes leak — a secret field failing its own rule echoes the secret,
+    and a body-shape failure echoes the ENTIRE body. Both verified against the real app before the
+    `RequestValidationError` handler was added (Codex, review of the fix wave).
+    """
+    from fastapi import FastAPI, Request
+    from fastapi.exceptions import RequestValidationError
+    from fastapi.responses import JSONResponse
+    from fastapi.testclient import TestClient
+    from pydantic import BaseModel, Field
+
+    from app.config import validation_detail
+
+    class _Body(BaseModel):
+        host: str
+        ssh_password: str | None = Field(default=None, max_length=20)
+
+    app = FastAPI()
+
+    @app.exception_handler(RequestValidationError)
+    async def _handler(_r: Request, exc: RequestValidationError) -> JSONResponse:
+        return JSONResponse(status_code=422, content={"detail": validation_detail(exc)})
+
+    @app.put("/h")
+    def _put(body: _Body) -> dict[str, str]:  # pragma: no cover - never reached with invalid input
+        return {}
+
+    c = TestClient(app)
+    # (1) the secret field fails its OWN rule → its value is the `input`
+    r = c.put("/h", json={"host": "x", "ssh_password": "pw-CANARY-pw-CANARY-pw-CANARY"})
+    assert r.status_code == 422 and "CANARY" not in r.text
+    # (2) the whole body is the wrong shape → the ENTIRE body is the `input`
+    r2 = c.put("/h", json=["not", "a", "mapping", "pw-CANARY"])
+    assert r2.status_code == 422 and "CANARY" not in r2.text
+    assert all(set(e) == {"loc", "msg", "type"} for e in r2.json()["detail"])

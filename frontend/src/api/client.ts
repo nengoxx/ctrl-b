@@ -52,8 +52,9 @@ export function formatDetail(detail: unknown): string | null {
       if (typeof item === "string") return item.trim() || null;
       if (!item || typeof item !== "object") return null;
       const o = item as Record<string, unknown>;
-      const what =
+      const raw =
         typeof o.message === "string" ? o.message : typeof o.msg === "string" ? o.msg : "";
+      const what = raw.trim(); // whitespace-only would render a blank toast — worse than the status line
       if (!what) return null;
       const where =
         typeof o.path === "string"

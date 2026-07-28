@@ -1294,9 +1294,22 @@ export function ConfTab({ active }: Props) {
     ...(jsonBlocked ? ["fix the invalid provider fields highlighted above"] : []),
   ];
   const saveDisabled = !dirty || save.isPending || blockReasons.length > 0;
+  // `save.isPending` is a RENDERED value: two `mutate` calls in the same tick both see `false`, and the
+  // second detaches TanStack's observer from the first, so the first call's per-call `onSuccess` — which
+  // is where the epoch, the captured base and the rename queue are reconciled — never runs (Codex,
+  // review of the fix wave). A ref is the only guard that is true at call time.
+  const savingRef = useRef(false);
+  // Released TWO ways, deliberately. The per-call `onSettled` below is the normal path; this effect is
+  // the backstop, because the whole reason the lock exists is that a per-call callback can fail to run
+  // when a second `mutate` detaches the observer — and a lock nobody clears wedges the tab entirely,
+  // which is worse than the race it guards. `isPending` going false covers every terminal case.
+  useEffect(() => {
+    if (!save.isPending) savingRef.current = false;
+  }, [save.isPending]);
 
   function onSave() {
-    if (!draft || saveDisabled) return;
+    if (!draft || saveDisabled || savingRef.current) return;
+    savingRef.current = true;
     const coerced: SavePatch = {
       server: {
         ...draft.server,
@@ -1350,8 +1363,8 @@ export function ConfTab({ active }: Props) {
       patch.providers = draft.providers;
       patch.providers_base = capturedBaseRef.current ?? undefined;
     }
-    const sentRenames = Object.keys(renames);
-    if (sentRenames.length) patch.provider_renames = renames;
+    const sentRenames = { ...renames };
+    if (Object.keys(sentRenames).length) patch.provider_renames = sentRenames;
     // What we are actually submitting — the reconcile below compares against THIS, not against whatever
     // the draft looks like when the response lands (D48 B5: reconcile only the submitted snapshot).
     const submittedJson = JSON.stringify(draft);
@@ -1367,12 +1380,30 @@ export function ConfTab({ active }: Props) {
         // those edits away (A11 pre-release FE audit, HIGH). Keeping them leaves the draft dirty against
         // the new baseline — the save bar says "Save changes" again, which is the truth.
         setDraft((d) => (JSON.stringify(d) === submittedJson ? echo : d));
-        // Clear only the renames that were SENT. One queued after the submit still refers to a name that
-        // exists server-side (the sent ones already applied), so it stays valid for the next save.
-        setRenames((prev) =>
-          Object.fromEntries(Object.entries(prev).filter(([old]) => !sentRenames.includes(old))),
-        );
+        // REBASE the rename queue onto what the server just applied. Dropping every sent SOURCE key was
+        // wrong for a chain: rename A→B, save, then rename B→C before the response lands, and the queue
+        // is `{A: C}` (the control re-points the existing entry, it does not add one). Clearing key `A`
+        // then threw the whole rename away — the draft calls it C, the server calls it B, and the next
+        // PUT looks like a brand-new provider C whose masked key has nothing stored, so the credential
+        // is DROPPED by the very MUST-FIX above (Codex, review of the fix wave — exactly the "rebasing
+        // post-submit rename chains is subtle" it warned about when it argued for freezing instead).
+        // So: an entry whose source was sent and whose destination still matches is done and goes; one
+        // that moved on is re-keyed to the name the server now knows; anything untouched carries.
+        setRenames((prev) => {
+          const next: Record<string, string> = {};
+          for (const [from, to] of Object.entries(prev)) {
+            const applied = sentRenames[from];
+            if (applied === undefined)
+              next[from] = to; // never sent → still valid as-is
+            else if (applied !== to) next[applied] = to; // re-renamed mid-flight → rebase onto the new name
+            // applied === to → the server did exactly this; nothing left to queue
+          }
+          return next;
+        });
         setSaveWarn({ at: Date.now(), warnings: res.warnings ?? [] }); // FX16/FR2-3 — replace, stamped with the save moment
+      },
+      onSettled: () => {
+        savingRef.current = false; // the normal release; the isPending effect above is the backstop
       },
     });
   }
@@ -1396,7 +1427,7 @@ export function ConfTab({ active }: Props) {
       )}
       <div className="conf-savebar">
         <button className="conf-save" disabled={saveDisabled} onClick={onSave}>
-          {save.isPending ? "Saving…" : dirty ? "Save changes" : "Saved"}
+          {save.isPending ? "Saving…" : effectiveDirty ? "Save changes" : "Saved"}
         </button>
       </div>
     </>

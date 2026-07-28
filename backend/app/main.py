@@ -23,8 +23,9 @@ from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
@@ -52,7 +53,13 @@ from app.api import (
 from app.api import (
     voice as voice_api,
 )
-from app.config import ConfigValidationError, load_dotenv, load_settings, loggable
+from app.config import (
+    ConfigValidationError,
+    load_dotenv,
+    load_settings,
+    loggable,
+    validation_detail,
+)
 from app.core.events import EventBus
 from app.db import Database
 from app.runtime import (
@@ -416,6 +423,24 @@ def _preflight_config() -> None:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="ctrl-b dashboard", version=__version__, lifespan=lifespan)
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        """FastAPI's OWN 422s, rendered through the same sanitiser as our explicit ones.
+
+        Routing the six explicit `except ValidationError` sites through `validation_detail` closed the
+        leak we knew about and left the bigger door open: a body that fails validation BEFORE the
+        handler runs never reaches those sites, and FastAPI's default renderer includes `input`.
+        Verified both ways — a secret field failing its own rule echoes the secret
+        (`ssh_password` too long → `input: "pw-…"`), and a whole-body shape failure echoes the ENTIRE
+        body, secrets and all (`PUT` a list where an object was expected). Found by Codex after it
+        judged the drift guard's class claim overstated; it was right.
+
+        `.errors()` on a `RequestValidationError` has the same shape as pydantic's, so the same
+        renderer applies. The status stays 422 and the envelope stays `{"detail": [...]}`, so nothing
+        downstream changes — only the fields inside each entry.
+        """
+        return JSONResponse(status_code=422, content={"detail": validation_detail(exc)})
 
     app.include_router(health.router, prefix="/api")
     app.include_router(hosts.router, prefix="/api")

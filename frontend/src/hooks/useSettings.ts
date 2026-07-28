@@ -222,6 +222,12 @@ export function useSaveSettings() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (patch: SavePatch) => putJSON<SaveResult>("/api/settings", patch),
+    // Cancel any in-flight settings GET before writing. Without this a read that started BEFORE the
+    // save can land after `setQueryData` and restore the pre-save doc + its old `X-Providers-Rev`; a
+    // draft that just went clean then reseeds from that stale snapshot and shows old values while the
+    // server holds the new ones — with the bar saying "Saved" (Codex, review of the fix wave). This is
+    // the standard optimistic-write guard; it is the one thing missing to make the echo authoritative.
+    onMutate: () => qc.cancelQueries({ queryKey: ["settings"] }),
     onSuccess: (res) => {
       qc.setQueryData(["settings"], res.settings); // adopt the server's masked echo immediately
       // FR2-1 — keep the providers base rev PAIRED with the settings echo (the same key the settings

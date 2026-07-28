@@ -701,6 +701,43 @@ describe("ConfTab · pre-release audit regressions", () => {
     expect(baseInput("Poll cadence").value).toBe("9"); // …and the draft is still here
   });
 
+  it("rebases a rename chained during an in-flight save instead of dropping it", () => {
+    // Rename A→B, save, then rename B→C before the response lands: the control re-points the existing
+    // entry, so the queue is {A: C}. Clearing the sent SOURCE key threw the whole rename away — the
+    // draft said C, the server said B, and the next PUT looked like a brand-new provider whose masked
+    // key has nothing stored, so the credential was dropped by the mask guard. It rebases now.
+    render(<ConfTab active />);
+    fireEvent.click(screen.getByText("llamacpp", { selector: "div.label" }));
+    fireEvent.click(screen.getByRole("button", { name: "rename" }));
+    fireEvent.change(screen.getByLabelText("New provider name"), { target: { value: "step-b" } });
+    fireEvent.click(screen.getByRole("button", { name: "ok" }));
+    fireEvent.click(saveButton());
+    expect(lastPatch().provider_renames).toEqual({ llamacpp: "step-b" });
+    // …the response has NOT landed, and the owner renames again…
+    fireEvent.click(screen.getByRole("button", { name: "rename" }));
+    fireEvent.change(screen.getByLabelText("New provider name"), { target: { value: "step-c" } });
+    fireEvent.click(screen.getByRole("button", { name: "ok" }));
+    const opts = h.save.mock.calls[0][1] as {
+      onSuccess: (r: unknown) => void;
+      onSettled: () => void;
+    };
+    const echo = makeSettings();
+    const echoProviders = echo.providers as Record<string, unknown>;
+    echoProviders["step-b"] = echoProviders.llamacpp; // the server applied A→B
+    delete echoProviders.llamacpp;
+    echo.inference.provider = "step-b";
+    act(() => {
+      // the real callback order, including the release of the same-tick save lock
+      opts.onSuccess({ settings: echo, providers_rev: "revB", warnings: [], restart_required: [] });
+      opts.onSettled();
+    });
+    fireEvent.click(saveButton());
+    // the second save must tell the server about B→C, NOT drop it and not re-send the applied A→B
+    expect((h.save.mock.calls[1][0] as SavedPatch).provider_renames).toEqual({
+      "step-b": "step-c",
+    });
+  });
+
   it("does not queue a rename for a provider that exists only in the draft", () => {
     // The server resolves `provider_renames` against ITS state, so renaming a not-yet-saved provider
     // earned a 422 for what is just a new entry under a different key.
@@ -740,6 +777,9 @@ describe("ConfTab · pre-release audit regressions", () => {
     h.providers = makeProvidersInfo();
     h.providers.reserved_verbs = ["agent", "clear", "compact", "help", "priv", "privilege"];
     render(<ConfTab active />);
+    // make an otherwise-valid edit first: a clean draft disables the button anyway, so without this
+    // the assertion below would pass with the guard removed (Codex).
+    fireEvent.change(baseInput("Poll cadence"), { target: { value: "9" } });
     expect(screen.getAllByText(/collides with a secret field/).length).toBeGreaterThan(0);
     expect(saveButton().disabled).toBe(true);
   });
@@ -748,6 +788,7 @@ describe("ConfTab · pre-release audit regressions", () => {
     h.settings = makeSettings();
     h.settings.providers.llamacpp.base_url = "";
     render(<ConfTab active />);
+    fireEvent.change(baseInput("Poll cadence"), { target: { value: "9" } }); // …a real edit, as above
     expect(screen.getAllByText(/has no base URL/).length).toBeGreaterThan(0);
     expect(saveButton().disabled).toBe(true);
   });

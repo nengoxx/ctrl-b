@@ -29,7 +29,7 @@ vi.mock("../../src/store/ui", async (importActual) => {
   return { ...actual, useTabActive: (tab: string) => tab === "conf" };
 });
 
-import { useSettings, useSettingsProvidersRev } from "../../src/hooks/useSettings";
+import { useSaveSettings, useSettings, useSettingsProvidersRev } from "../../src/hooks/useSettings";
 
 describe("useSettings · the providers rev rides the settings response", () => {
   let qc: QueryClient;
@@ -63,5 +63,32 @@ describe("useSettings · the providers rev rides the settings response", () => {
     });
     await waitFor(() => expect(result.current.s.data).toBeTruthy());
     await waitFor(() => expect(qc.getQueryData(["settings", "providers-rev"])).toBeNull());
+  });
+});
+
+describe("useSaveSettings · a stale in-flight GET cannot overwrite the echo", () => {
+  it("cancels the settings query before adopting the PUT echo", async () => {
+    // A read that STARTED before the save can land after `setQueryData` and restore the pre-save doc
+    // and its old rev; a draft that just went clean then reseeds from that stale snapshot and shows old
+    // values while the server holds the new ones — with the bar saying "Saved" (Codex).
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const cancel = vi.spyOn(qc, "cancelQueries");
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: qc }, children);
+    mockFetch(
+      {
+        settings: { server: { port: 5433 } },
+        providers_rev: "revB",
+        warnings: [],
+        restart_required: [],
+      },
+      {},
+    );
+    const { result } = renderHook(() => useSaveSettings(), { wrapper });
+    result.current.mutate({ server: { port: 5433 } });
+    await waitFor(() => expect(cancel).toHaveBeenCalled());
+    expect(cancel.mock.calls[0][0]).toEqual({ queryKey: ["settings"] });
+    // …and the echo is what ends up in the cache, with its paired rev
+    await waitFor(() => expect(qc.getQueryData(["settings", "providers-rev"])).toBe("revB"));
   });
 });

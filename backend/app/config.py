@@ -27,7 +27,7 @@ import re
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Literal, TypeGuard
+from typing import Any, ClassVar, Literal, Protocol, TypeGuard
 
 import yaml
 from dotenv import dotenv_values
@@ -1249,7 +1249,15 @@ def sanitise_validation_error(exc: ValidationError, origin: str, stage: str = ""
     return "\n".join(lines)
 
 
-def validation_detail(exc: ValidationError) -> list[dict[str, Any]]:
+class _HasErrors(Protocol):
+    """Structural type for "a validation error that can list its problems" — pydantic's
+    `ValidationError` and FastAPI's `RequestValidationError` both satisfy it with different
+    signatures, and `config.py` sits below the API layer, so neither is imported here."""
+
+    def errors(self, *args: Any, **kwargs: Any) -> Sequence[Any]: ...
+
+
+def validation_detail(exc: _HasErrors) -> list[dict[str, Any]]:
     """The API-safe rendering of a `ValidationError` — `{loc, msg, type}` and nothing else.
 
     The structured sibling of `sanitise_validation_error` (which renders the same facts as a log line),
@@ -1263,11 +1271,18 @@ def validation_detail(exc: ValidationError) -> list[dict[str, Any]]:
     Rebuilt field-by-field rather than trusting `include_input=False` alone, so a future pydantic field
     that echoes the input has to be added here consciously. `loc` is kept — see
     `sanitise_validation_error` for why a location is not a secret in this system.
+
+    Takes anything with an `errors()` — pydantic's `ValidationError` AND FastAPI's
+    `RequestValidationError`, which is the one that matters most (it fires BEFORE any handler runs) and
+    whose `errors()` accepts **no keyword arguments at all**. Hence the fallback, and hence the rebuild
+    being the actual guarantee rather than the kwargs: typed structurally so `config.py`, which sits
+    below the API layer, does not have to import FastAPI to name it.
     """
-    return [
-        {"loc": list(e.get("loc", ())), "msg": e.get("msg", ""), "type": e.get("type", "")}
-        for e in exc.errors(include_url=False, include_context=False, include_input=False)
-    ]
+    try:
+        raw = exc.errors(include_url=False, include_context=False, include_input=False)
+    except TypeError:  # FastAPI's RequestValidationError.errors() takes no kwargs
+        raw = exc.errors()
+    return [{"loc": list(e.get("loc", ())), "msg": e.get("msg", ""), "type": e.get("type", "")} for e in raw]
 
 
 def load_settings(path: Path | None = None) -> Settings:
