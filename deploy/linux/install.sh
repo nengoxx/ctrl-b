@@ -65,8 +65,8 @@ if [ "${CTRLB_DEPLOY_LOCK_HELD:-}" != "$LOCK" ]; then
   exec 9>"$LOCK"
   flock -n 9 || { echo "✗ another install/update is already running for this instance ($LOCK)"; exit 1; }
 fi
-# update.sh (slice 7) holds the same lock and exports CTRLB_DEPLOY_LOCK_HELD=1 so this child does not
-# block on its parent.
+# update.sh (slice 7) holds the same lock and exports CTRLB_DEPLOY_LOCK_HELD=<that path> so this
+# child does not block on its parent.
 migration() { ( cd "$APP/backend" && CTRLB_HOME="$CTRLB_HOME" "$VENV/bin/python" -m app.config_migration "$@" ); }
 
 [ -d "$APP" ] || { echo "ERROR: $APP not found — is the $ROLE tree cloned? (see bootstrap.py / README)"; exit 1; }
