@@ -188,8 +188,11 @@ From the owner directive of 2026-07-25, after one unscoped launch became a ~55-t
 - **The brief MUST forbid nested subagents.** `general-purpose` agents can spawn their own and *will*.
   State it: *"Do NOT spawn subagents or use the Agent/Task tool — do the work yourself."*
 - **Use `Explore` for read-only searching.** Cheaper and it cannot wander into edits.
-- **Forbid file writes** in research briefs. The main session writes the dossier — four agents editing
-  one file is a conflict, and synthesis is a judgement task.
+- **File writes: one dossier file per agent, nothing else (revised 2026-07-28).** A research agent
+  writes its OWN draft dossier (`docs/research/R<n>-<slug>.md`, following that folder's README
+  conventions) — the heavy write-up is workforce work, not main-seat work. Still forbidden: two
+  agents touching the same file, writes anywhere outside `docs/research/`, and editing the index —
+  the main seat reviews/curates the draft, rules on its claims, and adds the README index row.
 - **Demand confidence markers**: VERIFIED (read the source) / REPORTED (secondary) / UNVERIFIED, plus
   an explicit *"what I could not determine"*. A brief that omits this gets folklore back.
 - **Ask for the number that decides the design** (line counts, sizes, versions) — not just prose.
@@ -200,7 +203,9 @@ From the owner directive of 2026-07-25, after one unscoped launch became a ~55-t
 
 Research findings go into **`docs/research/`** in the **same session** they land — see that folder's
 README for the dossier conventions and the peer-project reference class. A finding that never reaches
-the folder was bought for nothing.
+the folder was bought for nothing. **The research agent drafts the dossier itself** (owner, 2026-07-28
+— it has the findings in context and the main seat should not burn tokens transcribing); the main
+seat then verifies the load-bearing claims, trims, and indexes it.
 
 ---
 

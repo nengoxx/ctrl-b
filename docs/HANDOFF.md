@@ -69,9 +69,10 @@
 > §9 the council record.
 > **Agent discipline now lives in [`.claude/skills/second-opinion/SKILL.md`](../.claude/skills/second-opinion/SKILL.md)** —
 > read before spawning Codex or subagents.
-> **▲ WORKFLOW (owner, 2026-07-24): the main model is now Opus 5 on HIGH** (subagents Opus 5 high ·
-> Codex `gpt-5.6-sol` high co-reviewer · Fable 5 = on-request second opinion via its own session).
-> Match the model to your tmux session at session start: `tmux display-message -p '#S'`. — v1.2.1 = the seg stadium-trick patch on top of v1.2.0 same night: ACA Slices 1–8 + the D45/D46 reasoning arc + D47 multi-homed s1–2 + UI polish; both released via runbook §Release by the agent — v1.2.0 gate 29801506922, v1.2.1 gate 29802230245, both green incl. e2e; **the prod config riders are LIVE: `api_mode: llamacpp` + `max_concurrent_requests: 1` on local, `api_mode: openrouter` on cloud**; snapshots `ctrlb-20260721-063649` + `-065258.db.gz`. Prior: v1.1.1 2026-07-16 · v1.1.0 2026-07-10 · v1.0.0 same day.
+> **▲ WORKFLOW: see the READ-FIRST block at the top of this file** — since 2026-07-28 the main
+> seat is **Fable 5 on high**, Opus 5 (high) subagents carry the heavy token work, Codex
+> `gpt-5.6-sol` high co-reviews. *(The 2026-07-24 Opus-main arrangement that previously stood here
+> is superseded.)* — v1.2.1 = the seg stadium-trick patch on top of v1.2.0 same night: ACA Slices 1–8 + the D45/D46 reasoning arc + D47 multi-homed s1–2 + UI polish; both released via runbook §Release by the agent — v1.2.0 gate 29801506922, v1.2.1 gate 29802230245, both green incl. e2e; **the prod config riders are LIVE: `api_mode: llamacpp` + `max_concurrent_requests: 1` on local, `api_mode: openrouter` on cloud**; snapshots `ctrlb-20260721-063649` + `-065258.db.gz`. Prior: v1.1.1 2026-07-16 · v1.1.0 2026-07-10 · v1.0.0 same day.
 > **✅ ctrl-b v1.0.0 (tag `v1.0.0` = `8fa8404`) deployed to emma per the D32-amended plan — first try,
 > release gate green on its maiden tag run (full gate + Playwright e2e on ubuntu).** As-executed record:
 > the PRE-FLIGHT block atop [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md); living runbook: `deploy/linux/README.md`.
@@ -87,9 +88,10 @@
 > - **Agents (D32 AMENDED-2):** TWO boot instances of the template `ctrl-b-agent@.service` **in the
 >   workspace** — `@fable` → tmux **`ctrl-b-fable`** (`claude-fable-5`, high) and `@opus` → tmux
 >   **`ctrl-b-opus`** (the `opus` alias = latest Opus, **Opus 5**, high); attach: `tmux attach -t
->   ctrl-b-opus`. **Opus 5 on high is the MAIN model (owner, 2026-07-24)** — Fable 5 is now an
->   on-request second opinion (like Codex), reached by attaching its own session, and both units
->   stay enabled. Match the model to the session: `tmux display-message -p '#S'`. The launcher
+>   ctrl-b-opus`. **Fable 5 on high is the MAIN model (owner, 2026-07-28; Opus 5 held the seat
+>   2026-07-24 → 28)** — Opus 5 works as high-effort subagents and via its own session when the
+>   owner drives it; both units stay enabled. Match the model to the session:
+>   `tmux display-message -p '#S'`. The launcher
 >   waits (≤60s) for network before starting claude — RC registers at startup and doesn't retry
 >   (post-reboot finding). One writer per tree at a time (simultaneous second writer → worktree).
 >   Effort/perm overrides via `~/.config/ctrl-b/agent[-<i>].env`. The one-time first-clone *trust prompt*
