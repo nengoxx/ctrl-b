@@ -198,7 +198,23 @@ print((m[0].get("conclusion") or m[0].get("status") or "") if m else "none")' "$
     echo ""
     echo "✓ prod updated: $from → $tag  (serving $hver)"
     echo "  verify on a device: https://emma.lobster-vector.ts.net"
-    echo "  roll back with:     bash $repo/deploy/linux/update.sh $from"
+    # The rollback hint must be VERSION-AWARE (v1.3.0 release finding): after a run that migrated the
+    # config, `update.sh $from` against a pre-runner tag is refused by step 5 (safe, but the hint sent
+    # the operator into a refusal), and the real sequence starts with the CONFIG restore. Only offer
+    # the one-liner when $from can actually read today's on-disk shape.
+    local from_ver=0 fraw cur_ver=0 cur_line
+    if fraw="$(git -C "$repo" show "$from:backend/app/config_migration/VERSION" 2>/dev/null)"; then
+      from_ver="$(parse_version "$fraw" || echo 0)"
+    fi
+    cur_line="$(grep -m1 '^config_version:' "$cfg" 2>/dev/null || true)"
+    [ -z "$cur_line" ] || cur_ver="$(parse_version "${cur_line#config_version:}" || echo 0)"
+    if [ "$from_ver" -ge "$cur_ver" ]; then
+      echo "  roll back with:     bash $repo/deploy/linux/update.sh $from"
+    else
+      echo "  roll back:          NOT a one-liner — this run migrated your config (shape $disk_ver → $cur_ver),"
+      echo "                      which $from cannot read. Follow README §Rollback: restore the config"
+      echo "                      backup printed above FIRST, then re-deploy $from."
+    fi
     return 0
   fi
 
