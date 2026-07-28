@@ -16,7 +16,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getJSON, putJSON } from "../api/client";
 import { stableStringify } from "../lib/stableStringify";
-import { isAnyDirty } from "../store/dirty";
+import { useAnyDirty } from "../store/dirty";
 import {
   getUI,
   setUI,
@@ -135,6 +135,13 @@ export function reconcileAppearance(
  *  change is never reverted. */
 export function useAppearanceSync(): void {
   const { data } = useAppearance();
+  // The WAKE EDGE for the deferral below. Without it the deferral has no mechanism: this effect keys on
+  // `data`, and TanStack's structural sharing preserves that reference when a refetch returns a
+  // deep-equal doc — which is exactly what happens while a deferred change waits — so going clean would
+  // produce no run and the change would strand until a reload (Fable, review of the fix wave). This is
+  // the subscription `dirty.ts` reserved for a consumer; the registry dedupes to actual flips, so it
+  // costs about two re-renders per editing session.
+  const anyDirty = useAnyDirty();
   useEffect(() => {
     if (!data) return;
     const ui = getUI();
@@ -150,13 +157,12 @@ export function useAppearanceSync(): void {
     // this module already pulls it transitively via `switchTheme`.
     const next = reconcileAppearance(data, local, (id) => registry[id as ThemeId] != null);
     if (!next) return;
-    if (next.theme !== local.theme && isAnyDirty()) {
+    if (next.theme !== local.theme && anyDirty) {
       // A SKIN change remounts the keyed theme root, unmounting every editor with it — and their drafts
       // are component state (A11 pre-release FE audit, HIGH). The user-initiated switch is refused in
       // ConfTab with a message; this one arrives from ANOTHER DEVICE, so there is nobody to tell. Defer
-      // it instead: the reconcile is level-triggered, so the next run after the editor goes clean (a
-      // save, a discard, closing the tab — all of which clear the registry) applies it. `isAnyDirty` is a
-      // direct read, not a subscription, so this does not re-render on every keystroke.
+      // it instead: `anyDirty` is a subscription, so the flip to clean (a save, a discard, closing the
+      // tab — all of which clear the registry) re-runs this effect and the change lands then.
       return;
     }
     if (next.theme !== local.theme) {
@@ -185,7 +191,7 @@ export function useAppearanceSync(): void {
         themeSettings: next.themeSettings,
       });
     }
-  }, [data]);
+  }, [data, anyDirty]);
 }
 
 export interface AppearancePatch {

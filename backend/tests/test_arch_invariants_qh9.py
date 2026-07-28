@@ -163,3 +163,31 @@ def test_api_422s_go_through_the_safe_validation_renderer():
         "an API module renders a pydantic ValidationError directly; use `config.validation_detail(exc)` "
         f"— `.errors()` includes the rejected `input` value: {offenders}"
     )
+
+
+# --- 5. the frontend's secret-sentinel mirror cannot drift --------------------------------------
+
+
+def test_frontend_secret_sentinel_list_matches_the_schema_rule():
+    """The Conf reference-guard names the secret sentinels inline so it can block a save before the
+    server 422s. Duplication was accepted over putting the list on the wire — it changes maybe once a
+    year, and a wire field is permanent machinery — but the premise "it is a fixed rule" is weaker than
+    it looks: `_SECRET_SENTINEL_NAMES` is a DERIVED union of the leaf keys, the map keys and two extras,
+    and it has already grown once. Add `client_secret` to the leaf keys and the mirror drifts silently
+    (fail-safe — the server still rejects — but the inline guard quietly stops covering it).
+
+    So the drift is closed by a test instead, the same way the installer's unit path is: read the other
+    file and compare (Fable, review of the fix wave).
+    """
+    import re
+
+    from app.config import _SECRET_SENTINEL_NAMES
+
+    conf = (BACKEND.parent / "frontend" / "src" / "tabs" / "ConfTab.tsx").read_text(encoding="utf-8")
+    m = re.search(r"const SECRET_SENTINEL_NAMES = \[(.*?)\];", conf, re.S)
+    assert m, "ConfTab no longer declares SECRET_SENTINEL_NAMES — update this guard with it"
+    mirrored = set(re.findall(r'"([^"]+)"', m.group(1)))
+    assert mirrored == set(_SECRET_SENTINEL_NAMES), (
+        "the Conf guard's secret-sentinel list has drifted from `config._SECRET_SENTINEL_NAMES`: "
+        f"frontend={sorted(mirrored)} backend={sorted(_SECRET_SENTINEL_NAMES)}"
+    )

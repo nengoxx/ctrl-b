@@ -165,6 +165,7 @@ vi.mock("../../src/hooks/useIntegrations", () => ({
 }));
 vi.mock("../../src/hooks/useSkills", () => ({ useSkills: () => ({ data: [] }) }));
 
+import { setDirty } from "../../src/store/dirty";
 import { ConfTab } from "../../src/tabs/ConfTab";
 
 beforeEach(() => {
@@ -671,6 +672,21 @@ describe("ConfTab · pre-release audit regressions", () => {
     );
     expect(baseInput("Poll cadence").value).toBe("11"); // the later edit survived
     expect(saveButton().textContent).toMatch(/Save changes/); // …and is correctly still unsaved
+  });
+
+  it("refuses a theme switch while ANOTHER editor is dirty, not just this tab", () => {
+    // The remount kills every mounted editor's draft, and tabs stay mounted — so a dirty skill or agent
+    // draft is sitting there while the owner is on Conf. Guarding only Conf's own draft left the same
+    // class open through the other five registrants.
+    render(<ConfTab active />);
+    setDirty("skill:deploy", true); // some other editor has unsaved work
+    const themeBtn = screen.queryByRole("button", { name: /^cosmos$/i });
+    expect(themeBtn).toBeTruthy();
+    fireEvent.click(themeBtn!);
+    expect(h.saveAppearance).not.toHaveBeenCalled();
+    setDirty("skill:deploy", false); // …and once it is clean the switch goes through
+    fireEvent.click(themeBtn!);
+    expect(h.saveAppearance).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a theme switch while Conf is dirty (the switch unmounts the tab and its draft)", () => {

@@ -39,7 +39,7 @@ import {
 import { useSkills } from "../hooks/useSkills";
 import { promptPreview } from "../lib/promptPreview";
 import { setCollapsed } from "../store/collapse";
-import { useRegisterDirty } from "../store/dirty";
+import { isAnyDirty, useRegisterDirty } from "../store/dirty";
 import { clearGroupScrollTarget, useGroupScrollTarget } from "../store/groupScroll";
 import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
@@ -778,8 +778,15 @@ export function ConfTab({ active }: Props) {
     // component state, so it goes with it. No navigation warning fires, because this is not navigation
     // (A11 pre-release FE audit, HIGH: edit providers, change theme, edits gone). Ordinary tab switching
     // is safe — the tabs stay mounted — so the block is scoped to the one action that destroys state.
-    if (effectiveDirty) {
-      pushToast("Save or discard your Conf changes before switching theme", "err");
+    //
+    // The blast radius is EVERY mounted editor, not this tab: the registry has six registrants (conf ·
+    // agent:* · agents-globals · skill:* · memory:* · memory:caps), and because tabs stay mounted, a
+    // dirty skill or agent draft is sitting right there while the owner is on Conf. Guarding only
+    // `effectiveDirty` left the same class open through the other five (Fable, review of the fix wave).
+    // Both terms are kept: `useRegisterDirty` syncs through an effect, so the registry can lag this
+    // render by one tick, and the local flag is authoritative for this tab.
+    if (effectiveDirty || isAnyDirty()) {
+      pushToast("Save or discard your unsaved changes before switching theme", "err");
       return;
     }
     // The target theme's default mode/accent — the single source of truth is `defaultSwitchTarget`

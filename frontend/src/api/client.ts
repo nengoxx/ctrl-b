@@ -12,6 +12,8 @@ export class ApiError extends Error {
   }
 }
 
+// GETs throw the bare status line: they carry no validation `detail` worth rendering. If that ever
+// changes, route it through `formatDetail` below — do NOT grow a second renderer here.
 export async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(path, { headers: { Accept: "application/json" } });
   if (!res.ok) throw new ApiError(`${path} → ${res.status} ${res.statusText}`, res.status);
