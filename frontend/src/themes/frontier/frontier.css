@@ -280,12 +280,23 @@
       color: var(--accent-ink, var(--bg));
     }
 
-    /* The rig grid — 2 columns of art cards below the map. */
+    /* The rig grid — 2 columns of art cards below the map (owner-liked at phone widths). */
     .frontier-rigs {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 11px;
       padding: 12px 14px 18px;
+    }
+    /* v1.3.1 owner finding #3: with a fixed 1fr 1fr and no width cap, the art (aspect-ratio-scaled to
+     * column width) hit ~940px per card at 1920 — far too large. Above phone/phablet width the grid
+     * flows into as many 240px-floor columns as fit, which self-bounds the art to ~240-380px at any
+     * viewport. NOTE: this is the codebase's FIRST min-width breakpoint (the only other media query is
+     * the 420px phone one) — there is no breakpoint token system; if a second desktop breakpoint ever
+     * appears, tokenize then. */
+    @media (min-width: 700px) {
+      .frontier-rigs {
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      }
     }
     .frontier-rig {
       all: unset;

@@ -9,7 +9,9 @@
 
 /** The Stop square (D39): the send button becomes a Stop control while a turn streams — every kit
  *  layout variant renders it through the same `isStreaming ? stop : send` swap (vapor's pattern).
- *  Rounded square, stroke language matching the arrowhead. */
+ *  Rounded square, stroke language matching the arrowhead. The rect spans 5→19 — the SAME glyph box
+ *  as the default send arrow it swaps with (a closed square reads optically smaller than an open
+ *  directional glyph, so it gets the full box, not the old 6→18; owner device round, v1.3.1). */
 export function StopSquareIcon({ size = 16 }: { size?: number }) {
   return (
     <svg
@@ -18,12 +20,14 @@ export function StopSquareIcon({ size = 16 }: { size?: number }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2.2"
+      strokeWidth="2.4"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
     >
-      <rect x="6" y="6" width="12" height="12" rx="2" />
+      {/* 2.4, not the arrowhead's 2.2: a square's long straight runs read thinner than angled
+          strokes at equal weight (owner eyeball; the mic sits at 2.6). */}
+      <rect x="5" y="5" width="14" height="14" rx="2.5" />
     </svg>
   );
 }

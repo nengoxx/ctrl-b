@@ -100,7 +100,9 @@ export function KitComposer({
             onClick={isStreaming ? stopTurn : send}
           >
             {isStreaming ? (
-              <StopSquareIcon size={16} />
+              /* 20, not the idle arrow's 16: the stop square paints ~48% of the 34px button — vapor's
+                 stop-to-button ratio (owner device round, v1.3.1: 16 read too small). */
+              <StopSquareIcon size={20} />
             ) : (
               (sendIcon ??
               (skin === "glass" ? (

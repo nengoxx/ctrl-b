@@ -159,10 +159,14 @@ body[data-motion="reduced"] .kit .tab.active {
   gap: 10px;
   padding: calc(16px * var(--density-pad)) 18px calc(12px * var(--density-pad));
   /* frosted glass — content stays visible (blurred) behind the bar as it scrolls under (vapor parity).
-   * backdrop-filter is the heaviest effect on Firefox, so it's gated on data-perf (lite → opaque below). */
-  background: color-mix(in oklch, var(--bg) 72%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+   * backdrop-filter is the heaviest effect on Firefox, so it's gated on data-perf (lite → opaque below).
+   * v1.3.1 owner finding #2: 72% + blur(8px) was too weak a surface — scrolled-under section titles
+   * read as text painted THROUGH the bar (worst on minimal's flat palette). The contract is that the
+   * bar reads as a SURFACE: under-scrolled content is texture, never legible. 85% + blur(14px) is
+   * vapor's proven strength (its bar never drew the complaint); perf-lite stays fully opaque below. */
+  background: color-mix(in oklch, var(--bg) 85%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
 }
 .kit-brand {
   display: flex;
@@ -489,6 +493,15 @@ body[data-perf="lite"] .kit-composer {
 }
 .kit-send svg {
   display: block;
+}
+/* The STOP square is symmetric — the arrowhead optical nudges (`.tall svg` / `.line-btn svg` /
+ * the glass-skin rule, all translate(-1px,1px) for a glyph whose mass leans up-right) must NOT
+ * apply to it or it renders visibly off-center (owner device round, v1.3.1). Five classes + type
+ * = (0,5,1): beats the sheet/line nudges (0,4,1 — `.kit-composer.line .kit-send.line-btn svg`)
+ * and glass (0,4,2) regardless of source order. `.kit-main` hosts ThemedComposer for every
+ * layout variant, so the chain matches stacked/sheet/line alike. */
+.kit .kit-main .kit-composer .kit-send.stop svg {
+  transform: none;
 }
 
 /* ── composer · DOCKED "sheet" variant (SheetComposer, COMPOSER_SURFACE_PLAN §3.3) ──────────────────────
@@ -4424,6 +4437,15 @@ body[data-motion="reduced"] .kit .kit-composer {
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
+}
+/* FLOATING-nav content inset (owner device round, v1.3.1 — the appbarMode="minimal" finding): with no bar
+ * in flow, content started at y=0 and the first section title rode straight under the floating launcher
+ * (10px top + 44px icon ≈ a 54px zone). A slim scroller inset — NOT a bar-height reservation, the mode's
+ * whole point is chrome-lessness — plus `.sec`'s own 22px padding puts the first title just below the icon.
+ * Keyed on the SAME `:has` condition the mini-player/plan-pin yields use (the floating menu being rendered),
+ * so it vanishes when the menu docks (visible mode) or isn't there (off mode). */
+.kit:has(.navmenu:not(.docked)) .kit-scroll {
+  padding-top: calc(34px + env(safe-area-inset-top));
 }
 .kit .navmenu:not(.docked) .navmenu-launch {
   /* just the orbit icon — no circle/background (owner directive), a transparent tap target. Sized to the

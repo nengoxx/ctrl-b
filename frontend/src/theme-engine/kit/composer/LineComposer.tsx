@@ -101,7 +101,9 @@ export function LineComposer({ controlsStart, overlay }: ComposerSlots = {}) {
             {/* Streaming → the Stop square (D39, same swap as every composer). Idle → the SHARED
                 arrowhead glyph — optically re-centered via the `.kit-send.line-btn svg` nudge in
                 kit.css (the glyph's mass leans up-right, vapor's fix). */}
-            {isStreaming ? <StopSquareIcon size={16} /> : <SendArrowheadIcon size={20} />}
+            {/* Stop at 20 (not the arrowhead's 20-for-16 split): ~48% of the 36px circle — vapor's
+                stop-to-button ratio (owner device round, v1.3.1). */}
+            {isStreaming ? <StopSquareIcon size={20} /> : <SendArrowheadIcon size={20} />}
           </button>
         )}
       </div>

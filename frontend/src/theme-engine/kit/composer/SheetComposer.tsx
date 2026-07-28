@@ -87,7 +87,9 @@ export function SheetComposer({ controlsStart, overlay }: ComposerSlots = {}) {
                 arrowhead glyph (owner pick, icon showcase 2026-07-11) — stroke language matches
                 the mic; 24px matches vapor's send proportion. Optically re-centered via the
                 `.kit-send.tall svg` nudge in kit.css (the glyph's mass leans up-right, vapor's fix). */}
-            {isStreaming ? <StopSquareIcon size={20} /> : <SendArrowheadIcon size={24} />}
+            {/* Stop at 24 — vapor's dock paints its stop 24px in a 50px block; the tall send is the
+                same geometry (owner device round, v1.3.1: 20 read too small). */}
+            {isStreaming ? <StopSquareIcon size={24} /> : <SendArrowheadIcon size={24} />}
           </button>
         </div>
       </div>
