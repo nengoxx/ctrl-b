@@ -13,9 +13,19 @@
 > failure mode.)*
 >
 > ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-28, clean tree, gate 6/6)
-> **PUSHED 2026-07-28 + TAGGED `v1.3.0` (= `d386099`); the release cutover is in motion. Backend
-> 1051 · FE 629 passed/631 (an earlier note here said 634 — miscounted) · `check.py` 7/7 incl. e2e
-> green on the tag.** Everything below is built and reviewed; nothing is half-done.
+> **✅ v1.3.0 IS LIVE ON EMMA (2026-07-28).** Tag `v1.3.0` = `d386099` · CI release gate green (run
+> 30365243491, 4m23s) · cutover via the **bootstrap-form `update.sh`** (its first real run — clean,
+> exit 0) · **the A11 fold ran on prod: config_version 0→1, all 11 legacy keys folded, config
+> backup `config.yaml.20260728T135338Z`, DB snapshot `ctrlb-20260728-155338.db.gz`** · health
+> ok/1.3.0, pid == MainPID, config 0600 · **the three provider renames are applied**
+> (`emma-speaches` / `vault-speaches` / `vault-alltalk`, refs cascaded server-side, secrets followed
+> their providers, voice stt+tts live). Post-tag on main: the postcss/sharp dev-dep bumps
+> (`8f482e2`) + doc syncs. Backend 1051 · FE 629 passed/631 · `check.py` 7/7 incl. e2e on the tag.
+> **New LOW (recorded, unfixed): `update.sh`'s success-path rollback hint prints
+> `update.sh v(prev)`, which for a cross-shape rollback is wrong as a one-liner — it is
+> SAFE-BY-REFUSAL (step 5 refuses shape 1 > v1.2.1's 0 and prints the restore sequence), but the
+> hint should be version-aware. A device spot-check of https://emma.lobster-vector.ts.net remains
+> for the owner.**
 > - **▶ 2026-07-28, Fable main seat: the recommended pre-tag Codex pass RAN — and earned its keep
 >   again.** Verdict FIX FIRST: 4 confirmed defects in the previous fix wave, all closed in
 >   `edba2b9` (HIGH: provider identity ops now FREEZE on `savingRef` mid-save — delete/recreate
