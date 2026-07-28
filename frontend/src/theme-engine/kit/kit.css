@@ -254,9 +254,14 @@ body[data-perf="lite"] .kit-appbar.transparent {
   backdrop-filter: none;
   /* SLIMMER than the painted bar (owner, v1.3.1 device round): with no surface to fill, the full
    * 16/12 pads read as dead air — halve them so the in-flow offset the clear bar reserves is thinner.
-   * The 34px squared icon buttons below set the row's real height, so this only trims the margins. */
+   * The 34px squared icon buttons below set the row's real height, so this only trims the margins.
+   * The negative bottom margin then pulls the FOLLOWING content up under the reserved strip (owner
+   * round 2: the bar-to-content gap still read too wide — the first .sec carries its own 22px pad).
+   * Safe because this bar paints nothing, and --appbar-h is measured from offsetHeight (margin-
+   * exempt), so overlay anchors (toasts, mini-player) are unaffected. */
   padding-top: calc(8px * var(--density-pad));
   padding-bottom: calc(6px * var(--density-pad));
+  margin-bottom: -14px;
 }
 /* SQUARED icon buttons in this mode ONLY (prototype `.iconbtn`: 34px, 9px radius, 1px `--line-2` border) — the
  * round base pill fights the borderless-bar look. Applies to the TTS toggle + the docked NavMenu launcher
