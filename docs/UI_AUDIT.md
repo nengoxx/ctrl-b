@@ -274,7 +274,7 @@ This is documented in `Waveform.tsx` with a leading comment so the mistake isn't
 | F10 | Memoize `resultByCall` in AgentTab | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
 | F11 | PWA icon fan-out + PNG compression | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
 | F12 | Bundle analyzer in build | 🟢 | ✅ SAFE | XS | ✅ Slice 1 |
-| F13 | React Compiler trial | 🟢 | 🛑 DEFER | — | ⏸️ defer until F1–F12 stable (they are) — now gated on the **same F9 trigger**; also carries the 29 deferred eslint warns (the Compiler-prep backlog, SYS-16) and owns ACA-14 |
+| F13 | React Compiler trial | 🟢 | 🛑 DEFER | — | ⏸️ defer until F1–F12 stable (they are) — now gated on the **same F9 trigger**; also carries the deferred eslint warns (the Compiler-prep backlog, SYS-16 — **38 as of 2026-07-28**, was 29; the v1.3.1 waves added deliberate ref-read-in-render instances, same class) and owns ACA-14 |
 | F14 | Interactive divs missing keyboard/role | 🔴 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-02 |
 | F15 | `prefers-reduced-motion` not respected | 🔴 | ✅ SAFE | S | 🆕 follow-up audit 2026-06-02 |
 | F16 | SSE no error handler / no reconnect UI | 🟡 | ⚠️ MITIGATED | S | 🆕 follow-up audit 2026-06-02 |

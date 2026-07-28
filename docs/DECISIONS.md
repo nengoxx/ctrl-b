@@ -2466,7 +2466,12 @@ delayed `/compact` note is thread-scoped (dropped if the view moved on). Accepte
 beyond the locked list: `reasoning_effort` exotic values ride verbatim to a strict cloud hop (a
 400 there is config-inflicted + failover-absorbed; a per-endpoint effort-map is the future seam) ·
 the ConfTab-WIDE draft reset on any settings save is pre-existing draft-lifecycle behavior,
-DEFERRED to a Conf-surface follow-up (per-section dirty tracking).)*
+DEFERRED to a Conf-surface follow-up (per-section dirty tracking). ✏️ **v1.3.1 (2026-07-28,
+`0358f4c`): the two DATA-LOSS vectors inside this residual are CLOSED** — the save-diff/dirty
+baseline moved to the draft's epoch snapshot (the Slice-8 LWW race), and AgentsEditor's reseed
+guard now compares only the draft-managed `pickGlobals` projection (the cross-section clobber).
+What remains deferred is granularity only: per-section seeding/adoption, cosmetic on a
+single-PUT tab.)*
 
 ## D43 — Model routing (failure-fallback lead) + retryable classifier + typed retry/failover visibility (ACA Slice 7: A4-reduced, A6, A7) ✏️ LOCKED 2026-07-19 (Slice 7 design review)
 

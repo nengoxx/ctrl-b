@@ -829,8 +829,9 @@ against a real unit **plus a real drop-in**, which it catches while correctly ig
 `CTRLB_DEPLOY_LOCK_HELD=1` · the `migration()` call shape end-to-end on a copy of the prod config
 (legacy → applied → stamped → `uvicorn` reaches "startup complete", zero errors) · `bash -n`.
 
-**NOT verified, deliberately — the gap to close before the release.** `install.sh` has **never been run
-end-to-end** by this session. `install.sh prod` is a release action, not a slice-5 action. `install.sh
+**~~NOT verified~~ ✅ CLOSED by the v1.3.0 release (2026-07-28):** `install.sh prod` ran end-to-end in
+the live cutover (clean, health ok/1.3.0, pid == MainPID). Original caveat kept for the record:
+`install.sh` had **never been run end-to-end** by the authoring session. `install.sh prod` is a release action, not a slice-5 action. `install.sh
 dev` would be safe in principle, but it runs `systemctl --user enable --now ctrl-b-agent@{fable,opus}` —
 and this session *is* one of those agent instances, so a restart would kill the run that is testing it.
 It should be exercised from a plain SSH shell (or by the owner) before slice 8's release: `bash
@@ -1001,9 +1002,11 @@ with `update.sh` and keeps the manual sequence as the fallback it orchestrates.
 gains `config_version: 1`, and the example config now reports *"migration: not needed"* against the
 real CLI.
 
-**NOT verified:** `update.sh` has never been run to completion — doing so is a production release.
-Its refusal paths were exercised (wrong tree, missing argument) and its two parsers were run against the
-real tags and configs, but the success path is exercised for the first time by the slice-8 release.
+**~~NOT verified~~ ✅ CLOSED by the v1.3.0 release (2026-07-28):** the **bootstrap-form** `update.sh`
+ran to completion in the live cutover (first real run — clean, exit 0; the A11 fold ran on prod 0→1
+with config backup + DB snapshot; the three provider renames applied after). The v1.3.1 release will
+exercise the **shipped-script** (non-bootstrap) form for the first time. Original caveat kept for the
+record: refusal paths and parsers were exercised pre-release; the success path first ran at v1.3.0.
 
 ### 17.1 Pre-release audit of slice 7 (Fable) — the recovery text was the defect
 

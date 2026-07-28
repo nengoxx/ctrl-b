@@ -12,7 +12,52 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-28, clean tree, gate 6/6)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-28 evening — the v1.3.1 PATCH IS BUILT, gate 6/6, UNPUSHED)
+> **The v1.3.1 stabilization patch is COMPLETE on main: 14 unpushed commits (`bac7da1..859bdd2` + this
+> docs commit), full gate 6/6 (ruff·pyright·pytest 1064·FE check-all 640·prettier), backend + FE suites
+> green, dev units RUNNING for owner eyeball (:5173/:5434).**
+> **▶ WHAT REMAINS = the RELEASE ONLY, and it needs the owner:** ① push OK → `git push` (pre-push runs
+> the full gate) ② pick/confirm **v1.3.1** → tag → **wait for the CI release gate green** (only the tag
+> gate runs e2e) ③ `update.sh` — **the shipped script's FIRST non-bootstrap run** (runbook §Release;
+> prod is at v1.3.0 so the script exists on the deployed tree now) ④ verify health/describe.
+> **What shipped in the patch (all owner device findings + triaged sweep + two review rounds):**
+> - **The 5 device findings:** stop glyph = stroked square, family box, stroke 2.4, vapor-ratio sizes,
+>   nudge-exempt centering (owner-iterated on device) · app-bar contract — visible bar 85%+blur14
+>   (vapor's proven strength), **appbarMode=minimal gets a 34px scroller inset** (the owner's real mode
+>   — his screenshot cracked it; content started at y=0 under the floating launcher), clear bar slimmed
+>   64→50px + content pulled up −14px (owner round 2) · frontier fleet = the codebase's FIRST min-width
+>   breakpoint (700px, auto-fill minmax(240px,1fr), art bounded ~240–380px, phone 2-col untouched) ·
+>   **#4/#5 picker disclosure SKIPPED (owner ruling)** — design shelved in ROADMAP §P.
+> - **The sweep (triaged IN, all shipped):** SYS-5 /api JSON-404 guard · SYS-6 save_settings fenced ·
+>   SYS-9.2 composer /agent set refresh (agents was the gap; skills/providers already wired) ·
+>   SYS-10 theme drift test · SYS-17a+b voice caps as config fields (+ bounded STT read) · A-fallbacks
+>   no empty `fallbacks: []` · A-steps1 chain self-fallback dedup (registry, NOT the fold) · A-steps2
+>   actionable bare-`models:` refusal at build_plan · A5-x /compact too-small = benign noop · A-verb
+>   verified already surfacing (no change; strict 422 pinned).
+> - **The ConfTab draft work (main-seat ruling: M1 loses nothing — one global save; the LOSS vectors
+>   fixed):** save-diff + dirty + providersDirty all diff against the DRAFT EPOCH (`seededRef`), never
+>   live query data (the Slice-8 LWW race + the fabricated-409 sibling Codex found) · AgentsEditor =
+>   full epoch semantics via shared `pickAgentSection` projection + submitted-snapshot reconcile on its
+>   OWN mutation instance + call-time re-entry ref (a shared instance DETACHES the first call's
+>   observer — I1's class; the Codex verify round caught it) · AgentRow detail value-guard.
+>   **Per-section granularity stays DEFERRED (D42 follow-up, recorded in DECISIONS) — cosmetic once
+>   the loss vectors are closed.**
+> - **Review record:** full-patch Codex round (DO NOT SHIP → 4 findings, all accepted; the ASGI
+>   receive-limiter prescription REJECTED on the tailnet threat model — bounded read instead) → fix
+>   wave `9e595ba` → **Codex verify round (FIX THE FIXES: 3 closed, HIGH re-opened on the observer
+>   detach)** → `859bdd2` closes it with the reviewer's own prescribed minimal form; loop ruled closed.
+> - **Owner rulings this session:** QR-to-phone DELETED → **ROADMAP §P "Parked — not planned"** (new
+>   section; sweeps must skip it; the parked-items memory says why) · whisper-warm TTL closed as
+>   misconception (his server unloads at 30min idle by config) · picker disclosure skipped.
+> - **Residuals recorded, NOT in this patch:** per-section draft granularity (D42) · theme cold-load
+>   mode/accent (M1, accepted) · never-settling-PUT wedge (L1, accepted) · `hold(ep)` chat-gate dedup ·
+>   SYS-2/3 structural · F9/F13 (lint now **40 warnings**, all deliberate F13-class — UI_AUDIT row
+>   updated) · MemoryEditor latent reseed shape (primitive-dep protected).
+> - Session notes: a mid-session REBOOT + a usage-limit kill both recovered clean (one half-done
+>   SYS-6 rename finished by hand; agents relaunched) · `docs/Screenshot 2026-07-28 182629.png` is the
+>   owner's untracked reference shot — his file, not committed.
+>
+> ## ▶ PREVIOUS STATE (2026-07-28 morning, superseded — kept for the release record)
 > **✅ v1.3.0 IS LIVE ON EMMA (2026-07-28).** Tag `v1.3.0` = `d386099` · CI release gate green (run
 > 30365243491, 4m23s) · cutover via the **bootstrap-form `update.sh`** (its first real run — clean,
 > exit 0) · **the A11 fold ran on prod: config_version 0→1, all 11 legacy keys folded, config
