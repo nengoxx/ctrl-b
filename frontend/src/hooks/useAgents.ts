@@ -75,6 +75,30 @@ export interface AgentSectionCfg {
   compaction: CompactionCfg; // D42 — the GLOBAL default compaction knobs (per-agent overrides stay YAML-only)
 }
 
+/** Project the settings doc's `agent` section onto the editor's view model (the defaults mirror the
+ *  backend's). ONE source of truth for that projection: ConfTab builds the AgentsEditor's `cfg` prop
+ *  with it, and the editor re-projects a save ECHO (`res.settings.agent`) through the same function so
+ *  its draft-epoch seed is byte-comparable with the prop that lands a render later (v1.3.1). */
+export function pickAgentSection(section: Partial<AgentSectionCfg> | undefined): AgentSectionCfg {
+  return {
+    default_agent: section?.default_agent ?? "",
+    default_title: section?.default_title ?? "",
+    global_subagent_limit: section?.global_subagent_limit ?? 6,
+    subagent_clamp_privilege: section?.subagent_clamp_privilege ?? true,
+    auto_rotate: section?.auto_rotate ?? false,
+    auto_rotate_min_overlap: section?.auto_rotate_min_overlap ?? 2,
+    streaming: section?.streaming ?? "auto",
+    // D42 — global compaction defaults (per-agent overrides stay YAML-only). Defaults mirror
+    // CompactionCfg's backend defaults; only these four knobs are surfaced.
+    compaction: {
+      enabled: section?.compaction?.enabled ?? true,
+      threshold_frac: section?.compaction?.threshold_frac ?? 0.85,
+      keep_recent_tokens: section?.compaction?.keep_recent_tokens ?? 4096,
+      clear_output_min_tokens: section?.compaction?.clear_output_min_tokens ?? 500,
+    },
+  };
+}
+
 /** The `default` slug — the workspace-root / generalist agent (no agent.yaml). */
 export const DEFAULT_AGENT = "default";
 

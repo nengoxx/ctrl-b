@@ -5,6 +5,7 @@ import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useProviders, useSaveSettings } from "../hooks/useSettings";
 import {
   DEFAULT_AGENT,
+  pickAgentSection,
   pickFields,
   useAgent,
   useAgentList,
@@ -517,12 +518,20 @@ export function AgentsEditor(props: {
   // immediate-save controls in this same card write straight to the server, and their echo arrives as
   // a genuinely changed `props.cfg`, which reseeded the draft and dropped whatever was unsaved
   // ("edit compaction, flip auto-route, the compaction edit vanishes").
+  // v1.3.1 (Codex review) — DRAFT EPOCH, exactly as ConfTab's (its `seededRef` + per-call onSuccess).
+  // `seededRef` is the projection the local draft was last seeded from; the doc is adopted ONLY while
+  // the draft is CLEAN against that seed. A dirty draft keeps its edits AND its epoch — including when
+  // the changed prop is the echo of the user's OWN save, which previously reseeded over whatever was
+  // typed while the save was in flight. `saveGlobals` reconciles that echo explicitly (below).
   const seededRef = useRef(JSON.stringify(pickGlobals(props.cfg)));
   useEffect(() => {
     const next = JSON.stringify(pickGlobals(props.cfg));
     if (next === seededRef.current) return;
-    seededRef.current = next;
-    setCfg(props.cfg);
+    setCfg((c) => {
+      if (JSON.stringify(pickGlobals(c)) !== seededRef.current) return c; // dirty → keep draft + epoch
+      seededRef.current = next; // clean → adopt the fresh doc as the new epoch
+      return props.cfg;
+    });
   }, [props.cfg]);
 
   // Auto-router controls (7e-g) save immediately (mirrors the SkillsEditor master switch), so they
@@ -570,23 +579,43 @@ export function AgentsEditor(props: {
 
   const saveGlobals = () => {
     if (!globalsDirty) return;
-    saveSettings.mutate({
-      agent: {
-        default_agent: cfg.default_agent,
-        global_subagent_limit: cfg.global_subagent_limit,
-        subagent_clamp_privilege: cfg.subagent_clamp_privilege,
-        streaming: cfg.streaming,
-        // D42 — only the four surfaced compaction knobs; a partial PUT deep-merges so the YAML-only
-        // fields (clear_keep_steps, summarizer, reserve_output, …) round-trip untouched. threshold_frac
-        // is clamped to the schema bounds (0.5–0.95) at commit — the field's ge/le guard is the backstop.
-        compaction: {
-          enabled: cfg.compaction.enabled,
-          threshold_frac: Math.min(0.95, Math.max(0.5, cfg.compaction.threshold_frac)),
-          keep_recent_tokens: cfg.compaction.keep_recent_tokens,
-          clear_output_min_tokens: cfg.compaction.clear_output_min_tokens,
+    // What we are actually submitting — the reconcile below compares against THIS, not against whatever
+    // the draft looks like when the response lands (ConfTab's onSave pattern / D48 B5).
+    const submittedGlobalsJson = JSON.stringify(pickGlobals(cfg));
+    saveSettings.mutate(
+      {
+        agent: {
+          default_agent: cfg.default_agent,
+          global_subagent_limit: cfg.global_subagent_limit,
+          subagent_clamp_privilege: cfg.subagent_clamp_privilege,
+          streaming: cfg.streaming,
+          // D42 — only the four surfaced compaction knobs; a partial PUT deep-merges so the YAML-only
+          // fields (clear_keep_steps, summarizer, reserve_output, …) round-trip untouched. threshold_frac
+          // is clamped to the schema bounds (0.5–0.95) at commit — the field's ge/le guard is the backstop.
+          compaction: {
+            enabled: cfg.compaction.enabled,
+            threshold_frac: Math.min(0.95, Math.max(0.5, cfg.compaction.threshold_frac)),
+            keep_recent_tokens: cfg.compaction.keep_recent_tokens,
+            clear_output_min_tokens: cfg.compaction.clear_output_min_tokens,
+          },
         },
       },
-    });
+      {
+        onSuccess: (res) => {
+          // The PUT echo is the new epoch: the same doc that lands as `props.cfg` one render later (the
+          // mutation's own onSuccess writes it into the ["settings"] cache), projected through the SAME
+          // function ConfTab uses — so the reseed effect above then sees `next === seededRef.current`
+          // and no second adoption happens. The seed advances here exactly once, and never backwards.
+          const echo = pickAgentSection(res.settings.agent as Partial<AgentSectionCfg> | undefined);
+          seededRef.current = JSON.stringify(pickGlobals(echo));
+          // …but the draft is only REPLACED when it is still what we sent. On a slow link the owner can
+          // keep editing while the save is in flight; adopting the echo over that silently throws those
+          // edits away. Keeping them leaves the draft dirty against the new epoch — the bar says
+          // "Save agent settings" again, which is the truth.
+          setCfg((c) => (JSON.stringify(pickGlobals(c)) === submittedGlobalsJson ? echo : c));
+        },
+      },
+    );
   };
 
   const defaultOpts = [

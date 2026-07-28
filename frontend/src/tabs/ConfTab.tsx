@@ -20,7 +20,7 @@ import { useSections } from "../hooks/useSections";
 import { currentAppearancePatch, useSaveAppearance } from "../hooks/useAppearance";
 import { agentModeOf, useActionSpecs } from "../hooks/useActions";
 import { disclosureToggle } from "../lib/disclosure";
-import { useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
+import { pickAgentSection, useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
 import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
@@ -900,23 +900,9 @@ export function ConfTab({ active }: Props) {
   const { data: agentList } = useAgentList();
   const agentCount = (agentList?.agents.length ?? 0) + 1; // specialists + the default/root agent
   const agentSection = settings?.agent as Partial<AgentSectionCfg> | undefined;
-  const agentCfg: AgentSectionCfg = {
-    default_agent: agentSection?.default_agent ?? "",
-    default_title: agentSection?.default_title ?? "",
-    global_subagent_limit: agentSection?.global_subagent_limit ?? 6,
-    subagent_clamp_privilege: agentSection?.subagent_clamp_privilege ?? true,
-    auto_rotate: agentSection?.auto_rotate ?? false,
-    auto_rotate_min_overlap: agentSection?.auto_rotate_min_overlap ?? 2,
-    streaming: agentSection?.streaming ?? "auto",
-    // D42 — global compaction defaults (per-agent overrides stay YAML-only). Defaults mirror
-    // CompactionCfg's backend defaults; only these four knobs are surfaced.
-    compaction: {
-      enabled: agentSection?.compaction?.enabled ?? true,
-      threshold_frac: agentSection?.compaction?.threshold_frac ?? 0.85,
-      keep_recent_tokens: agentSection?.compaction?.keep_recent_tokens ?? 4096,
-      clear_output_min_tokens: agentSection?.compaction?.clear_output_min_tokens ?? 500,
-    },
-  };
+  // v1.3.1 — the projection is shared with the AgentsEditor (`pickAgentSection`), which re-uses it to
+  // project its own save echo into the exact shape this prop takes.
+  const agentCfg: AgentSectionCfg = pickAgentSection(agentSection);
   // The per-agent tool grid mirrors the global tri-state (8b, D22): show every tool that's an agent
   // tool *by default* (so a globally-disabled tool still appears, locked-off, rather than vanishing)
   // and pass each one's effective mode so the grid can lock core (on) / disabled (off).
@@ -973,13 +959,27 @@ export function ConfTab({ active }: Props) {
   // underneath it, so a live-doc comparison reports sections the user never touched as changed (and
   // `onSave` would then patch them back to the stale values — the LWW race). `seededRef` is exactly
   // the doc this draft was seeded from; the fallback covers the first render before the seed lands.
-  const seededJson = settings ? (seededRef.current ?? JSON.stringify(pickDraft(settings))) : null;
+  // The epoch snapshot in BOTH forms the guards need — parsed once per render, and re-used by `onSave`
+  // (which diffs section-by-section against the same object) instead of parsing the string a third time.
+  const seedRaw = seededRef.current;
+  const seededDraft: Draft | null = !settings
+    ? null
+    : seedRaw
+      ? (JSON.parse(seedRaw) as Draft)
+      : pickDraft(settings);
+  const seededJson = seededDraft ? (seedRaw ?? JSON.stringify(seededDraft)) : null;
   const dirty = settings && draft && JSON.stringify(draft) !== seededJson;
   // FX11 — is the providers SUBTREE specifically dirty (vs the whole draft)? Drives whether the save
   // carries the `providers` map + its base at all. A queued rename also requires sending the map (the
   // backend rekey/replacement needs it). The epoch base itself is captured at seed time (FR2-1, above).
+  // v1.3.1 (Codex review) — the baseline is the EPOCH snapshot, not the live query data, for the same
+  // reason `dirty` uses it: a background providers move under a dirty draft otherwise reads as "the
+  // user edited providers", so the save carried the untouched map with an epoch-bound base and earned
+  // a 409 the user never caused.
   const providersDirty =
-    !!settings && !!draft && JSON.stringify(draft.providers) !== JSON.stringify(settings.providers);
+    !!settings &&
+    !!draft &&
+    JSON.stringify(draft.providers) !== JSON.stringify(seededDraft?.providers);
   const sendProviders = providersDirty || Object.keys(renames).length > 0;
   // Unsaved-ness as the USER sees it. A number/JSON field holding text that does not parse keeps that
   // text OUT of the draft (by design — the draft stays valid), so `dirty` alone stayed false while
@@ -1397,9 +1397,7 @@ export function ConfTab({ active }: Props) {
     // patch, which is what makes "send only what changed" a genuine per-section guarantee. (The
     // `providers` subtree keeps its stronger, server-checked protection: the epoch-bound
     // `providers_base` 409s instead of merging.) The fallback is first-load safety only.
-    const seeded: Record<string, unknown> = seededRef.current
-      ? (JSON.parse(seededRef.current) as Record<string, unknown>)
-      : pickDraft(settings);
+    const seeded: Record<string, unknown> = seededDraft ?? pickDraft(settings);
     const patch: SavePatch = {};
     for (const [key, value] of Object.entries(coerced)) {
       if (JSON.stringify(value) !== JSON.stringify(seeded[key])) patch[key] = value;

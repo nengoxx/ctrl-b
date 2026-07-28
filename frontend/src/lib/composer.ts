@@ -38,11 +38,19 @@ export const SHELL_SIGIL = "!";
  *  the set is best-effort — an unknown `/verb` still falls through to the unknown-command note. */
 const knownSkills = new Set<string>();
 
+// Each loader is fired from several places (module import, CRUD invalidations, settings saves), so two
+// can be in flight at once. A per-loader generation counter, captured at call start and re-checked
+// before the install, keeps the NEWEST-STARTED response authoritative — without it a slow earlier
+// response lands last and overwrites the fresher set (v1.3.1 Codex review).
+let skillsGen = 0;
+
 export async function loadSkills(): Promise<void> {
+  const gen = ++skillsGen;
   try {
     const res = await fetch("/api/skills");
     if (!res.ok) return;
     const skills = (await res.json()) as { name: string }[];
+    if (gen !== skillsGen) return; // a newer load started → it owns the set
     knownSkills.clear();
     for (const s of skills) knownSkills.add(s.name);
   } catch {
@@ -55,12 +63,15 @@ void loadSkills();
  *  same as the skills set; an unknown name still routes (the backend resolves gracefully). */
 const knownAgents = new Set<string>();
 let defaultAgent = "default";
+let agentsGen = 0;
 
 export async function loadAgents(): Promise<void> {
+  const gen = ++agentsGen;
   try {
     const res = await fetch("/api/agents");
     if (!res.ok) return;
     const data = (await res.json()) as { agents: string[]; default: string };
+    if (gen !== agentsGen) return; // a newer load started → it owns the set
     knownAgents.clear();
     for (const n of data.agents) knownAgents.add(n);
     defaultAgent = data.default || "default";
@@ -75,12 +86,15 @@ void loadAgents();
  *  and skill-shadow / reserved-name rules), refreshed on every settings save (useSaveSettings). The
  *  set is best-effort; an unknown `/verb` still falls through to the unknown-command note. */
 const knownProviders = new Set<string>();
+let providersGen = 0;
 
 export async function loadProviders(): Promise<void> {
+  const gen = ++providersGen;
   try {
     const res = await fetch("/api/providers");
     if (!res.ok) return;
     const data = (await res.json()) as { verbs?: string[] };
+    if (gen !== providersGen) return; // a newer load started → it owns the set
     knownProviders.clear();
     for (const v of data.verbs ?? []) knownProviders.add(v);
   } catch {

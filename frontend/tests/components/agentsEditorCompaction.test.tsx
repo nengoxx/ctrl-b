@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // AgentsEditor — the D42 Slice-6 additions: the GLOBAL compaction block (Auto-compact Switch +
@@ -195,11 +195,50 @@ describe("AgentsEditor · draft reseed value-guard (Codex FIX B)", () => {
     expect(value("Compact at % of context")).toBe("70"); // edit survives the re-render
   });
 
-  it("a genuinely changed server value DOES reseed the draft", () => {
+  it("a genuinely changed server value DOES reseed a CLEAN draft", () => {
+    const { rerender } = render(propsFor(baseCfg));
+    rerender(propsFor({ ...baseCfg, compaction: { ...baseCfg.compaction, threshold_frac: 0.6 } }));
+    expect(value("Compact at % of context")).toBe("60"); // clean → reseeded to the new server value
+  });
+
+  // v1.3.1 (Codex review, HIGH) — the draft epoch, same semantics as ConfTab's: while the draft is
+  // DIRTY the incoming doc is not adopted at all (and the epoch does not advance), so a background
+  // refetch — or the echo of the user's own in-flight save — cannot clobber unsaved edits.
+  it("a background server move does NOT clobber a DIRTY draft", () => {
     const { rerender } = render(propsFor(baseCfg));
     fireEvent.change(screen.getByLabelText("Compact at % of context"), { target: { value: "70" } });
     rerender(propsFor({ ...baseCfg, compaction: { ...baseCfg.compaction, threshold_frac: 0.6 } }));
-    expect(value("Compact at % of context")).toBe("60"); // reseeded to the new server value
+    expect(value("Compact at % of context")).toBe("70"); // the unsaved edit survives
+  });
+
+  it("keeps globals edits made while the save was in flight, and stays dirty", () => {
+    const { rerender } = render(propsFor(baseCfg));
+    fireEvent.change(screen.getByLabelText("Compact at % of context"), { target: { value: "70" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save agent settings" }));
+    expect(h.saveSettings).toHaveBeenCalledTimes(1);
+    // …the owner keeps editing ANOTHER globals field before the response lands…
+    fireEvent.change(screen.getByLabelText("Keep recent (tokens)"), { target: { value: "2000" } });
+    // …then the PUT echo for what WAS submitted arrives (mutation onSuccess → cache → prop).
+    const echoCfg = { ...baseCfg, compaction: { ...baseCfg.compaction, threshold_frac: 0.7 } };
+    const onSuccess = h.saveSettings.mock.calls[0][1].onSuccess as (r: unknown) => void;
+    act(() =>
+      onSuccess({
+        settings: { agent: echoCfg },
+        providers_rev: "revB",
+        warnings: [],
+        restart_required: [],
+      }),
+    );
+    rerender(propsFor(echoCfg)); // the echo lands as the prop one render later
+    expect(value("Compact at % of context")).toBe("70"); // the saved value round-tripped
+    expect(value("Keep recent (tokens)")).toBe("2000"); // …and the in-flight edit survived
+    // The bar is honest about it: still dirty, and a second save carries the in-flight edit.
+    const bar = screen.getByRole("button", { name: /Save agent settings|Saved/ });
+    expect(bar.textContent).toBe("Save agent settings");
+    fireEvent.click(bar);
+    const second = h.saveSettings.mock.calls[1][0] as SavedAgent;
+    expect(second.agent.compaction.keep_recent_tokens).toBe(2000);
+    expect(second.agent.compaction.threshold_frac).toBe(0.7);
   });
 
   // v1.3.1 draft-loss slice — this card mixes the savebar draft with IMMEDIATE-SAVE controls

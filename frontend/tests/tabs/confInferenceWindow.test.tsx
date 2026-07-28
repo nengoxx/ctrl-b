@@ -302,6 +302,30 @@ describe("ConfTab · draft epoch (R18)", () => {
     expect((p.server as { poll_seconds: number }).poll_seconds).toBe(9);
     expect(p.inference).toBeUndefined(); // the moved section is NOT dragged back to the stale value
   });
+
+  // v1.3.1 (Codex review) — the same epoch rule for the PROVIDERS subtree gate. It compared the frozen
+  // draft against the LIVE doc, so a background providers move read as "the user edited providers": the
+  // save then carried the untouched map plus the epoch-bound `providers_base` and 409'd on a conflict
+  // the user never created.
+  it("a background PROVIDERS move does not make an unrelated save carry the providers map", () => {
+    const { rerender } = render(<ConfTab active />);
+    fireEvent.change(baseInput("Poll cadence"), { target: { value: "9" } }); // dirty: server only
+    // …meanwhile another writer adds a provider (and the base rev moves with it).
+    const next = makeSettings();
+    (next.providers as Record<string, unknown>).elsewhere = {
+      base_url: "http://other/v1",
+      api_key: null,
+      api_mode: "openai",
+      models: { m: {} },
+    };
+    h.settings = next;
+    h.settingsRev = "revB";
+    rerender(<ConfTab active />);
+    fireEvent.click(saveButton());
+    const p = lastPatch();
+    expect(p.providers).toBeUndefined(); // the untouched subtree does not ride…
+    expect(p.providers_base).toBeUndefined(); // …so no epoch-bound base fabricates a 409
+  });
 });
 
 describe("ConfTab · reference-guard (B2/R19)", () => {

@@ -47,13 +47,16 @@ async def stt(request: Request, file: UploadFile) -> Response:
     if not voice.configured("stt"):
         raise HTTPException(status_code=503, detail="speech-to-text is not configured")
     max_bytes = request.app.state.settings.voice.stt.max_upload_bytes
-    content = await file.read()
+    # Read at most cap+1 bytes: that is the least that still proves "over the cap", so an oversized
+    # clip is refused without ever materializing more than the cap in memory (v1.3.1 Codex review).
+    content = await file.read(max_bytes + 1)
     if not content:
         raise HTTPException(status_code=422, detail="empty audio upload")
     if len(content) > max_bytes:
+        # The true size is deliberately NOT reported — we stopped reading at cap+1.
         raise HTTPException(
             status_code=413,
-            detail=f"audio upload too large ({len(content)} bytes; limit {max_bytes})",
+            detail=f"audio upload too large (limit {max_bytes} bytes)",
         )
     try:
         text, served = await voice.transcribe(

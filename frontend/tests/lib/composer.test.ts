@@ -136,6 +136,29 @@ describe("runComposer routing", () => {
     expect(chat.pushSystemNote).toHaveBeenCalledWith(expect.stringContaining("unknown command"));
     expect(chat.sendMessage).not.toHaveBeenCalled();
   });
+
+  // v1.3.1 (Codex review) — the loaders are fired from several places (module import, CRUD
+  // invalidations, settings saves), so two can be in flight at once. The generation guard keeps the
+  // NEWEST-STARTED response authoritative; without it the slower earlier response lands last and
+  // reinstates the stale verb set. Same three-line guard in loadSkills/loadAgents.
+  it("out-of-order loader responses: the newest-STARTED load owns the set", async () => {
+    let landStale!: (r: Response) => void;
+    const stale = new Promise<Response>((resolve) => (landStale = resolve));
+    globalThis.fetch = vi.fn(() => stale);
+    const first = loadProviders(); // starts, then hangs on the network
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ verbs: ["fresh"] }) } as Response),
+    );
+    await loadProviders(); // starts later, resolves first → installs ["fresh"]
+    landStale({ ok: true, json: () => Promise.resolve({ verbs: ["stale"] }) } as Response);
+    await first; // …and now the older response lands, and must NOT overwrite
+
+    runComposer("/fresh");
+    expect(chat.setSessionMode).toHaveBeenCalledWith("fresh");
+    runComposer("/stale");
+    expect(chat.setSessionMode).toHaveBeenCalledTimes(1); // the stale verb never became known
+    expect(chat.pushSystemNote).toHaveBeenCalledWith(expect.stringContaining("unknown command"));
+  });
 });
 
 // A minimal controlled textarea bound to the draft store EXACTLY like both real composers
