@@ -497,6 +497,10 @@ class SttServiceCfg(VoiceServiceCfg):
     language: str = "en"  # default English; "" → auto-detect
     vad_filter: bool = True  # voice-activity-detection: skip silence
     hotwords: str = ""  # space-separated recognition bias (fleet names, jargon)
+    # Reject an oversized clip before buffering it upstream (SYS-17b). Default = OpenAI Whisper's own
+    # 25 MB limit; `gt=0` so a blanked Conf field can't disable the cap (an int, so `.inf`/NaN are
+    # rejected by type — mirrors the `allow_inf_nan=False` intent on the timeout fields above).
+    max_upload_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
     # Client behavior (not a transcription param): True → the PWA mic *sends* the transcript
     # immediately; False (default) → fills the composer for review-before-send. Surfaced to the
     # always-on mic via `GET /voice/status` (the Conf-scoped settings query isn't read on Fleet/Agent).
@@ -509,6 +513,9 @@ class TtsServiceCfg(VoiceServiceCfg):
     (`<audio>.playbackRate`, live-adjustable without re-synth — owner's call), so it's not here."""
 
     format: str = "mp3"  # response_format (mp3|opus|aac|flac|wav|pcm)
+    # Reject an over-long synthesis request (SYS-17a). Default = OpenAI's own TTS input limit; `gt=0`
+    # so a blanked Conf field can't disable the cap (an int, so `.inf`/NaN are rejected by type).
+    max_text_chars: int = Field(default=4096, gt=0)
 
 
 class VoiceCfg(BaseModel):

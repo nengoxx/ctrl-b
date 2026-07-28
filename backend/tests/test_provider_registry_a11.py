@@ -126,16 +126,32 @@ def test_blank_primary_promotes_lenient_but_422s_strict() -> None:
 
 
 # ── duplicate-target rejection / dedup (C5) ──────────────────────────────────────────────────────
-def test_duplicate_target_rejects_strict_dedups_lenient() -> None:
+def test_self_fallback_dedups_not_refuses() -> None:
+    # A fallback that duplicates the primary by (provider, resolved-model) — e.g. a hand-migrated legacy
+    # config whose local/cloud endpoints were identical — is a redundant chain entry, NOT a
+    # misconfiguration. Strict: deduped silently (no error). Lenient: deduped + a warning naming the
+    # dropped ref (A-steps1, v1.3.1).
     s = _settings(
         {"p": ProviderCfg(base_url="http://p/v1", models={"m": ModelCfg()})},
         InferenceCfg(provider="p", fallbacks=[SectionRef(provider="p", model="m")]),  # same target twice
     )
-    errs = resolve_strict(s)
-    assert isinstance(errs, list) and any("duplicate target" in e.message for e in errs)
+    strict = resolve_strict(s)
+    assert not isinstance(strict, list)  # a Registry, not a refusal
+    assert [(t.provider, t.model) for t in strict.inference_chain] == [("p", "m")]  # deduped
     reg, warns = resolve_lenient(s)
-    assert len(reg.inference_chain) == 1  # deduped
-    assert any("duplicate target" in w for w in warns)
+    assert [(t.provider, t.model) for t in reg.inference_chain] == [("p", "m")]  # deduped
+    assert any("p/m" in w for w in warns)  # the warning names the dropped ref
+
+
+def test_distinct_models_on_same_provider_are_both_kept() -> None:
+    # dedup is by (provider, RESOLVED model): two different models on the same provider are NOT a dup.
+    s = _settings(
+        {"p": ProviderCfg(base_url="http://p/v1", models={"a": ModelCfg(), "b": ModelCfg()})},
+        InferenceCfg(provider="p", model="a", fallbacks=[SectionRef(provider="p", model="b")]),
+    )
+    reg, warns = resolve_lenient(s)
+    assert [(t.provider, t.model) for t in reg.inference_chain] == [("p", "a"), ("p", "b")]
+    assert not any("dropped duplicate" in w for w in warns)
 
 
 # ── gate None-conflict → min-wins (C4) ───────────────────────────────────────────────────────────
@@ -441,8 +457,18 @@ def test_duplicate_target_is_per_section_stt_and_tts_legal() -> None:
         },
     )
     assert not isinstance(resolve_strict(s), list)  # a Registry, no error
-    dup = _voice_settings(
-        voice={"stt": {"provider": "vault-whisper", "fallbacks": [{"provider": "vault-whisper"}]}},
+    # two DIFFERENT provider names resolving to the SAME endpoint identity WITHIN one section is a C5
+    # duplicate-target refusal — distinct from the self-fallback (provider,model) dedup, which is silent.
+    dup = Settings(
+        providers={
+            "va": ProviderCfg(base_url="http://vault:9000/v1", models={"whisper": ModelCfg()}),
+            "vb": ProviderCfg(base_url="http://vault:9000/v1", models={"whisper": ModelCfg()}),
+            "llamacpp": ProviderCfg(
+                base_url="http://l/v1", api_mode="llamacpp", models={"minig": ModelCfg()}
+            ),
+        },
+        inference=InferenceCfg(provider="llamacpp"),
+        voice={"stt": {"provider": "va", "fallbacks": [{"provider": "vb"}]}},
     )
     errs = resolve_strict(dup)
     assert isinstance(errs, list) and any(

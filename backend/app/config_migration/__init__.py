@@ -514,12 +514,37 @@ def needs_migration(ctx: Context, steps: Sequence[Step] = STEPS) -> bool:
     return bool(pending_steps(ctx, steps))
 
 
+def _refuse_empty_provider_models(config: Mapping[str, Any]) -> None:
+    """Refuse a provider whose `models:` is present but not a mapping (bare `models:` — YAML null — or a
+    scalar), naming the provider and the fix.
+
+    Two paths otherwise give an unhelpful message for the same operator mistake: a hand-authored
+    new-shape provider with `models:` blank fails `Settings.model_validate` as a generic
+    `dict_type` error, and — when a legacy endpoint folds INTO such a provider — the fold crashes on
+    `None.setdefault(...)`, which the runner can only report as `type(exc).__name__` with the detail
+    withheld. Catching it here, BEFORE any step runs, turns both into one actionable refusal. The
+    sanitise-don't-leak guard for genuinely unexpected exceptions is untouched; the provider NAME is
+    public identity (see `sanitise_validation_error`), so naming it leaks nothing. An empty `models: {}`
+    is left alone — a mapping is a valid (if unconfigured) shape the fold itself can produce.
+    """
+    providers = config.get("providers")
+    if not isinstance(providers, dict):
+        return
+    for name, pcfg in providers.items():
+        if isinstance(pcfg, dict) and "models" in pcfg and not isinstance(pcfg["models"], dict):
+            raise MigrationRefused(
+                f"provider {name!r}: `models:` is empty — add at least one model or remove the key",
+                remedy="give the provider a `models:` mapping (e.g. `models: {<name>: {}}`) or drop the key",
+            )
+
+
 def build_plan(ctx: Context, steps: Sequence[Step] = STEPS) -> Plan | None:
     """Chain every applicable step and return the combined plan, or `None` when nothing applies.
 
     Each step sees the document as the previous step left it (`db.py::MIGRATIONS` ordering), so a later
     step never has to know which earlier ones ran. Nothing is written.
     """
+    _refuse_empty_provider_models(ctx.config)
     cur = ctx
     ran = False
     consumes: list[str | Sequence[str]] = []

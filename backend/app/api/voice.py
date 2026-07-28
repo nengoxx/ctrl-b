@@ -46,9 +46,15 @@ async def stt(request: Request, file: UploadFile) -> Response:
     voice = _client(request)
     if not voice.configured("stt"):
         raise HTTPException(status_code=503, detail="speech-to-text is not configured")
+    max_bytes = request.app.state.settings.voice.stt.max_upload_bytes
     content = await file.read()
     if not content:
         raise HTTPException(status_code=422, detail="empty audio upload")
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"audio upload too large ({len(content)} bytes; limit {max_bytes})",
+        )
     try:
         text, served = await voice.transcribe(
             content=content,
@@ -78,6 +84,12 @@ async def tts(body: TtsRequest, request: Request) -> Response:
         raise HTTPException(status_code=503, detail="text-to-speech is not configured")
     if not body.text.strip():
         raise HTTPException(status_code=422, detail="empty text")
+    max_chars = request.app.state.settings.voice.tts.max_text_chars
+    if len(body.text) > max_chars:
+        raise HTTPException(
+            status_code=422,
+            detail=f"text too long ({len(body.text)} chars; limit {max_chars})",
+        )
     try:
         audio, media_type, served = await voice.synthesize(text=body.text, voice=body.voice)
     except VoiceError as exc:

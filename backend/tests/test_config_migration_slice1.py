@@ -537,6 +537,45 @@ def test_a_validation_error_is_rendered_without_the_rejected_values(tmp_path, mo
     assert "providers.p.models" in str(exc.value)
 
 
+def test_a_provider_with_bare_models_refuses_with_an_actionable_message(tmp_path, monkeypatch) -> None:
+    """A hand-authored new-shape provider whose `models:` is blank (YAML null) is refused by name, with
+    the fix — not pydantic's generic `dict_type` line — and the provider's secret never leaks."""
+    _home(
+        tmp_path,
+        monkeypatch,
+        f"providers:\n  x:\n    base_url: http://x/v1\n    api_key: {SECRET}\n    models:\n",
+    )
+    with pytest.raises(cm.MigrationRefused) as exc:
+        cm.check(cm.context_from_env())
+    msg = str(exc.value)
+    assert "provider 'x'" in msg and "models" in msg and "add at least one model" in msg
+    assert SECRET not in msg
+
+
+def test_folding_into_a_bare_models_provider_refuses_not_crashes(tmp_path, monkeypatch) -> None:
+    """A legacy endpoint folding INTO an existing provider with a blank `models:` used to crash the fold
+    (an `AttributeError` the runner could only report as a type name); it now gives the same actionable
+    refusal, before any step runs."""
+    _home(
+        tmp_path,
+        monkeypatch,
+        "providers:\n  shared:\n    base_url: http://shared:9000/v1\n    models:\n"
+        "embeddings:\n  base_url: http://shared:9000/v1\n  model: embed-me\n",
+    )
+    with pytest.raises(cm.MigrationRefused) as exc:
+        cm.check(cm.context_from_env())
+    msg = str(exc.value)
+    assert "provider 'shared'" in msg and "add at least one model" in msg
+    assert "AttributeError" not in msg  # not the generic type-only crash message
+
+
+def test_an_empty_models_map_is_not_refused(tmp_path, monkeypatch) -> None:
+    """`models: {}` is a valid (if unconfigured) shape the fold itself can produce — it must not trip the
+    bare-`models:` refusal."""
+    _home(tmp_path, monkeypatch, "providers:\n  x:\n    base_url: http://x/v1\n    models: {}\n")
+    cm.check(cm.context_from_env())  # no raise
+
+
 # ── the CLI ──────────────────────────────────────────────────────────────────────────────────────
 
 

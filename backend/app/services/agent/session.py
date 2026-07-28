@@ -99,6 +99,11 @@ log = logging.getLogger(__name__)
 #: `_SUSPEND_CALL_STATES`, kept local so the routing sweep never couples the session to that module).
 _SUSPEND_CALL_STATES = (RunState.AWAITING_CONFIRM, RunState.AWAITING_ANSWER)
 
+#: The informational outcome of a manual `/compact` that found nothing worth folding — the thread is
+#: too small (no clean turn boundary, or a head so small a summary wouldn't shrink it). A benign no-op,
+#: phrased so the composer reads it as "nothing to do" rather than a failure (A5-x, v1.3.1).
+COMPACT_TOO_SMALL = "thread too small to compact — nothing to do"
+
 DEFAULT_SYSTEM_PROMPT = (
     "You are ctrl-b, a concise assistant embedded in a single-user homelab control panel. "
     "You help the owner wake, monitor, and manage a small fleet of PCs over their tailnet/LAN. "
@@ -820,9 +825,21 @@ class AgentSession:
                 cs.breaker_latched = False
                 cs.notice_emitted = False
         if res is None:
-            return {"removed": 0}
+            # No clean turn boundary to fold — the thread is too small. A benign no-op (A5-x), not a
+            # failure: mark it so the composer phrases it as "nothing to do".
+            return {"removed": 0, "noop": True, "detail": COMPACT_TOO_SMALL}
         if res.rejected:
-            return {"removed": 0, "rejected": True, "truncated": res.truncated}
+            # A FORCED compact only rejects on a pathologically small head (compaction.py) — i.e. the
+            # thread is too small to usefully fold. Surface the SAME benign no-op as the empty-head case
+            # rather than the auto path's "the summary wouldn't shrink" failure wording. `rejected` is
+            # kept for back-compat; the thrash machine reads `res.rejected` directly, not this dict.
+            return {
+                "removed": 0,
+                "noop": True,
+                "detail": COMPACT_TOO_SMALL,
+                "rejected": True,
+                "truncated": res.truncated,
+            }
         return {"removed": res.removed, "summaryId": res.summary_id, "truncated": res.truncated}
 
     async def resume(

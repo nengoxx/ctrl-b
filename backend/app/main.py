@@ -25,7 +25,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
@@ -463,7 +463,13 @@ def create_app() -> FastAPI:
         )
 
         @app.get("/{full_path:path}")
-        async def spa_fallback(full_path: str) -> FileResponse:  # noqa: ARG001
+        async def spa_fallback(full_path: str) -> Response:
+            # An unmatched `/api/...` (or `/api` itself) is a mistyped/removed endpoint, not an SPA
+            # route — return a JSON 404 rather than serving index.html with a 200, which would mask
+            # the client bug behind an HTML body. Real API routes are registered under the `/api`
+            # prefix above and never reach here.
+            if full_path == "api" or full_path.startswith("api/"):
+                return JSONResponse(status_code=404, content={"detail": "Not Found"})
             return FileResponse(_FRONTEND_DIST / "index.html")
 
     return app

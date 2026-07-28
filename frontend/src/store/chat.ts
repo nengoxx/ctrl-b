@@ -1669,11 +1669,21 @@ export async function compactThread(instructions: string | null = null): Promise
       return;
     }
     if (!res.ok) throw new Error(`compact → ${res.status}`);
-    const data = (await res.json()) as { removed: number; truncated?: boolean; rejected?: boolean };
+    const data = (await res.json()) as {
+      removed: number;
+      truncated?: boolean;
+      rejected?: boolean;
+      noop?: boolean;
+      detail?: string;
+    };
     // Compaction only shrinks the model's *working* context; the visible chat log keeps the full
     // history (the summary lives server-side for the next turn), so just drop a breadcrumb — same
     // as the auto path. No re-read: that would surface the raw summary mid-log beside the originals.
-    pushSystemNote(compactionNote(data.removed, Boolean(data.truncated), Boolean(data.rejected)));
+    // A too-small thread is a benign no-op (A5-x): the server labels it with an informational `detail`,
+    // rendered as-is rather than the failure-ish "wouldn't shrink the context" wording.
+    if (data.noop && data.detail) pushSystemNote(`// ${data.detail}`);
+    else
+      pushSystemNote(compactionNote(data.removed, Boolean(data.truncated), Boolean(data.rejected)));
   } catch {
     if (state.threadId === threadId) pushSystemNote("// compaction failed — try again");
   }

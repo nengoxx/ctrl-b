@@ -683,6 +683,32 @@ def test_thrash_manual_reset_unlatches_and_force_works_while_latched() -> None:
         _run(go())
 
 
+def test_manual_compact_on_too_small_thread_is_a_benign_noop() -> None:
+    """A5-x: a forced /compact on a thread too small to fold (no clean head) returns a clear
+    informational no-op — `noop` + a `detail` message — not an error-looking result."""
+    from app.services.agent.session import COMPACT_TOO_SMALL
+
+    with _workspace(), _client() as c:
+        state = c.app.state
+
+        async def go() -> None:
+            from app.api.agent import _build_session
+            from app.domain.conversation import Thread
+
+            thread = await state.threads.create(Thread())
+            m = _user("hi")  # a single short message → nothing sits outside the recent-message floor
+            m.thread_id = thread.id
+            await state.messages.add(m)
+            session = _build_session(state, thread)
+            out = await session.compact(thread)
+            assert out["removed"] == 0
+            assert out["noop"] is True
+            assert out["detail"] == COMPACT_TOO_SMALL
+            assert "rejected" not in out  # not the failure-signal branch
+
+        _run(go())
+
+
 def test_thrash_truncation_shrink_counts_as_success() -> None:
     """A summarizer failure that ends in a SHRINKING truncation-fold is a SUCCESS (resets the counter)
     — the ONLY failure is the didn't-shrink inflation-reject."""

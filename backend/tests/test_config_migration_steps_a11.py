@@ -214,7 +214,25 @@ def test_voice_fold_shape_order_and_speaches_merge() -> None:
     assert stt["provider"] == "emma-9000" and stt["model"] == "parakeet"  # 2-model provider → named
     assert [f["provider"] for f in stt["fallbacks"]] == ["vault-9000"]  # order kept
     assert stt["language"] == "en"  # service knob rides through
-    assert tts["provider"] == "emma-9000" and tts["model"] == "kokoro" and tts["fallbacks"] == []
+    # single-endpoint section: no `fallbacks:` written at all (absence == the model's empty-list default),
+    # not a cosmetic `fallbacks: []` (A-fallbacks, v1.3.1)
+    assert tts["provider"] == "emma-9000" and tts["model"] == "kokoro" and "fallbacks" not in tts
+
+
+def test_single_endpoint_section_omits_empty_fallbacks() -> None:
+    # A legacy inference with ONE endpoint and no fallbacks must not fold to a cosmetic `fallbacks: []`.
+    raw = {
+        "inference": {
+            "default_mode": "local",
+            "local": {"base_url": "http://only/v1", "model": "m", "api_mode": "llamacpp"},
+        }
+    }
+    migrated, _slot, _consumed = _migrate_legacy(raw)
+    inf = migrated["inference"]
+    assert inf["provider"] and "fallbacks" not in inf
+    # idempotent: the folded doc is not legacy (it has `provider`), so a re-run changes nothing
+    again, _s2, _d2 = _migrate_legacy(migrated)
+    assert again == migrated
 
 
 def test_embeddings_fold_dim_on_model_and_ref() -> None:

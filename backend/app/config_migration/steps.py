@@ -346,7 +346,12 @@ def _migrate_legacy(
         sect["provider"] = pname
         if len(providers[pname].get("models") or {}) != 1 and model:
             sect["model"] = model
-        sect["fallbacks"] = [_section_ref(p, m) for p, m in refs[1:]]
+        # Only emit `fallbacks:` when there is at least one — a single-endpoint section would otherwise
+        # get a cosmetic `fallbacks: []` written into config.yaml. Absence is the model default (an empty
+        # list), so this is shape-equivalent AND keeps re-running the fold on a folded config diff-free.
+        section_fallbacks = [_section_ref(p, m) for p, m in refs[1:]]
+        if section_fallbacks:
+            sect["fallbacks"] = section_fallbacks
 
     # ── config-held ModelRef homes: `mode:` -> `provider:` through the slot map ──
     # Runs UNCONDITIONALLY, not only when the chat fold fired: a stale `mode:` beside an already-migrated

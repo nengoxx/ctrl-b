@@ -541,12 +541,25 @@ def _build_section_chain(
 
     chain: list[ResolvedTarget] = []
     seen: set[tuple[str, str | None, str, str]] = set()
+    seen_pm: set[tuple[str, str]] = set()
     for t in ([primary] if primary else []) + fb:
+        # A fallback that duplicates an earlier ref by (provider, resolved-model) is a redundant chain
+        # entry — e.g. a hand-migrated legacy config whose local/cloud endpoints were identical, so a
+        # section's primary and its fallback resolve to the same provider AND model. That is not a
+        # misconfiguration, so it is NOT a strict refusal: dedup silently, and warn only on the lenient
+        # path so the operator can prune it. (This is narrower than the C5 endpoint-identity dedup below,
+        # which still fires for two DIFFERENT provider names that resolve to the same endpoint.)
+        pm = (t.provider, t.model)
+        if pm in seen_pm:
+            if not strict:
+                warnings.append(f"dropped duplicate {t.provider}/{t.model} ref in the {section} chain")
+            continue
         ident = _target_identity(t)
         if ident in seen:
             msg = f"duplicate target {t.provider}/{t.model} in the {section} chain"
             (errors.append(RegistryError(section, msg)) if strict else warnings.append(msg))
             continue
+        seen_pm.add(pm)
         seen.add(ident)
         chain.append(t)
     return tuple(chain)

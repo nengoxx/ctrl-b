@@ -354,12 +354,18 @@ class _StubVoice:
         return b"AUDIOBYTES", "audio/mpeg", SimpleNamespace(served=self._served, degraded=False)
 
 
-def _app(stub: _StubVoice, *, auto_send=False) -> TestClient:
+def _app(stub: _StubVoice, *, auto_send=False, stt_max_bytes=None, tts_max_chars=None) -> TestClient:
     from app.api import voice as voice_api
 
     app = FastAPI()
     app.state.voice = stub
-    app.state.settings = Settings.model_validate({"voice": {"stt": {"auto_send": auto_send}}})
+    stt_cfg: dict = {"auto_send": auto_send}
+    if stt_max_bytes is not None:
+        stt_cfg["max_upload_bytes"] = stt_max_bytes
+    voice_cfg: dict = {"stt": stt_cfg}
+    if tts_max_chars is not None:
+        voice_cfg["tts"] = {"max_text_chars": tts_max_chars}
+    app.state.settings = Settings.model_validate({"voice": voice_cfg})
     app.include_router(voice_api.router, prefix="/api")
     return TestClient(app)
 
@@ -391,6 +397,42 @@ def test_api_tts() -> None:
     assert r.headers["Content-Length"] == str(len(b"AUDIOBYTES"))
     assert c.post("/api/voice/tts", json={"text": "   "}).status_code == 422
     assert _app(_StubVoice(tts=False)).post("/api/voice/tts", json={"text": "hi"}).status_code == 503
+
+
+def test_api_stt_rejects_oversized_upload() -> None:
+    # SYS-17b: an upload over the configured byte cap is rejected (413); at the cap it still serves.
+    c = _app(_StubVoice(), stt_max_bytes=8)
+    at_cap = c.post("/api/voice/stt", files={"file": ("clip.webm", b"12345678", "audio/webm")})
+    assert at_cap.status_code == 200  # exactly at the cap → allowed
+    over = c.post("/api/voice/stt", files={"file": ("clip.webm", b"123456789", "audio/webm")})
+    assert over.status_code == 413
+
+
+def test_api_tts_rejects_overlong_text() -> None:
+    # SYS-17a: text over the configured char cap is rejected (422); at the cap it still synthesizes.
+    c = _app(_StubVoice(), tts_max_chars=5)
+    assert c.post("/api/voice/tts", json={"text": "hello"}).status_code == 200  # exactly at the cap
+    over = c.post("/api/voice/tts", json={"text": "hello!"})
+    assert over.status_code == 422
+
+
+def test_voice_caps_reject_zero_and_inf() -> None:
+    # No hardcoding + no silent disable: the caps floor >0 and reject inf/NaN (int type), like the
+    # D48 timeout fields.
+    from pydantic import ValidationError
+
+    from app.config import VoiceCfg
+
+    for bad in (
+        {"stt": {"max_upload_bytes": 0}},
+        {"tts": {"max_text_chars": 0}},
+        {"tts": {"max_text_chars": float("inf")}},
+    ):
+        try:
+            VoiceCfg.model_validate(bad)
+            raise AssertionError(f"expected ValidationError for {bad}")
+        except ValidationError:
+            pass
 
 
 if __name__ == "__main__":
