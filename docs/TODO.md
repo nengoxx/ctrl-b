@@ -45,10 +45,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 > (`AGENT_CHAT_AUDIT.md` §5 is the spec; Slice 0 landed; Slices 1–2 pre-deploy candidates, 3+
 > post-deploy) and the `SYSTEM_AUDIT.md` **SYS** riders — **SYS-13** (live `fillComposer` bug) +
 > **SYS-14** (Linux CI) are Phase-9 pre-deploy items below — **both ✅ DONE 2026-07-07.**
-> **Still open (low / deferred), as of 2026-07-28:** QR-to-phone (`segno` dep, pending owner OK);
-> vector memory recall; ROADMAP E2 OpenAI facade; D19 voice streaming transports; UI_AUDIT F9/F13
-> (perf, both now gated on the 2026-07-20 measured trigger). *(This list is a snapshot — date it when
-> you touch it; an undated "still open" line is how stale rows are born.)*
+> **Still open (low / deferred), as of 2026-07-28:** vector memory recall; ROADMAP E2 OpenAI facade;
+> D19 voice streaming transports; UI_AUDIT F9/F13 (perf, both now gated on the 2026-07-20 measured
+> trigger). *(QR-to-phone is NOT on this list anymore — owner deleted it from the plan 2026-07-28;
+> it lives in ROADMAP §P Parked. This list is a snapshot — date it when you touch it; an undated
+> "still open" line is how stale rows are born.)*
 >
 > **⭐ GLOBAL ORDER OF WORK (cross-track, reviewed + pinned 2026-07-07 — each track's internal
 > order lives in its own doc; this is the interleave):**
@@ -462,10 +463,12 @@ tools + confirm bubbles) are DONE.**
       proxy caveat (use `npm run preview` for a clean serve), and the phone-verify checklist.
 - [x] **Verify on the phone** ✅ 2026-06-22 — owner ran `tailscale serve --bg 5173` (non-elevated, Windows)
       and confirmed the voice UX works over the `https://…ts.net` URL on Android ("it works well").
-- [ ] **(server-side, independent)** keep the Speaches whisper model warm (model TTL) — fixes the measured
-      STT cold-start lag; do it around the phone test so dictation feels snappy.
+- [x] ~~**(server-side, independent)** keep the Speaches whisper model warm (model TTL)~~ **CLOSED
+      2026-07-28 — not an issue (owner):** the "cold-start lag" was the owner's Whisper server
+      unloading the model after 30 idle minutes **by its own configuration** — expected behavior,
+      nothing for the app or ops to fix.
 
-#### 6c-2 — in-app "Enable HTTPS" control (settings panel) — ✅ CORE DONE 2026-06-22 (backend + frontend); QR remaining
+#### 6c-2 — in-app "Enable HTTPS" control (settings panel) — ✅ DONE 2026-06-22 (backend + frontend); QR piece DELETED from the plan (owner 2026-07-28 → ROADMAP §P Parked)
 - [x] **Backend** (`7e3dfe3`): `core/proc.py run_capture()` (shared subprocess core; `shell.py` refactored
       onto it, test_shell_5 green), `services/actions/tailscale.py` (`resolve_status()` live read +
       audited `tailscale_serve_enable`/`disable` MED actions, **`serve` only, never `funnel`**, binary
@@ -475,9 +478,9 @@ tools + confirm bubbles) are DONE.**
 - [x] **Frontend** (`56e87a4`): `hooks/useAccess.ts` + a `TailscaleAccessCard` in the **Server** conf
       group (no renumbering) — live Enable/Disable toggle + status + URL + copy; degrades to a hint when
       the CLI is unavailable. `tsc -b` + `vite build` clean. **Eyeball at 390px pending** (owner).
-- [ ] **QR-to-phone** (the one remaining D20 piece): server-rendered QR SVG (`GET /api/access/qr.svg`)
-      via **`segno`** (zero-dep, pure-Python) so the panel `<img>`s it — keeps the tailnet hostname off
-      any third-party service. Deferred pending the **owner's OK on adding the `segno` backend dep**.
+- ~~QR-to-phone (the one remaining D20 piece)~~ **DELETED from the plan (owner, 2026-07-28)** —
+      "just not something I want to do or need." Moved to [ROADMAP §P Parked](./ROADMAP.md#p-parked--not-planned)
+      with its design one-liner; do **not** re-propose it from here.
 
 ## Phase 7 — Conf tab (settings, prompts, memory, hosts CRUD) — **sliced 7a–7e**
 

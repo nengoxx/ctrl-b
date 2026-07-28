@@ -856,3 +856,25 @@ providers:
 **Explicitly NOT the shape:** `CTRLB_PROVIDERS__<name>__<field>` env→path addressing. It cannot deliver
 its own capability without per-field provenance, it makes an env-addressed provider un-renameable, and
 6 of 8 peer projects abandoned the pattern ([R6](./research/R6-env-overrides-and-secret-provenance.md)).
+
+---
+
+## P. Parked — not planned
+
+> **What this section is (owner directive, 2026-07-28):** ideas the owner has explicitly ruled OUT of
+> the plan — not deferred, not "later", just **not wanted unless a need actually arises**. They are
+> recorded here only so their design thinking isn't lost and so they stop resurfacing in sweeps.
+> **Agents: do not propose, triage, or schedule anything in this section.** The only way an item
+> leaves this list is the owner asking for it by name.
+
+- **QR-to-phone** (ex-TODO 6c-2, the last D20 piece; deleted by the owner 2026-07-28 — "just not
+  something I want to do or need"). Shelved design, should it ever return: server-rendered QR SVG at
+  `GET /api/access/qr.svg` via `segno` (zero-dep, pure-Python) so the access panel `<img>`s it,
+  keeping the tailnet hostname off any third-party QR service.
+- **Provider/embeddings picker disclosure** (ex-v1.3.1 device findings #4/#5; skipped by the owner
+  2026-07-28 — the single user knows their own providers; "let the user be the judge"). Shelved
+  design: widen `PickerCatalog` per provider to `{models, apiMode, roles?}` (roles derived in the
+  same walk as `referenceReport.byProvider`), render provider options as `name · role-summary` with
+  a quiet current-usage hint line on cross-role selection; embeddings model picker sorts and
+  annotates `dim`-carrying catalog entries — disclosure only, never a hard filter (R1: no portable
+  capability probe exists; D48 no-capability-tags stands).
