@@ -170,30 +170,50 @@ function show(signal: NotifySignal): void {
  *  longer than a live registration takes and short enough that nothing is left dangling. */
 const SW_READY_TIMEOUT_MS = 4000;
 
-/** The single in-flight `serviceWorker.ready` race, shared by every signal (Codex LOW). Without this,
- *  each notification on a SW-less origin would attach its own `.then` to a promise that never settles
- *  — one leaked pending chain per buzz, for the session's lifetime. Resolves to `null` when there is
- *  no SW API, when `ready` rejects, or when the timeout wins; a null outcome CLEARS the memo so a
- *  worker that registers later can still be found, while never leaving more than one race pending. */
-let swReadyRace: Promise<ServiceWorkerRegistration | null> | null = null;
+/** The registration, once a worker has actually taken control — filled by the permanent observer
+ *  below and consulted FIRST by every fallback, so the common case costs nothing. */
+let swReg: ServiceWorkerRegistration | null = null;
+
+/** ONE permanent observer on `serviceWorker.ready`, installed lazily on the first fallback (verify-5,
+ *  fix 4). `ready` settles at most once, so a single retained reaction is bounded BY CONSTRUCTION —
+ *  which is the whole point: the previous shape raced `ready` against a timeout PER memo, and every
+ *  timeout both left the loser reaction attached to a promise that may never settle and cleared the
+ *  memo, so the next signal attached another. N buzzes on a SW-less origin ⇒ N retained chains.
+ *  Here the subscription happens exactly once and it also caches the registration, which is what makes
+ *  a worker that registers LATE reachable without ever re-subscribing. Never rejects. */
+let swReadyOnce: Promise<ServiceWorkerRegistration | null> | null = null;
+
+/** The ONE bounded wait shared by every signal: the observer's promise raced against a single timeout.
+ *  Created once (not per signal) and deliberately never cleared — once it has resolved `null` the
+ *  fallback is instant, and a worker arriving later is picked up from `swReg` above, not from here. */
+let swWait: Promise<ServiceWorkerRegistration | null> | null = null;
 
 function swRegistration(): Promise<ServiceWorkerRegistration | null> {
-  if (swReadyRace !== null) return swReadyRace;
-  const ready: Promise<ServiceWorkerRegistration> | undefined = navigator.serviceWorker?.ready;
-  // No API at all — nothing to wait for, and nothing to memo. (Explicit `=== undefined` rather than a
-  // truthiness test: a Promise in a boolean conditional is exactly the `no-misused-promises` trap.)
-  if (ready === undefined) return Promise.resolve(null);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const race = Promise.race([
-    ready.catch(() => null),
-    new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), SW_READY_TIMEOUT_MS);
-    }),
-  ]).then((reg) => {
-    clearTimeout(timer); // a resolved `ready` must not leave the timer holding the loop open
-    if (reg === null) swReadyRace = null; // abandoned: let a LATER signal try once more
-    return reg;
-  });
-  swReadyRace = race;
-  return race;
+  if (swReg !== null) return Promise.resolve(swReg); // a worker is in control — no waiting at all
+  if (swReadyOnce === null) {
+    const ready: Promise<ServiceWorkerRegistration> | undefined = navigator.serviceWorker?.ready;
+    // No API at all — nothing to observe, and nothing to memo. (Explicit `=== undefined` rather than a
+    // truthiness test: a Promise in a boolean conditional is exactly the `no-misused-promises` trap.)
+    if (ready === undefined) return Promise.resolve(null);
+    swReadyOnce = ready.then(
+      (reg) => {
+        swReg = reg;
+        return reg;
+      },
+      () => null, // `ready` is specified never to reject; treat a non-conforming one as "no worker"
+    );
+  }
+  if (swWait === null) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    swWait = Promise.race([
+      swReadyOnce,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), SW_READY_TIMEOUT_MS);
+      }),
+    ]).then((reg) => {
+      clearTimeout(timer); // a settled `ready` must not leave the timer holding the loop open
+      return reg;
+    });
+  }
+  return swWait;
 }

@@ -210,12 +210,17 @@ describe("useForegroundNotifications · end to end", () => {
     expect(getUI().tab).toBe("agent");
   });
 
-  it("the service-worker fallback is BOUNDED — one shared wait, abandoned on timeout", async () => {
+  it("the service-worker fallback keeps ONE permanent readiness observer — timeouts accumulate nothing", async () => {
     // Android throws `TypeError` on the constructor, so the SW path is the only one there. But
     // `serviceWorker.ready` is specified to never reject and to settle only once a worker CONTROLS the
-    // page — on an origin where registration failed or is disabled it hangs forever. Pre-fix, every
-    // signal attached its own `.then` to that dead promise: one leaked pending chain per buzz
-    // (Codex final round, LOW).
+    // page — on an origin where registration failed or is disabled it hangs forever.
+    //
+    // The shape this pins (verify-5, fix 4): ONE subscription to `ready`, ever. The previous shape
+    // raced `ready` against a timeout and CLEARED the memo when the timeout won, so each later signal
+    // re-subscribed — every timed-out race leaving its loser reaction attached to a promise that never
+    // settles. N buzzes ⇒ N retained chains. `ready` settles at most once, so one permanent observer
+    // is bounded by construction, and it caches the registration so a LATE worker is still found
+    // without re-subscribing. The counters below are what discriminates the two shapes.
     vi.useFakeTimers();
     class Throwing {
       constructor() {
@@ -227,7 +232,16 @@ describe("useForegroundNotifications · end to end", () => {
     Object.defineProperty(window, "Notification", { value: Throwing, configurable: true });
 
     let accesses = 0;
-    const neverReady = new Promise<ServiceWorkerRegistration>(() => undefined);
+    let subscriptions = 0;
+    const pending = new Promise<ServiceWorkerRegistration>(() => undefined); // never settles
+    // A thenable that COUNTS subscriptions and hands back a real never-settling promise, so the count
+    // reflects our code's `.then` on `ready` and nothing else.
+    const neverReady = {
+      then: () => {
+        subscriptions++;
+        return pending;
+      },
+    } as unknown as Promise<ServiceWorkerRegistration>;
     Object.defineProperty(navigator, "serviceWorker", {
       configurable: true,
       get() {
@@ -241,17 +255,21 @@ describe("useForegroundNotifications · end to end", () => {
       publishNotify(signal({ key: "perm:t1:a" }));
       publishNotify(signal({ key: "perm:t1:b" }));
       publishNotify(signal({ key: "perm:t1:c" }));
-      // THE bound: three signals, ONE in-flight wait — not three pending chains on a dead promise.
       expect(accesses).toBe(1);
+      expect(subscriptions).toBe(1); // three signals, ONE reaction on the dead promise
 
-      // Past the transport timeout the race resolves to null and the chain completes: nothing is
-      // shown, and the memo clears so a worker that registers later can still be found — which is
-      // exactly what a FOURTH signal re-arming the wait proves (still at most one pending at a time).
+      // Past the transport timeout the shared wait resolves null and the chain completes: nothing is
+      // shown, no timer is left holding the loop — and further signals reuse the same wait rather than
+      // re-arming a fresh race (the old shape's `accesses`/`subscriptions` would tick to 2 here).
       await vi.advanceTimersByTimeAsync(10_000);
       expect(shown).toHaveLength(0);
       publishNotify(signal({ key: "perm:t1:d" }));
-      expect(accesses).toBe(2);
-      await vi.advanceTimersByTimeAsync(10_000); // let it settle too, so nothing outlives the test
+      publishNotify(signal({ key: "perm:t1:e" }));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(accesses).toBe(1);
+      expect(subscriptions).toBe(1);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(shown).toHaveLength(0);
     } finally {
       delete (navigator as unknown as Record<string, unknown>).serviceWorker;
       vi.useRealTimers();

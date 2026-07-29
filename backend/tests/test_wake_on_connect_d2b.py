@@ -206,6 +206,38 @@ def test_schedule_without_a_running_loop_is_silent_and_allocates_nothing() -> No
     assert actions.calls == []  # and of course nothing ran
 
 
+def test_a_refused_create_task_never_escapes_the_trigger() -> None:
+    """The same promise one level up (verify-5): `loop.create_task` itself can fail (a loop that is
+    shutting down, an instrumented loop). That call used to sit OUTSIDE the guard, so the failure
+    would raise into the SSE generator AND strand the already-built coroutine — which then warns
+    "never awaited" when collected. Now it is guarded and the coroutine is closed explicitly."""
+    app, actions = _app([_h("alpha")])
+    seen: list[str] = []
+
+    async def drive() -> None:
+        loop = asyncio.get_running_loop()
+        original = loop.create_task
+
+        def boom(*_a, **_kw):
+            seen.append("refused")
+            raise RuntimeError("loop is shutting down")
+
+        loop.create_task = boom  # type: ignore[method-assign]
+        try:
+            wake_on_connect.schedule(app)  # must not raise into the caller
+        finally:
+            loop.create_task = original  # type: ignore[method-assign]
+        await asyncio.sleep(0)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        asyncio.run(drive())
+        gc.collect()
+    assert seen == ["refused"]  # the guarded call really did fire
+    assert [w for w in caught if issubclass(w.category, RuntimeWarning)] == []
+    assert actions.calls == []  # nothing ran — the wake was simply dropped
+
+
 # --------------------------------------------------------------------------- API wiring
 
 

@@ -83,6 +83,56 @@ function mockReattach(frames: Frame[]) {
   );
 }
 
+/** A fake re-attach whose `…/stream` answers the JSON `{active:false, …}` terminal shape, with `floor`
+ *  standing in for the durable messages the forced `reloadChat(true)` then re-reads. */
+function mockTerminalReattach(body: Record<string, unknown>, floor: unknown[] = []) {
+  globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
+    Promise.resolve(
+      String(url).includes("/stream")
+        ? ({
+            ok: true,
+            headers: new Headers({ "content-type": "application/json" }),
+            json: async () => body,
+          } as unknown as Response)
+        : ({ ok: true, json: async () => floor } as unknown as Response),
+    ),
+  );
+}
+
+/** The durable floor of a turn parked on a confirm — what `/api/threads/t1/messages` returns after the
+ *  turn suspended. This is ALL a cold-loaded device has: `call_id` + `tool` + `args` + `state`; the
+ *  permission PROMPT was never persisted (it rides the live `tool.permission` frame only). */
+const FLOOR_AWAITING_CONFIRM = [
+  {
+    id: "u1",
+    thread_id: "t1",
+    role: "user",
+    parts: [{ type: "text", text: "shut it down" }],
+    actor: "user",
+    ts: "2026-07-29T00:00:00Z",
+    tokens: null,
+    compacted: false,
+  },
+  {
+    id: "m1",
+    thread_id: "t1",
+    role: "assistant",
+    parts: [
+      {
+        type: "tool_call",
+        call_id: "c1",
+        tool: "shutdown_host",
+        args: {},
+        state: "awaiting_confirm",
+      },
+    ],
+    actor: "agent",
+    ts: "2026-07-29T00:00:01Z",
+    tokens: null,
+    compacted: false,
+  },
+];
+
 /** The `turn.sync` frame both re-attach tests use: one call parked on a confirm, no terminal yet. */
 const SYNC_AWAITING_CONFIRM: Frame = {
   event: "turn.sync",
@@ -103,6 +153,18 @@ const SYNC_AWAITING_CONFIRM: Frame = {
     ],
   },
 };
+
+/** Seed thread t1 with one completed turn, so a re-attach has somewhere to attach. */
+async function seedThread(): Promise<void> {
+  mockStream([
+    { event: "thread", data: { threadId: "t1" } },
+    { event: "message.start", data: { messageId: "seed" } },
+    { event: "done", data: { state: "completed" } },
+  ]);
+  await act(async () => {
+    await sendMessage("shut it down");
+  });
+}
 
 const captured: NotifySignal[] = [];
 const unsub = onNotify((s) => captured.push(s));
@@ -408,6 +470,139 @@ describe("the non-live transports publish the same signals", () => {
     expect(done[0].key).toBe("turn-done:t1:turn-y");
     expect(done[0].title).toBe("The agent hit its step limit");
   });
+
+  // ── verify-5 ──────────────────────────────────────────────────────────────────────────────────
+
+  it("a SUSPENDED `{active:false}` answer reconstructs the awaiting call from the reloaded floor", async () => {
+    // The headline case F1 exists for: the app was killed while the agent was parked on an approval.
+    // The cold-load probe gets `{active:false, terminal_status:"suspended"}` — and the terminal builder
+    // is (correctly) silent on `suspended`, so before fix 1 this device was told NOTHING at all.
+    await seedThread();
+    captured.length = 0;
+
+    mockTerminalReattach(
+      { active: false, terminal_status: "suspended", turn_id: "turn-s" },
+      FLOOR_AWAITING_CONFIRM,
+    );
+    await act(async () => {
+      await reattachTurn("t1", "turn-s:1");
+    });
+
+    const inputs = byClass("agent_input");
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0].key).toBe("perm:t1:c1"); // identical to the live frame's key ⇒ collapses on replay
+    // The prompt isn't durable, so the body degrades to the builder's tool-name fallback. The KEY is
+    // what the de-dupe rides on, so this costs nothing but wording.
+    expect(inputs[0].body).toBe("shutdown_host is waiting for your approval");
+    expect(byClass("turn_done")).toHaveLength(0); // suspended stays silent, as everywhere
+  });
+
+  it("a suspended reattach announces a parked QUESTION with its durable prompt", async () => {
+    await seedThread();
+    captured.length = 0;
+
+    mockTerminalReattach({ active: false, terminal_status: "suspended", turn_id: "turn-s" }, [
+      FLOOR_AWAITING_CONFIRM[0],
+      {
+        ...FLOOR_AWAITING_CONFIRM[1],
+        parts: [
+          {
+            type: "tool_call",
+            call_id: "q1",
+            tool: "question",
+            args: { prompt: "which host?" },
+            state: "awaiting_answer",
+          },
+        ],
+      },
+    ]);
+    await act(async () => {
+      await reattachTurn("t1", "turn-s:1");
+    });
+    const inputs = byClass("agent_input");
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0].key).toBe("ask:t1:q1");
+    expect(inputs[0].body).toBe("which host?"); // the question builtin's `args.prompt` IS durable
+  });
+
+  it("an ALREADY-RESOLVED call in the floor is never re-announced", async () => {
+    // The resume flips the durable state and appends a `tool_result`; the reconstruction mirrors the
+    // bubble's own `!result && awaiting_*` test, so a resolved call stays silent.
+    await seedThread();
+    captured.length = 0;
+
+    mockTerminalReattach({ active: false, terminal_status: "suspended", turn_id: "turn-s" }, [
+      FLOOR_AWAITING_CONFIRM[0],
+      FLOOR_AWAITING_CONFIRM[1],
+      {
+        ...FLOOR_AWAITING_CONFIRM[1],
+        id: "m2",
+        role: "tool",
+        parts: [
+          {
+            type: "tool_result",
+            call_id: "c1",
+            result: { state: "ok", summary: "done", data: {}, output: null, error: null },
+          },
+        ],
+      },
+    ]);
+    await act(async () => {
+      await reattachTurn("t1", "turn-s:1");
+    });
+    expect(captured).toHaveLength(0);
+  });
+
+  it("an UNKNOWN/EXPIRED reattach (null terminal_status) publishes NOTHING", async () => {
+    // No handle and no linger record ⇒ the server can say only "not live". Nothing was learned about
+    // how the turn ended, so a `turn_done` here would be a fabricated "The agent finished" (fix 2) —
+    // and the floor's awaiting call may be an ancient unanswered one, so it is not announced either.
+    await seedThread();
+    captured.length = 0;
+
+    mockTerminalReattach(
+      { active: false, terminal_status: null, turn_id: "turn-x" },
+      FLOOR_AWAITING_CONFIRM,
+    );
+    let handled = false;
+    await act(async () => {
+      handled = await reattachTurn("t1", "turn-x:1");
+    });
+    expect(handled).toBe(true); // the JSON terminal path really ran (it just had nothing to say)
+    expect(captured).toHaveLength(0);
+  });
+
+  it("a buffered turn keys its signals under the ORIGINATING thread when a `/clear` lands mid-reload", async () => {
+    // The buffered path publishes AFTER `await reloadChat()`. A `/clear` is legal in that window (the
+    // view is already idle), and it nulls `state.threadId` — so reading the scope after the await
+    // filed this turn's signals under the NEW thread (here: the no-thread fallback), and a device that
+    // saw the live frame would have buzzed a second time. Fix 3 captures the scope BEFORE the await.
+    let cleared = false;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      if (String(url).includes("/agent/"))
+        return Promise.resolve({
+          ok: true,
+          body: {},
+          headers: { get: () => "application/json" },
+          json: async () => ({
+            threadId: "t1",
+            state: "suspended",
+            permission: { callId: "c1", token: "t", tool: "shutdown_host", prompt: "confirm?" },
+          }),
+        } as unknown as Response);
+      startNewThread(); // the owner taps /clear exactly while the reload's re-read is in flight
+      cleared = true;
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+    await act(async () => {
+      await sendMessage("shut it down");
+    });
+
+    expect(cleared).toBe(true); // the interleave really happened (the reload was reached)
+    const inputs = byClass("agent_input");
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0].key).toBe("perm:t1:c1"); // NOT `perm:thread:c1`
+  });
 });
 
 // ── end to end: the mounted engine collapses live + replay (the acceptance bar) ──────────────────
@@ -441,18 +636,6 @@ describe("a hidden device + a turn.sync snapshot → exactly one notification", 
     cleanup(); // `globals: false` ⇒ no auto-cleanup; an engine left mounted bleeds into the next test
     delete (window as unknown as Record<string, unknown>).Notification;
   });
-
-  /** Seed thread t1 with a completed turn, so a re-attach has somewhere to attach. */
-  async function seedThread(): Promise<void> {
-    mockStream([
-      { event: "thread", data: { threadId: "t1" } },
-      { event: "message.start", data: { messageId: "seed" } },
-      { event: "done", data: { state: "completed" } },
-    ]);
-    await act(async () => {
-      await sendMessage("shut it down");
-    });
-  }
 
   it("(a) the live frame was MISSED — the snapshot alone raises exactly one", async () => {
     await seedThread();
@@ -502,6 +685,58 @@ describe("a hidden device + a turn.sync snapshot → exactly one notification", 
     ]);
     await act(async () => {
       await reattachTurn("t1", "turn-a:3");
+    });
+    expect(shown).toHaveLength(1);
+  });
+
+  it("(c) a SUSPENDED cold reattach: one buzz when the live frame was missed…", async () => {
+    await seedThread();
+    renderHook(() => useForegroundNotifications());
+    shown = []; // ignore the seed turn's own turn_done
+
+    mockTerminalReattach(
+      { active: false, terminal_status: "suspended", turn_id: "turn-s" },
+      FLOOR_AWAITING_CONFIRM,
+    );
+    await act(async () => {
+      await reattachTurn("t1", "turn-s:1");
+    });
+    expect(shown).toHaveLength(1);
+    expect(shown[0].title).toBe("Approval needed");
+    expect(shown[0].options.tag).toBe("perm:t1:c1");
+  });
+
+  it("(d) …and STILL one when it wasn't — the reconstruction collapses onto the live key", async () => {
+    renderHook(() => useForegroundNotifications());
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "m1" }, id: "turn-s:1" },
+      {
+        event: "tool.permission",
+        id: "turn-s:2",
+        data: {
+          callId: "c1",
+          tool: "shutdown_host",
+          prompt: "Shutdown: confirm to proceed.",
+          token: "t",
+        },
+      },
+      { event: "done", data: { state: "suspended" }, id: "turn-s:3" },
+    ]);
+    await act(async () => {
+      await sendMessage("shut it down");
+    });
+    expect(shown).toHaveLength(1);
+
+    // The socket dies and the app is re-opened later: the probe's terminal answer + the durable floor
+    // rebuild the SAME call. Same key ⇒ the seen-set swallows it (this is the pair fix 1 must not
+    // trade a missed notification for a double one).
+    mockTerminalReattach(
+      { active: false, terminal_status: "suspended", turn_id: "turn-s" },
+      FLOOR_AWAITING_CONFIRM,
+    );
+    await act(async () => {
+      await reattachTurn("t1", "turn-s:3");
     });
     expect(shown).toHaveLength(1);
   });

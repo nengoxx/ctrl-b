@@ -256,14 +256,20 @@ function notifyAwaitingAnswer(
  *
  *  The turn segment falls back to the thread when the transport carries no turn id (the buffered
  *  reply; a stream whose frames aren't stamped). Bounded + accepted: two consecutive id-less turns on
- *  one thread collapse into a single buzz — see the test that pins it. */
+ *  one thread collapse into a single buzz — see the test that pins it.
+ *
+ *  An ABSENT state (`undefined`/`null`) is not a terminal at all and publishes NOTHING (verify-5, fix
+ *  2). The re-attach `{active:false}` answer carries `terminal_status: null` whenever the turn is
+ *  unknown/expired — nothing was learned about how it ended — and the old `st !== "suspended"` test
+ *  read that as a finish, announcing "The agent finished" for a turn we know nothing about (and, on a
+ *  cold load, for one that may still be parked on the owner). Only a real state speaks. */
 function notifyTurnTerminal(
   threadId: string | null | undefined,
   turnId: string | null,
-  st: string | undefined,
+  st: string | null | undefined,
   message?: string,
 ): void {
-  if (st === "suspended") return;
+  if (!st || st === "suspended") return;
   const scope = notifyScope(threadId);
   const failed = st === "error";
   publishNotify({
@@ -281,6 +287,46 @@ function notifyTurnTerminal(
         : "your reply is ready in the chat",
     focus: "agent",
   });
+}
+
+/** F1 (verify-5, fix 1) — announce the call(s) a SUSPENDED turn is parked on, reconstructed from the
+ *  DURABLE messages a reload just restored. This is the fourth transport's missing half: the re-attach
+ *  `{active:false, terminal_status:"suspended"}` answer says only "the turn ended, parked" — the
+ *  terminal builder is (correctly) silent on `suspended`, so a device that missed the live
+ *  `tool.permission`/`tool.question` — the app-killed phone, the cold load — was never told about the
+ *  block at all. That is exactly the case the feature exists for, so it is reconstructed here through
+ *  the SAME builders/keys as every other transport; a device that DID see the live frame collapses the
+ *  two in the engine's seen-set instead of buzzing twice.
+ *
+ *  Scope = the current turn: walk back to the last user message (a turn's boundary) so an ancient
+ *  unanswered suspend further up the thread isn't re-announced on every cold load; a suspend is the
+ *  LAST thing a turn does, so any steered user bubble mid-turn sits before the parked call. A call with
+ *  a `tool_result` is resolved (the resume flips the durable state and appends the result) and stays
+ *  silent — mirrors the bubble's own `!result && state === "awaiting_*"` test.
+ *
+ *  The durable floor carries `call_id` + `tool` + `args` + `state`; the confirm PROMPT is not persisted
+ *  (it lives only on the live `tool.permission` frame / the in-memory snapshot), so a reconstructed
+ *  confirm falls back to the builder's "<tool> is waiting for your approval" body — same key, so the
+ *  de-dupe is unaffected. A question's text IS durable (`args.prompt`, the `question` builtin's input). */
+function notifyRestoredAwaiting(threadId: string): void {
+  const msgs = state.messages;
+  let from = 0;
+  for (let i = msgs.length - 1; i >= 0; i--)
+    if (msgs[i].role === "user") {
+      from = i + 1;
+      break;
+    }
+  const resolved = new Set<string>();
+  for (let i = from; i < msgs.length; i++)
+    for (const p of msgs[i].parts) if (p.type === "tool_result") resolved.add(p.call_id);
+  for (let i = from; i < msgs.length; i++)
+    for (const p of msgs[i].parts) {
+      if (p.type !== "tool_call" || resolved.has(p.call_id)) continue;
+      if (p.state === "awaiting_confirm")
+        notifyAwaitingConfirm(threadId, p.call_id, undefined, p.tool);
+      else if (p.state === "awaiting_answer")
+        notifyAwaitingAnswer(threadId, p.call_id, str(p.args.prompt));
+    }
 }
 
 // Sticky inference backend for this session, set by a bare `/<provider>` verb (A11/D48 C7). `null` →
@@ -1027,6 +1073,11 @@ async function streamTurn(
         modeByCall[q.callId] = turnMode;
         skillsByCall[q.callId] = turnSkills;
       }
+      // The thread THIS turn belongs to, captured BEFORE the reload await (verify-5, fix 3). The
+      // notify calls below used to read `state.threadId` after it, so a `/clear` interleaving during
+      // the reload (the view is idle by then — `startNewThread` is allowed) re-namespaced this turn's
+      // signals under the NEW thread (or the no-thread fallback), breaking the live↔replay collapse.
+      const notifyThread = str(payload.threadId) ?? state.threadId;
       // Clear the streaming placeholder so reloadChat (which skips while "streaming") runs.
       set({ status: "idle", streamingId: null });
       await reloadChat();
@@ -1039,10 +1090,10 @@ async function streamTurn(
       // state it describes. The payload carries no turn id (verified: `collect_turn` folds only
       // state/messageId/permission/question/error/notices, and the endpoint merges `{threadId, title}`
       // on top) — so the terminal key falls back to the thread scope, the documented bounded case.
-      if (perm?.callId) notifyAwaitingConfirm(state.threadId, perm.callId, perm.prompt, perm.tool);
-      if (q?.callId) notifyAwaitingAnswer(state.threadId, q.callId, q.question);
+      if (perm?.callId) notifyAwaitingConfirm(notifyThread, perm.callId, perm.prompt, perm.tool);
+      if (q?.callId) notifyAwaitingAnswer(notifyThread, q.callId, q.question);
       notifyTurnTerminal(
-        state.threadId,
+        notifyThread,
         null,
         str(payload.state),
         isObj(payload.error) ? str(payload.error.message) : undefined,
@@ -1450,8 +1501,12 @@ export async function reattachTurn(
         // disconnected, and this JSON answer is the only place we learn it. The endpoint carries
         // `turn_id` (verified — `turn_stream`'s not-live replies all include it, from the handle or the
         // linger cache), so the key matches the live `done`'s and a device that saw both buzzes once.
-        // A `suspended` terminal publishes nothing, as everywhere else.
+        // A `suspended` terminal publishes nothing, as everywhere else — the awaiting call below IS
+        // that moment (verify-5, fix 1: reconstructed from the floor the reload above just applied,
+        // through the shared builders). An absent/null terminal_status (an unknown/expired turn)
+        // publishes nothing at all: nothing was learned about how it ended.
         notifyTurnTerminal(threadId, nonEmpty(body.turn_id) ?? null, st);
+        if (st === "suspended") notifyRestoredAwaiting(threadId);
         return true;
       }
       if (!res.ok || !res.body) return false;

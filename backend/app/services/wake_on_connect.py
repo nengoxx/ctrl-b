@@ -107,6 +107,17 @@ def schedule(app: "FastAPI") -> None:
     except RuntimeError:  # no running loop (shouldn't happen from a request) — nothing to do
         logger.warning("wake-on-connect could not be scheduled: no running event loop")
         return
-    task = loop.create_task(_guarded())
+    # …and the create_task itself is guarded too (verify-5, fix 5). It sat OUTSIDE the try: a loop that
+    # refuses the task (shutting down, a patched/instrumented loop, a scheduling error) would raise
+    # straight into the SSE generator that called us — the ONE thing this module promises never to do —
+    # and leave the just-built coroutine unstarted, so its collection warns "never awaited" on top.
+    # Constructing the coroutine first means we hold the reference needed to `close()` it on that path.
+    coro = _guarded()
+    try:
+        task = loop.create_task(coro)
+    except Exception:  # noqa: BLE001 — an automation must never escape into its trigger
+        coro.close()  # never started → close it explicitly, so nothing warns when it is collected
+        logger.exception("wake-on-connect could not be scheduled")
+        return
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
