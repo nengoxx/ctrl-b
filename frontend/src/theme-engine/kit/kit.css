@@ -514,13 +514,17 @@ body[data-perf="lite"] .kit-composer {
   transform: none;
 }
 
-/* ── composer · slash-suggest popover (A2) — LAYOUT-agnostic ────────────────────────────────────────────
- * A positioned SIBLING of `.kit-composer` (rendered by every variant, like the plan sheet's `overlay`),
- * anchored above the composer's top edge off the measured `--composer-h` — the same anchor the plan sheet
- * uses, so the two agree at any layout/density. z 5 puts it over the composer (z 4) and the plan sheet's
- * peek (z 3): it hovers, it never tucks. Semantic tokens only; the `.priv-menu` recipe (surface + line-2 +
- * radius-sm + a lifted shadow, accent-soft for the active row) so the app has ONE popover look. */
-.kit .kit-suggest {
+/* ── composer · OVERLAY POPOVERS — LAYOUT-agnostic ──────────────────────────────────────────────────────
+ * Two occupants, ONE look: the slash-suggest listbox (A2, `.kit-suggest`) and the tools/skills menu panel
+ * (A6, `.tools-sheet`). Both are positioned SIBLINGS of `.kit-composer` (rendered by every variant, like the
+ * plan sheet's `overlay`), anchored above the composer's top edge off the measured `--composer-h` — the same
+ * anchor the plan sheet uses, so all three agree at any layout/density. z 5 puts them over the composer
+ * (z 4) and the plan sheet's peek (z 3): they hover, they never tuck. Only ONE is ever open
+ * (store/composerOverlay), so they never overlap each other. Semantic tokens only; the `.priv-menu` recipe
+ * (surface + line-2 + radius-sm + a lifted shadow, accent-soft for the selected row) so the app has ONE
+ * popover look. Both scroll internally when the list runs long — they never push past 40vh. */
+.kit .kit-suggest,
+.kit .tools-sheet {
   position: absolute;
   left: 18px;
   right: 18px;
@@ -528,7 +532,6 @@ body[data-perf="lite"] .kit-composer {
   z-index: 5;
   margin: 0;
   padding: 4px;
-  list-style: none;
   max-height: 40vh;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -537,12 +540,23 @@ body[data-perf="lite"] .kit-composer {
   border-radius: var(--radius-sm);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 }
+.kit .kit-suggest {
+  list-style: none; /* the suggest popover is a <ul>; the tools panel is a <div> */
+}
 /* the DOCKED composer sits at bottom:0 (the others float 12px up) — drop that inset, keep the 8px gap.
  * Same `:has()` probe the plan sheet uses for the identical reason (edge #7). */
-.kit-main:has(.kit-composer.sheet) .kit-suggest {
+.kit-main:has(.kit-composer.sheet) .kit-suggest,
+.kit-main:has(.kit-composer.sheet) .tools-sheet {
   bottom: calc(var(--composer-h, 64px) + 8px);
 }
-.kit .kit-suggest li {
+/* the tools panel's rows are BUTTONS (the suggest rows are <li>) — the reset must come BEFORE the shared
+ * row recipe below, since `all: unset` sets every property and would wipe it from a later rule. */
+.kit .tools-sheet .tools-row,
+.kit .tools-sheet .tools-clear {
+  all: unset;
+}
+.kit .kit-suggest li,
+.kit .tools-sheet .tools-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -552,17 +566,20 @@ body[data-perf="lite"] .kit-composer {
   color: var(--text-2);
   font-size: 13px;
 }
-.kit .kit-suggest li.active {
+.kit .kit-suggest li.active,
+.kit .tools-sheet .tools-row.on {
   color: var(--text);
   background: var(--accent-soft);
 }
-.kit .kit-suggest .sg-val {
+.kit .kit-suggest .sg-val,
+.kit .tools-sheet .tools-name {
   flex: 1;
   min-width: 0;
   font-family: ui-monospace, "JetBrains Mono", monospace;
   overflow-wrap: anywhere; /* a long skill name wraps, never widens the popover (§14.11) */
 }
-.kit .kit-suggest .sg-kind {
+.kit .kit-suggest .sg-kind,
+.kit .tools-sheet .tools-tag {
   flex-shrink: 0;
   padding: 2px 6px;
   border: 1px solid var(--line-2);
@@ -571,6 +588,80 @@ body[data-perf="lite"] .kit-composer {
   font-size: 9px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+/* ── composer · TOOLS/SKILLS MENU deltas (A6) — everything the shared popover recipe doesn't cover ────── */
+.kit .tools-sheet .tools-row {
+  width: 100%;
+  box-sizing: border-box;
+}
+/* two sections (agent · skills) — a hairline between them, no heavy chrome. */
+.kit .tools-sheet .tools-sec + .tools-sec {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line-2);
+}
+/* the section label wears the plan widget's accent caption voice (`.plan-title`), sized for a menu. */
+.kit .tools-sheet .tools-lbl {
+  padding: 6px 10px 2px;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--accent);
+}
+/* fixed-width selection gutter so names line up whether or not a row is ticked (• radio / ✓ checkbox). */
+.kit .tools-sheet .tools-tick {
+  flex-shrink: 0;
+  width: 12px;
+  text-align: center;
+  color: var(--accent);
+  font-size: 11px;
+}
+.kit .tools-sheet .tools-empty {
+  margin: 0;
+  padding: 4px 10px 8px;
+  color: var(--text-3);
+  font-size: 12px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+}
+.kit .tools-sheet .tools-clear {
+  display: block;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line-2);
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.kit .tools-sheet .tools-clear:active {
+  color: var(--text-2);
+}
+/* the TRIGGER — plain `.kit-cbtn` chrome (so every composer SKIN already styles it and every LAYOUT already
+ * sizes/snaps it); only the open tint + the ARMED dot are new. `--accent`, never `--accent-fill` (which may
+ * be a gradient <image> — background-only per the tokens.css contract). */
+.kit .kit-cbtn.tools {
+  position: relative; /* the armed dot's containing block */
+}
+.kit .kit-cbtn.tools.open {
+  color: var(--accent);
+  border-color: color-mix(in oklch, var(--accent) 40%, transparent);
+}
+/* the ARMED marker: the one always-visible sign that the next message is pointed somewhere. It must read
+ * with the panel CLOSED, so it rides the trigger's top-right corner rather than living in the panel. */
+.kit .kit-cbtn.tools .tools-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+/* the LINE layout's controls lane is 36px (see `.kit-composer.line .plan-pill`) and the row bottom-aligns,
+ * so a 32px `.kit-cbtn` would sit off the shared baseline — size it into the lane like the pill. */
+.kit-composer.line .kit-cbtn.tools {
+  width: 36px;
+  height: 36px;
 }
 
 /* ── composer · DOCKED "sheet" variant (SheetComposer, COMPOSER_SURFACE_PLAN §3.3) ──────────────────────
@@ -606,6 +697,7 @@ body[data-mode="light"] .kit-composer.sheet {
 .kit-composer.sheet .sheet-controls {
   display: flex;
   align-items: center;
+  gap: 6px; /* A6: the slot holds more than one control now (tools trigger, then the plan pill) */
   flex-shrink: 0;
   padding-left: 10px;
 }
@@ -751,6 +843,7 @@ body[data-motion="reduced"] .kit-composer.line .kit-cbtn.mic.line-btn.rec {
 .kit-composer.line .line-controls {
   display: flex;
   align-items: center;
+  gap: 6px; /* A6: the slot holds more than one control now (tools trigger, then the plan pill) */
   flex-shrink: 0;
 }
 .kit-composer.line .line-controls:empty {
@@ -803,8 +896,12 @@ body[data-motion="reduced"] .kit-composer.line .kit-cbtn.mic.line-btn.rec {
     opacity: 1;
   }
 }
+/* A6: the pop targets the lane's CHILDREN, not the lane itself — since the tools trigger always occupies
+ * `.line-controls`, the wrapper no longer mounts/unmounts with the plan pill, so animating the wrapper
+ * would pop once at composer mount and never again. Per-child keeps the original intent (each control pops
+ * as IT appears: the pill when a plan starts, the trigger with the bar). */
 body[data-motion="full"] .kit-composer.line .line-btn,
-body[data-motion="full"] .kit-composer.line .line-controls {
+body[data-motion="full"] .kit-composer.line .line-controls > * {
   animation: kit-btn-pop 0.15s ease-out;
 }
 

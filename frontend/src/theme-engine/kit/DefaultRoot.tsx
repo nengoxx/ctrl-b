@@ -4,6 +4,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -24,9 +25,11 @@ import { UtilsTab } from "../../tabs/UtilsTab";
 import { useScrollKeep } from "../scrollKeep";
 import type { TabDef, TabId } from "../types";
 import { KitAppBar } from "./AppBar";
+import { mergeComposerSlots } from "./composer/mergeSlots";
 import { kitPlanComposerSlots } from "./composer/plan";
 import { usePlanPlacement } from "./composer/plan/placement";
 import { ThemedComposer, useComposerLayout } from "./composer/ThemedComposer";
+import { kitToolsMenuSlots } from "./composer/toolsMenu";
 import type { ComposerSlots } from "./composer/types";
 import { KitFleet } from "./Fleet";
 import { KitNavBar } from "./NavBar";
@@ -64,8 +67,9 @@ interface Props {
    *  defaults. Replaces + generalizes the old single-purpose `Fleet` prop. */
   bodies?: Partial<Record<TabId, ComponentType<{ active: boolean }>>>;
   /** Composer ADDONS composed into the variant — the FEATURE axis (D30). Since A4, DefaultRoot OWNS the
-   *  inline plan composition (see below), so a theme no longer passes the plan here; this prop is the
-   *  future theme-addon seam and is unused today. Omitted → the bare composer (when the plan is `pinned`). */
+   *  inline plan composition and (A6) the tools/skills menu, so a theme passes neither here; this prop is
+   *  the theme's OWN addon seam, unused by any theme today. It is MERGED with the Kit's addons (it used to
+   *  be dropped whenever the plan was inline — see the merge below), and lands last in the controls row. */
   composerSlots?: ComposerSlots;
   /** The appbar brand-subtitle slot (D30 slot composition), threaded to KitAppBar — a theme's live/bespoke
    *  subtitle (frontier's rig count). Omitted → the Kit default ("dashboard"). */
@@ -101,15 +105,24 @@ export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots, bra
   // theme's `composer` setting (registry lookup, fallback-safe). Read the layout once here so the
   // `--composer-h` effect can key on it (re-measure on a live swap) and pass it down (one subscription).
   const composerLayout = useComposerLayout();
-  // The plan PLACEMENT axis (A4). DefaultRoot OWNS the inline plan composition: when the active theme's
-  // placement is `inline` it composes the Kit plan pill+sheet into the composer here (themes no longer pass
-  // it). When `pinned`, the plan renders as AgentTab's PinnedPlanPanel and the composer gets NO plan slots.
-  // The `composerSlots` prop stays the future theme-addon axis (D30); a real slot-MERGE (inline plan + a
-  // theme's own addon) arrives with the first SECOND contributor (ROADMAP A7 / rule of three), not before —
-  // so a LIMITATION holds until then: when inline, a theme-passed `composerSlots` is NOT merged with the plan
-  // slots (no theme passes any today). DefaultRoot renders NO pinned panel — that's AgentTab's.
+  // Composer ADDON composition (D30). DefaultRoot owns it for every variant, and it's a real MERGE
+  // (`mergeComposerSlots`) since A6 — the old "when inline, a theme-passed `composerSlots` is silently
+  // dropped" limitation is GONE. Three contributors, in `controlsStart` order (first = leading edge):
+  //   1. the tools/skills MENU (A6) — Kit chrome, always composed, at the controls leading edge;
+  //   2. the inline PLAN pill+sheet (A4) — only under the `inline` placement axis; under `pinned` the plan
+  //      renders as AgentTab's PinnedPlanPanel instead and contributes nothing here;
+  //   3. the theme's own `composerSlots` prop — the theme-addon seam, unused by any theme today.
+  // DefaultRoot renders NO pinned panel — that's AgentTab's.
   const planPlacement = usePlanPlacement();
-  const composerAddons = planPlacement === "inline" ? kitPlanComposerSlots : composerSlots;
+  const composerAddons = useMemo(
+    () =>
+      mergeComposerSlots(
+        kitToolsMenuSlots,
+        planPlacement === "inline" ? kitPlanComposerSlots : undefined,
+        composerSlots,
+      ),
+    [planPlacement, composerSlots],
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
 
@@ -252,7 +265,7 @@ export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots, bra
           })}
         </div>
         <MiniPlayer />
-        {showComposer && <ThemedComposer layout={composerLayout} {...(composerAddons ?? {})} />}
+        {showComposer && <ThemedComposer layout={composerLayout} {...composerAddons} />}
       </div>
       {/* Nav (D35 §F0 + the 2026-07-12 docking rule): the in-flow tab bar shows whenever there's an
           appbar-bearing layout (visible/transparent/off) — everything but `minimal`. The nav menu DOCKS to the

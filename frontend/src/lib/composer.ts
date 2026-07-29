@@ -27,6 +27,7 @@ import {
   startNewThread,
 } from "../store/chat";
 import { setDraft } from "../store/composer";
+import { clearComposerScope, takeComposerScope } from "../store/composerScope";
 import { createStore } from "../store/createStore";
 import { setUI } from "../store/ui";
 import { PRIVILEGE_LEVELS, PRIVILEGE_VALUES, privilegeLabel, type Privilege } from "./privilege";
@@ -63,6 +64,13 @@ const knownSkills = new Set<string>();
 // response lands last and overwrites the fresher set (v1.3.1 Codex review).
 let skillsGen = 0;
 
+/** The discovered skill names, for the composer tools/skills MENU (A6). A COPY — the Set itself stays
+ *  private (routing owns it), so a UI read can never mutate the routing source. Pair with
+ *  `useVerbsVersion()` for reactivity: a loader install bumps the version, the caller re-derives. */
+export function getKnownSkills(): string[] {
+  return [...knownSkills];
+}
+
 export async function loadSkills(): Promise<void> {
   const gen = ++skillsGen;
   try {
@@ -84,6 +92,17 @@ void loadSkills();
 const knownAgents = new Set<string>();
 let defaultAgent = "default";
 let agentsGen = 0;
+
+/** The configured SPECIALIST agent names (the `default`/root agent is not among them — `GET /api/agents`
+ *  reports it separately). Same copy-not-the-Set contract as `getKnownSkills`. */
+export function getKnownAgents(): string[] {
+  return [...knownAgents];
+}
+
+/** The resolved default agent's slug — what "no agent pick" means, for labelling the menu's default row. */
+export function getDefaultAgent(): string {
+  return defaultAgent;
+}
 
 export async function loadAgents(): Promise<void> {
   const gen = ++agentsGen;
@@ -250,7 +269,15 @@ export function runComposer(raw: string): void {
   }
   // Plain NL send. `raw` == `text` here (no prefix), but pass it explicitly so a queued steer restores
   // the exact line on Stop (D41 §6) — the raw-line map is keyed uniformly for every send path.
-  void sendMessage(text, { raw: text });
+  // A6: this is the message the tools/skills menu armed, so its one-shot scope rides along and is SPENT
+  // here (`take` = read + clear). Absent fields are omitted rather than passed empty so the call shape is
+  // unchanged when nothing is armed.
+  const scope = takeComposerScope();
+  void sendMessage(text, {
+    raw: text,
+    ...(scope.agent ? { agent: scope.agent } : {}),
+    ...(scope.skills.length ? { skills: scope.skills } : {}),
+  });
 }
 
 /** `!<cmd>` — the guarded shell escape hatch (Phase 5, built). Runs `run_shell` on the backend host via
@@ -277,11 +304,17 @@ function routeSlash(text: string): void {
     builtin.run(rest);
   } else if (knownSkills.has(verb)) {
     // /skill-name <task> → run the task with that skill explicitly active (user-invoked, 4.5).
-    if (rest) void sendMessage(rest, { skills: [verb], raw });
-    else pushSystemNote(`// /${verb} needs a task: /${verb} <what to do>`);
+    // A6: an EXPLICIT slash-routed send WINS over the tools/skills menu — the arming is dropped, not
+    // merged (the owner just routed this message by hand). Same at the provider branch below; a verb that
+    // sends NO message (/help, /clear, /agent…) leaves the arming alone — it's still for the next message.
+    if (rest) {
+      clearComposerScope();
+      void sendMessage(rest, { skills: [verb], raw });
+    } else pushSystemNote(`// /${verb} needs a task: /${verb} <what to do>`);
   } else if (knownProviders.has(verb)) {
     // /<provider> [msg] → force that inference backend. With args = one-shot; bare = sticky.
     if (rest) {
+      clearComposerScope();
       void sendMessage(rest, { mode: verb, raw });
     } else {
       setSessionMode(verb);

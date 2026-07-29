@@ -1574,7 +1574,7 @@ export async function stopTurn(): Promise<void> {
  */
 export async function sendMessage(
   text: string,
-  opts?: { mode?: ChatMode; skills?: string[]; raw?: string },
+  opts?: { mode?: ChatMode; skills?: string[]; agent?: string; raw?: string },
 ): Promise<void> {
   const body = text.trim();
   if (!body) return;
@@ -1586,6 +1586,12 @@ export async function sendMessage(
   const steering = state.status === "streaming";
   const mode = opts?.mode ?? sessionMode ?? null;
   const skills = opts?.skills ?? []; // explicit /skill-name invocations (4.5)
+  // A6 — the per-message agent, same one-shot-beats-sticky precedence as `mode`: the composer menu's
+  // armed pick wins for THIS message, else the sticky `/agent <name>` session pick, else the server
+  // default (null). NOT stashed per-turn like turnMode/turnSkills: the resume/answer payloads carry no
+  // `agent` (the server resolves the suspended turn's own), so there is no pin a steer could re-point —
+  // a steer's agent rides its own POST, exactly like its `mode`.
+  const agent = opts?.agent ?? sessionAgent;
   if (!steering) {
     turnMode = mode;
     turnSkills = skills;
@@ -1609,7 +1615,7 @@ export async function sendMessage(
     thread_id: state.threadId,
     mode,
     skills,
-    agent: sessionAgent,
+    agent,
     privilege: state.sessionPrivilege,
     stream: true, // the PWA always prefers streaming; the server's agent.streaming=off can override (D17)
   };

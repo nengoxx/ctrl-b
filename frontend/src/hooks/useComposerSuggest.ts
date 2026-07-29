@@ -1,7 +1,11 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 
 import { getCompletions, useVerbsVersion, type Completion } from "../lib/composer";
-import { setPlanSheetOpen } from "../store/planSheet";
+import {
+  releaseComposerOverlay,
+  setComposerOverlay,
+  useComposerOverlayOpen,
+} from "../store/composerOverlay";
 
 // Composer autocomplete (A2) — the BEHAVIOUR half, headless like `useComposer`: open/close policy, the
 // keyboard grammar, and accepting a suggestion. The GRAMMAR is `lib/composer.getCompletions` (one source,
@@ -73,14 +77,20 @@ export function useComposerSuggest({
   useVerbsVersion();
   const items = getCompletions(draft);
 
-  const open = armed && !dismissed && items.length > 0;
+  // Overlay coexistence (A6): the popover, the plan sheet and the tools menu all hover over the composer's
+  // top edge, so exactly one may be open — `store/composerOverlay` holds that single owner slot. The
+  // popover's own policy decides when it WANTS to be open; the slot decides whether it gets to be. Claiming
+  // on the want-transition (not on every render) is what lets a menu/plan tap displace it: the popover stays
+  // down until the next keystroke re-arms it, instead of fighting back on the very next render.
+  const wantOpen = armed && !dismissed && items.length > 0;
+  const hasSlot = useComposerOverlayOpen("suggest");
+  const open = wantOpen && hasSlot;
   const active = items.length ? Math.min(activeIndex, items.length - 1) : 0;
 
-  // Overlay coexistence: the popover and the plan sheet both hover over the composer's top edge, so opening
-  // one collapses the other. Only this direction is enforced — opening the plan sheet mid-typing is fine.
   useEffect(() => {
-    if (open) setPlanSheetOpen(false);
-  }, [open]);
+    if (wantOpen) setComposerOverlay("suggest");
+    else releaseComposerOverlay("suggest");
+  }, [wantOpen]);
 
   function accept(item: Completion): void {
     setDraft(replaceToken(draft, item.insert));

@@ -12,6 +12,7 @@ import {
   retryLastTurn,
   runShell,
   sendMessage,
+  setSessionAgent,
   startNewThread,
   stopTurn,
   useChat,
@@ -3041,6 +3042,122 @@ describe("steering queue — client (Slice 5, D41)", () => {
     controller.close();
     await act(async () => {
       await sendP;
+    });
+  });
+});
+
+// ── A6 — the PER-MESSAGE agent. The composer tools/skills menu arms a one-shot agent for the next message;
+// it rides the per-turn `ChatRequest.agent` field the backend already accepts (zero backend change), with
+// the same one-shot-beats-sticky precedence `mode` has: opts.agent → the sticky `/agent <name>` session
+// pick → null (the server default). Unlike mode/skills it is NOT stashed per-turn — resume/answer carry no
+// `agent` — so a steer has no pin to re-point; the second case locks that in from the outside. ──
+describe("per-message agent (A6)", () => {
+  const enc = new TextEncoder();
+
+  it("precedence: the one-shot agent beats the sticky /agent pick, which beats the server default", async () => {
+    let body: Record<string, unknown> = {};
+    globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      body = JSON.parse(init!.body as string) as Record<string, unknown>;
+      return Promise.resolve(sseResponse([{ event: "done", data: { state: "completed" } }]));
+    });
+    renderHook(() => useChat());
+
+    await act(async () => {
+      await sendMessage("hi");
+    });
+    expect(body.agent).toBe(null); // nothing armed, nothing sticky → the server's default
+
+    setSessionAgent("ops"); // the sticky `/agent ops`
+    await act(async () => {
+      await sendMessage("hi");
+    });
+    expect(body.agent).toBe("ops");
+
+    await act(async () => {
+      await sendMessage("hi", { agent: "research" }); // the menu's one-shot for THIS message
+    });
+    expect(body.agent).toBe("research");
+
+    setSessionAgent(null); // …and the sticky pick is untouched by the one-shot
+    await act(async () => {
+      await sendMessage("hi");
+    });
+    expect(body.agent).toBe(null);
+  });
+
+  it("a STEER's agent rides its own POST and does NOT re-point the live turn's mode/skills pins (D41)", async () => {
+    // A held-open turn sent with mode+skills, then a steer with a DIFFERENT agent/mode/skills.
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const held = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+        c.enqueue(
+          enc.encode(`event: thread\r\ndata: ${JSON.stringify({ threadId: "t1" })}\r\n\r\n`),
+        );
+      },
+    });
+    let chatCalls = 0;
+    let steerBody: Record<string, unknown> = {};
+    globalThis.fetch = vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).includes("/agent/chat")) {
+        chatCalls++;
+        if (chatCalls === 1) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            body: held,
+            headers: {
+              get: (k: string) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null),
+            },
+          } as unknown as Response);
+        }
+        steerBody = JSON.parse(init!.body as string) as Record<string, unknown>;
+        return Promise.resolve(resp202("e1"));
+      }
+      return Promise.resolve({ ok: true, json: async () => [] } as unknown as Response);
+    });
+
+    const hook = renderHook(() => useChat());
+    let sendP!: Promise<void>;
+    await act(async () => {
+      sendP = sendMessage("first", { mode: "cloud", skills: ["deploy"] });
+    });
+    expect(hook.result.current.status).toBe("streaming");
+
+    await act(async () => {
+      await sendMessage("steer", { agent: "ops", mode: "local", skills: ["backups"] });
+    });
+    expect(steerBody.agent).toBe("ops"); // the steer's own agent rode its own POST
+
+    // The live turn suspends on a confirm — the pins taken at part.added must be the FRESH send's.
+    const push = (event: string, data: unknown) =>
+      controller.enqueue(enc.encode(`event: ${event}\r\ndata: ${JSON.stringify(data)}\r\n\r\n`));
+    push("message.start", { messageId: "m1" });
+    push("part.added", {
+      messageId: "m1",
+      part: { type: "tool_call", call_id: "c1", tool: "wake_host", args: {}, state: "pending" },
+    });
+    push("tool.permission", { callId: "c1", token: "tok-1" });
+    push("done", { state: "suspended" });
+    controller.close();
+    await act(async () => {
+      await sendP;
+    });
+
+    let resumeBody: Record<string, unknown> = {};
+    globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      resumeBody = JSON.parse(init!.body as string) as Record<string, unknown>;
+      return Promise.resolve(sseResponse([{ event: "done", data: { state: "completed" } }]));
+    });
+    await act(async () => {
+      await resumeCall("c1", "execute");
+    });
+    expect(resumeBody.mode).toBe("cloud"); // NOT the steer's "local"
+    expect(resumeBody.skills).toEqual(["deploy"]); // NOT the steer's ["backups"]
+
+    // drain the fire-and-forget probe chain so it can't bleed into the next case (see the D41 block)
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 320));
     });
   });
 });

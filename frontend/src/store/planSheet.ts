@@ -1,29 +1,35 @@
 // Composer plan-sheet open/closed state. The plan pill (in the composer's controls row) and the plan sheet
 // (the frosted panel that peeks up from the composer's top edge) are mounted in DIFFERENT DOM locations but
 // share this ONE flag — so neither needs a common parent holding state, and toggling the sheet never
-// re-renders the app shell (the pill/sheet self-subscribe; see kit/composer/plan). Dep-free `createStore`
-// (D23), exactly like `cosmosDive`. `false` = collapsed.
+// re-renders the app shell (the pill/sheet self-subscribe; see kit/composer/plan).
+//
+// The flag itself now LIVES in `store/composerOverlay` (A6): the plan sheet is one of three surfaces that
+// hover over the composer's top edge, and only one may be open. This module stays the plan sheet's public
+// face — same three exports, same semantics — and simply addresses the `"plan"` slot of the shared
+// coordinator, so every existing caller (pill, sheet, pinned panel, cosmos/frontier Fleet) is untouched.
 
 import { useEffect } from "react";
 
 import type { Plan } from "../types";
-import { createStore } from "./createStore";
+import {
+  getComposerOverlay,
+  releaseComposerOverlay,
+  setComposerOverlay,
+  useComposerOverlayOpen,
+} from "./composerOverlay";
 
-const { emit, useStore } = createStore();
-let open = false;
-
-/** Open/close (or, with no arg, toggle) the composer plan sheet. Idempotent — only emits on a real change. */
+/** Open/close (or, with no arg, toggle) the composer plan sheet. Idempotent — only emits on a real change.
+ *  Opening CLAIMS the shared composer-overlay slot (closing the suggest popover / tools menu); closing
+ *  RELEASES it only if the plan sheet still holds it. */
 export function setPlanSheetOpen(next?: boolean): void {
-  const value = next ?? !open;
-  if (value !== open) {
-    open = value;
-    emit();
-  }
+  const value = next ?? getComposerOverlay() !== "plan";
+  if (value) setComposerOverlay("plan");
+  else releaseComposerOverlay("plan");
 }
 
 /** Whether the composer plan sheet is open. */
 export function usePlanSheetOpen(): boolean {
-  return useStore(() => open);
+  return useComposerOverlayOpen("plan");
 }
 
 /** Reset the open flag when the plan goes away (A4). The flag is SHARED across plan changes so it survives

@@ -31,6 +31,12 @@ import {
 import { PRIVILEGE_LEVELS } from "../../src/lib/privilege";
 import * as chat from "../../src/store/chat";
 import { clearDraft, getDraft, setDraft, useDraft } from "../../src/store/composer";
+import {
+  clearComposerScope,
+  getComposerScope,
+  setScopeAgent,
+  toggleScopeSkill,
+} from "../../src/store/composerScope";
 import { setUI } from "../../src/store/ui";
 
 // loadSkills/loadAgents fire a best-effort fetch on import; make it a quiet no-op so nothing hits the
@@ -171,6 +177,77 @@ describe("runComposer routing", () => {
     runComposer("/stale");
     expect(chat.setSessionMode).toHaveBeenCalledTimes(1); // the stale verb never became known
     expect(chat.pushSystemNote).toHaveBeenCalledWith(expect.stringContaining("unknown command"));
+  });
+});
+
+// A6 — the composer tools/skills MENU arms a ONE-SHOT scope for the NEXT message; `runComposer` is where it
+// is applied or overridden. The pinned precedence rule: a plain NL send CARRIES the arming (and spends it);
+// an EXPLICIT `/verb` send WINS over the menu — it spends the arming WITHOUT applying it.
+describe("runComposer × the one-shot menu scope (A6)", () => {
+  beforeEach(() => clearComposerScope());
+
+  it("a plain NL send carries the armed agent + skills, then clears the arming", () => {
+    setScopeAgent("ops");
+    toggleScopeSkill("deploy");
+    runComposer("wake the vault");
+    expect(chat.sendMessage).toHaveBeenCalledWith("wake the vault", {
+      raw: "wake the vault",
+      agent: "ops",
+      skills: ["deploy"],
+    });
+    expect(getComposerScope()).toEqual({ agent: null, skills: [] }); // spent by the message it rode
+  });
+
+  it("nothing armed → the call shape is exactly what it was before A6", () => {
+    runComposer("wake the vault");
+    expect(chat.sendMessage).toHaveBeenCalledWith("wake the vault", { raw: "wake the vault" });
+  });
+
+  it("an explicit `/skill` send WINS: the arming is cleared, never merged", async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
+      String(url).includes("/api/skills")
+        ? Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([{ name: "deploy" }]),
+          } as Response)
+        : Promise.resolve({ ok: false } as Response),
+    );
+    await loadSkills();
+    setScopeAgent("ops");
+    toggleScopeSkill("backups");
+    runComposer("/deploy do it");
+    // the hand-routed skill alone — no `agent`, no `backups`
+    expect(chat.sendMessage).toHaveBeenCalledWith("do it", {
+      skills: ["deploy"],
+      raw: "/deploy do it",
+    });
+    expect(getComposerScope()).toEqual({ agent: null, skills: [] });
+  });
+
+  it("an explicit `/<provider> <msg>` send wins the same way", async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
+      String(url).includes("/api/providers")
+        ? Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ verbs: ["llamacpp"] }),
+          } as Response)
+        : Promise.resolve({ ok: false } as Response),
+    );
+    await loadProviders();
+    setScopeAgent("ops");
+    runComposer("/llamacpp ping");
+    expect(chat.sendMessage).toHaveBeenCalledWith("ping", {
+      mode: "llamacpp",
+      raw: "/llamacpp ping",
+    });
+    expect(getComposerScope().agent).toBe(null);
+  });
+
+  it("a verb that sends NO message leaves the arming alone — it's still for the NEXT message", () => {
+    setScopeAgent("ops");
+    runComposer("/help");
+    runComposer("/privilege full");
+    expect(getComposerScope().agent).toBe("ops");
   });
 });
 
