@@ -1,8 +1,10 @@
 import { useRef } from "react";
 
 import { useComposer } from "../../../hooks/useComposer";
+import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
 import { MicIcon, SendArrowheadIcon, StopSquareIcon } from "./icons";
+import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
 import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 
@@ -33,6 +35,8 @@ export function LineComposer({ controlsStart, overlay }: ComposerSlots = {}) {
   const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
+  // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.
+  const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
 
   // The trailing controls (owner eyeball 2026-07-11, revising the original full-morph): the MIC is visible
   // whenever dictation is configured — it must never vanish just because text exists — and SEND joins it (to
@@ -49,6 +53,7 @@ export function LineComposer({ controlsStart, overlay }: ComposerSlots = {}) {
       {/* `overlay` slot — a positioned sibling ABOVE `.kit-composer` (e.g. the plan sheet). Rendered before
           the bar so, at equal stacking, the floating composer paints over the overlay's tucked bottom edge. */}
       {overlay}
+      <SuggestPopover suggest={suggest} />
       <div className="kit-composer line" id="composer">
         {/* `controlsStart` slot — the in-row plan pill FLUSH at the leading edge (owner eyeball: mirror how
             the mic/send hug the trailing edge; this IS A4's `planPill: inline` semantics; with `pinned` the
@@ -62,8 +67,11 @@ export function LineComposer({ controlsStart, overlay }: ComposerSlots = {}) {
           // deliberate delta from the Kit's long "How can I help you today?").
           placeholder="Message"
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onKeyDown}
+          onChange={(e) => suggest.onDraftChange(e.target.value)}
+          onKeyDown={suggest.onKeyDown}
+          onFocus={suggest.onFocus}
+          onBlur={suggest.onBlur}
+          {...suggest.aria}
         />
         {/* ROADMAP A8 attach button lands HERE (trailing of the field, leading of the mic/send),
             capability-gated like the mic. Nothing is reserved in the DOM until then. */}

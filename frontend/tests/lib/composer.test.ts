@@ -20,7 +20,15 @@ vi.mock("../../src/store/chat", () => ({
 }));
 vi.mock("../../src/store/ui", () => ({ setUI: vi.fn() }));
 
-import { fillComposer, loadProviders, loadSkills, runComposer } from "../../src/lib/composer";
+import {
+  fillComposer,
+  getCompletions,
+  loadAgents,
+  loadProviders,
+  loadSkills,
+  runComposer,
+} from "../../src/lib/composer";
+import { PRIVILEGE_LEVELS } from "../../src/lib/privilege";
 import * as chat from "../../src/store/chat";
 import { clearDraft, getDraft, setDraft, useDraft } from "../../src/store/composer";
 import { setUI } from "../../src/store/ui";
@@ -131,6 +139,11 @@ describe("runComposer routing", () => {
     expect(chat.pushSystemNote).toHaveBeenCalledWith(expect.stringContaining("unknown level"));
   });
 
+  it("`/priv` still routes as the `/privilege` alias (the built-in table's alias column)", () => {
+    runComposer("/priv confirm");
+    expect(chat.setSessionPrivilege).toHaveBeenCalledWith("confirm");
+  });
+
   it("an unknown slash verb gets a note, not the agent", () => {
     runComposer("/definitelynotacommand");
     expect(chat.pushSystemNote).toHaveBeenCalledWith(expect.stringContaining("unknown command"));
@@ -158,6 +171,98 @@ describe("runComposer routing", () => {
     runComposer("/stale");
     expect(chat.setSessionMode).toHaveBeenCalledTimes(1); // the stale verb never became known
     expect(chat.pushSystemNote).toHaveBeenCalledWith(expect.stringContaining("unknown command"));
+  });
+});
+
+// A2 — the composer autocomplete GRAMMAR. `getCompletions` is pure over the draft + the three loaded verb
+// sets, and shares its precedence rules (and its built-in table) with `routeSlash`, so a suggestion can
+// never be something the router wouldn't run.
+describe("getCompletions (A2)", () => {
+  const values = (draft: string) => getCompletions(draft).map((c) => c.value);
+  const kinds = (draft: string) => getCompletions(draft).map((c) => c.kind);
+
+  beforeEach(async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/api/skills"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve([{ name: "deploy" }, { name: "clear" }, { name: "cloud-sync" }]),
+        } as Response);
+      if (u.includes("/api/providers"))
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ verbs: ["llamacpp", "cloudy", "deploy", "help"] }),
+        } as Response);
+      if (u.includes("/api/agents"))
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ agents: ["default", "ops", "research"], default: "default" }),
+        } as Response);
+      return Promise.resolve({ ok: false } as Response);
+    });
+    await Promise.all([loadSkills(), loadProviders(), loadAgents()]);
+  });
+
+  it("suggests nothing for a shell line, plain text, or an empty draft", () => {
+    expect(getCompletions("!ls -la")).toEqual([]);
+    expect(getCompletions("wake the vault")).toEqual([]);
+    expect(getCompletions("")).toEqual([]);
+    expect(getCompletions("   ")).toEqual([]);
+  });
+
+  it("first token: built-ins, then skills, then providers (the routing precedence, in that order)", () => {
+    expect(values("/c")).toEqual(["compact", "clear", "cloud-sync", "cloudy"]);
+    expect(kinds("/c")).toEqual(["builtin", "builtin", "skill", "provider"]);
+  });
+
+  it("drops names a higher tier shadows — they could never route", () => {
+    // the `clear` SKILL is shadowed by the built-in (above); `deploy` the PROVIDER by the `deploy` skill;
+    // `help` the PROVIDER by the built-in.
+    expect(kinds("/dep")).toEqual(["skill"]);
+    expect(kinds("/hel")).toEqual(["builtin"]);
+  });
+
+  it("`/agent ` lists the configured agents; a partial second token filters them", () => {
+    expect(values("/agent ")).toEqual(["default", "ops", "research"]);
+    expect(kinds("/agent ")).toEqual(["agent", "agent", "agent"]);
+    expect(values("/agent re")).toEqual(["research"]);
+  });
+
+  it("`/privilege ` (and its `/priv` alias) offers the SHARED privilege ladder", () => {
+    const ladder = PRIVILEGE_LEVELS.map((l) => l.val);
+    expect(values("/privilege ")).toEqual(ladder);
+    expect(values("/priv ")).toEqual(ladder);
+    expect(kinds("/priv ")).toEqual(ladder.map(() => "privilege"));
+    expect(values("/priv a")).toEqual(["auto_low"]);
+  });
+
+  it("stops after a verb that takes free text, and after the second token", () => {
+    expect(getCompletions("/compact ")).toEqual([]);
+    expect(getCompletions("/deploy do it")).toEqual([]);
+    expect(getCompletions("/agent ops ")).toEqual([]);
+    expect(getCompletions("/agent ops x")).toEqual([]);
+  });
+
+  it("a fully typed SOLE candidate stops suggesting (so Enter sends `/clear` instead of accepting it)", () => {
+    expect(values("/clea")).toEqual(["clear"]);
+    expect(getCompletions("/clear")).toEqual([]);
+    expect(getCompletions("/agent research")).toEqual([]);
+  });
+
+  it("`insert` replaces the whole token — the first one keeps its sigil, later ones don't", () => {
+    expect(getCompletions("/clea")[0]?.insert).toBe("/clear");
+    expect(getCompletions("/agent re")[0]?.insert).toBe("research");
+  });
+
+  it("ONE built-in table drives both `/help` and the completions (no second list)", () => {
+    runComposer("/help");
+    const help = vi.mocked(chat.pushSystemNote).mock.calls.at(-1)?.[0] ?? "";
+    const builtins = getCompletions("/").filter((c) => c.kind === "builtin");
+    expect(builtins.length).toBeGreaterThan(0);
+    for (const b of builtins) expect(help).toContain(`/${b.value} `);
   });
 });
 

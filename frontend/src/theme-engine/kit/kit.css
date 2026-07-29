@@ -514,6 +514,65 @@ body[data-perf="lite"] .kit-composer {
   transform: none;
 }
 
+/* ── composer · slash-suggest popover (A2) — LAYOUT-agnostic ────────────────────────────────────────────
+ * A positioned SIBLING of `.kit-composer` (rendered by every variant, like the plan sheet's `overlay`),
+ * anchored above the composer's top edge off the measured `--composer-h` — the same anchor the plan sheet
+ * uses, so the two agree at any layout/density. z 5 puts it over the composer (z 4) and the plan sheet's
+ * peek (z 3): it hovers, it never tucks. Semantic tokens only; the `.priv-menu` recipe (surface + line-2 +
+ * radius-sm + a lifted shadow, accent-soft for the active row) so the app has ONE popover look. */
+.kit .kit-suggest {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: calc(var(--composer-h, 64px) + 20px);
+  z-index: 5;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 40vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+/* the DOCKED composer sits at bottom:0 (the others float 12px up) — drop that inset, keep the 8px gap.
+ * Same `:has()` probe the plan sheet uses for the identical reason (edge #7). */
+.kit-main:has(.kit-composer.sheet) .kit-suggest {
+  bottom: calc(var(--composer-h, 64px) + 8px);
+}
+.kit .kit-suggest li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.kit .kit-suggest li.active {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.kit .kit-suggest .sg-val {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  overflow-wrap: anywhere; /* a long skill name wraps, never widens the popover (§14.11) */
+}
+.kit .kit-suggest .sg-kind {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--text-3);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 /* ── composer · DOCKED "sheet" variant (SheetComposer, COMPOSER_SURFACE_PLAN §3.3) ──────────────────────
  * vapor's rounded-dock LOOK ported to the Kit's SEMANTIC tokens: full-width bar pinned to the screen bottom
  * with a rounded top, an embedded borderless accent mic inside the field, and a tall full-height send block

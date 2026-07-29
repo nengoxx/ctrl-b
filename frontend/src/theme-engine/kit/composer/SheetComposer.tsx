@@ -1,8 +1,10 @@
 import { useRef } from "react";
 
 import { useComposer } from "../../../hooks/useComposer";
+import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
 import { MicIcon, SendArrowheadIcon, StopSquareIcon } from "./icons";
+import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
 import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 
@@ -22,12 +24,15 @@ export function SheetComposer({ controlsStart, overlay }: ComposerSlots = {}) {
   const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
+  // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.
+  const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
 
   return (
     <>
       {/* `overlay` slot — a positioned sibling ABOVE `.kit-composer` (e.g. the plan sheet). Rendered before
           the bar so, at equal stacking, the docked composer paints over the overlay's tucked bottom edge. */}
       {overlay}
+      <SuggestPopover suggest={suggest} />
       <div className="kit-composer sheet" id="composer">
         <div className="sheet-row">
           <div className="field">
@@ -45,8 +50,11 @@ export function SheetComposer({ controlsStart, overlay }: ComposerSlots = {}) {
               // scrolled to read). A one-line bar wants a short placeholder.
               placeholder="Message"
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={onKeyDown}
+              onChange={(e) => suggest.onDraftChange(e.target.value)}
+              onKeyDown={suggest.onKeyDown}
+              onFocus={suggest.onFocus}
+              onBlur={suggest.onBlur}
+              {...suggest.aria}
             />
             {sttReady && (
               <button

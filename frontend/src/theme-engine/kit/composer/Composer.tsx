@@ -1,10 +1,12 @@
 import { useRef, type ReactNode } from "react";
 
 import { useComposer } from "../../../hooks/useComposer";
+import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
 import { useUISlice } from "../../../store/ui";
 import { useComposerSkin } from "../axes";
 import { SendArrowheadIcon, StopSquareIcon } from "./icons";
+import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
 import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 
@@ -37,6 +39,9 @@ export function KitComposer({
   const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
   // Shared presentational chrome (mic-press toggle, auto-grow, Enter-to-send) — §3.1.
   const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
+  // Slash autocomplete (A2) — headless; its `onKeyDown` wraps the chrome's so the popover gets the arrow/
+  // Enter/Tab/Esc keys first and everything else still sends.
+  const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
   // The resolved composer skin picks the DEFAULT send glyph (glass → the arrowhead, the old Borderless glyph);
   // an explicit `sendIcon` prop still wins. Kit components may import BOTH the store and the registry-backed
   // resolver — only store→registry is the forbidden cycle. (§14.16)
@@ -48,6 +53,7 @@ export function KitComposer({
       {/* `overlay` slot — a positioned sibling ABOVE `.kit-composer` (e.g. the plan sheet). Rendered before
           the bar so, at equal stacking, the composer paints over the overlay's tucked bottom edge. */}
       {overlay}
+      <SuggestPopover suggest={suggest} />
       <div className={"kit-composer stacked" + (rootClass ? " " + rootClass : "")} id="composer">
         <div className="field">
           <textarea
@@ -56,8 +62,11 @@ export function KitComposer({
             rows={1}
             placeholder="How can I help you today?"
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKeyDown}
+            onChange={(e) => suggest.onDraftChange(e.target.value)}
+            onKeyDown={suggest.onKeyDown}
+            onFocus={suggest.onFocus}
+            onBlur={suggest.onBlur}
+            {...suggest.aria}
           />
         </div>
         <div className="crow">
