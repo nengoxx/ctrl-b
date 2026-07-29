@@ -151,6 +151,23 @@ describe("tools menu — arming", () => {
     expect(trigger(container).querySelector(".tools-dot")).toBe(null); // reflected ≠ armed
   });
 
+  // Codex, verify round — `/agent typo` stays sticky ON PURPOSE (the backend falls back to the default and
+  // routeSlash already warned), but "typo" matches no row: reflecting it verbatim left EVERY radio
+  // unchecked, i.e. the panel claiming the next message goes nowhere. The default row is where it goes.
+  it("a sticky agent that isn't configured reads as the DEFAULT row, not an empty group", () => {
+    setSessionAgent("typo");
+    const { container } = renderComposer();
+    fireEvent.click(trigger(container));
+    expect(
+      radios(container)
+        .filter((r) => r.checked)
+        .map(rowName),
+    ).toEqual(["default"]);
+    expect(trigger(container).querySelector(".tools-dot")).toBe(null); // reflected ≠ armed
+    // …and the DISPLAY normalization never touches the sticky value the send path reads
+    expect(getComposerScope().agent).toBe(undefined);
+  });
+
   it("picking the DEFAULT row over a sticky pick arms an explicit `null` (not 'nothing armed')", () => {
     setSessionAgent("ops");
     const { container } = renderComposer();

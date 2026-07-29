@@ -90,8 +90,9 @@ export function useComposerSuggest({
   // Overlay coexistence (A6): the popover, the plan sheet and the tools menu all hover over the composer's
   // top edge, so exactly one may be open — `store/composerOverlay` holds that single owner slot. The
   // popover's own policy decides when it WANTS to be open; the slot decides whether it gets to be. Claiming
-  // on the want-transition (not on every render) is what lets a menu/plan tap displace it: the popover stays
-  // down until the next keystroke re-arms it, instead of fighting back on the very next render.
+  // on the want-transition and on each KEYSTROKE (not on every render) is what lets a menu/plan tap displace
+  // it: the popover stays down until the next keystroke re-claims it, instead of fighting back on the very
+  // next render.
   const wantOpen = armed && !dismissed && items.length > 0;
   const hasSlot = useComposerOverlayOpen("suggest");
   const open = wantOpen && hasSlot;
@@ -104,17 +105,39 @@ export function useComposerSuggest({
   // arrowing (or tapping) onto a LONGER row makes the active one non-exact again, so Enter accepts.
   // Enter only: Tab is an explicit completion key, and completing to yourself still appends the
   // separating space that moves the caret to the next token.
-  const exactActive = items[active]?.insert.toLowerCase() === tokenAt(draft).toLowerCase();
+  //
+  // "Exactly" is CASE-SENSITIVE for skills and case-INSENSITIVE for everything else (Codex, verify round).
+  // A skill's `insert` is its CANONICAL free-form name and case-only siblings are separately routable
+  // (`Ops` beside `OPS` — see `lib/composer`'s bucket map), so a typed `/ops` is NOT the row it highlights:
+  // sending it hands `resolveSkill` an ambiguous fold that resolves to nothing, i.e. "unknown command",
+  // where accepting the row gives the user a name that routes. Every other kind is lowercase by
+  // construction (built-in verbs, provider slugs, agent slugs, privilege levels) and routing lowercases the
+  // verb it parses, so a case-folded `/CLEAR` IS fully typed and must still fall through to send.
+  const activeItem = items[active];
+  const exactActive =
+    activeItem !== undefined &&
+    (activeItem.kind === "skill"
+      ? activeItem.insert === tokenAt(draft)
+      : activeItem.insert.toLowerCase() === tokenAt(draft).toLowerCase());
 
+  // Claiming keys off the DRAFT as well as the want-transition (Codex, verify round). `wantOpen` alone
+  // meant a displacement was permanent: the menu/plan takes the slot, `wantOpen` never changes (it's still
+  // a `/verb` draft, still armed), so the effect never re-ran and no amount of typing brought the popover
+  // back. Re-claiming per keystroke keeps the displacement — the popover stays down until the user types
+  // again — while still deferring to the surface that displaced it in between. Deliberately NOT keyed on
+  // the slot itself: an effect that re-claims when it sees another owner would fight the menu on the very
+  // next render, which is the pairwise "opening X closes Y" tangle the slot exists to replace.
   useEffect(() => {
     if (wantOpen) setComposerOverlay("suggest");
     else releaseComposerOverlay("suggest");
-    // …and hand the slot back on UNMOUNT (Codex, round 2): a tab or layout swap that drops the composer
-    // takes the popover with it, and a slot still naming a surface that no longer exists is an invisible
-    // owner — nothing else can claim it. Guarded, for the same reason the `else` branch is: if another
-    // surface displaced us it owns the slot now and must keep it.
-    return () => releaseComposerOverlay("suggest");
-  }, [wantOpen]);
+  }, [wantOpen, draft]);
+
+  // Hand the slot back on UNMOUNT (Codex, round 2): a tab or layout swap that drops the composer takes the
+  // popover with it, and a slot still naming a surface that no longer exists is an invisible owner —
+  // nothing else can claim it. Its OWN effect, so the release fires only on unmount and not after every
+  // keystroke of the effect above. Guarded, for the same reason the `else` branch is: if another surface
+  // displaced us it owns the slot now and must keep it.
+  useEffect(() => () => releaseComposerOverlay("suggest"), []);
 
   function accept(item: Completion): void {
     setDraft(replaceToken(draft, item.insert));

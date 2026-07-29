@@ -64,7 +64,20 @@ export function ToolsMenuSheet() {
   // one, else the sticky `/agent <name>` a plain send would use, else the configured default. Reading the
   // sticky pick non-reactively is safe — it only changes by SENDING `/agent …`, and typing that `/` hands
   // the overlay slot to the suggest popover, which unmounts this panel; reopening re-reads.
-  const effectiveAgent = scope.agent !== undefined ? scope.agent : getSessionAgent();
+  //
+  // A sticky name that isn't a CONFIGURED agent reads as the default row (Codex, verify round). `/agent
+  // typo` stays sticky on purpose — the backend falls back to the default agent and `routeSlash` already
+  // warned — but "typo" matches no row, so reflecting it verbatim left the whole group unchecked, i.e. the
+  // panel claiming the next message goes nowhere. The default row is where it actually goes, so that's what
+  // gets ticked. DISPLAY only: the sticky value and the send path are untouched, and `armed` (the dot) still
+  // keys off the one-shot alone.
+  const sticky = getSessionAgent();
+  const effectiveAgent =
+    scope.agent !== undefined
+      ? scope.agent
+      : sticky !== null && agents.includes(sticky)
+        ? sticky
+        : null;
 
   return (
     <div

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useComposerSuggest } from "../../src/hooks/useComposerSuggest";
 import { loadSkills } from "../../src/lib/composer";
 import { clearDraft, getDraft } from "../../src/store/composer";
+import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
 import { setPlanSheetOpen, usePlanSheetOpen } from "../../src/store/planSheet";
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
 
@@ -34,12 +35,26 @@ function key(k: string, extra: { shiftKey?: boolean; composing?: boolean } = {})
 /** Drive the hook against a locally-held draft (the variants hold theirs in store/composer). */
 function harness(initialDraft = "") {
   const base = vi.fn();
-  const { result } = renderHook(() => {
+  const { result, unmount } = renderHook(() => {
     const [draft, setDraft] = useState(initialDraft);
     const suggest = useComposerSuggest({ draft, setDraft, onKeyDown: base });
     return { draft, suggest, planOpen: usePlanSheetOpen() };
   });
-  return { result, base };
+  return { result, base, unmount };
+}
+
+/** Install a skills set through the REAL loader — the verb sets are private module state, so the only way
+ *  in is the fetch the loader makes. `[]` hands the next describe an empty one back. */
+async function loadSkillSet(names: string[]) {
+  globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
+    String(url).includes("/api/skills")
+      ? Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(names.map((name) => ({ name }))),
+        } as Response)
+      : Promise.resolve({ ok: false } as Response),
+  );
+  await loadSkills();
 }
 
 describe("useComposerSuggest — open policy", () => {
@@ -82,6 +97,31 @@ describe("useComposerSuggest — open policy", () => {
     act(() => result.current.suggest.onDraftChange("/c"));
     expect(result.current.suggest.open).toBe(true);
     expect(result.current.planOpen).toBe(false);
+  });
+
+  // Codex, verify round — the claim used to key off the WANT transition alone, so a displacement was
+  // permanent: the menu takes the slot, `wantOpen` never changes (still armed, still a `/verb`), and no
+  // amount of typing brought the popover back for the rest of the composer's life.
+  it("a displacement keeps the popover down — and the NEXT keystroke re-claims the slot", () => {
+    const { result } = harness();
+    act(() => result.current.suggest.onDraftChange("/c"));
+    expect(result.current.suggest.open).toBe(true);
+
+    act(() => setComposerOverlay("menu")); // the tools menu (or the plan sheet) takes the slot
+    expect(result.current.suggest.open).toBe(false);
+    expect(getComposerOverlay()).toBe("menu"); // …and the popover does NOT fight back on the next render
+
+    act(() => result.current.suggest.onDraftChange("/cl"));
+    expect(result.current.suggest.open).toBe(true);
+    expect(getComposerOverlay()).toBe("suggest");
+  });
+
+  it("hands the slot back on unmount (the release now lives in its own effect)", () => {
+    const { result, unmount } = harness();
+    act(() => result.current.suggest.onDraftChange("/c"));
+    expect(getComposerOverlay()).toBe("suggest");
+    unmount();
+    expect(getComposerOverlay()).toBe(null);
   });
 });
 
@@ -186,17 +226,6 @@ describe("useComposerSuggest — keyboard", () => {
 // `clear` + skill `clear-cache`) used to be accepted by Enter instead of sent. The rule is about the
 // ACTIVE row, so it also covers the sole-candidate case the grammar used to special-case.
 describe("useComposerSuggest — Enter on an already-complete verb", () => {
-  const loadSkillSet = async (names: string[]) => {
-    globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
-      String(url).includes("/api/skills")
-        ? Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve(names.map((name) => ({ name }))),
-          } as Response)
-        : Promise.resolve({ ok: false } as Response),
-    );
-    await loadSkills();
-  };
   beforeEach(async () => {
     await loadSkillSet(["clear-cache"]);
   });
@@ -233,6 +262,52 @@ describe("useComposerSuggest — Enter on an already-complete verb", () => {
     expect(result.current.suggest.items.map((i) => i.value)).toEqual(["compact"]);
     act(() => result.current.suggest.onKeyDown(key("Enter")));
     expect(result.current.draft).toBe("/compact");
+    expect(base).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Codex, verify round — "fully typed" is CASE-SENSITIVE for skills only. Skill names are free-form
+// server-side, so `Ops` and `OPS` are two real, separately-routable skills (lib/composer's bucket map);
+// a typed `/ops` matches NEITHER by exact name, and `resolveSkill` refuses to guess between them.
+describe("useComposerSuggest — case-only skill siblings", () => {
+  beforeEach(async () => {
+    await loadSkillSet(["Ops", "OPS"]);
+  });
+  afterEach(async () => {
+    await loadSkillSet([]);
+  });
+
+  it("a typed FOLD is not the canonical row: Enter accepts it instead of sending an ambiguous verb", () => {
+    const { result, base } = harness();
+    act(() => result.current.suggest.onDraftChange("/ops"));
+    expect(result.current.suggest.items.map((i) => i.value)).toEqual(["Ops", "OPS"]);
+    act(() => result.current.suggest.onKeyDown(key("Enter")));
+    expect(result.current.draft).toBe("/Ops "); // sending `/ops` would have been "unknown command"
+    expect(base).not.toHaveBeenCalled();
+  });
+
+  it("arrowing onto the sibling accepts THAT canonical", () => {
+    const { result } = harness();
+    act(() => result.current.suggest.onDraftChange("/ops"));
+    act(() => result.current.suggest.onKeyDown(key("ArrowDown")));
+    act(() => result.current.suggest.onKeyDown(key("Enter")));
+    expect(result.current.draft).toBe("/OPS ");
+  });
+
+  it("the EXACT canonical is fully typed and falls through to send (the router matches it by name)", () => {
+    const { result, base } = harness();
+    act(() => result.current.suggest.onDraftChange("/Ops"));
+    act(() => result.current.suggest.onKeyDown(key("Enter")));
+    expect(result.current.draft).toBe("/Ops");
+    expect(base).toHaveBeenCalledTimes(1);
+  });
+
+  it("the other kinds stay case-INSENSITIVE: `/CLEAR` is a fully-typed built-in and sends", () => {
+    const { result, base } = harness();
+    act(() => result.current.suggest.onDraftChange("/CLEAR"));
+    expect(result.current.suggest.items.map((i) => i.value)).toEqual(["clear"]);
+    act(() => result.current.suggest.onKeyDown(key("Enter")));
+    expect(result.current.draft).toBe("/CLEAR"); // routing lowercases the verb — nothing to complete
     expect(base).toHaveBeenCalledTimes(1);
   });
 });
