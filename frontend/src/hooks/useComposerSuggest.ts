@@ -16,7 +16,8 @@ import {
 //   • NEVER opens on mount — a `/…` draft restored from localStorage (store/composer persists it) must not
 //     pop a menu over a page the user just reloaded. It arms on the first focus/keystroke instead.
 //   • The popover intercepts Enter BEFORE the send handler, so it must fall through cleanly: closed → send,
-//     IME-composing → neither (the keystroke belongs to the input method).
+//     active row already fully typed → send (`exactActive` below), IME-composing → neither (the keystroke
+//     belongs to the input method).
 
 /** The listbox element id — one composer is mounted at a time, like `#cmd-input`/`#composer`. */
 const LISTBOX_ID = "composer-suggest";
@@ -29,11 +30,15 @@ export interface ComposerSuggest {
   /** Stable per-row option id for `aria-activedescendant`. */
   optionId: (i: number) => string;
   /** APG editable-combobox-with-list wiring — spread onto the textarea. DOM focus never leaves the field;
-   *  the active option is announced through `aria-activedescendant`. */
+   *  the active option is announced through `aria-activedescendant`.
+   *
+   *  No `role="combobox"` and no `aria-expanded`: ARIA-in-HTML lists NO role as allowed on `<textarea>`
+   *  (it is an implicit `textbox`, and combobox is non-conforming there), and `aria-expanded` is not a
+   *  supported attribute of `textbox`. The three that ARE valid on a textbox carry the pattern on their
+   *  own — the listbox is `aria-controls`-linked and the active row is named via `aria-activedescendant`,
+   *  which is only emitted while the popover is open. */
   aria: {
-    role: "combobox";
     "aria-autocomplete": "list";
-    "aria-expanded": boolean;
     "aria-controls": string | undefined;
     "aria-activedescendant": string | undefined;
   };
@@ -55,10 +60,15 @@ export interface ComposerSuggestInput {
   onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
 }
 
-/** Replace the token under the caret — the trailing run of non-space text, empty right after a space —
- *  and leave a trailing space so the next token (an agent name, a level, the message) starts clean. */
+/** The token under the caret — the trailing run of non-space text, empty right after a space. */
+function tokenAt(draft: string): string {
+  return /\S*$/.exec(draft)?.[0] ?? "";
+}
+
+/** Replace the token under the caret and leave a trailing space so the next token (an agent name, a
+ *  level, the message) starts clean. */
 function replaceToken(draft: string, insert: string): string {
-  return draft.replace(/\S*$/, "") + insert + " ";
+  return draft.slice(0, draft.length - tokenAt(draft).length) + insert + " ";
 }
 
 export function useComposerSuggest({
@@ -86,6 +96,15 @@ export function useComposerSuggest({
   const hasSlot = useComposerOverlayOpen("suggest");
   const open = wantOpen && hasSlot;
   const active = items.length ? Math.min(activeIndex, items.length - 1) : 0;
+
+  // The active row is ALREADY exactly what's typed → accepting it would only re-insert it, so Enter is
+  // the user asking to SEND (`/clear` next to a `clear-cache` skill must send, not complete itself).
+  // One rule where there used to be a grammar-side "sole fully-typed candidate suggests nothing" special
+  // case: this covers the sole candidate too, and unlike it stays correct with siblings in the list —
+  // arrowing (or tapping) onto a LONGER row makes the active one non-exact again, so Enter accepts.
+  // Enter only: Tab is an explicit completion key, and completing to yourself still appends the
+  // separating space that moves the caret to the next token.
+  const exactActive = items[active]?.insert.toLowerCase() === tokenAt(draft).toLowerCase();
 
   useEffect(() => {
     if (wantOpen) setComposerOverlay("suggest");
@@ -130,6 +149,7 @@ export function useComposerSuggest({
         case "Enter":
         case "Tab":
           if (e.shiftKey) break; // Shift+Enter = newline · Shift+Tab = move focus out
+          if (e.key === "Enter" && exactActive) break; // nothing to accept → the send handler gets it
           e.preventDefault();
           accept(items[active]);
           return;
@@ -145,15 +165,19 @@ export function useComposerSuggest({
     listboxId: LISTBOX_ID,
     optionId: (i) => `${LISTBOX_ID}-opt-${i}`,
     aria: {
-      role: "combobox",
       "aria-autocomplete": "list",
-      "aria-expanded": open,
       "aria-controls": open ? LISTBOX_ID : undefined,
       "aria-activedescendant": open ? `${LISTBOX_ID}-opt-${active}` : undefined,
     },
     onKeyDown,
     onDraftChange,
-    onFocus: () => setArmed(true),
+    // Focus RE-ARMS and un-dismisses: the Esc latch is scoped to the visit it was pressed in. Leaving the
+    // field and coming back is the same gesture as focusing a fresh composer, and that opens (the policy
+    // above) — a latch surviving the round trip would silently mute the popover for the rest of the session.
+    onFocus: () => {
+      setArmed(true);
+      setDismissed(false);
+    },
     onBlur: () => setArmed(false),
     accept,
     setActiveIndex,

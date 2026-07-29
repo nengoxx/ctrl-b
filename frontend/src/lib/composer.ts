@@ -55,8 +55,13 @@ export function useVerbsVersion(): number {
 
 /** Names of discovered skills, so `/skill-name` routes as an invocation rather than "unknown command"
  *  (4.5). Loaded lazily from `GET /api/skills` and refreshed each time the composer module is used;
- *  the set is best-effort — an unknown `/verb` still falls through to the unknown-command note. */
-const knownSkills = new Set<string>();
+ *  the set is best-effort — an unknown `/verb` still falls through to the unknown-command note.
+ *
+ *  Keyed LOWERCASE → the CANONICAL name, because skill names are free-form (the backend reads them from
+ *  the skill's frontmatter/dir name, no case folding) while routing lowercases the verb it parses: a
+ *  case-sensitive set means `/OpsAssist` could never route, and a completion could insert a name the
+ *  router then rejects. The map resolves the verb and hands the CANONICAL name to the backend. */
+const knownSkills = new Map<string, string>();
 
 // Each loader is fired from several places (module import, CRUD invalidations, settings saves), so two
 // can be in flight at once. A per-loader generation counter, captured at call start and re-checked
@@ -68,7 +73,7 @@ let skillsGen = 0;
  *  private (routing owns it), so a UI read can never mutate the routing source. Pair with
  *  `useVerbsVersion()` for reactivity: a loader install bumps the version, the caller re-derives. */
 export function getKnownSkills(): string[] {
-  return [...knownSkills];
+  return [...knownSkills.values()];
 }
 
 export async function loadSkills(): Promise<void> {
@@ -79,7 +84,7 @@ export async function loadSkills(): Promise<void> {
     const skills = (await res.json()) as { name: string }[];
     if (gen !== skillsGen) return; // a newer load started → it owns the set
     knownSkills.clear();
-    for (const s of skills) knownSkills.add(s.name);
+    for (const s of skills) knownSkills.set(s.name.toLowerCase(), s.name);
     verbsChanged();
   } catch {
     /* best-effort — leave the set as-is */
@@ -88,7 +93,13 @@ export async function loadSkills(): Promise<void> {
 void loadSkills();
 
 /** Configured agent names, so `/agent <name>` can validate + the default is known (7d). Best-effort,
- *  same as the skills set; an unknown name still routes (the backend resolves gracefully). */
+ *  same as the skills set; an unknown name still routes (the backend resolves gracefully).
+ *
+ *  A plain Set for the same reason as the providers one: `GET /api/agents` lists only folders that
+ *  EQUAL their own slug (`backend/app/config.py` `list_agent_names`: `_slug(p.name) == p.name`, with
+ *  `_slug` = lowercase + non-alphanumerics → `-`), so every listed name is lowercase and whitespace-free.
+ *  A mixed-case `/agent Ops` genuinely isn't configured, and the "will fall back to default" warning
+ *  below is the correct answer rather than a lookup miss. */
 const knownAgents = new Set<string>();
 let defaultAgent = "default";
 let agentsGen = 0;
@@ -124,7 +135,12 @@ void loadAgents();
 /** Composer-routable provider names (A11/D48 C7), so `/<provider>` forces that inference backend.
  *  Loaded from `GET /api/providers` (`verbs` — the backend already applies the in-chain / sole-model
  *  and skill-shadow / reserved-name rules), refreshed on every settings save (useSaveSettings). The
- *  set is best-effort; an unknown `/verb` still falls through to the unknown-command note. */
+ *  set is best-effort; an unknown `/verb` still falls through to the unknown-command note.
+ *
+ *  A plain Set (not the skills map): a provider name IS its slug — `backend/app/config.py`
+ *  `_PROVIDER_SLUG_RE = ^[a-z0-9][a-z0-9_+.-]{0,31}$`, enforced as a pydantic field_validator on the
+ *  `providers` map, so a non-lowercase or whitespace-bearing key 422s the config load and the settings
+ *  PUT. Membership against the lowercased verb is therefore exact by construction. */
 const knownProviders = new Set<string>();
 let providersGen = 0;
 
@@ -287,11 +303,23 @@ function routeShell(cmd: string): void {
   void runShell(cmd);
 }
 
+/** A slash line split at its FIRST whitespace run — ONE tokenizer for `routeSlash` AND `getCompletions`
+ *  (they used to disagree: completions split on `\s+`, routing only on an ASCII space, so `/agent\tre`
+ *  suggested agents and then routed as an unknown command). Both fields are VERBATIM — `verb` is not
+ *  lowercased and `after` keeps its leading whitespace, because the two callers need different things:
+ *  routing wants the trimmed remainder, completions need to know whether a second token has started. */
+function splitSlashLine(text: string): { verb: string; after: string } {
+  const at = text.search(/\s/);
+  return at === -1
+    ? { verb: text.slice(1), after: "" }
+    : { verb: text.slice(1, at), after: text.slice(at) };
+}
+
 /** `/<verb> [args]` — slash commands. Unknown verbs get a one-line note rather than hitting the agent. */
 function routeSlash(text: string): void {
-  const sp = text.indexOf(" ");
-  const verb = (sp === -1 ? text : text.slice(0, sp)).slice(1).toLowerCase();
-  const rest = sp === -1 ? "" : text.slice(sp + 1).trim();
+  const { verb: typed, after } = splitSlashLine(text);
+  const verb = typed.toLowerCase();
+  const rest = after.trim();
   // The RAW composer line (WITH the `/prefix`) for a D41 Stop-harvest — the server stores only the
   // stripped `rest`, so a queued `/cloud do X` must restore `/cloud do X`, not `do X`.
   const raw = text;
@@ -300,17 +328,20 @@ function routeSlash(text: string): void {
   // skill wins (the backend also drops the shadowed provider from `verbs`). `getCompletions` offers the
   // same three tiers in the same order off the same sources.
   const builtin = BUILTIN_BY_VERB.get(verb);
+  const skill = knownSkills.get(verb);
   if (builtin) {
     builtin.run(rest);
-  } else if (knownSkills.has(verb)) {
-    // /skill-name <task> → run the task with that skill explicitly active (user-invoked, 4.5).
+  } else if (skill !== undefined) {
+    // /skill-name <task> → run the task with that skill explicitly active (user-invoked, 4.5). The
+    // CANONICAL name goes to the backend, not the lowercased verb — a skill's name is free-form and is
+    // also its lookup key server-side (`resolve_skills` matches by exact name).
     // A6: an EXPLICIT slash-routed send WINS over the tools/skills menu — the arming is dropped, not
     // merged (the owner just routed this message by hand). Same at the provider branch below; a verb that
     // sends NO message (/help, /clear, /agent…) leaves the arming alone — it's still for the next message.
     if (rest) {
       clearComposerScope();
-      void sendMessage(rest, { skills: [verb], raw });
-    } else pushSystemNote(`// /${verb} needs a task: /${verb} <what to do>`);
+      void sendMessage(rest, { skills: [skill], raw });
+    } else pushSystemNote(`// /${skill} needs a task: /${skill} <what to do>`);
   } else if (knownProviders.has(verb)) {
     // /<provider> [msg] → force that inference backend. With args = one-shot; bare = sticky.
     if (rest) {
@@ -343,21 +374,24 @@ export interface Completion {
 /** Completions for the token at the END of `draft`. Empty unless the draft's FIRST token is a `/verb` —
  *  `!shell` and plain agent chat never suggest. First token → built-ins > skills > providers (routing
  *  precedence, shadowed names dropped since they'd never route); `/agent <tab>` → configured agent names;
- *  `/privilege <tab>` (or its `/priv` alias) → the shared privilege ladder. Pure: no state, no effects. */
+ *  `/privilege <tab>` (or its `/priv` alias) → the shared privilege ladder. Pure: no state, no effects.
+ *
+ *  A fully-typed candidate is still LISTED (it may share a prefix with a longer one — `clear` beside
+ *  `clear-cache`); "there is nothing to accept, so Enter belongs to the send handler" is a KEY rule and
+ *  lives with the other keys, in `useComposerSuggest`. */
 export function getCompletions(draft: string): Completion[] {
   const text = draft.replace(/^\s+/, "");
   if (!text.startsWith("/")) return [];
+  const { verb, after } = splitSlashLine(text);
 
-  const parts = text.split(/\s+/);
-  if (parts.at(-1) === "") parts.pop(); // a trailing space closes the token before it
-  const fresh = /\s$/.test(text); // …and starts a new, empty one
-  const index = fresh ? parts.length : parts.length - 1;
-  const token = fresh ? "" : (parts.at(-1) ?? "");
-  const lower = token.toLowerCase();
+  // Only a name that is ONE grammar token can be offered: the tokenizer splits at the first whitespace,
+  // so a `My Skill` row would insert a line routing as the verb `my`. Skill names are free-form
+  // server-side (SKILL.md frontmatter, no slug check), so the guard is real, not defensive.
+  const typable = (n: string) => !/\s/.test(n);
 
-  let out: Completion[] = [];
-  if (index === 0) {
-    const prefix = lower.slice(1); // drop the sigil — the sets hold bare names
+  // FIRST token — nothing typed after the verb yet.
+  if (!after) {
+    const prefix = verb.toLowerCase();
     const hit = (n: string) => n.toLowerCase().startsWith(prefix);
     const shadowed = (n: string) => BUILTIN_BY_VERB.has(n.toLowerCase());
     const mk = (value: string, kind: CompletionKind): Completion => ({
@@ -365,30 +399,28 @@ export function getCompletions(draft: string): Completion[] {
       kind,
       insert: `/${value}`,
     });
-    out = [
+    return [
       ...BUILTIN_VERBS.filter((b) => hit(b.verb)).map((b) => mk(b.verb, "builtin")),
-      ...[...knownSkills].filter((n) => hit(n) && !shadowed(n)).map((n) => mk(n, "skill")),
+      ...[...knownSkills.values()]
+        .filter((n) => typable(n) && hit(n) && !shadowed(n))
+        .map((n) => mk(n, "skill")),
       ...[...knownProviders]
-        .filter((n) => hit(n) && !shadowed(n) && !knownSkills.has(n))
+        .filter((n) => hit(n) && !shadowed(n) && !knownSkills.has(n.toLowerCase()))
         .map((n) => mk(n, "provider")),
     ];
-  } else if (index === 1) {
-    const verb = (parts[0] ?? "").slice(1).toLowerCase();
-    const hit = (n: string) => n.toLowerCase().startsWith(lower);
-    const mk = (value: string, kind: CompletionKind): Completion => ({
-      value,
-      kind,
-      insert: value,
-    });
-    if (verb === "agent") {
-      out = [...knownAgents].filter(hit).map((n) => mk(n, "agent"));
-    } else if (BUILTIN_BY_VERB.get(verb)?.verb === "privilege") {
-      out = PRIVILEGE_LEVELS.filter((l) => hit(l.val)).map((l) => mk(l.val, "privilege"));
-    }
   }
 
-  // Nothing left to complete — the sole candidate is already fully typed. Also keeps Enter from being
-  // swallowed as an "accept" on a finished verb the user is trying to SEND (e.g. `/clear`).
-  if (out.length === 1 && out[0]?.insert.toLowerCase() === lower) return [];
-  return out;
+  // SECOND token — the run after that first whitespace. Whitespace INSIDE it means a third token has
+  // started, and no verb takes more than one completable argument.
+  const token = after.replace(/^\s+/, "");
+  if (!typable(token)) return [];
+  const lower = token.toLowerCase();
+  const head = verb.toLowerCase();
+  const hit = (n: string) => n.toLowerCase().startsWith(lower);
+  const mk = (value: string, kind: CompletionKind): Completion => ({ value, kind, insert: value });
+  if (head === "agent") return [...knownAgents].filter(hit).map((n) => mk(n, "agent"));
+  if (BUILTIN_BY_VERB.get(head)?.verb === "privilege") {
+    return PRIVILEGE_LEVELS.filter((l) => hit(l.val)).map((l) => mk(l.val, "privilege"));
+  }
+  return [];
 }

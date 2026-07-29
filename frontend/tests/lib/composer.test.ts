@@ -323,10 +323,48 @@ describe("getCompletions (A2)", () => {
     expect(getCompletions("/agent ops x")).toEqual([]);
   });
 
-  it("a fully typed SOLE candidate stops suggesting (so Enter sends `/clear` instead of accepting it)", () => {
+  it("a fully typed candidate is STILL listed — 'nothing to accept' is the hook's Enter rule, not a filter", () => {
+    // It has to be: `clear` shares its prefix with `clear-cache`, so dropping the exact row would hide the
+    // one the user is on. useComposerSuggest falls Enter through to send when the ACTIVE row is exact.
     expect(values("/clea")).toEqual(["clear"]);
-    expect(getCompletions("/clear")).toEqual([]);
-    expect(getCompletions("/agent research")).toEqual([]);
+    expect(values("/clear")).toEqual(["clear"]);
+    expect(values("/agent research")).toEqual(["research"]);
+  });
+
+  // Codex, v1.3.2 fix wave — `getCompletions` split the line on `/\s+/` while `routeSlash` split on an
+  // ASCII space, so a TAB after the verb suggested agents and then routed as an unknown command. One
+  // tokenizer now serves both.
+  it("a TAB after the verb tokenizes exactly like a space (one shared tokenizer)", () => {
+    expect(values("/agent\tre")).toEqual(["research"]);
+    expect(values("/agent\t")).toEqual(["default", "ops", "research"]);
+    expect(getCompletions("/agent\tops\tx")).toEqual([]); // a third token still ends the grammar
+    runComposer("/agent\tops");
+    expect(chat.setSessionAgent).toHaveBeenCalledWith("ops");
+  });
+
+  // Skill names are free-form server-side (SKILL.md frontmatter — no slug check), so the composer must
+  // fold case itself and must never offer a name the `/verb` grammar can't express.
+  it("a mixed-case skill routes, and completes to its CANONICAL name", async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
+      String(url).includes("/api/skills")
+        ? Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([{ name: "OpsAssist" }, { name: "My Skill" }]),
+          } as Response)
+        : Promise.resolve({ ok: false } as Response),
+    );
+    await loadSkills();
+
+    expect(values("/opsas")).toEqual(["OpsAssist"]);
+    expect(getCompletions("/opsas")[0]?.insert).toBe("/OpsAssist");
+    runComposer("/opsassist do it"); // …and the lowercased verb the user typed still routes
+    expect(chat.sendMessage).toHaveBeenCalledWith("do it", {
+      skills: ["OpsAssist"], // the CANONICAL name — the backend matches skills by exact name
+      raw: "/opsassist do it",
+    });
+
+    // `My Skill` can't be reached by `/verb` at all (the tokenizer stops at the space), so it is never offered
+    expect(values("/my")).toEqual([]);
   });
 
   it("`insert` replaces the whole token — the first one keeps its sigil, later ones don't", () => {

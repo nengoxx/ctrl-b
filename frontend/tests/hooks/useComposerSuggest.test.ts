@@ -4,6 +4,7 @@ import { createElement, useState, type KeyboardEvent } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useComposerSuggest } from "../../src/hooks/useComposerSuggest";
+import { loadSkills } from "../../src/lib/composer";
 import { clearDraft, getDraft } from "../../src/store/composer";
 import { setPlanSheetOpen, usePlanSheetOpen } from "../../src/store/planSheet";
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
@@ -147,6 +148,19 @@ describe("useComposerSuggest — keyboard", () => {
     expect(result.current.suggest.open).toBe(true);
   });
 
+  // Codex, v1.3.2 fix wave — the latch is scoped to the VISIT it was pressed in. Leaving the field and
+  // coming back is the same gesture as focusing a fresh composer, and that opens.
+  it("the Esc latch clears on refocus: Esc → blur → focus reopens", () => {
+    const { result } = harness();
+    act(() => result.current.suggest.onDraftChange("/c"));
+    act(() => result.current.suggest.onKeyDown(key("Escape")));
+    expect(result.current.suggest.open).toBe(false);
+
+    act(() => result.current.suggest.onBlur());
+    act(() => result.current.suggest.onFocus());
+    expect(result.current.suggest.open).toBe(true);
+  });
+
   it("Enter with the popover closed falls through to the send handler", () => {
     const { result, base } = harness();
     act(() => result.current.suggest.onKeyDown(key("Enter")));
@@ -168,6 +182,61 @@ describe("useComposerSuggest — keyboard", () => {
   });
 });
 
+// Codex, v1.3.2 fix wave — a fully typed verb that SHARES its prefix with a longer candidate (built-in
+// `clear` + skill `clear-cache`) used to be accepted by Enter instead of sent. The rule is about the
+// ACTIVE row, so it also covers the sole-candidate case the grammar used to special-case.
+describe("useComposerSuggest — Enter on an already-complete verb", () => {
+  const loadSkillSet = async (names: string[]) => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
+      String(url).includes("/api/skills")
+        ? Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(names.map((name) => ({ name }))),
+          } as Response)
+        : Promise.resolve({ ok: false } as Response),
+    );
+    await loadSkills();
+  };
+  beforeEach(async () => {
+    await loadSkillSet(["clear-cache"]);
+  });
+  afterEach(async () => {
+    await loadSkillSet([]); // the verb sets are module state — hand the next describe an empty one
+  });
+
+  it("Enter falls through to send when the active row is exactly what's typed; Tab still accepts", () => {
+    const { result, base } = harness();
+    act(() => result.current.suggest.onDraftChange("/clear"));
+    expect(result.current.suggest.items.map((i) => i.value)).toEqual(["clear", "clear-cache"]);
+    expect(result.current.suggest.open).toBe(true); // the exact row is still LISTED — `clear-cache` needs it
+
+    act(() => result.current.suggest.onKeyDown(key("Enter")));
+    expect(result.current.draft).toBe("/clear"); // not re-inserted
+    expect(base).toHaveBeenCalledTimes(1); // the send handler got the keystroke
+
+    act(() => result.current.suggest.onKeyDown(key("Tab")));
+    expect(result.current.draft).toBe("/clear "); // Tab is the explicit completion key
+  });
+
+  it("arrow-selecting the longer row makes it non-exact again → Enter accepts", () => {
+    const { result, base } = harness();
+    act(() => result.current.suggest.onDraftChange("/clear"));
+    act(() => result.current.suggest.onKeyDown(key("ArrowDown")));
+    act(() => result.current.suggest.onKeyDown(key("Enter")));
+    expect(result.current.draft).toBe("/clear-cache ");
+    expect(base).not.toHaveBeenCalled();
+  });
+
+  it("a SOLE fully-typed candidate falls through the same way (one rule, no special case)", () => {
+    const { result, base } = harness();
+    act(() => result.current.suggest.onDraftChange("/compact"));
+    expect(result.current.suggest.items.map((i) => i.value)).toEqual(["compact"]);
+    act(() => result.current.suggest.onKeyDown(key("Enter")));
+    expect(result.current.draft).toBe("/compact");
+    expect(base).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("SuggestPopover in a real Kit composer", () => {
   beforeEach(() => {
     clearDraft();
@@ -183,16 +252,22 @@ describe("SuggestPopover in a real Kit composer", () => {
   it("typing a `/verb` opens a listbox above the composer with the APG combobox wiring", () => {
     const { container } = renderComposer();
     const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
-    expect(ta.getAttribute("role")).toBe("combobox");
+    // ARIA-in-HTML allows NO role override on `<textarea>` (implicit `textbox`), and `aria-expanded` is
+    // not supported on `textbox` — so neither is emitted (Codex, v1.3.2 fix wave). The three attributes
+    // that ARE valid on a textbox carry the pattern, and only while the popover is open.
+    expect(ta.getAttribute("role")).toBeNull();
+    expect(ta.getAttribute("aria-expanded")).toBeNull();
     expect(ta.getAttribute("aria-autocomplete")).toBe("list");
-    expect(ta.getAttribute("aria-expanded")).toBe("false");
+    expect(ta.getAttribute("aria-controls")).toBeNull();
+    expect(ta.getAttribute("aria-activedescendant")).toBeNull();
 
     fireEvent.change(ta, { target: { value: "/c" } });
     const list = container.querySelector("ul#composer-suggest");
     expect(list?.getAttribute("role")).toBe("listbox");
     const opts = container.querySelectorAll("#composer-suggest [role=option]");
     expect(opts.length).toBeGreaterThan(1);
-    expect(ta.getAttribute("aria-expanded")).toBe("true");
+    expect(ta.getAttribute("role")).toBeNull();
+    expect(ta.getAttribute("aria-expanded")).toBeNull();
     expect(ta.getAttribute("aria-controls")).toBe("composer-suggest");
     expect(ta.getAttribute("aria-activedescendant")).toBe(opts[0]?.id);
     expect(opts[0]?.getAttribute("aria-selected")).toBe("true");
