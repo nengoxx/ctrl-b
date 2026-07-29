@@ -12,27 +12,56 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-29 — the QUICK QoL CLUSTER is CODE-COMPLETE, unpushed)
-> **All four cluster items BUILT + four Codex review rounds closed. Seven commits on main, NOT pushed:**
-> `39a7fdd` A2 autocomplete → `ad8ef82` A6 tools/skills menu → `a0bfdfa`+`0b0aad2` review waves →
-> `04247c7` micro-wave → `0bfaf34` F1 foreground notifications + D2-B wake-on-connect → `7168521` the
-> final review wave (notifications publish on EVERY transport — live/buffered/turn.sync/re-attach —
-> the round's one MED). Docs synced in this block's commit. Gate green throughout: backend **1084** ·
-> FE **779/781** · full `check.py` 6/6 on every commit. Dev units RUNNING (:5434 + :5173) for the
-> owner's eyeball. **Review record:** round 1 (A2) SHIP-WITH-FIXES → wave; round 2 (A6+wave)
-> SHIP-WITH-FIXES → wave; round 3 verify = all CLOSED + 3 LOWs → micro-wave; round 4 (Slice 3 +
-> micro-wave) SHIP-WITH-FIXES → final wave. Every finding fixed or explicitly ruled (rulings inline in
-> the ROADMAP entries). **Key residuals recorded in ROADMAP:** popovers don't follow `composerSkin`
-> (owner-deferred design session, covers suggest+menu at once) · armed menu pick lost on 409/harvest
-> (LOW) · cross-device notification-prefs staleness while hidden · Android notification taps inform
-> but don't navigate (custom SW = the Web Push slice) · host up/down toggle needs the D2-A/A3 monitor.
-> **NEXT:** (1) owner device eyeball at :5173 — NOTE the notification *firing* test needs a secure
-> origin (dev is plain HTTP → the API is absent there by design; the real phone test = post-release
-> via Tailscale Serve, or temporarily Serve the dev port); (2) owner's release call — **the release IS
-> the shipped `update.sh`'s first PLAIN-form run** (`bash ~/apps/ctrl-b/deploy/linux/update.sh vX.Y.Z`);
-> (3) then **A3 automations = the next design conversation** (owner-locked). Ops notes: harness
-> background-Bash gets killed ~10 min — long Codex runs go `setsid nohup` + a Monitor on the OUTPUT
-> FILE (`$!` after setsid is the dead wrapper, not codex — match by name, `pgrep -f "codex exec"`).
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-29 — the QUICK QoL CLUSTER is COMPLETE + review-CLEAN, unpushed)
+> **All four cluster items BUILT, SIX Codex rounds closed, final verdict WAVE CLEAN (zero open
+> findings). Nine commits on main, NOT pushed:** `39a7fdd` A2 autocomplete → `ad8ef82` A6 tools/skills
+> menu → `a0bfdfa`+`0b0aad2` review waves → `04247c7` micro-wave → `0bfaf34` F1 foreground
+> notifications + D2-B wake-on-connect → `7168521` transport wave (notifications publish on EVERY
+> transport: live/buffered/turn.sync/re-attach) → `842398c` closing wave (suspended-reattach
+> reconstruction · null-terminal guard · thread-scope capture · one permanent SW observer ·
+> re-guarded create_task) → `db039fd` + this block = docs. Gate 6/6 on every commit; final counts
+> **backend 1085 · FE 786/788**. Dev units RUNNING (:5434 + Vite :5173).
+> **The review ledger (all closed):** R1 A2 SHIP-WITH-FIXES→wave · R2 A6+wave SHIP-WITH-FIXES→wave ·
+> R3 verify all-CLOSED +3 LOWs→micro-wave · R4 slice3+micro SHIP-WITH-FIXES→wave · R5 verify on the
+> wave 2×CLOSED/4×refine +1 MED→closing wave · **R6 verify: 5/5 CLOSED, no new issues, WAVE CLEAN.**
+> Every finding fixed or explicitly ruled; rulings live inline in the ROADMAP F1/D2/A6/A-autocomplete
+> entries. ACA core twice confirmed regression-free under adversarial scrutiny.
+>
+> ## ▶ NEXT SESSION — the checklist, in order
+> 1. **Owner device eyeball** at http://emma:5173 (units already up; if down: `systemctl --user start
+>    ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`): the `/verb` autocomplete (type `/pri`, tap) ·
+>    the tools/skills menu (arm an agent+skill, watch the dot, send) · Conf group 10 Notifications
+>    (on dev-HTTP it shows the designed "needs HTTPS" state — that's correct) · MachineEditor's
+>    "Wake when I connect" + the Event log entry on reconnect (actor `system`).
+> 2. **Release on the owner's word** — runbook `deploy/linux/README.md` §Release end-to-end, and this
+>    one is the milestone: **the shipped `update.sh`'s FIRST PLAIN-FORM run**
+>    (`bash ~/apps/ctrl-b/deploy/linux/update.sh vX.Y.Z` — the fixed updater has been on the prod tree
+>    since v1.3.2). Push main first (owner confirms), then tag per runbook, wait for the release gate.
+> 3. **Post-release: the F1 device round** (paper-verified only so far, flagged by the builder): on
+>    the installed PWA via https://emma.lobster-vector.ts.net — enable Notifications in Conf (the
+>    permission prompt rides the toggle gesture), background the app, trigger a confirm-gated action;
+>    a notification should land (Android delivers via the SW registration — the constructor throws
+>    there by platform design, handled). Known limit: the tap informs but doesn't navigate (custom SW
+>    arrives with the Web Push slice). Also sanity-check wake-on-connect cooldown vs real reconnects.
+> 4. **Then: A3 automations = the NEXT DESIGN CONVERSATION (owner-locked, prose-first).** Biggest
+>    unlocked capability; needs the full design treatment (ROADMAP §A3 seam: scheduler subsystem,
+>    Automation model, headless agent runs; the F1 engine + D2's `wake:` section + Actor.AUTOMATION
+>    are the seams it composes with). Do NOT start coding without the design conversation.
+> 5. *(Backlog, owner-deferred, recorded):* popover/menu `composerSkin` participation (one shared
+>    recipe covers both — its own design session) · the `sendIcon` setting + gradient-accent fills
+>    (the cluster's item 4, never reached) · Web Push channel (custom SW, VAPID) · ntfy/bot channels ·
+>    host up/down notify toggle (needs the D2-A/A3 monitor loop).
+> **Residuals ledger (all LOW, all recorded where they belong):** armed menu pick lost on 409/Stop-
+> harvest · cross-device notification-prefs staleness while hidden (PUT-echo fixed same-device;
+> polling declined) · id-less-transport turns share a thread-scoped dedupe key (bounded, tested) ·
+> confirm-permission prompt text isn't persisted → reconstructed notifications use the degraded
+> "<tool> is waiting" body (key identical) · cold hidden load announces a just-ended turn within
+> `linger_s` (owner-approved semantics) · "default + don't auto-route" not expressible on the wire
+> while `agent.auto_rotate` is on · a11y e2e scans only tab panels, not composer chrome.
+> **Ops notes for the next session:** harness background-Bash is killed at ~10 min — long Codex runs
+> go `setsid nohup … &` from a FOREGROUND call + a Monitor on the OUTPUT FILE; `$!` after setsid is
+> the dead wrapper, not codex (match by `pgrep -f "codex exec"`, judge liveness by LOG GROWTH). The
+> `second-opinion` skill + the `qol-cluster-shipped` memory carry the same notes.
 >
 > ## ▶ PREVIOUS STATE (2026-07-28 night — ✅ **v1.3.2 IS LIVE ON EMMA**)
 > **The stabilization patch SHIPPED as `v1.3.2` (= `92241a4`; `v1.3.1` = `983f7dc` stays tagged but
