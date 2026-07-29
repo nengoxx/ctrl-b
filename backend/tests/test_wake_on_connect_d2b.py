@@ -11,8 +11,10 @@ a WOL packet.
 from __future__ import annotations
 
 import asyncio
+import gc
 import os
 import tempfile
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -184,6 +186,24 @@ def test_an_exploding_invoke_never_escapes_the_scheduler() -> None:
 
     asyncio.run(drive())  # an escaped exception would fail the run
     assert len(actions.calls) == 1  # it really did try
+
+
+def test_schedule_without_a_running_loop_is_silent_and_allocates_nothing() -> None:
+    """`schedule` probes for the loop BEFORE building the coroutine (Codex final round, LOW).
+
+    The old shape called `create_task(_guarded())`: with no running loop that constructs a coroutine
+    which is then never awaited, so the interpreter emits "coroutine ... was never awaited" — a
+    RuntimeWarning — when it is collected, ON TOP of the error already being handled. That is log
+    noise in prod and a hard failure under a `-W error` run. The probe-first shape allocates nothing,
+    so there is nothing to warn about. `gc.collect()` inside the block is what forces the old
+    behavior to surface (the warning fires at collection, not at the call)."""
+    app, actions = _app([_h("alpha")])
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        wake_on_connect.schedule(app)  # a SYNC context: no running event loop
+        gc.collect()
+    assert [w for w in caught if issubclass(w.category, RuntimeWarning)] == []
+    assert actions.calls == []  # and of course nothing ran
 
 
 # --------------------------------------------------------------------------- API wiring

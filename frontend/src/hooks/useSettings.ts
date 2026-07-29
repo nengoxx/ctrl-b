@@ -246,7 +246,19 @@ export function useSaveSettings() {
       qc.setQueryData(["settings", "providers-rev"], res.providers_rev);
       void qc.invalidateQueries({ queryKey: ["health"] }); // poll cadence/port may have changed
       void qc.invalidateQueries({ queryKey: ["voice-status"] }); // a Voice edit flips mic/TTS availability (6b)
-      void qc.invalidateQueries({ queryKey: ["notification-prefs"] }); // F1 — the always-on prefs read the engine gates on
+      // F1 (Codex MED-2) — adopt the notification prefs from the PUT's own settings echo, exactly like
+      // the settings doc above. The invalidation alone only *requests* a refetch: the engine keeps
+      // gating on the pre-save preference for a whole extra round-trip, so a signal published in that
+      // window is judged against the preference the owner just changed — the "I turned it off and it
+      // still buzzed" shape, from the one place a stale read is unforgivable. The echo IS the
+      // authoritative post-write doc (`mask_secrets(new.model_dump())`, the same body
+      // `GET /api/notifications` reads from), so writing it makes the switch effective the instant the
+      // save returns. The invalidation stays as the refetch backstop.
+      //
+      // Known residual (owner-declined: no polling, no SSE-driven invalidation): this fixes the device
+      // that saved. ANOTHER open device keeps its cached prefs until its next refetch trigger.
+      qc.setQueryData(["notification-prefs"], res.settings.notifications);
+      void qc.invalidateQueries({ queryKey: ["notification-prefs"] });
       void qc.invalidateQueries({ queryKey: ["providers"] }); // D48 — a save may add/rename/drop providers (fresh names/warnings)
       void loadProviders(); // refresh the composer's module-level `/<provider>` verb set (best-effort)
       void loadAgents(); // SYS-9.2 — a save may change the default-agent selection; keep the composer's `/agent` set + resolved default fresh (best-effort)

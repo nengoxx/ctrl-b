@@ -53,6 +53,16 @@ async def stream_events(request: Request) -> EventSourceResponse:
                 except asyncio.TimeoutError:
                     yield {"event": "ping", "data": ""}
                     continue
-                yield {"event": "event", "id": event.id, "data": event.model_dump_json()}
+                # `output` is EXCLUDED from the live frame (Codex final round, LOW): it is the action's
+                # full (redacted, but still up to `max_output_chars`) stdout, and no stream consumer
+                # reads it — `hooks/useEvents` invalidates caches off the frame and projects
+                # action/target/status/summary into an F1 notification. Shipping it multiplies the
+                # bytes on a tailnet SSE connection that stays open for the session, for nothing. The
+                # canonical record is unchanged: `GET /api/events` still returns the full Event.
+                yield {
+                    "event": "event",
+                    "id": event.id,
+                    "data": event.model_dump_json(exclude={"output"}),
+                }
 
     return EventSourceResponse(gen())

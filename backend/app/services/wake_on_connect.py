@@ -95,10 +95,18 @@ def schedule(app: "FastAPI") -> None:
         except Exception:  # noqa: BLE001 — an automation must never escape into its trigger
             logger.exception("wake-on-connect failed")
 
+    # Probe for the loop BEFORE constructing the coroutine (Codex final round, LOW). The old shape
+    # called `create_task(_guarded())`: with no running loop that builds a coroutine object which is
+    # then never awaited, so the interpreter emits "coroutine was never awaited" (a RuntimeWarning)
+    # when it is collected — log noise in prod, and a hard failure under a `-W error` test run, on top
+    # of the error we were already handling. Probing first means the no-loop path allocates nothing.
+    # Holding the loop also removes the second failure mode: `loop.create_task` cannot raise
+    # "no running event loop" the way the module-level helper can.
     try:
-        task = asyncio.create_task(_guarded())
+        loop = asyncio.get_running_loop()
     except RuntimeError:  # no running loop (shouldn't happen from a request) — nothing to do
-        logger.exception("wake-on-connect could not be scheduled")
+        logger.warning("wake-on-connect could not be scheduled: no running event loop")
         return
+    task = loop.create_task(_guarded())
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)

@@ -1,8 +1,10 @@
-"""F1 — the notifications config section + its thin always-on read.
+"""F1 — the notifications config section, its thin always-on read, and the live event frame.
 
 The whole delivery mechanism is client-side (the PWA's Notifications API), so the backend's entire
 contribution is: hold the preference, hand it to the client cheaply, and round-trip it through the
-one settings write path. That is exactly what this pins.
+one settings write path. That is exactly what this pins — plus the one wire change F1's review
+prompted: the SSE frame's projection (the client's fleet-side notification source) drops `output`,
+while `GET /api/events` stays the full canonical record.
 
 Runs as `python tests/test_notifications_f1.py` from backend/ (plain asserts + a __main__ runner) or
 under pytest. Config writes go to a temp `CTRLB_CONFIG` — never the operator's real config.yaml.
@@ -10,11 +12,16 @@ under pytest. Config writes go to a temp `CTRLB_CONFIG` — never the operator's
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 from app.config import Settings, load_settings
+from app.domain.enums import Actor, RunState
+from app.domain.event import Event
 
 _SEED = """\
 # fixture fleet
@@ -107,6 +114,92 @@ def test_get_notifications_and_put_roundtrip() -> None:
     finally:
         os.environ.pop("CTRLB_CONFIG", None)
         os.environ.pop("CTRLB_DB", None)
+
+
+# --------------------------------------------------------------------------- the live event frame
+
+
+def _drive_stream(event: Event) -> dict:
+    """Run `stream_events`' generator far enough to yield ONE published event frame.
+
+    Driven against the router's own async generator rather than a live TestClient stream (the same
+    reason `test_wake_on_connect_d2b` does): the endpoint is an infinite loop whose first natural
+    frame is a 15s keepalive, so an HTTP-level assertion would either hang or pin a timing constant.
+    The first `is_disconnected()` check publishes (the generator is inside `bus.subscribe()` by then)
+    and returns False; the second ends the loop. `schedule` is stubbed out so the D2-B trigger doesn't
+    spawn a task against this skeleton app.
+    """
+    import app.api.events as events_api
+    from app.core.events import EventBus
+    from app.services import wake_on_connect
+
+    app = SimpleNamespace(state=SimpleNamespace(event_bus=EventBus()))
+
+    class _FakeRequest:
+        def __init__(self) -> None:
+            self.app = app
+            self._checks = 0
+
+        async def is_disconnected(self) -> bool:
+            self._checks += 1
+            if self._checks == 1:
+                app.state.event_bus.publish(event)
+                return False
+            return True
+
+    async def drive() -> dict:
+        response = await events_api.stream_events(_FakeRequest())  # type: ignore[arg-type]
+        async for frame in response.body_iterator:
+            if frame.get("event") == "event":
+                return frame
+        raise AssertionError("the stream never yielded an event frame")
+
+    real_schedule = wake_on_connect.schedule
+    try:
+        wake_on_connect.schedule = lambda _app: None  # type: ignore[assignment]
+        return asyncio.run(drive())
+    finally:
+        wake_on_connect.schedule = real_schedule  # type: ignore[assignment]
+
+
+def test_stream_frame_omits_output_while_the_history_keeps_it() -> None:
+    """The live frame is a "what happened" notification source — `hooks/useEvents` invalidates caches
+    off it and projects action/target/status/summary into an F1 signal. `output` is the action's full
+    (redacted, but up-to-`max_output_chars`) stdout, which no stream consumer reads: shipping it
+    multiplies the bytes on a connection held open for the whole session. The canonical record is
+    unchanged — `GET /api/events` still returns the field."""
+    import app.api.events as events_api
+
+    event = Event(
+        actor=Actor.USER,
+        action="run_shell",
+        target="alpha",
+        status=RunState.ERROR,
+        summary="exit 1",
+        output="x" * 4000,
+    )
+
+    frame = _drive_stream(event)
+    assert frame["id"] == event.id
+    data = json.loads(frame["data"])
+    assert "output" not in data  # the whole point
+    # …and everything the client DOES read is still there.
+    assert (data["id"], data["action"], data["target"], data["status"], data["summary"]) == (
+        event.id,
+        "run_shell",
+        "alpha",
+        "error",
+        "exit 1",
+    )
+
+    # The history endpoint's projection is untouched: same Event, full record.
+    class _FakeEvents:
+        async def recent(self, limit: int):
+            return [event]
+
+    req = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(events=_FakeEvents())))
+    history = asyncio.run(events_api.list_events(req, limit=100))  # type: ignore[arg-type]
+    assert history[0]["output"] == "x" * 4000
 
 
 if __name__ == "__main__":

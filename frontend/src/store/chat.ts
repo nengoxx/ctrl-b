@@ -189,20 +189,98 @@ function seqGateDrop(id: string | undefined): boolean {
   return false;
 }
 
-/** The stable identity of the turn being reduced right now — the de-dupe key base for the F1
- *  turn-terminal notifications. `lastTurnId` is the wire `turn_id` the seq gate just latched, so it
- *  is per-turn and survives a re-attach (a replayed `done` computes the SAME key and the engine's
- *  seen-set swallows it). Falls back to the thread id for streams with no frame ids (tests, and any
- *  future transport that doesn't stamp them). */
-function turnKey(): string {
-  return lastTurnId ?? state.threadId ?? "turn";
+// ── F1 notification signals — ONE builder set, shared by EVERY transport ─────────────────────────
+// A turn occurrence reaches this store through FOUR transports: the live SSE reducer, the buffered
+// (non-streaming) JSON reply, a `turn.sync` re-attach snapshot, and the re-attach `{active:false}`
+// terminal answer. The same occurrence MUST produce the same signal — same class, same key — from any
+// of them, because the engine's bounded seen-set is what collapses live + replay into a single buzz
+// (Codex final round, MED-1: publishing only from the live reducer meant a phone that missed the live
+// frame was never told, while one that saw it and then re-attached risked a second buzz). So every
+// turn-side `publishNotify` goes through these three builders; do NOT inline one anywhere else.
+//
+// Keys are namespaced `<kind>:<threadId>:<id>` (Codex LOW): call ids and turn ids are server-unique
+// already, but the thread segment makes a snapshot's key provably identical to the live frame's
+// without leaning on that uniqueness, and keeps two threads' turns out of one de-dupe bucket.
+
+/** Key segment for a signal published before any thread id is known (only reachable in isolated
+ *  tests — production always has a `thread` frame or a payload `threadId` first). */
+const NOTIFY_NO_THREAD = "thread";
+
+function notifyScope(threadId: string | null | undefined): string {
+  return threadId ?? state.threadId ?? NOTIFY_NO_THREAD;
 }
 
-/** The shared key for "this turn FAILED". Deliberately one key for the `error` frame AND the
- *  `done(error)` that follows it: the server emits both for a single failure, so a distinct key per
- *  frame would buzz the owner twice for one thing. */
-function turnFailKey(): string {
-  return `turn-error:${turnKey()}`;
+/** F1 — the agent is now BLOCKED on the owner (a confirm-gated call). This is the class that makes
+ *  notifications worth having: an unattended turn parks here indefinitely otherwise. Keyed on the
+ *  durable `callId`, so a re-attach that REPLAYS or RECONSTRUCTS the same call resolves to the same
+ *  key and is swallowed by the engine's seen-set. */
+function notifyAwaitingConfirm(
+  threadId: string | null | undefined,
+  callId: string,
+  prompt: string | undefined,
+  tool: string | undefined,
+): void {
+  publishNotify({
+    cls: "agent_input",
+    key: `perm:${notifyScope(threadId)}:${callId}`,
+    title: "Approval needed",
+    body: prompt ?? `${tool ?? "a tool"} is waiting for your approval`,
+    focus: "agent",
+  });
+}
+
+/** F1 — same class as the confirm bubble: the turn is parked on the owner's reply (the `question`
+ *  builtin, A2). */
+function notifyAwaitingAnswer(
+  threadId: string | null | undefined,
+  callId: string,
+  question: string | undefined,
+): void {
+  publishNotify({
+    cls: "agent_input",
+    key: `ask:${notifyScope(threadId)}:${callId}`,
+    title: "The agent has a question",
+    body: question ?? "open the chat to answer",
+    focus: "agent",
+  });
+}
+
+/** F1 — the turn reached a terminal state. `suspended` is deliberately EXCLUDED (the standing rule,
+ *  enforced HERE so no transport can forget it): it is the terminal that always accompanies a
+ *  `tool.permission`/`tool.question`, so notifying for it too would double-buzz the exact case
+ *  `agent_input` already covers — and under a preference the owner may have turned off.
+ *
+ *  `error` publishes under a distinct `turn-error:` key shared by the `error` frame AND the
+ *  `done(error)` that follows it: the server emits both for one failure, so the pair de-dupes to ONE
+ *  notification carrying the first frame's real message — and a lone `done(error)` still produces one.
+ *
+ *  The turn segment falls back to the thread when the transport carries no turn id (the buffered
+ *  reply; a stream whose frames aren't stamped). Bounded + accepted: two consecutive id-less turns on
+ *  one thread collapse into a single buzz — see the test that pins it. */
+function notifyTurnTerminal(
+  threadId: string | null | undefined,
+  turnId: string | null,
+  st: string | undefined,
+  message?: string,
+): void {
+  if (st === "suspended") return;
+  const scope = notifyScope(threadId);
+  const failed = st === "error";
+  publishNotify({
+    cls: "turn_done",
+    key: `${failed ? "turn-error" : "turn-done"}:${scope}:${turnId ?? scope}`,
+    title: failed
+      ? "The agent stopped"
+      : st === "capped"
+        ? "The agent hit its step limit"
+        : "The agent finished",
+    body: failed
+      ? (message ?? "the turn ended with an error")
+      : st === "capped"
+        ? "send a message to continue"
+        : "your reply is ready in the chat",
+    focus: "agent",
+  });
 }
 
 // Sticky inference backend for this session, set by a bare `/<provider>` verb (A11/D48 C7). `null` →
@@ -706,16 +784,9 @@ function makeTurnReducer(ctx: TurnCtx) {
         modeByCall[callId] = turnMode; // pin THIS turn's mode for the eventual resume (ACA-16)
         skillsByCall[callId] = turnSkills; // …and its active skills (C5-M1)
         setCallState(callId, "awaiting_confirm");
-        // F1 — the agent is now BLOCKED on the owner. This is the class that makes notifications
-        // worth having: an unattended turn parks here indefinitely otherwise. Keyed on `callId`, so a
-        // `reattachTurn` replay of this frame resolves to the same key and is swallowed by the engine.
-        publishNotify({
-          cls: "agent_input",
-          key: `perm:${callId}`,
-          title: "Approval needed",
-          body: str(data.prompt) ?? `${str(data.tool) ?? "a tool"} is waiting for your approval`,
-          focus: "agent",
-        });
+        // F1 — announce the block through the shared builder (the same one the buffered reply and the
+        // `turn.sync` reconstruction use, so all three collapse onto one key in the engine).
+        notifyAwaitingConfirm(state.threadId, callId, str(data.prompt), str(data.tool));
         break;
       }
       case "tool.question": {
@@ -727,13 +798,7 @@ function makeTurnReducer(ctx: TurnCtx) {
         skillsByCall[callId] = turnSkills; // …and its active skills (C5-M1)
         setCallState(callId, "awaiting_answer");
         // F1 — same class as the confirm bubble: the turn is parked on the owner's reply.
-        publishNotify({
-          cls: "agent_input",
-          key: `ask:${callId}`,
-          title: "The agent has a question",
-          body: str(data.question) ?? "open the chat to answer",
-          focus: "agent",
-        });
+        notifyAwaitingAnswer(state.threadId, callId, str(data.question));
         break;
       }
       case "tool.result": {
@@ -814,16 +879,10 @@ function makeTurnReducer(ctx: TurnCtx) {
         failStream(str(data.message) ?? "agent error");
         ctx.settled = true;
         // F1 — a turn that ENDED, badly. Same class as `done` (the user's attention is wanted back
-        // either way), and the SAME key the `done(error)` that follows it publishes under — the server
-        // emits both for one failure, and the engine's de-dupe is what collapses the pair into a
-        // single buzz carrying THIS frame's real message.
-        publishNotify({
-          cls: "turn_done",
-          key: turnFailKey(),
-          title: "The agent stopped",
-          body: str(data.message) ?? "agent error",
-          focus: "agent",
-        });
+        // either way) and the same key the `done(error)` that follows it publishes under, so the pair
+        // collapses to one buzz carrying THIS frame's real message. `lastTurnId` is the wire `turn_id`
+        // the seq gate just latched — per-turn, and identical on a replay of the same frame.
+        notifyTurnTerminal(state.threadId, lastTurnId, "error", str(data.message) ?? "agent error");
         break;
       case "done": {
         ctx.settled = true;
@@ -834,30 +893,9 @@ function makeTurnReducer(ctx: TurnCtx) {
           pushSystemNote("// reached the step limit — send a message to continue");
         }
         set({ status: st === "error" ? "error" : "idle", streamingId: null });
-        // F1 — the turn reached a terminal state. `suspended` is deliberately EXCLUDED: it is the
-        // terminal that always accompanies a `tool.permission`/`tool.question` in the same stream, so
-        // notifying here too would double-buzz the exact case `agent_input` already covers (and would
-        // do it under a preference the owner may have turned off). `error` publishes under the
-        // preceding `error` frame's key so the pair de-dupes to ONE notification — and still produces
-        // one if some path ever emits `done(error)` on its own.
-        if (st !== "suspended") {
-          const failed = st === "error";
-          publishNotify({
-            cls: "turn_done",
-            key: failed ? turnFailKey() : `turn-done:${turnKey()}`,
-            title: failed
-              ? "The agent stopped"
-              : st === "capped"
-                ? "The agent hit its step limit"
-                : "The agent finished",
-            body: failed
-              ? "the turn ended with an error"
-              : st === "capped"
-                ? "send a message to continue"
-                : "your reply is ready in the chat",
-            focus: "agent",
-          });
-        }
+        // F1 — the turn reached a terminal state (the builder owns the `suspended` exclusion and the
+        // error-key sharing; see its docstring).
+        notifyTurnTerminal(state.threadId, lastTurnId, st);
         break;
       }
       default:
@@ -967,7 +1005,14 @@ async function streamTurn(
       const payload = (await res.json()) as Record<string, unknown>;
       if (payload.threadId) set({ threadId: payload.threadId as string });
       const perm = payload.permission as
-        { callId?: string; token?: string; alwaysEligible?: boolean } | undefined;
+        | {
+            callId?: string;
+            token?: string;
+            alwaysEligible?: boolean;
+            prompt?: string;
+            tool?: string;
+          }
+        | undefined;
       if (perm?.callId && perm.token) {
         confirmTokens[perm.callId] = perm.token;
         alwaysEligibleByCall[perm.callId] = perm.alwaysEligible === true; // D44 W3, mirrors the SSE branch
@@ -977,7 +1022,7 @@ async function streamTurn(
       // C3-M4: a buffered turn can also suspend on a `tool.question` (no token) — seed its per-call
       // mode + skills too, else a newer send overwriting `turnMode`/`turnSkills` strands the answer
       // with the wrong turn's context. Mirrors the live `tool.question` reducer branch.
-      const q = payload.question as { callId?: string } | undefined;
+      const q = payload.question as { callId?: string; question?: string } | undefined;
       if (q?.callId) {
         modeByCall[q.callId] = turnMode;
         skillsByCall[q.callId] = turnSkills;
@@ -988,6 +1033,20 @@ async function streamTurn(
       if (payload.state === "capped")
         pushSystemNote("// reached the step limit — send a message to continue");
       if (payload.state === "error") set({ status: "error" });
+      // F1 (Codex MED-1) — the buffered transport announces the SAME occurrences the live reducer
+      // does, through the SAME builders/keys: a turn that suspends on a confirm/question is exactly as
+      // unattended here as it is over SSE. Published AFTER the reload so the announcement follows the
+      // state it describes. The payload carries no turn id (verified: `collect_turn` folds only
+      // state/messageId/permission/question/error/notices, and the endpoint merges `{threadId, title}`
+      // on top) — so the terminal key falls back to the thread scope, the documented bounded case.
+      if (perm?.callId) notifyAwaitingConfirm(state.threadId, perm.callId, perm.prompt, perm.tool);
+      if (q?.callId) notifyAwaitingAnswer(state.threadId, q.callId, q.question);
+      notifyTurnTerminal(
+        state.threadId,
+        null,
+        str(payload.state),
+        isObj(payload.error) ? str(payload.error.message) : undefined,
+      );
       discoverSpawnedSteerTurn(); // D41 §3 — a buffered turn can also leave queued steers to a drain-B turn
       return;
     }
@@ -1310,6 +1369,26 @@ export async function reattachTurn(
     } else {
       set({ status: "streaming", streamingId: openId });
     }
+    // (d) F1 (Codex MED-1) — ANNOUNCE what the snapshot reconstructed, through the shared builders.
+    // This is the transport that matters most for notifications: a phone that slept through the live
+    // `tool.permission` frame learns about the block ONLY from here. Same keys as the live reducer, so
+    // a device that DID see the live frame collapses the two onto one entry in the engine's seen-set
+    // instead of buzzing twice. Published after the state above is applied; a suspended terminal
+    // publishes nothing (the builder's standing rule) — the awaiting call below IS that moment.
+    for (const c of Array.isArray(snap.calls) ? snap.calls : []) {
+      if (!isObj(c)) continue;
+      const callId = nonEmpty(c.call_id);
+      if (!callId) continue;
+      const p = isObj(c.permission) ? c.permission : null;
+      const qn = isObj(c.question) ? c.question : null;
+      // The accumulator stamps these RunStates on the call when it folds the suspend event, and drops
+      // the ephemeral payload once a result lands — so an already-resolved call never re-announces.
+      if (c.state === "awaiting_confirm")
+        notifyAwaitingConfirm(threadId, callId, str(p?.prompt), str(c.tool));
+      else if (c.state === "awaiting_answer")
+        notifyAwaitingAnswer(threadId, callId, str(qn?.question));
+    }
+    if (termState) notifyTurnTerminal(threadId, lastTurnId, termState);
   };
 
   const onFrame = async (
@@ -1344,7 +1423,11 @@ export async function reattachTurn(
         // content-type) would otherwise be read as a completed turn — reloading + settling idle +
         // dropping the Stop affordance while the turn is actually still running. Anything else →
         // return false so the caller's reload/failStream fallback handles it.
-        const body = (await res.json()) as { active?: boolean; terminal_status?: string };
+        const body = (await res.json()) as {
+          active?: boolean;
+          terminal_status?: string;
+          turn_id?: string;
+        };
         if (!res.ok || body.active !== false) return false;
         // FIX A/C — the `res.json()` awaited: bail if a newer stream superseded us or the owner
         // switched threads, so a stale terminal answer can't settle status under the current view.
@@ -1363,6 +1446,12 @@ export async function reattachTurn(
         } else {
           set({ status: "idle", streamingId: null });
         }
+        // F1 (Codex MED-1) — the third reconstruction transport: the turn ended while we were
+        // disconnected, and this JSON answer is the only place we learn it. The endpoint carries
+        // `turn_id` (verified — `turn_stream`'s not-live replies all include it, from the handle or the
+        // linger cache), so the key matches the live `done`'s and a device that saw both buzzes once.
+        // A `suspended` terminal publishes nothing, as everywhere else.
+        notifyTurnTerminal(threadId, nonEmpty(body.turn_id) ?? null, st);
         return true;
       }
       if (!res.ok || !res.body) return false;

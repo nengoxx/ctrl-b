@@ -157,8 +157,43 @@ function show(signal: NotifySignal): void {
       n.close();
     };
   } catch {
-    void navigator.serviceWorker?.ready
-      .then((reg) => reg.showNotification(signal.title, options))
+    void swRegistration()
+      .then((reg) => reg?.showNotification(signal.title, options))
       .catch(() => undefined);
   }
+}
+
+/** How long to wait for the service-worker registration before abandoning the fallback path. A
+ *  TRANSPORT timeout, not a user tunable: `serviceWorker.ready` is documented to never reject and
+ *  never settle until a worker actually controls the page, so on an origin where registration failed
+ *  (or is disabled — the dev server, a browser with SW off) it hangs FOREVER. A few seconds is far
+ *  longer than a live registration takes and short enough that nothing is left dangling. */
+const SW_READY_TIMEOUT_MS = 4000;
+
+/** The single in-flight `serviceWorker.ready` race, shared by every signal (Codex LOW). Without this,
+ *  each notification on a SW-less origin would attach its own `.then` to a promise that never settles
+ *  — one leaked pending chain per buzz, for the session's lifetime. Resolves to `null` when there is
+ *  no SW API, when `ready` rejects, or when the timeout wins; a null outcome CLEARS the memo so a
+ *  worker that registers later can still be found, while never leaving more than one race pending. */
+let swReadyRace: Promise<ServiceWorkerRegistration | null> | null = null;
+
+function swRegistration(): Promise<ServiceWorkerRegistration | null> {
+  if (swReadyRace !== null) return swReadyRace;
+  const ready: Promise<ServiceWorkerRegistration> | undefined = navigator.serviceWorker?.ready;
+  // No API at all — nothing to wait for, and nothing to memo. (Explicit `=== undefined` rather than a
+  // truthiness test: a Promise in a boolean conditional is exactly the `no-misused-promises` trap.)
+  if (ready === undefined) return Promise.resolve(null);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const race = Promise.race([
+    ready.catch(() => null),
+    new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), SW_READY_TIMEOUT_MS);
+    }),
+  ]).then((reg) => {
+    clearTimeout(timer); // a resolved `ready` must not leave the timer holding the loop open
+    if (reg === null) swReadyRace = null; // abandoned: let a LATER signal try once more
+    return reg;
+  });
+  swReadyRace = race;
+  return race;
 }

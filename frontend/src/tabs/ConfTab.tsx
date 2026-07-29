@@ -2174,8 +2174,8 @@ export function ConfTab({ active }: Props) {
 
       {/* Hosted Tools group (D35 §F0): when the active layout hosts utils in Conf (3-/2-tab), the Tools
           content renders here as the LAST functional group before Appearance — the group header replaces
-          utils's standalone `.sec`. Numbered 16 (slotting in before the terminal Appearance group, which
-          shifts to 17 while hosted); the standalone UtilsTab is unmounted in this layout, so its
+          utils's standalone `.sec`. Numbered 17 (slotting in before the terminal Appearance group, which
+          shifts to 18 while hosted); the standalone UtilsTab is unmounted in this layout, so its
           "agent-tools" child group has no duplicate DOM id. */}
       {hostsUtils && (
         <ConfGroup id={HOSTED_UTILS_GROUP_ID} num="17" title="Tools" right="utility tools">

@@ -210,6 +210,54 @@ describe("useForegroundNotifications · end to end", () => {
     expect(getUI().tab).toBe("agent");
   });
 
+  it("the service-worker fallback is BOUNDED — one shared wait, abandoned on timeout", async () => {
+    // Android throws `TypeError` on the constructor, so the SW path is the only one there. But
+    // `serviceWorker.ready` is specified to never reject and to settle only once a worker CONTROLS the
+    // page — on an origin where registration failed or is disabled it hangs forever. Pre-fix, every
+    // signal attached its own `.then` to that dead promise: one leaked pending chain per buzz
+    // (Codex final round, LOW).
+    vi.useFakeTimers();
+    class Throwing {
+      constructor() {
+        throw new TypeError("Illegal constructor"); // the literal Android behavior
+      }
+      static permission: NotificationPermission = "granted";
+      static requestPermission = vi.fn();
+    }
+    Object.defineProperty(window, "Notification", { value: Throwing, configurable: true });
+
+    let accesses = 0;
+    const neverReady = new Promise<ServiceWorkerRegistration>(() => undefined);
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      get() {
+        accesses++;
+        return { ready: neverReady };
+      },
+    });
+
+    try {
+      renderHook(() => useForegroundNotifications());
+      publishNotify(signal({ key: "perm:t1:a" }));
+      publishNotify(signal({ key: "perm:t1:b" }));
+      publishNotify(signal({ key: "perm:t1:c" }));
+      // THE bound: three signals, ONE in-flight wait — not three pending chains on a dead promise.
+      expect(accesses).toBe(1);
+
+      // Past the transport timeout the race resolves to null and the chain completes: nothing is
+      // shown, and the memo clears so a worker that registers later can still be found — which is
+      // exactly what a FOURTH signal re-arming the wait proves (still at most one pending at a time).
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(shown).toHaveLength(0);
+      publishNotify(signal({ key: "perm:t1:d" }));
+      expect(accesses).toBe(2);
+      await vi.advanceTimersByTimeAsync(10_000); // let it settle too, so nothing outlives the test
+    } finally {
+      delete (navigator as unknown as Record<string, unknown>).serviceWorker;
+      vi.useRealTimers();
+    }
+  });
+
   it("a fleet-side notification click focuses but does NOT yank the user off their tab", async () => {
     vi.spyOn(window, "focus").mockImplementation(() => undefined);
     const { setUI, getUI } = await import("../../src/store/ui");

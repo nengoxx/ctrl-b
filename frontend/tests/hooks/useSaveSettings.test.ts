@@ -100,4 +100,29 @@ describe("useSaveSettings · notification prefs invalidation (F1)", () => {
     const keys = invalidate.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
     expect(keys).toContain(JSON.stringify(["notification-prefs"]));
   });
+
+  it("adopts the prefs from the PUT's settings echo IMMEDIATELY (Codex MED-2)", async () => {
+    // The invalidation only *requests* a refetch: the engine would keep gating on the pre-save
+    // preference for a whole round-trip. The echo is the authoritative post-write doc, so the cache
+    // must hold the new prefs the moment the mutation resolves — before any refetch lands.
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const localWrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+
+    const echoed = {
+      enabled: true,
+      events: { agent_input: true, turn_done: false, action_failed: true },
+    };
+    h.put.mockResolvedValue({
+      settings: { notifications: echoed },
+      restart_required: [],
+      warnings: [],
+      providers_rev: "r",
+    });
+    const { result } = renderHook(() => useSaveSettings(), { wrapper: localWrapper });
+    result.current.mutate({ notifications: { enabled: true, events: { turn_done: false } } });
+    await waitFor(() => expect(h.loadProviders).toHaveBeenCalled());
+
+    expect(client.getQueryData(["notification-prefs"])).toEqual(echoed);
+  });
 });
