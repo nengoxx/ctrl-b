@@ -1,3 +1,4 @@
+import { getDefaultAgent, useVerbsVersion } from "../../../../lib/composer";
 import { toggleComposerOverlay, useComposerOverlayOpen } from "../../../../store/composerOverlay";
 import { useComposerScope } from "../../../../store/composerScope";
 import { TOOLS_SHEET_ID } from "./ToolsMenuSheet";
@@ -36,11 +37,16 @@ function SlidersIcon({ size = 16 }: { size?: number }) {
 export function ToolsMenuTrigger() {
   const open = useComposerOverlayOpen("menu");
   const scope = useComposerScope();
-  const armed = scope.agent !== null || scope.skills.length > 0;
+  // The label can name the DEFAULT agent (below), so re-render when a loader installs a fresh set — the
+  // same version subscription the panel uses.
+  useVerbsVersion();
+  const armed = scope.agent !== undefined || scope.skills.length > 0;
   // The label spells the arming out — the dot alone can't say WHAT is armed, and this control has no
-  // visible text of its own.
+  // visible text of its own. `agent: null` IS an arming (the menu's default row, pinning this message to
+  // the configured default over any sticky `/agent`), so it names the default agent rather than going
+  // quiet and leaving a lit dot unexplained.
   const armedParts = [
-    ...(scope.agent ? [`agent ${scope.agent}`] : []),
+    ...(scope.agent !== undefined ? [`agent ${scope.agent ?? getDefaultAgent()}`] : []),
     ...(scope.skills.length ? [`skills ${scope.skills.join(", ")}`] : []),
   ];
   const label = armedParts.length
@@ -52,8 +58,9 @@ export function ToolsMenuTrigger() {
       className={"kit-cbtn tools" + (open ? " open" : "") + (armed ? " armed" : "")}
       onClick={() => toggleComposerOverlay("menu")}
       // `dialog`, not `menu`: `aria-haspopup` should describe the popup's ROLE, and the panel is a
-      // labelled REGION holding a radiogroup + a checkbox group — Tab-navigable, no roving focus. Claiming
-      // `menu` would promise arrow-key menu semantics this deliberately isn't (see ToolsMenuSheet).
+      // labelled REGION holding a native radio group + a checkbox group — Tab between the groups, arrows
+      // within the radios. Claiming `menu` would promise WHOLE-PANEL menu-widget semantics (arrow keys
+      // across every row, typeahead, focus return on Esc) this deliberately isn't (see ToolsMenuSheet).
       aria-haspopup="dialog"
       aria-expanded={open}
       // Only while the panel exists — it unmounts when closed, and a dangling `aria-controls` target is

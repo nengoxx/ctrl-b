@@ -549,8 +549,9 @@ body[data-perf="lite"] .kit-composer {
 .kit-main:has(.kit-composer.sheet) .tools-sheet {
   bottom: calc(var(--composer-h, 64px) + 8px);
 }
-/* the tools panel's rows are BUTTONS (the suggest rows are <li>) — the reset must come BEFORE the shared
- * row recipe below, since `all: unset` sets every property and would wipe it from a later rule. */
+/* the tools panel's rows are CONTROLS — a <label> wrapping a native radio (agents), a button (skills), a
+ * button (clear); the suggest rows are plain <li>. The reset must come BEFORE the shared row recipe below,
+ * since `all: unset` sets every property and would wipe it from a later rule. */
 .kit .tools-sheet .tools-row,
 .kit .tools-sheet .tools-clear {
   all: unset;
@@ -608,6 +609,17 @@ body[data-perf="lite"] .kit-composer {
   text-transform: uppercase;
   font-weight: 700;
   color: var(--accent);
+}
+/* the agent rows' native radio is sr-only (its recipe rides with `.bs-close-sr` — one place for it) and the
+ * ROW is the visual, so the keyboard ring has to be drawn on the row. Two selectors: `:has()` for the
+ * label-wrapped radio (focus lands on the invisible input), the plain one for the button rows. Inset by 2px
+ * — a positive offset would be clipped by the panel's 4px padding. These rows `all: unset`, which resets
+ * `outline` and unties the global `.kit :focus-visible` ring (same P3 case as `.pm-listbtn` & co). */
+.kit .tools-sheet .tools-row:has(.tools-radio:focus-visible),
+.kit .tools-sheet .tools-row:focus-visible,
+.kit .tools-sheet .tools-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 /* fixed-width selection gutter so names line up whether or not a row is ticked (• radio / ✓ checkbox). */
 .kit .tools-sheet .tools-tick {
@@ -4575,8 +4587,11 @@ body[data-motion="reduced"] .kit .kit-composer {
   overflow-y: auto;
   overscroll-behavior: contain; /* scrolling the body never chains to the page behind the sheet */
 }
-/* sr-only close — keyboard/AT parity without a visible ✕ */
-.kit .bs-close-sr {
+/* sr-only — ONE recipe, two users: the sheet's close button (keyboard/AT parity without a visible ✕) and
+ * the tools menu's native agent radios (A6 — real radios for real arrow-key group semantics, with the
+ * `.tools-row` beside them as the visual; its focus ring is in the tools block). */
+.kit .bs-close-sr,
+.kit .tools-sheet .tools-radio {
   position: absolute;
   width: 1px;
   height: 1px;

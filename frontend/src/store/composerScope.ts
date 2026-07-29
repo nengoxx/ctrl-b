@@ -10,24 +10,36 @@
 //     a plain NL send takes it; an explicit `/verb` send CLEARS it without applying (the user routed by
 //     hand, so the hand-routing wins).
 //
-// `agent: null` = the configured default agent (the menu's "default" row) — the same null-means-default
-// convention as `sessionAgent`/`sessionMode` in store/chat. Dep-free `createStore` (D23).
+// The agent is TRI-STATE, not nullable (Codex, round 2). "Nothing armed" and "armed at the configured
+// default" are different messages once a sticky `/agent <name>` is in play: with only `string | null`,
+// picking the menu's default row was indistinguishable from never opening the menu, so the send fell back
+// to the sticky agent while the menu showed "default" checked. So:
+//
+//   • `undefined` — UNTOUCHED. The send falls back to the sticky `/agent` pick (or the server default).
+//   • `null`      — explicitly armed "the configured default": it OVERRIDES a sticky pick for this one
+//                   message. On the wire that is `agent: null`, which the chat endpoint already accepts
+//                   as "no explicit agent" (it then resolves its own default — zero backend change).
+//   • a string    — an armed specialist.
+//
+// Dep-free `createStore` (D23).
 
 import { createStore } from "./createStore";
 
 export interface ComposerScope {
-  /** One-shot agent for the next message; `null` = the configured default. */
-  agent: string | null;
+  /** One-shot agent for the next message — tri-state: `undefined` untouched · `null` explicitly the
+   *  configured default · a name = that specialist. See the header. */
+  agent: string | null | undefined;
   /** Skills armed for the next message (the menu's ticks). Empty = none. */
   skills: string[];
 }
 
-const EMPTY: ComposerScope = { agent: null, skills: [] };
+const EMPTY: ComposerScope = { agent: undefined, skills: [] };
 
 const { emit, useStore } = createStore();
 let scope: ComposerScope = EMPTY;
 
-/** Arm (or, with `null`, un-arm) the one-shot agent for the next message. */
+/** Arm the one-shot agent for the next message — a name, or `null` for "the configured default, even if
+ *  a sticky `/agent` says otherwise". Un-arming entirely is `clearComposerScope` (the menu's clear row). */
 export function setScopeAgent(agent: string | null): void {
   if (scope.agent === agent) return;
   scope = { ...scope, agent };

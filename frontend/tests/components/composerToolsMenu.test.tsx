@@ -3,7 +3,8 @@ import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadAgents, loadSkills } from "../../src/lib/composer";
-import { setComposerOverlay } from "../../src/store/composerOverlay";
+import { setSessionAgent } from "../../src/store/chat";
+import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
 import { clearComposerScope, getComposerScope } from "../../src/store/composerScope";
 import { clearDraft } from "../../src/store/composer";
 import { setPlanSheetOpen, usePlanSheetOpen } from "../../src/store/planSheet";
@@ -22,6 +23,7 @@ const SKILLS = [{ name: "deploy" }, { name: "backups" }];
 beforeEach(async () => {
   clearDraft();
   clearComposerScope();
+  setSessionAgent(null);
   setComposerOverlay(null);
   localStorage.clear();
   globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
@@ -48,6 +50,12 @@ function renderComposer() {
 }
 
 const trigger = (c: HTMLElement) => c.querySelector<HTMLButtonElement>("button.kit-cbtn.tools")!;
+/** The agent rows' NATIVE radios (Codex round 2 — a `role=radio` button promises arrow keys it can't
+ *  deliver; a same-`name` input group gets them from the browser). The row label is their parent. */
+const radios = (c: HTMLElement) =>
+  Array.from(c.querySelectorAll<HTMLInputElement>("#composer-tools input[type=radio]"));
+const rowName = (r: HTMLInputElement) =>
+  r.closest("label")?.querySelector(".tools-name")?.textContent;
 
 describe("tools menu — trigger/panel wiring", () => {
   it("the trigger declares its popup and points at the panel only while it exists", () => {
@@ -80,16 +88,14 @@ describe("tools menu — trigger/panel wiring", () => {
     expect(barIdx).toBeGreaterThan(panelIdx);
   });
 
-  it("lists the configured agents as radios (plus a default row) and the skills as checkboxes", () => {
+  it("lists the configured agents as ONE native radio group (plus a default row), skills as checkboxes", () => {
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
-    const radios = container.querySelectorAll("#composer-tools [role=radio]");
-    expect(Array.from(radios).map((r) => r.querySelector(".tools-name")?.textContent)).toEqual([
-      "default",
-      "ops",
-      "research",
-    ]);
-    expect(radios[0].getAttribute("aria-checked")).toBe("true"); // default is the resting pick
+    const rows = radios(container);
+    expect(rows.map(rowName)).toEqual(["default", "ops", "research"]);
+    expect(rows[0].checked).toBe(true); // default is the resting pick
+    // one shared `name` = one group = the browser's own arrow-key selection, no roving focus to hand-roll
+    expect(new Set(rows.map((r) => r.name)).size).toBe(1);
     const boxes = container.querySelectorAll("#composer-tools [role=checkbox]");
     expect(Array.from(boxes).map((b) => b.querySelector(".tools-name")?.textContent)).toEqual([
       "deploy",
@@ -103,8 +109,7 @@ describe("tools menu — arming", () => {
   it("picking an agent + ticking skills arms the one-shot, and the trigger shows the armed marker", () => {
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
-    const radios = container.querySelectorAll<HTMLButtonElement>("#composer-tools [role=radio]");
-    fireEvent.click(radios[1]); // "ops"
+    fireEvent.click(radios(container)[1]); // "ops"
     fireEvent.click(
       container.querySelectorAll<HTMLButtonElement>("#composer-tools [role=checkbox]")[0],
     );
@@ -115,21 +120,51 @@ describe("tools menu — arming", () => {
     expect(btn.getAttribute("aria-label")).toContain("agent ops");
     expect(btn.getAttribute("aria-label")).toContain("deploy");
     expect(
-      container.querySelector("#composer-tools [role=radio][aria-checked=true] .tools-name")
-        ?.textContent,
-    ).toBe("ops");
+      radios(container)
+        .filter((r) => r.checked)
+        .map(rowName),
+    ).toEqual(["ops"]);
   });
 
   it("the clear row appears only when armed and drops the arming", () => {
     const { container } = renderComposer();
     fireEvent.click(trigger(container));
     expect(container.querySelector(".tools-clear")).toBe(null);
-    fireEvent.click(
-      container.querySelectorAll<HTMLButtonElement>("#composer-tools [role=radio]")[1],
-    );
+    fireEvent.click(radios(container)[1]);
     fireEvent.click(container.querySelector<HTMLButtonElement>(".tools-clear")!);
-    expect(getComposerScope()).toEqual({ agent: null, skills: [] });
+    expect(getComposerScope().agent).toBe(undefined);
+    expect(getComposerScope().skills).toEqual([]);
     expect(trigger(container).querySelector(".tools-dot")).toBe(null);
+  });
+
+  // Codex, round 2 — the checked row must describe where the next message ACTUALLY goes. With a sticky
+  // `/agent ops` in force and nothing armed, "default" ticked was a lie: the send would have gone to `ops`.
+  it("with a sticky `/agent ops` and nothing armed, the STICKY row reads as checked", () => {
+    setSessionAgent("ops");
+    const { container } = renderComposer();
+    fireEvent.click(trigger(container));
+    expect(
+      radios(container)
+        .filter((r) => r.checked)
+        .map(rowName),
+    ).toEqual(["ops"]);
+    expect(trigger(container).querySelector(".tools-dot")).toBe(null); // reflected ≠ armed
+  });
+
+  it("picking the DEFAULT row over a sticky pick arms an explicit `null` (not 'nothing armed')", () => {
+    setSessionAgent("ops");
+    const { container } = renderComposer();
+    fireEvent.click(trigger(container));
+    fireEvent.click(radios(container)[0]); // the "default" row
+    expect(getComposerScope().agent).toBe(null); // a REAL pick — runComposer forwards `agent: null`
+    expect(
+      radios(container)
+        .filter((r) => r.checked)
+        .map(rowName),
+    ).toEqual(["default"]);
+    // …and the trigger says so, rather than lighting a dot it can't explain
+    expect(trigger(container).querySelector(".tools-dot")).not.toBe(null);
+    expect(trigger(container).getAttribute("aria-label")).toContain("agent default");
   });
 });
 
@@ -151,5 +186,31 @@ describe("tools menu — the shared composer-overlay slot", () => {
     });
     expect(container.querySelector("#composer-tools")).toBe(null);
     expect(container.querySelector("#composer-suggest")).not.toBe(null);
+  });
+
+  // Codex, round 2 — the slot is module state and the surfaces are composer children: a tab/layout swap
+  // that drops the composer would leave the slot naming a surface that no longer exists (an invisible
+  // owner nothing else can displace), and the menu would spring back open on the next mount.
+  it("unmounting the composer hands the MENU's slot back — it doesn't spring open on remount", () => {
+    const first = renderComposer();
+    fireEvent.click(trigger(first.container));
+    expect(getComposerOverlay()).toBe("menu");
+
+    first.unmount();
+    expect(getComposerOverlay()).toBe(null);
+
+    const again = renderComposer();
+    expect(again.container.querySelector("#composer-tools")).toBe(null);
+    expect(trigger(again.container).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("…and the SUGGEST popover's, which would otherwise strand an owner nobody can see", () => {
+    const { container, unmount } = renderComposer();
+    fireEvent.change(container.querySelector<HTMLTextAreaElement>("#cmd-input")!, {
+      target: { value: "/c" },
+    });
+    expect(getComposerOverlay()).toBe("suggest");
+    unmount();
+    expect(getComposerOverlay()).toBe(null);
   });
 });

@@ -23,6 +23,7 @@ vi.mock("../../src/store/ui", () => ({ setUI: vi.fn() }));
 import {
   fillComposer,
   getCompletions,
+  getKnownSkills,
   loadAgents,
   loadProviders,
   loadSkills,
@@ -195,12 +196,27 @@ describe("runComposer × the one-shot menu scope (A6)", () => {
       agent: "ops",
       skills: ["deploy"],
     });
-    expect(getComposerScope()).toEqual({ agent: null, skills: [] }); // spent by the message it rode
+    expect(getComposerScope().agent).toBe(undefined); // spent by the message it rode
+    expect(getComposerScope().skills).toEqual([]);
   });
 
-  it("nothing armed → the call shape is exactly what it was before A6", () => {
+  it("nothing armed → the call shape is exactly what it was before A6 (NO `agent` key)", () => {
     runComposer("wake the vault");
     expect(chat.sendMessage).toHaveBeenCalledWith("wake the vault", { raw: "wake the vault" });
+    // the key's ABSENCE is the contract — `sendMessage` falls back to the sticky `/agent` on it
+    expect("agent" in (vi.mocked(chat.sendMessage).mock.calls[0][1] ?? {})).toBe(false);
+  });
+
+  // Codex, round 2 — the tri-state's reason to exist: with a sticky `/agent ops` set, picking the menu's
+  // "default" row must SAY so on the wire. `null` is a pick, not "nothing picked".
+  it("an armed `null` (the menu's default row) is forwarded as an explicit `agent: null`", () => {
+    setScopeAgent(null);
+    runComposer("wake the vault");
+    expect(chat.sendMessage).toHaveBeenCalledWith("wake the vault", {
+      raw: "wake the vault",
+      agent: null,
+    });
+    expect(getComposerScope().agent).toBe(undefined); // spent like any other arming
   });
 
   it("an explicit `/skill` send WINS: the arming is cleared, never merged", async () => {
@@ -221,7 +237,8 @@ describe("runComposer × the one-shot menu scope (A6)", () => {
       skills: ["deploy"],
       raw: "/deploy do it",
     });
-    expect(getComposerScope()).toEqual({ agent: null, skills: [] });
+    expect(getComposerScope().agent).toBe(undefined);
+    expect(getComposerScope().skills).toEqual([]);
   });
 
   it("an explicit `/<provider> <msg>` send wins the same way", async () => {
@@ -240,14 +257,44 @@ describe("runComposer × the one-shot menu scope (A6)", () => {
       mode: "llamacpp",
       raw: "/llamacpp ping",
     });
-    expect(getComposerScope().agent).toBe(null);
+    expect(getComposerScope().agent).toBe(undefined);
   });
 
-  it("a verb that sends NO message leaves the arming alone — it's still for the NEXT message", () => {
+  // The RETENTION matrix (Codex, round 2 — named cases): one rule, "a line that SENDS a message spends the
+  // arming; a line that doesn't, leaves it", checked across every routing branch at once.
+  it("scope retention: only a line that SENDS spends the arming", async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
+      String(url).includes("/api/providers")
+        ? Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ verbs: ["llamacpp"] }),
+          } as Response)
+        : Promise.resolve({ ok: false } as Response),
+    );
+    await loadProviders();
+    // bare verbs + an unknown one: no message goes out, so the arming is still for the NEXT message
+    for (const line of [
+      "/llamacpp",
+      "/agent",
+      "/agent ops",
+      "/clear",
+      "/compact",
+      "/nope",
+      "/help",
+    ]) {
+      setScopeAgent("ops");
+      toggleScopeSkill("deploy");
+      runComposer(line);
+      expect(getComposerScope(), line).toEqual({ agent: "ops", skills: ["deploy"] });
+      clearComposerScope();
+    }
+    // `!shell` doesn't go through the agent at all — nothing to apply the arming to, so it survives
     setScopeAgent("ops");
-    runComposer("/help");
-    runComposer("/privilege full");
+    runComposer("!ls -la");
+    expect(chat.runShell).toHaveBeenCalledWith("ls -la");
     expect(getComposerScope().agent).toBe("ops");
+    // and none of those lines sent a MESSAGE — `/compact` runs the summarizer, `/agent` flips the sticky
+    expect(chat.sendMessage).not.toHaveBeenCalled();
   });
 });
 
@@ -365,6 +412,49 @@ describe("getCompletions (A2)", () => {
 
     // `My Skill` can't be reached by `/verb` at all (the tokenizer stops at the space), so it is never offered
     expect(values("/my")).toEqual([]);
+  });
+
+  // Codex, round 2 — the fold map used to keep ONE name per lowercase key, so a backend that has both
+  // `Ops` and `ops` lost one of them entirely: absent from the menu, unroutable from the composer.
+  it("case-COLLIDING skills both survive: each is offered, and routes by its exact case", async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
+      String(url).includes("/api/skills")
+        ? Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([{ name: "Ops" }, { name: "ops" }]),
+          } as Response)
+        : Promise.resolve({ ok: false } as Response),
+    );
+    await loadSkills();
+
+    expect(getKnownSkills()).toEqual(["Ops", "ops"]); // both listed for the tools/skills menu
+    expect(values("/op")).toEqual(["Ops", "ops"]); // …and both typable from the popover
+
+    runComposer("/Ops task");
+    expect(chat.sendMessage).toHaveBeenLastCalledWith("task", {
+      skills: ["Ops"],
+      raw: "/Ops task",
+    });
+    runComposer("/ops task");
+    expect(chat.sendMessage).toHaveBeenLastCalledWith("task", {
+      skills: ["ops"],
+      raw: "/ops task",
+    });
+  });
+
+  it("an AMBIGUOUS fold with no exact match is unknown — never a guess at which skill was meant", async () => {
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) =>
+      String(url).includes("/api/skills")
+        ? Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([{ name: "Ops" }, { name: "OPS" }]),
+          } as Response)
+        : Promise.resolve({ ok: false } as Response),
+    );
+    await loadSkills();
+    runComposer("/ops task"); // neither canonical is spelled this way
+    expect(chat.sendMessage).not.toHaveBeenCalled();
+    expect(chat.pushSystemNote).toHaveBeenCalledWith("// unknown command: /ops — try /help");
   });
 
   it("`insert` replaces the whole token — the first one keeps its sigil, later ones don't", () => {

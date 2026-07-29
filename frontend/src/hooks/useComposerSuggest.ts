@@ -109,6 +109,11 @@ export function useComposerSuggest({
   useEffect(() => {
     if (wantOpen) setComposerOverlay("suggest");
     else releaseComposerOverlay("suggest");
+    // …and hand the slot back on UNMOUNT (Codex, round 2): a tab or layout swap that drops the composer
+    // takes the popover with it, and a slot still naming a surface that no longer exists is an invisible
+    // owner — nothing else can claim it. Guarded, for the same reason the `else` branch is: if another
+    // surface displaced us it owns the slot now and must keep it.
+    return () => releaseComposerOverlay("suggest");
   }, [wantOpen]);
 
   function accept(item: Completion): void {

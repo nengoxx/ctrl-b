@@ -1,4 +1,5 @@
 import { cleanup, render } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { mergeComposerSlots } from "../../src/theme-engine/kit/composer/mergeSlots";
@@ -59,10 +60,39 @@ describe("mergeComposerSlots (A6)", () => {
     });
   });
 
-  it("a SINGLE contribution passes through as the bare node (no wrapper fragment)", () => {
-    const one = slots("menu");
-    const merged = mergeComposerSlots(undefined, one);
-    expect(merged.controlsStart).toBe(one.controlsStart);
-    expect(merged.overlay).toBe(one.overlay);
+  // Codex, round 2 — the merge used to return the BARE node for a single contributor and a keyed fragment
+  // for several, so the slot's element TYPE depended on how many sources happened to contribute: flipping
+  // the plan placement (or swapping a theme) changed the cardinality and React REMOUNTED the surviving
+  // contributions, dropping their state. One shape now, keyed by ARGUMENT position so a source dropping
+  // out doesn't renumber its neighbours.
+  it("a cardinality change does NOT remount the SURVIVING contribution", () => {
+    let mounts = 0;
+    const Probe = () => {
+      useEffect(() => {
+        mounts++;
+      }, []);
+      return <b>menu</b>;
+    };
+    // exactly DefaultRoot's call shape: menu · (plan only when inline) · the theme's own slots
+    const merge = (inline: boolean) =>
+      mergeComposerSlots(
+        { controlsStart: <Probe /> },
+        inline ? slots("plan") : undefined,
+        slots("theme"),
+      );
+    const { rerender } = render(<div id="cs">{merge(true).controlsStart}</div>);
+    expect(mounts).toBe(1);
+    rerender(<div id="cs">{merge(false).controlsStart}</div>); // the plan goes pinned → 3 sources → 2
+    expect(mounts).toBe(1); // the menu survived the drop with its instance intact
+    rerender(<div id="cs">{merge(true).controlsStart}</div>);
+    expect(mounts).toBe(1); // …and back again
+  });
+
+  it("a single contribution renders no wrapper DOM (the `:empty` collapse still sees a bare row)", () => {
+    const merged = mergeComposerSlots(undefined, slots("menu"));
+    const { container } = render(<div id="cs">{merged.controlsStart}</div>);
+    // a Fragment emits nothing, so the slot's child is still the contribution itself
+    expect(container.querySelector("#cs")?.children.length).toBe(1);
+    expect(container.querySelector("#cs > b")?.textContent).toBe("menu");
   });
 });

@@ -57,11 +57,15 @@ export function useVerbsVersion(): number {
  *  (4.5). Loaded lazily from `GET /api/skills` and refreshed each time the composer module is used;
  *  the set is best-effort — an unknown `/verb` still falls through to the unknown-command note.
  *
- *  Keyed LOWERCASE → the CANONICAL name, because skill names are free-form (the backend reads them from
+ *  Keyed LOWERCASE → the CANONICAL names, because skill names are free-form (the backend reads them from
  *  the skill's frontmatter/dir name, no case folding) while routing lowercases the verb it parses: a
  *  case-sensitive set means `/OpsAssist` could never route, and a completion could insert a name the
- *  router then rejects. The map resolves the verb and hands the CANONICAL name to the backend. */
-const knownSkills = new Map<string, string>();
+ *  router then rejects. The map resolves the verb and hands the CANONICAL name to the backend.
+ *
+ *  The value is a BUCKET, not one name (Codex, round 2): the backend distinguishes `Ops` from `ops`, so a
+ *  one-name-per-key map silently dropped whichever landed second — gone from the menu AND unroutable.
+ *  Every canonical is kept; `resolveSkill` decides which one a typed verb means. */
+const knownSkills = new Map<string, string[]>();
 
 // Each loader is fired from several places (module import, CRUD invalidations, settings saves), so two
 // can be in flight at once. A per-loader generation counter, captured at call start and re-checked
@@ -69,11 +73,21 @@ const knownSkills = new Map<string, string>();
 // response lands last and overwrites the fresher set (v1.3.1 Codex review).
 let skillsGen = 0;
 
-/** The discovered skill names, for the composer tools/skills MENU (A6). A COPY — the Set itself stays
- *  private (routing owns it), so a UI read can never mutate the routing source. Pair with
- *  `useVerbsVersion()` for reactivity: a loader install bumps the version, the caller re-derives. */
+/** Every discovered skill name, for the composer tools/skills MENU (A6) — case-fold siblings included, so
+ *  the menu shows exactly what the backend has. A COPY — the map itself stays private (routing owns it),
+ *  so a UI read can never mutate the routing source. Pair with `useVerbsVersion()` for reactivity: a
+ *  loader install bumps the version, the caller re-derives. */
 export function getKnownSkills(): string[] {
-  return [...knownSkills.values()];
+  return [...knownSkills.values()].flat();
+}
+
+/** Which canonical skill a typed verb means, or `undefined` if none does. The EXACT typed case wins (the
+ *  backend matches skills by exact name, so `/Ops` must reach `Ops` even with an `ops` beside it); failing
+ *  that, a fold with exactly one canonical resolves to it. An AMBIGUOUS fold with no exact match resolves
+ *  to nothing — guessing would run the wrong skill, so the caller reports an unknown command instead. */
+function resolveSkill(bucket: string[], typed: string): string | undefined {
+  if (bucket.includes(typed)) return typed;
+  return bucket.length === 1 ? bucket[0] : undefined;
 }
 
 export async function loadSkills(): Promise<void> {
@@ -84,7 +98,11 @@ export async function loadSkills(): Promise<void> {
     const skills = (await res.json()) as { name: string }[];
     if (gen !== skillsGen) return; // a newer load started → it owns the set
     knownSkills.clear();
-    for (const s of skills) knownSkills.set(s.name.toLowerCase(), s.name);
+    for (const s of skills) {
+      const bucket = knownSkills.get(s.name.toLowerCase());
+      if (!bucket) knownSkills.set(s.name.toLowerCase(), [s.name]);
+      else if (!bucket.includes(s.name)) bucket.push(s.name);
+    }
     verbsChanged();
   } catch {
     /* best-effort — leave the set as-is */
@@ -287,11 +305,13 @@ export function runComposer(raw: string): void {
   // the exact line on Stop (D41 §6) — the raw-line map is keyed uniformly for every send path.
   // A6: this is the message the tools/skills menu armed, so its one-shot scope rides along and is SPENT
   // here (`take` = read + clear). Absent fields are omitted rather than passed empty so the call shape is
-  // unchanged when nothing is armed.
+  // unchanged when nothing is armed — and the armed agent is forwarded by PRESENCE (`!== undefined`), so
+  // an explicit "the configured default" pick reaches `sendMessage` as a real `agent: null` and overrides
+  // the sticky `/agent` there, instead of looking like no pick at all.
   const scope = takeComposerScope();
   void sendMessage(text, {
     raw: text,
-    ...(scope.agent ? { agent: scope.agent } : {}),
+    ...(scope.agent !== undefined ? { agent: scope.agent } : {}),
     ...(scope.skills.length ? { skills: scope.skills } : {}),
   });
 }
@@ -328,7 +348,8 @@ function routeSlash(text: string): void {
   // skill wins (the backend also drops the shadowed provider from `verbs`). `getCompletions` offers the
   // same three tiers in the same order off the same sources.
   const builtin = BUILTIN_BY_VERB.get(verb);
-  const skill = knownSkills.get(verb);
+  const bucket = knownSkills.get(verb);
+  const skill = bucket && resolveSkill(bucket, typed);
   if (builtin) {
     builtin.run(rest);
   } else if (skill !== undefined) {
@@ -342,7 +363,10 @@ function routeSlash(text: string): void {
       clearComposerScope();
       void sendMessage(rest, { skills: [skill], raw });
     } else pushSystemNote(`// /${skill} needs a task: /${skill} <what to do>`);
-  } else if (knownProviders.has(verb)) {
+    // `!bucket`: a verb whose fold IS a known skill stays with the skills tier even when the case is
+    // ambiguous — it falls to the unknown note below rather than quietly routing to a same-named
+    // provider, matching how `getCompletions` drops skill-shadowed providers.
+  } else if (!bucket && knownProviders.has(verb)) {
     // /<provider> [msg] → force that inference backend. With args = one-shot; bare = sticky.
     if (rest) {
       clearComposerScope();
@@ -401,7 +425,10 @@ export function getCompletions(draft: string): Completion[] {
     });
     return [
       ...BUILTIN_VERBS.filter((b) => hit(b.verb)).map((b) => mk(b.verb, "builtin")),
+      // every canonical, case-fold siblings included: each is separately typable (`/Ops` vs `/ops`) and
+      // routes to itself by exact match, so offering only one of them would hide a real skill.
       ...[...knownSkills.values()]
+        .flat()
         .filter((n) => typable(n) && hit(n) && !shadowed(n))
         .map((n) => mk(n, "skill")),
       ...[...knownProviders]

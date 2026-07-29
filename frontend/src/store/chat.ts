@@ -211,11 +211,17 @@ let turnMode: ChatMode | null = null;
 let turnSkills: string[] = [];
 
 // Sticky agent for this session, set by `/agent <name>` (7d). `null` → the thread's / configured
-// default AgentDef. Per-message only (not persisted on the thread) — like sessionMode, a resume
-// finishes on the default agent.
+// default AgentDef. Per-message only (not persisted on the thread): a resume/answer payload carries no
+// `agent` at all, so a continuation finishes on the SUSPENDED TURN's own agent (the server resolves it),
+// not on whatever is sticky now.
 let sessionAgent: string | null = null;
 export function setSessionAgent(name: string | null): void {
   sessionAgent = name;
+}
+/** The sticky pick, non-reactively — the composer menu needs it to show which agent the next message
+ *  would ACTUALLY run on when nothing is armed (A6 tri-state). */
+export function getSessionAgent(): string | null {
+  return sessionAgent;
 }
 
 // Sticky session privilege override, set by `/privilege <level>` (A1/D16). Reactive (lives in
@@ -1574,7 +1580,7 @@ export async function stopTurn(): Promise<void> {
  */
 export async function sendMessage(
   text: string,
-  opts?: { mode?: ChatMode; skills?: string[]; agent?: string; raw?: string },
+  opts?: { mode?: ChatMode; skills?: string[]; agent?: string | null; raw?: string },
 ): Promise<void> {
   const body = text.trim();
   if (!body) return;
@@ -1588,10 +1594,12 @@ export async function sendMessage(
   const skills = opts?.skills ?? []; // explicit /skill-name invocations (4.5)
   // A6 — the per-message agent, same one-shot-beats-sticky precedence as `mode`: the composer menu's
   // armed pick wins for THIS message, else the sticky `/agent <name>` session pick, else the server
-  // default (null). NOT stashed per-turn like turnMode/turnSkills: the resume/answer payloads carry no
-  // `agent` (the server resolves the suspended turn's own), so there is no pin a steer could re-point —
-  // a steer's agent rides its own POST, exactly like its `mode`.
-  const agent = opts?.agent ?? sessionAgent;
+  // default (null). Applied by PROPERTY PRESENCE, not `??`: `agent: null` is a REAL pick (the menu's
+  // "default" row, armed on purpose over a sticky specialist) and `??` would silently fall through it
+  // back to the sticky agent. NOT stashed per-turn like turnMode/turnSkills: the resume/answer payloads
+  // carry no `agent` (the server resolves the suspended turn's own), so there is no pin a steer could
+  // re-point — a steer's agent rides its own POST, exactly like its `mode`.
+  const agent = opts && "agent" in opts ? (opts.agent ?? null) : sessionAgent;
   if (!steering) {
     turnMode = mode;
     turnSkills = skills;

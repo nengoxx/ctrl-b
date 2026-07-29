@@ -19,24 +19,35 @@ import type { ComposerSlots } from "./types";
 // deliberate: variants gate on the SLOT being populated and collapse the empty wrapper in CSS
 // (`.sheet-controls:empty` / `.line-controls:empty`), so the merge never needs to know what a node renders.
 
+/** One contribution: its node, tagged with the ARGUMENT position of the source it came from. */
+type Contribution = [at: number, node: ReactNode];
+
 /** Fragment a slot's contributions into one node — `undefined` when nothing contributed (so a variant's
- *  `{controlsStart && …}` wrapper gate still works), the bare node when exactly one did. */
-function joinSlot(nodes: ReactNode[]): ReactNode {
+ *  `{controlsStart && …}` wrapper gate still works), otherwise ALWAYS the same shape: a keyed list.
+ *
+ *  One shape for one and for many (Codex, round 2): returning the bare node for a single contributor made
+ *  the slot's element TYPE depend on how many sources happened to contribute, so a change that alters the
+ *  count — flipping the plan placement, swapping a theme — remounted the SURVIVING contributions (React
+ *  reconciles a fragment against a bare node as a replacement, blowing away their state). Nothing is lost
+ *  by always fragmenting: a Fragment renders no DOM, so the variants' `{controlsStart && …}` gates and the
+ *  `:empty` collapse rules see exactly what they saw before.
+ *
+ *  The key is the SOURCE's argument position, not the index in the filtered list — that's what stays put
+ *  when a source drops out (menu 0 · plan 1 · theme 2 → menu 0 · theme 2, and both keep their instances). */
+function joinSlot(nodes: Contribution[]): ReactNode {
   if (nodes.length === 0) return undefined;
-  if (nodes.length === 1) return nodes[0];
-  // Index keys are correct here: the composition is positional and fixed for a given set of sources.
-  return nodes.map((n, i) => <Fragment key={i}>{n}</Fragment>);
+  return nodes.map(([at, n]) => <Fragment key={at}>{n}</Fragment>);
 }
 
 /** Compose composer addons into one `ComposerSlots`. `undefined` sources are skipped, so a caller can pass
  *  a conditional contribution inline (`inline ? kitPlanComposerSlots : undefined`). */
 export function mergeComposerSlots(...sources: (ComposerSlots | undefined)[]): ComposerSlots {
-  const controlsStart: ReactNode[] = [];
-  const overlay: ReactNode[] = [];
-  for (const src of sources) {
-    if (!src) continue;
-    if (src.controlsStart !== undefined) controlsStart.push(src.controlsStart);
-    if (src.overlay !== undefined) overlay.push(src.overlay);
-  }
+  const controlsStart: Contribution[] = [];
+  const overlay: Contribution[] = [];
+  sources.forEach((src, at) => {
+    if (!src) return;
+    if (src.controlsStart !== undefined) controlsStart.push([at, src.controlsStart]);
+    if (src.overlay !== undefined) overlay.push([at, src.overlay]);
+  });
   return { controlsStart: joinSlot(controlsStart), overlay: joinSlot(overlay) };
 }

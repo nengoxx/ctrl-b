@@ -3085,6 +3085,66 @@ describe("per-message agent (A6)", () => {
     expect(body.agent).toBe(null);
   });
 
+  // Codex, round 2 — the opts.agent is applied by PROPERTY PRESENCE, not `??`. `agent: null` is the menu's
+  // "default" row armed on purpose: it must BEAT a sticky `/agent ops` for this one message, where a `??`
+  // fallback would silently hand the message to `ops` while the menu showed "default" ticked.
+  it("an explicit `agent: null` overrides the sticky pick — and leaves it standing for the next send", async () => {
+    let body: Record<string, unknown> = {};
+    globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      body = JSON.parse(init!.body as string) as Record<string, unknown>;
+      return Promise.resolve(sseResponse([{ event: "done", data: { state: "completed" } }]));
+    });
+    renderHook(() => useChat());
+
+    setSessionAgent("ops");
+    await act(async () => {
+      await sendMessage("hi", { agent: null }); // the menu's default row, armed over the sticky pick
+    });
+    expect(body.agent).toBe(null);
+
+    await act(async () => {
+      await sendMessage("hi"); // one-shot spent → the sticky pick is back in charge
+    });
+    expect(body.agent).toBe("ops");
+    setSessionAgent(null);
+  });
+
+  it("resume and answer payloads carry NO `agent` key — the server resolves the suspended turn's own", async () => {
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "m1" } },
+      {
+        event: "part.added",
+        data: {
+          messageId: "m1",
+          part: { type: "tool_call", call_id: "c1", tool: "wake_host", args: {}, state: "pending" },
+        },
+      },
+      { event: "tool.permission", data: { callId: "c1", token: "tok-1" } },
+      { event: "done", data: { state: "suspended" } },
+    ]);
+    renderHook(() => useChat());
+    setSessionAgent("ops"); // a sticky pick that must NOT leak into a continuation
+    await act(async () => {
+      await sendMessage("wake", { agent: "research" });
+    });
+
+    const bodies: Record<string, unknown>[] = [];
+    globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(init!.body as string) as Record<string, unknown>);
+      return Promise.resolve(sseResponse([{ event: "done", data: { state: "completed" } }]));
+    });
+    await act(async () => {
+      await resumeCall("c1", "execute");
+    });
+    await act(async () => {
+      await answerQuestion("c1", "yes");
+    });
+    expect(bodies.length).toBe(2);
+    for (const b of bodies) expect("agent" in b).toBe(false);
+    setSessionAgent(null);
+  });
+
   it("a STEER's agent rides its own POST and does NOT re-point the live turn's mode/skills pins (D41)", async () => {
     // A held-open turn sent with mode+skills, then a steer with a DIFFERENT agent/mode/skills.
     let controller!: ReadableStreamDefaultController<Uint8Array>;
