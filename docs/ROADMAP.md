@@ -94,12 +94,18 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
   replies render **markdown** with **copy / send-to-composer** on code blocks (generalize Vapor
   `editCmd`/`cmdInto`). See `ARCHITECTURE.md` §5. *(Prefix routing + formatting + `/local`,`/cloud`
   is effectively v1; custom/extensible slash commands are the post-v1 part.)*
-- **Composer autocomplete / typeahead (raised 2026-06-14):** as you type, a filtered popover above
-  the composer suggests completions — `/` → slash commands; `/agent ` → agent names
-  (`GET /api/agents`); `/<partial>` → matching skills (`GET /api/skills`) + commands. **Frontend-only**
-  (reuses existing endpoints + a static command list), viable + cheap. Becomes useful once 7e makes
-  the agent/skill lists real (folders + per-agent skills), so it lands as a small slice after that —
-  off the critical path. Arrow/Tab to select; Esc to dismiss.
+- **Composer autocomplete / typeahead (raised 2026-06-14) — ✅ SHIPPED 2026-07-29 (`39a7fdd`, QoL
+  cluster Slice 1):** a filtered popover above the composer — first token → built-ins > skills >
+  providers (the routing precedence, one shared `BUILTIN_VERBS` table); `/agent ` → agent names;
+  `/priv[ilege] ` → the privilege ladder. Kit-only (frozen vapor stays verb-only, owner ruling);
+  APG-derived list-autocomplete ARIA on the native textbox role (no `role="combobox"`/`aria-expanded`
+  — neither is conforming on a `<textarea>`; Codex round, fixed `a0bfdfa`); tap-accept on
+  pointerdown; Arrow/Tab/Enter + Esc on desktop.
+  - **Follow-up (owner, 2026-07-29 device eyeball — deferred, its own design session):** the suggest
+    popover renders the base kit outline chrome regardless of the resolved `composerSkin` — e.g. the
+    line layout + bezel skin composer gets an outlined popover that visibly doesn't belong to its
+    bar. Design goal: the popover (and composer-anchored overlays generally) participate in the D37
+    skin axis so each skin styles its own popover chrome. Optional polish, not scheduled.
 - **Open:** slash-command registry shape; how custom commands are defined (config vs UI);
   configurable command sigil storage; autocomplete popover styling (Vapor tokens, D7).
 
@@ -233,8 +239,14 @@ back to the analysis.
   an agent that lacks it — the clean inverse pattern is a broad agent + skills that narrow per intent.
 - **Open:** shipped presets vs all-custom; whether to surface the active agent in the composer/header;
   interaction with privilege (A1) and skills (A5).
-- **Composer tools/skills MENU (the UI face of this feature) — noted 2026-07-11 (owner, at the A2
-  composer-surface eyeball):** surface the selection control as a **menu in the composer**, at the
+- **Composer tools/skills MENU — ✅ SHIPPED 2026-07-29** (QoL cluster Slice 2, `ad8ef82` + review
+  waves `0b0aad2`/`04247c7`): trigger at the controls leading edge (kit-only), one-shot tri-state
+  agent radio (native inputs) + skill ticks riding the existing `ChatRequest.agent`/`skills` fields,
+  `mergeComposerSlots` (the DefaultRoot inline slot-drop limitation is dead), and the
+  `store/composerOverlay` one-overlay-at-a-time coordinator. Typed verbs beat menu picks; arming is
+  spent on send. Residual (LOW, recorded): a 409/Stop-harvest after dispatch loses the armed pick.
+  Original seam note kept below for provenance — noted 2026-07-11 (owner, at the A2
+  composer-surface eyeball): surface the selection control as a **menu in the composer**, at the
   controls **leading edge beside the plan pill**. The layout seam already exists and is additive:
   the D30 slot contract (`ComposerSlots.controlsStart` — `kit/composer/types.ts`) takes any node, so
   a menu trigger composes in next to `PlanPill` with zero contract change (a new named slot is also
@@ -422,6 +434,13 @@ back to the analysis.
   SSH/open-terminal channels before any persistent helper agent).
 
 ### D2. Wake-on-connection
+
+> **✅ B (PWA-connect MVP) SHIPPED 2026-07-29** (QoL cluster Slice 3, `0bfaf34`): per-host
+> `wake_on_connect` flag (unified host object, MachineEditor switch) + `wake: {cooldown_s: 300}` ·
+> the SSE stream connect fires `wake_host` through `ActionService.invoke(actor=SYSTEM)` — audited,
+> detached, guarded, per-host cooldown, cached-online skip. First connect after a backend restart
+> wakes all flagged hosts (owner-ruled: intended). **A** (the Tailscale-status poll) still lands with
+> the scheduler/monitor subsystem and joins the same `wake:` section + action path.
 
 - **What:** (from the old README TODO) auto-wake chosen hosts when the phone/owner joins the
   LAN/tailnet — walk in the door, the boxes are already coming up.
@@ -628,6 +647,17 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
   priority for a single-user tailnet app; noted so it isn't forgotten.
 
 ### F1. Push to phone on fleet events
+
+> **✅ CHANNEL 1 (foreground) SHIPPED 2026-07-29** (QoL cluster Slice 3, `0bfaf34` + the review wave
+> `7168521`): `notifications: {enabled=False, events:{agent_input, turn_done, action_failed}}` (master
+> OFF = the owner's spam guard) · one engine in `<AppEngines/>` gated on hidden-page + permission,
+> fed by BOTH streams **on every transport** (live, buffered, `turn.sync`, re-attach — thread-namespaced
+> dedupe keys) · Conf group 10 with honest denied/no-HTTPS states · Android delivers via the existing
+> SW registration (`Notification` constructor throws there; SW-path taps inform but don't navigate —
+> the click handler belongs to channel 2's custom worker). **Recorded residuals:** cross-device prefs
+> staleness on a hidden page (PUT-echo seeding fixed same-device; polling/SSE-invalidation declined) ·
+> id-less-transport turns share a thread-scoped dedupe key (bounded, tested) · host up/down events need
+> the D2-A/A3 monitor loop before that toggle can exist. Channels 2/3 (Web Push · ntfy/bot) stay future.
 
 - **What:** notify when a host wakes/dies, an automation finishes, an action fails, or — key —
   **the agent needs input it can't get** (a `question` or a `confirm` it lacks privilege for, while

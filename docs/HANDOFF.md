@@ -12,7 +12,29 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-28 night — ✅ **v1.3.2 IS LIVE ON EMMA**)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-29 — the QUICK QoL CLUSTER is CODE-COMPLETE, unpushed)
+> **All four cluster items BUILT + four Codex review rounds closed. Seven commits on main, NOT pushed:**
+> `39a7fdd` A2 autocomplete → `ad8ef82` A6 tools/skills menu → `a0bfdfa`+`0b0aad2` review waves →
+> `04247c7` micro-wave → `0bfaf34` F1 foreground notifications + D2-B wake-on-connect → `7168521` the
+> final review wave (notifications publish on EVERY transport — live/buffered/turn.sync/re-attach —
+> the round's one MED). Docs synced in this block's commit. Gate green throughout: backend **1084** ·
+> FE **779/781** · full `check.py` 6/6 on every commit. Dev units RUNNING (:5434 + :5173) for the
+> owner's eyeball. **Review record:** round 1 (A2) SHIP-WITH-FIXES → wave; round 2 (A6+wave)
+> SHIP-WITH-FIXES → wave; round 3 verify = all CLOSED + 3 LOWs → micro-wave; round 4 (Slice 3 +
+> micro-wave) SHIP-WITH-FIXES → final wave. Every finding fixed or explicitly ruled (rulings inline in
+> the ROADMAP entries). **Key residuals recorded in ROADMAP:** popovers don't follow `composerSkin`
+> (owner-deferred design session, covers suggest+menu at once) · armed menu pick lost on 409/harvest
+> (LOW) · cross-device notification-prefs staleness while hidden · Android notification taps inform
+> but don't navigate (custom SW = the Web Push slice) · host up/down toggle needs the D2-A/A3 monitor.
+> **NEXT:** (1) owner device eyeball at :5173 — NOTE the notification *firing* test needs a secure
+> origin (dev is plain HTTP → the API is absent there by design; the real phone test = post-release
+> via Tailscale Serve, or temporarily Serve the dev port); (2) owner's release call — **the release IS
+> the shipped `update.sh`'s first PLAIN-form run** (`bash ~/apps/ctrl-b/deploy/linux/update.sh vX.Y.Z`);
+> (3) then **A3 automations = the next design conversation** (owner-locked). Ops notes: harness
+> background-Bash gets killed ~10 min — long Codex runs go `setsid nohup` + a Monitor on the OUTPUT
+> FILE (`$!` after setsid is the dead wrapper, not codex — match by name, `pgrep -f "codex exec"`).
+>
+> ## ▶ PREVIOUS STATE (2026-07-28 night — ✅ **v1.3.2 IS LIVE ON EMMA**)
 > **The stabilization patch SHIPPED as `v1.3.2` (= `92241a4`; `v1.3.1` = `983f7dc` stays tagged but
 > was NEVER DEPLOYED — it carries the updater bug below; not a rollback target).** CI release gate
 > green (run 30386540373, 4m12s, e2e ✓) · cutover via the **bootstrap form of the FIXED
