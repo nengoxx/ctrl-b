@@ -6,6 +6,7 @@
 // until `resumeCall(execute|dismiss)` reopens the stream (DESIGN §5.3, §12).
 
 import { clearAudioCache } from "../lib/audioController";
+import { publishNotify } from "../lib/notifyBus";
 import { currentPlanOf } from "../lib/plan";
 import type { Privilege } from "../lib/privilege";
 import type { ChatMessage, Part, Plan, PlanStep, RunState, Thread, ToolResult } from "../types";
@@ -186,6 +187,22 @@ function seqGateDrop(id: string | undefined): boolean {
   if (p.seq <= lastSeq) return true;
   lastSeq = p.seq;
   return false;
+}
+
+/** The stable identity of the turn being reduced right now — the de-dupe key base for the F1
+ *  turn-terminal notifications. `lastTurnId` is the wire `turn_id` the seq gate just latched, so it
+ *  is per-turn and survives a re-attach (a replayed `done` computes the SAME key and the engine's
+ *  seen-set swallows it). Falls back to the thread id for streams with no frame ids (tests, and any
+ *  future transport that doesn't stamp them). */
+function turnKey(): string {
+  return lastTurnId ?? state.threadId ?? "turn";
+}
+
+/** The shared key for "this turn FAILED". Deliberately one key for the `error` frame AND the
+ *  `done(error)` that follows it: the server emits both for a single failure, so a distinct key per
+ *  frame would buzz the owner twice for one thing. */
+function turnFailKey(): string {
+  return `turn-error:${turnKey()}`;
 }
 
 // Sticky inference backend for this session, set by a bare `/<provider>` verb (A11/D48 C7). `null` →
@@ -689,6 +706,16 @@ function makeTurnReducer(ctx: TurnCtx) {
         modeByCall[callId] = turnMode; // pin THIS turn's mode for the eventual resume (ACA-16)
         skillsByCall[callId] = turnSkills; // …and its active skills (C5-M1)
         setCallState(callId, "awaiting_confirm");
+        // F1 — the agent is now BLOCKED on the owner. This is the class that makes notifications
+        // worth having: an unattended turn parks here indefinitely otherwise. Keyed on `callId`, so a
+        // `reattachTurn` replay of this frame resolves to the same key and is swallowed by the engine.
+        publishNotify({
+          cls: "agent_input",
+          key: `perm:${callId}`,
+          title: "Approval needed",
+          body: str(data.prompt) ?? `${str(data.tool) ?? "a tool"} is waiting for your approval`,
+          focus: "agent",
+        });
         break;
       }
       case "tool.question": {
@@ -699,6 +726,14 @@ function makeTurnReducer(ctx: TurnCtx) {
         modeByCall[callId] = turnMode; // pin THIS turn's mode for the eventual answer (ACA-16)
         skillsByCall[callId] = turnSkills; // …and its active skills (C5-M1)
         setCallState(callId, "awaiting_answer");
+        // F1 — same class as the confirm bubble: the turn is parked on the owner's reply.
+        publishNotify({
+          cls: "agent_input",
+          key: `ask:${callId}`,
+          title: "The agent has a question",
+          body: str(data.question) ?? "open the chat to answer",
+          focus: "agent",
+        });
         break;
       }
       case "tool.result": {
@@ -778,6 +813,17 @@ function makeTurnReducer(ctx: TurnCtx) {
       case "error":
         failStream(str(data.message) ?? "agent error");
         ctx.settled = true;
+        // F1 — a turn that ENDED, badly. Same class as `done` (the user's attention is wanted back
+        // either way), and the SAME key the `done(error)` that follows it publishes under — the server
+        // emits both for one failure, and the engine's de-dupe is what collapses the pair into a
+        // single buzz carrying THIS frame's real message.
+        publishNotify({
+          cls: "turn_done",
+          key: turnFailKey(),
+          title: "The agent stopped",
+          body: str(data.message) ?? "agent error",
+          focus: "agent",
+        });
         break;
       case "done": {
         ctx.settled = true;
@@ -788,6 +834,30 @@ function makeTurnReducer(ctx: TurnCtx) {
           pushSystemNote("// reached the step limit — send a message to continue");
         }
         set({ status: st === "error" ? "error" : "idle", streamingId: null });
+        // F1 — the turn reached a terminal state. `suspended` is deliberately EXCLUDED: it is the
+        // terminal that always accompanies a `tool.permission`/`tool.question` in the same stream, so
+        // notifying here too would double-buzz the exact case `agent_input` already covers (and would
+        // do it under a preference the owner may have turned off). `error` publishes under the
+        // preceding `error` frame's key so the pair de-dupes to ONE notification — and still produces
+        // one if some path ever emits `done(error)` on its own.
+        if (st !== "suspended") {
+          const failed = st === "error";
+          publishNotify({
+            cls: "turn_done",
+            key: failed ? turnFailKey() : `turn-done:${turnKey()}`,
+            title: failed
+              ? "The agent stopped"
+              : st === "capped"
+                ? "The agent hit its step limit"
+                : "The agent finished",
+            body: failed
+              ? "the turn ended with an error"
+              : st === "capped"
+                ? "send a message to continue"
+                : "your reply is ready in the chat",
+            focus: "agent",
+          });
+        }
         break;
       }
       default:

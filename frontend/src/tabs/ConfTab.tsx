@@ -23,6 +23,10 @@ import { disclosureToggle } from "../lib/disclosure";
 import { pickAgentSection, useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
+import {
+  notificationPermission,
+  requestNotificationPermission,
+} from "../hooks/useForegroundNotifications";
 import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
 import { type MemoryCfg } from "../hooks/useMemory";
 import {
@@ -699,8 +703,19 @@ type Draft = Pick<
   | "open_terminal"
   | "shell"
   | "voice"
+  | "notifications"
   | "providers"
 >;
+
+// F1 — the seed used when the settings doc carries no `notifications` block. The live backend always
+// sends one (`Settings` defaults the section, so the dump includes it), so this only bites against a
+// doc from an older/mismatched build — but the draft, the changed-section diff and the row controls
+// all assume a well-formed object, and `undefined` propagating through those is a worse failure than
+// one explicit default. Same defensive shape `memoryCfg`/`agentCfg` use for their sections.
+const NOTIFICATIONS_FALLBACK: SettingsDoc["notifications"] = {
+  enabled: false,
+  events: { agent_input: true, turn_done: true, action_failed: true },
+};
 
 function pickDraft(s: SettingsDoc): Draft {
   return {
@@ -712,6 +727,7 @@ function pickDraft(s: SettingsDoc): Draft {
     open_terminal: s.open_terminal,
     shell: s.shell,
     voice: s.voice,
+    notifications: s.notifications ?? NOTIFICATIONS_FALLBACK,
   };
 }
 
@@ -864,6 +880,11 @@ export function ConfTab({ active }: Props) {
   const { data: skillList = [] } = useSkills();
   const { data: defaultPrompt = "" } = useDefaultPrompt();
   const [draft, setDraft] = useState<Draft | null>(null);
+  // F1 — the BROWSER's notification grant. Deliberately component state, not draft/config: it's device
+  // state owned by the browser, so it's read at mount and updated by the request below, never saved.
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">(
+    notificationPermission,
+  );
   const [openProvider, setOpenProvider] = useState<string | null>(null); // A11 — expanded provider card
   const [adding, setAdding] = useState(false); // A11 — the "add provider" affordance
   const [newProvName, setNewProvName] = useState("");
@@ -1154,12 +1175,47 @@ export function ConfTab({ active }: Props) {
     );
   }
 
+  // F1 — the notifications master + the three per-class toggles. `setNotifyEvent` writes into the ONE
+  // nested `events` object (mirroring `NotificationEventsCfg`), so a future class is one more key here
+  // and a new row below — never a second setter or a sibling map.
+  function setNotifyEnabled(on: boolean) {
+    setDraft((d) => (d ? { ...d, notifications: { ...d.notifications, enabled: on } } : d));
+  }
+  /** The master toggle does TWO things with different lifetimes: it edits the draft (saved with the
+   *  bar, like every other setting) and — on the ENABLE gesture only — asks the browser for
+   *  permission. The request must ride a user gesture (browsers reject or auto-deny otherwise), which
+   *  is exactly why the engine can't ask for itself on mount. The grant is browser state, so it
+   *  applies immediately and is never part of the save; a `denied` outcome still flips the config
+   *  preference (it's a real preference) and the row explains why nothing will arrive. */
+  async function toggleNotifications() {
+    const next = !notif?.enabled;
+    setNotifyEnabled(next);
+    if (next) setNotifPerm(await requestNotificationPermission());
+  }
+  function setNotifyEvent<K extends keyof Draft["notifications"]["events"]>(
+    key: K,
+    val: Draft["notifications"]["events"][K],
+  ) {
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            notifications: {
+              ...d.notifications,
+              events: { ...d.notifications.events, [key]: val },
+            },
+          }
+        : d,
+    );
+  }
+
   const sx = draft?.searxng;
   const emb = draft?.embeddings;
   const term = draft?.open_terminal;
   const sh = draft?.shell;
   const vstt = draft?.voice.stt;
   const vtts = draft?.voice.tts;
+  const notif = draft?.notifications;
 
   // A11/D48 B2 + R19 — the reference-guard. Collect every config-held ModelRef (the draft's inference
   // primary/fallbacks + the settings doc's agent.defaults.model / summarizer[s] / routing.lead), resolve
@@ -1380,6 +1436,7 @@ export function ConfTab({ active }: Props) {
           timeout_s: Number(draft.voice.tts.timeout_s),
         },
       },
+      notifications: draft.notifications, // all booleans — nothing to coerce
     };
     // Send ONLY the sections that actually changed. Sending everything made every scalar save a
     // resolution-relevant patch (the backend strict-resolves any patch touching providers / inference /
@@ -1980,9 +2037,62 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
+      {/* F1 — placed right after the Voice groups: both are "how the app reaches out to you on this
+          device", both depend on a secure context (Tailscale Serve HTTPS), and both mix a saved
+          config preference with an immediate browser-capability gesture. */}
+      <ConfGroup id="notifications" num="10" title="Notifications" right="while the app is open">
+        <div className="conf-card">
+          <SettingRow
+            label="Enabled"
+            desc={
+              notifPerm === "unsupported"
+                ? "needs HTTPS (Tailscale Serve) — the browser hides notifications on a plain http origin"
+                : notifPerm === "denied"
+                  ? "blocked in the browser — allow notifications for this site in its site settings"
+                  : "buzz this device on the events below. best-effort: delivery needs the app open or backgrounded — push to a closed app is a future feature"
+            }
+          >
+            <Switch
+              on={!!notif?.enabled}
+              onToggle={() => void toggleNotifications()}
+              label="Notifications enabled"
+              disabled={notifPerm === "unsupported"}
+            />
+          </SettingRow>
+          {/* The three classes mirror `NotificationEventsCfg` one-for-one. Inert (but visible, and
+              still saved) until the master is on — the master is the spam guard, so these describe
+              WHICH events would notify, not whether any do. */}
+          <SettingRow label="Agent needs you" desc="a confirm bubble or a question is waiting">
+            <Switch
+              on={!!notif?.events.agent_input}
+              onToggle={() => setNotifyEvent("agent_input", !notif?.events.agent_input)}
+              label="Notify on agent input"
+              disabled={!notif?.enabled}
+            />
+          </SettingRow>
+          <SettingRow label="Turn finished" desc="an agent turn completed, capped or errored">
+            <Switch
+              on={!!notif?.events.turn_done}
+              onToggle={() => setNotifyEvent("turn_done", !notif?.events.turn_done)}
+              label="Notify on turn done"
+              disabled={!notif?.enabled}
+            />
+          </SettingRow>
+          <SettingRow label="Action failed" desc="a recorded action ended error, denied or timeout">
+            <Switch
+              on={!!notif?.events.action_failed}
+              onToggle={() => setNotifyEvent("action_failed", !notif?.events.action_failed)}
+              label="Notify on action failed"
+              disabled={!notif?.enabled}
+            />
+          </SettingRow>
+        </div>
+        {saveBar}
+      </ConfGroup>
+
       <ConfGroup
         id="mcp"
-        num="10"
+        num="11"
         title="MCP servers"
         right={`${settings?.mcp_servers?.length ?? 0} server${(settings?.mcp_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
@@ -1995,7 +2105,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="openapi"
-        num="11"
+        num="12"
         title="OpenAPI tool servers"
         right={`${settings?.openapi_servers?.length ?? 0} server${(settings?.openapi_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
@@ -2020,7 +2130,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="agents"
-        num="12"
+        num="13"
         title="Agents"
         right={`${agentCount} agent${agentCount === 1 ? "" : "s"}`}
         defaultCollapsed
@@ -2035,7 +2145,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="skills"
-        num="13"
+        num="14"
         title="Skills"
         right={`${skillNames.length} discovered`}
         defaultCollapsed
@@ -2045,7 +2155,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="memory"
-        num="14"
+        num="15"
         title="Memory"
         right={memoryCfg.enabled ? "on" : "off"}
         defaultCollapsed
@@ -2055,7 +2165,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="computers"
-        num="15"
+        num="16"
         title="Computers"
         right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
       >
@@ -2068,12 +2178,12 @@ export function ConfTab({ active }: Props) {
           shifts to 17 while hosted); the standalone UtilsTab is unmounted in this layout, so its
           "agent-tools" child group has no duplicate DOM id. */}
       {hostsUtils && (
-        <ConfGroup id={HOSTED_UTILS_GROUP_ID} num="16" title="Tools" right="utility tools">
+        <ConfGroup id={HOSTED_UTILS_GROUP_ID} num="17" title="Tools" right="utility tools">
           <UtilsContent />
         </ConfGroup>
       )}
 
-      <ConfGroup id="appearance" num={hostsUtils ? "17" : "16"} title="Appearance">
+      <ConfGroup id="appearance" num={hostsUtils ? "18" : "17"} title="Appearance">
         {/* Every row uses the shared `SettingRow` (label + desc + trailing control) so the group has one
             consistent shape; the Palette axis uses the `Swatches` color-chip radiogroup. */}
         <div className="conf-card">

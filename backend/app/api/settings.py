@@ -65,6 +65,20 @@ async def get_appearance(request: Request) -> dict[str, Any]:
     return settings.appearance.model_dump(mode="json")
 
 
+@router.get("/notifications")
+async def get_notifications(request: Request) -> dict[str, Any]:
+    """The notification preferences only (F1): `{enabled, events:{agent_input, turn_done,
+    action_failed}}`.
+
+    The same lightweight always-on read as `GET /api/appearance` above, and for the same reason: the
+    consumer is an app-global engine (the foreground-notification hook in `<AppEngines/>`), while the
+    full `GET /api/settings` is Conf-tab-scoped on the client and so can never drive it. Writes still
+    go through the ordinary `PUT /api/settings` — this is a read projection, not a second write path.
+    No secrets in this block → no masking needed."""
+    settings: Settings = request.app.state.settings
+    return settings.notifications.model_dump(mode="json")
+
+
 def _pop_provider_metadata(patch: dict[str, Any]) -> tuple[dict[str, str], str | None]:
     """Strip the two A11/D48 PUT TRANSPORT fields from the raw patch BEFORE it reaches the merge — they
     are request metadata, never config that lands in `Settings`/YAML (C1). `provider_renames`

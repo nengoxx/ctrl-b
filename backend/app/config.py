@@ -722,6 +722,11 @@ class ComputerCfg(BaseModel):
     #: `True` ⇒ VPN-first SSH connect/failover (e.g. a host whose LAN sshd is firewalled but whose
     #: overlay sshd answers). The LAN>VPN order lives ONLY in `host_addresses`, never at a call site.
     ssh_prefer_vpn: bool = False
+    #: Wake-on-connect (ROADMAP D2-B): opening the live SSE stream fires `wake_host` for this machine.
+    #: An additive optional field on the unified per-host object — deliberately NOT a `wake.targets`
+    #: list beside it (CLAUDE.md hard rule); the next per-host automation dimension joins here too.
+    #: Needs a `mac` to do anything (the wake itself DENIES without one, same as the button).
+    wake_on_connect: bool = False
     tags: list[str] = []
     services: dict[str, ServiceCfg] = Field(default_factory=dict)
     #: Per-host, per-theme presentation override (Phase 11 / D28 §9.9) — an OPEN pass-through blob the
@@ -820,6 +825,62 @@ class AppearanceCfg(BaseModel):
     updated_at: datetime | None = None  # server-stamped on each write; None until first saved
 
 
+class NotificationEventsCfg(BaseModel):
+    """Which event CLASSES are notify-worthy (F1). Each class is one optional field on the ONE unified
+    events object — the next class is an additive field with a default, never a sibling map.
+
+    All three default **on**, because the master `NotificationsCfg.enabled` is what actually arms the
+    feature (owner's spam guard, ROADMAP F1 "decided defaults"): nothing can fire while it's off, so a
+    per-class default of False would only mean "enabling notifications does nothing".
+
+    - `agent_input`: the agent is blocked on the owner — a confirm bubble or a `question` (the class
+      that turns notifications into the response channel for an unattended agent).
+    - `turn_done`: an agent turn ended — completed, capped, or errored. NOT `suspended`, which always
+      accompanies a confirm/question frame and is therefore already covered by `agent_input`.
+    - `action_failed`: a recorded Event whose `RunState` is a failure (error / denied / timeout)."""
+
+    model_config = {"extra": "allow"}
+
+    agent_input: bool = True
+    turn_done: bool = True
+    action_failed: bool = True
+
+
+class NotificationsCfg(BaseModel):
+    """Notifications (F1). v1 ships the **foreground channel only**: the PWA's own Notifications API,
+    driven client-side by the live SSE feeds it is already subscribed to. There is deliberately no
+    server-side sender here — no Web Push / VAPID, no ntfy, no bot (all ROADMAP F1 futures). That is
+    why this section is pure preference: the backend stores it and hands it to the client, and the
+    client owns delivery + gating.
+
+    `enabled=False` by default: the whole feature is opt-in, and while it is off NOTHING fires
+    regardless of the per-class toggles below. When a future channel lands it joins this object as its
+    own optional field (`web_push: WebPushCfg`), never a parallel top-level section."""
+
+    model_config = {"extra": "allow"}
+
+    enabled: bool = False
+    events: NotificationEventsCfg = Field(default_factory=NotificationEventsCfg)
+
+
+class WakeCfg(BaseModel):
+    """Fleet wake automation (ROADMAP D2). Today it holds only the shared cooldown consumed by
+    **D2-B wake-on-connect** (`ComputerCfg.wake_on_connect`): the SSE stream connect fires `wake_host`
+    for each flagged, offline host, and this bounds how often one host can be re-woken by reconnects
+    (a phone walking in and out of wifi range reopens the stream constantly).
+
+    Deliberately a SECTION, not a scalar on `server`: D2-A (the Tailscale-status poll — owner device
+    nodes, the offline→online debounce) is the same feature reached by a different trigger, and it
+    lands here as additional optional fields on THIS object rather than a second wake-ish section.
+
+    `cooldown_s=0` disables the cooldown (every connect may wake). WOL is idempotent, so the cooldown
+    is Event-log noise reduction, not a safety property."""
+
+    model_config = {"extra": "allow"}
+
+    cooldown_s: int = Field(default=300, ge=0)  # per-host seconds between wake-on-connect fires
+
+
 class Settings(BaseModel):
     """Typed view over `config.yaml`.
 
@@ -845,6 +906,11 @@ class Settings(BaseModel):
     open_terminal: OpenTerminalCfg = Field(default_factory=OpenTerminalCfg)
     shell: ShellCfg = Field(default_factory=ShellCfg)
     tailscale: TailscaleCfg = Field(default_factory=TailscaleCfg)
+    #: Foreground notification preferences (F1) — read by the client through the thin
+    #: `GET /api/notifications`; the backend never sends a notification itself.
+    notifications: NotificationsCfg = Field(default_factory=NotificationsCfg)
+    #: Fleet wake automation (ROADMAP D2) — today the wake-on-connect cooldown (D2-B).
+    wake: WakeCfg = Field(default_factory=WakeCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
     #: Agents are **folder-only** (D14/D15 #3): discovered by scanning `$CTRLB_HOME/agents/<name>/`
@@ -932,6 +998,7 @@ class Settings(BaseModel):
                 role=cfg.role,
                 vpn_host=cfg.vpn_host,
                 ssh_prefer_vpn=cfg.ssh_prefer_vpn,
+                wake_on_connect=cfg.wake_on_connect,
                 tags=cfg.tags,
             )
             for name, cfg in self.computers.items()

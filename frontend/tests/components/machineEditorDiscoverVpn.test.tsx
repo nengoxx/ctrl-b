@@ -12,9 +12,10 @@ import type { Host } from "../../src/types";
 // helpers + the toast store — and drive the REAL hook through a real QueryClient.
 //
 // THE load-bearing assertion (audit HIGH-1): the fill PUT must carry the FULL host body. The hosts
-// PUT is not a PATCH — the backend omit-preserves ONLY vpn_host/ssh_prefer_vpn (D47); a partial body
-// would reset os_type to linux and DELETE mac/ssh_username/role/services. The body is built from a
-// host list fetched FRESH inside the mutation (never the possibly-stale prop/cache).
+// PUT is not a PATCH — the backend omit-preserves ONLY the flags that predate their editor rows
+// (vpn_host/ssh_prefer_vpn, D47; wake_on_connect, D2-B); a partial body would reset os_type to linux
+// and DELETE mac/ssh_username/role/services. The body is built from a host list fetched FRESH inside
+// the mutation (never the possibly-stale prop/cache).
 
 const api = vi.hoisted(() => ({
   getJSON: vi.fn(),
@@ -43,6 +44,7 @@ function mkHost(over: Partial<Host> = {}): Host {
     services: [],
     vpn_host: null,
     ssh_prefer_vpn: false,
+    wake_on_connect: false,
     ...over,
   };
 }
@@ -128,6 +130,7 @@ describe("MachineEditor — Discover from Tailscale (D3 slice 3)", () => {
       ip: "10.0.0.1",
       vpn_host: "alpha.ts.net",
       ssh_prefer_vpn: false,
+      wake_on_connect: false, // D2-B — carried, so a VPN fill can't clear an owner's flag
       mac: "aa:bb:cc:dd:ee:ff",
       ssh_username: "gamer",
       ssh_password: "",

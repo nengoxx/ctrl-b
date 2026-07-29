@@ -4,6 +4,7 @@ import { ApiError, getJSON, getJSONWithHeader, putJSON } from "../api/client";
 import { loadAgents, loadProviders } from "../lib/composer";
 import { pushToast } from "../store/toast";
 import type { McpServer, OpenApiServer } from "./useIntegrations";
+import type { NotificationEvents } from "./useNotificationPrefs";
 import { useScopedQuery } from "./useScopedQuery";
 
 // Phase 7a. The settings doc is the whole masked config; the Conf forms read/write the slices they
@@ -130,6 +131,10 @@ export interface SettingsDoc {
     max_output_chars: number;
   };
   voice: { enabled: boolean; stt: VoiceStt; tts: VoiceTts };
+  // F1 — foreground notification preferences. Same shape as the always-on `GET /api/notifications`
+  // read (`useNotificationPrefs`); edited here through the ordinary settings draft/PUT, since there
+  // is exactly one write path for config.
+  notifications: { enabled: boolean; events: NotificationEvents };
   mcp_servers: McpServer[]; // Phase 7c-b — managed via the integrations CRUD endpoints, read here
   openapi_servers: OpenApiServer[];
   [k: string]: unknown; // other sections (agent, …) — managed elsewhere
@@ -241,6 +246,7 @@ export function useSaveSettings() {
       qc.setQueryData(["settings", "providers-rev"], res.providers_rev);
       void qc.invalidateQueries({ queryKey: ["health"] }); // poll cadence/port may have changed
       void qc.invalidateQueries({ queryKey: ["voice-status"] }); // a Voice edit flips mic/TTS availability (6b)
+      void qc.invalidateQueries({ queryKey: ["notification-prefs"] }); // F1 — the always-on prefs read the engine gates on
       void qc.invalidateQueries({ queryKey: ["providers"] }); // D48 — a save may add/rename/drop providers (fresh names/warnings)
       void loadProviders(); // refresh the composer's module-level `/<provider>` verb set (best-effort)
       void loadAgents(); // SYS-9.2 — a save may change the default-agent selection; keep the composer's `/agent` set + resolved default fresh (best-effort)

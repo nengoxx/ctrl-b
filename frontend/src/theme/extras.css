@@ -1602,6 +1602,13 @@ body {
   color: var(--ink-faint);
   cursor: pointer;
 }
+/* F1 — a switch whose value is real but not operable right now (the per-event notification toggles
+ * while the master is off). Attribute selector, so the component needs no extra class; vapor.css
+ * stays untouched (D7) — net-new pixels live here. Mirrored in kit.css for the kit themes. */
+.switch[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 /* a slightly smaller switch knob to fit the compact service card */
 .svc-auto .switch .knob {
   width: 36px;
@@ -1660,7 +1667,15 @@ body {
 .mconf .mform .mrow-switch {
   display: flex;
   align-items: center;
+  gap: 10px;
   min-height: 30px;
+}
+/* D2-B — inline caveat beside a switch in the machine form (the mform grid has no desc slot, unlike
+   SettingRow). Net-new class, so it's mirrored verbatim into kit.css without touching anything. */
+.mconf .mform .mrow-hint {
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  color: var(--ink-faint);
 }
 .mform textarea.kv-text:focus {
   border-color: var(--magenta);

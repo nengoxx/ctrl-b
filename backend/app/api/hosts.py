@@ -60,6 +60,7 @@ class HostIn(BaseModel):
     role: str | None = None
     vpn_host: str | None = None  # D47: VPN/overlay address (MagicDNS name preferred) — Conf editor is Slice 2
     ssh_prefer_vpn: bool = False  # D47: VPN-first SSH failover toggle
+    wake_on_connect: bool = False  # D2-B: wake this machine when a client opens the live stream
     tags: list[str] = []
     services: list[ServiceIn] = []
 
@@ -92,6 +93,7 @@ def _host_dto(host: Host, status: HostStatus | None, cfg: ComputerCfg | None) ->
         "role": host.role,
         "vpn_host": host.vpn_host,  # D47 — exposed for Slice-2's vantage-aware service links
         "ssh_prefer_vpn": host.ssh_prefer_vpn,
+        "wake_on_connect": host.wake_on_connect,  # D2-B — the editor's "Wake when I connect" row
         "tags": host.tags,
         "has_password": bool(cfg and cfg.ssh_password),  # never the value — just whether one is set
         "services": _services_dto(cfg),
@@ -144,6 +146,8 @@ def _host_entry(body: HostIn, *, password: str | None) -> dict[str, Any]:
         e["vpn_host"] = body.vpn_host.strip()
     if body.ssh_prefer_vpn:  # bool default False — omit-when-default, like a service's `autostart`
         e["ssh_prefer_vpn"] = True
+    if body.wake_on_connect:  # D2-B — same omit-when-default bool shape
+        e["wake_on_connect"] = True
     if body.tags:
         e["tags"] = list(body.tags)
     svcs = {s.name.strip(): _svc_entry(s) for s in body.services}
@@ -182,6 +186,17 @@ def _set_or_del(node: Any, key: str, value: Any) -> None:
         node[key] = value
 
 
+def _set_or_del_flag(node: Any, key: str, on: bool) -> None:
+    """`_set_or_del` for a **default-False bool**: write `true` when on, delete the key when off — so
+    the YAML keeps the hand-written omit-when-default style instead of accumulating `: false` lines.
+    Can't reuse `_set_or_del` because `False in (None, "")` is False (it would write `false`)."""
+    if on:
+        if node.get(key) is not True:
+            node[key] = True
+    elif key in node:
+        del node[key]
+
+
 def _apply_fields(node: Any, body: HostIn, *, password: str | None) -> None:
     """Edit an existing machine node in place: managed scalars set/cleared, services synced, and any
     field the form doesn't manage (e.g. tags it didn't send) left untouched on the node."""
@@ -206,13 +221,13 @@ def _apply_fields(node: Any, body: HostIn, *, password: str | None) -> None:
     if "vpn_host" in sent:
         _set_or_del(node, "vpn_host", body.vpn_host.strip() if body.vpn_host else None)
     if "ssh_prefer_vpn" in sent:
-        # bool default-False: set only when on, delete when cleared (the `_set_or_del` shape for a
-        # boolean; `False in (None, "")` is False, so it can't reuse that helper).
-        if body.ssh_prefer_vpn:
-            if node.get("ssh_prefer_vpn") is not True:
-                node["ssh_prefer_vpn"] = True
-        elif "ssh_prefer_vpn" in node:
-            del node["ssh_prefer_vpn"]
+        _set_or_del_flag(node, "ssh_prefer_vpn", body.ssh_prefer_vpn)
+    # D2-B `wake_on_connect` takes the SAME omit-preserves treatment, for the same reason generalized:
+    # this PUT is not a PATCH, so any caller that doesn't model the field would clear an owner's flag on
+    # an unrelated edit. Our own editor + `hostToPayload` always send it (so an explicit false clears);
+    # the guard is what keeps a third body — a script, an older tab still open — harmless.
+    if "wake_on_connect" in sent:
+        _set_or_del_flag(node, "wake_on_connect", body.wake_on_connect)
     if body.tags:
         node["tags"] = list(body.tags)
 

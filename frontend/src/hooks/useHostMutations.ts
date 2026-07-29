@@ -121,12 +121,13 @@ const APPLY_LABEL: Record<VpnApplyStatus, string> = {
  *  untouched — both per the editor's own toPayload contract. */
 function hostToPayload(
   h: Host,
-): HostPayload & { vpn_host: string | null; ssh_prefer_vpn: boolean } {
+): HostPayload & { vpn_host: string | null; ssh_prefer_vpn: boolean; wake_on_connect: boolean } {
   return {
     name: h.name,
     ip: h.ip,
     vpn_host: h.vpn_host ?? null,
     ssh_prefer_vpn: h.ssh_prefer_vpn ?? false,
+    wake_on_connect: h.wake_on_connect ?? false, // D2-B — carried, so a VPN fill can't clear the flag
     mac: h.mac ?? null,
     ssh_username: h.ssh_username ?? null,
     ssh_password: "", // "" → keep existing secret

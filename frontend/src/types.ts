@@ -25,6 +25,9 @@ export interface Host {
   // over `ip` when the SPA was reached over a VPN origin; `ssh_prefer_vpn` is the per-host SSH toggle.
   vpn_host?: string | null;
   ssh_prefer_vpn?: boolean;
+  // D2-B: WOL this machine when a client opens the live event stream (i.e. when the dashboard is
+  // opened). Needs `mac`; the wake itself degrades to a clean DENIED without one.
+  wake_on_connect?: boolean;
   tags: string[];
   status: HostStatus | null;
   has_password?: boolean; // Phase 7b: whether an ssh_password is stored (the value is never sent)

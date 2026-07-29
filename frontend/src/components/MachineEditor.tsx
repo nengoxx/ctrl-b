@@ -33,6 +33,7 @@ interface Draft {
   ip: string;
   vpn_host: string; // D3 slice 2 — VPN/overlay address (MagicDNS name preferred); "" clears it
   ssh_prefer_vpn: boolean; // D3 slice 2 — try the VPN address first for SSH
+  wake_on_connect: boolean; // D2-B — WOL this machine when a client opens the live stream
   mac: string;
   ssh_username: string;
   ssh_password: string; // "" = unchanged (keep stored) on an existing host
@@ -60,6 +61,7 @@ function draftFromHost(h: Host): Draft {
     ip: h.ip,
     vpn_host: h.vpn_host ?? "",
     ssh_prefer_vpn: !!h.ssh_prefer_vpn,
+    wake_on_connect: !!h.wake_on_connect,
     mac: h.mac ?? "",
     ssh_username: h.ssh_username ?? "",
     ssh_password: "",
@@ -77,6 +79,7 @@ function blankDraft(): Draft {
     ip: "",
     vpn_host: "",
     ssh_prefer_vpn: false,
+    wake_on_connect: false,
     mac: "",
     ssh_username: "",
     ssh_password: "",
@@ -107,6 +110,9 @@ function toPayload(d: Draft) {
     // omit-preserves is only for OLD clients that never send them — explicit null here is correct (D47).
     vpn_host: d.vpn_host.trim() || null,
     ssh_prefer_vpn: d.ssh_prefer_vpn,
+    // Always sent, like the vpn fields: the backend's omit-preserves guard exists for bodies that
+    // don't model the field at all, so an explicit false from THIS editor is what clears the flag.
+    wake_on_connect: d.wake_on_connect,
     mac: d.mac.trim() || null,
     ssh_username: d.ssh_username.trim() || null,
     ssh_password: d.ssh_password, // "" → keep (existing) / null-ish (new)
@@ -263,6 +269,19 @@ function MachineForm(props: {
           placeholder="aa:bb:cc:dd:ee:ff"
           onChange={(e) => set({ mac: e.target.value })}
         />
+
+        {/* D2-B — wake-on-connect. Sits right after MAC because it depends on it: with no MAC the
+            automatic wake degrades exactly like the Wake button does (a clean DENIED in the Event
+            log, never a crash), so the hint says so instead of the form policing it. */}
+        <label>Wake when I connect</label>
+        <div className="mrow-switch">
+          <Switch
+            on={d.wake_on_connect}
+            onToggle={() => set({ wake_on_connect: !d.wake_on_connect })}
+            label="Wake when I connect"
+          />
+          <span className="mrow-hint">needs the MAC above</span>
+        </div>
 
         <label>SSH user</label>
         <input

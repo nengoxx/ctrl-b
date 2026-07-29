@@ -75,6 +75,12 @@ vi.mock("../src/hooks/useAgentChat", () => ({
 vi.mock("../src/hooks/useAutoTts", () => ({ useAutoTts: () => undefined }));
 vi.mock("../src/hooks/useEvents", () => ({ useEventStream: () => undefined }));
 vi.mock("../src/hooks/useFleet", () => ({ useFleetCycle: () => undefined }));
+// F1 — like the engines above: stubbed so App renders without a QueryClientProvider (the real hook
+// reads the always-on notification-prefs query). Its own behavior is covered in
+// tests/hooks/foregroundNotifications.test.ts.
+vi.mock("../src/hooks/useForegroundNotifications", () => ({
+  useForegroundNotifications: () => undefined,
+}));
 
 import App from "../src/App";
 import { setThemeSetting, setUI } from "../src/store/ui";

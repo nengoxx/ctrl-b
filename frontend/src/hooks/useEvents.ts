@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { publishNotify } from "../lib/notifyBus";
 import { reconcileChat } from "../store/chat";
 import { setConnection } from "../store/connection";
 
@@ -37,6 +38,55 @@ import { setConnection } from "../store/connection";
 const INITIAL_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 30_000;
 
+// F1 — the `RunState`s that make a recorded Event a FAILURE worth notifying about. Mirrors
+// backend `domain/enums.py`: `error` (something broke), `denied` (the gate refused, or the action
+// couldn't run — e.g. wake_host with no MAC), `timeout` (gave up waiting). Deliberately NOT
+// `cancelled` (the owner interrupted it — they know) or `skipped` (a no-op outcome), and obviously
+// not the in-flight states (`pending`/`running`/`awaiting_*`), which resolve into one of these.
+const FAILED_STATES: Record<string, string> = {
+  error: "Action failed",
+  denied: "Action denied",
+  timeout: "Action timed out",
+};
+
+/** The subset of the domain `Event` (backend `domain/event.py`) this client reads off the wire.
+ *  Everything optional: the parse is defensive by design — a frame we can't understand must
+ *  invalidate caches like always and simply not notify. */
+interface WireEvent {
+  id?: unknown;
+  action?: unknown;
+  target?: unknown;
+  status?: unknown;
+  summary?: unknown;
+}
+
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
+/** Turn one live Event frame into an `action_failed` signal, when it is one. Split out of the
+ *  listener so the mapping (which states, which text) is unit-testable without an EventSource. */
+export function notifyForEvent(raw: string): void {
+  let ev: WireEvent;
+  try {
+    ev = JSON.parse(raw) as WireEvent;
+  } catch {
+    return; // unparseable frame — cache invalidation already happened; nothing to announce
+  }
+  if (ev === null || typeof ev !== "object") return;
+  const title = FAILED_STATES[str(ev.status)];
+  if (!title) return;
+  const action = str(ev.action) || "action";
+  const target = str(ev.target);
+  publishNotify({
+    cls: "action_failed",
+    // The Event id is the durable identity of this record, so a re-delivery can't double-notify.
+    key: `event:${str(ev.id) || `${action}:${target}`}`,
+    title,
+    body: str(ev.summary) || (target ? `${action} · ${target}` : action),
+    // No `focus`: a fleet action failure is legible from any tab, and yanking the user off the
+    // Agent tab mid-conversation to look at it would be worse than leaving them where they are.
+  });
+}
+
 export function useEventStream(): void {
   const qc = useQueryClient();
   useEffect(() => {
@@ -48,10 +98,16 @@ export function useEventStream(): void {
 
     // Per-event invalidation: only the live fleet caches that the activity feed actually mutates
     // (a recorded Event is a host/service/action change). Cheap; runs on every event.
-    function invalidateLiveCaches() {
+    //
+    // F1 — the payload used to be ignored entirely (the frame was a pure "something changed" ping).
+    // It carries the whole domain Event, so it's also the fleet-side notification source: parse it
+    // and publish a signal for the failure states. Invalidation runs FIRST and unconditionally — the
+    // notification path is strictly additive and must never be able to cost us a cache refresh.
+    function onEvent(e: MessageEvent<string>) {
       void qc.invalidateQueries({ queryKey: ["hosts"] });
       void qc.invalidateQueries({ queryKey: ["services"] });
       void qc.invalidateQueries({ queryKey: ["events"] });
+      notifyForEvent(e.data);
     }
 
     // Reconcile after a reconnect: invalidate ALL React Query caches (settings, integrations,
@@ -92,7 +148,7 @@ export function useEventStream(): void {
         }
       });
 
-      es.addEventListener("event", invalidateLiveCaches);
+      es.addEventListener("event", onEvent);
     }
 
     // F16 — global React Query cache observer as a second connection-health signal. The

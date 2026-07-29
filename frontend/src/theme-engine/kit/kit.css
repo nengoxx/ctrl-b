@@ -1433,6 +1433,12 @@ body[data-composer-skin="sleek"] .kit-composer.stacked .field:focus-within {
   transform: translateX(20px);
   background: var(--bg);
 }
+/* F1 — a switch whose value is real but not operable right now (the per-event notification toggles
+ * while the master is off). Attribute selector, so it needs no extra class from the component. */
+.kit .switch[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 /* ── primitive: palette swatch picker (Swatches) — a radiogroup of color chips; the selected chip shows a
  *    ring (the accent), focus a visible outline. Chip background is set inline (the theme's swatch). ── */
@@ -2237,6 +2243,14 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   border-color: var(--accent);
 }
 .kit .mconf .mform input::placeholder {
+  color: var(--text-3);
+}
+/* D2-B — inline caveat beside a switch in the machine form (the mform grid has no desc slot). Net-new
+ * class, mirroring extras.css; `.mrow-switch` itself is deliberately left alone here (vapor-only
+ * today) so this can't shift the existing SSH-via-VPN row. */
+.kit .mconf .mform .mrow-hint {
+  font-size: 11px;
+  letter-spacing: 0.02em;
   color: var(--text-3);
 }
 .kit .mconf .mform .split {

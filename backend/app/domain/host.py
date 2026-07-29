@@ -30,6 +30,8 @@ class Host(BaseModel):
     vpn_host: str | None = None
     #: Per-host SSH failover preference (D47). See `ComputerCfg.ssh_prefer_vpn`.
     ssh_prefer_vpn: bool = False
+    #: Wake-on-connect (ROADMAP D2-B). See `ComputerCfg.wake_on_connect`.
+    wake_on_connect: bool = False
     tags: list[str] = []
 
 

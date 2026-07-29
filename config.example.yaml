@@ -15,6 +15,27 @@ server:
   poll_seconds: 5        # fleet status poll cadence
   debug: false           # keep false — debug is an RCE surface
 
+# Notifications (F1) — v1 is the FOREGROUND channel only: the PWA raises a browser notification from
+# the live streams it already holds, so the phone buzzes while the app is open or backgrounded. There
+# is no server-side sender (Web Push / ntfy / bot are ROADMAP F1 futures), and closed-app delivery is
+# NOT covered. Master `enabled` is the spam guard: while it's false nothing fires, whatever the
+# per-event toggles say. Delivery also needs the browser permission (asked when you flip it on in
+# Conf → Notifications) and a secure context — i.e. reach the app over Tailscale Serve HTTPS, not
+# plain http, exactly like the mic.
+# notifications:
+#   enabled: false
+#   events:
+#     agent_input: true      # the agent is blocked on you (a confirm bubble, or a `question`)
+#     turn_done: true        # an agent turn finished / hit its step limit / errored
+#     action_failed: true    # a recorded action ended error / denied / timeout
+
+# Fleet wake automation (ROADMAP D2). `wake_on_connect` on a machine below (D2-B) fires that host's
+# Wake-on-LAN whenever a client opens the live event stream — i.e. when you open the dashboard. This
+# cooldown bounds how often ONE host can be re-woken by reconnects (a phone drifting off wifi reopens
+# the stream a lot); 0 disables it. WOL is idempotent, so this is about keeping the Event log quiet.
+# wake:
+#   cooldown_s: 300
+
 # Tailscale Serve (Phase 6c-2, D20) — the in-app HTTPS toggle (Conf → Access). `serve` only, never
 # funnel (tailnet-only by construction). `target_port` = the local port Serve fronts: 5433 (the
 # default) is the backend-served prod SPA; set 5173 to front the dev Vite server instead. Also
@@ -314,6 +335,7 @@ computers:
     ssh_port: 22
     os_type: linux
     role: nas
+    # wake_on_connect: true  # D2-B — WOL this box when you open the dashboard (needs the mac above)
     # Services nest under their host (Phase 3). Each gets a stable id "<host-slug>.<svc-slug>".
     # Liveness is DERIVED, not stored: the `port` is TCP-probed each poll (a port-less service
     # just tracks its host being up). The svc-row links to http://<ip>:<port><path> when online.

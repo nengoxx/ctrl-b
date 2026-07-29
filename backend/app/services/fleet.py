@@ -102,6 +102,19 @@ class FleetService:
         async with self._sem:
             return await ping_host(host)
 
+    def cached_online_ids(self) -> set[str]:
+        """Host ids the LAST sweep saw online — a synchronous, probe-free read of the same cache
+        `status_all` serves from, honoring the same `poll_seconds` TTL. A cold or expired cache
+        returns an EMPTY set, i.e. "nothing is known to be online" rather than a stale claim.
+
+        Exists for wake-on-connect (D2-B), which wants to skip already-awake hosts without paying for
+        (or waiting on) a sweep. Callers must treat this as an optimization: absence from the set means
+        unknown-or-offline, never a guarantee that the host is down."""
+        ttl = max(1, self._settings.server.poll_seconds)
+        if self._cache is None or (time.monotonic() - self._cache_at) >= ttl:
+            return set()
+        return {s.host_id for s in self._cache if s.online}
+
     async def status_all(self, *, force: bool = False) -> list[HostStatus]:
         """Ping the whole fleet concurrently, served from cache within `poll_seconds`."""
         ttl = max(1, self._settings.server.poll_seconds)

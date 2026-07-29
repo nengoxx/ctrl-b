@@ -76,3 +76,28 @@ describe("useSaveSettings · composer refresh on success (SYS-9.2)", () => {
     expect(h.loadProviders).toHaveBeenCalled();
   });
 });
+
+// F1 — the notification engine reads its prefs from the ALWAYS-ON `["notification-prefs"]` query, not
+// from the Conf-scoped settings doc. A save that flips notifications must therefore invalidate that key
+// too, or the owner turns notifications on and nothing changes until a reload.
+describe("useSaveSettings · notification prefs invalidation (F1)", () => {
+  it("a successful save invalidates the always-on notification-prefs query", async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const localWrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+
+    h.put.mockResolvedValue({
+      settings: {},
+      restart_required: [],
+      warnings: [],
+      providers_rev: "r",
+    });
+    const { result } = renderHook(() => useSaveSettings(), { wrapper: localWrapper });
+    result.current.mutate({ notifications: { enabled: true } });
+    await waitFor(() => expect(h.loadProviders).toHaveBeenCalled());
+
+    const keys = invalidate.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
+    expect(keys).toContain(JSON.stringify(["notification-prefs"]));
+  });
+});

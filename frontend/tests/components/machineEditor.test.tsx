@@ -96,3 +96,43 @@ describe("MachineEditor — vpn_host + ssh_prefer_vpn (D3 slice 2)", () => {
     expect(arg.payload.vpn_host).toBeNull();
   });
 });
+
+// D2-B — the per-host `wake_on_connect` flag rides the same Draft → PUT path as the D3 fields, and for
+// the same reason must ALWAYS be sent by this editor (the backend's omit-preserves exists for bodies
+// that don't model the field, not for this one).
+describe("MachineEditor — wake_on_connect (D2-B)", () => {
+  it("renders the switch, seeded from the host, with the MAC caveat spelled out", () => {
+    render(<MachineEditor hosts={[mkHost({ wake_on_connect: true })]} />);
+    openRow("corsair");
+    const sw = screen.getByRole("switch", { name: "Wake when I connect" });
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText("needs the MAC above")).toBeTruthy();
+  });
+
+  it("round-trips a toggle into the PUT payload", () => {
+    render(<MachineEditor hosts={[mkHost()]} />);
+    openRow("corsair");
+    expect(
+      screen.getByRole("switch", { name: "Wake when I connect" }).getAttribute("aria-checked"),
+    ).toBe("false");
+    fireEvent.click(screen.getByRole("switch", { name: "Wake when I connect" }));
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    expect(h.update.mock.calls[0][0].payload.wake_on_connect).toBe(true);
+  });
+
+  it("SENDS a loaded host's existing value on an untouched save (omit-preserves regression)", () => {
+    render(<MachineEditor hosts={[mkHost({ wake_on_connect: true })]} />);
+    openRow("corsair");
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    expect(h.update.mock.calls[0][0].payload.wake_on_connect).toBe(true);
+  });
+
+  it("defaults to false on a new machine", () => {
+    render(<MachineEditor hosts={[]} />);
+    openRow("add machine");
+    fireEvent.change(screen.getByLabelText("Hostname"), { target: { value: "pegasus" } });
+    fireEvent.change(screen.getByLabelText("IP or DNS name"), { target: { value: "10.0.0.9" } });
+    fireEvent.click(screen.getByRole("button", { name: "add machine" }));
+    expect(h.create.mock.calls[0][0].wake_on_connect).toBe(false);
+  });
+});

@@ -10,6 +10,7 @@ import {
 import { useAutoTts } from "./hooks/useAutoTts";
 import { useEventStream } from "./hooks/useEvents";
 import { useFleetCycle } from "./hooks/useFleet";
+import { useForegroundNotifications } from "./hooks/useForegroundNotifications";
 import { isAnyDirty } from "./store/dirty";
 import { usePlanOpenAutoClose } from "./store/planSheet";
 import { useUISlice } from "./store/ui";
@@ -172,6 +173,11 @@ function AppEngines() {
   useAppearanceSync(); // reconcile theme/mode/accent against the server (cross-device LWW, §9.11)
   useChatInit(); // load the most-recent thread once (was AgentTab) — theme-independent (§14.5)
   useAutoTts(); // auto read-aloud of a just-completed reply (6b-2) — global, runs regardless of tab
+  // F1 — the SINGLE foreground-notification gate. Hosted here (not in a tab or a theme body) because
+  // both of its sources are app-global streams and the whole point is one chokepoint: prefs +
+  // visibility + permission + de-dupe are decided in exactly one place. Inert until the owner enables
+  // notifications in Conf, and a no-op entirely on a browser/origin without the Notifications API.
+  useForegroundNotifications();
   // A4 — reset the SHARED plan-open flag when the plan clears. Hosted HERE (not AgentTab) so a bespoke
   // theme body that replaces the agent section can never lose the reset (§14.5, theme-independent engines).
   // `useAgentChat` is a cheap memoized derivation (threads are bounded); we only read `currentPlan`.
