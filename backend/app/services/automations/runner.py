@@ -57,6 +57,25 @@ INTERRUPTED_NOTE = (
     "so its external effects may be incomplete"
 )
 
+#: How a terminal run reads on its audit row (§D-2 "honest terminals" → `RunState`). Every terminal
+#: gets an Event, not just `interrupted` (14d): the live feed is what tells an open client a DETACHED
+#: run finished — the F1 `automation_done` notification and the Conf list's invalidation both hang off
+#: this frame, and a run-now that answered 202 has no other completion signal at all. `missed` is in
+#: the map for totality only — it is written by the claim, which never reaches the finalizer, and
+#: deliberately gets no Event: recording one would mean an EventBus publish from INSIDE the claim's
+#: `BEGIN IMMEDIATE` transaction, i.e. telling every client to re-read a row that has not committed.
+RUN_TERMINAL_STATES: dict[RunStatus, RunState] = {
+    "ok": RunState.OK,
+    "error": RunState.ERROR,
+    "timed_out": RunState.TIMEOUT,
+    "interrupted": RunState.CANCELLED,
+    "missed": RunState.SKIPPED,
+}
+
+#: What a run that ended cleanly says on its audit row. The failing terminals carry `_terminal`'s own
+#: explanation instead (it is always set for them).
+COMPLETED_NOTE = "the run completed"
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -536,20 +555,32 @@ class AutomationRunner:
         error: str | None,
         thread_id: str | None,
     ) -> None:
-        """Close the claimed run row (and audit an interrupted one). Runs inside `_shielded`, so it must
-        swallow its own failures: whatever brought us here — a cancel, an exception — is the story, and a
-        raise from the finalizer would replace it."""
+        """Close the claimed run row and audit its terminal. Runs inside `_shielded`, so it must swallow
+        its own failures: whatever brought us here — a cancel, an exception — is the story, and a raise
+        from the finalizer would replace it.
+
+        Terminalization is first-writer-wins (`AutomationService.finish_run`) because this is not always
+        the only closer: `shutdown` sweeps a manual run that outlived its grace, and that task can still
+        arrive here afterwards. Losing the race is a normal outcome, not an error — the row is already
+        terminal and already audited."""
         try:
-            await self._service.finish_run(snapshot.run_id, status=status, error=error, thread_id=thread_id)
-            if status == "interrupted":
-                # The one terminal that gets its own audit row (§D-2): the owner needs to be able to see
-                # that a run was cut off mid-flight without opening the run history.
-                await self._service.record_run_event(
-                    automation_id=snapshot.automation_id,
-                    run_id=snapshot.run_id,
-                    name=snapshot.name,
-                    status=RunState.CANCELLED,
-                    summary=error or INTERRUPTED_NOTE,
-                )
+            won = await self._service.finish_run(
+                snapshot.run_id, status=status, error=error, thread_id=thread_id
+            )
+            if not won:
+                # The shutdown backstop sweep already closed this row (post-14d review, MED): it is
+                # terminal, it has its own audit row, and writing a second one here would duplicate the
+                # run in the log and fire a second `automation_done` notification for it.
+                return
+            # One audit row per terminal, whatever the outcome (see `RUN_TERMINAL_STATES`): the owner
+            # can see how a run ended without opening the history, and an open client learns that a
+            # detached run finished at all.
+            await self._service.record_run_event(
+                automation_id=snapshot.automation_id,
+                run_id=snapshot.run_id,
+                name=snapshot.name,
+                status=RUN_TERMINAL_STATES[status],
+                summary=error or COMPLETED_NOTE,
+            )
         except Exception:  # noqa: BLE001 — never replace the outcome we are here to record
             log.exception("failed to terminalize automation run %s", snapshot.run_id)

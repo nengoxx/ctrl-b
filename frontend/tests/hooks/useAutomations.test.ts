@@ -37,7 +37,10 @@ import {
   useUpdateAutomation,
   useAutomationRuns,
   useAutomations,
+  automationsSummary,
   draftOf,
+  type AutomationsDoc,
+  type AutomationView,
 } from "../../src/hooks/useAutomations";
 
 function harness() {
@@ -171,5 +174,36 @@ describe("the running-poll cadence", () => {
       createElement(QueryClientProvider, { client: qc }, children);
     const { result } = renderHook(() => useAutomationRuns(null), { wrapper });
     expect(result.current.fetchStatus).toBe("idle");
+  });
+});
+
+// ── A3 14d — the Conf group header's collapsed summary. A pure function of the list envelope, so the
+// precedence rule (unread ▸ scheduler off ▸ count) is pinned without rendering the 2300-line Conf tab.
+
+describe("automationsSummary · what the collapsed group says", () => {
+  const view = (unread: number): AutomationView =>
+    ({ unread_runs: unread }) as unknown as AutomationView;
+  const doc = (over: Partial<AutomationsDoc>): AutomationsDoc =>
+    ({ automations: [], enabled: true, busy: false, ...over }) as AutomationsDoc;
+
+  it("says nothing at all until the list has loaded", () => {
+    expect(automationsSummary(undefined)).toBeUndefined();
+  });
+
+  it("counts automations while everything is read", () => {
+    expect(automationsSummary(doc({ automations: [view(0), view(0)] }))).toBe("2 automations");
+    expect(automationsSummary(doc({ automations: [view(0)] }))).toBe("1 automation");
+    expect(automationsSummary(doc({}))).toBe("0 automations");
+  });
+
+  it("says the scheduler is off when it is — that outranks the count", () => {
+    expect(automationsSummary(doc({ automations: [view(0)], enabled: false }))).toBe(
+      "scheduler off",
+    );
+  });
+
+  it("SUMS the unread runs and leads with them, even while the scheduler is off", () => {
+    expect(automationsSummary(doc({ automations: [view(2), view(1)] }))).toBe("3 new");
+    expect(automationsSummary(doc({ automations: [view(1)], enabled: false }))).toBe("1 new");
   });
 });

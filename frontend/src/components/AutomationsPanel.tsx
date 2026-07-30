@@ -6,6 +6,7 @@ import { Switch } from "./Switch";
 import { useAgentList } from "../hooks/useAgents";
 import {
   draftOf,
+  fmtWhen,
   useAutomationRuns,
   useAutomations,
   useCreateAutomation,
@@ -75,19 +76,6 @@ function chipClass(status: RunStatus | undefined): string {
   if (status === "ok") return "badge";
   if (status === "error" || status === "timed_out") return "badge stale";
   return "badge dim";
-}
-
-/** A moment rendered in the automation's OWN zone — the one the schedule is written in. Showing the
- *  device's zone instead would make "At 03:00 daily" and "next: 02:00" disagree on a travelling phone. */
-function fmtWhen(iso: string, tz?: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: tz,
-  });
 }
 
 function fmtDuration(run: AutomationRun): string {

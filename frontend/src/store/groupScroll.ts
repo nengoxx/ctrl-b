@@ -6,6 +6,7 @@
 // between a coerced navigate and the host's scroll effect. `target` is a DOM element id (a ConfGroup id).
 
 import { createStore } from "./createStore";
+import { setUI } from "./ui";
 
 const { emit, useStore } = createStore();
 let target: string | null = null;
@@ -21,6 +22,16 @@ export function clearGroupScrollTarget(): void {
   if (target === null) return;
   target = null;
   emit();
+}
+
+/** Deep-link to a Conf group: land on the Conf tab and arm the handoff, so the tab expands + scrolls to
+ *  that group as it mounts. The same two calls `useSections.navigate` makes when it coerces a hosted
+ *  navigation — named once so a link INTO a settings group (the chat's created-automation card) is not a
+ *  second, hand-rolled version of the routing that already exists. Not a router: `setUI` is the only
+ *  navigation this app has. */
+export function openConfGroup(id: string): void {
+  setUI({ tab: "conf" });
+  setGroupScrollTarget(id);
 }
 
 /** Non-reactive read — for effects that must PEEK the pending target without subscribing (DefaultRoot's

@@ -71,7 +71,7 @@ const makeSettings = () => ({
   },
   notifications: {
     enabled: false,
-    events: { agent_input: true, turn_done: true, action_failed: true },
+    events: { agent_input: true, turn_done: true, action_failed: true, automation_done: true },
   },
   mcp_servers: [],
   openapi_servers: [],
@@ -91,7 +91,12 @@ vi.mock("../../src/components/ServerListEditor", () => ({ ServerListEditor: () =
 vi.mock("../../src/components/AutomationsPanel", () => ({ AutomationsPanel: () => null }));
 // A3 (14c) — ConfTab reads the automations list itself for the group's header summary, so the
 // hook is stubbed alongside the panel (this suite renders ConfTab with no QueryClientProvider).
-vi.mock("../../src/hooks/useAutomations", () => ({ useAutomations: () => ({ data: undefined }) }));
+// Partial: the group header calls the REAL `automationsSummary` (a pure function of the envelope), so
+// only the query itself is stubbed out.
+vi.mock("../../src/hooks/useAutomations", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/hooks/useAutomations")>()),
+  useAutomations: () => ({ data: undefined }),
+}));
 vi.mock("../../src/tabs/UtilsTab", () => ({ UtilsContent: () => null }));
 vi.mock("../../src/hooks/useSettings", () => ({
   useSettings: () => ({ data: h.settings }),
@@ -173,6 +178,9 @@ const perClass = () => [
   screen.getByLabelText("Notify on agent input"),
   screen.getByLabelText("Notify on turn done"),
   screen.getByLabelText("Notify on action failed"),
+  // A3 14d — the fourth class, wired exactly like the other three (one more key on the ONE events
+  // object, never a sibling map): inert while the master is off, and saved with the same setter.
+  screen.getByLabelText("Notify on automation done"),
 ];
 const saveButton = () =>
   screen.getAllByRole<HTMLButtonElement>("button", { name: /Save changes|Saved|Saving/ })[0];
@@ -209,7 +217,12 @@ describe("ConfTab · Notifications (F1)", () => {
       ...makeSettings(),
       notifications: {
         enabled: true,
-        events: { agent_input: true, turn_done: true, action_failed: true },
+        events: {
+          agent_input: true,
+          turn_done: true,
+          action_failed: true,
+          automation_done: true,
+        },
       },
     };
     render(<ConfTab active />);
@@ -238,5 +251,23 @@ describe("ConfTab · Notifications (F1)", () => {
   it("a GRANTED origin shows the honest best-effort copy, not a delivery promise", () => {
     render(<ConfTab active />);
     expect(screen.getByText(/push to a closed app is a future feature/)).toBeTruthy();
+  });
+
+  it("the automation class saves through the SAME nested events setter as its siblings", () => {
+    render(<ConfTab active />);
+    fireEvent.click(master()); // arm the per-class switches
+    fireEvent.click(screen.getByLabelText("Notify on automation done"));
+    fireEvent.click(saveButton());
+
+    const patch = h.save.mock.calls[0][0] as {
+      notifications?: { events: Record<string, boolean> };
+    };
+    // ONE events object, with the other three untouched — not a sibling map, not a partial overwrite.
+    expect(patch.notifications?.events).toEqual({
+      agent_input: true,
+      turn_done: true,
+      action_failed: true,
+      automation_done: false,
+    });
   });
 });

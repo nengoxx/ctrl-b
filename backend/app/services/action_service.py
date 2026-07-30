@@ -265,6 +265,29 @@ class ActionService:
             result.duration_ms = int((time.monotonic() - started) * 1000)
         return result
 
+    async def record_policy_denial(
+        self,
+        name: str,
+        raw_args: dict,
+        result: ToolResult,
+        *,
+        actor: Actor,
+        origin: Origin,
+    ) -> Event:
+        """Audit a denial the GATE returned `needs_confirm` for but the CALLER resolved as a refusal —
+        today exactly one case: a confirm-gated call in a headless session (`decide` deliberately leaves
+        the headless mapping to the caller, see its signature).
+
+        A suspend records nothing, by design — the call has not happened yet and may still be allowed.
+        But when the caller converts that suspend into a DENIED result there is no owner who could ever
+        confirm it, so it IS a decided outcome and belongs in the audit log like any other policy denial
+        (post-14d review, MED: an unattended run's refusals were visible only in the transcript). This is
+        the SAME `_record` every other outcome takes — a public door onto it, not a second path — so the
+        row carries the caller's origin/run_id attribution and `decision="policy"` exactly like the
+        gate's own DENY.
+        """
+        return await self._record(actor, name, raw_args, result, origin=origin, decision="policy")
+
     async def _record(
         self,
         actor: Actor,

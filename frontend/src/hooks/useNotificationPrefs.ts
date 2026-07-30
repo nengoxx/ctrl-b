@@ -15,6 +15,8 @@ export interface NotificationEvents {
   agent_input: boolean;
   turn_done: boolean;
   action_failed: boolean;
+  /** A3 14d — a scheduled (or run-now) automation run reached a terminal, however it ended. */
+  automation_done: boolean;
 }
 
 export interface NotificationPrefs {

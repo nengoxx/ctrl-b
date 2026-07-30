@@ -13,6 +13,13 @@ import { useScopedQuery } from "./useScopedQuery";
 // agent-writable record must never be able to brick the config-validated boot) — so nothing here
 // touches the `["settings"]` cache.
 
+/** The Conf group that hosts this feature — its ConfGroup `id`, which doubles as the collapse key and
+ *  the DOM anchor a deep link scrolls to (`openConfGroup`). Named here, with the rest of the
+ *  automations vocabulary, because the two call sites are ConfTab (which renders it) and the chat's
+ *  created-automation card (which links to it) — and the card must not import the Conf tab to say
+ *  where it points. */
+export const AUTOMATIONS_GROUP_ID = "automations";
+
 export type QuestionPolicy = "skip" | "use_default";
 export type ThreadMode = "fresh" | "rolling";
 export type RunStatus = "running" | "ok" | "error" | "timed_out" | "interrupted" | "missed";
@@ -96,6 +103,48 @@ export interface SchedulePreview {
   tz: string;
   describe: string | null;
   next_fires: string[];
+}
+
+/** The Automations ConfGroup header's `right` text — what the group says while COLLAPSED.
+ *
+ *  UNREAD leads whenever there is any (14d): a finished run the owner has not opened is the only thing
+ *  in this group that is actionable without expanding it, and it outranks both the count and the master
+ *  switch — a run can finish while the scheduler is off, since run-now still works. Otherwise "scheduler
+ *  off" wins, because an armed-looking row list under an idle scheduler would be a lie. `undefined`
+ *  (the list hasn't loaded) renders no text at all rather than a flash of "0 automations".
+ *
+ *  The counts are already in the list envelope, so this costs no extra request. */
+export function automationsSummary(doc: AutomationsDoc | undefined): string | undefined {
+  if (!doc) return undefined;
+  const unread = doc.automations.reduce((n, v) => n + v.unread_runs, 0);
+  if (unread > 0) return `${unread} new`;
+  if (!doc.enabled) return "scheduler off";
+  const n = doc.automations.length;
+  return `${n} automation${n === 1 ? "" : "s"}`;
+}
+
+/** A moment rendered in the automation's OWN zone — the one the schedule is written in. Showing the
+ *  device's zone instead would make "At 03:00 daily" and "next: 02:00" disagree on a travelling phone.
+ *  Shared by the Conf panel (list rows + run history) and the chat's created-automation card, so the
+ *  same instant can never be printed two ways. Invalid input echoes back verbatim rather than
+ *  rendering "Invalid Date". */
+export function fmtWhen(iso: string, tz?: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  try {
+    return d.toLocaleString(undefined, {
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: tz,
+    });
+  } catch {
+    // `Intl` THROWS a RangeError on a zone it cannot resolve — and one of the callers renders a
+    // persisted chat transcript, where a bad `tz` (an old row, a zone this browser lacks) would take the
+    // whole log down rather than one line. Degrade to the raw instant; the server validates the zone at
+    // the write, so this is a backstop, not the normal path.
+    return iso;
+  }
 }
 
 /** Seed a draft from a stored automation (edit) or from nothing (create). One place, so the two

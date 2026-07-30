@@ -28,6 +28,7 @@ server:
 #     agent_input: true      # the agent is blocked on you (a confirm bubble, or a `question`)
 #     turn_done: true        # an agent turn finished / hit its step limit / errored
 #     action_failed: true    # a recorded action ended error / denied / timeout
+#     automation_done: true  # a scheduled (or run-now) automation run finished — however it ended
 
 # Fleet wake automation (ROADMAP D2). `wake_on_connect` on a machine below (D2-B) fires that host's
 # Wake-on-LAN whenever a client opens the live event stream — i.e. when you open the dashboard. This

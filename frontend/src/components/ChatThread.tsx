@@ -2,6 +2,7 @@ import { memo, type ReactNode, useCallback, useEffect, useRef, useState } from "
 
 import { useActionSpecs } from "../hooks/useActions";
 import type { AgentChat } from "../hooks/useAgentChat";
+import { AUTOMATIONS_GROUP_ID, fmtWhen } from "../hooks/useAutomations";
 import { toggle as playMessage, usePlayback } from "../lib/audioController";
 import { fillComposer } from "../lib/composer";
 import { Markdown } from "../lib/markdown";
@@ -14,6 +15,7 @@ import {
   resumeCall,
   retryLastTurn,
 } from "../store/chat";
+import { openConfGroup } from "../store/groupScroll";
 import type { ChatMessage, Part, ToolCallPart, ToolResult, WebSearchHit } from "../types";
 
 // The agent-chat LOG (F4) — the reusable `.chat-log` transcript, split out of AgentTab so a bespoke theme
@@ -80,6 +82,78 @@ function hitsFrom(result: ToolResult | undefined): WebSearchHit[] {
  *  auto-write switch is off, returned `data.proposed`, and hasn't been approved/dismissed yet. */
 function isProposed(result: ToolResult | undefined): boolean {
   return !!(result?.data as { proposed?: unknown } | undefined)?.proposed;
+}
+
+/** The record a confirmed `create_automation` returned (A3 §D-5, backend `_card`), narrowed to what the
+ *  card RENDERS — the payload also carries the raw cron, which the human echo (`schedule_text`) replaces
+ *  here. Every field below is validated at runtime; a field the card doesn't read isn't declared, so the
+ *  type can't claim more than the parser proves. Times are ISO strings. */
+interface AutomationCardData {
+  id: string;
+  name: string;
+  schedule_text: string;
+  tz: string;
+  next_fire: string | null;
+  thread_mode: string;
+  enabled: boolean;
+  agent: string | null;
+}
+
+/** Pull the created-automation card off a result's `data`, or null. Keyed on the SHAPE (`data.automation`,
+ *  the `data.plan`/`data.results` pattern) rather than on the tool name, so a second writer of the same
+ *  payload — or a rename of the tool — needs no change here.
+ *
+ *  EVERY field is checked, not just the identity pair (post-14d review, MED). `data` is persisted JSON
+ *  replayed from the DB — a row written by another build, or hand-edited — and the card feeds a value
+ *  straight into `Intl` (`tz`). A partial match that type-asserted its way through would render
+ *  `undefined` into the bubble at best. Anything that isn't the whole shape simply isn't a card. */
+function automationCardFrom(result: ToolResult | undefined): AutomationCardData | null {
+  const a = (result?.data as { automation?: Record<string, unknown> } | undefined)?.automation;
+  if (!a || typeof a !== "object") return null;
+  const str = (v: unknown) => typeof v === "string";
+  const ok =
+    str(a.id) &&
+    str(a.name) &&
+    str(a.schedule_text) &&
+    str(a.tz) &&
+    str(a.thread_mode) &&
+    typeof a.enabled === "boolean" &&
+    (a.next_fire === null || str(a.next_fire)) &&
+    (a.agent === null || str(a.agent));
+  return ok ? (a as unknown as AutomationCardData) : null;
+}
+
+/** The persisted card a confirmed `create_automation` leaves in the transcript (§D-5): what was saved,
+ *  when it will run, and one tap into the group that owns it. Deliberately read-only — the editor lives in
+ *  Conf, and a second edit surface in the chat log would be a second implementation of the same form.
+ *  Styling is the `.svc-card` recipe the run history already uses, plus one net-new name line. */
+function AutomationCard({ card }: { card: AutomationCardData }) {
+  // The next fire is rendered in the AUTOMATION's zone, like every other moment in this feature — a
+  // schedule written "At 03:00, Europe/Madrid" must not read as 02:00 on a travelling phone.
+  const when = card.next_fire ? `next ${fmtWhen(card.next_fire, card.tz)}` : "no upcoming run";
+  const mode = card.thread_mode === "rolling" ? "one continuing thread" : "new thread each run";
+  return (
+    <div className="svc-card auto-made">
+      <div className="auto-made-name">{card.name}</div>
+      <div className="auto-run-when">
+        {card.schedule_text} · {card.tz} · {when}
+      </div>
+      <div className="auto-run-when">
+        {mode}
+        {card.agent ? ` · ${card.agent}` : ""}
+        {card.enabled ? "" : " · off"}
+      </div>
+      <div className="auto-made-foot">
+        <button
+          type="button"
+          className="pm-alt"
+          onClick={() => openConfGroup(AUTOMATIONS_GROUP_ID)}
+        >
+          Open in Conf ↗
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /** web_search results as a collapsed-by-default disclosure: the bubble stays compact (just the
@@ -152,6 +226,7 @@ function CmdBubble({
   reasoning?: string;
 }) {
   const hits = call.tool === "web_search" ? hitsFrom(result) : [];
+  const card = automationCardFrom(result);
   const awaiting = !result && call.state === "awaiting_confirm";
   const running = !result && (call.state === "pending" || call.state === "running");
   const okState = result?.state ?? call.state;
@@ -238,6 +313,9 @@ function CmdBubble({
           </div>
         )}
         {hits.length > 0 && <SearchResults hits={hits} />}
+        {/* A3 §D-5 — the created automation, rendered from the result's own payload, so it survives a
+            reload with no extra state (the plan/web_search pattern). */}
+        {card && <AutomationCard card={card} />}
       </div>
     </div>
   );

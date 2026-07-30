@@ -55,6 +55,8 @@ def test_defaults_are_master_off_classes_on() -> None:
     n = Settings().notifications
     assert n.enabled is False
     assert (n.events.agent_input, n.events.turn_done, n.events.action_failed) == (True, True, True)
+    # A3 14d — the fourth class (an automation run reached a terminal) joins on the same rule.
+    assert n.events.automation_done is True
 
 
 def test_absent_section_loads_as_defaults() -> None:
@@ -89,13 +91,23 @@ def test_get_notifications_and_put_roundtrip() -> None:
             assert r.status_code == 200, r.text
             assert r.json() == {
                 "enabled": False,
-                "events": {"agent_input": True, "turn_done": True, "action_failed": True},
+                "events": {
+                    "agent_input": True,
+                    "turn_done": True,
+                    "action_failed": True,
+                    "automation_done": True,
+                },
             }
 
             # write through the ordinary settings PUT
             r = c.put(
                 "/api/settings",
-                json={"notifications": {"enabled": True, "events": {"turn_done": False}}},
+                json={
+                    "notifications": {
+                        "enabled": True,
+                        "events": {"turn_done": False, "automation_done": False},
+                    }
+                },
             )
             assert r.status_code == 200, r.text
             assert r.json()["settings"]["notifications"]["enabled"] is True
@@ -103,7 +115,12 @@ def test_get_notifications_and_put_roundtrip() -> None:
             # …visible on the thin read (hot-applied, no restart)…
             assert c.get("/api/notifications").json() == {
                 "enabled": True,
-                "events": {"agent_input": True, "turn_done": False, "action_failed": True},
+                "events": {
+                    "agent_input": True,
+                    "turn_done": False,
+                    "action_failed": True,
+                    "automation_done": False,
+                },
             }
             # …and persisted, with the file's comments intact (the shared writer's contract)
             assert "# fixture fleet" in cfg.read_text(encoding="utf-8")
@@ -111,6 +128,9 @@ def test_get_notifications_and_put_roundtrip() -> None:
             assert reloaded.notifications.enabled is True
             assert reloaded.notifications.events.turn_done is False
             assert reloaded.notifications.events.agent_input is True
+            # A3 14d — the newest class round-trips like its siblings: PUT → thin GET → a fresh load
+            # from disk. A class that read back as its default would silently re-arm itself on restart.
+            assert reloaded.notifications.events.automation_done is False
     finally:
         os.environ.pop("CTRLB_CONFIG", None)
         os.environ.pop("CTRLB_DB", None)

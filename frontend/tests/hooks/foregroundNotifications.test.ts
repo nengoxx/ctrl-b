@@ -30,7 +30,7 @@ import { publishNotify, type NotifySignal } from "../../src/lib/notifyBus";
 
 const ALL_ON = {
   enabled: true,
-  events: { agent_input: true, turn_done: true, action_failed: true },
+  events: { agent_input: true, turn_done: true, action_failed: true, automation_done: true },
 };
 
 const signal = (over: Partial<NotifySignal> = {}): NotifySignal => ({
@@ -124,6 +124,7 @@ describe("shouldNotify · the gate matrix", () => {
     expect(shouldNotify(signal({ cls: "agent_input" }), prefs, env)).toBe(false);
     expect(shouldNotify(signal({ cls: "turn_done" }), prefs, env)).toBe(true);
     expect(shouldNotify(signal({ cls: "action_failed" }), prefs, env)).toBe(true);
+    expect(shouldNotify(signal({ cls: "automation_done" }), prefs, env)).toBe(true);
   });
 
   it("blocks while the page is visible (the toast UI already told the user)", () => {

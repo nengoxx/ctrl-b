@@ -2957,5 +2957,21 @@ body {
   color: var(--ink-soft);
   overflow-wrap: anywhere;
 }
+
+/* ── A3 (14d) — the created-automation card in the CHAT log (§D-5) ────────────────────────────────
+   A confirmed `create_automation` leaves a small card in the transcript. The frame is the same
+   `.svc-card` the run history uses and the meta line is `.auto-run-when`, so this is the whole
+   net-new surface: a name line and a right-anchored action foot. */
+.auto-made-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.auto-made-foot {
+  display: flex;
+  justify-content: flex-end;
+}
 }
 /* end @scope ([data-skin="vapor"]) */

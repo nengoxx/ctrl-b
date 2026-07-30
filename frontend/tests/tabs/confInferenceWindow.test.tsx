@@ -151,7 +151,12 @@ vi.mock("../../src/components/ServerListEditor", () => ({ ServerListEditor: () =
 vi.mock("../../src/components/AutomationsPanel", () => ({ AutomationsPanel: () => null }));
 // A3 (14c) — ConfTab reads the automations list itself for the group's header summary, so the
 // hook is stubbed alongside the panel (this suite renders ConfTab with no QueryClientProvider).
-vi.mock("../../src/hooks/useAutomations", () => ({ useAutomations: () => ({ data: undefined }) }));
+// Partial: the group header calls the REAL `automationsSummary` (a pure function of the envelope), so
+// only the query itself is stubbed out.
+vi.mock("../../src/hooks/useAutomations", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/hooks/useAutomations")>()),
+  useAutomations: () => ({ data: undefined }),
+}));
 vi.mock("../../src/tabs/UtilsTab", () => ({ UtilsContent: () => null }));
 
 vi.mock("../../src/hooks/useSettings", () => ({

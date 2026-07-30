@@ -297,6 +297,10 @@ async def lifespan(app: FastAPI):
         # retention and the delete cascade can never remove a thread a live turn still owns.
         turns,
     )
+    # The agent's `create_automation`/`list_automations` builtins reach the service through `Deps` (a
+    # tool's only handle on the world is its InvocationContext) — back-filled here, like the other
+    # agent-runtime handles above, because `Deps` is built long before this stack exists.
+    deps.automations = app.state.automation_service
     try:
         await app.state.automation_service.sweep_orphans()
     except Exception:

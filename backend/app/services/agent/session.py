@@ -2450,6 +2450,22 @@ class AgentSession:
                                     state=RunState.DENIED,
                                     summary=f"{cp.tool} needs confirmation — skipped ({self._headless_label()})",
                                 )
+                                # The note/`note_recorded` bookkeeping is `invoke`'s, kept locally rather
+                                # than resting on "a resume note cannot reach a headless call": whatever
+                                # produced this result, it now reaches an Event, so the note belongs in
+                                # the row and must not be appended a second time by the tail below.
+                                if note:
+                                    result.summary = f"{result.summary}{note}"
+                                # …and AUDITED (post-14d review, MED). `invoke` records nothing for a
+                                # suspend — correctly, the call may still be allowed — but THIS converts
+                                # the suspend into a refusal nobody can lift, so it is a decided outcome.
+                                # Unaudited, an unattended run's blocked tool calls existed only in its
+                                # transcript: absent from the event log, from the history, and from the
+                                # notification that would have told the owner their run was stopped.
+                                await self._actions.record_policy_denial(
+                                    cp.tool, cp.args, result, actor=AGENT_ACTOR, origin=self._origin
+                                )
+                                note_recorded = True
                             elif inv.needs_confirm:
                                 cp.state = RunState.AWAITING_CONFIRM
                                 spec = self._actions.registry.get(cp.tool).spec

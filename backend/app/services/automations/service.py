@@ -524,16 +524,25 @@ class AutomationService:
 
     async def sweep_orphans(self) -> int:
         """Turn every `running` row left by a dead process into `interrupted`, with an Event (§D-2).
+        Returns how many rows THIS sweep actually closed.
 
         Safe to do wholesale at boot precisely because there cannot be a live run yet — the runner loop
         is started only AFTER this (the same reasoning as the stale-call reconcile it runs beside). An
         orphan is the one status a reader must never see as still-running: it would make the automation
         look permanently busy and block run-now and delete forever.
+
+        The sweep is ALSO the shutdown backstop for a manual run that never drained (`runner.shutdown`),
+        and there the race is real: the abandoned task may still reach its own finalizer. So the close
+        goes through `finish_run` — the one first-writer-wins transition — and the Event is recorded only
+        for a row this sweep genuinely closed (post-14d review, MED). A row someone else terminalized in
+        the meantime is silently skipped: it already has its own honest terminal and audit row.
         """
         orphans = await self._repo.open_runs()
-        moment = _now()
+        closed = 0
         for run in orphans:
-            await self._repo.finish_run(run.id, status="interrupted", finished_at=moment, error=ORPHAN_NOTE)
+            if not await self.finish_run(run.id, status="interrupted", error=ORPHAN_NOTE):
+                continue
+            closed += 1
             automation = await self._repo.get(run.automation_id)
             await self.record_run_event(
                 automation_id=run.automation_id,
@@ -542,9 +551,9 @@ class AutomationService:
                 status=RunState.CANCELLED,
                 summary=f"automation run interrupted — {ORPHAN_NOTE}",
             )
-        if orphans:
-            log.warning("marked %d orphaned automation run(s) interrupted at boot", len(orphans))
-        return len(orphans)
+        if closed:
+            log.warning("marked %d orphaned automation run(s) interrupted at boot", closed)
+        return closed
 
     async def prune_runs(self, automation_id: str) -> int:
         """Retention (§D-1): drop run rows beyond `keep_runs` and the per-run threads they owned.
@@ -640,9 +649,14 @@ class AutomationService:
         status: RunStatus,
         error: str | None = None,
         thread_id: str | None = None,
-    ) -> None:
-        """Terminalize a claimed run. Thin on purpose — the runner's shielded finalizer is the only
-        caller, and it must be able to say "close this row" in one await."""
-        await self._repo.finish_run(
+    ) -> bool:
+        """Terminalize a claimed run, **first writer wins** — True iff this call closed it.
+
+        Thin on purpose — a caller must be able to say "close this row" in one await. The boolean is the
+        whole race protocol (see `AutomationRepo.finish_run`): the two callers that can collide on one
+        row (the runner's shielded finalizer and the shutdown backstop sweep) both record their terminal
+        Event only when they won, so one run produces exactly one terminal transition and one audit row.
+        """
+        return await self._repo.finish_run(
             run_id, status=status, finished_at=_now(), error=error, thread_id=thread_id
         )

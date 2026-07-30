@@ -5027,6 +5027,20 @@ body[data-perf="lite"] .kit .navmenu-pop {
   color: var(--text-2);
   overflow-wrap: anywhere;
 }
+/* ── A3 (14d) — the created-automation card in the CHAT log (§D-5). The kit half of the extras.css
+ * block: the frame is `.svc-card` and the meta line is `.auto-run-when` (both styled above), so only
+ * the name line and the right-anchored action foot are net-new. */
+.kit .auto-made-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kit .auto-made-foot {
+  display: flex;
+  justify-content: flex-end;
+}
 /* Parity with extras.css's `.mform .seg`: a Seg in the narrow .mform value column must wrap, or the
  * five-option privilege picker overflows a phone — and it must HUG its chips: a grid item stretches
  * to its track by default, which painted the capsule across the whole column with the chips pinned

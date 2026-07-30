@@ -126,6 +126,8 @@ ADAPTER_BOUNDED: dict[str, str] = {
     "memory": "local SQLite/file memory write; the git commit is bounded by MemoryGitCfg.commit_timeout_s",
     "skill_manage": "local file + SQLite write, no external I/O",
     "task_plan": "in-process turn state persisted to local SQLite, no external I/O",
+    "create_automation": "local SQLite write through AutomationService, no external I/O",
+    "list_automations": "local SQLite reads (list + latest-runs window), no external I/O",
     "session_search": "local SQLite FTS query, no external I/O",
     "question": "control-flow signal to the loop; returns immediately, no I/O",
     "spawn_subagents": "each child runs under its own asyncio.timeout(agent.subagent_child_timeout_s)",

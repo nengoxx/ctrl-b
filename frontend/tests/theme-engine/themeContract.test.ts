@@ -503,3 +503,29 @@ describe("root-owned attr lifecycle (mounted Root) — MinimalRoot data-density"
     expect(document.body.dataset.density).toBeUndefined(); // cleared → no stale attr on the next skin
   });
 });
+
+// ── The Root scroll-reset contract (post-14d review, MED). Both Roots reset the content pane to the top
+//    on a section switch, and both must SKIP that reset while a scroll-to-group handoff is pending: the
+//    Root's effect runs AFTER the host body's (parent-after-child), so on a WARM Conf tab it lands last
+//    and cancels the group scroll outright — making every deep link into a Conf group (a coerced
+//    hosted-navigate, the chat's created-automation card) silently inert. vapor shipped without the guard
+//    the kit Root had. A source-level check, deliberately: the alternative is an effect-ORDERING test
+//    across two component trees, which is exactly the flaky shape this repo avoids — and the failure mode
+//    is a MISSING line, which reading the source proves and a render test would only prove by accident. ──
+describe("theme Roots ↔ the group-scroll handoff", () => {
+  it.each([["src/theme-engine/kit/DefaultRoot.tsx"], ["src/themes/vapor/VaporRoot.tsx"]])(
+    "%s guards its scroll-reset on a pending group-scroll target",
+    (file) => {
+      const src = readFileSync(resolve(process.cwd(), file), "utf8");
+      expect(
+        /scrollTo\(0,\s*0\)/.test(src),
+        `${file} no longer resets the scroll — drop it from this list if that is intended`,
+      ).toBe(true);
+      expect(
+        /!getGroupScrollTarget\(\)[^\n]*scrollTo\(0,\s*0\)/.test(src),
+        `${file} must skip its scroll-reset while a group-scroll handoff is pending: ` +
+          `\`if (tab !== "agent" && !getGroupScrollTarget()) scrollRef.current?.scrollTo(0, 0)\``,
+      ).toBe(true);
+    },
+  );
+});

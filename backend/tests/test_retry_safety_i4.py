@@ -32,9 +32,18 @@ RETRY_SAFE = {
     "ip_info",
     "yt_captions",
     "question",  # only prompts the owner; no external effect
+    "list_automations",  # reads the automation roster
 }
 # The retry-UNSAFE set: mutating AND non-idempotent — re-running repeats the effect.
-RETRY_UNSAFE = {"reboot_host", "restart_service", "run_shell", "spawn_subagents", "memory", "skill_manage"}
+RETRY_UNSAFE = {
+    "reboot_host",
+    "restart_service",
+    "run_shell",
+    "spawn_subagents",
+    "memory",
+    "skill_manage",
+    "create_automation",  # a re-run creates a SECOND automation (and eats another cap slot)
+}
 
 
 def test_retry_safe_classification() -> None:

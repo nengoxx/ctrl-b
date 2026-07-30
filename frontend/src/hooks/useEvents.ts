@@ -49,6 +49,24 @@ const FAILED_STATES: Record<string, string> = {
   timeout: "Action timed out",
 };
 
+// A3 14d — the ACTION name the automation runner records one Event under when a run reaches a
+// terminal (backend `AutomationService.record_run_event`). Together with a non-null `run_id` it is the
+// whole predicate: a TOOL call made *inside* an automation run also carries that run id (attribution,
+// 14a), so the run's own lifecycle row is identified by the action name, never by the id alone.
+const AUTOMATION_RUN_ACTION = "automation_run";
+
+// How each terminal `RunState` of a RUN reads. `ok` is the only success; the three failures keep the
+// word "automation" so the notification says what ended, and they stay in the `automation_done` class
+// rather than falling through to `action_failed` — the automation toggle governs automation noise, and
+// one run must never raise two notifications. `skipped` (a misfired slot) is absent on purpose: the
+// claim writes those rows inside its own transaction and records no Event for them.
+const RUN_TERMINALS: Record<string, string> = {
+  ok: "Automation finished",
+  error: "Automation failed",
+  timeout: "Automation timed out",
+  cancelled: "Automation interrupted",
+};
+
 /** The subset of the domain `Event` (backend `domain/event.py`) this client reads off the wire.
  *  Everything optional: the parse is defensive by design — a frame we can't understand must
  *  invalidate caches like always and simply not notify. */
@@ -58,20 +76,80 @@ interface WireEvent {
   target?: unknown;
   status?: unknown;
   summary?: unknown;
+  /** Attribution (14a): the automation-run id, preserved through every descendant of a run. */
+  run_id?: unknown;
+  /** The initiator's id within its kind — for a run frame, the automation's id. */
+  origin_id?: unknown;
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
-/** Turn one live Event frame into an `action_failed` signal, when it is one. Split out of the
- *  listener so the mapping (which states, which text) is unit-testable without an EventSource. */
-export function notifyForEvent(raw: string): void {
-  let ev: WireEvent;
+/** A finished automation run, as read off one live Event frame — or `null` for every other frame.
+ *  Exported so the stream listener can invalidate the automations caches off the SAME predicate the
+ *  notification uses (one definition of "a run just ended", not two that can drift). */
+export interface RunTerminalFrame {
+  runId: string;
+  /** The automation the run belongs to — `""` when the frame didn't name one (nothing to key on). */
+  automationId: string;
+  /** The `RUN_TERMINALS` title for its state. */
+  title: string;
+  body: string;
+  eventId: string;
+}
+
+function parseEvent(raw: string): WireEvent | null {
   try {
-    ev = JSON.parse(raw) as WireEvent;
+    const ev = JSON.parse(raw) as WireEvent;
+    return ev !== null && typeof ev === "object" ? ev : null;
   } catch {
-    return; // unparseable frame — cache invalidation already happened; nothing to announce
+    return null; // unparseable frame — cache invalidation already happened; nothing to read
   }
-  if (ev === null || typeof ev !== "object") return;
+}
+
+/** Read a terminal automation-run frame off one raw Event, or `null`. Pure, so both consumers (the
+ *  notification below and the listener's cache invalidation) agree by construction. */
+export function runTerminalOf(raw: string): RunTerminalFrame | null {
+  const ev = parseEvent(raw);
+  return ev && runTerminalOfEvent(ev);
+}
+
+/** The predicate itself, on an already-parsed frame — so `notifyForEvent` reads a frame ONCE and both
+ *  of its arms share that parse. */
+function runTerminalOfEvent(ev: WireEvent): RunTerminalFrame | null {
+  const runId = str(ev.run_id);
+  if (str(ev.action) !== AUTOMATION_RUN_ACTION || !runId) return null;
+  const title = RUN_TERMINALS[str(ev.status)];
+  if (!title) return null; // a state this build doesn't read as terminal — invalidate, don't announce
+  return {
+    runId,
+    automationId: str(ev.origin_id) || str(ev.target),
+    title,
+    // The backend's run summary already leads with the automation's NAME ("nightly: the run
+    // completed"), which is what makes the body legible on its own; the title says how it ended.
+    body: str(ev.summary) || "the run finished",
+    eventId: str(ev.id),
+  };
+}
+
+/** Turn one live Event frame into a notification signal, when it is one. Split out of the listener so
+ *  the mapping (which states, which text) is unit-testable without an EventSource. */
+export function notifyForEvent(raw: string): void {
+  const ev = parseEvent(raw);
+  if (!ev) return; // unparseable frame — cache invalidation already happened; nothing to announce
+  const run = runTerminalOfEvent(ev);
+  if (run) {
+    publishNotify({
+      cls: "automation_done",
+      // Keyed on the RUN, not the Event: the run is the occurrence being announced, and it is the
+      // durable id a re-delivery would repeat.
+      key: `run:${run.runId}`,
+      title: run.title,
+      body: run.body,
+      // No `focus`: a run's result is legible from Conf → Automations whenever the owner gets to it,
+      // and the run happened while they were elsewhere by definition.
+    });
+    return; // never also under `action_failed` — see RUN_TERMINALS
+  }
   const title = FAILED_STATES[str(ev.status)];
   if (!title) return;
   const action = str(ev.action) || "action";
@@ -107,6 +185,18 @@ export function useEventStream(): void {
       void qc.invalidateQueries({ queryKey: ["hosts"] });
       void qc.invalidateQueries({ queryKey: ["services"] });
       void qc.invalidateQueries({ queryKey: ["events"] });
+      // A3 14d — a run that just ended is the ONE thing the automations caches cannot learn on their
+      // own: run-now answers 202 the moment the run is claimed, so a detached run has no completion
+      // response to invalidate off. This frame is that signal, so the Conf list goes live the moment a
+      // run finishes; the list's poll-while-`busy` (useAutomations) stays as the fallback for a client
+      // that missed the frame. Invalidation stays FIRST and unconditional, as above.
+      const run = runTerminalOf(e.data);
+      if (run) {
+        void qc.invalidateQueries({ queryKey: ["automations"] });
+        // The history is keyed per automation — invalidate it only when the frame named one.
+        if (run.automationId)
+          void qc.invalidateQueries({ queryKey: ["automation-runs", run.automationId] });
+      }
       notifyForEvent(e.data);
     }
 

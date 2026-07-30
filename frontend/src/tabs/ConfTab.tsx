@@ -17,7 +17,7 @@ import { Swatches } from "../components/Swatches";
 import { Switch } from "../components/Switch";
 import { useAccessStatus, useSetServe } from "../hooks/useAccess";
 import { useAppChrome } from "../hooks/useAppChrome";
-import { useAutomations } from "../hooks/useAutomations";
+import { AUTOMATIONS_GROUP_ID, automationsSummary, useAutomations } from "../hooks/useAutomations";
 import { useSections } from "../hooks/useSections";
 import { currentAppearancePatch, useSaveAppearance } from "../hooks/useAppearance";
 import { agentModeOf, useActionSpecs } from "../hooks/useActions";
@@ -716,7 +716,7 @@ type Draft = Pick<
 // one explicit default. Same defensive shape `memoryCfg`/`agentCfg` use for their sections.
 const NOTIFICATIONS_FALLBACK: SettingsDoc["notifications"] = {
   enabled: false,
-  events: { agent_input: true, turn_done: true, action_failed: true },
+  events: { agent_input: true, turn_done: true, action_failed: true, automation_done: true },
 };
 
 function pickDraft(s: SettingsDoc): Draft {
@@ -843,16 +843,19 @@ export function ConfTab({ active }: Props) {
     setThemeSetting(theme, key, value);
     saveAppearance.mutate(currentAppearancePatch());
   };
-  // Hosted-utils scroll handoff (D35 §F0): when `useSections.navigate` coerces a `utils` navigation to Conf
-  // it arms `groupScroll` with the hosted group's DOM id. Consume it here — force-EXPAND the group (a plain
-  // toggle can't guarantee the open state), scroll it to the top, then clear. The clear is deferred to a
-  // MICROTASK so DefaultRoot's parent scroll-reset effect (which runs AFTER this child effect in the same
+  // Group scroll handoff (D35 §F0): something armed `groupScroll` with a group's DOM id — either
+  // `useSections.navigate` coercing a `utils` navigation to Conf, or a deep link from elsewhere in the app
+  // (`openConfGroup`, e.g. the chat's created-automation card). Consume it here — force-EXPAND the group (a
+  // plain toggle can't guarantee the open state), scroll it to the top, then clear. The clear is deferred to
+  // a MICROTASK so DefaultRoot's parent scroll-reset effect (which runs AFTER this child effect in the same
   // passive-effect flush) still peeks a pending target and SKIPS its `scrollTo(0,0)` — otherwise it would
-  // cancel this scroll. Guarded on `hostsUtils` so it only fires when the group is actually rendered here.
+  // cancel this scroll. The hosted-utils target additionally waits for `hostsUtils`: that group only exists
+  // in Conf while the layout hosts it, and consuming the handoff before it renders would scroll to nothing.
   useEffect(() => {
-    if (scrollTarget !== HOSTED_UTILS_GROUP_ID || !hostsUtils) return;
-    setCollapsed(HOSTED_UTILS_GROUP_ID, false);
-    document.getElementById(HOSTED_UTILS_GROUP_ID)?.scrollIntoView({ block: "start" });
+    if (!scrollTarget) return;
+    if (scrollTarget === HOSTED_UTILS_GROUP_ID && !hostsUtils) return;
+    setCollapsed(scrollTarget, false);
+    document.getElementById(scrollTarget)?.scrollIntoView({ block: "start" });
     queueMicrotask(clearGroupScrollTarget);
   }, [scrollTarget, hostsUtils]);
 
@@ -923,16 +926,10 @@ export function ConfTab({ active }: Props) {
   const { data: agentList } = useAgentList();
   const agentCount = (agentList?.agents.length ?? 0) + 1; // specialists + the default/root agent
   // A3 — the Automations group's header summary. Reads the SAME `["automations"]` query the panel
-  // does (TanStack dedupes it), so the count can't disagree with the list underneath. The master
-  // switch is surfaced here because an "off" scheduler is the one state where a row that says
-  // "next: 03:00" would otherwise be lying.
+  // does (TanStack dedupes it), so the count can't disagree with the list underneath; the text itself
+  // is a pure function of the envelope (`automationsSummary`), tested without rendering this tab.
   const { data: automations } = useAutomations();
-  const automationCount = automations?.automations.length ?? 0;
-  const automationsRight = !automations
-    ? undefined
-    : !automations.enabled
-      ? "scheduler off"
-      : `${automationCount} automation${automationCount === 1 ? "" : "s"}`;
+  const automationsRight = automationsSummary(automations);
   const agentSection = settings?.agent as Partial<AgentSectionCfg> | undefined;
   // v1.3.1 — the projection is shared with the AgentsEditor (`pickAgentSection`), which re-uses it to
   // project its own save echo into the exact shape this prop takes.
@@ -2072,7 +2069,7 @@ export function ConfTab({ active }: Props) {
               disabled={notifPerm === "unsupported"}
             />
           </SettingRow>
-          {/* The three classes mirror `NotificationEventsCfg` one-for-one. Inert (but visible, and
+          {/* The four classes mirror `NotificationEventsCfg` one-for-one. Inert (but visible, and
               still saved) until the master is on — the master is the spam guard, so these describe
               WHICH events would notify, not whether any do. */}
           <SettingRow label="Agent needs you" desc="a confirm bubble or a question is waiting">
@@ -2096,6 +2093,16 @@ export function ConfTab({ active }: Props) {
               on={!!notif?.events.action_failed}
               onToggle={() => setNotifyEvent("action_failed", !notif?.events.action_failed)}
               label="Notify on action failed"
+              disabled={!notif?.enabled}
+            />
+          </SettingRow>
+          {/* A3 14d — the class that makes an unattended run reportable at all: nobody is watching the
+              tab when a 03:00 job fires. A FAILED run notifies here too, not under "Action failed". */}
+          <SettingRow label="Automation finished" desc="a scheduled or manual run reached a result">
+            <Switch
+              on={!!notif?.events.automation_done}
+              onToggle={() => setNotifyEvent("automation_done", !notif?.events.automation_done)}
+              label="Notify on automation done"
               disabled={!notif?.enabled}
             />
           </SettingRow>
@@ -2161,7 +2168,7 @@ export function ConfTab({ active }: Props) {
           in SQLite behind `AutomationService`, NOT in config.yaml — so this group has no draft and no
           save bar: every row edit is its own request. */}
       <ConfGroup
-        id="automations"
+        id={AUTOMATIONS_GROUP_ID}
         num="14"
         title="Automations"
         right={automationsRight}

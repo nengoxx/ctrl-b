@@ -10,6 +10,7 @@ import { SwUpdatePrompt } from "../../components/SwUpdatePrompt";
 import { TabBar } from "../../components/TabBar";
 import { Toasts } from "../../components/Toasts";
 import { useSections } from "../../hooks/useSections";
+import { getGroupScrollTarget } from "../../store/groupScroll";
 import { appbarShown, useUISlice } from "../../store/ui";
 import { prefetchOnIdle } from "../../lib/prefetch";
 import { AgentTab } from "../../tabs/AgentTab";
@@ -61,13 +62,18 @@ export function VaporRoot() {
   const restoredScrollRef = useScrollKeep(scrollRef);
 
   // Reset the content pane to the top on tab switch (Agent is the exception — it scrolls itself).
+  // SKIP when a scroll-to-group handoff is pending — the DefaultRoot guard, which vapor was missing
+  // (post-14d review, MED): this parent effect runs AFTER the host body's child effect, so on a WARM Conf
+  // tab (already mounted, so nothing re-suspends) it landed last and cancelled the group scroll outright.
+  // A deep link into a Conf group (`openConfGroup`, e.g. the chat's created-automation card) is therefore
+  // silently inert on the default theme without it. Read via the getter (a peek), not a subscription.
   // Skip the ONE mount-run that follows a scrollKeep restore (a theme switch, not a tab switch).
   useEffect(() => {
     if (restoredScrollRef.current) {
       restoredScrollRef.current = false;
       return;
     }
-    if (tab !== "agent") scrollRef.current?.scrollTo(0, 0);
+    if (tab !== "agent" && !getGroupScrollTarget()) scrollRef.current?.scrollTo(0, 0);
     // `restoredScrollRef` is a stable ref (lint can't see through the custom hook) — a dep for hygiene only.
   }, [tab, restoredScrollRef]);
 

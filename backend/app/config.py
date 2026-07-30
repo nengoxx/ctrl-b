@@ -829,7 +829,7 @@ class NotificationEventsCfg(BaseModel):
     """Which event CLASSES are notify-worthy (F1). Each class is one optional field on the ONE unified
     events object — the next class is an additive field with a default, never a sibling map.
 
-    All three default **on**, because the master `NotificationsCfg.enabled` is what actually arms the
+    All four default **on**, because the master `NotificationsCfg.enabled` is what actually arms the
     feature (owner's spam guard, ROADMAP F1 "decided defaults"): nothing can fire while it's off, so a
     per-class default of False would only mean "enabling notifications does nothing".
 
@@ -837,13 +837,18 @@ class NotificationEventsCfg(BaseModel):
       that turns notifications into the response channel for an unattended agent).
     - `turn_done`: an agent turn ended — completed, capped, or errored. NOT `suspended`, which always
       accompanies a confirm/question frame and is therefore already covered by `agent_input`.
-    - `action_failed`: a recorded Event whose `RunState` is a failure (error / denied / timeout)."""
+    - `action_failed`: a recorded Event whose `RunState` is a failure (error / denied / timeout).
+    - `automation_done`: a scheduled or manual automation run reached a terminal (A3 14d) — the class
+      that makes an unattended run reportable at all, since nobody is watching the tab when it fires.
+      A FAILED run notifies under this class too, not under `action_failed`: the toggle governs
+      automation noise as a whole, and one run must never raise two notifications."""
 
     model_config = {"extra": "allow"}
 
     agent_input: bool = True
     turn_done: bool = True
     action_failed: bool = True
+    automation_done: bool = True
 
 
 class NotificationsCfg(BaseModel):

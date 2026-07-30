@@ -15,7 +15,10 @@ vi.mock("../../src/hooks/useActions", () => ({ useActionSpecs: () => ({ data: []
 
 import { ChatThread } from "../../src/components/ChatThread";
 import type { AgentChat } from "../../src/hooks/useAgentChat";
+import { AUTOMATIONS_GROUP_ID } from "../../src/hooks/useAutomations";
 import { sendMessage, useChat } from "../../src/store/chat";
+import { clearGroupScrollTarget, getGroupScrollTarget } from "../../src/store/groupScroll";
+import { getUI, setUI } from "../../src/store/ui";
 import {
   setPlanSheetOpen,
   usePlanOpenAutoClose,
@@ -359,5 +362,115 @@ describe("A4 plan-open auto-close is decoupled from AgentTab", () => {
     expect(renderHook(() => usePlanSheetOpen()).result.current).toBe(true);
     rerender(<Body p={null} />);
     expect(renderHook(() => usePlanSheetOpen()).result.current).toBe(false);
+  });
+});
+
+// ── A3 §D-5 (14d) — the created-automation card. A confirmed `create_automation` returns the record in
+// its result `data`, and the bubble renders it from THAT — no store branch, no refetch — so it survives a
+// reload of a persisted thread. The affordance into Conf reuses the app's one navigation
+// (`openConfGroup` → tab + the group-scroll handoff), never a second router.
+
+/** An assistant message holding one settled `create_automation` call + its result. */
+function createdChat(data: Record<string, unknown> | undefined): AgentChat {
+  const msg: ChatMessage = {
+    id: "m1",
+    thread_id: "t1",
+    role: "assistant",
+    actor: "agent",
+    ts: new Date().toISOString(),
+    tokens: null,
+    compacted: false,
+    parts: [
+      {
+        type: "tool_call",
+        call_id: "a1",
+        tool: "create_automation",
+        args: { name: "nightly", schedule: "0 3 * * *", prompt: "check the fleet" },
+        state: "ok",
+      },
+    ],
+  };
+  return {
+    ...emptyChat(),
+    messages: [msg],
+    resultByCall: {
+      a1: { call_id: "a1", state: "ok", summary: "created automation 'nightly'", data },
+    } as unknown as AgentChat["resultByCall"],
+  };
+}
+
+const CARD = {
+  id: "auto-1",
+  name: "nightly",
+  schedule: "0 3 * * *",
+  schedule_text: "At 03:00 every day",
+  tz: "UTC",
+  next_fire: "2026-07-31T03:00:00+00:00",
+  thread_mode: "fresh",
+  enabled: true,
+  agent: null,
+};
+
+describe("A3 14d · the created-automation card", () => {
+  it("renders the saved record from the result payload", () => {
+    const { container } = render(<ChatThread active chat={createdChat({ automation: CARD })} />);
+    expect(screen.getByText("nightly")).toBeTruthy();
+    expect(screen.getByText(/At 03:00 every day · UTC · next /)).toBeTruthy();
+    expect(screen.getByText(/new thread each run/)).toBeTruthy();
+    expect(container.querySelector(".svc-card.auto-made")).toBeTruthy();
+  });
+
+  it("says so when the automation runs as a named agent on one continuing thread", () => {
+    render(
+      <ChatThread
+        active
+        chat={createdChat({ automation: { ...CARD, thread_mode: "rolling", agent: "scout" } })}
+      />,
+    );
+    expect(screen.getByText("one continuing thread · scout")).toBeTruthy();
+  });
+
+  it("renders no card for a result that carries no automation payload", () => {
+    const { container } = render(<ChatThread active chat={createdChat(undefined)} />);
+    expect(container.querySelector(".auto-made")).toBeNull();
+    // …nor for a payload too partial to render (a row from a build before this shape existed).
+    const partial = render(<ChatThread active chat={createdChat({ automation: { tz: "UTC" } })} />);
+    expect(partial.container.querySelector(".auto-made")).toBeNull();
+  });
+
+  // `data` is persisted JSON replayed from the DB, so EVERY field is proved before the cast — a
+  // shape-matching payload with a bad field would otherwise render `undefined` into the transcript, or
+  // (for `tz`) feed `Intl` something it throws a RangeError on (post-14d review, MED).
+  it.each([
+    ["a non-string schedule_text", { schedule_text: 42 }],
+    ["a non-string tz", { tz: null }],
+    ["a non-string thread_mode", { thread_mode: 1 }],
+    ["a non-boolean enabled", { enabled: "yes" }],
+    ["a next_fire that is neither a string nor null", { next_fire: 1750000000 }],
+    ["an agent that is neither a string nor null", { agent: 7 }],
+  ])("renders no card when the payload has %s", (_label, over) => {
+    const { container } = render(
+      <ChatThread active chat={createdChat({ automation: { ...CARD, ...over } })} />,
+    );
+    expect(container.querySelector(".auto-made")).toBeNull();
+  });
+
+  it("degrades to the raw instant when the stored zone is one this browser cannot resolve", () => {
+    // A valid-shaped card whose `tz` `Intl` refuses: the bubble must still render (the whole transcript
+    // used to go down with it), just without the localized moment.
+    render(
+      <ChatThread active chat={createdChat({ automation: { ...CARD, tz: "Mars/Olympus" } })} />,
+    );
+    expect(screen.getByText(/next 2026-07-31T03:00:00\+00:00/)).toBeTruthy();
+  });
+
+  it("jumps to the Conf group that owns it, through the app's one navigation", () => {
+    render(<ChatThread active chat={createdChat({ automation: CARD })} />);
+    screen.getByRole("button", { name: /Open in Conf/ }).click();
+    expect(getUI().tab).toBe("conf");
+    expect(getGroupScrollTarget()).toBe(AUTOMATIONS_GROUP_ID);
+    // Both stores are module state — leave them as they were found.
+    clearGroupScrollTarget();
+    setUI({ tab: "fleet" });
   });
 });

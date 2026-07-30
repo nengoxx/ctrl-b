@@ -17,6 +17,7 @@ from app.adapters.searxng import SearxngClient
 from app.config import Settings
 from app.core.memory import MemoryProvider
 from app.core.skills import SkillProvider, SkillSelector
+from app.services.automations import AutomationService
 from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.events import EventService
 from app.services.fleet import FleetService
@@ -47,3 +48,9 @@ class Deps:
     selector: SkillSelector | None = None
     memory: MemoryProvider | None = None  # file-based agent memory (Phase 7e-d); read each turn
     subagent_sem: asyncio.Semaphore | None = None
+    #: The ONE automations writer/reader (A3 14d), for the `create_automation`/`list_automations`
+    #: builtins. Imported directly (unlike `actions` above) because nothing under
+    #: `services/automations/` imports `Deps` — there is no cycle to dodge, so the tools get a real
+    #: type instead of a string one. Back-filled in the lifespan like the other agent-runtime handles:
+    #: `Deps` is constructed before the chat stack, and the service needs the DB + the turn registry.
+    automations: AutomationService | None = None

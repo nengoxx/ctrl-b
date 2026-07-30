@@ -206,14 +206,33 @@ class AutomationRepo:
         finished_at: datetime,
         error: str | None = None,
         thread_id: str | None = None,
-    ) -> None:
-        """Close a run. `thread_id` is written only when supplied (`COALESCE`), so a finalizer that
-        never got as far as resolving a thread cannot erase one an earlier step already recorded."""
-        await self._db.execute(
-            "UPDATE automation_runs SET status = ?, finished_at = ?, error = ?, "
-            "thread_id = COALESCE(?, thread_id) WHERE id = ?",
-            (status, _epoch(finished_at), error, thread_id, run_id),
-        )
+    ) -> bool:
+        """Close a run, **first writer wins** — returns whether THIS call performed the transition.
+
+        Two callers can legitimately race for one row (post-14d review, MED): a manual run still pending
+        when `AutomationRunner.shutdown` gives up is terminalized by the backstop sweep, and the task can
+        then reach its own shielded finalizer a moment later. Unguarded, both wrote — the second silently
+        replacing the first's status AND recording a second terminal Event for one run (a duplicate in the
+        audit log, and a duplicate notification). The guard makes the transition happen exactly once, and
+        the boolean is what lets the caller record the audit row only when it is the one that closed it.
+
+        Read-then-write inside ONE `BEGIN IMMEDIATE` rather than an `UPDATE … WHERE status = 'running'`
+        with a rowcount, because `Database.execute` deliberately exposes no cursor; the transaction gives
+        the same atomicity through the seam the claim already uses. It therefore must NOT be called from
+        inside an open transaction (nesting is a `RuntimeError` by design) — no caller does.
+
+        `thread_id` is written only when supplied (`COALESCE`), so a finalizer that never got as far as
+        resolving a thread cannot erase one an earlier step already recorded."""
+        async with self._db.transaction():
+            rows = await self._db.query("SELECT status FROM automation_runs WHERE id = ?", (run_id,))
+            if not rows or rows[0]["status"] != "running":
+                return False  # already terminal (or gone) — someone else closed it
+            await self._db.execute(
+                "UPDATE automation_runs SET status = ?, finished_at = ?, error = ?, "
+                "thread_id = COALESCE(?, thread_id) WHERE id = ?",
+                (status, _epoch(finished_at), error, thread_id, run_id),
+            )
+        return True
 
     async def set_run_thread(self, run_id: str, thread_id: str) -> None:
         await self._db.execute("UPDATE automation_runs SET thread_id = ? WHERE id = ?", (thread_id, run_id))

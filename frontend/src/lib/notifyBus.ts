@@ -17,7 +17,7 @@
 
 /** Which per-event preference (`notifications.events.*`) governs a signal. Mirrors the backend
  *  `NotificationEventsCfg` field names one-for-one, so the gate is a direct key lookup. */
-export type NotifyClass = "agent_input" | "turn_done" | "action_failed";
+export type NotifyClass = "agent_input" | "turn_done" | "action_failed" | "automation_done";
 
 export interface NotifySignal {
   /** The preference key that gates this signal. */
