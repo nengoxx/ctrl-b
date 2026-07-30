@@ -8,6 +8,7 @@ import { loadSkills } from "../../src/lib/composer";
 import { clearDraft, getDraft } from "../../src/store/composer";
 import { getComposerOverlay, setComposerOverlay } from "../../src/store/composerOverlay";
 import { setPlanSheetOpen, usePlanSheetOpen } from "../../src/store/planSheet";
+import { setUI } from "../../src/store/ui";
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
 
 // A2 — the composer autocomplete BEHAVIOUR (hooks/useComposerSuggest) + its popover wiring in a real Kit
@@ -316,8 +317,17 @@ describe("SuggestPopover in a real Kit composer", () => {
   beforeEach(() => {
     clearDraft();
     localStorage.clear();
+    setComposerOverlay(null);
+    setUI({ motion: "full" }); // the retention path depends on it — one case flips it to `reduced`
   });
   afterEach(cleanup); // globals:false → register RTL cleanup explicitly
+
+  /** The VALUES the popover currently renders — identity, not just a count: the retained set must be the
+   *  rows that were there, and a reopen must show the new query's rows rather than the stale ones. */
+  const rowValues = (c: HTMLElement) =>
+    Array.from(c.querySelectorAll("#composer-suggest [role=option] .sg-val")).map(
+      (n) => n.textContent,
+    );
 
   const renderComposer = () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -372,16 +382,71 @@ describe("SuggestPopover in a real Kit composer", () => {
     fireEvent.change(ta, { target: { value: "/cle" } });
     expect(list().classList.contains("open")).toBe(true);
     expect(list().hasAttribute("inert")).toBe(false);
-    const rows = container.querySelectorAll("#composer-suggest [role=option]").length;
-    expect(rows).toBeGreaterThan(0);
+    const rows = rowValues(container);
+    expect(rows).toEqual(["clear"]);
 
     fireEvent.keyDown(ta, { key: "Escape" }); // dismiss — the popover closes, the draft stays
     expect(list().classList.contains("open")).toBe(false);
     expect(list().hasAttribute("inert")).toBe(true);
-    expect(container.querySelectorAll("#composer-suggest [role=option]").length).toBe(rows);
+    expect(rowValues(container)).toEqual(rows); // the SAME rows, by value — not just the same count
     // …and the textarea drops its combobox wiring the moment it closes (nothing points at an inert list)
     expect(ta.getAttribute("aria-controls")).toBeNull();
     expect(ta.getAttribute("aria-activedescendant")).toBeNull();
+  });
+
+  // Codex, LOW — retained rows must not outlive the exit, or every later composer render reconciles them
+  // (a per-keystroke cost on Fennec with a big discovered registry). The shell's own opacity `transitionend`
+  // is the release.
+  it("releases the retained rows when the exit transition ends", () => {
+    const { container } = renderComposer();
+    const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
+    fireEvent.change(ta, { target: { value: "/cle" } });
+    fireEvent.keyDown(ta, { key: "Escape" });
+    expect(rowValues(container)).toEqual(["clear"]); // retained through the slide
+
+    const list = container.querySelector<HTMLElement>("ul#composer-suggest")!;
+    fireEvent.transitionEnd(list, { propertyName: "transform" }); // the other leg releases NOTHING
+    expect(rowValues(container)).toEqual(["clear"]);
+    fireEvent.transitionEnd(list, { propertyName: "opacity" });
+    expect(rowValues(container)).toEqual([]); // …and the closed shell now reconciles zero rows
+  });
+
+  // …and where there is NO transition to wait for, the release is synchronous: `transitionend` never fires
+  // under `transition: none`, so keying the release on it alone would leak the rows for the session.
+  it("releases them synchronously under reduced motion (no transition, no transitionend)", () => {
+    setUI({ motion: "reduced" });
+    const { container } = renderComposer();
+    const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
+    fireEvent.change(ta, { target: { value: "/cle" } });
+    expect(rowValues(container)).toEqual(["clear"]);
+    fireEvent.keyDown(ta, { key: "Escape" });
+    expect(rowValues(container)).toEqual([]); // released at the close edge, no transitionend needed
+  });
+
+  // The same synchronous path when ANOTHER overlay displaces us: kit.css snaps a displaced overlay out
+  // (it must not ghost over the incoming panel), so again there is no transitionend coming.
+  it("releases them synchronously when another composer overlay takes the slot", () => {
+    const { container } = renderComposer();
+    const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
+    fireEvent.change(ta, { target: { value: "/cle" } });
+    expect(rowValues(container)).toEqual(["clear"]);
+    act(() => setComposerOverlay("plan")); // the plan sheet claims the space
+    expect(container.querySelector("ul#composer-suggest")!.classList.contains("open")).toBe(false);
+    expect(rowValues(container)).toEqual([]);
+  });
+
+  // Reopening must show the NEW query's rows immediately — the retained set is a closing artifact only.
+  it("a reopen renders the new query's rows, never the retained ones", () => {
+    const { container } = renderComposer();
+    const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
+    fireEvent.change(ta, { target: { value: "/cle" } });
+    expect(rowValues(container)).toEqual(["clear"]);
+    fireEvent.keyDown(ta, { key: "Escape" });
+    expect(rowValues(container)).toEqual(["clear"]); // retained while closing
+
+    fireEvent.change(ta, { target: { value: "/comp" } }); // typing re-arms the popover
+    expect(container.querySelector("ul#composer-suggest")!.classList.contains("open")).toBe(true);
+    expect(rowValues(container)).toEqual(["compact"]);
   });
 
   it("tapping a row accepts it (pointerdown, before the field can blur) and writes the draft store", () => {

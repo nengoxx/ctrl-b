@@ -575,6 +575,21 @@ body[data-motion="reduced"] .kit .kit-suggest,
 body[data-motion="reduced"] .kit .tools-sheet {
   transition: none; /* §14.11: reduced motion → snap open/closed, no slide */
 }
+/* HANDOFF SNAP (Codex review of the motion slice). The three overlays share ONE slot, so opening B while A
+ * is still mid-exit painted A's dying .2s fade OVER B: the composer pair tie at z 5 and both outrank the
+ * plan sheet at z 3, so a closing popover ghosted across whatever had just opened. Rule: while ANY of the
+ * three is `.open`, every OTHER (closed) one is snapped invisible with NO transition — there is nothing
+ * left to ghost, and the incoming panel owns the space from frame one. A plain close (the owner hands the
+ * slot back to nobody) matches no `.open` sibling, so it KEEPS its exit slide — the point of the slice.
+ * `:has()` on their common ancestor, the same probe the docked-composer overrides above use. Specificity
+ * (0,5,0) — `:has()` contributes its most specific argument — clears the base recipes it overrides.
+ * The suggest popover mirrors this in TS (it drops its retained rows when displaced) — one contract. */
+.kit-main:has(.kit-suggest.open, .tools-sheet.open, .plan-sheet.open) .kit-suggest:not(.open),
+.kit-main:has(.kit-suggest.open, .tools-sheet.open, .plan-sheet.open) .tools-sheet:not(.open),
+.kit-main:has(.kit-suggest.open, .tools-sheet.open, .plan-sheet.open) .plan-sheet:not(.open) {
+  opacity: 0;
+  transition: none;
+}
 /* the DOCKED composer sits at bottom:0 (the others float 12px up) — drop that inset, keep the 8px gap.
  * Same `:has()` probe the plan sheet uses for the identical reason (edge #7). */
 .kit-main:has(.kit-composer.sheet) .kit-suggest,

@@ -2,6 +2,7 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 
 import { getCompletions, useVerbsVersion, type Completion } from "../lib/composer";
 import {
+  getComposerOverlay,
   releaseComposerOverlay,
   setComposerOverlay,
   useComposerOverlayOpen,
@@ -26,6 +27,11 @@ export interface ComposerSuggest {
   open: boolean;
   items: Completion[];
   activeIndex: number;
+  /** Closed because ANOTHER composer overlay took the slot, rather than because we simply closed. The
+   *  popover has no exit slide in that case (kit.css snaps a displaced overlay out so it can't ghost over
+   *  the incoming panel), which the presentation half needs in order to release its retained rows
+   *  synchronously instead of waiting on a `transitionend` that will never fire. */
+  displaced: boolean;
   listboxId: string;
   /** Stable per-row option id for `aria-activedescendant`. */
   optionId: (i: number) => string;
@@ -96,6 +102,11 @@ export function useComposerSuggest({
   const wantOpen = armed && !dismissed && items.length > 0;
   const hasSlot = useComposerOverlayOpen("suggest");
   const open = wantOpen && hasSlot;
+  // DISPLACED = someone else holds the slot (see `displaced` on the interface). Read non-reactively:
+  // `hasSlot` already subscribes us to the store, so any owner change re-renders this hook and the read is
+  // always current. Note a self-dismiss (Esc) leaves the slot ours until the release effect runs, which is
+  // exactly right — that close DOES get its exit slide.
+  const displaced = !hasSlot && getComposerOverlay() !== null;
   const active = items.length ? Math.min(activeIndex, items.length - 1) : 0;
 
   // The active row is ALREADY exactly what's typed → accepting it would only re-insert it, so Enter is
@@ -190,6 +201,7 @@ export function useComposerSuggest({
     open,
     items,
     activeIndex: active,
+    displaced,
     listboxId: LISTBOX_ID,
     optionId: (i) => `${LISTBOX_ID}-opt-${i}`,
     aria: {
