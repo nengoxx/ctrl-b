@@ -12,7 +12,14 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-30 — ✅ v1.4.0 LIVE + the POPOVER MOTION/SKIN SLICE review-CLEAN, unpushed)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-30 — ✅ v1.4.1 LIVE; both releases today ran the PLAIN-FORM updater clean)
+> **✅ v1.4.1 RELEASED + LIVE same day** (tag @ `5a6faed`; release gate green run 30526099548 incl.
+> e2e; the plain-form updater's SECOND clean run, 1.4.0→1.4.1; health/pid/HTTPS verified; DB snapshot
+> `ctrlb-20260730-102239.db.gz`; rollback = `update.sh v1.4.0`, no config-shape change). It carries
+> the popover motion/skin slice below + the archive dependabot de-index (`050c2df`+`5a6faed`:
+> lockfiles + prototype package.json deleted, flask requirements renamed — **zero indexable manifests
+> left in archive/, dependabot alerts at ZERO, class dead**). Everything below is now PUSHED.
+>
 > **✅ v1.4.0 (the QoL cluster) RELEASED + LIVE on emma 2026-07-30** — tag @ `d6f3aae`, release gate
 > green (run 30520253335, incl. e2e), **and the MILESTONE landed: the shipped `update.sh`'s FIRST
 > PLAIN-FORM run** (`bash ~/apps/ctrl-b/deploy/linux/update.sh v1.4.0`) executed clean end-to-end —
@@ -33,8 +40,8 @@
 > otherwise): react-dom wraps ONLY `transitionend` as SyntheticTransitionEvent — `transitioncancel`
 > arrives as the BASE synthetic with NO `propertyName`; read `e.nativeEvent.propertyName`.** Gate 6/6
 > on every commit; both engines live-verified (Chromium + Gecko dispatch `transitioncancel` on the
-> snap). Dev units RUNNING (:5434 + Vite :5173). Next release carries this slice on the owner's word
-> (the plain-form updater's second run).
+> snap). Dev units RUNNING (:5434 + Vite :5173). ~~Next release carries this slice~~ → **shipped in
+> v1.4.1 (above).**
 >
 > ## ▶ PREVIOUS STATE (2026-07-29 — the QUICK QoL CLUSTER was COMPLETE + review-CLEAN, since released as v1.4.0)
 > **All four cluster items BUILT, SIX Codex rounds closed, final verdict WAVE CLEAN (zero open
@@ -52,10 +59,10 @@
 > entries. ACA core twice confirmed regression-free under adversarial scrutiny.
 >
 > ## ▶ NEXT SESSION — the checklist, in order
-> 1. ~~Owner device eyeball~~ + ~~release~~ — **✅ BOTH DONE 2026-07-30** (v1.4.0 live via the
->    plain-form updater; see the state block above). The popover slice (3 commits, unpushed) still
->    wants an owner eyeball on :5173: open/close the `/` popover + tools menu (0.2s slide both ways),
->    switch overlays mid-exit (instant snap, no ghosting), flip the four skins (frontier=bezel).
+> 1. ~~Owner device eyeball~~ + ~~release~~ — **✅ DONE 2026-07-30** (v1.4.0 then v1.4.1, both via
+>    the plain-form updater). The popover slice still wants an owner eyeball — now live on the PROD
+>    PWA too: open/close the `/` popover + tools menu (0.2s slide both ways), switch overlays
+>    mid-exit (instant snap, no ghosting), flip the four skins (frontier=bezel).
 > 3. **Post-release: the F1 device round** (paper-verified only so far, flagged by the builder): on
 >    the installed PWA via https://emma.lobster-vector.ts.net — enable Notifications in Conf (the
 >    permission prompt rides the toggle gesture), background the app, trigger a confirm-gated action;
