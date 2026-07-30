@@ -12,7 +12,31 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-29 — the QUICK QoL CLUSTER is COMPLETE + review-CLEAN, unpushed)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-30 — ✅ v1.4.0 LIVE + the POPOVER MOTION/SKIN SLICE review-CLEAN, unpushed)
+> **✅ v1.4.0 (the QoL cluster) RELEASED + LIVE on emma 2026-07-30** — tag @ `d6f3aae`, release gate
+> green (run 30520253335, incl. e2e), **and the MILESTONE landed: the shipped `update.sh`'s FIRST
+> PLAIN-FORM run** (`bash ~/apps/ctrl-b/deploy/linux/update.sh v1.4.0`) executed clean end-to-end —
+> parsed the stamped marker, self-verified CI + health, 1.3.2→1.4.0, pid==MainPID, HTTPS serving
+> 1.4.0. **The update chain is proven in its normal form.** Rollback target: v1.3.2 (no config-shape
+> change). Wake-on-connect default: audited on owner request — already OFF at every layer and no
+> flag set in prod or dev config; nothing changed.
+> **Then the POPOVER MOTION + SKIN slice shipped same day (owner-requested), THREE commits on main,
+> NOT pushed:** `f05bd26` slice (popovers join the `composerSkin` axis + plan-sheet open/close motion
+> via stay-mounted `inert` + retention; per-skin chrome glass/bezel/sleek; `.priv-menu` fold; plan
+> panels' latent `aria-hidden` focus trap → `inert`) → `e5c76e3` Codex wave (MED `:has()` handoff
+> snap · retention release on transitionend + sync paths · rider/identity tests) → `165f7e0`
+> micro-wave (`transitioncancel` closes the late-displacement retention leak). **Review ledger: R1
+> SHIP-WITH-FIXES (1 MED + 2 LOW, all accepted) → R2 verify 2×CLOSED + 1 new LOW (the snap cancels
+> the exit transition whose end-event released the rows) → R3 confirm: 3/3 sound, zero new, WAVE
+> CLEAN.** Notable ruling: Codex's reactive-subscription fix overruled for `onTransitionCancel` on
+> the existing handler. **Durable gotcha (caught by a failing test, would have shipped green
+> otherwise): react-dom wraps ONLY `transitionend` as SyntheticTransitionEvent — `transitioncancel`
+> arrives as the BASE synthetic with NO `propertyName`; read `e.nativeEvent.propertyName`.** Gate 6/6
+> on every commit; both engines live-verified (Chromium + Gecko dispatch `transitioncancel` on the
+> snap). Dev units RUNNING (:5434 + Vite :5173). Next release carries this slice on the owner's word
+> (the plain-form updater's second run).
+>
+> ## ▶ PREVIOUS STATE (2026-07-29 — the QUICK QoL CLUSTER was COMPLETE + review-CLEAN, since released as v1.4.0)
 > **All four cluster items BUILT, SIX Codex rounds closed, final verdict WAVE CLEAN (zero open
 > findings). Nine commits on main, NOT pushed:** `39a7fdd` A2 autocomplete → `ad8ef82` A6 tools/skills
 > menu → `a0bfdfa`+`0b0aad2` review waves → `04247c7` micro-wave → `0bfaf34` F1 foreground
@@ -28,15 +52,10 @@
 > entries. ACA core twice confirmed regression-free under adversarial scrutiny.
 >
 > ## ▶ NEXT SESSION — the checklist, in order
-> 1. **Owner device eyeball** at http://emma:5173 (units already up; if down: `systemctl --user start
->    ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`): the `/verb` autocomplete (type `/pri`, tap) ·
->    the tools/skills menu (arm an agent+skill, watch the dot, send) · Conf group 10 Notifications
->    (on dev-HTTP it shows the designed "needs HTTPS" state — that's correct) · MachineEditor's
->    "Wake when I connect" + the Event log entry on reconnect (actor `system`).
-> 2. **Release on the owner's word** — runbook `deploy/linux/README.md` §Release end-to-end, and this
->    one is the milestone: **the shipped `update.sh`'s FIRST PLAIN-FORM run**
->    (`bash ~/apps/ctrl-b/deploy/linux/update.sh vX.Y.Z` — the fixed updater has been on the prod tree
->    since v1.3.2). Push main first (owner confirms), then tag per runbook, wait for the release gate.
+> 1. ~~Owner device eyeball~~ + ~~release~~ — **✅ BOTH DONE 2026-07-30** (v1.4.0 live via the
+>    plain-form updater; see the state block above). The popover slice (3 commits, unpushed) still
+>    wants an owner eyeball on :5173: open/close the `/` popover + tools menu (0.2s slide both ways),
+>    switch overlays mid-exit (instant snap, no ghosting), flip the four skins (frontier=bezel).
 > 3. **Post-release: the F1 device round** (paper-verified only so far, flagged by the builder): on
 >    the installed PWA via https://emma.lobster-vector.ts.net — enable Notifications in Conf (the
 >    permission prompt rides the toggle gesture), background the app, trigger a confirm-gated action;
