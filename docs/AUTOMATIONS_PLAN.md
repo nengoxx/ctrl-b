@@ -227,6 +227,28 @@ keep_runs: 50}` — all tunables, no magic numbers. Records in SQLite (rationale
   `AutomationService.turns` is a required dependency. Ruled residual: the unattended question's
   audit Event reads `awaiting_answer` (subagent-consistent; no concrete harm — Codex-confirmed).
 
+- **Slice 3 (14c):** run-now is **202-DETACHED** — the claim happens inline (it decides 409-vs-started
+  and is the row the response carries), the run executes on a tracked task the lifespan drains;
+  holding an HTTP handler open across a full agent turn is what D39 exists to avoid. `runner.run_now`
+  = `start_now` awaited (in-process/tests; caller-cancel abandons the rendezvous, not the run).
+  `start_now` refuses on `shutting_down`; `shutdown()`'s backstop for a task cancelled before its
+  first step (body/finally never run) is `sweep_orphans()` while the DB is still open. The list is a
+  typed envelope (`AutomationsDoc`: rows + enabled/busy/max_count/server_tz/default_timeout_s) over
+  FOUR fixed reads (list · latest-runs window · unread GROUP BY · open runs). One `_mapped()`
+  chokepoint: NotFound→404 · Invalid/AgentMissing→422 `[{path,message}]` · Cap/Busy→409.
+  Whitespace-only name/prompt rejected in the SERVICE (`_validated` — the 14d tool inherits it);
+  name stored stripped. `schedule-preview` is always-200 advisory incl. blank input. The Conf editor
+  sheet is the **PromptModal shell, NOT `<BottomSheet>`** (BottomSheet CSS is kit-scoped; vapor —
+  the frozen default — would render it unstyled) on its own `auto-pm` **z-45 layer** (ladder: sheet
+  45 < ConfirmDialog 50 < PromptModal 60 — the sheet opens confirms) with the shared `modalKeyDown`
+  focus trap (extracted from PromptModal into `lib/focusTrap.ts`). Run history open = the read event
+  (marks unread; atomic `COALESCE(read_at, ?)`). Staleness while a detached run finishes: the list
+  polls at a named FE cadence only while `busy` (zero idle cost). "Open thread" from a run =
+  `openThread()` in the chat store — fetch-first-swap-second, guarded by `loadGen`
+  (completion-ordered reconciliation) + `openSeq` (intent-ordered explicit opens; `/clear` claims a
+  ticket too). Presets (hourly/daily/weekly/custom) are a pure VIEW over the one stored cron
+  (`lib/cronPreset.ts`); a non-representable expression shows a standing note.
+
 ## Out of v1 (recorded, additive later)
 
 `pinned` thread mode (+ its pre-bought failure semantics: deleted destination → fail loudly,

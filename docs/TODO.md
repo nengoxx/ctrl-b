@@ -1189,9 +1189,17 @@ Codex round → owner pause.
       precedent-consistent; fix needs an invoke signature change — Codex confirmed no concrete
       harm) · the post-cancel timeout wait is deliberately unbounded (honest wedge; tools are
       deadline-bounded; shutdown stays bounded).**
-- [ ] **14c — Surface:** `/api/automations` CRUD + run-now (409 busy) + runs/mark-read +
+- [x] **14c — Surface:** `/api/automations` CRUD + run-now (409 busy) + runs/mark-read +
       schedule-preview; Conf "Automations" group (list) + sheet editor (presets + raw-cron escape
       hatch + live preview, agent picker, privilege chip, policy/results segs, history).
+      **✅ 2026-07-30 — built + R3 WAVE CLEAN (Opus build → main-seat audit → Codex R1
+      DO-NOT-SHIP 4H/4M → fix wave, all 13 rulings → R2 verify 8/9 CLOSED → micro-wave (openSeq
+      ticket · mutateAsync catch) → R3 confirm). As-built deltas in AUTOMATIONS_PLAN §As-built
+      (run-now = 202-DETACHED; the sheet = PromptModal shell on its own `auto-pm` z-45 layer, NOT
+      BottomSheet; `openThread`/`loadGen`/`openSeq` in the chat store; shared `modalKeyDown` focus
+      trap). Ruled residuals: the list's four reads are not one snapshot (self-heals on refetch) ·
+      preview validates tz before schedule (cosmetic) · PUT is last-writer-wins (single-user;
+      `expected_rev` = future arm).**
 - [ ] **14d — Tools:** `create_automation` (confirm-gated, create-only, capped, non-interactive
       DENY) + `list_automations` + the created-automation card + F1/unread polish.
 
