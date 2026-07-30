@@ -332,8 +332,16 @@ _AUTOMATION_THREAD_DETAIL = (
 )
 
 
-async def _reject_automation_thread(state, thread: Thread) -> None:
-    """Refuse an interactive turn aimed at an automation-owned ROLLING thread (§D-3).
+async def _reject_automation_thread(state, thread_id: str) -> None:
+    """Refuse an interactive MUTATION aimed at an automation-owned ROLLING thread (§D-3).
+
+    ONE helper, called by EVERY thread-mutating endpoint (post-14b review, MED) — the same six the D38
+    marker guard covers, pinned together by `test_turn_guard_invariant`. Chat and exec are the obvious
+    doors, but compact rewrites the thread's history, a plan edit and a proposal apply rewrite its
+    messages in place, and resume continues a suspended turn inside it: every one of those changes what
+    the automation's next run reads as its context. Resume is reachable in practice — a thread that was
+    fresh (and so legitimately chattable) can be suspended mid-turn and then adopted as a rolling
+    destination — so the guard keys on the CURRENT owner, not on how the thread was created.
 
     Only rolling threads are owned: a `fresh` per-run thread is deliberately free to continue in chat once
     its run is terminal (the AnythingLLM pattern), and while such a run is LIVE the turn marker already
@@ -342,7 +350,7 @@ async def _reject_automation_thread(state, thread: Thread) -> None:
     repo = getattr(state, "automations", None)
     if repo is None:
         return
-    if await repo.rolling_owner(thread.id) is not None:
+    if await repo.rolling_owner(thread_id) is not None:
         raise HTTPException(status_code=403, detail=_AUTOMATION_THREAD_DETAIL)
 
 
@@ -1066,7 +1074,7 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     threads = request.app.state.threads
     thread = await threads.get(body.thread_id) if body.thread_id else None
     if thread is not None:
-        await _reject_automation_thread(request.app.state, thread)  # §D-3 rolling-thread guard
+        await _reject_automation_thread(request.app.state, thread.id)  # §D-3 rolling-thread guard
     if thread is None:
         thread = await threads.create(Thread(title=body.text[:60]))
 
@@ -1149,7 +1157,7 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Re
     threads = request.app.state.threads
     thread = await threads.get(body.thread_id) if body.thread_id else None
     if thread is not None:
-        await _reject_automation_thread(request.app.state, thread)  # §D-3 rolling-thread guard
+        await _reject_automation_thread(request.app.state, thread.id)  # §D-3 rolling-thread guard
     if thread is None:
         thread = await threads.create(Thread(title=f"! {body.command[:58]}"))
 
@@ -1653,6 +1661,9 @@ async def compact(body: CompactRequest, request: Request) -> dict[str, Any]:
     thread = await threads.get(body.thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
+    # §D-3: folding an automation's rolling history would change what its next run reads (the guard is
+    # ahead of the marker reserve — a refusal the owner cannot resolve by waiting should answer first).
+    await _reject_automation_thread(request.app.state, thread.id)
     # Reserve the thread's turn marker (D38) — compaction read-modify-writes can race the loop's own
     # `_compactor.compact` (double summary insertion); 409 while a turn is live. Released in finally.
     handle = _reserve_turn(request, thread.id, "compact")
@@ -1686,6 +1697,7 @@ async def edit_plan(body: PlanEditRequest, request: Request) -> dict[str, Any]:
     messages = request.app.state.messages
     if await threads.get(body.thread_id) is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
+    await _reject_automation_thread(request.app.state, body.thread_id)  # §D-3 rolling-thread guard
 
     # Reserve the thread's turn marker (D38) — a plan-dot tap read-modify-writes the same task_plan
     # rows the live loop updates (clobber either way); 409 while a turn is live. Released in finally.
@@ -1757,6 +1769,7 @@ async def resume(body: ResumeRequest, request: Request) -> Response:
     thread = await threads.get(body.thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
+    await _reject_automation_thread(request.app.state, thread.id)  # §D-3 rolling-thread guard
     # Continue as the last assistant turn's agent (D15 #5): last assistant message's `agent` →
     # thread.agent → default (no explicit override on resume). So a thread keeps talking to the
     # specialist you last used until you `/agent`-switch on a fresh turn.
@@ -1832,6 +1845,7 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
     if thread is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
 
+    await _reject_automation_thread(request.app.state, thread.id)  # §D-3 rolling-thread guard
     # Reserve the thread's turn marker (D38) — apply does the same in-place read-modify-write on the
     # call/result rows as /agent/plan (clobber risk vs the live loop); 409 while a turn is live.
     handle = _reserve_turn(request, body.thread_id, "apply")

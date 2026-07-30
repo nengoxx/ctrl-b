@@ -44,7 +44,12 @@ log = logging.getLogger(__name__)
 #: `automation` is a scheduled run's turn (A3/D49 §D-2): a turn nobody requested, driven through this
 #: same machinery by the runner (the `start_steer_turn` precedent) rather than around it — so Stop, the
 #: `max_active_turns` cap, live re-attach and the one marker lifecycle all cover it for free.
-TurnKind = Literal["chat", "resume", "exec", "plan", "apply", "compact", "automation"]
+#: `prune` is the housekeeping marker (A3 post-14b review, HIGH): retention and automation-delete take a
+#: thread's marker BEFORE deleting it, so a thread with a live interactive turn is never cascaded out
+#: from under its drain task. Like the other sync kinds it spawns no task and is exempt from the cap — it
+#: is held for the length of one DELETE. It is deliberately not a chat/resume kind, so a steer aimed at a
+#: thread being deleted gets the busy 409 rather than being queued into a thread that is about to vanish.
+TurnKind = Literal["chat", "resume", "exec", "plan", "apply", "compact", "automation", "prune"]
 
 #: Kinds that spawn a server-owned drain task (D39) — the async turn loop runs detached and is
 #: cancellable. The sync kinds (exec/plan/apply/compact) run inline in their handler and hold the

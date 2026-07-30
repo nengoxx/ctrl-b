@@ -150,7 +150,7 @@ class AutomationRunner:
                 # `expected_rev` is the scan's view: an edit that landed since invalidates this claim
                 # (the next poll re-reads the new definition). `now` is taken fresh INSIDE the claim, so
                 # lateness is measured against the real clock even after a long preceding run.
-                snapshot = await self._service.claim(row.id, trigger="scheduled", expected_rev=row.rev)
+                snapshot = await self._claim(row.id, trigger="scheduled", expected_rev=row.rev)
                 if snapshot is None:
                     continue  # not due / disabled / edited / missed-beyond-grace (recorded in the claim)
                 await self._execute(snapshot)
@@ -169,12 +169,40 @@ class AutomationRunner:
         if self._arbiter.locked():
             raise AutomationBusy("the automation runner is busy with another run — try again shortly")
         async with self._arbiter:
-            snapshot = await self._service.claim(automation_id, trigger="manual")
+            snapshot = await self._claim(automation_id, trigger="manual")
             if snapshot is None:
                 raise AutomationNotFound(f"no automation {automation_id!r}")
             await self._execute(snapshot)
             await self._service.prune_runs(automation_id)
             return await self._service.repo.get_run(snapshot.run_id)
+
+    async def _claim(self, automation_id: str, **kw) -> AutomationSnapshot | None:
+        """`AutomationService.claim`, made uninterruptible ACROSS THE OWNERSHIP HANDOFF (post-14b review,
+        MED).
+
+        The gap this closes: a claim COMMITs a `running` row and only then returns the snapshot that
+        makes `_execute` responsible for closing it. A cancel landing in between — plausibly while
+        aiosqlite's worker thread is finishing the COMMIT, so the rollback that follows is a no-op —
+        leaves a row that is durably `running` with nobody who knows about it. Nothing would resolve it
+        until the next boot's orphan sweep, and until then the automation reads as permanently busy
+        (run-now and delete both refuse).
+
+        So the claim runs as its own task (genuinely uncancellable by our cancel), we `shield` it, and on
+        a cancel we still await its outcome: if it committed a run, we terminalize that run as
+        `interrupted` — the honest status for "claimed, never started" — before propagating. Same
+        mechanism as `_shielded`/`Database._shielded_rollback`; here it protects a HANDOFF rather than a
+        write.
+        """
+        task = asyncio.ensure_future(self._service.claim(automation_id, **kw))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            snapshot = await task  # uncancellable by the outer cancel — let the claim land
+            if snapshot is not None:
+                await _shielded(
+                    self._finalize(snapshot, status="interrupted", error=INTERRUPTED_NOTE, thread_id=None)
+                )
+            raise
 
     # ── one run ───────────────────────────────────────────────────────────────────────────────────
 
@@ -284,16 +312,31 @@ class AutomationRunner:
             await asyncio.wait([task], timeout=snapshot.timeout_s)
             if not task.done():
                 # Deadline: cancel through the ONE sanctioned path (`cancel_turn` — a raw task cancel
-                # would pierce the drain's persistence shield, D39 H2) and WAIT for the reconcile the
-                # cancel path performs, so the thread's in-flight calls are settled before we report.
+                # would pierce the drain's persistence shield, D39 H2), then wait for the turn to
+                # ACTUALLY END — no grace window (post-14b review, HIGH).
+                #
+                # The bounded wait this replaces released the arbiter and wrote `timed_out` while a
+                # cancellation-resistant step (a tool in `to_thread`, a subagent TaskGroup unwinding)
+                # could still be running: the NEXT automation would then start beside a turn the runner
+                # had already declared finished, and a shutdown could close the DB underneath the
+                # straggler's persistence. Waiting is honest about a wedge; the alternative is a lie about
+                # an overlap. In practice the wait is bounded by the tools themselves — every registered
+                # tool either declares `ToolSpec.timeout_s` or is covered by `ADAPTER_BOUNDED` (ACA-7).
                 timed_out = True
                 cancel_turn(handle)
-                await asyncio.wait([task], timeout=cfg.shutdown_grace_s)
+                await asyncio.wait([task])
         except asyncio.CancelledError:
             # Our own await was cancelled (shutdown, or a Stop of the runner). Route the turn through the
             # same single cancel and let it settle under a shield, so its persistence completes while the
             # DB is still open; then re-raise so the loop unwinds. `_execute`'s finally still terminalizes
             # the run as `interrupted`.
+            #
+            # THIS wait stays bounded by `shutdown_grace_s`, unlike the deadline path above, and the
+            # difference is deliberate: shutdown must not hang systemd, and the label it produces is
+            # `interrupted` — "this was cut off, its effects may be incomplete" — which stays TRUE even
+            # if the turn is still unwinding when the process goes. A bounded wait is only dishonest
+            # when it is used to declare a RECONCILED terminal, which is exactly what the deadline path
+            # no longer does.
             cancel_turn(handle)
             with anyio.CancelScope(shield=True):
                 await asyncio.wait([task], timeout=cfg.shutdown_grace_s)

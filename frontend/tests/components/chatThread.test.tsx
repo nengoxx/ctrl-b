@@ -185,6 +185,38 @@ describe("D44 W3 · the CmdBubble always-allow affordance", () => {
 // (the same source as the prompt), so no store branch is involved: an awaiting question with `choices`
 // shows a chip per option, the declared `default` is marked, free text is untouched, and a question
 // that offers nothing renders exactly as before.
+/** Drive one QUESTION suspend through the store, so the module has a live `threadId` (and an idle
+ *  status) for the chip tap to resume against — the `suspendCall` pattern, for `tool.question`. */
+async function suspendQuestion() {
+  globalThis.fetch = vi.fn(() =>
+    Promise.resolve(
+      sseResponse([
+        { event: "thread", data: { threadId: "t1" } },
+        { event: "message.start", data: { messageId: "m1" } },
+        {
+          event: "part.added",
+          data: {
+            messageId: "m1",
+            part: {
+              type: "tool_call",
+              call_id: "q1",
+              tool: "question",
+              args: { prompt: "Which host?", choices: ["corsair", "emma"], default: "emma" },
+              state: "awaiting_answer",
+            },
+          },
+        },
+        { event: "tool.question", data: { callId: "q1", question: "Which host?" } },
+        { event: "done", data: { state: "suspended" } },
+      ]),
+    ),
+  );
+  renderHook(() => useChat());
+  await act(async () => {
+    await sendMessage("which host");
+  });
+}
+
 function questionChat(args: Record<string, unknown>, state = "awaiting_answer"): AgentChat {
   const msg: ChatMessage = {
     id: "m1",
@@ -247,6 +279,68 @@ describe("A2/A3 · question bubble choice chips", () => {
     const chat = questionChat({ prompt: "Which host?", choices: ["corsair"] }, "ok");
     const { container } = render(<ChatThread active chat={chat} />);
     expect(container.querySelector(".q-choices")).toBeNull();
+  });
+
+  it("trims and de-duplicates the offered options before rendering", () => {
+    // A trimmed chip is what makes the tap agree with the trimmed `default` (and with the headless
+    // ladder, which compares against the same trimmed value); two spellings of one answer are one
+    // choice, and would otherwise collide as React keys.
+    const { container } = render(
+      <ChatThread
+        active
+        chat={questionChat({
+          prompt: "Which host?",
+          choices: [" emma ", "emma", "corsair"],
+          default: "emma",
+        })}
+      />,
+    );
+    const chips = [...container.querySelectorAll(".q-chip")];
+    expect(chips.map((c) => c.textContent)).toEqual(["emma", "corsair"]);
+    expect(chips[0].className).toContain("preferred"); // " emma " now matches its own default
+  });
+
+  it("caps the chips so a long list can't become a wall of buttons on a phone", () => {
+    const many = Array.from({ length: 20 }, (_, i) => `option-${i}`);
+    const { container } = render(
+      <ChatThread active chat={questionChat({ prompt: "Pick", choices: many })} />,
+    );
+    expect(container.querySelectorAll(".q-chip").length).toBe(8);
+  });
+
+  it("tapping a chip sends it as the answer on the real resume path", async () => {
+    // The behavioural half (post-14b review): the chip is not decoration — it must produce exactly the
+    // resume payload the typed answer produces, for the same call, so the turn continues identically.
+    await suspendQuestion();
+    const posts: { url: string; body: Record<string, unknown> }[] = [];
+    globalThis.fetch = vi.fn((url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      posts.push({ url: String(url), body });
+      return Promise.resolve(sseResponse([{ event: "done", data: { state: "completed" } }]));
+    }) as unknown as typeof fetch;
+
+    render(
+      <ChatThread
+        active
+        chat={questionChat({
+          prompt: "Which host?",
+          choices: ["corsair", "emma"],
+          default: "emma",
+        })}
+      />,
+    );
+    await act(async () => {
+      screen.getByText("emma").click();
+    });
+
+    expect(posts.length).toBe(1);
+    expect(posts[0].url).toContain("/api/agent/resume");
+    expect(posts[0].body).toMatchObject({
+      thread_id: "t1",
+      call_id: "q1",
+      decision: "answer",
+      answer: "emma",
+    });
   });
 });
 

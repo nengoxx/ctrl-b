@@ -288,7 +288,13 @@ async def lifespan(app: FastAPI):
     # above, orphan runs here) are best-effort for the same reason: a DB hiccup must not abort startup.
     app.state.automations = AutomationRepo(app.state.db)
     app.state.automation_service = AutomationService(
-        app.state.automations, app.state.settings, app.state.threads, app.state.events
+        app.state.automations,
+        app.state.settings,
+        app.state.threads,
+        app.state.events,
+        # The turn-marker registry (D38): the service takes a thread's marker before deleting it, so
+        # retention and the delete cascade can never remove a thread a live turn still owns.
+        turns,
     )
     try:
         await app.state.automation_service.sweep_orphans()

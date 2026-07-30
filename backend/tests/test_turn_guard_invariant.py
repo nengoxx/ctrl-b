@@ -98,6 +98,24 @@ def _route_endpoints():
             yield fn
 
 
+def test_every_thread_mutating_endpoint_refuses_an_automation_rolling_thread() -> None:
+    """A3 §D-3 (post-14b review, MED): the SAME set of thread-mutating endpoints must also refuse a
+    thread an automation owns as its rolling conversation — chat and exec were only the obvious two.
+    Compact rewrites its history, a plan edit and a proposal apply rewrite its messages in place, and
+    resume continues a suspended turn inside it; each one changes what the automation's next scheduled
+    run reads as context. Pinned against the SAME `_EXPECTED` set as the marker guard above, so the two
+    protections can never drift apart as endpoints are added."""
+    guarded: set[str] = set()
+    for fn in _route_endpoints():
+        src = _code_only(inspect.getsource(fn))
+        if "_reject_automation_thread(" in src:
+            guarded.add(fn.__name__)
+    assert guarded == _EXPECTED, (
+        "the rolling-thread guard and the turn-marker guard must cover the same endpoints "
+        f"(missing: {sorted(_EXPECTED - guarded)}, unexpected: {sorted(guarded - _EXPECTED)})"
+    )
+
+
 def test_every_thread_mutating_endpoint_reserves_the_turn_marker() -> None:
     guarded: set[str] = set()
     for fn in _route_endpoints():

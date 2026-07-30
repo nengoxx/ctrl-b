@@ -243,6 +243,11 @@ function CmdBubble({
   );
 }
 
+/** Chips rendered at most (mirrors `question.MAX_CHOICES`): the backend refuses a longer list at the
+ *  tool boundary, so this only bounds a row persisted before that cap existed — a phone must never get a
+ *  wall of buttons. Free text stays available for anything not shown. */
+const MAX_CHOICE_CHIPS = 8;
+
 /** A `question` call (A2): the agent asked the owner something and suspended. While awaiting, show the
  *  prompt + any offered choices as one-tap chips + a reply input (Send / Decline); once answered or
  *  declined, show the outcome. Sibling of PlanBubble — questions render their own bubble, not a CmdBubble.
@@ -263,10 +268,21 @@ function QuestionBubble({
 }) {
   const prompt = typeof call.args.prompt === "string" ? call.args.prompt : "";
   const awaiting = !result && call.state === "awaiting_answer";
-  // Defensive per element: `args` is whatever the model emitted, so a non-string / blank entry is
-  // dropped rather than rendered as an unpressable empty chip.
+  // Defensive per element: `args` is whatever the model emitted (a REJECTED call still persists its
+  // args, and an older row predates the backend's caps), so each entry is trimmed and non-strings /
+  // blanks are dropped rather than rendered as an unpressable empty chip. Trimming here is what makes
+  // the chips agree with the headless ladder, which compares against a trimmed `default` — `" emma "`
+  // would otherwise render as a chip that never matches its own default. De-duped after trimming for
+  // the same reason: two variants of one answer are one choice, and would collide as React keys.
   const choices = Array.isArray(call.args.choices)
-    ? call.args.choices.filter((c): c is string => typeof c === "string" && c.trim() !== "")
+    ? [
+        ...new Set(
+          call.args.choices
+            .filter((c): c is string => typeof c === "string")
+            .map((c) => c.trim())
+            .filter((c) => c !== ""),
+        ),
+      ].slice(0, MAX_CHOICE_CHIPS)
     : [];
   const preferred = typeof call.args.default === "string" ? call.args.default.trim() : "";
   const [text, setText] = useState("");

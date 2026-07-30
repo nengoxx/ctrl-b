@@ -300,8 +300,16 @@ class AutomationRepo:
             tz=r["tz"],
             prompt=r["prompt"],
             agent=r["agent"],
-            # Unknown → NULL, i.e. "the agent's own level": the one coercion that cannot escalate.
-            privilege=Privilege(raw_priv) if raw_priv in _PRIVILEGES else None,
+            # A stored privilege this build cannot read narrows to READONLY — the floor of the ladder —
+            # NOT to NULL (post-14b review, MED). NULL means "the agent's own level", so on a FULL agent
+            # it would turn an unreadable value into MORE capability than the row asked for: the exact
+            # inversion of the less-capable-arm rule the other fallbacks follow. A NULL column is still
+            # "the agent's own" (that is what the owner wrote); only an unrecognized VALUE floors.
+            privilege=(
+                Privilege(raw_priv)
+                if raw_priv in _PRIVILEGES
+                else (None if raw_priv is None else Privilege.READONLY)
+            ),
             question_policy=_narrow(r["question_policy"], _POLICIES, "skip"),  # type: ignore[arg-type]
             thread_mode=_narrow(r["thread_mode"], _MODES, "fresh"),  # type: ignore[arg-type]
             thread_id=r["thread_id"],

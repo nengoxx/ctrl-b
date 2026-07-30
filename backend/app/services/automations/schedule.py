@@ -115,37 +115,63 @@ def validate_cron(schedule: str) -> str:
     return expr
 
 
-def next_fire(schedule: str, tz: str, *, after: datetime) -> datetime:
-    """The first fire STRICTLY after `after`, as an aware datetime in `tz`.
+#: How many `cronsim` candidates may be discarded for not being in the future before we give up. Only
+#: the DST fold produces any at all (see `_future_fires`), and a fold is one hour — so even a
+#: minute-granular schedule discards ~60. The bound exists so a pathological expression cannot spin.
+_MAX_PAST_CANDIDATES = 200
 
-    `cronsim` is strictly-after by construction (given a datetime that IS a fire time it yields the
-    following one), which is the property the invariants depend on: a claim advancing `next_run_at`
-    from *now* can never hand back the slot it just consumed, and enabling an automation can never
-    reuse a stale past value.
+
+def _future_fires(schedule: str, tz: str, *, after: datetime, count: int) -> list[datetime]:
+    """Up to `count` fires whose EPOCH is strictly greater than `after`'s — the one place that guarantee
+    lives (post-14b review, HIGH).
+
+    `cronsim` is strictly-after in LOCAL WALL-CLOCK terms, which is not the same thing during an autumn
+    DST fold, when the same wall clock happens twice. Measured: with `Europe/Madrid` and
+    `after = 2026-10-25T01:00Z` — 02:00 local in the SECOND pass of the folded hour — a `30 2 * * *`
+    schedule yields `02:30+02:00`, i.e. the FIRST pass, whose epoch is `00:30Z`: thirty minutes in the
+    PAST. Stored as `next_run_at` that regresses the schedule: every poll re-reads a due slot, records
+    the same `missed` row (or, with a grace ≥ the offset, RE-RUNS the automation) until the fold ends.
+
+    Filtering on the epoch rather than on the wall clock is the whole fix — it is also the only
+    comparison that means anything across a fold, which is why storage is epoch-based to begin with.
     """
     zone = ZoneInfo(tz)
-    try:
-        return next(CronSim(schedule, after.astimezone(zone)))
-    except CronSimError as exc:  # a row written by an older/looser build
-        raise ScheduleError(f"invalid cron expression: {exc}") from exc
-    except StopIteration as exc:
-        raise ScheduleError(f"{schedule!r} never fires again") from exc
-
-
-def next_fires(schedule: str, tz: str, *, after: datetime, count: int = 3) -> list[datetime]:
-    """The next `count` fires — the editor's live preview (14c). Stops early rather than raising if the
-    expression runs out of matches, so a preview always renders what it *can*."""
-    zone = ZoneInfo(tz)
+    floor = after.timestamp()
     out: list[datetime] = []
+    discarded = 0
     try:
         it = CronSim(schedule, after.astimezone(zone))
-        for _ in range(max(0, count)):
-            out.append(next(it))
-    except CronSimError as exc:
+        while len(out) < count and discarded <= _MAX_PAST_CANDIDATES:
+            candidate = next(it)
+            if candidate.timestamp() > floor:
+                out.append(candidate)
+            else:
+                discarded += 1  # a fold-1 wall clock resolving to an instant already behind us
+    except CronSimError as exc:  # a row written by an older/looser build
         raise ScheduleError(f"invalid cron expression: {exc}") from exc
     except StopIteration:
         pass
     return out
+
+
+def next_fire(schedule: str, tz: str, *, after: datetime) -> datetime:
+    """The first fire whose instant is STRICTLY after `after`, as an aware datetime in `tz`.
+
+    This is the property every `next_run_at` invariant rests on: a claim advancing from *now* can never
+    hand back the slot it just consumed, and enabling an automation can never reuse a stale past value.
+    See `_future_fires` for why "strictly after" has to be measured in epoch seconds.
+    """
+    fires = _future_fires(schedule, tz, after=after, count=1)
+    if not fires:
+        raise ScheduleError(f"{schedule!r} never fires again")
+    return fires[0]
+
+
+def next_fires(schedule: str, tz: str, *, after: datetime, count: int = 3) -> list[datetime]:
+    """The next `count` fires — the editor's live preview (14c). Same strictly-future guarantee as
+    `next_fire` (one implementation). Stops early rather than raising if the expression runs out of
+    matches, so a preview always renders what it *can*."""
+    return _future_fires(schedule, tz, after=after, count=max(0, count))
 
 
 def describe(schedule: str) -> str:

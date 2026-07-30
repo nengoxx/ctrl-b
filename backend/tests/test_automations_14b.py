@@ -35,11 +35,13 @@ import asyncio
 import contextlib
 import os
 import tempfile
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import anyio
 from _async import drain_run_calls, run_async
 
 _MADRID = ZoneInfo("Europe/Madrid")
@@ -397,6 +399,91 @@ def test_a_manual_claim_consumes_a_due_slot_and_otherwise_leaves_the_schedule() 
         assert _run(c.app.state.automations.get(a.id)).next_run_at > _now()
 
 
+def test_concurrent_claimers_of_one_slot_race_and_exactly_one_wins() -> None:
+    """The SAME assertion as the sequential test above, made adversarial (post-14b review, MED): both
+    claims are released from an `asyncio.Barrier` so they are genuinely in flight together, and the
+    write lock + `BEGIN IMMEDIATE` are what decide it. A claim that read outside a transaction would
+    hand both callers a snapshot here and run the automation twice."""
+    with _workspace(), _client() as c:
+        svc = _svc(c)
+        a = _run(svc.create(_draft(schedule="*/5 * * * *")))
+        _due_now(c, a)
+
+        async def go():
+            barrier = asyncio.Barrier(2)
+
+            async def claimer():
+                await barrier.wait()  # neither proceeds until BOTH are here
+                return await svc.claim(a.id, expected_rev=a.rev)
+
+            return await asyncio.gather(claimer(), claimer())
+
+        won = [s for s in _run(go()) if s is not None]
+        assert len(won) == 1
+        runs = _run(c.app.state.automations.runs(a.id))
+        assert len(runs) == 1 and runs[0].id == won[0].run_id
+
+
+def test_a_claim_racing_a_delete_is_decided_atomically_either_way() -> None:
+    """The TOCTOU hole the one-transaction DELETE closes (post-14b review, HIGH). Started together, the
+    two outcomes are the only two legal ones: DELETE first ⇒ the claim finds no automation and nothing
+    executes; CLAIM first ⇒ the delete refuses because a run is active. What must NEVER happen is the
+    old third outcome — a snapshot handed out for an automation whose row and run were just cascaded
+    away, executing after the owner deleted it."""
+    from app.services.automations import AutomationBusy, AutomationNotFound
+
+    with _workspace(), _client() as c:
+        svc = _svc(c)
+        a = _run(svc.create(_draft(schedule="*/5 * * * *")))
+        _due_now(c, a)
+
+        async def go():
+            barrier = asyncio.Barrier(2)
+
+            async def claimer():
+                await barrier.wait()
+                return await svc.claim(a.id, expected_rev=a.rev)
+
+            async def deleter():
+                await barrier.wait()
+                await svc.delete(a.id)
+
+            return await asyncio.gather(claimer(), deleter(), return_exceptions=True)
+
+        snapshot, deletion = _run(go())
+        gone = _run(c.app.state.automations.get(a.id)) is None
+        if isinstance(deletion, (AutomationBusy, AutomationNotFound)):
+            # the claim won: the automation survives WITH its running run, and the delete refused
+            assert snapshot is not None and not gone
+            assert [r.status for r in _run(c.app.state.automations.runs(a.id))] == ["running"]
+        else:
+            # the delete won: nothing was handed a snapshot, and no run row survives to be executed
+            assert deletion is None and gone
+            assert snapshot is None
+            assert _run(c.app.state.automations.runs(a.id)) == []
+
+
+def test_a_claim_during_the_autumn_fold_never_moves_the_slot_backward() -> None:
+    """The HIGH the review caught, at the layer that stores it. During Europe/Madrid's 2026-10-25 fold,
+    01:00Z is 02:00 local in the SECOND pass of the repeated hour — and `cronsim` answers a `30 2 * * *`
+    schedule with `02:30+02:00`, the FIRST pass, whose epoch is thirty minutes in the PAST. Storing that
+    as `next_run_at` makes the row due again immediately: the same slot is re-recorded `missed` every
+    poll, or (with a grace wider than the offset) RE-RUN, until the fold ends."""
+    with _workspace(), _client() as c:
+        svc, repo = _svc(c), c.app.state.automations
+        a = _run(svc.create(_draft(schedule="30 2 * * *", tz="Europe/Madrid")))
+        during_fold = datetime(2026, 10, 25, 1, 0, tzinfo=timezone.utc)  # 02:00 local, second pass
+        _run(repo.set_next_run(a.id, during_fold - timedelta(seconds=30)))
+
+        snap = _run(svc.claim(a.id, expected_rev=a.rev, now=during_fold))
+        assert snap is not None  # inside the grace, so it legitimately runs
+        advanced = _run(repo.get(a.id)).next_run_at
+        assert advanced is not None
+        assert advanced.timestamp() > during_fold.timestamp()  # the regression this closes
+        # …and a second claim at the same instant finds nothing due (the slot really did move on)
+        assert _run(svc.claim(a.id, expected_rev=_run(repo.get(a.id)).rev, now=during_fold)) is None
+
+
 # ── 6. runs through the turn machinery ──────────────────────────────────────────────────────────
 
 
@@ -417,6 +504,32 @@ class _FakeSession:
             await asyncio.sleep(30)  # cancelled by the deadline / the shutdown path
         if self._done is not None:
             yield AgentEvent("done", {"threadId": thread.id, "state": self._done})
+
+
+class _StubbornSession:
+    """A turn that does NOT die the instant it is cancelled — a tool finishing in `to_thread`, a
+    subagent TaskGroup unwinding, the persistence `finally` the drain shields. The runner must treat
+    "cancel delivered" as the START of the wait, never as the end of the turn."""
+
+    def __init__(self, resist_s: float = 0.4) -> None:
+        self._resist = resist_s
+        #: signalled the moment the cancel LANDS, and cleared-by-nothing once the turn finally lets go —
+        #: the window between them is the one the old grace-abandonment handed to the next automation.
+        self.cancelled = asyncio.Event()
+        self.released_at: float | None = None
+
+    async def run_turn(self, thread, text, **_kw):
+        from app.services.agent.session import AgentEvent
+
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            with anyio.CancelScope(shield=True):
+                await asyncio.sleep(self._resist)  # still doing real work AFTER the cancel
+            self.released_at = time.monotonic()
+            raise
+        yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})  # pragma: no cover
 
 
 @contextlib.contextmanager
@@ -475,6 +588,63 @@ def test_a_run_past_its_timeout_is_cancelled_through_cancel_turn_and_reads_timed
         run = _run(state.automations.get_run(snap.run_id))
         assert run.status == "timed_out" and "timeout" in (run.error or "")
         assert state.turns == {}
+
+
+def test_a_timeout_holds_ownership_until_the_turn_actually_ends() -> None:
+    """The HIGH the review caught in the deadline path. After the sanctioned `cancel_turn`, the runner
+    used to wait a grace window and then declare `timed_out` — releasing the arbiter while the turn was
+    demonstrably still running, so the NEXT automation could start beside it (and a shutdown could close
+    the DB under the straggler). Three things are pinned: the run is still `running` and the runner is
+    still busy while the cancelled turn winds down, run-now is refused in that window, and the run row is
+    written only AFTER the turn has genuinely released."""
+    from app.services.automations import AutomationBusy
+
+    # `shutdown_grace_s` is deliberately TINY here and the turn resists for much longer than it: the
+    # discarded implementation waited exactly this budget and then declared the run finished, so a
+    # resistance shorter than the grace would pass against the bug too. This is the discriminating shape.
+    cfg = "agent:\n  turns:\n    shutdown_grace_s: 0.05\n"
+    with _workspace(cfg), _client() as c:
+        svc, state = _svc(c), c.app.state
+        assert state.settings.agent.turns.shutdown_grace_s == 0.05
+        a = _run(svc.create(_draft(schedule="*/5 * * * *", timeout_s=1)))
+        _due_now(c, a)
+        session = _StubbornSession(resist_s=0.6)
+        order: list[str] = []
+        real_finish = svc.finish_run
+
+        async def _record_finish(run_id, **kw):
+            order.append("finalized")
+            return await real_finish(run_id, **kw)
+
+        svc.finish_run = _record_finish  # type: ignore[assignment]
+
+        async def go():
+            runner = _runner(c)
+            with _fake_sessions(session):
+                run_task = asyncio.ensure_future(runner.run_now(a.id))
+                # …wait for the deadline's cancel to LAND (an Event, so the observation is not a poll),
+                # then look while the turn is still winding down — 0.6s of resistance against an
+                # immediate wake-up, so the window is wide open when we assert into it.
+                await asyncio.wait_for(session.cancelled.wait(), timeout=10)
+                assert session.released_at is None and not run_task.done(), "the window closed too fast"
+                assert runner.busy, "the arbiter must stay held while the cancelled turn winds down"
+                assert await state.automations.open_runs(a.id), "the run must stay open until it ends"
+                try:
+                    await runner.run_now(a.id)
+                except AutomationBusy:
+                    pass
+                else:
+                    raise AssertionError("run-now must be refused while a run is still winding down")
+                assert session.released_at is None  # …and none of that ended the turn early
+                await run_task
+
+        _run(go())
+        svc.finish_run = real_finish  # type: ignore[assignment]
+        assert session.released_at is not None
+        assert order == ["finalized"]  # written once, after the turn released (asserted above)
+        run = _run(state.automations.runs(a.id))[0]
+        assert run.status == "timed_out" and state.turns == {}
+        assert not _runner(c).busy
 
 
 def test_a_cancelled_runner_terminalizes_the_run_as_interrupted_with_an_event() -> None:
@@ -676,14 +846,14 @@ def test_interactive_chat_into_a_rolling_thread_is_refused_but_a_run_thread_is_n
         rolling = _run(state.threads.get(_run(state.automations.get(a.id)).thread_id))
 
         try:
-            _run(_reject_automation_thread(state, rolling))
+            _run(_reject_automation_thread(state, rolling.id))
         except HTTPException as exc:
             assert exc.status_code == 403 and "automation" in exc.detail
         else:
             raise AssertionError("chat into a rolling automation thread must be refused")
 
         ordinary = _run(state.threads.create(Thread()))
-        _run(_reject_automation_thread(state, ordinary))  # no raise
+        _run(_reject_automation_thread(state, ordinary.id))  # no raise
         # and the endpoint itself refuses (the guard is wired, not just defined)
         r = c.post("/api/agent/chat", json={"text": "hello", "thread_id": rolling.id})
         assert r.status_code == 403
@@ -778,6 +948,75 @@ def test_retention_prunes_old_runs_with_their_threads_but_never_the_rolling_one(
             )
         assert _run(svc.prune_runs(b.id)) == 1
         assert _run(state.threads.get(shared.id)) is not None
+
+
+def test_retention_never_deletes_a_thread_with_a_live_turn() -> None:
+    """The HIGH the review caught in retention. A fresh run's thread is explicitly continuable in chat,
+    so an old one can have a LIVE interactive turn when a later run triggers pruning — and deleting it
+    would cascade its messages out from under the running drain task. The pair (run row + thread) is
+    skipped WHOLE while the marker is held, and prunes on the next cycle once the turn ends."""
+    from app.domain.automation import AutomationRun
+    from app.domain.conversation import Thread
+    from app.services.agent.turns import release, reserve
+
+    with _workspace("automations:\n  keep_runs: 1\n"), _client() as c:
+        svc, state = _svc(c), c.app.state
+        a = _run(svc.create(_draft()))
+        made = []
+        for i in range(3):
+            t = _run(state.threads.create(Thread(title=f"run {i}", archived=True)))
+            _run(
+                state.automations.add_run(
+                    AutomationRun(
+                        automation_id=a.id,
+                        status="ok",
+                        thread_id=t.id,
+                        started_at=_now() - timedelta(minutes=10 - i),
+                    )
+                )
+            )
+            made.append(t.id)
+
+        busy = reserve(state.turns, made[0], "chat")  # the owner is talking in the oldest run's thread
+        assert _run(svc.prune_runs(a.id)) == 1  # only the OTHER excess run went
+        assert _run(state.threads.get(made[0])) is not None  # the live thread is untouched…
+        assert [r.thread_id for r in _run(state.automations.runs(a.id, limit=9))] == [made[2], made[0]]
+        assert _run(state.threads.get(made[1])) is None  # …and the idle one really was pruned
+
+        release(state.turns, busy)  # the turn ends
+        assert _run(svc.prune_runs(a.id)) == 1  # …and the next cycle collects it
+        assert _run(state.threads.get(made[0])) is None
+
+
+def test_delete_refuses_while_a_thread_it_owns_has_a_live_turn() -> None:
+    """The same HIGH on the delete path: the definition's threads are cascaded, so a live turn in ANY of
+    them refuses the whole delete (the same busy answer the active-run guard gives) rather than deleting
+    some threads and leaving history half-gone."""
+    from app.domain.automation import AutomationRun
+    from app.domain.conversation import Thread
+    from app.services.agent.turns import release, reserve
+    from app.services.automations import AutomationBusy
+
+    with _workspace(), _client() as c:
+        svc, state = _svc(c), c.app.state
+        a = _run(svc.create(_draft()))
+        t = _run(state.threads.create(Thread(archived=True)))
+        _run(state.automations.add_run(AutomationRun(automation_id=a.id, status="ok", thread_id=t.id)))
+
+        busy = reserve(state.turns, t.id, "chat")
+        try:
+            _run(svc.delete(a.id))
+        except AutomationBusy:
+            pass
+        else:
+            raise AssertionError("delete must refuse while one of its threads has a live turn")
+        assert _run(state.automations.get(a.id)) is not None  # nothing was half-deleted
+        assert _run(state.threads.get(t.id)) is not None
+
+        release(state.turns, busy)
+        _run(svc.delete(a.id))
+        assert _run(state.automations.get(a.id)) is None and _run(state.threads.get(t.id)) is None
+        assert state.turns == {}  # every marker the delete took was released
 
 
 def test_delete_refuses_while_a_run_is_active_then_cascades() -> None:
@@ -1011,6 +1250,24 @@ def test_skip_keeps_todays_deny_in_place_and_subagents_are_unaffected() -> None:
         assert "headless subagent" in result2["summary"]  # the original wording, unchanged
 
 
+def test_an_unreadable_stored_privilege_floors_instead_of_widening() -> None:
+    """Post-14b review, MED. A row written by a NEWER build can carry a privilege this one has never
+    heard of. Narrowing it to NULL would mean "the agent's own level" — on a FULL agent, MORE capability
+    than the row asked for. It floors to READONLY instead; an actually-NULL column still means the
+    agent's own, because that is what the owner wrote."""
+    from app.domain.enums import Privilege
+
+    with _workspace(), _client() as c:
+        a = _run(_svc(c).create(_draft(privilege=Privilege.AUTO_LOW)))
+        _run(
+            c.app.state.db.execute("UPDATE automations SET privilege = ? WHERE id = ?", ("quarantined", a.id))
+        )
+        assert _run(c.app.state.automations.get(a.id)).privilege is Privilege.READONLY
+
+        _run(c.app.state.db.execute("UPDATE automations SET privilege = NULL WHERE id = ?", (a.id,)))
+        assert _run(c.app.state.automations.get(a.id)).privilege is None
+
+
 def test_the_question_tool_offers_choices_and_default_additively() -> None:
     """The A2 bubble shape, additive: the fields reach the model's schema, and the OFFER rides in the
     result's `data` so the loop's ladder never has to know this input model's field names."""
@@ -1030,6 +1287,21 @@ def test_the_question_tool_offers_choices_and_default_additively() -> None:
     schema = QuestionInput.model_json_schema()["properties"]
     assert "choices" in schema and "default" in schema
     assert QuestionInput(prompt="x").choices is None  # both optional
+
+    # …and the offer is BOUNDED (post-14b review, LOW): a phone renders these as buttons, so an
+    # over-long list or a paragraph-length option fails validation — which the loop already turns into a
+    # repair-this-call error — rather than being silently truncated or rendered as a wall of chips.
+    from pydantic import ValidationError
+
+    from app.services.agent.question import MAX_CHOICE_CHARS, MAX_CHOICES
+
+    QuestionInput(prompt="x", choices=["a"] * MAX_CHOICES)  # the cap itself is fine
+    for over in ({"choices": ["a"] * (MAX_CHOICES + 1)}, {"choices": ["x" * (MAX_CHOICE_CHARS + 1)]}):
+        try:
+            QuestionInput(prompt="x", **over)
+        except ValidationError:
+            continue
+        raise AssertionError(f"{over} should have been refused")
 
 
 def test_an_interactive_question_still_suspends_with_the_new_fields() -> None:

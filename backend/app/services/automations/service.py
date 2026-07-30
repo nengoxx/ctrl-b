@@ -40,6 +40,7 @@ from app.domain.automation import (
 )
 from app.domain.enums import Actor, RunState
 from app.domain.event import Event
+from app.services.agent.turns import TurnBusy, TurnHandle, release, reserve
 from app.services.automations.repo import AutomationRepo
 from app.services.automations.schedule import ScheduleError, next_fire, resolve_tz, validate_cron
 from app.services.conversation import ThreadRepo
@@ -103,6 +104,7 @@ class AutomationService:
         settings: Settings,
         threads: ThreadRepo,
         events: EventService,
+        turns: dict[str, TurnHandle] | None = None,
     ) -> None:
         self._repo = repo
         #: The live `Settings` object (mutated in place by `runtime.apply_settings_inplace`), so a Conf
@@ -110,6 +112,11 @@ class AutomationService:
         self._settings = settings
         self._threads = threads
         self._events = events
+        #: The app's per-thread turn-marker registry (D38) — the SINGLE busy-truth for the chat stack.
+        #: This service deletes threads (retention, and the delete cascade), and a fresh run's thread is
+        #: explicitly continuable in chat, so it must take that thread's marker before removing it (see
+        #: `_claim_thread`). `None` only in unit paths that never delete; treated as "nothing is live".
+        self._turns: dict[str, TurnHandle] = {} if turns is None else turns
 
     @property
     def repo(self) -> AutomationRepo:
@@ -119,6 +126,24 @@ class AutomationService:
     def cfg(self):
         """The live `automations:` section (§D-7). Read per use — every tunable comes from here."""
         return self._settings.automations
+
+    def _claim_thread(self, thread_id: str) -> TurnHandle | None:
+        """Take a thread's turn marker so nothing can start a turn on it while we delete it, or `None`
+        if a turn already owns it (post-14b review, HIGH).
+
+        Deleting a thread cascades its messages, and a FRESH run's thread is deliberately continuable in
+        chat afterwards — so retention firing while the owner is mid-turn in an old run's thread would
+        delete the history out from under a live drain task (lost messages, then persistence failures
+        against rows that no longer exist). `reserve` is the same check-and-set the endpoints use, so
+        "busy" means exactly what it means everywhere else, and holding the marker across the delete
+        closes the window a bare membership test would leave open (there are `await`s in between).
+
+        Synchronous by construction (the D38 no-await discipline): the caller pairs it with `release`."""
+        try:
+            # ring_size=1: a prune marker carries no drain task, so its replay ring is never written to.
+            return reserve(self._turns, thread_id, "prune", ring_size=1)
+        except TurnBusy:
+            return None
 
     # ── writes: the ONE validated path ────────────────────────────────────────────────────────────
 
@@ -262,23 +287,52 @@ class AutomationService:
 
     async def delete(self, automation_id: str) -> None:
         """Delete a definition, its run history and the threads that history owned (§D-1). Refuses while
-        a run is active — that run's finalizer still has a row to close and a thread to point at.
+        a run is active — that run's finalizer still has a row to close and a thread to point at — or
+        while any of those threads has a live turn of its own.
+
+        **Everything happens inside ONE `BEGIN IMMEDIATE` transaction** (post-14b review, HIGH): the
+        re-read, the active-run check, the ownership enumeration and the deletes. Read outside it, the
+        active-run guarantee was a TOCTOU hole — a tick or a run-now could commit a `running` row in the
+        window between the check and the delete, and the delete would then cascade that row away while
+        its claimed snapshot happily ran on against an automation the owner had already deleted. Since
+        the claim takes the same write lock, one transaction makes claim-vs-delete decide atomically:
+        whichever commits first, the other sees the settled world (no row to claim / an active run to
+        refuse for).
 
         Events are deliberately NOT touched: the audit trail is append-only, and a dangling `run_id` in
         it is explicit and acceptable (§D-1)."""
-        current = await self._repo.get(automation_id)
-        if current is None:
-            raise AutomationNotFound(f"no automation {automation_id!r}")
-        if await self._repo.open_runs(automation_id):
-            raise AutomationBusy(f"a run of {current.name!r} is active — stop or wait for it, then delete")
-        runs = await self._repo.runs(automation_id, limit=100_000)
-        thread_ids = {r.thread_id for r in runs if r.thread_id}
-        if current.thread_id:
-            thread_ids.add(current.thread_id)
-        async with self._repo.db.transaction():
-            await self._repo.delete(automation_id)  # run rows go with it (FK cascade)
-            for thread_id in thread_ids:
-                await self._threads.delete(thread_id)
+        markers: list[TurnHandle] = []
+        try:
+            async with self._repo.db.transaction():
+                current = await self._repo.get(automation_id)
+                if current is None:
+                    raise AutomationNotFound(f"no automation {automation_id!r}")
+                if await self._repo.open_runs(automation_id):
+                    raise AutomationBusy(
+                        f"a run of {current.name!r} is active — stop or wait for it, then delete"
+                    )
+                runs = await self._repo.runs(automation_id, limit=100_000)
+                thread_ids = {r.thread_id for r in runs if r.thread_id}
+                if current.thread_id:
+                    thread_ids.add(current.thread_id)
+                # Take every owned thread's marker BEFORE deleting anything. A live turn on ANY of them
+                # (the owner continuing an old fresh-run thread in chat) refuses the whole delete rather
+                # than deleting some threads and leaving the definition — the same busy answer the
+                # active-run guard gives, so the owner's remedy is identical.
+                for thread_id in sorted(thread_ids):
+                    marker = self._claim_thread(thread_id)
+                    if marker is None:
+                        raise AutomationBusy(
+                            f"a turn is running in one of {current.name!r}'s threads — wait for it, "
+                            "then delete"
+                        )
+                    markers.append(marker)
+                await self._repo.delete(automation_id)  # run rows go with it (FK cascade)
+                for thread_id in thread_ids:
+                    await self._threads.delete(thread_id)
+        finally:
+            for marker in markers:
+                release(self._turns, marker)
 
     # ── the claim ─────────────────────────────────────────────────────────────────────────────────
 
@@ -434,9 +488,13 @@ class AutomationService:
     async def prune_runs(self, automation_id: str) -> int:
         """Retention (§D-1): drop run rows beyond `keep_runs` and the per-run threads they owned.
 
-        Two rows are never pruned's business: a still-`running` run (its finalizer owns it) and the
+        Three rows are never pruned's business: a still-`running` run (its finalizer owns it), the
         automation's OWN thread — a rolling automation's runs all point at that one thread, and deleting
-        it would destroy the accumulating conversation the mode exists for.
+        it would destroy the accumulating conversation the mode exists for — and a run whose thread has a
+        LIVE TURN (post-14b review, HIGH). The last one is the one that bites: a fresh run's thread is
+        explicitly continuable in chat, so retention firing while the owner is talking in an old one would
+        cascade its messages out from under the running drain task. That run is SKIPPED WHOLE (row and
+        thread together, so the thread can never be orphaned by a half-prune) and prunes on a later cycle.
         """
         automation = await self._repo.get(automation_id)
         if automation is None:
@@ -445,16 +503,34 @@ class AutomationService:
         if not excess:
             return 0
         pruned = 0
+        skipped = 0
         async with self._repo.db.transaction():
             for run in excess:
                 if not run.terminal:
                     continue  # a live run is not history yet — its finalizer still owns the row
-                await self._repo.delete_run(run.id)
-                pruned += 1
-                if run.thread_id and run.thread_id != automation.thread_id:
-                    await self._threads.delete(run.thread_id)
-        if pruned:
-            log.debug("pruned %d run(s) of automation %s", pruned, automation_id)
+                # The run's OWN thread (a rolling automation's shared one is never pruned's business).
+                own_thread = (
+                    run.thread_id if run.thread_id and run.thread_id != automation.thread_id else None
+                )
+                marker = self._claim_thread(own_thread) if own_thread else None
+                if own_thread and marker is None:
+                    skipped += 1
+                    continue  # a live turn owns that thread — leave the pair alone until next cycle
+                try:
+                    await self._repo.delete_run(run.id)
+                    pruned += 1
+                    if own_thread is not None:
+                        await self._threads.delete(own_thread)
+                finally:
+                    if marker is not None:
+                        release(self._turns, marker)
+        if pruned or skipped:
+            log.debug(
+                "pruned %d run(s) of automation %s (%d skipped: live thread)",
+                pruned,
+                automation_id,
+                skipped,
+            )
         return pruned
 
     async def record_run_event(

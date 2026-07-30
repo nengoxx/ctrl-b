@@ -68,29 +68,30 @@ _BLOCKING_MODULE_CALLS = {
     ("shutil", "move"),
 }
 
-#: Blocking-fs sites deliberately left on the loop, keyed `<path>: <call>` → how many are waived there,
-#: each with its reason.
+#: Blocking-fs sites deliberately left on the loop, keyed `<path>: <function>: <call>` → how many are
+#: waived there, each with its reason.
 #:
-#: Deliberately NOT line-keyed (A3 slice 2 carry-forward): the old `app/db.py:201: mkdir` form made every
-#: edit ABOVE a waived line — adding a migration, extending a docstring — fail this test for a reason
-#: that has nothing to do with the invariant, and the fix was always to renumber the waiver, which is
-#: exactly the kind of edit that stops being read. The COUNT keeps the guarantee the line number was
-#: carrying: a SECOND `mkdir` appearing anywhere in db.py is still an unexpected hit, because the file's
-#: waived total is pinned at one. (What is genuinely lost is "that specific line" — a moved-and-replaced
-#: call of the same name in the same file would pass. Worth it: the file is the meaningful unit here, and
-#: the reason below is about the call, not about where it sits.)
+#: Deliberately NOT line-keyed (A3 slice 2): the old `app/db.py:201: mkdir` form made every edit ABOVE a
+#: waived line — adding a migration, extending a docstring — fail this test for a reason that has nothing
+#: to do with the invariant, and the fix was always to renumber the waiver, which is exactly the kind of
+#: edit that stops being read. The ENCLOSING FUNCTION is what makes the anchor stable AND specific
+#: (post-14b review, LOW): keying on the file alone would have let the startup `connect()` mkdir be
+#: deleted and an identical call appear inside a hot request handler in the same file, preserving the
+#: file+call+count and passing silently. The reason below is a property of *that function*, so that is
+#: what the key names; the count then still catches a second waived call inside it.
 _ALLOWED: dict[str, int] = {
     # One mkdir on the SQLite parent dir, at process startup inside the lifespan `connect()` —
     # before the server accepts traffic, so there is no loop to stall (and it must happen before
     # aiosqlite opens the file). Moving it to a thread would buy nothing.
-    "app/db.py: mkdir": 1,
+    "app/db.py: connect: mkdir": 1,
 }
 
 
 def _anchor(hit: str) -> str:
-    """A `<path>:<line>: <call>` hit re-keyed to its stable anchor `<path>: <call>` (see `_ALLOWED`)."""
-    path, _, call = hit.partition(":")
-    return f"{path}: {call.partition(': ')[2]}"
+    """A `<path>:<line>: <function>: <call>` hit re-keyed to its stable anchor `<path>: <function>:
+    <call>` (see `_ALLOWED`) — everything but the line number."""
+    path, _, rest = hit.partition(":")
+    return f"{path}: {rest.partition(': ')[2]}"
 
 
 def _unwaived(hits: list[str]) -> list[str]:
@@ -156,7 +157,7 @@ def _scan(src: str, rel: str) -> list[str]:
                 continue
             label = _blocking_label(inner)
             if label is not None:
-                found.append(f"{rel}:{inner.lineno}: {label}")
+                found.append(f"{rel}:{inner.lineno}: {node.name}: {label}")
     return found
 
 
@@ -185,16 +186,20 @@ def test_no_blocking_filesystem_calls_inside_async_defs():
     assert not stale, f"allowlisted blocking-fs sites are gone — prune the allowlist: {stale}"
 
 
-def test_the_waiver_is_keyed_to_the_file_not_the_line():
-    """The re-keying itself (A3 slice 2 carry-forward): a waived call that MOVES stays waived, an extra
-    one at the same anchor does not. That is the whole point — editing db.py above line 201 used to fail
-    this test for a reason unrelated to the invariant, and the "fix" was to renumber the waiver."""
-    moved = ["app/db.py:1: mkdir"]  # the same call, anywhere in the same file
+def test_the_waiver_is_keyed_to_the_function_not_the_line():
+    """The re-keying itself: a waived call that MOVES within its function stays waived; an extra one, a
+    different call, a different file, or the SAME call in a different function does not. Editing db.py
+    above line 201 used to fail this test for a reason unrelated to the invariant, and the "fix" was to
+    renumber the waiver — while keying on the file alone would have waived any mkdir anywhere in it."""
+    moved = ["app/db.py:1: connect: mkdir"]  # the same call in the same function, anywhere in the file
     assert _unwaived(moved) == []
-    surplus = ["app/db.py:1: mkdir", "app/db.py:2: mkdir"]  # a SECOND one is still a finding
-    assert _unwaived(surplus) == ["app/db.py:2: mkdir"]
-    assert _unwaived(["app/db.py:1: read_text"]) == ["app/db.py:1: read_text"]  # different call
-    assert _unwaived(["app/other.py:1: mkdir"]) == ["app/other.py:1: mkdir"]  # different file
+    surplus = ["app/db.py:1: connect: mkdir", "app/db.py:2: connect: mkdir"]  # a SECOND one still counts
+    assert _unwaived(surplus) == ["app/db.py:2: connect: mkdir"]
+    assert _unwaived(["app/db.py:1: connect: read_text"]) == ["app/db.py:1: connect: read_text"]
+    assert _unwaived(["app/other.py:1: connect: mkdir"]) == ["app/other.py:1: connect: mkdir"]
+    # …and the gaming the file-only key allowed: delete the startup mkdir, add one to a hot handler in
+    # the SAME file. File + call + count all still match; the ENCLOSING FUNCTION is what refuses it.
+    assert _unwaived(["app/db.py:9: query: mkdir"]) == ["app/db.py:9: query: mkdir"]
 
 
 def _blocking_helpers(tree: ast.Module) -> set[str]:
@@ -247,7 +252,7 @@ def _sync_helper_calls_in_async(src: str, rel: str) -> list[str]:
                 and isinstance(x.func, ast.Name)
                 and x.func.id in helpers
             ):
-                found.append(f"{rel}:{x.lineno}: {x.func.id}()")
+                found.append(f"{rel}:{x.lineno}: {node.name}: {x.func.id}()")
     return found
 
 
@@ -287,7 +292,7 @@ async def good(p: Path, threads) -> str:
     return await asyncio.to_thread(_sync_ok, p)
 """
     labels = sorted(h.split(": ", 1)[1] for h in _scan(src, "sample.py"))
-    assert labels == ["is_file", "read_text"]  # only the two in `bad`
+    assert labels == ["bad: is_file", "bad: read_text"]  # only the two in `bad`, named by their function
 
 
 def test_ratchet_detects_a_dropped_to_thread():
@@ -310,8 +315,8 @@ async def handler(p: Path) -> str:
     assert good == [], f"the to_thread form must not trip the guard: {good}"
 
     bad = _sync_helper_calls_in_async(tmpl.format(body="_read_soul(p)"), "s.py")
-    assert [h.split(": ", 1)[1] for h in bad] == ["_read_soul()"]
+    assert [h.split(": ", 1)[1] for h in bad] == ["handler: _read_soul()"]
 
     # transitive: a helper that only *calls* a blocking helper is itself blocking
     trans = _sync_helper_calls_in_async(tmpl.format(body="_wrapper(p)"), "s.py")
-    assert [h.split(": ", 1)[1] for h in trans] == ["_wrapper()"]
+    assert [h.split(": ", 1)[1] for h in trans] == ["handler: _wrapper()"]

@@ -19,11 +19,21 @@ LOW risk → auto-runs under the agent's privilege (no confirm gate); the suspen
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Annotated
+
+from pydantic import BaseModel, Field, StringConstraints
 
 from app.core.tool import InvocationContext, action
 from app.domain.enums import Risk, RunState
 from app.domain.result import ToolResult
+
+#: Bounds on the offered answers (post-14b review, LOW). A `question` renders as one-tap chips on a
+#: PHONE, so an unbounded list is a wall of buttons, not a choice — and the offer also has to fit in the
+#: model's own tool schema. Enforced at the input model, so an over-long list fails validation with the
+#: repair path the loop already gives any bad tool call, instead of being silently truncated somewhere
+#: downstream. Deliberately not configurable: this is a property of a phone-sized bubble, not a policy.
+MAX_CHOICES = 8
+MAX_CHOICE_CHARS = 60
 
 
 class QuestionInput(BaseModel):
@@ -41,16 +51,19 @@ class QuestionInput(BaseModel):
     #: use_default`) can resolve the question itself from `default` → `choices[0]` instead of skipping it.
     #: They reach the model's tool schema the moment they exist, which is why the interactive rendering
     #: ships in the same slice.
-    choices: list[str] | None = Field(
+    choices: list[Annotated[str, StringConstraints(max_length=MAX_CHOICE_CHARS)]] | None = Field(
         default=None,
+        max_length=MAX_CHOICES,
         description=(
             "Optional short answer options, if the question is a choice between a few known ones (e.g. "
-            "['corsair', 'emma']). The owner gets them as one-tap buttons and can still type something "
-            "else. Omit for a genuinely open question."
+            f"['corsair', 'emma']). At most {MAX_CHOICES}, each under {MAX_CHOICE_CHARS} characters. The "
+            "owner gets them as one-tap buttons and can still type something else. Omit for a genuinely "
+            "open question."
         ),
     )
     default: str | None = Field(
         default=None,
+        max_length=MAX_CHOICE_CHARS,
         description=(
             "Optional answer to assume if the owner is not there to reply (an unattended scheduled run "
             "may proceed with it instead of skipping the step). Set it whenever one answer is the "
