@@ -3,16 +3,44 @@
 One write path (SQLite, audit trail) + one live feed (EventBus → `/api/events/stream`), per
 DESIGN.md §0.5/§8/§12. `output` is redacted upstream by the action layer before it reaches here;
 this service does not handle secrets.
+
+The read (`recent`) is the ONE place a stored row becomes a domain `Event` again, so it is also the one
+place that tolerates a row this build cannot fully interpret — see `_origin_kind`/`_decision`.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import cast, get_args
 
 from app.core.events import EventBus
 from app.db import Database
 from app.domain.enums import Actor, RunState
-from app.domain.event import Event
+from app.domain.event import DecisionReason, Event, OriginKind
+
+#: The attribution vocabularies this build understands, derived from the domain Literals so there is no
+#: second list to drift out of sync when a kind is added.
+_ORIGIN_KINDS: frozenset[str] = frozenset(get_args(OriginKind))
+_DECISIONS: frozenset[str] = frozenset(get_args(DecisionReason))
+
+
+def _origin_kind(value: object) -> OriginKind:
+    """A stored `origin` narrowed to the vocabulary this build knows, anything else → `unknown`.
+
+    Why lenient here and nowhere else (post-14a review, LOW): `Event`'s fields are Literals, so a single
+    row carrying a kind from a NEWER build would raise inside the list comprehension and fail the whole
+    `GET /api/events` response — the audit trail going dark on the one occasion you most want to read it.
+    Rollback is by tag (D32), so that row is a realistic artifact of a downgrade, not corruption. Degrade
+    the one field, keep the history readable. Deliberately NOT symmetric: the WRITE path stays strict
+    (the gate can only stamp a kind it has in its own vocabulary).
+    """
+    return cast(OriginKind, value) if isinstance(value, str) and value in _ORIGIN_KINDS else "unknown"
+
+
+def _decision(value: object) -> DecisionReason | None:
+    """A stored `decision` narrowed to the known reasons; anything else (incl. NULL) → `None`, which the
+    column already means "no reason recorded". Same rationale as `_origin_kind`."""
+    return cast(DecisionReason, value) if isinstance(value, str) and value in _DECISIONS else None
 
 
 class EventService:
@@ -61,10 +89,10 @@ class EventService:
                 status=RunState(r["status"]),
                 summary=r["summary"],
                 output=r["output"],
-                origin=r["origin"],
+                origin=_origin_kind(r["origin"]),
                 origin_id=r["origin_id"],
                 run_id=r["run_id"],
-                decision=r["decision"],
+                decision=_decision(r["decision"]),
             )
             for r in rows
         ]

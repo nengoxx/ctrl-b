@@ -15,6 +15,9 @@ that arrives in slice 2 has nothing to invent. What's pinned here:
   5. Wire       — the history read and the SSE frame carry the new keys (additive, `output` still out).
   6. Subagents  — a child session runs as `origin=subagent` named after the child agent, with the
                   parent's `run_id` PRESERVED — the transitive "descended from an automation" predicate.
+  7. Reads      — a row this build can't interpret (a rollback reading what a newer build wrote)
+                  degrades to `unknown`/None instead of failing the whole history read; the write path
+                  stays strict, and `unknown` is never emitted by the gate.
 
 Runs as `python tests/test_attribution_14a.py` from backend/ (plain asserts + a __main__ runner) or
 under pytest. Every test works in an isolated `$CTRLB_HOME`/`CTRLB_CONFIG`/`CTRLB_DB` temp workspace —
@@ -420,6 +423,109 @@ def test_spawn_subagents_forwards_the_context_origin_as_the_parent_origin() -> N
 
     assert captured["parent_origin"] == origin
     assert captured["depth"] == 1  # unchanged: attribution rides beside the existing depth plumbing
+
+
+# ── 7. lenient reads (post-14a review, LOW) ─────────────────────────────────────────────────────
+
+
+def _insert_row(c, *, event_id: str, origin: str, decision: str | None) -> None:
+    """Write an events row straight through SQLite, bypassing the domain model — the only way to stage
+    what a NEWER build (or a corrupted row) would leave behind for this one to read."""
+    _run(
+        c.app.state.db.execute(
+            "INSERT INTO events "
+            "(id, ts, actor, action, target, status, summary, output, origin, origin_id, run_id, decision) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                event_id,
+                f"2026-07-30T12:00:0{event_id[-1]}+00:00",
+                "user",
+                "wake_host",
+                "alpha",
+                "ok",
+                "sent",
+                None,
+                origin,
+                None,
+                None,
+                decision,
+            ),
+        )
+    )
+
+
+def test_an_unknown_origin_degrades_instead_of_failing_the_whole_history() -> None:
+    """Rollback is by tag (D32), so a downgraded build can legitimately meet an origin kind it has never
+    heard of. `Event`'s Literals would raise on it — inside a list comprehension over the whole result —
+    so ONE such row would blank the entire audit trail exactly when it matters. The read coerces the
+    field instead: `unknown` / `None`, every other column intact, and the valid rows beside it untouched."""
+    with _workspace(), _client() as c:
+        _insert_row(c, event_id="row1", origin="user_chat", decision="auto")
+        _insert_row(c, event_id="row2", origin="fleet_monitor", decision="quorum")  # a v1.6 build's row
+
+        by_id = {e.id: e for e in _run(c.app.state.events.recent(10))}
+        assert len(by_id) == 2  # the read survived — this is the regression
+
+        assert (by_id["row1"].origin, by_id["row1"].decision) == ("user_chat", "auto")
+        assert (by_id["row2"].origin, by_id["row2"].decision) == ("unknown", None)
+        # Degrade the field, not the record: everything else about the strange row still reads true.
+        assert (by_id["row2"].action, by_id["row2"].target, by_id["row2"].summary) == (
+            "wake_host",
+            "alpha",
+            "sent",
+        )
+
+        # …and the endpoint the SPA polls stays a 200 with both rows in it.
+        body = c.get("/api/events").json()
+        assert {r["id"] for r in body} == {"row1", "row2"}
+        assert next(r for r in body if r["id"] == "row2")["origin"] == "unknown"
+
+
+def test_the_coercion_is_derived_from_the_domain_vocabulary() -> None:
+    """The known-value sets come off the `Literal`s via `get_args`, so adding a kind can never leave a
+    hand-maintained copy behind (which would silently coerce a brand-new, perfectly valid kind)."""
+    from typing import get_args
+
+    from app.domain.event import DecisionReason, OriginKind
+    from app.services.events import _DECISIONS, _ORIGIN_KINDS, _decision, _origin_kind
+
+    assert _ORIGIN_KINDS == frozenset(get_args(OriginKind))
+    assert _DECISIONS == frozenset(get_args(DecisionReason))
+    for kind in get_args(OriginKind):
+        assert _origin_kind(kind) == kind  # every known kind passes through untouched
+    for reason in get_args(DecisionReason):
+        assert _decision(reason) == reason
+    assert _origin_kind("nope") == "unknown" and _origin_kind(None) == "unknown"
+    assert _decision("nope") is None and _decision(None) is None
+
+
+def test_unknown_is_a_read_side_sentinel_the_gate_can_never_write() -> None:
+    """The asymmetry that keeps the audit trail honest: leniency belongs to the READ. Nothing in `app/`
+    constructs an `unknown` origin, so the sentinel can only ever mean "this build could not read what
+    was stored" — never "the gate did not know who was calling"."""
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    writers = [
+        str(p.relative_to(app_dir))
+        for p in sorted(app_dir.rglob("*.py"))
+        if any(marker in (src := p.read_text(encoding="utf-8")) for marker in ('kind="unknown"', "'unknown'"))
+        and "Origin(" in src
+    ]
+    assert writers == []
+
+    # And end-to-end: a real invocation records the kind it was given, never the sentinel.
+    from app.domain.enums import Privilege
+
+    with _workspace(), _client() as c:
+        for kind in _KINDS:
+            out = _run(
+                c.app.state.actions.invoke(
+                    "restart_service",
+                    {"service_id": "ghost"},
+                    origin=Origin(kind=kind),
+                    privilege=Privilege.FULL,
+                )
+            )
+            assert out.event is not None and out.event.origin == kind != "unknown"
 
 
 def test_interactive_sessions_carry_the_chat_origin() -> None:

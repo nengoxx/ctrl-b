@@ -25,7 +25,13 @@ from app.domain.enums import Actor, RunState
 #: Who set an invocation in motion. Records the IMMEDIATE initiator only — an automation's
 #: subagent's calls read `subagent`, not `automation` (D-4 "ancestry semantics"): the authoritative
 #: "descended from an automation" predicate is a non-null `run_id`, preserved through descendants.
-OriginKind = Literal["user_chat", "automation", "subagent", "system"]
+#:
+#: `unknown` is a READ-SIDE SENTINEL, never written by the gate (post-14a review, LOW): rollback is by
+#: tag (D32), so a downgraded build can legitimately read rows a newer one wrote with an origin kind
+#: this build has never heard of. The events read boundary coerces those to `unknown` rather than
+#: raising — one strange row in the audit trail must not take `GET /api/events` down with it. Nothing
+#: in `app/` ever constructs it (pinned by `test_attribution_14a.py`).
+OriginKind = Literal["user_chat", "automation", "subagent", "system", "unknown"]
 #: Why the permission gate let an invocation through (or, for `policy`, why it didn't): `auto` = the
 #: risk/privilege decision allowed it outright · `confirmed` = it executed against a confirm token ·
 #: `approval` = a persisted D44 approval rule matched · `policy` = the gate DENIED it. The

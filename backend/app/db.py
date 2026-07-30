@@ -5,7 +5,9 @@ process-wide write lock (`_write_lock`) is enough to keep multi-statement writes
 `SQLITE_BUSY` is effectively impossible today (WAL is enabled but its cross-connection read
 concurrency is unused — the named seam is a dedicated reader-pool if read latency ever matters, and
 `PRAGMA busy_timeout` future-proofs it). See DESIGN.md §8. Migrations are numbered SQL blocks applied
-in order and tracked in `schema_version`; no ORM (hand-written SQL is enough at this scale).
+in order and tracked in `schema_version` — each one **atomically together with its version stamp**
+(`_apply_migration`), so a crash mid-migration can never leave a database whose shape is ahead of its
+recorded version; no ORM (hand-written SQL is enough at this scale).
 
 Multi-statement write *sequences* (compaction's summary-insert + flag-flips, the plan/apply/exec
 message pairs) commit atomically via `transaction()` (SYS-1) — otherwise `execute()` commits per
@@ -39,6 +41,9 @@ BUSY_TIMEOUT_MS = 5000
 _in_transaction: contextvars.ContextVar[bool] = contextvars.ContextVar("db_in_transaction", default=False)
 
 # Numbered migrations. Append new (version, sql) tuples; never edit a shipped one.
+# Authoring rule: a script contains DDL/DML only — NO `BEGIN`/`COMMIT`/`ROLLBACK`. `_apply_migration`
+# wraps the script and its version stamp in one transaction for you; own transaction control would
+# close that one early and re-open the partial-application window it exists to shut.
 # Release-compat rule (D32 amendment, expand/contract): migrations are FORWARD-ONLY and prod code
 # rolls back by tag, so every change ships ADDITIVE first (new nullable column / new table); a
 # DESTRUCTIVE contraction (drop/rename) may land at the earliest ONE release after the code stopped
@@ -308,9 +313,50 @@ class Database:
             current = await self._current_version()
             for version, sql in MIGRATIONS:
                 if version > current:
-                    await self.conn.executescript(sql)
-                    await self.conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
-                    await self.conn.commit()
+                    await self._apply_migration(version, sql)
+
+    async def _apply_migration(self, version: int, sql: str) -> None:
+        """Apply ONE migration and its `schema_version` stamp **atomically** (post-14a review, MED).
+
+        The partial state this closes is unrecoverable by the service itself: the old shape ran the
+        script, then stamped the version, then committed — three separate autocommits — so a crash (or a
+        killed unit, or a full disk) between v4's four `ALTER`s, or after any script but before its
+        stamp, left a database whose real shape is ahead of its recorded version. The next boot re-runs
+        the same migration and dies on `duplicate column name` / `table already exists`, and since
+        `connect()` runs in the lifespan the service then crash-loops on every start. All-or-nothing
+        means that state cannot exist: either the whole migration is visible AND stamped, or nothing is.
+
+        The mechanism is explicit transaction control INSIDE the composed script, because wrapping the
+        call cannot work: `executescript` implicitly COMMITs any pending transaction before it runs, so
+        an outer `BEGIN` would be committed away (and `transaction()` here would strand the write lock).
+        Python's sqlite3 documents this shape — "no other implicit transaction control is performed; any
+        transaction control must be added to sql_script". SQLite's DDL is fully transactional, so the
+        rollback really does undo the `CREATE`/`ALTER`s (pinned by
+        `test_db_migration_atomicity.py`, which crashes a migration mid-script and asserts both the
+        version and the partial columns are gone, then that a clean boot applies it in full).
+
+        The script is composed, never split: v3's FTS triggers carry semicolons inside `BEGIN … END`
+        bodies, so any statement-splitting would corrupt them. `version` is interpolated (executescript
+        takes no parameters) — it is an int from this module's own `MIGRATIONS`, never input.
+        """
+        script = "\n".join(
+            (
+                "BEGIN IMMEDIATE;",
+                sql,
+                f"INSERT INTO schema_version (version) VALUES ({int(version)});",
+                "COMMIT;",
+            )
+        )
+        try:
+            await self.conn.executescript(script)
+        except BaseException:
+            # Leave nothing half-open on the shared connection: a failed script leaves its transaction
+            # active, and an abandoned BEGIN poisons every later transaction on this connection. A
+            # rollback that itself fails (the failure was the BEGIN, so no transaction is active) is not
+            # interesting — the original error is what the operator needs to see.
+            with contextlib.suppress(Exception):
+                await self.conn.rollback()
+            raise
 
     async def schema_version(self) -> int:
         return await self._current_version()
