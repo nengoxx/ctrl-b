@@ -104,7 +104,7 @@ class AutomationService:
         settings: Settings,
         threads: ThreadRepo,
         events: EventService,
-        turns: dict[str, TurnHandle] | None = None,
+        turns: dict[str, TurnHandle],
     ) -> None:
         self._repo = repo
         #: The live `Settings` object (mutated in place by `runtime.apply_settings_inplace`), so a Conf
@@ -115,8 +115,15 @@ class AutomationService:
         #: The app's per-thread turn-marker registry (D38) — the SINGLE busy-truth for the chat stack.
         #: This service deletes threads (retention, and the delete cascade), and a fresh run's thread is
         #: explicitly continuable in chat, so it must take that thread's marker before removing it (see
-        #: `_claim_thread`). `None` only in unit paths that never delete; treated as "nothing is live".
-        self._turns: dict[str, TurnHandle] = {} if turns is None else turns
+        #: `_claim_thread`).
+        #:
+        #: REQUIRED, with no default (wave 2). It briefly defaulted to `None` → a private empty dict,
+        #: which is the same shape as `origin`'s rejected default: a safety invariant that a caller can
+        #: switch off by OMISSION, silently and without failing — here it would mean "nothing is ever
+        #: live", i.e. deleting threads out from under running turns. There is one construction site
+        #: (the lifespan) and it passes the shared registry; anything else is a wiring bug that should
+        #: be a type error at the site, not a quiet loss of the guarantee.
+        self._turns: dict[str, TurnHandle] = turns
 
     @property
     def repo(self) -> AutomationRepo:
@@ -215,13 +222,49 @@ class AutomationService:
 
         `next_run_at` is recomputed when the answer could have changed: an enable, a schedule/tz edit, or
         a row that somehow held none. An unchanged schedule keeps its pending slot, so editing the prompt
-        does not push the next run back."""
+        does not push the next run back.
+
+        A `thread_mode` CHANGE additionally takes the row's thread marker (wave 2), and is refused while a
+        turn is live there. `fresh ↔ rolling` is what decides whether the interactive endpoints refuse a
+        thread at all, so flipping it under a turn that already passed the guard would leave that turn
+        writing into a conversation the automation now owns (or, the other way, leave the guard armed for
+        a thread nothing owns any more). Ownership therefore only ever changes while the thread is idle,
+        and — like every other marker here — it is held past COMMIT."""
         schedule, tz = self._validated(draft)
         now = _now()
+        markers: list[TurnHandle] = []
+        try:
+            return await self._update(
+                automation_id, draft, schedule=schedule, tz=tz, now=now, markers=markers
+            )
+        finally:
+            for marker in markers:
+                release(self._turns, marker)
+
+    async def _update(
+        self,
+        automation_id: str,
+        draft: AutomationDraft,
+        *,
+        schedule: str,
+        tz: str,
+        now: datetime,
+        markers: list[TurnHandle],
+    ) -> Automation:
+        """`update`'s transactional body. Split out ONLY so the marker release can be ordered after the
+        transaction context exits (see `prune_runs` for why that ordering is load-bearing)."""
         async with self._repo.db.transaction():
             current = await self._repo.get(automation_id)
             if current is None:
                 raise AutomationNotFound(f"no automation {automation_id!r}")
+            if draft.thread_mode != current.thread_mode and current.thread_id:
+                marker = self._claim_thread(current.thread_id)
+                if marker is None:
+                    raise AutomationBusy(
+                        f"a turn is running in {current.name!r}'s thread — wait for it, then change how "
+                        "its results are stored"
+                    )
+                markers.append(marker)
             recompute = (
                 schedule != current.schedule
                 or tz != current.tz
@@ -495,6 +538,13 @@ class AutomationService:
         explicitly continuable in chat, so retention firing while the owner is talking in an old one would
         cascade its messages out from under the running drain task. That run is SKIPPED WHOLE (row and
         thread together, so the thread can never be orphaned by a half-prune) and prunes on a later cycle.
+
+        Every marker taken here is held until AFTER the transaction has COMMITTED (wave 2): releasing
+        inside the block — as the first version did — leaves a window in which the delete is not yet
+        visible to any reader but the thread is already reservable, so a chat POST could take the marker
+        and start a turn on a row that is about to vanish. The `finally` is deliberately ordered outside
+        the `async with`, which is what makes "held past commit" a property of the code shape rather than
+        of where the loop happens to end.
         """
         automation = await self._repo.get(automation_id)
         if automation is None:
@@ -504,26 +554,29 @@ class AutomationService:
             return 0
         pruned = 0
         skipped = 0
-        async with self._repo.db.transaction():
-            for run in excess:
-                if not run.terminal:
-                    continue  # a live run is not history yet — its finalizer still owns the row
-                # The run's OWN thread (a rolling automation's shared one is never pruned's business).
-                own_thread = (
-                    run.thread_id if run.thread_id and run.thread_id != automation.thread_id else None
-                )
-                marker = self._claim_thread(own_thread) if own_thread else None
-                if own_thread and marker is None:
-                    skipped += 1
-                    continue  # a live turn owns that thread — leave the pair alone until next cycle
-                try:
+        markers: list[TurnHandle] = []
+        try:
+            async with self._repo.db.transaction():
+                for run in excess:
+                    if not run.terminal:
+                        continue  # a live run is not history yet — its finalizer still owns the row
+                    # The run's OWN thread (a rolling automation's shared one is never pruned's business).
+                    own_thread = (
+                        run.thread_id if run.thread_id and run.thread_id != automation.thread_id else None
+                    )
+                    marker = self._claim_thread(own_thread) if own_thread else None
+                    if own_thread and marker is None:
+                        skipped += 1
+                        continue  # a live turn owns it — leave the pair alone until the next cycle
+                    if marker is not None:
+                        markers.append(marker)
                     await self._repo.delete_run(run.id)
                     pruned += 1
                     if own_thread is not None:
                         await self._threads.delete(own_thread)
-                finally:
-                    if marker is not None:
-                        release(self._turns, marker)
+        finally:
+            for marker in markers:
+                release(self._turns, marker)
         if pruned or skipped:
             log.debug(
                 "pruned %d run(s) of automation %s (%d skipped: live thread)",

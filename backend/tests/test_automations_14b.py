@@ -675,6 +675,67 @@ def test_a_cancelled_runner_terminalizes_the_run_as_interrupted_with_an_event() 
         assert state.turns == {}
 
 
+def test_a_repeatedly_cancelled_claim_still_hands_off_and_keeps_the_cancellation() -> None:
+    """Wave 2, the claim/cancel handoff under an unfriendly shutdown. Three things must hold when a
+    cancel lands after the claim COMMITs: the run it created is terminalized `interrupted` (never left
+    `running` until a reboot), a SECOND cancel arriving during that cleanup does not abandon it, and the
+    caller still sees `CancelledError` — a claim error surfacing instead would be caught by `loop()`'s
+    `except Exception` and shutdown would stop being orderly."""
+    with _workspace(), _client() as c:
+        svc, state = _svc(c), c.app.state
+        a = _run(svc.create(_draft(schedule="*/5 * * * *")))
+        _due_now(c, a)
+        real_claim = svc.claim
+
+        async def _slow_claim(*args, **kw):
+            await asyncio.sleep(0.05)  # the window a shutdown cancel lands in
+            return await real_claim(*args, **kw)
+
+        svc.claim = _slow_claim  # type: ignore[assignment]
+
+        async def go():
+            task = asyncio.ensure_future(_runner(c)._claim(a.id, expected_rev=a.rev))
+            await asyncio.sleep(0.01)
+            task.cancel()
+            await asyncio.sleep(0)  # let the cleanup begin…
+            task.cancel()  # …and cancel it AGAIN, mid-handoff
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            return task
+
+        task = _run(go())
+        svc.claim = real_claim  # type: ignore[assignment]
+        assert task.cancelled(), "the original cancellation must survive the cleanup"
+        runs = _run(state.automations.runs(a.id))
+        assert len(runs) == 1 and runs[0].status == "interrupted"  # claimed, never started, closed
+        assert _run(state.automations.open_runs()) == []
+
+
+def test_a_claim_that_raises_during_cancellation_never_replaces_the_cancellation() -> None:
+    """The other half: if the claim itself fails while we are unwinding, that exception must not become
+    the thing the caller sees — `loop()` would swallow it as an ordinary poll failure and keep going
+    through a shutdown."""
+    with _workspace(), _client() as c:
+        svc = _svc(c)
+
+        async def _boom(*_a, **_kw):
+            await asyncio.sleep(0.05)
+            raise RuntimeError("the claim blew up while we were unwinding")
+
+        svc.claim = _boom  # type: ignore[assignment]
+
+        async def go():
+            task = asyncio.ensure_future(_runner(c)._claim("whatever"))
+            await asyncio.sleep(0.01)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            return task
+
+        task = _run(go())
+        assert task.cancelled(), "the claim's own error must not replace the cancellation"
+
+
 def test_a_missing_named_agent_fails_the_run_and_never_falls_back() -> None:
     """§D-1's strict re-check. The forgiving `resolve_agent` would have handed the run the DEFAULT
     agent's toolset and privilege — a different blast radius than the owner authorized — so a vanished
@@ -1017,6 +1078,130 @@ def test_delete_refuses_while_a_thread_it_owns_has_a_live_turn() -> None:
         _run(svc.delete(a.id))
         assert _run(state.automations.get(a.id)) is None and _run(state.threads.get(t.id)) is None
         assert state.turns == {}  # every marker the delete took was released
+
+
+def test_a_deleting_transaction_holds_its_markers_past_the_commit() -> None:
+    """Wave 2. Releasing a prune marker INSIDE the transaction leaves a window that is invisible but
+    real: the delete has not committed, so every reader still sees the thread — and the marker is already
+    free, so a chat POST can reserve it and start a turn on a row that is about to vanish. The ordering is
+    asserted directly, by recording when the connection COMMITs against when the markers are released."""
+    from app.domain.automation import AutomationRun
+    from app.domain.conversation import Thread
+    from app.services.automations import service as service_mod
+
+    with _workspace("automations:\n  keep_runs: 1\n"), _client() as c:
+        svc, state = _svc(c), c.app.state
+        a = _run(svc.create(_draft()))
+        threads = []
+        for i in range(2):
+            t = _run(state.threads.create(Thread(archived=True)))
+            _run(
+                state.automations.add_run(
+                    AutomationRun(
+                        automation_id=a.id,
+                        status="ok",
+                        thread_id=t.id,
+                        started_at=_now() - timedelta(minutes=5 - i),
+                    )
+                )
+            )
+            threads.append(t.id)
+
+        order: list[str] = []
+        real_commit = state.db.conn.commit
+        real_release = service_mod.release
+
+        async def _commit():
+            order.append("commit")
+            return await real_commit()
+
+        def _release(turns, handle):
+            order.append("release")
+            return real_release(turns, handle)
+
+        state.db.conn.commit = _commit  # type: ignore[assignment]
+        service_mod.release = _release  # type: ignore[assignment]
+        try:
+            assert _run(svc.prune_runs(a.id)) == 1
+        finally:
+            state.db.conn.commit = real_commit  # type: ignore[assignment]
+            service_mod.release = real_release  # type: ignore[assignment]
+
+        assert "commit" in order and "release" in order
+        assert order.index("commit") < order.index("release"), (
+            f"the prune marker was released before the delete committed: {order}"
+        )
+        assert state.turns == {}  # …and it really was released afterwards
+
+
+def test_a_thread_deleted_between_the_load_and_the_reserve_is_refused() -> None:
+    """Wave 2, the stale pre-read. Every mutating endpoint resolves its thread BEFORE it reserves the
+    marker, so a retention prune (or a delete) committing in that window leaves the handler holding a
+    `Thread` object for a row that is gone — and it would happily persist messages against it. With the
+    marker held, `_revalidate_thread` is the point at which that becomes impossible: it re-reads, and a
+    vanished thread is a 404 rather than a turn on a deleted row."""
+    from fastapi import HTTPException
+
+    from app.api.agent import _revalidate_thread
+    from app.domain.conversation import Thread
+
+    with _workspace(), _client() as c:
+        state = c.app.state
+        stale = _run(state.threads.create(Thread()))  # what the handler pre-read
+        _run(_revalidate_thread(state, stale.id))  # still there → proceeds
+
+        _run(state.threads.delete(stale.id))  # …retention wins the race and commits
+        try:
+            _run(_revalidate_thread(state, stale.id))
+        except HTTPException as exc:
+            assert exc.status_code == 404
+        else:
+            raise AssertionError("a turn must not start against a thread that was deleted under it")
+
+        # …and the endpoint refuses end-to-end (a rolling thread it may no longer touch → 403)
+        svc = _svc(c)
+        a = _run(svc.create(_draft(thread_mode="rolling", schedule="*/5 * * * *")))
+        _due_now(c, a)
+        snap = _run(svc.claim(a.id, expected_rev=a.rev))
+        with _fake_sessions(_FakeSession()):
+            _run(_runner(c)._execute(snap))
+        rolling = _run(state.automations.get(a.id)).thread_id
+        assert c.post("/api/agent/compact", json={"thread_id": rolling}).status_code == 403
+        assert c.post("/api/agent/plan", json={"thread_id": rolling, "steps": []}).status_code == 403
+        assert state.turns == {}  # every refusal released the marker it took
+
+
+def test_a_mode_switch_cannot_flip_ownership_under_a_live_turn() -> None:
+    """Wave 2. `fresh ↔ rolling` is what decides whether the endpoints refuse a thread at all, so
+    flipping it while a turn runs there would leave that turn writing into a conversation the automation
+    now owns — a guard that already passed, invalidated behind its back. The update takes the SAME marker
+    and refuses while the thread is busy."""
+    from app.domain.conversation import Thread
+    from app.services.agent.turns import release, reserve
+    from app.services.automations import AutomationBusy
+
+    with _workspace(), _client() as c:
+        svc, state = _svc(c), c.app.state
+        a = _run(svc.create(_draft(thread_mode="rolling")))
+        t = _run(state.threads.create(Thread(archived=True)))
+        _run(state.automations.set_thread(a.id, t.id))
+
+        busy = reserve(state.turns, t.id, "chat")  # the owner is talking in it right now
+        try:
+            _run(svc.update(a.id, _draft(thread_mode="fresh")))
+        except AutomationBusy:
+            pass
+        else:
+            raise AssertionError("a mode switch must not flip ownership under a live turn")
+        assert _run(state.automations.get(a.id)).thread_mode == "rolling"  # unchanged
+
+        # …an edit that does NOT change the mode is unaffected by the live turn
+        edited = _run(svc.update(a.id, _draft(thread_mode="rolling", prompt="still fine")))
+        assert edited.prompt == "still fine"
+
+        release(state.turns, busy)
+        switched = _run(svc.update(a.id, _draft(thread_mode="fresh")))
+        assert switched.thread_mode == "fresh" and state.turns == {}
 
 
 def test_delete_refuses_while_a_run_is_active_then_cascades() -> None:

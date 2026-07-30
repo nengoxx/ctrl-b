@@ -354,6 +354,29 @@ async def _reject_automation_thread(state, thread_id: str) -> None:
         raise HTTPException(status_code=403, detail=_AUTOMATION_THREAD_DETAIL)
 
 
+async def _revalidate_thread(state, thread_id: str) -> None:
+    """Re-check the thread AFTER its turn marker is held — the authoritative half of the guard (wave 2).
+
+    Every mutating endpoint loads the thread, decides, and only then reserves; between the load and the
+    reserve, the automations service can COMMIT a retention prune or a definition delete that removes
+    that very thread, or an update that hands it to an automation as its rolling conversation. The
+    pre-reserve checks are then stale, and the endpoint proceeds against a row that no longer exists (or
+    that it would now have refused).
+
+    Once the marker is HELD, neither can happen — the service takes the same marker before deleting a
+    thread or flipping its ownership, and holds it past COMMIT — so re-reading here is the point at which
+    the answer becomes stable for the rest of the request. `404` for a thread that went (the same answer
+    the pre-read gives), `403` for one an automation now owns.
+
+    Revalidating after the reserve rather than reserving before the load is deliberate: the load resolves
+    WHICH thread to reserve (chat creates one when absent, resume reads the thread's last agent), so
+    reserve-first would mean restructuring four handlers around a marker they cannot yet name — a much
+    larger change to the D38 discipline for the same guarantee."""
+    if await state.threads.get(thread_id) is None:
+        raise HTTPException(status_code=404, detail=f"unknown thread '{thread_id}'")
+    await _reject_automation_thread(state, thread_id)
+
+
 # The 409 detail when the server-wide concurrency cap (`agent.turns.max_active_turns`, D39) is hit by
 # a NEW task-bearing turn (chat/resume). Distinct + actionable, separate from the per-thread busy 409.
 _TURN_CAP_DETAIL = "too many turns are running — wait for one to finish"
@@ -1128,6 +1151,8 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     # stale context now that a fresh turn owns the thread). A steer-enqueue (202 above) is NOT a new turn.
     state.steer_harvests.pop(thread.id, None)
     try:
+        # The marker is held now, so the pre-reserve reads above are stable from here on (wave 2).
+        await _revalidate_thread(state, thread.id)
         session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
         handle.mode = body.mode  # the turn's inference mode — the snapshot carries it (D39)
@@ -1184,6 +1209,7 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Re
         return _steer_202(state, thread.id, e.handle, steer_entry, cfg)
     state.steer_harvests.pop(thread.id, None)  # D41 FIX 4: a new turn started → drop the stale receipt
     try:
+        await _revalidate_thread(state, thread.id)  # marker held → the pre-reserve reads are stable
         # ONE user-exec implementation (D41): run_shell@FULL + the atomic assistant+tool pair persist,
         # shared verbatim with the steer drain (`run_user_exec`). Response shape unchanged.
         exec_out = await run_user_exec(
@@ -1661,13 +1687,13 @@ async def compact(body: CompactRequest, request: Request) -> dict[str, Any]:
     thread = await threads.get(body.thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
-    # §D-3: folding an automation's rolling history would change what its next run reads (the guard is
-    # ahead of the marker reserve — a refusal the owner cannot resolve by waiting should answer first).
-    await _reject_automation_thread(request.app.state, thread.id)
     # Reserve the thread's turn marker (D38) — compaction read-modify-writes can race the loop's own
     # `_compactor.compact` (double summary insertion); 409 while a turn is live. Released in finally.
     handle = _reserve_turn(request, thread.id, "compact")
     try:
+        # §D-3: folding an automation's rolling history would change what its next run reads. Checked
+        # with the marker HELD, so the answer can't go stale under the fold (wave 2).
+        await _revalidate_thread(request.app.state, thread.id)
         result = await _session(request, thread).compact(thread, instructions=body.instructions)
         # D42 R3: a manual compact that leaves the thread healthy resets the thrash machine to
         # all-defaults — drop the now-inert entry so `app.state.compaction_state` doesn't accumulate
@@ -1697,12 +1723,12 @@ async def edit_plan(body: PlanEditRequest, request: Request) -> dict[str, Any]:
     messages = request.app.state.messages
     if await threads.get(body.thread_id) is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
-    await _reject_automation_thread(request.app.state, body.thread_id)  # §D-3 rolling-thread guard
 
     # Reserve the thread's turn marker (D38) — a plan-dot tap read-modify-writes the same task_plan
     # rows the live loop updates (clobber either way); 409 while a turn is live. Released in finally.
     handle = _reserve_turn(request, body.thread_id, "plan")
     try:
+        await _revalidate_thread(request.app.state, body.thread_id)  # §D-3, with the marker held
         plan = Plan(steps=TaskPlanInput(steps=body.steps).steps)  # lenient coercion (status/field names)
         steps_dump = [s.model_dump() for s in plan.steps]
         total = len(plan.steps)
@@ -1769,7 +1795,6 @@ async def resume(body: ResumeRequest, request: Request) -> Response:
     thread = await threads.get(body.thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
-    await _reject_automation_thread(request.app.state, thread.id)  # §D-3 rolling-thread guard
     # Continue as the last assistant turn's agent (D15 #5): last assistant message's `agent` →
     # thread.agent → default (no explicit override on resume). So a thread keeps talking to the
     # specialist you last used until you `/agent`-switch on a fresh turn.
@@ -1779,6 +1804,7 @@ async def resume(body: ResumeRequest, request: Request) -> Response:
     # done-callback (D39; covers SSE + buffered); release + re-raise on any pre-handoff error.
     handle = _reserve_turn(request, thread.id, "resume")
     try:
+        await _revalidate_thread(request.app.state, thread.id)  # §D-3, with the marker held
         session = _session(request, thread, agent_name=last_agent, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
         handle.mode = body.mode  # carried onto the snapshot (D39) — same as chat
@@ -1845,11 +1871,11 @@ async def apply_proposal_endpoint(body: ApplyRequest, request: Request) -> dict[
     if thread is None:
         raise HTTPException(status_code=404, detail=f"unknown thread '{body.thread_id}'")
 
-    await _reject_automation_thread(request.app.state, thread.id)  # §D-3 rolling-thread guard
     # Reserve the thread's turn marker (D38) — apply does the same in-place read-modify-write on the
     # call/result rows as /agent/plan (clobber risk vs the live loop); 409 while a turn is live.
     handle = _reserve_turn(request, body.thread_id, "apply")
     try:
+        await _revalidate_thread(request.app.state, body.thread_id)  # §D-3, with the marker held
         msgs = await messages.list(body.thread_id)
         call_msg = call_part = None
         for m in msgs:

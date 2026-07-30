@@ -98,18 +98,32 @@ def _route_endpoints():
             yield fn
 
 
-def test_every_thread_mutating_endpoint_refuses_an_automation_rolling_thread() -> None:
-    """A3 §D-3 (post-14b review, MED): the SAME set of thread-mutating endpoints must also refuse a
-    thread an automation owns as its rolling conversation — chat and exec were only the obvious two.
-    Compact rewrites its history, a plan edit and a proposal apply rewrite its messages in place, and
-    resume continues a suspended turn inside it; each one changes what the automation's next scheduled
-    run reads as context. Pinned against the SAME `_EXPECTED` set as the marker guard above, so the two
-    protections can never drift apart as endpoints are added."""
+def test_every_thread_mutating_endpoint_revalidates_under_its_marker() -> None:
+    """A3 §D-3: the SAME set of thread-mutating endpoints must refuse a thread an automation owns as its
+    rolling conversation — chat and exec were only the obvious two. Compact rewrites its history, a plan
+    edit and a proposal apply rewrite its messages in place, and resume continues a suspended turn inside
+    it; each changes what the automation's next scheduled run reads as context.
+
+    Pinned as `_revalidate_thread`, which is the check made AFTER the turn marker is reserved (wave 2):
+    every one of these handlers loads and decides BEFORE it reserves, and in that window the automations
+    service can commit a prune, a delete or a mode switch — so a pre-reserve check alone is a check
+    against a thread the handler may no longer be entitled to touch. The ORDER is asserted, not just the
+    presence, and against the SAME `_EXPECTED` set as the marker guard, so the two can never drift."""
     guarded: set[str] = set()
     for fn in _route_endpoints():
         src = _code_only(inspect.getsource(fn))
-        if "_reject_automation_thread(" in src:
-            guarded.add(fn.__name__)
+        if "_revalidate_thread(" not in src:
+            continue
+        guarded.add(fn.__name__)
+        reserve_at = min(
+            (src.index(m) for m in ("_reserve_turn(", "_reserve_or_busy(") if m in src),
+            default=-1,
+        )
+        assert reserve_at >= 0, f"{fn.__name__} revalidates without ever reserving"
+        assert src.index("_revalidate_thread(") > reserve_at, (
+            f"{fn.__name__} revalidates BEFORE it reserves — the whole point is that the marker is "
+            "already held, so the answer cannot go stale between the check and the mutation"
+        )
     assert guarded == _EXPECTED, (
         "the rolling-thread guard and the turn-marker guard must cover the same endpoints "
         f"(missing: {sorted(_EXPECTED - guarded)}, unexpected: {sorted(guarded - _EXPECTED)})"

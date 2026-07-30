@@ -25,6 +25,7 @@ Three properties are load-bearing and easy to break:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Coroutine
 from datetime import datetime, timezone
@@ -192,17 +193,45 @@ class AutomationRunner:
         `interrupted` — the honest status for "claimed, never started" — before propagating. Same
         mechanism as `_shielded`/`Database._shielded_rollback`; here it protects a HANDOFF rather than a
         write.
+
+        The cleanup is written to survive the two things that actually go wrong during a shutdown (wave
+        2): a REPEATED or level-triggered cancel landing while we drain the claim — anyio's scope plus a
+        second `await` on the task, the db.py shape, safe because our cancel cannot cancel that task —
+        and the claim RAISING, which must never replace the cancellation. The bare `raise` at the end
+        always re-raises the original `CancelledError`: a claim error surfacing in its place would be
+        caught by `loop()`'s `except Exception` and swallowed, and shutdown would stop being orderly.
         """
         task = asyncio.ensure_future(self._service.claim(automation_id, **kw))
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
-            snapshot = await task  # uncancellable by the outer cancel — let the claim land
+            snapshot: AutomationSnapshot | None = None
+            # Drain the claim to completion, HOWEVER MANY cancels arrive. A single re-await (the db.py
+            # shape) is enough for one delivered cancel, but a second `cancel()` landing during that
+            # await raises again and would abandon a claim that is about to commit — the very row this
+            # method exists to hand off. Each `cancel()` is delivered at most once, so consuming them in
+            # a loop terminates; `asyncio.wait` never re-raises the TASK's own outcome, so the result is
+            # read from the settled task below instead of from an exception path.
+            while not task.done():
+                with contextlib.suppress(BaseException):
+                    await asyncio.wait([task])
+            if not task.cancelled():  # nothing cancels the claim task itself — belt, not braces
+                failure = task.exception()
+                if failure is not None:
+                    # Logged, never raised: a claim error surfacing here would REPLACE the cancellation,
+                    # and `loop()`'s `except Exception` would swallow it as an ordinary poll failure —
+                    # leaving the loop running through a shutdown.
+                    log.error("the claim failed while unwinding a cancel: %r", failure)
+                else:
+                    snapshot = task.result()
             if snapshot is not None:
-                await _shielded(
-                    self._finalize(snapshot, status="interrupted", error=INTERRUPTED_NOTE, thread_id=None)
-                )
-            raise
+                # Best-effort, and deliberately swallowing even a `CancelledError` raised by the
+                # finalizer: whatever it reports, the cancellation below is the story this unwind tells.
+                with contextlib.suppress(BaseException):
+                    await _shielded(
+                        self._finalize(snapshot, status="interrupted", error=INTERRUPTED_NOTE, thread_id=None)
+                    )
+            raise  # ALWAYS the original CancelledError
 
     # ── one run ───────────────────────────────────────────────────────────────────────────────────
 
