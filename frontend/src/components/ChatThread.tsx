@@ -244,8 +244,14 @@ function CmdBubble({
 }
 
 /** A `question` call (A2): the agent asked the owner something and suspended. While awaiting, show the
- *  prompt + a reply input (Send / Decline); once answered/declined, show the outcome. Sibling of
- *  PlanBubble — questions render their own bubble, not a CmdBubble. */
+ *  prompt + any offered choices as one-tap chips + a reply input (Send / Decline); once answered or
+ *  declined, show the outcome. Sibling of PlanBubble — questions render their own bubble, not a CmdBubble.
+ *
+ *  The chips (A3 §D-3) read the DURABLE `call.args` — the same place `prompt` comes from — so they
+ *  survive a reload and a re-attach with no new event, no store branch and no second component tree.
+ *  They are strictly additive: free text still works, and a question that offers nothing renders exactly
+ *  as it did before. `default` (what an unattended scheduled run would assume) is marked rather than
+ *  pre-filled: the owner is here, so it is a hint, not a decision already made for them. */
 function QuestionBubble({
   call,
   result,
@@ -257,6 +263,12 @@ function QuestionBubble({
 }) {
   const prompt = typeof call.args.prompt === "string" ? call.args.prompt : "";
   const awaiting = !result && call.state === "awaiting_answer";
+  // Defensive per element: `args` is whatever the model emitted, so a non-string / blank entry is
+  // dropped rather than rendered as an unpressable empty chip.
+  const choices = Array.isArray(call.args.choices)
+    ? call.args.choices.filter((c): c is string => typeof c === "string" && c.trim() !== "")
+    : [];
+  const preferred = typeof call.args.default === "string" ? call.args.default.trim() : "";
   const [text, setText] = useState("");
   const send = () => {
     const a = text.trim();
@@ -269,6 +281,21 @@ function QuestionBubble({
         <div className="q-prompt">{prompt || "(question)"}</div>
         {awaiting ? (
           <>
+            {choices.length > 0 && (
+              <div className="q-choices">
+                {choices.map((choice) => (
+                  <button
+                    key={choice}
+                    type="button"
+                    className={"q-chip" + (choice === preferred ? " preferred" : "")}
+                    title={choice === preferred ? "the agent's suggested answer" : undefined}
+                    onClick={() => void answerQuestion(call.call_id, choice)}
+                  >
+                    {choice}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="q-input-wrap">
               <input
                 className="q-input"

@@ -21,7 +21,7 @@ import {
   usePlanOpenAutoClose,
   usePlanSheetOpen,
 } from "../../src/store/planSheet";
-import type { ChatMessage, Plan } from "../../src/types";
+import type { ChatMessage, Plan, ToolCallPart } from "../../src/types";
 
 beforeAll(() => {
   class ResizeObserverStub {
@@ -178,6 +178,75 @@ describe("D44 W3 · the CmdBubble always-allow affordance", () => {
     render(<ChatThread active chat={awaitingChat()} />);
     expect(screen.getByText("allow")).toBeTruthy(); // the row still renders
     expect(screen.queryByText("always")).toBeNull(); // but no always-allow affordance
+  });
+});
+
+// ── A3 §D-3 — the question bubble's one-tap choice chips. They render off the DURABLE `call.args`
+// (the same source as the prompt), so no store branch is involved: an awaiting question with `choices`
+// shows a chip per option, the declared `default` is marked, free text is untouched, and a question
+// that offers nothing renders exactly as before.
+function questionChat(args: Record<string, unknown>, state = "awaiting_answer"): AgentChat {
+  const msg: ChatMessage = {
+    id: "m1",
+    thread_id: "t1",
+    role: "assistant",
+    actor: "agent",
+    ts: new Date().toISOString(),
+    tokens: null,
+    compacted: false,
+    parts: [
+      {
+        type: "tool_call",
+        call_id: "q1",
+        tool: "question",
+        args,
+        state: state as ToolCallPart["state"],
+      },
+    ],
+  };
+  return { ...emptyChat(), messages: [msg] };
+}
+
+describe("A2/A3 · question bubble choice chips", () => {
+  it("renders one chip per offered choice and marks the declared default", () => {
+    render(
+      <ChatThread
+        active
+        chat={questionChat({
+          prompt: "Which host?",
+          choices: ["corsair", "emma"],
+          default: "emma",
+        })}
+      />,
+    );
+    expect(screen.getByText("Which host?")).toBeTruthy();
+    const corsair = screen.getByText("corsair");
+    const emma = screen.getByText("emma");
+    expect(corsair.className).toContain("q-chip");
+    expect(corsair.className).not.toContain("preferred");
+    expect(emma.className).toContain("preferred"); // the answer an unattended run would assume
+    expect(screen.getByPlaceholderText("type your answer…")).toBeTruthy(); // free text stays
+  });
+
+  it("drops non-string and blank options rather than rendering an empty chip", () => {
+    const { container } = render(
+      <ChatThread active chat={questionChat({ prompt: "Pick", choices: ["ok", "", 7, null] })} />,
+    );
+    expect(container.querySelectorAll(".q-chip").length).toBe(1);
+  });
+
+  it("renders no chip row at all when the question offers no choices", () => {
+    const { container } = render(
+      <ChatThread active chat={questionChat({ prompt: "Open one?" })} />,
+    );
+    expect(container.querySelector(".q-choices")).toBeNull();
+    expect(screen.getByPlaceholderText("type your answer…")).toBeTruthy();
+  });
+
+  it("shows no chips once the question is resolved (the bubble renders its outcome instead)", () => {
+    const chat = questionChat({ prompt: "Which host?", choices: ["corsair"] }, "ok");
+    const { container } = render(<ChatThread active chat={chat} />);
+    expect(container.querySelector(".q-choices")).toBeNull();
   });
 });
 
