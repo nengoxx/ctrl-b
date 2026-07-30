@@ -41,13 +41,18 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-TurnKind = Literal["chat", "resume", "exec", "plan", "apply", "compact"]
+#: `automation` is a scheduled run's turn (A3/D49 §D-2): a turn nobody requested, driven through this
+#: same machinery by the runner (the `start_steer_turn` precedent) rather than around it — so Stop, the
+#: `max_active_turns` cap, live re-attach and the one marker lifecycle all cover it for free.
+TurnKind = Literal["chat", "resume", "exec", "plan", "apply", "compact", "automation"]
 
 #: Kinds that spawn a server-owned drain task (D39) — the async turn loop runs detached and is
 #: cancellable. The sync kinds (exec/plan/apply/compact) run inline in their handler and hold the
 #: per-thread marker for their (short) duration; they never get a `task` and are exempt from the
-#: `max_active_turns` cap.
-TASK_KINDS: frozenset[TurnKind] = frozenset({"chat", "resume"})
+#: `max_active_turns` cap. `automation` IS task-bearing and deliberately counts against the cap
+#: (§D-2 "max_active_turns sees automation turns"): a scheduled run costs the same inference capacity
+#: as a chat turn, and the runner treats a saturated cap as a failed run rather than queueing past it.
+TASK_KINDS: frozenset[TurnKind] = frozenset({"chat", "resume", "automation"})
 
 #: Terminal sentinel pushed onto every subscriber queue once a turn ends (D39/M2). A subscriber's
 #: consumer loop stops when it dequeues this; it is NOT an `AgentEvent` (never framed onto the wire),

@@ -881,6 +881,38 @@ class WakeCfg(BaseModel):
     cooldown_s: int = Field(default=300, ge=0)  # per-host seconds between wake-on-connect fires
 
 
+class AutomationsCfg(BaseModel):
+    """Scheduled agent automations (A3/D49 §D-7) — the TUNABLES only.
+
+    The automations themselves live in SQLite, deliberately (§D-1): they are agent-writable records, and
+    a bad one must never be able to brick the config-validated boot — the unit crash-loops on a config
+    this build cannot load, and the only UI for fixing that is the one that would be down. What belongs
+    in config is what the OPERATOR sets once: how the runner behaves.
+
+    `enabled=True` is safe as a default because it arms nothing on its own: with no automations stored,
+    the loop polls an empty table. Turning it OFF is the master switch (the loop keeps idling and applies
+    the change with no restart), which is what makes it useful during an incident.
+
+    - `poll_seconds`: how often the claim scan runs. Named to match `server.poll_seconds`.
+    - `default_timeout_s`: the wall-clock deadline for a run that sets none of its own; the runner cancels
+      the turn through `cancel_turn` when it passes.
+    - `max_count`: how many definitions may exist AT ALL (counted + inserted in one transaction, so the
+      cap cannot be raced). A cap the agent can hit too — hence the refusal names the remedy.
+    - `misfire_grace_s`: how late a slot may still fire. Past it the run is recorded `missed` and skipped
+      (owner ruling 3) — a box asleep at 09:00 does not run the 09:00 job at noon.
+    - `keep_runs`: run rows kept per automation; older ones are pruned WITH their per-run threads (an
+      hourly automation would otherwise leave ~8.7k invisible archived threads a year)."""
+
+    model_config = {"extra": "allow"}
+
+    enabled: bool = True
+    poll_seconds: int = Field(default=10, ge=1, le=3600)
+    default_timeout_s: int = Field(default=300, ge=1, le=86_400)
+    max_count: int = Field(default=20, ge=1, le=500)
+    misfire_grace_s: int = Field(default=300, ge=0, le=86_400)
+    keep_runs: int = Field(default=50, ge=1, le=1000)
+
+
 class Settings(BaseModel):
     """Typed view over `config.yaml`.
 
@@ -911,6 +943,8 @@ class Settings(BaseModel):
     notifications: NotificationsCfg = Field(default_factory=NotificationsCfg)
     #: Fleet wake automation (ROADMAP D2) — today the wake-on-connect cooldown (D2-B).
     wake: WakeCfg = Field(default_factory=WakeCfg)
+    #: Scheduled agent automations (A3/D49) — runner tunables only; the definitions live in SQLite.
+    automations: AutomationsCfg = Field(default_factory=AutomationsCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
     #: Agents are **folder-only** (D14/D15 #3): discovered by scanning `$CTRLB_HOME/agents/<name>/`

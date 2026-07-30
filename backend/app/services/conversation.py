@@ -76,6 +76,24 @@ class ThreadRepo:
         threads = await self.list()
         return threads[0] if threads else None
 
+    async def delete(self, thread_id: str) -> bool:
+        """Delete a thread and everything hanging off it. Returns whether a row went.
+
+        The first thread-deleting path in the app (A3 retention: an hourly automation would otherwise
+        accumulate ~8.7k invisible archived threads a year — §D-1). One statement is enough: `messages`
+        declares `ON DELETE CASCADE` on `thread_id` and the connection runs with `PRAGMA
+        foreign_keys=ON`, so the messages go with the thread, and the cascade fires the `messages_fts_ad`
+        trigger on each one — so the FTS index is cleaned too, rather than left with rows pointing at
+        deleted messages (which `session_search` would then join into nothing).
+
+        Deliberately unconditional on `archived`: the caller decides what it owns. Automations only ever
+        pass a thread they created."""
+        rows = await self._db.query("SELECT id FROM threads WHERE id = ?", (thread_id,))
+        if not rows:
+            return False
+        await self._db.execute("DELETE FROM threads WHERE id = ?", (thread_id,))
+        return True
+
     @staticmethod
     def _row(r) -> Thread:
         return Thread(

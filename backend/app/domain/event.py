@@ -16,11 +16,25 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.enums import Actor, RunState
+
+
+def _as_enum(value: object, enum: type[StrEnum]) -> object:
+    """`value` as its `StrEnum` member when the vocabulary has it, else unchanged (see `StoredActor`)."""
+    if isinstance(value, enum):
+        return value
+    if isinstance(value, str):
+        try:
+            return enum(value)
+        except ValueError:
+            return value  # a row from a build that knew a member this one doesn't — keep the raw text
+    return value
+
 
 #: Who set an invocation in motion — the WRITABLE vocabulary: exactly what a caller may declare at the
 #: gate. Records the IMMEDIATE initiator only — an automation's subagent's calls read `subagent`, not
@@ -43,6 +57,20 @@ UNKNOWN_ORIGIN: EventOriginKind = "unknown"
 #: `approval` = a persisted D44 approval rule matched · `policy` = the gate DENIED it. The
 #: machine-readable column D44's summary-string marker lacked (that marker is unchanged).
 DecisionReason = Literal["auto", "confirmed", "approval", "policy"]
+
+#: What a STORED `actor`/`status` may read as (14a carry-forward). The strict enum is what any code path
+#: WRITES; a plain `str` is what a row this build cannot interpret degrades to on the way OUT.
+#:
+#: Same rollback fragility as `origin` above, same rule — one strange row must not take `GET /api/events`
+#: down with it — but a different shape, because these are ENUMS: adding an `UNKNOWN` member would make
+#: the sentinel mintable at every write site (and `RunState` is shared with live tool results, where an
+#: "unreadable" state has no business existing). The union keeps the enums closed and PRESERVES the raw
+#: text instead of collapsing it, which for an audit surface is strictly better than a sentinel: the row
+#: still says what it actually recorded. `StrEnum` members compare equal to their value, so every existing
+#: `event.actor == Actor.AGENT` / status-string consumer is unaffected either way; the read boundary
+#: (`services/events.py`) is the only place that mints the `str` arm.
+StoredActor = Actor | str
+StoredStatus = RunState | str
 
 
 class Origin(BaseModel):
@@ -74,10 +102,14 @@ def _now() -> datetime:
 class Event(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     ts: datetime = Field(default_factory=_now)
-    actor: Actor
+    #: Written as an `Actor`/`RunState` by every producer (the gate, the exec path, the automation
+    #: runner). Typed as the wider `Stored*` union ONLY so the read boundary can hand back a row whose
+    #: value this build does not know — see the types' own note. The before-validators below decide the
+    #: arm explicitly rather than leaving it to union inference, so a known value is ALWAYS the enum.
+    actor: StoredActor
     action: str
     target: str | None = None  # host id / resource the action touched
-    status: RunState
+    status: StoredStatus
     summary: str | None = None
     output: str | None = None  # redacted + truncated upstream
     #: The `Origin` flattened onto the audit row (one column each, matching migration 4) — the shape
@@ -87,3 +119,19 @@ class Event(BaseModel):
     origin_id: str | None = None
     run_id: str | None = None
     decision: DecisionReason | None = None  # NULL for a record written outside the permission gate
+
+    @field_validator("actor", mode="before")
+    @classmethod
+    def _coerce_actor(cls, v: object) -> object:
+        """A known value becomes the real `Actor` member; anything else passes through as text.
+
+        Explicit rather than left to pydantic's smart-union inference: for `Actor | str` a plain string
+        input could plausibly satisfy either arm, and "user" landing as a bare `str` would silently take
+        `.value` away from every consumer. This makes the arm deterministic — enum for the vocabulary,
+        text only for what this build cannot read."""
+        return _as_enum(v, Actor)
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _coerce_status(cls, v: object) -> object:
+        return _as_enum(v, RunState)

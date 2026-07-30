@@ -870,12 +870,23 @@ _OVERFLOW = InferenceError(
 
 
 def _backstop_session(state, thread, *, summary: str | None = "tiny summary"):
-    """A session whose pre-stream auto-compaction is inert (big window, so never over threshold) and
-    whose summarizer either shrinks (`summary` set) or inflates (`summary=None`, huge reply → reject)."""
+    """A session whose pre-stream auto-compaction is inert (never over threshold) and whose summarizer
+    either shrinks (`summary` set) or inflates (`summary=None`, huge reply → reject).
+
+    Inert on BOTH trigger paths (A3 slice 2 fix). The big-window stub below only governs the
+    window-derived trigger, and it is only consulted when an endpoint RESOLVES — this workspace's config
+    declares no providers, so `target_for` returns None and the trigger falls back to the ABSOLUTE
+    `threshold_tokens`, priced against an estimate that includes the whole tool-schema head. That made
+    "is the pre-stream compaction inert?" a function of how many tools happen to be registered in the
+    process (the global registry accumulates open-terminal tools from any earlier test that booted an app
+    with one configured), and it silently flipped when the `question` tool grew two fields: a PROACTIVE
+    fold then fired before the first stream call and these tests were no longer exercising the backstop
+    at all. Raising the absolute threshold too makes the helper's documented intent true by construction
+    — the backstop's own `force=True` fold ignores every threshold, so nothing under test is weakened."""
     from app.api.agent import _build_session
 
     session = _build_session(state, thread)
-    cfg = CompactionCfg(keep_last_messages=2, keep_recent_tokens=5)
+    cfg = CompactionCfg(keep_last_messages=2, keep_recent_tokens=5, threshold_tokens=10_000_000)
     session._compaction_cfg = cfg
     session._compactor = Compactor(session._inference, state.messages, cfg)
 

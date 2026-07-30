@@ -9,8 +9,10 @@ owner's reply reopens the stream via `resume(decision="answer", answer=…)`, wh
 this call's result (the model reads it like any tool output) and continues the loop.
 
 `core=True` (the cognitive set, like `task_plan`/`memory`): asking for clarification is a fundamental
-capability every agent should have. A **headless subagent** has no one to ask, so the loop converts the
-suspend into a DENIED result there — the subagent reports it couldn't ask and carries on, never hanging.
+capability every agent should have. A **headless** session has no one to ask, so the loop resolves the
+suspend itself and the turn never hangs: a subagent gets a DENIED result and carries on, while an
+unattended automation run follows its `question_policy` (§D-3) — `skip` is that same DENIED, and
+`use_default` answers from the `default`/`choices` offered below so the run keeps moving.
 
 LOW risk → auto-runs under the agent's privilege (no confirm gate); the suspend is the whole point.
 """
@@ -33,6 +35,28 @@ class QuestionInput(BaseModel):
             "(those are confirmed automatically)."
         ),
     )
+    #: A2's locked bubble shape, additive (§D-3 / council R-1). Both optional: every call that worked
+    #: before still works, and a call that fills them in is strictly better — the owner gets one-tap
+    #: chips instead of typing, and an UNATTENDED run (an automation with `question_policy:
+    #: use_default`) can resolve the question itself from `default` → `choices[0]` instead of skipping it.
+    #: They reach the model's tool schema the moment they exist, which is why the interactive rendering
+    #: ships in the same slice.
+    choices: list[str] | None = Field(
+        default=None,
+        description=(
+            "Optional short answer options, if the question is a choice between a few known ones (e.g. "
+            "['corsair', 'emma']). The owner gets them as one-tap buttons and can still type something "
+            "else. Omit for a genuinely open question."
+        ),
+    )
+    default: str | None = Field(
+        default=None,
+        description=(
+            "Optional answer to assume if the owner is not there to reply (an unattended scheduled run "
+            "may proceed with it instead of skipping the step). Set it whenever one answer is the "
+            "sensible, safe assumption; omit it when guessing would be wrong."
+        ),
+    )
 
 
 @action(
@@ -42,7 +66,10 @@ class QuestionInput(BaseModel):
         "Ask the owner a clarifying question and wait for their answer before continuing. Use it when a "
         "request is genuinely ambiguous and you can't resolve it from the fleet roster or context — ask "
         "instead of guessing. Don't use it to ask permission for a risky action (those are confirmed for "
-        "you) or to narrate progress. The turn pauses until the owner replies; then you get their answer."
+        "you) or to narrate progress. The turn pauses until the owner replies; then you get their answer. "
+        "Offer `choices` when the answer is one of a few known options (the owner gets one-tap buttons), "
+        "and `default` when one answer is a safe assumption — a scheduled run with no owner present can "
+        "then proceed with it instead of skipping the step."
     ),
     icon="help-circle",
     category="builtin",
@@ -62,4 +89,15 @@ async def question(inp: QuestionInput, ctx: InvocationContext) -> ToolResult:
             summary="empty question",
             error="`prompt` is required — what do you want to ask?",
         )
-    return ToolResult(state=RunState.AWAITING_ANSWER, summary=text)
+    # The OFFER rides in `data` (§D-3): the tool declares what it is willing to have assumed, and the
+    # loop's unattended ladder reads it from there rather than from the model's raw args — so the session
+    # stays ignorant of this input model's field names and any future suspending tool can offer the same.
+    # Blank/empty values are dropped, so "offered nothing" and "offered an empty string" can't be
+    # confused. The interactive path is untouched: it renders the durable `args` on the question bubble.
+    offer: dict[str, object] = {}
+    choices = [c.strip() for c in (inp.choices or []) if c and c.strip()]
+    if choices:
+        offer["choices"] = choices
+    if inp.default and inp.default.strip():
+        offer["default"] = inp.default.strip()
+    return ToolResult(state=RunState.AWAITING_ANSWER, summary=text, data=offer)

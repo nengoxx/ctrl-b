@@ -87,6 +87,7 @@ from app.services.agent.turns import (
     cancel_turn,
     reconcile_stale_calls,
 )
+from app.services.automations import AutomationRepo, AutomationRunner, AutomationService
 from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.deps import Deps
 from app.services.events import EventService
@@ -280,6 +281,24 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("startup stale-call reconcile failed — continuing")
 
+    # Scheduled automations (A3/D49). The repo + service are wired first (the API and the agent tools
+    # read them off app.state), then the boot ORPHAN SWEEP, and only THEN the poll loop — the ordering is
+    # load-bearing (§D-2): a `running` row left by a dead process must be resolved to `interrupted` before
+    # anything can claim a new run, or the automation reads as permanently busy. Both sweeps (stale calls
+    # above, orphan runs here) are best-effort for the same reason: a DB hiccup must not abort startup.
+    app.state.automations = AutomationRepo(app.state.db)
+    app.state.automation_service = AutomationService(
+        app.state.automations, app.state.settings, app.state.threads, app.state.events
+    )
+    try:
+        await app.state.automation_service.sweep_orphans()
+    except Exception:
+        logger.exception("startup automation orphan sweep failed — continuing")
+    app.state.automation_runner = AutomationRunner(app, app.state.automation_service)
+    # Started unconditionally: the loop re-reads `automations.enabled` every iteration, so the master
+    # switch is live from Conf instead of needing a restart (an off switch just idles the poll).
+    app.state.automation_task = asyncio.create_task(app.state.automation_runner.loop())
+
     try:
         yield
     finally:
@@ -304,6 +323,14 @@ async def lifespan(app: FastAPI):
                     logger.warning(
                         "turn %s did not drain within %.1fs", h.turn_id, turns_cfg.shutdown_grace_s
                     )
+        # A3/D49: the automation loop is cancelled AFTER the turn drain above and BEFORE the idle sweeps
+        # and any adapter/DB close. Both halves matter: an automation run's turn IS one of the handles
+        # drained above (kind `automation` lives in the same registry), and the runner's shielded
+        # finalizer still has to write the run's terminal status — which needs `app.state.db` open. The
+        # `shutting_down` flag set at the top of this block already stops it starting anything new.
+        app.state.automation_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await app.state.automation_task
         app.state.memory_sweep_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.memory_sweep_task

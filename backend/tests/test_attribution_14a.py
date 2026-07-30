@@ -110,18 +110,25 @@ def test_migration_v4_backfills_a_legacy_row_and_adds_the_columns() -> None:
         finally:
             dbmod.MIGRATIONS = real
 
-        assert version == 4
+        # Booting the SHIPPED code applies every migration, so the stamp is the current tail — not
+        # literally 4 (slice 2 appended v5). Compared against `MIGRATIONS` so appending another one never
+        # makes this test about the wrong thing; what it is here to prove is the v4 columns below.
+        assert version == dbmod.MIGRATIONS[-1][0] >= 4
         for col in ("origin", "origin_id", "run_id", "decision"):
             assert col in cols
         assert values == ("user_chat", None, None, None)
 
 
-def test_migrations_are_append_only_up_to_v4() -> None:
-    """The numbering invariant the release path depends on (db.py header): versions ascend by one and
-    v4 is the tail — a re-ordered or re-used number silently skips a migration on an existing box."""
+def test_migrations_are_append_only() -> None:
+    """The numbering invariant the release path depends on (db.py header): versions ascend by one from 1
+    with no gaps and no re-use — either of which silently skips a migration on an existing box. Stated as
+    the RULE rather than as today's tail (which was `[1, 2, 3, 4]` until slice 2 appended v5), so the
+    guard keeps holding as migrations land instead of being edited into agreement each time."""
     from app.db import MIGRATIONS
 
-    assert [v for v, _ in MIGRATIONS] == [1, 2, 3, 4]
+    versions = [v for v, _ in MIGRATIONS]
+    assert versions == list(range(1, len(MIGRATIONS) + 1))
+    assert versions[-1] >= 4  # v4 (this slice's own migration) is in, and stays in
 
 
 # ── 2./3. threading the origin through the chokepoint ───────────────────────────────────────────
@@ -531,6 +538,52 @@ def test_the_sentinel_is_unwritable_by_construction_not_by_convention() -> None:
     assert stored.origin == UNKNOWN_ORIGIN
     assert set(get_args(OriginKind)) == set(_KINDS)
     assert _literal_values(EventOriginKind) == set(_KINDS) | {UNKNOWN_ORIGIN}
+
+
+def test_an_unknown_actor_or_status_degrades_instead_of_failing_the_whole_history() -> None:
+    """The carry-forward of the same class (A3 slice 2): `actor` and `status` are ENUMS, and
+    `Actor(...)`/`RunState(...)` RAISED on a value this build has never heard of — one row from a newer
+    build, and `GET /api/events` was a 500 for the whole trail. They now degrade like `origin` does, but
+    by PASSING THE RAW TEXT THROUGH rather than collapsing to a sentinel: for an audit surface, "this
+    row says `fleet_agent`" beats "this row says unknown", and skipping the row outright is not an
+    option at all. A known value still lands as the real enum member, so `.value` and every enum
+    comparison behave exactly as before."""
+    from app.domain.enums import Actor, RunState
+
+    with _workspace(), _client() as c:
+        _run(
+            c.app.state.db.execute(
+                "INSERT INTO events (id, ts, actor, action, target, status, summary, output, origin, "
+                "origin_id, run_id, decision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "weird",
+                    "2026-07-30T12:00:00+00:00",
+                    "fleet_agent",  # an actor a v1.6 build knows about
+                    "wake_host",
+                    "alpha",
+                    "quarantined",  # …and a run state it knows about
+                    "sent",
+                    None,
+                    "user_chat",
+                    None,
+                    None,
+                    None,
+                ),
+            )
+        )
+        _insert_row(c, event_id="row1", origin="user_chat", decision="auto")
+
+        by_id = {e.id: e for e in _run(c.app.state.events.recent(10))}
+        assert len(by_id) == 2  # the read survived — the regression this closes
+        assert (by_id["weird"].actor, by_id["weird"].status) == ("fleet_agent", "quarantined")
+        assert by_id["weird"].summary == "sent"  # degrade the field, keep the record
+        # …a known value is still the ENUM, not a look-alike string.
+        assert by_id["row1"].actor is Actor.USER
+        assert by_id["row1"].status is RunState.OK
+        # …and the endpoint the SPA polls stays a 200 carrying both.
+        body = c.get("/api/events").json()
+        assert {r["id"] for r in body} == {"weird", "row1"}
+        assert next(r for r in body if r["id"] == "weird")["actor"] == "fleet_agent"
 
 
 def test_a_real_invocation_records_the_kind_it_was_given() -> None:

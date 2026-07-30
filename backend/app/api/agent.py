@@ -34,9 +34,10 @@ from app.config import Settings, deep_merge, is_provider_slug, providers_rev
 from app.core.fsutil import write_text_eol
 from app.core.memory import StoreScope, StoreSpec, store_by_key
 from app.domain.agent import AgentDef
+from app.domain.automation import AutomationSnapshot
 from app.domain.conversation import Message, Thread, ToolCallPart, ToolResultPart
 from app.domain.enums import Actor, Privilege, RunState
-from app.domain.event import ORIGIN_USER_CHAT, Event
+from app.domain.event import ORIGIN_USER_CHAT, Event, Origin
 from app.domain.plan import Plan
 from app.domain.result import ToolResult
 from app.runtime import clear_reasoning_demotions, rediscover_integrations
@@ -214,13 +215,30 @@ def _build_session(
     thread: Thread | None = None,
     agent_name: str | None = None,
     privilege: Privilege | None = None,
+    automation: AutomationSnapshot | None = None,
 ) -> AgentSession:
     """Build a session from `app.state` (NOT a Request) — the state-shaped core of `_session`, shared
-    with the D41 drain-B spawn (`start_steer_turn`, which has only `state`, never a Request). Resolves
-    which `AgentDef` drives the turn: `agent_name` (the `/agent <name>` switch, 7d) wins; else the
-    thread's `agent` field (D11); else the configured default. `privilege` is the `/privilege` session
-    override (A1/D16). Wires the D41 Drain-A `steer_source` when a thread is resolved (subagent sessions
-    build the session directly with the `None` default — children are never steered)."""
+    with the D41 drain-B spawn (`start_steer_turn`, which has only `state`, never a Request) and with the
+    A3 automation runner. Resolves which `AgentDef` drives the turn: `agent_name` (the `/agent <name>`
+    switch, 7d) wins; else the thread's `agent` field (D11); else the configured default. `privilege` is
+    the `/privilege` session override (A1/D16). Wires the D41 Drain-A `steer_source` when a thread is
+    resolved (subagent sessions build the session directly with the `None` default — children are never
+    steered).
+
+    `automation` (A3/D49 §D-3) is the ONE options object that turns this into an UNATTENDED run — the
+    frozen claim snapshot itself, so the builder cannot disagree with the row the run was claimed from.
+    Everything it changes is derived here rather than passed as a bag of bools:
+
+      * `interactive=False` — a confirm-gated call denies in place instead of parking the run forever.
+      * `message_actor=AUTOMATION` — the injected prompt was not typed by the owner.
+      * `question_policy` — what an unattended `question` resolves to (§D-3 ladder).
+      * no `steer_source` — there is no composer to steer a scheduled run from.
+      * compaction state only for a ROLLING thread: those grow across runs and need the thrash machine;
+        a fresh per-run thread cannot outlive its one turn, so a per-thread state entry would just leak.
+      * `origin=automation` + the run id — the attribution D-4 threads through every action it takes.
+
+    Kept as ONE builder on purpose (the no-parallel-implementation rule): a separate automation builder
+    would be a second place for the steer/compaction/routing/skills wiring to drift."""
     name = agent_name or (thread.agent if thread else None)
     agent = resolve_session_agent(state.settings, name, privilege)
     return AgentSession(
@@ -233,13 +251,26 @@ def _build_session(
         skills=getattr(state, "skills", None),
         selector=getattr(state, "skill_selector", None),
         memory=getattr(state, "memory", None),
-        steer_source=steer_source_for(state, thread.id) if thread is not None else None,
-        compaction_state=(compaction_state_for(state, thread.id) if thread is not None else None),
+        interactive=automation is None,
+        steer_source=(
+            steer_source_for(state, thread.id) if thread is not None and automation is None else None
+        ),
+        compaction_state=(
+            compaction_state_for(state, thread.id)
+            if thread is not None and (automation is None or automation.rolling)
+            else None
+        ),
         routing_state=(routing_state_for(state, thread.id) if thread is not None else None),
-        # Every session this builder produces is the owner talking to the app (D-4). Stated, not
-        # inherited from the default: this is THE interactive builder, so the automation runner that
-        # reuses it in slice 2 overrides one obvious argument instead of relying on an omission.
-        origin=ORIGIN_USER_CHAT,
+        # Who set this in motion (D-4). Stated, never inherited from the field default: this is THE
+        # shared builder, so an automation run overrides the obvious arguments instead of relying on an
+        # omission — and an interactive turn says out loud that it is the owner talking to the app.
+        origin=(
+            ORIGIN_USER_CHAT
+            if automation is None
+            else Origin(kind="automation", id=automation.automation_id, run_id=automation.run_id)
+        ),
+        message_actor=Actor.USER if automation is None else Actor.AUTOMATION,
+        question_policy="skip" if automation is None else automation.question_policy,
     )
 
 
@@ -291,6 +322,30 @@ def _effective_stream(setting: str, requested: bool) -> bool:
 # The single 409 detail for a thread that already has a live turn (D38 busy-truth; the manual
 # rediscover endpoint uses its own message). Actionable per Goose's busy-error precedent.
 _TURN_BUSY_DETAIL = "a turn is already running on this thread — wait for it to finish"
+# A3/D49 §D-3: an automation's ROLLING thread is the automation's own continuing conversation. Chatting
+# into it would interleave the owner's turns with scheduled runs and silently change what the next run
+# reads as its context, so v1 refuses (takeover/detach is a recorded future). 403, not the busy 409:
+# nothing is running — this is simply not the owner's thread to talk in.
+_AUTOMATION_THREAD_DETAIL = (
+    "this thread belongs to an automation's continuing conversation — read it from the automation's "
+    "run history instead; chatting into it would change what its next scheduled run sees"
+)
+
+
+async def _reject_automation_thread(state, thread: Thread) -> None:
+    """Refuse an interactive turn aimed at an automation-owned ROLLING thread (§D-3).
+
+    Only rolling threads are owned: a `fresh` per-run thread is deliberately free to continue in chat once
+    its run is terminal (the AnythingLLM pattern), and while such a run is LIVE the turn marker already
+    refuses through the ordinary busy path. Tolerates a missing repo (`getattr`) so unit paths that build
+    an app state without the automations subsystem behave exactly as before."""
+    repo = getattr(state, "automations", None)
+    if repo is None:
+        return
+    if await repo.rolling_owner(thread.id) is not None:
+        raise HTTPException(status_code=403, detail=_AUTOMATION_THREAD_DETAIL)
+
+
 # The 409 detail when the server-wide concurrency cap (`agent.turns.max_active_turns`, D39) is hit by
 # a NEW task-bearing turn (chat/resume). Distinct + actionable, separate from the per-thread busy 409.
 _TURN_CAP_DETAIL = "too many turns are running — wait for one to finish"
@@ -1010,6 +1065,8 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     when buffered (D17), one JSON payload `{threadId, title, state, messageId?, permission?, …}`."""
     threads = request.app.state.threads
     thread = await threads.get(body.thread_id) if body.thread_id else None
+    if thread is not None:
+        await _reject_automation_thread(request.app.state, thread)  # §D-3 rolling-thread guard
     if thread is None:
         thread = await threads.create(Thread(title=body.text[:60]))
 
@@ -1091,6 +1148,8 @@ async def exec_shell(body: ExecRequest, request: Request) -> dict[str, Any] | Re
 
     threads = request.app.state.threads
     thread = await threads.get(body.thread_id) if body.thread_id else None
+    if thread is not None:
+        await _reject_automation_thread(request.app.state, thread)  # §D-3 rolling-thread guard
     if thread is None:
         thread = await threads.create(Thread(title=f"! {body.command[:58]}"))
 

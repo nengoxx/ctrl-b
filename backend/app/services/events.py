@@ -5,7 +5,10 @@ DESIGN.md §0.5/§8/§12. `output` is redacted upstream by the action layer befo
 this service does not handle secrets.
 
 The read (`recent`) is the ONE place a stored row becomes a domain `Event` again, so it is also the one
-place that tolerates a row this build cannot fully interpret — see `_origin_kind`/`_decision`.
+place that tolerates a row this build cannot fully interpret — see `_origin_kind`/`_decision` for the
+Literal columns, and `Event`'s own `actor`/`status` validators for the enum ones. The rule is the same
+everywhere: degrade the FIELD, never drop the record — a rollback (D32) is exactly when the history is
+worth reading.
 """
 
 from __future__ import annotations
@@ -15,7 +18,6 @@ from typing import cast, get_args
 
 from app.core.events import EventBus
 from app.db import Database
-from app.domain.enums import Actor, RunState
 from app.domain.event import UNKNOWN_ORIGIN, DecisionReason, Event, EventOriginKind, OriginKind
 
 #: The attribution vocabularies this build understands, derived from the domain Literals so there is no
@@ -60,10 +62,14 @@ class EventService:
             (
                 event.id,
                 event.ts.isoformat(),
-                event.actor.value,
+                # `str()` rather than `.value`: the fields are typed `Actor | str` for the read side (see
+                # `domain/event.py`), and `StrEnum.__str__` IS the value — so this writes the same bytes
+                # for a real member and passes an unreadable one through unchanged (a row round-tripped
+                # by a downgraded build keeps what it said instead of being rewritten).
+                str(event.actor),
                 event.action,
                 event.target,
-                event.status.value,
+                str(event.status),
                 event.summary,
                 event.output,
                 event.origin,
@@ -86,10 +92,15 @@ class EventService:
             Event(
                 id=r["id"],
                 ts=_parse_ts(r["ts"]),
-                actor=Actor(r["actor"]),
+                # 14a carry-forward: `Actor(...)`/`RunState(...)` RAISED on a value this build doesn't
+                # know — inside this comprehension, so one row from a newer build blanked the whole audit
+                # trail. Handing the raw column to the model instead lets its before-validator narrow it
+                # to the enum when it can and keep the text when it can't (skipping the row is not an
+                # option for an audit read; neither is inventing an actor it wasn't).
+                actor=r["actor"],
                 action=r["action"],
                 target=r["target"],
-                status=RunState(r["status"]),
+                status=r["status"],
                 summary=r["summary"],
                 output=r["output"],
                 origin=_origin_kind(r["origin"]),

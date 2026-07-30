@@ -68,13 +68,42 @@ _BLOCKING_MODULE_CALLS = {
     ("shutil", "move"),
 }
 
-#: `<path>:<line>: <call>` sites deliberately left on the loop, each with its reason.
-_ALLOWED = {
+#: Blocking-fs sites deliberately left on the loop, keyed `<path>: <call>` → how many are waived there,
+#: each with its reason.
+#:
+#: Deliberately NOT line-keyed (A3 slice 2 carry-forward): the old `app/db.py:201: mkdir` form made every
+#: edit ABOVE a waived line — adding a migration, extending a docstring — fail this test for a reason
+#: that has nothing to do with the invariant, and the fix was always to renumber the waiver, which is
+#: exactly the kind of edit that stops being read. The COUNT keeps the guarantee the line number was
+#: carrying: a SECOND `mkdir` appearing anywhere in db.py is still an unexpected hit, because the file's
+#: waived total is pinned at one. (What is genuinely lost is "that specific line" — a moved-and-replaced
+#: call of the same name in the same file would pass. Worth it: the file is the meaningful unit here, and
+#: the reason below is about the call, not about where it sits.)
+_ALLOWED: dict[str, int] = {
     # One mkdir on the SQLite parent dir, at process startup inside the lifespan `connect()` —
     # before the server accepts traffic, so there is no loop to stall (and it must happen before
     # aiosqlite opens the file). Moving it to a thread would buy nothing.
-    "app/db.py:201: mkdir",
+    "app/db.py: mkdir": 1,
 }
+
+
+def _anchor(hit: str) -> str:
+    """A `<path>:<line>: <call>` hit re-keyed to its stable anchor `<path>: <call>` (see `_ALLOWED`)."""
+    path, _, call = hit.partition(":")
+    return f"{path}: {call.partition(': ')[2]}"
+
+
+def _unwaived(hits: list[str]) -> list[str]:
+    """Hits beyond what `_ALLOWED` waives: everything at an un-waived anchor, plus the SURPLUS at a
+    waived one (sorted, so a surplus reports the specific extra sites and not the whole group)."""
+    grouped: dict[str, list[str]] = {}
+    for hit in sorted(set(hits)):
+        grouped.setdefault(_anchor(hit), []).append(hit)
+    out: list[str] = []
+    for anchor, sites in grouped.items():
+        out += sites[_ALLOWED.get(anchor, 0) :]
+    return sorted(out)
+
 
 #: Direct `async def` → blocking-sync-helper calls deliberately left as-is (same format, same rules).
 _ALLOWED_HELPER_CALLS: set[str] = set()
@@ -140,16 +169,32 @@ def test_no_blocking_filesystem_calls_inside_async_defs():
     for py in sorted((BACKEND / "app").rglob("*.py")):
         hits += _blocking_fs_in_async(py)
 
-    unexpected = sorted(set(hits) - _ALLOWED)
+    unexpected = _unwaived(hits)
     assert not unexpected, (
         "blocking filesystem call inside an `async def` (SYS-16) — it stalls the event loop for "
         f"every other request: {unexpected}. Hoist the whole blocking sequence into ONE sync helper "
         "and call it via `asyncio.to_thread` (see `api/agent.py::_write_soul`, "
         "`memory_backup._prep_repo_dir`), or add it to _ALLOWED with a reason."
     )
-    # And the allowlist can't rot into dead entries:
-    stale = sorted(_ALLOWED - set(hits))
+    # And the allowlist can't rot into dead entries (a waiver for a site that no longer exists, or one
+    # waiving MORE sites than the file actually has):
+    found: dict[str, int] = {}
+    for hit in set(hits):
+        found[_anchor(hit)] = found.get(_anchor(hit), 0) + 1
+    stale = sorted(a for a, n in _ALLOWED.items() if found.get(a, 0) < n)
     assert not stale, f"allowlisted blocking-fs sites are gone — prune the allowlist: {stale}"
+
+
+def test_the_waiver_is_keyed_to_the_file_not_the_line():
+    """The re-keying itself (A3 slice 2 carry-forward): a waived call that MOVES stays waived, an extra
+    one at the same anchor does not. That is the whole point — editing db.py above line 201 used to fail
+    this test for a reason unrelated to the invariant, and the "fix" was to renumber the waiver."""
+    moved = ["app/db.py:1: mkdir"]  # the same call, anywhere in the same file
+    assert _unwaived(moved) == []
+    surplus = ["app/db.py:1: mkdir", "app/db.py:2: mkdir"]  # a SECOND one is still a finding
+    assert _unwaived(surplus) == ["app/db.py:2: mkdir"]
+    assert _unwaived(["app/db.py:1: read_text"]) == ["app/db.py:1: read_text"]  # different call
+    assert _unwaived(["app/other.py:1: mkdir"]) == ["app/other.py:1: mkdir"]  # different file
 
 
 def _blocking_helpers(tree: ast.Module) -> set[str]:
@@ -213,7 +258,7 @@ def test_no_blocking_sync_helpers_called_straight_from_async():
             py.read_text(encoding="utf-8"), py.relative_to(BACKEND).as_posix()
         )
 
-    unexpected = sorted(set(hits) - _ALLOWED_HELPER_CALLS)
+    unexpected = sorted(set(hits) - _ALLOWED_HELPER_CALLS)  # empty allowlist — nothing to re-key here
     assert not unexpected, (
         "an `async def` calls a blocking sync helper directly (SYS-16) — hoisting the fs work into a "
         f"helper only fixes the stall if the helper is reached via `asyncio.to_thread`: {unexpected}"

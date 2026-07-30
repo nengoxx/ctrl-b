@@ -14,8 +14,8 @@ message pairs) commit atomically via `transaction()` (SYS-1) — otherwise `exec
 statement and a crash mid-sequence tears state.
 
 Phase 0 creates the v1 tables the rest of the app builds on — threads, messages, memory,
-events. Repositories and later tables (automations, push_subscriptions, pending_actions)
-arrive with the phases that need them.
+events; migration 5 adds the automations pair (A3/D49). Repositories and later tables
+(push_subscriptions, pending_actions) arrive with the phases that need them.
 """
 
 from __future__ import annotations
@@ -167,6 +167,63 @@ MIGRATIONS: list[tuple[int, str]] = [
         ALTER TABLE events ADD COLUMN origin_id  TEXT;
         ALTER TABLE events ADD COLUMN run_id     TEXT;
         ALTER TABLE events ADD COLUMN decision   TEXT;
+        """,
+    ),
+    (
+        5,
+        # Scheduled automations (A3 slice 2, D49 / AUTOMATIONS_PLAN §D-1). Two new tables, nothing
+        # altered — the definitions the owner (and, from slice 4, the agent) writes, plus one row per
+        # RUN of them. In SQLite rather than config.yaml on purpose: agent-writable records must never
+        # be able to brick the config-validated boot (the unit crash-loops on a bad config).
+        #
+        # Every instant here is a **UTC epoch INTEGER**, not the ISO text the older tables use: these
+        # columns are compared and ordered in SQL on the claim's hot path (`next_run_at <= ?`), and the
+        # single-integer form makes that a real index range scan with no parsing and no timezone in the
+        # comparison. `tz` is the SEPARATE, human-facing half — the IANA key the cron FIELDS are
+        # evaluated in (the R7 DST rule: never do wall-clock arithmetic across a fold; ask cronsim for
+        # the next fire in the zone and store the instant it resolves to).
+        #
+        # `automations.thread_id` deliberately carries NO foreign key: it is the ROLLING mode's lazily
+        # owned thread, and a `threads` row the owner deletes must not be undeletable (nor silently
+        # nulled behind the runner's back) — the service recreates it on the next run. Same for
+        # `automation_runs.thread_id`: the run row is the historical record of which thread a run used,
+        # so a dangling id after retention pruning is explicit and correct (the `events.run_id`
+        # precedent). The runs→automation FK, in contrast, DOES cascade: a deleted definition has no
+        # history worth keeping (the audit trail lives in `events`, which is never deleted).
+        """
+        CREATE TABLE automations (
+            id               TEXT PRIMARY KEY,
+            name             TEXT NOT NULL,
+            enabled          INTEGER NOT NULL DEFAULT 1,
+            schedule         TEXT NOT NULL,          -- 5-field cron, validated by the write service
+            tz               TEXT NOT NULL,          -- IANA key; the cron fields are evaluated in it
+            prompt           TEXT NOT NULL,
+            agent            TEXT,                   -- NULL = the default agent, resolved per run
+            privilege        TEXT,                   -- NULL = the resolved agent's own
+            question_policy  TEXT NOT NULL DEFAULT 'use_default',   -- skip | use_default
+            thread_mode      TEXT NOT NULL DEFAULT 'fresh',         -- fresh | rolling (pinned = later)
+            thread_id        TEXT,                   -- rolling mode's own thread (see above)
+            timeout_s        INTEGER,                -- NULL = automations.default_timeout_s
+            next_run_at      INTEGER,                -- UTC epoch; NULL = never (disabled)
+            rev              INTEGER NOT NULL DEFAULT 1,  -- bumped on every definition change
+            created_at       INTEGER NOT NULL,
+            updated_at       INTEGER NOT NULL
+        );
+        CREATE INDEX idx_automations_next_run ON automations(next_run_at);
+
+        CREATE TABLE automation_runs (
+            id             TEXT PRIMARY KEY,
+            automation_id  TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+            trigger        TEXT NOT NULL,            -- scheduled | manual
+            scheduled_for  INTEGER,                  -- the slot; NULL for a manual run
+            started_at     INTEGER NOT NULL,
+            finished_at    INTEGER,
+            status         TEXT NOT NULL,            -- running|ok|error|timed_out|interrupted|missed
+            error          TEXT,
+            thread_id      TEXT,
+            read_at        INTEGER                   -- NULL = unread
+        );
+        CREATE INDEX idx_automation_runs_automation ON automation_runs(automation_id, started_at DESC);
         """,
     ),
 ]

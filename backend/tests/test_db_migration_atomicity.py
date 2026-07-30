@@ -196,7 +196,10 @@ def test_a_reboot_after_the_crash_applies_the_real_migration_in_full() -> None:
     finally:
         dbmod.MIGRATIONS = real
 
-    assert version == 4
+    # The shipped list applies EVERY pending migration, so the stamp is the current tail (v5 landed in
+    # A3 slice 2) — read off `MIGRATIONS` rather than pinned, since what this asserts is "recovery
+    # completed", and the v4 columns below are what proves the poisoned attempt left no residue.
+    assert version == real[-1][0] >= 4
     for col in ("origin", "origin_id", "run_id", "decision"):
         assert col in cols
     assert "half_applied" not in cols

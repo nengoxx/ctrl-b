@@ -57,6 +57,7 @@ from app.core.permissions import Decision, decide
 from app.core.skills import SkillProvider, SkillSelector
 from app.core.tool import UnknownTool
 from app.domain.agent import AgentDef, ModelRef
+from app.domain.automation import QuestionPolicy
 from app.domain.conversation import (
     ErrorPart,
     Message,
@@ -104,6 +105,15 @@ _SUSPEND_CALL_STATES = (RunState.AWAITING_CONFIRM, RunState.AWAITING_ANSWER)
 #: too small (no clean turn boundary, or a head so small a summary wouldn't shrink it). A benign no-op,
 #: phrased so the composer reads it as "nothing to do" rather than a failure (A5-x, v1.3.1).
 COMPACT_TOO_SMALL = "thread too small to compact — nothing to do"
+
+#: The third rung of the unattended `question` ladder (§D-3, council ruling R-1): what the model is told
+#: when an automation running under `question_policy: use_default` asks something that offered neither a
+#: default nor choices. It must keep the run MOVING — the alternative (deny) collapses `use_default` into
+#: `skip` for every default-less question — while making the model own and surface the assumption.
+UNATTENDED_JUDGEMENT_ANSWER = (
+    "No owner is available to answer this — proceed on your best judgement and state the assumption you "
+    "made in your final answer."
+)
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are ctrl-b, a concise assistant embedded in a single-user homelab control panel. "
@@ -374,6 +384,8 @@ class AgentSession:
         compaction_state: CompactionState | None = None,
         routing_state: RoutingState | None = None,
         origin: Origin = ORIGIN_USER_CHAT,
+        message_actor: Actor = Actor.USER,
+        question_policy: QuestionPolicy = "skip",
     ) -> None:
         self._threads = threads
         self._messages = messages
@@ -401,8 +413,19 @@ class AgentSession:
         self._depth = depth
         #: Who set this whole turn in motion (D49 / AUTOMATIONS_PLAN §D-4), stamped on every action
         #: this loop invokes. The interactive builders pass the chat default explicitly; a subagent
-        #: session is built with `kind="subagent"` (its parent's `run_id` preserved) by `run_subagent`.
+        #: session is built with `kind="subagent"` (its parent's `run_id` preserved) by `run_subagent`;
+        #: an automation run is built with `kind="automation"` + its run id (§D-3).
         self._origin = origin
+        #: Who the INJECTED prompt message is attributed to (§D-3). `run_turn` used to hardcode
+        #: `Actor.USER`, which is true for every interactive path and a lie for an automation: nobody
+        #: typed it. An automation session passes `Actor.AUTOMATION`, so the UI can badge the turn and
+        #: the history reads honestly; the default keeps every existing caller byte-identical.
+        self._message_actor = message_actor
+        #: What an UNATTENDED run does when the model calls `question` (§D-3, owner ruling 1). Only ever
+        #: consulted on the headless path (an interactive session suspends and asks), so the `skip`
+        #: default IS today's behavior — subagents keep denying in place. An automation may pass
+        #: `use_default`, which resolves an answer and lets the run continue.
+        self._question_policy = question_policy
         # Context-window settings are per-agent (4.5): the AgentDef's `compaction` wins, else the
         # global default. A subagent inherits the parent's effective value (resolved at spawn).
         self._compaction_cfg = self._agent.compaction or settings.agent.compaction
@@ -787,23 +810,40 @@ class AgentSession:
         `None` uses the section default chain. `skills` are explicit `/skill-name` invocations
         (4.5); the selector adds model-invoked picks on top."""
         self._activate_skills(user_text, skills)
+        # `actor` is the session's `message_actor` (§D-3), not a hardcoded USER: the text is the owner's
+        # for every interactive path (the default) and the AUTOMATION's for an unattended run. `role`
+        # stays "user" — that is the model's turn-taking slot, not a claim about who wrote it.
         user_msg = Message(
-            thread_id=thread.id, role="user", actor=Actor.USER, parts=[TextPart(text=user_text)]
+            thread_id=thread.id, role="user", actor=self._message_actor, parts=[TextPart(text=user_text)]
         )
         await self._messages.add(user_msg)
         await self._maybe_arm_reflection(thread)  # D27-C — periodic "save anything worth remembering"
         async for ev in self._drive(thread, mode=mode):
             yield ev
 
+    def _reflection_eligible(self) -> bool:
+        """Whether this session may reflect into the owner's DURABLE memory at all (D27-C, re-expressed
+        for §D-3). Reflection is a property of the OWNER'S OWN CONVERSATION: the nudge asks the model to
+        write lasting facts about the owner, and only a top-level interactive chat is that conversation.
+
+        The old predicate was `depth > 0` — a proxy that read "not a subagent" and happened to mean
+        "interactive top-level" because subagents were the only headless path. An automation breaks the
+        proxy: a cron run is depth 0, so it would have reflected a throwaway unattended task into the
+        owner's memory. Keying on the ORIGIN says what was always meant. `depth == 0` is kept beside it
+        so the subagent guarantee survives even if a future caller forgets to pass an origin — and
+        because it is exactly the old condition, every existing path (interactive chat arms, subagent
+        never) behaves identically."""
+        return self._origin.kind == "user_chat" and self._depth == 0
+
     async def _maybe_arm_reflection(self, thread: Thread) -> None:
         """Arm the periodic-reflection nudge for this turn (D27-C) when the thread's user-turn count
         is a multiple of `reflection_interval`. Counts the user message just persisted (so the cadence
         is every Nth turn) and **includes compacted messages** so it doesn't drift as history folds.
-        Opt-in: off unless both the master memory switch and `reflection_enabled` are on, and only on
-        the **top-level** conversation — a headless subagent (`depth > 0`) runs a throwaway, archived
-        task thread and must not reflect its internal task into the owner's durable memory."""
+        Opt-in: off unless both the master memory switch and `reflection_enabled` are on, and only for a
+        session `_reflection_eligible` admits — a headless subagent or an unattended automation run works
+        a throwaway, archived thread and must not write the owner's durable memory from it."""
         cfg = self._settings.memory
-        if self._depth > 0 or not (cfg.enabled and cfg.reflection_enabled):
+        if not self._reflection_eligible() or not (cfg.enabled and cfg.reflection_enabled):
             self._reflect_now = False
             return
         interval = cfg.reflection_interval
@@ -811,6 +851,49 @@ class AgentSession:
         # `interval > 0` is belt-and-suspenders — `MemoryCfg` enforces `ge=1`, but guard the modulo
         # against a 0 reaching here via a direct mutation (tests) rather than risk a ZeroDivisionError.
         self._reflect_now = interval > 0 and count > 0 and count % interval == 0
+
+    def _headless_label(self) -> str:
+        """What to call this session in a message the MODEL reads when it cannot reach the owner. The
+        wording ends up in a tool result the model reasons about (and in the run history a human reads),
+        so it has to be true: a subagent and a cron run are both headless for different reasons, and
+        telling an automation it is a "subagent" would be a small lie in the one place it is confusing."""
+        return "unattended automation run" if self._origin.kind == "automation" else "headless subagent"
+
+    def _headless_answer(self, cp: ToolCallPart, result: ToolResult) -> ToolResult:
+        """Resolve a `question` that suspended with nobody to answer it (§D-3, owner ruling 1).
+
+        `skip` → DENIED in place: byte-identical to the behavior every headless session had before this
+        existed, and what subagents still get (the policy is an AUTOMATION session option).
+
+        `use_default` → an answer, so the run CONTINUES, down a three-rung ladder: the declared
+        `default` → the first offered choice → a synthesized "no owner is available, use your judgement".
+        The third rung is the reason the policy is not just "skip with extra steps" (council R-1): a
+        question with no default declared is the common case, and denying it would collapse `use_default`
+        into `skip` for exactly those runs.
+
+        The offer is read from the RESULT's `data`, not from the model's raw args: the suspending tool
+        declares what it is offering, so this stays ignorant of `QuestionInput`'s field names and any
+        future suspending tool gets the same treatment for free. Anything malformed simply isn't an offer.
+        """
+        if self._question_policy != "use_default":
+            return ToolResult(
+                state=RunState.DENIED,
+                summary=f"{cp.tool}: cannot ask the owner — {self._headless_label()}",
+            )
+        offer = result.data if isinstance(result.data, dict) else {}
+        declared = offer.get("default")
+        choices = offer.get("choices")
+        if isinstance(declared, str) and declared.strip():
+            answer, source = declared.strip(), "the question's declared default"
+        elif isinstance(choices, list) and choices and isinstance(choices[0], str) and choices[0].strip():
+            answer, source = choices[0].strip(), "the first offered choice (no default was declared)"
+        else:
+            answer, source = UNATTENDED_JUDGEMENT_ANSWER, "no default and no choices were offered"
+        return ToolResult(
+            state=RunState.OK,
+            summary=f"no owner to ask ({self._headless_label()}) — answered from {source}",
+            output=answer,
+        )
 
     async def compact(self, thread: Thread, *, instructions: str | None = None) -> dict:
         """Manual `/compact` (4e/D42): force-fold the oldest turns now, ignoring the token threshold +
@@ -2356,11 +2439,16 @@ class AgentSession:
                         else:
                             note_recorded = inv.event is not None  # invoke already folded it in
                             if inv.needs_confirm and not self._interactive:
-                                # Headless child (subagent): no UI to confirm against → deny in place so
-                                # the turn never stalls (DESIGN §5.3). The child reports it skipped the step.
+                                # Headless (a subagent, or an unattended automation run): no UI to confirm
+                                # against → deny in place so the turn never stalls (DESIGN §5.3, §D-3).
+                                # UNCHANGED by `question_policy`, deliberately and out loud: that policy
+                                # governs QUESTIONS only. A confirm always follows the privilege/approvals
+                                # ladder — a D44 approval rule or `privilege: full` is how an automation is
+                                # authorized to run risky tools, because consent belongs at authoring time
+                                # (a stored prompt is not consent).
                                 result = ToolResult(
                                     state=RunState.DENIED,
-                                    summary=f"{cp.tool} needs confirmation — skipped (headless subagent)",
+                                    summary=f"{cp.tool} needs confirmation — skipped ({self._headless_label()})",
                                 )
                             elif inv.needs_confirm:
                                 cp.state = RunState.AWAITING_CONFIRM
@@ -2395,10 +2483,12 @@ class AgentSession:
                     # no one to ask, so (like a headless confirm) it's denied in place and the child carries on.
                     if result.state == RunState.AWAITING_ANSWER:
                         if not self._interactive:
-                            result = ToolResult(
-                                state=RunState.DENIED,
-                                summary=f"{cp.tool}: cannot ask the owner — headless subagent",
-                            )
+                            # No owner to ask (§D-3). `question_policy` decides between denying in place
+                            # (today's behavior, and what every subagent still gets) and resolving an
+                            # answer so an unattended run keeps moving. Resolved HERE — BEFORE the
+                            # AWAITING_ANSWER flip is persisted and before any `tool.question` is emitted
+                            # — so an unattended run leaves no suspended call behind for nobody to resolve.
+                            result = self._headless_answer(cp, result)
                         else:
                             cp.state = RunState.AWAITING_ANSWER
                             await _persist()  # persist the AWAITING_ANSWER flip BEFORE emitting
