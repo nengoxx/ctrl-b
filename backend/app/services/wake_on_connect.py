@@ -11,10 +11,10 @@ Three properties this module exists to guarantee:
   1. **It never touches the stream.** `schedule()` returns immediately; the work runs in a detached
      task under a broad exception guard. A config typo, a dead adapter or an exploding `invoke` logs
      and dies alone — the SSE generator is already yielding by then either way.
-  2. **It goes through the chokepoint.** `ActionService.invoke("wake_host", …, actor=SYSTEM,
-     interactive=False)` — privilege-gated and audited like every other invocation, so an automatic
-     wake is visible in the Event log exactly like a button press (with `system` as the actor). No
-     direct `wol.send_magic` shortcut.
+  2. **It goes through the chokepoint.** `ActionService.invoke("wake_host", …, origin=system,
+     actor=SYSTEM, interactive=False)` — privilege-gated and audited like every other invocation, so an
+     automatic wake is visible in the Event log exactly like a button press (with `system` as both the
+     actor and the origin). No direct `wol.send_magic` shortcut.
   3. **It stays quiet.** A phone walking in and out of wifi range reopens the stream constantly, and
      every reconnect would otherwise write a fresh Event per flagged host. A per-host monotonic
      cooldown (`wake.cooldown_s`) bounds that. WOL is idempotent, so this is log hygiene, not safety —
@@ -31,6 +31,7 @@ import time
 from typing import TYPE_CHECKING
 
 from app.domain.enums import Actor
+from app.domain.event import Origin
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -80,6 +81,9 @@ async def wake_flagged_hosts(app: "FastAPI") -> None:
         await actions.invoke(
             "wake_host",
             {"host_id": host.id},
+            # Nobody typed this — the app itself decided (D-4): `system`, stated explicitly, so the
+            # audit row distinguishes an automatic wake from the owner pressing the button.
+            origin=Origin(kind="system"),
             actor=Actor.SYSTEM,
             interactive=False,
         )

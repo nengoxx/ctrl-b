@@ -27,6 +27,8 @@ from pathlib import Path
 
 from _async import drain_run_calls, run_async
 
+from app.domain.event import ORIGIN_USER_CHAT
+
 
 @contextlib.contextmanager
 def _workspace(config_text: str = "server:\n  port: 5433\n"):
@@ -120,7 +122,7 @@ def test_max_subagent_depth_blocks_deeper_nesting() -> None:
         class _FakeOrch:
             def __init__(self, **_kw) -> None: ...
 
-            async def run_many(self, deps, children, *, depth):  # noqa: ANN001
+            async def run_many(self, deps, children, *, depth, parent_origin):  # noqa: ANN001
                 return []
 
         orig = subagents.ParallelOrchestrator
@@ -152,7 +154,7 @@ def test_concurrency_bounded_by_per_agent_and_global_sems() -> None:
         live = {"cur": 0, "max": 0}
         barrier = asyncio.Barrier(expected)
 
-        async def fake_run_subagent(deps, cdef, task, *, index, depth, timeout_s):  # noqa: ANN001
+        async def fake_run_subagent(deps, cdef, task, *, index, depth, timeout_s, parent_origin):  # noqa: ANN001
             live["cur"] += 1
             live["max"] = max(live["max"], live["cur"])
             await barrier.wait()  # blocks until `expected` children are concurrently here — or deadlocks
@@ -166,7 +168,9 @@ def test_concurrency_bounded_by_per_agent_and_global_sems() -> None:
             orch = ParallelOrchestrator(per_agent=per_agent, global_sem=gsem, child_timeout_s=5)
             children = [(object(), f"t{i}") for i in range(n_children)]
             # wait_for turns a serial-regression deadlock at the barrier into a clean test failure.
-            results = await asyncio.wait_for(orch.run_many(None, children, depth=1), timeout=5)
+            results = await asyncio.wait_for(
+                orch.run_many(None, children, depth=1, parent_origin=ORIGIN_USER_CHAT), timeout=5
+            )
         finally:
             sub.run_subagent = orig
         assert len(results) == n_children  # every child produced a result
@@ -198,7 +202,17 @@ def test_child_timeout_cancels_a_hung_child() -> None:
         orig = sess_mod.AgentSession
         sess_mod.AgentSession = _HangingSession  # type: ignore[misc,assignment]
         try:
-            res = _run(run_subagent(deps, agent_def, "hang forever", index=0, depth=1, timeout_s=0.05))
+            res = _run(
+                run_subagent(
+                    deps,
+                    agent_def,
+                    "hang forever",
+                    index=0,
+                    depth=1,
+                    timeout_s=0.05,
+                    parent_origin=ORIGIN_USER_CHAT,
+                )
+            )
         finally:
             sess_mod.AgentSession = orig  # type: ignore[misc]
         assert res.state == RunState.TIMEOUT  # the timeout fired — never raised, never hung the parent

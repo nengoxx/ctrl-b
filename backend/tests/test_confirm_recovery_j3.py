@@ -24,6 +24,8 @@ from pathlib import Path
 
 from _async import drain_run_calls, run_async
 
+from app.domain.event import ORIGIN_USER_CHAT
+
 
 def _client():
     from fastapi.testclient import TestClient
@@ -101,12 +103,21 @@ def test_confirm_token_for_mints_a_consumable_token() -> None:
     with _workspace(), _client() as c:
         actions = c.app.state.actions
         args = {"host_id": "nope"}
-        out = _run(actions.invoke("reboot_host", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM))
+        out = _run(
+            actions.invoke(
+                "reboot_host", args, origin=ORIGIN_USER_CHAT, actor=Actor.AGENT, privilege=Privilege.CONFIRM
+            )
+        )
         assert out.needs_confirm  # no token → the gate asks
         tok = actions.confirm_token_for("reboot_host", args)
         out2 = _run(
             actions.invoke(
-                "reboot_host", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM, confirm_token=tok
+                "reboot_host",
+                args,
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.CONFIRM,
+                confirm_token=tok,
             )
         )
         assert not out2.needs_confirm  # gate passed → executed
@@ -121,7 +132,11 @@ def test_confirm_token_for_consumes_the_orphan_token() -> None:
         actions = c.app.state.actions
         args = {"host_id": "nope"}
         # The first gate mints a token (this is "device A"'s outstanding Allow).
-        out = _run(actions.invoke("reboot_host", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM))
+        out = _run(
+            actions.invoke(
+                "reboot_host", args, origin=ORIGIN_USER_CHAT, actor=Actor.AGENT, privilege=Privilege.CONFIRM
+            )
+        )
         assert out.needs_confirm and out.confirm_token
         orphan = out.confirm_token
 
@@ -134,7 +149,12 @@ def test_confirm_token_for_consumes_the_orphan_token() -> None:
         # Redeeming the orphan now fails cleanly — it re-asks instead of executing (device B's stale tap).
         stale = _run(
             actions.invoke(
-                "reboot_host", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM, confirm_token=orphan
+                "reboot_host",
+                args,
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.CONFIRM,
+                confirm_token=orphan,
             )
         )
         assert stale.needs_confirm  # rejected → gate re-asks; the action did NOT run
@@ -142,7 +162,12 @@ def test_confirm_token_for_consumes_the_orphan_token() -> None:
         # …but the fresh (resume) token still executes in one shot.
         ok = _run(
             actions.invoke(
-                "reboot_host", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM, confirm_token=fresh
+                "reboot_host",
+                args,
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.CONFIRM,
+                confirm_token=fresh,
             )
         )
         assert not ok.needs_confirm and ok.result is not None and ok.result.state.value == "error"

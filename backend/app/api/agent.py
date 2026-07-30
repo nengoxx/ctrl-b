@@ -36,7 +36,7 @@ from app.core.memory import StoreScope, StoreSpec, store_by_key
 from app.domain.agent import AgentDef
 from app.domain.conversation import Message, Thread, ToolCallPart, ToolResultPart
 from app.domain.enums import Actor, Privilege, RunState
-from app.domain.event import Event
+from app.domain.event import ORIGIN_USER_CHAT, Event
 from app.domain.plan import Plan
 from app.domain.result import ToolResult
 from app.runtime import clear_reasoning_demotions, rediscover_integrations
@@ -236,6 +236,10 @@ def _build_session(
         steer_source=steer_source_for(state, thread.id) if thread is not None else None,
         compaction_state=(compaction_state_for(state, thread.id) if thread is not None else None),
         routing_state=(routing_state_for(state, thread.id) if thread is not None else None),
+        # Every session this builder produces is the owner talking to the app (D-4). Stated, not
+        # inherited from the default: this is THE interactive builder, so the automation runner that
+        # reuses it in slice 2 overrides one obvious argument instead of relying on an omission.
+        origin=ORIGIN_USER_CHAT,
     )
 
 

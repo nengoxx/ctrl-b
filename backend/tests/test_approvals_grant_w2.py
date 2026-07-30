@@ -25,6 +25,8 @@ from pathlib import Path
 
 from _async import drain_run_calls, run_async
 
+from app.domain.event import ORIGIN_USER_CHAT
+
 
 def _client():
     from fastapi.testclient import TestClient
@@ -237,7 +239,11 @@ def test_execute_always_runs_and_persists_then_subsequent_invoke_auto_allows_wit
         # A SUBSEQUENT identical invoke now auto-allows (no confirm) and stamps the W1 audit marker.
         out = _run(
             c.app.state.actions.invoke(
-                "restart_service", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM
+                "restart_service",
+                args,
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.CONFIRM,
             )
         )
         assert not out.needs_confirm

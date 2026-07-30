@@ -31,6 +31,7 @@ from app.core.tool import InvocationContext, action
 from app.domain.agent import AgentDef
 from app.domain.conversation import Thread
 from app.domain.enums import Privilege, Risk, RunState
+from app.domain.event import Origin
 from app.domain.result import ToolResult
 
 if TYPE_CHECKING:
@@ -103,7 +104,7 @@ class Orchestrator(Protocol):
     bounded parallel; a sequential or map-reduce strategy is a drop-in."""
 
     async def run_many(
-        self, deps: "Deps", children: list[tuple[AgentDef, str]], *, depth: int
+        self, deps: "Deps", children: list[tuple[AgentDef, str]], *, depth: int, parent_origin: Origin
     ) -> list[SubResult]: ...
 
 
@@ -124,7 +125,7 @@ class ParallelOrchestrator(Orchestrator):
         self._timeout = child_timeout_s
 
     async def run_many(
-        self, deps: "Deps", children: list[tuple[AgentDef, str]], *, depth: int
+        self, deps: "Deps", children: list[tuple[AgentDef, str]], *, depth: int, parent_origin: Origin
     ) -> list[SubResult]:
         results: list[SubResult | None] = [None] * len(children)
 
@@ -135,7 +136,13 @@ class ParallelOrchestrator(Orchestrator):
                     await stack.enter_async_context(self._global)
                 await stack.enter_async_context(self._per)
                 results[i] = await run_subagent(
-                    deps, cdef, task, index=i, depth=depth, timeout_s=self._timeout
+                    deps,
+                    cdef,
+                    task,
+                    index=i,
+                    depth=depth,
+                    timeout_s=self._timeout,
+                    parent_origin=parent_origin,
                 )
 
         # Capture the enclosing task so we can re-assert a cancellation the TaskGroup may swallow
@@ -171,10 +178,15 @@ async def run_subagent(
     index: int,
     depth: int,
     timeout_s: float,
+    parent_origin: Origin,
 ) -> SubResult:
     """Run one child agent to completion on its own ephemeral (archived) thread, headless, and
     return its final answer as a `SubResult`. Never raises — any failure/timeout becomes a result
-    state the parent model can reason about (partial success preserved, §5.5)."""
+    state the parent model can reason about (partial success preserved, §5.5).
+
+    `parent_origin` is the origin of the turn that spawned this child; the child's own origin is
+    derived from it below. Required (not defaulted) so a new caller can't silently drop the ancestry
+    the `run_id` carries."""
     # Local import: session.py → action_service.py → deps.py, so importing at module load would
     # cycle through this module's `Deps` typing. Imported here, the cycle is broken.
     from app.services.agent.session import AgentSession
@@ -193,6 +205,11 @@ async def run_subagent(
 
     thread = Thread(title=f"[subagent:{agent_def.name}] {task[:48]}", agent=agent_def.name, archived=True)
     await threads.create(thread)
+    # Attribution (D-4): `kind` records the IMMEDIATE initiator, so every action this child takes is
+    # attributed to the subagent that took it (`id` = the child's own agent name), NOT to whatever
+    # started the tree. The parent's `run_id` is PRESERVED instead — that is the authoritative
+    # "descended from an automation" predicate, and it must stay true transitively at any depth.
+    origin = Origin(kind="subagent", id=agent_def.name, run_id=parent_origin.run_id)
     session = AgentSession(
         threads,
         messages,
@@ -205,6 +222,7 @@ async def run_subagent(
         memory=deps.memory,
         interactive=False,
         depth=depth,
+        origin=origin,
     )
     try:
         async with asyncio.timeout(timeout_s):
@@ -287,5 +305,5 @@ async def spawn_subagents(inp: SpawnInput, ctx: InvocationContext) -> ToolResult
         global_sem=deps.subagent_sem,
         child_timeout_s=deps.settings.agent.subagent_child_timeout_s,
     )
-    results = await orchestrator.run_many(deps, children, depth=ctx.depth + 1)
+    results = await orchestrator.run_many(deps, children, depth=ctx.depth + 1, parent_origin=ctx.origin)
     return _aggregate(results)

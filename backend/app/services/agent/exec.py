@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 
 from app.domain.conversation import Message, ToolCallPart, ToolResultPart
 from app.domain.enums import Actor, Privilege, RunState
+from app.domain.event import ORIGIN_USER_CHAT
 from app.domain.result import ToolResult
 
 if TYPE_CHECKING:
@@ -49,7 +50,11 @@ async def run_user_exec(
     result pair atomically (SYS-1). The single implementation shared by the `/exec` endpoint and the
     D41 steer drain. Caller must have already enforced `shell.user_exec_enabled` (fail-closed)."""
     outcome = await actions.invoke(
-        "run_shell", {"command": command}, actor=Actor.USER, privilege=Privilege.FULL
+        "run_shell",
+        {"command": command},
+        origin=ORIGIN_USER_CHAT,
+        actor=Actor.USER,
+        privilege=Privilege.FULL,
     )
     result = outcome.result or ToolResult(state=RunState.ERROR, summary="run_shell produced no result")
 

@@ -23,8 +23,9 @@ class EventService:
     async def record(self, event: Event) -> Event:
         """Persist + publish. Returns the event (id/ts already populated by the model)."""
         await self._db.execute(
-            "INSERT INTO events (id, ts, actor, action, target, status, summary, output) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO events "
+            "(id, ts, actor, action, target, status, summary, output, origin, origin_id, run_id, decision) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 event.id,
                 event.ts.isoformat(),
@@ -34,6 +35,10 @@ class EventService:
                 event.status.value,
                 event.summary,
                 event.output,
+                event.origin,
+                event.origin_id,
+                event.run_id,
+                event.decision,
             ),
         )
         self._bus.publish(event)
@@ -41,7 +46,8 @@ class EventService:
 
     async def recent(self, limit: int = 100) -> list[Event]:
         rows = await self._db.query(
-            "SELECT id, ts, actor, action, target, status, summary, output "
+            "SELECT id, ts, actor, action, target, status, summary, output, "
+            "origin, origin_id, run_id, decision "
             "FROM events ORDER BY ts DESC LIMIT ?",
             (max(1, min(limit, 500)),),
         )
@@ -55,6 +61,10 @@ class EventService:
                 status=RunState(r["status"]),
                 summary=r["summary"],
                 output=r["output"],
+                origin=r["origin"],
+                origin_id=r["origin_id"],
+                run_id=r["run_id"],
+                decision=r["decision"],
             )
             for r in rows
         ]

@@ -25,6 +25,7 @@ from pathlib import Path
 from _async import run_async
 
 from app.core.tool import ADAPTER_BOUNDED
+from app.domain.event import ORIGIN_USER_CHAT
 from app.services.actions import build_registry
 from app.services.actions._common import SSH_ACTION_TIMEOUT_S
 
@@ -92,7 +93,9 @@ def test_in_tool_timeout_with_no_spec_bound_normalizes_cleanly() -> None:
         _register_stub(reg, "_stub_intimeout", _raises_timeout, timeout_s=None)
         try:
             out = run_async(
-                c.app.state.actions.invoke("_stub_intimeout", {}, actor=Actor.USER, privilege=Privilege.FULL)
+                c.app.state.actions.invoke(
+                    "_stub_intimeout", {}, origin=ORIGIN_USER_CHAT, actor=Actor.USER, privilege=Privilege.FULL
+                )
             )
         finally:
             reg.remove("_stub_intimeout")
@@ -118,7 +121,9 @@ def test_wait_for_fires_with_a_numeric_message() -> None:
         _register_stub(reg, "_stub_hang", _hangs, timeout_s=0.2)
         try:
             out = run_async(
-                c.app.state.actions.invoke("_stub_hang", {}, actor=Actor.USER, privilege=Privilege.FULL)
+                c.app.state.actions.invoke(
+                    "_stub_hang", {}, origin=ORIGIN_USER_CHAT, actor=Actor.USER, privilege=Privilege.FULL
+                )
             )
         finally:
             reg.remove("_stub_hang")

@@ -36,6 +36,8 @@ from typing import cast
 
 from _async import run_async
 
+from app.domain.event import ORIGIN_USER_CHAT
+
 
 def _client():
     from fastapi.testclient import TestClient
@@ -376,7 +378,7 @@ def test_b5_openapi_tool_carries_timeout_and_times_out() -> None:
             assert spec.timeout_s == 0.2, "the OpenAPI spec must carry the server's call_timeout_s"
 
             out = await state.actions.invoke(
-                "api__srv__do_it", {}, actor=Actor.USER, privilege=Privilege.FULL
+                "api__srv__do_it", {}, origin=ORIGIN_USER_CHAT, actor=Actor.USER, privilege=Privilege.FULL
             )
             assert out.result is not None and out.result.state == RunState.TIMEOUT
 

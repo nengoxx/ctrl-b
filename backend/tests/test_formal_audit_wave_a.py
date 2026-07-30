@@ -31,6 +31,8 @@ from pathlib import Path
 
 from _async import drain_run_calls, run_async
 
+from app.domain.event import ORIGIN_USER_CHAT
+
 
 def _client():
     from fastapi.testclient import TestClient
@@ -173,6 +175,7 @@ def test_a2_dismiss_revokes_the_pending_token() -> None:
             actions.invoke(
                 "reboot_host",
                 {"host_id": "nope"},
+                origin=ORIGIN_USER_CHAT,
                 actor=Actor.AGENT,
                 privilege=Privilege.CONFIRM,
                 confirm_token=token,
@@ -188,7 +191,11 @@ def test_a2_single_liveness_on_remint() -> None:
         actions = c.app.state.actions
         args = {"host_id": "nope"}
         # the gate mints a token (the outstanding Allow), then the resume re-mint consumes it …
-        out = _run(actions.invoke("reboot_host", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM))
+        out = _run(
+            actions.invoke(
+                "reboot_host", args, origin=ORIGIN_USER_CHAT, actor=Actor.AGENT, privilege=Privilege.CONFIRM
+            )
+        )
         orphan = out.confirm_token
         fresh = actions.confirm_token_for("reboot_host", args)
         assert fresh != orphan

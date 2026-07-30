@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 from app.core.permissions import NONE_CANON, Decision, approval_match, decide, exact_arg_pins
 from app.core.tool import InvocationContext, ToolRegistry, UnknownTool
 from app.domain.enums import Actor, Privilege, RunState
-from app.domain.event import Event
+from app.domain.event import DecisionReason, Event, Origin
 from app.domain.result import ToolResult
 from app.services.deps import Deps
 
@@ -122,6 +122,7 @@ class ActionService:
         name: str,
         raw_args: dict,
         *,
+        origin: Origin,
         actor: Actor = Actor.USER,
         privilege: Privilege = Privilege.CONFIRM,
         interactive: bool = True,
@@ -132,6 +133,11 @@ class ActionService:
     ) -> InvokeOutcome:
         """Run an action. Raises `UnknownTool` (→404) / `ValidationError` (→422) for the API to
         map; every other outcome is data on a ToolResult.
+
+        `origin` (D49 / AUTOMATIONS_PLAN §D-4) is who set this call in motion. It is REQUIRED and
+        deliberately has NO default: a default would let a future call site mislabel its calls as
+        interactive chat *silently* (R9's structural-omission warning), whereas an omission here is a
+        type error at the site. It rides onto the `InvocationContext` and is stamped on the Event.
 
         `summary_note` is a caller-supplied breadcrumb appended to the result summary BEFORE the Event
         is recorded (post-audit LOW-3), so a note the caller can only know at call time — today the D44
@@ -168,9 +174,13 @@ class ActionService:
             )
             if summary_note:
                 result.summary = f"{result.summary}{summary_note}"
-            event = await self._record(actor, name, raw_args, result)
+            event = await self._record(actor, name, raw_args, result, origin=origin, decision="policy")
             return InvokeOutcome(needs_confirm=False, result=result, event=event)
 
+        # Why this call is about to run, for the audit row (D-4). `approval` uses the SAME predicate as
+        # the D44 summary marker below (`rule is not None`), so the column and the marker can never
+        # disagree about which runs an approval rule covered.
+        reason: DecisionReason = "approval" if rule is not None else "auto"
         if decision is Decision.CONFIRM:
             if not self._consume_token(confirm_token, name, args_json):
                 token = self._mint_token(name, args_json)
@@ -179,6 +189,7 @@ class ActionService:
                     confirm_token=token,
                     confirm_prompt=f"{tool.spec.title}: confirm to proceed.",
                 )
+            reason = "confirmed"  # the gate asked and a one-time token came back
 
         result = await self._execute(
             tool,
@@ -188,12 +199,13 @@ class ActionService:
             interactive=interactive,
             depth=depth,
             agent=agent,
+            origin=origin,
         )
         if rule is not None:  # D44 §6: mandatory audit marker on the approval-fired run's Event summary
             result.summary = f"{result.summary}{_APPROVAL_MARKER.format(detail=_approval_detail(rule))}"
         if summary_note:
             result.summary = f"{result.summary}{summary_note}"
-        event = await self._record(actor, name, raw_args, result)
+        event = await self._record(actor, name, raw_args, result, origin=origin, decision=reason)
         return InvokeOutcome(needs_confirm=False, result=result, event=event)
 
     async def _execute(
@@ -206,10 +218,11 @@ class ActionService:
         interactive: bool = True,
         depth: int = 0,
         agent: "AgentDef | None" = None,
+        origin: Origin,  # required, like at `invoke` — the context must never default its attribution
     ) -> ToolResult:
-        # The context carries the real caller (actor/privilege/depth/agent) so meta-tools like
-        # spawn_subagents can enforce limits + clamp child privilege (DESIGN §5.5); ordinary tools
-        # ignore these fields.
+        # The context carries the real caller (actor/privilege/depth/agent/origin) so meta-tools like
+        # spawn_subagents can enforce limits + clamp child privilege (DESIGN §5.5) and propagate
+        # attribution (§D-4); ordinary tools ignore these fields.
         ctx = InvocationContext(
             actor=actor,
             privilege=privilege,
@@ -218,6 +231,7 @@ class ActionService:
             confirm_token=None,
             depth=depth,
             agent=agent,
+            origin=origin,
         )
         started = time.monotonic()
         # Per-tool deadline (DESIGN/E0a). `timeout_s=None` (the default) ⇒ NO bound — a tool we
@@ -251,7 +265,16 @@ class ActionService:
             result.duration_ms = int((time.monotonic() - started) * 1000)
         return result
 
-    async def _record(self, actor: Actor, name: str, raw_args: dict, result: ToolResult) -> Event:
+    async def _record(
+        self,
+        actor: Actor,
+        name: str,
+        raw_args: dict,
+        result: ToolResult,
+        *,
+        origin: Origin,
+        decision: DecisionReason,
+    ) -> Event:
         event = Event(
             actor=actor,
             action=name,
@@ -259,6 +282,10 @@ class ActionService:
             status=result.state,
             summary=result.summary,
             output=result.output,
+            origin=origin.kind,
+            origin_id=origin.id,
+            run_id=origin.run_id,
+            decision=decision,
         )
         return await self._deps.events.record(event)
 

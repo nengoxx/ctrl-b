@@ -32,6 +32,8 @@ from pathlib import Path
 
 from _async import run_async
 
+from app.domain.event import ORIGIN_USER_CHAT
+
 
 def _client():
     from fastapi.testclient import TestClient
@@ -69,7 +71,12 @@ def _invoke(c, args: dict, *, agent_name: str | None = None):
 
     return _run(
         c.app.state.actions.invoke(
-            "memory", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM, agent=_agent(c, agent_name)
+            "memory",
+            args,
+            origin=ORIGIN_USER_CHAT,
+            actor=Actor.AGENT,
+            privilege=Privilege.CONFIRM,
+            agent=_agent(c, agent_name),
         )
     )
 

@@ -73,7 +73,7 @@ _ALLOWED = {
     # One mkdir on the SQLite parent dir, at process startup inside the lifespan `connect()` —
     # before the server accepts traffic, so there is no loop to stall (and it must happen before
     # aiosqlite opens the file). Moving it to a thread would buy nothing.
-    "app/db.py:180: mkdir",
+    "app/db.py:196: mkdir",
 }
 
 #: Direct `async def` → blocking-sync-helper calls deliberately left as-is (same format, same rules).

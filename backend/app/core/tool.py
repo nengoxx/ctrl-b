@@ -29,6 +29,7 @@ from typing import (
 from pydantic import BaseModel
 
 from app.domain.enums import Actor, Privilege, Risk
+from app.domain.event import ORIGIN_USER_CHAT, Origin
 from app.domain.result import ToolResult
 
 if TYPE_CHECKING:  # avoid a core→services import cycle; Deps is structural here
@@ -147,6 +148,11 @@ class InvocationContext:
     #: `max_subagent_depth` / `max_concurrent_subagents` and to clamp child privilege to the parent.
     depth: int = 0
     agent: "AgentDef | None" = None
+    #: Who set this invocation in motion (D49 / AUTOMATIONS_PLAN §D-4). `ActionService._execute` stamps
+    #: the `origin` its caller passed, so a tool can read the initiator it runs under — the seam the
+    #: `create_automation` recursion guard keys off. Defaults to the interactive chat like the other
+    #: optional fields here, so a hand-built context (a tool unit test) needs no attribution.
+    origin: Origin = ORIGIN_USER_CHAT
 
     def require_deps(self) -> "Deps":
         """The world-handle a deps-using tool needs, narrowed to non-`None`. `deps` is optional on

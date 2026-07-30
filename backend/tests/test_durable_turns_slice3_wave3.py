@@ -39,6 +39,8 @@ from test_durable_turns_slice3 import (
     _workspace,
 )
 
+from app.domain.event import ORIGIN_USER_CHAT
+
 
 class _Req:
     """Minimal Request shim: the wave-3 read-only handlers only touch `request.app.state`."""
@@ -523,7 +525,7 @@ def test_subagent_taskgroup_propagates_external_cancel() -> None:
         started = asyncio.Event()
         cancelled = {"n": 0}
 
-        async def fake_run_subagent(deps, cdef, task, *, index, depth, timeout_s):
+        async def fake_run_subagent(deps, cdef, task, *, index, depth, timeout_s, parent_origin):
             started.set()
             try:
                 await asyncio.sleep(3600)
@@ -539,7 +541,7 @@ def test_subagent_taskgroup_propagates_external_cancel() -> None:
             children = [(object(), "t1"), (object(), "t2")]
 
             async def run():
-                return await orch.run_many(None, children, depth=1)
+                return await orch.run_many(None, children, depth=1, parent_origin=ORIGIN_USER_CHAT)
 
             task = asyncio.create_task(run())
             await started.wait()

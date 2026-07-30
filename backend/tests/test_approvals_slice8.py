@@ -22,6 +22,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
+from app.domain.event import ORIGIN_USER_CHAT
+
 
 @contextlib.contextmanager
 def _workspace(config_text: str = "server:\n  port: 5433\n"):
@@ -276,11 +278,27 @@ def test_invoke_med_executes_with_matching_rule_and_stamps_marker() -> None:
         actions = c.app.state.actions
         args = {"service_id": "ghost"}
         # No rule yet → MED confirm at CONFIRM.
-        out0 = _run(actions.invoke("restart_service", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM))
+        out0 = _run(
+            actions.invoke(
+                "restart_service",
+                args,
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.CONFIRM,
+            )
+        )
         assert out0.needs_confirm
 
         _set_approvals(actions, "restart_service", [ApprovalRule(args={"service_id": "ghost"})])
-        out = _run(actions.invoke("restart_service", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM))
+        out = _run(
+            actions.invoke(
+                "restart_service",
+                args,
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.CONFIRM,
+            )
+        )
         assert not out.needs_confirm  # the approval downgraded CONFIRM → ALLOW, it ran
         assert out.event is not None
         assert "[auto-allowed:" in out.event.summary  # the mandatory audit marker (D44 §6)
@@ -302,7 +320,11 @@ def test_invoke_marker_truncates_long_pattern_values() -> None:
         _set_approvals(actions, "restart_service", [ApprovalRule(args={"service_id": long_value})])
         out = _run(
             actions.invoke(
-                "restart_service", {"service_id": long_value}, actor=Actor.AGENT, privilege=Privilege.CONFIRM
+                "restart_service",
+                {"service_id": long_value},
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.CONFIRM,
             )
         )
         assert not out.needs_confirm and out.event is not None
@@ -336,7 +358,11 @@ def test_invoke_marker_whole_action_reads_any_args() -> None:
         _set_approvals(actions, "restart_service", [ApprovalRule(args=None)])  # whole-action grant
         out = _run(
             actions.invoke(
-                "restart_service", {"service_id": "ghost"}, actor=Actor.AGENT, privilege=Privilege.CONFIRM
+                "restart_service",
+                {"service_id": "ghost"},
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.CONFIRM,
             )
         )
         assert not out.needs_confirm
@@ -352,7 +378,13 @@ def test_invoke_confirm_true_rule_still_confirms() -> None:
         actions = c.app.state.actions
         _set_approvals(actions, "reboot_host", [ApprovalRule(args=None)])
         out = _run(
-            actions.invoke("reboot_host", {"host_id": "nope"}, actor=Actor.AGENT, privilege=Privilege.CONFIRM)
+            actions.invoke(
+                "reboot_host",
+                {"host_id": "nope"},
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.CONFIRM,
+            )
         )
         assert out.needs_confirm  # forced-confirm outranks the approval
 
@@ -367,7 +399,11 @@ def test_invoke_readonly_rule_still_denied() -> None:
         _set_approvals(actions, "reboot_host", [ApprovalRule(args=None)])
         out = _run(
             actions.invoke(
-                "reboot_host", {"host_id": "nope"}, actor=Actor.AGENT, privilege=Privilege.READONLY
+                "reboot_host",
+                {"host_id": "nope"},
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.READONLY,
             )
         )
         assert not out.needs_confirm
@@ -384,7 +420,11 @@ def test_invoke_no_match_confirms() -> None:
         _set_approvals(actions, "restart_service", [ApprovalRule(args={"service_id": "other"})])
         out = _run(
             actions.invoke(
-                "restart_service", {"service_id": "ghost"}, actor=Actor.AGENT, privilege=Privilege.CONFIRM
+                "restart_service",
+                {"service_id": "ghost"},
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.CONFIRM,
             )
         )
         assert out.needs_confirm  # the rule didn't match these args
@@ -400,13 +440,25 @@ def test_liveness_grant_then_revoke() -> None:
         args = {"service_id": "ghost"}
         _set_approvals(actions, "restart_service", [ApprovalRule(args={"service_id": "ghost"})])
         granted = _run(
-            actions.invoke("restart_service", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM)
+            actions.invoke(
+                "restart_service",
+                args,
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.CONFIRM,
+            )
         )
         assert not granted.needs_confirm  # rule applies
 
         actions._deps.settings.tool_overrides["restart_service"].approvals = None  # revoke, in place
         revoked = _run(
-            actions.invoke("restart_service", args, actor=Actor.AGENT, privilege=Privilege.CONFIRM)
+            actions.invoke(
+                "restart_service",
+                args,
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.CONFIRM,
+            )
         )
         assert revoked.needs_confirm  # the next invoke is confirmation-gated again
 
@@ -438,7 +490,11 @@ def test_run_shell_unapprovable_through_invoke() -> None:
         _set_approvals(actions, "run_shell", [ApprovalRule(args={"command": "echo hi"})])
         out = _run(
             actions.invoke(
-                "run_shell", {"command": "echo hi"}, actor=Actor.AGENT, privilege=Privilege.CONFIRM
+                "run_shell",
+                {"command": "echo hi"},
+                origin=ORIGIN_USER_CHAT,
+                actor=Actor.AGENT,
+                privilege=Privilege.CONFIRM,
             )
         )
         assert out.needs_confirm  # the matching rule is inert against a forced-confirm tool

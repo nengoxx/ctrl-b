@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, ValidationError
 from app.config import validation_detail
 from app.core.tool import UnknownTool
 from app.domain.enums import Actor, Privilege
+from app.domain.event import ORIGIN_USER_CHAT
 from app.runtime import spec_dto
 
 router = APIRouter(tags=["tools"])
@@ -55,7 +56,9 @@ async def invoke_tool(name: str, body: ToolInvokeRequest, request: Request) -> d
     if not _is_util_card(tool.spec):
         raise HTTPException(status_code=404, detail=f"'{name}' is not a Tools-tab utility") from None
     try:
-        outcome = await svc.invoke(name, body.args, actor=Actor.USER, privilege=Privilege.CONFIRM)
+        outcome = await svc.invoke(
+            name, body.args, origin=ORIGIN_USER_CHAT, actor=Actor.USER, privilege=Privilege.CONFIRM
+        )
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=validation_detail(exc)) from None
     return {

@@ -34,6 +34,8 @@ from pathlib import Path
 
 from _async import run_async
 
+from app.domain.event import ORIGIN_USER_CHAT
+
 _WIN = platform.system().lower() == "windows"
 
 
@@ -74,6 +76,7 @@ def _exec(c, command: str, *, privilege=None, agent_exec=False):
         c.app.state.actions.invoke(
             "run_shell",
             {"command": command},
+            origin=ORIGIN_USER_CHAT,
             actor=Actor.USER,
             privilege=privilege or Privilege.FULL,
         )
@@ -158,7 +161,11 @@ def test_agent_denied_without_optin() -> None:
         with _client() as c:
             out = _run(
                 c.app.state.actions.invoke(
-                    "run_shell", {"command": "echo hi"}, actor=Actor.AGENT, privilege=Privilege.CONFIRM
+                    "run_shell",
+                    {"command": "echo hi"},
+                    origin=ORIGIN_USER_CHAT,
+                    actor=Actor.AGENT,
+                    privilege=Privilege.CONFIRM,
                 )
             )
             assert out.result.state == RunState.DENIED
@@ -172,7 +179,11 @@ def test_agent_optin_still_confirms() -> None:
             c.app.state.settings.shell.agent_exec_enabled = True
             out = _run(
                 c.app.state.actions.invoke(
-                    "run_shell", {"command": "echo hi"}, actor=Actor.AGENT, privilege=Privilege.CONFIRM
+                    "run_shell",
+                    {"command": "echo hi"},
+                    origin=ORIGIN_USER_CHAT,
+                    actor=Actor.AGENT,
+                    privilege=Privilege.CONFIRM,
                 )
             )
             assert out.needs_confirm is True  # HIGH risk still gates below FULL

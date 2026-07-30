@@ -20,6 +20,7 @@ from types import SimpleNamespace
 
 from app.config import Settings, load_settings
 from app.domain.enums import Actor, OSType
+from app.domain.event import Origin
 from app.domain.host import Host
 from app.services import wake_on_connect
 
@@ -83,10 +84,14 @@ class _FakeActions:
 
     def __init__(self, *, explode: bool = False) -> None:
         self.calls: list[tuple[str, dict, Actor, bool]] = []
+        #: The `Origin` of each call, recorded separately so the decision-matrix assertions above stay
+        #: about which hosts fire (attribution has its own test below).
+        self.origins: list[Origin] = []
         self._explode = explode
 
-    async def invoke(self, name, raw_args, *, actor=Actor.USER, interactive=True, **_kw):
+    async def invoke(self, name, raw_args, *, origin, actor=Actor.USER, interactive=True, **_kw):
         self.calls.append((name, raw_args, actor, interactive))
+        self.origins.append(origin)
         if self._explode:
             raise RuntimeError("boom")
         return None
@@ -126,6 +131,16 @@ def test_fires_for_a_flagged_offline_host_through_the_chokepoint() -> None:
     app, actions = _app([_h("alpha")])
     asyncio.run(wake_on_connect.wake_flagged_hosts(app))
     assert actions.calls == [("wake_host", {"host_id": "alpha"}, Actor.SYSTEM, False)]
+
+
+def test_the_wake_is_attributed_to_the_system_not_the_owner() -> None:
+    """Attribution (D49 / AUTOMATIONS_PLAN §D-4): nobody typed this, the app decided — so the origin is
+    `system`, stated explicitly at the call site. Without it the audit row would be indistinguishable
+    from the owner pressing Wake, which is the whole thing the origin column exists to separate."""
+    app, actions = _app([_h("alpha")])
+    asyncio.run(wake_on_connect.wake_flagged_hosts(app))
+    assert actions.origins == [Origin(kind="system")]
+    assert actions.origins[0].run_id is None  # not descended from an automation run
 
 
 def test_unflagged_hosts_are_never_touched() -> None:

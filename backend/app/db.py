@@ -148,6 +148,22 @@ MIGRATIONS: list[tuple[int, str]] = [
         FROM messages m WHERE m.role IN ('user', 'assistant');
         """,
     ),
+    (
+        4,
+        # Action attribution (A3 slice 1, D49 / AUTOMATIONS_PLAN §D-4). `origin` is the IMMEDIATE
+        # initiator of the invocation (user_chat | automation | subagent | system); `origin_id` names it
+        # within that kind (an automation's id, a subagent's agent name); `run_id` is the automation-run
+        # id, preserved through every descendant — the authoritative "descended from an automation"
+        # predicate; `decision` is why the gate let the call through (auto | confirmed | approval), or
+        # `policy` when it denied it. Purely additive: `origin`'s NOT NULL default backfills every
+        # existing row as the interactive chat action it was, the rest read NULL.
+        """
+        ALTER TABLE events ADD COLUMN origin     TEXT NOT NULL DEFAULT 'user_chat';
+        ALTER TABLE events ADD COLUMN origin_id  TEXT;
+        ALTER TABLE events ADD COLUMN run_id     TEXT;
+        ALTER TABLE events ADD COLUMN decision   TEXT;
+        """,
+    ),
 ]
 
 

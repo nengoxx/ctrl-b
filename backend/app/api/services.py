@@ -17,6 +17,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.config import validation_detail
 from app.core.tool import UnknownTool
+from app.domain.event import ORIGIN_USER_CHAT
 from app.domain.host import Host
 from app.domain.service import Service, ServiceStatus
 
@@ -82,7 +83,12 @@ async def invoke_service_action(
 
     actions = request.app.state.actions
     try:
-        outcome = await actions.invoke(name, {"service_id": service_id}, confirm_token=body.confirm_token)
+        outcome = await actions.invoke(
+            name,
+            {"service_id": service_id},
+            origin=ORIGIN_USER_CHAT,
+            confirm_token=body.confirm_token,
+        )
     except UnknownTool:
         raise HTTPException(status_code=404, detail=f"unknown action '{name}'") from None
     except ValidationError as exc:

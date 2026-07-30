@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.domain.enums import Actor, Privilege, RunState
+from app.domain.event import ORIGIN_USER_CHAT
 from app.domain.result import ToolResult
 from app.services.actions.tailscale import resolve_status
 
@@ -46,7 +47,9 @@ async def access_serve(body: ServeRequest, request: Request) -> dict[str, Any]:
     if not cfg.enabled:
         raise HTTPException(status_code=403, detail="Tailscale control is disabled (tailscale.enabled)")
     name = "tailscale_serve_enable" if body.enable else "tailscale_serve_disable"
-    outcome = await request.app.state.actions.invoke(name, {}, actor=Actor.USER, privilege=Privilege.FULL)
+    outcome = await request.app.state.actions.invoke(
+        name, {}, origin=ORIGIN_USER_CHAT, actor=Actor.USER, privilege=Privilege.FULL
+    )
     result = outcome.result or ToolResult(state=RunState.ERROR, summary="no result")
     st = await _status(request)
     st["last"] = {"state": result.state.value, "summary": result.summary, "error": result.error}

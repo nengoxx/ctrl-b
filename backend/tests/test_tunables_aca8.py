@@ -20,6 +20,8 @@ from pathlib import Path
 
 from _async import run_async
 
+from app.domain.event import ORIGIN_USER_CHAT
+
 
 @contextlib.contextmanager
 def _workspace(config_text: str = "server:\n  port: 5433\n"):
@@ -92,7 +94,7 @@ def test_spawn_subagents_passes_config_child_timeout() -> None:
         def __init__(self, *, per_agent, global_sem, child_timeout_s) -> None:
             captured["timeout"] = child_timeout_s
 
-        async def run_many(self, deps, children, *, depth):  # noqa: ANN001, ANN202
+        async def run_many(self, deps, children, *, depth, parent_origin):  # noqa: ANN001, ANN202
             return []
 
     with _workspace("agent:\n  subagent_child_timeout_s: 5.5\n"), _client() as c:
@@ -103,6 +105,7 @@ def test_spawn_subagents_passes_config_child_timeout() -> None:
                 c.app.state.actions.invoke(
                     "spawn_subagents",
                     {"tasks": [{"task": "a"}, {"task": "b"}]},
+                    origin=ORIGIN_USER_CHAT,
                     actor=Actor.AGENT,
                     privilege=Privilege.FULL,  # bypass the MED-risk confirm gate for the test
                 )

@@ -68,6 +68,7 @@ from app.domain.conversation import (
     ToolResultPart,
 )
 from app.domain.enums import Actor, RunState
+from app.domain.event import ORIGIN_USER_CHAT, Origin
 from app.domain.provider import ResolvedTarget
 from app.domain.result import ToolResult
 from app.runtime import grant_approval
@@ -372,6 +373,7 @@ class AgentSession:
         steer_source: SteerSource | None = None,
         compaction_state: CompactionState | None = None,
         routing_state: RoutingState | None = None,
+        origin: Origin = ORIGIN_USER_CHAT,
     ) -> None:
         self._threads = threads
         self._messages = messages
@@ -397,6 +399,10 @@ class AgentSession:
         #: invocation so a child's `spawn_subagents` sees depth+1.
         self._interactive = interactive
         self._depth = depth
+        #: Who set this whole turn in motion (D49 / AUTOMATIONS_PLAN §D-4), stamped on every action
+        #: this loop invokes. The interactive builders pass the chat default explicitly; a subagent
+        #: session is built with `kind="subagent"` (its parent's `run_id` preserved) by `run_subagent`.
+        self._origin = origin
         # Context-window settings are per-agent (4.5): the AgentDef's `compaction` wins, else the
         # global default. A subagent inherits the parent's effective value (resolved at spawn).
         self._compaction_cfg = self._agent.compaction or settings.agent.compaction
@@ -2087,6 +2093,7 @@ class AgentSession:
                             return cp, await self._actions.invoke(
                                 cp.tool,
                                 cp.args,
+                                origin=self._origin,
                                 actor=AGENT_ACTOR,
                                 privilege=self._agent.privilege,
                                 interactive=self._interactive,
@@ -2329,6 +2336,7 @@ class AgentSession:
                             inv = await self._actions.invoke(
                                 cp.tool,
                                 cp.args,
+                                origin=self._origin,
                                 actor=AGENT_ACTOR,
                                 privilege=self._agent.privilege,
                                 interactive=self._interactive,

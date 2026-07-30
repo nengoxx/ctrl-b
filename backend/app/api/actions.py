@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.config import validation_detail
 from app.core.tool import UnknownTool
+from app.domain.event import ORIGIN_USER_CHAT
 from app.runtime import spec_dto
 
 router = APIRouter(tags=["actions"])
@@ -51,7 +52,7 @@ async def invoke_action(name: str, body: InvokeRequest, request: Request) -> dic
     token to proceed) or `{needs_confirm: false, result, event}`."""
     svc = request.app.state.actions
     try:
-        outcome = await svc.invoke(name, body.args, confirm_token=body.confirm_token)
+        outcome = await svc.invoke(name, body.args, origin=ORIGIN_USER_CHAT, confirm_token=body.confirm_token)
     except UnknownTool:
         raise HTTPException(status_code=404, detail=f"unknown action '{name}'") from None
     except ValidationError as exc:
