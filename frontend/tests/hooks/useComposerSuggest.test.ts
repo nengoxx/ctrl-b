@@ -355,6 +355,35 @@ describe("SuggestPopover in a real Kit composer", () => {
     expect(barIdx).toBeGreaterThan(listIdx);
   });
 
+  // 2026-07-30 — the popover STAYS MOUNTED and toggles `.open` so its CLOSE animates (the plan-sheet
+  // idiom); `inert` is what keeps the closed shell out of tab order + the a11y tree. Accepting a row
+  // empties the completion list in the same frame, so the closing render RETAINS the last row set —
+  // otherwise the exit slide would play on a bare 8px shell.
+  it("closing leaves it mounted-but-inert, with the last rows retained for the exit slide", () => {
+    const { container } = renderComposer();
+    const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
+    const list = () => container.querySelector<HTMLElement>("ul#composer-suggest")!;
+
+    expect(list()).not.toBe(null); // mounted from the first render…
+    expect(list().classList.contains("open")).toBe(false); // …but closed
+    expect(list().hasAttribute("inert")).toBe(true);
+    expect(list().getAttribute("aria-hidden")).toBe(null); // inert ALONE — never both
+
+    fireEvent.change(ta, { target: { value: "/cle" } });
+    expect(list().classList.contains("open")).toBe(true);
+    expect(list().hasAttribute("inert")).toBe(false);
+    const rows = container.querySelectorAll("#composer-suggest [role=option]").length;
+    expect(rows).toBeGreaterThan(0);
+
+    fireEvent.keyDown(ta, { key: "Escape" }); // dismiss — the popover closes, the draft stays
+    expect(list().classList.contains("open")).toBe(false);
+    expect(list().hasAttribute("inert")).toBe(true);
+    expect(container.querySelectorAll("#composer-suggest [role=option]").length).toBe(rows);
+    // …and the textarea drops its combobox wiring the moment it closes (nothing points at an inert list)
+    expect(ta.getAttribute("aria-controls")).toBeNull();
+    expect(ta.getAttribute("aria-activedescendant")).toBeNull();
+  });
+
   it("tapping a row accepts it (pointerdown, before the field can blur) and writes the draft store", () => {
     const { container } = renderComposer();
     const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;

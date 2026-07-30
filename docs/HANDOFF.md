@@ -47,10 +47,14 @@
 >    unlocked capability; needs the full design treatment (ROADMAP §A3 seam: scheduler subsystem,
 >    Automation model, headless agent runs; the F1 engine + D2's `wake:` section + Actor.AUTOMATION
 >    are the seams it composes with). Do NOT start coding without the design conversation.
-> 5. *(Backlog, owner-deferred, recorded):* popover/menu `composerSkin` participation (one shared
->    recipe covers both — its own design session) · the `sendIcon` setting + gradient-accent fills
+> 5. *(Backlog, owner-deferred, recorded):* the `sendIcon` setting + gradient-accent fills
 >    (the cluster's item 4, never reached) · Web Push channel (custom SW, VAPID) · ntfy/bot channels ·
 >    host up/down notify toggle (needs the D2-A/A3 monitor loop).
+>    **Popover/menu `composerSkin` participation — ✅ SHIPPED 2026-07-30:** one shared popover shell
+>    (`.kit-suggest` · `.tools-sheet`, with the drifted `.priv-menu` copy folded in) + per-skin chrome
+>    for the two composer-anchored ones + the plan sheet's open/close slide, via mounted-when-closed
+>    `inert` (which also closed the plan sheet's own latent `aria-hidden`-over-focusable trap).
+>    →ROADMAP §A2, THEME_ENGINE §14.16/§15.
 > **Residuals ledger (all LOW, all recorded where they belong):** armed menu pick lost on 409/Stop-
 > harvest · cross-device notification-prefs staleness while hidden (PUT-echo fixed same-device;
 > polling declined) · id-less-transport turns share a thread-scoped dedupe key (bounded, tested) ·

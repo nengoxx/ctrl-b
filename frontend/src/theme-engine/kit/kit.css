@@ -514,15 +514,41 @@ body[data-perf="lite"] .kit-composer {
   transform: none;
 }
 
-/* ── composer · OVERLAY POPOVERS — LAYOUT-agnostic ──────────────────────────────────────────────────────
- * Two occupants, ONE look: the slash-suggest listbox (A2, `.kit-suggest`) and the tools/skills menu panel
- * (A6, `.tools-sheet`). Both are positioned SIBLINGS of `.kit-composer` (rendered by every variant, like the
- * plan sheet's `overlay`), anchored above the composer's top edge off the measured `--composer-h` — the same
- * anchor the plan sheet uses, so all three agree at any layout/density. z 5 puts them over the composer
- * (z 4) and the plan sheet's peek (z 3): they hover, they never tuck. Only ONE is ever open
- * (store/composerOverlay), so they never overlap each other. Semantic tokens only; the `.priv-menu` recipe
- * (surface + line-2 + radius-sm + a lifted shadow, accent-soft for the selected row) so the app has ONE
- * popover look. Both scroll internally when the list runs long — they never push past 40vh. */
+/* ── POPOVER SHELL — the app's ONE popover look ─────────────────────────────────────────────────────────
+ * THREE occupants, one shell: the slash-suggest listbox (A2, `.kit-suggest`), the tools/skills menu panel
+ * (A6, `.tools-sheet`) and the session-privilege drop-down (`.priv-menu`, the chat section header). The
+ * CHROME — surface fill, hairline, radius, the lifted shadow, the 4px gutter — lives HERE and nowhere else
+ * (it used to be copy-pasted into the priv-menu block, which drifted); each occupant adds only its own
+ * ANCHORING + row deltas (the composer pair right below, `.priv-menu` with its chip ~line 3571). Semantic
+ * tokens only. The two COMPOSER-anchored occupants also join the `composerSkin` axis (§14.16 — see the
+ * "composer skins" section); `.priv-menu` deliberately does NOT: it is header chrome, not composer chrome. */
+.kit .kit-suggest,
+.kit .tools-sheet,
+.kit .priv-menu {
+  margin: 0;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+.kit .kit-suggest,
+.kit .priv-menu {
+  list-style: none; /* both are <ul>; the tools panel is a <div> */
+}
+
+/* ── composer · OVERLAY POPOVERS — LAYOUT-agnostic anchoring + the open/close slide ──────────────────────
+ * Both are positioned SIBLINGS of `.kit-composer` (rendered by every variant, like the plan sheet's
+ * `overlay`), anchored above the composer's top edge off the measured `--composer-h` — the same anchor the
+ * plan sheet uses, so all three agree at any layout/density. z 5 puts them over the composer (z 4) and the
+ * plan sheet's peek (z 3): they hover, they never tuck. Only ONE is ever open (store/composerOverlay), so
+ * they never overlap each other. Both scroll internally when the list runs long — never past 40vh.
+ *
+ * MOTION: they stay MOUNTED and toggle `.open` — the plan sheet's idiom, and for the same reason: a panel
+ * that unmounts on close can only animate its ENTER. Same values as the sheet (opacity + translateY(14px),
+ * .2s ease — transform/opacity only, §14.11), gated on `data-motion` (never the raw OS query). The closed
+ * shell is `inert` (SuggestPopover/ToolsMenuSheet) — out of tab order AND the a11y tree, which is what
+ * makes "stay mounted" safe here; `pointer-events: none` below is the pointer half of the same contract. */
 .kit .kit-suggest,
 .kit .tools-sheet {
   position: absolute;
@@ -530,18 +556,24 @@ body[data-perf="lite"] .kit-composer {
   right: 18px;
   bottom: calc(var(--composer-h, 64px) + 20px);
   z-index: 5;
-  margin: 0;
-  padding: 4px;
   max-height: 40vh;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: var(--surface);
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-sm);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  /* closed: dropped + faded + non-interactive; `.open` lifts it into view */
+  opacity: 0;
+  transform: translateY(14px);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
-.kit .kit-suggest {
-  list-style: none; /* the suggest popover is a <ul>; the tools panel is a <div> */
+.kit .kit-suggest.open,
+.kit .tools-sheet.open {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+body[data-motion="reduced"] .kit .kit-suggest,
+body[data-motion="reduced"] .kit .tools-sheet {
+  transition: none; /* §14.11: reduced motion → snap open/closed, no slide */
 }
 /* the DOCKED composer sits at bottom:0 (the others float 12px up) — drop that inset, keep the 8px gap.
  * Same `:has()` probe the plan sheet uses for the identical reason (edge #7). */
@@ -567,8 +599,11 @@ body[data-perf="lite"] .kit-composer {
   color: var(--text-2);
   font-size: 13px;
 }
+/* the SELECTED row — one treatment for all three occupants (the priv-menu's row metrics diverge, but its
+ * selected state was a byte-identical copy of this one; folded here, ~line 3588 keeps only the metrics). */
 .kit .kit-suggest li.active,
-.kit .tools-sheet .tools-row.on {
+.kit .tools-sheet .tools-row.on,
+.kit .priv-menu button.active {
   color: var(--text);
   background: var(--accent-soft);
 }
@@ -1009,6 +1044,30 @@ body[data-composer-skin="glass"] .kit-composer.stacked .kit-send svg {
 body[data-composer-skin="glass"] .kit-composer.stacked .plan-pill {
   border-radius: 8px;
 }
+/* glass · the composer POPOVERS (`.kit-suggest` + `.tools-sheet`) follow the bar, exactly as the plan sheet
+ * already does under this skin (search `[data-composer-skin="glass"] .kit .plan-sheet`): no outline, a
+ * NEUTRAL frost instead of the opaque surface, and the bar's own deeper ambient+contact elevation — so a
+ * popover reads as part of the glass composer, not a bordered card parked above it. (0,3,1) beats the
+ * shared shell (0,2,0). §14.11: the blur is perf-gated to opaque right below. */
+body[data-composer-skin="glass"] .kit .kit-suggest,
+body[data-composer-skin="glass"] .kit .tools-sheet {
+  border-color: transparent;
+  background: color-mix(in oklch, var(--surface) 86%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+body[data-perf="lite"][data-composer-skin="glass"] .kit .kit-suggest,
+body[data-perf="lite"][data-composer-skin="glass"] .kit .tools-sheet {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--surface); /* opaque fallback — a translucent panel with no blur is unreadable */
+}
+/* light mode softens the elevation, mirroring the glass BAR's own light-mode re-assert above. */
+body[data-composer-skin="glass"][data-mode="light"] .kit .kit-suggest,
+body[data-composer-skin="glass"][data-mode="light"] .kit .tools-sheet {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12), 0 2px 10px rgba(0, 0, 0, 0.08);
+}
 
 /* ── skin · BEZEL (body[data-composer-skin="bezel"]) — frontier's F4 composer sweep, generalized ──────────
  * Graduated from frontier.css's @layer theme sweep (F5 slice B): transparent border on the bar + inner
@@ -1036,6 +1095,17 @@ body[data-composer-skin="bezel"] .kit-composer.sheet {
  * the ring is stripped — the red icon is the recording cue. */
 body[data-composer-skin="bezel"] .kit-composer .kit-cbtn {
   border-color: transparent;
+}
+/* bezel · the composer POPOVERS wear the bar's own language: no outline, the mode-invariant dusk-ink drop
+ * plus the 1px inset top light edge, so the panel reads as another bezelled slab from the same bar. One
+ * step deeper than the bar's 4px drop — it floats over live content, where the bar sits on the page edge.
+ * Opaque `--surface` fill kept (the shared shell): a bezel is a lit EDGE, not a frost. (0,3,1) > (0,2,0). */
+body[data-composer-skin="bezel"] .kit .kit-suggest,
+body[data-composer-skin="bezel"] .kit .tools-sheet {
+  border-color: transparent;
+  box-shadow:
+    0 6px 18px rgba(20, 8, 28, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 /* ── skin · SLEEK (body[data-composer-skin="sleek"]) — the old Ghost look ──────────────────────────────────
@@ -1100,6 +1170,17 @@ body[data-composer-skin="sleek"] .kit-composer.stacked .field {
 }
 body[data-composer-skin="sleek"] .kit-composer.stacked .field:focus-within {
   box-shadow: 0 1px 0 0 var(--accent);
+}
+/* sleek · the composer POPOVERS go FLATTER and TIGHTER, the skin's whole idea: the outline drops (sleek owns
+ * no resting borders — its field is a hairline underline), the lift shrinks to a shallow contact shadow
+ * instead of the shared 24px ambient, and the gutter tightens by a pixel. The opaque `--surface` fill STAYS
+ * (unlike the bar, which the extended scrim backs): a list of rows over live chat needs its own surface —
+ * the bar's transparency has a readability backstop, a floating panel doesn't. (0,3,1) > (0,2,0). */
+body[data-composer-skin="sleek"] .kit .kit-suggest,
+body[data-composer-skin="sleek"] .kit .tools-sheet {
+  padding: 3px;
+  border-color: transparent;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
 }
 
 /* ── Fleet view (KitFleet) — device list + 3-stat summary; ported from the minimal prototype. Inner class
@@ -3481,23 +3562,29 @@ body[data-motion="reduced"] .kit .plan-pin-drop {
   border: 0;
   cursor: default;
 }
+/* The privilege drop-down. Its SHELL is the shared popover recipe (fill/hairline/radius/lift/gutter — the
+ * composer section, ~line 517, where the selected-row treatment lives too); only its anchoring, its own row
+ * metrics and its entrance live here. It DROPS DOWN from the header chip, so it wears the NavMenu's drop-in
+ * (`kit-navmenu-in`, ~line 4830) rather than the composer popovers' rise — and it still unmounts when closed
+ * (PrivilegeChip), so an enter-only keyframe is the right form for it. It does NOT join the composerSkin
+ * axis: it is chat-header chrome. §14.11: transform/opacity only, gated on `data-motion`. */
 .kit .priv-menu {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
   z-index: 61;
-  margin: 0;
-  padding: 4px;
-  list-style: none;
   min-width: 124px;
-  background: var(--surface);
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-sm);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  transform-origin: top right;
+  animation: kit-navmenu-in 0.16s ease;
+}
+body[data-motion="reduced"] .kit .priv-menu {
+  animation: none;
 }
 .kit .priv-menu li {
   margin: 0;
 }
+/* the rows genuinely diverge from the shared row recipe (a text-only menu item: no flex/gap/badge column,
+ * tighter padding, 12px) — kept as this occupant's delta, unlike the shell above. */
 .kit .priv-menu button {
   all: unset;
   box-sizing: border-box;
@@ -3509,12 +3596,10 @@ body[data-motion="reduced"] .kit .plan-pin-drop {
   text-align: left;
   cursor: pointer;
 }
-.kit .priv-menu button:active {
+/* `:not(.active)` preserves the pre-fold cascade exactly: the selected row's `--accent-soft` used to win
+ * this tie by source order, and the folded rule now sits ABOVE this one — so the exclusion is explicit. */
+.kit .priv-menu button:not(.active):active {
   background: var(--surface-2);
-}
-.kit .priv-menu button.active {
-  color: var(--text);
-  background: var(--accent-soft);
 }
 
 /* perf gate — drop the frosted blur on the plan sheet under data-perf=lite (§14.11) → opaque surface (the

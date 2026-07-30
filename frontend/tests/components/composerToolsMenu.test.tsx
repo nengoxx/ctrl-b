@@ -50,6 +50,15 @@ function renderComposer() {
 }
 
 const trigger = (c: HTMLElement) => c.querySelector<HTMLButtonElement>("button.kit-cbtn.tools")!;
+/** The panel STAYS MOUNTED (2026-07-30) so its close animates like the plan sheet's — "closed" is now
+ *  `.open` off + `inert` on (out of tab order AND the a11y tree), not absence. */
+const panel = (c: HTMLElement) => c.querySelector<HTMLElement>("#composer-tools")!;
+const panelOpen = (c: HTMLElement) => {
+  const el = panel(c);
+  expect(el).not.toBe(null);
+  expect(el.hasAttribute("inert")).toBe(!el.classList.contains("open")); // the two never disagree
+  return el.classList.contains("open");
+};
 /** The agent rows' NATIVE radios (Codex round 2 — a `role=radio` button promises arrow keys it can't
  *  deliver; a same-`name` input group gets them from the browser). The row label is their parent. */
 const radios = (c: HTMLElement) =>
@@ -65,17 +74,20 @@ describe("tools menu — trigger/panel wiring", () => {
     expect(btn.getAttribute("aria-haspopup")).toBe("dialog");
     expect(btn.getAttribute("aria-expanded")).toBe("false");
     expect(btn.getAttribute("aria-controls")).toBe(null);
-    expect(container.querySelector("#composer-tools")).toBe(null);
+    expect(panelOpen(container)).toBe(false); // mounted, but inert + closed
 
     fireEvent.click(btn);
     expect(btn.getAttribute("aria-expanded")).toBe("true");
     expect(btn.getAttribute("aria-controls")).toBe("composer-tools");
-    const panel = container.querySelector("#composer-tools")!;
-    expect(panel.getAttribute("role")).toBe("region");
-    expect(panel.getAttribute("aria-label")).toContain("next message");
+    expect(panelOpen(container)).toBe(true);
+    expect(panel(container).getAttribute("role")).toBe("region");
+    expect(panel(container).getAttribute("aria-label")).toContain("next message");
 
     fireEvent.click(btn); // the trigger is also the close gesture
-    expect(container.querySelector("#composer-tools")).toBe(null);
+    expect(panelOpen(container)).toBe(false);
+    // `aria-hidden` is deliberately NOT used alongside inert — aria-hidden over focusable rows is the
+    // `aria-hidden-focus` violation this mechanism replaces.
+    expect(panel(container).getAttribute("aria-hidden")).toBe(null);
   });
 
   it("the panel is a positioned SIBLING rendered before the composer bar (the overlay slot)", () => {
@@ -195,14 +207,14 @@ describe("tools menu — the shared composer-overlay slot", () => {
 
     fireEvent.click(trigger(container));
     expect(probe.container.textContent).toBe("false"); // the menu took the slot
-    expect(container.querySelector("#composer-tools")).not.toBe(null);
+    expect(panelOpen(container)).toBe(true);
 
     // typing a `/verb` arms the suggest popover, which claims the slot in turn
     fireEvent.change(container.querySelector<HTMLTextAreaElement>("#cmd-input")!, {
       target: { value: "/c" },
     });
-    expect(container.querySelector("#composer-tools")).toBe(null);
-    expect(container.querySelector("#composer-suggest")).not.toBe(null);
+    expect(panelOpen(container)).toBe(false);
+    expect(container.querySelector("#composer-suggest")!.classList.contains("open")).toBe(true);
   });
 
   // Codex, round 2 — the slot is module state and the surfaces are composer children: a tab/layout swap
@@ -217,7 +229,7 @@ describe("tools menu — the shared composer-overlay slot", () => {
     expect(getComposerOverlay()).toBe(null);
 
     const again = renderComposer();
-    expect(again.container.querySelector("#composer-tools")).toBe(null);
+    expect(panelOpen(again.container)).toBe(false);
     expect(trigger(again.container).getAttribute("aria-expanded")).toBe("false");
   });
 

@@ -101,13 +101,17 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
   APG-derived list-autocomplete ARIA on the native textbox role (no `role="combobox"`/`aria-expanded`
   — neither is conforming on a `<textarea>`; Codex round, fixed `a0bfdfa`); tap-accept on
   pointerdown; Arrow/Tab/Enter + Esc on desktop.
-  - **Follow-up (owner, 2026-07-29 device eyeball — deferred, its own design session):** the suggest
-    popover renders the base kit outline chrome regardless of the resolved `composerSkin` — e.g. the
-    line layout + bezel skin composer gets an outlined popover that visibly doesn't belong to its
-    bar. Design goal: the popover (and composer-anchored overlays generally) participate in the D37
-    skin axis so each skin styles its own popover chrome. Optional polish, not scheduled.
+  - **Follow-up (owner, 2026-07-29 device eyeball) — ✅ SHIPPED 2026-07-30:** the popover no longer
+    renders base outline chrome regardless of the resolved `composerSkin`. As built: the A2 popover
+    and the A6 tools panel share ONE popover shell recipe in kit.css (the `.priv-menu` copy folded
+    into it — base chrome only, no skin participation: it is header chrome), and the two
+    composer-anchored occupants take a per-skin block off `body[data-composer-skin]` (glass frost +
+    perf-lite fallback · bezel edge · sleek flat · outline = the base). Both also gained the plan
+    sheet's full open/close slide — mounted-when-closed + `inert` (the plan sheet's own latent
+    `aria-hidden`-over-focusable trap was fixed to `inert` in the same pass). →THEME_ENGINE §14.16/§15.
 - **Open:** slash-command registry shape; how custom commands are defined (config vs UI);
-  configurable command sigil storage; autocomplete popover styling (Vapor tokens, D7).
+  configurable command sigil storage. *(Popover styling — CLOSED 2026-07-30: the Kit shell recipe +
+  the `composerSkin` per-skin blocks above; vapor stays verb-only with no popover at all, D7.)*
 
 ### A3. Scheduled agent automations (cron triggers)
 

@@ -22,7 +22,10 @@ export function PlanSheet() {
       id="plan-sheet"
       role="region"
       aria-label="task plan"
-      aria-hidden={!open}
+      // `inert`, not `aria-hidden` (2026-07-30): the closed sheet stays mounted for its slide and holds
+      // focusable `.tick-btn` dots — `aria-hidden` over focusable content is the `aria-hidden-focus`
+      // violation (invisible-but-tabbable). `inert` removes them from tab order AND the a11y tree.
+      inert={!open}
     >
       <PlanSteps plan={plan} onCycle={cycle} />
     </div>

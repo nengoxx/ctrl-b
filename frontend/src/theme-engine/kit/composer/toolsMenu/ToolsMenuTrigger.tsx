@@ -63,8 +63,9 @@ export function ToolsMenuTrigger() {
       // across every row, typeahead, focus return on Esc) this deliberately isn't (see ToolsMenuSheet).
       aria-haspopup="dialog"
       aria-expanded={open}
-      // Only while the panel exists — it unmounts when closed, and a dangling `aria-controls` target is
-      // what the suggest popover's `open ? LISTBOX_ID : undefined` avoids for the same reason.
+      // Only while the panel is OPEN. It now stays mounted for its close animation, but it is `inert` when
+      // closed — out of the a11y tree — so pointing at it would name a target AT can't reach. Same rule,
+      // same reason, as the suggest popover's `open ? LISTBOX_ID : undefined`.
       aria-controls={open ? TOOLS_SHEET_ID : undefined}
       aria-label={label}
       title={label}

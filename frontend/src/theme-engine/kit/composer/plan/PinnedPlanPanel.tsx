@@ -46,7 +46,9 @@ export function PinnedPlanPanel() {
         id="plan-pin-panel-drop"
         role="region"
         aria-label="task plan"
-        aria-hidden={!open}
+        // `inert`, not `aria-hidden` — the same fix as `PlanSheet` (identical pattern: mounted while
+        // closed, focusable `.tick-btn` dots inside, opacity/transform-only close).
+        inert={!open}
       >
         <PlanSteps plan={plan} onCycle={cycle} />
       </div>

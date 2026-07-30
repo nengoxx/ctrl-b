@@ -1829,7 +1829,11 @@ two rows render adjacent). Its skins are first-class kit chrome in kit.css keyed
 `body[data-composer-skin]` (a dedicated "composer skins" section), NOT axes-layer strips; the composer
 LAYOUT catalog deduped to the three real components `[stacked, sheet, line]` (borderless/ghost → the
 glass/sleek skins). No theme styles composer chrome directly (D37 authority rule: outlines axis owns the
-chat thread, skin axis owns the composer). One sanctioned TS seam: KitComposer picks its default send
+chat thread, skin axis owns the composer). **2026-07-30 — the axis grew to the composer's OVERLAY POPOVERS**
+(`.kit-suggest` · `.tools-sheet`): one shared shell recipe (§15) plus one per-skin block each — glass = the
+plan sheet's neutral frost + the bar's elevation (perf-lite → opaque), bezel = the bar's dusk drop + inset
+light edge, sleek = flat + tight, outline = the un-keyed base. `.priv-menu` shares the SHELL but not the
+axis: it is chat-header chrome, not composer chrome. One sanctioned TS seam: KitComposer picks its default send
 glyph by resolved skin (glass → arrowhead). Full as-built rationale: **DECISIONS D37 (amended
 2026-07-15)**.
 
@@ -1861,6 +1865,7 @@ this table is the pin.
 | Question bubble | `.q-prompt` · `.q-input-wrap` · `.q-input` |
 | Markdown | `.md` (the A.3b block/inline element set) · `.md-code` → `.md-code-bar` (`.lang`/`.acts`) + `pre>code` |
 | Plan | `.plan-note` · kit `.plan-pin-panel`/`.plan-pin-head`/`.plan-pin-drop` · shared `.plan-steps`/`.plan-step`[`.pending`/`.active`/`.done`]/`.tick`(`.tick-btn`)/`.txt` · composer `.plan-pill`/`.plan-sheet` (vapor's frozen in-tab `.plan-pin`/`.plan-pin-wrap`/`.plan-drop` live in extras.css, outside this contract) |
+| Composer popovers | `.kit-suggest` (A2 — `li`[`.active`] → `.sg-val`/`.sg-kind`) · `.tools-sheet` (A6 — `.tools-sec`/`.tools-lbl`/`.tools-list`/`.tools-row`[`.on`]/`.tools-radio`/`.tools-tick`/`.tools-name`/`.tools-tag`/`.tools-empty`/`.tools-clear`; trigger `.kit-cbtn.tools`[`.open`] → `.tools-dot`). Both carry `.open` (mounted-when-closed + `inert`, like `.plan-sheet`) and share ONE shell recipe with `.priv-menu`; the two composer-anchored ones ALSO take per-skin chrome from the `composerSkin` axis (§14.16) — `.priv-menu` deliberately does not |
 | Chat section header | `.sec` (`.num`/`.right`) · the privilege family `.priv-chip-wrap`/`.priv-chip`(`.set`)/`.priv-dot`/`.priv-lbl`/`.priv-backdrop`/`.priv-menu` |
 | Notices | `.notice` (+ `.heart`) |
 

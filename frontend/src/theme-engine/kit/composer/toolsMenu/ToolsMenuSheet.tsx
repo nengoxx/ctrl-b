@@ -18,13 +18,16 @@ import {
 // The tools/skills MENU panel (A6) — the `overlay` slot half of the addon. Geometry is the plan sheet's
 // idiom (a positioned SIBLING of `.kit-composer`, anchored off the measured `--composer-h`, tucking behind
 // the composer's rounded top); the two never collide because `store/composerOverlay` opens exactly one
-// composer overlay at a time. Content + state only here — the anchor/frost live in kit.css (`.tools-sheet`,
-// grouped with `.plan-sheet`).
+// composer overlay at a time. Content + state only here — the chrome lives in kit.css (`.tools-sheet`: the
+// shared POPOVER SHELL + the composer-anchored geometry, and its per-`composerSkin` dress, §14.16).
 //
-// Mount policy follows the SUGGEST popover, not the plan sheet: it renders NOTHING when closed rather than
-// staying mounted under `aria-hidden`. A permanently-mounted panel full of buttons behind `aria-hidden` is
-// the `aria-hidden-focus` violation (the plan sheet dodges it only because it unmounts with the plan, which
-// this menu never does) — and a menu has no "peek" state worth animating out of.
+// Mount policy follows the SUGGEST popover, and both now follow the PLAN SHEET: the panel stays MOUNTED and
+// toggles `.open` (kit.css), so the close gets the same .2s slide as the open — a panel that unmounts on
+// close can only ever animate its enter. What makes that safe is `inert`, never `aria-hidden`: a permanently
+// mounted panel full of buttons behind `aria-hidden` IS the `aria-hidden-focus` violation, while `inert`
+// takes the closed panel out of tab order AND the accessibility tree (React 19 exposes it as a real boolean
+// prop; BottomSheet applies the same thing imperatively to its below-the-fold content). `pointer-events:
+// none` on the closed shell is the pointer half of the same contract.
 //
 // Two sections, two one-shot semantics for the NEXT message only (nothing here is sticky — `/agent <name>`
 // remains the sticky switch):
@@ -56,14 +59,15 @@ export function ToolsMenuSheet() {
   // plan outlives the composer's mount; an open menu doesn't.)
   useEffect(() => () => releaseComposerOverlay("menu"), []);
 
-  if (!open) return null;
   const agents = getKnownAgents();
   const skills = getKnownSkills();
   const armed = scope.agent !== undefined || scope.skills.length > 0;
   // The radio group must tell the TRUTH about where the next message goes: the armed pick if the menu armed
   // one, else the sticky `/agent <name>` a plain send would use, else the configured default. Reading the
   // sticky pick non-reactively is safe — it only changes by SENDING `/agent …`, and typing that `/` hands
-  // the overlay slot to the suggest popover, which unmounts this panel; reopening re-reads.
+  // the overlay slot to the suggest popover, which CLOSES this panel; reopening re-reads. (That still holds
+  // now the panel stays mounted: `open` flipping IS a re-render of this component, so reopening re-reads
+  // the sticky value exactly as remounting used to.)
   //
   // A sticky name that isn't a CONFIGURED agent reads as the default row (Codex, verify round). `/agent
   // typo` stays sticky on purpose — the backend falls back to the default agent and `routeSlash` already
@@ -81,10 +85,11 @@ export function ToolsMenuSheet() {
 
   return (
     <div
-      className="tools-sheet"
+      className={"tools-sheet" + (open ? " open" : "")}
       id={TOOLS_SHEET_ID}
       role="region"
       aria-label="agent and skills for the next message"
+      inert={!open}
     >
       <div className="tools-sec">
         <div className="tools-lbl" id={AGENTS_LABEL_ID}>
