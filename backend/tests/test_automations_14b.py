@@ -711,6 +711,57 @@ def test_a_repeatedly_cancelled_claim_still_hands_off_and_keeps_the_cancellation
         assert _run(state.automations.open_runs()) == []
 
 
+def test_two_further_cancels_during_cleanup_cannot_abandon_terminalization() -> None:
+    """Micro-wave: the finalizer drain is pierce-proof. A cancel puts the run into its cleanup, and TWO
+    MORE raw cancels land while the terminal status is being written — a Stop racing a shutdown, or any
+    caller that cancels more than once. The previous shape re-awaited exactly once, so the second cancel
+    propagated straight out of `_shielded` and left the row `running` until the next boot's sweep.
+
+    The assertion is read the INSTANT the unwind finishes, deliberately: the point is not that the write
+    eventually lands from a detached task, it is that terminalization is COMPLETE before the cancel
+    propagates — the lifespan closes the DB immediately after."""
+    with _workspace(), _client() as c:
+        svc, state = _svc(c), c.app.state
+        a = _run(svc.create(_draft(schedule="*/5 * * * *")))
+        _due_now(c, a)
+        snap = _run(svc.claim(a.id, expected_rev=a.rev))
+        entered = asyncio.Event()
+        real_finish = svc.finish_run
+
+        async def _slow_finish(run_id, **kw):
+            entered.set()  # the finalizer is now in flight INSIDE `_shielded`
+            await asyncio.sleep(0.15)  # …the window the extra cancels land in
+            return await real_finish(run_id, **kw)
+
+        svc.finish_run = _slow_finish  # type: ignore[assignment]
+
+        async def go():
+            with _fake_sessions(_FakeSession(hang=True)):
+                task = asyncio.ensure_future(_runner(c)._execute(snap))
+                await asyncio.sleep(0.1)
+                task.cancel()  # (1) the shutdown cancel — enters the cleanup
+                await asyncio.wait_for(entered.wait(), timeout=5)
+                # (2) and (3) are spaced so each is genuinely DELIVERED: asyncio does not queue
+                # cancels, so two `cancel()` calls before the task next resumes collapse into one
+                # CancelledError — and one is exactly what the shape being replaced survives.
+                task.cancel()
+                await asyncio.sleep(0.01)
+                task.cancel()
+                await asyncio.sleep(0.01)
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+                return task
+
+        task = _run(go())
+        # …read IMMEDIATELY: no sleep, no second chance for a detached write to land.
+        run = _run(state.automations.get_run(snap.run_id))
+        svc.finish_run = real_finish  # type: ignore[assignment]
+        assert run.status == "interrupted", "terminalization was abandoned by a repeated raw cancel"
+        assert _run(state.automations.open_runs()) == []
+        assert task.cancelled(), "the cancellation must still propagate once the write has landed"
+        assert state.turns == {}
+
+
 def test_a_claim_that_raises_during_cancellation_never_replaces_the_cancellation() -> None:
     """The other half: if the claim itself fails while we are unwinding, that exception must not become
     the thing the caller sees — `loop()` would swallow it as an ordinary poll failure and keep going

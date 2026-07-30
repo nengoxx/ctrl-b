@@ -69,20 +69,37 @@ async def _shielded(coro: Coroutine[Any, Any, None]) -> None:
     `anyio.CancelScope(shield=True)` does not reliably suppress a bare `asyncio.Task.cancel()` (anyio
     cannot attribute it to a scope it owns, so it re-raises mid-await), and the lifespan cancels this
     loop exactly that way. Running the write as its OWN task makes it genuinely uncancellable by the
-    outer cancel; `await asyncio.shield(...)` propagates the cancel to US while it continues, and the
-    second `await` guarantees it FINISHED before the cancel propagates further (so it is never a
-    detached task, and the DB is still open — the lifespan cancels this loop before closing it).
+    outer cancel, and awaiting it to `done()` guarantees it FINISHED before the cancel propagates
+    further — so it is never a detached task, and the DB is still open (the lifespan cancels this loop
+    before closing it).
+
+    **Every wait here consumes cancels; there is no bare `await task`** (micro-wave). The shape this
+    replaces re-awaited the task ONCE, which survives exactly one further cancel: a second raw
+    `cancel()` landing during that await propagated straight out, abandoning a half-written
+    terminalization and leaving the run row `running` until the next boot's orphan sweep. Repeated raw
+    cancellation is not exotic here — it is what a Stop racing a shutdown, or any caller that cancels
+    more than once, actually looks like. The loop terminates because each `cancel()` is delivered at
+    most once, and `asyncio.wait` never re-raises the TASK's own outcome, so the result is read off the
+    settled task instead of an exception path.
 
     The write itself never raises out of here: a failing terminalize must not replace the cancel that is
-    unwinding the loop, and it is logged where an operator will find it.
+    unwinding the loop, and it is logged where an operator will find it. A cancel that WAS consumed is
+    re-raised at the end, so a caller that was not already unwinding still learns it was cancelled.
     """
     task = asyncio.ensure_future(coro)
+    cancelled = False
     with anyio.CancelScope(shield=True):
-        try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError:
-            await task  # uncancellable by the outer cancel — let it land, then propagate
-            raise
+        while not task.done():
+            try:
+                await asyncio.wait([task])
+            except asyncio.CancelledError:
+                cancelled = True  # consumed: the task is uncancellable by it — keep draining
+        if not task.cancelled():  # nothing cancels the finalizer task itself — belt, not braces
+            failure = task.exception()
+            if failure is not None:
+                log.error("a shielded finalizer failed: %r", failure)
+    if cancelled:
+        raise asyncio.CancelledError
 
 
 class AutomationRunner:
