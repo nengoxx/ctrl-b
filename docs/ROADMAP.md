@@ -664,6 +664,13 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
 > staleness on a hidden page (PUT-echo seeding fixed same-device; polling/SSE-invalidation declined) ·
 > id-less-transport turns share a thread-scoped dedupe key (bounded, tested) · host up/down events need
 > the D2-A/A3 monitor loop before that toggle can exist. Channels 2/3 (Web Push · ntfy/bot) stay future.
+> **Device round 2026-07-30 (owner, Fennec/Android): NOT delivering.** A reboot-confirm (the flagship
+> `agent_input` case) produced no notification — including a retest that backgrounded the app only
+> seconds before the confirm, which rules out the long-background freeze theory. Cause unconfirmed
+> (Conf permission state not yet verified on-device); prime suspects: the Fennec SW-registration
+> `showNotification` path, or Android page throttling. **Owner ruling: note-and-observe** — they'll
+> watch whether it fires in some cases during daily use; revisit with the Web Push channel (2), whose
+> custom worker replaces this path anyway.
 
 - **What:** notify when a host wakes/dies, an automation finishes, an action fails, or — key —
   **the agent needs input it can't get** (a `question` or a `confirm` it lacks privilege for, while
