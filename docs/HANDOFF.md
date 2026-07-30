@@ -12,7 +12,29 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-30 night — 🏁 **PHASE 14 / A3 AUTOMATIONS COMPLETE**: 14c + 14d built + review-clean same day; 14a–14c PUSHED CI-GREEN, 14d + docs UNPUSHED)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-30 night — 🏁 **PHASE 14 / A3 COMPLETE and ✅ LIVE ON PROD as v1.4.4**)
+> **✅ v1.4.4 RELEASED + LIVE on emma 2026-07-30 night** (v1.4.1 → v1.4.4; the plain-form updater's
+> THIRD clean run; DB snapshot `ctrlb-20260730-221525.db.gz`; **migrations v4+v5 folded on prod's
+> first boot — health reports schema 5**; tag pinned + pid==MainPID + HTTPS verified; the
+> automations API live with an empty roster; rollback = `update.sh v1.4.1` + that snapshot, since
+> the schema advanced). Owner ruling: **v1.5.0 stays RESERVED** — this shipped as a patch tag.
+> **TWO TAGS BURNED buying real fixes (tags are immutable; both are tagged but were NEVER deployed
+> and are NOT rollback targets):** `v1.4.2`'s gate — the ONLY pipeline that runs e2e — caught the
+> Conf tab CRASHING whenever `/api/automations` answered malformed (`automationsSummary` reduced
+> over undefined; the e2e mock's unmocked-GET `{}` = any proxy error body in prod) → fixed
+> `c928e41` (array-prove at both consumers + a realistic e2e fixture route). `v1.4.3`'s gate —
+> two of the new M1 race tests were timing-pinned (the slow runner let the OTHER legal writer win
+> first-writer-wins, and a sleep-vs-grace margin inverted; the PRODUCT invariant held) → rewritten
+> scheduling-independent `638ce7f` (`_HeldTurn` event choreography · invariant-not-winner pins ·
+> two latent same-class 14b flakes fixed; 15/15 repeat + 5/5 under 10× CPU starvation).
+> **▶ NEXT SESSION:** 1. **Owner device round of A3 on PROD** (create via chat → confirm → the
+> card → run-now → the `automation_done` notification → unread badge → open-thread) — ask for the
+> result. 2. **v1.5.0 remains reserved** (owner's call when). 3. Carried: the F1 Fennec-delivery
+> mystery (observe in daily use). 4. Backlog unchanged (sendIcon/gradient fills · Web Push · ntfy ·
+> host up/down notify — the last needs the D2-A/A3 monitor loop, whose lifecycle convention the
+> runner now demonstrates).
+>
+> ## ▶ PREVIOUS STATE (2026-07-30 night — 🏁 **PHASE 14 / A3 AUTOMATIONS COMPLETE**: 14c + 14d built + review-clean same day; 14a–14c PUSHED CI-GREEN, 14d + docs UNPUSHED — since released, see above)
 > **The whole automations feature is BUILT.** This session: pushed the 14a/14b stack (first CI run
 > GREEN) → **14c surface** (`c4bc9fa`+docs `d3da383`, R3 WAVE CLEAN after Codex R1 DO-NOT-SHIP
 > 4H/4M: REST router w/ 202-DETACHED run-now · Conf group 14 list + PromptModal-shell sheet on its
